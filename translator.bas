@@ -753,9 +753,20 @@ End Function
 
 Private Function FindMarkers(ws As Worksheet, ByRef eolRow As Long, ByRef eocCol As Long) As Boolean
   Dim c As Range, r As Range
+  Dim searchRow As Range, searchCol As Range
+  Set searchRow = ws.Rows(1)
+  Set searchCol = ws.Columns(1)
   On Error Resume Next
-  Set c = ws.Rows(1).Find(What:="EOC", LookIn:=xlValues, LookAt:=xlWhole, SearchOrder:=xlByColumns, MatchCase:=False)
-  Set r = ws.Columns(1).Find(What:="EOL", LookIn:=xlValues, LookAt:=xlWhole, SearchOrder:=xlByRows, MatchCase:=False)
+  Set c = searchRow.Find(What:="EOC", _
+                         After:=searchRow.Cells(searchRow.Columns.count), _
+                         LookIn:=xlValues, LookAt:=xlWhole, _
+                         SearchOrder:=xlByColumns, SearchDirection:=xlNext, _
+                         MatchCase:=False)
+  Set r = searchCol.Find(What:="EOL", _
+                         After:=searchCol.Cells(searchCol.Rows.count), _
+                         LookIn:=xlValues, LookAt:=xlWhole, _
+                         SearchOrder:=xlByRows, SearchDirection:=xlNext, _
+                         MatchCase:=False)
   On Error GoTo 0
   If c Is Nothing Or r Is Nothing Then Exit Function
   eocCol = c.Column
@@ -907,23 +918,37 @@ End Sub
 '========================
 Private Function ShapeInRange(ByVal shp As Shape, ByVal rng As Range) As Boolean
   On Error GoTo EH
-  Dim tl As Range, br As Range
-  Set tl = shp.TopLeftCell
-  Set br = shp.BottomRightCell
-  If tl Is Nothing Or br Is Nothing Then GoTo EH
-  If Not Intersect(tl, rng) Is Nothing Then ShapeInRange = True: Exit Function
-  If Not Intersect(br, rng) Is Nothing Then ShapeInRange = True: Exit Function
+  Dim rLeft As Double, rTop As Double, rRight As Double, rBottom As Double
+  rLeft = rng.Left
+  rTop = rng.Top
+  rRight = rLeft + rng.Width
+  rBottom = rTop + rng.Height
+
+  Dim sLeft As Double, sTop As Double, sRight As Double, sBottom As Double
+  sLeft = shp.Left
+  sTop = shp.Top
+  sRight = sLeft + shp.Width
+  sBottom = sTop + shp.Height
+
+  ' Overlap check with small tolerance to account for floating point rounding
+  Const EPS As Double = 0.5
+  If sRight < rLeft - EPS Then GoTo EH
+  If sLeft > rRight + EPS Then GoTo EH
+  If sBottom < rTop - EPS Then GoTo EH
+  If sTop > rBottom + EPS Then GoTo EH
+  ShapeInRange = True
   Exit Function
 EH:
   ShapeInRange = False
 End Function
 
-Private Sub CollectTextShapes(ByVal parentShapes As Shapes, ByVal targetRng As Range, ByRef out As Collection)
+Private Sub CollectTextShapes(ByVal parentShapes As Object, ByVal targetRng As Range, ByRef out As Collection)
   Dim shp As Shape
   For Each shp In parentShapes
     If shp.Type = msoGroup Then
       CollectTextShapes shp.GroupItems, targetRng, out
     Else
+      If shp.Visible = msoFalse Then GoTo NextShape
       If ShapeInRange(shp, targetRng) Then
         Dim hasTxt As Boolean
         On Error Resume Next
@@ -937,6 +962,8 @@ Private Sub CollectTextShapes(ByVal parentShapes As Shapes, ByVal targetRng As R
         If hasTxt Then out.Add shp
       End If
     End If
+NextShape:
+    ' continue
   Next
 End Sub
 

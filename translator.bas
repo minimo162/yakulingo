@@ -53,6 +53,7 @@ Private Const USE_EMOJI As Boolean = True
 ' マッチング正規化
 Private Const IGNORE_ALL_SPACES_WHEN_MATCHING As Boolean = True
 Private Const NORMALIZE_WIDE_NARROW           As Boolean = True
+Private Const SHAPE_BOUNDS_EPSILON            As Double = 0.5
 
 ' グローバル（互換のため残置）
 Private g_entries As Collection
@@ -917,6 +918,7 @@ End Sub
 '   図形（テキストボックス等）ユーティリティ
 '========================
 Private Function ShapeInRange(ByVal shp As Shape, ByVal rng As Range) As Boolean
+  Const EPS As Double = SHAPE_BOUNDS_EPSILON
   On Error GoTo EH
   Dim rLeft As Double, rTop As Double, rRight As Double, rBottom As Double
   rLeft = rng.Left
@@ -930,8 +932,6 @@ Private Function ShapeInRange(ByVal shp As Shape, ByVal rng As Range) As Boolean
   sRight = sLeft + shp.Width
   sBottom = sTop + shp.Height
 
-  ' Overlap check with small tolerance to account for floating point rounding
-  Const EPS As Double = 0.5
   If sRight < rLeft - EPS Then GoTo EH
   If sLeft > rRight + EPS Then GoTo EH
   If sBottom < rTop - EPS Then GoTo EH

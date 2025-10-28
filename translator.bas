@@ -806,7 +806,12 @@ Private Function ApplyToSheet(ws As Worksheet, entries As Collection, Optional c
 
   Dim idx As Object: Set idx = BuildIndexForSheet(entries, ws)
   Dim cell As Range, key As String, changed As Long, entry As Object
-  Dim total As Long: total = IIf(textRng Is Nothing, 0, textRng.Cells.count)
+  Dim total As Long
+  If textRng Is Nothing Then
+    total = 0
+  Else
+    total = textRng.Cells.count
+  End If
   Dim i As Long: i = 0
 
   If Not textRng Is Nothing Then

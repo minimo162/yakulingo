@@ -919,27 +919,42 @@ End Sub
 '========================
 Private Function ShapeInRange(ByVal shp As Shape, ByVal rng As Range) As Boolean
   On Error GoTo EH
+
   Dim eps As Double
   eps = SHAPE_BOUNDS_EPSILON
 
-  Dim rLeft As Double, rTop As Double, rRight As Double, rBottom As Double
-  rLeft = rng.Left
-  rTop = rng.Top
-  rRight = rLeft + rng.Width
-  rBottom = rTop + rng.Height
+  Dim rngLeft As Double
+  Dim rngTop As Double
+  Dim rngRight As Double
+  Dim rngBottom As Double
 
-  Dim sLeft As Double, sTop As Double, sRight As Double, sBottom As Double
-  sLeft = shp.Left
-  sTop = shp.Top
-  sRight = sLeft + shp.Width
-  sBottom = sTop + shp.Height
+  rngLeft = rng.Left
+  rngTop = rng.Top
+  rngRight = rngLeft + rng.Width
+  rngBottom = rngTop + rng.Height
+
+  Dim shpLeft As Double
+  Dim shpTop As Double
+  Dim shpRight As Double
+  Dim shpBottom As Double
+
+  shpLeft = shp.Left
+  shpTop = shp.Top
+  shpRight = shpLeft + shp.Width
+  shpBottom = shpTop + shp.Height
+
+  If shpRight < rngLeft - eps Then GoTo Outside
+  If shpLeft > rngRight + eps Then GoTo Outside
+  If shpBottom < rngTop - eps Then GoTo Outside
+  If shpTop > rngBottom + eps Then GoTo Outside
 
   ShapeInRange = True
-  If sRight < rLeft - eps Then ShapeInRange = False: Exit Function
-  If sLeft > rRight + eps Then ShapeInRange = False: Exit Function
-  If sBottom < rTop - eps Then ShapeInRange = False: Exit Function
-  If sTop > rBottom + eps Then ShapeInRange = False: Exit Function
   Exit Function
+
+Outside:
+  ShapeInRange = False
+  Exit Function
+
 EH:
   ShapeInRange = False
 End Function

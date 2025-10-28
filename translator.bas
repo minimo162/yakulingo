@@ -919,7 +919,9 @@ End Sub
 '========================
 Private Function ShapeInRange(ByVal shp As Shape, ByVal rng As Range) As Boolean
   On Error GoTo EH
-  Dim eps As Double: eps = SHAPE_BOUNDS_EPSILON
+  Dim eps As Double
+  eps = SHAPE_BOUNDS_EPSILON
+
   Dim rLeft As Double, rTop As Double, rRight As Double, rBottom As Double
   rLeft = rng.Left
   rTop = rng.Top
@@ -932,11 +934,11 @@ Private Function ShapeInRange(ByVal shp As Shape, ByVal rng As Range) As Boolean
   sRight = sLeft + shp.Width
   sBottom = sTop + shp.Height
 
-  If sRight < rLeft - eps Then GoTo EH
-  If sLeft > rRight + eps Then GoTo EH
-  If sBottom < rTop - eps Then GoTo EH
-  If sTop > rBottom + eps Then GoTo EH
-  ShapeInRange = True
+  ShapeInRange = Not ( _
+       (sRight < rLeft - eps) Or _
+       (sLeft > rRight + eps) Or _
+       (sBottom < rTop - eps) Or _
+       (sTop > rBottom + eps))
   Exit Function
 EH:
   ShapeInRange = False

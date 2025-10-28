@@ -934,11 +934,11 @@ Private Function ShapeInRange(ByVal shp As Shape, ByVal rng As Range) As Boolean
   sRight = sLeft + shp.Width
   sBottom = sTop + shp.Height
 
-  ShapeInRange = Not ( _
-       (sRight < rLeft - eps) Or _
-       (sLeft > rRight + eps) Or _
-       (sBottom < rTop - eps) Or _
-       (sTop > rBottom + eps))
+  ShapeInRange = True
+  If sRight < rLeft - eps Then ShapeInRange = False: Exit Function
+  If sLeft > rRight + eps Then ShapeInRange = False: Exit Function
+  If sBottom < rTop - eps Then ShapeInRange = False: Exit Function
+  If sTop > rBottom + eps Then ShapeInRange = False: Exit Function
   Exit Function
 EH:
   ShapeInRange = False

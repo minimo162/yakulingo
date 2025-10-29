@@ -386,13 +386,32 @@ Private Function FindMarkers(ws As Worksheet, ByRef eolRow As Long, ByRef eocCol
 End Function
 
 Private Function GetTextCellsRange(ws As Worksheet, ByVal eolRow As Long, ByVal eocCol As Long) As Range
-  Dim baseRng As Range, visRng As Range, textRng As Range
+  Dim baseRng As Range, visRng As Range, extra As Range, targetRng As Range, textRng As Range
   Set baseRng = ws.Range(ws.Cells(RANGE_START_ROW, RANGE_START_COL), ws.Cells(eolRow, eocCol))
   On Error Resume Next
   Set visRng = baseRng.SpecialCells(xlCellTypeVisible)
   If visRng Is Nothing Then Set visRng = baseRng
-  Set textRng = visRng.SpecialCells(xlCellTypeConstants, xlTextValues)
+
+  Dim cell As Range
+  For Each cell In visRng
+    If cell.MergeCells Then
+      If extra Is Nothing Then
+        Set extra = cell.MergeArea.Cells(1, 1)
+      Else
+        Set extra = Union(extra, cell.MergeArea.Cells(1, 1))
+      End If
+    End If
+  Next cell
+
+  If extra Is Nothing Then
+    Set targetRng = visRng
+  Else
+    Set targetRng = Union(visRng, extra)
+  End If
+
+  Set textRng = targetRng.SpecialCells(xlCellTypeConstants, xlTextValues)
   On Error GoTo 0
+  If textRng Is Nothing Then Set textRng = targetRng
   Set GetTextCellsRange = textRng
 End Function
 
@@ -450,7 +469,7 @@ Private Function ApplyToSheet(ws As Worksheet, entries As Collection) As Long
         If Len(key) > 0 And idx.Exists(key) Then
           Set entry = idx.Item(key)
           If CStr(targetCell.Value2) <> CStr(entry.Item("target")) Then
-            targetCell.Value2 = entry.Item("target")
+            targetRange.Value2 = entry.Item("target")
             ApplyStyleIfAny targetRange, entry
             targetRange.Font.Name = "Arial"
             ShrinkCellFont targetRange

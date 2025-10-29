@@ -437,6 +437,8 @@ Private Function ApplyToSheet(ws As Worksheet, entries As Collection) As Long
   On Error Resume Next
   If Not textRng Is Nothing Then textRng.Font.Name = "Arial"
   On Error GoTo 0
+  Dim shrinkTarget As Range
+  Set shrinkTarget = ws.Range(ws.Cells(RANGE_START_ROW, RANGE_START_COL), ws.Cells(eolRow, eocCol))
 
   Dim idx As Object: Set idx = BuildIndex(entries)
   Dim processedMerges As Object: Set processedMerges = CreateObject("Scripting.Dictionary")
@@ -472,7 +474,6 @@ Private Function ApplyToSheet(ws As Worksheet, entries As Collection) As Long
             targetRange.Value2 = entry.Item("target")
             ApplyStyleIfAny targetRange, entry
             targetRange.Font.Name = "Arial"
-            ShrinkCellFont targetRange
             changed = changed + 1
           End If
         End If
@@ -500,12 +501,17 @@ NextCell:
           SetShapeText shp, tgt
           ApplyShapeStyleIfAny shp, entry
           ForceShapeFontArial shp
-          ShrinkShapeFont shp
           changed = changed + 1
         End If
       End If
     End If
   Next
+
+  For Each shp In shapesInScope
+    ShrinkShapeFont shp
+  Next
+
+  If Not shrinkTarget Is Nothing Then ShrinkCellFont shrinkTarget
 
   Application.StatusBar = False
   ApplyToSheet = changed

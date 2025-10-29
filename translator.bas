@@ -13,9 +13,9 @@ Option Explicit
 
 ' ===== UI定義 =====
 Private Const HELPER_SHEET As String = "ECM_Helper"
-Private Const COL_WB_PATH As String = "B4"
-Private Const COL_CSV_PATH As String = "B6"
-Private Const CELL_STATUS  As String = "B9"
+Private Const COL_WB_PATH As String = "B5"
+Private Const COL_CSV_PATH As String = "B9"
+Private Const CELL_STATUS  As String = "B15"
 
 ' 範囲開始（B2）
 Private Const RANGE_START_ROW As Long = 2
@@ -73,7 +73,6 @@ Public Sub ECM_Setup()
     On Error GoTo 0
   End With
   ws.Range("A1:F1").Interior.Color = COLOR_PRIMARY_LIGHT
-  ws.Rows(1).RowHeight = 30
 
   ws.Range("A2").value = "翻訳対象のブックと辞書CSVを指定し、「反映」を実行してください。"
   ws.Range("A2:F2").Merge
@@ -82,34 +81,54 @@ Public Sub ECM_Setup()
   ws.Range("A2").Font.Size = 11
 
   ws.Range("A4").value = "ターゲットブック"
+  ws.Range("A4").Font.Bold = True
+  ws.Range("B5:E5").Merge
   ws.Range(COL_WB_PATH).value = ThisWorkbook.fullName
   ws.Range(COL_WB_PATH).HorizontalAlignment = xlLeft
+  ws.Range(COL_WB_PATH).VerticalAlignment = xlCenter
 
-  ws.Range("A6").value = "辞書CSV"
+  ws.Range("A8").value = "辞書CSV"
+  ws.Range("A8").Font.Bold = True
+  ws.Range("B9:E9").Merge
   ws.Range(COL_CSV_PATH).value = ThisWorkbook.path & Application.PathSeparator & "ECM_JE_Dictionary.csv"
   ws.Range(COL_CSV_PATH).HorizontalAlignment = xlLeft
+  ws.Range(COL_CSV_PATH).VerticalAlignment = xlCenter
 
-  ws.Range("A8").value = "アクション"
-  ws.Range("A9").value = "ステータス"
+  ws.Range("A12").value = "アクション"
+  ws.Range("A12").Font.Bold = True
+  ws.Range("A14").value = "ステータス"
+  ws.Range("A14").Font.Bold = True
+  ws.Range("B15:E15").Merge
   ws.Range(CELL_STATUS).value = "Ready"
+  ws.Range(CELL_STATUS).HorizontalAlignment = xlLeft
+  ws.Range(CELL_STATUS).VerticalAlignment = xlCenter
 
   DeleteButtons ws, "btnECM_*"
-  AddButton ws, "btnECM_BrowseWb", LabelWithIcon("folder", "ターゲット選択"), ws.Range("E4"), 140, "ECM_BrowseWorkbook", True, "翻訳先となるExcelブックを選択します。"
-  AddButton ws, "btnECM_BrowseCsv", LabelWithIcon("index", "辞書CSV選択"), ws.Range("E6"), 140, "ECM_BrowseCSV", True, "翻訳辞書となるCSVファイルを選択します。"
-  AddButton ws, "btnECM_Apply", LabelWithIcon("check", "反映"), ws.Range("B8"), 240, "ECM_ApplyTranslations", True, "辞書を使ってターゲットブックへ翻訳を反映します。"
+  AddButton ws, "btnECM_BrowseWb", LabelWithIcon("folder", "ターゲット選択"), ws.Range("B6"), 220, "ECM_BrowseWorkbook", True, "翻訳先となるExcelブックを選択します。"
+  AddButton ws, "btnECM_BrowseCsv", LabelWithIcon("index", "辞書CSV選択"), ws.Range("B10"), 220, "ECM_BrowseCSV", True, "翻訳辞書となるCSVファイルを選択します。"
+  AddButton ws, "btnECM_Apply", LabelWithIcon("check", "反映"), ws.Range("B13"), 280, "ECM_ApplyTranslations", True, "辞書を使ってターゲットブックへ翻訳を反映します。"
 
   With ws
     .Columns("A").ColumnWidth = 18
-    .Columns("B").ColumnWidth = 52
-    .Columns("C").ColumnWidth = 2
-    .Columns("D").ColumnWidth = 4
-    .Columns("E").ColumnWidth = 18
-    .Columns("F").ColumnWidth = 2
+    .Columns("B").ColumnWidth = 50
+    .Columns("C").ColumnWidth = 3
+    .Columns("D").ColumnWidth = 3
+    .Columns("E").ColumnWidth = 16
+    .Columns("F").ColumnWidth = 4
+    .Rows(1).RowHeight = 30
     .Rows(2).RowHeight = 24
-    .Rows(4).RowHeight = 24
-    .Rows(6).RowHeight = 24
-    .Rows(8).RowHeight = 28
-    .Rows(9).RowHeight = 22
+    .Rows(4).RowHeight = 20
+    .Rows(5).RowHeight = 28
+    .Rows(6).RowHeight = 34
+    .Rows(7).RowHeight = 12
+    .Rows(8).RowHeight = 20
+    .Rows(9).RowHeight = 28
+    .Rows(10).RowHeight = 34
+    .Rows(11).RowHeight = 12
+    .Rows(12).RowHeight = 20
+    .Rows(13).RowHeight = 38
+    .Rows(14).RowHeight = 20
+    .Rows(15).RowHeight = 24
   End With
 
   Application.ScreenUpdating = True

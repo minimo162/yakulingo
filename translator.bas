@@ -13,28 +13,16 @@ Option Explicit
 
 ' ===== UI定義 =====
 Private Const HELPER_SHEET As String = "ECM_Helper"
-Private Const COL_WB_PATH As String = "B2"
-Private Const COL_CSV_PATH As String = "B3"
-Private Const CELL_BACKUP  As String = "B4"
-Private Const CELL_STATUS  As String = "B6"
-
-' テーブル
-Private Const TABLE_START As String = "A10" ' Include/Sheet/A1/EOL/EOC
-Private Const TABLE_NAME  As String = "ECM_Sheets"
+Private Const COL_WB_PATH As String = "B4"
+Private Const COL_CSV_PATH As String = "B6"
+Private Const CELL_STATUS  As String = "B9"
 
 ' 範囲開始（B2）
 Private Const RANGE_START_ROW As Long = 2
 Private Const RANGE_START_COL As Long = 2
 
-' 進捗バー
-Private Const PROG_BG As String = "ECM_Prog_BG"
-Private Const PROG_FG As String = "ECM_Prog_FG"
-Private Const SHOW_PROGRESS_BAR As Boolean = True
-
-' シート名
-Private Const PREVIEW_SHEET As String = "ECM_Preview"
-Private Const LOG_SHEET     As String = "ECM_Log"
-Private Const HELP_SHEET    As String = "ECM_Help"
+' ログシート
+Private Const LOG_SHEET As String = "ECM_Log"
 
 ' 配色
 Private Const COLOR_PRIMARY       As Long = &HE5464F
@@ -74,9 +62,9 @@ Public Sub ECM_Setup()
   ws.Cells.clear
 
   With ws.Range("A1")
-    .value = LabelWithIcon("globe", "ECM CA1 ? Translate JA → EN")
+    .value = LabelWithIcon("globe", "ECM Translator")
     .Font.Bold = True
-    .Font.Size = 16
+    .Font.Size = 18
     .Font.Color = COLOR_TEXT
     On Error Resume Next
     .Font.Name = IIf(USE_EMOJI, "Segoe UI Emoji", UI_FONT)
@@ -85,73 +73,49 @@ Public Sub ECM_Setup()
     On Error GoTo 0
   End With
   ws.Range("A1:F1").Interior.Color = COLOR_PRIMARY_LIGHT
-  ws.Rows(1).RowHeight = 28
+  ws.Rows(1).RowHeight = 30
 
-  ws.Range("A2").value = "Target Workbook (.xlsx/.xlsm):"
+  ws.Range("A2").value = "翻訳対象のブックと辞書CSVを指定し、「反映」を実行してください。"
+  ws.Range("A2:F2").Merge
+  ws.Range("A2:F2").Interior.Color = COLOR_PRIMARY_LIGHT
+  ws.Range("A2").Font.Color = COLOR_TEXT
+  ws.Range("A2").Font.Size = 11
+
+  ws.Range("A4").value = "ターゲットブック"
   ws.Range(COL_WB_PATH).value = ThisWorkbook.fullName
-  ws.Range("A3").value = "Dictionary CSV (source,target,...):"
+  ws.Range(COL_WB_PATH).HorizontalAlignment = xlLeft
+
+  ws.Range("A6").value = "辞書CSV"
   ws.Range(COL_CSV_PATH).value = ThisWorkbook.path & Application.PathSeparator & "ECM_JE_Dictionary.csv"
+  ws.Range(COL_CSV_PATH).HorizontalAlignment = xlLeft
 
-  ws.Range("A4").value = "Backup before apply (Y/N):"
-  With ws.Range(CELL_BACKUP)
-    .value = "Y"
-    With .Validation
-      .Delete
-      .Add Type:=xlValidateList, AlertStyle:=xlValidAlertStop, Formula1:="Y,N"
-      .IgnoreBlank = True
-      .InCellDropdown = True
-    End With
-  End With
-
-  ws.Range("A5").value = "Actions:"
-  ws.Range("A6").value = "Status:"
+  ws.Range("A8").value = "アクション"
+  ws.Range("A9").value = "ステータス"
   ws.Range(CELL_STATUS).value = "Ready"
 
   DeleteButtons ws, "btnECM_*"
-  AddButton ws, "btnECM_BrowseWb", LabelWithIcon("folder", "ブック選択"), ws.Range("D2"), 140, "ECM_BrowseWorkbook", True, "対象ブック（翻訳先）を選びます。"
-  AddButton ws, "btnECM_OpenWb", LabelWithIcon("search", "開く"), ws.Range("E2"), 100, "ECM_OpenWorkbook", False, "対象ブックを開きます。"
-  AddButton ws, "btnECM_BrowseCsv", LabelWithIcon("index", "CSV選択"), ws.Range("D3"), 140, "ECM_BrowseCSV", True, "辞書CSVを選びます。"
-  AddButton ws, "btnECM_OpenCsv", LabelWithIcon("search", "開く"), ws.Range("E3"), 100, "ECM_OpenCSV", False, "辞書CSVを開きます。"
-  AddButton ws, "btnECM_Scan", LabelWithIcon("compass", "シート検出"), ws.Range("B5"), 120, "ECM_ScanSheets", True, "EOL/EOC 範囲のあるシート一覧。"
-  AddButton ws, "btnECM_Preview", LabelWithIcon("flask", "プレビュー"), ws.Range("C5"), 120, "ECM_PreviewTranslations", True, "変更予定を一覧表示。"
-  AddButton ws, "btnECM_Apply", LabelWithIcon("check", "反映"), ws.Range("D5"), 120, "ECM_ApplyTranslations", True, "プレビュー内容を反映。"
-  AddButton ws, "btnECM_RunAll", LabelWithIcon("play", "おまかせ実行"), ws.Range("E5"), 140, "ECM_RunAll", True, "検出→プレビュー→反映。"
-
-  EnsureProgressBar ws
-
-  AddButton ws, "btnECM_AllY", LabelWithIcon("allok", "すべてY"), ws.Range("B8"), 100, "ECM_SelectAllY", False, "Includeを全てY。"
-  AddButton ws, "btnECM_AllN", LabelWithIcon("allng", "すべてN"), ws.Range("C8"), 100, "ECM_SelectAllN", False, "Includeを全てN。"
-  AddButton ws, "btnECM_Help", LabelWithIcon("info", "ヘルプ"), ws.Range("D8"), 100, "ECM_OpenHelp", False, "使い方。"
-  AddButton ws, "btnECM_Reset", LabelWithIcon("broom", "リセット"), ws.Range("E8"), 100, "ECM_Setup", False, "パネル再作成。"
-  AddButton ws, "btnECM_ReloadDict", LabelWithIcon("index", "辞書再読込"), ws.Range("F8"), 120, "ECM_ReloadDictionary", False, "毎回読込方式の説明。"
-
-  SetupIncludeTable ws
+  AddButton ws, "btnECM_BrowseWb", LabelWithIcon("folder", "ターゲット選択"), ws.Range("E4"), 140, "ECM_BrowseWorkbook", True, "翻訳先となるExcelブックを選択します。"
+  AddButton ws, "btnECM_BrowseCsv", LabelWithIcon("index", "辞書CSV選択"), ws.Range("E6"), 140, "ECM_BrowseCSV", True, "翻訳辞書となるCSVファイルを選択します。"
+  AddButton ws, "btnECM_Apply", LabelWithIcon("check", "反映"), ws.Range("B8"), 240, "ECM_ApplyTranslations", True, "辞書を使ってターゲットブックへ翻訳を反映します。"
 
   With ws
-    .Columns("A").ColumnWidth = 34
-    .Columns("B").ColumnWidth = 60
-    .Columns("C").ColumnWidth = 28
-    .Columns("D").ColumnWidth = 20
+    .Columns("A").ColumnWidth = 18
+    .Columns("B").ColumnWidth = 52
+    .Columns("C").ColumnWidth = 2
+    .Columns("D").ColumnWidth = 4
     .Columns("E").ColumnWidth = 18
+    .Columns("F").ColumnWidth = 2
     .Rows(2).RowHeight = 24
-    .Rows(3).RowHeight = 24
-    .Rows(5).RowHeight = 24
-    .Rows(7).RowHeight = 12
-    .Rows(8).RowHeight = 24
+    .Rows(4).RowHeight = 24
+    .Rows(6).RowHeight = 24
+    .Rows(8).RowHeight = 28
+    .Rows(9).RowHeight = 22
   End With
-
-  If Not SHOW_PROGRESS_BAR Then
-    On Error Resume Next
-    ws.Shapes(PROG_BG).Delete
-    ws.Shapes(PROG_FG).Delete
-    On Error GoTo 0
-  End If
 
   Application.ScreenUpdating = True
   Application.DisplayAlerts = True
 
-  MsgBox "コントロールパネルを作成しました。" & vbCrLf & _
-         "1) シート検出 → 2) プレビュー → 3) 反映（推奨: バックアップあり）", vbInformation
+  MsgBox "翻訳パネルを準備しました。ターゲットブックと辞書CSVを確認してから「反映」を実行してください。", vbInformation
 End Sub
 
 Private Function GetOrCreatePanel(Name As String) As Worksheet
@@ -220,84 +184,6 @@ Private Sub AddButton(ws As Worksheet, _
   End With
 End Sub
 
-Private Sub SetupIncludeTable(ws As Worksheet)
-  Dim lo As ListObject
-  On Error Resume Next
-  Set lo = ws.ListObjects(TABLE_NAME)
-  On Error GoTo 0
-  If lo Is Nothing Then
-    ws.Range(TABLE_START).Resize(1, 5).value = Array("Include (Y/N)", "Sheet", "A1", "EOL", "EOC")
-    Dim tgt As Range
-    Set tgt = ws.Range(TABLE_START).Resize(2, 5) ' header + 1 blank row
-    Set lo = ws.ListObjects.Add(xlSrcRange, tgt, , xlYes)
-    lo.Name = TABLE_NAME
-    lo.TableStyle = "TableStyleLight11"
-    If Not lo.DataBodyRange Is Nothing Then lo.DataBodyRange.Rows.Delete
-  Else
-    lo.HeaderRowRange.value = Array("Include (Y/N)", "Sheet", "A1", "EOL", "EOC")
-  End If
-  With ws.Range("A11:A10000").Validation
-    .Delete
-    .Add Type:=xlValidateList, AlertStyle:=xlValidAlertStop, Formula1:="Y,N"
-  End With
-End Sub
-
-'========================
-'   プログレス（UI）
-'========================
-Private Sub EnsureProgressBar(ws As Worksheet)
-  If Not SHOW_PROGRESS_BAR Then Exit Sub
-
-  Dim topCell As Range: Set topCell = ws.Range("B7")
-  Dim widthTotal As Double: widthTotal = ws.Range("B7:E7").Width
-  Dim h As Double: h = ws.Rows(7).RowHeight - 2
-
-  On Error Resume Next
-  ws.Shapes(PROG_BG).Delete
-  ws.Shapes(PROG_FG).Delete
-  On Error GoTo 0
-
-  Dim bg As Shape, fg As Shape
-  Set bg = ws.Shapes.AddShape(msoShapeRectangle, topCell.Left, topCell.Top + 1, widthTotal, h)
-  With bg
-    .Name = PROG_BG
-    .Fill.ForeColor.RGB = RGB(240, 240, 240)
-    .line.Visible = msoFalse
-  End With
-
-  Set fg = ws.Shapes.AddShape(msoShapeRectangle, topCell.Left, topCell.Top + 1, 0, h)
-  With fg
-    .Name = PROG_FG
-    .Fill.ForeColor.RGB = COLOR_PRIMARY
-    .line.Visible = msoFalse
-  End With
-End Sub
-
-Private Sub SetProgress(ByVal percent As Double, Optional ByVal caption As String = "")
-  If Not SHOW_PROGRESS_BAR Then
-    If Len(caption) > 0 Then SetStatus caption
-    Application.StatusBar = caption
-    Exit Sub
-  End If
-  Dim ws As Worksheet: On Error Resume Next: Set ws = ThisWorkbook.Worksheets(HELPER_SHEET): On Error GoTo 0
-  If ws Is Nothing Then Exit Sub
-  Dim bg As Shape, fg As Shape
-  On Error Resume Next
-  Set bg = ws.Shapes(PROG_BG): Set fg = ws.Shapes(PROG_FG)
-  On Error GoTo 0
-  If bg Is Nothing Or fg Is Nothing Then Exit Sub
-  If percent < 0 Then percent = 0
-  If percent > 1 Then percent = 1
-  fg.Width = bg.Width * percent
-  If Len(caption) > 0 Then SetStatus caption
-  Application.StatusBar = caption
-End Sub
-
-Private Sub ResetProgress()
-  SetProgress 0, "Ready"
-  Application.StatusBar = False
-End Sub
-
 '========================
 '     ファイル選択/OPEN
 '========================
@@ -325,264 +211,6 @@ Public Sub ECM_BrowseCSV()
   End With
 End Sub
 
-Public Sub ECM_OpenWorkbook()
-  Dim path As String: path = CleanPath(ThisWorkbook.Worksheets(HELPER_SHEET).Range(COL_WB_PATH).value & "")
-  If Len(path) > 0 And Dir$(path) <> "" Then
-    Application.Workbooks.Open path
-  Else
-    MsgBox "Invalid workbook path.", vbExclamation
-  End If
-End Sub
-
-Public Sub ECM_OpenCSV()
-  Dim path As String: path = CleanPath(ThisWorkbook.Worksheets(HELPER_SHEET).Range(COL_CSV_PATH).value & "")
-  If Len(path) > 0 And Dir$(path) <> "" Then
-    Application.Workbooks.Open path
-  Else
-    MsgBox "Invalid CSV path.", vbExclamation
-  End If
-End Sub
-
-'========================
-'        検出/集計
-'========================
-Public Sub ECM_ScanSheets()
-  Dim wsUI As Worksheet: Set wsUI = ThisWorkbook.Worksheets(HELPER_SHEET)
-  Dim wb As Workbook: Set wb = GetTargetWorkbook(wsUI.Range(COL_WB_PATH).value & "")
-  If wb Is Nothing Then
-    MsgBox "Could not open target workbook.", vbExclamation
-    Exit Sub
-  End If
-
-  Dim lo As ListObject: Set lo = wsUI.ListObjects(TABLE_NAME)
-  On Error Resume Next
-  Do While lo.ListRows.count > 0: lo.ListRows(1).Delete: Loop
-  On Error GoTo 0
-
-  Application.ScreenUpdating = False
-  SetStatus "Scanning sheets..."
-  SetProgress 0
-
-  Dim sh As Worksheet, eolRow As Long, eocCol As Long
-  Dim total As Long: total = wb.Worksheets.count
-  Dim i As Long: i = 0
-
-  For Each sh In wb.Worksheets
-    i = i + 1
-    If FindMarkers(sh, eolRow, eocCol) Then
-      Dim nr As ListRow
-      Set nr = lo.ListRows.Add
-      nr.Range(1, 1).value = "Y"
-      nr.Range(1, 2).value = sh.Name
-      nr.Range(1, 3).value = SafeText(sh.Range("A1").Value2)
-      nr.Range(1, 4).value = eolRow
-      nr.Range(1, 5).value = eocCol
-    End If
-    If (i Mod 1) = 0 Then SetProgress i / total, "Scanning: " & i & "/" & total
-  Next
-
-  ResetProgress
-  Application.ScreenUpdating = True
-  SetStatus "Scan complete."
-  MsgBox "シート検出が完了しました。処理対象に 'Y' を付けてください。", vbInformation
-End Sub
-
-Public Sub ECM_ExportTemplate()
-  Dim wsUI As Worksheet: Set wsUI = ThisWorkbook.Worksheets(HELPER_SHEET)
-  Dim wb As Workbook: Set wb = GetTargetWorkbook(wsUI.Range(COL_WB_PATH).value & "")
-  If wb Is Nothing Then
-    MsgBox "Could not open target workbook.", vbExclamation
-    Exit Sub
-  End If
-
-  Dim uniq As Object: Set uniq = CreateObject("Scripting.Dictionary")
-  uniq.CompareMode = 1 'TextCompare
-
-  Dim lo As ListObject: Set lo = wsUI.ListObjects(TABLE_NAME)
-  Dim r As Long
-  For r = 1 To lo.ListRows.count
-    If UCase$(Trim$(lo.DataBodyRange(r, 1).value & "")) = "Y" Then
-      Dim shName As String: shName = lo.DataBodyRange(r, 2).value & ""
-      If Len(shName) > 0 Then
-        Dim ws As Worksheet: Set ws = Nothing
-        On Error Resume Next: Set ws = wb.Worksheets(shName): On Error GoTo 0
-        If Not ws Is Nothing Then CollectLabels ws, uniq
-        ' 図形も集めたい場合は、FindMarkers→範囲→CollectTextShapes→GetShapeText→uniq.Add を追加
-      End If
-    End If
-  Next
-
-  Dim outWb As Workbook: Set outWb = Application.Workbooks.Add(xlWBATWorksheet)
-  Dim outWs As Worksheet: Set outWs = outWb.Worksheets(1)
-  outWs.Name = "Dictionary"
-  outWs.Range("A1").value = "source"
-  outWs.Range("B1").value = "target"
-
-  Dim key As Variant, rowOut As Long: rowOut = 2
-  For Each key In uniq.Keys
-    outWs.Cells(rowOut, 1).value = key
-    outWs.Cells(rowOut, 2).value = ""
-    rowOut = rowOut + 1
-  Next
-  outWs.Columns("A:B").AutoFit
-
-  Dim savePath As String
-  savePath = ThisWorkbook.path & Application.PathSeparator & "ECM_JE_Dictionary.csv"
-  On Error Resume Next
-  outWb.SaveAs Filename:=savePath, FileFormat:=xlCSVUTF8, Local:=True
-  outWb.Close SaveChanges:=False
-  On Error GoTo 0
-
-  MsgBox "テンプレートを出力しました: " & savePath, vbInformation
-End Sub
-
-'========================
-'     プレビュー/反映
-'========================
-Public Sub ECM_PreviewTranslations()
-  Dim wsUI As Worksheet: Set wsUI = ThisWorkbook.Worksheets(HELPER_SHEET)
-  Dim wb As Workbook: Set wb = GetTargetWorkbook(wsUI.Range(COL_WB_PATH).value & "")
-  If wb Is Nothing Then
-    MsgBox "Could not open target workbook.", vbExclamation
-    Exit Sub
-  End If
-
-  Dim csvPath As String: csvPath = CleanPath(wsUI.Range(COL_CSV_PATH).value & "")
-  If Len(csvPath) = 0 Then
-    MsgBox "Please set Dictionary CSV path.", vbExclamation: Exit Sub
-  End If
-
-  WarnIfCsvUnsaved csvPath
-
-  SetStatus "Loading dictionary..."
-  Dim entries As Collection
-  Set entries = EnsureDictionaryLoaded(csvPath)
-  If (entries Is Nothing) Or (entries.count = 0) Then
-    SetStatus "Dictionary load failed or empty."
-    MsgBox "辞書が読み込めませんでした（空か、形式不正）。", vbExclamation
-    Exit Sub
-  End If
-  SetStatus "Dictionary loaded: " & entries.count & " entries"
-
-  Application.ScreenUpdating = False
-  Application.StatusBar = "Preview..."
-  SetProgress 0, "Preview..."
-
-  Dim rep As Worksheet: Set rep = GetOrCreateSheet(PREVIEW_SHEET, True) ' 完全初期化
-  rep.Range("A1:E1").value = Array("Sheet", "Cell", "Before", "After", "Scope")
-  rep.Range("A1:E1").Font.Bold = True
-
-  Dim lo As ListObject: Set lo = wsUI.ListObjects(TABLE_NAME)
-  Dim out As New Collection
-  Dim totalMatches As Long, totalChanges As Long, totalScanned As Long
-
-  Dim i As Long, totalSheets As Long: totalSheets = lo.ListRows.count
-  For i = 1 To lo.ListRows.count
-    If UCase$(Trim$(lo.DataBodyRange(i, 1).value & "")) <> "Y" Then GoTo ContinueSheet
-    Dim shName As String: shName = lo.DataBodyRange(i, 2).value & ""
-    If Len(shName) = 0 Then GoTo ContinueSheet
-
-    Dim ws As Worksheet: Set ws = Nothing
-    On Error Resume Next: Set ws = wb.Worksheets(shName): On Error GoTo 0
-    If ws Is Nothing Then GoTo ContinueSheet
-    If SheetProtected(ws) Then GoTo ContinueSheet
-
-    Dim idx As Object: Set idx = BuildIndexForSheet(entries, ws)
-    Dim eolRow As Long, eocCol As Long
-    If Not FindMarkers(ws, eolRow, eocCol) Then GoTo ContinueSheet
-
-    Dim textRng As Range: Set textRng = GetTextCellsRange(ws, eolRow, eocCol)
-    If Not textRng Is Nothing Then
-      Dim cell As Range, key As String
-      For Each cell In textRng.Cells
-        totalScanned = totalScanned + 1
-        If VarType(cell.Value2) = vbString Then
-          key = KeyFor(CStr(cell.Value2))
-          If Len(key) > 0 And idx.Exists(key) Then
-            totalMatches = totalMatches + 1
-            Dim entry As Object: Set entry = idx.Item(key)
-            Dim tgt As String: tgt = CStr(entry.Item("target"))
-            If CStr(cell.Value2) <> tgt Then
-              totalChanges = totalChanges + 1
-              Dim rec(1 To 5) As Variant
-              rec(1) = ws.Name
-              rec(2) = cell.Address(False, False)
-              rec(3) = CStr(cell.Value2)
-              rec(4) = tgt
-              rec(5) = entry.Item("scope") & ""
-              out.Add rec
-            End If
-          End If
-        End If
-      Next
-    End If
-
-    ' 図形のプレビュー
-    Dim targetRect As Range
-    Set targetRect = ws.Range(ws.Cells(RANGE_START_ROW, RANGE_START_COL), ws.Cells(eolRow, eocCol))
-
-    Dim shapesInScope As New Collection, shp As Shape
-    CollectTextShapes ws.Shapes, targetRect, shapesInScope
-
-    For Each shp In shapesInScope
-      Dim sTxt As String: sTxt = GetShapeText(shp)
-      If Len(sTxt) > 0 Then
-        Dim key2 As String: key2 = KeyFor(sTxt)
-        If Len(key2) > 0 And idx.Exists(key2) Then
-          Dim e As Object: Set e = idx.Item(key2)
-          Dim t As String: t = CStr(e.Item("target"))
-          If sTxt <> t Then
-            totalMatches = totalMatches + 1
-            totalChanges = totalChanges + 1
-            Dim rec2(1 To 5) As Variant
-            rec2(1) = ws.Name
-            rec2(2) = "Shape:" & shp.Name
-            rec2(3) = sTxt
-            rec2(4) = t
-            rec2(5) = e.Item("scope") & ""
-            out.Add rec2
-          End If
-        End If
-      End If
-    Next
-
-ContinueSheet:
-    SetProgress i / IIf(totalSheets = 0, 1, totalSheets), "Preview " & i & "/" & totalSheets
-  Next
-
-  If out.count > 0 Then
-    Dim arr() As Variant: ReDim arr(1 To out.count, 1 To 5)
-    Dim r As Long
-    For r = 1 To out.count
-      Dim rowArr As Variant: rowArr = out(r)
-      arr(r, 1) = rowArr(1)
-      arr(r, 2) = rowArr(2)
-      arr(r, 3) = rowArr(3)
-      arr(r, 4) = rowArr(4)
-      arr(r, 5) = rowArr(5)
-    Next
-    rep.Range("A2").Resize(UBound(arr, 1), 5).value = arr
-  End If
-
-  CreateTableIfNeeded rep, "A1:E1", "A2"
-  rep.Columns("A:E").AutoFit
-  rep.Activate
-  Application.GoTo rep.Range("A1"), True
-  On Error Resume Next
-  With ActiveWindow
-    .FreezePanes = False
-    .SplitColumn = 0
-    .SplitRow = 0
-  End With
-  On Error GoTo 0
-
-  ResetProgress
-  Application.ScreenUpdating = True
-  SetStatus "Preview: " & totalChanges & " changes (" & totalMatches & " matches, scanned " & totalScanned & ")"
-  MsgBox "プレビューを作成しました。'" & PREVIEW_SHEET & "' をご確認ください。" & vbCrLf & _
-         "変更予定セル/図形数: " & totalChanges, vbInformation
-End Sub
-
 Public Sub ECM_ApplyTranslations()
   Dim wsUI As Worksheet: Set wsUI = ThisWorkbook.Worksheets(HELPER_SHEET)
   Dim wb As Workbook: Set wb = GetTargetWorkbook(wsUI.Range(COL_WB_PATH).value & "")
@@ -593,122 +221,85 @@ Public Sub ECM_ApplyTranslations()
 
   Dim csvPath As String: csvPath = CleanPath(wsUI.Range(COL_CSV_PATH).value & "")
   If Len(csvPath) = 0 Then
-    MsgBox "Please set Dictionary CSV path.", vbExclamation: Exit Sub
+    MsgBox "Please set Dictionary CSV path.", vbExclamation
+    Exit Sub
   End If
 
   WarnIfCsvUnsaved csvPath
 
-  SetStatus "Loading dictionary..."
+  SetStatus "辞書を読み込み中..."
   Dim entries As Collection
   Set entries = EnsureDictionaryLoaded(csvPath)
-  If (entries Is Nothing) Or (entries.count = 0) Then
-    SetStatus "Dictionary load failed or empty."
+  If (entries Is Nothing) Or (entries.Count = 0) Then
+    SetStatus "辞書の読み込みに失敗（空か形式不正）。"
     MsgBox "辞書が読み込めませんでした（空か、形式不正）。", vbExclamation
     Exit Sub
   End If
-  SetStatus "Dictionary loaded: " & entries.count & " entries"
+  SetStatus "辞書読み込み完了: " & entries.Count & " 件"
 
-  If UCase$(Trim$(wsUI.Range(CELL_BACKUP).value & "")) = "Y" Then
-    On Error Resume Next
-    Dim bk As String: bk = BackupPath(wb.fullName)
-    wb.SaveCopyAs bk
-    On Error GoTo 0
+  Dim targets As New Collection
+  Dim ws As Worksheet
+  For Each ws In wb.Worksheets
+    If Not IsInternalSheet(ws) Then
+      Dim eolRow As Long, eocCol As Long
+      If FindMarkers(ws, eolRow, eocCol) Then targets.Add ws
+    End If
+  Next ws
+
+  If targets.Count = 0 Then
+    SetStatus "反映対象のシートが見つかりません。"
+    MsgBox "EOL/EOC マーカーが見つかるシートがありません。", vbInformation
+    Exit Sub
   End If
 
-  If MsgBox("プレビューの内容を反映します。" & vbCrLf & _
+  If MsgBox("反映を実行します。" & vbCrLf & _
             "・対象ブック: " & wb.Name & vbCrLf & _
+            "・対象シート数: " & targets.Count & vbCrLf & _
             "・辞書: " & csvPath & vbCrLf & _
-            "・バックアップ: " & IIf(UCase$(Trim$(wsUI.Range(CELL_BACKUP).value & "")) = "Y", "あり", "なし") & vbCrLf & _
             "よろしいですか？", vbQuestion + vbOKCancel) <> vbOK Then
     Exit Sub
   End If
 
+  Dim oldCalc As XlCalculation: oldCalc = Application.Calculation
+  On Error GoTo CleanFail
   Application.ScreenUpdating = False
   Application.Calculation = xlCalculationManual
   Application.EnableEvents = False
-  Application.StatusBar = "Applying translations..."
-  SetProgress 0, "Applying..."
 
-  Dim lo As ListObject: Set lo = wsUI.ListObjects(TABLE_NAME)
-  Dim i As Long, totalApplied As Long, totalSheets As Long: totalSheets = lo.ListRows.count
+  Dim totalApplied As Long
   Dim changes As New Collection
+  Dim processed As Long
+  Dim targetSheet As Worksheet
 
-  For i = 1 To lo.ListRows.count
-    If UCase$(Trim$(lo.DataBodyRange(i, 1).value & "")) <> "Y" Then GoTo NextSheet
-    Dim shName As String: shName = lo.DataBodyRange(i, 2).value & ""
-    If Len(shName) = 0 Then GoTo NextSheet
+  For Each targetSheet In targets
+    processed = processed + 1
+    If SheetProtected(targetSheet) Then
+      SetStatus targetSheet.Name & ": 保護のためスキップ"
+    Else
+      SetStatus "反映中: " & targetSheet.Name & " (" & processed & "/" & targets.Count & ")"
+      Application.StatusBar = "Applying translations to " & targetSheet.Name & "..."
+      totalApplied = totalApplied + ApplyToSheet(targetSheet, entries, changes)
+    End If
+    DoEvents
+  Next targetSheet
 
-    Dim ws As Worksheet: Set ws = Nothing
-    On Error Resume Next: Set ws = wb.Worksheets(shName): On Error GoTo 0
-    If ws Is Nothing Then GoTo NextSheet
-    If SheetProtected(ws) Then GoTo NextSheet
-
-    totalApplied = totalApplied + ApplyToSheet(ws, entries, changes)
-
-NextSheet:
-    SetProgress i / IIf(totalSheets = 0, 1, totalSheets), "Applying " & i & "/" & totalSheets
-  Next
-
-  If changes.count > 0 Then WriteChangeLog changes, csvPath
+  If changes.Count > 0 Then WriteChangeLog changes, csvPath
 
   Application.StatusBar = False
+  SetStatus "反映完了: " & totalApplied & " 件更新"
+  MsgBox "反映が完了しました。変更セル/図形数: " & totalApplied & vbCrLf & "必要に応じて保存してください。", vbInformation
+  GoTo CleanExit
+
+CleanFail:
+  Application.StatusBar = False
+  Dim errMsg As String: errMsg = "反映中にエラーが発生しました: " & Err.Description
+  MsgBox errMsg, vbExclamation
+  SetStatus errMsg
+
+CleanExit:
   Application.EnableEvents = True
-  Application.Calculation = xlCalculationAutomatic
+  Application.Calculation = oldCalc
   Application.ScreenUpdating = True
-  ResetProgress
-
-  MsgBox "反映が完了しました。変更セル/図形数: " & totalApplied & vbCrLf & "保存してください。", vbInformation
-End Sub
-
-'========================
-'  ワンボタン実行 / ヘルプ
-'========================
-Public Sub ECM_RunAll()
-  ECM_ScanSheets
-  ECM_PreviewTranslations
-  ECM_ApplyTranslations
-End Sub
-
-Public Sub ECM_OpenHelp()
-  Dim ws As Worksheet: Set ws = GetOrCreateSheet(HELP_SHEET, False)
-  With ws
-    .Cells.clear
-    .Range("A1").value = LabelWithIcon("info", "ECM CA1 ? ヘルプ")
-    .Range("A1").Font.Bold = True
-    .Range("A1").Font.Size = 16
-    .Range("A2").value = "目的：辞書CSVでEOL/EOC範囲のセル定数＋図形テキストを英訳。scopeで対象絞り込み可。"
-    .Range("A4").value = "手順：Setup → パス設定 → 検出 → プレビュー → 反映（推奨：バックアップ）"
-    .Range("A6").value = "CSV列：source, target, scope, font_name, font_size, align, bold（ヘッダ名で判定）"
-    .Range("A7").value = "正規化：空白無視/全角→半角/括弧統一/ダッシュ統一。重複定義は後勝ち。"
-    .Columns("A").EntireColumn.AutoFit
-  End With
-  ws.Activate
-  MsgBox "ヘルプを表示しました。", vbInformation
-End Sub
-
-'========================
-'    手動: 辞書キャッシュクリア（説明のみ）
-'========================
-Public Sub ECM_ReloadDictionary()
-  g_loadedDictPath = ""
-  Set g_entries = Nothing
-  g_dictMtime = 0
-  g_dictSize = 0
-  g_dictHash = ""
-  SetStatus "（毎回読込方式）辞書は各実行時に最新を読み込みます。"
-  MsgBox "更新検知/キャッシュは廃止。毎回CSVを読み込みます。", vbInformation
-End Sub
-
-'========================
-'    Include 一括操作
-'========================
-Public Sub ECM_SelectAllY(): ECM_SelectAllInclude "Y": End Sub
-Public Sub ECM_SelectAllN(): ECM_SelectAllInclude "N": End Sub
-Private Sub ECM_SelectAllInclude(ByVal mark As String)
-  Dim ws As Worksheet: Set ws = ThisWorkbook.Worksheets(HELPER_SHEET)
-  Dim lo As ListObject: Set lo = ws.ListObjects(TABLE_NAME)
-  If lo.ListRows.count = 0 Then Exit Sub
-  lo.DataBodyRange.Columns(1).value = mark
 End Sub
 
 '========================
@@ -786,25 +377,20 @@ Private Function GetTextCellsRange(ws As Worksheet, ByVal eolRow As Long, ByVal 
   Set GetTextCellsRange = textRng
 End Function
 
-Private Sub CollectLabels(ws As Worksheet, ByRef uniq As Object)
-  Dim eolRow As Long, eocCol As Long
-  If Not FindMarkers(ws, eolRow, eocCol) Then Exit Sub
-  Dim textRng As Range: Set textRng = GetTextCellsRange(ws, eolRow, eocCol)
-  If textRng Is Nothing Then Exit Sub
-  Dim cell As Range, v As Variant
-  For Each cell In textRng.Cells
-    v = cell.Value2
-    If VarType(v) = vbString Then
-      v = Trim$(CStr(v))
-      If Len(v) > 0 Then If Not uniq.Exists(v) Then uniq.Add v, 1
-    End If
-  Next
-End Sub
-
 Private Function SheetProtected(ws As Worksheet) As Boolean
   On Error Resume Next
   SheetProtected = ws.ProtectContents
   On Error GoTo 0
+End Function
+
+Private Function IsInternalSheet(ByVal ws As Worksheet) As Boolean
+  Dim nm As String
+  nm = ws.Name
+  If StrComp(nm, HELPER_SHEET, vbTextCompare) = 0 Then
+    IsInternalSheet = True
+  ElseIf StrComp(nm, LOG_SHEET, vbTextCompare) = 0 Then
+    IsInternalSheet = True
+  End If
 End Function
 
 ' 適用（戻り値: 変更セル/図形数）＋ 変更ログ収集（Optional changes）
@@ -1397,21 +983,6 @@ Private Function GetOrCreateSheet(ByVal Name As String, ByVal clear As Boolean) 
   End If
   Set GetOrCreateSheet = ws
 End Function
-
-Private Sub CreateTableIfNeeded(ByVal ws As Worksheet, ByVal headerRangeAddress As String, ByVal dataStartCellAddress As String)
-  Dim lo As ListObject
-  On Error Resume Next
-  Set lo = ws.ListObjects(1)
-  On Error GoTo 0
-  If Not lo Is Nothing Then Exit Sub
-
-  Dim lastRow As Long: lastRow = ws.Cells(ws.Rows.count, ws.Range(headerRangeAddress).Column).End(xlUp).Row
-  If lastRow < ws.Range(dataStartCellAddress).Row Then Exit Sub
-
-  Dim rng As Range: Set rng = ws.Range(headerRangeAddress).Resize(lastRow - ws.Range(headerRangeAddress).Row + 1, 5)
-  Set lo = ws.ListObjects.Add(xlSrcRange, rng, , xlYes)
-  lo.TableStyle = "TableStyleLight11"
-End Sub
 
 Private Sub WriteChangeLog(ByVal changes As Collection, ByVal dictPath As String)
   Dim ws As Worksheet: Set ws = GetOrCreateSheet(LOG_SHEET, False)

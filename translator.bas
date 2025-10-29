@@ -82,26 +82,35 @@ Public Sub ECM_Setup()
 
   ws.Range("A4").value = "ターゲットブック"
   ws.Range("A4").Font.Bold = True
-  ws.Range("B5:E5").Merge
-  ws.Range(COL_WB_PATH).value = ThisWorkbook.fullName
-  ws.Range(COL_WB_PATH).HorizontalAlignment = xlLeft
-  ws.Range(COL_WB_PATH).VerticalAlignment = xlCenter
+  ws.Range("B5:F5").Merge
+  With ws.Range(COL_WB_PATH)
+    .value = ThisWorkbook.fullName
+    .HorizontalAlignment = xlLeft
+    .VerticalAlignment = xlTop
+    .WrapText = True
+  End With
 
   ws.Range("A8").value = "辞書CSV"
   ws.Range("A8").Font.Bold = True
-  ws.Range("B9:E9").Merge
-  ws.Range(COL_CSV_PATH).value = ThisWorkbook.path & Application.PathSeparator & "ECM_JE_Dictionary.csv"
-  ws.Range(COL_CSV_PATH).HorizontalAlignment = xlLeft
-  ws.Range(COL_CSV_PATH).VerticalAlignment = xlCenter
+  ws.Range("B9:F9").Merge
+  With ws.Range(COL_CSV_PATH)
+    .value = ThisWorkbook.path & Application.PathSeparator & "ECM_JE_Dictionary.csv"
+    .HorizontalAlignment = xlLeft
+    .VerticalAlignment = xlTop
+    .WrapText = True
+  End With
 
   ws.Range("A12").value = "アクション"
   ws.Range("A12").Font.Bold = True
   ws.Range("A14").value = "ステータス"
   ws.Range("A14").Font.Bold = True
-  ws.Range("B15:E15").Merge
-  ws.Range(CELL_STATUS).value = "Ready"
-  ws.Range(CELL_STATUS).HorizontalAlignment = xlLeft
-  ws.Range(CELL_STATUS).VerticalAlignment = xlCenter
+  ws.Range("B15:F15").Merge
+  With ws.Range(CELL_STATUS)
+    .value = "Ready"
+    .HorizontalAlignment = xlLeft
+    .VerticalAlignment = xlTop
+    .WrapText = True
+  End With
 
   DeleteButtons ws, "btnECM_*"
   AddButton ws, "btnECM_BrowseWb", LabelWithIcon("folder", "ターゲット選択"), ws.Range("B6"), 220, "ECM_BrowseWorkbook", True, "翻訳先となるExcelブックを選択します。"
@@ -110,25 +119,25 @@ Public Sub ECM_Setup()
 
   With ws
     .Columns("A").ColumnWidth = 18
-    .Columns("B").ColumnWidth = 50
+    .Columns("B").ColumnWidth = 54
     .Columns("C").ColumnWidth = 3
     .Columns("D").ColumnWidth = 3
-    .Columns("E").ColumnWidth = 16
-    .Columns("F").ColumnWidth = 4
+    .Columns("E").ColumnWidth = 15
+    .Columns("F").ColumnWidth = 8
     .Rows(1).RowHeight = 30
     .Rows(2).RowHeight = 24
     .Rows(4).RowHeight = 20
-    .Rows(5).RowHeight = 28
+    .Rows(5).RowHeight = 44
     .Rows(6).RowHeight = 34
     .Rows(7).RowHeight = 12
     .Rows(8).RowHeight = 20
-    .Rows(9).RowHeight = 28
+    .Rows(9).RowHeight = 44
     .Rows(10).RowHeight = 34
     .Rows(11).RowHeight = 12
     .Rows(12).RowHeight = 20
     .Rows(13).RowHeight = 38
     .Rows(14).RowHeight = 20
-    .Rows(15).RowHeight = 24
+    .Rows(15).RowHeight = 30
   End With
 
   Application.ScreenUpdating = True

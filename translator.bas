@@ -407,8 +407,6 @@ Private Function IsInternalSheet(ByVal ws As Worksheet) As Boolean
   nm = ws.Name
   If StrComp(nm, HELPER_SHEET, vbTextCompare) = 0 Then
     IsInternalSheet = True
-  ElseIf StrComp(nm, LOG_SHEET, vbTextCompare) = 0 Then
-    IsInternalSheet = True
   End If
 End Function
 

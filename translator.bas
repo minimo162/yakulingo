@@ -838,6 +838,7 @@ Private Function ApplyToSheet(ws As Worksheet, entries As Collection, Optional c
             Dim beforeVal As String: beforeVal = CStr(cell.Value2)
             cell.Value2 = entry.Item("target")
             ApplyStyleIfAny cell, entry
+            cell.Font.Name = "Arial"
             changed = changed + 1
             If Not changes Is Nothing Then
               Dim rec(1 To 5) As Variant
@@ -862,6 +863,7 @@ Private Function ApplyToSheet(ws As Worksheet, entries As Collection, Optional c
   CollectTextShapes ws.Shapes, targetRect, shapesInScope
 
   For Each shp In shapesInScope
+    ForceShapeFontArial shp
     Dim sTxt As String: sTxt = GetShapeText(shp)
     If Len(sTxt) > 0 Then
       key = KeyFor(sTxt)
@@ -871,6 +873,7 @@ Private Function ApplyToSheet(ws As Worksheet, entries As Collection, Optional c
         If sTxt <> tgt Then
           SetShapeText shp, tgt
           ApplyShapeStyleIfAny shp, entry
+          ForceShapeFontArial shp
           changed = changed + 1
           If Not changes Is Nothing Then
             Dim recS(1 To 5) As Variant
@@ -1019,6 +1022,13 @@ Private Sub ApplyShapeStyleIfAny(ByVal shp As Shape, ByVal entry As Object)
     Case "center", "centre": shp.TextFrame2.TextRange.ParagraphFormat.Alignment = msoAlignCenter
     Case "right":  shp.TextFrame2.TextRange.ParagraphFormat.Alignment = msoAlignRight
   End Select
+  On Error GoTo 0
+End Sub
+
+Private Sub ForceShapeFontArial(ByVal shp As Shape)
+  On Error Resume Next
+  shp.TextFrame2.TextRange.Font.Name = "Arial"
+  shp.TextFrame.Characters.Font.Name = "Arial"
   On Error GoTo 0
 End Sub
 

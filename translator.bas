@@ -441,7 +441,7 @@ Private Function ApplyToSheet(ws As Worksheet, entries As Collection) As Long
       If cell.MergeCells Then
         Set targetRange = cell.MergeArea
         Set targetCell = targetRange.Cells(1, 1)
-        mergeKey = targetCell.Address(False, False)
+        mergeKey = targetRange.Address(False, False)
         If processedMerges.Exists(mergeKey) Then GoTo NextCell
         processedMerges.Add mergeKey, True
       End If
@@ -450,7 +450,7 @@ Private Function ApplyToSheet(ws As Worksheet, entries As Collection) As Long
         If Len(key) > 0 And idx.Exists(key) Then
           Set entry = idx.Item(key)
           If CStr(targetCell.Value2) <> CStr(entry.Item("target")) Then
-            targetRange.Value = entry.Item("target")
+            targetCell.Value2 = entry.Item("target")
             ApplyStyleIfAny targetRange, entry
             targetRange.Font.Name = "Arial"
             ShrinkCellFont targetRange

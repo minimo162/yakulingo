@@ -6,7 +6,7 @@ Option Explicit
 '
 ' - 既存（v3.4d）:
 '   * 【Fix】CsvFields を PushField 方式で安全化（fields[count] 問題の根治）。
-'   * 図形（テキストボックス等）もプレビュー/反映の対象。
+'   * 図形（テキストボックス等）もプレビュー/翻訳の対象。
 '   * プレビュー再実行時、ListObject/フィルタを完全初期化。
 '   * FindMarkers で LookIn/SearchOrder を明示し安定化。
 '   * CSVは毎回読み込み（キャッシュなし）。失敗時は空Collectionを返す。
@@ -74,7 +74,7 @@ Public Sub ECM_Setup()
   End With
   ws.Range("A1:F1").Interior.Color = COLOR_PRIMARY_LIGHT
 
-  ws.Range("A2").value = "翻訳対象のブックと辞書CSVを指定し、「反映」を実行してください。"
+  ws.Range("A2").value = "翻訳対象のブックと辞書CSVを指定し、「翻訳」を実行してください。"
   ws.Range("A2:F2").Merge
   ws.Range("A2:F2").Interior.Color = COLOR_PRIMARY_LIGHT
   ws.Range("A2").Font.Color = COLOR_TEXT
@@ -115,7 +115,7 @@ Public Sub ECM_Setup()
   DeleteButtons ws, "btnECM_*"
   AddButton ws, "btnECM_BrowseWb", LabelWithIcon("folder", "ターゲット選択"), ws.Range("B6"), 220, "ECM_BrowseWorkbook", True, "翻訳先となるExcelブックを選択します。"
   AddButton ws, "btnECM_BrowseCsv", LabelWithIcon("index", "辞書CSV選択"), ws.Range("B10"), 220, "ECM_BrowseCSV", True, "翻訳辞書となるCSVファイルを選択します。"
-  AddButton ws, "btnECM_Apply", LabelWithIcon("check", "反映"), ws.Range("B13"), 280, "ECM_ApplyTranslations", True, "辞書を使ってターゲットブックへ翻訳を反映します。"
+  AddButton ws, "btnECM_Apply", LabelWithIcon("check", "翻訳"), ws.Range("B13"), 280, "ECM_ApplyTranslations", True, "辞書を使ってターゲットブックを翻訳します。"
 
   With ws
     .Columns("A").ColumnWidth = 18
@@ -143,7 +143,7 @@ Public Sub ECM_Setup()
   Application.ScreenUpdating = True
   Application.DisplayAlerts = True
 
-  MsgBox "翻訳パネルを準備しました。ターゲットブックと辞書CSVを確認してから「反映」を実行してください。", vbInformation
+  MsgBox "翻訳パネルを準備しました。ターゲットブックと辞書CSVを確認してから「翻訳」を実行してください。", vbInformation
 End Sub
 
 Private Function GetOrCreatePanel(Name As String) As Worksheet
@@ -275,12 +275,12 @@ Public Sub ECM_ApplyTranslations()
   Next ws
 
   If targets.Count = 0 Then
-    SetStatus "反映対象のシートが見つかりません。"
+    SetStatus "翻訳対象のシートが見つかりません。"
     MsgBox "EOL/EOC マーカーが見つかるシートがありません。", vbInformation
     Exit Sub
   End If
 
-  If MsgBox("反映を実行します。" & vbCrLf & _
+  If MsgBox("翻訳を実行します。" & vbCrLf & _
             "・対象ブック: " & wb.Name & vbCrLf & _
             "・対象シート数: " & targets.Count & vbCrLf & _
             "・辞書: " & csvPath & vbCrLf & _
@@ -304,7 +304,7 @@ Public Sub ECM_ApplyTranslations()
     If SheetProtected(targetSheet) Then
       SetStatus targetSheet.Name & ": 保護のためスキップ"
     Else
-      SetStatus "反映中: " & targetSheet.Name & " (" & processed & "/" & targets.Count & ")"
+      SetStatus "翻訳中: " & targetSheet.Name & " (" & processed & "/" & targets.Count & ")"
       Application.StatusBar = "Applying translations to " & targetSheet.Name & "..."
       totalApplied = totalApplied + ApplyToSheet(targetSheet, entries, changes)
     End If
@@ -314,13 +314,13 @@ Public Sub ECM_ApplyTranslations()
   If changes.Count > 0 Then WriteChangeLog changes, csvPath
 
   Application.StatusBar = False
-  SetStatus "反映完了: " & totalApplied & " 件更新"
-  MsgBox "反映が完了しました。変更セル/図形数: " & totalApplied & vbCrLf & "必要に応じて保存してください。", vbInformation
+  SetStatus "翻訳完了: " & totalApplied & " 件更新"
+  MsgBox "翻訳が完了しました。変更セル/図形数: " & totalApplied & vbCrLf & "必要に応じて保存してください。", vbInformation
   GoTo CleanExit
 
 CleanFail:
   Application.StatusBar = False
-  Dim errMsg As String: errMsg = "反映中にエラーが発生しました: " & Err.Description
+  Dim errMsg As String: errMsg = "翻訳中にエラーが発生しました: " & Err.Description
   MsgBox errMsg, vbExclamation
   SetStatus errMsg
 
@@ -469,7 +469,7 @@ Private Function ApplyToSheet(ws As Worksheet, entries As Collection, Optional c
     Next
   End If
 
-  ' 図形の反映
+' 図形の翻訳
   Dim targetRect As Range
   Set targetRect = ws.Range(ws.Cells(RANGE_START_ROW, RANGE_START_COL), ws.Cells(eolRow, eocCol))
 
@@ -1120,7 +1120,7 @@ Private Sub WarnIfCsvUnsaved(ByVal csvPath As String)
   For Each wb In Application.Workbooks
     If StrComp(wb.fullName, csvPath, vbTextCompare) = 0 Then
       If Not wb.Saved Then
-        MsgBox "辞書CSVが未保存です。保存してからプレビュー／反映してください。", vbExclamation
+        MsgBox "辞書CSVが未保存です。保存してからプレビュー／翻訳してください。", vbExclamation
       End If
       Exit For
     End If

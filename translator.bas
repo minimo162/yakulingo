@@ -432,6 +432,7 @@ Private Function ApplyToSheet(ws As Worksheet, entries As Collection, Optional c
 
   Dim idx As Object: Set idx = BuildIndexForSheet(entries, ws)
   Dim cell As Range, key As String, changed As Long, entry As Object
+  Dim targetCell As Range
   Dim total As Long
   If textRng Is Nothing Then
     total = 0
@@ -444,20 +445,25 @@ Private Function ApplyToSheet(ws As Worksheet, entries As Collection, Optional c
     For Each cell In textRng.Cells
       i = i + 1
       If (i Mod 200) = 0 Then Application.StatusBar = "Applying " & ws.Name & "... (" & i & "/" & total & ")"
-      If VarType(cell.Value2) = vbString Then
-        key = KeyFor(CStr(cell.Value2))
+      Set targetCell = cell
+      If cell.MergeCells Then
+        Set targetCell = cell.MergeArea.Cells(1, 1)
+        If targetCell.Address(False, False) <> cell.Address(False, False) Then GoTo NextCell
+      End If
+      If VarType(targetCell.Value2) = vbString Then
+        key = KeyFor(CStr(targetCell.Value2))
         If Len(key) > 0 And idx.Exists(key) Then
           Set entry = idx.Item(key)
-          If CStr(cell.Value2) <> CStr(entry.Item("target")) Then
-            Dim beforeVal As String: beforeVal = CStr(cell.Value2)
-            cell.Value2 = entry.Item("target")
-            ApplyStyleIfAny cell, entry
-            cell.Font.Name = "Arial"
+          If CStr(targetCell.Value2) <> CStr(entry.Item("target")) Then
+            Dim beforeVal As String: beforeVal = CStr(targetCell.Value2)
+            targetCell.Value2 = entry.Item("target")
+            ApplyStyleIfAny targetCell, entry
+            targetCell.Font.Name = "Arial"
             changed = changed + 1
             If Not changes Is Nothing Then
               Dim rec(1 To 5) As Variant
               rec(1) = ws.Name
-              rec(2) = cell.Address(False, False)
+              rec(2) = targetCell.Address(False, False)
               rec(3) = beforeVal
               rec(4) = CStr(entry.Item("target"))
               rec(5) = entry.Item("scope") & ""
@@ -466,6 +472,7 @@ Private Function ApplyToSheet(ws As Worksheet, entries As Collection, Optional c
           End If
         End If
       End If
+NextCell:
     Next
   End If
 

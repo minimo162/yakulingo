@@ -459,6 +459,7 @@ Private Function ApplyToSheet(ws As Worksheet, entries As Collection, Optional c
             targetCell.Value2 = entry.Item("target")
             ApplyStyleIfAny targetCell, entry
             targetCell.Font.Name = "Arial"
+            ShrinkCellFont targetCell
             changed = changed + 1
             If Not changes Is Nothing Then
               Dim rec(1 To 5) As Variant
@@ -495,6 +496,7 @@ NextCell:
           SetShapeText shp, tgt
           ApplyShapeStyleIfAny shp, entry
           ForceShapeFontArial shp
+          ShrinkShapeFont shp
           changed = changed + 1
           If Not changes Is Nothing Then
             Dim recS(1 To 5) As Variant
@@ -650,6 +652,26 @@ Private Sub ForceShapeFontArial(ByVal shp As Shape)
   On Error Resume Next
   shp.TextFrame2.TextRange.Font.Name = "Arial"
   shp.TextFrame.Characters.Font.Name = "Arial"
+  On Error GoTo 0
+End Sub
+
+Private Sub ShrinkCellFont(ByVal cell As Range)
+  On Error Resume Next
+  Dim currentSize As Double
+  currentSize = cell.Font.Size
+  If currentSize > 0.5 Then cell.Font.Size = currentSize - 0.5
+  On Error GoTo 0
+End Sub
+
+Private Sub ShrinkShapeFont(ByVal shp As Shape)
+  On Error Resume Next
+  Dim currentSize2 As Double
+  currentSize2 = shp.TextFrame2.TextRange.Font.Size
+  If currentSize2 > 0.5 Then shp.TextFrame2.TextRange.Font.Size = currentSize2 - 0.5
+
+  Dim currentSize As Double
+  currentSize = shp.TextFrame.Characters.Font.Size
+  If currentSize > 0.5 Then shp.TextFrame.Characters.Font.Size = currentSize - 0.5
   On Error GoTo 0
 End Sub
 

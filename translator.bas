@@ -420,8 +420,10 @@ Private Function ApplyToSheet(ws As Worksheet, entries As Collection) As Long
   On Error GoTo 0
 
   Dim idx As Object: Set idx = BuildIndex(entries)
+  Dim processedMerges As Object: Set processedMerges = CreateObject("Scripting.Dictionary")
+  processedMerges.CompareMode = vbTextCompare
   Dim cell As Range, key As String, changed As Long, entry As Object
-  Dim targetCell As Range
+  Dim targetCell As Range, targetRange As Range, mergeKey As String
   Dim total As Long
   If textRng Is Nothing Then
     total = 0
@@ -434,21 +436,24 @@ Private Function ApplyToSheet(ws As Worksheet, entries As Collection) As Long
     For Each cell In textRng.Cells
       i = i + 1
       If (i Mod 200) = 0 Then Application.StatusBar = "Applying " & ws.Name & "... (" & i & "/" & total & ")"
+      Set targetRange = cell
       Set targetCell = cell
       If cell.MergeCells Then
-        Set targetCell = cell.MergeArea.Cells(1, 1)
-        If targetCell.Address(False, False) <> cell.Address(False, False) Then GoTo NextCell
+        Set targetRange = cell.MergeArea
+        Set targetCell = targetRange.Cells(1, 1)
+        mergeKey = targetCell.Address(False, False)
+        If processedMerges.Exists(mergeKey) Then GoTo NextCell
+        processedMerges.Add mergeKey, True
       End If
       If VarType(targetCell.Value2) = vbString Then
         key = KeyFor(CStr(targetCell.Value2))
         If Len(key) > 0 And idx.Exists(key) Then
           Set entry = idx.Item(key)
           If CStr(targetCell.Value2) <> CStr(entry.Item("target")) Then
-            Dim beforeVal As String: beforeVal = CStr(targetCell.Value2)
-            targetCell.Value2 = entry.Item("target")
-            ApplyStyleIfAny targetCell, entry
-            targetCell.Font.Name = "Arial"
-            ShrinkCellFont targetCell
+            targetRange.Value = entry.Item("target")
+            ApplyStyleIfAny targetRange, entry
+            targetRange.Font.Name = "Arial"
+            ShrinkCellFont targetRange
             changed = changed + 1
           End If
         End If

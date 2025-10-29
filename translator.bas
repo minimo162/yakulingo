@@ -2,7 +2,6 @@ Option Explicit
 '
 ' ECM_CA1 ? Simple Panel v3.4e (JA→EN Translator with CSV Dictionary, Shapes support + robust CSV parser)
 ' - 変更点（v3.4e）:
-'   * 【Fix】WarnIfCsvUnsaved を追加（未保存CSVの注意喚起）。Option Explicit 下の未定義エラーを解消。
 '
 ' - 既存（v3.4d）:
 '   * 【Fix】CsvFields を PushField 方式で安全化（fields[count] 問題の根治）。
@@ -20,9 +19,6 @@ Private Const CELL_STATUS  As String = "B15"
 ' 範囲開始（B2）
 Private Const RANGE_START_ROW As Long = 2
 Private Const RANGE_START_COL As Long = 2
-
-' ログシート
-Private Const LOG_SHEET As String = "ECM_Log"
 
 ' 配色
 Private Const COLOR_PRIMARY       As Long = &HE5464F
@@ -253,8 +249,6 @@ Public Sub ECM_ApplyTranslations()
     Exit Sub
   End If
 
-  WarnIfCsvUnsaved csvPath
-
   SetStatus "辞書を読み込み中..."
   Dim entries As Collection
   Set entries = EnsureDictionaryLoaded(csvPath)
@@ -295,7 +289,6 @@ Public Sub ECM_ApplyTranslations()
   Application.EnableEvents = False
 
   Dim totalApplied As Long
-  Dim changes As New Collection
   Dim processed As Long
   Dim targetSheet As Worksheet
 
@@ -306,12 +299,10 @@ Public Sub ECM_ApplyTranslations()
     Else
       SetStatus "翻訳中: " & targetSheet.Name & " (" & processed & "/" & targets.Count & ")"
       Application.StatusBar = "Applying translations to " & targetSheet.Name & "..."
-      totalApplied = totalApplied + ApplyToSheet(targetSheet, entries, changes)
+      totalApplied = totalApplied + ApplyToSheet(targetSheet, entries)
     End If
     DoEvents
   Next targetSheet
-
-  If changes.Count > 0 Then WriteChangeLog changes, csvPath
 
   Application.StatusBar = False
   SetStatus "翻訳完了: " & totalApplied & " 件更新"
@@ -421,8 +412,8 @@ Private Function IsInternalSheet(ByVal ws As Worksheet) As Boolean
   End If
 End Function
 
-' 適用（戻り値: 変更セル/図形数）＋ 変更ログ収集（Optional changes）
-Private Function ApplyToSheet(ws As Worksheet, entries As Collection, Optional changes As Collection) As Long
+' 適用（戻り値: 変更セル/図形数）
+Private Function ApplyToSheet(ws As Worksheet, entries As Collection) As Long
   Dim eolRow As Long, eocCol As Long
   If Not FindMarkers(ws, eolRow, eocCol) Then Exit Function
   Dim textRng As Range: Set textRng = GetTextCellsRange(ws, eolRow, eocCol)
@@ -430,7 +421,7 @@ Private Function ApplyToSheet(ws As Worksheet, entries As Collection, Optional c
   If Not textRng Is Nothing Then textRng.Font.Name = "Arial"
   On Error GoTo 0
 
-  Dim idx As Object: Set idx = BuildIndexForSheet(entries, ws)
+  Dim idx As Object: Set idx = BuildIndex(entries)
   Dim cell As Range, key As String, changed As Long, entry As Object
   Dim targetCell As Range
   Dim total As Long
@@ -461,15 +452,6 @@ Private Function ApplyToSheet(ws As Worksheet, entries As Collection, Optional c
             targetCell.Font.Name = "Arial"
             ShrinkCellFont targetCell
             changed = changed + 1
-            If Not changes Is Nothing Then
-              Dim rec(1 To 5) As Variant
-              rec(1) = ws.Name
-              rec(2) = targetCell.Address(False, False)
-              rec(3) = beforeVal
-              rec(4) = CStr(entry.Item("target"))
-              rec(5) = entry.Item("scope") & ""
-              changes.Add rec
-            End If
           End If
         End If
       End If
@@ -498,15 +480,6 @@ NextCell:
           ForceShapeFontArial shp
           ShrinkShapeFont shp
           changed = changed + 1
-          If Not changes Is Nothing Then
-            Dim recS(1 To 5) As Variant
-            recS(1) = ws.Name
-            recS(2) = "Shape:" & shp.Name
-            recS(3) = sTxt
-            recS(4) = tgt
-            recS(5) = entry.Item("scope") & ""
-            changes.Add recS
-          End If
         End If
       End If
     End If
@@ -752,10 +725,9 @@ Private Function LoadDictionaryViaExcel(ByVal csvPath As String) As Collection
   Next
 
   Dim colSource As Long, colTarget As Long
-  Dim colScope As Long, colFontName As Long, colFontSize As Long, colAlign As Long, colBold As Long
+  Dim colFontName As Long, colFontSize As Long, colAlign As Long, colBold As Long
   colSource = Nz(headerMap("source"), 1)
   colTarget = Nz(headerMap("target"), 2)
-  colScope = Nz(headerMap("scope"), 0)
   colFontName = Nz(headerMap("font_name"), 0)
   colFontSize = Nz(headerMap("font_size"), 0)
   colAlign = Nz(headerMap("align"), 0)
@@ -769,7 +741,6 @@ Private Function LoadDictionaryViaExcel(ByVal csvPath As String) As Collection
     Dim src As String: src = Trim$(SafeText(ws.Cells(r, colSource).Value2))
     If Len(src) = 0 Then GoTo NextR
     Dim e As Object: Set e = CreateObject("Scripting.Dictionary")
-    e.Add "scope", IIf(colScope > 0, Trim$(SafeText(ws.Cells(r, colScope).Value2)), "")
     e.Add "source", src
     e.Add "target", Trim$(SafeText(ws.Cells(r, colTarget).Value2))
     e.Add "font_name", IIf(colFontName > 0, SafeText(ws.Cells(r, colFontName).Value2), "")
@@ -801,8 +772,8 @@ Private Function ParseCsvFile(ByVal csvPath As String) As Collection
   Dim lines() As String: lines = Split(text, vbLf)
 
   Dim colSource As Long, colTarget As Long
-  Dim colScope As Long, colFontName As Long, colFontSize As Long, colAlign As Long, colBold As Long
-  colSource = -1: colTarget = -1: colScope = -1: colFontName = -1: colFontSize = -1: colAlign = -1: colBold = -1
+  Dim colFontName As Long, colFontSize As Long, colAlign As Long, colBold As Long
+  colSource = -1: colTarget = -1: colFontName = -1: colFontSize = -1: colAlign = -1: colBold = -1
 
   Dim out As New Collection
   Dim i As Long, fields As Variant, headerDone As Boolean
@@ -821,7 +792,6 @@ Private Function ParseCsvFile(ByVal csvPath As String) As Collection
       h = LCase$(Trim$(CStr(fields(j))))
       If h = "source" Then colSource = j
       If h = "target" Then colTarget = j
-      If h = "scope" Then colScope = j
       If h = "font_name" Then colFontName = j
       If h = "font_size" Then colFontSize = j
       If h = "align" Then colAlign = j
@@ -847,7 +817,6 @@ NextLine:
     Dim src As String: src = Trim$(CStr(fields(colSource)))
     If Len(src) = 0 Then GoTo NextData
     Dim e As Object: Set e = CreateObject("Scripting.Dictionary")
-    e.Add "scope", FieldOrEmpty(fields, colScope)
     e.Add "source", src
     e.Add "target", FieldOrEmpty(fields, colTarget)
     e.Add "font_name", FieldOrEmpty(fields, colFontName)
@@ -927,33 +896,18 @@ Private Function CsvFields(ByVal line As String) As Variant
 End Function
 
 ' 後勝ち・安全：Exists→Remove→Add
-Private Function BuildIndexForSheet(entries As Collection, ws As Worksheet) As Object
+Private Function BuildIndex(entries As Collection) As Object
   Dim idx As Object: Set idx = CreateObject("Scripting.Dictionary")
   idx.CompareMode = 1
   Dim entry As Variant, k As String
   For Each entry In entries
-    If ShouldApplyToSheet(entry, ws) Then
-      k = KeyFor(CStr(entry.Item("source")))
-      If Len(k) > 0 Then
-        If idx.Exists(k) Then idx.Remove k
-        idx.Add k, entry
-      End If
+    k = KeyFor(CStr(entry.Item("source")))
+    If Len(k) > 0 Then
+      If idx.Exists(k) Then idx.Remove k
+      idx.Add k, entry
     End If
   Next
-  Set BuildIndexForSheet = idx
-End Function
-
-Private Function ShouldApplyToSheet(ByVal entry As Object, ByVal ws As Worksheet) As Boolean
-  Dim scope As String: scope = Trim$(entry.Item("scope") & "")
-  If Len(scope) = 0 Then ShouldApplyToSheet = True: Exit Function
-  Dim a1 As String: a1 = SafeText(ws.Range("A1").Value2)
-  If InStr(1, ws.Name, scope, vbTextCompare) > 0 Then
-    ShouldApplyToSheet = True
-  ElseIf InStr(1, a1, scope, vbTextCompare) > 0 Then
-    ShouldApplyToSheet = True
-  Else
-    ShouldApplyToSheet = False
-  End If
+  Set BuildIndex = idx
 End Function
 
 '========================
@@ -1015,55 +969,6 @@ Private Sub SetStatus(ByVal msg As String)
   On Error Resume Next
   ThisWorkbook.Worksheets(HELPER_SHEET).Range(CELL_STATUS).value = msg
   On Error GoTo 0
-End Sub
-
-'========================
-'   テーブル/ログ/ユーティリティ
-'========================
-Private Function GetOrCreateSheet(ByVal Name As String, ByVal clear As Boolean) As Worksheet
-  Dim ws As Worksheet
-  On Error Resume Next
-  Set ws = ThisWorkbook.Worksheets(Name)
-  On Error GoTo 0
-  If ws Is Nothing Then
-    Set ws = ThisWorkbook.Worksheets.Add(After:=ThisWorkbook.Worksheets(ThisWorkbook.Worksheets.count))
-    ws.Name = Name
-  ElseIf clear Then
-    On Error Resume Next
-    If ws.AutoFilterMode Then ws.AutoFilterMode = False
-    Dim lo As ListObject
-    For Each lo In ws.ListObjects
-      lo.Delete
-    Next
-    ws.Cells.clear
-    On Error GoTo 0
-  End If
-  Set GetOrCreateSheet = ws
-End Function
-
-Private Sub WriteChangeLog(ByVal changes As Collection, ByVal dictPath As String)
-  Dim ws As Worksheet: Set ws = GetOrCreateSheet(LOG_SHEET, False)
-  Dim hasHeader As Boolean: hasHeader = (Trim$(SafeText(ws.Range("A1").Value2)) <> "")
-  If Not hasHeader Then
-    ws.Range("A1:G1").value = Array("Timestamp", "Sheet", "Cell", "Before", "After", "Scope", "Dictionary")
-    ws.Range("A1:G1").Font.Bold = True
-  End If
-
-  Dim startRow As Long: startRow = ws.Cells(ws.Rows.count, 1).End(xlUp).Row + 1
-  Dim arr() As Variant: ReDim arr(1 To changes.count, 1 To 7)
-  Dim i As Long
-  For i = 1 To changes.count
-    Dim rec As Variant: rec = changes(i)
-    arr(i, 1) = Now
-    arr(i, 2) = rec(1)
-    arr(i, 3) = rec(2)
-    arr(i, 4) = rec(3)
-    arr(i, 5) = rec(4)
-    arr(i, 6) = rec(5)
-    arr(i, 7) = dictPath
-  Next
-  ws.Range("A" & startRow).Resize(UBound(arr, 1), UBound(arr, 2)).value = arr
-  ws.Columns("A:G").AutoFit
 End Sub
 
 '========================
@@ -1139,21 +1044,4 @@ Private Function ToHex32(ByVal v As Double) As String
   Next
   ToHex32 = hexStr
 End Function
-
-'========================
-'   未保存CSVの注意喚起（★追加）
-'========================
-Private Sub WarnIfCsvUnsaved(ByVal csvPath As String)
-  On Error Resume Next
-  Dim wb As Workbook
-  For Each wb In Application.Workbooks
-    If StrComp(wb.fullName, csvPath, vbTextCompare) = 0 Then
-      If Not wb.Saved Then
-        MsgBox "辞書CSVが未保存です。保存してからプレビュー／翻訳してください。", vbExclamation
-      End If
-      Exit For
-    End If
-  Next
-End Sub
-
 

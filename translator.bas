@@ -672,91 +672,14 @@ End Function
 Private Function LoadDictionaryFromCSV(ByVal csvPath As String) As Collection
   csvPath = CleanPath(csvPath)
 
-  Dim cUtf8 As Collection, cExcel As Collection
-  Set cUtf8 = ParseCsvFile(csvPath)            ' UTF-8直読
-  Set cExcel = LoadDictionaryViaExcel(csvPath) ' Excel経由
+  Dim parsed As Collection
+  Set parsed = ParseCsvFile(csvPath) ' UTF-8直読
 
-  Dim idx As Object: Set idx = CreateObject("Scripting.Dictionary")
-  idx.CompareMode = 1
-
-  Dim e As Variant, k As String
-
-  If Not cExcel Is Nothing Then
-    For Each e In cExcel
-      k = KeyFor(CStr(e.Item("source")))
-      If Len(k) > 0 Then
-        If idx.Exists(k) Then idx.Remove k
-        idx.Add k, e
-      End If
-    Next
+  If parsed Is Nothing Then
+    Set LoadDictionaryFromCSV = Nothing
+  Else
+    Set LoadDictionaryFromCSV = parsed
   End If
-
-  If Not cUtf8 Is Nothing Then
-    For Each e In cUtf8
-      k = KeyFor(CStr(e.Item("source")))
-      If Len(k) > 0 Then
-        If idx.Exists(k) Then idx.Remove k
-        idx.Add k, e
-      End If
-    Next
-  End If
-
-  Dim out As New Collection, key As Variant
-  For Each key In idx.Keys: out.Add idx(key): Next
-  Set LoadDictionaryFromCSV = out
-End Function
-
-Private Function LoadDictionaryViaExcel(ByVal csvPath As String) As Collection
-  On Error GoTo ErrExcel
-  Dim out As New Collection
-  Dim csvWb As Workbook: Set csvWb = Application.Workbooks.Open(Filename:=csvPath, ReadOnly:=True, Local:=True)
-  Dim ws As Worksheet: Set ws = csvWb.Worksheets(1)
-
-  Dim headerMap As Object: Set headerMap = CreateObject("Scripting.Dictionary")
-  headerMap.CompareMode = 1
-  Dim lastCol As Long: lastCol = ws.Cells(1, 1).CurrentRegion.Columns.count
-  If lastCol = 1 Then lastCol = ws.Cells(1, ws.Columns.count).End(xlToLeft).Column
-
-  Dim c As Long, h As String
-  For c = 1 To lastCol
-    h = LCase$(Trim$(SafeText(ws.Cells(1, c).Value2)))
-    If Len(h) > 0 Then headerMap(h) = c
-  Next
-
-  Dim colSource As Long, colTarget As Long
-  Dim colFontName As Long, colFontSize As Long, colAlign As Long, colBold As Long
-  colSource = Nz(headerMap("source"), 1)
-  colTarget = Nz(headerMap("target"), 2)
-  colFontName = Nz(headerMap("font_name"), 0)
-  colFontSize = Nz(headerMap("font_size"), 0)
-  colAlign = Nz(headerMap("align"), 0)
-  colBold = Nz(headerMap("bold"), 0)
-
-  Dim lastRow As Long: lastRow = ws.Cells(1, 1).CurrentRegion.Rows.count
-  If lastRow < 2 Then lastRow = ws.Cells(ws.Rows.count, 1).End(xlUp).Row
-
-  Dim r As Long
-  For r = 2 To lastRow
-    Dim src As String: src = Trim$(SafeText(ws.Cells(r, colSource).Value2))
-    If Len(src) = 0 Then GoTo NextR
-    Dim e As Object: Set e = CreateObject("Scripting.Dictionary")
-    e.Add "source", src
-    e.Add "target", Trim$(SafeText(ws.Cells(r, colTarget).Value2))
-    e.Add "font_name", IIf(colFontName > 0, SafeText(ws.Cells(r, colFontName).Value2), "")
-    e.Add "font_size", IIf(colFontSize > 0, SafeText(ws.Cells(r, colFontSize).Value2), "")
-    e.Add "align", IIf(colAlign > 0, SafeText(ws.Cells(r, colAlign).Value2), "")
-    e.Add "bold", IIf(colBold > 0, SafeText(ws.Cells(r, colBold).Value2), "")
-    out.Add e
-NextR:
-  Next
-  csvWb.Close SaveChanges:=False
-  Set LoadDictionaryViaExcel = out
-  Exit Function
-
-ErrExcel:
-  On Error Resume Next
-  If Not csvWb Is Nothing Then csvWb.Close SaveChanges:=False
-  Set LoadDictionaryViaExcel = Nothing
 End Function
 
 '========================
@@ -768,7 +691,49 @@ Private Function ParseCsvFile(ByVal csvPath As String) As Collection
   Dim text As String: text = ReadAllTextUTF8(csvPath)
   If Len(text) = 0 Then Exit Function
   text = Replace(Replace(text, vbCrLf, vbLf), vbCr, vbLf)
-  Dim lines() As String: lines = Split(text, vbLf)
+
+  Dim lines() As String
+  Dim lineCount As Long
+  ReDim lines(0 To 0)
+  lineCount = 0
+
+  Dim currentLine As String
+  Dim inQuotes As Boolean
+  Dim charIndex As Long
+  Dim ch As String
+  Dim advance As Long
+  Dim textLen As Long: textLen = Len(text)
+
+  charIndex = 1
+  Do While charIndex <= textLen
+    ch = Mid$(text, charIndex, 1)
+    advance = 1
+    If ch = """" Then
+      If inQuotes Then
+        If charIndex < textLen And Mid$(text, charIndex + 1, 1) = """" Then
+          currentLine = currentLine & """" & """"
+          advance = 2
+        Else
+          inQuotes = False
+          currentLine = currentLine & ch
+        End If
+      Else
+        inQuotes = True
+        currentLine = currentLine & ch
+      End If
+    ElseIf ch = vbLf Then
+      If inQuotes Then
+        currentLine = currentLine & ch
+      Else
+        PushField lines, lineCount, currentLine
+        currentLine = vbNullString
+      End If
+    Else
+      currentLine = currentLine & ch
+    End If
+    charIndex = charIndex + advance
+  Loop
+  PushField lines, lineCount, currentLine
 
   Dim colSource As Long, colTarget As Long
   Dim colFontName As Long, colFontSize As Long, colAlign As Long, colBold As Long
@@ -934,16 +899,6 @@ End Function
 
 Private Function KeyFor(ByVal s As String) As String
   KeyFor = LCase$(NormalizeKeyText(s))
-End Function
-
-Private Function Nz(ByVal v As Variant, ByVal def As Long) As Long
-  If IsEmpty(v) Or IsNull(v) Then
-    Nz = def
-  ElseIf VarType(v) = vbString Then
-    If Len(Trim$(CStr(v))) = 0 Then Nz = def Else Nz = CLng(v)
-  Else
-    Nz = CLng(v)
-  End If
 End Function
 
 Private Function SafeText(v As Variant) As String

@@ -7,7 +7,7 @@ Option Explicit
 '   * 【Fix】CsvFields を PushField 方式で安全化（fields[count] 問題の根治）。
 '   * 図形（テキストボックス等）もプレビュー/翻訳の対象。
 '   * プレビュー再実行時、ListObject/フィルタを完全初期化。
-'   * FindMarkers で LookIn/SearchOrder を明示し安定化。
+'   * 処理範囲を 1000 行 × 1000 列に固定化。
 '   * CSVは毎回読み込み（キャッシュなし）。失敗時は空Collectionを返す。
 
 ' ===== UI定義 =====
@@ -16,9 +16,11 @@ Private Const COL_WB_PATH As String = "B5"
 Private Const COL_CSV_PATH As String = "B9"
 Private Const CELL_STATUS  As String = "B15"
 
-' 範囲開始（B2）
-Private Const RANGE_START_ROW As Long = 2
-Private Const RANGE_START_COL As Long = 2
+' 範囲開始（A1）
+Private Const RANGE_START_ROW As Long = 1
+Private Const RANGE_START_COL As Long = 1
+Private Const TRANSLATION_MAX_ROWS As Long = 1000
+Private Const TRANSLATION_MAX_COLS As Long = 1000
 
 ' 配色
 Private Const COLOR_PRIMARY       As Long = &HE5464F
@@ -262,15 +264,12 @@ Public Sub ECM_ApplyTranslations()
   Dim targets As New Collection
   Dim ws As Worksheet
   For Each ws In wb.Worksheets
-    If Not IsInternalSheet(ws) Then
-      Dim eolRow As Long, eocCol As Long
-      If FindMarkers(ws, eolRow, eocCol) Then targets.Add ws
-    End If
+    If Not IsInternalSheet(ws) Then targets.Add ws
   Next ws
 
   If targets.Count = 0 Then
     SetStatus "翻訳対象のシートが見つかりません。"
-    MsgBox "EOL/EOC マーカーが見つかるシートがありません。", vbInformation
+    MsgBox "翻訳対象のシートが見つかりませんでした。", vbInformation
     Exit Sub
   End If
 
@@ -347,6 +346,74 @@ Private Function CleanPath(ByVal pathIn As String) As String
   CleanPath = p
 End Function
 
+Private Sub ReopenDictionaryWorkbook(ByVal csvPath As String)
+  Dim cleaned As String: cleaned = CleanPath(csvPath)
+  If Len(cleaned) = 0 Then Exit Sub
+  Dim oldAlerts As Boolean
+  oldAlerts = Application.DisplayAlerts
+  Application.DisplayAlerts = False
+  On Error Resume Next
+  Application.Workbooks.Open Filename:=cleaned, UpdateLinks:=False, ReadOnly:=False
+  Application.DisplayAlerts = oldAlerts
+  On Error GoTo 0
+End Sub
+
+Private Function EnsureDictionaryWorkbookWritable(ByVal csvPath As String, ByRef reopenAfter As Boolean) As Boolean
+  Dim cleaned As String: cleaned = CleanPath(csvPath)
+  If Len(cleaned) = 0 Then Exit Function
+
+  Dim target As Workbook
+  Dim wb As Workbook
+  For Each wb In Application.Workbooks
+    On Error Resume Next
+    If LCase$(CleanPath(wb.FullName)) = LCase$(cleaned) Then
+      Set target = wb
+      Exit For
+    End If
+  Next wb
+  On Error GoTo 0
+
+  Dim probe As Workbook
+  Dim oldAlerts As Boolean
+  oldAlerts = Application.DisplayAlerts
+  Application.DisplayAlerts = False
+
+  On Error GoTo EH
+
+  If Not target Is Nothing Then
+    reopenAfter = True
+    If target.Saved = False Then target.Save
+    target.Close SaveChanges:=False
+  Else
+    reopenAfter = False
+  End If
+
+  Set probe = Application.Workbooks.Open(Filename:=cleaned, UpdateLinks:=False, ReadOnly:=False)
+  If probe Is Nothing Then Err.Raise vbObjectError + 200, , "Open failed"
+  If probe.ReadOnly Then Err.Raise vbObjectError + 201, , "File locked"
+  probe.Close SaveChanges:=False
+  Set probe = Nothing
+
+  EnsureDictionaryWorkbookWritable = True
+  GoTo CleanExit
+
+EH:
+  EnsureDictionaryWorkbookWritable = False
+  reopenAfter = False
+  On Error Resume Next
+  If Not probe Is Nothing Then probe.Close SaveChanges:=False
+  Application.DisplayAlerts = oldAlerts
+  On Error GoTo 0
+  MsgBox "辞書CSVが他のユーザーによって使用中です。閉じてから再実行してください。" & vbCrLf & "対象: " & cleaned, vbExclamation
+  SetStatus "辞書CSVが他のユーザーによってロックされています: " & cleaned
+  Exit Function
+
+CleanExit:
+  On Error Resume Next
+  Application.DisplayAlerts = oldAlerts
+  On Error GoTo 0
+End Function
+
 Private Function GetTargetWorkbook(ByVal pathIn As String) As Workbook
   Dim path As String: path = CleanPath(pathIn)
   Dim wb As Workbook
@@ -362,32 +429,15 @@ Private Function GetTargetWorkbook(ByVal pathIn As String) As Workbook
   Set GetTargetWorkbook = wb
 End Function
 
-Private Function FindMarkers(ws As Worksheet, ByRef eolRow As Long, ByRef eocCol As Long) As Boolean
-  Dim c As Range, r As Range
-  Dim searchRow As Range, searchCol As Range
-  Set searchRow = ws.Rows(1)
-  Set searchCol = ws.Columns(1)
-  On Error Resume Next
-  Set c = searchRow.Find(What:="EOC", _
-                         After:=searchRow.Cells(searchRow.Columns.count), _
-                         LookIn:=xlValues, LookAt:=xlWhole, _
-                         SearchOrder:=xlByColumns, SearchDirection:=xlNext, _
-                         MatchCase:=False)
-  Set r = searchCol.Find(What:="EOL", _
-                         After:=searchCol.Cells(searchCol.Rows.count), _
-                         LookIn:=xlValues, LookAt:=xlWhole, _
-                         SearchOrder:=xlByRows, SearchDirection:=xlNext, _
-                         MatchCase:=False)
-  On Error GoTo 0
-  If c Is Nothing Or r Is Nothing Then Exit Function
-  eocCol = c.Column
-  eolRow = r.Row
-  FindMarkers = True
-End Function
-
-Private Function GetTextCellsRange(ws As Worksheet, ByVal eolRow As Long, ByVal eocCol As Long) As Range
+Private Function GetTextCellsRange(ws As Worksheet) As Range
   Dim baseRng As Range, visRng As Range, extra As Range, targetRng As Range, textRng As Range
-  Set baseRng = ws.Range(ws.Cells(RANGE_START_ROW, RANGE_START_COL), ws.Cells(eolRow, eocCol))
+  Dim startRow As Long: startRow = RANGE_START_ROW
+  Dim startCol As Long: startCol = RANGE_START_COL
+  Dim endRow As Long: endRow = startRow + TRANSLATION_MAX_ROWS - 1
+  Dim endCol As Long: endCol = startCol + TRANSLATION_MAX_COLS - 1
+  If endRow > ws.Rows.Count Then endRow = ws.Rows.Count
+  If endCol > ws.Columns.Count Then endCol = ws.Columns.Count
+  Set baseRng = ws.Range(ws.Cells(startRow, startCol), ws.Cells(endRow, endCol))
   On Error Resume Next
   Set visRng = baseRng.SpecialCells(xlCellTypeVisible)
   If visRng Is Nothing Then Set visRng = baseRng
@@ -431,9 +481,7 @@ End Function
 
 ' 適用（戻り値: 変更セル/図形数）
 Private Function ApplyToSheet(ws As Worksheet, entries As Collection) As Long
-  Dim eolRow As Long, eocCol As Long
-  If Not FindMarkers(ws, eolRow, eocCol) Then Exit Function
-  Dim textRng As Range: Set textRng = GetTextCellsRange(ws, eolRow, eocCol)
+  Dim textRng As Range: Set textRng = GetTextCellsRange(ws)
   On Error Resume Next
   If Not textRng Is Nothing Then textRng.Font.Name = "Arial"
   On Error GoTo 0
@@ -480,8 +528,12 @@ NextCell:
   End If
 
 ' 図形の翻訳
+  Dim rangeEndRow As Long: rangeEndRow = RANGE_START_ROW + TRANSLATION_MAX_ROWS - 1
+  Dim rangeEndCol As Long: rangeEndCol = RANGE_START_COL + TRANSLATION_MAX_COLS - 1
+  If rangeEndRow > ws.Rows.Count Then rangeEndRow = ws.Rows.Count
+  If rangeEndCol > ws.Columns.Count Then rangeEndCol = ws.Columns.Count
   Dim targetRect As Range
-  Set targetRect = ws.Range(ws.Cells(RANGE_START_ROW, RANGE_START_COL), ws.Cells(eolRow, eocCol))
+  Set targetRect = ws.Range(ws.Cells(RANGE_START_ROW, RANGE_START_COL), ws.Cells(rangeEndRow, rangeEndCol))
 
   Dim shapesInScope As New Collection, shp As Shape
   CollectTextShapes ws.Shapes, targetRect, shapesInScope
@@ -658,8 +710,17 @@ Private Function EnsureDictionaryLoaded(ByVal csvPath As String) As Collection
     Exit Function
   End If
 
+  Dim reopenAfter As Boolean
+  reopenAfter = False
+  If Not EnsureDictionaryWorkbookWritable(cleaned, reopenAfter) Then
+    Set EnsureDictionaryLoaded = New Collection
+    Exit Function
+  End If
+
   Dim loaded As Collection
   Set loaded = LoadDictionaryFromCSV(cleaned)
+
+  If reopenAfter Then ReopenDictionaryWorkbook cleaned
 
   If loaded Is Nothing Then
     SetStatus "Dictionary load failed (empty or format error): " & cleaned
@@ -805,21 +866,67 @@ End Function
 Private Function ReadAllTextUTF8(ByVal path As String) As String
   On Error GoTo Fallback
   Dim stm As Object: Set stm = CreateObject("ADODB.Stream")
-  stm.Type = 2: stm.Mode = 3: stm.Charset = "utf-8"
+  stm.Type = 2: stm.Mode = 1: stm.Charset = "utf-8"
   stm.Open: stm.LoadFromFile path
   ReadAllTextUTF8 = stm.ReadText(-1)
   stm.Close: Set stm = Nothing
   Exit Function
 Fallback:
   On Error Resume Next
-  Dim fso As Object, ts As Object
-  Set fso = CreateObject("Scripting.FileSystemObject")
-  If fso.FileExists(path) Then
-    Set ts = fso.OpenTextFile(path, 1, False)
-    ReadAllTextUTF8 = ts.ReadAll
-    ts.Close
-  Else
-    ReadAllTextUTF8 = ""
+  ReadAllTextUTF8 = ReadAllTextUtf8Fallback(path)
+End Function
+
+Private Function ReadAllTextUtf8Fallback(ByVal path As String) As String
+  Dim f As Integer: f = 0
+  Dim stmBinary As Object
+  Dim stmText As Object
+  On Error GoTo EH
+  If Len(path) = 0 Or Dir$(path) = "" Then Exit Function
+
+  f = FreeFile
+  Open path For Binary Access Read Shared As #f
+  Dim size As Long: size = LOF(f)
+  If size = 0 Then
+    Close #f
+    f = 0
+    ReadAllTextUtf8Fallback = ""
+    GoTo Cleanup
+  End If
+
+  Dim buffer() As Byte
+  ReDim buffer(0 To size - 1) As Byte
+  Get #f, 1, buffer
+  Close #f
+  f = 0
+
+  Set stmBinary = CreateObject("ADODB.Stream")
+  stmBinary.Type = 1
+  stmBinary.Open
+  stmBinary.Write buffer
+  stmBinary.Position = 0
+
+  Set stmText = CreateObject("ADODB.Stream")
+  stmText.Type = 2
+  stmText.Charset = "utf-8"
+  stmText.Open
+  stmBinary.CopyTo stmText
+  stmText.Position = 0
+  ReadAllTextUtf8Fallback = stmText.ReadText(-1)
+  GoTo Cleanup
+
+EH:
+  ReadAllTextUtf8Fallback = ""
+
+Cleanup:
+  On Error Resume Next
+  If f <> 0 Then Close #f
+  If Not stmText Is Nothing Then
+    stmText.Close
+    Set stmText = Nothing
+  End If
+  If Not stmBinary Is Nothing Then
+    stmBinary.Close
+    Set stmBinary = Nothing
   End If
 End Function
 

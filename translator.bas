@@ -47,6 +47,22 @@ Private g_loadedDictPath As String
 Private g_dictMtime As Date
 Private g_dictSize As Double
 Private g_dictHash As String
+Private g_lastCsvError As String
+Private g_lastCsvStage As String
+
+#If VBA7 Then
+Private Declare PtrSafe Function MultiByteToWideChar Lib "kernel32" _
+  (ByVal CodePage As Long, ByVal dwFlags As Long, ByVal lpMultiByteStr As LongPtr, _
+   ByVal cbMultiByte As Long, ByVal lpWideCharStr As LongPtr, ByVal cchWideChar As Long) As Long
+#Else
+Private Declare Function MultiByteToWideChar Lib "kernel32" _
+  (ByVal CodePage As Long, ByVal dwFlags As Long, ByVal lpMultiByteStr As Long, _
+   ByVal cbMultiByte As Long, ByVal lpWideCharStr As Long, ByVal cchWideChar As Long) As Long
+#End If
+
+Private Const CP_UTF8 As Long = 65001
+Private Const CP_SHIFT_JIS As Long = 932
+Private Const CP_ACP As Long = 0
 
 '========================
 '          UI
@@ -255,8 +271,11 @@ Public Sub ECM_ApplyTranslations()
   Dim entries As Collection
   Set entries = EnsureDictionaryLoaded(csvPath)
   If (entries Is Nothing) Or (entries.Count = 0) Then
-    SetStatus "辞書の読み込みに失敗（空か形式不正）。"
-    MsgBox "辞書が読み込めませんでした（空か、形式不正）。", vbExclamation
+    Dim detailMsg As String
+    detailMsg = LastCsvErrorDetail()
+    If Len(detailMsg) > 0 Then detailMsg = " (" & detailMsg & ")"
+    SetStatus "辞書の読み込みに失敗（空か形式不正）。" & detailMsg
+    MsgBox "辞書が読み込めませんでした（空か、形式不正）。" & detailMsg, vbExclamation
     Exit Sub
   End If
   SetStatus "辞書読み込み完了: " & entries.Count & " 件"
@@ -723,7 +742,10 @@ Private Function EnsureDictionaryLoaded(ByVal csvPath As String) As Collection
   If reopenAfter Then ReopenDictionaryWorkbook cleaned
 
   If loaded Is Nothing Then
-    SetStatus "Dictionary load failed (empty or format error): " & cleaned
+    Dim detail As String: detail = cleaned
+    Dim errDetail As String: errDetail = LastCsvErrorDetail()
+    If Len(errDetail) > 0 Then detail = detail & " [" & errDetail & "]"
+    SetStatus "Dictionary load failed (empty or format error): " & detail
     Set EnsureDictionaryLoaded = New Collection
   Else
     Set EnsureDictionaryLoaded = loaded
@@ -748,9 +770,40 @@ End Function
 '========================
 Private Function ParseCsvFile(ByVal csvPath As String) As Collection
   On Error GoTo ErrH
-  If Len(Dir$(csvPath)) = 0 Then Exit Function
-  Dim text As String: text = ReadAllTextUTF8(csvPath)
-  If Len(text) = 0 Then Exit Function
+  g_lastCsvError = ""
+  g_lastCsvStage = "init"
+  If Len(Dir$(csvPath)) = 0 Then
+    g_lastCsvError = "file not found"
+    g_lastCsvStage = "file check"
+    Exit Function
+  End If
+
+  Dim fileSize As Long
+  On Error Resume Next
+  fileSize = FileLen(csvPath)
+  On Error GoTo ErrH
+  If fileSize = 0 Then
+    g_lastCsvError = "file size is 0"
+    Exit Function
+  End If
+
+  Dim text As String
+  g_lastCsvStage = "read text utf-8"
+  On Error Resume Next
+  text = ReadAllTextUTF8(csvPath)
+  If Err.Number <> 0 Then
+    g_lastCsvError = "read text throw " & Err.Number & ": " & Err.Description
+    g_lastCsvStage = "read text utf-8 call"
+    Err.Clear
+    Exit Function
+  End If
+  On Error GoTo ErrH
+  If Len(text) = 0 Then
+    g_lastCsvError = "text read as empty"
+    g_lastCsvStage = "read text"
+    Exit Function
+  End If
+  g_lastCsvStage = "normalize newlines"
   text = Replace(Replace(text, vbCrLf, vbLf), vbCr, vbLf)
 
   Dim lines() As String
@@ -804,8 +857,10 @@ Private Function ParseCsvFile(ByVal csvPath As String) As Collection
   Dim i As Long, fields As Variant, headerDone As Boolean
 
   ' ヘッダ解析
+  g_lastCsvStage = "header scan"
   For i = LBound(lines) To UBound(lines)
     If Len(Trim$(lines(i))) = 0 Then GoTo NextLine
+    g_lastCsvStage = "header line " & CStr(i)
     fields = CsvFields(lines(i))
     If i = LBound(lines) Then
       If VBA.Len(fields(0)) > 0 Then
@@ -835,7 +890,9 @@ NextLine:
     startRow = LBound(lines)
   End If
 
+  g_lastCsvStage = "data rows"
   For i = startRow To UBound(lines)
+    g_lastCsvStage = "data line " & CStr(i)
     If Len(Trim$(lines(i))) = 0 Then GoTo NextData
     fields = CsvFields(lines(i))
     If UBound(fields) < colTarget Then GoTo NextData
@@ -853,82 +910,154 @@ NextData:
   Next i
 
   Set ParseCsvFile = out
+  If out.Count = 0 Then
+    If Len(g_lastCsvError) = 0 Then g_lastCsvError = "parsed entry count = 0"
+    g_lastCsvStage = "final count"
+  Else
+    g_lastCsvError = ""
+    g_lastCsvStage = ""
+  End If
   Exit Function
 ErrH:
+  Dim stageInfo As String
+  If Len(g_lastCsvStage) > 0 Then
+    stageInfo = "stage=" & g_lastCsvStage & "; "
+  Else
+    stageInfo = ""
+  End If
+  g_lastCsvError = stageInfo & "parse error " & Err.Number & ": " & Err.Description
   Set ParseCsvFile = Nothing
+End Function
+
+Private Function LastCsvErrorDetail() As String
+  Dim detail As String
+  If Len(g_lastCsvError) > 0 Then detail = g_lastCsvError
+  If Len(g_lastCsvStage) > 0 Then
+    If Len(detail) > 0 Then
+      detail = detail & "; stage=" & g_lastCsvStage
+    Else
+      detail = "stage=" & g_lastCsvStage
+    End If
+  End If
+  LastCsvErrorDetail = detail
 End Function
 
 Private Function FieldOrEmpty(ByVal fields As Variant, ByVal idx As Long) As String
   If idx >= 0 And idx <= UBound(fields) Then FieldOrEmpty = CStr(fields(idx)) Else FieldOrEmpty = ""
 End Function
 
-' --- UTF-8 読み込み（ADODB.Stream） ---
+' --- CSVテキスト読み込み（MultiByteToWideChar ベース） ---
 Private Function ReadAllTextUTF8(ByVal path As String) As String
-  On Error GoTo Fallback
-  Dim stm As Object: Set stm = CreateObject("ADODB.Stream")
-  stm.Type = 2: stm.Mode = 1: stm.Charset = "utf-8"
-  stm.Open: stm.LoadFromFile path
-  ReadAllTextUTF8 = stm.ReadText(-1)
-  stm.Close: Set stm = Nothing
-  Exit Function
-Fallback:
-  On Error Resume Next
-  ReadAllTextUTF8 = ReadAllTextUtf8Fallback(path)
+  Dim text As String
+
+  text = ReadAllTextWithCodePage(path, CP_UTF8)
+  If Len(text) > 0 Then
+    ReadAllTextUTF8 = text
+    Exit Function
+  End If
+
+  text = ReadAllTextWithCodePage(path, CP_SHIFT_JIS)
+  If Len(text) > 0 Then
+    ReadAllTextUTF8 = text
+    Exit Function
+  End If
+
+  text = ReadAllTextWithCodePage(path, CP_ACP)
+  If Len(text) > 0 Then
+    ReadAllTextUTF8 = text
+  Else
+    ReadAllTextUTF8 = ""
+  End If
 End Function
 
-Private Function ReadAllTextUtf8Fallback(ByVal path As String) As String
+Private Function ReadAllTextWithCodePage(ByVal path As String, ByVal codePage As Long) As String
+  On Error GoTo EH
+  If Len(path) = 0 Or Dir$(path) = "" Then Exit Function
+
+  Dim data() As Byte
+  If Not ReadAllBytes(path, data) Then Exit Function
+
+  Dim startIdx As Long
+  Dim byteCount As Long
+  startIdx = LBound(data)
+  byteCount = UBound(data) - startIdx + 1
+  If byteCount <= 0 Then Exit Function
+
+  If codePage = CP_UTF8 Then
+    If byteCount >= 3 Then
+      If data(startIdx) = &HEF And data(startIdx + 1) = &HBB And data(startIdx + 2) = &HBF Then
+        startIdx = startIdx + 3
+        byteCount = byteCount - 3
+        If byteCount <= 0 Then Exit Function
+      End If
+    End If
+  End If
+
+  ReadAllTextWithCodePage = BytesToWideString(data, startIdx, byteCount, codePage)
+  Exit Function
+EH:
+  ReadAllTextWithCodePage = ""
+End Function
+
+Private Function ReadAllBytes(ByVal path As String, ByRef data() As Byte) As Boolean
   Dim f As Integer: f = 0
-  Dim stmBinary As Object
-  Dim stmText As Object
   On Error GoTo EH
   If Len(path) = 0 Or Dir$(path) = "" Then Exit Function
 
   f = FreeFile
   Open path For Binary Access Read Shared As #f
   Dim size As Long: size = LOF(f)
-  If size = 0 Then
+  If size <= 0 Then
     Close #f
     f = 0
-    ReadAllTextUtf8Fallback = ""
-    GoTo Cleanup
+    Exit Function
   End If
 
-  Dim buffer() As Byte
-  ReDim buffer(0 To size - 1) As Byte
-  Get #f, 1, buffer
+  ReDim data(0 To size - 1) As Byte
+  Get #f, 1, data
+
   Close #f
   f = 0
-
-  Set stmBinary = CreateObject("ADODB.Stream")
-  stmBinary.Type = 1
-  stmBinary.Open
-  stmBinary.Write buffer
-  stmBinary.Position = 0
-
-  Set stmText = CreateObject("ADODB.Stream")
-  stmText.Type = 2
-  stmText.Charset = "utf-8"
-  stmText.Open
-  stmBinary.CopyTo stmText
-  stmText.Position = 0
-  ReadAllTextUtf8Fallback = stmText.ReadText(-1)
-  GoTo Cleanup
-
+  ReadAllBytes = True
+  Exit Function
 EH:
-  ReadAllTextUtf8Fallback = ""
-
-Cleanup:
+  ReadAllBytes = False
   On Error Resume Next
   If f <> 0 Then Close #f
-  If Not stmText Is Nothing Then
-    stmText.Close
-    Set stmText = Nothing
-  End If
-  If Not stmBinary Is Nothing Then
-    stmBinary.Close
-    Set stmBinary = Nothing
-  End If
+  On Error GoTo 0
 End Function
+
+Private Function BytesToWideString(ByRef data() As Byte, ByVal startIndex As Long, ByVal byteCount As Long, ByVal codePage As Long) As String
+  If byteCount <= 0 Then Exit Function
+
+#If VBA7 Then
+  Dim ptrBytes As LongPtr
+  ptrBytes = VarPtr(data(startIndex))
+  Dim ptrWide As LongPtr
+#Else
+  Dim ptrBytes As Long
+  ptrBytes = VarPtr(data(startIndex))
+  Dim ptrWide As Long
+#End If
+
+  Dim charCount As Long
+  charCount = MultiByteToWideChar(codePage, 0, ptrBytes, byteCount, 0, 0)
+  If charCount <= 0 Then Exit Function
+
+  Dim buffer As String
+  buffer = String$(charCount, vbNullChar)
+#If VBA7 Then
+  ptrWide = StrPtr(buffer)
+#Else
+  ptrWide = StrPtr(buffer)
+#End If
+
+  charCount = MultiByteToWideChar(codePage, 0, ptrBytes, byteCount, ptrWide, charCount)
+  If charCount <= 0 Then Exit Function
+
+  BytesToWideString = Left$(buffer, charCount)
+End Function
+
 
 ' --- CSV 1行を安全分割（PushField で配列末尾追加） ---
 Private Sub PushField(ByRef arr() As String, ByRef n As Long, ByVal value As String)

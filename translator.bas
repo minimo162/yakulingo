@@ -14,7 +14,7 @@ Option Explicit
 Private Const HELPER_SHEET As String = "ECM_Helper"
 Private Const COL_WB_PATH As String = "B5"
 Private Const COL_CSV_PATH As String = "B9"
-Private Const CELL_STATUS  As String = "B15"
+Private Const CELL_STATUS  As String = "B16"
 
 ' 範囲開始（A1）
 Private Const RANGE_START_ROW As Long = 1
@@ -49,6 +49,7 @@ Private g_dictSize As Double
 Private g_dictHash As String
 Private g_lastCsvError As String
 Private g_lastCsvStage As String
+Private g_copilotDriver As Object
 
 #If VBA7 Then
 Private Declare PtrSafe Function MultiByteToWideChar Lib "kernel32" _
@@ -88,7 +89,7 @@ Public Sub ECM_Setup()
   End With
   ws.Range("A1:F1").Interior.Color = COLOR_PRIMARY_LIGHT
 
-  ws.Range("A2").value = "翻訳対象のブックと辞書CSVを指定し、「翻訳」を実行してください。"
+  ws.Range("A2").value = "翻訳対象のブックと辞書CSVを指定し、「辞書翻訳」または「copilot翻訳」を実行してください。"
   ws.Range("A2:F2").Merge
   ws.Range("A2:F2").Interior.Color = COLOR_PRIMARY_LIGHT
   ws.Range("A2").Font.Color = COLOR_TEXT
@@ -116,9 +117,9 @@ Public Sub ECM_Setup()
 
   ws.Range("A12").value = "アクション"
   ws.Range("A12").Font.Bold = True
-  ws.Range("A14").value = "ステータス"
-  ws.Range("A14").Font.Bold = True
-  ws.Range("B15:F15").Merge
+  ws.Range("A15").value = "ステータス"
+  ws.Range("A15").Font.Bold = True
+  ws.Range("B16:F16").Merge
   With ws.Range(CELL_STATUS)
     .value = "Ready"
     .HorizontalAlignment = xlLeft
@@ -129,7 +130,8 @@ Public Sub ECM_Setup()
   DeleteButtons ws, "btnECM_*"
   AddButton ws, "btnECM_BrowseWb", LabelWithIcon("folder", "ターゲット選択"), ws.Range("B6"), 220, "ECM_BrowseWorkbook", True, "翻訳先となるExcelブックを選択します。"
   AddButton ws, "btnECM_BrowseCsv", LabelWithIcon("index", "辞書CSV選択"), ws.Range("B10"), 220, "ECM_BrowseCSV", True, "翻訳辞書となるCSVファイルを選択します。"
-  AddButton ws, "btnECM_Apply", LabelWithIcon("check", "翻訳"), ws.Range("B13"), 280, "ECM_ApplyTranslations", True, "辞書を使ってターゲットブックを翻訳します。"
+  AddButton ws, "btnECM_Apply", LabelWithIcon("check", "辞書翻訳"), ws.Range("B13"), 280, "ECM_ApplyTranslations", True, "辞書を使ってターゲットブックを翻訳します。"
+  AddButton ws, "btnECM_Copilot", LabelWithIcon("robot", "copilot翻訳"), ws.Range("B14"), 280, "ECM_OpenCopilot", False, "Copilot for Microsoft 365 に接続し、ブラウザで翻訳を行います。"
 
   With ws
     .Columns("A").ColumnWidth = 18
@@ -150,14 +152,15 @@ Public Sub ECM_Setup()
     .Rows(11).RowHeight = 12
     .Rows(12).RowHeight = 20
     .Rows(13).RowHeight = 38
-    .Rows(14).RowHeight = 20
-    .Rows(15).RowHeight = 30
+    .Rows(14).RowHeight = 38
+    .Rows(15).RowHeight = 20
+    .Rows(16).RowHeight = 30
   End With
 
   Application.ScreenUpdating = True
   Application.DisplayAlerts = True
 
-  MsgBox "翻訳パネルを準備しました。ターゲットブックと辞書CSVを確認してから「翻訳」を実行してください。", vbInformation
+  MsgBox "翻訳パネルを準備しました。ターゲットブックと辞書CSVを確認してから「辞書翻訳」を実行するか、「copilot翻訳」でCopilotを開いてください。", vbInformation
 End Sub
 
 Private Function GetOrCreatePanel(Name As String) As Worksheet
@@ -337,6 +340,160 @@ CleanExit:
   Application.EnableEvents = True
   Application.Calculation = oldCalc
   Application.ScreenUpdating = True
+End Sub
+
+'========================
+'    Copilot 連携
+'========================
+Public Sub ECM_OpenCopilot()
+  Const TARGET_URL As String = "https://m365.cloud.microsoft/chat/"
+  On Error GoTo ErrH
+
+  SetStatus "Copilotブラウザを初期化しています..."
+  If Not EnsureCopilotDriver() Then Exit Sub
+
+  SetStatus "Copilotへ接続中..."
+  On Error Resume Next
+  g_copilotDriver.Get TARGET_URL
+  If Err.Number <> 0 Then
+    Dim navErr As String
+    navErr = "Copilotページへの接続に失敗しました: " & Err.Description
+    Err.Clear
+    On Error GoTo ErrH
+    SetStatus navErr
+    MsgBox navErr, vbExclamation
+    Exit Sub
+  End If
+  On Error GoTo ErrH
+
+  SetStatus "Copilotの認証完了を待機しています..."
+  If WaitForCopilotReady(g_copilotDriver, TARGET_URL, 300) Then
+    SetStatus "Copilot接続を確認しました。"
+    MsgBox "Copilot for Microsoft 365 への接続を確認しました。ブラウザ上で翻訳を続けてください。", vbInformation
+  Else
+    SetStatus "Copilot接続の確認がタイムアウトしました。"
+    MsgBox "指定時間内にCopilotへの接続を確認できませんでした。認証が完了したら再度お試しください。", vbExclamation
+  End If
+  Exit Sub
+
+ErrH:
+  Dim errMsg As String
+  errMsg = "Copilot翻訳の準備中にエラーが発生しました: " & Err.Description
+  SetStatus errMsg
+  MsgBox errMsg, vbCritical
+End Sub
+
+Private Function EnsureCopilotDriver() As Boolean
+  On Error Resume Next
+  If Not g_copilotDriver Is Nothing Then
+    Dim aliveTest As Variant
+    aliveTest = g_copilotDriver.SessionId
+    If Err.Number = 0 Then
+      EnsureCopilotDriver = True
+      On Error GoTo 0
+      Exit Function
+    End If
+    Set g_copilotDriver = Nothing
+    Err.Clear
+  End If
+  On Error GoTo 0
+
+  Dim driver As Object
+  If Not TryStartDriver("Selenium.EdgeDriver", "edge", driver) Then
+    If Not TryStartDriver("Selenium.ChromeDriver", "chrome", driver) Then
+      If Not TryStartDriver("Selenium.WebDriver", "chrome", driver) Then
+        SetStatus "Copilotブラウザを起動できませんでした。"
+        MsgBox "Copilotブラウザを起動できませんでした。SeleniumBasicとブラウザドライバーのインストール状況を確認してください。", vbCritical
+        EnsureCopilotDriver = False
+        Exit Function
+      End If
+    End If
+  End If
+
+  Set g_copilotDriver = driver
+  On Error Resume Next
+  g_copilotDriver.Window.Maximize
+  On Error GoTo 0
+
+  EnsureCopilotDriver = True
+End Function
+
+Private Function TryStartDriver(ByVal progId As String, ByVal browserName As String, ByRef driverOut As Object) As Boolean
+  On Error Resume Next
+  Set driverOut = CreateObject(progId)
+  If driverOut Is Nothing Then
+    Err.Clear
+    Exit Function
+  End If
+
+  driverOut.Start browserName
+  If Err.Number <> 0 Then
+    Set driverOut = Nothing
+    Err.Clear
+    Exit Function
+  End If
+
+  TryStartDriver = True
+  Err.Clear
+  On Error GoTo 0
+End Function
+
+Private Function WaitForCopilotReady(ByVal driver As Object, ByVal targetUrl As String, ByVal timeoutSeconds As Long) As Boolean
+  Dim startTick As Double
+  startTick = Timer
+  Dim targetCheck As String
+  targetCheck = LCase$(Trim$(targetUrl))
+  If Len(targetCheck) = 0 Then targetCheck = "https://m365.cloud.microsoft/chat/"
+
+  Do
+    Dim currentUrl As String
+    currentUrl = ""
+    On Error Resume Next
+    currentUrl = driver.Url
+    If Err.Number <> 0 Then
+      Err.Clear
+      On Error GoTo 0
+      Exit Do
+    End If
+    On Error GoTo 0
+
+    If Len(currentUrl) > 0 Then
+      Dim lowerUrl As String
+      lowerUrl = LCase$(currentUrl)
+      If InStr(lowerUrl, "m365.cloud.microsoft/chat") > 0 _
+         Or InStr(lowerUrl, targetCheck) > 0 Then
+        WaitForCopilotReady = True
+        Exit Function
+      End If
+    End If
+
+    If TimeoutElapsed(startTick, timeoutSeconds) Then Exit Do
+    PauseWithDoEvents 1
+  Loop
+End Function
+
+Private Function TimeoutElapsed(ByVal startTick As Double, ByVal timeoutSeconds As Long) As Boolean
+  Dim nowTick As Double
+  nowTick = Timer
+
+  Dim elapsed As Double
+  elapsed = nowTick - startTick
+  If elapsed < 0 Then elapsed = elapsed + 86400#
+
+  TimeoutElapsed = (elapsed >= timeoutSeconds)
+End Function
+
+Private Sub PauseWithDoEvents(ByVal seconds As Double)
+  If seconds <= 0 Then
+    DoEvents
+    Exit Sub
+  End If
+  Dim waitUntil As Date
+  waitUntil = DateAdd("s", seconds, Now)
+  DoEvents
+  On Error Resume Next
+  Application.Wait waitUntil
+  On Error GoTo 0
 End Sub
 
 '========================
@@ -1178,6 +1335,7 @@ Private Function UiIcon(ByVal Name As String) As String
     Case "info":     UiIcon = ChrW(&H2139)
     Case "broom":    UiIcon = ChrW(&HD83E) & ChrW(&HDDF9)
     Case "globe":    UiIcon = ChrW(&HD83C) & ChrW(&HDF10)
+    Case "robot":    UiIcon = ChrW(&HD83E) & ChrW(&HDD16)
     Case Else:       UiIcon = ""
   End Select
 End Function

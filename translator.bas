@@ -398,12 +398,27 @@ Private Function EnsureCopilotDriver() As Boolean
   End If
   On Error GoTo 0
 
+  Dim driverPath As String
+  Dim haveDriver As Boolean
+  haveDriver = False
+  driverPath = ""
+  ' Edge ドライバーを優先して準備
+  haveDriver = EnsureBrowserDriver("edge", driverPath)
+
   Dim driver As Object
-  If Not TryStartDriver("Selenium.EdgeDriver", "edge", driver) Then
-    If Not TryStartDriver("Selenium.ChromeDriver", "chrome", driver) Then
-      If Not TryStartDriver("Selenium.WebDriver", "chrome", driver) Then
+  If Not TryStartDriver("Selenium.EdgeDriver", "edge", driver, driverPath) Then
+    driverPath = ""
+    haveDriver = EnsureBrowserDriver("chrome", driverPath)
+    If Not TryStartDriver("Selenium.ChromeDriver", "chrome", driver, driverPath) Then
+      driverPath = ""
+      If haveDriver Then haveDriver = EnsureBrowserDriver("chrome", driverPath)
+      If Not TryStartDriver("Selenium.WebDriver", "chrome", driver, driverPath) Then
         SetStatus "Copilotブラウザを起動できませんでした。"
-        MsgBox "Copilotブラウザを起動できませんでした。SeleniumBasicとブラウザドライバーのインストール状況を確認してください。", vbCritical
+        If Not IsSeleniumBasicInstalled() Then
+          ShowSeleniumBasicInstallGuide
+        Else
+          MsgBox "Copilotブラウザを起動できませんでした。SeleniumBasicとブラウザドライバーのインストール状況を確認してください。", vbCritical
+        End If
         EnsureCopilotDriver = False
         Exit Function
       End If
@@ -418,7 +433,7 @@ Private Function EnsureCopilotDriver() As Boolean
   EnsureCopilotDriver = True
 End Function
 
-Private Function TryStartDriver(ByVal progId As String, ByVal browserName As String, ByRef driverOut As Object) As Boolean
+Private Function TryStartDriver(ByVal progId As String, ByVal browserName As String, ByRef driverOut As Object, Optional ByVal driverPath As String = "") As Boolean
   On Error Resume Next
   Set driverOut = CreateObject(progId)
   If driverOut Is Nothing Then
@@ -426,8 +441,28 @@ Private Function TryStartDriver(ByVal progId As String, ByVal browserName As Str
     Exit Function
   End If
 
+  If Len(Trim$(driverPath)) > 0 Then
+    On Error Resume Next
+    driverOut.AddDriver browserName, driverPath
+    If Err.Number <> 0 Then
+      Dim addErr As String
+      addErr = "AddDriver失敗(" & browserName & "): " & Err.Number & " " & Err.Description
+      SetStatus addErr
+      Err.Clear
+      driverOut.AddDriver browserName, "", driverPath
+      If Err.Number <> 0 Then
+        addErr = "AddDriver再試行失敗(" & browserName & "): " & Err.Number & " " & Err.Description
+        SetStatus addErr
+        Err.Clear
+      End If
+    End If
+    On Error GoTo 0
+  End If
   driverOut.Start browserName
   If Err.Number <> 0 Then
+    Dim errMsg As String
+    errMsg = "Selenium起動エラー(" & browserName & "): " & Err.Number & " " & Err.Description
+    SetStatus errMsg
     Set driverOut = Nothing
     Err.Clear
     Exit Function
@@ -495,6 +530,527 @@ Private Sub PauseWithDoEvents(ByVal seconds As Double)
   Application.Wait waitUntil
   On Error GoTo 0
 End Sub
+
+'========================
+'  ドライバーセットアップ
+'========================
+Private Function EnsureBrowserDriver(ByVal browser As String, ByRef driverPathOut As String) As Boolean
+  On Error GoTo EH
+  Dim pathOut As String
+  Select Case LCase$(browser)
+    Case "edge"
+      If EnsureEdgeDriver(pathOut) Then
+        driverPathOut = pathOut
+        EnsureBrowserDriver = True
+      End If
+    Case "chrome"
+      If EnsureChromeDriver(pathOut) Then
+        driverPathOut = pathOut
+        EnsureBrowserDriver = True
+      End If
+  End Select
+  Exit Function
+EH:
+  ' 失敗しても既存環境のドライバー検出に任せる
+  EnsureBrowserDriver = False
+End Function
+
+Private Function EnsureEdgeDriver(ByRef driverPathOut As String) As Boolean
+  Dim storageRoot As String
+  storageRoot = CombinePath(DriverStorageRoot(), "edge")
+  If Not EnsureFolderExists(storageRoot) Then Exit Function
+
+  Dim driverExe As String
+  driverExe = CombinePath(storageRoot, "msedgedriver.exe")
+  If FileExists(driverExe) Then
+    driverPathOut = driverExe
+    EnsureEdgeDriver = True
+    RegisterDriverForSeleniumBasic driverExe
+    Exit Function
+  End If
+
+  SetStatus "Edgeドライバーを自動セットアップ中..."
+
+  Dim edgeVersion As String
+  edgeVersion = GetInstalledEdgeVersion()
+  Dim driverVersion As String
+  driverVersion = GetLatestEdgeDriverVersion(edgeVersion)
+  If Len(driverVersion) = 0 Then
+    SetStatus "Edgeドライバーのバージョン取得に失敗しました。"
+    Exit Function
+  End If
+
+  Dim archTag As String
+  archTag = EdgeArchitectureTag()
+  Dim downloadUrl As String
+  downloadUrl = "https://msedgedriver.azureedge.net/" & driverVersion & "/edgedriver_" & archTag & ".zip"
+
+  Dim tempZip As String
+  tempZip = CreateTempFile("edge_driver_", ".zip")
+  If Len(tempZip) = 0 Then Exit Function
+
+  If Not DownloadBinaryFile(downloadUrl, tempZip) Then
+    SetStatus "Edgeドライバーのダウンロードに失敗しました。"
+    DeleteFileSafe tempZip
+    Exit Function
+  End If
+
+  If Not ExtractZipFile(tempZip, storageRoot) Then
+    SetStatus "Edgeドライバーの展開に失敗しました。"
+    DeleteFileSafe tempZip
+    Exit Function
+  End If
+  DeleteFileSafe tempZip
+
+  Dim found As String
+  found = FindFileRecursive(storageRoot, "msedgedriver.exe")
+  If Len(found) = 0 Then Exit Function
+
+  If LCase$(found) <> LCase$(driverExe) Then
+    On Error Resume Next
+    CreateObject("Scripting.FileSystemObject").CopyFile found, driverExe, True
+    On Error GoTo 0
+  End If
+
+  If FileExists(driverExe) Then
+    driverPathOut = driverExe
+    EnsureEdgeDriver = True
+    RegisterDriverForSeleniumBasic driverExe
+    SetStatus "Edgeドライバーの準備が完了しました。"
+  End If
+End Function
+
+Private Function EnsureChromeDriver(ByRef driverPathOut As String) As Boolean
+  Dim storageRoot As String
+  storageRoot = CombinePath(DriverStorageRoot(), "chrome")
+  If Not EnsureFolderExists(storageRoot) Then Exit Function
+
+  Dim driverExe As String
+  driverExe = CombinePath(storageRoot, "chromedriver.exe")
+  If FileExists(driverExe) Then
+    driverPathOut = driverExe
+    EnsureChromeDriver = True
+    RegisterDriverForSeleniumBasic driverExe
+    Exit Function
+  End If
+
+  SetStatus "Chromeドライバーを自動セットアップ中..."
+
+  Dim chromeVersion As String
+  chromeVersion = GetInstalledChromeVersion()
+  Dim driverVersion As String
+  driverVersion = GetLatestChromeDriverVersion(chromeVersion)
+  If Len(driverVersion) = 0 Then
+    SetStatus "Chromeドライバーのバージョン取得に失敗しました。"
+    Exit Function
+  End If
+
+  Dim downloadUrl As String
+  downloadUrl = "https://chromedriver.storage.googleapis.com/" & driverVersion & "/chromedriver_win32.zip"
+
+  Dim tempZip As String
+  tempZip = CreateTempFile("chrome_driver_", ".zip")
+  If Len(tempZip) = 0 Then Exit Function
+
+  If Not DownloadBinaryFile(downloadUrl, tempZip) Then
+    SetStatus "Chromeドライバーのダウンロードに失敗しました。"
+    DeleteFileSafe tempZip
+    Exit Function
+  End If
+
+  If Not ExtractZipFile(tempZip, storageRoot) Then
+    SetStatus "Chromeドライバーの展開に失敗しました。"
+    DeleteFileSafe tempZip
+    Exit Function
+  End If
+  DeleteFileSafe tempZip
+
+  Dim found As String
+  found = FindFileRecursive(storageRoot, "chromedriver.exe")
+  If Len(found) = 0 Then Exit Function
+
+  If LCase$(found) <> LCase$(driverExe) Then
+    On Error Resume Next
+    CreateObject("Scripting.FileSystemObject").CopyFile found, driverExe, True
+    On Error GoTo 0
+  End If
+
+  If FileExists(driverExe) Then
+    driverPathOut = driverExe
+    EnsureChromeDriver = True
+    RegisterDriverForSeleniumBasic driverExe
+    SetStatus "Chromeドライバーの準備が完了しました。"
+  End If
+End Function
+
+Private Function DriverStorageRoot() As String
+  Dim basePath As String
+  basePath = Trim$(ThisWorkbook.Path)
+  If Len(basePath) = 0 Then basePath = Trim$(Environ$("LOCALAPPDATA"))
+  If Len(basePath) = 0 Then basePath = Trim$(Environ$("USERPROFILE"))
+  If Len(basePath) = 0 Then basePath = Trim$(Environ$("TEMP"))
+  If Len(basePath) = 0 Then basePath = "C:\Temp"
+  DriverStorageRoot = CombinePath(basePath, "ECMDrivers")
+End Function
+
+Private Function EnsureFolderExists(ByVal folderPath As String) As Boolean
+  Dim fso As Object
+  Set fso = CreateObject("Scripting.FileSystemObject")
+  On Error Resume Next
+  If fso.FolderExists(folderPath) Then
+    EnsureFolderExists = True
+  Else
+    fso.CreateFolder folderPath
+    EnsureFolderExists = fso.FolderExists(folderPath)
+  End If
+  On Error GoTo 0
+End Function
+
+Private Function CombinePath(ByVal basePath As String, ByVal appendPath As String) As String
+  If Len(basePath) = 0 Then
+    CombinePath = appendPath
+    Exit Function
+  End If
+  If Len(appendPath) = 0 Then
+    CombinePath = basePath
+    Exit Function
+  End If
+
+  Dim sep As String
+  sep = Application.PathSeparator
+  If Right$(basePath, 1) = sep Then
+    If Left$(appendPath, 1) = sep Then
+      CombinePath = basePath & Mid$(appendPath, 2)
+    Else
+      CombinePath = basePath & appendPath
+    End If
+  Else
+    If Left$(appendPath, 1) = sep Then
+      CombinePath = basePath & appendPath
+    Else
+      CombinePath = basePath & sep & appendPath
+    End If
+  End If
+End Function
+
+Private Function FileExists(ByVal filePath As String) As Boolean
+  On Error Resume Next
+  FileExists = (Len(Dir$(filePath, vbNormal)) > 0)
+  On Error GoTo 0
+End Function
+
+Private Function DownloadBinaryFile(ByVal url As String, ByVal destPath As String) As Boolean
+  On Error GoTo EH
+  Dim xhr As Object
+  Set xhr = CreateObject("MSXML2.XMLHTTP")
+  xhr.Open "GET", url, False
+  xhr.send
+  If xhr.Status < 200 Or xhr.Status >= 300 Then GoTo EH
+
+  Dim stm As Object
+  Set stm = CreateObject("ADODB.Stream")
+  stm.Type = 1
+  stm.Open
+  stm.Write xhr.responseBody
+  stm.SaveToFile destPath, 2
+  stm.Close
+  DownloadBinaryFile = True
+  Exit Function
+EH:
+  DownloadBinaryFile = False
+End Function
+
+Private Function DownloadTextFile(ByVal url As String) As String
+  On Error GoTo EH
+  Dim xhr As Object
+  Set xhr = CreateObject("MSXML2.XMLHTTP")
+  xhr.Open "GET", url, False
+  xhr.send
+  If xhr.Status < 200 Or xhr.Status >= 300 Then GoTo EH
+  DownloadTextFile = Trim$(xhr.responseText & "")
+  Exit Function
+EH:
+  DownloadTextFile = ""
+End Function
+
+Private Function ExtractZipFile(ByVal zipPath As String, ByVal targetDir As String) As Boolean
+  On Error GoTo EH
+  If Len(zipPath) = 0 Or Len(targetDir) = 0 Then Exit Function
+  If Not FileExists(zipPath) Then Exit Function
+  If Not EnsureFolderExists(targetDir) Then Exit Function
+
+  Dim shellApp As Object
+  Set shellApp = CreateObject("Shell.Application")
+  Dim zipNs As Object, targetNs As Object
+  Set zipNs = shellApp.NameSpace(zipPath)
+  Set targetNs = shellApp.NameSpace(targetDir)
+  If zipNs Is Nothing Or targetNs Is Nothing Then Exit Function
+
+  targetNs.CopyHere zipNs.Items, 16 Or 256
+  Dim waitUntil As Date
+  waitUntil = DateAdd("s", 10, Now)
+  Do
+    DoEvents
+    If Now >= waitUntil Then Exit Do
+  Loop
+
+  ExtractZipFile = True
+  Exit Function
+EH:
+  ExtractZipFile = False
+End Function
+
+Private Function FindFileRecursive(ByVal rootDir As String, ByVal fileName As String) As String
+  On Error GoTo EH
+  Dim fso As Object
+  Set fso = CreateObject("Scripting.FileSystemObject")
+  If Not fso.FolderExists(rootDir) Then Exit Function
+  Dim folder As Object
+  Set folder = fso.GetFolder(rootDir)
+  Dim fileItem As Object
+  For Each fileItem In folder.Files
+    If LCase$(fileItem.Name) = LCase$(fileName) Then
+      FindFileRecursive = fileItem.Path
+      Exit Function
+    End If
+  Next fileItem
+  Dim subFolder As Object
+  For Each subFolder In folder.SubFolders
+    FindFileRecursive = FindFileRecursive(subFolder.Path, fileName)
+    If Len(FindFileRecursive) > 0 Then Exit Function
+  Next subFolder
+  Exit Function
+EH:
+  FindFileRecursive = ""
+End Function
+
+Private Function CreateTempFile(ByVal prefix As String, ByVal suffix As String) As String
+  On Error GoTo EH
+  Dim tempPath As String
+  tempPath = Environ$("TEMP")
+  If Len(tempPath) = 0 Then tempPath = Environ$("TMP")
+  If Len(tempPath) = 0 Then tempPath = "C:\Temp"
+  Dim fso As Object
+  Set fso = CreateObject("Scripting.FileSystemObject")
+  If Right$(tempPath, 1) <> "\" Then tempPath = tempPath & "\"
+  Dim tempName As String
+  tempName = prefix & fso.GetTempName
+  tempName = tempPath & tempName
+  If Len(suffix) > 0 Then
+    If Right$(suffix, 1) = "." Then suffix = Left$(suffix, Len(suffix) - 1)
+    If Left$(suffix, 1) <> "." Then suffix = "." & suffix
+    tempName = tempName & suffix
+  End If
+  CreateTempFile = tempName
+  Exit Function
+EH:
+  CreateTempFile = ""
+End Function
+
+Private Sub DeleteFileSafe(ByVal filePath As String)
+  On Error Resume Next
+  If Len(filePath) > 0 Then
+    If FileExists(filePath) Then Kill filePath
+  End If
+  On Error GoTo 0
+End Sub
+
+Private Sub RegisterDriverForSeleniumBasic(ByVal driverFile As String)
+  If Len(driverFile) = 0 Then Exit Sub
+  If Not FileExists(driverFile) Then Exit Sub
+
+  Dim targets As Collection
+  Set targets = New Collection
+  targets.Add CombinePath(Environ$("LOCALAPPDATA"), "SeleniumBasic")
+  targets.Add CombinePath(Environ$("APPDATA"), "SeleniumBasic")
+  targets.Add CombinePath(Environ$("PROGRAMFILES"), "SeleniumBasic")
+  targets.Add CombinePath(Environ$("PROGRAMFILES(X86)"), "SeleniumBasic")
+  targets.Add "C:\SeleniumBasic"
+
+  Dim fso As Object
+  Set fso = CreateObject("Scripting.FileSystemObject")
+  Dim basePath As Variant
+  For Each basePath In targets
+    Dim base As String
+    base = Trim$(CStr(basePath))
+    If Len(base) = 0 Then GoTo NextBase
+    If Not fso.FolderExists(base) Then GoTo NextBase
+    CopyDriverIfNeeded fso, driverFile, base
+    CopyDriverIfNeeded fso, driverFile, CombinePath(base, "drivers")
+NextBase:
+  Next basePath
+End Sub
+
+Private Sub CopyDriverIfNeeded(ByVal fso As Object, ByVal srcFile As String, ByVal destFolder As String)
+  On Error Resume Next
+  If Len(destFolder) = 0 Then Exit Sub
+  If Not fso.FolderExists(destFolder) Then fso.CreateFolder destFolder
+  If Not fso.FolderExists(destFolder) Then Exit Sub
+  Dim destFile As String
+  destFile = CombinePath(destFolder, fso.GetFileName(srcFile))
+  fso.CopyFile srcFile, destFile, True
+  On Error GoTo 0
+End Sub
+
+Private Function IsSeleniumBasicInstalled() As Boolean
+  Dim targets As Collection
+  Set targets = New Collection
+  targets.Add CombinePath(Environ$("LOCALAPPDATA"), "SeleniumBasic")
+  targets.Add CombinePath(Environ$("APPDATA"), "SeleniumBasic")
+  targets.Add CombinePath(Environ$("PROGRAMFILES"), "SeleniumBasic")
+  targets.Add CombinePath(Environ$("PROGRAMFILES(X86)"), "SeleniumBasic")
+  targets.Add "C:\SeleniumBasic"
+
+  Dim fso As Object
+  Set fso = CreateObject("Scripting.FileSystemObject")
+  Dim base As Variant
+  For Each base In targets
+    Dim path As String
+    path = Trim$(CStr(base))
+    If Len(path) = 0 Then GoTo NextBase
+    If fso.FolderExists(path) Then
+      If fso.FileExists(CombinePath(path, "SeleniumBasic.chm")) _
+         Or fso.FileExists(CombinePath(path, "Selenium.dll")) Then
+        IsSeleniumBasicInstalled = True
+        Exit Function
+      End If
+    End If
+NextBase:
+  Next base
+End Function
+
+Private Sub ShowSeleniumBasicInstallGuide()
+  Dim msg As String
+  msg = "SeleniumBasic がインストールされていないため、Copilot ブラウザを起動できませんでした。" & vbCrLf & vbCrLf & _
+        "SeleniumBasic のインストール手順を下記に出力しましたので、シート内の案内をご確認ください。"
+  MsgBox msg, vbExclamation, "SeleniumBasic のインストールが必要です"
+  OutputSeleniumBasicGuideToSheet
+  SetStatus "SeleniumBasic のインストール手順をシートに出力しました。"
+End Sub
+
+Private Sub OutputSeleniumBasicGuideToSheet()
+  On Error GoTo EH
+  Dim ws As Worksheet
+  Set ws = GetOrCreatePanel(HELPER_SHEET)
+
+  ws.Range("B18:F25").Clear
+
+  Dim area As Range
+  Set area = ws.Range("B18:F24")
+  area.HorizontalAlignment = xlLeft
+  area.VerticalAlignment = xlTop
+  area.WrapText = True
+
+  With ws.Range("B18:F18")
+    .Merge
+    .Value = "SeleniumBasicのインストール"
+    .Font.Bold = True
+  End With
+
+  With ws.Range("B19:F19")
+    .Merge
+    .Value = "1.リリースサイトにて実行ファイル(.exe)をクリックしてダウンロード"
+  End With
+
+  Dim linkCell As Range
+  Set linkCell = ws.Range("B20")
+  linkCell.Value = "https://github.com/florentbr/SeleniumBasic/releases/tag/v2.0.9.0"
+  linkCell.Hyperlinks.Add Anchor:=linkCell, Address:=linkCell.Value, TextToDisplay:=linkCell.Value
+  ws.Range("B20:F20").Merge
+
+  With ws.Range("B21:F21")
+    .Merge
+    .Value = "2.「WebDriver for Microsoft Edge」を選択してインストール"
+  End With
+
+  With ws.Range("B22:F22")
+    .Merge
+    .Value = "   インストール先(デフォルト)： C:\Users\<ログインユーザー名>\AppData\Local\SeleniumBasic"
+    .Font.Italic = True
+  End With
+
+  ws.Columns("B:F").ColumnWidth = 32
+  Exit Sub
+EH:
+  ' シート更新に失敗した場合は黙って続行
+End Sub
+
+Private Function EdgeArchitectureTag() As String
+  Dim arch As String
+  arch = LCase$(Environ$("PROCESSOR_ARCHITECTURE"))
+  If InStr(arch, "64") > 0 Then
+    EdgeArchitectureTag = "win64"
+  Else
+    EdgeArchitectureTag = "win32"
+  End If
+End Function
+
+Private Function GetInstalledEdgeVersion() As String
+  Dim version As String
+  version = ReadRegistryValue("HKEY_CURRENT_USER\Software\Microsoft\Edge\BLBeacon\version")
+  If Len(version) = 0 Then version = ReadRegistryValue("HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Edge\BLBeacon\version")
+  GetInstalledEdgeVersion = version
+End Function
+
+Private Function GetLatestEdgeDriverVersion(ByVal installedVersion As String) As String
+  Dim version As String
+  version = ""
+  Dim major As String
+  major = ""
+  If Len(installedVersion) > 0 Then
+    Dim parts() As String
+    parts = Split(installedVersion, ".")
+    If UBound(parts) >= 0 Then major = parts(0)
+  End If
+
+  If Len(major) > 0 Then
+    version = DownloadTextFile("https://msedgedriver.azureedge.net/LATEST_RELEASE_" & major)
+    If Len(version) = 0 Then version = DownloadTextFile("https://msedgewebdriverstorage.blob.core.windows.net/edgewebdriver/LATEST_RELEASE_" & major)
+  End If
+  If Len(version) = 0 Then
+    version = DownloadTextFile("https://msedgedriver.azureedge.net/LATEST_STABLE")
+  End If
+  If Len(version) = 0 Then version = installedVersion
+  GetLatestEdgeDriverVersion = Trim$(version)
+End Function
+
+Private Function GetInstalledChromeVersion() As String
+  Dim version As String
+  version = ReadRegistryValue("HKEY_CURRENT_USER\Software\Google\Chrome\BLBeacon\version")
+  If Len(version) = 0 Then version = ReadRegistryValue("HKEY_LOCAL_MACHINE\SOFTWARE\Google\Chrome\BLBeacon\version")
+  GetInstalledChromeVersion = version
+End Function
+
+Private Function GetLatestChromeDriverVersion(ByVal installedVersion As String) As String
+  Dim version As String
+  version = ""
+  Dim major As String
+  major = ""
+  If Len(installedVersion) > 0 Then
+    Dim parts() As String
+    parts = Split(installedVersion, ".")
+    If UBound(parts) >= 0 Then major = parts(0)
+  End If
+
+  If Len(major) > 0 Then
+    version = DownloadTextFile("https://chromedriver.storage.googleapis.com/LATEST_RELEASE_" & major)
+  End If
+  If Len(version) = 0 Then
+    version = DownloadTextFile("https://chromedriver.storage.googleapis.com/LATEST_RELEASE")
+  End If
+  If Len(version) = 0 Then version = installedVersion
+  GetLatestChromeDriverVersion = Trim$(version)
+End Function
+
+Private Function ReadRegistryValue(ByVal path As String) As String
+  On Error GoTo EH
+  Dim shell As Object
+  Set shell = CreateObject("WScript.Shell")
+  ReadRegistryValue = Trim$(shell.RegRead(path) & "")
+  Exit Function
+EH:
+  ReadRegistryValue = ""
+End Function
 
 '========================
 '      低レベル関数

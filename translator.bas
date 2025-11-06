@@ -2968,26 +2968,56 @@ End Function
 Private Function ExtractZipWithPowerShell(ByVal zipPath As String, ByVal targetDir As String, ByRef errOut As String) As Boolean
   On Error GoTo EH
   errOut = ""
-  Dim quotedZip As String
-  Dim quotedDest As String
-  quotedZip = """" & Replace(zipPath, """", """""") & """"
-  quotedDest = """" & Replace(targetDir, """", """""") & """"
-  Dim command As String
-  command = "powershell -NoLogo -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -Command ""Expand-Archive -LiteralPath " & quotedZip & " -DestinationPath " & quotedDest & " -Force"""
 
-  Dim psOut As String
-  Dim psErr As String
-  Dim psExit As Long
-  If Not ExecuteCommand(command, psOut, psErr, 120, psExit) Then
-    If Len(Trim$(psErr)) = 0 Then psErr = "ExitCode=" & CStr(psExit)
-    errOut = "PowerShell 展開でエラーが発生しました: " & psErr
+  Dim shell As Object
+  Set shell = CreateObject("WScript.Shell")
+  If shell Is Nothing Then
+    errOut = "WScript.Shell を初期化できませんでした。"
     Exit Function
   End If
+
+  Dim quotedZip As String
+  Dim quotedDest As String
+  Dim logPath As String
+  Dim quotedLog As String
+  quotedZip = """" & Replace(zipPath, """", """""") & """"
+  quotedDest = """" & Replace(targetDir, """", """""") & """"
+  logPath = CreateTempFile("ecm_ps_", ".log")
+  If Len(logPath) = 0 Then
+    errOut = "PowerShell 展開ログ用の一時ファイルを作成できませんでした。"
+    Exit Function
+  End If
+  quotedLog = """" & Replace(logPath, """", """""") & """"
+
+  Dim command As String
+  command = "powershell -NoLogo -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -Command " & _
+            """$ErrorActionPreference='Stop';" & _
+            "Remove-Item -LiteralPath " & quotedLog & " -ErrorAction SilentlyContinue;" & _
+            "try { Expand-Archive -LiteralPath " & quotedZip & " -DestinationPath " & quotedDest & " -Force } " & _
+            "catch { $_ | Out-File -LiteralPath " & quotedLog & " -Encoding UTF8; exit 1 }"""
+
+  Dim exitCode As Long
+  exitCode = shell.Run(command, 0, True)
+  If exitCode <> 0 Then
+    Dim psErr As String
+    psErr = ""
+    If FileExists(logPath) Then
+      psErr = Trim$(ReadAllTextUTF8(logPath))
+    End If
+    If Len(psErr) = 0 Then psErr = "ExitCode=" & CStr(exitCode)
+    errOut = "PowerShell 展開でエラーが発生しました: " & psErr
+    GoTo Cleanup
+  End If
+
   ExtractZipWithPowerShell = True
-  Exit Function
+  GoTo Cleanup
+
 EH:
   errOut = "PowerShell 展開中に例外が発生しました: " & Err.Number & " " & Err.description
   ExtractZipWithPowerShell = False
+
+Cleanup:
+  DeleteFileSafe logPath
 End Function
 
 Private Function FolderHasContent(ByVal folderPath As String) As Boolean

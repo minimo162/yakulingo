@@ -52,6 +52,10 @@ Private Const USE_EMOJI As Boolean = True
 ' マッチング正規化
 Private Const NORMALIZE_WIDE_NARROW           As Boolean = True
 Private Const SHAPE_BOUNDS_EPSILON            As Double = 0.5
+Private Const EDGE_DRIVER_PORT_MIN            As Long = 20000
+Private Const EDGE_DRIVER_PORT_MAX            As Long = 25000
+Private Const EDGE_DRIVER_PORT_FALLBACK       As Long = 23081
+Private Const EDGE_DRIVER_MAX_PORT_ATTEMPTS   As Long = 5
 
 ' グローバル（互換のため残置）
 Private g_entries As Collection
@@ -717,7 +721,9 @@ Private Function LaunchEdgeDriverService(ByVal driverPath As String, _
                                          ByRef svcUrlOut As String, _
                                          ByRef pidOut As Long, _
                                          ByRef portOut As Long, _
-                                         ByRef errOut As String) As Boolean
+                                         ByRef errOut As String, _
+                                         Optional ByVal initialPort As Long = 0, _
+                                         Optional ByRef sharedAttempts As Object) As Boolean
   On Error GoTo EH
   svcUrlOut = ""
   pidOut = 0
@@ -730,9 +736,6 @@ Private Function LaunchEdgeDriverService(ByVal driverPath As String, _
   g_edgeSvcUrl = ""
   g_edgeSvcPid = 0
   g_edgeSvcLogPath = ""
-
-  Dim startedDriver As Boolean
-  startedDriver = False
 
   Dim baselinePids As Object
   Set baselinePids = CreateObject("Scripting.Dictionary")
@@ -752,149 +755,165 @@ Private Function LaunchEdgeDriverService(ByVal driverPath As String, _
     GoTo Fail
   End If
 
-  Dim logPath As String
-  logPath = CreateTempFile("edge_svc_", ".log")
-  If Len(logPath) = 0 Then
-    errOut = "EdgeDriver ログ用の一時ファイルを作成できませんでした。"
-    GoTo Fail
+  Dim attemptedPorts As Object
+  If sharedAttempts Is Nothing Then
+    Set attemptedPorts = CreateObject("Scripting.Dictionary")
+    If Not attemptedPorts Is Nothing Then
+      Set sharedAttempts = attemptedPorts
+    End If
+  Else
+    Set attemptedPorts = sharedAttempts
   End If
 
-  Dim cmd As String
-  cmd = """" & driverPath & """ --port=0 --allowed-origins=http://127.0.0.1 --allowed-origins=http://localhost --disable-build-check --verbose --log-path=""" & logPath & """"
-  Dim launchResult As Long
-  launchResult = sh.Run(cmd, 0, False)
-  If launchResult <> 0 Then
-    errOut = "msedgedriver.exe の起動に失敗しました。"
-    GoTo Fail
-  End If
-  g_edgeSvcLogPath = logPath
-
+  Dim attempt As Long
+  Dim candidatePort As Long
   Dim logBuffer As String
-  Dim detectedPort As Long
-  Dim startTick As Double
-  logBuffer = ""
-  detectedPort = 0
-  startTick = Timer
+  Dim lastError As String
+  Dim attemptError As String
+  Dim logPath As String
+  Dim statusResult As String
+  Dim preferredCandidate As Long
+  preferredCandidate = initialPort
+  lastError = ""
 
-  Do
-    DoEvents
-    Dim logText As String
-    logText = SafeReadAllText(logPath)
-    If Len(logText) > 0 Then
-      logBuffer = logText
-      Dim parsedPort As Long
-      parsedPort = DetectPortFromLogText(logBuffer)
-      If parsedPort > 0 Then
-        detectedPort = parsedPort
-        Exit Do
-      End If
+  For attempt = 1 To EDGE_DRIVER_MAX_PORT_ATTEMPTS
+    candidatePort = PickSafePort(attemptedPorts, preferredCandidate)
+    preferredCandidate = 0
+    If candidatePort = 0 Then
+      lastError = AppendError(lastError, "利用可能な待受ポートを確保できませんでした。")
+      Exit For
+    End If
+    attemptedPorts(CStr(candidatePort)) = True
+
+    logPath = CreateTempFile("edge_svc_", ".log")
+    If Len(logPath) = 0 Then
+      lastError = AppendError(lastError, "EdgeDriver ログ用の一時ファイルを作成できませんでした。")
+      Exit For
     End If
 
-    Dim currentPids As Collection
-    Set currentPids = ListProcessIdsByImageName("msedgedriver.exe")
-    Dim alive As Boolean
-    alive = False
-    If Not currentPids Is Nothing Then
-      Dim cp As Variant
-      For Each cp In currentPids
-        Dim pidKey As String
-        pidKey = Trim$(CStr(cp))
-        If Len(pidKey) > 0 Then
-          If g_edgeSvcPid = 0 Then
-            If Not baselinePids.Exists(pidKey) Then
-              g_edgeSvcPid = CLng(Val(pidKey))
-              baselinePids(pidKey) = True
+    Dim cmd As String
+    cmd = """" & driverPath & """ --host=127.0.0.1 --port=" & CStr(candidatePort) & _
+          " --allowed-origins=http://127.0.0.1 --allowed-origins=http://localhost" & _
+          " --disable-build-check --verbose --log-path=""" & logPath & """"
+
+    g_edgeSvcLogPath = logPath
+    Dim launchResult As Long
+    launchResult = sh.Run(cmd, 0, False)
+    If launchResult <> 0 Then
+      attemptError = "msedgedriver.exe の起動に失敗しました (ExitCode=" & CStr(launchResult) & ")."
+      GoTo AttemptFailure
+    End If
+
+    logBuffer = ""
+    Dim detectedPort As Long
+    Dim startTick As Double
+    detectedPort = candidatePort
+    startTick = Timer
+
+    Do
+      DoEvents
+      Dim logText As String
+      logText = SafeReadAllText(logPath)
+      If Len(logText) > 0 Then
+        logBuffer = logText
+        Dim parsedPort As Long
+        parsedPort = DetectPortFromLogText(logBuffer)
+        If parsedPort > 0 Then detectedPort = parsedPort
+      End If
+
+      Dim currentPids As Collection
+      Set currentPids = ListProcessIdsByImageName("msedgedriver.exe")
+      Dim alive As Boolean
+      alive = False
+      If Not currentPids Is Nothing Then
+        Dim cp As Variant
+        For Each cp In currentPids
+          Dim pidKey As String
+          pidKey = Trim$(CStr(cp))
+          If Len(pidKey) > 0 Then
+            If g_edgeSvcPid = 0 Then
+              If Not baselinePids.Exists(pidKey) Then
+                g_edgeSvcPid = CLng(Val(pidKey))
+                baselinePids(pidKey) = True
+              End If
+            End If
+            If g_edgeSvcPid > 0 Then
+              If CLng(Val(pidKey)) = g_edgeSvcPid Then alive = True
             End If
           End If
-          If g_edgeSvcPid > 0 Then
-            If CLng(Val(pidKey)) = g_edgeSvcPid Then alive = True
-          End If
-        End If
-      Next cp
-    End If
-    If g_edgeSvcPid > 0 And Not alive Then Exit Do
+        Next cp
+      End If
+      If g_edgeSvcPid > 0 And Not alive Then Exit Do
 
-    If SecondsElapsed(startTick) > 12# Then Exit Do
-    PauseWithDoEvents 0.2
-  Loop
+      If SecondsElapsed(startTick) > 12# Then Exit Do
+      PauseWithDoEvents 0.2
+    Loop
 
-  If detectedPort = 0 Then
-    Dim portDescriptions As Collection
-    Dim fallbackPort As Long
-    fallbackPort = DetectEdgeDriverListeningPorts(portDescriptions)
-    If fallbackPort > 0 Then
-      If g_edgeSvcPid > 0 And Not portDescriptions Is Nothing Then
-        Dim desc As Variant
-        For Each desc In portDescriptions
-          Dim descPid As String
-          descPid = ExtractPidFromPortDescription(CStr(desc))
-          If Len(descPid) > 0 Then
-            If CLng(Val(descPid)) = g_edgeSvcPid Then
-              Dim endpoint As String
-              endpoint = ExtractEndpointFromPortDescription(CStr(desc))
-              fallbackPort = ExtractPortFromEndpoint(endpoint)
+    If g_edgeSvcPid = 0 Then
+      Dim refreshedPids As Collection
+      Set refreshedPids = ListProcessIdsByImageName("msedgedriver.exe")
+      If Not refreshedPids Is Nothing Then
+        Dim rp As Variant
+        For Each rp In refreshedPids
+          Dim pidCandidate As String
+          pidCandidate = Trim$(CStr(rp))
+          If Len(pidCandidate) > 0 Then
+            If Not baselinePids.Exists(pidCandidate) Then
+              g_edgeSvcPid = CLng(Val(pidCandidate))
+              baselinePids(pidCandidate) = True
               Exit For
             End If
           End If
-        Next desc
+        Next rp
       End If
-      detectedPort = fallbackPort
     End If
-  End If
 
-  If g_edgeSvcPid = 0 Then
-    Dim refreshedPids As Collection
-    Set refreshedPids = ListProcessIdsByImageName("msedgedriver.exe")
-    If Not refreshedPids Is Nothing Then
-      Dim rp As Variant
-      For Each rp In refreshedPids
-        Dim pidCandidate As String
-        pidCandidate = Trim$(CStr(rp))
-        If Len(pidCandidate) > 0 Then
-          If Not baselinePids.Exists(pidCandidate) Then
-            g_edgeSvcPid = CLng(Val(pidCandidate))
-            Exit For
-          End If
-        End If
-      Next rp
+    Dim driverReady As Boolean
+    Dim checkStart As Double
+    driverReady = False
+    checkStart = Timer
+    statusResult = ""
+    Do
+      statusResult = TestDriverEndpoint(detectedPort)
+      If statusResult Like "HTTP 200 *" Then
+        driverReady = True
+        Exit Do
+      End If
+      If SecondsElapsed(checkStart) > 20# Then Exit Do
+      PauseWithDoEvents 0.4
+    Loop
+    If Not driverReady Then
+      attemptError = "EdgeDriver の /status が所定時間内に 200 を返しませんでした。"
+      If Len(statusResult) > 0 Then attemptError = attemptError & " 最終応答: " & statusResult
+      If Len(Trim$(logBuffer)) > 0 Then attemptError = AppendError(attemptError, Trim$(logBuffer))
+      GoTo AttemptFailure
     End If
-  End If
 
-  If detectedPort = 0 Then
-    errOut = "EdgeDriver の待受ポートを検出できませんでした。"
-    If Len(Trim$(logBuffer)) > 0 Then
-      errOut = AppendError(errOut, Trim$(logBuffer))
+    g_edgeSvcPort = detectedPort
+    g_edgeSvcUrl = "http://127.0.0.1:" & CStr(detectedPort) & "/"
+    svcUrlOut = g_edgeSvcUrl
+    pidOut = g_edgeSvcPid
+    portOut = g_edgeSvcPort
+
+    LaunchEdgeDriverService = True
+    Exit Function
+
+AttemptFailure:
+    StopEdgeDriverService
+    If Len(logPath) > 0 Then DeleteFileSafe(logPath)
+    g_edgeSvcLogPath = ""
+    If Len(attemptError) > 0 Then
+      lastError = AppendError(lastError, "Port " & CStr(candidatePort) & ": " & attemptError)
+    ElseIf Len(Trim$(logBuffer)) > 0 Then
+      lastError = AppendError(lastError, "Port " & CStr(candidatePort) & ": " & Trim$(logBuffer))
     End If
-    GoTo Fail
+    attemptError = ""
+    logPath = ""
+  Next attempt
+
+  If Len(Trim$(lastError)) > 0 Then
+    errOut = Trim$(lastError)
   End If
-
-  Dim driverReady As Boolean
-  Dim checkStart As Double
-  driverReady = False
-  checkStart = Timer
-  Do
-    Dim statusResult As String
-    statusResult = TestDriverEndpoint(detectedPort)
-    If statusResult Like "HTTP 200 *" Then
-      driverReady = True
-      Exit Do
-    End If
-    If SecondsElapsed(checkStart) > 15# Then Exit Do
-    PauseWithDoEvents 0.4
-  Loop
-  If Not driverReady Then
-    errOut = "EdgeDriver の /status が所定時間内に 200 を返しませんでした。"
-    GoTo Fail
-  End If
-
-  g_edgeSvcPort = detectedPort
-  g_edgeSvcUrl = "http://127.0.0.1:" & CStr(detectedPort) & "/"
-  svcUrlOut = g_edgeSvcUrl
-  pidOut = g_edgeSvcPid
-  portOut = g_edgeSvcPort
-
-  LaunchEdgeDriverService = True
-  Exit Function
 
 Fail:
   StopEdgeDriverService
@@ -964,7 +983,7 @@ Private Function TryAttachToEdgeDriverService(ByVal svcUrl As String, ByVal svcP
 
   Dim attemptIndex As Long
   Dim attemptErr As String
-  For attemptIndex = 1 To 3
+  For attemptIndex = 1 To 5
     attemptErr = ""
     connected = TryConnectToEdgeServiceCore(remoteDriver, svcUrl, svcPort, attemptErr, methodMissing)
     If Len(Trim$(attemptErr)) > 0 Then
@@ -989,7 +1008,7 @@ Private Function TryAttachToEdgeDriverService(ByVal svcUrl As String, ByVal svcP
     Exit Function
   End If
 
-  If Not WaitForWebDriverSession(remoteDriver, 10#) Then
+  If Not WaitForWebDriverSession(remoteDriver, 15#) Then
     errOut = AppendError(errOut, "EdgeDriver サービスへの接続に成功しましたが、セッションIDを取得できませんでした。")
     DisposeWebDriver remoteDriver
     Exit Function
@@ -1246,7 +1265,7 @@ Private Function WaitForWebDriverSession(ByVal driver As Object, ByVal timeoutSe
       End If
     End If
     If SecondsElapsed(startTick) >= timeoutSeconds Then Exit Do
-    PauseWithDoEvents 0.2
+    PauseWithDoEvents 0.3
   Loop
 End Function
 
@@ -1267,13 +1286,24 @@ Private Function TryStartDriver(ByVal progId As String, ByVal browserName As Str
   Dim lowerBrowser As String
   lowerBrowser = LCase$(Trim$(browserName))
   Dim remoteDriver As Object
+  Dim portAttempts As Object
+
+  If lowerBrowser = "edge" Then
+    On Error Resume Next
+    Set portAttempts = CreateObject("Scripting.Dictionary")
+    If Err.Number <> 0 Then
+      Set portAttempts = Nothing
+      Err.Clear
+    End If
+    On Error GoTo 0
+  End If
 
   If lowerBrowser = "edge" And Len(Trim$(driverPath)) > 0 Then
     Dim svcUrl As String
     Dim svcPid As Long
     Dim svcPort As Long
     Dim svcErr As String
-    If LaunchEdgeDriverService(driverPath, svcUrl, svcPid, svcPort, svcErr) Then
+    If LaunchEdgeDriverService(driverPath, svcUrl, svcPid, svcPort, svcErr, 0, portAttempts) Then
       Dim attachErr As String
       attachErr = ""
       If TryAttachToEdgeDriverService(svcUrl, svcPort, remoteDriver, attachErr) Then
@@ -1287,85 +1317,167 @@ Private Function TryStartDriver(ByVal progId As String, ByVal browserName As Str
       End If
       DisposeWebDriver remoteDriver
       StopEdgeDriverService
+      If Not skipProcessCleanup Then
+        KillProcessByImageName "msedgedriver.exe"
+      End If
     Else
       lastError = AppendError(lastError, svcErr)
     End If
   End If
 
-  On Error Resume Next
-  Set driverOut = CreateObject(progId)
-  If driverOut Is Nothing Then
-    lastError = AppendError(lastError, "ドライバー生成に失敗しました (" & progId & ").")
-    Err.Clear
-    GoTo Fail
-  End If
-
-  If Len(Trim$(driverPath)) > 0 Then
-    CallByName driverOut, "AddDriver", VbMethod, "msedgedriver.exe", driverPath
-    CallByName driverOut, "AddDriver", VbMethod, "MicrosoftEdge", driverPath
-  End If
-  CallByName driverOut, "AddArgument", VbMethod, "--allowed-origins=http://127.0.0.1"
-  CallByName driverOut, "AddArgument", VbMethod, "--allowed-origins=http://localhost"
-  CallByName driverOut, "AddArgument", VbMethod, "--disable-build-check"
-  CallByName driverOut, "AddArgument", VbMethod, "--verbose"
-  On Error GoTo 0
-  Err.Clear
-
-  On Error Resume Next
-  If lowerBrowser = "edge" Then
-    driverOut.browser = "edge"
-  End If
-  driverOut.Start IIf(lowerBrowser = "edge", "edge", browserName)
-  If Err.Number <> 0 Then
-    lastError = AppendError(lastError, "Selenium起動エラー(" & browserName & "): " & Err.Number & " " & Err.description)
-    Err.Clear
-    If lowerBrowser = "edge" Then
-      driverOut.Start "MicrosoftEdge"
-      If Err.Number <> 0 Then
-        lastError = AppendError(lastError, "Selenium起動エラー(" & browserName & "): " & Err.Number & " " & Err.description)
-        Err.Clear
-        GoTo Fail
-      End If
-    Else
-      GoTo Fail
-    End If
-  End If
-  On Error GoTo Fail
-
-  PauseWithDoEvents 0.6
-
+  Dim maxAttempts As Long
+  Dim attemptIndex As Long
+  Dim attemptPort As Long
+  Dim attemptError As String
+  Dim candidateDriver As Object
+  Dim startErrNum As Long
+  Dim startErrDesc As String
   Dim startTickWait As Double
+  Dim waitStep As Double
+  Dim maxWaitSeconds As Double
   Dim okSession As Boolean
-  startTickWait = Timer
-  Do
+
+  If lowerBrowser = "edge" Then
+    maxAttempts = EDGE_DRIVER_MAX_PORT_ATTEMPTS
+  Else
+    maxAttempts = 1
+  End If
+
+  For attemptIndex = 1 To maxAttempts
+    attemptError = ""
+    attemptPort = 0
+
+    If lowerBrowser = "edge" Then
+      If portAttempts Is Nothing Then
+        On Error Resume Next
+        Set portAttempts = CreateObject("Scripting.Dictionary")
+        Err.Clear
+        On Error GoTo 0
+      End If
+      attemptPort = PickSafePort(portAttempts)
+      If attemptPort = 0 Then
+        attemptError = "SeleniumBasic 用のポートを確保できませんでした。"
+        lastError = AppendError(lastError, attemptError)
+        Exit For
+      End If
+      On Error Resume Next
+      portAttempts(CStr(attemptPort)) = True
+      Err.Clear
+      On Error GoTo 0
+    End If
+
     On Error Resume Next
-    okSession = (Len(Trim$(CStr(driverOut.SessionId))) > 0)
+    Set candidateDriver = CreateObject(progId)
+    If candidateDriver Is Nothing Then
+      attemptError = "ドライバー生成に失敗しました (" & progId & ")."
+      Err.Clear
+      lastError = AppendError(lastError, attemptError)
+      Exit For
+    End If
     Err.Clear
-    On Error GoTo Fail
-    If okSession Then Exit Do
-    If SecondsElapsed(startTickWait) > 3 Then Exit Do
-    PauseWithDoEvents 0.2
-  Loop
-  If Not okSession Then
-    lastError = AppendError(lastError, "ブラウザセッションの初期化に失敗しました(" & browserName & ").")
-    GoTo Fail
-  End If
+    On Error GoTo 0
 
-  On Error Resume Next
-  driverOut.Get "about:blank"
-  If Err.Number <> 0 Then
-    lastError = AppendError(lastError, "ブラウザ起動直後に失敗しました(" & browserName & "): " & Err.Number & " " & Err.description)
+    If Len(Trim$(driverPath)) > 0 Then
+      On Error Resume Next
+      CallByName candidateDriver, "AddDriver", VbMethod, "msedgedriver.exe", driverPath
+      CallByName candidateDriver, "AddDriver", VbMethod, "MicrosoftEdge", driverPath
+      Err.Clear
+      On Error GoTo 0
+    End If
+
+    On Error Resume Next
+    CallByName candidateDriver, "AddArgument", VbMethod, "--allowed-origins=http://127.0.0.1"
+    CallByName candidateDriver, "AddArgument", VbMethod, "--allowed-origins=http://localhost"
+    CallByName candidateDriver, "AddArgument", VbMethod, "--disable-build-check"
+    CallByName candidateDriver, "AddArgument", VbMethod, "--verbose"
+    If attemptPort > 0 Then
+      CallByName candidateDriver, "AddArgument", VbMethod, "--host=127.0.0.1"
+      CallByName candidateDriver, "AddArgument", VbMethod, "--port=" & CStr(attemptPort)
+    End If
     Err.Clear
-    GoTo Fail
-  End If
+    On Error GoTo 0
 
-  Err.Clear
-  On Error GoTo 0
-  If lowerBrowser <> "edge" Or g_edgeSvcPort = 0 Then
-    RememberCopilotDiagPort 0
-  End If
-  TryStartDriver = True
-  Exit Function
+    On Error Resume Next
+    If lowerBrowser = "edge" Then
+      candidateDriver.browser = "edge"
+    End If
+    candidateDriver.Start IIf(lowerBrowser = "edge", "edge", browserName)
+    startErrNum = Err.Number
+    startErrDesc = Err.description
+    Err.Clear
+    If startErrNum <> 0 And lowerBrowser = "edge" Then
+      candidateDriver.Start "MicrosoftEdge"
+      startErrNum = Err.Number
+      startErrDesc = Err.description
+      Err.Clear
+    End If
+    On Error GoTo 0
+    If startErrNum <> 0 Then
+      attemptError = "Selenium起動エラー(" & browserName & "): " & startErrNum & " " & startErrDesc
+      GoTo AttemptFailure
+    End If
+
+    maxWaitSeconds = IIf(lowerBrowser = "edge", 15#, 3#)
+    waitStep = IIf(lowerBrowser = "edge", 0.3, 0.2)
+    startTickWait = Timer
+    okSession = False
+    Do
+      On Error Resume Next
+      okSession = (Len(Trim$(CStr(candidateDriver.SessionId))) > 0)
+      Err.Clear
+      On Error GoTo 0
+      If okSession Then Exit Do
+      If SecondsElapsed(startTickWait) > maxWaitSeconds Then Exit Do
+      PauseWithDoEvents waitStep
+    Loop
+    If Not okSession Then
+      attemptError = "ブラウザセッションの初期化に失敗しました(" & browserName & ")."
+      GoTo AttemptFailure
+    End If
+
+    On Error Resume Next
+    candidateDriver.Get "about:blank"
+    startErrNum = Err.Number
+    startErrDesc = Err.description
+    Err.Clear
+    On Error GoTo 0
+    If startErrNum <> 0 Then
+      attemptError = "ブラウザ起動直後に失敗しました(" & browserName & "): " & startErrNum & " " & startErrDesc
+      GoTo AttemptFailure
+    End If
+
+    If lowerBrowser = "edge" Then
+      RememberCopilotDiagPort attemptPort
+    Else
+      RememberCopilotDiagPort 0
+    End If
+    Set driverOut = candidateDriver
+    TryStartDriver = True
+    Exit Function
+
+AttemptFailure:
+    On Error Resume Next
+    If Not candidateDriver Is Nothing Then
+      candidateDriver.Quit
+    End If
+    Set candidateDriver = Nothing
+    Err.Clear
+    On Error GoTo 0
+    If lowerBrowser = "edge" And Not skipProcessCleanup Then
+      KillProcessByImageName "msedgedriver.exe"
+    End If
+    If Len(attemptError) > 0 Then
+      If attemptPort > 0 Then
+        lastError = AppendError(lastError, "Port " & CStr(attemptPort) & ": " & attemptError)
+      Else
+        lastError = AppendError(lastError, attemptError)
+      End If
+    End If
+    attemptError = ""
+    If lowerBrowser <> "edge" Then Exit For
+  Next attemptIndex
+
+  GoTo Fail
 
 Fail:
   On Error Resume Next
@@ -1606,6 +1718,97 @@ Private Function CollectPortDiagnostics(ByVal portNumber As Long) As String
   CollectPortDiagnostics = Trim$(report)
 End Function
 
+Private Function PickSafePort(Optional ByVal blacklist As Object, Optional ByVal preferredPort As Long = 0) As Long
+  Dim netstatOut As String
+  Dim netstatErr As String
+  Dim netstatExit As Long
+  Dim netstatReady As Boolean
+  Dim excludedOut As String
+  Dim excludedErr As String
+  Dim excludedExit As Long
+  Dim excludedReady As Boolean
+
+  On Error Resume Next
+  netstatReady = ExecuteCommand("netstat -ano -p tcp", netstatOut, netstatErr, 10, netstatExit)
+  If Err.Number <> 0 Then
+    netstatReady = False
+    Err.Clear
+  End If
+  excludedReady = ExecuteCommand("netsh int ipv4 show excludedportrange protocol=tcp", excludedOut, excludedErr, 10, excludedExit)
+  If Err.Number <> 0 Then
+    excludedReady = False
+    Err.Clear
+  End If
+  On Error GoTo 0
+
+  If PortCandidateAvailable(preferredPort, blacklist, netstatReady, netstatOut, excludedReady, excludedOut) Then
+    PickSafePort = preferredPort
+    Exit Function
+  End If
+
+  Dim span As Long
+  span = EDGE_DRIVER_PORT_MAX - EDGE_DRIVER_PORT_MIN + 1
+  If span <= 0 Then Exit Function
+
+  Randomize Timer
+  Dim offset As Long
+  offset = CLng(span * Rnd)
+
+  Dim idx As Long
+  For idx = 0 To span - 1
+    Dim candidate As Long
+    candidate = EDGE_DRIVER_PORT_MIN + ((offset + idx) Mod span)
+    If PortCandidateAvailable(candidate, blacklist, netstatReady, netstatOut, excludedReady, excludedOut) Then
+      PickSafePort = candidate
+      Exit Function
+    End If
+  Next idx
+
+  If PortCandidateAvailable(EDGE_DRIVER_PORT_FALLBACK, blacklist, netstatReady, netstatOut, excludedReady, excludedOut) Then
+    PickSafePort = EDGE_DRIVER_PORT_FALLBACK
+  End If
+End Function
+
+Private Function PortCandidateAvailable(ByVal portNumber As Long, ByVal blacklist As Object, ByVal netstatReady As Boolean, ByVal netstatOut As String, ByVal excludedReady As Boolean, ByVal excludedOut As String) As Boolean
+  If portNumber <= 0 Then Exit Function
+  If Not IsPortInCandidateRange(portNumber) Then Exit Function
+  If IsPortInBlacklist(blacklist, portNumber) Then Exit Function
+  If excludedReady Then
+    If Len(DetectExcludedRange(excludedOut, portNumber)) > 0 Then Exit Function
+  End If
+  If netstatReady Then
+    If Len(FindNetstatLine(netstatOut, portNumber)) > 0 Then Exit Function
+  End If
+  PortCandidateAvailable = True
+End Function
+
+Private Function IsPortInCandidateRange(ByVal portNumber As Long) As Boolean
+  IsPortInCandidateRange = (portNumber >= EDGE_DRIVER_PORT_MIN And portNumber <= EDGE_DRIVER_PORT_MAX)
+End Function
+
+Private Function IsPortInBlacklist(ByVal blacklist As Object, ByVal portNumber As Long) As Boolean
+  If blacklist Is Nothing Then Exit Function
+  Dim key As String
+  key = CStr(portNumber)
+  On Error Resume Next
+  Select Case TypeName(blacklist)
+    Case "Dictionary"
+      IsPortInBlacklist = blacklist.Exists(key)
+    Case "Collection"
+      Dim item As Variant
+      For Each item In blacklist
+        If CLng(Val(item)) = portNumber Then
+          IsPortInBlacklist = True
+          Exit For
+        End If
+      Next item
+    Case Else
+      IsPortInBlacklist = CBool(CallByName(blacklist, "Exists", VbMethod, key))
+  End Select
+  Err.Clear
+  On Error GoTo 0
+End Function
+
 Private Function ExecuteCommand(ByVal command As String, ByRef stdoutOut As String, ByRef stderrOut As String, Optional ByVal timeoutSeconds As Long = 10, Optional ByRef exitCodeOut As Long) As Boolean
   On Error GoTo EH
   Dim shell As Object
@@ -1622,14 +1825,16 @@ Private Function ExecuteCommand(ByVal command As String, ByRef stdoutOut As Stri
   Dim comspec As String
   comspec = Environ$("ComSpec")
   If Len(comspec) = 0 Then comspec = "cmd.exe"
-  cmdLine = """" & comspec & """ /C " & command & " 1>""" & stdoutPath & """ 2>""" & stderrPath & """"
+  cmdLine = """" & comspec & """ /C chcp 65001 >NUL & " & command & " 1>""" & stdoutPath & """ 2>""" & stderrPath & """"
 
   exitCodeOut = shell.Run(cmdLine, 0, True)
   stdoutOut = ReadAllTextUTF8(stdoutPath)
   stderrOut = ReadAllTextUTF8(stderrPath)
   ExecuteCommand = (exitCodeOut = 0)
   If Not ExecuteCommand Then
-    Err.Raise vbObjectError + 2101, "ExecuteCommand", "コマンド実行に失敗しました: " & command & " (ExitCode=" & exitCodeOut & ")"
+    If Len(Trim$(stderrOut)) = 0 Then
+      stderrOut = "コマンド実行に失敗しました (ExitCode=" & exitCodeOut & ")"
+    End If
   End If
 
 Cleanup:
@@ -2666,6 +2871,18 @@ Private Function TestDriverExecutable(ByVal driverPath As String) As String
     Else
       TestDriverExecutable = "成功 (出力なし)"
     End If
+  ElseIf exitCode = 1 Then
+    Dim warningText As String
+    warningText = "警告 (ExitCode=1): "
+    If Len(stdoutText) > 0 Then
+      warningText = warningText & stdoutText
+      If Len(stderrText) > 0 Then warningText = warningText & " / stderr: " & stderrText
+    ElseIf Len(stderrText) > 0 Then
+      warningText = warningText & stderrText
+    Else
+      warningText = warningText & "msedgedriver.exe --version が警告終了しました。"
+    End If
+    TestDriverExecutable = warningText
   Else
     If Len(stdoutText) > 0 Then
       Dim extra As String

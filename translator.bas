@@ -106,6 +106,8 @@ Private Declare Sub CopyMemory Lib "kernel32" Alias "RtlMoveMemory" (ByVal Desti
 #End If
 
 Private Const CP_UTF8 As Long = 65001
+Private Const CP_UTF16_LE As Long = 1200
+Private Const CP_UTF16_BE As Long = 1201
 Private Const CP_SHIFT_JIS As Long = 932
 Private Const CP_ACP As Long = 0
 
@@ -866,7 +868,6 @@ Private Function TryAttachToEdgeDriverService(ByVal svcUrl As String, ByVal svcP
   Next attemptIndex
 
   If methodMissing Then
-    errOut = AppendError(errOut, "SeleniumBasic のバージョンが Connect メソッドを提供していません。")
     DisposeWebDriver remoteDriver
     Exit Function
   End If
@@ -1287,7 +1288,7 @@ Fail:
     End If
   End If
   If InStr(1, errOut, "listening port", vbTextCompare) > 0 Then
-    errOut = errOut & vbCrLf & "Edgeドライバーがローカルポートを開くことに失敗しました。ウイルス対策ソフトやファイアウォール、アプリケーション制御で msedgedriver.exe の実行が阻害されていないか確認してください。"
+    errOut = errOut & vbCrLf & "Edgeドライバーがローカルポートを開くことに失敗しました。"
   End If
   TryStartDriver = False
   Exit Function
@@ -2563,7 +2564,12 @@ Private Function TestDriverExecutable(ByVal driverPath As String) As String
       TestDriverExecutable = "成功 (出力なし)"
     End If
   Else
-    If Len(stderrText) > 0 Then
+    If Len(stdoutText) > 0 Then
+      Dim extra As String
+      extra = ""
+      If Len(stderrText) > 0 Then extra = " / stderr: " & stderrText
+      TestDriverExecutable = "出力あり (ExitCode=" & CStr(exitCode) & "): " & stdoutText & extra
+    ElseIf Len(stderrText) > 0 Then
       TestDriverExecutable = "エラー: " & stderrText
     ElseIf errNumber <> 0 Then
       TestDriverExecutable = "実行失敗: " & errNumber & " " & errDesc
@@ -4422,6 +4428,18 @@ Private Function ReadAllTextUTF8(ByVal path As String) As String
     Exit Function
   End If
 
+  text = ReadAllTextWithCodePage(path, CP_UTF16_LE)
+  If Len(text) > 0 Then
+    ReadAllTextUTF8 = text
+    Exit Function
+  End If
+
+  text = ReadAllTextWithCodePage(path, CP_UTF16_BE)
+  If Len(text) > 0 Then
+    ReadAllTextUTF8 = text
+    Exit Function
+  End If
+
   text = ReadAllTextWithCodePage(path, CP_SHIFT_JIS)
   If Len(text) > 0 Then
     ReadAllTextUTF8 = text
@@ -4455,15 +4473,34 @@ Private Function ReadAllTextWithCodePage(ByVal path As String, ByVal codePage As
   byteCount = UBound(data) - startIdx + 1
   If byteCount <= 0 Then Exit Function
 
-  If codePage = CP_UTF8 Then
-    If byteCount >= 3 Then
-      If data(startIdx) = &HEF And data(startIdx + 1) = &HBB And data(startIdx + 2) = &HBF Then
-        startIdx = startIdx + 3
-        byteCount = byteCount - 3
-        If byteCount <= 0 Then Exit Function
+  Select Case codePage
+    Case CP_UTF8
+      If byteCount >= 3 Then
+        If data(startIdx) = &HEF And data(startIdx + 1) = &HBB And data(startIdx + 2) = &HBF Then
+          startIdx = startIdx + 3
+          byteCount = byteCount - 3
+          If byteCount <= 0 Then Exit Function
+        End If
       End If
-    End If
-  End If
+    Case CP_UTF16_LE
+      If byteCount >= 2 Then
+        If data(startIdx) = &HFF And data(startIdx + 1) = &HFE Then
+          startIdx = startIdx + 2
+          byteCount = byteCount - 2
+        End If
+      End If
+      If (byteCount And 1) = 1 Then byteCount = byteCount - 1
+      If byteCount <= 0 Then Exit Function
+    Case CP_UTF16_BE
+      If byteCount >= 2 Then
+        If data(startIdx) = &HFE And data(startIdx + 1) = &HFF Then
+          startIdx = startIdx + 2
+          byteCount = byteCount - 2
+        End If
+      End If
+      If (byteCount And 1) = 1 Then byteCount = byteCount - 1
+      If byteCount <= 0 Then Exit Function
+  End Select
 
   ReadAllTextWithCodePage = BytesToWideString(data, startIdx, byteCount, codePage)
   Exit Function

@@ -1421,6 +1421,9 @@ Private Function ProbeEdgeDriverListeningPort(ByVal driverPath As String, ByRef 
   On Error GoTo EH
   errOut = ""
 
+  Dim startedDriver As Boolean
+  startedDriver = False
+
   Dim baselinePids As Object
   Set baselinePids = CreateObject("Scripting.Dictionary")
   Dim existingPids As Collection

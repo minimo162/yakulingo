@@ -1848,7 +1848,7 @@ Private Function CollectCopilotDiagnostics() As String
   If Not hadEdgeDriver Then
     Dim ensurePath As String
     Dim ensureErr As String
-    If EnsureEdgeDriver(ensurePath, ensureErr) Then
+    If EnsureEdgeDriver(ensurePath, ensureErr, False) Then
       If Len(Trim$(ensurePath)) > 0 And FileExists(ensurePath) Then
         autoDownloaded = True
         autoDownloadPath = ensurePath
@@ -2399,7 +2399,7 @@ EH:
   EnsureBrowserDriver = False
 End Function
 
-Private Function EnsureEdgeDriver(ByRef driverPathOut As String, Optional ByRef errorOut As String) As Boolean
+Private Function EnsureEdgeDriver(ByRef driverPathOut As String, Optional ByRef errorOut As String, Optional ByVal allowPowerShell As Boolean = True) As Boolean
   errorOut = ""
   Dim storageRoot As String
   storageRoot = CombinePath(DriverStorageRoot(), "edge")
@@ -2494,7 +2494,7 @@ Private Function EnsureEdgeDriver(ByRef driverPathOut As String, Optional ByRef 
 
   ClearFolderContents storageRoot
   Dim extractErr As String
-  If Not ExtractZipFile(tempZip, storageRoot, extractErr) Then
+  If Not ExtractZipFile(tempZip, storageRoot, extractErr, allowPowerShell) Then
     SetStatus "Edgeドライバーの展開に失敗しました。"
     DeleteFileSafe tempZip
     If Len(Trim$(extractErr)) > 0 Then
@@ -2886,7 +2886,7 @@ EH:
   Set CreateHttpRequest = Nothing
 End Function
 
-Private Function ExtractZipFile(ByVal zipPath As String, ByVal targetDir As String, Optional ByRef errorOut As String) As Boolean
+Private Function ExtractZipFile(ByVal zipPath As String, ByVal targetDir As String, Optional ByRef errorOut As String, Optional ByVal allowPowerShell As Boolean = True) As Boolean
   errorOut = ""
   If Len(zipPath) = 0 Or Len(targetDir) = 0 Then
     errorOut = "ZIP ファイルまたは展開先のパスが空です。"
@@ -2912,10 +2912,12 @@ Private Function ExtractZipFile(ByVal zipPath As String, ByVal targetDir As Stri
 
   Dim psErr As String
   psErr = ""
-  If ExtractZipWithPowerShell(zipPath, targetDir, psErr) Then
-    If FolderHasContent(targetDir) Then
-      ExtractZipFile = True
-      Exit Function
+  If allowPowerShell Then
+    If ExtractZipWithPowerShell(zipPath, targetDir, psErr) Then
+      If FolderHasContent(targetDir) Then
+        ExtractZipFile = True
+        Exit Function
+      End If
     End If
   End If
 

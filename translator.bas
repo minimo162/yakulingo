@@ -14,8 +14,10 @@ Option Explicit
 Private Const HELPER_SHEET As String = "ECM_Helper"
 Private Const COL_WB_PATH As String = "B5"
 Private Const COL_CSV_PATH As String = "B9"
-Private Const CELL_STATUS  As String = "B16"
-Private Const COPILOT_DIAG_START_ROW As Long = 19
+Private Const CELL_IGNORE_SPACES As String = "B12"
+Private Const CELL_FORCE_FONT As String = "B13"
+Private Const CELL_STATUS  As String = "B20"
+Private Const COPILOT_DIAG_START_ROW As Long = 23
 Private Const COPILOT_DIAG_MAX_LINES As Long = 200
 
 ' 範囲開始（A1）
@@ -23,6 +25,9 @@ Private Const RANGE_START_ROW As Long = 1
 Private Const RANGE_START_COL As Long = 1
 Private Const TRANSLATION_MAX_ROWS As Long = 1000
 Private Const TRANSLATION_MAX_COLS As Long = 1000
+Private Const DEFAULT_IGNORE_SPACES As Boolean = True
+Private Const DEFAULT_FORCE_FONT As Boolean = False
+Private Const FONT_FALLBACK As String = "Yu Gothic UI"
 
 ' 配色
 Private Const COLOR_PRIMARY       As Long = &HE5464F
@@ -45,7 +50,6 @@ Private Const MIN_IPHLPAPI_VERSION_FOR_NETSH As String = "10.0.16299.0"
 Private Const USE_EMOJI As Boolean = True
 
 ' マッチング正規化
-Private Const IGNORE_ALL_SPACES_WHEN_MATCHING As Boolean = True
 Private Const NORMALIZE_WIDE_NARROW           As Boolean = True
 Private Const SHAPE_BOUNDS_EPSILON            As Double = 0.5
 
@@ -57,6 +61,7 @@ Private g_dictSize As Double
 Private g_dictHash As String
 Private g_lastCsvError As String
 Private g_lastCsvStage As String
+Private g_lastCsvWarnings As String
 Private g_copilotDriver As Object
 Private g_lastCopilotDiagPort As Long
 ' === EdgeDriver 自前サービス管理 ===
@@ -64,6 +69,9 @@ Private g_edgeSvcPid   As Long
 Private g_edgeSvcPort  As Long
 Private g_edgeSvcUrl   As String
 Private g_edgeSvcLogPath As String
+Private g_optionIgnoreSpaces As Boolean
+Private g_optionForceFont As Boolean
+Private g_optionsLoaded As Boolean
 
 #If VBA7 Then
 Private Declare PtrSafe Function MultiByteToWideChar Lib "kernel32" _
@@ -165,11 +173,30 @@ Public Sub ECM_Setup()
     .WrapText = True
   End With
 
-  ws.Range("A12").value = "アクション"
-  ws.Range("A12").Font.Bold = True
-  ws.Range("A15").value = "ステータス"
+  ws.Range("A11").value = "オプション"
+  ws.Range("A11").Font.Bold = True
+  ws.Range("A12").value = "スペース無視（辞書キー一致時）"
+  With ws.Range(CELL_IGNORE_SPACES)
+    .value = DEFAULT_IGNORE_SPACES
+    .HorizontalAlignment = xlLeft
+    .VerticalAlignment = xlTop
+    .WrapText = False
+    .NumberFormat = "General"
+  End With
+  ws.Range("A13").value = "フォント強制（Yu Gothic UI）"
+  With ws.Range(CELL_FORCE_FONT)
+    .value = DEFAULT_FORCE_FONT
+    .HorizontalAlignment = xlLeft
+    .VerticalAlignment = xlTop
+    .WrapText = False
+    .NumberFormat = "General"
+  End With
+
+  ws.Range("A15").value = "アクション"
   ws.Range("A15").Font.Bold = True
-  ws.Range("B16:F16").Merge
+  ws.Range("A19").value = "ステータス"
+  ws.Range("A19").Font.Bold = True
+  ws.Range("B20:F20").Merge
   With ws.Range(CELL_STATUS)
     .value = "Ready"
     .HorizontalAlignment = xlLeft
@@ -177,16 +204,16 @@ Public Sub ECM_Setup()
     .WrapText = True
   End With
 
-  ws.Range("A18").value = "Copilot診断レポート"
-  ws.Range("A18").Font.Bold = True
+  ws.Range("A22").value = "Copilot診断レポート"
+  ws.Range("A22").Font.Bold = True
   ClearCopilotDiagnosticsOutput ws
 
   DeleteButtons ws, "btnECM_*"
   AddButton ws, "btnECM_BrowseWb", LabelWithIcon("folder", "ターゲット選択"), ws.Range("B6"), 220, "ECM_BrowseWorkbook", True, "翻訳先となるExcelブックを選択します。"
   AddButton ws, "btnECM_BrowseCsv", LabelWithIcon("index", "辞書CSV選択"), ws.Range("B10"), 220, "ECM_BrowseCSV", True, "翻訳辞書となるCSVファイルを選択します。"
-  AddButton ws, "btnECM_Apply", LabelWithIcon("check", "辞書翻訳"), ws.Range("B13"), 280, "ECM_ApplyTranslations", True, "辞書を使ってターゲットブックを翻訳します。"
-  AddButton ws, "btnECM_Copilot", LabelWithIcon("robot", "copilot翻訳"), ws.Range("B14"), 280, "ECM_OpenCopilot", False, "Copilot for Microsoft 365 に接続し、ブラウザで翻訳を行います。"
-  AddButton ws, "btnECM_DiagnoseCopilot", LabelWithIcon("info", "Copilot診断"), ws.Range("B17"), 260, "ECM_RunCopilotDiagnostics", False, "Copilot ブラウザ起動トラブルの診断を実行します。"
+  AddButton ws, "btnECM_Apply", LabelWithIcon("check", "辞書翻訳"), ws.Range("B16"), 280, "ECM_ApplyTranslations", True, "辞書を使ってターゲットブックを翻訳します。"
+  AddButton ws, "btnECM_Copilot", LabelWithIcon("robot", "copilot翻訳"), ws.Range("B17"), 280, "ECM_OpenCopilot", False, "Copilot for Microsoft 365 に接続し、ブラウザで翻訳を行います。"
+  AddButton ws, "btnECM_DiagnoseCopilot", LabelWithIcon("info", "Copilot診断"), ws.Range("B18"), 260, "ECM_RunCopilotDiagnostics", False, "Copilot ブラウザ起動トラブルの診断を実行します。"
 
   With ws
     .Columns("A").ColumnWidth = 18
@@ -204,18 +231,24 @@ Public Sub ECM_Setup()
     .Rows(8).RowHeight = 20
     .Rows(9).RowHeight = 44
     .Rows(10).RowHeight = 34
-    .Rows(11).RowHeight = 12
-    .Rows(12).RowHeight = 20
-    .Rows(13).RowHeight = 38
-    .Rows(14).RowHeight = 38
+    .Rows(11).RowHeight = 20
+    .Rows(12).RowHeight = 24
+    .Rows(13).RowHeight = 24
+    .Rows(14).RowHeight = 12
     .Rows(15).RowHeight = 20
-    .Rows(16).RowHeight = 36
-    .Rows(17).RowHeight = 32
-    .Rows(18).RowHeight = 20
+    .Rows(16).RowHeight = 38
+    .Rows(17).RowHeight = 38
+    .Rows(18).RowHeight = 38
+    .Rows(19).RowHeight = 20
+    .Rows(20).RowHeight = 36
+    .Rows(21).RowHeight = 12
+    .Rows(22).RowHeight = 20
   End With
 
   Application.ScreenUpdating = True
   Application.DisplayAlerts = True
+
+  g_optionsLoaded = False
 
   MsgBox "翻訳パネルを準備しました。ターゲットブックと辞書CSVを確認してから「辞書翻訳」を実行するか、「copilot翻訳」でCopilotを開いてください。", vbInformation
 End Sub
@@ -286,6 +319,70 @@ Private Sub AddButton(ws As Worksheet, _
   End With
 End Sub
 
+Private Sub RefreshRuntimeOptions(Optional ByVal forceReload As Boolean = False)
+  If g_optionsLoaded And Not forceReload Then Exit Sub
+  g_optionIgnoreSpaces = ReadHelperBoolean(CELL_IGNORE_SPACES, DEFAULT_IGNORE_SPACES)
+  g_optionForceFont = ReadHelperBoolean(CELL_FORCE_FONT, DEFAULT_FORCE_FONT)
+  g_optionsLoaded = True
+End Sub
+
+Private Function ReadHelperBoolean(ByVal address As String, ByVal defaultValue As Boolean) As Boolean
+  On Error GoTo EH
+  Dim ws As Worksheet
+  Set ws = ThisWorkbook.Worksheets(HELPER_SHEET)
+  ReadHelperBoolean = EvaluateBooleanOption(ws.Range(address).value, defaultValue)
+  Exit Function
+EH:
+  ReadHelperBoolean = defaultValue
+End Function
+
+Private Function EvaluateBooleanOption(ByVal value As Variant, ByVal defaultValue As Boolean) As Boolean
+  Select Case VarType(value)
+    Case vbBoolean
+      EvaluateBooleanOption = value
+    Case vbByte, vbInteger, vbLong, vbSingle, vbDouble, vbCurrency, vbDecimal
+      EvaluateBooleanOption = (CDbl(value) <> 0)
+    Case vbString
+      Dim txt As String
+      txt = LCase$(Trim$(CStr(value)))
+      Select Case txt
+        Case "true", "1", "yes", "y", "on"
+          EvaluateBooleanOption = True
+        Case "false", "0", "no", "n", "off"
+          EvaluateBooleanOption = False
+        Case Else
+          EvaluateBooleanOption = defaultValue
+      End Select
+    Case Else
+      EvaluateBooleanOption = defaultValue
+  End Select
+End Function
+
+Private Function ShouldIgnoreSpaces() As Boolean
+  If Not g_optionsLoaded Then RefreshRuntimeOptions
+  ShouldIgnoreSpaces = g_optionIgnoreSpaces
+End Function
+
+Private Function ShouldForceFont() As Boolean
+  If Not g_optionsLoaded Then RefreshRuntimeOptions
+  ShouldForceFont = g_optionForceFont
+End Function
+
+Private Sub MaybeForceCellFont(ByVal rng As Range, ByVal forceFont As Boolean)
+  If Not forceFont Then Exit Sub
+  On Error Resume Next
+  rng.Font.Name = FONT_FALLBACK
+  On Error GoTo 0
+End Sub
+
+Private Sub MaybeForceShapeFont(ByVal shp As Shape, ByVal forceFont As Boolean)
+  If Not forceFont Then Exit Sub
+  On Error Resume Next
+  shp.TextFrame2.TextRange.Font.Name = FONT_FALLBACK
+  shp.TextFrame.Characters.Font.Name = FONT_FALLBACK
+  On Error GoTo 0
+End Sub
+
 '========================
 '     ファイル選択/OPEN
 '========================
@@ -327,6 +424,7 @@ Public Sub ECM_ApplyTranslations()
     Exit Sub
   End If
 
+  RefreshRuntimeOptions True
   SetStatus "辞書を読み込み中..."
   Dim entries As Collection
   Set entries = EnsureDictionaryLoaded(csvPath)
@@ -338,7 +436,17 @@ Public Sub ECM_ApplyTranslations()
     MsgBox "辞書が読み込めませんでした（空か、形式不正）。" & detailMsg, vbExclamation
     Exit Sub
   End If
-  SetStatus "辞書読み込み完了: " & entries.Count & " 件"
+  Dim loadMsg As String
+  loadMsg = "辞書読み込み完了: " & entries.Count & " 件"
+  Dim warnMsg As String
+  warnMsg = LastCsvWarnings()
+  If Len(warnMsg) > 0 Then
+    loadMsg = loadMsg & vbCrLf & warnMsg
+  End If
+  SetStatus loadMsg
+  If Len(warnMsg) > 0 Then
+    MsgBox "辞書の検証で警告が検出されました。" & vbCrLf & warnMsg, vbExclamation, "辞書警告"
+  End If
 
   Dim targets As New Collection
   Dim ws As Worksheet
@@ -618,7 +726,6 @@ Private Function LaunchEdgeDriverService(ByVal driverPath As String, _
   LaunchEdgeDriverService = False
 
   StopEdgeDriverService
-  KillProcessByImageName "msedgedriver.exe"
   g_edgeSvcPort = 0
   g_edgeSvcUrl = ""
   g_edgeSvcPid = 0
@@ -653,7 +760,7 @@ Private Function LaunchEdgeDriverService(ByVal driverPath As String, _
   End If
 
   Dim cmd As String
-  cmd = """" & driverPath & """ --port=0 --allowed-origins=* --disable-build-check --verbose --log-path=""" & logPath & """"
+  cmd = """" & driverPath & """ --port=0 --allowed-origins=http://127.0.0.1 --allowed-origins=http://localhost --disable-build-check --verbose --log-path=""" & logPath & """"
   Dim launchResult As Long
   launchResult = sh.Run(cmd, 0, False)
   If launchResult <> 0 Then
@@ -1185,11 +1292,6 @@ Private Function TryStartDriver(ByVal progId As String, ByVal browserName As Str
     End If
   End If
 
-  If Not skipProcessCleanup Then
-    KillProcessByImageName "msedgedriver.exe"
-    KillProcessByImageName "chromedriver.exe"
-  End If
-
   On Error Resume Next
   Set driverOut = CreateObject(progId)
   If driverOut Is Nothing Then
@@ -1202,7 +1304,8 @@ Private Function TryStartDriver(ByVal progId As String, ByVal browserName As Str
     CallByName driverOut, "AddDriver", VbMethod, "msedgedriver.exe", driverPath
     CallByName driverOut, "AddDriver", VbMethod, "MicrosoftEdge", driverPath
   End If
-  CallByName driverOut, "AddArgument", VbMethod, "--allowed-origins=*"
+  CallByName driverOut, "AddArgument", VbMethod, "--allowed-origins=http://127.0.0.1"
+  CallByName driverOut, "AddArgument", VbMethod, "--allowed-origins=http://localhost"
   CallByName driverOut, "AddArgument", VbMethod, "--disable-build-check"
   CallByName driverOut, "AddArgument", VbMethod, "--verbose"
   On Error GoTo 0
@@ -3921,39 +4024,73 @@ Private Function GetTargetWorkbook(ByVal pathIn As String) As Workbook
 End Function
 
 Private Function GetTextCellsRange(ws As Worksheet) As Range
-  Dim baseRng As Range, visRng As Range, extra As Range, targetRng As Range, textRng As Range
   Dim startRow As Long: startRow = RANGE_START_ROW
   Dim startCol As Long: startCol = RANGE_START_COL
   Dim endRow As Long: endRow = startRow + TRANSLATION_MAX_ROWS - 1
   Dim endCol As Long: endCol = startCol + TRANSLATION_MAX_COLS - 1
   If endRow > ws.Rows.Count Then endRow = ws.Rows.Count
   If endCol > ws.Columns.Count Then endCol = ws.Columns.Count
+
+  Dim baseRng As Range
   Set baseRng = ws.Range(ws.Cells(startRow, startCol), ws.Cells(endRow, endCol))
+
+  Dim visRng As Range
   On Error Resume Next
   Set visRng = baseRng.SpecialCells(xlCellTypeVisible)
+  On Error GoTo 0
   If visRng Is Nothing Then Set visRng = baseRng
 
+  Dim constTxt As Range, formulaTxt As Range
+  On Error Resume Next
+  Set constTxt = visRng.SpecialCells(xlCellTypeConstants, xlTextValues)
+  Set formulaTxt = visRng.SpecialCells(xlCellTypeFormulas, xlTextValues)
+  On Error GoTo 0
+
+  Dim combined As Range
+  If constTxt Is Nothing And formulaTxt Is Nothing Then
+    Set combined = visRng
+  ElseIf constTxt Is Nothing Then
+    Set combined = formulaTxt
+  ElseIf formulaTxt Is Nothing Then
+    Set combined = constTxt
+  Else
+    On Error Resume Next
+    Set combined = Union(constTxt, formulaTxt)
+    If Err.Number <> 0 Then
+      Err.Clear
+      Set combined = constTxt
+    End If
+    On Error GoTo 0
+  End If
+
+  If combined Is Nothing Then
+    Set GetTextCellsRange = visRng
+    Exit Function
+  End If
+
+  Dim extra As Range
   Dim cell As Range
-  For Each cell In visRng
+  For Each cell In combined.Cells
     If cell.MergeCells Then
+      Dim topLeft As Range
+      Set topLeft = cell.MergeArea.Cells(1, 1)
       If extra Is Nothing Then
-        Set extra = cell.MergeArea.Cells(1, 1)
+        Set extra = topLeft
       Else
-        Set extra = Union(extra, cell.MergeArea.Cells(1, 1))
+        On Error Resume Next
+        Set extra = Union(extra, topLeft)
+        On Error GoTo 0
       End If
     End If
   Next cell
 
-  If extra Is Nothing Then
-    Set targetRng = visRng
-  Else
-    Set targetRng = Union(visRng, extra)
+  If Not extra Is Nothing Then
+    On Error Resume Next
+    Set combined = Union(combined, extra)
+    On Error GoTo 0
   End If
 
-  Set textRng = targetRng.SpecialCells(xlCellTypeConstants, xlTextValues)
-  On Error GoTo 0
-  If textRng Is Nothing Then Set textRng = targetRng
-  Set GetTextCellsRange = textRng
+  Set GetTextCellsRange = combined
 End Function
 
 Private Function SheetProtected(ws As Worksheet) As Boolean
@@ -3970,68 +4107,145 @@ Private Function IsInternalSheet(ByVal ws As Worksheet) As Boolean
   End If
 End Function
 
-' 適用（戻り値: 変更セル/図形数）
 Private Function ApplyToSheet(ws As Worksheet, entries As Collection) As Long
-  Dim textRng As Range: Set textRng = GetTextCellsRange(ws)
-  On Error Resume Next
-  If Not textRng Is Nothing Then textRng.Font.Name = "Arial"
-  On Error GoTo 0
+  ApplyToSheet = ApplyToSheet_Fast(ws, entries)
+End Function
+
+' 適用（戻り値: 変更セル/図形数）
+Private Function ApplyToSheet_Fast(ws As Worksheet, entries As Collection) As Long
+  RefreshRuntimeOptions
+  Dim forceFont As Boolean: forceFont = ShouldForceFont()
+
   Dim idx As Object: Set idx = BuildIndex(entries)
+  Dim changed As Long: changed = 0
+
+  Dim startRow As Long: startRow = RANGE_START_ROW
+  Dim startCol As Long: startCol = RANGE_START_COL
+  Dim endRow As Long: endRow = WorksheetFunction.Min(ws.Rows.Count, startRow + TRANSLATION_MAX_ROWS - 1)
+  Dim endCol As Long: endCol = WorksheetFunction.Min(ws.Columns.Count, startCol + TRANSLATION_MAX_COLS - 1)
+  Dim area As Range
+  Set area = ws.Range(ws.Cells(startRow, startCol), ws.Cells(endRow, endCol))
+  If area Is Nothing Then
+    ApplyToSheet_Fast = 0
+    Exit Function
+  End If
+
+  Dim grid As Variant
+  Dim singleCell As Boolean
+  singleCell = (area.Cells.Count = 1)
+  If singleCell Then
+    ReDim grid(1 To 1, 1 To 1)
+    grid(1, 1) = area.Value2
+  Else
+    grid = area.Value2
+    If Not IsArray(grid) Then
+      ReDim grid(1 To 1, 1 To 1)
+      grid(1, 1) = area.Value2
+      singleCell = True
+    End If
+  End If
+
+  Dim rowsCount As Long: rowsCount = UBound(grid, 1)
+  Dim colsCount As Long: colsCount = UBound(grid, 2)
+  Dim styleTargets As Object: Set styleTargets = CreateObject("Scripting.Dictionary")
+  styleTargets.CompareMode = vbTextCompare
   Dim processedMerges As Object: Set processedMerges = CreateObject("Scripting.Dictionary")
   processedMerges.CompareMode = vbTextCompare
-  Dim cell As Range, key As String, changed As Long, entry As Object
-  Dim targetCell As Range, targetRange As Range, mergeKey As String
-  Dim total As Long
-  If textRng Is Nothing Then
-    total = 0
-  Else
-    total = textRng.Cells.Count
-  End If
-  Dim i As Long: i = 0
 
-  If Not textRng Is Nothing Then
-    For Each cell In textRng.Cells
-      i = i + 1
-      If (i Mod 200) = 0 Then Application.StatusBar = "Applying " & ws.Name & "... (" & i & "/" & total & ")"
-      Set targetRange = cell
-      Set targetCell = cell
-      If cell.MergeCells Then
-        Set targetRange = cell.MergeArea
-        Set targetCell = targetRange.Cells(1, 1)
-        mergeKey = targetRange.Address(False, False)
+  Dim totalCells As Long: totalCells = rowsCount * colsCount
+  Dim processed As Long: processed = 0
+
+  Dim r As Long, c As Long
+  For r = 1 To rowsCount
+    For c = 1 To colsCount
+      processed = processed + 1
+      If totalCells >= 200 And (processed Mod 200) = 0 Then
+        Application.StatusBar = "Applying " & ws.Name & "... (" & processed & "/" & totalCells & ")"
+      End If
+
+      Dim currentCell As Range
+      Set currentCell = area.Cells(r, c)
+      If currentCell.EntireRow.Hidden Or currentCell.EntireColumn.Hidden Then GoTo NextCell
+
+      Dim mergeArea As Range
+      Dim mergeKey As String
+      mergeKey = currentCell.Address(False, False)
+      If currentCell.MergeCells Then
+        Set mergeArea = currentCell.MergeArea
+        Dim topLeft As Range
+        Set topLeft = mergeArea.Cells(1, 1)
+        If currentCell.Address(False, False) <> topLeft.Address(False, False) Then GoTo NextCell
+        mergeKey = topLeft.Address(False, False)
         If processedMerges.Exists(mergeKey) Then GoTo NextCell
         processedMerges.Add mergeKey, True
       End If
-      If VarType(targetCell.Value2) = vbString Then
-        key = KeyFor(CStr(targetCell.Value2))
+
+      Dim currentValue As Variant
+      currentValue = grid(r, c)
+      If VarType(currentValue) = vbString Then
+        Dim key As String
+        key = KeyFor(CStr(currentValue))
         If Len(key) > 0 And idx.Exists(key) Then
+          Dim entry As Object
           Set entry = idx.item(key)
-          If CStr(targetCell.Value2) <> CStr(entry.item("target")) Then
-            targetRange.Value2 = entry.item("target")
-            ApplyStyleIfAny targetRange, entry
-            targetRange.Font.Name = "Arial"
+          Dim targetText As String
+          targetText = CStr(entry.item("target"))
+          If CStr(currentValue) <> targetText Then
+            grid(r, c) = targetText
+            If Not mergeArea Is Nothing Then
+              Dim mergeCell As Range
+              For Each mergeCell In mergeArea.Cells
+                Dim rr As Long: rr = mergeCell.Row - startRow + 1
+                Dim cc As Long: cc = mergeCell.Column - startCol + 1
+                If rr >= 1 And rr <= rowsCount And cc >= 1 And cc <= colsCount Then
+                  grid(rr, cc) = targetText
+                End If
+              Next mergeCell
+            End If
             changed = changed + 1
+            styleTargets(mergeKey) = key
           End If
         End If
       End If
 NextCell:
-    Next
+    Next c
+  Next r
+
+  If singleCell Then
+    area.Value2 = grid(1, 1)
+  Else
+    area.Value2 = grid
   End If
 
-' 図形の翻訳
-  Dim rangeEndRow As Long: rangeEndRow = RANGE_START_ROW + TRANSLATION_MAX_ROWS - 1
-  Dim rangeEndCol As Long: rangeEndCol = RANGE_START_COL + TRANSLATION_MAX_COLS - 1
-  If rangeEndRow > ws.Rows.Count Then rangeEndRow = ws.Rows.Count
-  If rangeEndCol > ws.Columns.Count Then rangeEndCol = ws.Columns.Count
+  Dim styleKey As Variant
+  For Each styleKey In styleTargets.Keys
+    Dim styleCell As Range
+    Set styleCell = ws.Range(CStr(styleKey))
+    Dim styleRange As Range
+    Set styleRange = styleCell
+    If styleCell.MergeCells Then Set styleRange = styleCell.MergeArea
+    Dim entryKey As String
+    entryKey = CStr(styleTargets(styleKey))
+    If idx.Exists(entryKey) Then
+      ApplyStyleIfAny styleRange, idx.item(entryKey), forceFont
+    ElseIf forceFont Then
+      MaybeForceCellFont styleRange, forceFont
+    End If
+  Next styleKey
+
+  Dim rangeEndRow As Long: rangeEndRow = endRow
+  Dim rangeEndCol As Long: rangeEndCol = endCol
   Dim targetRect As Range
-  Set targetRect = ws.Range(ws.Cells(RANGE_START_ROW, RANGE_START_COL), ws.Cells(rangeEndRow, rangeEndCol))
+  Set targetRect = ws.Range(ws.Cells(startRow, startCol), ws.Cells(rangeEndRow, rangeEndCol))
 
   Dim shapesInScope As New Collection, shp As Shape
   CollectTextShapes ws.Shapes, targetRect, shapesInScope
 
+  Dim key As String
+  Dim entry As Object
   For Each shp In shapesInScope
-    ForceShapeFontArial shp
-    Dim sTxt As String: sTxt = GetShapeText(shp)
+    Dim sTxt As String
+    sTxt = GetShapeText(shp)
     If Len(sTxt) > 0 Then
       key = KeyFor(sTxt)
       If Len(key) > 0 And idx.Exists(key) Then
@@ -4039,19 +4253,24 @@ NextCell:
         Dim tgt As String: tgt = CStr(entry.item("target"))
         If sTxt <> tgt Then
           SetShapeText shp, tgt
-          ApplyShapeStyleIfAny shp, entry
-          ForceShapeFontArial shp
+          ApplyShapeStyleIfAny shp, entry, forceFont
           changed = changed + 1
+        ElseIf forceFont Then
+          ApplyShapeStyleIfAny shp, entry, forceFont
         End If
+      ElseIf forceFont Then
+        MaybeForceShapeFont shp, forceFont
       End If
+    ElseIf forceFont Then
+      MaybeForceShapeFont shp, forceFont
     End If
   Next
 
   Application.StatusBar = False
-  ApplyToSheet = changed
+  ApplyToSheet_Fast = changed
 End Function
 
-Private Sub ApplyStyleIfAny(ByVal cell As Range, ByVal entry As Object)
+Private Sub ApplyStyleIfAny(ByVal cell As Range, ByVal entry As Object, ByVal forceFont As Boolean)
   On Error Resume Next
   Dim fn As String: fn = entry.item("font_name") & ""
   If Len(fn) > 0 Then cell.Font.Name = fn
@@ -4063,7 +4282,9 @@ Private Sub ApplyStyleIfAny(ByVal cell As Range, ByVal entry As Object)
 
   Dim b As Variant: b = entry.item("bold")
   If Not IsEmpty(b) And Len(Trim$(b & "")) > 0 Then
-    cell.Font.Bold = (UCase$(CStr(b)) = "1" Or UCase$(CStr(b)) = "TRUE")
+    Dim boldToken As String
+    boldToken = LCase$(Trim$(CStr(b)))
+    cell.Font.Bold = (boldToken = "1" Or boldToken = "true" Or boldToken = "yes" Or boldToken = "y")
   End If
 
   Dim al As String: al = LCase$(Trim$(entry.item("align") & ""))
@@ -4073,6 +4294,7 @@ Private Sub ApplyStyleIfAny(ByVal cell As Range, ByVal entry As Object)
     Case "right":  cell.HorizontalAlignment = xlHAlignRight
   End Select
   On Error GoTo 0
+  MaybeForceCellFont cell, forceFont
 End Sub
 
 '========================
@@ -4159,7 +4381,7 @@ Private Sub SetShapeText(ByVal shp As Shape, ByVal newText As String)
   On Error GoTo 0
 End Sub
 
-Private Sub ApplyShapeStyleIfAny(ByVal shp As Shape, ByVal entry As Object)
+Private Sub ApplyShapeStyleIfAny(ByVal shp As Shape, ByVal entry As Object, ByVal forceFont As Boolean)
   On Error Resume Next
   Dim fn As String: fn = entry.item("font_name") & ""
   If Len(fn) > 0 Then shp.TextFrame2.TextRange.Font.Name = fn
@@ -4171,7 +4393,9 @@ Private Sub ApplyShapeStyleIfAny(ByVal shp As Shape, ByVal entry As Object)
 
   Dim b As Variant: b = entry.item("bold")
   If Not IsEmpty(b) And Len(Trim$(b & "")) > 0 Then
-    shp.TextFrame2.TextRange.Font.Bold = IIf(UCase$(CStr(b)) = "1" Or UCase$(CStr(b)) = "TRUE", msoTrue, msoFalse)
+    Dim boldToken As String
+    boldToken = LCase$(Trim$(CStr(b)))
+    shp.TextFrame2.TextRange.Font.Bold = IIf(boldToken = "1" Or boldToken = "true" Or boldToken = "yes" Or boldToken = "y", msoTrue, msoFalse)
   End If
 
   Dim al As String: al = LCase$(Trim$(entry.item("align") & ""))
@@ -4181,13 +4405,7 @@ Private Sub ApplyShapeStyleIfAny(ByVal shp As Shape, ByVal entry As Object)
     Case "right":  shp.TextFrame2.TextRange.ParagraphFormat.Alignment = msoAlignRight
   End Select
   On Error GoTo 0
-End Sub
-
-Private Sub ForceShapeFontArial(ByVal shp As Shape)
-  On Error Resume Next
-  shp.TextFrame2.TextRange.Font.Name = "Arial"
-  shp.TextFrame.Characters.Font.Name = "Arial"
-  On Error GoTo 0
+  MaybeForceShapeFont shp, forceFont
 End Sub
 
 '========================
@@ -4244,6 +4462,7 @@ Private Function ParseCsvFile(ByVal csvPath As String) As Collection
   On Error GoTo ErrH
   g_lastCsvError = ""
   g_lastCsvStage = "init"
+  g_lastCsvWarnings = ""
   If Len(Dir$(csvPath)) = 0 Then
     g_lastCsvError = "file not found"
     g_lastCsvStage = "file check"
@@ -4325,6 +4544,13 @@ Private Function ParseCsvFile(ByVal csvPath As String) As Collection
   Dim colFontName As Long, colFontSize As Long, colAlign As Long, colBold As Long
   colSource = -1: colTarget = -1: colFontName = -1: colFontSize = -1: colAlign = -1: colBold = -1
 
+  Dim warnings As String
+  warnings = ""
+  Dim seenSources As Object: Set seenSources = CreateObject("Scripting.Dictionary")
+  If Not seenSources Is Nothing Then seenSources.CompareMode = vbTextCompare
+  Dim unknownCols As Object: Set unknownCols = CreateObject("Scripting.Dictionary")
+  If Not unknownCols Is Nothing Then unknownCols.CompareMode = vbTextCompare
+
   Dim out As New Collection
   Dim i As Long, fields As Variant, headerDone As Boolean
 
@@ -4342,17 +4568,32 @@ Private Function ParseCsvFile(ByVal csvPath As String) As Collection
     Dim j As Long, h As String
     For j = LBound(fields) To UBound(fields)
       h = LCase$(Trim$(CStr(fields(j))))
-      If h = "source" Then colSource = j
-      If h = "target" Then colTarget = j
-      If h = "font_name" Then colFontName = j
-      If h = "font_size" Then colFontSize = j
-      If h = "align" Then colAlign = j
-      If h = "bold" Then colBold = j
+      Select Case h
+        Case "source":    colSource = j
+        Case "target":    colTarget = j
+        Case "font_name": colFontName = j
+        Case "font_size": colFontSize = j
+        Case "align":     colAlign = j
+        Case "bold":      colBold = j
+        Case Else
+          If Len(h) > 0 And Not unknownCols Is Nothing Then unknownCols(h) = True
+      End Select
     Next j
     If colSource >= 0 And colTarget >= 0 Then headerDone = True
     Exit For
 NextLine:
   Next i
+
+  If headerDone Then
+    If Not unknownCols Is Nothing And unknownCols.Count > 0 Then
+      Dim uc As Variant, unknownList As String
+      For Each uc In unknownCols.Keys
+        If Len(unknownList) > 0 Then unknownList = unknownList & ", "
+        unknownList = unknownList & CStr(uc)
+      Next uc
+      warnings = AppendError(warnings, "未対応の列を検出: " & unknownList)
+    End If
+  End If
 
   Dim startRow As Long
   If headerDone Then
@@ -4370,18 +4611,34 @@ NextLine:
     If UBound(fields) < colTarget Then GoTo NextData
     Dim src As String: src = Trim$(CStr(fields(colSource)))
     If Len(src) = 0 Then GoTo NextData
+    Dim tgtRaw As String: tgtRaw = FieldOrEmpty(fields, colTarget)
+    If Len(Trim$(tgtRaw)) = 0 Then
+      warnings = AppendError(warnings, "target が空のため行 " & CStr(i + 1) & " をスキップ: source=""" & src & """")
+      GoTo NextData
+    End If
     Dim e As Object: Set e = CreateObject("Scripting.Dictionary")
     e.Add "source", src
-    e.Add "target", FieldOrEmpty(fields, colTarget)
+    e.Add "target", tgtRaw
     e.Add "font_name", FieldOrEmpty(fields, colFontName)
     e.Add "font_size", FieldOrEmpty(fields, colFontSize)
     e.Add "align", FieldOrEmpty(fields, colAlign)
     e.Add "bold", FieldOrEmpty(fields, colBold)
+    e.Add "row", CLng(i + 1)
+    If Not seenSources Is Nothing Then
+      Dim dupKey As String: dupKey = LCase$(src)
+      If seenSources.Exists(dupKey) Then
+        warnings = AppendError(warnings, "source """ & src & """ が重複: 行 " & CStr(i + 1) & "（前回 行 " & CStr(seenSources(dupKey)) & "）。後勝ちで上書きします。")
+        seenSources(dupKey) = i + 1
+      Else
+        seenSources.Add dupKey, i + 1
+      End If
+    End If
     out.Add e
 NextData:
   Next i
 
   Set ParseCsvFile = out
+  g_lastCsvWarnings = Trim$(warnings)
   If out.Count = 0 Then
     If Len(g_lastCsvError) = 0 Then g_lastCsvError = "parsed entry count = 0"
     g_lastCsvStage = "final count"
@@ -4398,6 +4655,7 @@ ErrH:
     stageInfo = ""
   End If
   g_lastCsvError = stageInfo & "parse error " & Err.Number & ": " & Err.description
+  g_lastCsvWarnings = ""
   Set ParseCsvFile = Nothing
 End Function
 
@@ -4412,6 +4670,10 @@ Private Function LastCsvErrorDetail() As String
     End If
   End If
   LastCsvErrorDetail = detail
+End Function
+
+Private Function LastCsvWarnings() As String
+  LastCsvWarnings = g_lastCsvWarnings
 End Function
 
 Private Function FieldOrEmpty(ByVal fields As Variant, ByVal idx As Long) As String
@@ -4622,7 +4884,7 @@ End Function
 '========================
 '   正規化
 '========================
-Private Function NormalizeKeyText(ByVal s As String) As String
+Private Function NormalizeKeyText(ByVal s As String, ByVal ignoreSpaces As Boolean) As String
   Dim t As String: t = CStr(s)
   t = Replace(t, vbCr, " ")
   t = Replace(t, vbLf, " ")
@@ -4638,12 +4900,12 @@ Private Function NormalizeKeyText(ByVal s As String) As String
   Do While InStr(1, t, "  ") > 0: t = Replace(t, "  ", " "): Loop
   t = Trim$(t)
   If NORMALIZE_WIDE_NARROW Then On Error Resume Next: t = StrConv(t, vbNarrow): On Error GoTo 0
-  If IGNORE_ALL_SPACES_WHEN_MATCHING Then t = Replace(t, " ", "")
+  If ignoreSpaces Then t = Replace(t, " ", "")
   NormalizeKeyText = t
 End Function
 
 Private Function KeyFor(ByVal s As String) As String
-  KeyFor = LCase$(NormalizeKeyText(s))
+  KeyFor = LCase$(NormalizeKeyText(s, ShouldIgnoreSpaces()))
 End Function
 
 Private Function SafeText(v As Variant) As String
@@ -4771,17 +5033,21 @@ Private Sub AdjustMergedRowHeight(ByVal targetRange As Range, ByVal minHeight As
 
   Dim area As Range
   Set area = targetRange.MergeArea
-  Dim rowIndex As Long
-  rowIndex = area.Row
   Dim wasMerged As Boolean
   wasMerged = area.MergeCells
 
-  Dim storedValue As Variant
-  storedValue = area.Cells(1, 1).value
-
-  If wasMerged Then
-    area.MergeCells = False
+  Dim hasFormula As Boolean
+  Dim storedFormula As String
+  Dim storedFormulaR1C1 As String
+  If Len(area.Cells(1, 1).Formula) > 0 Then
+    hasFormula = True
+    storedFormula = area.Cells(1, 1).Formula
+    storedFormulaR1C1 = area.Cells(1, 1).FormulaR1C1
   End If
+  Dim storedValue As Variant
+  storedValue = area.Cells(1, 1).Value2
+
+  If wasMerged Then area.MergeCells = False
 
   area.WrapText = True
   area.Rows.AutoFit
@@ -4790,13 +5056,17 @@ Private Sub AdjustMergedRowHeight(ByVal targetRange As Range, ByVal minHeight As
   newHeight = area.Rows(1).RowHeight
   If newHeight < minHeight Then newHeight = minHeight
   If newHeight > maxHeight Then newHeight = maxHeight
-  ws.Rows(rowIndex).RowHeight = newHeight
+  ws.Rows(area.Row).RowHeight = newHeight
 
 Cleanup:
   If wasMerged Then
     On Error Resume Next
     If Not area.MergeCells Then area.Merge
-    area.Cells(1, 1).value = storedValue
+    If hasFormula Then
+      area.Cells(1, 1).FormulaR1C1 = storedFormulaR1C1
+    Else
+      area.Cells(1, 1).Value2 = storedValue
+    End If
     area.WrapText = True
     area.HorizontalAlignment = xlLeft
     area.VerticalAlignment = xlTop

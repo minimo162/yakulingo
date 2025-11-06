@@ -617,6 +617,21 @@ Private Function LaunchEdgeDriverService(ByVal driverPath As String, _
 
   StopEdgeDriverService
   KillProcessByImageName "msedgedriver.exe"
+  g_edgeSvcPort = 0
+  g_edgeSvcUrl = ""
+  g_edgeSvcPid = 0
+  Set g_edgeSvcExec = Nothing
+
+  Dim baselinePids As Object
+  Set baselinePids = CreateObject("Scripting.Dictionary")
+  Dim existingPids As Collection
+  Set existingPids = ListProcessIdsByImageName("msedgedriver.exe")
+  If Not existingPids Is Nothing Then
+    Dim bp As Variant
+    For Each bp In existingPids
+      baselinePids(Trim$(CStr(bp))) = True
+    Next bp
+  End If
 
   Dim sh As Object
   Set sh = CreateObject("WScript.Shell")
@@ -633,6 +648,11 @@ Private Function LaunchEdgeDriverService(ByVal driverPath As String, _
     errOut = "msedgedriver.exe の起動に失敗しました。"
     GoTo Fail
   End If
+  Set g_edgeSvcExec = exec
+
+  On Error Resume Next
+  g_edgeSvcPid = exec.ProcessID
+  On Error GoTo EH
 
   Dim stdoutBuf As String
   Dim stderrBuf As String
@@ -656,6 +676,24 @@ Private Function LaunchEdgeDriverService(ByVal driverPath As String, _
         stderrBuf = stderrBuf & exec.StdErr.Read(1024)
       End If
     End If
+    If g_edgeSvcPid = 0 Then
+      Dim currentPids As Collection
+      Set currentPids = ListProcessIdsByImageName("msedgedriver.exe")
+      If Not currentPids Is Nothing Then
+        Dim cp As Variant
+        For Each cp In currentPids
+          Dim pidKey As String
+          pidKey = Trim$(CStr(cp))
+          If Len(pidKey) > 0 Then
+            If Not baselinePids.Exists(pidKey) Then
+              g_edgeSvcPid = CLng(Val(pidKey))
+              baselinePids(pidKey) = True
+              Exit For
+            End If
+          End If
+        Next cp
+      End If
+    End If
     On Error GoTo EH
     If Len(stdoutBuf) > 0 Then
       Dim parsedPort As Long
@@ -675,7 +713,40 @@ Private Function LaunchEdgeDriverService(ByVal driverPath As String, _
     Dim fallbackPort As Long
     fallbackPort = DetectEdgeDriverListeningPorts(portDescriptions)
     If fallbackPort > 0 Then
+      If g_edgeSvcPid > 0 And Not portDescriptions Is Nothing Then
+        Dim desc As Variant
+        For Each desc In portDescriptions
+          Dim descPid As String
+          descPid = ExtractPidFromPortDescription(CStr(desc))
+          If Len(descPid) > 0 Then
+            If CLng(Val(descPid)) = g_edgeSvcPid Then
+              Dim endpoint As String
+              endpoint = ExtractEndpointFromPortDescription(CStr(desc))
+              fallbackPort = ExtractPortFromEndpoint(endpoint)
+              Exit For
+            End If
+          End If
+        Next desc
+      End If
       detectedPort = fallbackPort
+    End If
+  End If
+
+  If g_edgeSvcPid = 0 Then
+    Dim refreshedPids As Collection
+    Set refreshedPids = ListProcessIdsByImageName("msedgedriver.exe")
+    If Not refreshedPids Is Nothing Then
+      Dim rp As Variant
+      For Each rp In refreshedPids
+        Dim pidCandidate As String
+        pidCandidate = Trim$(CStr(rp))
+        If Len(pidCandidate) > 0 Then
+          If Not baselinePids.Exists(pidCandidate) Then
+            g_edgeSvcPid = CLng(Val(pidCandidate))
+            Exit For
+          End If
+        End If
+      Next rp
     End If
   End If
 
@@ -706,37 +777,11 @@ Private Function LaunchEdgeDriverService(ByVal driverPath As String, _
   Loop
   If Not driverReady Then
     errOut = "EdgeDriver の /status が所定時間内に 200 を返しませんでした。"
-    If Len(Trim$(stdoutBuf)) > 0 Then
-      errOut = AppendError(errOut, Trim$(stdoutBuf))
-    End If
-    If Len(Trim$(stderrBuf)) > 0 Then
-      errOut = AppendError(errOut, Trim$(stderrBuf))
-    End If
     GoTo Fail
   End If
 
   g_edgeSvcPort = detectedPort
   g_edgeSvcUrl = "http://127.0.0.1:" & CStr(detectedPort) & "/"
-  g_edgeSvcPid = 0
-  Set g_edgeSvcExec = exec
-
-  On Error Resume Next
-  g_edgeSvcPid = exec.ProcessID
-  On Error GoTo EH
-  If g_edgeSvcPid = 0 Then
-    Dim netstatOut As String
-    Dim netstatErr As String
-    Dim netstatExit As Long
-    If ExecuteCommand("netstat -ano -p tcp", netstatOut, netstatErr, 5, netstatExit) Then
-      Dim line As String
-      line = FindNetstatLine(netstatOut, detectedPort)
-      Dim pidText As String
-      pidText = ExtractPidFromNetstatLine(line)
-      If Len(Trim$(pidText)) > 0 Then
-        g_edgeSvcPid = CLng(Val(pidText))
-      End If
-    End If
-  End If
 
   svcUrlOut = g_edgeSvcUrl
   pidOut = g_edgeSvcPid
@@ -745,14 +790,10 @@ Private Function LaunchEdgeDriverService(ByVal driverPath As String, _
   Exit Function
 
 Fail:
-  On Error Resume Next
-  If Not g_edgeSvcExec Is Nothing Then
-    g_edgeSvcExec.Terminate
-  ElseIf Not exec Is Nothing Then
-    exec.Terminate
-  End If
-  On Error GoTo 0
   StopEdgeDriverService
+  If Len(errOut) = 0 Then
+    errOut = "EdgeDriver の起動に失敗しました。"
+  End If
   Exit Function
 
 EH:
@@ -765,7 +806,7 @@ Private Sub StopEdgeDriverService()
   If Not g_edgeSvcExec Is Nothing Then
     g_edgeSvcExec.Terminate
   End If
-  g_edgeSvcExec = Nothing
+  Set g_edgeSvcExec = Nothing
   If g_edgeSvcPid > 0 Then
     Dim sh As Object
     Set sh = CreateObject("WScript.Shell")
@@ -1137,17 +1178,7 @@ Private Function CollectPortDiagnostics(ByVal portNumber As Long) As String
     report = AppendLine(report, "  netsh: DynamicPort (TCP) 取得失敗 (" & dynErr & ")")
   End If
 
-  Dim psOut As String, psErr As String, psExit As Long
-  Dim psCmd As String
-  psCmd = "powershell -NoLogo -NoProfile -Command ""$c = Get-NetTCPConnection -LocalPort " & portNumber & " -State Listen -ErrorAction SilentlyContinue;" & _
-          " if ($c) { $c | Select-Object -First 1 LocalAddress,LocalPort,State,OwningProcess | Format-List | Out-String -Width 200 } ; exit 0"""
-  If ExecuteCommand(psCmd, psOut, psErr, 10, psExit) Then
-    If Len(Trim$(psOut)) > 0 Then
-      report = AppendLine(report, "  PowerShell: " & Replace(Trim$(psOut), vbCrLf, " / "))
-    End If
-  ElseIf Len(Trim$(psErr)) > 0 Then
-    report = AppendLine(report, "  PowerShell: 取得失敗 (" & psErr & ")")
-  End If
+  report = AppendLine(report, "  PowerShell: スキップ（コマンドライン診断のみ実施）")
 
   CollectPortDiagnostics = Trim$(report)
 End Function
@@ -1156,33 +1187,39 @@ Private Function ExecuteCommand(ByVal command As String, ByRef stdoutOut As Stri
   On Error GoTo EH
   Dim shell As Object
   Set shell = CreateObject("WScript.Shell")
-  If shell Is Nothing Then Exit Function
-  Dim exec As Object
-  Set exec = shell.exec("cmd /c " & command)
-  Dim startTick As Double
-  startTick = Timer
-  Do While exec.status = 0
-    If SecondsElapsed(startTick) > timeoutSeconds Then
-      exec.Terminate
-      Exit Do
-    End If
-    DoEvents
-  Loop
-  stdoutOut = exec.stdout.ReadAll
-  stderrOut = exec.stderr.ReadAll
-  exitCodeOut = exec.exitCode
-  If exitCodeOut = 0 Then
-    ExecuteCommand = True
-  Else
-    ExecuteCommand = False
+  If shell Is Nothing Then GoTo EH
+
+  Dim stdoutPath As String
+  Dim stderrPath As String
+  stdoutPath = CreateTempFile("ecm_cmd_", ".out")
+  stderrPath = CreateTempFile("ecm_cmd_", ".err")
+  If Len(stdoutPath) = 0 Or Len(stderrPath) = 0 Then GoTo EH
+
+  Dim cmdLine As String
+  Dim comspec As String
+  comspec = Environ$("ComSpec")
+  If Len(comspec) = 0 Then comspec = "cmd.exe"
+  cmdLine = """" & comspec & """ /C " & command & " 1>""" & stdoutPath & """ 2>""" & stderrPath & """"
+
+  exitCodeOut = shell.Run(cmdLine, 0, True)
+  stdoutOut = ReadAllTextUTF8(stdoutPath)
+  stderrOut = ReadAllTextUTF8(stderrPath)
+  ExecuteCommand = (exitCodeOut = 0)
+  If Not ExecuteCommand Then
     Err.Raise vbObjectError + 2101, "ExecuteCommand", "コマンド実行に失敗しました: " & command & " (ExitCode=" & exitCodeOut & ")"
   End If
+
+Cleanup:
+  DeleteFileSafe stdoutPath
+  DeleteFileSafe stderrPath
   Exit Function
+
 EH:
   stdoutOut = ""
   stderrOut = Err.description
   exitCodeOut = -1
   ExecuteCommand = False
+  Resume Cleanup
 End Function
 
 Private Sub KillProcessByImageName(ByVal imageName As String)
@@ -2929,35 +2966,19 @@ End Function
 Private Function ExtractZipWithPowerShell(ByVal zipPath As String, ByVal targetDir As String, ByRef errOut As String) As Boolean
   On Error GoTo EH
   errOut = ""
-  Dim shell As Object
-  Set shell = CreateObject("WScript.Shell")
-  If shell Is Nothing Then
-    errOut = "PowerShell を起動できませんでした。WScript.Shell の生成に失敗しました。"
-    Exit Function
-  End If
   Dim quotedZip As String
   Dim quotedDest As String
   quotedZip = """" & Replace(zipPath, """", """""") & """"
   quotedDest = """" & Replace(targetDir, """", """""") & """"
   Dim command As String
-  command = "powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -Command ""Expand-Archive -LiteralPath " & quotedZip & " -DestinationPath " & quotedDest & " -Force"""
-  Dim exec As Object
-  Set exec = shell.exec(command)
-  Dim startTick As Double
-  startTick = Timer
-  Do While exec.status = 0
-    If SecondsElapsed(startTick) > 60 Then
-      exec.Terminate
-      errOut = "PowerShell 展開がタイムアウトしました。"
-      Exit Function
-    End If
-    DoEvents
-  Loop
-  If exec.exitCode <> 0 Then
-    Dim stderrText As String
-    stderrText = Trim$(exec.stderr.ReadAll)
-    If Len(stderrText) = 0 Then stderrText = "ExitCode=" & exec.exitCode
-    errOut = "PowerShell 展開でエラーが発生しました: " & stderrText
+  command = "powershell -NoLogo -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -Command ""Expand-Archive -LiteralPath " & quotedZip & " -DestinationPath " & quotedDest & " -Force"""
+
+  Dim psOut As String
+  Dim psErr As String
+  Dim psExit As Long
+  If Not ExecuteCommand(command, psOut, psErr, 120, psExit) Then
+    If Len(Trim$(psErr)) = 0 Then psErr = "ExitCode=" & CStr(psExit)
+    errOut = "PowerShell 展開でエラーが発生しました: " & psErr
     Exit Function
   End If
   ExtractZipWithPowerShell = True

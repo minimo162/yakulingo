@@ -60,10 +60,10 @@ Private g_lastCsvStage As String
 Private g_copilotDriver As Object
 Private g_lastCopilotDiagPort As Long
 ' === EdgeDriver 自前サービス管理 ===
-Private g_edgeSvcExec  As Object
 Private g_edgeSvcPid   As Long
 Private g_edgeSvcPort  As Long
 Private g_edgeSvcUrl   As String
+Private g_edgeSvcLogPath As String
 
 #If VBA7 Then
 Private Declare PtrSafe Function MultiByteToWideChar Lib "kernel32" _
@@ -482,7 +482,7 @@ Private Function EnsureCopilotDriver() As Boolean
   driverPath = ""
   ' Edge ドライバーを優先して準備
   Dim driverSetupError As String
-  haveDriver = EnsureBrowserDriver("edge", driverPath, driverSetupError)
+  haveDriver = EnsureBrowserDriver("edge", driverPath, driverSetupError, False)
   If Not haveDriver Or Len(Trim$(driverPath)) = 0 Then
     Dim edgeSetupMsg As String
     edgeSetupMsg = "Copilotブラウザを起動できませんでした。Edgeドライバーの準備に失敗しました。"
@@ -620,7 +620,10 @@ Private Function LaunchEdgeDriverService(ByVal driverPath As String, _
   g_edgeSvcPort = 0
   g_edgeSvcUrl = ""
   g_edgeSvcPid = 0
-  Set g_edgeSvcExec = Nothing
+  g_edgeSvcLogPath = ""
+
+  Dim startedDriver As Boolean
+  startedDriver = False
 
   Dim baselinePids As Object
   Set baselinePids = CreateObject("Scripting.Dictionary")
@@ -640,70 +643,68 @@ Private Function LaunchEdgeDriverService(ByVal driverPath As String, _
     GoTo Fail
   End If
 
-  Dim exec As Object
+  Dim logPath As String
+  logPath = CreateTempFile("edge_svc_", ".log")
+  If Len(logPath) = 0 Then
+    errOut = "EdgeDriver ログ用の一時ファイルを作成できませんでした。"
+    GoTo Fail
+  End If
+
   Dim cmd As String
-  cmd = """" & driverPath & """ --port=0 --allowed-origins=* --disable-build-check --verbose"
-  Set exec = sh.exec(cmd)
-  If exec Is Nothing Then
+  cmd = """" & driverPath & """ --port=0 --allowed-origins=* --disable-build-check --verbose --log-path=""" & logPath & """"
+  Dim launchResult As Long
+  launchResult = sh.Run(cmd, 0, False)
+  If launchResult <> 0 Then
     errOut = "msedgedriver.exe の起動に失敗しました。"
     GoTo Fail
   End If
-  Set g_edgeSvcExec = exec
+  g_edgeSvcLogPath = logPath
 
-  On Error Resume Next
-  g_edgeSvcPid = exec.ProcessID
-  On Error GoTo EH
-
-  Dim stdoutBuf As String
-  Dim stderrBuf As String
+  Dim logBuffer As String
   Dim detectedPort As Long
   Dim startTick As Double
-  stdoutBuf = ""
-  stderrBuf = ""
+  logBuffer = ""
   detectedPort = 0
   startTick = Timer
 
   Do
     DoEvents
-    On Error Resume Next
-    If Not exec.StdOut Is Nothing Then
-      If Not exec.StdOut.AtEndOfStream Then
-        stdoutBuf = stdoutBuf & exec.StdOut.Read(1024)
-      End If
-    End If
-    If Not exec.StdErr Is Nothing Then
-      If Not exec.StdErr.AtEndOfStream Then
-        stderrBuf = stderrBuf & exec.StdErr.Read(1024)
-      End If
-    End If
-    If g_edgeSvcPid = 0 Then
-      Dim currentPids As Collection
-      Set currentPids = ListProcessIdsByImageName("msedgedriver.exe")
-      If Not currentPids Is Nothing Then
-        Dim cp As Variant
-        For Each cp In currentPids
-          Dim pidKey As String
-          pidKey = Trim$(CStr(cp))
-          If Len(pidKey) > 0 Then
-            If Not baselinePids.Exists(pidKey) Then
-              g_edgeSvcPid = CLng(Val(pidKey))
-              baselinePids(pidKey) = True
-              Exit For
-            End If
-          End If
-        Next cp
-      End If
-    End If
-    On Error GoTo EH
-    If Len(stdoutBuf) > 0 Then
+    Dim logText As String
+    logText = SafeReadAllText(logPath)
+    If Len(logText) > 0 Then
+      logBuffer = logText
       Dim parsedPort As Long
-      parsedPort = DetectPortFromLogText(stdoutBuf)
+      parsedPort = DetectPortFromLogText(logBuffer)
       If parsedPort > 0 Then
         detectedPort = parsedPort
         Exit Do
       End If
     End If
-    If exec.Status <> 0 Then Exit Do
+
+    Dim currentPids As Collection
+    Set currentPids = ListProcessIdsByImageName("msedgedriver.exe")
+    Dim alive As Boolean
+    alive = False
+    If Not currentPids Is Nothing Then
+      Dim cp As Variant
+      For Each cp In currentPids
+        Dim pidKey As String
+        pidKey = Trim$(CStr(cp))
+        If Len(pidKey) > 0 Then
+          If g_edgeSvcPid = 0 Then
+            If Not baselinePids.Exists(pidKey) Then
+              g_edgeSvcPid = CLng(Val(pidKey))
+              baselinePids(pidKey) = True
+            End If
+          End If
+          If g_edgeSvcPid > 0 Then
+            If CLng(Val(pidKey)) = g_edgeSvcPid Then alive = True
+          End If
+        End If
+      Next cp
+    End If
+    If g_edgeSvcPid > 0 And Not alive Then Exit Do
+
     If SecondsElapsed(startTick) > 12# Then Exit Do
     PauseWithDoEvents 0.2
   Loop
@@ -752,11 +753,8 @@ Private Function LaunchEdgeDriverService(ByVal driverPath As String, _
 
   If detectedPort = 0 Then
     errOut = "EdgeDriver の待受ポートを検出できませんでした。"
-    If Len(Trim$(stdoutBuf)) > 0 Then
-      errOut = AppendError(errOut, Trim$(stdoutBuf))
-    End If
-    If Len(Trim$(stderrBuf)) > 0 Then
-      errOut = AppendError(errOut, Trim$(stderrBuf))
+    If Len(Trim$(logBuffer)) > 0 Then
+      errOut = AppendError(errOut, Trim$(logBuffer))
     End If
     GoTo Fail
   End If
@@ -782,10 +780,10 @@ Private Function LaunchEdgeDriverService(ByVal driverPath As String, _
 
   g_edgeSvcPort = detectedPort
   g_edgeSvcUrl = "http://127.0.0.1:" & CStr(detectedPort) & "/"
-
   svcUrlOut = g_edgeSvcUrl
   pidOut = g_edgeSvcPid
   portOut = g_edgeSvcPort
+
   LaunchEdgeDriverService = True
   Exit Function
 
@@ -793,6 +791,9 @@ Fail:
   StopEdgeDriverService
   If Len(errOut) = 0 Then
     errOut = "EdgeDriver の起動に失敗しました。"
+  End If
+  If Len(g_edgeSvcLogPath) = 0 Then
+    DeleteFileSafe logPath
   End If
   Exit Function
 
@@ -803,10 +804,6 @@ End Function
 
 Private Sub StopEdgeDriverService()
   On Error Resume Next
-  If Not g_edgeSvcExec Is Nothing Then
-    g_edgeSvcExec.Terminate
-  End If
-  Set g_edgeSvcExec = Nothing
   If g_edgeSvcPid > 0 Then
     Dim sh As Object
     Set sh = CreateObject("WScript.Shell")
@@ -817,6 +814,8 @@ Private Sub StopEdgeDriverService()
   g_edgeSvcPid = 0
   g_edgeSvcPort = 0
   g_edgeSvcUrl = ""
+  DeleteFileSafe g_edgeSvcLogPath
+  g_edgeSvcLogPath = ""
   On Error GoTo 0
 End Sub
 
@@ -1437,17 +1436,32 @@ Private Function ProbeEdgeDriverListeningPort(ByVal driverPath As String, ByRef 
   Set shell = CreateObject("WScript.Shell")
   If shell Is Nothing Then
     errOut = "WScript.Shell を初期化できません。"
-    Exit Function
+    GoTo Cleanup
+  End If
+
+  Dim logPath As String
+  logPath = CreateTempFile("edge_probe_", ".log")
+  If Len(logPath) = 0 Then
+    errOut = "EdgeDriver ログ用の一時ファイルを作成できません。"
+    GoTo Cleanup
   End If
 
   Dim cmd As String
-  cmd = """" & driverPath & """ --port=0 --allowed-origins=* --disable-build-check --verbose"
-  Dim exec As Object
-  Set exec = shell.exec(cmd)
+  cmd = """" & driverPath & """ --port=0 --allowed-origins=* --disable-build-check --verbose --log-path=""" & logPath & """"
+  Dim launchResult As Long
+  launchResult = shell.Run(cmd, 0, False)
+  startedDriver = (launchResult = 0)
+  If Not startedDriver Then
+    errOut = "msedgedriver.exe の診断起動に失敗しました。"
+    GoTo Cleanup
+  End If
+
   Dim startTick As Double
   startTick = Timer
   Dim portNumber As Long
   portNumber = 0
+  Dim driverPid As Long
+  driverPid = 0
 
   Dim probeDescriptions As Collection
   Set probeDescriptions = New Collection
@@ -1469,6 +1483,7 @@ Private Function ProbeEdgeDriverListeningPort(ByVal driverPath As String, ByRef 
         If Len(descPid) > 0 Then
           If Not baselinePids.Exists(descPid) And descPort > 0 Then
             portNumber = descPort
+            driverPid = CLng(Val(descPid))
             baselinePids(descPid) = True
           End If
         End If
@@ -1479,7 +1494,40 @@ Private Function ProbeEdgeDriverListeningPort(ByVal driverPath As String, ByRef 
       Next desc
     End If
     If portNumber > 0 Then Exit Do
-    If exec.status <> 0 Then Exit Do
+
+    Dim currentPids As Collection
+    Set currentPids = ListProcessIdsByImageName("msedgedriver.exe")
+    Dim driverAlive As Boolean
+    driverAlive = False
+    If Not currentPids Is Nothing Then
+      Dim cp As Variant
+      For Each cp In currentPids
+        Dim pidKey As String
+        pidKey = Trim$(CStr(cp))
+        If Len(pidKey) = 0 Then GoTo NextPid
+        If driverPid = 0 Then
+          If Not baselinePids.Exists(pidKey) Then
+            driverPid = CLng(Val(pidKey))
+          End If
+        End If
+        If driverPid > 0 Then
+          If CLng(Val(pidKey)) = driverPid Then
+            driverAlive = True
+          End If
+        Else
+          If Not baselinePids.Exists(pidKey) Then
+            driverAlive = True
+          End If
+        End If
+NextPid:
+      Next cp
+    End If
+    If driverPid > 0 Then
+      If Not driverAlive Then Exit Do
+    Else
+      If Not driverAlive Then Exit Do
+    End If
+
     If SecondsElapsed(startTick) > 12 Then Exit Do
     PauseWithDoEvents 0.3
   Loop
@@ -1490,50 +1538,63 @@ Private Function ProbeEdgeDriverListeningPort(ByVal driverPath As String, ByRef 
     AppendTextBlockToCollection logLinesOut, "probe_http: " & TestDriverEndpoint(portNumber)
   End If
 
-  If exec.status = 0 Then
-    On Error Resume Next
-    exec.Terminate
-    On Error GoTo EH
-  End If
-
-  Dim stdoutText As String
-  Dim stderrText As String
-  stdoutText = ""
-  stderrText = ""
+Cleanup:
   On Error Resume Next
-  If Not exec Is Nothing Then
-    stdoutText = Trim$(stdoutText & IIf(Len(stdoutText) > 0, vbCrLf, "") & exec.stdout.ReadAll)
-    stderrText = Trim$(stderrText & IIf(Len(stderrText) > 0, vbCrLf, "") & exec.stderr.ReadAll)
+  If driverPid > 0 Then
+    Dim killShell As Object
+    Set killShell = CreateObject("WScript.Shell")
+    If Not killShell Is Nothing Then
+      killShell.Run "cmd /c taskkill /F /PID " & CStr(driverPid) & " >NUL 2>&1", 0, True
+    End If
+  ElseIf startedDriver Then
+    Dim cleanupPids As Collection
+    Set cleanupPids = ListProcessIdsByImageName("msedgedriver.exe")
+    If Not cleanupPids Is Nothing Then
+      Dim kp As Variant
+      For Each kp In cleanupPids
+        Dim kpKey As String
+        kpKey = Trim$(CStr(kp))
+        If Len(kpKey) > 0 Then
+          If Not baselinePids.Exists(kpKey) Then
+            Dim killer As Object
+            Set killer = CreateObject("WScript.Shell")
+            If Not killer Is Nothing Then
+              killer.Run "cmd /c taskkill /F /PID " & kpKey & " >NUL 2>&1", 0, True
+            End If
+          End If
+        End If
+      Next kp
+    End If
   End If
   On Error GoTo EH
 
+  Dim logBuffer As String
+  logBuffer = Trim$(SafeReadAllText(logPath))
+  DeleteFileSafe logPath
+
   If logLinesOut Is Nothing Then Set logLinesOut = New Collection
-  Dim pd As Variant
-  For Each pd In probeDescriptions
-    AppendTextBlockToCollection logLinesOut, "probe: " & CStr(pd)
-  Next pd
-  If Len(stdoutText) > 0 Then
-    AppendTextBlockToCollection logLinesOut, "stdout: " & Replace(stdoutText, vbCrLf, " / ")
+  If Not probeDescriptions Is Nothing Then
+    Dim pd As Variant
+    For Each pd In probeDescriptions
+      AppendTextBlockToCollection logLinesOut, "probe: " & CStr(pd)
+    Next pd
   End If
-  If Len(stderrText) > 0 Then
-    AppendTextBlockToCollection logLinesOut, "stderr: " & Replace(stderrText, vbCrLf, " / ")
+  If Len(logBuffer) > 0 Then
+    AppendTextBlockToCollection logLinesOut, "log: " & Replace(logBuffer, vbCrLf, " / ")
   End If
 
   If portNumber = 0 Then
-    If exec.status <> 0 Then
-      errOut = "ExitCode=" & exec.exitCode
-    ElseIf Len(errOut) = 0 Then
+    If Len(errOut) = 0 Then
       errOut = "ポート情報を取得できませんでした。"
     End If
   End If
 
   ProbeEdgeDriverListeningPort = portNumber
   Exit Function
+
 EH:
   errOut = Err.Number & " " & Err.description
-  On Error Resume Next
-  If Not exec Is Nothing Then exec.Terminate
-  On Error GoTo 0
+  Resume Cleanup
 End Function
 
 Private Function TestDriverEndpoint(ByVal port As Long) As String
@@ -2152,35 +2213,39 @@ End Sub
 
 Private Function TestDriverExecutable(ByVal driverPath As String) As String
   On Error GoTo EH
-  Dim shell As Object
-  Set shell = CreateObject("WScript.Shell")
   Dim cmd As String
   cmd = """" & driverPath & """ --version"
-  Dim exec As Object
-  Set exec = shell.exec(cmd)
-  Dim startTick As Double
-  startTick = Timer
-  Do While exec.status = 0
-    If SecondsElapsed(startTick) > 5 Then
-      exec.Terminate
-      TestDriverExecutable = "タイムアウト (--version が 5 秒以内に終了しませんでした)"
-      Exit Function
-    End If
-    DoEvents
-  Loop
-  Dim output As String
-  output = Trim$(exec.stdout.ReadAll)
-  Dim errText As String
-  errText = Trim$(exec.stderr.ReadAll)
-  If Len(output) > 0 Then
-    TestDriverExecutable = "成功: " & output
-  ElseIf Len(errText) > 0 Then
-    TestDriverExecutable = "エラー: " & errText
-  Else
-    If exec.exitCode = 0 Then
-      TestDriverExecutable = "成功 (出力なし)"
+
+  Dim stdoutText As String
+  Dim stderrText As String
+  Dim exitCode As Long
+  Dim success As Boolean
+  Dim errNumber As Long
+  Dim errDesc As String
+
+  On Error Resume Next
+  success = ExecuteCommand(cmd, stdoutText, stderrText, 10, exitCode)
+  errNumber = Err.Number
+  errDesc = Err.Description
+  Err.Clear
+  On Error GoTo EH
+
+  stdoutText = Trim$(stdoutText)
+  stderrText = Trim$(stderrText)
+
+  If success Then
+    If Len(stdoutText) > 0 Then
+      TestDriverExecutable = "成功: " & stdoutText
     Else
-      TestDriverExecutable = "終了コード " & exec.exitCode
+      TestDriverExecutable = "成功 (出力なし)"
+    End If
+  Else
+    If Len(stderrText) > 0 Then
+      TestDriverExecutable = "エラー: " & stderrText
+    ElseIf errNumber <> 0 Then
+      TestDriverExecutable = "実行失敗: " & errNumber & " " & errDesc
+    Else
+      TestDriverExecutable = "終了コード " & exitCode
     End If
   End If
   Exit Function
@@ -2373,13 +2438,13 @@ End Sub
 '========================
 '  ドライバーセットアップ
 '========================
-Private Function EnsureBrowserDriver(ByVal browser As String, ByRef driverPathOut As String, Optional ByRef errorOut As String) As Boolean
+Private Function EnsureBrowserDriver(ByVal browser As String, ByRef driverPathOut As String, Optional ByRef errorOut As String, Optional ByVal allowPowerShell As Boolean = True) As Boolean
   On Error GoTo EH
   errorOut = ""
   Dim pathOut As String
   Select Case LCase$(browser)
     Case "edge"
-      If EnsureEdgeDriver(pathOut, errorOut) Then
+      If EnsureEdgeDriver(pathOut, errorOut, allowPowerShell) Then
         driverPathOut = pathOut
         EnsureBrowserDriver = True
       End If
@@ -4046,6 +4111,12 @@ Private Function ReadAllTextUTF8(ByVal path As String) As String
   Else
     ReadAllTextUTF8 = ""
   End If
+End Function
+
+Private Function SafeReadAllText(ByVal path As String) As String
+  On Error Resume Next
+  SafeReadAllText = ReadAllTextUTF8(path)
+  On Error GoTo 0
 End Function
 
 Private Function ReadAllTextWithCodePage(ByVal path As String, ByVal codePage As Long) As String

@@ -819,6 +819,340 @@ Private Sub StopEdgeDriverService()
   On Error GoTo 0
 End Sub
 
+Private Function TryAttachToEdgeDriverService(ByVal svcUrl As String, ByVal svcPort As Long, ByRef driverOut As Object, ByRef errOut As String) As Boolean
+  errOut = ""
+  Set driverOut = Nothing
+
+  Dim remoteDriver As Object
+  Dim createErrNum As Long
+  Dim createErrDesc As String
+  Dim navErrNum As Long
+  Dim navErrDesc As String
+
+  On Error Resume Next
+  Set remoteDriver = CreateObject("Selenium.WebDriver")
+  createErrNum = Err.Number
+  createErrDesc = Err.description
+  Err.Clear
+  On Error GoTo 0
+
+  If remoteDriver Is Nothing Then
+    If createErrNum <> 0 Or Len(createErrDesc) > 0 Then
+      errOut = "Selenium.WebDriver の生成に失敗しました: " & createErrDesc
+    Else
+      errOut = "Selenium.WebDriver の生成に失敗しました。"
+    End If
+    Exit Function
+  End If
+
+  Dim connectErr As String
+  Dim methodMissing As Boolean
+  connectErr = ""
+  methodMissing = False
+
+  Dim connected As Boolean
+  connected = False
+
+  Dim attemptIndex As Long
+  Dim attemptErr As String
+  For attemptIndex = 1 To 3
+    attemptErr = ""
+    connected = TryConnectToEdgeServiceCore(remoteDriver, svcUrl, svcPort, attemptErr, methodMissing)
+    If Len(Trim$(attemptErr)) > 0 Then
+      connectErr = AppendError(connectErr, Trim$(attemptErr))
+    End If
+    If connected Or methodMissing Then Exit For
+    PauseWithDoEvents 0.25
+  Next attemptIndex
+
+  If methodMissing Then
+    errOut = AppendError(errOut, "SeleniumBasic のバージョンが Connect メソッドを提供していません。")
+    DisposeWebDriver remoteDriver
+    Exit Function
+  End If
+
+  If Not connected Then
+    If Len(Trim$(connectErr)) > 0 Then
+      errOut = AppendError(errOut, Trim$(connectErr))
+    Else
+      errOut = AppendError(errOut, "EdgeDriver サービスへの接続に失敗しました。")
+    End If
+    DisposeWebDriver remoteDriver
+    Exit Function
+  End If
+
+  If Not WaitForWebDriverSession(remoteDriver, 10#) Then
+    errOut = AppendError(errOut, "EdgeDriver サービスへの接続に成功しましたが、セッションIDを取得できませんでした。")
+    DisposeWebDriver remoteDriver
+    Exit Function
+  End If
+
+  On Error Resume Next
+  remoteDriver.Get "about:blank"
+  navErrNum = Err.Number
+  navErrDesc = Err.description
+  Err.Clear
+  On Error GoTo 0
+  If navErrNum <> 0 Then
+    errOut = AppendError(errOut, "EdgeDriver サービスへの接続に成功しましたが、初期ページの読み込みに失敗しました: " & navErrDesc)
+    DisposeWebDriver remoteDriver
+    Exit Function
+  End If
+
+  Set driverOut = remoteDriver
+  TryAttachToEdgeDriverService = True
+End Function
+
+Private Function TryConnectToEdgeServiceCore(ByVal driver As Object, ByVal svcUrl As String, ByVal svcPort As Long, ByRef errLog As String, ByRef methodMissing As Boolean) As Boolean
+  Dim urls As Collection
+  Set urls = BuildEdgeServiceUrlCandidates(svcUrl, svcPort)
+  If urls Is Nothing Then Exit Function
+
+  Dim capabilities As Object
+  Set capabilities = CreateEdgeCapabilityDictionary()
+
+  Dim attempt As Variant
+  For Each attempt In urls
+    Dim attemptUrl As String
+    attemptUrl = CStr(attempt)
+    If Len(Trim$(attemptUrl)) = 0 Then GoTo NextAttempt
+
+    Dim mode As Integer
+    For mode = 0 To 2
+      Dim skipMode As Boolean
+      skipMode = False
+      On Error Resume Next
+      Select Case mode
+        Case 0
+          CallByName driver, "Connect", VbMethod, attemptUrl
+        Case 1
+          CallByName driver, "Connect", VbMethod, attemptUrl, Empty
+        Case 2
+          If capabilities Is Nothing Then
+            skipMode = True
+          Else
+            CallByName driver, "Connect", VbMethod, attemptUrl, capabilities
+          End If
+      End Select
+      Dim errNum As Long
+      Dim errDesc As String
+      errNum = Err.Number
+      errDesc = Err.description
+      Err.Clear
+      On Error GoTo 0
+
+      If skipMode Then GoTo NextMode
+
+      If errNum = 0 Then
+        TryConnectToEdgeServiceCore = True
+        Exit Function
+      ElseIf errNum = 438 Then
+        methodMissing = True
+        Exit Function
+      ElseIf errNum = 450 Or errNum = 449 Then
+        ' Wrong number of arguments; try next signature.
+      Else
+        Dim attemptLabel As String
+        attemptLabel = attemptUrl
+        Select Case mode
+          Case 1: attemptLabel = attemptLabel & " [Empty]"
+          Case 2: attemptLabel = attemptLabel & " [Capabilities]"
+        End Select
+        errLog = AppendError(errLog, "Connect " & attemptLabel & ": " & errNum & " " & errDesc)
+      End If
+NextMode:
+    Next mode
+    PauseWithDoEvents 0.15
+NextAttempt:
+  Next attempt
+End Function
+
+Private Function BuildEdgeServiceUrlCandidates(ByVal svcUrl As String, ByVal svcPort As Long) As Collection
+  Dim candidates As Collection
+  Set candidates = New Collection
+
+  Dim baseUrl As String
+  baseUrl = Trim$(svcUrl)
+  Dim baseNoSlash As String
+  baseNoSlash = TrimTrailingSlash(baseUrl)
+  Dim baseWithSlash As String
+  baseWithSlash = EnsureTrailingSlash(baseNoSlash)
+
+  Dim portBase As String
+  If svcPort > 0 Then portBase = "http://127.0.0.1:" & CStr(svcPort)
+  Dim portWithSlash As String
+  portWithSlash = EnsureTrailingSlash(portBase)
+
+  AddUniqueString candidates, baseWithSlash
+  AddUniqueString candidates, baseNoSlash
+  AddUniqueString candidates, portWithSlash
+  AddUniqueString candidates, portBase
+
+  AddUniqueString candidates, AppendUrlPath(baseWithSlash, "wd/hub")
+  AddUniqueString candidates, AppendUrlPath(EnsureTrailingSlash(baseNoSlash), "wd/hub")
+  AddUniqueString candidates, AppendUrlPath(portWithSlash, "wd/hub")
+  AddUniqueString candidates, AppendUrlPath(EnsureTrailingSlash(portBase), "wd/hub")
+  AddUniqueString candidates, AppendUrlPath(baseWithSlash, "session")
+  AddUniqueString candidates, AppendUrlPath(portWithSlash, "session")
+
+  Set BuildEdgeServiceUrlCandidates = candidates
+End Function
+
+Private Function TrimTrailingSlash(ByVal url As String) As String
+  Dim result As String
+  result = Trim$(url)
+  Do While Len(result) > 0 And Right$(result, 1) = "/" And Not EndsWithProtocolSuffix(result)
+    result = Left$(result, Len(result) - 1)
+  Loop
+  TrimTrailingSlash = result
+End Function
+
+Private Function EndsWithProtocolSuffix(ByVal url As String) As Boolean
+  Dim lowerValue As String
+  lowerValue = LCase$(url)
+  If Len(lowerValue) < 3 Then
+    EndsWithProtocolSuffix = False
+  Else
+    EndsWithProtocolSuffix = (Right$(lowerValue, 3) = "://")
+  End If
+End Function
+
+Private Function EnsureTrailingSlash(ByVal url As String) As String
+  Dim trimmed As String
+  trimmed = Trim$(url)
+  If Len(trimmed) = 0 Then
+    EnsureTrailingSlash = ""
+  ElseIf Right$(trimmed, 1) = "/" Then
+    EnsureTrailingSlash = trimmed
+  Else
+    EnsureTrailingSlash = trimmed & "/"
+  End If
+End Function
+
+Private Function AppendUrlPath(ByVal baseUrl As String, ByVal segment As String) As String
+  Dim trimmedBase As String
+  Dim trimmedSegment As String
+  trimmedBase = Trim$(baseUrl)
+  trimmedSegment = Trim$(segment)
+  If Len(trimmedBase) = 0 Or Len(trimmedSegment) = 0 Then
+    AppendUrlPath = trimmedBase
+  Else
+    If Right$(trimmedBase, 1) <> "/" Then trimmedBase = trimmedBase & "/"
+    AppendUrlPath = trimmedBase & trimmedSegment
+  End If
+End Function
+
+Private Sub AddUniqueString(ByRef list As Collection, ByVal value As String)
+  If list Is Nothing Then Exit Sub
+  Dim trimmed As String
+  trimmed = Trim$(value)
+  If Len(trimmed) = 0 Then Exit Sub
+  Dim item As Variant
+  For Each item In list
+    If StrComp(CStr(item), trimmed, vbTextCompare) = 0 Then Exit Sub
+  Next item
+  list.Add trimmed
+End Sub
+
+Private Function CreateEdgeCapabilityDictionary() As Object
+  On Error Resume Next
+  Dim root As Object
+  Set root = CreateObject("Scripting.Dictionary")
+  If Err.Number <> 0 Then
+    Err.Clear
+    Set root = Nothing
+    On Error GoTo 0
+    Exit Function
+  End If
+  root.RemoveAll
+
+  Dim alwaysMatch As Object
+  Set alwaysMatch = CreateObject("Scripting.Dictionary")
+  If Err.Number = 0 And Not alwaysMatch Is Nothing Then
+    alwaysMatch.RemoveAll
+    alwaysMatch.Add "browserName", "MicrosoftEdge"
+  Else
+    Err.Clear
+    Set alwaysMatch = Nothing
+  End If
+
+  Dim edgeOptions As Object
+  Set edgeOptions = CreateObject("Scripting.Dictionary")
+  If Err.Number = 0 And Not edgeOptions Is Nothing Then
+    edgeOptions.RemoveAll
+    edgeOptions.Add "args", Array()
+  Else
+    Err.Clear
+    Set edgeOptions = Nothing
+  End If
+  If Not alwaysMatch Is Nothing And Not edgeOptions Is Nothing Then
+    alwaysMatch.Add "ms:edgeOptions", edgeOptions
+  End If
+
+  Dim capsRoot As Object
+  Set capsRoot = CreateObject("Scripting.Dictionary")
+  If Err.Number = 0 And Not capsRoot Is Nothing Then
+    capsRoot.RemoveAll
+    If Not alwaysMatch Is Nothing Then capsRoot.Add "alwaysMatch", alwaysMatch
+    Dim firstMatch As Variant
+    Dim firstEntry As Object
+    Set firstEntry = CreateObject("Scripting.Dictionary")
+    If Err.Number = 0 And Not firstEntry Is Nothing Then
+      firstEntry.RemoveAll
+      firstMatch = Array(firstEntry)
+      capsRoot.Add "firstMatch", firstMatch
+    Else
+      Err.Clear
+    End If
+  Else
+    Err.Clear
+    Set capsRoot = Nothing
+  End If
+
+  If Not capsRoot Is Nothing Then
+    root.Add "capabilities", capsRoot
+  ElseIf Not alwaysMatch Is Nothing Then
+    root.Add "browserName", "MicrosoftEdge"
+  Else
+    root.Add "browserName", "MicrosoftEdge"
+  End If
+  On Error GoTo 0
+  Set CreateEdgeCapabilityDictionary = root
+End Function
+
+Private Function WaitForWebDriverSession(ByVal driver As Object, ByVal timeoutSeconds As Double) As Boolean
+  Dim startTick As Double
+  startTick = Timer
+  Do
+    On Error Resume Next
+    Dim sessionId As String
+    sessionId = CStr(driver.SessionId)
+    Dim errNum As Long
+    errNum = Err.Number
+    Err.Clear
+    On Error GoTo 0
+    If errNum = 0 Then
+      If Len(Trim$(sessionId)) > 0 Then
+        WaitForWebDriverSession = True
+        Exit Function
+      End If
+    End If
+    If SecondsElapsed(startTick) >= timeoutSeconds Then Exit Do
+    PauseWithDoEvents 0.2
+  Loop
+End Function
+
+Private Sub DisposeWebDriver(ByRef driver As Object)
+  On Error Resume Next
+  If Not driver Is Nothing Then
+    CallByName driver, "Quit", VbMethod
+  End If
+  Set driver = Nothing
+  Err.Clear
+  On Error GoTo 0
+End Sub
+
+
 Private Function TryStartDriver(ByVal progId As String, ByVal browserName As String, ByRef driverOut As Object, Optional ByVal driverPath As String = "", Optional ByRef errOut As String = "", Optional ByVal skipProcessCleanup As Boolean = False) As Boolean
   errOut = ""
   Dim lastError As String
@@ -832,32 +1166,18 @@ Private Function TryStartDriver(ByVal progId As String, ByVal browserName As Str
     Dim svcPort As Long
     Dim svcErr As String
     If LaunchEdgeDriverService(driverPath, svcUrl, svcPid, svcPort, svcErr) Then
-      On Error Resume Next
-      Set remoteDriver = CreateObject("Selenium.WebDriver")
-      If Err.Number <> 0 Or remoteDriver Is Nothing Then
-        lastError = AppendError(lastError, "Selenium.WebDriver の生成に失敗しました: " & Err.description)
-        Err.Clear
-      Else
-        remoteDriver.AddDriver "MicrosoftEdge", driverPath
-        remoteDriver.Start "edge", svcUrl
-        If Err.Number <> 0 Then
-          lastError = AppendError(lastError, "EdgeDriver サービスへの接続に失敗しました: " & Err.description)
-          Err.Clear
-        Else
-          On Error GoTo 0
-          Set driverOut = remoteDriver
-          RememberCopilotDiagPort svcPort
-          TryStartDriver = True
-          Exit Function
-        End If
+      Dim attachErr As String
+      attachErr = ""
+      If TryAttachToEdgeDriverService(svcUrl, svcPort, remoteDriver, attachErr) Then
+        Set driverOut = remoteDriver
+        RememberCopilotDiagPort svcPort
+        TryStartDriver = True
+        Exit Function
       End If
-      On Error GoTo 0
-      On Error Resume Next
-      If Not remoteDriver Is Nothing Then
-        remoteDriver.Quit
+      If Len(Trim$(attachErr)) > 0 Then
+        lastError = AppendError(lastError, Trim$(attachErr))
       End If
-      On Error GoTo 0
-      Set remoteDriver = Nothing
+      DisposeWebDriver remoteDriver
       StopEdgeDriverService
     Else
       lastError = AppendError(lastError, svcErr)

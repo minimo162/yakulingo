@@ -14,8 +14,8 @@ Option Explicit
 Private Const HELPER_SHEET As String = "ECM_Helper"
 Private Const COL_WB_PATH As String = "B5"
 Private Const COL_CSV_PATH As String = "B9"
-Private Const CELL_IGNORE_SPACES As String = "B12"
-Private Const CELL_FORCE_FONT As String = "B13"
+Private Const CELL_IGNORE_SPACES As String = "B13"
+Private Const CELL_FORCE_FONT As String = "B14"
 Private Const CELL_STATUS  As String = "B20"
 Private Const COPILOT_DIAG_START_ROW As Long = 23
 Private Const COPILOT_DIAG_MAX_LINES As Long = 200
@@ -29,12 +29,26 @@ Private Const DEFAULT_IGNORE_SPACES As Boolean = True
 Private Const DEFAULT_FORCE_FONT As Boolean = False
 Private Const FONT_FALLBACK As String = "Yu Gothic UI"
 
-' 配色
-Private Const COLOR_PRIMARY       As Long = &HE5464F
-Private Const COLOR_PRIMARY_LIGHT As Long = &HFFF2EE
-Private Const COLOR_BORDER        As Long = &HCA383F
-Private Const COLOR_TEXT          As Long = &H1A1A1A
-Private Const COLOR_BUTTON_BG     As Long = &HF5F5F5
+' テーマ
+Private Const UI_SHAPE_PREFIX As String = "ui_"
+
+Private Type UITheme
+  Primary As Long
+  PrimaryDark As Long
+  Accent As Long
+  AccentSoft As Long
+  Surface As Long
+  SurfaceAlt As Long
+  TextStrong As Long
+  TextMuted As Long
+  BorderSoft As Long
+  Glow As Long
+  FontPrimary As String
+  FontEmphasis As String
+End Type
+
+Private g_theme As UITheme
+Private g_themeReady As Boolean
 
 ' フォント
 Private Const UI_FONT As String = "Segoe UI"
@@ -137,124 +151,158 @@ Public Sub ECM_Setup()
   Dim ws As Worksheet
   Set ws = GetOrCreatePanel(HELPER_SHEET)
   ws.Cells.Clear
+  DeleteButtons ws, "btnECM_*"
+  DeleteShapesByPrefix ws, UI_SHAPE_PREFIX
 
-  With ws.Range("A1")
-    .value = LabelWithIcon("globe", "ECM Translator")
-    .Font.Bold = True
-    .Font.size = 18
-    .Font.Color = COLOR_TEXT
-    On Error Resume Next
-    .Font.Name = IIf(USE_EMOJI, "Segoe UI Emoji", UI_FONT)
-    If .Font.Name <> "Segoe UI Emoji" And USE_EMOJI Then .Font.Name = "Segoe UI Symbol"
-    If .Font.Name <> "Segoe UI Emoji" And .Font.Name <> "Segoe UI Symbol" Then .Font.Name = ALT_FONT
-    On Error GoTo 0
+  EnsureTheme
+  ApplyWorksheetBranding ws
+  With ws
+    .Columns("A").ColumnWidth = 18
+    .Columns("B").ColumnWidth = 52
+    .Columns("C").ColumnWidth = 3
+    .Columns("D").ColumnWidth = 3
+    .Columns("E").ColumnWidth = 12
+    .Columns("F").ColumnWidth = 10
+    .Rows(1).RowHeight = 42
+    .Rows(2).RowHeight = 26
+    .Rows(3).RowHeight = 20
+    .Rows(4).RowHeight = 18
+    .Rows(5).RowHeight = 44
+    .Rows(6).RowHeight = 34
+    .Rows(7).RowHeight = 22
+    .Rows(8).RowHeight = 24
+    .Rows(9).RowHeight = 44
+    .Rows(10).RowHeight = 34
+    .Rows(11).RowHeight = 22
+    .Rows(12).RowHeight = 26
+    .Rows(13).RowHeight = 24
+    .Rows(14).RowHeight = 22
+    .Rows(15).RowHeight = 28
+    .Rows(16).RowHeight = 40
+    .Rows(17).RowHeight = 34
+    .Rows(18).RowHeight = 34
+    .Rows(19).RowHeight = 26
+    .Rows(20).RowHeight = 34
+    .Rows(21).RowHeight = 26
+    .Rows(22).RowHeight = 24
   End With
-  ws.Range("A1:F1").Interior.Color = COLOR_PRIMARY_LIGHT
+  RenderHeroSection ws
 
-  ws.Range("A2").value = "翻訳対象のブックと辞書CSVを指定し、「辞書翻訳」または「copilot翻訳」を実行してください。"
-  ws.Range("A2:F2").Merge
-  ws.Range("A2:F2").Interior.Color = COLOR_PRIMARY_LIGHT
-  ws.Range("A2").Font.Color = COLOR_TEXT
-  ws.Range("A2").Font.size = 11
-
-  ws.Range("A4").value = "ターゲットブック"
-  ws.Range("A4").Font.Bold = True
+  ' ターゲットブックカード
+  AddCard ws, "card_target", ws.Range("A4:F7"), True
+  With ws.Range("A4:F4")
+    .Merge
+    .Value = "翻訳先ブックを整えて、世界を射程に捉える滑走路をセット。"
+    .Font.Color = g_theme.TextMuted
+    .Font.Size = 10
+  End With
+  ws.Range("A5").Value = LabelWithIcon("folder", "ターゲットブック")
+  ws.Range("A5").Font.Bold = True
+  ws.Range("A5").Font.Size = 12
   ws.Range("B5:F5").Merge
   With ws.Range(COL_WB_PATH)
-    .value = ThisWorkbook.fullName
+    .Value = ThisWorkbook.FullName
     .HorizontalAlignment = xlLeft
     .VerticalAlignment = xlTop
     .WrapText = True
+    .NumberFormat = "@"
   End With
+  StyleInputField ws.Range("B5:F5")
+  ws.Range("A7:F7").Merge
+  ws.Range("A7").Value = "常に最新の保存先をセットしてから辞書翻訳またはCopilotに進んでください。"
+  ws.Range("A7").Font.Color = g_theme.TextMuted
 
-  ws.Range("A8").value = "辞書CSV"
+  ' 辞書カード
+  AddCard ws, "card_dictionary", ws.Range("A8:F11"), False
+  ws.Range("A8").Value = LabelWithIcon("index", "辞書CSV")
   ws.Range("A8").Font.Bold = True
+  ws.Range("A8").Font.Size = 12
   ws.Range("B9:F9").Merge
   With ws.Range(COL_CSV_PATH)
-    .value = ThisWorkbook.path & Application.PathSeparator & "ECM_JE_Dictionary.csv"
+    .Value = ThisWorkbook.Path & Application.PathSeparator & "ECM_JE_Dictionary.csv"
     .HorizontalAlignment = xlLeft
     .VerticalAlignment = xlTop
     .WrapText = True
+    .NumberFormat = "@"
   End With
+  StyleInputField ws.Range("B9:F9")
+  ws.Range("A11:F11").Merge
+  ws.Range("A11").Value = "ブランド用語のニュアンスを逃さないよう、審査済みの最新CSVを指定してください。"
+  ws.Range("A11").Font.Color = g_theme.TextMuted
 
-  ws.Range("A11").value = "オプション"
-  ws.Range("A11").Font.Bold = True
-  ws.Range("A12").value = "スペース無視（辞書キー一致時）"
+  ' オプションカード
+  AddCard ws, "card_options", ws.Range("A12:F14"), False
+  ws.Range("A12").Value = LabelWithIcon("robot", "スマートオプション")
+  ws.Range("A12").Font.Bold = True
+  ws.Range("A12").Font.Size = 12
+  ws.Range("A13").Value = "スペースを無視して辞書キーを比較"
+  ws.Range("A13").Font.Color = g_theme.TextMuted
   With ws.Range(CELL_IGNORE_SPACES)
-    .value = DEFAULT_IGNORE_SPACES
+    .Value = DEFAULT_IGNORE_SPACES
     .HorizontalAlignment = xlLeft
     .VerticalAlignment = xlTop
     .WrapText = False
     .NumberFormat = "General"
   End With
-  ws.Range("A13").value = "フォント強制（Yu Gothic UI）"
+  StyleInputField ws.Range(CELL_IGNORE_SPACES)
+  ws.Range("A14").Value = "表示フォントをYu Gothic UIで統一"
+  ws.Range("A14").Font.Color = g_theme.TextMuted
   With ws.Range(CELL_FORCE_FONT)
-    .value = DEFAULT_FORCE_FONT
+    .Value = DEFAULT_FORCE_FONT
     .HorizontalAlignment = xlLeft
     .VerticalAlignment = xlTop
     .WrapText = False
     .NumberFormat = "General"
+  End With
+  StyleInputField ws.Range(CELL_FORCE_FONT)
+
+  ' アクションカード
+  AddCard ws, "card_actions", ws.Range("A15:F18"), True
+  With ws.Range("A15:F15")
+    .Merge
+    .Value = LabelWithIcon("check", "翻訳アクションをローンチ")
+    .Font.Bold = True
+    .Font.Size = 12
   End With
 
-  ws.Range("A15").value = "アクション"
-  ws.Range("A15").Font.Bold = True
-  ws.Range("A19").value = "ステータス"
+  ' ステータスカード
+  AddCard ws, "card_status", ws.Range("A19:F21"), False
+  ws.Range("A19").Value = LabelWithIcon("play", "リアルタイムステータス")
   ws.Range("A19").Font.Bold = True
+  ws.Range("A19").Font.Size = 12
   ws.Range("B20:F20").Merge
   With ws.Range(CELL_STATUS)
-    .value = "Ready"
+    .Value = "Ready for lift-off"
     .HorizontalAlignment = xlLeft
     .VerticalAlignment = xlTop
     .WrapText = True
   End With
+  ws.Range(CELL_STATUS).Font.Color = g_theme.Primary
+  ws.Range(CELL_STATUS).Font.Size = 12
 
-  ws.Range("A22").value = "Copilot診断レポート"
-  ws.Range("A22").Font.Bold = True
+  With ws.Range("A22:F22")
+    .Merge
+    .Value = LabelWithIcon("info", "Copilot診断レポート")
+    .Font.Bold = True
+    .Font.Color = g_theme.TextStrong
+  End With
   ClearCopilotDiagnosticsOutput ws
 
   DeleteButtons ws, "btnECM_*"
-  AddButton ws, "btnECM_BrowseWb", LabelWithIcon("folder", "ターゲット選択"), ws.Range("B6"), 220, "ECM_BrowseWorkbook", True, "翻訳先となるExcelブックを選択します。"
-  AddButton ws, "btnECM_BrowseCsv", LabelWithIcon("index", "辞書CSV選択"), ws.Range("B10"), 220, "ECM_BrowseCSV", True, "翻訳辞書となるCSVファイルを選択します。"
-  AddButton ws, "btnECM_Apply", LabelWithIcon("check", "辞書翻訳"), ws.Range("B16"), 280, "ECM_ApplyTranslations", True, "辞書を使ってターゲットブックを翻訳します。"
-  AddButton ws, "btnECM_Copilot", LabelWithIcon("robot", "copilot翻訳"), ws.Range("B17"), 280, "ECM_OpenCopilot", False, "Copilot for Microsoft 365 に接続し、ブラウザで翻訳を行います。"
-  AddButton ws, "btnECM_DiagnoseCopilot", LabelWithIcon("info", "Copilot診断"), ws.Range("B18"), 260, "ECM_RunCopilotDiagnostics", False, "Copilot ブラウザ起動トラブルの診断を実行します。"
+  AddButton ws, "btnECM_BrowseWb", LabelWithIcon("folder", "ターゲットを選択"), ws.Range("B6"), 260, "ECM_BrowseWorkbook", False, "翻訳先となるExcelブックを選択します。"
+  AddButton ws, "btnECM_BrowseCsv", LabelWithIcon("index", "辞書CSVを読み込む"), ws.Range("B10"), 260, "ECM_BrowseCSV", False, "翻訳辞書となるCSVファイルを選択します。"
+  AddButton ws, "btnECM_Apply", LabelWithIcon("check", "辞書翻訳をローンチ"), ws.Range("B16"), 300, "ECM_ApplyTranslations", True, "辞書を使ってターゲットブックを翻訳します。"
+  AddButton ws, "btnECM_Copilot", LabelWithIcon("robot", "Copilot翻訳を開く"), ws.Range("B17"), 300, "ECM_OpenCopilot", False, "Copilot for Microsoft 365 に接続し、ブラウザで翻訳を行います。"
+  AddButton ws, "btnECM_DiagnoseCopilot", LabelWithIcon("info", "Copilot診断を実行"), ws.Range("B18"), 300, "ECM_RunCopilotDiagnostics", False, "Copilot ブラウザ起動トラブルの診断を実行します。"
 
-  With ws
-    .Columns("A").ColumnWidth = 18
-    .Columns("B").ColumnWidth = 54
-    .Columns("C").ColumnWidth = 3
-    .Columns("D").ColumnWidth = 3
-    .Columns("E").ColumnWidth = 15
-    .Columns("F").ColumnWidth = 8
-    .Rows(1).RowHeight = 30
-    .Rows(2).RowHeight = 24
-    .Rows(4).RowHeight = 20
-    .Rows(5).RowHeight = 44
-    .Rows(6).RowHeight = 34
-    .Rows(7).RowHeight = 12
-    .Rows(8).RowHeight = 20
-    .Rows(9).RowHeight = 44
-    .Rows(10).RowHeight = 34
-    .Rows(11).RowHeight = 20
-    .Rows(12).RowHeight = 24
-    .Rows(13).RowHeight = 24
-    .Rows(14).RowHeight = 12
-    .Rows(15).RowHeight = 20
-    .Rows(16).RowHeight = 38
-    .Rows(17).RowHeight = 38
-    .Rows(18).RowHeight = 38
-    .Rows(19).RowHeight = 20
-    .Rows(20).RowHeight = 36
-    .Rows(21).RowHeight = 12
-    .Rows(22).RowHeight = 20
-  End With
+  SetupStatusPanel ws
 
   Application.ScreenUpdating = True
   Application.DisplayAlerts = True
 
   g_optionsLoaded = False
 
-  MsgBox "翻訳パネルを準備しました。ターゲットブックと辞書CSVを確認してから「辞書翻訳」を実行するか、「copilot翻訳」でCopilotを開いてください。", vbInformation
+  MsgBox "ラグジュアリーな翻訳パネルを用意しました。ターゲットと辞書を確認してから「辞書翻訳をローンチ」または「Copilot翻訳を開く」を選んでください。", vbInformation
 End Sub
 
 Private Function GetOrCreatePanel(Name As String) As Worksheet
@@ -278,6 +326,263 @@ Private Sub DeleteButtons(ws As Worksheet, ByVal likeName As String)
   On Error GoTo 0
 End Sub
 
+Private Sub DeleteShapesByPrefix(ws As Worksheet, ByVal prefix As String)
+  Dim shp As Shape
+  Dim targetPrefix As String
+  targetPrefix = prefix
+  If Len(targetPrefix) = 0 Then Exit Sub
+  On Error Resume Next
+  For Each shp In ws.Shapes
+    If Left$(shp.Name, Len(targetPrefix)) = targetPrefix Then shp.Delete
+  Next shp
+  On Error GoTo 0
+End Sub
+
+Private Sub EnsureTheme()
+  If g_themeReady Then Exit Sub
+  With g_theme
+    .Primary = RGB(11, 29, 42)
+    .PrimaryDark = RGB(5, 13, 20)
+    .Accent = RGB(46, 211, 183)
+    .AccentSoft = RGB(133, 236, 220)
+    .Surface = RGB(245, 247, 251)
+    .SurfaceAlt = RGB(255, 255, 255)
+    .TextStrong = RGB(16, 28, 36)
+    .TextMuted = RGB(120, 134, 148)
+    .BorderSoft = RGB(210, 219, 231)
+    .Glow = RGB(190, 223, 255)
+    .FontPrimary = UI_FONT
+    .FontEmphasis = "Segoe UI Semibold"
+  End With
+  g_themeReady = True
+End Sub
+
+Private Sub ApplyWorksheetBranding(ws As Worksheet)
+  EnsureTheme
+  With ws.Cells
+    .Interior.Color = g_theme.Surface
+    .Font.Name = g_theme.FontPrimary
+    .Font.Size = 11
+    .Font.Color = g_theme.TextStrong
+    .HorizontalAlignment = xlLeft
+    .VerticalAlignment = xlCenter
+  End With
+End Sub
+
+Private Sub RenderHeroSection(ws As Worksheet)
+  EnsureTheme
+  Dim heroRange As Range
+  Set heroRange = ws.Range("A1:F3")
+
+  Dim heroName As String
+  heroName = UI_SHAPE_PREFIX & "hero"
+  On Error Resume Next
+  ws.Shapes(heroName).Delete
+  On Error GoTo 0
+
+  Dim hero As Shape
+  Set hero = ws.Shapes.AddShape(msoShapeRoundedRectangle, heroRange.Left - 6, heroRange.Top - 4, heroRange.Width + 12, heroRange.Height + 8)
+  With hero
+    .Name = heroName
+    .Fill.TwoColorGradient msoGradientHorizontal, 1
+    .Fill.ForeColor.RGB = g_theme.Primary
+    .Fill.BackColor.RGB = g_theme.PrimaryDark
+    .Line.Visible = msoFalse
+    .Adjustments.Item(1) = 0.12
+    .Shadow.Visible = msoTrue
+    .Shadow.ForeColor.RGB = g_theme.Glow
+    .Shadow.Transparency = 0.7
+    .Shadow.Blur = 18
+    .Shadow.OffsetX = 0
+    .Shadow.OffsetY = 10
+    .Placement = xlMoveAndSize
+    .ZOrder msoSendToBack
+  End With
+
+  With ws.Range("A1:F1")
+    .Merge
+    .Value = LabelWithIcon("globe", "ECM Translator")
+    .Font.Bold = True
+    .Font.Size = 26
+    .Font.Color = RGB(255, 255, 255)
+    .HorizontalAlignment = xlLeft
+    .VerticalAlignment = xlBottom
+  End With
+  With ws.Range("A2:F2")
+    .Merge
+    .Value = "世界を翻訳でつなぐ。CSV辞書とCopilotを一つの滑走路に。"
+    .Font.Size = 14
+    .Font.Color = RGB(235, 243, 248)
+  End With
+  With ws.Range("A3:F3")
+    .Merge
+    .Value = "辞書翻訳でブックを整え、必要に応じて Copilot for Microsoft 365 へ即ジャンプ。"
+    .Font.Size = 11
+    .Font.Color = RGB(220, 233, 241)
+  End With
+End Sub
+
+Private Function CardShapeName(ByVal cardId As String) As String
+  CardShapeName = UI_SHAPE_PREFIX & cardId
+End Function
+
+Private Sub AddCard(ws As Worksheet, ByVal cardId As String, targetRange As Range, Optional ByVal elevated As Boolean = False)
+  EnsureTheme
+  Dim shapeName As String
+  shapeName = CardShapeName(cardId)
+  On Error Resume Next
+  ws.Shapes(shapeName).Delete
+  On Error GoTo 0
+
+  Dim padding As Double
+  padding = 4
+  Dim shp As Shape
+  Set shp = ws.Shapes.AddShape(msoShapeRoundedRectangle, targetRange.Left - padding, targetRange.Top - padding, targetRange.Width + padding * 2, targetRange.Height + padding * 2)
+  With shp
+    .Name = shapeName
+    .Fill.ForeColor.RGB = g_theme.SurfaceAlt
+    .Line.ForeColor.RGB = IIf(elevated, g_theme.Accent, g_theme.BorderSoft)
+    .Line.Transparency = IIf(elevated, 0.3, 0.55)
+    .Line.Weight = 0.9
+    .Adjustments.Item(1) = 0.08
+    .Shadow.Visible = True
+    .Shadow.ForeColor.RGB = g_theme.BorderSoft
+    .Shadow.Transparency = IIf(elevated, 0.35, 0.65)
+    .Shadow.Blur = IIf(elevated, 22, 14)
+    .Shadow.OffsetX = 0
+    .Shadow.OffsetY = IIf(elevated, 10, 5)
+    .Shadow.Size = 104
+    .Placement = xlMoveAndSize
+    .ZOrder msoSendToBack
+  End With
+End Sub
+
+Private Sub StyleInputField(ByVal target As Range)
+  EnsureTheme
+  If target Is Nothing Then Exit Sub
+  With target
+    .Interior.Color = g_theme.SurfaceAlt
+    .HorizontalAlignment = xlLeft
+    .VerticalAlignment = xlTop
+    .Font.Color = g_theme.TextStrong
+    .WrapText = True
+  End With
+  Dim bd As Border
+  For Each bd In target.Borders
+    bd.LineStyle = xlContinuous
+    bd.Weight = xlThin
+    bd.Color = g_theme.BorderSoft
+  Next bd
+End Sub
+
+Private Sub SetupStatusPanel(ws As Worksheet)
+  EnsureTheme
+  On Error Resume Next
+  ws.Shapes(CardShapeName("status_meter_bg")).Delete
+  ws.Shapes(CardShapeName("status_meter_fg")).Delete
+  On Error GoTo 0
+
+  Dim meterRange As Range
+  Set meterRange = ws.Range("B21:F21")
+  Dim meterBg As Shape
+  Set meterBg = ws.Shapes.AddShape(msoShapeRoundedRectangle, meterRange.Left, meterRange.Top + 4, meterRange.Width, meterRange.Height - 8)
+  With meterBg
+    .Name = CardShapeName("status_meter_bg")
+    .Fill.ForeColor.RGB = g_theme.SurfaceAlt
+    .Line.ForeColor.RGB = g_theme.BorderSoft
+    .Line.Transparency = 0.4
+    .Adjustments.Item(1) = 0.9
+    .Shadow.Visible = msoFalse
+    .Placement = xlMoveAndSize
+  End With
+
+  Dim meterFg As Shape
+  Set meterFg = ws.Shapes.AddShape(msoShapeRoundedRectangle, meterBg.Left + 4, meterBg.Top + 4, meterBg.Width * 0.25, meterBg.Height - 8)
+  With meterFg
+    .Name = CardShapeName("status_meter_fg")
+    .Fill.ForeColor.RGB = g_theme.Accent
+    .Line.Visible = msoFalse
+    .Adjustments.Item(1) = 0.9
+    .Placement = xlMoveAndSize
+  End With
+
+  UpdateStatusVisuals ws, ws.Range(CELL_STATUS).Value & ""
+End Sub
+
+Private Sub UpdateStatusVisuals(ByVal ws As Worksheet, ByVal msg As String)
+  On Error GoTo ExitHandler
+  EnsureTheme
+  Dim meterBg As Shape
+  Dim meterFg As Shape
+  Set meterBg = ws.Shapes(CardShapeName("status_meter_bg"))
+  Set meterFg = ws.Shapes(CardShapeName("status_meter_fg"))
+
+  Dim pct As Double
+  pct = StatusProgressFor(msg)
+  If pct < 0.05 Then pct = 0.05
+  If pct > 1 Then pct = 1
+
+  Dim usableWidth As Double
+  usableWidth = meterBg.Width - 8
+  If usableWidth < 8 Then usableWidth = meterBg.Width
+  Dim newWidth As Double
+  newWidth = usableWidth * pct
+  If newWidth < 8 Then newWidth = 8
+
+  meterFg.Left = meterBg.Left + 4
+  meterFg.Top = meterBg.Top + 4
+  meterFg.Width = newWidth
+  meterFg.Height = meterBg.Height - 8
+  If meterFg.Height < 6 Then meterFg.Height = 6
+  meterFg.Fill.ForeColor.RGB = IIf(pct >= 0.99, g_theme.AccentSoft, g_theme.Accent)
+ExitHandler:
+End Sub
+
+Private Function StatusProgressFor(ByVal msg As String) As Double
+  Dim lowered As String
+  lowered = LCase$(msg)
+  Select Case True
+    Case InStr(lowered, "ready") > 0 Or InStr(lowered, "待機") > 0
+      StatusProgressFor = 0.2
+    Case InStr(lowered, "読み込み") > 0 Or InStr(lowered, "load") > 0
+      StatusProgressFor = 0.35
+    Case InStr(lowered, "翻訳") > 0 Or InStr(lowered, "translat") > 0
+      StatusProgressFor = 0.65
+    Case InStr(lowered, "完了") > 0 Or InStr(lowered, "done") > 0 Or InStr(lowered, "success") > 0
+      StatusProgressFor = 1
+    Case InStr(lowered, "失敗") > 0 Or InStr(lowered, "error") > 0
+      StatusProgressFor = 0.1
+    Case Else
+      StatusProgressFor = 0.45
+  End Select
+End Function
+
+Private Sub ApplyButtonTheme(ByVal shp As Shape, ByVal primary As Boolean)
+  EnsureTheme
+  With shp
+    .LockAspectRatio = msoFalse
+    .Adjustments.Item(1) = 0.2
+    .Fill.ForeColor.RGB = IIf(primary, g_theme.Accent, g_theme.SurfaceAlt)
+    .Fill.Transparency = IIf(primary, 0, 0.05)
+    .Line.ForeColor.RGB = IIf(primary, g_theme.AccentSoft, g_theme.BorderSoft)
+    .Line.Transparency = IIf(primary, 0.15, 0.4)
+    .Line.Weight = 0.9
+    .Shadow.Visible = msoTrue
+    .Shadow.ForeColor.RGB = g_theme.BorderSoft
+    .Shadow.Transparency = 0.6
+    .Shadow.Blur = 14
+    .Shadow.OffsetX = 0
+    .Shadow.OffsetY = 4
+    .Placement = xlMove
+  End With
+  With shp.TextFrame2.TextRange.Font
+    If Not USE_EMOJI Then .Name = g_theme.FontPrimary
+    .Size = 12
+    .Bold = msoFalse
+    .Fill.ForeColor.RGB = IIf(primary, g_theme.PrimaryDark, g_theme.TextStrong)
+  End With
+End Sub
+
 Private Sub AddButton(ws As Worksheet, _
                       ByVal btnName As String, ByVal caption As String, _
                       anchor As Range, ByVal w As Double, _
@@ -287,15 +592,19 @@ Private Sub AddButton(ws As Worksheet, _
   On Error Resume Next
   ws.Shapes(btnName).Delete
   On Error GoTo 0
-  Set shp = ws.Shapes.AddShape(msoShapeRoundedRectangle, anchor.Left, anchor.Top, w, anchor.RowHeight)
+
+  Dim targetHeight As Double
+  targetHeight = anchor.RowHeight - 4
+  If targetHeight < 30 Then targetHeight = 30
+  Set shp = ws.Shapes.AddShape(msoShapeRoundedRectangle, anchor.Left, anchor.Top + (anchor.RowHeight - targetHeight) / 2, w, targetHeight)
   With shp
     .Name = btnName
     .onAction = onAction
     .TextFrame2.TextRange.Characters.text = caption
     .TextFrame2.TextRange.ParagraphFormat.Alignment = msoAlignCenter
     .TextFrame2.VerticalAnchor = msoAnchorMiddle
-    .TextFrame2.TextRange.Font.size = 10
-    .TextFrame2.TextRange.Font.Bold = msoTrue
+    .TextFrame2.TextRange.Font.size = 12
+    .TextFrame2.TextRange.Font.Bold = msoFalse
     On Error Resume Next
     If USE_EMOJI Then
       .TextFrame2.TextRange.Font.Name = "Segoe UI Emoji"
@@ -306,15 +615,7 @@ Private Sub AddButton(ws As Worksheet, _
       .TextFrame2.TextRange.Font.Name = UI_FONT
     End If
     On Error GoTo 0
-    If primary Then
-      .Fill.ForeColor.RGB = COLOR_PRIMARY_LIGHT
-      .line.ForeColor.RGB = COLOR_PRIMARY
-      .TextFrame2.TextRange.Font.Fill.ForeColor.RGB = COLOR_PRIMARY
-    Else
-      .Fill.ForeColor.RGB = COLOR_BUTTON_BG
-      .line.ForeColor.RGB = COLOR_BORDER
-      .TextFrame2.TextRange.Font.Fill.ForeColor.RGB = RGB(60, 60, 60)
-    End If
+    ApplyButtonTheme shp, primary
     If Len(tooltip) > 0 Then
       On Error Resume Next
       .AlternativeText = tooltip
@@ -5156,6 +5457,7 @@ Private Sub SetStatus(ByVal msg As String)
     .HorizontalAlignment = xlLeft
     .VerticalAlignment = xlTop
   End With
+  UpdateStatusVisuals ws, msg
 
   AdjustMergedRowHeight target, 36, 160
   Exit Sub

@@ -484,7 +484,7 @@ class TranslatorApp(ctk.CTk):
 
         self.stat_right_label = ctk.CTkLabel(
             self.stat_right,
-            text="Batch",
+            text="Status",
             font=get_font("text", 11),
             text_color=THEME.text_tertiary
         )
@@ -503,15 +503,15 @@ class TranslatorApp(ctk.CTk):
         )
         self.action_btn.pack(fill="x")
 
-        # Settings link
-        self.settings_btn = MinimalButton(
+        # About link
+        self.about_btn = MinimalButton(
             self.footer,
-            text="Settings",
+            text="About",
             variant="ghost",
             height=36,
-            command=self._show_settings
+            command=self._show_about
         )
-        self.settings_btn.pack(fill="x", pady=(THEME.space_sm, 0))
+        self.about_btn.pack(fill="x", pady=(THEME.space_sm, 0))
 
     def _on_action(self):
         """Handle main action button"""
@@ -532,8 +532,8 @@ class TranslatorApp(ctk.CTk):
         if self.on_cancel_callback:
             self.on_cancel_callback()
 
-    def _show_settings(self):
-        """Open settings"""
+    def _show_about(self):
+        """Open about dialog"""
         SettingsSheet(self)
 
     # === Public API ===
@@ -583,7 +583,7 @@ class TranslatorApp(ctk.CTk):
             text_color=THEME.text_primary
         )
 
-    def show_translating(self, current: int, total: int, batch: int, total_batches: int):
+    def show_translating(self, current: int, total: int):
         """Translation in progress - focused energy"""
         self.is_translating = True
 
@@ -595,10 +595,10 @@ class TranslatorApp(ctk.CTk):
         self.percent_label.configure(text=f"{percent}%")
 
         self.status_label.configure(text="Translating")
-        self.subtitle_label.configure(text=f"Processing batch {batch} of {total_batches}")
+        self.subtitle_label.configure(text=f"Processing {total} cells...")
 
-        self.stat_left_value.configure(text=f"{current}/{total}")
-        self.stat_right_value.configure(text=f"{batch}/{total_batches}")
+        self.stat_left_value.configure(text=str(total))
+        self.stat_right_value.configure(text="Working")
 
         self.action_btn.configure(
             text="Cancel",
@@ -670,14 +670,14 @@ class TranslatorApp(ctk.CTk):
 # =============================================================================
 class SettingsSheet(ctk.CTkToplevel):
     """
-    Settings panel - Clean, focused configuration.
+    Settings panel - Clean, focused information.
     """
 
     def __init__(self, parent):
         super().__init__(parent)
 
-        self.title("Settings")
-        self.geometry("380x280")
+        self.title("About")
+        self.geometry("380x220")
         self.configure(fg_color=THEME.bg_primary)
         self.resizable(False, False)
 
@@ -705,58 +705,32 @@ class SettingsSheet(ctk.CTkToplevel):
         # Header
         header = ctk.CTkLabel(
             container,
-            text="Settings",
+            text="Excel Translator",
             font=get_font("display", 22, "bold"),
             text_color=THEME.text_primary
         )
         header.pack(anchor="w")
 
-        # Batch size option
-        option_frame = GlassCard(container)
-        option_frame.pack(fill="x", pady=(THEME.space_lg, 0))
+        # Info card
+        info_frame = GlassCard(container)
+        info_frame.pack(fill="x", pady=(THEME.space_lg, 0))
 
-        option_inner = ctk.CTkFrame(option_frame, fg_color="transparent")
-        option_inner.pack(fill="x", padx=THEME.space_md, pady=THEME.space_md)
-
-        option_header = ctk.CTkFrame(option_inner, fg_color="transparent")
-        option_header.pack(fill="x")
+        info_inner = ctk.CTkFrame(info_frame, fg_color="transparent")
+        info_inner.pack(fill="x", padx=THEME.space_md, pady=THEME.space_md)
 
         ctk.CTkLabel(
-            option_header,
-            text="Batch Size",
+            info_inner,
+            text="Japanese → English Translation",
             font=get_font("text", 14, "bold"),
             text_color=THEME.text_primary
-        ).pack(side="left")
-
-        self.batch_value_label = ctk.CTkLabel(
-            option_header,
-            text="300",
-            font=get_font("mono", 14),
-            text_color=THEME.accent
-        )
-        self.batch_value_label.pack(side="right")
+        ).pack(anchor="w")
 
         ctk.CTkLabel(
-            option_inner,
-            text="Maximum cells per translation request",
+            info_inner,
+            text="Powered by M365 Copilot",
             font=get_font("text", 12),
             text_color=THEME.text_tertiary
-        ).pack(anchor="w", pady=(THEME.space_xs, THEME.space_sm))
-
-        self.batch_slider = ctk.CTkSlider(
-            option_inner,
-            from_=50,
-            to=500,
-            number_of_steps=9,
-            fg_color=THEME.bg_elevated,
-            progress_color=THEME.accent,
-            button_color=THEME.text_primary,
-            button_hover_color=THEME.text_secondary,
-            height=20,
-            command=self._on_batch_change
-        )
-        self.batch_slider.set(300)
-        self.batch_slider.pack(fill="x")
+        ).pack(anchor="w", pady=(THEME.space_xs, 0))
 
         # Done button
         done_btn = MinimalButton(
@@ -766,10 +740,6 @@ class SettingsSheet(ctk.CTkToplevel):
             command=self.destroy
         )
         done_btn.pack(fill="x", side="bottom")
-
-    def _on_batch_change(self, value):
-        """Update batch value display"""
-        self.batch_value_label.configure(text=str(int(value)))
 
 
 # =============================================================================

@@ -29,19 +29,16 @@ class Config:
     # Paths (relative to script directory)
     script_dir: Path = None
     prompt_file: Path = None
-    
-    # Local settings
-    max_lines_per_batch: int = 300
-    
+
     # M365 Copilot URL
     copilot_url: str = "https://m365.cloud.microsoft/chat/?auth=2"
-    
+
     # CSS Selectors
     selector_input: str = "#m365-chat-editor-target-element > p"
     selector_new_chat: str = "#new-chat-button"
     selector_send: str = 'button[aria-label="送信"]'
     selector_copy: str = 'button[data-testid="CopyButtonTestId"]'
-    
+
     def __post_init__(self):
         self.script_dir = Path(__file__).parent
         self.prompt_file = self.script_dir / "prompt.txt"
@@ -180,7 +177,41 @@ class ExcelHandler:
             if match:
                 row, col = int(match.group(1)), int(match.group(2))
                 sheet.Cells(row, col).Value = translated
-    
+
+    def capture_selection_screenshot(self) -> Optional[Path]:
+        """Capture screenshot of current selection and save to temp file"""
+        try:
+            from PIL import ImageGrab
+            import tempfile
+
+            selection = self.app.Selection
+
+            # Copy selection as picture to clipboard
+            # xlScreen=1, xlBitmap=2
+            selection.CopyPicture(Appearance=1, Format=2)
+
+            # Small delay for clipboard
+            time.sleep(0.3)
+
+            # Grab image from clipboard
+            img = ImageGrab.grabclipboard()
+            if img is None:
+                print("  Warning: Could not capture screenshot from clipboard")
+                return None
+
+            # Save to temp file
+            temp_dir = Path(tempfile.gettempdir()) / "excel_translator"
+            temp_dir.mkdir(exist_ok=True)
+            screenshot_path = temp_dir / f"selection_{int(time.time())}.png"
+            img.save(screenshot_path, "PNG")
+
+            print(f"  Screenshot saved: {screenshot_path.name}")
+            return screenshot_path
+
+        except Exception as e:
+            print(f"  Warning: Screenshot capture failed: {e}")
+            return None
+
     def cleanup(self):
         """Cleanup"""
         try:
@@ -393,18 +424,51 @@ class CopilotHandler:
         except Exception as e:
             print(f"New chat error: {e}")
     
-    def send_prompt(self, prompt: str) -> bool:
-        """Send prompt"""
+    def attach_image(self, image_path: Path) -> bool:
+        """Attach an image to the chat"""
+        try:
+            # Look for file input element (hidden)
+            file_input = self.page.query_selector('input[type="file"]')
+            if file_input:
+                file_input.set_input_files(str(image_path))
+                time.sleep(1)
+                print("  Image attached via file input")
+                return True
+
+            # Alternative: Click attach button and use file chooser
+            attach_button = self.page.query_selector('button[aria-label*="添付"], button[aria-label*="Attach"], button[data-testid*="attach"]')
+            if attach_button:
+                with self.page.expect_file_chooser() as fc_info:
+                    attach_button.click()
+                file_chooser = fc_info.value
+                file_chooser.set_files(str(image_path))
+                time.sleep(1)
+                print("  Image attached via button")
+                return True
+
+            print("  Warning: Could not find attach mechanism")
+            return False
+
+        except Exception as e:
+            print(f"  Warning: Image attach failed: {e}")
+            return False
+
+    def send_prompt(self, prompt: str, image_path: Optional[Path] = None) -> bool:
+        """Send prompt with optional image attachment"""
         try:
             # Bring browser to front so user can see progress
             self.page.bring_to_front()
-            
+
+            # Attach image first if provided
+            if image_path and image_path.exists():
+                self.attach_image(image_path)
+
             self.page.click(CONFIG.selector_input)
             time.sleep(0.3)
             self.page.evaluate(f"navigator.clipboard.writeText({repr(prompt)})")
             self.page.keyboard.press("Control+v")
             time.sleep(1)
-            
+
             input_text = self.page.inner_text(CONFIG.selector_input)
             if not input_text.strip():
                 show_message("Error", "Paste failed.\nPlease allow clipboard access in browser.", "error")
@@ -414,7 +478,7 @@ class CopilotHandler:
                 input_text = self.page.inner_text(CONFIG.selector_input)
                 if not input_text.strip():
                     return False
-            
+
             self.page.wait_for_selector(CONFIG.selector_send, state="visible", timeout=5000)
             self.page.click(CONFIG.selector_send)
             return True
@@ -494,12 +558,7 @@ class CopilotHandler:
 # =============================================================================
 # Helper Functions
 # =============================================================================
-def create_batches(cells: list[dict], max_lines: int) -> list[list[dict]]:
-    """Split cells into batches"""
-    return [cells[i:i + max_lines] for i in range(0, len(cells), max_lines)]
-
-
-def format_batch_for_copilot(cells: list[dict]) -> str:
+def format_cells_for_copilot(cells: list[dict]) -> str:
     """Format batch as TSV for Copilot"""
     return "\n".join(f"{cell['address']}\t{cell['text']}" for cell in cells)
 
@@ -595,15 +654,16 @@ class TranslatorController:
                 return
 
             total_cells = len(japanese_cells)
-            batches = create_batches(japanese_cells, CONFIG.max_lines_per_batch)
-            total_batches = len(batches)
 
             if self.cancel_requested:
                 self._update_ui(self.app.show_cancelled)
                 self.excel.cleanup()
                 return
 
-            # Step 4: Launch Copilot
+            # Step 4: Capture screenshot for context
+            screenshot_path = self.excel.capture_selection_screenshot()
+
+            # Step 5: Launch Copilot
             self.copilot = CopilotHandler()
             if not self.copilot.launch():
                 self._update_ui(self.app.show_error, "Failed to launch browser")
@@ -615,60 +675,37 @@ class TranslatorController:
                 self._cleanup()
                 return
 
-            # Step 5: Translate
-            all_translations = {}
-            processed_cells = 0
+            # Step 6: Translate
+            self._update_ui(self.app.show_translating, 0, total_cells)
 
-            for i, batch in enumerate(batches):
-                if self.cancel_requested:
-                    self._update_ui(self.app.show_cancelled)
-                    self._cleanup()
-                    return
+            cells_tsv = format_cells_for_copilot(japanese_cells)
+            full_prompt = f"{prompt_header}\n{cells_tsv}"
 
-                # Update UI
-                self._update_ui(
-                    self.app.show_translating,
-                    processed_cells, total_cells,
-                    i + 1, total_batches
-                )
+            if not self.copilot.send_prompt(full_prompt, image_path=screenshot_path):
+                self._update_ui(self.app.show_error, "Failed to send prompt")
+                self._cleanup()
+                return
 
-                if i > 0:
-                    self.copilot.new_chat()
+            response = self.copilot.wait_and_copy_response()
+            if not response:
+                self._update_ui(self.app.show_error, "Failed to get response")
+                self._cleanup()
+                return
 
-                batch_tsv = format_batch_for_copilot(batch)
-                full_prompt = f"{prompt_header}\n{batch_tsv}"
+            translations = parse_copilot_response(response)
 
-                if not self.copilot.send_prompt(full_prompt):
-                    continue
-
+            # Retry if count mismatch
+            if len(translations) != len(japanese_cells):
                 response = self.copilot.wait_and_copy_response()
-                if not response:
-                    continue
-
-                translations = parse_copilot_response(response)
-
-                # Retry if count mismatch
-                if len(translations) != len(batch):
-                    response = self.copilot.wait_and_copy_response()
-                    if response:
-                        translations = parse_copilot_response(response)
-
-                all_translations.update(translations)
-                processed_cells += len(batch)
-
-                # Update progress
-                self._update_ui(
-                    self.app.show_translating,
-                    processed_cells, total_cells,
-                    i + 1, total_batches
-                )
+                if response:
+                    translations = parse_copilot_response(response)
 
             # Close browser
             self.copilot.close()
 
             # Write to Excel
             bring_excel_to_front()
-            self.excel.write_translations(all_translations, selection_info)
+            self.excel.write_translations(translations, selection_info)
 
             # Select first cell
             time.sleep(0.5)
@@ -683,7 +720,7 @@ class TranslatorController:
             self.excel.cleanup()
 
             # Show completion
-            self._update_ui(self.app.show_complete, len(all_translations))
+            self._update_ui(self.app.show_complete, len(translations))
 
         except Exception as e:
             self._update_ui(self.app.show_error, str(e))
@@ -761,50 +798,42 @@ def main_cli():
         return
     print(f"  Japanese cells: {len(japanese_cells)}")
 
-    batches = create_batches(japanese_cells, CONFIG.max_lines_per_batch)
-    print(f"  Batches: {len(batches)}")
+    # Step 4: Capture screenshot
+    print("\n[4/5] Capturing screenshot...")
+    screenshot_path = excel.capture_selection_screenshot()
 
-    # Step 4: Launch Copilot
-    print("\n[4/5] Launching Copilot...")
+    # Step 5: Launch Copilot and translate
+    print("\n[5/5] Launching Copilot...")
     copilot = CopilotHandler()
     if not copilot.launch():
         excel.cleanup()
         return
 
-    # Step 5: Translate
-    print("\n[5/5] Translating...")
-    all_translations = {}
+    print("  Translating...")
+    cells_tsv = format_cells_for_copilot(japanese_cells)
+    full_prompt = f"{prompt_header}\n{cells_tsv}"
 
-    for i, batch in enumerate(batches):
-        print(f"\n  Batch {i + 1}/{len(batches)} ({len(batch)} cells)")
+    if not copilot.send_prompt(full_prompt, image_path=screenshot_path):
+        show_message("Error", "Failed to send prompt.", "error")
+        copilot.close()
+        excel.cleanup()
+        return
 
-        if i > 0:
-            copilot.new_chat()
+    print("  Waiting for Copilot...")
+    response = copilot.wait_and_copy_response()
+    if not response:
+        show_message("Error", "Failed to get response.", "error")
+        copilot.close()
+        excel.cleanup()
+        return
 
-        batch_tsv = format_batch_for_copilot(batch)
-        full_prompt = f"{prompt_header}\n{batch_tsv}"
+    translations = parse_copilot_response(response)
 
-        if not copilot.send_prompt(full_prompt):
-            show_message("Error", f"Failed to send batch {i + 1}.", "error")
-            continue
-        print("    Waiting for Copilot...")
-
+    if len(translations) != len(japanese_cells):
+        print(f"  Warning: input {len(japanese_cells)} rows -> output {len(translations)} rows")
         response = copilot.wait_and_copy_response()
-        if not response:
-            show_message("Error", f"Failed to get response for batch {i + 1}.", "error")
-            continue
-
-        translations = parse_copilot_response(response)
-
-        if len(translations) != len(batch):
-            print(f"    Warning: input {len(batch)} rows -> output {len(translations)} rows")
-            show_message("Error", "Failed to copy Copilot output.\nRetrying...", "error")
-            response = copilot.wait_and_copy_response()
-            if response:
-                translations = parse_copilot_response(response)
-
-        all_translations.update(translations)
-        print(f"    OK: {len(translations)} cells")
+        if response:
+            translations = parse_copilot_response(response)
 
     # Close Copilot tab
     copilot.close()
@@ -814,7 +843,7 @@ def main_cli():
     bring_excel_to_front()
 
     # Write translations
-    excel.write_translations(all_translations, selection_info)
+    excel.write_translations(translations, selection_info)
 
     # Brief pause then select first translated cell
     time.sleep(0.5)
@@ -828,7 +857,7 @@ def main_cli():
 
     excel.cleanup()
 
-    print(f"\n  Complete! {len(all_translations)} cells translated.")
+    print(f"\n  Complete! {len(translations)} cells translated.")
     print("\n" + "=" * 60)
 
 

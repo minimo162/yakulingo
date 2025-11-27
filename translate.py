@@ -1678,9 +1678,13 @@ def main():
     print("  (Excel is auto-detected)")
     print("-" * 50)
     if config.glossary_enabled:
-        print(f"  Glossary: {config.glossary_url[:50]}...")
+        mode = config.config.glossary.mode
+        if mode == "sharepoint":
+            print(f"  Glossary: SharePoint ({config.glossary_url[:40]}...)")
+        else:
+            print(f"  Glossary: Local ({config.config.glossary.local_file})")
     else:
-        print("  Glossary: Not configured")
+        print("  Glossary: Not configured (edit config.json)")
     if config.minimize_to_tray:
         print("  System Tray: Enabled (close to minimize)")
     print("=" * 50)

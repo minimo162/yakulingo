@@ -1,0 +1,13 @@
+# Universal Translator - Glossary File
+# Format: source_term,translated_term
+# Lines starting with # are comments
+#
+# Example entries (Japanese → English):
+# 売上高,Revenue
+# 営業利益,Operating Income
+#
+# Example entries (English → Japanese):
+# ROI,投資対効果
+# KPI,重要業績評価指標
+#
+# Add your custom terms below:

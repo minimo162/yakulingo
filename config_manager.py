@@ -1,20 +1,23 @@
 """
 Configuration Manager
-Manages application settings including glossary SharePoint links.
+Manages application settings including glossary (local file or SharePoint).
 """
 
 import json
+import csv
 from pathlib import Path
 from dataclasses import dataclass, field, asdict
-from typing import Optional
+from typing import Optional, List, Tuple
 
 
 @dataclass
 class GlossaryConfig:
     """Glossary configuration"""
     enabled: bool = False
+    mode: str = "local"  # "local" or "sharepoint"
+    local_file: str = "glossary.csv"
     sharepoint_url: str = ""
-    description: str = "SharePoint URL to glossary file (Excel/Word). M365 Copilot will reference this for consistent terminology."
+    description: str = "mode: 'local' = use local CSV file, 'sharepoint' = use SharePoint URL (paid Copilot only)"
 
 
 @dataclass
@@ -121,15 +124,42 @@ class ConfigManager:
     def start_minimized(self) -> bool:
         return self.config.system_tray.start_minimized
 
+    def _load_local_glossary(self) -> List[Tuple[str, str]]:
+        """Load glossary terms from local CSV file"""
+        terms = []
+        glossary_path = Path(__file__).parent / self.config.glossary.local_file
+
+        if not glossary_path.exists():
+            return terms
+
+        try:
+            with open(glossary_path, 'r', encoding='utf-8') as f:
+                reader = csv.reader(f)
+                for row in reader:
+                    # Skip empty lines and comments
+                    if not row or row[0].startswith('#'):
+                        continue
+                    if len(row) >= 2:
+                        source = row[0].strip()
+                        target = row[1].strip()
+                        if source and target:
+                            terms.append((source, target))
+        except Exception as e:
+            print(f"Warning: Failed to load glossary: {e}")
+
+        return terms
+
     def get_glossary_prompt_addition(self) -> str:
         """
         Get the prompt addition for glossary reference.
         Returns empty string if glossary is not configured.
         """
-        if not self.glossary_enabled or not self.glossary_url:
+        if not self.glossary_enabled:
             return ""
 
-        return f"""
+        # SharePoint mode
+        if self.config.glossary.mode == "sharepoint" and self.glossary_url:
+            return f"""
 
 [IMPORTANT: Glossary Reference]
 Please refer to the glossary file for consistent terminology:
@@ -138,6 +168,25 @@ Please refer to the glossary file for consistent terminology:
 Use the terms defined in this glossary whenever applicable.
 If a term appears in the glossary, you MUST use the specified translation.
 """
+
+        # Local file mode
+        if self.config.glossary.mode == "local":
+            terms = self._load_local_glossary()
+            if not terms:
+                return ""
+
+            # Format terms as a table
+            terms_table = "\n".join(f"  {src} → {tgt}" for src, tgt in terms)
+
+            return f"""
+
+[IMPORTANT: Use the following glossary for consistent terminology]
+{terms_table}
+
+You MUST use these exact translations when the source term appears.
+"""
+
+        return ""
 
 
 # Global config instance

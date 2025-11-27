@@ -35,8 +35,21 @@ from playwright.sync_api import sync_playwright, Page, BrowserContext
 class TranslationMode(Enum):
     """Translation mode"""
     EXCEL_JP_TO_EN = "excel_jp_to_en"  # Excel cells: Japanese → English (compressed)
+    EXCEL_EN_TO_JP = "excel_en_to_jp"  # Excel cells: English → Japanese
     TEXT_JP_TO_EN = "text_jp_to_en"    # General text: Japanese → English
     TEXT_EN_TO_JP = "text_en_to_jp"    # General text: English → Japanese
+
+
+def is_excel_active() -> bool:
+    """Check if the active window is Microsoft Excel"""
+    try:
+        import win32gui
+        hwnd = win32gui.GetForegroundWindow()
+        title = win32gui.GetWindowText(hwnd)
+        # Check for Excel window titles
+        return "Excel" in title or "EXCEL" in title
+    except Exception:
+        return False
 
 
 # =============================================================================
@@ -48,6 +61,7 @@ class Config:
     # Paths (relative to script directory)
     script_dir: Path = None
     prompt_file: Path = None  # Excel JP→EN (compressed)
+    prompt_file_excel_en_to_jp: Path = None  # Excel EN→JP
     prompt_file_jp_to_en: Path = None  # General JP→EN
     prompt_file_en_to_jp: Path = None  # EN→JP
 
@@ -63,6 +77,7 @@ class Config:
     def __post_init__(self):
         self.script_dir = Path(__file__).parent
         self.prompt_file = self.script_dir / "prompt.txt"
+        self.prompt_file_excel_en_to_jp = self.script_dir / "prompt_excel_en_to_jp.txt"
         self.prompt_file_jp_to_en = self.script_dir / "prompt_jp_to_en.txt"
         self.prompt_file_en_to_jp = self.script_dir / "prompt_en_to_jp.txt"
 
@@ -70,6 +85,8 @@ class Config:
         """Get prompt file for translation mode"""
         if mode == TranslationMode.EXCEL_JP_TO_EN:
             return self.prompt_file
+        elif mode == TranslationMode.EXCEL_EN_TO_JP:
+            return self.prompt_file_excel_en_to_jp
         elif mode == TranslationMode.TEXT_JP_TO_EN:
             return self.prompt_file_jp_to_en
         elif mode == TranslationMode.TEXT_EN_TO_JP:
@@ -657,6 +674,25 @@ class ExcelHandler:
                         "address": f"R{row}C{col}", "text": text,
                     })
         return japanese_cells
+
+    def extract_english_cells(self, info: dict) -> list[dict]:
+        """Extract cells containing English (non-Japanese text)"""
+        english_cells = []
+        sheet = self.original_sheet
+        for row in range(info["first_row"], info["last_row"] + 1):
+            for col in range(info["first_col"], info["last_col"] + 1):
+                cell = sheet.Cells(row, col)
+                value = cell.Value
+                if value is None:
+                    continue
+                text = clean_cell_text(str(value))
+                # Non-empty text that does NOT contain Japanese
+                if text and not has_japanese(text):
+                    english_cells.append({
+                        "row": row, "col": col,
+                        "address": f"R{row}C{col}", "text": text,
+                    })
+        return english_cells
     
     def write_translations(self, translations: dict[str, str], info: dict):
         """Write translations back to sheet"""
@@ -1336,13 +1372,23 @@ class TranslatorController:
         self.cancel_requested = False
         self.excel: Optional[ExcelHandler] = None
         self.copilot: Optional[CopilotHandler] = None
+        self.translation_mode: TranslationMode = TranslationMode.EXCEL_JP_TO_EN
 
-    def start_translation(self):
+    def start_translation(self, mode: TranslationMode = TranslationMode.EXCEL_JP_TO_EN):
         """Start translation in background thread"""
         import threading
         self.cancel_requested = False
+        self.translation_mode = mode
         thread = threading.Thread(target=self._run_translation, daemon=True)
         thread.start()
+
+    def start_jp_to_en(self):
+        """Start JP→EN Excel translation"""
+        self.start_translation(TranslationMode.EXCEL_JP_TO_EN)
+
+    def start_en_to_jp(self):
+        """Start EN→JP Excel translation"""
+        self.start_translation(TranslationMode.EXCEL_EN_TO_JP)
 
     def request_cancel(self):
         """Request cancellation"""
@@ -1358,9 +1404,14 @@ class TranslatorController:
             # Initialize COM for this thread
             pythoncom.CoInitialize()
 
-            # Step 1: Load prompt
+            # Step 1: Load prompt based on mode
             self._update_ui(self.app.show_connecting)
-            prompt_header = load_prompt()
+            prompt_file = CONFIG.get_prompt_file(self.translation_mode)
+            try:
+                prompt_header = prompt_file.read_text(encoding="utf-8")
+            except Exception as e:
+                self._update_ui(self.app.show_error, f"Failed to load prompt: {e}")
+                return
 
             if self.cancel_requested:
                 self._update_ui(self.app.show_cancelled)
@@ -1372,16 +1423,26 @@ class TranslatorController:
                 self._update_ui(self.app.show_error, "Failed to connect to Excel")
                 return
 
-            # Step 3: Get selection
+            # Step 3: Get selection and extract cells based on direction
             selection_info = self.excel.get_selection_info()
-            japanese_cells = self.excel.extract_japanese_cells(selection_info)
 
-            if not japanese_cells:
-                self._update_ui(self.app.show_error, "No Japanese text found in selection")
+            if self.translation_mode == TranslationMode.EXCEL_EN_TO_JP:
+                # EN→JP: Extract English cells
+                cells_to_translate = self.excel.extract_english_cells(selection_info)
+                error_msg = "No English text found in selection"
+            else:
+                # JP→EN: Extract Japanese cells
+                cells_to_translate = self.excel.extract_japanese_cells(selection_info)
+                error_msg = "No Japanese text found in selection"
+
+            if not cells_to_translate:
+                self._update_ui(self.app.show_error, error_msg)
                 self.excel.cleanup()
                 return
 
-            total_cells = len(japanese_cells)
+            total_cells = len(cells_to_translate)
+            # Use cells_to_translate instead of japanese_cells below
+            japanese_cells = cells_to_translate  # Alias for compatibility
 
             if self.cancel_requested:
                 self._update_ui(self.app.show_cancelled)
@@ -1518,48 +1579,51 @@ def main():
     universal_controller = UniversalTranslatorController(app)
 
     # Connect callbacks for all modes
-    app.set_on_start(excel_controller.start_translation)  # Excel mode
-    app.set_on_jp_to_en(lambda: universal_controller.translate_clipboard(TranslationMode.TEXT_JP_TO_EN))
-    app.set_on_en_to_jp(lambda: universal_controller.translate_clipboard(TranslationMode.TEXT_EN_TO_JP))
+    app.set_on_start(excel_controller.start_translation)  # Excel mode (legacy)
+    app.set_on_jp_to_en(lambda: _smart_translate(app, excel_controller, universal_controller, "jp_to_en"))
+    app.set_on_en_to_jp(lambda: _smart_translate(app, excel_controller, universal_controller, "en_to_jp"))
     app.set_on_cancel(lambda: (excel_controller.request_cancel(), universal_controller.request_cancel()))
 
-    # Global hotkey handlers
-    def on_hotkey_excel():
-        """Handle Ctrl+Shift+X hotkey - Excel translation"""
-        app.after(0, lambda: _trigger_excel_translation(app, excel_controller))
+    def _smart_translate(app, excel_ctrl, universal_ctrl, direction: str):
+        """Smart translation: auto-detect Excel or use clipboard"""
+        if app.is_translating:
+            return
 
+        # Auto-detect if Excel is active
+        if is_excel_active():
+            # Use Excel translation
+            if direction == "jp_to_en":
+                excel_ctrl.start_jp_to_en()
+            else:
+                excel_ctrl.start_en_to_jp()
+        else:
+            # Use clipboard translation
+            if direction == "jp_to_en":
+                universal_ctrl.translate_clipboard(TranslationMode.TEXT_JP_TO_EN)
+            else:
+                universal_ctrl.translate_clipboard(TranslationMode.TEXT_EN_TO_JP)
+
+    # Global hotkey handlers (only 2 hotkeys now)
     def on_hotkey_jp_to_en():
-        """Handle Ctrl+Shift+E hotkey - Japanese to English"""
-        app.after(0, lambda: _trigger_universal_translation(app, universal_controller, TranslationMode.TEXT_JP_TO_EN))
+        """Handle Ctrl+Shift+E hotkey - Japanese to English (auto-detect Excel)"""
+        app.after(0, lambda: _trigger_smart_translation(app, excel_controller, universal_controller, "jp_to_en"))
 
     def on_hotkey_en_to_jp():
-        """Handle Ctrl+Shift+J hotkey - English to Japanese"""
-        app.after(0, lambda: _trigger_universal_translation(app, universal_controller, TranslationMode.TEXT_EN_TO_JP))
+        """Handle Ctrl+Shift+J hotkey - English to Japanese (auto-detect Excel)"""
+        app.after(0, lambda: _trigger_smart_translation(app, excel_controller, universal_controller, "en_to_jp"))
 
-    def _trigger_excel_translation(app, controller):
-        """Trigger Excel translation from hotkey"""
+    def _trigger_smart_translation(app, excel_ctrl, universal_ctrl, direction: str):
+        """Trigger smart translation from hotkey"""
         try:
             app.deiconify()
             app.lift()
             app.focus_force()
             if not app.is_translating:
-                controller.start_translation()
+                _smart_translate(app, excel_ctrl, universal_ctrl, direction)
         except Exception:
             pass
 
-    def _trigger_universal_translation(app, controller, mode):
-        """Trigger universal translation from hotkey"""
-        try:
-            app.deiconify()
-            app.lift()
-            app.focus_force()
-            if not app.is_translating:
-                controller.translate_clipboard(mode)
-        except Exception:
-            pass
-
-    # Register global hotkeys
-    keyboard.add_hotkey('ctrl+shift+x', on_hotkey_excel, suppress=False)    # Excel cells
+    # Register global hotkeys (only 2 now - Excel is auto-detected)
     keyboard.add_hotkey('ctrl+shift+e', on_hotkey_jp_to_en, suppress=False)  # JP → EN
     keyboard.add_hotkey('ctrl+shift+j', on_hotkey_en_to_jp, suppress=False)  # EN → JP
 
@@ -1567,9 +1631,9 @@ def main():
     print("=" * 50)
     print("Universal Translator - Global Hotkeys")
     print("=" * 50)
-    print("  Ctrl+Shift+E : Japanese → English (any text)")
-    print("  Ctrl+Shift+J : English → Japanese (any text)")
-    print("  Ctrl+Shift+X : Excel cells (Japanese → English)")
+    print("  Ctrl+Shift+E : Japanese → English")
+    print("  Ctrl+Shift+J : English → Japanese")
+    print("  (Excel is auto-detected)")
     print("=" * 50)
 
     try:

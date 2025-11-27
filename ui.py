@@ -1650,7 +1650,7 @@ class TranslatorApp(ctk.CTk):
         # Subtitle - Also Kinetic
         self.subtitle_text = KineticText(
             self.hero,
-            text="Select cells in Excel",
+            text="Japanese → English (Excel auto-detected)",
             font_size=14,
             font_weight="normal",
             color=THEME.text_secondary
@@ -1724,7 +1724,7 @@ class TranslatorApp(ctk.CTk):
         # Mode label
         self.mode_label = ctk.CTkLabel(
             self.mode_frame,
-            text="Mode:",
+            text="Direction:",
             font=get_font("text", 11),
             text_color=THEME.text_muted
         )
@@ -1734,58 +1734,43 @@ class TranslatorApp(ctk.CTk):
         self.mode_buttons_frame = ctk.CTkFrame(self.mode_frame, fg_color="transparent")
         self.mode_buttons_frame.pack(side="left", fill="x", expand=True)
 
-        # Current mode
-        self.current_mode = "excel"  # excel, jp_to_en, en_to_jp
+        # Current mode (only 2 modes now - Excel is auto-detected)
+        self.current_mode = "jp_to_en"  # jp_to_en, en_to_jp
 
-        # Mode: Japanese → English (general text)
+        # Mode: Japanese → English
         self.mode_jp_en_btn = ctk.CTkButton(
             self.mode_buttons_frame,
-            text="JP→EN",
-            width=70,
-            height=28,
-            font=get_font("text", 11, "bold"),
-            fg_color=THEME.bg_elevated,
-            hover_color=THEME.bg_tertiary,
-            text_color=THEME.text_secondary,
-            corner_radius=6,
+            text="JP → EN",
+            width=90,
+            height=32,
+            font=get_font("text", 12, "bold"),
+            fg_color=THEME.accent,
+            hover_color=THEME.gradient_active[1],
+            text_color=THEME.bg_primary,
+            corner_radius=8,
             command=lambda: self._set_mode("jp_to_en")
         )
-        self.mode_jp_en_btn.pack(side="left", padx=(0, 4))
+        self.mode_jp_en_btn.pack(side="left", padx=(0, 8))
 
         # Mode: English → Japanese
         self.mode_en_jp_btn = ctk.CTkButton(
             self.mode_buttons_frame,
-            text="EN→JP",
-            width=70,
-            height=28,
-            font=get_font("text", 11, "bold"),
+            text="EN → JP",
+            width=90,
+            height=32,
+            font=get_font("text", 12, "bold"),
             fg_color=THEME.bg_elevated,
-            hover_color=THEME.bg_tertiary,
+            hover_color=THEME.bg_card,
             text_color=THEME.text_secondary,
-            corner_radius=6,
+            corner_radius=8,
             command=lambda: self._set_mode("en_to_jp")
         )
-        self.mode_en_jp_btn.pack(side="left", padx=(0, 4))
+        self.mode_en_jp_btn.pack(side="left")
 
-        # Mode: Excel cells
-        self.mode_excel_btn = ctk.CTkButton(
-            self.mode_buttons_frame,
-            text="Excel",
-            width=70,
-            height=28,
-            font=get_font("text", 11, "bold"),
-            fg_color=THEME.accent,
-            hover_color=THEME.accent_hover,
-            text_color=THEME.bg_primary,
-            corner_radius=6,
-            command=lambda: self._set_mode("excel")
-        )
-        self.mode_excel_btn.pack(side="left")
-
-        # Hotkey hints
+        # Hotkey hints (updated - no Excel hotkey)
         self.hotkey_hint = ctk.CTkLabel(
             self.footer,
-            text="Hotkeys: E=JP→EN  J=EN→JP  X=Excel (with Ctrl+Shift)",
+            text="Ctrl+Shift+E = JP→EN  |  Ctrl+Shift+J = EN→JP  (Excel auto-detected)",
             font=get_font("text", 10),
             text_color=THEME.text_muted
         )
@@ -1811,7 +1796,7 @@ class TranslatorApp(ctk.CTk):
         self.about_btn.pack(fill="x", pady=(THEME.space_sm, 0))
 
     def _set_mode(self, mode: str):
-        """Set translation mode"""
+        """Set translation mode (2 modes only - Excel is auto-detected)"""
         self.current_mode = mode
 
         # Reset all button styles
@@ -1826,18 +1811,14 @@ class TranslatorApp(ctk.CTk):
 
         self.mode_jp_en_btn.configure(**inactive_style)
         self.mode_en_jp_btn.configure(**inactive_style)
-        self.mode_excel_btn.configure(**inactive_style)
 
         # Highlight active button and update subtitle
         if mode == "jp_to_en":
             self.mode_jp_en_btn.configure(**active_style)
-            self.subtitle_text.set_text("Select text anywhere")
-        elif mode == "en_to_jp":
+            self.subtitle_text.set_text("Japanese → English (Excel auto-detected)")
+        else:  # en_to_jp
             self.mode_en_jp_btn.configure(**active_style)
-            self.subtitle_text.set_text("Select English text")
-        else:  # excel
-            self.mode_excel_btn.configure(**active_style)
-            self.subtitle_text.set_text("Select cells in Excel")
+            self.subtitle_text.set_text("English → Japanese (Excel auto-detected)")
 
     def _on_action(self):
         """Handle main action button"""
@@ -1847,7 +1828,7 @@ class TranslatorApp(ctk.CTk):
             self._start()
 
     def _start(self):
-        """Start translation based on current mode"""
+        """Start translation based on current mode (2 modes - Excel auto-detected)"""
         SoundPlayer.play_start()
 
         if self.current_mode == "jp_to_en" and self.on_jp_to_en_callback:
@@ -1855,6 +1836,7 @@ class TranslatorApp(ctk.CTk):
         elif self.current_mode == "en_to_jp" and self.on_en_to_jp_callback:
             self.on_en_to_jp_callback()
         elif self.on_start_callback:
+            # Fallback to start callback (legacy)
             self.on_start_callback()
 
     def _request_cancel(self):
@@ -1903,9 +1885,12 @@ class TranslatorApp(ctk.CTk):
         self.progress_ring.set_progress(0, animate=False)
         self.percent_label.configure(text="")
 
-        # Kinetic Typography
+        # Kinetic Typography - show based on current mode
         self.status_text.set_text("Ready")
-        self.subtitle_text.set_text("Select cells in Excel")
+        if self.current_mode == "jp_to_en":
+            self.subtitle_text.set_text("Japanese → English (Excel auto-detected)")
+        else:
+            self.subtitle_text.set_text("English → Japanese (Excel auto-detected)")
 
         self.stat_left_value.configure(text="--")
         self.stat_right_value.configure(text="--")
@@ -2180,10 +2165,24 @@ class SettingsSheet(ctk.CTkToplevel):
 
         ctk.CTkLabel(
             hotkey_inner,
-            text="Hotkey:  Ctrl + Shift + E",
-            font=get_font("mono", 13),
+            text="Ctrl+Shift+E = JP → EN",
+            font=get_font("mono", 12),
             text_color=THEME.accent
         ).pack(anchor="w")
+
+        ctk.CTkLabel(
+            hotkey_inner,
+            text="Ctrl+Shift+J = EN → JP",
+            font=get_font("mono", 12),
+            text_color=THEME.accent
+        ).pack(anchor="w")
+
+        ctk.CTkLabel(
+            hotkey_inner,
+            text="Excel is auto-detected",
+            font=get_font("text", 11),
+            text_color=THEME.text_tertiary
+        ).pack(anchor="w", pady=(4, 0))
 
         # Done button
         done_btn = MinimalButton(

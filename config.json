@@ -1,8 +1,10 @@
 {
     "glossary": {
         "enabled": false,
+        "mode": "local",
+        "local_file": "glossary.csv",
         "sharepoint_url": "",
-        "description": "SharePoint URL to glossary file (Excel/Word). M365 Copilot will reference this for consistent terminology."
+        "description": "mode: 'local' = use local CSV file, 'sharepoint' = use SharePoint URL (paid Copilot only)"
     },
     "system_tray": {
         "minimize_to_tray": true,

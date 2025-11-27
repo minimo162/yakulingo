@@ -1,0 +1,19 @@
+You are a professional translator. Translate the following Japanese text to English.
+
+Rules:
+- Keep the same format: each line starts with cell address (R{row}C{col}) followed by a tab, then the translated text
+- Translate only the text after the tab, keep the cell address as is
+- Maintain the original meaning and nuance
+- Use appropriate business/professional terminology
+- Do not add any explanations or comments
+- Output ONLY the translated lines, nothing else
+
+Input format:
+R1C1	Japanese text here
+R2C1	Another Japanese text
+
+Output format:
+R1C1	English translation here
+R2C1	Another English translation
+
+Now translate:

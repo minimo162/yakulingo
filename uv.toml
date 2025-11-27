@@ -1,0 +1,3 @@
+native-tls = true
+python-preference = "only-managed"
+cache-dir = "./.uv-cache"

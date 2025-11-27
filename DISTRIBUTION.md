@@ -1,39 +1,45 @@
-# Distribution Guide
+# 配布ガイド
 
-## For Setup Administrator
+## 管理者向け：配布用ZIPの作成手順
 
-### 1. Run Setup
+### 1. セットアップ実行
 ```
-Double-click setup.bat
-```
-
-### 2. Test
-```
-Double-click run.bat
+setup.bat をダブルクリック
 ```
 
-### 3. Create ZIP for Distribution
+### 2. 動作確認
+```
+★run.bat をダブルクリック
+```
 
-**Include:**
-- setup.bat
-- run.bat
-- translate.py
-- pyproject.toml
-- uv.toml
-- .uv-cache/
-- .uv-python/
-- .playwright-browsers/
+### 3. ZIP作成
 
-**Exclude:**
-- .edge-profile/ (login credentials)
-- .venv/
-- uv.lock
-- __pycache__/
+**含めるファイル:**
+- `★run.bat`
+- `setup.bat`
+- `translate.py`
+- `prompt.txt`
+- `pyproject.toml`
+- `uv.toml`
+- `README.md`
+- `.uv-cache/`
+- `.uv-python/`
+- `.playwright-browsers/`
+
+**除外するファイル:**
+- `.edge-profile/` （ログイン情報）
+- `.venv/`
+- `.git/`
+- `uv.lock`
+- `__pycache__/`
+- `DISTRIBUTION.md`
+- `AGENTS.md`
+- `LICENSE`
 
 ---
 
-## For End Users
+## 利用者向け
 
-1. Extract ZIP
-2. Double-click run.bat
-3. Login to M365 Copilot (first time only)
+1. ZIPを展開
+2. `★run.bat` をダブルクリック
+3. 初回のみM365 Copilotにログイン

@@ -7,6 +7,7 @@ import os
 import sys
 import re
 import time
+import subprocess
 from pathlib import Path
 from dataclasses import dataclass
 from typing import Optional
@@ -184,8 +185,8 @@ class ExcelHandler:
         """Cleanup"""
         try:
             pythoncom.CoUninitialize()
-        except:
-            pass
+        except Exception:
+            pass  # CoUninitialize may fail if not initialized
 
 
 # =============================================================================
@@ -223,13 +224,11 @@ class CopilotHandler:
             result = sock.connect_ex(('127.0.0.1', self.cdp_port))
             sock.close()
             return result == 0
-        except:
+        except (socket.error, OSError):
             return False
     
     def _kill_existing_translator_edge(self):
         """Kill any Edge using our dedicated port/profile"""
-        import subprocess
-        
         # Use netstat to find process using our port (use full path, local cwd)
         try:
             netstat_path = r"C:\Windows\System32\netstat.exe"
@@ -245,17 +244,15 @@ class CopilotHandler:
                     parts = line.split()
                     if parts:
                         pid = parts[-1]
-                        subprocess.run([taskkill_path, "/F", "/PID", pid], 
+                        subprocess.run([taskkill_path, "/F", "/PID", pid],
                                       capture_output=True, timeout=5, cwd=local_cwd)
                         time.sleep(1)
                         break
-        except:
-            pass
+        except (subprocess.SubprocessError, OSError, TimeoutError) as e:
+            print(f"  Warning: Failed to kill existing Edge: {e}")
     
     def _start_translator_edge(self) -> bool:
         """Start dedicated Edge instance for translation"""
-        import subprocess
-        
         edge_exe = self._find_edge_exe()
         if not edge_exe:
             show_message("Error", "Microsoft Edge not found.", "error")
@@ -330,8 +327,8 @@ class CopilotHandler:
                 for page in pages[1:]:
                     try:
                         page.close()
-                    except:
-                        pass
+                    except Exception:
+                        pass  # Ignore errors when closing extra tabs
             else:
                 self.page = self.context.new_page()
             
@@ -348,7 +345,7 @@ class CopilotHandler:
             try:
                 self.page.wait_for_selector(CONFIG.selector_input, state="visible", timeout=30000)
                 print(" ready")
-            except:
+            except TimeoutError:
                 print(" login required")
                 show_message("Login Required", "Please login to M365 Copilot.\nClick OK after logging in.")
                 self.page.wait_for_selector(CONFIG.selector_input, state="visible", timeout=300000)
@@ -367,11 +364,11 @@ class CopilotHandler:
         try:
             # Wait for GPT-5 button to appear
             gpt5_button = self.page.wait_for_selector(
-                'button.fui-ToggleButton[aria-pressed]', 
-                state="visible", 
+                'button.fui-ToggleButton[aria-pressed]',
+                state="visible",
                 timeout=10000
             )
-            
+
             if gpt5_button:
                 is_pressed = gpt5_button.get_attribute("aria-pressed")
                 if is_pressed == "false":
@@ -381,8 +378,10 @@ class CopilotHandler:
                     print(" done")
                 else:
                     print("  GPT-5 already enabled")
+        except TimeoutError:
+            print("  GPT-5 button not found (timeout)")
         except Exception as e:
-            print(f"  GPT-5 button not found: {e}")
+            print(f"  GPT-5 button error: {e}")
     
     def new_chat(self):
         """Start new chat"""
@@ -442,52 +441,52 @@ class CopilotHandler:
             if self.page:
                 try:
                     self.page.close()
-                except:
-                    pass
-            
+                except Exception:
+                    pass  # Page may already be closed
+
             # Close browser context
             if self.context:
                 try:
                     self.context.close()
-                except:
-                    pass
-            
+                except Exception:
+                    pass  # Context may already be closed
+
             # Disconnect from browser (don't close it yet)
             if self.browser:
                 try:
                     self.browser.close()
-                except:
-                    pass
-            
+                except Exception:
+                    pass  # Browser may already be disconnected
+
             # Stop playwright
             if self.playwright:
                 try:
                     self.playwright.stop()
-                except:
-                    pass
-            
+                except Exception:
+                    pass  # Playwright may already be stopped
+
             # Give Edge time to save profile
             time.sleep(1)
-            
+
             # Close Edge gracefully using window close (not kill)
             if self.edge_process:
                 try:
                     # Send close signal and wait
                     self.edge_process.terminate()
                     self.edge_process.wait(timeout=5)
-                except:
+                except (subprocess.TimeoutExpired, OSError):
                     # If still running, wait more for profile save
                     time.sleep(2)
                     try:
                         self.edge_process.kill()
-                    except:
-                        pass
-            
+                    except OSError:
+                        pass  # Process may have already exited
+
             # Final cleanup if port still in use
             time.sleep(0.5)
             if self._is_port_in_use():
                 self._kill_existing_translator_edge()
-                
+
         except Exception as e:
             print(f"  Close error: {e}")
 
@@ -606,7 +605,6 @@ def main():
     try:
         excel.app.Visible = True
         import win32gui
-        import win32con
         # Find Excel window and bring to front
         def enum_callback(hwnd, hwnds):
             if win32gui.IsWindowVisible(hwnd):
@@ -618,8 +616,8 @@ def main():
         win32gui.EnumWindows(enum_callback, hwnds)
         if hwnds:
             win32gui.SetForegroundWindow(hwnds[0])
-    except:
-        pass
+    except Exception:
+        pass  # Non-critical: Excel window focus is optional
     
     # Write translations
     excel.write_translations(all_translations, selection_info)
@@ -631,8 +629,8 @@ def main():
         excel.app.ActiveWorkbook.Sheets(selection_info['sheet_name']).Cells(
             first_cell['row'], first_cell['col']
         ).Select()
-    except:
-        pass
+    except Exception:
+        pass  # Non-critical: Cell selection is optional
     
     excel.cleanup()
     

@@ -64,7 +64,7 @@ echo [DONE] Playwright browser installed.
 echo.
 echo ============================================================
 echo Setup completed!
-echo Run "run.bat" to start the translation tool.
+echo Run the star-run.bat to start the translation tool.
 echo ============================================================
 echo.
 pause

@@ -1559,8 +1559,10 @@ class TranslatorApp(ctk.CTk):
         # State
         self.is_translating = False
         self.cancel_requested = False
-        self.on_start_callback: Optional[Callable] = None
+        self.on_start_callback: Optional[Callable] = None  # Excel mode
         self.on_cancel_callback: Optional[Callable] = None
+        self.on_jp_to_en_callback: Optional[Callable] = None  # JP→EN mode
+        self.on_en_to_jp_callback: Optional[Callable] = None  # EN→JP mode
         self.last_translation_pairs = None
 
         self._build_ui()
@@ -1715,6 +1717,80 @@ class TranslatorApp(ctk.CTk):
         self.footer = ctk.CTkFrame(self.container, fg_color="transparent")
         self.footer.pack(fill="x", side="bottom")
 
+        # Translation mode selector
+        self.mode_frame = ctk.CTkFrame(self.footer, fg_color="transparent")
+        self.mode_frame.pack(fill="x", pady=(0, THEME.space_sm))
+
+        # Mode label
+        self.mode_label = ctk.CTkLabel(
+            self.mode_frame,
+            text="Mode:",
+            font=get_font("text", 11),
+            text_color=THEME.text_muted
+        )
+        self.mode_label.pack(side="left", padx=(0, THEME.space_sm))
+
+        # Mode buttons container
+        self.mode_buttons_frame = ctk.CTkFrame(self.mode_frame, fg_color="transparent")
+        self.mode_buttons_frame.pack(side="left", fill="x", expand=True)
+
+        # Current mode
+        self.current_mode = "excel"  # excel, jp_to_en, en_to_jp
+
+        # Mode: Japanese → English (general text)
+        self.mode_jp_en_btn = ctk.CTkButton(
+            self.mode_buttons_frame,
+            text="JP→EN",
+            width=70,
+            height=28,
+            font=get_font("text", 11, "bold"),
+            fg_color=THEME.bg_elevated,
+            hover_color=THEME.bg_tertiary,
+            text_color=THEME.text_secondary,
+            corner_radius=6,
+            command=lambda: self._set_mode("jp_to_en")
+        )
+        self.mode_jp_en_btn.pack(side="left", padx=(0, 4))
+
+        # Mode: English → Japanese
+        self.mode_en_jp_btn = ctk.CTkButton(
+            self.mode_buttons_frame,
+            text="EN→JP",
+            width=70,
+            height=28,
+            font=get_font("text", 11, "bold"),
+            fg_color=THEME.bg_elevated,
+            hover_color=THEME.bg_tertiary,
+            text_color=THEME.text_secondary,
+            corner_radius=6,
+            command=lambda: self._set_mode("en_to_jp")
+        )
+        self.mode_en_jp_btn.pack(side="left", padx=(0, 4))
+
+        # Mode: Excel cells
+        self.mode_excel_btn = ctk.CTkButton(
+            self.mode_buttons_frame,
+            text="Excel",
+            width=70,
+            height=28,
+            font=get_font("text", 11, "bold"),
+            fg_color=THEME.accent,
+            hover_color=THEME.accent_hover,
+            text_color=THEME.bg_primary,
+            corner_radius=6,
+            command=lambda: self._set_mode("excel")
+        )
+        self.mode_excel_btn.pack(side="left")
+
+        # Hotkey hints
+        self.hotkey_hint = ctk.CTkLabel(
+            self.footer,
+            text="Hotkeys: E=JP→EN  J=EN→JP  X=Excel (with Ctrl+Shift)",
+            font=get_font("text", 10),
+            text_color=THEME.text_muted
+        )
+        self.hotkey_hint.pack(fill="x", pady=(0, THEME.space_sm))
+
         # Main action button
         self.action_btn = MinimalButton(
             self.footer,
@@ -1734,6 +1810,35 @@ class TranslatorApp(ctk.CTk):
         )
         self.about_btn.pack(fill="x", pady=(THEME.space_sm, 0))
 
+    def _set_mode(self, mode: str):
+        """Set translation mode"""
+        self.current_mode = mode
+
+        # Reset all button styles
+        inactive_style = {
+            "fg_color": THEME.bg_elevated,
+            "text_color": THEME.text_secondary
+        }
+        active_style = {
+            "fg_color": THEME.accent,
+            "text_color": THEME.bg_primary
+        }
+
+        self.mode_jp_en_btn.configure(**inactive_style)
+        self.mode_en_jp_btn.configure(**inactive_style)
+        self.mode_excel_btn.configure(**inactive_style)
+
+        # Highlight active button and update subtitle
+        if mode == "jp_to_en":
+            self.mode_jp_en_btn.configure(**active_style)
+            self.subtitle_text.set_text("Select text anywhere")
+        elif mode == "en_to_jp":
+            self.mode_en_jp_btn.configure(**active_style)
+            self.subtitle_text.set_text("Select English text")
+        else:  # excel
+            self.mode_excel_btn.configure(**active_style)
+            self.subtitle_text.set_text("Select cells in Excel")
+
     def _on_action(self):
         """Handle main action button"""
         if self.is_translating:
@@ -1742,9 +1847,14 @@ class TranslatorApp(ctk.CTk):
             self._start()
 
     def _start(self):
-        """Start translation"""
+        """Start translation based on current mode"""
         SoundPlayer.play_start()
-        if self.on_start_callback:
+
+        if self.current_mode == "jp_to_en" and self.on_jp_to_en_callback:
+            self.on_jp_to_en_callback()
+        elif self.current_mode == "en_to_jp" and self.on_en_to_jp_callback:
+            self.on_en_to_jp_callback()
+        elif self.on_start_callback:
             self.on_start_callback()
 
     def _request_cancel(self):
@@ -1761,10 +1871,20 @@ class TranslatorApp(ctk.CTk):
     # === Public API ===
 
     def set_on_start(self, callback: Callable):
+        """Set callback for Excel translation (default mode)"""
         self.on_start_callback = callback
 
     def set_on_cancel(self, callback: Callable):
+        """Set callback for cancellation"""
         self.on_cancel_callback = callback
+
+    def set_on_jp_to_en(self, callback: Callable):
+        """Set callback for Japanese → English translation"""
+        self.on_jp_to_en_callback = callback
+
+    def set_on_en_to_jp(self, callback: Callable):
+        """Set callback for English → Japanese translation"""
+        self.on_en_to_jp_callback = callback
 
     def show_ready(self):
         """Ready state - calm, inviting"""

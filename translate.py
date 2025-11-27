@@ -492,7 +492,7 @@ class CopilotHandler:
 
 
 # =============================================================================
-# Main
+# Helper Functions
 # =============================================================================
 def create_batches(cells: list[dict], max_lines: int) -> list[list[dict]]:
     """Split cells into batches"""
@@ -520,92 +520,10 @@ def parse_copilot_response(response: str) -> dict[str, str]:
     return result
 
 
-def main():
-    """Main process"""
-    print("=" * 60)
-    print("Excel Japanese to English Translation Tool")
-    print("=" * 60)
-    
-    # Step 1: Load prompt
-    print("\n[1/5] Loading prompt...")
-    prompt_header = load_prompt()
-    print("  OK")
-    
-    # Step 2: Connect to Excel
-    print("\n[2/5] Connecting to Excel...")
-    excel = ExcelHandler()
-    if not excel.connect():
-        return
-    print("  OK")
-    
-    # Step 3: Get selection
-    print("\n[3/5] Reading selection...")
-    selection_info = excel.get_selection_info()
-    print(f"  Sheet: {selection_info['sheet_name']}")
-    print(f"  Range: R{selection_info['first_row']}C{selection_info['first_col']}:"
-          f"R{selection_info['last_row']}C{selection_info['last_col']}")
-    
-    japanese_cells = excel.extract_japanese_cells(selection_info)
-    if not japanese_cells:
-        show_message("Error", "No Japanese text found in selection.", "error")
-        excel.cleanup()
-        return
-    print(f"  Japanese cells: {len(japanese_cells)}")
-    
-    batches = create_batches(japanese_cells, CONFIG.max_lines_per_batch)
-    print(f"  Batches: {len(batches)}")
-    
-    # Step 4: Launch Copilot
-    print("\n[4/5] Launching Copilot...")
-    copilot = CopilotHandler()
-    if not copilot.launch():
-        excel.cleanup()
-        return
-    
-    # Step 5: Translate
-    print("\n[5/5] Translating...")
-    all_translations = {}
-    
-    for i, batch in enumerate(batches):
-        print(f"\n  Batch {i + 1}/{len(batches)} ({len(batch)} cells)")
-        
-        if i > 0:
-            copilot.new_chat()
-        
-        batch_tsv = format_batch_for_copilot(batch)
-        full_prompt = f"{prompt_header}\n{batch_tsv}"
-        
-        if not copilot.send_prompt(full_prompt):
-            show_message("Error", f"Failed to send batch {i + 1}.", "error")
-            continue
-        print("    Waiting for Copilot...")
-        
-        response = copilot.wait_and_copy_response()
-        if not response:
-            show_message("Error", f"Failed to get response for batch {i + 1}.", "error")
-            continue
-        
-        translations = parse_copilot_response(response)
-        
-        if len(translations) != len(batch):
-            print(f"    Warning: input {len(batch)} rows -> output {len(translations)} rows")
-            show_message("Error", "Failed to copy Copilot output.\nRetrying...", "error")
-            response = copilot.wait_and_copy_response()
-            if response:
-                translations = parse_copilot_response(response)
-        
-        all_translations.update(translations)
-        print(f"    OK: {len(translations)} cells")
-    
-    # Close Copilot tab
-    copilot.close()
-    
-    # Bring Excel to front
-    print("\n  Writing to Excel...")
+def bring_excel_to_front():
+    """Bring Excel window to front"""
     try:
-        excel.app.Visible = True
         import win32gui
-        # Find Excel window and bring to front
         def enum_callback(hwnd, hwnds):
             if win32gui.IsWindowVisible(hwnd):
                 title = win32gui.GetWindowText(hwnd)
@@ -617,12 +535,288 @@ def main():
         if hwnds:
             win32gui.SetForegroundWindow(hwnds[0])
     except Exception:
-        pass  # Non-critical: Excel window focus is optional
-    
+        pass
+
+
+# =============================================================================
+# Translation Controller (connects UI with translation logic)
+# =============================================================================
+class TranslatorController:
+    """Controls the translation process with UI integration"""
+
+    def __init__(self, app):
+        self.app = app
+        self.cancel_requested = False
+        self.excel: Optional[ExcelHandler] = None
+        self.copilot: Optional[CopilotHandler] = None
+
+    def start_translation(self):
+        """Start translation in background thread"""
+        import threading
+        self.cancel_requested = False
+        thread = threading.Thread(target=self._run_translation, daemon=True)
+        thread.start()
+
+    def request_cancel(self):
+        """Request cancellation"""
+        self.cancel_requested = True
+
+    def _update_ui(self, method, *args, **kwargs):
+        """Thread-safe UI update"""
+        self.app.after(0, lambda: method(*args, **kwargs))
+
+    def _run_translation(self):
+        """Main translation process (runs in background thread)"""
+        try:
+            # Initialize COM for this thread
+            pythoncom.CoInitialize()
+
+            # Step 1: Load prompt
+            self._update_ui(self.app.show_connecting)
+            prompt_header = load_prompt()
+
+            if self.cancel_requested:
+                self._update_ui(self.app.show_cancelled)
+                return
+
+            # Step 2: Connect to Excel
+            self.excel = ExcelHandler()
+            if not self.excel.connect():
+                self._update_ui(self.app.show_error, "Failed to connect to Excel")
+                return
+
+            # Step 3: Get selection
+            selection_info = self.excel.get_selection_info()
+            japanese_cells = self.excel.extract_japanese_cells(selection_info)
+
+            if not japanese_cells:
+                self._update_ui(self.app.show_error, "No Japanese text found in selection")
+                self.excel.cleanup()
+                return
+
+            total_cells = len(japanese_cells)
+            batches = create_batches(japanese_cells, CONFIG.max_lines_per_batch)
+            total_batches = len(batches)
+
+            if self.cancel_requested:
+                self._update_ui(self.app.show_cancelled)
+                self.excel.cleanup()
+                return
+
+            # Step 4: Launch Copilot
+            self.copilot = CopilotHandler()
+            if not self.copilot.launch():
+                self._update_ui(self.app.show_error, "Failed to launch browser")
+                self.excel.cleanup()
+                return
+
+            if self.cancel_requested:
+                self._update_ui(self.app.show_cancelled)
+                self._cleanup()
+                return
+
+            # Step 5: Translate
+            all_translations = {}
+            processed_cells = 0
+
+            for i, batch in enumerate(batches):
+                if self.cancel_requested:
+                    self._update_ui(self.app.show_cancelled)
+                    self._cleanup()
+                    return
+
+                # Update UI
+                self._update_ui(
+                    self.app.show_translating,
+                    processed_cells, total_cells,
+                    i + 1, total_batches
+                )
+
+                if i > 0:
+                    self.copilot.new_chat()
+
+                batch_tsv = format_batch_for_copilot(batch)
+                full_prompt = f"{prompt_header}\n{batch_tsv}"
+
+                if not self.copilot.send_prompt(full_prompt):
+                    continue
+
+                response = self.copilot.wait_and_copy_response()
+                if not response:
+                    continue
+
+                translations = parse_copilot_response(response)
+
+                # Retry if count mismatch
+                if len(translations) != len(batch):
+                    response = self.copilot.wait_and_copy_response()
+                    if response:
+                        translations = parse_copilot_response(response)
+
+                all_translations.update(translations)
+                processed_cells += len(batch)
+
+                # Update progress
+                self._update_ui(
+                    self.app.show_translating,
+                    processed_cells, total_cells,
+                    i + 1, total_batches
+                )
+
+            # Close browser
+            self.copilot.close()
+
+            # Write to Excel
+            bring_excel_to_front()
+            self.excel.write_translations(all_translations, selection_info)
+
+            # Select first cell
+            time.sleep(0.5)
+            try:
+                first_cell = japanese_cells[0]
+                self.excel.app.ActiveWorkbook.Sheets(selection_info['sheet_name']).Cells(
+                    first_cell['row'], first_cell['col']
+                ).Select()
+            except Exception:
+                pass
+
+            self.excel.cleanup()
+
+            # Show completion
+            self._update_ui(self.app.show_complete, len(all_translations))
+
+        except Exception as e:
+            self._update_ui(self.app.show_error, str(e))
+            self._cleanup()
+
+    def _cleanup(self):
+        """Cleanup resources"""
+        if self.copilot:
+            try:
+                self.copilot.close()
+            except Exception:
+                pass
+        if self.excel:
+            try:
+                self.excel.cleanup()
+            except Exception:
+                pass
+
+
+# =============================================================================
+# Main Entry Point
+# =============================================================================
+def main():
+    """Main entry point - launches UI"""
+    import customtkinter as ctk
+    from ui import TranslatorApp
+
+    # Configure appearance
+    ctk.set_appearance_mode("dark")
+    ctk.set_default_color_theme("dark-blue")
+
+    # Create app
+    app = TranslatorApp()
+
+    # Create controller
+    controller = TranslatorController(app)
+
+    # Connect callbacks
+    app.set_on_start(controller.start_translation)
+    app.set_on_cancel(controller.request_cancel)
+
+    # Run
+    app.mainloop()
+
+
+def main_cli():
+    """CLI mode (legacy) - for debugging"""
+    print("=" * 60)
+    print("Excel Japanese to English Translation Tool")
+    print("=" * 60)
+
+    # Step 1: Load prompt
+    print("\n[1/5] Loading prompt...")
+    prompt_header = load_prompt()
+    print("  OK")
+
+    # Step 2: Connect to Excel
+    print("\n[2/5] Connecting to Excel...")
+    excel = ExcelHandler()
+    if not excel.connect():
+        return
+    print("  OK")
+
+    # Step 3: Get selection
+    print("\n[3/5] Reading selection...")
+    selection_info = excel.get_selection_info()
+    print(f"  Sheet: {selection_info['sheet_name']}")
+    print(f"  Range: R{selection_info['first_row']}C{selection_info['first_col']}:"
+          f"R{selection_info['last_row']}C{selection_info['last_col']}")
+
+    japanese_cells = excel.extract_japanese_cells(selection_info)
+    if not japanese_cells:
+        show_message("Error", "No Japanese text found in selection.", "error")
+        excel.cleanup()
+        return
+    print(f"  Japanese cells: {len(japanese_cells)}")
+
+    batches = create_batches(japanese_cells, CONFIG.max_lines_per_batch)
+    print(f"  Batches: {len(batches)}")
+
+    # Step 4: Launch Copilot
+    print("\n[4/5] Launching Copilot...")
+    copilot = CopilotHandler()
+    if not copilot.launch():
+        excel.cleanup()
+        return
+
+    # Step 5: Translate
+    print("\n[5/5] Translating...")
+    all_translations = {}
+
+    for i, batch in enumerate(batches):
+        print(f"\n  Batch {i + 1}/{len(batches)} ({len(batch)} cells)")
+
+        if i > 0:
+            copilot.new_chat()
+
+        batch_tsv = format_batch_for_copilot(batch)
+        full_prompt = f"{prompt_header}\n{batch_tsv}"
+
+        if not copilot.send_prompt(full_prompt):
+            show_message("Error", f"Failed to send batch {i + 1}.", "error")
+            continue
+        print("    Waiting for Copilot...")
+
+        response = copilot.wait_and_copy_response()
+        if not response:
+            show_message("Error", f"Failed to get response for batch {i + 1}.", "error")
+            continue
+
+        translations = parse_copilot_response(response)
+
+        if len(translations) != len(batch):
+            print(f"    Warning: input {len(batch)} rows -> output {len(translations)} rows")
+            show_message("Error", "Failed to copy Copilot output.\nRetrying...", "error")
+            response = copilot.wait_and_copy_response()
+            if response:
+                translations = parse_copilot_response(response)
+
+        all_translations.update(translations)
+        print(f"    OK: {len(translations)} cells")
+
+    # Close Copilot tab
+    copilot.close()
+
+    # Bring Excel to front
+    print("\n  Writing to Excel...")
+    bring_excel_to_front()
+
     # Write translations
     excel.write_translations(all_translations, selection_info)
-    
-    # Brief pause then select first translated cell to show change
+
+    # Brief pause then select first translated cell
     time.sleep(0.5)
     try:
         first_cell = japanese_cells[0]
@@ -630,13 +824,17 @@ def main():
             first_cell['row'], first_cell['col']
         ).Select()
     except Exception:
-        pass  # Non-critical: Cell selection is optional
-    
+        pass
+
     excel.cleanup()
-    
+
     print(f"\n  Complete! {len(all_translations)} cells translated.")
     print("\n" + "=" * 60)
 
 
 if __name__ == "__main__":
-    main()
+    # Check for --cli flag
+    if "--cli" in sys.argv:
+        main_cli()
+    else:
+        main()

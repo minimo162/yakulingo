@@ -12,7 +12,46 @@ Excel日英翻訳ツールの配布手順です。
 
 ---
 
-## 方法1: .exe ファイルで配布（推奨）
+## 方法1: スクリプト配布（推奨）
+
+### 配布パッケージ
+
+```
+ExcelTranslator/
+├── translate.py          # メインスクリプト
+├── ui.py                 # UI
+├── prompt.txt            # プロンプト
+├── pyproject.toml        # 依存関係定義
+├── setup.bat             # インストーラー（uvを自動ダウンロード）
+└── ★run.bat              # 実行用バッチ
+```
+
+### インストール手順（ユーザー）
+
+1. フォルダを任意の場所にコピー
+2. `setup.bat` をダブルクリック（初回のみ、約2-3分）
+   - uv（高速パッケージマネージャ）を自動ダウンロード
+   - Python 3.11 を自動インストール
+   - 依存関係を自動インストール
+   - Playwright ブラウザを自動インストール
+3. `★run.bat` をダブルクリックして起動
+
+### setup.bat の動作
+
+1. `uv.exe` をダウンロード（Astral社の高速パッケージマネージャ）
+2. Python 3.11 をローカルインストール（システム汚染なし）
+3. `.venv` 仮想環境を作成
+4. `pyproject.toml` から依存関係をインストール
+5. Playwright の Chromium ブラウザをインストール
+
+**メリット:**
+- Pythonのシステムインストール不要
+- すべてローカルフォルダ内で完結
+- クリーンアンインストール可能（フォルダ削除のみ）
+
+---
+
+## 方法2: .exe ファイルで配布
 
 ### ビルド手順（開発者）
 
@@ -48,50 +87,6 @@ Excel日英翻訳ツールの配布手順です。
 
 ---
 
-## 方法2: Pythonスクリプトで配布
-
-### パッケージ内容
-
-```
-ExcelTranslator/
-├── translate.py      # メインスクリプト
-├── ui.py             # UI
-├── prompt.txt        # プロンプト
-├── requirements.txt  # 依存関係
-├── install.bat       # インストーラー
-└── run.bat           # 実行用バッチ
-```
-
-### install.bat の内容
-
-```batch
-@echo off
-echo Installing Excel Translator...
-
-python --version >nul 2>&1
-if errorlevel 1 (
-    echo Python is not installed!
-    pause
-    exit /b 1
-)
-
-pip install -r requirements.txt
-playwright install chromium
-
-echo Installation complete!
-pause
-```
-
-### run.bat の内容
-
-```batch
-@echo off
-cd /d "%~dp0"
-python translate.py
-```
-
----
-
 ## 初回セットアップガイド（ユーザー向け）
 
 ### 1. Microsoft Edgeの確認
@@ -110,9 +105,14 @@ python translate.py
 
 ## トラブルシューティング
 
-### Q: 起動しない
-- Python 3.10以上がインストールされているか確認
-- `pip install -r requirements.txt` を実行
+### Q: setup.batが失敗する
+- インターネット接続を確認
+- ウイルス対策ソフトが `uv.exe` をブロックしていないか確認
+- 管理者権限で実行してみる
+
+### Q: ★run.batで起動しない
+- まず `setup.bat` を実行したか確認
+- `.venv` フォルダが存在するか確認
 
 ### Q: Edgeが起動しない
 - Microsoft Edge がインストールされているか確認
@@ -121,6 +121,12 @@ python translate.py
 ### Q: Copilotにログインできない
 - M365 Copilot のアクセス権があるか確認
 - 会社のIT部門に問い合わせ
+
+---
+
+## アンインストール
+
+フォルダを削除するだけでOK（レジストリ等は汚しません）
 
 ---
 

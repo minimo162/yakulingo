@@ -1056,23 +1056,34 @@ class SettingsSheet(ctk.CTkToplevel):
 
 
 # =============================================================================
-# Results Sheet - Translation log display
+# Results Sheet - World-class Translation Log
 # =============================================================================
 class ResultsSheet(ctk.CTkToplevel):
-    """Translation results log - Shows Japanese → English pairs."""
+    """
+    Translation results log - A celebration of successful translation.
+    Features: Staggered animations, hover effects, copy functionality.
+    """
 
     def __init__(self, parent, translation_pairs: list):
         super().__init__(parent)
 
-        self.title("Translation Results")
-        self.geometry("500x400")
+        self.title("")
+        self.geometry("520x480")
         self.configure(fg_color=THEME.bg_primary)
-        self.minsize(400, 300)
+        self.minsize(420, 380)
+        self.translation_pairs = translation_pairs
+        self.rows = []
 
         self.transient(parent)
 
+        # Start with 0 opacity for fade-in effect
+        self.attributes("-alpha", 0.0)
+
         self._build_ui(translation_pairs)
         self._center(parent)
+
+        # Animate entrance
+        self.after(10, self._animate_entrance)
 
     def _center(self, parent):
         """Center over parent"""
@@ -1084,102 +1095,237 @@ class ResultsSheet(ctk.CTkToplevel):
         y = py + (ph - h) // 2
         self.geometry(f"+{x}+{y}")
 
+    def _animate_entrance(self):
+        """Fade in the window"""
+        alpha = self.attributes("-alpha")
+        if alpha < 1.0:
+            self.attributes("-alpha", min(1.0, alpha + 0.08))
+            self.after(16, self._animate_entrance)
+        else:
+            # Start staggered row animations
+            self._animate_rows()
+
+    def _animate_rows(self):
+        """Animate rows appearing one by one"""
+        for i, row in enumerate(self.rows):
+            self.after(i * 50, lambda r=row: self._fade_in_row(r))
+
+    def _fade_in_row(self, row):
+        """Fade in a single row"""
+        row.configure(fg_color=THEME.bg_card)
+
     def _build_ui(self, translation_pairs: list):
         """Build results interface"""
-        container = ctk.CTkFrame(self, fg_color="transparent")
-        container.pack(fill="both", expand=True, padx=THEME.space_lg, pady=THEME.space_lg)
+        # Main container with subtle gradient effect
+        self.container = ctk.CTkFrame(self, fg_color="transparent")
+        self.container.pack(fill="both", expand=True, padx=THEME.space_lg, pady=THEME.space_lg)
 
-        # Header
-        header_frame = ctk.CTkFrame(container, fg_color="transparent")
+        # === Header with success indicator ===
+        header_frame = ctk.CTkFrame(self.container, fg_color="transparent")
         header_frame.pack(fill="x")
 
-        ctk.CTkLabel(
-            header_frame,
-            text="Translation Log",
-            font=get_font("display", 20, "bold"),
-            text_color=THEME.text_primary
-        ).pack(side="left")
+        # Success badge
+        badge_frame = ctk.CTkFrame(header_frame, fg_color="transparent")
+        badge_frame.pack(side="left")
 
-        ctk.CTkLabel(
-            header_frame,
-            text=f"{len(translation_pairs)} items",
-            font=get_font("text", 13),
-            text_color=THEME.text_tertiary
-        ).pack(side="right")
-
-        # Scrollable results list
-        results_frame = ctk.CTkScrollableFrame(
-            container,
-            fg_color=THEME.bg_card,
-            corner_radius=THEME.radius_md,
-            scrollbar_button_color=THEME.bg_elevated,
-            scrollbar_button_hover_color=THEME.text_tertiary
+        # Checkmark circle
+        check_canvas = ctk.CTkCanvas(
+            badge_frame,
+            width=28, height=28,
+            bg=THEME.bg_primary,
+            highlightthickness=0
         )
-        results_frame.pack(fill="both", expand=True, pady=(THEME.space_md, THEME.space_md))
+        check_canvas.pack(side="left", padx=(0, THEME.space_sm))
 
-        # Add translation pairs
+        # Draw success circle with checkmark
+        check_canvas.create_oval(2, 2, 26, 26, fill=THEME.accent, outline="")
+        # Checkmark
+        check_canvas.create_line(8, 14, 12, 18, fill="black", width=2, capstyle="round")
+        check_canvas.create_line(12, 18, 20, 10, fill="black", width=2, capstyle="round")
+
+        title_frame = ctk.CTkFrame(badge_frame, fg_color="transparent")
+        title_frame.pack(side="left")
+
+        ctk.CTkLabel(
+            title_frame,
+            text="Translation Complete",
+            font=get_font("display", 18, "bold"),
+            text_color=THEME.text_primary
+        ).pack(anchor="w")
+
+        ctk.CTkLabel(
+            title_frame,
+            text=f"{len(translation_pairs)} items translated",
+            font=get_font("text", 12),
+            text_color=THEME.accent
+        ).pack(anchor="w")
+
+        # Copy all button
+        self.copy_btn = ctk.CTkButton(
+            header_frame,
+            text="Copy All",
+            font=get_font("text", 12),
+            fg_color=THEME.bg_elevated,
+            hover_color=THEME.bg_card,
+            text_color=THEME.text_secondary,
+            corner_radius=THEME.radius_sm,
+            width=80,
+            height=32,
+            command=self._copy_all
+        )
+        self.copy_btn.pack(side="right")
+
+        # === Scrollable results list ===
+        results_container = ctk.CTkFrame(
+            self.container,
+            fg_color=THEME.bg_secondary,
+            corner_radius=THEME.radius_lg
+        )
+        results_container.pack(fill="both", expand=True, pady=(THEME.space_md, THEME.space_md))
+
+        self.results_frame = ctk.CTkScrollableFrame(
+            results_container,
+            fg_color="transparent",
+            scrollbar_button_color=THEME.bg_elevated,
+            scrollbar_button_hover_color=THEME.text_muted
+        )
+        self.results_frame.pack(fill="both", expand=True, padx=2, pady=2)
+
+        # Add translation pairs with hover-enabled rows
         for i, (japanese, english) in enumerate(translation_pairs):
-            self._add_result_row(results_frame, i, japanese, english)
+            row = self._add_result_row(self.results_frame, i, japanese, english)
+            self.rows.append(row)
 
-        # Close button
+        # === Footer buttons ===
+        footer = ctk.CTkFrame(self.container, fg_color="transparent")
+        footer.pack(fill="x")
+
         close_btn = MinimalButton(
-            container,
-            text="Close",
-            variant="primary",
-            command=self.destroy
+            footer,
+            text="Done",
+            variant="accent",
+            command=self._close_with_animation
         )
         close_btn.pack(fill="x")
 
     def _add_result_row(self, parent, index: int, japanese: str, english: str):
-        """Add a single result row"""
-        row = ctk.CTkFrame(parent, fg_color="transparent")
-        row.pack(fill="x", pady=(0, THEME.space_sm))
+        """Add a single result row with hover effect"""
+        # Start with transparent, will animate to visible
+        row = ctk.CTkFrame(
+            parent,
+            fg_color="transparent",  # Will animate to bg_card
+            corner_radius=THEME.radius_md
+        )
+        row.pack(fill="x", pady=(0, THEME.space_xs), padx=THEME.space_xs)
 
-        # Row number
+        # Store data for hover and copy
+        row.japanese = japanese
+        row.english = english
+
+        # Inner padding
+        inner = ctk.CTkFrame(row, fg_color="transparent")
+        inner.pack(fill="x", padx=THEME.space_md, pady=THEME.space_sm)
+
+        # Row number badge
+        num_badge = ctk.CTkFrame(
+            inner,
+            fg_color=THEME.bg_elevated,
+            corner_radius=THEME.radius_sm,
+            width=28,
+            height=28
+        )
+        num_badge.pack(side="left", padx=(0, THEME.space_sm))
+        num_badge.pack_propagate(False)
+
         ctk.CTkLabel(
-            row,
-            text=f"{index + 1}.",
-            font=get_font("mono", 11),
-            text_color=THEME.text_muted,
-            width=30
-        ).pack(side="left", anchor="n")
+            num_badge,
+            text=str(index + 1),
+            font=get_font("mono", 10),
+            text_color=THEME.text_tertiary
+        ).place(relx=0.5, rely=0.5, anchor="center")
 
-        # Content frame
-        content = ctk.CTkFrame(row, fg_color="transparent")
+        # Content
+        content = ctk.CTkFrame(inner, fg_color="transparent")
         content.pack(side="left", fill="x", expand=True)
 
-        # Japanese (original)
+        # Japanese (original) - with strikethrough effect (showing it's been translated)
+        jp_text = japanese[:55] + ("..." if len(japanese) > 55 else "")
         jp_label = ctk.CTkLabel(
             content,
-            text=japanese[:60] + ("..." if len(japanese) > 60 else ""),
+            text=jp_text,
             font=get_font("text", 12),
-            text_color=THEME.text_secondary,
+            text_color=THEME.text_muted,
             anchor="w",
             justify="left"
         )
         jp_label.pack(fill="x")
 
-        # Arrow and English
+        # English with arrow
         en_frame = ctk.CTkFrame(content, fg_color="transparent")
-        en_frame.pack(fill="x")
+        en_frame.pack(fill="x", pady=(2, 0))
 
-        ctk.CTkLabel(
+        arrow_label = ctk.CTkLabel(
             en_frame,
             text="→",
-            font=get_font("text", 12),
-            text_color=THEME.accent,
-            width=20
-        ).pack(side="left")
+            font=get_font("text", 13),
+            text_color=THEME.accent
+        )
+        arrow_label.pack(side="left", padx=(0, THEME.space_xs))
 
+        en_text = english[:55] + ("..." if len(english) > 55 else "")
         en_label = ctk.CTkLabel(
             en_frame,
-            text=english[:60] + ("..." if len(english) > 60 else ""),
-            font=get_font("text", 12, "bold"),
+            text=en_text,
+            font=get_font("text", 13, "bold"),
             text_color=THEME.text_primary,
             anchor="w",
             justify="left"
         )
         en_label.pack(side="left", fill="x", expand=True)
+
+        # Hover effects
+        def on_enter(e):
+            row.configure(fg_color=THEME.bg_elevated)
+
+        def on_leave(e):
+            row.configure(fg_color=THEME.bg_card)
+
+        row.bind("<Enter>", on_enter)
+        row.bind("<Leave>", on_leave)
+        inner.bind("<Enter>", on_enter)
+        inner.bind("<Leave>", on_leave)
+
+        return row
+
+    def _copy_all(self):
+        """Copy all translations to clipboard"""
+        text = "\n".join(
+            f"{jp}\t{en}" for jp, en in self.translation_pairs
+        )
+        self.clipboard_clear()
+        self.clipboard_append(text)
+
+        # Visual feedback
+        self.copy_btn.configure(text="Copied!", text_color=THEME.accent)
+        self.after(1500, lambda: self.copy_btn.configure(
+            text="Copy All", text_color=THEME.text_secondary
+        ))
+
+        # Play subtle sound
+        SoundPlayer.play_start()
+
+    def _close_with_animation(self):
+        """Close with fade out animation"""
+        self._fade_out()
+
+    def _fade_out(self):
+        """Fade out animation"""
+        alpha = self.attributes("-alpha")
+        if alpha > 0:
+            self.attributes("-alpha", max(0, alpha - 0.1))
+            self.after(16, self._fade_out)
+        else:
+            self.destroy()
 
 
 # =============================================================================

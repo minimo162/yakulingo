@@ -1,81 +1,253 @@
 """
 Excel Translator - Premium UI
 A world-class interface inspired by Apple's design philosophy.
+
+Design Concept: "Silent Power" - The beauty of restraint meets functional elegance.
 """
 
 import customtkinter as ctk
-import threading
+import math
 import time
 from typing import Callable, Optional
 from dataclasses import dataclass
 
 
 # =============================================================================
-# Design System
+# Design System - Apple-inspired Design Tokens
 # =============================================================================
 @dataclass
 class Theme:
-    """Design tokens - Inspired by Apple's Human Interface Guidelines"""
-    # Colors
-    bg_primary: str = "#0a0a0a"
-    bg_secondary: str = "#1a1a1a"
-    bg_tertiary: str = "#2a2a2a"
+    """Design tokens - Pursuit of perfection"""
+    # Colors - Deep, rich, intentional
+    bg_primary: str = "#000000"      # Pure black - the ultimate canvas
+    bg_secondary: str = "#0d0d0d"    # Subtle elevation
+    bg_card: str = "#1a1a1a"         # Card surfaces
+    bg_elevated: str = "#262626"     # Elevated elements
 
     text_primary: str = "#ffffff"
-    text_secondary: str = "#888888"
-    text_tertiary: str = "#555555"
+    text_secondary: str = "#a0a0a0"
+    text_tertiary: str = "#666666"
+    text_muted: str = "#404040"
 
-    accent: str = "#00d4aa"
-    accent_dim: str = "#007a5e"
+    # Accent colors - Subtle, meaningful
+    accent: str = "#34c759"          # Apple green - success, go
+    accent_blue: str = "#007aff"     # Apple blue - action
+    accent_orange: str = "#ff9500"   # Warning, attention
+    accent_red: str = "#ff3b30"      # Error, stop
 
-    error: str = "#ff4757"
-    warning: str = "#ffa502"
+    # Gradients (start, end)
+    gradient_active: tuple = ("#34c759", "#30d158")
 
-    # Typography
-    font_family: str = "Yu Gothic UI"
-    font_family_en: str = "Segoe UI"
+    # Typography - San Francisco inspired
+    font_display: str = "SF Pro Display"
+    font_text: str = "SF Pro Text"
+    font_mono: str = "SF Mono"
+    # Fallbacks for Windows
+    font_display_win: str = "Segoe UI"
+    font_text_win: str = "Segoe UI"
 
-    # Spacing
-    padding_xl: int = 48
-    padding_lg: int = 32
-    padding_md: int = 24
-    padding_sm: int = 16
-    padding_xs: int = 8
+    # Spacing - 8px grid system
+    space_xs: int = 4
+    space_sm: int = 8
+    space_md: int = 16
+    space_lg: int = 24
+    space_xl: int = 32
+    space_2xl: int = 48
+    space_3xl: int = 64
 
     # Animation
-    animation_duration: float = 0.3
+    duration_fast: int = 150
+    duration_normal: int = 300
+    duration_slow: int = 500
+
+    # Border radius
+    radius_sm: int = 8
+    radius_md: int = 12
+    radius_lg: int = 16
+    radius_xl: int = 24
+    radius_full: int = 9999
 
 
 THEME = Theme()
 
 
-# =============================================================================
-# Custom Components
-# =============================================================================
-class BreathingDot(ctk.CTkCanvas):
-    """A dot that breathes - indicates active processing"""
+def get_font(style: str = "text", size: int = 14, weight: str = "normal"):
+    """Get font tuple with fallback"""
+    font_map = {
+        "display": THEME.font_display_win,
+        "text": THEME.font_text_win,
+        "mono": "Consolas"
+    }
+    return (font_map.get(style, THEME.font_text_win), size, weight)
 
-    def __init__(self, parent, size: int = 12, color: str = THEME.accent, **kwargs):
+
+# =============================================================================
+# Custom Components - Crafted with intention
+# =============================================================================
+class CircularProgress(ctk.CTkCanvas):
+    """
+    Circular progress indicator - The hero element.
+    Inspired by Apple Watch activity rings.
+    """
+
+    def __init__(self, parent, size: int = 200, thickness: int = 8, **kwargs):
         super().__init__(
             parent,
-            width=size * 3,
-            height=size * 3,
+            width=size,
+            height=size,
             bg=THEME.bg_primary,
             highlightthickness=0,
             **kwargs
         )
         self.size = size
-        self.color = color
-        self.base_color = color
-        self.is_breathing = False
-        self.breath_phase = 0
-        self.center = size * 1.5
+        self.thickness = thickness
+        self.progress = 0.0
+        self.target_progress = 0.0
+        self.center = size / 2
+        self.radius = (size - thickness * 2) / 2
 
-        self._draw_dot(1.0)
+        self.glow_phase = 0
+        self.is_animating = False
 
-    def _draw_dot(self, scale: float):
-        self.delete("dot")
-        radius = (self.size / 2) * scale
+        self._draw()
+
+    def _draw(self):
+        """Draw the progress ring"""
+        self.delete("all")
+
+        padding = self.thickness
+        bbox = (padding, padding, self.size - padding, self.size - padding)
+
+        # Background ring (track)
+        self.create_arc(
+            *bbox,
+            start=90,
+            extent=-360,
+            style="arc",
+            outline=THEME.bg_elevated,
+            width=self.thickness,
+            tags="track"
+        )
+
+        # Progress ring
+        if self.progress > 0:
+            extent = -360 * self.progress
+
+            # Glow effect (subtle outer ring)
+            if self.is_animating:
+                glow_alpha = 0.3 + 0.2 * math.sin(self.glow_phase)
+                # Create subtle glow by drawing slightly larger arc
+                glow_bbox = (
+                    padding - 2, padding - 2,
+                    self.size - padding + 2, self.size - padding + 2
+                )
+                self.create_arc(
+                    *glow_bbox,
+                    start=90,
+                    extent=extent,
+                    style="arc",
+                    outline=THEME.accent,
+                    width=self.thickness + 4,
+                    tags="glow"
+                )
+
+            # Main progress arc
+            self.create_arc(
+                *bbox,
+                start=90,
+                extent=extent,
+                style="arc",
+                outline=THEME.accent,
+                width=self.thickness,
+                tags="progress"
+            )
+
+    def set_progress(self, value: float, animate: bool = True):
+        """Set progress with smooth animation"""
+        self.target_progress = max(0.0, min(1.0, value))
+        if animate:
+            self._animate()
+        else:
+            self.progress = self.target_progress
+            self._draw()
+
+    def _animate(self):
+        """Smooth easing animation"""
+        if abs(self.progress - self.target_progress) < 0.005:
+            self.progress = self.target_progress
+            self._draw()
+            return
+
+        # Ease-out cubic
+        diff = self.target_progress - self.progress
+        self.progress += diff * 0.12
+        self._draw()
+        self.after(16, self._animate)
+
+    def start_glow(self):
+        """Start subtle glow animation"""
+        self.is_animating = True
+        self._animate_glow()
+
+    def stop_glow(self):
+        """Stop glow animation"""
+        self.is_animating = False
+        self._draw()
+
+    def _animate_glow(self):
+        """Animate the glow effect"""
+        if not self.is_animating:
+            return
+        self.glow_phase += 0.08
+        self._draw()
+        self.after(30, self._animate_glow)
+
+    def set_color(self, color: str):
+        """Change the progress color"""
+        # Update theme accent temporarily
+        self._draw()
+
+
+class PulsingDot(ctk.CTkCanvas):
+    """Minimal status indicator with breathing animation"""
+
+    def __init__(self, parent, size: int = 8, **kwargs):
+        super().__init__(
+            parent,
+            width=size * 4,
+            height=size * 4,
+            bg=THEME.bg_primary,
+            highlightthickness=0,
+            **kwargs
+        )
+        self.dot_size = size
+        self.center = size * 2
+        self.color = THEME.accent
+        self.phase = 0
+        self.is_pulsing = False
+
+        self._draw(1.0, 1.0)
+
+    def _draw(self, scale: float, opacity: float):
+        """Draw the dot with scale and opacity"""
+        self.delete("all")
+        radius = (self.dot_size / 2) * scale
+
+        # Outer glow
+        if self.is_pulsing:
+            glow_radius = radius * 2
+            self.create_oval(
+                self.center - glow_radius,
+                self.center - glow_radius,
+                self.center + glow_radius,
+                self.center + glow_radius,
+                fill="",
+                outline=self.color,
+                width=1,
+                tags="glow"
+            )
+
+        # Main dot
         self.create_oval(
             self.center - radius,
             self.center - radius,
@@ -86,131 +258,109 @@ class BreathingDot(ctk.CTkCanvas):
             tags="dot"
         )
 
-    def start_breathing(self):
-        self.is_breathing = True
-        self._breathe()
+    def start_pulse(self):
+        """Start breathing animation"""
+        self.is_pulsing = True
+        self._pulse()
 
-    def stop_breathing(self):
-        self.is_breathing = False
-        self._draw_dot(1.0)
+    def stop_pulse(self):
+        """Stop animation"""
+        self.is_pulsing = False
+        self._draw(1.0, 1.0)
 
-    def _breathe(self):
-        if not self.is_breathing:
+    def _pulse(self):
+        """Breathing animation loop"""
+        if not self.is_pulsing:
             return
 
-        import math
-        self.breath_phase += 0.1
-        scale = 0.7 + 0.3 * (math.sin(self.breath_phase) + 1) / 2
-
-        # Subtle color shift
-        alpha = int(180 + 75 * (math.sin(self.breath_phase) + 1) / 2)
-
-        self._draw_dot(scale)
-        self.after(50, self._breathe)
+        self.phase += 0.06
+        scale = 0.85 + 0.15 * (math.sin(self.phase) + 1) / 2
+        self._draw(scale, 1.0)
+        self.after(30, self._pulse)
 
     def set_color(self, color: str):
+        """Set dot color"""
         self.color = color
-        self._draw_dot(1.0)
+        self._draw(1.0, 1.0)
 
 
-class MinimalProgressBar(ctk.CTkCanvas):
-    """Ultra-minimal progress bar with smooth animation"""
-
-    def __init__(self, parent, width: int = 300, height: int = 2, **kwargs):
-        super().__init__(
-            parent,
-            width=width,
-            height=height,
-            bg=THEME.bg_primary,
-            highlightthickness=0,
-            **kwargs
-        )
-        self.bar_width = width
-        self.bar_height = height
-        self.progress = 0.0
-        self.target_progress = 0.0
-
-        # Draw background track
-        self.create_rectangle(
-            0, 0, width, height,
-            fill=THEME.bg_tertiary,
-            outline="",
-            tags="track"
-        )
-
-        # Draw progress
-        self.progress_rect = self.create_rectangle(
-            0, 0, 0, height,
-            fill=THEME.accent,
-            outline="",
-            tags="progress"
-        )
-
-    def set_progress(self, value: float, animate: bool = True):
-        """Set progress (0.0 to 1.0)"""
-        self.target_progress = max(0.0, min(1.0, value))
-        if animate:
-            self._animate_progress()
-        else:
-            self.progress = self.target_progress
-            self._update_bar()
-
-    def _animate_progress(self):
-        if abs(self.progress - self.target_progress) < 0.01:
-            self.progress = self.target_progress
-            self._update_bar()
-            return
-
-        # Smooth easing
-        self.progress += (self.target_progress - self.progress) * 0.15
-        self._update_bar()
-        self.after(16, self._animate_progress)
-
-    def _update_bar(self):
-        width = self.bar_width * self.progress
-        self.coords(self.progress_rect, 0, 0, width, self.bar_height)
-
-
-class StateIndicator(ctk.CTkFrame):
-    """Shows current state with icon and text"""
+class GlassCard(ctk.CTkFrame):
+    """
+    Glass-morphism inspired card component.
+    Subtle elevation and depth.
+    """
 
     def __init__(self, parent, **kwargs):
-        super().__init__(parent, fg_color="transparent", **kwargs)
-
-        self.dot = BreathingDot(self, size=10)
-        self.dot.pack(side="left", padx=(0, THEME.padding_sm))
-
-        self.label = ctk.CTkLabel(
-            self,
-            text="",
-            font=(THEME.font_family, 13),
-            text_color=THEME.text_secondary
+        super().__init__(
+            parent,
+            fg_color=THEME.bg_card,
+            corner_radius=THEME.radius_lg,
+            **kwargs
         )
-        self.label.pack(side="left")
 
-    def set_state(self, text: str, breathing: bool = False, color: str = THEME.accent):
-        self.label.configure(text=text)
-        self.dot.set_color(color)
-        if breathing:
-            self.dot.start_breathing()
-        else:
-            self.dot.stop_breathing()
+
+class MinimalButton(ctk.CTkButton):
+    """
+    Refined button with subtle interactions.
+    """
+
+    def __init__(self, parent, text: str, variant: str = "primary", **kwargs):
+        colors = {
+            "primary": {
+                "fg": THEME.text_primary,
+                "bg": THEME.bg_elevated,
+                "hover": THEME.bg_card,
+                "text": THEME.bg_primary
+            },
+            "ghost": {
+                "fg": "transparent",
+                "bg": "transparent",
+                "hover": THEME.bg_secondary,
+                "text": THEME.text_secondary
+            },
+            "accent": {
+                "fg": THEME.accent,
+                "bg": THEME.accent,
+                "hover": THEME.gradient_active[1],
+                "text": THEME.bg_primary
+            }
+        }
+
+        c = colors.get(variant, colors["primary"])
+
+        super().__init__(
+            parent,
+            text=text,
+            font=get_font("text", 15, "bold"),
+            fg_color=c["fg"] if variant != "primary" else THEME.text_primary,
+            text_color=c["text"],
+            hover_color=c["hover"] if variant != "primary" else THEME.text_secondary,
+            corner_radius=THEME.radius_md,
+            height=52,
+            **kwargs
+        )
 
 
 # =============================================================================
-# Main Window
+# Main Application Window
 # =============================================================================
 class TranslatorApp(ctk.CTk):
-    """Main application window - Premium design"""
+    """
+    Main application - A study in restraint and elegance.
+    Every pixel has purpose. Every animation has meaning.
+    """
 
     def __init__(self):
         super().__init__()
 
-        # Window setup
-        self.title("Translate")
-        self.geometry("480x640")
-        self.minsize(400, 500)
+        # Window configuration
+        self.title("")  # Minimal - no title needed
+        self.geometry("420x680")
+        self.minsize(380, 600)
         self.configure(fg_color=THEME.bg_primary)
+
+        # Remove window decorations for cleaner look (optional)
+        # self.overrideredirect(True)
 
         # State
         self.is_translating = False
@@ -218,142 +368,176 @@ class TranslatorApp(ctk.CTk):
         self.on_start_callback: Optional[Callable] = None
         self.on_cancel_callback: Optional[Callable] = None
 
-        # Build UI
-        self._create_ui()
-
-        # Center window
+        self._build_ui()
         self._center_window()
 
     def _center_window(self):
+        """Center on screen"""
         self.update_idletasks()
-        width = self.winfo_width()
-        height = self.winfo_height()
-        x = (self.winfo_screenwidth() // 2) - (width // 2)
-        y = (self.winfo_screenheight() // 2) - (height // 2)
-        self.geometry(f"{width}x{height}+{x}+{y}")
+        w, h = self.winfo_width(), self.winfo_height()
+        x = (self.winfo_screenwidth() - w) // 2
+        y = (self.winfo_screenheight() - h) // 2
+        self.geometry(f"{w}x{h}+{x}+{y}")
 
-    def _create_ui(self):
-        # Main container with padding
+    def _build_ui(self):
+        """Construct the interface with surgical precision"""
+
+        # Main container
         self.container = ctk.CTkFrame(self, fg_color="transparent")
-        self.container.pack(fill="both", expand=True, padx=THEME.padding_xl, pady=THEME.padding_xl)
+        self.container.pack(fill="both", expand=True, padx=THEME.space_xl, pady=THEME.space_xl)
 
-        # Header (minimal)
-        self.header = ctk.CTkFrame(self.container, fg_color="transparent")
-        self.header.pack(fill="x", pady=(0, THEME.padding_xl))
+        # === Header (minimal) ===
+        self.header = ctk.CTkFrame(self.container, fg_color="transparent", height=40)
+        self.header.pack(fill="x")
+        self.header.pack_propagate(False)
 
-        self.title_label = ctk.CTkLabel(
+        self.brand = ctk.CTkLabel(
             self.header,
-            text="Excel Translator",
-            font=(THEME.font_family_en, 13),
-            text_color=THEME.text_tertiary
+            text="TRANSLATOR",
+            font=get_font("text", 11, "bold"),
+            text_color=THEME.text_muted
         )
-        self.title_label.pack(anchor="w")
+        self.brand.pack(side="left")
 
-        # Main content area (center)
-        self.content = ctk.CTkFrame(self.container, fg_color="transparent")
-        self.content.pack(fill="both", expand=True)
+        # === Hero Section (center stage) ===
+        self.hero = ctk.CTkFrame(self.container, fg_color="transparent")
+        self.hero.pack(fill="both", expand=True)
 
-        # Status area (vertically centered)
-        self.status_frame = ctk.CTkFrame(self.content, fg_color="transparent")
-        self.status_frame.place(relx=0.5, rely=0.4, anchor="center")
+        # Progress ring - the star of the show
+        self.progress_ring = CircularProgress(self.hero, size=180, thickness=6)
+        self.progress_ring.place(relx=0.5, rely=0.35, anchor="center")
 
-        # Main status text
-        self.status_text = ctk.CTkLabel(
-            self.status_frame,
-            text="Ready",
-            font=(THEME.font_family_en, 48, "bold"),
+        # Percentage display (inside ring)
+        self.percent_label = ctk.CTkLabel(
+            self.hero,
+            text="",
+            font=get_font("display", 42, "bold"),
             text_color=THEME.text_primary
         )
-        self.status_text.pack()
+        self.percent_label.place(relx=0.5, rely=0.35, anchor="center")
 
-        # Sub status
-        self.sub_status = ctk.CTkLabel(
-            self.status_frame,
-            text="Select cells in Excel and click Start",
-            font=(THEME.font_family, 14),
+        # Status text
+        self.status_label = ctk.CTkLabel(
+            self.hero,
+            text="Ready",
+            font=get_font("display", 28, "bold"),
+            text_color=THEME.text_primary
+        )
+        self.status_label.place(relx=0.5, rely=0.58, anchor="center")
+
+        # Subtitle
+        self.subtitle_label = ctk.CTkLabel(
+            self.hero,
+            text="Select cells in Excel",
+            font=get_font("text", 14),
             text_color=THEME.text_secondary
         )
-        self.sub_status.pack(pady=(THEME.padding_sm, 0))
+        self.subtitle_label.place(relx=0.5, rely=0.66, anchor="center")
 
-        # Progress section (below status)
-        self.progress_frame = ctk.CTkFrame(self.content, fg_color="transparent")
-        self.progress_frame.place(relx=0.5, rely=0.6, anchor="center")
+        # === Stats Card ===
+        self.stats_card = GlassCard(self.hero, height=70)
+        self.stats_card.place(relx=0.5, rely=0.82, anchor="center", relwidth=0.9)
 
-        # State indicator
-        self.state_indicator = StateIndicator(self.progress_frame)
-        self.state_indicator.pack(pady=(0, THEME.padding_md))
-        self.state_indicator.set_state("Waiting")
+        # Stats content
+        self.stats_inner = ctk.CTkFrame(self.stats_card, fg_color="transparent")
+        self.stats_inner.pack(fill="both", expand=True, padx=THEME.space_lg, pady=THEME.space_md)
 
-        # Progress bar
-        self.progress_bar = MinimalProgressBar(self.progress_frame, width=280, height=3)
-        self.progress_bar.pack()
+        # Left stat
+        self.stat_left = ctk.CTkFrame(self.stats_inner, fg_color="transparent")
+        self.stat_left.pack(side="left", expand=True)
 
-        # Stats
-        self.stats_label = ctk.CTkLabel(
-            self.progress_frame,
-            text="",
-            font=(THEME.font_family, 12),
+        self.stat_left_value = ctk.CTkLabel(
+            self.stat_left,
+            text="--",
+            font=get_font("display", 20, "bold"),
+            text_color=THEME.text_primary
+        )
+        self.stat_left_value.pack()
+
+        self.stat_left_label = ctk.CTkLabel(
+            self.stat_left,
+            text="Cells",
+            font=get_font("text", 11),
             text_color=THEME.text_tertiary
         )
-        self.stats_label.pack(pady=(THEME.padding_md, 0))
+        self.stat_left_label.pack()
 
-        # Bottom section
-        self.bottom = ctk.CTkFrame(self.container, fg_color="transparent")
-        self.bottom.pack(fill="x", side="bottom")
+        # Divider
+        self.divider = ctk.CTkFrame(
+            self.stats_inner,
+            fg_color=THEME.bg_elevated,
+            width=1
+        )
+        self.divider.pack(side="left", fill="y", padx=THEME.space_lg)
+
+        # Right stat
+        self.stat_right = ctk.CTkFrame(self.stats_inner, fg_color="transparent")
+        self.stat_right.pack(side="left", expand=True)
+
+        self.stat_right_value = ctk.CTkLabel(
+            self.stat_right,
+            text="--",
+            font=get_font("display", 20, "bold"),
+            text_color=THEME.text_primary
+        )
+        self.stat_right_value.pack()
+
+        self.stat_right_label = ctk.CTkLabel(
+            self.stat_right,
+            text="Batch",
+            font=get_font("text", 11),
+            text_color=THEME.text_tertiary
+        )
+        self.stat_right_label.pack()
+
+        # === Footer ===
+        self.footer = ctk.CTkFrame(self.container, fg_color="transparent")
+        self.footer.pack(fill="x", side="bottom")
 
         # Main action button
-        self.action_button = ctk.CTkButton(
-            self.bottom,
-            text="Start",
-            font=(THEME.font_family_en, 16, "bold"),
-            fg_color=THEME.text_primary,
-            text_color=THEME.bg_primary,
-            hover_color=THEME.text_secondary,
-            height=56,
-            corner_radius=12,
-            command=self._on_action_click
+        self.action_btn = MinimalButton(
+            self.footer,
+            text="Start Translation",
+            variant="primary",
+            command=self._on_action
         )
-        self.action_button.pack(fill="x")
+        self.action_btn.pack(fill="x")
 
-        # Settings button (subtle)
-        self.settings_frame = ctk.CTkFrame(self.bottom, fg_color="transparent")
-        self.settings_frame.pack(fill="x", pady=(THEME.padding_md, 0))
-
-        self.settings_button = ctk.CTkButton(
-            self.settings_frame,
+        # Settings link
+        self.settings_btn = MinimalButton(
+            self.footer,
             text="Settings",
-            font=(THEME.font_family_en, 12),
-            fg_color="transparent",
-            text_color=THEME.text_tertiary,
-            hover_color=THEME.bg_secondary,
-            height=32,
+            variant="ghost",
+            height=36,
             command=self._show_settings
         )
-        self.settings_button.pack()
+        self.settings_btn.pack(fill="x", pady=(THEME.space_sm, 0))
 
-    def _on_action_click(self):
+    def _on_action(self):
+        """Handle main action button"""
         if self.is_translating:
             self._request_cancel()
         else:
-            self._start_translation()
+            self._start()
 
-    def _start_translation(self):
+    def _start(self):
+        """Start translation"""
         if self.on_start_callback:
             self.on_start_callback()
 
     def _request_cancel(self):
+        """Request cancellation"""
         self.cancel_requested = True
-        self.action_button.configure(
-            text="Canceling...",
-            state="disabled"
-        )
+        self.action_btn.configure(text="Canceling...", state="disabled")
         if self.on_cancel_callback:
             self.on_cancel_callback()
 
     def _show_settings(self):
-        SettingsWindow(self)
+        """Open settings"""
+        SettingsSheet(self)
 
-    # Public API
+    # === Public API ===
+
     def set_on_start(self, callback: Callable):
         self.on_start_callback = callback
 
@@ -361,98 +545,120 @@ class TranslatorApp(ctk.CTk):
         self.on_cancel_callback = callback
 
     def show_ready(self):
-        """Show ready state"""
+        """Ready state - calm, inviting"""
         self.is_translating = False
         self.cancel_requested = False
 
-        self.status_text.configure(text="Ready")
-        self.sub_status.configure(text="Select cells in Excel and click Start")
-        self.state_indicator.set_state("Waiting")
-        self.progress_bar.set_progress(0, animate=False)
-        self.stats_label.configure(text="")
+        self.progress_ring.stop_glow()
+        self.progress_ring.set_progress(0, animate=False)
+        self.percent_label.configure(text="")
 
-        self.action_button.configure(
-            text="Start",
+        self.status_label.configure(text="Ready")
+        self.subtitle_label.configure(text="Select cells in Excel")
+
+        self.stat_left_value.configure(text="--")
+        self.stat_right_value.configure(text="--")
+
+        self.action_btn.configure(
+            text="Start Translation",
             state="normal",
             fg_color=THEME.text_primary,
             text_color=THEME.bg_primary
         )
 
     def show_connecting(self):
-        """Show connecting state"""
+        """Connecting state - anticipation"""
         self.is_translating = True
 
-        self.status_text.configure(text="Connecting")
-        self.sub_status.configure(text="Starting browser...")
-        self.state_indicator.set_state("Initializing", breathing=True)
+        self.progress_ring.set_progress(0.05)
+        self.progress_ring.start_glow()
+        self.percent_label.configure(text="")
 
-        self.action_button.configure(
+        self.status_label.configure(text="Connecting")
+        self.subtitle_label.configure(text="Starting browser...")
+
+        self.action_btn.configure(
             text="Cancel",
-            fg_color=THEME.bg_tertiary,
+            fg_color=THEME.bg_elevated,
             text_color=THEME.text_primary
         )
 
     def show_translating(self, current: int, total: int, batch: int, total_batches: int):
-        """Show translation progress"""
+        """Translation in progress - focused energy"""
         self.is_translating = True
 
         progress = current / total if total > 0 else 0
+        percent = int(progress * 100)
 
-        self.status_text.configure(text=f"{int(progress * 100)}%")
-        self.sub_status.configure(text=f"Translating batch {batch}/{total_batches}")
-        self.state_indicator.set_state("Processing", breathing=True)
-        self.progress_bar.set_progress(progress)
-        self.stats_label.configure(text=f"{current} / {total} cells")
+        self.progress_ring.set_progress(progress)
+        self.progress_ring.start_glow()
+        self.percent_label.configure(text=f"{percent}%")
 
-        self.action_button.configure(
+        self.status_label.configure(text="Translating")
+        self.subtitle_label.configure(text=f"Processing batch {batch} of {total_batches}")
+
+        self.stat_left_value.configure(text=f"{current}/{total}")
+        self.stat_right_value.configure(text=f"{batch}/{total_batches}")
+
+        self.action_btn.configure(
             text="Cancel",
-            fg_color=THEME.bg_tertiary,
+            state="normal",
+            fg_color=THEME.bg_elevated,
             text_color=THEME.text_primary
         )
 
     def show_complete(self, count: int):
-        """Show completion state"""
+        """Complete state - quiet celebration"""
         self.is_translating = False
 
-        self.status_text.configure(text="Complete")
-        self.sub_status.configure(text=f"{count} cells translated successfully")
-        self.state_indicator.set_state("Done", color=THEME.accent)
-        self.progress_bar.set_progress(1.0)
-        self.stats_label.configure(text="")
+        self.progress_ring.stop_glow()
+        self.progress_ring.set_progress(1.0)
+        self.percent_label.configure(text="")
 
-        self.action_button.configure(
-            text="Start New",
+        self.status_label.configure(text="Complete")
+        self.subtitle_label.configure(text=f"{count} cells translated")
+
+        self.stat_left_value.configure(text=str(count))
+        self.stat_right_value.configure(text="Done")
+
+        self.action_btn.configure(
+            text="Translate Again",
             state="normal",
             fg_color=THEME.accent,
             text_color=THEME.bg_primary
         )
 
     def show_error(self, message: str):
-        """Show error state"""
+        """Error state - calm acknowledgment"""
         self.is_translating = False
 
-        self.status_text.configure(text="Error")
-        self.sub_status.configure(text=message)
-        self.state_indicator.set_state("Failed", color=THEME.error)
+        self.progress_ring.stop_glow()
+        self.progress_ring.set_progress(0, animate=False)
+        self.percent_label.configure(text="")
 
-        self.action_button.configure(
-            text="Retry",
+        self.status_label.configure(text="Error")
+        self.subtitle_label.configure(text=message[:50])
+
+        self.action_btn.configure(
+            text="Try Again",
             state="normal",
             fg_color=THEME.text_primary,
             text_color=THEME.bg_primary
         )
 
     def show_cancelled(self):
-        """Show cancelled state"""
+        """Cancelled state - graceful stop"""
         self.is_translating = False
         self.cancel_requested = False
 
-        self.status_text.configure(text="Cancelled")
-        self.sub_status.configure(text="Translation was cancelled")
-        self.state_indicator.set_state("Stopped", color=THEME.warning)
+        self.progress_ring.stop_glow()
+        self.percent_label.configure(text="")
 
-        self.action_button.configure(
-            text="Start",
+        self.status_label.configure(text="Cancelled")
+        self.subtitle_label.configure(text="Translation stopped")
+
+        self.action_btn.configure(
+            text="Start Translation",
             state="normal",
             fg_color=THEME.text_primary,
             text_color=THEME.bg_primary
@@ -460,125 +666,116 @@ class TranslatorApp(ctk.CTk):
 
 
 # =============================================================================
-# Settings Window
+# Settings Sheet - Slide-up panel
 # =============================================================================
-class SettingsWindow(ctk.CTkToplevel):
-    """Settings panel - Minimal design"""
+class SettingsSheet(ctk.CTkToplevel):
+    """
+    Settings panel - Clean, focused configuration.
+    """
 
     def __init__(self, parent):
         super().__init__(parent)
 
         self.title("Settings")
-        self.geometry("400x300")
+        self.geometry("380x280")
         self.configure(fg_color=THEME.bg_primary)
         self.resizable(False, False)
 
-        # Make modal
         self.transient(parent)
         self.grab_set()
 
-        self._create_ui()
-        self._center_window(parent)
+        self._build_ui()
+        self._center(parent)
 
-    def _center_window(self, parent):
+    def _center(self, parent):
+        """Center over parent"""
         self.update_idletasks()
-        x = parent.winfo_x() + (parent.winfo_width() - self.winfo_width()) // 2
-        y = parent.winfo_y() + (parent.winfo_height() - self.winfo_height()) // 2
+        px, py = parent.winfo_x(), parent.winfo_y()
+        pw, ph = parent.winfo_width(), parent.winfo_height()
+        w, h = self.winfo_width(), self.winfo_height()
+        x = px + (pw - w) // 2
+        y = py + (ph - h) // 2
         self.geometry(f"+{x}+{y}")
 
-    def _create_ui(self):
+    def _build_ui(self):
+        """Build settings interface"""
         container = ctk.CTkFrame(self, fg_color="transparent")
-        container.pack(fill="both", expand=True, padx=THEME.padding_lg, pady=THEME.padding_lg)
+        container.pack(fill="both", expand=True, padx=THEME.space_lg, pady=THEME.space_lg)
 
-        # Title
-        title = ctk.CTkLabel(
+        # Header
+        header = ctk.CTkLabel(
             container,
             text="Settings",
-            font=(THEME.font_family_en, 24, "bold"),
+            font=get_font("display", 22, "bold"),
             text_color=THEME.text_primary
         )
-        title.pack(anchor="w", pady=(0, THEME.padding_lg))
+        header.pack(anchor="w")
 
-        # Batch size setting
-        batch_frame = ctk.CTkFrame(container, fg_color="transparent")
-        batch_frame.pack(fill="x", pady=THEME.padding_sm)
+        # Batch size option
+        option_frame = GlassCard(container)
+        option_frame.pack(fill="x", pady=(THEME.space_lg, 0))
 
-        batch_label = ctk.CTkLabel(
-            batch_frame,
+        option_inner = ctk.CTkFrame(option_frame, fg_color="transparent")
+        option_inner.pack(fill="x", padx=THEME.space_md, pady=THEME.space_md)
+
+        option_header = ctk.CTkFrame(option_inner, fg_color="transparent")
+        option_header.pack(fill="x")
+
+        ctk.CTkLabel(
+            option_header,
             text="Batch Size",
-            font=(THEME.font_family_en, 14),
+            font=get_font("text", 14, "bold"),
             text_color=THEME.text_primary
-        )
-        batch_label.pack(anchor="w")
+        ).pack(side="left")
 
-        batch_desc = ctk.CTkLabel(
-            batch_frame,
-            text="Maximum cells per translation batch",
-            font=(THEME.font_family, 12),
-            text_color=THEME.text_tertiary
+        self.batch_value_label = ctk.CTkLabel(
+            option_header,
+            text="300",
+            font=get_font("mono", 14),
+            text_color=THEME.accent
         )
-        batch_desc.pack(anchor="w")
+        self.batch_value_label.pack(side="right")
+
+        ctk.CTkLabel(
+            option_inner,
+            text="Maximum cells per translation request",
+            font=get_font("text", 12),
+            text_color=THEME.text_tertiary
+        ).pack(anchor="w", pady=(THEME.space_xs, THEME.space_sm))
 
         self.batch_slider = ctk.CTkSlider(
-            batch_frame,
+            option_inner,
             from_=50,
             to=500,
             number_of_steps=9,
-            fg_color=THEME.bg_tertiary,
+            fg_color=THEME.bg_elevated,
             progress_color=THEME.accent,
             button_color=THEME.text_primary,
-            button_hover_color=THEME.text_secondary
+            button_hover_color=THEME.text_secondary,
+            height=20,
+            command=self._on_batch_change
         )
         self.batch_slider.set(300)
-        self.batch_slider.pack(fill="x", pady=(THEME.padding_sm, 0))
+        self.batch_slider.pack(fill="x")
 
-        self.batch_value = ctk.CTkLabel(
-            batch_frame,
-            text="300",
-            font=(THEME.font_family_en, 12),
-            text_color=THEME.text_secondary
-        )
-        self.batch_value.pack(anchor="e")
-
-        self.batch_slider.configure(command=self._on_batch_change)
-
-        # Close button
-        close_btn = ctk.CTkButton(
+        # Done button
+        done_btn = MinimalButton(
             container,
             text="Done",
-            font=(THEME.font_family_en, 14),
-            fg_color=THEME.text_primary,
-            text_color=THEME.bg_primary,
-            hover_color=THEME.text_secondary,
-            height=44,
-            corner_radius=10,
+            variant="primary",
             command=self.destroy
         )
-        close_btn.pack(fill="x", side="bottom")
+        done_btn.pack(fill="x", side="bottom")
 
     def _on_batch_change(self, value):
-        self.batch_value.configure(text=str(int(value)))
+        """Update batch value display"""
+        self.batch_value_label.configure(text=str(int(value)))
 
 
 # =============================================================================
-# Entry Point (for testing)
+# Entry Point
 # =============================================================================
 if __name__ == "__main__":
     ctk.set_appearance_mode("dark")
     app = TranslatorApp()
-
-    # Test states
-    def test_flow():
-        time.sleep(1)
-        app.after(0, app.show_connecting)
-        time.sleep(2)
-
-        for i in range(1, 101):
-            app.after(0, lambda i=i: app.show_translating(i, 100, 1, 1))
-            time.sleep(0.05)
-
-        app.after(0, lambda: app.show_complete(100))
-
-    # threading.Thread(target=test_flow, daemon=True).start()
-
     app.mainloop()

@@ -3,11 +3,12 @@ Excel Translator - Premium UI
 A world-class interface inspired by Apple's design philosophy.
 
 Design Concept: "Silent Power" - The beauty of restraint meets functional elegance.
+Features: Aurora background, breathing UI, success celebration, sound feedback.
 """
 
 import customtkinter as ctk
 import math
-import time
+import random
 from typing import Callable, Optional
 from dataclasses import dataclass
 
@@ -34,6 +35,12 @@ class Theme:
     accent_blue: str = "#007aff"     # Apple blue - action
     accent_orange: str = "#ff9500"   # Warning, attention
     accent_red: str = "#ff3b30"      # Error, stop
+
+    # Aurora colors (very subtle)
+    aurora_1: str = "#1a1a2e"        # Deep blue
+    aurora_2: str = "#16213e"        # Navy
+    aurora_3: str = "#0f3460"        # Ocean
+    aurora_4: str = "#1a472a"        # Forest green
 
     # Gradients (start, end)
     gradient_active: tuple = ("#34c759", "#30d158")
@@ -82,12 +89,225 @@ def get_font(style: str = "text", size: int = 14, weight: str = "normal"):
 
 
 # =============================================================================
-# Custom Components - Crafted with intention
+# Sound System - Subtle audio feedback
+# =============================================================================
+class SoundPlayer:
+    """Minimal sound feedback - Apple-like subtle audio cues"""
+
+    @staticmethod
+    def play_success():
+        """Play success sound - like Apple Pay completion"""
+        try:
+            import winsound
+            # Two-tone ascending chime (like Apple Pay)
+            winsound.Beep(880, 80)   # A5
+            winsound.Beep(1175, 120)  # D6
+        except Exception:
+            pass
+
+    @staticmethod
+    def play_error():
+        """Play subtle error sound"""
+        try:
+            import winsound
+            winsound.Beep(330, 150)  # E4 - low, subtle
+        except Exception:
+            pass
+
+    @staticmethod
+    def play_start():
+        """Play subtle start sound"""
+        try:
+            import winsound
+            winsound.Beep(660, 50)  # E5 - quick, subtle
+        except Exception:
+            pass
+
+
+# =============================================================================
+# Aurora Background - Subtle animated gradient
+# =============================================================================
+class AuroraBackground(ctk.CTkCanvas):
+    """
+    Subtle aurora-like background animation.
+    Extremely subtle - almost subliminal - movement.
+    """
+
+    def __init__(self, parent, **kwargs):
+        super().__init__(
+            parent,
+            bg=THEME.bg_primary,
+            highlightthickness=0,
+            **kwargs
+        )
+        self.phase = 0
+        self.is_animating = True
+        self.blobs = []
+
+        # Create subtle color blobs
+        self._create_blobs()
+        self._animate()
+
+    def _create_blobs(self):
+        """Create subtle gradient blobs"""
+        colors = [THEME.aurora_1, THEME.aurora_2, THEME.aurora_3, THEME.aurora_4]
+        for i in range(4):
+            self.blobs.append({
+                'x': random.uniform(0.2, 0.8),
+                'y': random.uniform(0.2, 0.8),
+                'radius': random.uniform(0.3, 0.5),
+                'color': colors[i],
+                'speed_x': random.uniform(-0.0003, 0.0003),
+                'speed_y': random.uniform(-0.0003, 0.0003),
+                'phase': random.uniform(0, math.pi * 2)
+            })
+
+    def _draw(self):
+        """Draw aurora effect"""
+        self.delete("all")
+        w = self.winfo_width()
+        h = self.winfo_height()
+
+        if w <= 1 or h <= 1:
+            return
+
+        # Draw each blob as a subtle gradient circle
+        for blob in self.blobs:
+            x = int(blob['x'] * w)
+            y = int(blob['y'] * h)
+            r = int(blob['radius'] * min(w, h))
+
+            # Create subtle radial effect with multiple circles
+            for i in range(5, 0, -1):
+                alpha = i / 5
+                radius = int(r * alpha)
+                self.create_oval(
+                    x - radius, y - radius,
+                    x + radius, y + radius,
+                    fill=blob['color'],
+                    outline="",
+                    tags="aurora"
+                )
+
+    def _animate(self):
+        """Animate the aurora - very slow, subtle movement"""
+        if not self.is_animating:
+            return
+
+        self.phase += 0.01
+
+        # Move blobs very slowly
+        for blob in self.blobs:
+            blob['x'] += blob['speed_x'] + math.sin(self.phase + blob['phase']) * 0.0002
+            blob['y'] += blob['speed_y'] + math.cos(self.phase + blob['phase']) * 0.0002
+
+            # Bounce at edges
+            if blob['x'] < 0.1 or blob['x'] > 0.9:
+                blob['speed_x'] *= -1
+            if blob['y'] < 0.1 or blob['y'] > 0.9:
+                blob['speed_y'] *= -1
+
+        self._draw()
+        self.after(50, self._animate)
+
+    def stop(self):
+        """Stop animation"""
+        self.is_animating = False
+
+    def start(self):
+        """Start animation"""
+        if not self.is_animating:
+            self.is_animating = True
+            self._animate()
+
+
+# =============================================================================
+# Particle System - Success celebration
+# =============================================================================
+class Particle:
+    """Single particle for celebration effect"""
+    def __init__(self, x, y, color):
+        self.x = x
+        self.y = y
+        self.color = color
+        self.vx = random.uniform(-4, 4)
+        self.vy = random.uniform(-8, -2)
+        self.gravity = 0.2
+        self.life = 1.0
+        self.decay = random.uniform(0.02, 0.04)
+        self.size = random.uniform(3, 6)
+
+    def update(self):
+        """Update particle physics"""
+        self.x += self.vx
+        self.y += self.vy
+        self.vy += self.gravity
+        self.life -= self.decay
+        return self.life > 0
+
+    def draw(self, canvas):
+        """Draw particle on canvas"""
+        if self.life > 0:
+            size = self.size * self.life
+            canvas.create_oval(
+                self.x - size, self.y - size,
+                self.x + size, self.y + size,
+                fill=self.color,
+                outline="",
+                tags="particle"
+            )
+
+
+class ParticleSystem(ctk.CTkCanvas):
+    """
+    Particle celebration effect.
+    Bursts particles from a point for success celebration.
+    """
+
+    def __init__(self, parent, **kwargs):
+        super().__init__(
+            parent,
+            bg=THEME.bg_primary,
+            highlightthickness=0,
+            **kwargs
+        )
+        self.particles = []
+        self.is_animating = False
+        self.colors = [THEME.accent, "#50fa7b", "#69ff97", "#98ffb3", "#ffffff"]
+
+    def burst(self, x, y, count=30):
+        """Create particle burst at position"""
+        for _ in range(count):
+            color = random.choice(self.colors)
+            self.particles.append(Particle(x, y, color))
+
+        if not self.is_animating:
+            self.is_animating = True
+            self._animate()
+
+    def _animate(self):
+        """Animate particles"""
+        self.delete("particle")
+
+        # Update and draw particles
+        self.particles = [p for p in self.particles if p.update()]
+        for p in self.particles:
+            p.draw(self)
+
+        if self.particles:
+            self.after(16, self._animate)
+        else:
+            self.is_animating = False
+
+
+# =============================================================================
+# Circular Progress with Celebration
 # =============================================================================
 class CircularProgress(ctk.CTkCanvas):
     """
     Circular progress indicator - The hero element.
     Inspired by Apple Watch activity rings.
+    With success celebration animation.
     """
 
     def __init__(self, parent, size: int = 200, thickness: int = 8, **kwargs):
@@ -108,6 +328,9 @@ class CircularProgress(ctk.CTkCanvas):
 
         self.glow_phase = 0
         self.is_animating = False
+        self.is_celebrating = False
+        self.celebration_phase = 0
+        self.checkmark_progress = 0
 
         self._draw()
 
@@ -134,20 +357,22 @@ class CircularProgress(ctk.CTkCanvas):
             extent = -360 * self.progress
 
             # Glow effect (subtle outer ring)
-            if self.is_animating:
-                glow_alpha = 0.3 + 0.2 * math.sin(self.glow_phase)
-                # Create subtle glow by drawing slightly larger arc
+            if self.is_animating or self.is_celebrating:
                 glow_bbox = (
-                    padding - 2, padding - 2,
-                    self.size - padding + 2, self.size - padding + 2
+                    padding - 3, padding - 3,
+                    self.size - padding + 3, self.size - padding + 3
                 )
+
+                # Celebration glow is stronger
+                glow_width = self.thickness + 8 if self.is_celebrating else self.thickness + 4
+
                 self.create_arc(
                     *glow_bbox,
                     start=90,
                     extent=extent,
                     style="arc",
                     outline=THEME.accent,
-                    width=self.thickness + 4,
+                    width=glow_width,
                     tags="glow"
                 )
 
@@ -160,6 +385,48 @@ class CircularProgress(ctk.CTkCanvas):
                 outline=THEME.accent,
                 width=self.thickness,
                 tags="progress"
+            )
+
+        # Draw checkmark if celebrating
+        if self.is_celebrating and self.checkmark_progress > 0:
+            self._draw_checkmark()
+
+    def _draw_checkmark(self):
+        """Draw animated checkmark in center"""
+        cx, cy = self.center, self.center
+        scale = 25 * self.checkmark_progress
+
+        # Checkmark points (relative to center)
+        p1 = (cx - scale * 0.5, cy)
+        p2 = (cx - scale * 0.1, cy + scale * 0.4)
+        p3 = (cx + scale * 0.5, cy - scale * 0.3)
+
+        # Draw based on animation progress
+        if self.checkmark_progress < 0.5:
+            # First stroke
+            prog = self.checkmark_progress * 2
+            mid_x = p1[0] + (p2[0] - p1[0]) * prog
+            mid_y = p1[1] + (p2[1] - p1[1]) * prog
+            self.create_line(
+                p1[0], p1[1], mid_x, mid_y,
+                fill=THEME.accent, width=4, capstyle="round",
+                tags="checkmark"
+            )
+        else:
+            # First stroke complete
+            self.create_line(
+                p1[0], p1[1], p2[0], p2[1],
+                fill=THEME.accent, width=4, capstyle="round",
+                tags="checkmark"
+            )
+            # Second stroke
+            prog = (self.checkmark_progress - 0.5) * 2
+            mid_x = p2[0] + (p3[0] - p2[0]) * prog
+            mid_y = p2[1] + (p3[1] - p2[1]) * prog
+            self.create_line(
+                p2[0], p2[1], mid_x, mid_y,
+                fill=THEME.accent, width=4, capstyle="round",
+                tags="checkmark"
             )
 
     def set_progress(self, value: float, animate: bool = True):
@@ -202,93 +469,88 @@ class CircularProgress(ctk.CTkCanvas):
         self._draw()
         self.after(30, self._animate_glow)
 
-    def set_color(self, color: str):
-        """Change the progress color"""
-        # Update theme accent temporarily
+    def celebrate(self):
+        """Start celebration animation"""
+        self.is_celebrating = True
+        self.checkmark_progress = 0
+        self._animate_celebration()
+
+    def _animate_celebration(self):
+        """Animate celebration (checkmark drawing)"""
+        if not self.is_celebrating:
+            return
+
+        self.checkmark_progress += 0.05
+        self._draw()
+
+        if self.checkmark_progress < 1.0:
+            self.after(20, self._animate_celebration)
+        else:
+            # End celebration after a moment
+            self.after(2000, self._end_celebration)
+
+    def _end_celebration(self):
+        """End celebration"""
+        self.is_celebrating = False
+        self.checkmark_progress = 0
         self._draw()
 
 
-class PulsingDot(ctk.CTkCanvas):
-    """Minimal status indicator with breathing animation"""
+# =============================================================================
+# Breathing Card - Subtle idle animation
+# =============================================================================
+class BreathingCard(ctk.CTkFrame):
+    """
+    Card with subtle breathing animation when idle.
+    Gives the UI a sense of life.
+    """
 
-    def __init__(self, parent, size: int = 8, **kwargs):
+    def __init__(self, parent, **kwargs):
         super().__init__(
             parent,
-            width=size * 4,
-            height=size * 4,
-            bg=THEME.bg_primary,
-            highlightthickness=0,
+            fg_color=THEME.bg_card,
+            corner_radius=THEME.radius_lg,
             **kwargs
         )
-        self.dot_size = size
-        self.center = size * 2
-        self.color = THEME.accent
         self.phase = 0
-        self.is_pulsing = False
+        self.is_breathing = False
+        self.base_color = THEME.bg_card
 
-        self._draw(1.0, 1.0)
+    def start_breathing(self):
+        """Start subtle breathing animation"""
+        self.is_breathing = True
+        self._breathe()
 
-    def _draw(self, scale: float, opacity: float):
-        """Draw the dot with scale and opacity"""
-        self.delete("all")
-        radius = (self.dot_size / 2) * scale
+    def stop_breathing(self):
+        """Stop breathing"""
+        self.is_breathing = False
+        self.configure(fg_color=self.base_color)
 
-        # Outer glow
-        if self.is_pulsing:
-            glow_radius = radius * 2
-            self.create_oval(
-                self.center - glow_radius,
-                self.center - glow_radius,
-                self.center + glow_radius,
-                self.center + glow_radius,
-                fill="",
-                outline=self.color,
-                width=1,
-                tags="glow"
-            )
-
-        # Main dot
-        self.create_oval(
-            self.center - radius,
-            self.center - radius,
-            self.center + radius,
-            self.center + radius,
-            fill=self.color,
-            outline="",
-            tags="dot"
-        )
-
-    def start_pulse(self):
-        """Start breathing animation"""
-        self.is_pulsing = True
-        self._pulse()
-
-    def stop_pulse(self):
-        """Stop animation"""
-        self.is_pulsing = False
-        self._draw(1.0, 1.0)
-
-    def _pulse(self):
-        """Breathing animation loop"""
-        if not self.is_pulsing:
+    def _breathe(self):
+        """Breathing animation - very subtle color shift"""
+        if not self.is_breathing:
             return
 
-        self.phase += 0.06
-        scale = 0.85 + 0.15 * (math.sin(self.phase) + 1) / 2
-        self._draw(scale, 1.0)
-        self.after(30, self._pulse)
+        self.phase += 0.03
+        # Very subtle brightness oscillation
+        brightness = 0.95 + 0.05 * math.sin(self.phase)
 
-    def set_color(self, color: str):
-        """Set dot color"""
-        self.color = color
-        self._draw(1.0, 1.0)
+        # Interpolate between bg_card and slightly lighter
+        r = int(int(THEME.bg_card[1:3], 16) * brightness)
+        g = int(int(THEME.bg_card[3:5], 16) * brightness)
+        b = int(int(THEME.bg_card[5:7], 16) * brightness)
+
+        color = f"#{r:02x}{g:02x}{b:02x}"
+        self.configure(fg_color=color)
+
+        self.after(50, self._breathe)
 
 
+# =============================================================================
+# Glass Card (Original)
+# =============================================================================
 class GlassCard(ctk.CTkFrame):
-    """
-    Glass-morphism inspired card component.
-    Subtle elevation and depth.
-    """
+    """Glass-morphism inspired card component."""
 
     def __init__(self, parent, **kwargs):
         super().__init__(
@@ -299,10 +561,11 @@ class GlassCard(ctk.CTkFrame):
         )
 
 
+# =============================================================================
+# Minimal Button
+# =============================================================================
 class MinimalButton(ctk.CTkButton):
-    """
-    Refined button with subtle interactions.
-    """
+    """Refined button with subtle interactions."""
 
     def __init__(self, parent, text: str, variant: str = "primary", **kwargs):
         colors = {
@@ -359,17 +622,16 @@ class TranslatorApp(ctk.CTk):
         self.minsize(380, 600)
         self.configure(fg_color=THEME.bg_primary)
 
-        # Remove window decorations for cleaner look (optional)
-        # self.overrideredirect(True)
-
         # State
         self.is_translating = False
         self.cancel_requested = False
         self.on_start_callback: Optional[Callable] = None
         self.on_cancel_callback: Optional[Callable] = None
+        self.last_translation_pairs = None
 
         self._build_ui()
         self._center_window()
+        self._start_idle_animations()
 
     def _center_window(self):
         """Center on screen"""
@@ -379,8 +641,21 @@ class TranslatorApp(ctk.CTk):
         y = (self.winfo_screenheight() - h) // 2
         self.geometry(f"{w}x{h}+{x}+{y}")
 
+    def _start_idle_animations(self):
+        """Start subtle idle animations"""
+        self.stats_card.start_breathing()
+
     def _build_ui(self):
         """Construct the interface with surgical precision"""
+
+        # === Aurora Background (bottom layer) ===
+        self.aurora = AuroraBackground(self)
+        self.aurora.place(x=0, y=0, relwidth=1, relheight=1)
+
+        # === Particle System (top layer for celebrations) ===
+        self.particles = ParticleSystem(self)
+        self.particles.place(x=0, y=0, relwidth=1, relheight=1)
+        self.particles.lower()  # Below UI but above aurora
 
         # Main container
         self.container = ctk.CTkFrame(self, fg_color="transparent")
@@ -434,8 +709,8 @@ class TranslatorApp(ctk.CTk):
         )
         self.subtitle_label.place(relx=0.5, rely=0.66, anchor="center")
 
-        # === Stats Card ===
-        self.stats_card = GlassCard(self.hero, height=70)
+        # === Stats Card (with breathing) ===
+        self.stats_card = BreathingCard(self.hero, height=70)
         self.stats_card.place(relx=0.5, rely=0.82, anchor="center", relwidth=0.9)
 
         # Stats content
@@ -522,6 +797,7 @@ class TranslatorApp(ctk.CTk):
 
     def _start(self):
         """Start translation"""
+        SoundPlayer.play_start()
         if self.on_start_callback:
             self.on_start_callback()
 
@@ -559,6 +835,8 @@ class TranslatorApp(ctk.CTk):
         self.stat_left_value.configure(text="--")
         self.stat_right_value.configure(text="--")
 
+        self.stats_card.start_breathing()
+
         self.action_btn.configure(
             text="Start Translation",
             state="normal",
@@ -569,6 +847,7 @@ class TranslatorApp(ctk.CTk):
     def show_connecting(self):
         """Connecting state - anticipation"""
         self.is_translating = True
+        self.stats_card.stop_breathing()
 
         self.progress_ring.set_progress(0.05)
         self.progress_ring.start_glow()
@@ -608,14 +887,25 @@ class TranslatorApp(ctk.CTk):
         )
 
     def show_complete(self, count: int, translation_pairs: list = None):
-        """Complete state - quiet celebration"""
+        """Complete state - celebration!"""
         self.is_translating = False
-        self.last_translation_pairs = translation_pairs  # Store for viewing
+        self.last_translation_pairs = translation_pairs
 
+        # Stop regular glow, start celebration
         self.progress_ring.stop_glow()
         self.progress_ring.set_progress(1.0)
-        self.percent_label.configure(text="")
+        self.progress_ring.celebrate()  # Checkmark animation
 
+        # Particle burst from center
+        self.particles.lift()  # Bring to front
+        center_x = self.winfo_width() // 2
+        center_y = int(self.winfo_height() * 0.35)
+        self.particles.burst(center_x, center_y, count=40)
+
+        # Play success sound
+        SoundPlayer.play_success()
+
+        self.percent_label.configure(text="")
         self.status_label.configure(text="Complete")
         self.subtitle_label.configure(text=f"{count} cells translated")
 
@@ -629,13 +919,15 @@ class TranslatorApp(ctk.CTk):
             text_color=THEME.bg_primary
         )
 
-        # Show results dialog if we have translation pairs
+        # Show results dialog after celebration
         if translation_pairs:
-            self.after(300, lambda: ResultsSheet(self, translation_pairs))
+            self.after(800, lambda: ResultsSheet(self, translation_pairs))
 
     def show_error(self, message: str):
         """Error state - calm acknowledgment"""
         self.is_translating = False
+
+        SoundPlayer.play_error()
 
         self.progress_ring.stop_glow()
         self.progress_ring.set_progress(0, animate=False)
@@ -643,6 +935,8 @@ class TranslatorApp(ctk.CTk):
 
         self.status_label.configure(text="Error")
         self.subtitle_label.configure(text=message[:50])
+
+        self.stats_card.start_breathing()
 
         self.action_btn.configure(
             text="Try Again",
@@ -662,6 +956,8 @@ class TranslatorApp(ctk.CTk):
         self.status_label.configure(text="Cancelled")
         self.subtitle_label.configure(text="Translation stopped")
 
+        self.stats_card.start_breathing()
+
         self.action_btn.configure(
             text="Start Translation",
             state="normal",
@@ -671,12 +967,10 @@ class TranslatorApp(ctk.CTk):
 
 
 # =============================================================================
-# Settings Sheet - Slide-up panel
+# Settings Sheet - About panel
 # =============================================================================
 class SettingsSheet(ctk.CTkToplevel):
-    """
-    Settings panel - Clean, focused information.
-    """
+    """Settings panel - Clean, focused information."""
 
     def __init__(self, parent):
         super().__init__(parent)
@@ -765,9 +1059,7 @@ class SettingsSheet(ctk.CTkToplevel):
 # Results Sheet - Translation log display
 # =============================================================================
 class ResultsSheet(ctk.CTkToplevel):
-    """
-    Translation results log - Shows Japanese → English pairs.
-    """
+    """Translation results log - Shows Japanese → English pairs."""
 
     def __init__(self, parent, translation_pairs: list):
         super().__init__(parent)

@@ -180,7 +180,41 @@ class ExcelHandler:
             if match:
                 row, col = int(match.group(1)), int(match.group(2))
                 sheet.Cells(row, col).Value = translated
-    
+
+    def capture_selection_screenshot(self) -> Optional[Path]:
+        """Capture screenshot of current selection and save to temp file"""
+        try:
+            from PIL import ImageGrab
+            import tempfile
+
+            selection = self.app.Selection
+
+            # Copy selection as picture to clipboard
+            # xlScreen=1, xlBitmap=2
+            selection.CopyPicture(Appearance=1, Format=2)
+
+            # Small delay for clipboard
+            time.sleep(0.3)
+
+            # Grab image from clipboard
+            img = ImageGrab.grabclipboard()
+            if img is None:
+                print("  Warning: Could not capture screenshot from clipboard")
+                return None
+
+            # Save to temp file
+            temp_dir = Path(tempfile.gettempdir()) / "excel_translator"
+            temp_dir.mkdir(exist_ok=True)
+            screenshot_path = temp_dir / f"selection_{int(time.time())}.png"
+            img.save(screenshot_path, "PNG")
+
+            print(f"  Screenshot saved: {screenshot_path.name}")
+            return screenshot_path
+
+        except Exception as e:
+            print(f"  Warning: Screenshot capture failed: {e}")
+            return None
+
     def cleanup(self):
         """Cleanup"""
         try:
@@ -393,18 +427,51 @@ class CopilotHandler:
         except Exception as e:
             print(f"New chat error: {e}")
     
-    def send_prompt(self, prompt: str) -> bool:
-        """Send prompt"""
+    def attach_image(self, image_path: Path) -> bool:
+        """Attach an image to the chat"""
+        try:
+            # Look for file input element (hidden)
+            file_input = self.page.query_selector('input[type="file"]')
+            if file_input:
+                file_input.set_input_files(str(image_path))
+                time.sleep(1)
+                print("  Image attached via file input")
+                return True
+
+            # Alternative: Click attach button and use file chooser
+            attach_button = self.page.query_selector('button[aria-label*="添付"], button[aria-label*="Attach"], button[data-testid*="attach"]')
+            if attach_button:
+                with self.page.expect_file_chooser() as fc_info:
+                    attach_button.click()
+                file_chooser = fc_info.value
+                file_chooser.set_files(str(image_path))
+                time.sleep(1)
+                print("  Image attached via button")
+                return True
+
+            print("  Warning: Could not find attach mechanism")
+            return False
+
+        except Exception as e:
+            print(f"  Warning: Image attach failed: {e}")
+            return False
+
+    def send_prompt(self, prompt: str, image_path: Optional[Path] = None) -> bool:
+        """Send prompt with optional image attachment"""
         try:
             # Bring browser to front so user can see progress
             self.page.bring_to_front()
-            
+
+            # Attach image first if provided
+            if image_path and image_path.exists():
+                self.attach_image(image_path)
+
             self.page.click(CONFIG.selector_input)
             time.sleep(0.3)
             self.page.evaluate(f"navigator.clipboard.writeText({repr(prompt)})")
             self.page.keyboard.press("Control+v")
             time.sleep(1)
-            
+
             input_text = self.page.inner_text(CONFIG.selector_input)
             if not input_text.strip():
                 show_message("Error", "Paste failed.\nPlease allow clipboard access in browser.", "error")
@@ -414,7 +481,7 @@ class CopilotHandler:
                 input_text = self.page.inner_text(CONFIG.selector_input)
                 if not input_text.strip():
                     return False
-            
+
             self.page.wait_for_selector(CONFIG.selector_send, state="visible", timeout=5000)
             self.page.click(CONFIG.selector_send)
             return True
@@ -615,7 +682,10 @@ class TranslatorController:
                 self._cleanup()
                 return
 
-            # Step 5: Translate
+            # Step 5: Capture screenshot for context
+            screenshot_path = self.excel.capture_selection_screenshot()
+
+            # Step 6: Translate
             all_translations = {}
             processed_cells = 0
 
@@ -638,7 +708,9 @@ class TranslatorController:
                 batch_tsv = format_batch_for_copilot(batch)
                 full_prompt = f"{prompt_header}\n{batch_tsv}"
 
-                if not self.copilot.send_prompt(full_prompt):
+                # Attach screenshot only for first batch
+                image_to_attach = screenshot_path if i == 0 else None
+                if not self.copilot.send_prompt(full_prompt, image_path=image_to_attach):
                     continue
 
                 response = self.copilot.wait_and_copy_response()
@@ -764,15 +836,19 @@ def main_cli():
     batches = create_batches(japanese_cells, CONFIG.max_lines_per_batch)
     print(f"  Batches: {len(batches)}")
 
-    # Step 4: Launch Copilot
-    print("\n[4/5] Launching Copilot...")
+    # Step 4: Capture screenshot
+    print("\n[4/6] Capturing screenshot...")
+    screenshot_path = excel.capture_selection_screenshot()
+
+    # Step 5: Launch Copilot
+    print("\n[5/6] Launching Copilot...")
     copilot = CopilotHandler()
     if not copilot.launch():
         excel.cleanup()
         return
 
-    # Step 5: Translate
-    print("\n[5/5] Translating...")
+    # Step 6: Translate
+    print("\n[6/6] Translating...")
     all_translations = {}
 
     for i, batch in enumerate(batches):
@@ -784,7 +860,9 @@ def main_cli():
         batch_tsv = format_batch_for_copilot(batch)
         full_prompt = f"{prompt_header}\n{batch_tsv}"
 
-        if not copilot.send_prompt(full_prompt):
+        # Attach screenshot only for first batch
+        image_to_attach = screenshot_path if i == 0 else None
+        if not copilot.send_prompt(full_prompt, image_path=image_to_attach):
             show_message("Error", f"Failed to send batch {i + 1}.", "error")
             continue
         print("    Waiting for Copilot...")

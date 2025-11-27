@@ -3,7 +3,7 @@ Excel Translator - Premium UI
 A world-class interface inspired by Apple's design philosophy.
 
 Design Concept: "Silent Power" - The beauty of restraint meets functional elegance.
-Features: Aurora background, breathing UI, success celebration, sound feedback.
+Features: Glassmorphism, spring animations, aurora background, success celebration.
 """
 
 import customtkinter as ctk
@@ -14,16 +14,22 @@ from dataclasses import dataclass
 
 
 # =============================================================================
-# Design System - Apple-inspired Design Tokens
+# Design System - Apple-inspired Design Tokens with Glassmorphism
 # =============================================================================
 @dataclass
 class Theme:
-    """Design tokens - Pursuit of perfection"""
+    """Design tokens - Pursuit of perfection with Glassmorphism"""
     # Colors - Deep, rich, intentional
     bg_primary: str = "#000000"      # Pure black - the ultimate canvas
     bg_secondary: str = "#0d0d0d"    # Subtle elevation
     bg_card: str = "#1a1a1a"         # Card surfaces
     bg_elevated: str = "#262626"     # Elevated elements
+
+    # Glassmorphism colors
+    glass_bg: str = "#1a1a1a"        # Glass base (will be semi-transparent)
+    glass_border: str = "#333333"    # Glass border
+    glass_highlight: str = "#404040" # Top highlight
+    glass_shadow: str = "#000000"    # Bottom shadow
 
     text_primary: str = "#ffffff"
     text_secondary: str = "#a0a0a0"
@@ -67,6 +73,11 @@ class Theme:
     duration_normal: int = 300
     duration_slow: int = 500
 
+    # Spring animation parameters
+    spring_tension: float = 300.0    # Spring stiffness
+    spring_friction: float = 20.0    # Damping
+    spring_mass: float = 1.0         # Mass
+
     # Border radius
     radius_sm: int = 8
     radius_md: int = 12
@@ -86,6 +97,313 @@ def get_font(style: str = "text", size: int = 14, weight: str = "normal"):
         "mono": "Consolas"
     }
     return (font_map.get(style, THEME.font_text_win), size, weight)
+
+
+# =============================================================================
+# Spring Animation System - iOS-like physics
+# =============================================================================
+class SpringAnimation:
+    """
+    Physics-based spring animation.
+    Creates natural, bouncy motion like iOS animations.
+    """
+
+    def __init__(
+        self,
+        widget,
+        target_value: float,
+        on_update: Callable[[float], None],
+        tension: float = None,
+        friction: float = None,
+        mass: float = None,
+        initial_velocity: float = 0.0,
+    ):
+        self.widget = widget
+        self.target = target_value
+        self.on_update = on_update
+        self.tension = tension or THEME.spring_tension
+        self.friction = friction or THEME.spring_friction
+        self.mass = mass or THEME.spring_mass
+
+        self.position = 0.0
+        self.velocity = initial_velocity
+        self.is_running = False
+        self._after_id = None
+
+    def start(self, from_value: float = 0.0):
+        """Start animation from a value"""
+        self.position = from_value
+        self.is_running = True
+        self._animate()
+
+    def stop(self):
+        """Stop animation"""
+        self.is_running = False
+        if self._after_id:
+            try:
+                self.widget.after_cancel(self._after_id)
+            except Exception:
+                pass
+            self._after_id = None
+
+    def _animate(self):
+        """Physics simulation step"""
+        if not self.is_running:
+            return
+
+        # Spring physics
+        dt = 0.016  # ~60fps
+
+        # F = -kx - cv (spring force - damping)
+        displacement = self.position - self.target
+        spring_force = -self.tension * displacement
+        damping_force = -self.friction * self.velocity
+        acceleration = (spring_force + damping_force) / self.mass
+
+        # Update velocity and position
+        self.velocity += acceleration * dt
+        self.position += self.velocity * dt
+
+        # Check if settled (close enough and slow enough)
+        if abs(displacement) < 0.001 and abs(self.velocity) < 0.001:
+            self.position = self.target
+            self.is_running = False
+            self.on_update(self.target)
+            return
+
+        # Update UI
+        self.on_update(self.position)
+
+        # Schedule next frame
+        self._after_id = self.widget.after(16, self._animate)
+
+
+class SpringButton(ctk.CTkButton):
+    """
+    Button with spring animation on hover and click.
+    Feels alive and responsive like iOS buttons.
+    """
+
+    def __init__(self, master, **kwargs):
+        # Extract custom params
+        self.spring_scale = kwargs.pop('spring_scale', 1.05)
+        self.click_scale = kwargs.pop('click_scale', 0.95)
+
+        super().__init__(master, **kwargs)
+
+        self._base_width = None
+        self._base_height = None
+        self._scale = 1.0
+        self._spring: Optional[SpringAnimation] = None
+
+        # Bind events
+        self.bind('<Enter>', self._on_enter)
+        self.bind('<Leave>', self._on_leave)
+        self.bind('<Button-1>', self._on_press)
+        self.bind('<ButtonRelease-1>', self._on_release)
+
+    def _get_base_size(self):
+        """Get base size (called once)"""
+        if self._base_width is None:
+            self.update_idletasks()
+            self._base_width = self.winfo_width()
+            self._base_height = self.winfo_height()
+
+    def _apply_scale(self, scale: float):
+        """Apply scale transform"""
+        self._get_base_size()
+        if self._base_width and self._base_height:
+            new_width = int(self._base_width * scale)
+            new_height = int(self._base_height * scale)
+            # CTkButton doesn't directly support transform, so we adjust size
+            self.configure(width=new_width, height=new_height)
+        self._scale = scale
+
+    def _animate_to(self, target_scale: float, tension: float = None):
+        """Animate to target scale with spring physics"""
+        if self._spring:
+            self._spring.stop()
+
+        self._spring = SpringAnimation(
+            self,
+            target_scale,
+            self._apply_scale,
+            tension=tension or 400,
+            friction=25,
+        )
+        self._spring.start(self._scale)
+
+    def _on_enter(self, event):
+        """Mouse enter - scale up with spring"""
+        self._animate_to(self.spring_scale, tension=350)
+
+    def _on_leave(self, event):
+        """Mouse leave - scale back"""
+        self._animate_to(1.0, tension=300)
+
+    def _on_press(self, event):
+        """Mouse press - compress with quick spring"""
+        self._animate_to(self.click_scale, tension=500)
+
+    def _on_release(self, event):
+        """Mouse release - bounce back"""
+        self._animate_to(self.spring_scale, tension=400)
+
+
+# =============================================================================
+# Glassmorphism Components - Frosted glass effect
+# =============================================================================
+class GlassCard(ctk.CTkFrame):
+    """
+    Glassmorphism card with frosted glass effect.
+    Features: Semi-transparent background, subtle border, highlight/shadow.
+    """
+
+    def __init__(
+        self,
+        parent,
+        glass_opacity: float = 0.85,
+        border_opacity: float = 0.3,
+        with_glow: bool = False,
+        glow_color: str = None,
+        **kwargs
+    ):
+        # Remove any fg_color from kwargs to use our glass effect
+        kwargs.pop('fg_color', None)
+
+        super().__init__(parent, fg_color=THEME.glass_bg, **kwargs)
+
+        self.glass_opacity = glass_opacity
+        self.border_opacity = border_opacity
+        self.with_glow = with_glow
+        self.glow_color = glow_color or THEME.accent
+
+        self._glow_phase = 0
+        self._is_glowing = False
+
+        # Configure border for glass effect
+        self.configure(
+            corner_radius=THEME.radius_lg,
+            border_width=1,
+            border_color=THEME.glass_border,
+        )
+
+        # Create inner highlight frame for depth
+        self._highlight = ctk.CTkFrame(
+            self,
+            fg_color="transparent",
+            corner_radius=THEME.radius_lg - 2,
+            height=2
+        )
+        self._highlight.pack(fill="x", padx=1, pady=(1, 0))
+
+    def start_glow(self):
+        """Start subtle glow animation"""
+        if self.with_glow and not self._is_glowing:
+            self._is_glowing = True
+            self._animate_glow()
+
+    def stop_glow(self):
+        """Stop glow animation"""
+        self._is_glowing = False
+        self.configure(border_color=THEME.glass_border)
+
+    def _animate_glow(self):
+        """Animate border glow"""
+        if not self._is_glowing:
+            return
+
+        # Pulse the border color
+        self._glow_phase += 0.05
+        intensity = (math.sin(self._glow_phase) + 1) / 2  # 0 to 1
+
+        # Interpolate between border and glow color
+        r1, g1, b1 = int(THEME.glass_border[1:3], 16), int(THEME.glass_border[3:5], 16), int(THEME.glass_border[5:7], 16)
+        r2, g2, b2 = int(self.glow_color[1:3], 16), int(self.glow_color[3:5], 16), int(self.glow_color[5:7], 16)
+
+        r = int(r1 + (r2 - r1) * intensity * 0.5)
+        g = int(g1 + (g2 - g1) * intensity * 0.5)
+        b = int(b1 + (b2 - b1) * intensity * 0.5)
+
+        color = f"#{r:02x}{g:02x}{b:02x}"
+        self.configure(border_color=color)
+
+        self.after(50, self._animate_glow)
+
+
+class GlassButton(ctk.CTkButton):
+    """
+    Glassmorphism button with spring animation.
+    Features: Frosted glass look, spring hover, click compression.
+    """
+
+    def __init__(self, master, variant: str = "default", **kwargs):
+        # Set glass styling based on variant
+        if variant == "primary":
+            fg_color = THEME.accent
+            hover_color = THEME.gradient_active[1]
+            text_color = "#000000"
+        elif variant == "glass":
+            fg_color = THEME.glass_bg
+            hover_color = THEME.bg_elevated
+            text_color = THEME.text_primary
+        else:
+            fg_color = THEME.glass_bg
+            hover_color = THEME.bg_card
+            text_color = THEME.text_secondary
+
+        kwargs['fg_color'] = kwargs.get('fg_color', fg_color)
+        kwargs['hover_color'] = kwargs.get('hover_color', hover_color)
+        kwargs['text_color'] = kwargs.get('text_color', text_color)
+        kwargs['corner_radius'] = kwargs.get('corner_radius', THEME.radius_md)
+        kwargs['border_width'] = kwargs.get('border_width', 1)
+        kwargs['border_color'] = kwargs.get('border_color', THEME.glass_border)
+
+        super().__init__(master, **kwargs)
+
+        self._scale = 1.0
+        self._spring: Optional[SpringAnimation] = None
+        self._original_font = kwargs.get('font', get_font("text", 14))
+
+        # Bind spring events
+        self.bind('<Enter>', self._on_enter)
+        self.bind('<Leave>', self._on_leave)
+        self.bind('<Button-1>', self._on_press)
+        self.bind('<ButtonRelease-1>', self._on_release)
+
+    def _update_scale(self, scale: float):
+        """Update visual scale"""
+        self._scale = scale
+        # Simulate scale by adjusting border brightness
+        intensity = (scale - 0.95) / 0.1  # 0 at 0.95, 1 at 1.05
+        intensity = max(0, min(1, intensity))
+
+        r = int(0x33 + (0x50 - 0x33) * intensity)
+        border_color = f"#{r:02x}{r:02x}{r:02x}"
+        self.configure(border_color=border_color)
+
+    def _animate_to(self, target: float, tension: float = 400):
+        """Spring animate to target scale"""
+        if self._spring:
+            self._spring.stop()
+
+        self._spring = SpringAnimation(
+            self, target, self._update_scale,
+            tension=tension, friction=22
+        )
+        self._spring.start(self._scale)
+
+    def _on_enter(self, event):
+        self._animate_to(1.03, tension=350)
+
+    def _on_leave(self, event):
+        self._animate_to(1.0, tension=280)
+
+    def _on_press(self, event):
+        self._animate_to(0.97, tension=500)
+
+    def _on_release(self, event):
+        self._animate_to(1.03, tension=400)
 
 
 # =============================================================================
@@ -497,75 +815,94 @@ class CircularProgress(ctk.CTkCanvas):
 
 
 # =============================================================================
-# Breathing Card - Subtle idle animation
+# Breathing Card - Glassmorphism with subtle idle animation
 # =============================================================================
 class BreathingCard(ctk.CTkFrame):
     """
-    Card with subtle breathing animation when idle.
-    Gives the UI a sense of life.
+    Glassmorphism card with breathing animation.
+    Features: Glass effect, border glow, spring entrance.
     """
 
     def __init__(self, parent, **kwargs):
         super().__init__(
             parent,
-            fg_color=THEME.bg_card,
+            fg_color=THEME.glass_bg,
             corner_radius=THEME.radius_lg,
+            border_width=1,
+            border_color=THEME.glass_border,
             **kwargs
         )
         self.phase = 0
         self.is_breathing = False
-        self.base_color = THEME.bg_card
+        self.base_color = THEME.glass_bg
+        self._entrance_spring: Optional[SpringAnimation] = None
+
+        # Start with entrance animation
+        self.after(100, self._animate_entrance)
+
+    def _animate_entrance(self):
+        """Spring entrance animation"""
+        self._entrance_spring = SpringAnimation(
+            self,
+            target_value=1.0,
+            on_update=self._apply_entrance_scale,
+            tension=280,
+            friction=18,
+        )
+        self._entrance_spring.start(from_value=0.95)
+
+    def _apply_entrance_scale(self, scale: float):
+        """Apply entrance scale effect through opacity"""
+        # Simulate scale by changing border intensity
+        intensity = (scale - 0.9) / 0.1  # 0 to 1
+        intensity = max(0, min(1, intensity))
+
+        r = int(0x1a + (0x33 - 0x1a) * intensity)
+        g = int(0x1a + (0x33 - 0x1a) * intensity)
+        b = int(0x1a + (0x33 - 0x1a) * intensity)
+        self.configure(border_color=f"#{r:02x}{g:02x}{b:02x}")
 
     def start_breathing(self):
-        """Start subtle breathing animation"""
+        """Start subtle breathing animation with border glow"""
         self.is_breathing = True
         self._breathe()
 
     def stop_breathing(self):
         """Stop breathing"""
         self.is_breathing = False
-        self.configure(fg_color=self.base_color)
+        self.configure(fg_color=self.base_color, border_color=THEME.glass_border)
 
     def _breathe(self):
-        """Breathing animation - very subtle color shift"""
+        """Breathing animation - glassmorphism border glow"""
         if not self.is_breathing:
             return
 
         self.phase += 0.03
-        # Very subtle brightness oscillation
+
+        # Subtle brightness oscillation for background
         brightness = 0.95 + 0.05 * math.sin(self.phase)
+        r = int(int(THEME.glass_bg[1:3], 16) * brightness)
+        g = int(int(THEME.glass_bg[3:5], 16) * brightness)
+        b = int(int(THEME.glass_bg[5:7], 16) * brightness)
+        bg_color = f"#{r:02x}{g:02x}{b:02x}"
 
-        # Interpolate between bg_card and slightly lighter
-        r = int(int(THEME.bg_card[1:3], 16) * brightness)
-        g = int(int(THEME.bg_card[3:5], 16) * brightness)
-        b = int(int(THEME.bg_card[5:7], 16) * brightness)
+        # Border glow effect
+        glow_intensity = (math.sin(self.phase * 0.7) + 1) / 2  # 0 to 1
+        br = int(0x33 + (0x50 - 0x33) * glow_intensity * 0.3)
+        border_color = f"#{br:02x}{br:02x}{br:02x}"
 
-        color = f"#{r:02x}{g:02x}{b:02x}"
-        self.configure(fg_color=color)
-
+        self.configure(fg_color=bg_color, border_color=border_color)
         self.after(50, self._breathe)
 
 
 # =============================================================================
-# Glass Card (Original)
-# =============================================================================
-class GlassCard(ctk.CTkFrame):
-    """Glass-morphism inspired card component."""
-
-    def __init__(self, parent, **kwargs):
-        super().__init__(
-            parent,
-            fg_color=THEME.bg_card,
-            corner_radius=THEME.radius_lg,
-            **kwargs
-        )
-
-
-# =============================================================================
-# Minimal Button
+# Minimal Button with Spring Animation
 # =============================================================================
 class MinimalButton(ctk.CTkButton):
-    """Refined button with subtle interactions."""
+    """
+    Refined button with spring animations and glass effect.
+    iOS-like bouncy response to interaction.
+    """
 
     def __init__(self, parent, text: str, variant: str = "primary", **kwargs):
         colors = {
@@ -573,19 +910,29 @@ class MinimalButton(ctk.CTkButton):
                 "fg": THEME.text_primary,
                 "bg": THEME.bg_elevated,
                 "hover": THEME.bg_card,
-                "text": THEME.bg_primary
+                "text": THEME.bg_primary,
+                "border": THEME.glass_border
             },
             "ghost": {
                 "fg": "transparent",
                 "bg": "transparent",
                 "hover": THEME.bg_secondary,
-                "text": THEME.text_secondary
+                "text": THEME.text_secondary,
+                "border": "transparent"
             },
             "accent": {
                 "fg": THEME.accent,
                 "bg": THEME.accent,
                 "hover": THEME.gradient_active[1],
-                "text": THEME.bg_primary
+                "text": THEME.bg_primary,
+                "border": THEME.accent
+            },
+            "glass": {
+                "fg": THEME.glass_bg,
+                "bg": THEME.glass_bg,
+                "hover": THEME.bg_elevated,
+                "text": THEME.text_primary,
+                "border": THEME.glass_border
             }
         }
 
@@ -599,9 +946,69 @@ class MinimalButton(ctk.CTkButton):
             text_color=c["text"],
             hover_color=c["hover"] if variant != "primary" else THEME.text_secondary,
             corner_radius=THEME.radius_md,
+            border_width=1,
+            border_color=c.get("border", THEME.glass_border),
             height=52,
             **kwargs
         )
+
+        # Spring animation state
+        self._scale = 1.0
+        self._spring: Optional[SpringAnimation] = None
+        self._variant = variant
+
+        # Bind spring events
+        self.bind('<Enter>', self._on_enter)
+        self.bind('<Leave>', self._on_leave)
+        self.bind('<Button-1>', self._on_press)
+        self.bind('<ButtonRelease-1>', self._on_release)
+
+    def _update_scale(self, scale: float):
+        """Update visual feedback based on scale"""
+        self._scale = scale
+
+        # Create visual feedback through border glow intensity
+        intensity = (scale - 0.95) / 0.1  # 0 at 0.95, 1 at 1.05
+        intensity = max(0, min(1, intensity))
+
+        if self._variant == "accent":
+            # Green glow for accent
+            r = int(0x34 + (0x50 - 0x34) * intensity)
+            g = int(0xc7 + (0xff - 0xc7) * intensity)
+            b = int(0x59 + (0x80 - 0x59) * intensity)
+        else:
+            # White glow for others
+            base = 0x33
+            r = g = b = int(base + (0x60 - base) * intensity)
+
+        self.configure(border_color=f"#{r:02x}{g:02x}{b:02x}")
+
+    def _animate_to(self, target: float, tension: float = 400):
+        """Spring animate to target"""
+        if self._spring:
+            self._spring.stop()
+
+        self._spring = SpringAnimation(
+            self, target, self._update_scale,
+            tension=tension, friction=22
+        )
+        self._spring.start(self._scale)
+
+    def _on_enter(self, event):
+        """Mouse enter - subtle scale up"""
+        self._animate_to(1.02, tension=320)
+
+    def _on_leave(self, event):
+        """Mouse leave - return to normal"""
+        self._animate_to(1.0, tension=260)
+
+    def _on_press(self, event):
+        """Mouse press - compress"""
+        self._animate_to(0.96, tension=500)
+
+    def _on_release(self, event):
+        """Mouse release - spring back"""
+        self._animate_to(1.02, tension=380)
 
 
 # =============================================================================

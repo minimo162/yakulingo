@@ -1,13 +1,16 @@
 """
-Excel Japanese to English Translation Tool
-Uses M365 Copilot (GPT-5) to translate Japanese cells in Excel.
+Universal Translator
+Translates text from anywhere - Excel, browser, Outlook, or any application.
+Uses M365 Copilot (GPT-5) for high-quality translations.
 
-World-class translation engine with:
-- Smart retry with exponential backoff
-- Translation validation & quality checks
-- Confidence scoring
-- Intelligent response parsing
-- Progressive UI updates
+Features:
+- Excel cell translation (Japanese ↔ English, optimized for cells)
+- Universal text translation (Japanese ↔ English)
+- Clipboard integration for any application
+- Output to Notepad for easy copying
+- Global hotkeys for instant access
+- System tray integration (minimize to tray)
+- Glossary support via SharePoint link
 """
 
 import os
@@ -29,6 +32,29 @@ from playwright.sync_api import sync_playwright, Page, BrowserContext
 
 
 # =============================================================================
+# Translation Mode
+# =============================================================================
+class TranslationMode(Enum):
+    """Translation mode"""
+    EXCEL_JP_TO_EN = "excel_jp_to_en"  # Excel cells: Japanese → English (compressed)
+    EXCEL_EN_TO_JP = "excel_en_to_jp"  # Excel cells: English → Japanese
+    TEXT_JP_TO_EN = "text_jp_to_en"    # General text: Japanese → English
+    TEXT_EN_TO_JP = "text_en_to_jp"    # General text: English → Japanese
+
+
+def is_excel_active() -> bool:
+    """Check if the active window is Microsoft Excel"""
+    try:
+        import win32gui
+        hwnd = win32gui.GetForegroundWindow()
+        title = win32gui.GetWindowText(hwnd)
+        # Check for Excel window titles
+        return "Excel" in title or "EXCEL" in title
+    except Exception:
+        return False
+
+
+# =============================================================================
 # Configuration
 # =============================================================================
 @dataclass
@@ -36,7 +62,10 @@ class Config:
     """Configuration"""
     # Paths (relative to script directory)
     script_dir: Path = None
-    prompt_file: Path = None
+    prompt_file: Path = None  # Excel JP→EN (compressed)
+    prompt_file_excel_en_to_jp: Path = None  # Excel EN→JP
+    prompt_file_jp_to_en: Path = None  # General JP→EN
+    prompt_file_en_to_jp: Path = None  # EN→JP
 
     # M365 Copilot URL
     copilot_url: str = "https://m365.cloud.microsoft/chat/?auth=2"
@@ -50,6 +79,21 @@ class Config:
     def __post_init__(self):
         self.script_dir = Path(__file__).parent
         self.prompt_file = self.script_dir / "prompt.txt"
+        self.prompt_file_excel_en_to_jp = self.script_dir / "prompt_excel_en_to_jp.txt"
+        self.prompt_file_jp_to_en = self.script_dir / "prompt_jp_to_en.txt"
+        self.prompt_file_en_to_jp = self.script_dir / "prompt_en_to_jp.txt"
+
+    def get_prompt_file(self, mode: TranslationMode) -> Path:
+        """Get prompt file for translation mode"""
+        if mode == TranslationMode.EXCEL_JP_TO_EN:
+            return self.prompt_file
+        elif mode == TranslationMode.EXCEL_EN_TO_JP:
+            return self.prompt_file_excel_en_to_jp
+        elif mode == TranslationMode.TEXT_JP_TO_EN:
+            return self.prompt_file_jp_to_en
+        elif mode == TranslationMode.TEXT_EN_TO_JP:
+            return self.prompt_file_en_to_jp
+        return self.prompt_file
 
 
 CONFIG = Config()
@@ -632,6 +676,25 @@ class ExcelHandler:
                         "address": f"R{row}C{col}", "text": text,
                     })
         return japanese_cells
+
+    def extract_english_cells(self, info: dict) -> list[dict]:
+        """Extract cells containing English (non-Japanese text)"""
+        english_cells = []
+        sheet = self.original_sheet
+        for row in range(info["first_row"], info["last_row"] + 1):
+            for col in range(info["first_col"], info["last_col"] + 1):
+                cell = sheet.Cells(row, col)
+                value = cell.Value
+                if value is None:
+                    continue
+                text = clean_cell_text(str(value))
+                # Non-empty text that does NOT contain Japanese
+                if text and not has_japanese(text):
+                    english_cells.append({
+                        "row": row, "col": col,
+                        "address": f"R{row}C{col}", "text": text,
+                    })
+        return english_cells
     
     def write_translations(self, translations: dict[str, str], info: dict):
         """Write translations back to sheet"""
@@ -1020,6 +1083,251 @@ class CopilotHandler:
 
 
 # =============================================================================
+# Universal Text Translation (Clipboard-based)
+# =============================================================================
+class UniversalTranslator:
+    """
+    Translates text from clipboard and outputs to Notepad.
+    Works with any application - just select text and use hotkey.
+    """
+
+    def __init__(self, mode: TranslationMode = TranslationMode.TEXT_JP_TO_EN):
+        self.mode = mode
+        self.copilot: Optional[CopilotHandler] = None
+
+    def get_clipboard_text(self) -> Optional[str]:
+        """Get text from clipboard"""
+        try:
+            import win32clipboard
+            win32clipboard.OpenClipboard()
+            try:
+                if win32clipboard.IsClipboardFormatAvailable(win32clipboard.CF_UNICODETEXT):
+                    text = win32clipboard.GetClipboardData(win32clipboard.CF_UNICODETEXT)
+                    return text.strip() if text else None
+            finally:
+                win32clipboard.CloseClipboard()
+        except Exception as e:
+            print(f"Clipboard error: {e}")
+        return None
+
+    def set_clipboard_text(self, text: str):
+        """Set text to clipboard"""
+        try:
+            import win32clipboard
+            win32clipboard.OpenClipboard()
+            try:
+                win32clipboard.EmptyClipboard()
+                win32clipboard.SetClipboardData(win32clipboard.CF_UNICODETEXT, text)
+            finally:
+                win32clipboard.CloseClipboard()
+        except Exception as e:
+            print(f"Clipboard set error: {e}")
+
+    def copy_selected_text(self):
+        """Send Ctrl+C to copy selected text"""
+        try:
+            import keyboard
+            keyboard.send('ctrl+c')
+            time.sleep(0.3)
+        except Exception as e:
+            print(f"Copy error: {e}")
+
+    def open_notepad_with_text(self, original: str, translated: str):
+        """Open Notepad and paste the translation result"""
+        try:
+            # Format output
+            output = f"""=== Original ===
+{original}
+
+=== Translation ({self._get_direction_label()}) ===
+{translated}
+"""
+            # Copy to clipboard
+            self.set_clipboard_text(output)
+
+            # Open Notepad
+            local_cwd = os.environ.get("SYSTEMROOT", r"C:\Windows")
+            notepad_path = os.path.join(local_cwd, "notepad.exe")
+            subprocess.Popen([notepad_path], cwd=local_cwd)
+
+            # Wait for Notepad to open
+            time.sleep(0.5)
+
+            # Paste content
+            import keyboard
+            keyboard.send('ctrl+v')
+
+        except Exception as e:
+            print(f"Notepad error: {e}")
+
+    def _get_direction_label(self) -> str:
+        """Get human-readable direction label"""
+        if self.mode == TranslationMode.TEXT_JP_TO_EN:
+            return "Japanese → English"
+        elif self.mode == TranslationMode.TEXT_EN_TO_JP:
+            return "English → Japanese"
+        return "Translation"
+
+    def load_prompt(self) -> str:
+        """Load prompt for current mode with glossary reference"""
+        prompt_file = CONFIG.get_prompt_file(self.mode)
+        try:
+            prompt = prompt_file.read_text(encoding="utf-8")
+            # Add glossary reference if configured
+            from config_manager import get_config
+            glossary_addition = get_config().get_glossary_prompt_addition()
+            if glossary_addition:
+                prompt = prompt + glossary_addition
+            return prompt
+        except Exception as e:
+            show_message("Error", f"Failed to load prompt file.\n{e}", "error")
+            return ""
+
+    def translate_text(self, text: str) -> Optional[str]:
+        """Translate text using Copilot"""
+        if not text:
+            return None
+
+        # Load prompt
+        prompt_header = self.load_prompt()
+        if not prompt_header:
+            return None
+
+        # Build full prompt
+        full_prompt = f"{prompt_header}\n{text}"
+
+        # Initialize Copilot if needed
+        if not self.copilot:
+            self.copilot = CopilotHandler()
+            if not self.copilot.launch():
+                return None
+
+        # Send prompt
+        if not self.copilot.send_prompt(full_prompt):
+            return None
+
+        # Get response
+        response = self.copilot.wait_and_copy_response()
+        if response:
+            return clean_copilot_response(response)
+
+        return None
+
+    def close(self):
+        """Close Copilot"""
+        if self.copilot:
+            self.copilot.close()
+            self.copilot = None
+
+
+# =============================================================================
+# Universal Translation Controller
+# =============================================================================
+class UniversalTranslatorController:
+    """Controls universal text translation with UI integration"""
+
+    def __init__(self, app):
+        self.app = app
+        self.translator: Optional[UniversalTranslator] = None
+        self.cancel_requested = False
+
+    def translate_clipboard(self, mode: TranslationMode):
+        """Translate text from clipboard"""
+        import threading
+        self.cancel_requested = False
+        thread = threading.Thread(
+            target=self._run_clipboard_translation,
+            args=(mode,),
+            daemon=True
+        )
+        thread.start()
+
+    def request_cancel(self):
+        """Request cancellation"""
+        self.cancel_requested = True
+
+    def _update_ui(self, method, *args, **kwargs):
+        """Thread-safe UI update"""
+        self.app.after(0, lambda: method(*args, **kwargs))
+
+    def _run_clipboard_translation(self, mode: TranslationMode):
+        """Run clipboard translation in background"""
+        try:
+            # Initialize COM for this thread
+            pythoncom.CoInitialize()
+
+            self.translator = UniversalTranslator(mode)
+
+            # Update UI
+            direction = "JP→EN" if mode == TranslationMode.TEXT_JP_TO_EN else "EN→JP"
+            self._update_ui(self.app.show_connecting)
+
+            # Copy selected text
+            self.translator.copy_selected_text()
+
+            if self.cancel_requested:
+                self._update_ui(self.app.show_cancelled)
+                return
+
+            # Get text from clipboard
+            text = self.translator.get_clipboard_text()
+            if not text:
+                self._update_ui(self.app.show_error, "No text in clipboard. Select text first.")
+                return
+
+            # Validate text for translation direction
+            if mode == TranslationMode.TEXT_JP_TO_EN and not has_japanese(text):
+                self._update_ui(self.app.show_error, "Selected text does not contain Japanese.")
+                return
+
+            if self.cancel_requested:
+                self._update_ui(self.app.show_cancelled)
+                return
+
+            # Update UI - translating
+            self._update_ui(self.app.show_translating, 1, 1)
+
+            # Translate
+            translated = self.translator.translate_text(text)
+
+            if self.cancel_requested:
+                self._update_ui(self.app.show_cancelled)
+                self._cleanup()
+                return
+
+            if not translated:
+                self._update_ui(self.app.show_error, "Translation failed")
+                self._cleanup()
+                return
+
+            # Open Notepad with result
+            self.translator.open_notepad_with_text(text, translated)
+
+            # Close Copilot
+            self.translator.close()
+
+            # Show completion
+            self._update_ui(
+                self.app.show_complete,
+                1,
+                [(text[:50] + "..." if len(text) > 50 else text, translated[:50] + "..." if len(translated) > 50 else translated)],
+                95,
+            )
+
+        except Exception as e:
+            self._update_ui(self.app.show_error, str(e))
+            self._cleanup()
+
+    def _cleanup(self):
+        """Cleanup resources"""
+        if self.translator:
+            try:
+                self.translator.close()
+            except Exception:
+                pass
+
+
+# =============================================================================
 # Helper Functions
 # =============================================================================
 def format_cells_for_copilot(cells: list[dict]) -> str:
@@ -1072,13 +1380,23 @@ class TranslatorController:
         self.cancel_requested = False
         self.excel: Optional[ExcelHandler] = None
         self.copilot: Optional[CopilotHandler] = None
+        self.translation_mode: TranslationMode = TranslationMode.EXCEL_JP_TO_EN
 
-    def start_translation(self):
+    def start_translation(self, mode: TranslationMode = TranslationMode.EXCEL_JP_TO_EN):
         """Start translation in background thread"""
         import threading
         self.cancel_requested = False
+        self.translation_mode = mode
         thread = threading.Thread(target=self._run_translation, daemon=True)
         thread.start()
+
+    def start_jp_to_en(self):
+        """Start JP→EN Excel translation"""
+        self.start_translation(TranslationMode.EXCEL_JP_TO_EN)
+
+    def start_en_to_jp(self):
+        """Start EN→JP Excel translation"""
+        self.start_translation(TranslationMode.EXCEL_EN_TO_JP)
 
     def request_cancel(self):
         """Request cancellation"""
@@ -1094,9 +1412,19 @@ class TranslatorController:
             # Initialize COM for this thread
             pythoncom.CoInitialize()
 
-            # Step 1: Load prompt
+            # Step 1: Load prompt based on mode
             self._update_ui(self.app.show_connecting)
-            prompt_header = load_prompt()
+            prompt_file = CONFIG.get_prompt_file(self.translation_mode)
+            try:
+                prompt_header = prompt_file.read_text(encoding="utf-8")
+                # Add glossary reference if configured
+                from config_manager import get_config
+                glossary_addition = get_config().get_glossary_prompt_addition()
+                if glossary_addition:
+                    prompt_header = prompt_header + glossary_addition
+            except Exception as e:
+                self._update_ui(self.app.show_error, f"Failed to load prompt: {e}")
+                return
 
             if self.cancel_requested:
                 self._update_ui(self.app.show_cancelled)
@@ -1108,16 +1436,26 @@ class TranslatorController:
                 self._update_ui(self.app.show_error, "Failed to connect to Excel")
                 return
 
-            # Step 3: Get selection
+            # Step 3: Get selection and extract cells based on direction
             selection_info = self.excel.get_selection_info()
-            japanese_cells = self.excel.extract_japanese_cells(selection_info)
 
-            if not japanese_cells:
-                self._update_ui(self.app.show_error, "No Japanese text found in selection")
+            if self.translation_mode == TranslationMode.EXCEL_EN_TO_JP:
+                # EN→JP: Extract English cells
+                cells_to_translate = self.excel.extract_english_cells(selection_info)
+                error_msg = "No English text found in selection"
+            else:
+                # JP→EN: Extract Japanese cells
+                cells_to_translate = self.excel.extract_japanese_cells(selection_info)
+                error_msg = "No Japanese text found in selection"
+
+            if not cells_to_translate:
+                self._update_ui(self.app.show_error, error_msg)
                 self.excel.cleanup()
                 return
 
-            total_cells = len(japanese_cells)
+            total_cells = len(cells_to_translate)
+            # Use cells_to_translate instead of japanese_cells below
+            japanese_cells = cells_to_translate  # Alias for compatibility
 
             if self.cancel_requested:
                 self._update_ui(self.app.show_cancelled)
@@ -1237,10 +1575,15 @@ class TranslatorController:
 # Main Entry Point
 # =============================================================================
 def main():
-    """Main entry point - launches UI with global hotkey"""
+    """Main entry point - launches UI with global hotkeys and system tray"""
     import customtkinter as ctk
     import keyboard
     from ui import TranslatorApp
+    from config_manager import get_config
+    from system_tray import SystemTrayManager, setup_minimize_to_tray
+
+    # Load configuration
+    config = get_config()
 
     # Configure appearance
     ctk.set_appearance_mode("dark")
@@ -1249,44 +1592,107 @@ def main():
     # Create app
     app = TranslatorApp()
 
-    # Create controller
-    controller = TranslatorController(app)
+    # Create controllers
+    excel_controller = TranslatorController(app)
+    universal_controller = UniversalTranslatorController(app)
 
-    # Connect callbacks
-    app.set_on_start(controller.start_translation)
-    app.set_on_cancel(controller.request_cancel)
+    # Connect callbacks for all modes
+    app.set_on_start(excel_controller.start_translation)  # Excel mode (legacy)
+    app.set_on_jp_to_en(lambda: _smart_translate(app, excel_controller, universal_controller, "jp_to_en"))
+    app.set_on_en_to_jp(lambda: _smart_translate(app, excel_controller, universal_controller, "en_to_jp"))
+    app.set_on_cancel(lambda: (excel_controller.request_cancel(), universal_controller.request_cancel()))
 
-    # Global hotkey handler
-    def on_hotkey():
-        """Handle Ctrl+Shift+E hotkey"""
-        # Bring app to front and start translation
-        app.after(0, lambda: _trigger_translation(app, controller))
+    def _smart_translate(app, excel_ctrl, universal_ctrl, direction: str):
+        """Smart translation: auto-detect Excel or use clipboard"""
+        if app.is_translating:
+            return
 
-    def _trigger_translation(app, controller):
-        """Trigger translation from hotkey (runs in main thread)"""
+        # Auto-detect if Excel is active
+        if is_excel_active():
+            # Use Excel translation
+            if direction == "jp_to_en":
+                excel_ctrl.start_jp_to_en()
+            else:
+                excel_ctrl.start_en_to_jp()
+        else:
+            # Use clipboard translation
+            if direction == "jp_to_en":
+                universal_ctrl.translate_clipboard(TranslationMode.TEXT_JP_TO_EN)
+            else:
+                universal_ctrl.translate_clipboard(TranslationMode.TEXT_EN_TO_JP)
+
+    # Global hotkey handlers (only 2 hotkeys now)
+    def on_hotkey_jp_to_en():
+        """Handle Ctrl+Shift+E hotkey - Japanese to English (auto-detect Excel)"""
+        app.after(0, lambda: _trigger_smart_translation(app, excel_controller, universal_controller, "jp_to_en"))
+
+    def on_hotkey_en_to_jp():
+        """Handle Ctrl+Shift+J hotkey - English to Japanese (auto-detect Excel)"""
+        app.after(0, lambda: _trigger_smart_translation(app, excel_controller, universal_controller, "en_to_jp"))
+
+    def _trigger_smart_translation(app, excel_ctrl, universal_ctrl, direction: str):
+        """Trigger smart translation from hotkey"""
         try:
-            # Bring window to front
             app.deiconify()
             app.lift()
             app.focus_force()
-            # Start translation if not already running
             if not app.is_translating:
-                controller.start_translation()
+                _smart_translate(app, excel_ctrl, universal_ctrl, direction)
         except Exception:
             pass
 
-    # Register global hotkey (Ctrl+Shift+E)
-    keyboard.add_hotkey('ctrl+shift+e', on_hotkey, suppress=False)
+    # Register global hotkeys
+    keyboard.add_hotkey(config.config.hotkeys.jp_to_en, on_hotkey_jp_to_en, suppress=False)
+    keyboard.add_hotkey(config.config.hotkeys.en_to_jp, on_hotkey_en_to_jp, suppress=False)
 
-    # Show hotkey hint on startup
-    print("Global hotkey: Ctrl+Shift+E")
+    # Setup system tray
+    tray_manager = None
+    if config.minimize_to_tray:
+        def show_window():
+            app.deiconify()
+            app.lift()
+            app.focus_force()
+
+        def quit_app():
+            app.destroy()
+
+        tray_manager = SystemTrayManager(
+            app,
+            on_show=show_window,
+            on_quit=quit_app,
+            on_jp_to_en=lambda: _trigger_smart_translation(app, excel_controller, universal_controller, "jp_to_en"),
+            on_en_to_jp=lambda: _trigger_smart_translation(app, excel_controller, universal_controller, "en_to_jp"),
+        )
+        setup_minimize_to_tray(app, tray_manager)
+
+        # Start minimized if configured
+        if config.start_minimized:
+            app.withdraw()
+
+    # Show hotkey hints and config status
+    print("=" * 50)
+    print("Universal Translator - Global Hotkeys")
+    print("=" * 50)
+    print(f"  {config.config.hotkeys.jp_to_en.upper()} : Japanese → English")
+    print(f"  {config.config.hotkeys.en_to_jp.upper()} : English → Japanese")
+    print("  (Excel is auto-detected)")
+    print("-" * 50)
+    if config.glossary_enabled:
+        print(f"  Glossary: {config.glossary_url[:50]}...")
+    else:
+        print("  Glossary: Not configured")
+    if config.minimize_to_tray:
+        print("  System Tray: Enabled (close to minimize)")
+    print("=" * 50)
 
     try:
         # Run
         app.mainloop()
     finally:
-        # Cleanup hotkey on exit
+        # Cleanup
         keyboard.unhook_all()
+        if tray_manager:
+            tray_manager.stop()
 
 
 def main_cli():
@@ -1384,9 +1790,50 @@ def main_cli():
     print("\n" + "=" * 60)
 
 
+def main_context_menu(direction: str):
+    """Entry point for context menu - quick translation without UI"""
+    import keyboard
+
+    # Get text from clipboard
+    translator = UniversalTranslator(
+        mode=TranslationMode.TEXT_JP_TO_EN if direction == "jp_to_en" else TranslationMode.TEXT_EN_TO_JP
+    )
+
+    # Copy selected text first (send Ctrl+C)
+    keyboard.send('ctrl+c')
+    time.sleep(0.3)
+
+    text = translator.get_clipboard_text()
+    if not text:
+        show_message("Error", "No text selected or in clipboard.", "error")
+        return
+
+    print(f"Translating: {text[:50]}...")
+
+    # Initialize Copilot and translate
+    translated = translator.translate_text(text)
+
+    if translated:
+        # Open Notepad with result
+        translator.open_notepad_with_text(text, translated)
+        print("Translation complete!")
+    else:
+        show_message("Error", "Translation failed.", "error")
+
+    translator.close()
+
+
 if __name__ == "__main__":
-    # Check for --cli flag
+    # Check for command-line arguments
     if "--cli" in sys.argv:
         main_cli()
+    elif "--context-menu" in sys.argv:
+        # Context menu mode - quick translation
+        if "--jp-to-en" in sys.argv:
+            main_context_menu("jp_to_en")
+        elif "--en-to-jp" in sys.argv:
+            main_context_menu("en_to_jp")
+        else:
+            print("Usage: --context-menu --jp-to-en | --en-to-jp")
     else:
         main()

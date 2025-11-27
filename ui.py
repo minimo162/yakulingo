@@ -3,13 +3,20 @@ Excel Translator - Premium UI
 A world-class interface inspired by Apple's design philosophy.
 
 Design Concept: "Silent Power" - The beauty of restraint meets functional elegance.
-Features: Glassmorphism, spring animations, aurora background, success celebration.
+Features:
+- Glassmorphism with frosted glass effect
+- Spring physics animations (iOS-like)
+- Dynamic Island status (iPhone 14 inspired)
+- Kinetic Typography (animated text)
+- Ambient Glow (environmental lighting)
+- Particle celebration system
 """
 
 import customtkinter as ctk
 import math
 import random
-from typing import Callable, Optional
+import time
+from typing import Callable, Optional, List
 from dataclasses import dataclass
 
 
@@ -619,6 +626,520 @@ class ParticleSystem(ctk.CTkCanvas):
 
 
 # =============================================================================
+# Dynamic Island - iPhone 14 inspired morphing status
+# =============================================================================
+class DynamicIsland(ctk.CTkCanvas):
+    """
+    iPhone 14 Dynamic Island inspired status indicator.
+    Morphs between compact and expanded states with spring physics.
+    """
+
+    def __init__(self, parent, **kwargs):
+        self.base_width = 180
+        self.base_height = 36
+        self.expanded_width = 320
+        self.expanded_height = 80
+
+        super().__init__(
+            parent,
+            width=self.expanded_width + 40,
+            height=self.expanded_height + 20,
+            bg=THEME.bg_primary,
+            highlightthickness=0,
+            **kwargs
+        )
+
+        # State
+        self.current_width = self.base_width
+        self.current_height = self.base_height
+        self.target_width = self.base_width
+        self.target_height = self.base_height
+        self.corner_radius = 18
+
+        self.status_text = ""
+        self.subtitle_text = ""
+        self.progress = 0.0
+        self.is_expanded = False
+        self.pulse_phase = 0
+        self.is_pulsing = False
+
+        self._spring_w: Optional[SpringAnimation] = None
+        self._spring_h: Optional[SpringAnimation] = None
+
+        self._draw()
+
+    def _draw(self):
+        """Draw the Dynamic Island"""
+        self.delete("all")
+
+        cx = (self.expanded_width + 40) / 2
+        cy = (self.expanded_height + 20) / 2
+
+        w, h = self.current_width, self.current_height
+        r = min(self.corner_radius, h / 2)
+
+        # Calculate bounds
+        x1, y1 = cx - w / 2, cy - h / 2
+        x2, y2 = cx + w / 2, cy + h / 2
+
+        # Draw island shape (rounded rectangle)
+        self._draw_rounded_rect(x1, y1, x2, y2, r)
+
+        # Draw content based on state
+        if self.is_expanded:
+            self._draw_expanded_content(cx, cy)
+        else:
+            self._draw_compact_content(cx, cy)
+
+    def _draw_rounded_rect(self, x1, y1, x2, y2, r):
+        """Draw a rounded rectangle with glow"""
+        # Outer glow
+        if self.is_pulsing:
+            glow_intensity = (math.sin(self.pulse_phase) + 1) / 2 * 0.3
+            glow_color = self._blend_colors("#000000", THEME.accent, glow_intensity)
+            for i in range(3, 0, -1):
+                self.create_oval(
+                    x1 - i * 2, y1 - i * 2, x2 + i * 2, y2 + i * 2,
+                    fill="", outline=glow_color, width=2,
+                    tags="glow"
+                )
+
+        # Main shape - using polygon for smoother corners
+        points = []
+        steps = 8
+        # Top-left corner
+        for i in range(steps + 1):
+            angle = math.pi + (math.pi / 2) * (i / steps)
+            points.extend([x1 + r + r * math.cos(angle), y1 + r + r * math.sin(angle)])
+        # Top-right corner
+        for i in range(steps + 1):
+            angle = -math.pi / 2 + (math.pi / 2) * (i / steps)
+            points.extend([x2 - r + r * math.cos(angle), y1 + r + r * math.sin(angle)])
+        # Bottom-right corner
+        for i in range(steps + 1):
+            angle = 0 + (math.pi / 2) * (i / steps)
+            points.extend([x2 - r + r * math.cos(angle), y2 - r + r * math.sin(angle)])
+        # Bottom-left corner
+        for i in range(steps + 1):
+            angle = math.pi / 2 + (math.pi / 2) * (i / steps)
+            points.extend([x1 + r + r * math.cos(angle), y2 - r + r * math.sin(angle)])
+
+        self.create_polygon(points, fill="#000000", outline="#333333", width=1, smooth=True)
+
+    def _draw_compact_content(self, cx, cy):
+        """Draw compact mode content"""
+        if self.status_text:
+            self.create_text(
+                cx, cy,
+                text=self.status_text,
+                font=get_font("text", 12, "bold"),
+                fill=THEME.text_primary
+            )
+
+    def _draw_expanded_content(self, cx, cy):
+        """Draw expanded mode content"""
+        # Status text
+        if self.status_text:
+            self.create_text(
+                cx, cy - 12,
+                text=self.status_text,
+                font=get_font("text", 16, "bold"),
+                fill=THEME.text_primary
+            )
+
+        # Subtitle
+        if self.subtitle_text:
+            self.create_text(
+                cx, cy + 12,
+                text=self.subtitle_text,
+                font=get_font("text", 11),
+                fill=THEME.text_secondary
+            )
+
+        # Progress bar at bottom
+        if self.progress > 0:
+            bar_width = self.current_width - 40
+            bar_height = 4
+            bar_x = cx - bar_width / 2
+            bar_y = cy + 28
+
+            # Track
+            self.create_rectangle(
+                bar_x, bar_y, bar_x + bar_width, bar_y + bar_height,
+                fill=THEME.bg_elevated, outline=""
+            )
+            # Progress
+            self.create_rectangle(
+                bar_x, bar_y, bar_x + bar_width * self.progress, bar_y + bar_height,
+                fill=THEME.accent, outline=""
+            )
+
+    def _blend_colors(self, c1: str, c2: str, factor: float) -> str:
+        """Blend two colors"""
+        r1, g1, b1 = int(c1[1:3], 16), int(c1[3:5], 16), int(c1[5:7], 16)
+        r2, g2, b2 = int(c2[1:3], 16), int(c2[3:5], 16), int(c2[5:7], 16)
+        r = int(r1 + (r2 - r1) * factor)
+        g = int(g1 + (g2 - g1) * factor)
+        b = int(b1 + (b2 - b1) * factor)
+        return f"#{r:02x}{g:02x}{b:02x}"
+
+    def expand(self):
+        """Expand to full size with spring animation"""
+        self.is_expanded = True
+        self._animate_to(self.expanded_width, self.expanded_height)
+
+    def compact(self):
+        """Compact to small size"""
+        self.is_expanded = False
+        self._animate_to(self.base_width, self.base_height)
+
+    def _animate_to(self, target_w: float, target_h: float):
+        """Animate to target size with spring physics"""
+        if self._spring_w:
+            self._spring_w.stop()
+        if self._spring_h:
+            self._spring_h.stop()
+
+        self._spring_w = SpringAnimation(
+            self, target_w,
+            lambda v: self._update_width(v),
+            tension=280, friction=22
+        )
+        self._spring_h = SpringAnimation(
+            self, target_h,
+            lambda v: self._update_height(v),
+            tension=280, friction=22
+        )
+        self._spring_w.start(self.current_width)
+        self._spring_h.start(self.current_height)
+
+    def _update_width(self, w):
+        self.current_width = w
+        self._draw()
+
+    def _update_height(self, h):
+        self.current_height = h
+        self._draw()
+
+    def set_status(self, text: str, subtitle: str = "", progress: float = 0):
+        """Update status"""
+        self.status_text = text
+        self.subtitle_text = subtitle
+        self.progress = progress
+        self._draw()
+
+    def start_pulse(self):
+        """Start pulsing animation"""
+        self.is_pulsing = True
+        self._pulse()
+
+    def stop_pulse(self):
+        """Stop pulsing"""
+        self.is_pulsing = False
+        self._draw()
+
+    def _pulse(self):
+        """Pulse animation"""
+        if not self.is_pulsing:
+            return
+        self.pulse_phase += 0.1
+        self._draw()
+        self.after(30, self._pulse)
+
+
+# =============================================================================
+# Kinetic Typography - Animated text with spring physics
+# =============================================================================
+class KineticText(ctk.CTkCanvas):
+    """
+    Text where each character animates individually.
+    Creates wave effects, bounce-in, and celebration animations.
+    """
+
+    def __init__(
+        self,
+        parent,
+        text: str = "",
+        font_size: int = 28,
+        font_weight: str = "bold",
+        color: str = None,
+        **kwargs
+    ):
+        self.text = text
+        self.font_size = font_size
+        self.font_weight = font_weight
+        self.color = color or THEME.text_primary
+
+        # Calculate size based on text
+        self.char_width = font_size * 0.6
+        self.width = max(200, len(text) * self.char_width + 40)
+        self.height = font_size + 20
+
+        super().__init__(
+            parent,
+            width=self.width,
+            height=self.height,
+            bg=THEME.bg_primary,
+            highlightthickness=0,
+            **kwargs
+        )
+
+        # Character states
+        self.char_offsets: List[float] = [0.0] * len(text)
+        self.char_scales: List[float] = [1.0] * len(text)
+        self.char_opacities: List[float] = [1.0] * len(text)
+        self.springs: List[Optional[SpringAnimation]] = []
+
+        self.is_animating = False
+        self.wave_phase = 0
+
+        self._draw()
+
+    def _draw(self):
+        """Draw all characters"""
+        self.delete("all")
+
+        if not self.text:
+            return
+
+        total_width = len(self.text) * self.char_width
+        start_x = (self.width - total_width) / 2 + self.char_width / 2
+
+        for i, char in enumerate(self.text):
+            x = start_x + i * self.char_width
+            y = self.height / 2 + self.char_offsets[i]
+
+            # Draw character
+            self.create_text(
+                x, y,
+                text=char,
+                font=get_font("display", self.font_size, self.font_weight),
+                fill=self.color
+            )
+
+    def set_text(self, text: str, animate: bool = True):
+        """Set text with optional animation"""
+        old_len = len(self.text)
+        self.text = text
+
+        # Resize canvas
+        self.width = max(200, len(text) * self.char_width + 40)
+        self.configure(width=self.width)
+
+        # Reset states
+        self.char_offsets = [0.0] * len(text)
+        self.char_scales = [1.0] * len(text)
+        self.char_opacities = [1.0] * len(text)
+
+        if animate:
+            self.animate_in()
+        else:
+            self._draw()
+
+    def animate_in(self):
+        """Animate text appearing character by character"""
+        # Start each character from below
+        for i in range(len(self.text)):
+            self.char_offsets[i] = 20
+            self.after(i * 30, lambda idx=i: self._spring_char_in(idx))
+
+        self._draw()
+
+    def _spring_char_in(self, index: int):
+        """Spring a character into place"""
+        if index >= len(self.char_offsets):
+            return
+
+        spring = SpringAnimation(
+            self,
+            target_value=0.0,
+            on_update=lambda v, i=index: self._update_char_offset(i, v),
+            tension=350,
+            friction=18
+        )
+        spring.start(from_value=self.char_offsets[index])
+
+    def _update_char_offset(self, index: int, value: float):
+        """Update character offset"""
+        if index < len(self.char_offsets):
+            self.char_offsets[index] = value
+            self._draw()
+
+    def celebrate(self):
+        """Celebration wave animation"""
+        self.is_animating = True
+        self._wave_animate()
+
+    def _wave_animate(self):
+        """Wave animation through characters"""
+        if not self.is_animating:
+            return
+
+        self.wave_phase += 0.15
+
+        for i in range(len(self.text)):
+            # Each character follows a wave with offset
+            wave = math.sin(self.wave_phase - i * 0.3) * 8
+            self.char_offsets[i] = wave
+
+        self._draw()
+
+        # Stop after a few cycles
+        if self.wave_phase > math.pi * 6:
+            self.is_animating = False
+            # Spring back to rest
+            for i in range(len(self.text)):
+                self._spring_char_in(i)
+        else:
+            self.after(20, self._wave_animate)
+
+    def stop_animation(self):
+        """Stop any ongoing animation"""
+        self.is_animating = False
+        for i in range(len(self.char_offsets)):
+            self.char_offsets[i] = 0
+        self._draw()
+
+
+# =============================================================================
+# Ambient Glow - Environmental lighting effect
+# =============================================================================
+class AmbientGlow(ctk.CTkCanvas):
+    """
+    Ambient lighting effect that responds to app state.
+    Creates a subtle glow around the edges that changes color.
+    """
+
+    def __init__(self, parent, **kwargs):
+        super().__init__(
+            parent,
+            bg=THEME.bg_primary,
+            highlightthickness=0,
+            **kwargs
+        )
+
+        self.glow_color = THEME.accent
+        self.glow_intensity = 0.0
+        self.target_intensity = 0.0
+        self.phase = 0
+        self.is_animating = False
+        self.mode = "idle"  # idle, active, success, error
+
+        self.bind("<Configure>", self._on_resize)
+
+    def _on_resize(self, event):
+        """Redraw on resize"""
+        self._draw()
+
+    def _draw(self):
+        """Draw ambient glow effect"""
+        self.delete("all")
+
+        w = self.winfo_width()
+        h = self.winfo_height()
+
+        if w <= 1 or h <= 1 or self.glow_intensity <= 0.01:
+            return
+
+        # Create radial gradient effect from edges
+        glow_size = int(min(w, h) * 0.3)
+        steps = 15
+
+        for i in range(steps):
+            alpha = (1 - i / steps) * self.glow_intensity * 0.15
+            color = self._blend_color(THEME.bg_primary, self.glow_color, alpha)
+
+            # Top edge
+            self.create_rectangle(
+                0, i * glow_size // steps,
+                w, (i + 1) * glow_size // steps,
+                fill=color, outline=""
+            )
+
+            # Bottom edge
+            self.create_rectangle(
+                0, h - (i + 1) * glow_size // steps,
+                w, h - i * glow_size // steps,
+                fill=color, outline=""
+            )
+
+            # Left edge
+            self.create_rectangle(
+                i * glow_size // steps, glow_size,
+                (i + 1) * glow_size // steps, h - glow_size,
+                fill=color, outline=""
+            )
+
+            # Right edge
+            self.create_rectangle(
+                w - (i + 1) * glow_size // steps, glow_size,
+                w - i * glow_size // steps, h - glow_size,
+                fill=color, outline=""
+            )
+
+    def _blend_color(self, c1: str, c2: str, factor: float) -> str:
+        """Blend two colors"""
+        factor = max(0, min(1, factor))
+        r1, g1, b1 = int(c1[1:3], 16), int(c1[3:5], 16), int(c1[5:7], 16)
+        r2, g2, b2 = int(c2[1:3], 16), int(c2[3:5], 16), int(c2[5:7], 16)
+        r = int(r1 + (r2 - r1) * factor)
+        g = int(g1 + (g2 - g1) * factor)
+        b = int(b1 + (b2 - b1) * factor)
+        return f"#{r:02x}{g:02x}{b:02x}"
+
+    def set_mode(self, mode: str):
+        """Set glow mode: idle, active, success, error"""
+        self.mode = mode
+
+        if mode == "idle":
+            self.glow_color = THEME.text_muted
+            self.target_intensity = 0.2
+        elif mode == "active":
+            self.glow_color = THEME.accent_blue
+            self.target_intensity = 0.5
+        elif mode == "success":
+            self.glow_color = THEME.accent
+            self.target_intensity = 0.8
+        elif mode == "error":
+            self.glow_color = THEME.accent_red
+            self.target_intensity = 0.6
+
+        if not self.is_animating:
+            self.is_animating = True
+            self._animate()
+
+    def _animate(self):
+        """Animate glow intensity"""
+        if not self.is_animating:
+            return
+
+        # Ease toward target
+        diff = self.target_intensity - self.glow_intensity
+        self.glow_intensity += diff * 0.1
+
+        # Add subtle pulse for active modes
+        if self.mode in ["active", "success"]:
+            self.phase += 0.05
+            pulse = math.sin(self.phase) * 0.1
+            self.glow_intensity = max(0, self.glow_intensity + pulse * 0.1)
+
+        self._draw()
+
+        # Continue if not at rest
+        if abs(diff) > 0.01 or self.mode in ["active", "success"]:
+            self.after(30, self._animate)
+        else:
+            self.is_animating = False
+
+    def fade_out(self):
+        """Fade out glow"""
+        self.target_intensity = 0.0
+        if not self.is_animating:
+            self.is_animating = True
+            self._animate()
+
+
+# =============================================================================
 # Circular Progress with Celebration
 # =============================================================================
 class CircularProgress(ctk.CTkCanvas):
@@ -1018,6 +1539,12 @@ class TranslatorApp(ctk.CTk):
     """
     Main application - A study in restraint and elegance.
     Every pixel has purpose. Every animation has meaning.
+
+    Features:
+    - Dynamic Island status (iPhone 14 inspired)
+    - Kinetic Typography (animated text)
+    - Ambient Glow (environmental lighting)
+    - Spring physics throughout
     """
 
     def __init__(self):
@@ -1025,15 +1552,17 @@ class TranslatorApp(ctk.CTk):
 
         # Window configuration
         self.title("")  # Minimal - no title needed
-        self.geometry("420x680")
-        self.minsize(380, 600)
+        self.geometry("420x720")
+        self.minsize(380, 640)
         self.configure(fg_color=THEME.bg_primary)
 
         # State
         self.is_translating = False
         self.cancel_requested = False
-        self.on_start_callback: Optional[Callable] = None
+        self.on_start_callback: Optional[Callable] = None  # Excel mode
         self.on_cancel_callback: Optional[Callable] = None
+        self.on_jp_to_en_callback: Optional[Callable] = None  # JP→EN mode
+        self.on_en_to_jp_callback: Optional[Callable] = None  # EN→JP mode
         self.last_translation_pairs = None
 
         self._build_ui()
@@ -1051,11 +1580,16 @@ class TranslatorApp(ctk.CTk):
     def _start_idle_animations(self):
         """Start subtle idle animations"""
         self.stats_card.start_breathing()
+        self.ambient_glow.set_mode("idle")
 
     def _build_ui(self):
         """Construct the interface with surgical precision"""
 
-        # === Aurora Background (bottom layer) ===
+        # === Ambient Glow (bottom layer - environmental lighting) ===
+        self.ambient_glow = AmbientGlow(self)
+        self.ambient_glow.place(x=0, y=0, relwidth=1, relheight=1)
+
+        # === Aurora Background ===
         self.aurora = AuroraBackground(self)
         self.aurora.place(x=0, y=0, relwidth=1, relheight=1)
 
@@ -1066,16 +1600,21 @@ class TranslatorApp(ctk.CTk):
 
         # Main container
         self.container = ctk.CTkFrame(self, fg_color="transparent")
-        self.container.pack(fill="both", expand=True, padx=THEME.space_xl, pady=THEME.space_xl)
+        self.container.pack(fill="both", expand=True, padx=THEME.space_xl, pady=THEME.space_lg)
+
+        # === Dynamic Island (iPhone-style status) ===
+        self.dynamic_island = DynamicIsland(self.container)
+        self.dynamic_island.pack(pady=(0, THEME.space_md))
+        self.dynamic_island.set_status("Ready")
 
         # === Header (minimal) ===
-        self.header = ctk.CTkFrame(self.container, fg_color="transparent", height=40)
+        self.header = ctk.CTkFrame(self.container, fg_color="transparent", height=24)
         self.header.pack(fill="x")
         self.header.pack_propagate(False)
 
         self.brand = ctk.CTkLabel(
             self.header,
-            text="TRANSLATOR",
+            text="",
             font=get_font("text", 11, "bold"),
             text_color=THEME.text_muted
         )
@@ -1098,23 +1637,25 @@ class TranslatorApp(ctk.CTk):
         )
         self.percent_label.place(relx=0.5, rely=0.35, anchor="center")
 
-        # Status text
-        self.status_label = ctk.CTkLabel(
+        # Status text - Kinetic Typography
+        self.status_text = KineticText(
             self.hero,
             text="Ready",
-            font=get_font("display", 28, "bold"),
-            text_color=THEME.text_primary
+            font_size=32,
+            font_weight="bold",
+            color=THEME.text_primary
         )
-        self.status_label.place(relx=0.5, rely=0.58, anchor="center")
+        self.status_text.place(relx=0.5, rely=0.58, anchor="center")
 
-        # Subtitle
-        self.subtitle_label = ctk.CTkLabel(
+        # Subtitle - Also Kinetic
+        self.subtitle_text = KineticText(
             self.hero,
-            text="Select cells in Excel",
-            font=get_font("text", 14),
-            text_color=THEME.text_secondary
+            text="Japanese → English (Excel auto-detected)",
+            font_size=14,
+            font_weight="normal",
+            color=THEME.text_secondary
         )
-        self.subtitle_label.place(relx=0.5, rely=0.66, anchor="center")
+        self.subtitle_text.place(relx=0.5, rely=0.68, anchor="center")
 
         # === Stats Card (with breathing) ===
         self.stats_card = BreathingCard(self.hero, height=70)
@@ -1176,6 +1717,65 @@ class TranslatorApp(ctk.CTk):
         self.footer = ctk.CTkFrame(self.container, fg_color="transparent")
         self.footer.pack(fill="x", side="bottom")
 
+        # Translation mode selector
+        self.mode_frame = ctk.CTkFrame(self.footer, fg_color="transparent")
+        self.mode_frame.pack(fill="x", pady=(0, THEME.space_sm))
+
+        # Mode label
+        self.mode_label = ctk.CTkLabel(
+            self.mode_frame,
+            text="Direction:",
+            font=get_font("text", 11),
+            text_color=THEME.text_muted
+        )
+        self.mode_label.pack(side="left", padx=(0, THEME.space_sm))
+
+        # Mode buttons container
+        self.mode_buttons_frame = ctk.CTkFrame(self.mode_frame, fg_color="transparent")
+        self.mode_buttons_frame.pack(side="left", fill="x", expand=True)
+
+        # Current mode (only 2 modes now - Excel is auto-detected)
+        self.current_mode = "jp_to_en"  # jp_to_en, en_to_jp
+
+        # Mode: Japanese → English
+        self.mode_jp_en_btn = ctk.CTkButton(
+            self.mode_buttons_frame,
+            text="JP → EN",
+            width=90,
+            height=32,
+            font=get_font("text", 12, "bold"),
+            fg_color=THEME.accent,
+            hover_color=THEME.gradient_active[1],
+            text_color=THEME.bg_primary,
+            corner_radius=8,
+            command=lambda: self._set_mode("jp_to_en")
+        )
+        self.mode_jp_en_btn.pack(side="left", padx=(0, 8))
+
+        # Mode: English → Japanese
+        self.mode_en_jp_btn = ctk.CTkButton(
+            self.mode_buttons_frame,
+            text="EN → JP",
+            width=90,
+            height=32,
+            font=get_font("text", 12, "bold"),
+            fg_color=THEME.bg_elevated,
+            hover_color=THEME.bg_card,
+            text_color=THEME.text_secondary,
+            corner_radius=8,
+            command=lambda: self._set_mode("en_to_jp")
+        )
+        self.mode_en_jp_btn.pack(side="left")
+
+        # Hotkey hints (updated - no Excel hotkey)
+        self.hotkey_hint = ctk.CTkLabel(
+            self.footer,
+            text="Ctrl+Shift+E = JP→EN  |  Ctrl+Shift+J = EN→JP  (Excel auto-detected)",
+            font=get_font("text", 10),
+            text_color=THEME.text_muted
+        )
+        self.hotkey_hint.pack(fill="x", pady=(0, THEME.space_sm))
+
         # Main action button
         self.action_btn = MinimalButton(
             self.footer,
@@ -1195,6 +1795,31 @@ class TranslatorApp(ctk.CTk):
         )
         self.about_btn.pack(fill="x", pady=(THEME.space_sm, 0))
 
+    def _set_mode(self, mode: str):
+        """Set translation mode (2 modes only - Excel is auto-detected)"""
+        self.current_mode = mode
+
+        # Reset all button styles
+        inactive_style = {
+            "fg_color": THEME.bg_elevated,
+            "text_color": THEME.text_secondary
+        }
+        active_style = {
+            "fg_color": THEME.accent,
+            "text_color": THEME.bg_primary
+        }
+
+        self.mode_jp_en_btn.configure(**inactive_style)
+        self.mode_en_jp_btn.configure(**inactive_style)
+
+        # Highlight active button and update subtitle
+        if mode == "jp_to_en":
+            self.mode_jp_en_btn.configure(**active_style)
+            self.subtitle_text.set_text("Japanese → English (Excel auto-detected)")
+        else:  # en_to_jp
+            self.mode_en_jp_btn.configure(**active_style)
+            self.subtitle_text.set_text("English → Japanese (Excel auto-detected)")
+
     def _on_action(self):
         """Handle main action button"""
         if self.is_translating:
@@ -1203,9 +1828,15 @@ class TranslatorApp(ctk.CTk):
             self._start()
 
     def _start(self):
-        """Start translation"""
+        """Start translation based on current mode (2 modes - Excel auto-detected)"""
         SoundPlayer.play_start()
-        if self.on_start_callback:
+
+        if self.current_mode == "jp_to_en" and self.on_jp_to_en_callback:
+            self.on_jp_to_en_callback()
+        elif self.current_mode == "en_to_jp" and self.on_en_to_jp_callback:
+            self.on_en_to_jp_callback()
+        elif self.on_start_callback:
+            # Fallback to start callback (legacy)
             self.on_start_callback()
 
     def _request_cancel(self):
@@ -1222,22 +1853,44 @@ class TranslatorApp(ctk.CTk):
     # === Public API ===
 
     def set_on_start(self, callback: Callable):
+        """Set callback for Excel translation (default mode)"""
         self.on_start_callback = callback
 
     def set_on_cancel(self, callback: Callable):
+        """Set callback for cancellation"""
         self.on_cancel_callback = callback
+
+    def set_on_jp_to_en(self, callback: Callable):
+        """Set callback for Japanese → English translation"""
+        self.on_jp_to_en_callback = callback
+
+    def set_on_en_to_jp(self, callback: Callable):
+        """Set callback for English → Japanese translation"""
+        self.on_en_to_jp_callback = callback
 
     def show_ready(self):
         """Ready state - calm, inviting"""
         self.is_translating = False
         self.cancel_requested = False
 
+        # Dynamic Island - compact mode
+        self.dynamic_island.compact()
+        self.dynamic_island.set_status("Ready")
+        self.dynamic_island.stop_pulse()
+
+        # Ambient Glow - idle mode
+        self.ambient_glow.set_mode("idle")
+
         self.progress_ring.stop_glow()
         self.progress_ring.set_progress(0, animate=False)
         self.percent_label.configure(text="")
 
-        self.status_label.configure(text="Ready")
-        self.subtitle_label.configure(text="Select cells in Excel")
+        # Kinetic Typography - show based on current mode
+        self.status_text.set_text("Ready")
+        if self.current_mode == "jp_to_en":
+            self.subtitle_text.set_text("Japanese → English (Excel auto-detected)")
+        else:
+            self.subtitle_text.set_text("English → Japanese (Excel auto-detected)")
 
         self.stat_left_value.configure(text="--")
         self.stat_right_value.configure(text="--")
@@ -1256,12 +1909,21 @@ class TranslatorApp(ctk.CTk):
         self.is_translating = True
         self.stats_card.stop_breathing()
 
+        # Dynamic Island - expand with status
+        self.dynamic_island.expand()
+        self.dynamic_island.set_status("Connecting", "Starting browser...", 0.05)
+        self.dynamic_island.start_pulse()
+
+        # Ambient Glow - active mode (blue)
+        self.ambient_glow.set_mode("active")
+
         self.progress_ring.set_progress(0.05)
         self.progress_ring.start_glow()
         self.percent_label.configure(text="")
 
-        self.status_label.configure(text="Connecting")
-        self.subtitle_label.configure(text="Starting browser...")
+        # Kinetic Typography
+        self.status_text.set_text("Connecting")
+        self.subtitle_text.set_text("Starting browser...")
 
         self.action_btn.configure(
             text="Cancel",
@@ -1276,12 +1938,20 @@ class TranslatorApp(ctk.CTk):
         progress = current / total if total > 0 else 0
         percent = int(progress * 100)
 
+        # Dynamic Island - show progress
+        self.dynamic_island.set_status(
+            f"Translating {percent}%",
+            f"Processing {total} cells...",
+            progress
+        )
+
         self.progress_ring.set_progress(progress)
         self.progress_ring.start_glow()
         self.percent_label.configure(text=f"{percent}%")
 
-        self.status_label.configure(text="Translating")
-        self.subtitle_label.configure(text=f"Processing {total} cells...")
+        # Kinetic Typography - update without animation for smooth progress
+        self.status_text.set_text("Translating", animate=False)
+        self.subtitle_text.set_text(f"Processing {total} cells...", animate=False)
 
         self.stat_left_value.configure(text=str(total))
         self.stat_right_value.configure(text="Working")
@@ -1298,6 +1968,13 @@ class TranslatorApp(ctk.CTk):
         self.is_translating = False
         self.last_translation_pairs = translation_pairs
 
+        # Dynamic Island - success state
+        self.dynamic_island.stop_pulse()
+        self.dynamic_island.set_status("Complete!", f"{count} cells translated", 1.0)
+
+        # Ambient Glow - success mode (green)
+        self.ambient_glow.set_mode("success")
+
         # Stop regular glow, start celebration
         self.progress_ring.stop_glow()
         self.progress_ring.set_progress(1.0)
@@ -1306,17 +1983,16 @@ class TranslatorApp(ctk.CTk):
         # Particle burst from center (more particles for higher confidence)
         self.particles.lift()  # Bring to front
         center_x = self.winfo_width() // 2
-        center_y = int(self.winfo_height() * 0.35)
-        particle_count = max(20, int(40 * (confidence / 100)))
+        center_y = int(self.winfo_height() * 0.40)
+        particle_count = max(20, int(50 * (confidence / 100)))
         self.particles.burst(center_x, center_y, count=particle_count)
 
         # Play success sound
         SoundPlayer.play_success()
 
         self.percent_label.configure(text="")
-        self.status_label.configure(text="Complete")
 
-        # Show confidence indicator in subtitle
+        # Kinetic Typography - celebrate!
         if confidence >= 95:
             quality_text = "Excellent"
         elif confidence >= 80:
@@ -1326,7 +2002,9 @@ class TranslatorApp(ctk.CTk):
         else:
             quality_text = "Review"
 
-        self.subtitle_label.configure(text=f"{count} cells | {quality_text} ({confidence}%)")
+        self.status_text.set_text("Complete")
+        self.status_text.celebrate()  # Wave animation!
+        self.subtitle_text.set_text(f"{count} cells | {quality_text} ({confidence}%)")
 
         self.stat_left_value.configure(text=str(count))
         self.stat_right_value.configure(text=f"{confidence}%")
@@ -1338,6 +2016,9 @@ class TranslatorApp(ctk.CTk):
             text_color=THEME.bg_primary
         )
 
+        # Compact Dynamic Island after celebration
+        self.after(2000, self.dynamic_island.compact)
+
         # Show results dialog after celebration
         if translation_pairs:
             self.after(800, lambda: ResultsSheet(self, translation_pairs, confidence))
@@ -1346,14 +2027,23 @@ class TranslatorApp(ctk.CTk):
         """Error state - calm acknowledgment"""
         self.is_translating = False
 
+        # Dynamic Island - error state
+        self.dynamic_island.stop_pulse()
+        self.dynamic_island.expand()
+        self.dynamic_island.set_status("Error", message[:40], 0)
+
+        # Ambient Glow - error mode (red)
+        self.ambient_glow.set_mode("error")
+
         SoundPlayer.play_error()
 
         self.progress_ring.stop_glow()
         self.progress_ring.set_progress(0, animate=False)
         self.percent_label.configure(text="")
 
-        self.status_label.configure(text="Error")
-        self.subtitle_label.configure(text=message[:50])
+        # Kinetic Typography
+        self.status_text.set_text("Error")
+        self.subtitle_text.set_text(message[:50])
 
         self.stat_right_value.configure(text="--")
 
@@ -1366,16 +2056,28 @@ class TranslatorApp(ctk.CTk):
             text_color=THEME.bg_primary
         )
 
+        # Compact after showing error
+        self.after(3000, self.dynamic_island.compact)
+
     def show_cancelled(self):
         """Cancelled state - graceful stop"""
         self.is_translating = False
         self.cancel_requested = False
 
+        # Dynamic Island - compact with cancelled status
+        self.dynamic_island.stop_pulse()
+        self.dynamic_island.compact()
+        self.dynamic_island.set_status("Cancelled")
+
+        # Ambient Glow - fade out
+        self.ambient_glow.fade_out()
+
         self.progress_ring.stop_glow()
         self.percent_label.configure(text="")
 
-        self.status_label.configure(text="Cancelled")
-        self.subtitle_label.configure(text="Translation stopped")
+        # Kinetic Typography
+        self.status_text.set_text("Cancelled")
+        self.subtitle_text.set_text("Translation stopped")
 
         self.stat_right_value.configure(text="--")
 
@@ -1463,10 +2165,24 @@ class SettingsSheet(ctk.CTkToplevel):
 
         ctk.CTkLabel(
             hotkey_inner,
-            text="Hotkey:  Ctrl + Shift + E",
-            font=get_font("mono", 13),
+            text="Ctrl+Shift+E = JP → EN",
+            font=get_font("mono", 12),
             text_color=THEME.accent
         ).pack(anchor="w")
+
+        ctk.CTkLabel(
+            hotkey_inner,
+            text="Ctrl+Shift+J = EN → JP",
+            font=get_font("mono", 12),
+            text_color=THEME.accent
+        ).pack(anchor="w")
+
+        ctk.CTkLabel(
+            hotkey_inner,
+            text="Excel is auto-detected",
+            font=get_font("text", 11),
+            text_color=THEME.text_tertiary
+        ).pack(anchor="w", pady=(4, 0))
 
         # Done button
         done_btn = MinimalButton(

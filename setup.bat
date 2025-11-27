@@ -9,17 +9,52 @@ echo.
 
 cd /d "%~dp0"
 
+:: ============================================================
+:: Proxy Settings (Edit if behind corporate proxy)
+:: ============================================================
+:: Uncomment and edit the following lines if you need proxy:
+::
+:: set PROXY_SERVER=proxy.example.com:8080
+:: set PROXY_USER=your_user_id
+:: set PROXY_PASS=your_password
+::
+:: ============================================================
+
+:: Apply proxy settings if configured
+if defined PROXY_SERVER (
+    if defined PROXY_USER (
+        set HTTP_PROXY=http://%PROXY_USER%:%PROXY_PASS%@%PROXY_SERVER%
+        set HTTPS_PROXY=http://%PROXY_USER%:%PROXY_PASS%@%PROXY_SERVER%
+    ) else (
+        set HTTP_PROXY=http://%PROXY_SERVER%
+        set HTTPS_PROXY=http://%PROXY_SERVER%
+    )
+    echo [INFO] Proxy configured: %PROXY_SERVER%
+    echo.
+)
+
 set UV_CACHE_DIR=.uv-cache
 set UV_PYTHON_INSTALL_DIR=.uv-python
 set PLAYWRIGHT_BROWSERS_PATH=.playwright-browsers
 
 if not exist "uv.exe" (
     echo [1/4] Downloading uv...
-    powershell -ExecutionPolicy Bypass -Command ^
-        "$ProgressPreference = 'SilentlyContinue'; " ^
-        "Invoke-WebRequest -Uri 'https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-pc-windows-msvc.zip' -OutFile 'uv.zip'; " ^
-        "Expand-Archive -Path 'uv.zip' -DestinationPath '.' -Force; " ^
-        "Remove-Item 'uv.zip'"
+    if defined HTTP_PROXY (
+        powershell -ExecutionPolicy Bypass -Command ^
+            "$ProgressPreference = 'SilentlyContinue'; " ^
+            "$proxy = [System.Net.WebRequest]::GetSystemWebProxy(); " ^
+            "$proxy.Credentials = [System.Net.CredentialCache]::DefaultCredentials; " ^
+            "[System.Net.WebRequest]::DefaultWebProxy = $proxy; " ^
+            "Invoke-WebRequest -Uri 'https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-pc-windows-msvc.zip' -OutFile 'uv.zip' -Proxy '%HTTP_PROXY%'; " ^
+            "Expand-Archive -Path 'uv.zip' -DestinationPath '.' -Force; " ^
+            "Remove-Item 'uv.zip'"
+    ) else (
+        powershell -ExecutionPolicy Bypass -Command ^
+            "$ProgressPreference = 'SilentlyContinue'; " ^
+            "Invoke-WebRequest -Uri 'https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-pc-windows-msvc.zip' -OutFile 'uv.zip'; " ^
+            "Expand-Archive -Path 'uv.zip' -DestinationPath '.' -Force; " ^
+            "Remove-Item 'uv.zip'"
+    )
     if not exist "uv.exe" (
         echo [ERROR] Failed to download uv.
         pause

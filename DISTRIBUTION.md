@@ -109,6 +109,27 @@ ExcelTranslator/
 - インターネット接続を確認
 - ウイルス対策ソフトが `uv.exe` をブロックしていないか確認
 - 管理者権限で実行してみる
+- **社内プロキシ環境の場合**: 下記「プロキシ設定」を参照
+
+### Q: 社内プロキシ環境でsetup.batが動かない
+
+`setup.bat` をメモ帳で開き、以下の行のコメント(`::`)を外して編集:
+
+```batch
+:: set PROXY_SERVER=proxy.example.com:8080
+:: set PROXY_USER=your_user_id
+:: set PROXY_PASS=your_password
+```
+
+↓ 編集後（例）
+
+```batch
+set PROXY_SERVER=proxy.yourcompany.co.jp:8080
+set PROXY_USER=tanaka
+set PROXY_PASS=mypassword123
+```
+
+**注意**: パスワードを平文で書くため、setup.bat実行後は元に戻すか削除を推奨
 
 ### Q: ★run.batで起動しない
 - まず `setup.bat` を実行したか確認

@@ -677,7 +677,7 @@ class SettingsSheet(ctk.CTkToplevel):
         super().__init__(parent)
 
         self.title("About")
-        self.geometry("380x220")
+        self.geometry("380x280")
         self.configure(fg_color=THEME.bg_primary)
         self.resizable(False, False)
 
@@ -731,6 +731,20 @@ class SettingsSheet(ctk.CTkToplevel):
             font=get_font("text", 12),
             text_color=THEME.text_tertiary
         ).pack(anchor="w", pady=(THEME.space_xs, 0))
+
+        # Hotkey info
+        hotkey_frame = GlassCard(container)
+        hotkey_frame.pack(fill="x", pady=(THEME.space_md, 0))
+
+        hotkey_inner = ctk.CTkFrame(hotkey_frame, fg_color="transparent")
+        hotkey_inner.pack(fill="x", padx=THEME.space_md, pady=THEME.space_sm)
+
+        ctk.CTkLabel(
+            hotkey_inner,
+            text="Hotkey:  Ctrl + Shift + E",
+            font=get_font("mono", 13),
+            text_color=THEME.accent
+        ).pack(anchor="w")
 
         # Done button
         done_btn = MinimalButton(

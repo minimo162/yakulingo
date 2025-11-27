@@ -744,8 +744,9 @@ class TranslatorController:
 # Main Entry Point
 # =============================================================================
 def main():
-    """Main entry point - launches UI"""
+    """Main entry point - launches UI with global hotkey"""
     import customtkinter as ctk
+    import keyboard
     from ui import TranslatorApp
 
     # Configure appearance
@@ -762,8 +763,37 @@ def main():
     app.set_on_start(controller.start_translation)
     app.set_on_cancel(controller.request_cancel)
 
-    # Run
-    app.mainloop()
+    # Global hotkey handler
+    def on_hotkey():
+        """Handle Ctrl+Shift+E hotkey"""
+        # Bring app to front and start translation
+        app.after(0, lambda: _trigger_translation(app, controller))
+
+    def _trigger_translation(app, controller):
+        """Trigger translation from hotkey (runs in main thread)"""
+        try:
+            # Bring window to front
+            app.deiconify()
+            app.lift()
+            app.focus_force()
+            # Start translation if not already running
+            if not app.is_translating:
+                controller.start_translation()
+        except Exception:
+            pass
+
+    # Register global hotkey (Ctrl+Shift+E)
+    keyboard.add_hotkey('ctrl+shift+e', on_hotkey, suppress=False)
+
+    # Show hotkey hint on startup
+    print("Global hotkey: Ctrl+Shift+E")
+
+    try:
+        # Run
+        app.mainloop()
+    finally:
+        # Cleanup hotkey on exit
+        keyboard.unhook_all()
 
 
 def main_cli():

@@ -759,7 +759,7 @@ class TranslatorApp(ctk.CTk):
 
         self.stat_right_label = ctk.CTkLabel(
             self.stat_right,
-            text="Status",
+            text="Quality",
             font=get_font("text", 11),
             text_color=THEME.text_tertiary
         )
@@ -886,7 +886,7 @@ class TranslatorApp(ctk.CTk):
             text_color=THEME.text_primary
         )
 
-    def show_complete(self, count: int, translation_pairs: list = None):
+    def show_complete(self, count: int, translation_pairs: list = None, confidence: int = 100):
         """Complete state - celebration!"""
         self.is_translating = False
         self.last_translation_pairs = translation_pairs
@@ -896,21 +896,33 @@ class TranslatorApp(ctk.CTk):
         self.progress_ring.set_progress(1.0)
         self.progress_ring.celebrate()  # Checkmark animation
 
-        # Particle burst from center
+        # Particle burst from center (more particles for higher confidence)
         self.particles.lift()  # Bring to front
         center_x = self.winfo_width() // 2
         center_y = int(self.winfo_height() * 0.35)
-        self.particles.burst(center_x, center_y, count=40)
+        particle_count = max(20, int(40 * (confidence / 100)))
+        self.particles.burst(center_x, center_y, count=particle_count)
 
         # Play success sound
         SoundPlayer.play_success()
 
         self.percent_label.configure(text="")
         self.status_label.configure(text="Complete")
-        self.subtitle_label.configure(text=f"{count} cells translated")
+
+        # Show confidence indicator in subtitle
+        if confidence >= 95:
+            quality_text = "Excellent"
+        elif confidence >= 80:
+            quality_text = "Good"
+        elif confidence >= 60:
+            quality_text = "Fair"
+        else:
+            quality_text = "Review"
+
+        self.subtitle_label.configure(text=f"{count} cells | {quality_text} ({confidence}%)")
 
         self.stat_left_value.configure(text=str(count))
-        self.stat_right_value.configure(text="Done")
+        self.stat_right_value.configure(text=f"{confidence}%")
 
         self.action_btn.configure(
             text="Translate Again",
@@ -921,7 +933,7 @@ class TranslatorApp(ctk.CTk):
 
         # Show results dialog after celebration
         if translation_pairs:
-            self.after(800, lambda: ResultsSheet(self, translation_pairs))
+            self.after(800, lambda: ResultsSheet(self, translation_pairs, confidence))
 
     def show_error(self, message: str):
         """Error state - calm acknowledgment"""
@@ -935,6 +947,8 @@ class TranslatorApp(ctk.CTk):
 
         self.status_label.configure(text="Error")
         self.subtitle_label.configure(text=message[:50])
+
+        self.stat_right_value.configure(text="--")
 
         self.stats_card.start_breathing()
 
@@ -955,6 +969,8 @@ class TranslatorApp(ctk.CTk):
 
         self.status_label.configure(text="Cancelled")
         self.subtitle_label.configure(text="Translation stopped")
+
+        self.stat_right_value.configure(text="--")
 
         self.stats_card.start_breathing()
 
@@ -1064,14 +1080,15 @@ class ResultsSheet(ctk.CTkToplevel):
     Features: Staggered animations, hover effects, copy functionality.
     """
 
-    def __init__(self, parent, translation_pairs: list):
+    def __init__(self, parent, translation_pairs: list, confidence: int = 100):
         super().__init__(parent)
 
         self.title("")
-        self.geometry("520x480")
+        self.geometry("520x520")
         self.configure(fg_color=THEME.bg_primary)
-        self.minsize(420, 380)
+        self.minsize(420, 420)
         self.translation_pairs = translation_pairs
+        self.confidence = confidence
         self.rows = []
 
         self.transient(parent)
@@ -1153,16 +1170,34 @@ class ResultsSheet(ctk.CTkToplevel):
             text_color=THEME.text_primary
         ).pack(anchor="w")
 
+        # Quality indicator with confidence
+        if self.confidence >= 95:
+            quality_text = "Excellent"
+            quality_color = THEME.accent
+        elif self.confidence >= 80:
+            quality_text = "Good"
+            quality_color = THEME.accent
+        elif self.confidence >= 60:
+            quality_text = "Fair"
+            quality_color = "#F0A000"  # Amber
+        else:
+            quality_text = "Review"
+            quality_color = "#FF6B6B"  # Red
+
         ctk.CTkLabel(
             title_frame,
-            text=f"{len(translation_pairs)} items translated",
+            text=f"{len(translation_pairs)} items | {quality_text} ({self.confidence}%)",
             font=get_font("text", 12),
-            text_color=THEME.accent
+            text_color=quality_color
         ).pack(anchor="w")
+
+        # Right side buttons
+        btn_frame = ctk.CTkFrame(header_frame, fg_color="transparent")
+        btn_frame.pack(side="right")
 
         # Copy all button
         self.copy_btn = ctk.CTkButton(
-            header_frame,
+            btn_frame,
             text="Copy All",
             font=get_font("text", 12),
             fg_color=THEME.bg_elevated,

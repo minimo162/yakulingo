@@ -1,6 +1,13 @@
 """
 Excel Japanese to English Translation Tool
 Uses M365 Copilot (GPT-5) to translate Japanese cells in Excel.
+
+World-class translation engine with:
+- Smart retry with exponential backoff
+- Translation validation & quality checks
+- Confidence scoring
+- Intelligent response parsing
+- Progressive UI updates
 """
 
 import os
@@ -9,8 +16,9 @@ import re
 import time
 import subprocess
 from pathlib import Path
-from dataclasses import dataclass
-from typing import Optional
+from dataclasses import dataclass, field
+from typing import Optional, Callable
+from enum import Enum, auto
 
 # Windows COM
 import win32com.client
@@ -82,6 +90,462 @@ def clean_copilot_response(text: str) -> str:
     result = re.sub(r"(?m)^-\s+", "'- ", result)
     result = re.sub(r"\t- ", "\t'- ", result)
     return result
+
+
+# =============================================================================
+# World-Class Translation Engine
+# =============================================================================
+class TranslationStatus(Enum):
+    """Translation result status"""
+    SUCCESS = auto()
+    PARTIAL = auto()
+    RETRY_NEEDED = auto()
+    FAILED = auto()
+
+
+@dataclass
+class TranslationResult:
+    """Result of a translation attempt"""
+    status: TranslationStatus
+    translations: dict[str, str] = field(default_factory=dict)
+    confidence: float = 0.0
+    missing_cells: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+    raw_response: str = ""
+
+
+@dataclass
+class QualityMetrics:
+    """Translation quality metrics"""
+    completeness: float = 0.0  # % of cells translated
+    format_preserved: float = 0.0  # % with format intact
+    no_japanese_remnants: float = 0.0  # % without leftover Japanese
+    length_reasonable: float = 0.0  # % with reasonable length ratio
+    overall_confidence: float = 0.0
+
+
+class TranslationValidator:
+    """Validates translation quality"""
+
+    # Reasonable translation length ratios (Japanese is compact)
+    MIN_LENGTH_RATIO = 0.3  # English shouldn't be less than 30% of Japanese
+    MAX_LENGTH_RATIO = 5.0  # English shouldn't be more than 5x Japanese
+
+    @staticmethod
+    def has_japanese_remnants(text: str) -> bool:
+        """Check if text still contains Japanese characters"""
+        for char in text:
+            code = ord(char)
+            # Hiragana, Katakana, CJK (but allow some CJK punctuation)
+            if (0x3040 <= code <= 0x309F or  # Hiragana
+                0x30A0 <= code <= 0x30FF or  # Katakana
+                0x4E00 <= code <= 0x9FFF):   # CJK Unified
+                return True
+        return False
+
+    @staticmethod
+    def check_format_preserved(original: str, translated: str) -> bool:
+        """Check if special formatting is preserved"""
+        # Check for common format patterns
+        patterns = [
+            r'\{[^}]+\}',      # Placeholders like {name}
+            r'\[[^\]]+\]',     # Square brackets
+            r'<[^>]+>',        # HTML-like tags
+            r'\$\w+',          # Variables like $var
+            r'%[sd]',          # Format specifiers
+        ]
+        for pattern in patterns:
+            orig_matches = set(re.findall(pattern, original))
+            trans_matches = set(re.findall(pattern, translated))
+            # All original patterns should be in translation
+            if orig_matches and not orig_matches.issubset(trans_matches):
+                return False
+        return True
+
+    @staticmethod
+    def check_length_reasonable(original: str, translated: str) -> bool:
+        """Check if translation length is reasonable"""
+        if not original or not translated:
+            return False
+        ratio = len(translated) / len(original)
+        return TranslationValidator.MIN_LENGTH_RATIO <= ratio <= TranslationValidator.MAX_LENGTH_RATIO
+
+    @classmethod
+    def validate_single(cls, original: str, translated: str) -> tuple[bool, float, list[str]]:
+        """
+        Validate a single translation.
+        Returns: (is_valid, confidence, warnings)
+        """
+        warnings = []
+        scores = []
+
+        # Check 1: No Japanese remnants
+        if cls.has_japanese_remnants(translated):
+            warnings.append("Translation contains Japanese characters")
+            scores.append(0.0)
+        else:
+            scores.append(1.0)
+
+        # Check 2: Format preserved
+        if not cls.check_format_preserved(original, translated):
+            warnings.append("Format placeholders may be missing")
+            scores.append(0.5)
+        else:
+            scores.append(1.0)
+
+        # Check 3: Reasonable length
+        if not cls.check_length_reasonable(original, translated):
+            warnings.append("Translation length seems unusual")
+            scores.append(0.7)
+        else:
+            scores.append(1.0)
+
+        # Calculate confidence
+        confidence = sum(scores) / len(scores) if scores else 0.0
+        is_valid = confidence >= 0.5 and not cls.has_japanese_remnants(translated)
+
+        return is_valid, confidence, warnings
+
+    @classmethod
+    def validate_batch(cls, originals: dict[str, str], translations: dict[str, str]) -> QualityMetrics:
+        """Validate a batch of translations"""
+        if not originals:
+            return QualityMetrics()
+
+        total = len(originals)
+        translated_count = 0
+        format_ok_count = 0
+        no_japanese_count = 0
+        length_ok_count = 0
+        confidence_sum = 0.0
+
+        for address, original in originals.items():
+            if address not in translations:
+                continue
+
+            translated = translations[address]
+            translated_count += 1
+
+            # Check each metric
+            if not cls.has_japanese_remnants(translated):
+                no_japanese_count += 1
+            if cls.check_format_preserved(original, translated):
+                format_ok_count += 1
+            if cls.check_length_reasonable(original, translated):
+                length_ok_count += 1
+
+            _, conf, _ = cls.validate_single(original, translated)
+            confidence_sum += conf
+
+        metrics = QualityMetrics(
+            completeness=translated_count / total if total > 0 else 0,
+            format_preserved=format_ok_count / translated_count if translated_count > 0 else 0,
+            no_japanese_remnants=no_japanese_count / translated_count if translated_count > 0 else 0,
+            length_reasonable=length_ok_count / translated_count if translated_count > 0 else 0,
+            overall_confidence=confidence_sum / translated_count if translated_count > 0 else 0,
+        )
+
+        return metrics
+
+
+class SmartRetryStrategy:
+    """Intelligent retry with exponential backoff"""
+
+    def __init__(self, max_retries: int = 3, base_delay: float = 1.0):
+        self.max_retries = max_retries
+        self.base_delay = base_delay
+        self.attempt = 0
+
+    def should_retry(self, result: TranslationResult) -> bool:
+        """Determine if we should retry based on result"""
+        if self.attempt >= self.max_retries:
+            return False
+
+        # Always retry on partial success (missing translations)
+        if result.status == TranslationStatus.RETRY_NEEDED:
+            return True
+
+        # Retry on low confidence
+        if result.status == TranslationStatus.PARTIAL and result.confidence < 0.8:
+            return True
+
+        return False
+
+    def get_delay(self) -> float:
+        """Get delay before next retry (exponential backoff)"""
+        return self.base_delay * (2 ** self.attempt)
+
+    def next_attempt(self):
+        """Move to next attempt"""
+        self.attempt += 1
+
+    def reset(self):
+        """Reset retry counter"""
+        self.attempt = 0
+
+
+class IntelligentResponseParser:
+    """Advanced response parsing with multiple strategies"""
+
+    @staticmethod
+    def parse_tsv(response: str) -> dict[str, str]:
+        """Parse TSV format (primary strategy)"""
+        result = {}
+        cleaned = clean_copilot_response(response)
+
+        for line in cleaned.split("\n"):
+            line = line.strip()
+            if not line:
+                continue
+
+            # Try tab separator first
+            parts = line.split("\t", 1)
+            if len(parts) == 2:
+                address, translated = parts[0].strip(), parts[1].strip()
+                if re.match(r"R\d+C\d+", address):
+                    result[address] = translated
+                    continue
+
+            # Try multiple spaces as fallback
+            parts = re.split(r'\s{2,}', line, maxsplit=1)
+            if len(parts) == 2:
+                address, translated = parts[0].strip(), parts[1].strip()
+                if re.match(r"R\d+C\d+", address):
+                    result[address] = translated
+
+        return result
+
+    @staticmethod
+    def parse_markdown_table(response: str) -> dict[str, str]:
+        """Parse markdown table format"""
+        result = {}
+        lines = response.split("\n")
+
+        for line in lines:
+            # Skip header/separator lines
+            if '---' in line or 'Address' in line or 'セル' in line:
+                continue
+
+            # Parse pipe-separated values
+            if '|' in line:
+                parts = [p.strip() for p in line.split('|') if p.strip()]
+                if len(parts) >= 2:
+                    address = parts[0].strip()
+                    translated = parts[-1].strip()  # Last column is usually translation
+                    if re.match(r"R\d+C\d+", address):
+                        result[address] = clean_copilot_response(translated)
+
+        return result
+
+    @staticmethod
+    def parse_numbered_list(response: str, expected_addresses: list[str]) -> dict[str, str]:
+        """Parse numbered list format, matching with expected addresses"""
+        result = {}
+        lines = response.split("\n")
+        translations = []
+
+        for line in lines:
+            line = line.strip()
+            # Match "1. translation" or "1) translation" format
+            match = re.match(r'^\d+[.)]\s*(.+)$', line)
+            if match:
+                translations.append(clean_copilot_response(match.group(1)))
+
+        # Map to addresses
+        for i, addr in enumerate(expected_addresses):
+            if i < len(translations):
+                result[addr] = translations[i]
+
+        return result
+
+    @classmethod
+    def parse(cls, response: str, expected_addresses: list[str] = None) -> dict[str, str]:
+        """Parse response using best strategy"""
+        # Strategy 1: TSV (preferred)
+        result = cls.parse_tsv(response)
+        if result:
+            return result
+
+        # Strategy 2: Markdown table
+        result = cls.parse_markdown_table(response)
+        if result:
+            return result
+
+        # Strategy 3: Numbered list (needs expected addresses)
+        if expected_addresses:
+            result = cls.parse_numbered_list(response, expected_addresses)
+            if result:
+                return result
+
+        return {}
+
+
+class TranslationEngine:
+    """World-class translation engine"""
+
+    def __init__(
+        self,
+        copilot: 'CopilotHandler',
+        on_progress: Callable[[int, int, str], None] = None,
+        on_cell_translated: Callable[[str, str, str], None] = None,
+    ):
+        self.copilot = copilot
+        self.on_progress = on_progress  # (current, total, status_message)
+        self.on_cell_translated = on_cell_translated  # (address, original, translated)
+        self.validator = TranslationValidator()
+        self.retry_strategy = SmartRetryStrategy(max_retries=3)
+        self.parser = IntelligentResponseParser()
+
+    def _report_progress(self, current: int, total: int, message: str):
+        """Report progress to UI"""
+        if self.on_progress:
+            self.on_progress(current, total, message)
+
+    def _build_retry_prompt(self, prompt_header: str, missing_cells: list[dict], attempt: int) -> str:
+        """Build increasingly specific prompt for retries"""
+        cells_tsv = format_cells_for_copilot(missing_cells)
+
+        if attempt == 1:
+            # First retry: add emphasis
+            extra = "\n\n[IMPORTANT: Output MUST be in TSV format: ADDRESS<tab>TRANSLATION]\n"
+        elif attempt >= 2:
+            # Later retries: be very explicit
+            extra = f"""
+
+[CRITICAL INSTRUCTIONS]
+- Output format: R#C#<tab>English translation
+- Translate ALL {len(missing_cells)} cells
+- One cell per line, tab-separated
+- NO markdown, NO explanations, JUST translations
+"""
+        else:
+            extra = ""
+
+        return f"{prompt_header}{extra}\n{cells_tsv}"
+
+    def translate(
+        self,
+        prompt_header: str,
+        japanese_cells: list[dict],
+        screenshot_path: Path = None,
+    ) -> TranslationResult:
+        """
+        Perform translation with smart retry and validation.
+        Returns comprehensive TranslationResult.
+        """
+        total_cells = len(japanese_cells)
+        all_translations: dict[str, str] = {}
+        remaining_cells = japanese_cells.copy()
+        all_warnings: list[str] = []
+
+        self.retry_strategy.reset()
+
+        # Build address -> original text mapping for validation
+        originals = {cell['address']: cell['text'] for cell in japanese_cells}
+        expected_addresses = [cell['address'] for cell in japanese_cells]
+
+        while remaining_cells:
+            attempt = self.retry_strategy.attempt
+
+            # Progress update
+            translated_count = len(all_translations)
+            self._report_progress(
+                translated_count, total_cells,
+                f"Translating... ({translated_count}/{total_cells})"
+                + (f" [Retry {attempt}]" if attempt > 0 else "")
+            )
+
+            # Build prompt
+            prompt = self._build_retry_prompt(prompt_header, remaining_cells, attempt)
+
+            # Send to Copilot
+            use_screenshot = screenshot_path and attempt == 0  # Only use screenshot on first try
+            if not self.copilot.send_prompt(prompt, image_path=screenshot_path if use_screenshot else None):
+                return TranslationResult(
+                    status=TranslationStatus.FAILED,
+                    translations=all_translations,
+                    warnings=["Failed to send prompt to Copilot"],
+                )
+
+            # Get response
+            response = self.copilot.wait_and_copy_response()
+            if not response:
+                # Try once more to get response
+                time.sleep(1)
+                response = self.copilot.wait_and_copy_response()
+                if not response:
+                    return TranslationResult(
+                        status=TranslationStatus.FAILED,
+                        translations=all_translations,
+                        warnings=["Failed to get response from Copilot"],
+                    )
+
+            # Parse response
+            new_translations = self.parser.parse(response, expected_addresses)
+
+            # Validate and merge translations
+            for address, translated in new_translations.items():
+                if address in originals and address not in all_translations:
+                    original = originals[address]
+                    is_valid, confidence, warnings = self.validator.validate_single(original, translated)
+
+                    if is_valid or confidence >= 0.5:
+                        all_translations[address] = translated
+                        all_warnings.extend(warnings)
+
+                        # Report individual translation
+                        if self.on_cell_translated:
+                            self.on_cell_translated(address, original, translated)
+
+            # Check what's still missing
+            remaining_cells = [
+                cell for cell in remaining_cells
+                if cell['address'] not in all_translations
+            ]
+
+            # If we got all translations, we're done
+            if not remaining_cells:
+                break
+
+            # Check if we should retry
+            partial_result = TranslationResult(
+                status=TranslationStatus.RETRY_NEEDED,
+                translations=all_translations,
+                missing_cells=[c['address'] for c in remaining_cells],
+            )
+
+            if not self.retry_strategy.should_retry(partial_result):
+                break
+
+            # Wait before retry
+            delay = self.retry_strategy.get_delay()
+            time.sleep(delay)
+            self.retry_strategy.next_attempt()
+
+            # Start new chat for retry (clean context)
+            self.copilot.new_chat()
+
+        # Final validation
+        metrics = self.validator.validate_batch(originals, all_translations)
+
+        # Determine final status
+        if len(all_translations) == total_cells and metrics.overall_confidence >= 0.8:
+            status = TranslationStatus.SUCCESS
+        elif len(all_translations) == total_cells:
+            status = TranslationStatus.PARTIAL  # All translated but with warnings
+        elif len(all_translations) > 0:
+            status = TranslationStatus.PARTIAL
+        else:
+            status = TranslationStatus.FAILED
+
+        return TranslationResult(
+            status=status,
+            translations=all_translations,
+            confidence=metrics.overall_confidence,
+            missing_cells=[c['address'] for c in remaining_cells],
+            warnings=all_warnings,
+            raw_response=response or "",
+        )
 
 
 def show_message(title: str, message: str, icon: str = "info", yes_no: bool = False) -> Optional[str]:
@@ -675,47 +1139,61 @@ class TranslatorController:
                 self._cleanup()
                 return
 
-            # Step 6: Translate
+            # Step 6: Translate using world-class engine
             self._update_ui(self.app.show_translating, 0, total_cells)
 
-            cells_tsv = format_cells_for_copilot(japanese_cells)
-            full_prompt = f"{prompt_header}\n{cells_tsv}"
+            # Progress callback for real-time UI updates
+            def on_progress(current: int, total: int, message: str):
+                if not self.cancel_requested:
+                    self._update_ui(self.app.show_translating, current, total)
 
-            if not self.copilot.send_prompt(full_prompt, image_path=screenshot_path):
-                self._update_ui(self.app.show_error, "Failed to send prompt")
-                self._cleanup()
-                return
+            # Cell translated callback for live updates
+            translated_pairs: list[tuple[str, str]] = []
+            def on_cell_translated(address: str, original: str, translated: str):
+                translated_pairs.append((original, translated))
 
-            response = self.copilot.wait_and_copy_response()
-            if not response:
-                self._update_ui(self.app.show_error, "Failed to get response")
-                self._cleanup()
-                return
+            # Create world-class translation engine
+            engine = TranslationEngine(
+                copilot=self.copilot,
+                on_progress=on_progress,
+                on_cell_translated=on_cell_translated,
+            )
 
-            translations = parse_copilot_response(response)
-
-            # Retry if count mismatch
-            if len(translations) != len(japanese_cells):
-                response = self.copilot.wait_and_copy_response()
-                if response:
-                    translations = parse_copilot_response(response)
+            # Execute translation with smart retry and validation
+            result = engine.translate(
+                prompt_header=prompt_header,
+                japanese_cells=japanese_cells,
+                screenshot_path=screenshot_path,
+            )
 
             # Close browser
             self.copilot.close()
 
-            # Write to Excel
-            bring_excel_to_front()
-            self.excel.write_translations(translations, selection_info)
+            # Handle result based on status
+            if result.status == TranslationStatus.FAILED:
+                error_msg = "Translation failed"
+                if result.warnings:
+                    error_msg += f": {result.warnings[0]}"
+                self._update_ui(self.app.show_error, error_msg)
+                self._cleanup()
+                return
 
-            # Select first cell
-            time.sleep(0.5)
-            try:
-                first_cell = japanese_cells[0]
-                self.excel.app.ActiveWorkbook.Sheets(selection_info['sheet_name']).Cells(
-                    first_cell['row'], first_cell['col']
-                ).Select()
-            except Exception:
-                pass
+            translations = result.translations
+
+            # Write to Excel (even partial results)
+            if translations:
+                bring_excel_to_front()
+                self.excel.write_translations(translations, selection_info)
+
+                # Select first cell
+                time.sleep(0.5)
+                try:
+                    first_cell = japanese_cells[0]
+                    self.excel.app.ActiveWorkbook.Sheets(selection_info['sheet_name']).Cells(
+                        first_cell['row'], first_cell['col']
+                    ).Select()
+                except Exception:
+                    pass
 
             self.excel.cleanup()
 
@@ -726,8 +1204,16 @@ class TranslatorController:
                 if address in translations:
                     translation_pairs.append((cell['text'], translations[address]))
 
-            # Show completion with translation log
-            self._update_ui(self.app.show_complete, len(translations), translation_pairs)
+            # Add quality indicator to completion
+            confidence_pct = int(result.confidence * 100)
+
+            # Show completion with translation log and quality info
+            self._update_ui(
+                self.app.show_complete,
+                len(translations),
+                translation_pairs,
+                confidence_pct,  # Pass confidence to UI
+            )
 
         except Exception as e:
             self._update_ui(self.app.show_error, str(e))

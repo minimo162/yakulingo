@@ -607,9 +607,10 @@ class TranslatorApp(ctk.CTk):
             text_color=THEME.text_primary
         )
 
-    def show_complete(self, count: int):
+    def show_complete(self, count: int, translation_pairs: list = None):
         """Complete state - quiet celebration"""
         self.is_translating = False
+        self.last_translation_pairs = translation_pairs  # Store for viewing
 
         self.progress_ring.stop_glow()
         self.progress_ring.set_progress(1.0)
@@ -627,6 +628,10 @@ class TranslatorApp(ctk.CTk):
             fg_color=THEME.accent,
             text_color=THEME.bg_primary
         )
+
+        # Show results dialog if we have translation pairs
+        if translation_pairs:
+            self.after(300, lambda: ResultsSheet(self, translation_pairs))
 
     def show_error(self, message: str):
         """Error state - calm acknowledgment"""
@@ -754,6 +759,135 @@ class SettingsSheet(ctk.CTkToplevel):
             command=self.destroy
         )
         done_btn.pack(fill="x", side="bottom")
+
+
+# =============================================================================
+# Results Sheet - Translation log display
+# =============================================================================
+class ResultsSheet(ctk.CTkToplevel):
+    """
+    Translation results log - Shows Japanese → English pairs.
+    """
+
+    def __init__(self, parent, translation_pairs: list):
+        super().__init__(parent)
+
+        self.title("Translation Results")
+        self.geometry("500x400")
+        self.configure(fg_color=THEME.bg_primary)
+        self.minsize(400, 300)
+
+        self.transient(parent)
+
+        self._build_ui(translation_pairs)
+        self._center(parent)
+
+    def _center(self, parent):
+        """Center over parent"""
+        self.update_idletasks()
+        px, py = parent.winfo_x(), parent.winfo_y()
+        pw, ph = parent.winfo_width(), parent.winfo_height()
+        w, h = self.winfo_width(), self.winfo_height()
+        x = px + (pw - w) // 2
+        y = py + (ph - h) // 2
+        self.geometry(f"+{x}+{y}")
+
+    def _build_ui(self, translation_pairs: list):
+        """Build results interface"""
+        container = ctk.CTkFrame(self, fg_color="transparent")
+        container.pack(fill="both", expand=True, padx=THEME.space_lg, pady=THEME.space_lg)
+
+        # Header
+        header_frame = ctk.CTkFrame(container, fg_color="transparent")
+        header_frame.pack(fill="x")
+
+        ctk.CTkLabel(
+            header_frame,
+            text="Translation Log",
+            font=get_font("display", 20, "bold"),
+            text_color=THEME.text_primary
+        ).pack(side="left")
+
+        ctk.CTkLabel(
+            header_frame,
+            text=f"{len(translation_pairs)} items",
+            font=get_font("text", 13),
+            text_color=THEME.text_tertiary
+        ).pack(side="right")
+
+        # Scrollable results list
+        results_frame = ctk.CTkScrollableFrame(
+            container,
+            fg_color=THEME.bg_card,
+            corner_radius=THEME.radius_md,
+            scrollbar_button_color=THEME.bg_elevated,
+            scrollbar_button_hover_color=THEME.text_tertiary
+        )
+        results_frame.pack(fill="both", expand=True, pady=(THEME.space_md, THEME.space_md))
+
+        # Add translation pairs
+        for i, (japanese, english) in enumerate(translation_pairs):
+            self._add_result_row(results_frame, i, japanese, english)
+
+        # Close button
+        close_btn = MinimalButton(
+            container,
+            text="Close",
+            variant="primary",
+            command=self.destroy
+        )
+        close_btn.pack(fill="x")
+
+    def _add_result_row(self, parent, index: int, japanese: str, english: str):
+        """Add a single result row"""
+        row = ctk.CTkFrame(parent, fg_color="transparent")
+        row.pack(fill="x", pady=(0, THEME.space_sm))
+
+        # Row number
+        ctk.CTkLabel(
+            row,
+            text=f"{index + 1}.",
+            font=get_font("mono", 11),
+            text_color=THEME.text_muted,
+            width=30
+        ).pack(side="left", anchor="n")
+
+        # Content frame
+        content = ctk.CTkFrame(row, fg_color="transparent")
+        content.pack(side="left", fill="x", expand=True)
+
+        # Japanese (original)
+        jp_label = ctk.CTkLabel(
+            content,
+            text=japanese[:60] + ("..." if len(japanese) > 60 else ""),
+            font=get_font("text", 12),
+            text_color=THEME.text_secondary,
+            anchor="w",
+            justify="left"
+        )
+        jp_label.pack(fill="x")
+
+        # Arrow and English
+        en_frame = ctk.CTkFrame(content, fg_color="transparent")
+        en_frame.pack(fill="x")
+
+        ctk.CTkLabel(
+            en_frame,
+            text="→",
+            font=get_font("text", 12),
+            text_color=THEME.accent,
+            width=20
+        ).pack(side="left")
+
+        en_label = ctk.CTkLabel(
+            en_frame,
+            text=english[:60] + ("..." if len(english) > 60 else ""),
+            font=get_font("text", 12, "bold"),
+            text_color=THEME.text_primary,
+            anchor="w",
+            justify="left"
+        )
+        en_label.pack(side="left", fill="x", expand=True)
 
 
 # =============================================================================

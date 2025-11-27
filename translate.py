@@ -719,8 +719,15 @@ class TranslatorController:
 
             self.excel.cleanup()
 
-            # Show completion
-            self._update_ui(self.app.show_complete, len(translations))
+            # Build translation pairs for display
+            translation_pairs = []
+            for cell in japanese_cells:
+                address = cell['address']
+                if address in translations:
+                    translation_pairs.append((cell['text'], translations[address]))
+
+            # Show completion with translation log
+            self._update_ui(self.app.show_complete, len(translations), translation_pairs)
 
         except Exception as e:
             self._update_ui(self.app.show_error, str(e))

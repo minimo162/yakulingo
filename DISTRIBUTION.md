@@ -113,7 +113,9 @@ ExcelTranslator/
 
 ### Q: 社内プロキシ環境でsetup.batが動かない
 
-`setup.bat` をメモ帳で開き、以下の行のコメント(`::`)を外して編集:
+**通常は自動検出されます**：setup.batはWindowsのシステムプロキシ設定（IE/Edge設定）を自動検出します。
+
+自動検出が動作しない場合、`setup.bat` をメモ帳で開き、以下の行のコメント(`::`)を外して編集:
 
 ```batch
 :: set PROXY_SERVER=proxy.example.com:8080
@@ -129,7 +131,9 @@ set PROXY_USER=tanaka
 set PROXY_PASS=mypassword123
 ```
 
-**注意**: パスワードを平文で書くため、setup.bat実行後は元に戻すか削除を推奨
+**補足**:
+- Windows認証（NTLM/Kerberos）環境では、ユーザー/パスワード設定なしで動作する場合があります
+- パスワードを平文で書くため、setup.bat実行後は元に戻すか削除を推奨
 
 ### Q: ★run.batで起動しない
 - まず `setup.bat` を実行したか確認

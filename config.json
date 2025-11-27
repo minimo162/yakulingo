@@ -1,0 +1,15 @@
+{
+    "glossary": {
+        "enabled": false,
+        "sharepoint_url": "",
+        "description": "SharePoint URL to glossary file (Excel/Word). M365 Copilot will reference this for consistent terminology."
+    },
+    "system_tray": {
+        "minimize_to_tray": true,
+        "start_minimized": false
+    },
+    "hotkeys": {
+        "jp_to_en": "ctrl+shift+e",
+        "en_to_jp": "ctrl+shift+j"
+    }
+}

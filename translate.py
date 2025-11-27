@@ -4,11 +4,13 @@ Translates text from anywhere - Excel, browser, Outlook, or any application.
 Uses M365 Copilot (GPT-5) for high-quality translations.
 
 Features:
-- Excel cell translation (Japanese → English, optimized for cells)
+- Excel cell translation (Japanese ↔ English, optimized for cells)
 - Universal text translation (Japanese ↔ English)
 - Clipboard integration for any application
 - Output to Notepad for easy copying
 - Global hotkeys for instant access
+- System tray integration (minimize to tray)
+- Glossary support via SharePoint link
 """
 
 import os
@@ -1167,10 +1169,16 @@ class UniversalTranslator:
         return "Translation"
 
     def load_prompt(self) -> str:
-        """Load prompt for current mode"""
+        """Load prompt for current mode with glossary reference"""
         prompt_file = CONFIG.get_prompt_file(self.mode)
         try:
-            return prompt_file.read_text(encoding="utf-8")
+            prompt = prompt_file.read_text(encoding="utf-8")
+            # Add glossary reference if configured
+            from config_manager import get_config
+            glossary_addition = get_config().get_glossary_prompt_addition()
+            if glossary_addition:
+                prompt = prompt + glossary_addition
+            return prompt
         except Exception as e:
             show_message("Error", f"Failed to load prompt file.\n{e}", "error")
             return ""
@@ -1409,6 +1417,11 @@ class TranslatorController:
             prompt_file = CONFIG.get_prompt_file(self.translation_mode)
             try:
                 prompt_header = prompt_file.read_text(encoding="utf-8")
+                # Add glossary reference if configured
+                from config_manager import get_config
+                glossary_addition = get_config().get_glossary_prompt_addition()
+                if glossary_addition:
+                    prompt_header = prompt_header + glossary_addition
             except Exception as e:
                 self._update_ui(self.app.show_error, f"Failed to load prompt: {e}")
                 return
@@ -1562,10 +1575,15 @@ class TranslatorController:
 # Main Entry Point
 # =============================================================================
 def main():
-    """Main entry point - launches UI with global hotkeys"""
+    """Main entry point - launches UI with global hotkeys and system tray"""
     import customtkinter as ctk
     import keyboard
     from ui import TranslatorApp
+    from config_manager import get_config
+    from system_tray import SystemTrayManager, setup_minimize_to_tray
+
+    # Load configuration
+    config = get_config()
 
     # Configure appearance
     ctk.set_appearance_mode("dark")
@@ -1623,25 +1641,58 @@ def main():
         except Exception:
             pass
 
-    # Register global hotkeys (only 2 now - Excel is auto-detected)
-    keyboard.add_hotkey('ctrl+shift+e', on_hotkey_jp_to_en, suppress=False)  # JP → EN
-    keyboard.add_hotkey('ctrl+shift+j', on_hotkey_en_to_jp, suppress=False)  # EN → JP
+    # Register global hotkeys
+    keyboard.add_hotkey(config.config.hotkeys.jp_to_en, on_hotkey_jp_to_en, suppress=False)
+    keyboard.add_hotkey(config.config.hotkeys.en_to_jp, on_hotkey_en_to_jp, suppress=False)
 
-    # Show hotkey hints
+    # Setup system tray
+    tray_manager = None
+    if config.minimize_to_tray:
+        def show_window():
+            app.deiconify()
+            app.lift()
+            app.focus_force()
+
+        def quit_app():
+            app.destroy()
+
+        tray_manager = SystemTrayManager(
+            app,
+            on_show=show_window,
+            on_quit=quit_app,
+            on_jp_to_en=lambda: _trigger_smart_translation(app, excel_controller, universal_controller, "jp_to_en"),
+            on_en_to_jp=lambda: _trigger_smart_translation(app, excel_controller, universal_controller, "en_to_jp"),
+        )
+        setup_minimize_to_tray(app, tray_manager)
+
+        # Start minimized if configured
+        if config.start_minimized:
+            app.withdraw()
+
+    # Show hotkey hints and config status
     print("=" * 50)
     print("Universal Translator - Global Hotkeys")
     print("=" * 50)
-    print("  Ctrl+Shift+E : Japanese → English")
-    print("  Ctrl+Shift+J : English → Japanese")
+    print(f"  {config.config.hotkeys.jp_to_en.upper()} : Japanese → English")
+    print(f"  {config.config.hotkeys.en_to_jp.upper()} : English → Japanese")
     print("  (Excel is auto-detected)")
+    print("-" * 50)
+    if config.glossary_enabled:
+        print(f"  Glossary: {config.glossary_url[:50]}...")
+    else:
+        print("  Glossary: Not configured")
+    if config.minimize_to_tray:
+        print("  System Tray: Enabled (close to minimize)")
     print("=" * 50)
 
     try:
         # Run
         app.mainloop()
     finally:
-        # Cleanup hotkey on exit
+        # Cleanup
         keyboard.unhook_all()
+        if tray_manager:
+            tray_manager.stop()
 
 
 def main_cli():
@@ -1739,9 +1790,50 @@ def main_cli():
     print("\n" + "=" * 60)
 
 
+def main_context_menu(direction: str):
+    """Entry point for context menu - quick translation without UI"""
+    import keyboard
+
+    # Get text from clipboard
+    translator = UniversalTranslator(
+        mode=TranslationMode.TEXT_JP_TO_EN if direction == "jp_to_en" else TranslationMode.TEXT_EN_TO_JP
+    )
+
+    # Copy selected text first (send Ctrl+C)
+    keyboard.send('ctrl+c')
+    time.sleep(0.3)
+
+    text = translator.get_clipboard_text()
+    if not text:
+        show_message("Error", "No text selected or in clipboard.", "error")
+        return
+
+    print(f"Translating: {text[:50]}...")
+
+    # Initialize Copilot and translate
+    translated = translator.translate_text(text)
+
+    if translated:
+        # Open Notepad with result
+        translator.open_notepad_with_text(text, translated)
+        print("Translation complete!")
+    else:
+        show_message("Error", "Translation failed.", "error")
+
+    translator.close()
+
+
 if __name__ == "__main__":
-    # Check for --cli flag
+    # Check for command-line arguments
     if "--cli" in sys.argv:
         main_cli()
+    elif "--context-menu" in sys.argv:
+        # Context menu mode - quick translation
+        if "--jp-to-en" in sys.argv:
+            main_context_menu("jp_to_en")
+        elif "--en-to-jp" in sys.argv:
+            main_context_menu("en_to_jp")
+        else:
+            print("Usage: --context-menu --jp-to-en | --en-to-jp")
     else:
         main()

@@ -1,10 +1,7 @@
 {
     "glossary": {
         "enabled": false,
-        "mode": "local",
-        "local_file": "glossary.csv",
-        "sharepoint_url": "",
-        "description": "mode: 'local' = use local CSV file, 'sharepoint' = use SharePoint URL (paid Copilot only)"
+        "file": "glossary.csv"
     },
     "system_tray": {
         "minimize_to_tray": true,

@@ -1157,11 +1157,40 @@ class UniversalTranslator:
             print(f"Clipboard set error: {e}")
 
     def copy_selected_text(self):
-        """Send Ctrl+C to copy selected text"""
+        """Send Ctrl+C to copy selected text from the previous window"""
         try:
             import keyboard
+            import win32gui
+            import win32con
+
+            # Get current foreground window (TranslatorApp)
+            current_hwnd = win32gui.GetForegroundWindow()
+
+            # Find the previous window (the one with the text to copy)
+            prev_hwnd = win32gui.GetWindow(current_hwnd, win32con.GW_HWNDNEXT)
+            while prev_hwnd:
+                if win32gui.IsWindowVisible(prev_hwnd):
+                    title = win32gui.GetWindowText(prev_hwnd)
+                    if title:  # Found a visible window with title
+                        break
+                prev_hwnd = win32gui.GetWindow(prev_hwnd, win32con.GW_HWNDNEXT)
+
+            # Give focus to the previous window
+            if prev_hwnd:
+                win32gui.SetForegroundWindow(prev_hwnd)
+                time.sleep(0.1)
+
+            # Send Ctrl+C to copy
             keyboard.send('ctrl+c')
             time.sleep(0.3)
+
+            # Return focus to our app (optional, may not be needed)
+            if current_hwnd:
+                try:
+                    win32gui.SetForegroundWindow(current_hwnd)
+                except Exception:
+                    pass
+
         except Exception as e:
             print(f"Copy error: {e}")
 

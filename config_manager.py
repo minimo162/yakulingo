@@ -258,16 +258,15 @@ $Shortcut.Save()
 
         # Try relative path first, then absolute
         glossary_path = Path(__file__).parent / self.config.glossary.file
+        print(f"  [DEBUG] Checking glossary at: {glossary_path}")
         if not glossary_path.exists():
             glossary_path = Path(self.config.glossary.file)
+            print(f"  [DEBUG] Trying absolute path: {glossary_path}")
         if not glossary_path.exists():
+            print(f"  [DEBUG] Glossary file not found")
             return None
 
-        # Check if file has any terms
-        terms = self._load_glossary()
-        if not terms:
-            return None
-
+        print(f"  [DEBUG] Glossary file found: {glossary_path}")
         return glossary_path
 
     def get_glossary_prompt_addition(self) -> str:

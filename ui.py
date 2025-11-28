@@ -2143,7 +2143,7 @@ class SettingsSheet(ctk.CTkToplevel):
         super().__init__(parent)
 
         self.title("Settings")
-        self.geometry("420x520")
+        self.geometry("400x360")
         self.configure(fg_color=THEME.bg_primary)
         self.resizable(False, False)
 
@@ -2171,100 +2171,59 @@ class SettingsSheet(ctk.CTkToplevel):
         # Header
         header = ctk.CTkLabel(
             container,
-            text="Excel Translator",
-            font=get_font("display", 22, "bold"),
+            text="Settings",
+            font=get_font("display", 24, "bold"),
             text_color=THEME.text_primary
         )
         header.pack(anchor="w")
 
-        # Info card
-        info_frame = GlassCard(container)
-        info_frame.pack(fill="x", pady=(THEME.space_lg, 0))
-
-        info_inner = ctk.CTkFrame(info_frame, fg_color="transparent")
-        info_inner.pack(fill="x", padx=THEME.space_md, pady=THEME.space_md)
-
-        ctk.CTkLabel(
-            info_inner,
-            text="Japanese → English Translation",
-            font=get_font("text", 14, "bold"),
-            text_color=THEME.text_primary
-        ).pack(anchor="w")
-
-        ctk.CTkLabel(
-            info_inner,
-            text="Powered by M365 Copilot",
-            font=get_font("text", 12),
-            text_color=THEME.text_tertiary
-        ).pack(anchor="w", pady=(THEME.space_xs, 0))
-
-        # Hotkey info
-        hotkey_frame = GlassCard(container)
-        hotkey_frame.pack(fill="x", pady=(THEME.space_md, 0))
-
-        hotkey_inner = ctk.CTkFrame(hotkey_frame, fg_color="transparent")
-        hotkey_inner.pack(fill="x", padx=THEME.space_md, pady=THEME.space_sm)
-
-        ctk.CTkLabel(
-            hotkey_inner,
-            text="Ctrl+Shift+E = JP → EN",
-            font=get_font("mono", 12),
-            text_color=THEME.accent
-        ).pack(anchor="w")
-
-        ctk.CTkLabel(
-            hotkey_inner,
-            text="Ctrl+Shift+J = EN → JP",
-            font=get_font("mono", 12),
-            text_color=THEME.accent
-        ).pack(anchor="w")
-
-        ctk.CTkLabel(
-            hotkey_inner,
-            text="Excel is auto-detected",
-            font=get_font("text", 11),
-            text_color=THEME.text_tertiary
-        ).pack(anchor="w", pady=(4, 0))
+        # Load config
+        from config_manager import get_config
+        self.config = get_config()
 
         # Glossary settings
         glossary_frame = GlassCard(container)
-        glossary_frame.pack(fill="x", pady=(THEME.space_md, 0))
+        glossary_frame.pack(fill="x", pady=(THEME.space_lg, 0))
 
         glossary_inner = ctk.CTkFrame(glossary_frame, fg_color="transparent")
-        glossary_inner.pack(fill="x", padx=THEME.space_md, pady=THEME.space_sm)
+        glossary_inner.pack(fill="x", padx=THEME.space_md, pady=THEME.space_md)
 
         ctk.CTkLabel(
             glossary_inner,
             text="Glossary File",
-            font=get_font("text", 14, "bold"),
+            font=get_font("text", 16, "bold"),
             text_color=THEME.text_primary
         ).pack(anchor="w")
 
-        # Current file display
-        from config_manager import get_config
-        self.config = get_config()
+        ctk.CTkLabel(
+            glossary_inner,
+            text="CSV file with translation terms",
+            font=get_font("text", 13),
+            text_color=THEME.text_tertiary
+        ).pack(anchor="w", pady=(2, THEME.space_sm))
 
+        # Current file display
         self.glossary_label = ctk.CTkLabel(
             glossary_inner,
             text=self.config.get_glossary_display_name(),
-            font=get_font("mono", 11),
+            font=get_font("mono", 13),
             text_color=THEME.accent if self.config.glossary_enabled else THEME.text_tertiary
         )
-        self.glossary_label.pack(anchor="w", pady=(2, THEME.space_xs))
+        self.glossary_label.pack(anchor="w", pady=(0, THEME.space_sm))
 
         # Buttons row
         btn_row = ctk.CTkFrame(glossary_inner, fg_color="transparent")
-        btn_row.pack(fill="x", pady=(THEME.space_xs, 0))
+        btn_row.pack(fill="x")
 
         browse_btn = ctk.CTkButton(
             btn_row,
             text="📂 Browse...",
-            font=get_font("text", 13),
+            font=get_font("text", 14),
             fg_color=THEME.accent,
             hover_color=THEME.gradient_active[1],
             text_color="#ffffff",
-            height=32,
-            width=120,
+            height=36,
+            width=130,
             command=self._browse_glossary
         )
         browse_btn.pack(side="left", padx=(0, THEME.space_sm))
@@ -2272,37 +2231,45 @@ class SettingsSheet(ctk.CTkToplevel):
         clear_btn = ctk.CTkButton(
             btn_row,
             text="Clear",
-            font=get_font("text", 13),
+            font=get_font("text", 14),
             fg_color=THEME.bg_elevated,
             hover_color=THEME.bg_card,
             text_color=THEME.text_secondary,
-            height=32,
-            width=80,
+            height=36,
+            width=90,
             command=self._clear_glossary
         )
         clear_btn.pack(side="left")
 
         # Auto-start settings
         autostart_frame = GlassCard(container)
-        autostart_frame.pack(fill="x", pady=(THEME.space_md, 0))
+        autostart_frame.pack(fill="x", pady=(THEME.space_lg, 0))
 
         autostart_inner = ctk.CTkFrame(autostart_frame, fg_color="transparent")
-        autostart_inner.pack(fill="x", padx=THEME.space_md, pady=THEME.space_sm)
+        autostart_inner.pack(fill="x", padx=THEME.space_md, pady=THEME.space_md)
+
+        ctk.CTkLabel(
+            autostart_inner,
+            text="Start with Windows",
+            font=get_font("text", 16, "bold"),
+            text_color=THEME.text_primary
+        ).pack(anchor="w")
+
+        ctk.CTkLabel(
+            autostart_inner,
+            text="Launch automatically when Windows starts",
+            font=get_font("text", 13),
+            text_color=THEME.text_tertiary
+        ).pack(anchor="w", pady=(2, THEME.space_sm))
 
         autostart_row = ctk.CTkFrame(autostart_inner, fg_color="transparent")
         autostart_row.pack(fill="x")
 
-        ctk.CTkLabel(
-            autostart_row,
-            text="Start with Windows",
-            font=get_font("text", 14),
-            text_color=THEME.text_primary
-        ).pack(side="left")
-
         self.autostart_var = ctk.BooleanVar(value=self.config.auto_start)
         self.autostart_switch = ctk.CTkSwitch(
             autostart_row,
-            text="",
+            text="Enabled" if self.config.auto_start else "Disabled",
+            font=get_font("text", 14),
             variable=self.autostart_var,
             onvalue=True,
             offvalue=False,
@@ -2311,7 +2278,7 @@ class SettingsSheet(ctk.CTkToplevel):
             button_color=THEME.text_secondary,
             button_hover_color=THEME.text_primary
         )
-        self.autostart_switch.pack(side="right")
+        self.autostart_switch.pack(side="left")
 
         # Done button
         done_btn = MinimalButton(
@@ -2320,7 +2287,7 @@ class SettingsSheet(ctk.CTkToplevel):
             variant="primary",
             command=self.destroy
         )
-        done_btn.pack(fill="x", side="bottom")
+        done_btn.pack(fill="x", side="bottom", pady=(THEME.space_lg, 0))
 
     def _browse_glossary(self):
         """Open file browser to select glossary file"""
@@ -2350,7 +2317,9 @@ class SettingsSheet(ctk.CTkToplevel):
 
     def _toggle_autostart(self):
         """Toggle auto-start with Windows"""
-        self.config.set_auto_start(self.autostart_var.get())
+        enabled = self.autostart_var.get()
+        self.config.set_auto_start(enabled)
+        self.autostart_switch.configure(text="Enabled" if enabled else "Disabled")
 
 
 # =============================================================================

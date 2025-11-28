@@ -1928,6 +1928,10 @@ class TranslatorApp(ctk.CTk):
         """Set callback for English → Japanese translation"""
         self.on_en_to_jp_callback = callback
 
+    def set_mode(self, mode: str):
+        """Set translation mode from external source (e.g., hotkey)"""
+        self._set_mode(mode)
+
     def show_ready(self):
         """Ready state - calm, inviting"""
         self.is_translating = False

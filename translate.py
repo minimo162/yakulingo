@@ -2314,8 +2314,8 @@ def main():
         if app.is_translating:
             return
 
-        # Auto-detect if Excel is active
-        if is_excel_active():
+        # Auto-detect if Excel was the last active window (before clicking our button)
+        if app.was_excel_active():
             # Use Excel translation
             if direction == "jp_to_en":
                 excel_ctrl.start_jp_to_en()

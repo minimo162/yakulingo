@@ -1640,6 +1640,10 @@ class TranslatorApp(ctk.CTk):
         self.on_en_to_jp_callback: Optional[Callable] = None  # EN→JP mode
         self.last_translation_pairs = None
 
+        # Track last active window (for Excel detection after button click)
+        self.last_foreground_window = None
+        self.bind("<FocusIn>", self._on_focus_in)
+
         self._build_ui()
         self._center_window()
         self._start_idle_animations()
@@ -1656,6 +1660,25 @@ class TranslatorApp(ctk.CTk):
         """Start subtle idle animations"""
         # stats_card is now a regular CTkFrame, no breathing animation
         self.ambient_glow.set_mode("idle")
+
+    def _on_focus_in(self, event=None):
+        """Track the window that was active before our app got focus"""
+        try:
+            import win32gui
+            # Get current foreground window
+            hwnd = win32gui.GetForegroundWindow()
+            title = win32gui.GetWindowText(hwnd)
+            # Only update if it's not our app window
+            if title and "translator" not in title.lower() and "python" not in title.lower():
+                self.last_foreground_window = title
+        except Exception:
+            pass
+
+    def was_excel_active(self) -> bool:
+        """Check if Excel was the last active window before clicking our app"""
+        if self.last_foreground_window:
+            return "Excel" in self.last_foreground_window or "EXCEL" in self.last_foreground_window
+        return False
 
     def _build_ui(self):
         """Construct the interface with surgical precision"""

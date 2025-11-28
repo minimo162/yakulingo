@@ -1551,7 +1551,7 @@ class UniversalTranslator:
             import win32con
             import win32clipboard
             import win32process
-            import win32api
+            import pyautogui
 
             # Format output
             output = f"""=== Original ===
@@ -1560,6 +1560,14 @@ class UniversalTranslator:
 === Translation ({self._get_direction_label()}) ===
 {translated}
 """
+            # Copy to clipboard FIRST
+            win32clipboard.OpenClipboard()
+            try:
+                win32clipboard.EmptyClipboard()
+                win32clipboard.SetClipboardData(win32clipboard.CF_UNICODETEXT, output)
+            finally:
+                win32clipboard.CloseClipboard()
+
             # Get list of existing Notepad windows BEFORE opening new one
             existing_notepad_hwnds = set()
             def find_existing_notepad(hwnd, hwnds):
@@ -1605,8 +1613,8 @@ class UniversalTranslator:
                 print("  Warning: Failed to find new Notepad window")
                 return
 
-            # Activate Notepad window and paste using WM_PASTE
-            for attempt in range(10):  # Try up to 10 times
+            # Activate Notepad window and paste using pyautogui
+            for attempt in range(5):  # Try up to 5 times
                 try:
                     # Restore if minimized
                     if win32gui.IsIconic(notepad_hwnd):
@@ -1618,49 +1626,18 @@ class UniversalTranslator:
                     win32gui.SetForegroundWindow(notepad_hwnd)
                     time.sleep(0.5)
 
-                    # Copy to clipboard
-                    win32clipboard.OpenClipboard()
-                    try:
-                        win32clipboard.EmptyClipboard()
-                        win32clipboard.SetClipboardData(win32clipboard.CF_UNICODETEXT, output)
-                    finally:
-                        win32clipboard.CloseClipboard()
+                    # Get window rect and click in center to ensure focus
+                    rect = win32gui.GetWindowRect(notepad_hwnd)
+                    center_x = (rect[0] + rect[2]) // 2
+                    center_y = (rect[1] + rect[3]) // 2
+                    pyautogui.click(center_x, center_y)
+                    time.sleep(0.3)
 
-                    time.sleep(0.2)
-
-                    # Find edit control and send WM_PASTE directly
-                    edit_hwnd = None
-                    for class_name in ["Edit", "RichEditD2DPT", "RichEdit20W", "RICHEDIT50W"]:
-                        edit_hwnd = win32gui.FindWindowEx(notepad_hwnd, None, class_name, None)
-                        if edit_hwnd:
-                            break
-
-                    # If no edit control found, try to find any child window
-                    if not edit_hwnd:
-                        def find_edit_child(hwnd, result):
-                            class_name = win32gui.GetClassName(hwnd)
-                            if "Edit" in class_name or "RichEdit" in class_name:
-                                result.append(hwnd)
-                            return True
-                        child_result = []
-                        win32gui.EnumChildWindows(notepad_hwnd, find_edit_child, child_result)
-                        if child_result:
-                            edit_hwnd = child_result[0]
-
-                    if edit_hwnd:
-                        # Send WM_PASTE message directly to edit control
-                        WM_PASTE = 0x0302
-                        win32api.SendMessage(edit_hwnd, WM_PASTE, 0, 0)
-                        time.sleep(0.3)
-                        print("  Translation pasted to Notepad (WM_PASTE)")
-                        break
-                    else:
-                        # Fallback: use keyboard
-                        import keyboard
-                        keyboard.send('ctrl+v')
-                        time.sleep(0.3)
-                        print("  Translation pasted to Notepad (keyboard)")
-                        break
+                    # Use pyautogui for Ctrl+V paste
+                    pyautogui.hotkey('ctrl', 'v')
+                    time.sleep(0.3)
+                    print("  Translation pasted to Notepad (pyautogui)")
+                    break
 
                 except Exception as e:
                     print(f"  Paste attempt {attempt + 1} failed: {e}")
@@ -1757,8 +1734,7 @@ def open_notepad_with_excel_log(translation_pairs: list, direction: str = "JP â†
         import win32con
         import win32clipboard
         import win32process
-        import win32api
-        import ctypes
+        import pyautogui
 
         # Format output with both original and translated text
         lines = [f"=== Excel Translation Log ({direction}) ===", ""]
@@ -1770,6 +1746,14 @@ def open_notepad_with_excel_log(translation_pairs: list, direction: str = "JP â†
 
         lines.append(f"=== {len(translation_pairs)} cells translated ===")
         output = "\n".join(lines)
+
+        # Copy to clipboard FIRST (before opening Notepad)
+        win32clipboard.OpenClipboard()
+        try:
+            win32clipboard.EmptyClipboard()
+            win32clipboard.SetClipboardData(win32clipboard.CF_UNICODETEXT, output)
+        finally:
+            win32clipboard.CloseClipboard()
 
         # Get list of existing Notepad windows BEFORE opening new one
         existing_notepad_hwnds = set()
@@ -1816,8 +1800,8 @@ def open_notepad_with_excel_log(translation_pairs: list, direction: str = "JP â†
             print("  Warning: Could not find new Notepad window")
             return
 
-        # Activate Notepad window and paste using WM_PASTE
-        for attempt in range(10):  # Try up to 10 times
+        # Activate Notepad window and paste using pyautogui
+        for attempt in range(5):  # Try up to 5 times
             try:
                 # Restore if minimized
                 if win32gui.IsIconic(notepad_hwnd):
@@ -1829,49 +1813,18 @@ def open_notepad_with_excel_log(translation_pairs: list, direction: str = "JP â†
                 win32gui.SetForegroundWindow(notepad_hwnd)
                 time.sleep(0.5)
 
-                # Copy to clipboard
-                win32clipboard.OpenClipboard()
-                try:
-                    win32clipboard.EmptyClipboard()
-                    win32clipboard.SetClipboardData(win32clipboard.CF_UNICODETEXT, output)
-                finally:
-                    win32clipboard.CloseClipboard()
+                # Get window rect and click in center to ensure focus
+                rect = win32gui.GetWindowRect(notepad_hwnd)
+                center_x = (rect[0] + rect[2]) // 2
+                center_y = (rect[1] + rect[3]) // 2
+                pyautogui.click(center_x, center_y)
+                time.sleep(0.3)
 
-                time.sleep(0.2)
-
-                # Find edit control and send WM_PASTE directly
-                edit_hwnd = None
-                for class_name in ["Edit", "RichEditD2DPT", "RichEdit20W", "RICHEDIT50W"]:
-                    edit_hwnd = win32gui.FindWindowEx(notepad_hwnd, None, class_name, None)
-                    if edit_hwnd:
-                        break
-
-                # If no edit control found, try to find any child window
-                if not edit_hwnd:
-                    def find_edit_child(hwnd, result):
-                        class_name = win32gui.GetClassName(hwnd)
-                        if "Edit" in class_name or "RichEdit" in class_name:
-                            result.append(hwnd)
-                        return True
-                    child_result = []
-                    win32gui.EnumChildWindows(notepad_hwnd, find_edit_child, child_result)
-                    if child_result:
-                        edit_hwnd = child_result[0]
-
-                if edit_hwnd:
-                    # Send WM_PASTE message directly to edit control
-                    WM_PASTE = 0x0302
-                    win32api.SendMessage(edit_hwnd, WM_PASTE, 0, 0)
-                    time.sleep(0.3)
-                    print("  Translation log pasted to Notepad (WM_PASTE)")
-                    break
-                else:
-                    # Fallback: use keyboard
-                    import keyboard
-                    keyboard.send('ctrl+v')
-                    time.sleep(0.3)
-                    print("  Translation log pasted to Notepad (keyboard)")
-                    break
+                # Use pyautogui for Ctrl+V paste
+                pyautogui.hotkey('ctrl', 'v')
+                time.sleep(0.3)
+                print("  Translation log pasted to Notepad (pyautogui)")
+                break
 
             except Exception as e:
                 print(f"  Paste attempt {attempt + 1} failed: {e}")

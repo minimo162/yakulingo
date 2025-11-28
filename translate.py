@@ -42,6 +42,27 @@ class TranslationMode(Enum):
     TEXT_EN_TO_JP = "text_en_to_jp"    # General text: English → Japanese
 
 
+def _is_our_app_window(title: str) -> bool:
+    """Check if window title belongs to our app (TranslatorApp or console)"""
+    if not title:
+        return False
+    title_lower = title.lower()
+    # Skip our app windows
+    our_app_patterns = [
+        "python",           # Python console
+        "cmd.exe",          # Command prompt
+        "powershell",       # PowerShell
+        "windows powershell",
+        "translate.py",     # Script name in title
+        "run.bat",          # Batch file
+        "★run",             # Our batch file
+    ]
+    for pattern in our_app_patterns:
+        if pattern in title_lower:
+            return True
+    return False
+
+
 def is_excel_active() -> bool:
     """Check if Excel was the active window before TranslatorApp"""
     try:
@@ -61,11 +82,11 @@ def is_excel_active() -> bool:
             # Get the next window in Z-order (the one behind current)
             next_hwnd = win32gui.GetWindow(hwnd, win32con.GW_HWNDNEXT)
 
-            # Find the first visible window with a title below
+            # Find the first visible window with a title below (skip our app windows)
             while next_hwnd:
                 if win32gui.IsWindowVisible(next_hwnd):
                     next_title = win32gui.GetWindowText(next_hwnd)
-                    if next_title:  # Skip windows without title
+                    if next_title and not _is_our_app_window(next_title):
                         if "Excel" in next_title or "EXCEL" in next_title:
                             return True
                         # Found a visible window with title, stop searching
@@ -1167,11 +1188,13 @@ class UniversalTranslator:
             current_hwnd = win32gui.GetForegroundWindow()
 
             # Find the previous window (the one with the text to copy)
+            # Skip our app windows (console, etc.)
             prev_hwnd = win32gui.GetWindow(current_hwnd, win32con.GW_HWNDNEXT)
             while prev_hwnd:
                 if win32gui.IsWindowVisible(prev_hwnd):
                     title = win32gui.GetWindowText(prev_hwnd)
-                    if title:  # Found a visible window with title
+                    # Skip windows without title and our app windows
+                    if title and not _is_our_app_window(title):
                         break
                 prev_hwnd = win32gui.GetWindow(prev_hwnd, win32con.GW_HWNDNEXT)
 

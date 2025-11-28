@@ -14,6 +14,7 @@ Features:
 
 import customtkinter as ctk
 import tkinter as tk
+from tkinter import filedialog
 import math
 import random
 import time
@@ -2137,8 +2138,8 @@ class SettingsSheet(ctk.CTkToplevel):
     def __init__(self, parent):
         super().__init__(parent)
 
-        self.title("About")
-        self.geometry("380x280")
+        self.title("Settings")
+        self.geometry("420x380")
         self.configure(fg_color=THEME.bg_primary)
         self.resizable(False, False)
 
@@ -2221,6 +2222,62 @@ class SettingsSheet(ctk.CTkToplevel):
             text_color=THEME.text_tertiary
         ).pack(anchor="w", pady=(4, 0))
 
+        # Glossary settings
+        glossary_frame = GlassCard(container)
+        glossary_frame.pack(fill="x", pady=(THEME.space_md, 0))
+
+        glossary_inner = ctk.CTkFrame(glossary_frame, fg_color="transparent")
+        glossary_inner.pack(fill="x", padx=THEME.space_md, pady=THEME.space_sm)
+
+        ctk.CTkLabel(
+            glossary_inner,
+            text="Glossary File",
+            font=get_font("text", 14, "bold"),
+            text_color=THEME.text_primary
+        ).pack(anchor="w")
+
+        # Current file display
+        from config_manager import get_config
+        self.config = get_config()
+
+        self.glossary_label = ctk.CTkLabel(
+            glossary_inner,
+            text=self.config.get_glossary_display_name(),
+            font=get_font("mono", 11),
+            text_color=THEME.accent if self.config.glossary_enabled else THEME.text_tertiary
+        )
+        self.glossary_label.pack(anchor="w", pady=(2, THEME.space_xs))
+
+        # Buttons row
+        btn_row = ctk.CTkFrame(glossary_inner, fg_color="transparent")
+        btn_row.pack(fill="x")
+
+        browse_btn = ctk.CTkButton(
+            btn_row,
+            text="Browse...",
+            font=get_font("text", 12),
+            fg_color=THEME.bg_elevated,
+            hover_color=THEME.bg_card,
+            text_color=THEME.text_primary,
+            height=28,
+            width=80,
+            command=self._browse_glossary
+        )
+        browse_btn.pack(side="left", padx=(0, THEME.space_xs))
+
+        clear_btn = ctk.CTkButton(
+            btn_row,
+            text="Clear",
+            font=get_font("text", 12),
+            fg_color=THEME.bg_elevated,
+            hover_color=THEME.bg_card,
+            text_color=THEME.text_tertiary,
+            height=28,
+            width=60,
+            command=self._clear_glossary
+        )
+        clear_btn.pack(side="left")
+
         # Done button
         done_btn = MinimalButton(
             container,
@@ -2229,6 +2286,32 @@ class SettingsSheet(ctk.CTkToplevel):
             command=self.destroy
         )
         done_btn.pack(fill="x", side="bottom")
+
+    def _browse_glossary(self):
+        """Open file browser to select glossary file"""
+        file_path = filedialog.askopenfilename(
+            title="Select Glossary File",
+            filetypes=[
+                ("CSV files", "*.csv"),
+                ("All files", "*.*")
+            ],
+            parent=self
+        )
+        if file_path:
+            self.config.set_glossary_file(file_path)
+            self._update_glossary_display()
+
+    def _clear_glossary(self):
+        """Clear glossary file selection"""
+        self.config.set_glossary_file(None)
+        self._update_glossary_display()
+
+    def _update_glossary_display(self):
+        """Update the glossary label display"""
+        self.glossary_label.configure(
+            text=self.config.get_glossary_display_name(),
+            text_color=THEME.accent if self.config.glossary_enabled else THEME.text_tertiary
+        )
 
 
 # =============================================================================

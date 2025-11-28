@@ -1,0 +1,10 @@
+# Store batch files with CRLF (binary mode preserves exact bytes)
+# This ensures GitHub zip downloads work correctly on Windows
+*.bat binary
+
+# Other text files use LF (standard for cross-platform)
+*.py text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+*.toml text eol=lf
+*.lock text eol=lf

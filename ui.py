@@ -1463,6 +1463,12 @@ class MinimalButton(ctk.CTkButton):
 
         c = colors.get(variant, colors["primary"])
 
+        # Handle transparent border - CTkButton doesn't allow "transparent" for border_color
+        border_color = c.get("border", THEME.glass_border)
+        border_width = 0 if border_color == "transparent" else 1
+        if border_color == "transparent":
+            border_color = THEME.glass_border  # Use default, won't show with width=0
+
         super().__init__(
             parent,
             text=text,
@@ -1471,8 +1477,8 @@ class MinimalButton(ctk.CTkButton):
             text_color=c["text"],
             hover_color=c["hover"] if variant != "primary" else THEME.text_secondary,
             corner_radius=THEME.radius_md,
-            border_width=1,
-            border_color=c.get("border", THEME.glass_border),
+            border_width=border_width,
+            border_color=border_color,
             height=height,
             **kwargs
         )

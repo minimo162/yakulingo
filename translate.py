@@ -10,7 +10,7 @@ Features:
 - Output to Notepad for easy copying
 - Global hotkeys for instant access
 - System tray integration (minimize to tray)
-- Glossary support via SharePoint link
+- Glossary support via local CSV file
 """
 
 import os
@@ -1678,13 +1678,9 @@ def main():
     print("  (Excel is auto-detected)")
     print("-" * 50)
     if config.glossary_enabled:
-        mode = config.config.glossary.mode
-        if mode == "sharepoint":
-            print(f"  Glossary: SharePoint ({config.glossary_url[:40]}...)")
-        else:
-            print(f"  Glossary: Local ({config.config.glossary.local_file})")
+        print(f"  Glossary: {config.config.glossary.file}")
     else:
-        print("  Glossary: Not configured (edit config.json)")
+        print("  Glossary: Disabled (edit config.json to enable)")
     if config.minimize_to_tray:
         print("  System Tray: Enabled (close to minimize)")
     print("=" * 50)

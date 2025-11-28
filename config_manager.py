@@ -12,12 +12,9 @@ from typing import Optional, List, Tuple
 
 @dataclass
 class GlossaryConfig:
-    """Glossary configuration"""
+    """Glossary configuration - uses local CSV file"""
     enabled: bool = False
-    mode: str = "local"  # "local" or "sharepoint"
-    local_file: str = "glossary.csv"
-    sharepoint_url: str = ""
-    description: str = "mode: 'local' = use local CSV file, 'sharepoint' = use SharePoint URL (paid Copilot only)"
+    file: str = "glossary.csv"
 
 
 @dataclass
@@ -113,10 +110,6 @@ class ConfigManager:
         return self.config.glossary.enabled
 
     @property
-    def glossary_url(self) -> str:
-        return self.config.glossary.sharepoint_url
-
-    @property
     def minimize_to_tray(self) -> bool:
         return self.config.system_tray.minimize_to_tray
 
@@ -124,10 +117,10 @@ class ConfigManager:
     def start_minimized(self) -> bool:
         return self.config.system_tray.start_minimized
 
-    def _load_local_glossary(self) -> List[Tuple[str, str]]:
-        """Load glossary terms from local CSV file"""
+    def _load_glossary(self) -> List[Tuple[str, str]]:
+        """Load glossary terms from CSV file"""
         terms = []
-        glossary_path = Path(__file__).parent / self.config.glossary.local_file
+        glossary_path = Path(__file__).parent / self.config.glossary.file
 
         if not glossary_path.exists():
             return terms
@@ -152,41 +145,25 @@ class ConfigManager:
     def get_glossary_prompt_addition(self) -> str:
         """
         Get the prompt addition for glossary reference.
-        Returns empty string if glossary is not configured.
+        Returns empty string if glossary is not enabled or file is empty.
         """
         if not self.glossary_enabled:
             return ""
 
-        # SharePoint mode
-        if self.config.glossary.mode == "sharepoint" and self.glossary_url:
-            return f"""
+        terms = self._load_glossary()
+        if not terms:
+            return ""
 
-[IMPORTANT: Glossary Reference]
-Please refer to the glossary file for consistent terminology:
-{self.glossary_url}
+        # Format terms as a table
+        terms_table = "\n".join(f"  {src} → {tgt}" for src, tgt in terms)
 
-Use the terms defined in this glossary whenever applicable.
-If a term appears in the glossary, you MUST use the specified translation.
-"""
-
-        # Local file mode
-        if self.config.glossary.mode == "local":
-            terms = self._load_local_glossary()
-            if not terms:
-                return ""
-
-            # Format terms as a table
-            terms_table = "\n".join(f"  {src} → {tgt}" for src, tgt in terms)
-
-            return f"""
+        return f"""
 
 [IMPORTANT: Use the following glossary for consistent terminology]
 {terms_table}
 
 You MUST use these exact translations when the source term appears.
 """
-
-        return ""
 
 
 # Global config instance

@@ -2182,28 +2182,24 @@ def main():
     from config_manager import get_config
     from system_tray import SystemTrayManager, setup_minimize_to_tray
 
-    # Prevent multiple instances using a lock file
-    import tempfile
-    import atexit
-    lock_file = Path(tempfile.gettempdir()) / "excel_translator.lock"
-    try:
-        # Try to create lock file exclusively
-        if lock_file.exists():
-            # Check if the process is still running
-            try:
-                with open(lock_file, 'r') as f:
-                    old_pid = int(f.read().strip())
-                import psutil
-                if psutil.pid_exists(old_pid):
-                    print("Another instance is already running. Exiting.")
-                    return
-            except Exception:
-                pass  # Lock file exists but can't read - try to proceed
-        with open(lock_file, 'w') as f:
-            f.write(str(os.getpid()))
-        atexit.register(lambda: lock_file.unlink(missing_ok=True))
-    except Exception as e:
-        print(f"Warning: Could not create lock file: {e}")
+    # Prevent multiple instances using Windows mutex
+    import ctypes
+    mutex_name = "ExcelTranslatorMutex_SingleInstance"
+    mutex = ctypes.windll.kernel32.CreateMutexW(None, False, mutex_name)
+    last_error = ctypes.windll.kernel32.GetLastError()
+    ERROR_ALREADY_EXISTS = 183
+    if last_error == ERROR_ALREADY_EXISTS:
+        print("Another instance is already running.")
+        print("Please close the existing instance from the system tray first.")
+        ctypes.windll.kernel32.CloseHandle(mutex)
+        # Show message box to user
+        ctypes.windll.user32.MessageBoxW(
+            0,
+            "Excel Translator is already running.\nCheck the system tray icon.",
+            "Already Running",
+            0x40  # MB_ICONINFORMATION
+        )
+        return
 
     # Load configuration
     config = get_config()

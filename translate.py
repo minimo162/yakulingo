@@ -845,7 +845,8 @@ class CopilotHandler:
             
             result = subprocess.run(
                 [netstat_path, "-ano"],
-                capture_output=True, text=True, timeout=5, cwd=local_cwd
+                capture_output=True, text=True, timeout=5, cwd=local_cwd,
+                creationflags=subprocess.CREATE_NO_WINDOW
             )
             for line in result.stdout.split("\n"):
                 if f":{self.cdp_port}" in line and "LISTENING" in line:
@@ -853,7 +854,8 @@ class CopilotHandler:
                     if parts:
                         pid = parts[-1]
                         subprocess.run([taskkill_path, "/F", "/PID", pid],
-                                      capture_output=True, timeout=5, cwd=local_cwd)
+                                      capture_output=True, timeout=5, cwd=local_cwd,
+                                      creationflags=subprocess.CREATE_NO_WINDOW)
                         time.sleep(1)
                         break
         except (subprocess.SubprocessError, OSError, TimeoutError) as e:
@@ -1271,6 +1273,7 @@ class UniversalTranslator:
         """Open Notepad and paste the translation result"""
         try:
             import win32gui
+            import win32con
 
             # Format output
             output = f"""=== Original ===
@@ -1289,7 +1292,7 @@ class UniversalTranslator:
 
             # Wait for Notepad to open and find its window
             notepad_hwnd = None
-            for _ in range(20):  # Try for up to 2 seconds
+            for _ in range(30):  # Try for up to 3 seconds
                 time.sleep(0.1)
                 def find_notepad(hwnd, hwnds):
                     if win32gui.IsWindowVisible(hwnd):
@@ -1303,17 +1306,60 @@ class UniversalTranslator:
                     notepad_hwnd = hwnds[0]
                     break
 
-            # Set focus to Notepad and paste
-            if notepad_hwnd:
-                win32gui.SetForegroundWindow(notepad_hwnd)
-                time.sleep(0.2)
+            if not notepad_hwnd:
+                from ui import show_message
+                show_message("Error", "Failed to find Notepad window.", "error")
+                return
 
-            # Paste content
+            # Activate Notepad window reliably
+            # Try multiple methods to ensure window is in foreground
             import keyboard
-            keyboard.send('ctrl+v')
+
+            for attempt in range(5):  # Try up to 5 times
+                try:
+                    # Restore if minimized
+                    if win32gui.IsIconic(notepad_hwnd):
+                        win32gui.ShowWindow(notepad_hwnd, win32con.SW_RESTORE)
+                        time.sleep(0.1)
+
+                    # Bring to front and activate
+                    win32gui.ShowWindow(notepad_hwnd, win32con.SW_SHOW)
+                    win32gui.SetForegroundWindow(notepad_hwnd)
+                    time.sleep(0.15)
+
+                    # Verify Notepad is now in foreground
+                    current_fg = win32gui.GetForegroundWindow()
+                    if current_fg == notepad_hwnd:
+                        break  # Success
+
+                    # If not in foreground, try alternative method
+                    # Simulate Alt key to allow SetForegroundWindow to work
+                    keyboard.press('alt')
+                    win32gui.SetForegroundWindow(notepad_hwnd)
+                    keyboard.release('alt')
+                    time.sleep(0.15)
+
+                except Exception:
+                    time.sleep(0.1)
+                    continue
+
+            # Final wait to ensure window is ready
+            time.sleep(0.2)
+
+            # Verify one more time before pasting
+            current_fg = win32gui.GetForegroundWindow()
+            fg_title = win32gui.GetWindowText(current_fg) if current_fg else ""
+            if "メモ帳" in fg_title or "Notepad" in fg_title or "無題" in fg_title or "Untitled" in fg_title:
+                # Notepad is active, paste content
+                keyboard.send('ctrl+v')
+            else:
+                # Notepad is not active, show error message
+                from ui import show_message
+                show_message("Error", "Failed to activate Notepad. Translation copied to clipboard.", "warning")
 
         except Exception as e:
-            print(f"Notepad error: {e}")
+            from ui import show_message
+            show_message("Error", f"Notepad error: {e}", "error")
 
     def _get_direction_label(self) -> str:
         """Get human-readable direction label"""

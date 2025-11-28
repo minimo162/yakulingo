@@ -733,6 +733,37 @@ class ExcelHandler:
                 "cols_count": selection.Columns.Count,
             }
     
+    def _get_shapes_in_range(self, info: dict) -> list[str]:
+        """Get shape names that fall within the selected cell range"""
+        shapes_in_range = []
+        sheet = self.original_sheet
+
+        try:
+            # Iterate through all shapes on the sheet
+            for i in range(1, sheet.Shapes.Count + 1):
+                try:
+                    shape = sheet.Shapes.Item(i)
+                    # Check if shape has text
+                    if not shape.HasTextFrame:
+                        continue
+
+                    # Get shape's position using TopLeftCell
+                    top_left_cell = shape.TopLeftCell
+                    shape_row = top_left_cell.Row
+                    shape_col = top_left_cell.Column
+
+                    # Check if shape's top-left corner is within the selected range
+                    if (info["first_row"] <= shape_row <= info["last_row"] and
+                        info["first_col"] <= shape_col <= info["last_col"]):
+                        shapes_in_range.append(shape.Name)
+                except Exception:
+                    # Skip shapes that can't be accessed
+                    continue
+        except Exception as e:
+            print(f"  Warning: Could not enumerate shapes: {e}")
+
+        return shapes_in_range
+
     def extract_japanese_cells(self, info: dict) -> list[dict]:
         """Extract cells or shapes containing Japanese"""
         japanese_cells = []
@@ -770,6 +801,26 @@ class ExcelHandler:
                             "row": row, "col": col,
                             "address": f"R{row}C{col}", "text": text,
                         })
+
+            # Also extract text from shapes within the selected range
+            shapes_in_range = self._get_shapes_in_range(info)
+            for shape_name in shapes_in_range:
+                try:
+                    shape = sheet.Shapes(shape_name)
+                    if shape.HasTextFrame:
+                        text_frame = shape.TextFrame2
+                        if text_frame.HasText:
+                            text = text_frame.TextRange.Text
+                            text = clean_cell_text(str(text))
+                            if text and has_japanese(text):
+                                japanese_cells.append({
+                                    "shape_name": shape_name,
+                                    "address": f"SHAPE:{shape_name}",
+                                    "text": text,
+                                })
+                except Exception as e:
+                    print(f"  Warning: Could not read shape {shape_name}: {e}")
+
         return japanese_cells
 
     def extract_english_cells(self, info: dict) -> list[dict]:
@@ -811,6 +862,27 @@ class ExcelHandler:
                             "row": row, "col": col,
                             "address": f"R{row}C{col}", "text": text,
                         })
+
+            # Also extract text from shapes within the selected range
+            shapes_in_range = self._get_shapes_in_range(info)
+            for shape_name in shapes_in_range:
+                try:
+                    shape = sheet.Shapes(shape_name)
+                    if shape.HasTextFrame:
+                        text_frame = shape.TextFrame2
+                        if text_frame.HasText:
+                            text = text_frame.TextRange.Text
+                            text = clean_cell_text(str(text))
+                            # Non-empty text that does NOT contain Japanese
+                            if text and not has_japanese(text):
+                                english_cells.append({
+                                    "shape_name": shape_name,
+                                    "address": f"SHAPE:{shape_name}",
+                                    "text": text,
+                                })
+                except Exception as e:
+                    print(f"  Warning: Could not read shape {shape_name}: {e}")
+
         return english_cells
     
     def write_translations(self, translations: dict[str, str], info: dict):

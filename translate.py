@@ -1365,7 +1365,7 @@ class SharedCopilotManager:
     Keeps the browser open between translations for faster performance.
     """
     _instance: Optional[CopilotHandler] = None
-    _thread_id: Optional[int] = None  # Track which thread created the browser
+    _thread: Optional[_threading.Thread] = None  # Track the thread that created the browser
 
     @classmethod
     def _is_connection_valid(cls) -> bool:
@@ -1373,10 +1373,9 @@ class SharedCopilotManager:
         if cls._instance is None:
             return False
         try:
-            # Check if we're in the same thread (Playwright is not thread-safe)
-            current_thread_id = _threading.current_thread().ident
-            if cls._thread_id != current_thread_id:
-                print(f"  Thread mismatch: browser created in {cls._thread_id}, current is {current_thread_id}")
+            # Check if the original thread is still alive (Playwright requires same thread)
+            if cls._thread is not None and not cls._thread.is_alive():
+                print(f"  Original browser thread has exited, need to reconnect")
                 return False
             # Check if browser and page objects exist
             if cls._instance.browser is None or cls._instance.page is None:
@@ -1413,14 +1412,14 @@ class SharedCopilotManager:
                     except Exception:
                         pass
                     cls._instance = None
-                    cls._thread_id = None
+                    cls._thread = None
 
-            # Create new instance and store thread ID
+            # Create new instance and store thread reference
             cls._instance = CopilotHandler()
-            cls._thread_id = _threading.current_thread().ident
+            cls._thread = _threading.current_thread()
             if not cls._instance.launch(on_progress=on_progress):
                 cls._instance = None
-                cls._thread_id = None
+                cls._thread = None
                 return None
             return cls._instance
 
@@ -1442,7 +1441,7 @@ class SharedCopilotManager:
             if cls._instance:
                 cls._instance.close()
                 cls._instance = None
-                cls._thread_id = None
+                cls._thread = None
 
 
 # =============================================================================

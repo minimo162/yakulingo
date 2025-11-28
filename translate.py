@@ -43,13 +43,15 @@ class TranslationMode(Enum):
 
 
 def is_excel_active() -> bool:
-    """Check if the active window is Microsoft Excel"""
+    """Check if Excel is running and has a workbook open (via COM)"""
     try:
-        import win32gui
-        hwnd = win32gui.GetForegroundWindow()
-        title = win32gui.GetWindowText(hwnd)
-        # Check for Excel window titles
-        return "Excel" in title or "EXCEL" in title
+        import win32com.client
+        # Try to get the active Excel instance via COM
+        excel = win32com.client.GetActiveObject("Excel.Application")
+        # Check if there's an active workbook with a selection
+        if excel and excel.ActiveWorkbook and excel.Selection:
+            return True
+        return False
     except Exception:
         return False
 

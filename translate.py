@@ -2182,6 +2182,29 @@ def main():
     from config_manager import get_config
     from system_tray import SystemTrayManager, setup_minimize_to_tray
 
+    # Prevent multiple instances using a lock file
+    import tempfile
+    import atexit
+    lock_file = Path(tempfile.gettempdir()) / "excel_translator.lock"
+    try:
+        # Try to create lock file exclusively
+        if lock_file.exists():
+            # Check if the process is still running
+            try:
+                with open(lock_file, 'r') as f:
+                    old_pid = int(f.read().strip())
+                import psutil
+                if psutil.pid_exists(old_pid):
+                    print("Another instance is already running. Exiting.")
+                    return
+            except Exception:
+                pass  # Lock file exists but can't read - try to proceed
+        with open(lock_file, 'w') as f:
+            f.write(str(os.getpid()))
+        atexit.register(lambda: lock_file.unlink(missing_ok=True))
+    except Exception as e:
+        print(f"Warning: Could not create lock file: {e}")
+
     # Load configuration
     config = get_config()
 

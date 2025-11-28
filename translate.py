@@ -1617,17 +1617,14 @@ class UniversalTranslator:
             finally:
                 win32clipboard.CloseClipboard()
 
-            # Get list of existing Notepad windows BEFORE opening new one
+            # Get list of existing Notepad windows BEFORE opening new one (by title only)
             existing_notepad_hwnds = set()
             def find_existing_notepad(hwnd, hwnds):
                 try:
-                    title = win32gui.GetWindowText(hwnd)
-                    class_name = win32gui.GetClassName(hwnd)
-                    # Check by class name or title
-                    if class_name in ["Notepad", "NOTEPAD", "ApplicationFrameWindow"]:
-                        hwnds.add(hwnd)
-                    elif any(x in title for x in ["メモ帳", "Notepad", "無題", "Untitled"]):
-                        hwnds.add(hwnd)
+                    if win32gui.IsWindowVisible(hwnd):
+                        title = win32gui.GetWindowText(hwnd)
+                        if any(x in title for x in ["メモ帳", "Notepad", "無題", "Untitled"]):
+                            hwnds.add(hwnd)
                 except Exception:
                     pass
                 return True
@@ -1639,27 +1636,19 @@ class UniversalTranslator:
             subprocess.Popen([notepad_path], cwd=local_cwd)
 
             # Wait for NEW Notepad window (not in existing list)
-            # Windows 11 Notepad uses ApplicationFrameWindow class and may take time to appear
             notepad_hwnd = None
-            for _ in range(80):  # Try for up to 8 seconds (Windows 11 Notepad is slow)
+            for _ in range(80):  # Try for up to 8 seconds
                 time.sleep(0.1)
                 def find_new_notepad(hwnd, result):
                     try:
+                        if not win32gui.IsWindowVisible(hwnd):
+                            return True
                         title = win32gui.GetWindowText(hwnd)
-                        class_name = win32gui.GetClassName(hwnd)
-
-                        # Skip existing windows
-                        if hwnd in existing_notepad_hwnds:
+                        if not title:
                             return True
-
-                        # Check by class name (classic Notepad)
-                        if class_name in ["Notepad", "NOTEPAD"]:
-                            result.append(hwnd)
-                            return True
-
-                        # Check by title (both classic and Windows 11)
+                        # Check by title - simple and reliable
                         if any(x in title for x in ["メモ帳", "Notepad", "無題", "Untitled"]):
-                            if win32gui.IsWindowVisible(hwnd):
+                            if hwnd not in existing_notepad_hwnds:
                                 result.append(hwnd)
                     except Exception:
                         pass
@@ -1667,8 +1656,14 @@ class UniversalTranslator:
                 result = []
                 win32gui.EnumWindows(find_new_notepad, result)
                 if result:
-                    notepad_hwnd = result[0]
-                    break
+                    # Verify window is still valid before using
+                    candidate = result[0]
+                    try:
+                        if win32gui.IsWindow(candidate) and win32gui.IsWindowVisible(candidate):
+                            notepad_hwnd = candidate
+                            break
+                    except Exception:
+                        pass
 
             if not notepad_hwnd:
                 print("  Warning: Failed to find new Notepad window")
@@ -1677,6 +1672,12 @@ class UniversalTranslator:
             # Activate Notepad window and paste using keyboard library
             for attempt in range(5):  # Try up to 5 times
                 try:
+                    # Check window is still valid
+                    if not win32gui.IsWindow(notepad_hwnd):
+                        print(f"  Paste attempt {attempt + 1}: Window no longer valid")
+                        time.sleep(0.5)
+                        continue
+
                     # Restore if minimized
                     if win32gui.IsIconic(notepad_hwnd):
                         win32gui.ShowWindow(notepad_hwnd, win32con.SW_RESTORE)
@@ -1704,7 +1705,7 @@ class UniversalTranslator:
 
                 except Exception as e:
                     print(f"  Paste attempt {attempt + 1} failed: {e}")
-                    time.sleep(0.3)
+                    time.sleep(0.5)
                     continue
 
         except Exception as e:
@@ -1834,17 +1835,14 @@ def open_notepad_with_excel_log(translation_pairs: list, direction: str = "JP �
         finally:
             win32clipboard.CloseClipboard()
 
-        # Get list of existing Notepad windows BEFORE opening new one
+        # Get list of existing Notepad windows BEFORE opening new one (by title only)
         existing_notepad_hwnds = set()
         def find_existing_notepad(hwnd, hwnds):
             try:
-                title = win32gui.GetWindowText(hwnd)
-                class_name = win32gui.GetClassName(hwnd)
-                # Check by class name or title
-                if class_name in ["Notepad", "NOTEPAD", "ApplicationFrameWindow"]:
-                    hwnds.add(hwnd)
-                elif any(x in title for x in ["メモ帳", "Notepad", "無題", "Untitled"]):
-                    hwnds.add(hwnd)
+                if win32gui.IsWindowVisible(hwnd):
+                    title = win32gui.GetWindowText(hwnd)
+                    if any(x in title for x in ["メモ帳", "Notepad", "無題", "Untitled"]):
+                        hwnds.add(hwnd)
             except Exception:
                 pass
             return True
@@ -1856,27 +1854,19 @@ def open_notepad_with_excel_log(translation_pairs: list, direction: str = "JP �
         subprocess.Popen([notepad_path], cwd=local_cwd)
 
         # Wait for NEW Notepad window (not in existing list)
-        # Windows 11 Notepad uses ApplicationFrameWindow class and may take time to appear
         notepad_hwnd = None
-        for _ in range(80):  # Try for up to 8 seconds (Windows 11 Notepad is slow)
+        for _ in range(80):  # Try for up to 8 seconds
             time.sleep(0.1)
             def find_new_notepad(hwnd, result):
                 try:
+                    if not win32gui.IsWindowVisible(hwnd):
+                        return True
                     title = win32gui.GetWindowText(hwnd)
-                    class_name = win32gui.GetClassName(hwnd)
-
-                    # Skip existing windows
-                    if hwnd in existing_notepad_hwnds:
+                    if not title:
                         return True
-
-                    # Check by class name (classic Notepad)
-                    if class_name in ["Notepad", "NOTEPAD"]:
-                        result.append(hwnd)
-                        return True
-
-                    # Check by title (both classic and Windows 11)
+                    # Check by title - simple and reliable
                     if any(x in title for x in ["メモ帳", "Notepad", "無題", "Untitled"]):
-                        if win32gui.IsWindowVisible(hwnd):
+                        if hwnd not in existing_notepad_hwnds:
                             result.append(hwnd)
                 except Exception:
                     pass
@@ -1884,8 +1874,14 @@ def open_notepad_with_excel_log(translation_pairs: list, direction: str = "JP �
             result = []
             win32gui.EnumWindows(find_new_notepad, result)
             if result:
-                notepad_hwnd = result[0]
-                break
+                # Verify window is still valid before using
+                candidate = result[0]
+                try:
+                    if win32gui.IsWindow(candidate) and win32gui.IsWindowVisible(candidate):
+                        notepad_hwnd = candidate
+                        break
+                except Exception:
+                    pass
 
         if not notepad_hwnd:
             print("  Warning: Could not find new Notepad window")
@@ -1894,6 +1890,12 @@ def open_notepad_with_excel_log(translation_pairs: list, direction: str = "JP �
         # Activate Notepad window and paste using keyboard library
         for attempt in range(5):  # Try up to 5 times
             try:
+                # Check window is still valid
+                if not win32gui.IsWindow(notepad_hwnd):
+                    print(f"  Paste attempt {attempt + 1}: Window no longer valid")
+                    time.sleep(0.5)
+                    continue
+
                 # Restore if minimized
                 if win32gui.IsIconic(notepad_hwnd):
                     win32gui.ShowWindow(notepad_hwnd, win32con.SW_RESTORE)

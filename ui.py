@@ -1626,8 +1626,8 @@ class TranslatorApp(ctk.CTk):
 
         # Window configuration
         self.title("")  # Minimal - no title needed
-        self.geometry("420x720")
-        self.minsize(380, 640)
+        self.geometry("480x720")
+        self.minsize(460, 640)
         self.configure(fg_color=THEME.bg_primary)
 
         # State
@@ -1709,7 +1709,7 @@ class TranslatorApp(ctk.CTk):
         self.mode_jp_en_btn = ctk.CTkButton(
             self.mode_buttons_frame,
             text="日本語 → English",
-            width=140,
+            width=180,
             height=44,
             font=get_font("text", 16, "bold"),
             fg_color=THEME.accent,
@@ -1724,7 +1724,7 @@ class TranslatorApp(ctk.CTk):
         self.mode_en_jp_btn = ctk.CTkButton(
             self.mode_buttons_frame,
             text="English → 日本語",
-            width=140,
+            width=180,
             height=44,
             font=get_font("text", 16, "bold"),
             fg_color=THEME.bg_card,
@@ -1739,7 +1739,7 @@ class TranslatorApp(ctk.CTk):
         self.action_btn = ctk.CTkButton(
             self.direction_section,
             text="Translate",
-            width=292,
+            width=372,
             height=48,
             font=get_font("text", 18, "bold"),
             fg_color=THEME.text_primary,  # White button

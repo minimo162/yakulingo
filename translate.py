@@ -1373,10 +1373,14 @@ class CopilotHandler:
             # Attach files via file input (more reliable than clipboard)
             # If both glossary and image, attach them together
             files_to_attach = []
-            if glossary_path and glossary_path.exists():
-                files_to_attach.append(str(glossary_path))
-            if image_path and image_path.exists():
-                files_to_attach.append(str(image_path))
+            if glossary_path:
+                print(f"  Glossary path: {glossary_path} (exists: {glossary_path.exists()})")
+                if glossary_path.exists():
+                    files_to_attach.append(str(glossary_path))
+            if image_path:
+                print(f"  Image path: {image_path} (exists: {image_path.exists()})")
+                if image_path.exists():
+                    files_to_attach.append(str(image_path))
 
             if files_to_attach:
                 self.attach_files(files_to_attach)

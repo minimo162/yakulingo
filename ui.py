@@ -2143,7 +2143,7 @@ class SettingsSheet(ctk.CTkToplevel):
         super().__init__(parent)
 
         self.title("Settings")
-        self.geometry("420x400")
+        self.geometry("450x420")
         self.configure(fg_color=THEME.bg_primary)
         self.resizable(False, False)
 
@@ -2208,7 +2208,7 @@ class SettingsSheet(ctk.CTkToplevel):
             text=self.config.get_glossary_display_name(),
             font=get_font("mono", 15),
             text_color=THEME.accent if self.config.glossary_enabled else THEME.text_tertiary,
-            wraplength=350
+            wraplength=380
         )
         self.glossary_label.pack(anchor="w", pady=(0, THEME.space_sm))
 

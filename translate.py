@@ -1220,6 +1220,8 @@ class UniversalTranslator:
     def open_notepad_with_text(self, original: str, translated: str):
         """Open Notepad and paste the translation result"""
         try:
+            import win32gui
+
             # Format output
             output = f"""=== Original ===
 {original}
@@ -1235,8 +1237,26 @@ class UniversalTranslator:
             notepad_path = os.path.join(local_cwd, "notepad.exe")
             subprocess.Popen([notepad_path], cwd=local_cwd)
 
-            # Wait for Notepad to open
-            time.sleep(0.5)
+            # Wait for Notepad to open and find its window
+            notepad_hwnd = None
+            for _ in range(20):  # Try for up to 2 seconds
+                time.sleep(0.1)
+                def find_notepad(hwnd, hwnds):
+                    if win32gui.IsWindowVisible(hwnd):
+                        title = win32gui.GetWindowText(hwnd)
+                        if "メモ帳" in title or "Notepad" in title or "無題" in title or "Untitled" in title:
+                            hwnds.append(hwnd)
+                    return True
+                hwnds = []
+                win32gui.EnumWindows(find_notepad, hwnds)
+                if hwnds:
+                    notepad_hwnd = hwnds[0]
+                    break
+
+            # Set focus to Notepad and paste
+            if notepad_hwnd:
+                win32gui.SetForegroundWindow(notepad_hwnd)
+                time.sleep(0.2)
 
             # Paste content
             import keyboard

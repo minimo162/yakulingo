@@ -1688,64 +1688,119 @@ class TranslatorApp(ctk.CTk):
         self.footer = ctk.CTkFrame(self.container, fg_color="transparent")
         self.footer.pack(fill="x", side="bottom")
 
-        # Translation mode selector
-        self.mode_frame = ctk.CTkFrame(self.footer, fg_color="transparent")
-        self.mode_frame.pack(fill="x", pady=(0, THEME.space_sm))
-
-        # Mode label - larger and more visible
-        self.mode_label = ctk.CTkLabel(
-            self.mode_frame,
-            text="Direction:",
-            font=get_font("text", 16, "bold"),
-            text_color=THEME.text_primary
+        # === Translation Direction Section (prominent) ===
+        self.direction_section = ctk.CTkFrame(
+            self.footer,
+            fg_color=THEME.bg_elevated,
+            corner_radius=THEME.radius_md
         )
-        self.mode_label.pack(side="left", padx=(0, THEME.space_sm))
-
-        # Mode buttons container
-        self.mode_buttons_frame = ctk.CTkFrame(self.mode_frame, fg_color="transparent")
-        self.mode_buttons_frame.pack(side="left", fill="x", expand=True)
+        self.direction_section.pack(fill="x", pady=(0, THEME.space_md))
 
         # Current mode (only 2 modes now - Excel is auto-detected)
         self.current_mode = "jp_to_en"  # jp_to_en, en_to_jp
 
-        # Mode: Japanese → English
+        # Mode buttons container - centered
+        self.mode_buttons_frame = ctk.CTkFrame(self.direction_section, fg_color="transparent")
+        self.mode_buttons_frame.pack(pady=THEME.space_md)
+
+        # Mode: Japanese → English (larger button)
         self.mode_jp_en_btn = ctk.CTkButton(
             self.mode_buttons_frame,
-            text="JP → EN",
-            width=100,
-            height=36,
-            font=get_font("text", 15, "bold"),
+            text="日本語 → English",
+            width=140,
+            height=44,
+            font=get_font("text", 16, "bold"),
             fg_color=THEME.accent,
             hover_color=THEME.gradient_active[1],
             text_color=THEME.bg_primary,
-            corner_radius=8,
+            corner_radius=10,
             command=lambda: self._set_mode("jp_to_en")
         )
-        self.mode_jp_en_btn.pack(side="left", padx=(0, 8))
+        self.mode_jp_en_btn.pack(side="left", padx=(0, 12))
 
-        # Mode: English → Japanese
+        # Mode: English → Japanese (larger button)
         self.mode_en_jp_btn = ctk.CTkButton(
             self.mode_buttons_frame,
-            text="EN → JP",
-            width=100,
-            height=36,
-            font=get_font("text", 15, "bold"),
-            fg_color=THEME.bg_elevated,
-            hover_color=THEME.bg_card,
-            text_color=THEME.text_primary,
-            corner_radius=8,
+            text="English → 日本語",
+            width=140,
+            height=44,
+            font=get_font("text", 16, "bold"),
+            fg_color=THEME.bg_card,
+            hover_color=THEME.bg_elevated,
+            text_color=THEME.text_secondary,
+            corner_radius=10,
             command=lambda: self._set_mode("en_to_jp")
         )
         self.mode_en_jp_btn.pack(side="left")
 
-        # Hotkey hints - larger and more visible
-        self.hotkey_hint = ctk.CTkLabel(
+        # === Shortcut Keys Section (prominent) ===
+        self.shortcut_section = ctk.CTkFrame(
             self.footer,
-            text="Ctrl+Shift+E = JP→EN  |  Ctrl+Shift+J = EN→JP",
-            font=get_font("text", 14),
-            text_color=THEME.text_primary
+            fg_color=THEME.bg_card,
+            corner_radius=THEME.radius_md
         )
-        self.hotkey_hint.pack(fill="x", pady=(THEME.space_xs, THEME.space_sm))
+        self.shortcut_section.pack(fill="x", pady=(0, THEME.space_md))
+
+        # Shortcuts title
+        self.shortcut_title = ctk.CTkLabel(
+            self.shortcut_section,
+            text="⌨️ Keyboard Shortcuts",
+            font=get_font("text", 13),
+            text_color=THEME.text_secondary
+        )
+        self.shortcut_title.pack(pady=(THEME.space_sm, THEME.space_xs))
+
+        # Shortcuts container
+        self.shortcuts_frame = ctk.CTkFrame(self.shortcut_section, fg_color="transparent")
+        self.shortcuts_frame.pack(pady=(0, THEME.space_sm))
+
+        # Shortcut 1: JP → EN
+        self.shortcut1_frame = ctk.CTkFrame(self.shortcuts_frame, fg_color="transparent")
+        self.shortcut1_frame.pack(side="left", padx=THEME.space_md)
+
+        self.shortcut1_key = ctk.CTkLabel(
+            self.shortcut1_frame,
+            text="Ctrl + Shift + E",
+            font=get_font("text", 14, "bold"),
+            text_color=THEME.accent,
+            fg_color=THEME.bg_elevated,
+            corner_radius=6,
+            padx=8,
+            pady=4
+        )
+        self.shortcut1_key.pack()
+
+        self.shortcut1_desc = ctk.CTkLabel(
+            self.shortcut1_frame,
+            text="日本語→EN",
+            font=get_font("text", 12),
+            text_color=THEME.text_secondary
+        )
+        self.shortcut1_desc.pack(pady=(2, 0))
+
+        # Shortcut 2: EN → JP
+        self.shortcut2_frame = ctk.CTkFrame(self.shortcuts_frame, fg_color="transparent")
+        self.shortcut2_frame.pack(side="left", padx=THEME.space_md)
+
+        self.shortcut2_key = ctk.CTkLabel(
+            self.shortcut2_frame,
+            text="Ctrl + Shift + J",
+            font=get_font("text", 14, "bold"),
+            text_color=THEME.accent_blue,
+            fg_color=THEME.bg_elevated,
+            corner_radius=6,
+            padx=8,
+            pady=4
+        )
+        self.shortcut2_key.pack()
+
+        self.shortcut2_desc = ctk.CTkLabel(
+            self.shortcut2_frame,
+            text="EN→日本語",
+            font=get_font("text", 12),
+            text_color=THEME.text_secondary
+        )
+        self.shortcut2_desc.pack(pady=(2, 0))
 
         # Main action button
         self.action_btn = MinimalButton(
@@ -1766,25 +1821,9 @@ class TranslatorApp(ctk.CTk):
         )
         self.about_btn.pack(fill="x", pady=(THEME.space_sm, 0))
 
-        # === Hero Section (center stage) ===
+        # === Hero Section (center stage) - simplified ===
         self.hero = ctk.CTkFrame(self.container, fg_color="transparent")
         self.hero.pack(fill="both", expand=True)
-
-        # Top spacer
-        ctk.CTkFrame(self.hero, fg_color="transparent", height=10).pack()
-
-        # Progress ring
-        self.progress_ring = SimpleProgressRing(self.hero, size=150)
-        self.progress_ring.pack(pady=THEME.space_sm)
-        
-        # Percentage label inside the ring
-        self.percent_label = ctk.CTkLabel(
-            self.progress_ring,
-            text="",
-            font=get_font("display", 28, "bold"),
-            text_color=THEME.text_primary
-        )
-        self.percent_label.place(relx=0.5, rely=0.5, anchor="center")
 
         # Dummy status_text and subtitle_text for compatibility (not displayed)
         class DummyLabel:
@@ -1794,67 +1833,6 @@ class TranslatorApp(ctk.CTk):
             def stop_animation(self): pass
         self.status_text = DummyLabel()
         self.subtitle_text = DummyLabel()
-
-        # === Stats Card (separate section for reliable display) ===
-        self.stats_section = ctk.CTkFrame(self.container, fg_color="transparent")
-        self.stats_section.pack(fill="x", pady=(THEME.space_xs, THEME.space_sm))
-        
-        self.stats_card = ctk.CTkFrame(
-            self.stats_section, 
-            fg_color="#404050",  # Custom brighter background
-            corner_radius=THEME.radius_md,
-            border_width=2,
-            border_color="#606070",  # Brighter border
-            height=65
-        )
-        self.stats_card.pack(fill="x", padx=THEME.space_lg)
-
-        # Stats content - horizontal layout
-        self.stats_inner = ctk.CTkFrame(self.stats_card, fg_color="transparent")
-        self.stats_inner.place(relx=0.5, rely=0.5, anchor="center")
-
-        # Left stat
-        self.stat_left_value = ctk.CTkLabel(
-            self.stats_inner,
-            text="--",
-            font=get_font("display", 20, "bold"),
-            text_color=THEME.text_primary
-        )
-        self.stat_left_value.pack(side="left", padx=(0, 6))
-
-        self.stat_left_label = ctk.CTkLabel(
-            self.stats_inner,
-            text="Cells",
-            font=get_font("text", 14),
-            text_color=THEME.text_secondary
-        )
-        self.stat_left_label.pack(side="left", padx=(0, THEME.space_lg))
-
-        # Divider
-        self.divider = ctk.CTkLabel(
-            self.stats_inner,
-            text="|",
-            font=get_font("text", 16),
-            text_color=THEME.text_secondary
-        )
-        self.divider.pack(side="left", padx=THEME.space_md)
-
-        # Right stat
-        self.stat_right_value = ctk.CTkLabel(
-            self.stats_inner,
-            text="--",
-            font=get_font("display", 20, "bold"),
-            text_color=THEME.text_primary
-        )
-        self.stat_right_value.pack(side="left", padx=(THEME.space_lg, 6))
-
-        self.stat_right_label = ctk.CTkLabel(
-            self.stats_inner,
-            text="Quality",
-            font=get_font("text", 14),
-            text_color=THEME.text_secondary
-        )
-        self.stat_right_label.pack(side="left")
         
         # Lift container above background canvases
         self.container.tkraise()
@@ -1865,7 +1843,7 @@ class TranslatorApp(ctk.CTk):
 
         # Reset all button styles
         inactive_style = {
-            "fg_color": THEME.bg_elevated,
+            "fg_color": THEME.bg_card,
             "text_color": THEME.text_secondary
         }
         active_style = {
@@ -1945,22 +1923,12 @@ class TranslatorApp(ctk.CTk):
         # Ambient Glow - idle mode
         self.ambient_glow.set_mode("idle")
 
-        self.progress_ring.stop_glow()
-        self.progress_ring.set_progress(0, animate=False)
-        self.percent_label.configure(text="")
-
         # Kinetic Typography - show based on current mode
         self.status_text.set_text("Ready")
         if self.current_mode == "jp_to_en":
             self.subtitle_text.set_text("Japanese → English (Excel auto-detected)")
         else:
             self.subtitle_text.set_text("English → Japanese (Excel auto-detected)")
-
-        self.stat_left_value.configure(text="--")
-        self.stat_right_value.configure(text="--")
-
-        if hasattr(self.stats_card, 'start_breathing'):
-            self.stats_card.start_breathing()
 
         self.action_btn.configure(
             text="Start Translation",
@@ -1972,8 +1940,6 @@ class TranslatorApp(ctk.CTk):
     def show_connecting(self):
         """Connecting state - anticipation"""
         self.is_translating = True
-        if hasattr(self.stats_card, 'stop_breathing'):
-            self.stats_card.stop_breathing()
 
         # Dynamic Island - expand with status
         self.dynamic_island.expand()
@@ -1982,10 +1948,6 @@ class TranslatorApp(ctk.CTk):
 
         # Ambient Glow - active mode (blue)
         self.ambient_glow.set_mode("active")
-
-        self.progress_ring.set_progress(0.05)
-        self.progress_ring.start_glow()
-        self.percent_label.configure(text="")
 
         # Kinetic Typography
         self.status_text.set_text("Connecting")
@@ -2011,16 +1973,9 @@ class TranslatorApp(ctk.CTk):
             progress
         )
 
-        self.progress_ring.set_progress(progress)
-        self.progress_ring.start_glow()
-        self.percent_label.configure(text=f"{percent}%")
-
         # Kinetic Typography - update without animation for smooth progress
         self.status_text.set_text("Translating", animate=False)
         self.subtitle_text.set_text(f"Processing {total} cells...", animate=False)
-
-        self.stat_left_value.configure(text=str(total))
-        self.stat_right_value.configure(text="Working")
 
         self.action_btn.configure(
             text="Cancel",
@@ -2054,11 +2009,6 @@ class TranslatorApp(ctk.CTk):
             text_color=THEME.bg_primary
         )
 
-        # Update stats
-        self.stat_left_value.configure(text=str(count))
-        self.stat_right_value.configure(text=f"{confidence}%")
-        self.percent_label.configure(text="")
-
         # Update text displays
         self.status_text.set_text("Complete")
         self.subtitle_text.set_text(f"{count} cells | {quality_text} ({confidence}%)")
@@ -2071,11 +2021,6 @@ class TranslatorApp(ctk.CTk):
 
             # Ambient Glow - success mode (green)
             self.ambient_glow.set_mode("success")
-
-            # Stop regular glow, start celebration
-            self.progress_ring.stop_glow()
-            self.progress_ring.set_progress(1.0)
-            self.progress_ring.celebrate()  # Checkmark animation
 
             # Particle burst from center (more particles for higher confidence)
             self.particles.tkraise()  # Bring to front
@@ -2114,18 +2059,9 @@ class TranslatorApp(ctk.CTk):
 
         SoundPlayer.play_error()
 
-        self.progress_ring.stop_glow()
-        self.progress_ring.set_progress(0, animate=False)
-        self.percent_label.configure(text="")
-
         # Kinetic Typography
         self.status_text.set_text("Error")
         self.subtitle_text.set_text(message[:50])
-
-        self.stat_right_value.configure(text="--")
-
-        if hasattr(self.stats_card, 'start_breathing'):
-            self.stats_card.start_breathing()
 
         self.action_btn.configure(
             text="Try Again",
@@ -2150,17 +2086,9 @@ class TranslatorApp(ctk.CTk):
         # Ambient Glow - fade out
         self.ambient_glow.fade_out()
 
-        self.progress_ring.stop_glow()
-        self.percent_label.configure(text="")
-
         # Kinetic Typography
         self.status_text.set_text("Cancelled")
         self.subtitle_text.set_text("Translation stopped")
-
-        self.stat_right_value.configure(text="--")
-
-        if hasattr(self.stats_card, 'start_breathing'):
-            self.stats_card.start_breathing()
 
         self.action_btn.configure(
             text="Start Translation",

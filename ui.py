@@ -241,19 +241,19 @@ class SpringButton(ctk.CTkButton):
         )
         self._spring.start(self._scale)
 
-    def _on_enter(self, event):
+    def _on_enter(self, event=None):
         """Mouse enter - scale up with spring"""
         self._animate_to(self.spring_scale, tension=350)
 
-    def _on_leave(self, event):
+    def _on_leave(self, event=None):
         """Mouse leave - scale back"""
         self._animate_to(1.0, tension=300)
 
-    def _on_press(self, event):
+    def _on_press(self, event=None):
         """Mouse press - compress with quick spring"""
         self._animate_to(self.click_scale, tension=500)
 
-    def _on_release(self, event):
+    def _on_release(self, event=None):
         """Mouse release - bounce back"""
         self._animate_to(self.spring_scale, tension=400)
 
@@ -401,16 +401,16 @@ class GlassButton(ctk.CTkButton):
         )
         self._spring.start(self._scale)
 
-    def _on_enter(self, event):
+    def _on_enter(self, event=None):
         self._animate_to(1.03, tension=350)
 
-    def _on_leave(self, event):
+    def _on_leave(self, event=None):
         self._animate_to(1.0, tension=280)
 
-    def _on_press(self, event):
+    def _on_press(self, event=None):
         self._animate_to(0.97, tension=500)
 
-    def _on_release(self, event):
+    def _on_release(self, event=None):
         self._animate_to(1.03, tension=400)
 
 
@@ -1589,19 +1589,19 @@ class MinimalButton(ctk.CTkButton):
         )
         self._spring.start(self._scale)
 
-    def _on_enter(self, event):
+    def _on_enter(self, event=None):
         """Mouse enter - subtle scale up"""
         self._animate_to(1.02, tension=320)
 
-    def _on_leave(self, event):
+    def _on_leave(self, event=None):
         """Mouse leave - return to normal"""
         self._animate_to(1.0, tension=260)
 
-    def _on_press(self, event):
+    def _on_press(self, event=None):
         """Mouse press - compress"""
         self._animate_to(0.96, tension=500)
 
-    def _on_release(self, event):
+    def _on_release(self, event=None):
         """Mouse release - spring back"""
         self._animate_to(1.02, tension=380)
 

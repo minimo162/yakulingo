@@ -59,13 +59,13 @@ class Theme:
     # Gradients (start, end)
     gradient_active: tuple = ("#34c759", "#30d158")
 
-    # Typography - San Francisco inspired
-    font_display: str = "SF Pro Display"
-    font_text: str = "SF Pro Text"
-    font_mono: str = "SF Mono"
+    # Typography - Meiryo UI for Japanese readability
+    font_display: str = "Meiryo UI"
+    font_text: str = "Meiryo UI"
+    font_mono: str = "Consolas"
     # Fallbacks for Windows
-    font_display_win: str = "Segoe UI"
-    font_text_win: str = "Segoe UI"
+    font_display_win: str = "Meiryo UI"
+    font_text_win: str = "Meiryo UI"
 
     # Spacing - 8px grid system
     space_xs: int = 4
@@ -1688,11 +1688,13 @@ class TranslatorApp(ctk.CTk):
         self.footer = ctk.CTkFrame(self.container, fg_color="transparent")
         self.footer.pack(fill="x", side="bottom")
 
-        # === Translation Direction Section (prominent) ===
+        # === Translation Direction Section (prominent with border) ===
         self.direction_section = ctk.CTkFrame(
             self.footer,
-            fg_color=THEME.bg_elevated,
-            corner_radius=THEME.radius_md
+            fg_color=THEME.bg_card,  # Brighter background
+            corner_radius=THEME.radius_md,
+            border_width=1,
+            border_color=THEME.glass_border  # Visible border
         )
         self.direction_section.pack(fill="x", pady=(0, THEME.space_md))
 
@@ -1718,7 +1720,7 @@ class TranslatorApp(ctk.CTk):
         )
         self.mode_jp_en_btn.pack(side="left", padx=(0, 12))
 
-        # Mode: English → Japanese (larger button)
+        # Mode: English → Japanese (larger button) - starts inactive
         self.mode_en_jp_btn = ctk.CTkButton(
             self.mode_buttons_frame,
             text="English → 日本語",
@@ -1727,22 +1729,22 @@ class TranslatorApp(ctk.CTk):
             font=get_font("text", 16, "bold"),
             fg_color=THEME.bg_card,
             hover_color=THEME.bg_elevated,
-            text_color=THEME.text_secondary,
+            text_color=THEME.text_muted,  # More muted for inactive
             corner_radius=10,
             command=lambda: self._set_mode("en_to_jp")
         )
         self.mode_en_jp_btn.pack(side="left")
 
-        # Main action button (directly below direction buttons)
+        # Main action button (directly below direction buttons) - White for visibility
         self.action_btn = ctk.CTkButton(
             self.direction_section,
             text="Translate",
             width=292,
             height=48,
             font=get_font("text", 18, "bold"),
-            fg_color=THEME.accent,
-            hover_color=THEME.gradient_active[1],
-            text_color=THEME.bg_primary,
+            fg_color=THEME.text_primary,  # White button
+            hover_color=THEME.text_secondary,
+            text_color=THEME.bg_primary,  # Dark text on white
             corner_radius=10,
             command=self._on_action
         )
@@ -1847,25 +1849,35 @@ class TranslatorApp(ctk.CTk):
         """Set translation mode (2 modes only - Excel is auto-detected)"""
         self.current_mode = mode
 
-        # Reset all button styles
+        # Reset all button styles - make inactive buttons clearly inactive
         inactive_style = {
             "fg_color": THEME.bg_card,
-            "text_color": THEME.text_secondary
+            "hover_color": THEME.bg_elevated,
+            "text_color": THEME.text_muted
         }
-        active_style = {
+        # Active style - green accent for clear selection
+        active_style_jp = {
             "fg_color": THEME.accent,
+            "hover_color": THEME.gradient_active[1],
             "text_color": THEME.bg_primary
         }
+        # Blue accent for EN→JP
+        active_style_en = {
+            "fg_color": THEME.accent_blue,
+            "hover_color": "#0088ff",
+            "text_color": "#ffffff"
+        }
 
+        # Reset both buttons to inactive first
         self.mode_jp_en_btn.configure(**inactive_style)
         self.mode_en_jp_btn.configure(**inactive_style)
 
         # Highlight active button and update subtitle
         if mode == "jp_to_en":
-            self.mode_jp_en_btn.configure(**active_style)
+            self.mode_jp_en_btn.configure(**active_style_jp)
             self.subtitle_text.set_text("Japanese → English (Excel auto-detected)")
         else:  # en_to_jp
-            self.mode_en_jp_btn.configure(**active_style)
+            self.mode_en_jp_btn.configure(**active_style_en)
             self.subtitle_text.set_text("English → Japanese (Excel auto-detected)")
 
     def _on_action(self):
@@ -1939,7 +1951,8 @@ class TranslatorApp(ctk.CTk):
         self.action_btn.configure(
             text="Translate",
             state="normal",
-            fg_color=THEME.accent,
+            fg_color=THEME.text_primary,  # White button
+            hover_color=THEME.text_secondary,
             text_color=THEME.bg_primary
         )
 
@@ -2028,7 +2041,7 @@ class TranslatorApp(ctk.CTk):
         self.action_btn.configure(
             text="Translate",
             state="normal",
-            fg_color=THEME.accent,
+            fg_color=THEME.text_primary,  # White button
             text_color=THEME.bg_primary
         )
 
@@ -2091,7 +2104,7 @@ class TranslatorApp(ctk.CTk):
         self.action_btn.configure(
             text="Translate",
             state="normal",
-            fg_color=THEME.accent,
+            fg_color=THEME.text_primary,  # White button
             text_color=THEME.bg_primary
         )
 
@@ -2121,7 +2134,7 @@ class TranslatorApp(ctk.CTk):
         self.action_btn.configure(
             text="Translate",
             state="normal",
-            fg_color=THEME.accent,
+            fg_color=THEME.text_primary,  # White button
             text_color=THEME.bg_primary
         )
 

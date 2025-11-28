@@ -557,7 +557,6 @@ class TranslationEngine:
         self,
         prompt_header: str,
         japanese_cells: list[dict],
-        screenshot_path: Path = None,
         glossary_path: Path = None,
     ) -> TranslationResult:
         """
@@ -589,12 +588,10 @@ class TranslationEngine:
             # Build prompt
             prompt = self._build_retry_prompt(prompt_header, remaining_cells, attempt)
 
-            # Send to Copilot
-            use_screenshot = screenshot_path and attempt == 0  # Only use screenshot on first try
-            use_glossary = glossary_path and attempt == 0  # Only attach glossary on first try
+            # Send to Copilot (glossary only on first try)
+            use_glossary = glossary_path and attempt == 0
             if not self.copilot.send_prompt(
                 prompt,
-                image_path=screenshot_path if use_screenshot else None,
                 glossary_path=glossary_path if use_glossary else None,
             ):
                 return TranslationResult(
@@ -1365,25 +1362,18 @@ class CopilotHandler:
             return False
 
     def send_prompt(self, prompt: str, image_path: Optional[Path] = None, glossary_path: Optional[Path] = None) -> bool:
-        """Send prompt with optional file attachments (image, glossary)"""
+        """Send prompt with optional file attachment (image OR glossary, not both)"""
         try:
             # Bring browser to front so user can see progress (restore if minimized)
             bring_edge_translator_to_front()
 
-            # Attach files via file input (more reliable than clipboard)
-            # If both glossary and image, attach them together
-            files_to_attach = []
-            if glossary_path:
-                print(f"  Glossary path: {glossary_path} (exists: {glossary_path.exists()})")
-                if glossary_path.exists():
-                    files_to_attach.append(str(glossary_path))
-            if image_path:
-                print(f"  Image path: {image_path} (exists: {image_path.exists()})")
-                if image_path.exists():
-                    files_to_attach.append(str(image_path))
-
-            if files_to_attach:
-                self.attach_files(files_to_attach)
+            # Attach file if provided (image OR glossary - Copilot can't handle both)
+            if glossary_path and glossary_path.exists():
+                print(f"  Attaching glossary: {glossary_path}")
+                self.attach_file(glossary_path)
+            elif image_path and image_path.exists():
+                print(f"  Attaching image: {image_path}")
+                self.attach_file(image_path)
 
             # Type prompt text
             self.page.click(CONFIG.selector_input)
@@ -2137,10 +2127,7 @@ class TranslatorController:
                 self.excel.cleanup()
                 return
 
-            # Step 4: Capture screenshot for context
-            screenshot_path = self.excel.capture_selection_screenshot()
-
-            # Step 5: Get or launch Copilot (reuse existing connection)
+            # Step 4: Get or launch Copilot (reuse existing connection)
             already_connected = SharedCopilotManager.is_connected()
 
             # Progress callback for connection status
@@ -2189,7 +2176,6 @@ class TranslatorController:
             result = engine.translate(
                 prompt_header=prompt_header,
                 japanese_cells=japanese_cells,
-                screenshot_path=screenshot_path,
                 glossary_path=glossary_path,
             )
 
@@ -2383,12 +2369,8 @@ def main_cli():
         return
     print(f"  Japanese cells: {len(japanese_cells)}")
 
-    # Step 4: Capture screenshot
-    print("\n[4/5] Capturing screenshot...")
-    screenshot_path = excel.capture_selection_screenshot()
-
-    # Step 5: Launch Copilot and translate
-    print("\n[5/5] Launching Copilot...")
+    # Step 4: Launch Copilot and translate
+    print("\n[4/5] Launching Copilot...")
     copilot = CopilotHandler()
     if not copilot.launch():
         excel.cleanup()
@@ -2398,7 +2380,7 @@ def main_cli():
     cells_tsv = format_cells_for_copilot(japanese_cells)
     full_prompt = f"{prompt_header}\n{cells_tsv}"
 
-    if not copilot.send_prompt(full_prompt, image_path=screenshot_path):
+    if not copilot.send_prompt(full_prompt):
         show_message("Error", "Failed to send prompt.", "error")
         copilot.close()
         excel.cleanup()

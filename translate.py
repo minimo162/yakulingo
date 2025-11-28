@@ -1226,6 +1226,25 @@ class CopilotHandler:
 
             self.page.wait_for_selector(CONFIG.selector_send, state="visible", timeout=5000)
             self.page.click(CONFIG.selector_send)
+
+            # Wait for browser to stabilize after send, then scroll to bottom
+            time.sleep(1.5)
+            try:
+                # Scroll chat container to bottom to see response
+                self.page.evaluate("""
+                    () => {
+                        const chatContainer = document.querySelector('[class*="chat"]') ||
+                                            document.querySelector('[class*="conversation"]') ||
+                                            document.querySelector('main');
+                        if (chatContainer) {
+                            chatContainer.scrollTop = chatContainer.scrollHeight;
+                        }
+                        window.scrollTo(0, document.body.scrollHeight);
+                    }
+                """)
+            except Exception:
+                pass  # Scroll is nice-to-have, not critical
+
             return True
         except Exception as e:
             print(f"Send error: {e}")
@@ -1531,8 +1550,8 @@ class UniversalTranslator:
             import win32gui
             import win32con
             import win32clipboard
-            import keyboard
             import win32process
+            import win32api
 
             # Format output
             output = f"""=== Original ===
@@ -1586,32 +1605,20 @@ class UniversalTranslator:
                 print("  Warning: Failed to find new Notepad window")
                 return
 
-            # Activate Notepad window and paste
+            # Activate Notepad window and paste using WM_PASTE
             for attempt in range(10):  # Try up to 10 times
                 try:
                     # Restore if minimized
                     if win32gui.IsIconic(notepad_hwnd):
                         win32gui.ShowWindow(notepad_hwnd, win32con.SW_RESTORE)
-                        time.sleep(0.2)
+                        time.sleep(0.3)
 
                     # Bring to front and activate
                     win32gui.ShowWindow(notepad_hwnd, win32con.SW_SHOW)
-
-                    # Use Alt key trick to allow SetForegroundWindow
-                    keyboard.press('alt')
-                    time.sleep(0.05)
                     win32gui.SetForegroundWindow(notepad_hwnd)
-                    keyboard.release('alt')
-                    time.sleep(0.3)
+                    time.sleep(0.5)
 
-                    # Verify Notepad is in foreground
-                    current_fg = win32gui.GetForegroundWindow()
-                    if current_fg != notepad_hwnd:
-                        print(f"  Notepad not in foreground (attempt {attempt + 1}), retrying...")
-                        time.sleep(0.3)
-                        continue
-
-                    # Notepad is active - NOW copy to clipboard and paste immediately
+                    # Copy to clipboard
                     win32clipboard.OpenClipboard()
                     try:
                         win32clipboard.EmptyClipboard()
@@ -1619,13 +1626,41 @@ class UniversalTranslator:
                     finally:
                         win32clipboard.CloseClipboard()
 
-                    # Paste immediately after copying
-                    time.sleep(0.1)
-                    keyboard.send('ctrl+v')
-                    time.sleep(0.3)
+                    time.sleep(0.2)
 
-                    print("  Translation pasted to Notepad")
-                    break
+                    # Find edit control and send WM_PASTE directly
+                    edit_hwnd = None
+                    for class_name in ["Edit", "RichEditD2DPT", "RichEdit20W", "RICHEDIT50W"]:
+                        edit_hwnd = win32gui.FindWindowEx(notepad_hwnd, None, class_name, None)
+                        if edit_hwnd:
+                            break
+
+                    # If no edit control found, try to find any child window
+                    if not edit_hwnd:
+                        def find_edit_child(hwnd, result):
+                            class_name = win32gui.GetClassName(hwnd)
+                            if "Edit" in class_name or "RichEdit" in class_name:
+                                result.append(hwnd)
+                            return True
+                        child_result = []
+                        win32gui.EnumChildWindows(notepad_hwnd, find_edit_child, child_result)
+                        if child_result:
+                            edit_hwnd = child_result[0]
+
+                    if edit_hwnd:
+                        # Send WM_PASTE message directly to edit control
+                        WM_PASTE = 0x0302
+                        win32api.SendMessage(edit_hwnd, WM_PASTE, 0, 0)
+                        time.sleep(0.3)
+                        print("  Translation pasted to Notepad (WM_PASTE)")
+                        break
+                    else:
+                        # Fallback: use keyboard
+                        import keyboard
+                        keyboard.send('ctrl+v')
+                        time.sleep(0.3)
+                        print("  Translation pasted to Notepad (keyboard)")
+                        break
 
                 except Exception as e:
                     print(f"  Paste attempt {attempt + 1} failed: {e}")
@@ -1721,8 +1756,9 @@ def open_notepad_with_excel_log(translation_pairs: list, direction: str = "JP â†
         import win32gui
         import win32con
         import win32clipboard
-        import keyboard
         import win32process
+        import win32api
+        import ctypes
 
         # Format output with both original and translated text
         lines = [f"=== Excel Translation Log ({direction}) ===", ""]
@@ -1780,32 +1816,20 @@ def open_notepad_with_excel_log(translation_pairs: list, direction: str = "JP â†
             print("  Warning: Could not find new Notepad window")
             return
 
-        # Activate Notepad window and paste
+        # Activate Notepad window and paste using WM_PASTE
         for attempt in range(10):  # Try up to 10 times
             try:
                 # Restore if minimized
                 if win32gui.IsIconic(notepad_hwnd):
                     win32gui.ShowWindow(notepad_hwnd, win32con.SW_RESTORE)
-                    time.sleep(0.2)
+                    time.sleep(0.3)
 
                 # Bring to front and activate
                 win32gui.ShowWindow(notepad_hwnd, win32con.SW_SHOW)
-
-                # Use Alt key trick to allow SetForegroundWindow
-                keyboard.press('alt')
-                time.sleep(0.05)
                 win32gui.SetForegroundWindow(notepad_hwnd)
-                keyboard.release('alt')
-                time.sleep(0.3)
+                time.sleep(0.5)
 
-                # Verify Notepad is in foreground
-                current_fg = win32gui.GetForegroundWindow()
-                if current_fg != notepad_hwnd:
-                    print(f"  Notepad not in foreground (attempt {attempt + 1}), retrying...")
-                    time.sleep(0.3)
-                    continue
-
-                # Notepad is active - NOW copy to clipboard and paste immediately
+                # Copy to clipboard
                 win32clipboard.OpenClipboard()
                 try:
                     win32clipboard.EmptyClipboard()
@@ -1813,13 +1837,41 @@ def open_notepad_with_excel_log(translation_pairs: list, direction: str = "JP â†
                 finally:
                     win32clipboard.CloseClipboard()
 
-                # Paste immediately after copying
-                time.sleep(0.1)
-                keyboard.send('ctrl+v')
-                time.sleep(0.3)
+                time.sleep(0.2)
 
-                print("  Translation log pasted to Notepad")
-                break
+                # Find edit control and send WM_PASTE directly
+                edit_hwnd = None
+                for class_name in ["Edit", "RichEditD2DPT", "RichEdit20W", "RICHEDIT50W"]:
+                    edit_hwnd = win32gui.FindWindowEx(notepad_hwnd, None, class_name, None)
+                    if edit_hwnd:
+                        break
+
+                # If no edit control found, try to find any child window
+                if not edit_hwnd:
+                    def find_edit_child(hwnd, result):
+                        class_name = win32gui.GetClassName(hwnd)
+                        if "Edit" in class_name or "RichEdit" in class_name:
+                            result.append(hwnd)
+                        return True
+                    child_result = []
+                    win32gui.EnumChildWindows(notepad_hwnd, find_edit_child, child_result)
+                    if child_result:
+                        edit_hwnd = child_result[0]
+
+                if edit_hwnd:
+                    # Send WM_PASTE message directly to edit control
+                    WM_PASTE = 0x0302
+                    win32api.SendMessage(edit_hwnd, WM_PASTE, 0, 0)
+                    time.sleep(0.3)
+                    print("  Translation log pasted to Notepad (WM_PASTE)")
+                    break
+                else:
+                    # Fallback: use keyboard
+                    import keyboard
+                    keyboard.send('ctrl+v')
+                    time.sleep(0.3)
+                    print("  Translation log pasted to Notepad (keyboard)")
+                    break
 
             except Exception as e:
                 print(f"  Paste attempt {attempt + 1} failed: {e}")

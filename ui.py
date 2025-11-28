@@ -2055,9 +2055,8 @@ class TranslatorApp(ctk.CTk):
             # Compact Dynamic Island after celebration
             self.after(2000, self.dynamic_island.compact)
 
-            # Show results dialog after celebration
-            if translation_pairs:
-                self.after(800, lambda: ResultsSheet(self, translation_pairs, confidence))
+            # Keep UI visible (don't show ResultsSheet dialog for Excel - use Notepad instead)
+            # Translation log is now shown in Notepad by TranslatorController
 
         except Exception as e:
             print(f"Animation error (non-critical): {e}")

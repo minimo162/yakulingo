@@ -13,6 +13,7 @@ Features:
 """
 
 import customtkinter as ctk
+import tkinter as tk
 import math
 import random
 import time
@@ -1596,7 +1597,7 @@ class TranslatorApp(ctk.CTk):
         # === Particle System (top layer for celebrations) ===
         self.particles = ParticleSystem(self)
         self.particles.place(x=0, y=0, relwidth=1, relheight=1)
-        self.particles.lower()  # Below UI but above aurora
+        tk.Misc.lower(self.particles)  # Below UI but above aurora
 
         # Main container
         self.container = ctk.CTkFrame(self, fg_color="transparent")

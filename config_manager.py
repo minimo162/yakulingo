@@ -135,12 +135,33 @@ class ConfigManager:
         self.save()
         self._update_startup_shortcut(enabled)
 
+    def _get_startup_shortcut_path(self) -> Path:
+        """Get the path to the startup shortcut"""
+        import os
+        startup_folder = Path(os.environ['APPDATA']) / 'Microsoft' / 'Windows' / 'Start Menu' / 'Programs' / 'Startup'
+        return startup_folder / 'ExcelTranslator.lnk'
+
+    def _get_shortcut_target(self, shortcut_path: Path) -> Optional[str]:
+        """Read the target path from an existing shortcut"""
+        try:
+            import subprocess
+            ps_script = f'''
+$WshShell = New-Object -ComObject WScript.Shell
+$Shortcut = $WshShell.CreateShortcut("{shortcut_path}")
+Write-Output $Shortcut.TargetPath
+'''
+            result = subprocess.run(['powershell', '-Command', ps_script],
+                                  capture_output=True, text=True, creationflags=0x08000000)
+            if result.returncode == 0:
+                return result.stdout.strip()
+        except Exception:
+            pass
+        return None
+
     def _update_startup_shortcut(self, enabled: bool):
         """Create or remove startup shortcut"""
         try:
-            import os
-            startup_folder = Path(os.environ['APPDATA']) / 'Microsoft' / 'Windows' / 'Start Menu' / 'Programs' / 'Startup'
-            shortcut_path = startup_folder / 'ExcelTranslator.lnk'
+            shortcut_path = self._get_startup_shortcut_path()
 
             if enabled:
                 # Create shortcut using PowerShell
@@ -166,6 +187,38 @@ $Shortcut.Save()
                     print(f"  Startup shortcut removed")
         except Exception as e:
             print(f"  Warning: Could not update startup shortcut: {e}")
+
+    def verify_startup_shortcut(self):
+        """
+        Verify and update startup shortcut if needed.
+        Called at app startup to ensure shortcut points to current app location.
+        """
+        if not self.auto_start:
+            return
+
+        try:
+            shortcut_path = self._get_startup_shortcut_path()
+            app_dir = Path(__file__).parent
+            run_bat = app_dir / 'run.bat'
+
+            if not run_bat.exists():
+                return
+
+            current_target = str(run_bat)
+
+            if shortcut_path.exists():
+                # Check if shortcut points to correct location
+                existing_target = self._get_shortcut_target(shortcut_path)
+                if existing_target and existing_target != current_target:
+                    print(f"  Startup shortcut points to old location: {existing_target}")
+                    print(f"  Updating to current location: {current_target}")
+                    self._update_startup_shortcut(True)
+            else:
+                # Shortcut doesn't exist but auto_start is enabled - create it
+                print(f"  Auto-start enabled but shortcut missing, creating...")
+                self._update_startup_shortcut(True)
+        except Exception as e:
+            print(f"  Warning: Could not verify startup shortcut: {e}")
 
     def _load_glossary(self) -> List[Tuple[str, str]]:
         """Load glossary terms from CSV file"""

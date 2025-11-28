@@ -2204,6 +2204,9 @@ def main():
     # Load configuration
     config = get_config()
 
+    # Verify startup shortcut points to current app location (if auto-start is enabled)
+    config.verify_startup_shortcut()
+
     # Configure appearance
     ctk.set_appearance_mode("dark")
     ctk.set_default_color_theme("dark-blue")

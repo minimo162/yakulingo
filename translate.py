@@ -1791,7 +1791,10 @@ class UniversalTranslator:
 
         # Get glossary file path
         from config_manager import get_config
-        glossary_path = get_config().get_glossary_file_path()
+        config = get_config()
+        glossary_path = config.get_glossary_file_path()
+        print(f"  [DEBUG] glossary_enabled: {config.glossary_enabled}")
+        print(f"  [DEBUG] glossary_path: {glossary_path}")
 
         # Build full prompt
         full_prompt = f"{prompt_header}\n{text}"

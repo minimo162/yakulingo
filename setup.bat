@@ -10,10 +10,9 @@ echo.
 cd /d "%~dp0"
 
 :: ============================================================
-:: Proxy Settings (配布者が事前に設定)
+:: Proxy Settings (Pre-configured by distributor)
 :: ============================================================
-:: 自動検出できない場合は、以下にプロキシサーバーを記入してください
-:: set PROXY_SERVER=proxy.yourcompany.co.jp:8080
+set PROXY_SERVER=136.131.63.233:8082
 :: ============================================================
 
 set UV_CACHE_DIR=.uv-cache
@@ -44,37 +43,45 @@ if defined PROXY_SERVER (
 if not exist "uv.exe" (
     echo.
     echo [1/4] Downloading uv...
+    echo [INFO] Proxy server: !PROXY_SERVER!
 
-    :: Try with Windows authentication first
+    :: Step 1a: Try with Windows authentication first
+    echo [INFO] Trying Windows authentication...
     powershell -ExecutionPolicy Bypass -Command ^
         "$ProgressPreference = 'SilentlyContinue'; " ^
-        "$proxy = [System.Net.WebRequest]::GetSystemWebProxy(); " ^
-        "$proxy.Credentials = [System.Net.CredentialCache]::DefaultCredentials; " ^
+        "$proxy = New-Object System.Net.WebProxy('http://!PROXY_SERVER!'); " ^
+        "$proxy.Credentials = [System.Net.CredentialCache]::DefaultNetworkCredentials; " ^
         "[System.Net.WebRequest]::DefaultWebProxy = $proxy; " ^
         "$url = 'https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-pc-windows-msvc.zip'; " ^
         "try { " ^
-        "    Invoke-WebRequest -Uri $url -OutFile 'uv.zip' -UseDefaultCredentials -UseBasicParsing; " ^
+        "    Invoke-WebRequest -Uri $url -OutFile 'uv.zip' -UseBasicParsing -TimeoutSec 30; " ^
+        "    Expand-Archive -Path 'uv.zip' -DestinationPath '.' -Force; " ^
+        "    Remove-Item 'uv.zip'; " ^
         "} catch { " ^
-        "    Invoke-WebRequest -Uri $url -OutFile 'uv.zip' -UseBasicParsing; " ^
-        "} " ^
-        "Expand-Archive -Path 'uv.zip' -DestinationPath '.' -Force; " ^
-        "Remove-Item 'uv.zip'" 2>nul
+        "    exit 1; " ^
+        "}" 2>nul
 
-    if not exist "uv.exe" (
-        if defined PROXY_SERVER (
-            echo [WARN] Download failed. Proxy authentication may be required.
-            call :prompt_proxy_credentials
-            if defined HTTP_PROXY (
-                echo [INFO] Retrying with authentication...
-                powershell -ExecutionPolicy Bypass -Command ^
-                    "$ProgressPreference = 'SilentlyContinue'; " ^
-                    "Invoke-WebRequest -Uri 'https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-pc-windows-msvc.zip' -OutFile 'uv.zip' -Proxy '!HTTP_PROXY!' -UseBasicParsing; " ^
-                    "Expand-Archive -Path 'uv.zip' -DestinationPath '.' -Force; " ^
-                    "Remove-Item 'uv.zip'"
+    if exist "uv.exe" (
+        echo [OK] Windows authentication successful.
+    ) else (
+        echo [WARN] Windows authentication failed.
+
+        :: Step 1b: Prompt for manual credentials as last resort
+        echo [INFO] Requesting manual credentials...
+        call :prompt_proxy_credentials
+        if defined PROXY_USER (
+            echo [INFO] Retrying with manual credentials...
+            powershell -ExecutionPolicy Bypass -Command ^
+                "$ProgressPreference = 'SilentlyContinue'; " ^
+                "Invoke-WebRequest -Uri 'https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-pc-windows-msvc.zip' -OutFile 'uv.zip' -Proxy '!HTTP_PROXY!' -UseBasicParsing -TimeoutSec 60; " ^
+                "Expand-Archive -Path 'uv.zip' -DestinationPath '.' -Force; " ^
+                "Remove-Item 'uv.zip'"
+
+            if exist "uv.exe" (
+                echo [OK] Manual authentication successful.
+            ) else (
+                echo [ERROR] Manual authentication failed.
             )
-        ) else (
-            echo [ERROR] Download failed. No proxy detected.
-            echo Please check your internet connection.
         )
     )
 

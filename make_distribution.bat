@@ -128,7 +128,7 @@ echo [INFO] Creating distribution archive...
 
 :: Build list of existing files
 set "FILE_LIST="
-for %%f in (".venv" ".uv-python" ".playwright-browsers" "translate.py" "ui.py" "config_manager.py" "pyproject.toml" "uv.lock" "★run.bat" "README.md" "DISTRIBUTION.md") do (
+for %%f in (".venv" ".uv-python" ".playwright-browsers" "translate.py" "ui.py" "config_manager.py" "system_tray.py" "prompt.txt" "prompt_jp_to_en.txt" "prompt_en_to_jp.txt" "prompt_excel_en_to_jp.txt" "pyproject.toml" "uv.lock" "★run.bat" "README.md" "DISTRIBUTION.md") do (
     if exist "%%~f" set "FILE_LIST=!FILE_LIST! %%~f"
 )
 

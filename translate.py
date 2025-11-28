@@ -1634,6 +1634,7 @@ class UniversalTranslator:
             new_pid = proc.pid
 
             # Wait for NEW Notepad window (not in existing list)
+            # Note: Windows 11 Notepad may spawn with different PID, so we just check it's not existing
             notepad_hwnd = None
             for _ in range(50):  # Try for up to 5 seconds
                 time.sleep(0.1)
@@ -1641,16 +1642,9 @@ class UniversalTranslator:
                     if win32gui.IsWindowVisible(hwnd):
                         title = win32gui.GetWindowText(hwnd)
                         if "メモ帳" in title or "Notepad" in title or "無題" in title or "Untitled" in title:
-                            # Check if this is NOT an existing window
+                            # Accept any Notepad window NOT in existing list
                             if hwnd not in existing_notepad_hwnds:
-                                # Verify it's our process
-                                try:
-                                    _, pid = win32process.GetWindowThreadProcessId(hwnd)
-                                    if pid == new_pid:
-                                        result.append(hwnd)
-                                except Exception:
-                                    # If can't get PID, still use it if not in existing
-                                    result.append(hwnd)
+                                result.append(hwnd)
                     return True
                 result = []
                 win32gui.EnumWindows(find_new_notepad, result)
@@ -1846,16 +1840,9 @@ def open_notepad_with_excel_log(translation_pairs: list, direction: str = "JP �
                 if win32gui.IsWindowVisible(hwnd):
                     title = win32gui.GetWindowText(hwnd)
                     if "メモ帳" in title or "Notepad" in title or "無題" in title or "Untitled" in title:
-                        # Check if this is NOT an existing window
+                        # Accept any Notepad window NOT in existing list
                         if hwnd not in existing_notepad_hwnds:
-                            # Verify it's our process
-                            try:
-                                _, pid = win32process.GetWindowThreadProcessId(hwnd)
-                                if pid == new_pid:
-                                    result.append(hwnd)
-                            except Exception:
-                                # If can't get PID, still use it if not in existing
-                                result.append(hwnd)
+                            result.append(hwnd)
                 return True
             result = []
             win32gui.EnumWindows(find_new_notepad, result)

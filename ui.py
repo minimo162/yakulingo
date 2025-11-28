@@ -1996,8 +1996,9 @@ class TranslatorApp(ctk.CTk):
         """Translation in progress - focused energy"""
         self.is_translating = True
 
-        # Remove always-on-top (connection complete)
-        self.attributes("-topmost", False)
+        # Keep UI on top during translation for visibility
+        self.attributes("-topmost", True)
+        self.lift()
 
         progress = current / total if total > 0 else 0
         percent = int(progress * 100)
@@ -2026,6 +2027,9 @@ class TranslatorApp(ctk.CTk):
         self.is_translating = False
         self.cancel_requested = False
         self.last_translation_pairs = translation_pairs
+
+        # Remove always-on-top after translation completes
+        self.attributes("-topmost", False)
 
         # Quality text calculation
         if confidence >= 95:

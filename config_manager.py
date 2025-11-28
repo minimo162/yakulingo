@@ -22,6 +22,7 @@ class SystemTrayConfig:
     """System tray configuration"""
     minimize_to_tray: bool = True
     start_minimized: bool = False
+    auto_start: bool = False  # Start with Windows
 
 
 @dataclass
@@ -123,6 +124,48 @@ class ConfigManager:
     @property
     def start_minimized(self) -> bool:
         return self.config.system_tray.start_minimized
+
+    @property
+    def auto_start(self) -> bool:
+        return self.config.system_tray.auto_start
+
+    def set_auto_start(self, enabled: bool):
+        """Enable or disable auto-start with Windows"""
+        self.config.system_tray.auto_start = enabled
+        self.save()
+        self._update_startup_shortcut(enabled)
+
+    def _update_startup_shortcut(self, enabled: bool):
+        """Create or remove startup shortcut"""
+        try:
+            import os
+            startup_folder = Path(os.environ['APPDATA']) / 'Microsoft' / 'Windows' / 'Start Menu' / 'Programs' / 'Startup'
+            shortcut_path = startup_folder / 'ExcelTranslator.lnk'
+
+            if enabled:
+                # Create shortcut using PowerShell
+                app_dir = Path(__file__).parent
+                run_bat = app_dir / 'run.bat'
+                if run_bat.exists():
+                    import subprocess
+                    ps_script = f'''
+$WshShell = New-Object -ComObject WScript.Shell
+$Shortcut = $WshShell.CreateShortcut("{shortcut_path}")
+$Shortcut.TargetPath = "{run_bat}"
+$Shortcut.WorkingDirectory = "{app_dir}"
+$Shortcut.WindowStyle = 7
+$Shortcut.Save()
+'''
+                    subprocess.run(['powershell', '-Command', ps_script],
+                                 capture_output=True, creationflags=0x08000000)
+                    print(f"  Startup shortcut created: {shortcut_path}")
+            else:
+                # Remove shortcut
+                if shortcut_path.exists():
+                    shortcut_path.unlink()
+                    print(f"  Startup shortcut removed")
+        except Exception as e:
+            print(f"  Warning: Could not update startup shortcut: {e}")
 
     def _load_glossary(self) -> List[Tuple[str, str]]:
         """Load glossary terms from CSV file"""

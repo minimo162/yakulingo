@@ -2143,7 +2143,7 @@ class SettingsSheet(ctk.CTkToplevel):
         super().__init__(parent)
 
         self.title("Settings")
-        self.geometry("420x450")
+        self.geometry("420x520")
         self.configure(fg_color=THEME.bg_primary)
         self.resizable(False, False)
 
@@ -2282,6 +2282,37 @@ class SettingsSheet(ctk.CTkToplevel):
         )
         clear_btn.pack(side="left")
 
+        # Auto-start settings
+        autostart_frame = GlassCard(container)
+        autostart_frame.pack(fill="x", pady=(THEME.space_md, 0))
+
+        autostart_inner = ctk.CTkFrame(autostart_frame, fg_color="transparent")
+        autostart_inner.pack(fill="x", padx=THEME.space_md, pady=THEME.space_sm)
+
+        autostart_row = ctk.CTkFrame(autostart_inner, fg_color="transparent")
+        autostart_row.pack(fill="x")
+
+        ctk.CTkLabel(
+            autostart_row,
+            text="Start with Windows",
+            font=get_font("text", 14),
+            text_color=THEME.text_primary
+        ).pack(side="left")
+
+        self.autostart_var = ctk.BooleanVar(value=self.config.auto_start)
+        self.autostart_switch = ctk.CTkSwitch(
+            autostart_row,
+            text="",
+            variable=self.autostart_var,
+            onvalue=True,
+            offvalue=False,
+            command=self._toggle_autostart,
+            progress_color=THEME.accent,
+            button_color=THEME.text_secondary,
+            button_hover_color=THEME.text_primary
+        )
+        self.autostart_switch.pack(side="right")
+
         # Done button
         done_btn = MinimalButton(
             container,
@@ -2316,6 +2347,10 @@ class SettingsSheet(ctk.CTkToplevel):
             text=self.config.get_glossary_display_name(),
             text_color=THEME.accent if self.config.glossary_enabled else THEME.text_tertiary
         )
+
+    def _toggle_autostart(self):
+        """Toggle auto-start with Windows"""
+        self.config.set_auto_start(self.autostart_var.get())
 
 
 # =============================================================================

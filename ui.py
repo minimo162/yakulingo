@@ -1959,7 +1959,8 @@ class TranslatorApp(ctk.CTk):
         self.stat_left_value.configure(text="--")
         self.stat_right_value.configure(text="--")
 
-        self.stats_card.start_breathing()
+        if hasattr(self.stats_card, 'start_breathing'):
+            self.stats_card.start_breathing()
 
         self.action_btn.configure(
             text="Start Translation",
@@ -1971,7 +1972,8 @@ class TranslatorApp(ctk.CTk):
     def show_connecting(self):
         """Connecting state - anticipation"""
         self.is_translating = True
-        self.stats_card.stop_breathing()
+        if hasattr(self.stats_card, 'stop_breathing'):
+            self.stats_card.stop_breathing()
 
         # Dynamic Island - expand with status
         self.dynamic_island.expand()
@@ -2111,7 +2113,8 @@ class TranslatorApp(ctk.CTk):
 
         self.stat_right_value.configure(text="--")
 
-        self.stats_card.start_breathing()
+        if hasattr(self.stats_card, 'start_breathing'):
+            self.stats_card.start_breathing()
 
         self.action_btn.configure(
             text="Try Again",
@@ -2145,7 +2148,8 @@ class TranslatorApp(ctk.CTk):
 
         self.stat_right_value.configure(text="--")
 
-        self.stats_card.start_breathing()
+        if hasattr(self.stats_card, 'start_breathing'):
+            self.stats_card.start_breathing()
 
         self.action_btn.configure(
             text="Start Translation",

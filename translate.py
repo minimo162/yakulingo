@@ -1617,13 +1617,15 @@ class UniversalTranslator:
             finally:
                 win32clipboard.CloseClipboard()
 
-            # Get list of existing Notepad windows BEFORE opening new one (by title only)
+            # Get list of ALL existing Notepad windows BEFORE opening new one
+            # Include minimized windows to avoid pasting to wrong window
             existing_notepad_hwnds = set()
             def find_existing_notepad(hwnd, hwnds):
                 try:
-                    if win32gui.IsWindowVisible(hwnd):
+                    # Check all windows (including minimized) to avoid duplicates
+                    if win32gui.IsWindow(hwnd):
                         title = win32gui.GetWindowText(hwnd)
-                        if any(x in title for x in ["メモ帳", "Notepad", "無題", "Untitled"]):
+                        if any(x in title for x in ["メモ帳", "Notepad", "無題", "Untitled", "タイトルなし"]):
                             hwnds.add(hwnd)
                 except Exception:
                     pass
@@ -1647,7 +1649,7 @@ class UniversalTranslator:
                         if not title:
                             return True
                         # Check by title - simple and reliable
-                        if any(x in title for x in ["メモ帳", "Notepad", "無題", "Untitled"]):
+                        if any(x in title for x in ["メモ帳", "Notepad", "無題", "Untitled", "タイトルなし"]):
                             if hwnd not in existing_notepad_hwnds:
                                 result.append(hwnd)
                     except Exception:
@@ -1835,13 +1837,15 @@ def open_notepad_with_excel_log(translation_pairs: list, direction: str = "JP �
         finally:
             win32clipboard.CloseClipboard()
 
-        # Get list of existing Notepad windows BEFORE opening new one (by title only)
+        # Get list of ALL existing Notepad windows BEFORE opening new one
+        # Include minimized windows to avoid pasting to wrong window
         existing_notepad_hwnds = set()
         def find_existing_notepad(hwnd, hwnds):
             try:
-                if win32gui.IsWindowVisible(hwnd):
+                # Check all windows (including minimized) to avoid duplicates
+                if win32gui.IsWindow(hwnd):
                     title = win32gui.GetWindowText(hwnd)
-                    if any(x in title for x in ["メモ帳", "Notepad", "無題", "Untitled"]):
+                    if any(x in title for x in ["メモ帳", "Notepad", "無題", "Untitled", "タイトルなし"]):
                         hwnds.add(hwnd)
             except Exception:
                 pass
@@ -1865,7 +1869,7 @@ def open_notepad_with_excel_log(translation_pairs: list, direction: str = "JP �
                     if not title:
                         return True
                     # Check by title - simple and reliable
-                    if any(x in title for x in ["メモ帳", "Notepad", "無題", "Untitled"]):
+                    if any(x in title for x in ["メモ帳", "Notepad", "無題", "Untitled", "タイトルなし"]):
                         if hwnd not in existing_notepad_hwnds:
                             result.append(hwnd)
                 except Exception:

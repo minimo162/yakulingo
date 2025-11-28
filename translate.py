@@ -2182,8 +2182,30 @@ def main():
     from config_manager import get_config
     from system_tray import SystemTrayManager, setup_minimize_to_tray
 
+    # Prevent multiple instances using Windows mutex
+    import ctypes
+    mutex_name = "ExcelTranslatorMutex_SingleInstance"
+    mutex = ctypes.windll.kernel32.CreateMutexW(None, False, mutex_name)
+    last_error = ctypes.windll.kernel32.GetLastError()
+    ERROR_ALREADY_EXISTS = 183
+    if last_error == ERROR_ALREADY_EXISTS:
+        print("Another instance is already running.")
+        print("Please close the existing instance from the system tray first.")
+        ctypes.windll.kernel32.CloseHandle(mutex)
+        # Show message box to user
+        ctypes.windll.user32.MessageBoxW(
+            0,
+            "Excel Translator is already running.\nCheck the system tray icon.",
+            "Already Running",
+            0x40  # MB_ICONINFORMATION
+        )
+        return
+
     # Load configuration
     config = get_config()
+
+    # Verify startup shortcut points to current app location (if auto-start is enabled)
+    config.verify_startup_shortcut()
 
     # Configure appearance
     ctk.set_appearance_mode("dark")

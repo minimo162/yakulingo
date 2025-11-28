@@ -1526,12 +1526,12 @@ class UniversalTranslator:
             print(f"Copy error: {e}")
 
     def open_notepad_with_text(self, original: str, translated: str):
-        """Open Notepad and paste the translation result with verification"""
+        """Open Notepad and paste the translation result"""
         try:
             import win32gui
             import win32con
             import win32clipboard
-            import ctypes
+            import keyboard
 
             # Format output
             output = f"""=== Original ===
@@ -1540,15 +1540,7 @@ class UniversalTranslator:
 === Translation ({self._get_direction_label()}) ===
 {translated}
 """
-            # Copy to clipboard using win32clipboard directly for reliability
-            win32clipboard.OpenClipboard()
-            try:
-                win32clipboard.EmptyClipboard()
-                win32clipboard.SetClipboardData(win32clipboard.CF_UNICODETEXT, output)
-            finally:
-                win32clipboard.CloseClipboard()
-
-            # Open Notepad
+            # Open Notepad FIRST (before copying to clipboard)
             local_cwd = os.environ.get("SYSTEMROOT", r"C:\Windows")
             notepad_path = os.path.join(local_cwd, "notepad.exe")
             subprocess.Popen([notepad_path], cwd=local_cwd)
@@ -1573,10 +1565,7 @@ class UniversalTranslator:
                 print("  Warning: Failed to find Notepad window")
                 return
 
-            # Activate Notepad window reliably with multiple retries
-            import keyboard
-
-            paste_successful = False
+            # Activate Notepad window and paste
             for attempt in range(10):  # Try up to 10 times
                 try:
                     # Restore if minimized
@@ -1601,48 +1590,26 @@ class UniversalTranslator:
                         time.sleep(0.3)
                         continue
 
-                    # Notepad is active, paste content using Ctrl+V
+                    # Notepad is active - NOW copy to clipboard and paste immediately
+                    win32clipboard.OpenClipboard()
+                    try:
+                        win32clipboard.EmptyClipboard()
+                        win32clipboard.SetClipboardData(win32clipboard.CF_UNICODETEXT, output)
+                    finally:
+                        win32clipboard.CloseClipboard()
+
+                    # Paste immediately after copying
+                    time.sleep(0.1)
                     keyboard.send('ctrl+v')
-                    time.sleep(0.5)
+                    time.sleep(0.3)
 
-                    # Try to verify paste - check multiple edit control class names
-                    # Windows 11 Notepad uses RichEditD2DPT, older versions use Edit
-                    edit_hwnd = None
-                    for class_name in ["Edit", "RichEditD2DPT", "RichEdit20W", "RICHEDIT50W"]:
-                        edit_hwnd = win32gui.FindWindowEx(notepad_hwnd, None, class_name, None)
-                        if edit_hwnd:
-                            break
-
-                    if edit_hwnd:
-                        # Get text length
-                        WM_GETTEXTLENGTH = 0x000E
-                        WM_GETTEXT = 0x000D
-                        text_len = ctypes.windll.user32.SendMessageW(edit_hwnd, WM_GETTEXTLENGTH, 0, 0)
-
-                        if text_len > 10:  # Some text was pasted
-                            paste_successful = True
-                            print("  Translation pasted to Notepad (verified)")
-                            break
-                        else:
-                            # Try pasting again
-                            print(f"  Notepad appears empty (attempt {attempt + 1}), retrying paste...")
-                            keyboard.send('ctrl+v')
-                            time.sleep(0.5)
-                            continue
-                    else:
-                        # Could not find edit control (Windows 11 new Notepad)
-                        # Assume paste worked if we got this far
-                        paste_successful = True
-                        print("  Translation pasted to Notepad (assumed successful)")
-                        break
+                    print("  Translation pasted to Notepad")
+                    break
 
                 except Exception as e:
                     print(f"  Paste attempt {attempt + 1} failed: {e}")
                     time.sleep(0.3)
                     continue
-
-            if not paste_successful:
-                print("  Warning: Could not verify paste. Translation copied to clipboard.")
 
         except Exception as e:
             print(f"  Notepad error: {e}")
@@ -1734,7 +1701,6 @@ def open_notepad_with_excel_log(translation_pairs: list, direction: str = "JP â†
         import win32con
         import win32clipboard
         import keyboard
-        import ctypes
 
         # Format output with both original and translated text
         lines = [f"=== Excel Translation Log ({direction}) ===", ""]
@@ -1747,15 +1713,7 @@ def open_notepad_with_excel_log(translation_pairs: list, direction: str = "JP â†
         lines.append(f"=== {len(translation_pairs)} cells translated ===")
         output = "\n".join(lines)
 
-        # Copy to clipboard using win32clipboard directly for reliability
-        win32clipboard.OpenClipboard()
-        try:
-            win32clipboard.EmptyClipboard()
-            win32clipboard.SetClipboardData(win32clipboard.CF_UNICODETEXT, output)
-        finally:
-            win32clipboard.CloseClipboard()
-
-        # Open Notepad
+        # Open Notepad FIRST (before copying to clipboard)
         local_cwd = os.environ.get("SYSTEMROOT", r"C:\Windows")
         notepad_path = os.path.join(local_cwd, "notepad.exe")
         subprocess.Popen([notepad_path], cwd=local_cwd)
@@ -1780,8 +1738,7 @@ def open_notepad_with_excel_log(translation_pairs: list, direction: str = "JP â†
             print("  Warning: Could not find Notepad window")
             return
 
-        # Activate Notepad window and paste with verification
-        paste_successful = False
+        # Activate Notepad window and paste
         for attempt in range(10):  # Try up to 10 times
             try:
                 # Restore if minimized
@@ -1806,47 +1763,26 @@ def open_notepad_with_excel_log(translation_pairs: list, direction: str = "JP â†
                     time.sleep(0.3)
                     continue
 
-                # Notepad is active, paste content using Ctrl+V
+                # Notepad is active - NOW copy to clipboard and paste immediately
+                win32clipboard.OpenClipboard()
+                try:
+                    win32clipboard.EmptyClipboard()
+                    win32clipboard.SetClipboardData(win32clipboard.CF_UNICODETEXT, output)
+                finally:
+                    win32clipboard.CloseClipboard()
+
+                # Paste immediately after copying
+                time.sleep(0.1)
                 keyboard.send('ctrl+v')
-                time.sleep(0.5)
+                time.sleep(0.3)
 
-                # Try to verify paste - check multiple edit control class names
-                # Windows 11 Notepad uses RichEditD2DPT, older versions use Edit
-                edit_hwnd = None
-                for class_name in ["Edit", "RichEditD2DPT", "RichEdit20W", "RICHEDIT50W"]:
-                    edit_hwnd = win32gui.FindWindowEx(notepad_hwnd, None, class_name, None)
-                    if edit_hwnd:
-                        break
-
-                if edit_hwnd:
-                    # Get text length
-                    WM_GETTEXTLENGTH = 0x000E
-                    text_len = ctypes.windll.user32.SendMessageW(edit_hwnd, WM_GETTEXTLENGTH, 0, 0)
-
-                    if text_len > 10:  # Some text was pasted
-                        paste_successful = True
-                        print("  Translation log pasted to Notepad (verified)")
-                        break
-                    else:
-                        # Try pasting again
-                        print(f"  Notepad appears empty (attempt {attempt + 1}), retrying paste...")
-                        keyboard.send('ctrl+v')
-                        time.sleep(0.5)
-                        continue
-                else:
-                    # Could not find edit control (Windows 11 new Notepad)
-                    # Assume paste worked if we got this far
-                    paste_successful = True
-                    print("  Translation log pasted to Notepad (assumed successful)")
-                    break
+                print("  Translation log pasted to Notepad")
+                break
 
             except Exception as e:
                 print(f"  Paste attempt {attempt + 1} failed: {e}")
                 time.sleep(0.3)
                 continue
-
-        if not paste_successful:
-            print("  Warning: Could not verify paste. Translation log copied to clipboard.")
 
     except Exception as e:
         print(f"  Warning: Notepad log error: {e}")

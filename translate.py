@@ -1137,6 +1137,56 @@ class CopilotHandler:
 
 
 # =============================================================================
+# Shared Copilot Connection Manager
+# =============================================================================
+class SharedCopilotManager:
+    """
+    Manages a shared CopilotHandler instance across translations.
+    Keeps the browser open between translations for faster performance.
+    """
+    _instance: Optional[CopilotHandler] = None
+    _lock = None
+
+    @classmethod
+    def _get_lock(cls):
+        """Lazy initialize the lock (needed for threading)"""
+        if cls._lock is None:
+            import threading
+            cls._lock = threading.Lock()
+        return cls._lock
+
+    @classmethod
+    def get_copilot(cls) -> Optional[CopilotHandler]:
+        """Get the shared CopilotHandler, launching if needed"""
+        with cls._get_lock():
+            if cls._instance is None:
+                cls._instance = CopilotHandler()
+                if not cls._instance.launch():
+                    cls._instance = None
+                    return None
+            return cls._instance
+
+    @classmethod
+    def is_connected(cls) -> bool:
+        """Check if Copilot is already connected"""
+        return cls._instance is not None and cls._instance.page is not None
+
+    @classmethod
+    def new_chat(cls):
+        """Start a new chat in the existing connection"""
+        if cls._instance:
+            cls._instance.new_chat()
+
+    @classmethod
+    def close(cls):
+        """Close the shared Copilot (called on app exit)"""
+        with cls._get_lock():
+            if cls._instance:
+                cls._instance.close()
+                cls._instance = None
+
+
+# =============================================================================
 # Universal Text Translation (Clipboard-based)
 # =============================================================================
 class UniversalTranslator:
@@ -1305,11 +1355,16 @@ class UniversalTranslator:
         # Build full prompt
         full_prompt = f"{prompt_header}\n{text}"
 
-        # Initialize Copilot if needed
+        # Get or launch shared Copilot (reuse existing connection)
+        already_connected = SharedCopilotManager.is_connected()
+        self.copilot = SharedCopilotManager.get_copilot()
         if not self.copilot:
-            self.copilot = CopilotHandler()
-            if not self.copilot.launch():
-                return None
+            return None
+
+        # Start new chat if reusing connection
+        if already_connected:
+            print("  Reusing existing Copilot connection...")
+            SharedCopilotManager.new_chat()
 
         # Send prompt with glossary attachment
         if not self.copilot.send_prompt(full_prompt, glossary_path=glossary_path):
@@ -1323,10 +1378,9 @@ class UniversalTranslator:
         return None
 
     def close(self):
-        """Close Copilot"""
-        if self.copilot:
-            self.copilot.close()
-            self.copilot = None
+        """Don't close shared Copilot - keep connection for next translation"""
+        # Shared Copilot is managed by SharedCopilotManager
+        pass
 
 
 # =============================================================================
@@ -1576,12 +1630,18 @@ class TranslatorController:
             # Step 4: Capture screenshot for context
             screenshot_path = self.excel.capture_selection_screenshot()
 
-            # Step 5: Launch Copilot
-            self.copilot = CopilotHandler()
-            if not self.copilot.launch():
+            # Step 5: Get or launch Copilot (reuse existing connection)
+            already_connected = SharedCopilotManager.is_connected()
+            self.copilot = SharedCopilotManager.get_copilot()
+            if not self.copilot:
                 self._update_ui(self.app.show_error, "Failed to launch browser")
                 self.excel.cleanup()
                 return
+
+            # Start new chat if reusing connection
+            if already_connected:
+                print("  Reusing existing Copilot connection...")
+                SharedCopilotManager.new_chat()
 
             if self.cancel_requested:
                 self._update_ui(self.app.show_cancelled)
@@ -1616,8 +1676,7 @@ class TranslatorController:
                 glossary_path=glossary_path,
             )
 
-            # Close browser
-            self.copilot.close()
+            # Don't close browser - keep connection for next translation
 
             # Handle result based on status
             if result.status == TranslationStatus.FAILED:
@@ -1670,12 +1729,8 @@ class TranslatorController:
             self._cleanup()
 
     def _cleanup(self):
-        """Cleanup resources"""
-        if self.copilot:
-            try:
-                self.copilot.close()
-            except Exception:
-                pass
+        """Cleanup resources (but keep Copilot connection open)"""
+        # Don't close shared Copilot - keep connection for next translation
         if self.excel:
             try:
                 self.excel.cleanup()
@@ -1805,6 +1860,8 @@ def main():
         keyboard.unhook_all()
         if tray_manager:
             tray_manager.stop()
+        # Close shared Copilot connection
+        SharedCopilotManager.close()
 
 
 def main_cli():

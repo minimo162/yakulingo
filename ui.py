@@ -1733,6 +1733,21 @@ class TranslatorApp(ctk.CTk):
         )
         self.mode_en_jp_btn.pack(side="left")
 
+        # Main action button (directly below direction buttons)
+        self.action_btn = ctk.CTkButton(
+            self.direction_section,
+            text="Translate",
+            width=292,
+            height=48,
+            font=get_font("text", 18, "bold"),
+            fg_color=THEME.accent,
+            hover_color=THEME.gradient_active[1],
+            text_color=THEME.bg_primary,
+            corner_radius=10,
+            command=self._on_action
+        )
+        self.action_btn.pack(pady=(0, THEME.space_md))
+
         # === Shortcut Keys Section (prominent) ===
         self.shortcut_section = ctk.CTkFrame(
             self.footer,
@@ -1801,15 +1816,6 @@ class TranslatorApp(ctk.CTk):
             text_color=THEME.text_secondary
         )
         self.shortcut2_desc.pack(pady=(2, 0))
-
-        # Main action button
-        self.action_btn = MinimalButton(
-            self.footer,
-            text="Start Translation",
-            variant="primary",
-            command=self._on_action
-        )
-        self.action_btn.pack(fill="x")
 
         # About link
         self.about_btn = MinimalButton(
@@ -1931,9 +1937,9 @@ class TranslatorApp(ctk.CTk):
             self.subtitle_text.set_text("English → Japanese (Excel auto-detected)")
 
         self.action_btn.configure(
-            text="Start Translation",
+            text="Translate",
             state="normal",
-            fg_color=THEME.text_primary,
+            fg_color=THEME.accent,
             text_color=THEME.bg_primary
         )
 
@@ -2020,7 +2026,7 @@ class TranslatorApp(ctk.CTk):
 
         # Update button state first (critical)
         self.action_btn.configure(
-            text="Translate Again",
+            text="Translate",
             state="normal",
             fg_color=THEME.accent,
             text_color=THEME.bg_primary
@@ -2055,9 +2061,8 @@ class TranslatorApp(ctk.CTk):
             # Compact Dynamic Island after celebration
             self.after(2000, self.dynamic_island.compact)
 
-            # Show results dialog after celebration
-            if translation_pairs:
-                self.after(800, lambda: ResultsSheet(self, translation_pairs, confidence))
+            # Keep UI visible (don't show ResultsSheet dialog for Excel - use Notepad instead)
+            # Translation log is now shown in Notepad by TranslatorController
 
         except Exception as e:
             print(f"Animation error (non-critical): {e}")
@@ -2084,9 +2089,9 @@ class TranslatorApp(ctk.CTk):
         self.subtitle_text.set_text(message[:50])
 
         self.action_btn.configure(
-            text="Try Again",
+            text="Translate",
             state="normal",
-            fg_color=THEME.text_primary,
+            fg_color=THEME.accent,
             text_color=THEME.bg_primary
         )
 
@@ -2114,9 +2119,9 @@ class TranslatorApp(ctk.CTk):
         self.subtitle_text.set_text("Translation stopped")
 
         self.action_btn.configure(
-            text="Start Translation",
+            text="Translate",
             state="normal",
-            fg_color=THEME.text_primary,
+            fg_color=THEME.accent,
             text_color=THEME.bg_primary
         )
 

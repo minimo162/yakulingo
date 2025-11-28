@@ -1481,6 +1481,101 @@ class UniversalTranslator:
         pass
 
 
+def open_notepad_with_excel_log(translation_pairs: list, direction: str = "JP → EN"):
+    """Open Notepad with Excel translation log (original and translated text)
+
+    Args:
+        translation_pairs: List of (original, translated) tuples
+        direction: Translation direction label
+    """
+    try:
+        import win32gui
+        import win32con
+        import win32clipboard
+        import keyboard
+
+        # Format output with both original and translated text
+        lines = [f"=== Excel Translation Log ({direction}) ===", ""]
+        for i, (original, translated) in enumerate(translation_pairs, 1):
+            lines.append(f"[{i}] Original:")
+            lines.append(f"    {original}")
+            lines.append(f"    → {translated}")
+            lines.append("")
+
+        lines.append(f"=== {len(translation_pairs)} cells translated ===")
+        output = "\n".join(lines)
+
+        # Copy to clipboard
+        win32clipboard.OpenClipboard()
+        try:
+            win32clipboard.EmptyClipboard()
+            win32clipboard.SetClipboardData(win32clipboard.CF_UNICODETEXT, output)
+        finally:
+            win32clipboard.CloseClipboard()
+
+        # Open Notepad
+        local_cwd = os.environ.get("SYSTEMROOT", r"C:\Windows")
+        notepad_path = os.path.join(local_cwd, "notepad.exe")
+        subprocess.Popen([notepad_path], cwd=local_cwd)
+
+        # Wait for Notepad to open and find its window
+        notepad_hwnd = None
+        for _ in range(30):  # Try for up to 3 seconds
+            time.sleep(0.1)
+            def find_notepad(hwnd, hwnds):
+                if win32gui.IsWindowVisible(hwnd):
+                    title = win32gui.GetWindowText(hwnd)
+                    if "メモ帳" in title or "Notepad" in title or "無題" in title or "Untitled" in title:
+                        hwnds.append(hwnd)
+                return True
+            hwnds = []
+            win32gui.EnumWindows(find_notepad, hwnds)
+            if hwnds:
+                notepad_hwnd = hwnds[0]
+                break
+
+        if not notepad_hwnd:
+            print("  Warning: Could not find Notepad window")
+            return
+
+        # Activate Notepad window reliably
+        for attempt in range(5):
+            try:
+                if win32gui.IsIconic(notepad_hwnd):
+                    win32gui.ShowWindow(notepad_hwnd, win32con.SW_RESTORE)
+                    time.sleep(0.1)
+
+                win32gui.ShowWindow(notepad_hwnd, win32con.SW_SHOW)
+                win32gui.SetForegroundWindow(notepad_hwnd)
+                time.sleep(0.15)
+
+                current_fg = win32gui.GetForegroundWindow()
+                if current_fg == notepad_hwnd:
+                    break
+
+                keyboard.press('alt')
+                win32gui.SetForegroundWindow(notepad_hwnd)
+                keyboard.release('alt')
+                time.sleep(0.15)
+
+            except Exception:
+                time.sleep(0.1)
+                continue
+
+        # Final wait and paste
+        time.sleep(0.2)
+        current_fg = win32gui.GetForegroundWindow()
+        fg_title = win32gui.GetWindowText(current_fg) if current_fg else ""
+        if "メモ帳" in fg_title or "Notepad" in fg_title or "無題" in fg_title or "Untitled" in fg_title:
+            keyboard.send('ctrl+v')
+            print("  Translation log opened in Notepad")
+        else:
+            print("  Warning: Could not activate Notepad, log copied to clipboard")
+
+    except Exception as e:
+        print(f"  Warning: Notepad log error: {e}")
+
+
 # =============================================================================
 # Universal Translation Controller
 # =============================================================================
@@ -1824,6 +1919,11 @@ class TranslatorController:
 
             # Add quality indicator to completion
             confidence_pct = int(result.confidence * 100)
+
+            # Open Notepad with translation log (original + translated)
+            if translation_pairs:
+                direction = "JP → EN" if self.translation_mode == TranslationMode.EXCEL_JP_TO_EN else "EN → JP"
+                open_notepad_with_excel_log(translation_pairs, direction)
 
             # Show completion with translation log and quality info
             self._update_ui(

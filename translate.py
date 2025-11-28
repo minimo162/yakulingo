@@ -1620,31 +1620,49 @@ class UniversalTranslator:
             # Get list of existing Notepad windows BEFORE opening new one
             existing_notepad_hwnds = set()
             def find_existing_notepad(hwnd, hwnds):
-                if win32gui.IsWindowVisible(hwnd):
+                try:
                     title = win32gui.GetWindowText(hwnd)
-                    if "メモ帳" in title or "Notepad" in title or "無題" in title or "Untitled" in title:
+                    class_name = win32gui.GetClassName(hwnd)
+                    # Check by class name or title
+                    if class_name in ["Notepad", "NOTEPAD", "ApplicationFrameWindow"]:
                         hwnds.add(hwnd)
+                    elif any(x in title for x in ["メモ帳", "Notepad", "無題", "Untitled"]):
+                        hwnds.add(hwnd)
+                except Exception:
+                    pass
                 return True
             win32gui.EnumWindows(find_existing_notepad, existing_notepad_hwnds)
 
             # Open NEW Notepad
             local_cwd = os.environ.get("SYSTEMROOT", r"C:\Windows")
             notepad_path = os.path.join(local_cwd, "notepad.exe")
-            proc = subprocess.Popen([notepad_path], cwd=local_cwd)
-            new_pid = proc.pid
+            subprocess.Popen([notepad_path], cwd=local_cwd)
 
             # Wait for NEW Notepad window (not in existing list)
-            # Note: Windows 11 Notepad may spawn with different PID, so we just check it's not existing
+            # Windows 11 Notepad uses ApplicationFrameWindow class and may take time to appear
             notepad_hwnd = None
-            for _ in range(50):  # Try for up to 5 seconds
+            for _ in range(80):  # Try for up to 8 seconds (Windows 11 Notepad is slow)
                 time.sleep(0.1)
                 def find_new_notepad(hwnd, result):
-                    if win32gui.IsWindowVisible(hwnd):
+                    try:
                         title = win32gui.GetWindowText(hwnd)
-                        if "メモ帳" in title or "Notepad" in title or "無題" in title or "Untitled" in title:
-                            # Accept any Notepad window NOT in existing list
-                            if hwnd not in existing_notepad_hwnds:
+                        class_name = win32gui.GetClassName(hwnd)
+
+                        # Skip existing windows
+                        if hwnd in existing_notepad_hwnds:
+                            return True
+
+                        # Check by class name (classic Notepad)
+                        if class_name in ["Notepad", "NOTEPAD"]:
+                            result.append(hwnd)
+                            return True
+
+                        # Check by title (both classic and Windows 11)
+                        if any(x in title for x in ["メモ帳", "Notepad", "無題", "Untitled"]):
+                            if win32gui.IsWindowVisible(hwnd):
                                 result.append(hwnd)
+                    except Exception:
+                        pass
                     return True
                 result = []
                 win32gui.EnumWindows(find_new_notepad, result)
@@ -1819,30 +1837,49 @@ def open_notepad_with_excel_log(translation_pairs: list, direction: str = "JP �
         # Get list of existing Notepad windows BEFORE opening new one
         existing_notepad_hwnds = set()
         def find_existing_notepad(hwnd, hwnds):
-            if win32gui.IsWindowVisible(hwnd):
+            try:
                 title = win32gui.GetWindowText(hwnd)
-                if "メモ帳" in title or "Notepad" in title or "無題" in title or "Untitled" in title:
+                class_name = win32gui.GetClassName(hwnd)
+                # Check by class name or title
+                if class_name in ["Notepad", "NOTEPAD", "ApplicationFrameWindow"]:
                     hwnds.add(hwnd)
+                elif any(x in title for x in ["メモ帳", "Notepad", "無題", "Untitled"]):
+                    hwnds.add(hwnd)
+            except Exception:
+                pass
             return True
         win32gui.EnumWindows(find_existing_notepad, existing_notepad_hwnds)
 
         # Open NEW Notepad
         local_cwd = os.environ.get("SYSTEMROOT", r"C:\Windows")
         notepad_path = os.path.join(local_cwd, "notepad.exe")
-        proc = subprocess.Popen([notepad_path], cwd=local_cwd)
-        new_pid = proc.pid
+        subprocess.Popen([notepad_path], cwd=local_cwd)
 
         # Wait for NEW Notepad window (not in existing list)
+        # Windows 11 Notepad uses ApplicationFrameWindow class and may take time to appear
         notepad_hwnd = None
-        for _ in range(50):  # Try for up to 5 seconds
+        for _ in range(80):  # Try for up to 8 seconds (Windows 11 Notepad is slow)
             time.sleep(0.1)
             def find_new_notepad(hwnd, result):
-                if win32gui.IsWindowVisible(hwnd):
+                try:
                     title = win32gui.GetWindowText(hwnd)
-                    if "メモ帳" in title or "Notepad" in title or "無題" in title or "Untitled" in title:
-                        # Accept any Notepad window NOT in existing list
-                        if hwnd not in existing_notepad_hwnds:
+                    class_name = win32gui.GetClassName(hwnd)
+
+                    # Skip existing windows
+                    if hwnd in existing_notepad_hwnds:
+                        return True
+
+                    # Check by class name (classic Notepad)
+                    if class_name in ["Notepad", "NOTEPAD"]:
+                        result.append(hwnd)
+                        return True
+
+                    # Check by title (both classic and Windows 11)
+                    if any(x in title for x in ["メモ帳", "Notepad", "無題", "Untitled"]):
+                        if win32gui.IsWindowVisible(hwnd):
                             result.append(hwnd)
+                except Exception:
+                    pass
                 return True
             result = []
             win32gui.EnumWindows(find_new_notepad, result)

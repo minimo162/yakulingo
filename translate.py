@@ -696,64 +696,214 @@ class ExcelHandler:
             return False
     
     def get_selection_info(self) -> dict:
-        """Get selection info"""
+        """Get selection info - supports both cells and shapes"""
         selection = self.app.Selection
         self.original_sheet = self.app.ActiveSheet
-        return {
-            "sheet_name": self.original_sheet.Name,
-            "first_row": selection.Row,
-            "first_col": selection.Column,
-            "last_row": selection.Row + selection.Rows.Count - 1,
-            "last_col": selection.Column + selection.Columns.Count - 1,
-            "rows_count": selection.Rows.Count,
-            "cols_count": selection.Columns.Count,
-        }
+
+        # Check if selection is a shape/drawing object
+        selection_type = "cells"
+        shape_names = []
+
+        try:
+            # Try to access ShapeRange (exists when shapes are selected)
+            shape_range = selection.ShapeRange
+            if shape_range.Count > 0:
+                selection_type = "shapes"
+                for i in range(1, shape_range.Count + 1):
+                    shape_names.append(shape_range.Item(i).Name)
+        except Exception:
+            # Not a shape selection, it's cells
+            pass
+
+        if selection_type == "shapes":
+            return {
+                "sheet_name": self.original_sheet.Name,
+                "selection_type": "shapes",
+                "shape_names": shape_names,
+            }
+        else:
+            return {
+                "sheet_name": self.original_sheet.Name,
+                "selection_type": "cells",
+                "first_row": selection.Row,
+                "first_col": selection.Column,
+                "last_row": selection.Row + selection.Rows.Count - 1,
+                "last_col": selection.Column + selection.Columns.Count - 1,
+                "rows_count": selection.Rows.Count,
+                "cols_count": selection.Columns.Count,
+            }
     
+    def _get_shapes_in_range(self, info: dict) -> list[str]:
+        """Get shape names that fall within the selected cell range"""
+        shapes_in_range = []
+        sheet = self.original_sheet
+
+        try:
+            # Iterate through all shapes on the sheet
+            for i in range(1, sheet.Shapes.Count + 1):
+                try:
+                    shape = sheet.Shapes.Item(i)
+                    # Check if shape has text
+                    if not shape.HasTextFrame:
+                        continue
+
+                    # Get shape's position using TopLeftCell
+                    top_left_cell = shape.TopLeftCell
+                    shape_row = top_left_cell.Row
+                    shape_col = top_left_cell.Column
+
+                    # Check if shape's top-left corner is within the selected range
+                    if (info["first_row"] <= shape_row <= info["last_row"] and
+                        info["first_col"] <= shape_col <= info["last_col"]):
+                        shapes_in_range.append(shape.Name)
+                except Exception:
+                    # Skip shapes that can't be accessed
+                    continue
+        except Exception as e:
+            print(f"  Warning: Could not enumerate shapes: {e}")
+
+        return shapes_in_range
+
     def extract_japanese_cells(self, info: dict) -> list[dict]:
-        """Extract cells containing Japanese"""
+        """Extract cells or shapes containing Japanese"""
         japanese_cells = []
         sheet = self.original_sheet
-        for row in range(info["first_row"], info["last_row"] + 1):
-            for col in range(info["first_col"], info["last_col"] + 1):
-                cell = sheet.Cells(row, col)
-                value = cell.Value
-                if value is None:
-                    continue
-                text = clean_cell_text(str(value))
-                if text and has_japanese(text):
-                    japanese_cells.append({
-                        "row": row, "col": col,
-                        "address": f"R{row}C{col}", "text": text,
-                    })
+
+        if info.get("selection_type") == "shapes":
+            # Extract text from selected shapes
+            for shape_name in info.get("shape_names", []):
+                try:
+                    shape = sheet.Shapes(shape_name)
+                    if shape.HasTextFrame:
+                        text_frame = shape.TextFrame2
+                        if text_frame.HasText:
+                            text = text_frame.TextRange.Text
+                            text = clean_cell_text(str(text))
+                            if text and has_japanese(text):
+                                japanese_cells.append({
+                                    "shape_name": shape_name,
+                                    "address": f"SHAPE:{shape_name}",
+                                    "text": text,
+                                })
+                except Exception as e:
+                    print(f"  Warning: Could not read shape {shape_name}: {e}")
+        else:
+            # Extract text from cells
+            for row in range(info["first_row"], info["last_row"] + 1):
+                for col in range(info["first_col"], info["last_col"] + 1):
+                    cell = sheet.Cells(row, col)
+                    value = cell.Value
+                    if value is None:
+                        continue
+                    text = clean_cell_text(str(value))
+                    if text and has_japanese(text):
+                        japanese_cells.append({
+                            "row": row, "col": col,
+                            "address": f"R{row}C{col}", "text": text,
+                        })
+
+            # Also extract text from shapes within the selected range
+            shapes_in_range = self._get_shapes_in_range(info)
+            for shape_name in shapes_in_range:
+                try:
+                    shape = sheet.Shapes(shape_name)
+                    if shape.HasTextFrame:
+                        text_frame = shape.TextFrame2
+                        if text_frame.HasText:
+                            text = text_frame.TextRange.Text
+                            text = clean_cell_text(str(text))
+                            if text and has_japanese(text):
+                                japanese_cells.append({
+                                    "shape_name": shape_name,
+                                    "address": f"SHAPE:{shape_name}",
+                                    "text": text,
+                                })
+                except Exception as e:
+                    print(f"  Warning: Could not read shape {shape_name}: {e}")
+
         return japanese_cells
 
     def extract_english_cells(self, info: dict) -> list[dict]:
-        """Extract cells containing English (non-Japanese text)"""
+        """Extract cells or shapes containing English (non-Japanese text)"""
         english_cells = []
         sheet = self.original_sheet
-        for row in range(info["first_row"], info["last_row"] + 1):
-            for col in range(info["first_col"], info["last_col"] + 1):
-                cell = sheet.Cells(row, col)
-                value = cell.Value
-                if value is None:
-                    continue
-                text = clean_cell_text(str(value))
-                # Non-empty text that does NOT contain Japanese
-                if text and not has_japanese(text):
-                    english_cells.append({
-                        "row": row, "col": col,
-                        "address": f"R{row}C{col}", "text": text,
-                    })
+
+        if info.get("selection_type") == "shapes":
+            # Extract text from selected shapes
+            for shape_name in info.get("shape_names", []):
+                try:
+                    shape = sheet.Shapes(shape_name)
+                    if shape.HasTextFrame:
+                        text_frame = shape.TextFrame2
+                        if text_frame.HasText:
+                            text = text_frame.TextRange.Text
+                            text = clean_cell_text(str(text))
+                            # Non-empty text that does NOT contain Japanese
+                            if text and not has_japanese(text):
+                                english_cells.append({
+                                    "shape_name": shape_name,
+                                    "address": f"SHAPE:{shape_name}",
+                                    "text": text,
+                                })
+                except Exception as e:
+                    print(f"  Warning: Could not read shape {shape_name}: {e}")
+        else:
+            # Extract text from cells
+            for row in range(info["first_row"], info["last_row"] + 1):
+                for col in range(info["first_col"], info["last_col"] + 1):
+                    cell = sheet.Cells(row, col)
+                    value = cell.Value
+                    if value is None:
+                        continue
+                    text = clean_cell_text(str(value))
+                    # Non-empty text that does NOT contain Japanese
+                    if text and not has_japanese(text):
+                        english_cells.append({
+                            "row": row, "col": col,
+                            "address": f"R{row}C{col}", "text": text,
+                        })
+
+            # Also extract text from shapes within the selected range
+            shapes_in_range = self._get_shapes_in_range(info)
+            for shape_name in shapes_in_range:
+                try:
+                    shape = sheet.Shapes(shape_name)
+                    if shape.HasTextFrame:
+                        text_frame = shape.TextFrame2
+                        if text_frame.HasText:
+                            text = text_frame.TextRange.Text
+                            text = clean_cell_text(str(text))
+                            # Non-empty text that does NOT contain Japanese
+                            if text and not has_japanese(text):
+                                english_cells.append({
+                                    "shape_name": shape_name,
+                                    "address": f"SHAPE:{shape_name}",
+                                    "text": text,
+                                })
+                except Exception as e:
+                    print(f"  Warning: Could not read shape {shape_name}: {e}")
+
         return english_cells
     
     def write_translations(self, translations: dict[str, str], info: dict):
-        """Write translations back to sheet"""
+        """Write translations back to sheet (cells or shapes)"""
         sheet = self.original_sheet
         for address, translated in translations.items():
-            match = re.match(r"R(\d+)C(\d+)", address)
-            if match:
-                row, col = int(match.group(1)), int(match.group(2))
-                sheet.Cells(row, col).Value = translated
+            if address.startswith("SHAPE:"):
+                # Write to shape
+                shape_name = address[6:]  # Remove "SHAPE:" prefix
+                try:
+                    shape = sheet.Shapes(shape_name)
+                    if shape.HasTextFrame:
+                        shape.TextFrame2.TextRange.Text = translated
+                except Exception as e:
+                    print(f"  Warning: Could not write to shape {shape_name}: {e}")
+            else:
+                # Write to cell
+                match = re.match(r"R(\d+)C(\d+)", address)
+                if match:
+                    row, col = int(match.group(1)), int(match.group(2))
+                    sheet.Cells(row, col).Value = translated
 
     def capture_selection_screenshot(self) -> Optional[Path]:
         """Capture screenshot of current selection and save to temp file"""
@@ -1261,6 +1411,67 @@ class UniversalTranslator:
             print(f"Clipboard error: {e}")
         return None
 
+    def get_clipboard_image(self) -> Optional[Path]:
+        """Get image from clipboard and save to temp file"""
+        try:
+            from PIL import ImageGrab
+            import tempfile
+
+            img = ImageGrab.grabclipboard()
+            if img is None:
+                return None
+
+            # Save to temp file
+            temp_dir = Path(tempfile.gettempdir()) / "excel_translator"
+            temp_dir.mkdir(exist_ok=True)
+            image_path = temp_dir / f"clipboard_{int(time.time())}.png"
+            img.save(image_path, "PNG")
+            print(f"  Clipboard image saved: {image_path.name}")
+            return image_path
+        except Exception as e:
+            print(f"Clipboard image error: {e}")
+        return None
+
+    def translate_image(self, image_path: Path, on_progress: Optional[Callable[[int, str], None]] = None) -> Optional[str]:
+        """Translate image using Copilot (OCR + translation)
+
+        Args:
+            image_path: Path to image file
+            on_progress: Optional callback (step, message) for connection progress updates
+        """
+        if not image_path or not image_path.exists():
+            return None
+
+        # Build prompt for image translation
+        if self.mode == TranslationMode.TEXT_JP_TO_EN:
+            prompt = "Please extract any Japanese text from this image and translate it to English. Output only the translation."
+        else:
+            prompt = "Please extract any English text from this image and translate it to Japanese. Output only the translation."
+
+        # Get or launch shared Copilot
+        already_connected = SharedCopilotManager.is_connected()
+        self.copilot = SharedCopilotManager.get_copilot(
+            on_progress=on_progress if not already_connected else None
+        )
+        if not self.copilot:
+            return None
+
+        # Start new chat if reusing connection
+        if already_connected:
+            print("  Reusing existing Copilot connection...")
+            SharedCopilotManager.new_chat()
+
+        # Send prompt with image
+        if not self.copilot.send_prompt(prompt, image_path=image_path):
+            return None
+
+        # Get response
+        response = self.copilot.wait_and_copy_response()
+        if response:
+            return clean_copilot_response(response)
+
+        return None
+
     def set_clipboard_text(self, text: str):
         """Set text to clipboard"""
         try:
@@ -1607,7 +1818,7 @@ class UniversalTranslatorController:
         self.app.after(0, lambda: method(*args, **kwargs))
 
     def _run_clipboard_translation(self, mode: TranslationMode):
-        """Run clipboard translation in background"""
+        """Run clipboard translation in background (text or image)"""
         try:
             # Initialize COM for this thread
             pythoncom.CoInitialize()
@@ -1618,7 +1829,7 @@ class UniversalTranslatorController:
             direction = "JP→EN" if mode == TranslationMode.TEXT_JP_TO_EN else "EN→JP"
             self._update_ui(self.app.show_connecting, 0, "Preparing...")
 
-            # Copy selected text
+            # Copy selected content (text or image)
             self.translator.copy_selected_text()
 
             if self.cancel_requested:
@@ -1627,14 +1838,24 @@ class UniversalTranslatorController:
 
             # Get text from clipboard
             text = self.translator.get_clipboard_text()
-            if not text:
-                self._update_ui(self.app.show_error, "No text in clipboard. Select text first.")
-                return
 
-            # Validate text for translation direction
-            if mode == TranslationMode.TEXT_JP_TO_EN and not has_japanese(text):
-                self._update_ui(self.app.show_error, "Selected text does not contain Japanese.")
-                return
+            # If no text, check for image
+            image_path = None
+            is_image_translation = False
+            if not text:
+                image_path = self.translator.get_clipboard_image()
+                if image_path:
+                    is_image_translation = True
+                    print(f"  Image detected in clipboard, translating image...")
+                else:
+                    self._update_ui(self.app.show_error, "No text or image in clipboard. Select content first.")
+                    return
+
+            # Validate text for translation direction (skip for image)
+            if not is_image_translation:
+                if mode == TranslationMode.TEXT_JP_TO_EN and not has_japanese(text):
+                    self._update_ui(self.app.show_error, "Selected text does not contain Japanese.")
+                    return
 
             if self.cancel_requested:
                 self._update_ui(self.app.show_cancelled)
@@ -1644,8 +1865,13 @@ class UniversalTranslatorController:
             def on_connection_progress(step: int, message: str):
                 self._update_ui(self.app.show_connecting, step, message)
 
-            # Translate (will connect to Copilot if needed)
-            translated = self.translator.translate_text(text, on_progress=on_connection_progress)
+            # Translate (text or image)
+            if is_image_translation:
+                translated = self.translator.translate_image(image_path, on_progress=on_connection_progress)
+                original_display = "[Image]"
+            else:
+                translated = self.translator.translate_text(text, on_progress=on_connection_progress)
+                original_display = text
 
             # Update UI - translating done
             self._update_ui(self.app.show_translating, 1, 1)
@@ -1661,7 +1887,7 @@ class UniversalTranslatorController:
                 return
 
             # Open Notepad with result
-            self.translator.open_notepad_with_text(text, translated)
+            self.translator.open_notepad_with_text(original_display, translated)
 
             # Close Copilot
             self.translator.close()
@@ -1670,7 +1896,8 @@ class UniversalTranslatorController:
             self._update_ui(
                 self.app.show_complete,
                 1,
-                [(text[:50] + "..." if len(text) > 50 else text, translated[:50] + "..." if len(translated) > 50 else translated)],
+                [(original_display[:50] + "..." if len(original_display) > 50 else original_display,
+                  translated[:50] + "..." if len(translated) > 50 else translated)],
                 95,
             )
 

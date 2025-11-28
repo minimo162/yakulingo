@@ -1373,10 +1373,14 @@ class CopilotHandler:
             # Attach files via file input (more reliable than clipboard)
             # If both glossary and image, attach them together
             files_to_attach = []
-            if glossary_path and glossary_path.exists():
-                files_to_attach.append(str(glossary_path))
-            if image_path and image_path.exists():
-                files_to_attach.append(str(image_path))
+            if glossary_path:
+                print(f"  Glossary path: {glossary_path} (exists: {glossary_path.exists()})")
+                if glossary_path.exists():
+                    files_to_attach.append(str(glossary_path))
+            if image_path:
+                print(f"  Image path: {image_path} (exists: {image_path.exists()})")
+                if image_path.exists():
+                    files_to_attach.append(str(image_path))
 
             if files_to_attach:
                 self.attach_files(files_to_attach)
@@ -2257,12 +2261,10 @@ class TranslatorController:
 # Main Entry Point
 # =============================================================================
 def main():
-    """Main entry point - launches UI with global hotkeys and system tray"""
+    """Main entry point - launches UI"""
     import customtkinter as ctk
-    import keyboard
     from ui import TranslatorApp
     from config_manager import get_config
-    from system_tray import SystemTrayManager, setup_minimize_to_tray
 
     # Prevent multiple instances using Windows mutex
     import ctypes
@@ -2311,8 +2313,8 @@ def main():
         if app.is_translating:
             return
 
-        # Auto-detect if Excel is active
-        if is_excel_active():
+        # Auto-detect if Excel was the last active window (before clicking our button)
+        if app.was_excel_active():
             # Use Excel translation
             if direction == "jp_to_en":
                 excel_ctrl.start_jp_to_en()
@@ -2325,81 +2327,24 @@ def main():
             else:
                 universal_ctrl.translate_clipboard(TranslationMode.TEXT_EN_TO_JP)
 
-    # Global hotkey handlers (only 2 hotkeys now)
-    def on_hotkey_jp_to_en():
-        """Handle Ctrl+Shift+E hotkey - Japanese to English (auto-detect Excel)"""
-        app.after(0, lambda: _trigger_smart_translation(app, excel_controller, universal_controller, "jp_to_en"))
-
-    def on_hotkey_en_to_jp():
-        """Handle Ctrl+Shift+J hotkey - English to Japanese (auto-detect Excel)"""
-        app.after(0, lambda: _trigger_smart_translation(app, excel_controller, universal_controller, "en_to_jp"))
-
-    def _trigger_smart_translation(app, excel_ctrl, universal_ctrl, direction: str):
-        """Trigger smart translation from hotkey"""
-        try:
-            app.deiconify()
-            app.lift()
-            app.focus_force()
-            # Update UI to show the correct direction
-            app.set_mode(direction)
-            if not app.is_translating:
-                _smart_translate(app, excel_ctrl, universal_ctrl, direction)
-        except Exception:
-            pass
-
-    # Register global hotkeys
-    keyboard.add_hotkey(config.config.hotkeys.jp_to_en, on_hotkey_jp_to_en, suppress=False)
-    keyboard.add_hotkey(config.config.hotkeys.en_to_jp, on_hotkey_en_to_jp, suppress=False)
-
-    # Setup system tray
-    tray_manager = None
-    if config.minimize_to_tray:
-        def show_window():
-            app.deiconify()
-            app.lift()
-            app.focus_force()
-
-        def quit_app():
-            app.destroy()
-
-        tray_manager = SystemTrayManager(
-            app,
-            on_show=show_window,
-            on_quit=quit_app,
-            on_jp_to_en=lambda: _trigger_smart_translation(app, excel_controller, universal_controller, "jp_to_en"),
-            on_en_to_jp=lambda: _trigger_smart_translation(app, excel_controller, universal_controller, "en_to_jp"),
-        )
-        setup_minimize_to_tray(app, tray_manager)
-
-        # Start minimized if configured
-        if config.start_minimized:
-            app.withdraw()
-
-    # Show hotkey hints and config status
+    # Show config status
     print("=" * 50)
-    print("Universal Translator - Global Hotkeys")
+    print("Universal Translator")
     print("=" * 50)
-    print(f"  {config.config.hotkeys.jp_to_en.upper()} : Japanese → English")
-    print(f"  {config.config.hotkeys.en_to_jp.upper()} : English → Japanese")
+    print("  Use the UI buttons to translate")
     print("  (Excel is auto-detected)")
     print("-" * 50)
     if config.glossary_enabled:
         print(f"  Glossary: {config.config.glossary.file}")
     else:
-        print("  Glossary: Disabled (edit config.json to enable)")
-    if config.minimize_to_tray:
-        print("  System Tray: Enabled (close to minimize)")
+        print("  Glossary: Not set")
     print("=" * 50)
 
     try:
         # Run
         app.mainloop()
     finally:
-        # Cleanup
-        keyboard.unhook_all()
-        if tray_manager:
-            tray_manager.stop()
-        # Close shared Copilot connection
+        # Cleanup - close shared Copilot connection
         SharedCopilotManager.close()
 
 

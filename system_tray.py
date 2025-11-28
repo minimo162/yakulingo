@@ -54,14 +54,10 @@ class SystemTrayManager:
         app,
         on_show: Optional[Callable] = None,
         on_quit: Optional[Callable] = None,
-        on_jp_to_en: Optional[Callable] = None,
-        on_en_to_jp: Optional[Callable] = None,
     ):
         self.app = app
         self.on_show = on_show
         self.on_quit = on_quit
-        self.on_jp_to_en = on_jp_to_en
-        self.on_en_to_jp = on_en_to_jp
 
         self.icon: Optional[pystray.Icon] = None
         self._running = False
@@ -99,9 +95,6 @@ class SystemTrayManager:
             menu = pystray.Menu(
                 item('Show Window', self._on_show, default=True),
                 item('─────────', None, enabled=False),
-                item('JP → EN (Ctrl+Shift+E)', self._on_jp_to_en),
-                item('EN → JP (Ctrl+Shift+J)', self._on_en_to_jp),
-                item('─────────', None, enabled=False),
                 item('Quit', self._on_quit),
             )
 
@@ -129,16 +122,6 @@ class SystemTrayManager:
         self.stop()
         if self.on_quit:
             self.app.after(0, self.on_quit)
-
-    def _on_jp_to_en(self, icon=None, item=None):
-        """Trigger JP→EN translation"""
-        if self.on_jp_to_en:
-            self.app.after(0, self.on_jp_to_en)
-
-    def _on_en_to_jp(self, icon=None, item=None):
-        """Trigger EN→JP translation"""
-        if self.on_en_to_jp:
-            self.app.after(0, self.on_en_to_jp)
 
 
 def setup_minimize_to_tray(app, tray_manager: SystemTrayManager):

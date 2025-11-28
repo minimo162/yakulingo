@@ -107,7 +107,14 @@ class ConfigManager:
     # Convenience properties
     @property
     def glossary_enabled(self) -> bool:
-        return self.config.glossary.enabled
+        """Glossary is enabled if file is set and exists"""
+        if not self.config.glossary.file:
+            return False
+        glossary_path = Path(__file__).parent / self.config.glossary.file
+        if not glossary_path.exists():
+            # Try as absolute path
+            glossary_path = Path(self.config.glossary.file)
+        return glossary_path.exists()
 
     @property
     def minimize_to_tray(self) -> bool:
@@ -120,7 +127,10 @@ class ConfigManager:
     def _load_glossary(self) -> List[Tuple[str, str]]:
         """Load glossary terms from CSV file"""
         terms = []
+        # Try relative path first, then absolute
         glossary_path = Path(__file__).parent / self.config.glossary.file
+        if not glossary_path.exists():
+            glossary_path = Path(self.config.glossary.file)
 
         if not glossary_path.exists():
             return terms
@@ -150,7 +160,10 @@ class ConfigManager:
         if not self.glossary_enabled:
             return None
 
+        # Try relative path first, then absolute
         glossary_path = Path(__file__).parent / self.config.glossary.file
+        if not glossary_path.exists():
+            glossary_path = Path(self.config.glossary.file)
         if not glossary_path.exists():
             return None
 

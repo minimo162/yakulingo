@@ -845,7 +845,8 @@ class CopilotHandler:
             
             result = subprocess.run(
                 [netstat_path, "-ano"],
-                capture_output=True, text=True, timeout=5, cwd=local_cwd
+                capture_output=True, text=True, timeout=5, cwd=local_cwd,
+                creationflags=subprocess.CREATE_NO_WINDOW
             )
             for line in result.stdout.split("\n"):
                 if f":{self.cdp_port}" in line and "LISTENING" in line:
@@ -853,7 +854,8 @@ class CopilotHandler:
                     if parts:
                         pid = parts[-1]
                         subprocess.run([taskkill_path, "/F", "/PID", pid],
-                                      capture_output=True, timeout=5, cwd=local_cwd)
+                                      capture_output=True, timeout=5, cwd=local_cwd,
+                                      creationflags=subprocess.CREATE_NO_WINDOW)
                         time.sleep(1)
                         break
         except (subprocess.SubprocessError, OSError, TimeoutError) as e:
@@ -909,24 +911,35 @@ class CopilotHandler:
             print(f" error: {e}")
             return False
     
-    def launch(self) -> bool:
-        """Launch dedicated Edge and open Copilot"""
+    def launch(self, on_progress: Optional[Callable[[int, str], None]] = None) -> bool:
+        """Launch dedicated Edge and open Copilot
+
+        Args:
+            on_progress: Optional callback (step, message) for progress updates
+        """
+        def progress(step: int, message: str):
+            print(f"  {message}", end="", flush=True)
+            if on_progress:
+                on_progress(step, message)
+
         try:
+            progress(1, "Starting Edge...")
             if not self._start_translator_edge():
                 show_message("Error", "Failed to start Edge.", "error")
                 return False
-            
-            print("  Connecting...", end="", flush=True)
+            print(" done")
+
+            progress(2, "Connecting to browser...")
             self.playwright = sync_playwright().start()
             self.browser = self.playwright.chromium.connect_over_cdp(
                 f"http://127.0.0.1:{self.cdp_port}"
             )
             print(" done")
-            
+
             # Get existing context
             contexts = self.browser.contexts
             self.context = contexts[0] if contexts else self.browser.new_context()
-            
+
             # Use first existing page, close others
             pages = self.context.pages
             if pages:
@@ -939,17 +952,17 @@ class CopilotHandler:
                         pass  # Ignore errors when closing extra tabs
             else:
                 self.page = self.context.new_page()
-            
+
             # Navigate to Copilot and wait for full page load
-            print("  Opening Copilot...", end="", flush=True)
+            progress(3, "Opening M365 Copilot...")
             self.page.goto(CONFIG.copilot_url, wait_until="networkidle", timeout=60000)
             print(" done")
-            
+
             # Bring browser to front
             self.page.bring_to_front()
-            
+
             # Wait for input field
-            print("  Waiting for Copilot...", end="", flush=True)
+            progress(4, "Waiting for Copilot to load...")
             try:
                 self.page.wait_for_selector(CONFIG.selector_input, state="visible", timeout=30000)
                 print(" ready")
@@ -957,12 +970,13 @@ class CopilotHandler:
                 print(" login required")
                 show_message("Login Required", "Please login to M365 Copilot.\nClick OK after logging in.")
                 self.page.wait_for_selector(CONFIG.selector_input, state="visible", timeout=300000)
-            
+
             # Enable GPT-5 if not already enabled
+            progress(5, "Enabling GPT-5...")
             self._enable_gpt5()
-            
+
             return True
-            
+
         except Exception as e:
             show_message("Error", f"Failed to connect to browser.\n{e}", "error")
             return False
@@ -1139,37 +1153,70 @@ class CopilotHandler:
 # =============================================================================
 # Shared Copilot Connection Manager
 # =============================================================================
+import threading as _threading
+_shared_copilot_lock = _threading.Lock()  # Module-level lock to avoid race condition
+
+
 class SharedCopilotManager:
     """
     Manages a shared CopilotHandler instance across translations.
     Keeps the browser open between translations for faster performance.
     """
     _instance: Optional[CopilotHandler] = None
-    _lock = None
 
     @classmethod
-    def _get_lock(cls):
-        """Lazy initialize the lock (needed for threading)"""
-        if cls._lock is None:
-            import threading
-            cls._lock = threading.Lock()
-        return cls._lock
+    def _is_connection_valid(cls) -> bool:
+        """Check if the current connection is still valid and working"""
+        if cls._instance is None:
+            return False
+        try:
+            # Check if browser and page objects exist
+            if cls._instance.browser is None or cls._instance.page is None:
+                return False
+            # Try to verify the page is still responsive
+            if not cls._instance.browser.is_connected():
+                return False
+            # Page might be closed or crashed
+            if cls._instance.page.is_closed():
+                return False
+            return True
+        except Exception:
+            return False
 
     @classmethod
-    def get_copilot(cls) -> Optional[CopilotHandler]:
-        """Get the shared CopilotHandler, launching if needed"""
-        with cls._get_lock():
-            if cls._instance is None:
-                cls._instance = CopilotHandler()
-                if not cls._instance.launch():
+    def get_copilot(cls, on_progress: Optional[Callable[[int, str], None]] = None) -> Optional[CopilotHandler]:
+        """Get the shared CopilotHandler, launching if needed
+
+        Args:
+            on_progress: Optional callback (step, message) for progress updates during initial connection
+        """
+        with _shared_copilot_lock:
+            # Check if existing connection is still valid
+            if cls._instance is not None:
+                if cls._is_connection_valid():
+                    return cls._instance
+                else:
+                    # Connection is invalid, clean up and create new one
+                    print("  Previous connection invalid, reconnecting...")
+                    if on_progress:
+                        on_progress(0, "Reconnecting...")
+                    try:
+                        cls._instance.close()
+                    except Exception:
+                        pass
                     cls._instance = None
-                    return None
+
+            # Create new instance
+            cls._instance = CopilotHandler()
+            if not cls._instance.launch(on_progress=on_progress):
+                cls._instance = None
+                return None
             return cls._instance
 
     @classmethod
     def is_connected(cls) -> bool:
-        """Check if Copilot is already connected"""
-        return cls._instance is not None and cls._instance.page is not None
+        """Check if Copilot is already connected and valid"""
+        return cls._is_connection_valid()
 
     @classmethod
     def new_chat(cls):
@@ -1180,7 +1227,7 @@ class SharedCopilotManager:
     @classmethod
     def close(cls):
         """Close the shared Copilot (called on app exit)"""
-        with cls._get_lock():
+        with _shared_copilot_lock:
             if cls._instance:
                 cls._instance.close()
                 cls._instance = None
@@ -1271,6 +1318,7 @@ class UniversalTranslator:
         """Open Notepad and paste the translation result"""
         try:
             import win32gui
+            import win32con
 
             # Format output
             output = f"""=== Original ===
@@ -1289,7 +1337,7 @@ class UniversalTranslator:
 
             # Wait for Notepad to open and find its window
             notepad_hwnd = None
-            for _ in range(20):  # Try for up to 2 seconds
+            for _ in range(30):  # Try for up to 3 seconds
                 time.sleep(0.1)
                 def find_notepad(hwnd, hwnds):
                     if win32gui.IsWindowVisible(hwnd):
@@ -1303,17 +1351,60 @@ class UniversalTranslator:
                     notepad_hwnd = hwnds[0]
                     break
 
-            # Set focus to Notepad and paste
-            if notepad_hwnd:
-                win32gui.SetForegroundWindow(notepad_hwnd)
-                time.sleep(0.2)
+            if not notepad_hwnd:
+                from ui import show_message
+                show_message("Error", "Failed to find Notepad window.", "error")
+                return
 
-            # Paste content
+            # Activate Notepad window reliably
+            # Try multiple methods to ensure window is in foreground
             import keyboard
-            keyboard.send('ctrl+v')
+
+            for attempt in range(5):  # Try up to 5 times
+                try:
+                    # Restore if minimized
+                    if win32gui.IsIconic(notepad_hwnd):
+                        win32gui.ShowWindow(notepad_hwnd, win32con.SW_RESTORE)
+                        time.sleep(0.1)
+
+                    # Bring to front and activate
+                    win32gui.ShowWindow(notepad_hwnd, win32con.SW_SHOW)
+                    win32gui.SetForegroundWindow(notepad_hwnd)
+                    time.sleep(0.15)
+
+                    # Verify Notepad is now in foreground
+                    current_fg = win32gui.GetForegroundWindow()
+                    if current_fg == notepad_hwnd:
+                        break  # Success
+
+                    # If not in foreground, try alternative method
+                    # Simulate Alt key to allow SetForegroundWindow to work
+                    keyboard.press('alt')
+                    win32gui.SetForegroundWindow(notepad_hwnd)
+                    keyboard.release('alt')
+                    time.sleep(0.15)
+
+                except Exception:
+                    time.sleep(0.1)
+                    continue
+
+            # Final wait to ensure window is ready
+            time.sleep(0.2)
+
+            # Verify one more time before pasting
+            current_fg = win32gui.GetForegroundWindow()
+            fg_title = win32gui.GetWindowText(current_fg) if current_fg else ""
+            if "メモ帳" in fg_title or "Notepad" in fg_title or "無題" in fg_title or "Untitled" in fg_title:
+                # Notepad is active, paste content
+                keyboard.send('ctrl+v')
+            else:
+                # Notepad is not active, show error message
+                from ui import show_message
+                show_message("Error", "Failed to activate Notepad. Translation copied to clipboard.", "warning")
 
         except Exception as e:
-            print(f"Notepad error: {e}")
+            from ui import show_message
+            show_message("Error", f"Notepad error: {e}", "error")
 
     def _get_direction_label(self) -> str:
         """Get human-readable direction label"""
@@ -1338,8 +1429,13 @@ class UniversalTranslator:
             show_message("Error", f"Failed to load prompt file.\n{e}", "error")
             return ""
 
-    def translate_text(self, text: str) -> Optional[str]:
-        """Translate text using Copilot"""
+    def translate_text(self, text: str, on_progress: Optional[Callable[[int, str], None]] = None) -> Optional[str]:
+        """Translate text using Copilot
+
+        Args:
+            text: Text to translate
+            on_progress: Optional callback (step, message) for connection progress updates
+        """
         if not text:
             return None
 
@@ -1357,7 +1453,9 @@ class UniversalTranslator:
 
         # Get or launch shared Copilot (reuse existing connection)
         already_connected = SharedCopilotManager.is_connected()
-        self.copilot = SharedCopilotManager.get_copilot()
+        self.copilot = SharedCopilotManager.get_copilot(
+            on_progress=on_progress if not already_connected else None
+        )
         if not self.copilot:
             return None
 
@@ -1421,9 +1519,9 @@ class UniversalTranslatorController:
 
             self.translator = UniversalTranslator(mode)
 
-            # Update UI
+            # Update UI - initial connecting state
             direction = "JP→EN" if mode == TranslationMode.TEXT_JP_TO_EN else "EN→JP"
-            self._update_ui(self.app.show_connecting)
+            self._update_ui(self.app.show_connecting, 0, "Preparing...")
 
             # Copy selected text
             self.translator.copy_selected_text()
@@ -1447,11 +1545,15 @@ class UniversalTranslatorController:
                 self._update_ui(self.app.show_cancelled)
                 return
 
-            # Update UI - translating
-            self._update_ui(self.app.show_translating, 1, 1)
+            # Progress callback for connection status
+            def on_connection_progress(step: int, message: str):
+                self._update_ui(self.app.show_connecting, step, message)
 
-            # Translate
-            translated = self.translator.translate_text(text)
+            # Translate (will connect to Copilot if needed)
+            translated = self.translator.translate_text(text, on_progress=on_connection_progress)
+
+            # Update UI - translating done
+            self._update_ui(self.app.show_translating, 1, 1)
 
             if self.cancel_requested:
                 self._update_ui(self.app.show_cancelled)
@@ -1632,7 +1734,14 @@ class TranslatorController:
 
             # Step 5: Get or launch Copilot (reuse existing connection)
             already_connected = SharedCopilotManager.is_connected()
-            self.copilot = SharedCopilotManager.get_copilot()
+
+            # Progress callback for connection status
+            def on_connection_progress(step: int, message: str):
+                self._update_ui(self.app.show_connecting, step, message)
+
+            self.copilot = SharedCopilotManager.get_copilot(
+                on_progress=on_connection_progress if not already_connected else None
+            )
             if not self.copilot:
                 self._update_ui(self.app.show_error, "Failed to launch browser")
                 self.excel.cleanup()

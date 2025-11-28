@@ -191,20 +191,38 @@ uv.exe venv --native-tls
 uv.exe sync --native-tls 2>nul
 if not errorlevel 1 goto :deps_done
 
-:: If failed, try with manual proxy credentials
-echo [WARN] uv sync failed. Proxy authentication may be required.
-echo [INFO] Requesting proxy credentials for PyPI access...
-call :prompt_proxy_credentials
-if defined PROXY_USER (
-    echo [INFO] Retrying with proxy credentials...
-    uv.exe sync --native-tls
-    if errorlevel 1 (
-        echo [ERROR] Failed to install dependencies.
+:: If failed, try with Windows authentication via PowerShell
+echo [WARN] uv sync failed. Trying Windows authentication...
+echo [INFO] Downloading packages with Windows authentication...
+
+:: Download wheels using PowerShell with Windows auth
+powershell -ExecutionPolicy Bypass -File "download_wheels.ps1" -ProxyServer "!PROXY_SERVER!" -WheelsDir ".wheels" -PythonVersion "3.11"
+
+if errorlevel 1 (
+    echo [WARN] Windows authentication download failed.
+    echo [INFO] Falling back to manual credentials...
+    call :prompt_proxy_credentials
+    if defined PROXY_USER (
+        echo [INFO] Retrying uv sync with manual credentials...
+        uv.exe sync --native-tls
+        if errorlevel 1 (
+            echo [ERROR] Failed to install dependencies.
+            pause
+            exit /b 1
+        )
+        goto :deps_done
+    ) else (
+        echo [ERROR] Failed to install dependencies. Proxy credentials required.
         pause
         exit /b 1
     )
-) else (
-    echo [ERROR] Failed to install dependencies. Proxy credentials required.
+)
+
+:: Install from downloaded wheels
+echo [INFO] Installing from downloaded wheels...
+.venv\Scripts\pip.exe install --no-index --find-links=.wheels playwright pywin32 customtkinter pillow keyboard
+if errorlevel 1 (
+    echo [ERROR] Failed to install from wheels.
     pause
     exit /b 1
 )

@@ -19,6 +19,22 @@ if not defined PYTHON_DIR (
     exit /b 1
 )
 
+REM Fix pyvenv.cfg home path for portability (runs on every start)
+if exist "%VENV_DIR%\pyvenv.cfg" (
+    set PYVENV_CFG=%VENV_DIR%\pyvenv.cfg
+    set TEMP_CFG=%VENV_DIR%\pyvenv.cfg.tmp
+
+    REM Rewrite pyvenv.cfg with correct Python path
+    (
+        echo home = !PYTHON_DIR!
+        echo include-system-site-packages = false
+        for /f "tokens=1,* delims==" %%a in ('type "!PYVENV_CFG!" ^| findstr /i "^version"') do (
+            echo version =%%b
+        )
+    ) > "!TEMP_CFG!"
+    move /y "!TEMP_CFG!" "!PYVENV_CFG!" >nul 2>&1
+)
+
 set PATH=%VENV_DIR%\Scripts;%PYTHON_DIR%;%PYTHON_DIR%\Scripts;%PATH%
 set VIRTUAL_ENV=%VENV_DIR%
 

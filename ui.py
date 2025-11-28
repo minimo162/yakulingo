@@ -1427,6 +1427,9 @@ class MinimalButton(ctk.CTkButton):
     """
 
     def __init__(self, parent, text: str, variant: str = "primary", **kwargs):
+        # Extract height from kwargs to avoid duplicate keyword argument error
+        height = kwargs.pop('height', 52)
+
         colors = {
             "primary": {
                 "fg": THEME.text_primary,
@@ -1470,7 +1473,7 @@ class MinimalButton(ctk.CTkButton):
             corner_radius=THEME.radius_md,
             border_width=1,
             border_color=c.get("border", THEME.glass_border),
-            height=52,
+            height=height,
             **kwargs
         )
 

@@ -100,12 +100,84 @@ if not exist "uv.exe" (
 :: ============================================================
 echo.
 echo [2/4] Installing Python...
-uv.exe python install 3.11 --native-tls
-if errorlevel 1 (
-    echo [ERROR] Failed to install Python.
+
+:: Check if Python 3.11 is already installed via uv
+uv.exe python find 3.11 >nul 2>&1
+if not errorlevel 1 (
+    echo [INFO] Python 3.11 already installed.
+    goto :python_done
+)
+
+:: Try uv python install first (works without proxy auth)
+uv.exe python install 3.11 --native-tls 2>nul
+if not errorlevel 1 (
+    echo [DONE] Python installed via uv.
+    goto :python_done
+)
+
+:: If uv failed (likely proxy auth issue), download manually using PowerShell
+echo [INFO] uv download failed, trying manual download with Windows auth...
+set PYTHON_VERSION=3.11.14
+set PYTHON_BUILD=20251120
+set PYTHON_URL=https://github.com/astral-sh/python-build-standalone/releases/download/!PYTHON_BUILD!/cpython-!PYTHON_VERSION!+!PYTHON_BUILD!-x86_64-pc-windows-msvc-install_only_stripped.tar.gz
+set PYTHON_ARCHIVE=python-!PYTHON_VERSION!.tar.gz
+set PYTHON_INSTALL_DIR=!UV_PYTHON_INSTALL_DIR!\cpython-!PYTHON_VERSION!-windows-x86_64-none
+
+:: Create python install directory
+if not exist "!UV_PYTHON_INSTALL_DIR!" mkdir "!UV_PYTHON_INSTALL_DIR!"
+
+:: Download Python using PowerShell with Windows authentication
+if defined PROXY_SERVER (
+    powershell -ExecutionPolicy Bypass -Command ^
+        "$ProgressPreference = 'SilentlyContinue'; " ^
+        "$proxy = New-Object System.Net.WebProxy('http://!PROXY_SERVER!'); " ^
+        "$proxy.Credentials = [System.Net.CredentialCache]::DefaultNetworkCredentials; " ^
+        "[System.Net.WebRequest]::DefaultWebProxy = $proxy; " ^
+        "$url = '!PYTHON_URL!'; " ^
+        "Write-Host '[INFO] Downloading Python from GitHub...'; " ^
+        "try { " ^
+        "    Invoke-WebRequest -Uri $url -OutFile '!PYTHON_ARCHIVE!' -UseBasicParsing -TimeoutSec 120; " ^
+        "    Write-Host '[OK] Download complete.'; " ^
+        "} catch { " ^
+        "    Write-Host \"[ERROR] Download failed: $_\"; " ^
+        "    exit 1; " ^
+        "}"
+) else (
+    powershell -ExecutionPolicy Bypass -Command ^
+        "$ProgressPreference = 'SilentlyContinue'; " ^
+        "$url = '!PYTHON_URL!'; " ^
+        "Write-Host '[INFO] Downloading Python from GitHub...'; " ^
+        "try { " ^
+        "    Invoke-WebRequest -Uri $url -OutFile '!PYTHON_ARCHIVE!' -UseBasicParsing -TimeoutSec 120; " ^
+        "    Write-Host '[OK] Download complete.'; " ^
+        "} catch { " ^
+        "    Write-Host \"[ERROR] Download failed: $_\"; " ^
+        "    exit 1; " ^
+        "}"
+)
+
+if not exist "!PYTHON_ARCHIVE!" (
+    echo [ERROR] Failed to download Python.
     pause
     exit /b 1
 )
+
+:: Extract Python archive using tar (available on Windows 10+)
+echo [INFO] Extracting Python...
+if not exist "!PYTHON_INSTALL_DIR!" mkdir "!PYTHON_INSTALL_DIR!"
+tar -xzf "!PYTHON_ARCHIVE!" -C "!PYTHON_INSTALL_DIR!" --strip-components=1
+if errorlevel 1 (
+    echo [ERROR] Failed to extract Python.
+    del "!PYTHON_ARCHIVE!" 2>nul
+    pause
+    exit /b 1
+)
+
+:: Clean up archive
+del "!PYTHON_ARCHIVE!" 2>nul
+echo [DONE] Python installed manually.
+
+:python_done
 echo [DONE] Python installed.
 
 :: ============================================================

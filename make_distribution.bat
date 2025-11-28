@@ -126,23 +126,14 @@ if exist "%DIST_ZIP%" del /q "%DIST_ZIP%"
 :: Create file list for distribution
 echo [INFO] Creating distribution archive...
 
-:: Use PowerShell to create zip (more reliable than tar)
-powershell -ExecutionPolicy Bypass -Command ^
-    "$files = @(" ^
-    "    '.venv'," ^
-    "    '.uv-python'," ^
-    "    '.playwright-browsers'," ^
-    "    'translate.py'," ^
-    "    'ui.py'," ^
-    "    'config_manager.py'," ^
-    "    'pyproject.toml'," ^
-    "    'uv.lock'," ^
-    "    '★run.bat'," ^
-    "    'README.md'," ^
-    "    'DISTRIBUTION.md'" ^
-    "); " ^
-    "$existingFiles = $files | Where-Object { Test-Path $_ }; " ^
-    "Compress-Archive -Path $existingFiles -DestinationPath '%DIST_ZIP%' -Force"
+:: Build list of existing files
+set "FILE_LIST="
+for %%f in (".venv" ".uv-python" ".playwright-browsers" "translate.py" "ui.py" "config_manager.py" "pyproject.toml" "uv.lock" "★run.bat" "README.md" "DISTRIBUTION.md") do (
+    if exist "%%~f" set "FILE_LIST=!FILE_LIST! %%~f"
+)
+
+:: Use tar (Windows 10+) - much faster than PowerShell Compress-Archive
+tar -a -cf "%DIST_ZIP%" %FILE_LIST% 2>nul
 
 if exist "%DIST_ZIP%" (
     echo.

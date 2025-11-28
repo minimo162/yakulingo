@@ -27,22 +27,22 @@ from dataclasses import dataclass
 @dataclass
 class Theme:
     """Design tokens - Pursuit of perfection with Glassmorphism"""
-    # Colors - Deep, rich, intentional
-    bg_primary: str = "#000000"      # Pure black - the ultimate canvas
-    bg_secondary: str = "#0d0d0d"    # Subtle elevation
-    bg_card: str = "#1a1a1a"         # Card surfaces
-    bg_elevated: str = "#262626"     # Elevated elements
+    # Colors - Lighter for better visibility
+    bg_primary: str = "#121218"      # Dark but not pure black
+    bg_secondary: str = "#1a1a22"    # Subtle elevation
+    bg_card: str = "#252530"         # Card surfaces (much brighter)
+    bg_elevated: str = "#353542"     # Elevated elements (much brighter)
 
     # Glassmorphism colors
-    glass_bg: str = "#1a1a1a"        # Glass base (will be semi-transparent)
-    glass_border: str = "#333333"    # Glass border
-    glass_highlight: str = "#404040" # Top highlight
+    glass_bg: str = "#252530"        # Glass base
+    glass_border: str = "#505060"    # Glass border (brighter)
+    glass_highlight: str = "#606070" # Top highlight (brighter)
     glass_shadow: str = "#000000"    # Bottom shadow
 
     text_primary: str = "#ffffff"
-    text_secondary: str = "#a0a0a0"
-    text_tertiary: str = "#666666"
-    text_muted: str = "#404040"
+    text_secondary: str = "#d0d0d8"  # Much brighter
+    text_tertiary: str = "#a0a0a8"   # Much brighter
+    text_muted: str = "#707078"      # Brighter
 
     # Accent colors - Subtle, meaningful
     accent: str = "#34c759"          # Apple green - success, go
@@ -50,11 +50,11 @@ class Theme:
     accent_orange: str = "#ff9500"   # Warning, attention
     accent_red: str = "#ff3b30"      # Error, stop
 
-    # Aurora colors (very subtle)
-    aurora_1: str = "#1a1a2e"        # Deep blue
-    aurora_2: str = "#16213e"        # Navy
-    aurora_3: str = "#0f3460"        # Ocean
-    aurora_4: str = "#1a472a"        # Forest green
+    # Aurora colors (brighter for visibility)
+    aurora_1: str = "#252540"        # Deep blue (brighter)
+    aurora_2: str = "#203050"        # Navy (brighter)
+    aurora_3: str = "#1a4878"        # Ocean (brighter)
+    aurora_4: str = "#286040"        # Forest green (brighter)
 
     # Gradients (start, end)
     gradient_active: tuple = ("#34c759", "#30d158")
@@ -477,12 +477,19 @@ class AuroraBackground(ctk.CTkCanvas):
     def _create_blobs(self):
         """Create subtle gradient blobs"""
         colors = [THEME.aurora_1, THEME.aurora_2, THEME.aurora_3, THEME.aurora_4]
-        for i in range(4):
+        # More blobs spread across the screen including center
+        positions = [
+            (0.2, 0.3), (0.8, 0.3),  # Top left/right
+            (0.2, 0.7), (0.8, 0.7),  # Bottom left/right
+            (0.5, 0.5),              # Center
+            (0.5, 0.2), (0.5, 0.8),  # Top/bottom center
+        ]
+        for i, (px, py) in enumerate(positions):
             self.blobs.append({
-                'x': random.uniform(0.2, 0.8),
-                'y': random.uniform(0.2, 0.8),
-                'radius': random.uniform(0.3, 0.5),
-                'color': colors[i],
+                'x': px + random.uniform(-0.1, 0.1),
+                'y': py + random.uniform(-0.1, 0.1),
+                'radius': random.uniform(0.35, 0.55),
+                'color': colors[i % len(colors)],
                 'speed_x': random.uniform(-0.0003, 0.0003),
                 'speed_y': random.uniform(-0.0003, 0.0003),
                 'phase': random.uniform(0, math.pi * 2)
@@ -640,11 +647,15 @@ class DynamicIsland(ctk.CTkCanvas):
         self.base_height = 36
         self.expanded_width = 320
         self.expanded_height = 80
+        
+        # Canvas size matches content exactly
+        self.canvas_width = self.expanded_width
+        self.canvas_height = self.expanded_height
 
         super().__init__(
             parent,
-            width=self.expanded_width + 40,
-            height=self.expanded_height + 20,
+            width=self.canvas_width,
+            height=self.base_height + 10,
             bg=THEME.bg_primary,
             highlightthickness=0,
             **kwargs
@@ -672,9 +683,13 @@ class DynamicIsland(ctk.CTkCanvas):
     def _draw(self):
         """Draw the Dynamic Island"""
         self.delete("all")
+        
+        # Update canvas height based on current state
+        canvas_h = self.current_height + 10
+        self.configure(height=canvas_h)
 
-        cx = (self.expanded_width + 40) / 2
-        cy = (self.expanded_height + 20) / 2
+        cx = self.canvas_width / 2
+        cy = canvas_h / 2
 
         w, h = self.current_width, self.current_height
         r = min(self.corner_radius, h / 2)
@@ -851,10 +866,10 @@ class DynamicIsland(ctk.CTkCanvas):
 # =============================================================================
 # Kinetic Typography - Animated text with spring physics
 # =============================================================================
-class KineticText(ctk.CTkCanvas):
+class KineticText(ctk.CTkFrame):
     """
-    Text where each character animates individually.
-    Creates wave effects, bounce-in, and celebration animations.
+    Animated text label with spring effects.
+    Uses CTkLabel for proper transparency support.
     """
 
     def __init__(
@@ -866,140 +881,188 @@ class KineticText(ctk.CTkCanvas):
         color: str = None,
         **kwargs
     ):
+        # Remove any conflicting kwargs
+        kwargs.pop('width', None)
+        kwargs.pop('height', None)
+        
+        # Store params before super().__init__ (which calls _draw)
+        self._init_text = text
+        self._init_font_size = font_size
+        self._init_font_weight = font_weight
+        self._init_color = color or THEME.text_primary
+        self._label_created = False
+        
+        super().__init__(parent, fg_color="transparent", **kwargs)
+        
         self.text = text
         self.font_size = font_size
         self.font_weight = font_weight
-        self.color = color or THEME.text_primary
-
-        # Calculate size based on text
-        self.char_width = font_size * 0.6
-        self.width = max(200, len(text) * self.char_width + 40)
-        self.height = font_size + 20
-
-        super().__init__(
-            parent,
-            width=self.width,
-            height=self.height,
-            bg=THEME.bg_primary,
-            highlightthickness=0,
-            **kwargs
+        self.color = self._init_color
+        
+        # Create label
+        self.label = ctk.CTkLabel(
+            self,
+            text=text,
+            font=get_font("display", font_size, font_weight),
+            text_color=self.color
         )
-
-        # Character states
-        self.char_offsets: List[float] = [0.0] * len(text)
-        self.char_scales: List[float] = [1.0] * len(text)
-        self.char_opacities: List[float] = [1.0] * len(text)
-        self.springs: List[Optional[SpringAnimation]] = []
-
+        self.label.pack()
+        self._label_created = True
+        
+        # Animation state
         self.is_animating = False
         self.wave_phase = 0
+        self._spring: Optional[SpringAnimation] = None
+        self._offset_y = 0
 
-        self._draw()
+    def _draw(self, no_color_updates=False):
+        """Override parent _draw to handle CTkFrame compatibility"""
+        super()._draw(no_color_updates)
 
-    def _draw(self):
-        """Draw all characters"""
-        self.delete("all")
-
-        if not self.text:
-            return
-
-        total_width = len(self.text) * self.char_width
-        start_x = (self.width - total_width) / 2 + self.char_width / 2
-
-        for i, char in enumerate(self.text):
-            x = start_x + i * self.char_width
-            y = self.height / 2 + self.char_offsets[i]
-
-            # Draw character
-            self.create_text(
-                x, y,
-                text=char,
-                font=get_font("display", self.font_size, self.font_weight),
-                fill=self.color
-            )
+    def _update_display(self):
+        """Update label (compatibility method)"""
+        self.label.configure(text=self.text)
 
     def set_text(self, text: str, animate: bool = True):
         """Set text with optional animation"""
-        old_len = len(self.text)
         self.text = text
-
-        # Resize canvas
-        self.width = max(200, len(text) * self.char_width + 40)
-        self.configure(width=self.width)
-
-        # Reset states
-        self.char_offsets = [0.0] * len(text)
-        self.char_scales = [1.0] * len(text)
-        self.char_opacities = [1.0] * len(text)
-
+        self.label.configure(text=text)
+        
         if animate:
             self.animate_in()
-        else:
-            self._draw()
 
     def animate_in(self):
-        """Animate text appearing character by character"""
-        # Start each character from below
-        for i in range(len(self.text)):
-            self.char_offsets[i] = 20
-            self.after(i * 30, lambda idx=i: self._spring_char_in(idx))
-
-        self._draw()
-
-    def _spring_char_in(self, index: int):
-        """Spring a character into place"""
-        if index >= len(self.char_offsets):
-            return
-
-        spring = SpringAnimation(
+        """Animate text appearing with spring bounce"""
+        # Simple bounce animation using spring
+        if self._spring:
+            self._spring.stop()
+        
+        self._spring = SpringAnimation(
             self,
             target_value=0.0,
-            on_update=lambda v, i=index: self._update_char_offset(i, v),
+            on_update=self._apply_offset,
             tension=350,
             friction=18
         )
-        spring.start(from_value=self.char_offsets[index])
+        self._spring.start(from_value=15.0)
 
-    def _update_char_offset(self, index: int, value: float):
-        """Update character offset"""
-        if index < len(self.char_offsets):
-            self.char_offsets[index] = value
-            self._draw()
+    def _apply_offset(self, value: float):
+        """Apply y offset (simulated by padding)"""
+        self._offset_y = value
+        # Simulate offset with padding
+        pad_top = max(0, int(value))
+        self.label.configure(pady=(pad_top, 0))
 
     def celebrate(self):
-        """Celebration wave animation"""
+        """Celebration animation - subtle scale effect"""
         self.is_animating = True
+        self.wave_phase = 0
         self._wave_animate()
 
     def _wave_animate(self):
-        """Wave animation through characters"""
+        """Wave animation"""
         if not self.is_animating:
             return
 
         self.wave_phase += 0.15
-
-        for i in range(len(self.text)):
-            # Each character follows a wave with offset
-            wave = math.sin(self.wave_phase - i * 0.3) * 8
-            self.char_offsets[i] = wave
-
-        self._draw()
+        
+        # Subtle vertical movement
+        offset = math.sin(self.wave_phase) * 3
+        self.label.configure(pady=(max(0, int(offset + 3)), max(0, int(-offset + 3))))
 
         # Stop after a few cycles
         if self.wave_phase > math.pi * 6:
             self.is_animating = False
-            # Spring back to rest
-            for i in range(len(self.text)):
-                self._spring_char_in(i)
+            self.label.configure(pady=0)
         else:
             self.after(20, self._wave_animate)
 
     def stop_animation(self):
         """Stop any ongoing animation"""
         self.is_animating = False
-        for i in range(len(self.char_offsets)):
-            self.char_offsets[i] = 0
-        self._draw()
+        if self._spring:
+            self._spring.stop()
+        self.label.configure(pady=0)
+
+
+class AnimatedLabel(ctk.CTkLabel):
+    """
+    Simple label with set_text method for compatibility.
+    """
+    
+    def set_text(self, text: str, animate: bool = True):
+        """Set text (animate parameter ignored for simplicity)"""
+        self.configure(text=text)
+    
+    def celebrate(self):
+        """Placeholder for celebration animation"""
+        pass
+    
+    def stop_animation(self):
+        """Placeholder for stopping animation"""
+        pass
+
+
+class SimpleProgressRing(ctk.CTkFrame):
+    """
+    Simple progress ring using CTkFrame with circular appearance.
+    Displays progress as a colored border.
+    """
+    
+    def __init__(self, parent, size: int = 160, **kwargs):
+        # Ring colors (brighter for visibility)
+        self.ring_bg = "#555568"  # Bright ring background
+        self.ring_inner = "#2a2a35"  # Inner circle - brighter
+        
+        super().__init__(
+            parent,
+            width=size,
+            height=size,
+            corner_radius=size // 2,
+            fg_color=self.ring_bg,
+            border_width=6,
+            border_color=self.ring_bg,
+            **kwargs
+        )
+        self.size = size
+        self.progress = 0.0
+        self._is_glowing = False
+        
+        # Inner circle
+        inner_size = size - 24
+        self.inner = ctk.CTkFrame(
+            self,
+            width=inner_size,
+            height=inner_size,
+            corner_radius=inner_size // 2,
+            fg_color=self.ring_inner
+        )
+        self.inner.place(relx=0.5, rely=0.5, anchor="center")
+    
+    def set_progress(self, value: float, animate: bool = True):
+        """Set progress (0.0 to 1.0)"""
+        self.progress = max(0.0, min(1.0, value))
+        # Update border color based on progress
+        if self.progress > 0:
+            self.configure(border_color=THEME.accent)
+        else:
+            self.configure(border_color=self.ring_bg)
+    
+    def start_glow(self):
+        """Start glow effect"""
+        self._is_glowing = True
+        self.configure(border_color=THEME.accent)
+    
+    def stop_glow(self):
+        """Stop glow effect"""
+        self._is_glowing = False
+        if self.progress <= 0:
+            self.configure(border_color=self.ring_bg)
+    
+    def celebrate(self):
+        """Celebration effect - flash green"""
+        self.configure(border_color=THEME.accent, fg_color=THEME.accent)
+        self.after(500, lambda: self.configure(fg_color=self.ring_bg))
 
 
 # =============================================================================
@@ -1159,6 +1222,7 @@ class CircularProgress(ctk.CTkCanvas):
             highlightthickness=0,
             **kwargs
         )
+        
         self.size = size
         self.thickness = thickness
         self.progress = 0.0
@@ -1472,7 +1536,7 @@ class MinimalButton(ctk.CTkButton):
         super().__init__(
             parent,
             text=text,
-            font=get_font("text", 15, "bold"),
+            font=get_font("text", 17, "bold"),
             fg_color=c["fg"] if variant != "primary" else THEME.text_primary,
             text_color=c["text"],
             hover_color=c["hover"] if variant != "primary" else THEME.text_secondary,
@@ -1589,7 +1653,7 @@ class TranslatorApp(ctk.CTk):
 
     def _start_idle_animations(self):
         """Start subtle idle animations"""
-        self.stats_card.start_breathing()
+        # stats_card is now a regular CTkFrame, no breathing animation
         self.ambient_glow.set_mode("idle")
 
     def _build_ui(self):
@@ -1613,117 +1677,14 @@ class TranslatorApp(ctk.CTk):
         self.container.pack(fill="both", expand=True, padx=THEME.space_xl, pady=THEME.space_lg)
 
         # === Dynamic Island (iPhone-style status) ===
-        self.dynamic_island = DynamicIsland(self.container)
-        self.dynamic_island.pack(pady=(0, THEME.space_md))
+        self.dynamic_island_container = ctk.CTkFrame(self.container, fg_color="transparent")
+        self.dynamic_island_container.pack(fill="x", pady=(0, THEME.space_sm))
+        
+        self.dynamic_island = DynamicIsland(self.dynamic_island_container)
+        self.dynamic_island.pack(anchor="center")
         self.dynamic_island.set_status("Ready")
 
-        # === Header (minimal) ===
-        self.header = ctk.CTkFrame(self.container, fg_color="transparent", height=24)
-        self.header.pack(fill="x")
-        self.header.pack_propagate(False)
-
-        self.brand = ctk.CTkLabel(
-            self.header,
-            text="",
-            font=get_font("text", 11, "bold"),
-            text_color=THEME.text_muted
-        )
-        self.brand.pack(side="left")
-
-        # === Hero Section (center stage) ===
-        self.hero = ctk.CTkFrame(self.container, fg_color="transparent")
-        self.hero.pack(fill="both", expand=True)
-
-        # Progress ring - the star of the show
-        self.progress_ring = CircularProgress(self.hero, size=180, thickness=6)
-        self.progress_ring.place(relx=0.5, rely=0.35, anchor="center")
-
-        # Percentage display (inside ring)
-        self.percent_label = ctk.CTkLabel(
-            self.hero,
-            text="",
-            font=get_font("display", 42, "bold"),
-            text_color=THEME.text_primary
-        )
-        self.percent_label.place(relx=0.5, rely=0.35, anchor="center")
-
-        # Status text - Kinetic Typography
-        self.status_text = KineticText(
-            self.hero,
-            text="Ready",
-            font_size=32,
-            font_weight="bold",
-            color=THEME.text_primary
-        )
-        self.status_text.place(relx=0.5, rely=0.58, anchor="center")
-
-        # Subtitle - Also Kinetic
-        self.subtitle_text = KineticText(
-            self.hero,
-            text="Japanese → English (Excel auto-detected)",
-            font_size=14,
-            font_weight="normal",
-            color=THEME.text_secondary
-        )
-        self.subtitle_text.place(relx=0.5, rely=0.68, anchor="center")
-
-        # === Stats Card (with breathing) ===
-        self.stats_card = BreathingCard(self.hero, height=70)
-        self.stats_card.place(relx=0.5, rely=0.82, anchor="center", relwidth=0.9)
-
-        # Stats content
-        self.stats_inner = ctk.CTkFrame(self.stats_card, fg_color="transparent")
-        self.stats_inner.pack(fill="both", expand=True, padx=THEME.space_lg, pady=THEME.space_md)
-
-        # Left stat
-        self.stat_left = ctk.CTkFrame(self.stats_inner, fg_color="transparent")
-        self.stat_left.pack(side="left", expand=True)
-
-        self.stat_left_value = ctk.CTkLabel(
-            self.stat_left,
-            text="--",
-            font=get_font("display", 20, "bold"),
-            text_color=THEME.text_primary
-        )
-        self.stat_left_value.pack()
-
-        self.stat_left_label = ctk.CTkLabel(
-            self.stat_left,
-            text="Cells",
-            font=get_font("text", 11),
-            text_color=THEME.text_tertiary
-        )
-        self.stat_left_label.pack()
-
-        # Divider
-        self.divider = ctk.CTkFrame(
-            self.stats_inner,
-            fg_color=THEME.bg_elevated,
-            width=1
-        )
-        self.divider.pack(side="left", fill="y", padx=THEME.space_lg)
-
-        # Right stat
-        self.stat_right = ctk.CTkFrame(self.stats_inner, fg_color="transparent")
-        self.stat_right.pack(side="left", expand=True)
-
-        self.stat_right_value = ctk.CTkLabel(
-            self.stat_right,
-            text="--",
-            font=get_font("display", 20, "bold"),
-            text_color=THEME.text_primary
-        )
-        self.stat_right_value.pack()
-
-        self.stat_right_label = ctk.CTkLabel(
-            self.stat_right,
-            text="Quality",
-            font=get_font("text", 11),
-            text_color=THEME.text_tertiary
-        )
-        self.stat_right_label.pack()
-
-        # === Footer ===
+        # === Footer (pack first with side=bottom so it stays at bottom) ===
         self.footer = ctk.CTkFrame(self.container, fg_color="transparent")
         self.footer.pack(fill="x", side="bottom")
 
@@ -1731,12 +1692,12 @@ class TranslatorApp(ctk.CTk):
         self.mode_frame = ctk.CTkFrame(self.footer, fg_color="transparent")
         self.mode_frame.pack(fill="x", pady=(0, THEME.space_sm))
 
-        # Mode label
+        # Mode label - larger and more visible
         self.mode_label = ctk.CTkLabel(
             self.mode_frame,
             text="Direction:",
-            font=get_font("text", 11),
-            text_color=THEME.text_muted
+            font=get_font("text", 16, "bold"),
+            text_color=THEME.text_primary
         )
         self.mode_label.pack(side="left", padx=(0, THEME.space_sm))
 
@@ -1751,9 +1712,9 @@ class TranslatorApp(ctk.CTk):
         self.mode_jp_en_btn = ctk.CTkButton(
             self.mode_buttons_frame,
             text="JP → EN",
-            width=90,
-            height=32,
-            font=get_font("text", 12, "bold"),
+            width=100,
+            height=36,
+            font=get_font("text", 15, "bold"),
             fg_color=THEME.accent,
             hover_color=THEME.gradient_active[1],
             text_color=THEME.bg_primary,
@@ -1766,25 +1727,25 @@ class TranslatorApp(ctk.CTk):
         self.mode_en_jp_btn = ctk.CTkButton(
             self.mode_buttons_frame,
             text="EN → JP",
-            width=90,
-            height=32,
-            font=get_font("text", 12, "bold"),
+            width=100,
+            height=36,
+            font=get_font("text", 15, "bold"),
             fg_color=THEME.bg_elevated,
             hover_color=THEME.bg_card,
-            text_color=THEME.text_secondary,
+            text_color=THEME.text_primary,
             corner_radius=8,
             command=lambda: self._set_mode("en_to_jp")
         )
         self.mode_en_jp_btn.pack(side="left")
 
-        # Hotkey hints (updated - no Excel hotkey)
+        # Hotkey hints - larger and more visible
         self.hotkey_hint = ctk.CTkLabel(
             self.footer,
-            text="Ctrl+Shift+E = JP→EN  |  Ctrl+Shift+J = EN→JP  (Excel auto-detected)",
-            font=get_font("text", 10),
-            text_color=THEME.text_muted
+            text="Ctrl+Shift+E = JP→EN  |  Ctrl+Shift+J = EN→JP",
+            font=get_font("text", 14),
+            text_color=THEME.text_primary
         )
-        self.hotkey_hint.pack(fill="x", pady=(0, THEME.space_sm))
+        self.hotkey_hint.pack(fill="x", pady=(THEME.space_xs, THEME.space_sm))
 
         # Main action button
         self.action_btn = MinimalButton(
@@ -1804,6 +1765,99 @@ class TranslatorApp(ctk.CTk):
             command=self._show_about
         )
         self.about_btn.pack(fill="x", pady=(THEME.space_sm, 0))
+
+        # === Hero Section (center stage) ===
+        self.hero = ctk.CTkFrame(self.container, fg_color="transparent")
+        self.hero.pack(fill="both", expand=True)
+
+        # Top spacer
+        ctk.CTkFrame(self.hero, fg_color="transparent", height=10).pack()
+
+        # Progress ring
+        self.progress_ring = SimpleProgressRing(self.hero, size=150)
+        self.progress_ring.pack(pady=THEME.space_sm)
+        
+        # Percentage label inside the ring
+        self.percent_label = ctk.CTkLabel(
+            self.progress_ring,
+            text="",
+            font=get_font("display", 28, "bold"),
+            text_color=THEME.text_primary
+        )
+        self.percent_label.place(relx=0.5, rely=0.5, anchor="center")
+
+        # Dummy status_text and subtitle_text for compatibility (not displayed)
+        class DummyLabel:
+            def set_text(self, text, animate=True): pass
+            def configure(self, **kwargs): pass
+            def celebrate(self): pass
+            def stop_animation(self): pass
+        self.status_text = DummyLabel()
+        self.subtitle_text = DummyLabel()
+
+        # === Stats Card (separate section for reliable display) ===
+        self.stats_section = ctk.CTkFrame(self.container, fg_color="transparent")
+        self.stats_section.pack(fill="x", pady=(THEME.space_xs, THEME.space_sm))
+        
+        self.stats_card = ctk.CTkFrame(
+            self.stats_section, 
+            fg_color="#404050",  # Custom brighter background
+            corner_radius=THEME.radius_md,
+            border_width=2,
+            border_color="#606070",  # Brighter border
+            height=65
+        )
+        self.stats_card.pack(fill="x", padx=THEME.space_lg)
+
+        # Stats content - horizontal layout
+        self.stats_inner = ctk.CTkFrame(self.stats_card, fg_color="transparent")
+        self.stats_inner.place(relx=0.5, rely=0.5, anchor="center")
+
+        # Left stat
+        self.stat_left_value = ctk.CTkLabel(
+            self.stats_inner,
+            text="--",
+            font=get_font("display", 20, "bold"),
+            text_color=THEME.text_primary
+        )
+        self.stat_left_value.pack(side="left", padx=(0, 6))
+
+        self.stat_left_label = ctk.CTkLabel(
+            self.stats_inner,
+            text="Cells",
+            font=get_font("text", 14),
+            text_color=THEME.text_secondary
+        )
+        self.stat_left_label.pack(side="left", padx=(0, THEME.space_lg))
+
+        # Divider
+        self.divider = ctk.CTkLabel(
+            self.stats_inner,
+            text="|",
+            font=get_font("text", 16),
+            text_color=THEME.text_secondary
+        )
+        self.divider.pack(side="left", padx=THEME.space_md)
+
+        # Right stat
+        self.stat_right_value = ctk.CTkLabel(
+            self.stats_inner,
+            text="--",
+            font=get_font("display", 20, "bold"),
+            text_color=THEME.text_primary
+        )
+        self.stat_right_value.pack(side="left", padx=(THEME.space_lg, 6))
+
+        self.stat_right_label = ctk.CTkLabel(
+            self.stats_inner,
+            text="Quality",
+            font=get_font("text", 14),
+            text_color=THEME.text_secondary
+        )
+        self.stat_right_label.pack(side="left")
+        
+        # Lift container above background canvases
+        self.container.tkraise()
 
     def _set_mode(self, mode: str):
         """Set translation mode (2 modes only - Excel is auto-detected)"""

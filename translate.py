@@ -1215,8 +1215,14 @@ class CopilotHandler:
     def attach_file(self, file_path: Path) -> bool:
         """Attach a file (image, CSV, etc.) to the chat"""
         try:
+            # Wait for file input to be available (may take time after page load)
+            for _ in range(10):
+                file_input = self.page.query_selector('input[type="file"]')
+                if file_input:
+                    break
+                time.sleep(0.5)
+
             # Look for file input element (hidden)
-            file_input = self.page.query_selector('input[type="file"]')
             if file_input:
                 file_input.set_input_files(str(file_path))
                 time.sleep(1)

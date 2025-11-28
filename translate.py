@@ -1103,9 +1103,9 @@ class CopilotHandler:
             else:
                 self.page = self.context.new_page()
 
-            # Navigate to Copilot and wait for full page load
+            # Navigate to Copilot (use domcontentloaded to avoid hanging on networkidle)
             progress(3, "Opening M365 Copilot...")
-            self.page.goto(CONFIG.copilot_url, wait_until="networkidle", timeout=60000)
+            self.page.goto(CONFIG.copilot_url, wait_until="domcontentloaded", timeout=60000)
             print(" done")
 
             # Bring browser to front
@@ -2395,6 +2395,8 @@ def main():
             app.deiconify()
             app.lift()
             app.focus_force()
+            # Update UI to show the correct direction
+            app.set_mode(direction)
             if not app.is_translating:
                 _smart_translate(app, excel_ctrl, universal_ctrl, direction)
         except Exception:

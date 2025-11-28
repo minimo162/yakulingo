@@ -1689,11 +1689,36 @@ class TranslatorApp(ctk.CTk):
 
     def was_excel_active(self) -> bool:
         """Check if Excel was the last active window before clicking our app"""
-        result = False
+        # First check the tracked window from FocusIn event
         if self.last_foreground_window:
-            result = "Excel" in self.last_foreground_window or "EXCEL" in self.last_foreground_window
-        print(f"  [DEBUG] was_excel_active: {result} (last_window: {self.last_foreground_window})")
-        return result
+            if "Excel" in self.last_foreground_window or "EXCEL" in self.last_foreground_window:
+                print(f"  [DEBUG] was_excel_active: True (tracked: {self.last_foreground_window})")
+                return True
+
+        # Also check Z-order right now (window directly below us)
+        try:
+            import win32gui
+            import win32con
+            hwnd = win32gui.GetForegroundWindow()
+            next_hwnd = win32gui.GetWindow(hwnd, win32con.GW_HWNDNEXT)
+            while next_hwnd:
+                if win32gui.IsWindowVisible(next_hwnd):
+                    title = win32gui.GetWindowText(next_hwnd)
+                    if title:
+                        if "Excel" in title or "EXCEL" in title:
+                            print(f"  [DEBUG] was_excel_active: True (Z-order: {title})")
+                            return True
+                        # Skip our app windows
+                        if "translator" not in title.lower() and "python" not in title.lower():
+                            # Found a non-Excel window below us
+                            print(f"  [DEBUG] was_excel_active: False (Z-order: {title})")
+                            return False
+                next_hwnd = win32gui.GetWindow(next_hwnd, win32con.GW_HWNDNEXT)
+        except Exception as e:
+            print(f"  [DEBUG] Z-order check error: {e}")
+
+        print(f"  [DEBUG] was_excel_active: False (last_window: {self.last_foreground_window})")
+        return False
 
     def _build_ui(self):
         """Construct the interface with surgical precision"""

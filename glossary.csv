@@ -1,13 +1,320 @@
 # Universal Translator - Glossary File
 # Format: source_term,translated_term
-# Lines starting with # are comments
-#
-# Example entries (Japanese → English):
-# 売上高,Revenue
-# 営業利益,Operating Income
-#
-# Example entries (English → Japanese):
-# ROI,投資対効果
-# KPI,重要業績評価指標
-#
-# Add your custom terms below:
+source_term,translated_term
+ECM,ECM
+EM,EM
+ECM カスタマーサポート,ECM Customer Support
+ECM営業本部,ECM Sales Division
+提案サポート,Proposal Support
+プリセールス,Pre-sales
+営業（ECMソリューションセールス）,Sales (ECM Solution Sales)
+ECM カスタマーサクセス,ECM Customer Success
+導入コンサル,Implementation Consulting
+カスタマーサクセス,Customer Success
+ECM プロフェッショナルサービス,ECM Professional Services
+ソリューションアーキテクト,Solution Architect
+開発,Development
+システムエンジニア,System Engineer
+PM,PM
+ECM サービスマネジメント,ECM Service Management
+ヘルプデスク,Help Desk
+SRE,SRE
+ECM アライアンス,ECM Alliance
+アライアンス,Alliance
+ECM マーケティング,ECM Marketing
+マーケティング,Marketing
+EM バイスプレジデント,EM Vice President
+東日本ソリューション部,East Japan Solutions Department
+西日本ソリューション部,West Japan Solutions Department
+インダストリーソリューション部,Industry Solutions Department
+提案企画部,Proposal Planning Department
+サービスデリバリー部,Service Delivery Department
+グローバルデリバリー部,Global Delivery Department
+サービス運用部,Service Operations Department
+プロダクトマーケティング部,Product Marketing Department
+アライアンス営業部,Alliance Sales Department
+デマンドジェネレーション部,Demand Generation Department
+部長,Department Manager
+副部長,Deputy Department Manager
+課長,Section Manager
+チームリーダー,Team Leader
+マネージャー,Manager
+プロフェッショナル,Professional
+プロジェクトマネジャー,Project Manager
+シニア,Senior
+スペシャリスト,Specialist
+アソシエイト,Associate
+ジュニア,Junior
+インターン,Intern
+コンテンツプランナー,Content Planner
+インサイドセールス,Inside Sales
+マーケティングコーディネーター,Marketing Coordinator
+デザイナー,Designer
+アナリスト,Analyst
+採用コーディネーター,Recruitment Coordinator
+スーパーバイザー,Supervisor
+アシスタント,Assistant
+契約社員,Contract Employee
+準委任コンサルタント,Quasi-delegation Consultant
+派遣社員,Temporary Employee
+パートナー社員,Partner Employee
+カスタマーサービス,Customer Service
+代理店様,Distributor
+パートナー様,Partner
+お客様,Customer
+販売店様,Retailer
+仕入先様,Supplier
+士業様,Professional Service Provider
+ECMS,ECMS
+ECMS グループ本部,ECMS Group Headquarters
+グループ本部,Group Headquarters
+グループ本部長,Group Headquarters Manager
+副本部長,Deputy Headquarters Manager
+参与,Advisor
+グループ経営戦略部,Group Management Strategy Department
+グループ財務経理部,Group Finance and Accounting Department
+グループ人事総務部,Group HR and General Affairs Department
+グループ法務監査部,Group Legal and Audit Department
+グループ情報システム部,Group Information Systems Department
+経営管理,Management Administration
+財務・経理,Finance and Accounting
+人事・総務,HR and General Affairs
+法務・監査,Legal and Audit
+社内IT,Internal IT
+ECMSグループ,ECMS Group
+取締役会,Board of Directors
+執行役員会,Executive Committee
+CEO,CEO
+COO,COO
+CFO,CFO
+CTO,CTO
+CHRO,CHRO
+CLO,CLO
+CIO,CIO
+社長,President
+副社長,Vice President
+専務,Senior Managing Director
+常務,Managing Director
+取締役,Director
+監査役,Auditor
+執行役員,Executive Officer
+フェロー,Fellow
+事業本部長,Division General Manager
+事業副本部長,Deputy Division General Manager
+会長,Chairman
+相談役,Senior Advisor
+顧問,Consultant
+創業者,Founder
+共同創業者,Co-founder
+ECMSDC,ECMSDC
+ECMSデータコンサルティング事業,ECMS Data Consulting Business
+DC,DC
+DC 営業本部,DC Sales Division
+DC 営業,DC Sales
+DC ソリューション本部,DC Solutions Division
+DC ソリューション,DC Solutions
+DC テクニカル,DC Technical
+DC マーケティング,DC Marketing
+西日本データソリューション部,West Japan Data Solutions Department
+東日本データソリューション部,East Japan Data Solutions Department
+データソリューション開発部,Data Solutions Development Department
+DC マーケティング部,DC Marketing Department
+データエンジニアリング部,Data Engineering Department
+ECMSAI,ECMSAI
+ECMS AIエージェント事業,ECMS AI Agent Business
+AI,AI
+AI 営業本部,AI Sales Division
+AI 営業,AI Sales
+AI ソリューション本部,AI Solutions Division
+AI ソリューション,AI Solutions
+AIテクニカル,AI Technical
+AI マーケティング,AI Marketing
+AIソリューション開発部,AI Solutions Development Department
+AIソリューション部,AI Solutions Department
+AI マーケティング部,AI Marketing Department
+AIリサーチ＆イノベーション部,AI Research & Innovation Department
+AIインサイドセールス部,AI Inside Sales Department
+ECMS プラットフォーム,ECMS Platform
+ECMS プラットフォーム営業本部,ECMS Platform Sales Division
+ECMS プラットフォーム営業,ECMS Platform Sales
+ECMS プラットフォームソリューション本部,ECMS Platform Solutions Division
+ECMS プラットフォームソリューション,ECMS Platform Solutions
+ECMS プラットフォームテクニカル,ECMS Platform Technical
+ECMS プラットフォームマーケティング,ECMS Platform Marketing
+PFソリューション部,PF Solutions Department
+PFテクノロジー部,PF Technology Department
+PFマーケティング部,PF Marketing Department
+ECMSCX,ECMSCX
+ECMS CX事業,ECMS CX Business
+CX,CX
+CXソリューション部,CX Solutions Department
+CXマーケティング部,CX Marketing Department
+ECMSパートナー事業,ECMS Partner Business
+ECMSPT,ECMSPT
+PT,PT
+PTソリューション部,PT Solutions Department
+PTマーケティング部,PT Marketing Department
+ECMSセキュリティサービス,ECMS Security Services
+ECMSSec,ECMSSec
+Sec,Sec
+Secソリューション部,Sec Solutions Department
+Secマーケティング部,Sec Marketing Department
+プロダクトセールス,Product Sales
+フィールドセールス,Field Sales
+ソリューションセールス,Solution Sales
+アカウントエグゼクティブ,Account Executive
+ビジネスデベロップメント,Business Development
+カスタマーサポート,Customer Support
+テクニカルサポート,Technical Support
+ソリューションコンサルタント,Solutions Consultant
+テクニカルアーキテクト,Technical Architect
+クラウドアーキテクト,Cloud Architect
+セキュリティエンジニア,Security Engineer
+インフラエンジニア,Infrastructure Engineer
+ネットワークエンジニア,Network Engineer
+データサイエンティスト,Data Scientist
+データアナリスト,Data Analyst
+AIエンジニア,AI Engineer
+機械学習エンジニア,Machine Learning Engineer
+フロントエンドエンジニア,Frontend Engineer
+バックエンドエンジニア,Backend Engineer
+フルスタックエンジニア,Full Stack Engineer
+QAエンジニア,QA Engineer
+DevOpsエンジニア,DevOps Engineer
+リードエンジニア,Lead Engineer
+エンジニアリングマネージャー,Engineering Manager
+プロダクトオーナー,Product Owner
+スクラムマスター,Scrum Master
+アジャイルコーチ,Agile Coach
+ソリューションエンジニア,Solutions Engineer
+セールスエンジニア,Sales Engineer
+ビジネスアナリスト,Business Analyst
+経営企画,Corporate Planning
+事業企画,Business Planning
+営業企画,Sales Planning
+営業推進,Sales Promotion
+顧客管理,Customer Management
+パートナー推進,Partner Promotion
+代理店支援,Distributor Support
+コンプライアンス,Compliance
+リスク管理,Risk Management
+内部監査,Internal Audit
+外部監査,External Audit
+労務管理,Labor Management
+採用,Recruitment
+研修・教育,Training & Education
+広報,Public Relations
+IR,IR
+総務,General Affairs
+経理,Accounting
+財務,Finance
+予算管理,Budget Management
+原価管理,Cost Management
+購買,Procurement
+契約管理,Contract Management
+品質保証,Quality Assurance
+品質管理,Quality Control
+製品開発,Product Development
+R&D,R&D
+テクニカルライター,Technical Writer
+ドキュメンテーション,Documentation
+翻訳・ローカライゼーション,Translation & Localization
+UIデザイナー,UI Designer
+UXデザイナー,UX Designer
+グラフィックデザイナー,Graphic Designer
+Webデザイナー,Web Designer
+映像制作,Video Production
+イベント企画,Event Planning
+セミナー運営,Seminar Operations
+展示会,Exhibition
+カンファレンス,Conference
+ウェビナー,Webinar
+リードナーチャリング,Lead Nurturing
+リードジェネレーション,Lead Generation
+ABM,ABM
+コンテンツマーケティング,Content Marketing
+SEO,SEO
+SEM,SEM
+SNS運用,Social Media Management
+メールマーケティング,Email Marketing
+MA,MA
+CRM,CRM
+SFA,SFA
+BI,BI
+ERP,ERP
+HCM,HCM
+SCM,SCM
+PLM,PLM
+DX推進,DX Promotion
+IT戦略,IT Strategy
+セキュリティ対策,Security Measures
+災害対策,Disaster Recovery
+BCP,BCP
+資産管理,Asset Management
+ライセンス管理,License Management
+ベンダー管理,Vendor Management
+SLA管理,SLA Management
+インシデント管理,Incident Management
+問題管理,Problem Management
+変更管理,Change Management
+リリース管理,Release Management
+構成管理,Configuration Management
+キャパシティ管理,Capacity Management
+可用性管理,Availability Management
+サービスデスク,Service Desk
+エスカレーション,Escalation
+オンボーディング,Onboarding
+トレーニング,Training
+ハンズオン,Hands-on
+ワークショップ,Workshop
+PoC,PoC
+パイロット,Pilot
+本番移行,Production Migration
+運用保守,Operations & Maintenance
+定期点検,Regular Inspection
+障害対応,Incident Response
+監視,Monitoring
+アラート,Alert
+レポーティング,Reporting
+ダッシュボード,Dashboard
+KPI,KPI
+ROI,ROI
+TCO,TCO
+NPV,NPV
+IRR,IRR
+P&L,P&L
+BS,BS
+CF,CF
+予実管理,Budget vs Actual Management
+見込管理,Forecast Management
+パイプライン,Pipeline
+商談,Opportunity
+提案,Proposal
+見積,Quotation
+受注,Order
+失注,Lost
+契約,Contract
+納品,Delivery
+検収,Acceptance
+請求,Billing
+入金,Payment
+売掛,Accounts Receivable
+買掛,Accounts Payable
+前受,Advance Received
+前払,Advance Paid
+月次,Monthly
+四半期,Quarterly
+半期,Semi-annual
+年次,Annual
+期初,Beginning of Period
+期中,Mid-period
+期末,End of Period
+年度,Fiscal Year
+会計年度,Accounting Year
+暦年,Calendar Year
+上期,First Half
+下期,Second Half
+Q1,Q1
+Q2,Q2
+Q3,Q3
+Q4,Q4

@@ -1626,8 +1626,8 @@ class TranslatorApp(ctk.CTk):
 
         # Window configuration
         self.title("")  # Minimal - no title needed
-        self.geometry("540x800")
-        self.minsize(520, 720)
+        self.geometry("540x900")
+        self.minsize(520, 800)
         self.configure(fg_color=THEME.bg_primary)
 
         # State
@@ -2074,11 +2074,16 @@ class TranslatorApp(ctk.CTk):
             # Compact Dynamic Island after celebration
             self.after(2000, self.dynamic_island.compact)
 
+            # Reset to ready state after celebration (5 seconds)
+            self.after(5000, self.show_ready)
+
             # Keep UI visible (don't show ResultsSheet dialog for Excel - use Notepad instead)
             # Translation log is now shown in Notepad by TranslatorController
 
         except Exception as e:
             print(f"Animation error (non-critical): {e}")
+            # Even if animation fails, reset to ready state
+            self.after(2000, self.show_ready)
 
     def show_error(self, message: str):
         """Error state - calm acknowledgment"""

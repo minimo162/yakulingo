@@ -1526,10 +1526,11 @@ class UniversalTranslator:
             print(f"Copy error: {e}")
 
     def open_notepad_with_text(self, original: str, translated: str):
-        """Open Notepad and paste the translation result"""
+        """Open Notepad and paste the translation result with verification"""
         try:
             import win32gui
             import win32con
+            import ctypes
 
             # Format output
             output = f"""=== Original ===
@@ -1548,7 +1549,7 @@ class UniversalTranslator:
 
             # Wait for Notepad to open and find its window
             notepad_hwnd = None
-            for _ in range(30):  # Try for up to 3 seconds
+            for _ in range(50):  # Try for up to 5 seconds
                 time.sleep(0.1)
                 def find_notepad(hwnd, hwnds):
                     if win32gui.IsWindowVisible(hwnd):
@@ -1563,59 +1564,85 @@ class UniversalTranslator:
                     break
 
             if not notepad_hwnd:
-                from ui import show_message
-                show_message("Error", "Failed to find Notepad window.", "error")
+                print("  Warning: Failed to find Notepad window")
                 return
 
-            # Activate Notepad window reliably
-            # Try multiple methods to ensure window is in foreground
+            # Activate Notepad window reliably with multiple retries
             import keyboard
 
-            for attempt in range(5):  # Try up to 5 times
+            paste_successful = False
+            for attempt in range(10):  # Try up to 10 times
                 try:
                     # Restore if minimized
                     if win32gui.IsIconic(notepad_hwnd):
                         win32gui.ShowWindow(notepad_hwnd, win32con.SW_RESTORE)
-                        time.sleep(0.1)
+                        time.sleep(0.2)
 
                     # Bring to front and activate
                     win32gui.ShowWindow(notepad_hwnd, win32con.SW_SHOW)
-                    win32gui.SetForegroundWindow(notepad_hwnd)
-                    time.sleep(0.15)
 
-                    # Verify Notepad is now in foreground
-                    current_fg = win32gui.GetForegroundWindow()
-                    if current_fg == notepad_hwnd:
-                        break  # Success
-
-                    # If not in foreground, try alternative method
-                    # Simulate Alt key to allow SetForegroundWindow to work
+                    # Use Alt key trick to allow SetForegroundWindow
                     keyboard.press('alt')
+                    time.sleep(0.05)
                     win32gui.SetForegroundWindow(notepad_hwnd)
                     keyboard.release('alt')
-                    time.sleep(0.15)
+                    time.sleep(0.2)
 
-                except Exception:
-                    time.sleep(0.1)
+                    # Verify Notepad is in foreground
+                    current_fg = win32gui.GetForegroundWindow()
+                    if current_fg != notepad_hwnd:
+                        time.sleep(0.2)
+                        continue
+
+                    # Notepad is active, paste content
+                    keyboard.send('ctrl+v')
+                    time.sleep(0.3)
+
+                    # Verify paste by reading Notepad's Edit control content
+                    edit_hwnd = win32gui.FindWindowEx(notepad_hwnd, None, "Edit", None)
+                    if edit_hwnd:
+                        # Get text length
+                        WM_GETTEXTLENGTH = 0x000E
+                        WM_GETTEXT = 0x000D
+                        text_len = ctypes.windll.user32.SendMessageW(edit_hwnd, WM_GETTEXTLENGTH, 0, 0)
+
+                        if text_len > 0:
+                            # Get the text
+                            buffer = ctypes.create_unicode_buffer(text_len + 1)
+                            ctypes.windll.user32.SendMessageW(edit_hwnd, WM_GETTEXT, text_len + 1, buffer)
+                            notepad_text = buffer.value
+
+                            # Verify that our content was pasted (check for key marker)
+                            if "=== Original ===" in notepad_text and "=== Translation" in notepad_text:
+                                paste_successful = True
+                                print("  Translation pasted to Notepad (verified)")
+                                break
+                            else:
+                                # Content doesn't match, retry
+                                print(f"  Paste verification failed (attempt {attempt + 1}), retrying...")
+                                time.sleep(0.3)
+                                continue
+                        else:
+                            # No text in Notepad, retry paste
+                            print(f"  Notepad empty (attempt {attempt + 1}), retrying paste...")
+                            time.sleep(0.3)
+                            continue
+                    else:
+                        # Could not find Edit control, assume paste worked
+                        paste_successful = True
+                        print("  Translation pasted to Notepad (not verified)")
+                        break
+
+                except Exception as e:
+                    print(f"  Paste attempt {attempt + 1} failed: {e}")
+                    time.sleep(0.2)
                     continue
 
-            # Final wait to ensure window is ready
-            time.sleep(0.2)
-
-            # Verify one more time before pasting
-            current_fg = win32gui.GetForegroundWindow()
-            fg_title = win32gui.GetWindowText(current_fg) if current_fg else ""
-            if "メモ帳" in fg_title or "Notepad" in fg_title or "無題" in fg_title or "Untitled" in fg_title:
-                # Notepad is active, paste content
-                keyboard.send('ctrl+v')
-            else:
-                # Notepad is not active, show error message
-                from ui import show_message
-                show_message("Error", "Failed to activate Notepad. Translation copied to clipboard.", "warning")
+            if not paste_successful:
+                print("  Warning: Could not verify paste. Translation copied to clipboard.")
 
         except Exception as e:
-            from ui import show_message
-            show_message("Error", f"Notepad error: {e}", "error")
+            print(f"  Notepad error: {e}")
 
     def _get_direction_label(self) -> str:
         """Get human-readable direction label"""
@@ -1693,7 +1720,7 @@ class UniversalTranslator:
 
 
 def open_notepad_with_excel_log(translation_pairs: list, direction: str = "JP → EN"):
-    """Open Notepad with Excel translation log (original and translated text)
+    """Open Notepad with Excel translation log (original and translated text) with verification
 
     Args:
         translation_pairs: List of (original, translated) tuples
@@ -1704,6 +1731,7 @@ def open_notepad_with_excel_log(translation_pairs: list, direction: str = "JP �
         import win32con
         import win32clipboard
         import keyboard
+        import ctypes
 
         # Format output with both original and translated text
         lines = [f"=== Excel Translation Log ({direction}) ===", ""]
@@ -1731,7 +1759,7 @@ def open_notepad_with_excel_log(translation_pairs: list, direction: str = "JP �
 
         # Wait for Notepad to open and find its window
         notepad_hwnd = None
-        for _ in range(30):  # Try for up to 3 seconds
+        for _ in range(50):  # Try for up to 5 seconds
             time.sleep(0.1)
             def find_notepad(hwnd, hwnds):
                 if win32gui.IsWindowVisible(hwnd):
@@ -1749,39 +1777,77 @@ def open_notepad_with_excel_log(translation_pairs: list, direction: str = "JP �
             print("  Warning: Could not find Notepad window")
             return
 
-        # Activate Notepad window reliably
-        for attempt in range(5):
+        # Activate Notepad window and paste with verification
+        paste_successful = False
+        for attempt in range(10):  # Try up to 10 times
             try:
+                # Restore if minimized
                 if win32gui.IsIconic(notepad_hwnd):
                     win32gui.ShowWindow(notepad_hwnd, win32con.SW_RESTORE)
-                    time.sleep(0.1)
+                    time.sleep(0.2)
 
+                # Bring to front and activate
                 win32gui.ShowWindow(notepad_hwnd, win32con.SW_SHOW)
-                win32gui.SetForegroundWindow(notepad_hwnd)
-                time.sleep(0.15)
 
-                current_fg = win32gui.GetForegroundWindow()
-                if current_fg == notepad_hwnd:
-                    break
-
+                # Use Alt key trick to allow SetForegroundWindow
                 keyboard.press('alt')
+                time.sleep(0.05)
                 win32gui.SetForegroundWindow(notepad_hwnd)
                 keyboard.release('alt')
-                time.sleep(0.15)
+                time.sleep(0.2)
 
-            except Exception:
-                time.sleep(0.1)
+                # Verify Notepad is in foreground
+                current_fg = win32gui.GetForegroundWindow()
+                if current_fg != notepad_hwnd:
+                    time.sleep(0.2)
+                    continue
+
+                # Notepad is active, paste content
+                keyboard.send('ctrl+v')
+                time.sleep(0.3)
+
+                # Verify paste by reading Notepad's Edit control content
+                edit_hwnd = win32gui.FindWindowEx(notepad_hwnd, None, "Edit", None)
+                if edit_hwnd:
+                    # Get text length
+                    WM_GETTEXTLENGTH = 0x000E
+                    WM_GETTEXT = 0x000D
+                    text_len = ctypes.windll.user32.SendMessageW(edit_hwnd, WM_GETTEXTLENGTH, 0, 0)
+
+                    if text_len > 0:
+                        # Get the text
+                        buffer = ctypes.create_unicode_buffer(text_len + 1)
+                        ctypes.windll.user32.SendMessageW(edit_hwnd, WM_GETTEXT, text_len + 1, buffer)
+                        notepad_text = buffer.value
+
+                        # Verify that our content was pasted (check for key marker)
+                        if "=== Excel Translation Log" in notepad_text and "cells translated ===" in notepad_text:
+                            paste_successful = True
+                            print("  Translation log pasted to Notepad (verified)")
+                            break
+                        else:
+                            # Content doesn't match, retry
+                            print(f"  Paste verification failed (attempt {attempt + 1}), retrying...")
+                            time.sleep(0.3)
+                            continue
+                    else:
+                        # No text in Notepad, retry paste
+                        print(f"  Notepad empty (attempt {attempt + 1}), retrying paste...")
+                        time.sleep(0.3)
+                        continue
+                else:
+                    # Could not find Edit control, assume paste worked
+                    paste_successful = True
+                    print("  Translation log pasted to Notepad (not verified)")
+                    break
+
+            except Exception as e:
+                print(f"  Paste attempt {attempt + 1} failed: {e}")
+                time.sleep(0.2)
                 continue
 
-        # Final wait and paste
-        time.sleep(0.2)
-        current_fg = win32gui.GetForegroundWindow()
-        fg_title = win32gui.GetWindowText(current_fg) if current_fg else ""
-        if "メモ帳" in fg_title or "Notepad" in fg_title or "無題" in fg_title or "Untitled" in fg_title:
-            keyboard.send('ctrl+v')
-            print("  Translation log opened in Notepad")
-        else:
-            print("  Warning: Could not activate Notepad, log copied to clipboard")
+        if not paste_successful:
+            print("  Warning: Could not verify paste. Translation log copied to clipboard.")
 
     except Exception as e:
         print(f"  Warning: Notepad log error: {e}")

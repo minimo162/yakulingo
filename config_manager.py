@@ -142,26 +142,41 @@ class ConfigManager:
 
         return terms
 
+    def get_glossary_file_path(self) -> Optional[Path]:
+        """
+        Get the glossary file path if glossary is enabled and file exists.
+        Returns None if glossary is not enabled or file doesn't exist.
+        """
+        if not self.glossary_enabled:
+            return None
+
+        glossary_path = Path(__file__).parent / self.config.glossary.file
+        if not glossary_path.exists():
+            return None
+
+        # Check if file has any terms
+        terms = self._load_glossary()
+        if not terms:
+            return None
+
+        return glossary_path
+
     def get_glossary_prompt_addition(self) -> str:
         """
         Get the prompt addition for glossary reference.
-        Returns empty string if glossary is not enabled or file is empty.
+        Returns instruction to use the attached glossary file.
         """
         if not self.glossary_enabled:
             return ""
 
-        terms = self._load_glossary()
-        if not terms:
+        glossary_path = self.get_glossary_file_path()
+        if not glossary_path:
             return ""
 
-        # Format terms as a table
-        terms_table = "\n".join(f"  {src} → {tgt}" for src, tgt in terms)
+        return """
 
-        return f"""
-
-[IMPORTANT: Use the following glossary for consistent terminology]
-{terms_table}
-
+[IMPORTANT: Use the attached glossary.csv file for consistent terminology]
+The glossary file contains source→target term mappings.
 You MUST use these exact translations when the source term appears.
 """
 

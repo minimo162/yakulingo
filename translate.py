@@ -472,6 +472,7 @@ class TranslationEngine:
         prompt_header: str,
         japanese_cells: list[dict],
         screenshot_path: Path = None,
+        glossary_path: Path = None,
     ) -> TranslationResult:
         """
         Perform translation with smart retry and validation.
@@ -504,7 +505,12 @@ class TranslationEngine:
 
             # Send to Copilot
             use_screenshot = screenshot_path and attempt == 0  # Only use screenshot on first try
-            if not self.copilot.send_prompt(prompt, image_path=screenshot_path if use_screenshot else None):
+            use_glossary = glossary_path and attempt == 0  # Only attach glossary on first try
+            if not self.copilot.send_prompt(
+                prompt,
+                image_path=screenshot_path if use_screenshot else None,
+                glossary_path=glossary_path if use_glossary else None,
+            ):
                 return TranslationResult(
                     status=TranslationStatus.FAILED,
                     translations=all_translations,
@@ -951,15 +957,15 @@ class CopilotHandler:
         except Exception as e:
             print(f"New chat error: {e}")
     
-    def attach_image(self, image_path: Path) -> bool:
-        """Attach an image to the chat"""
+    def attach_file(self, file_path: Path) -> bool:
+        """Attach a file (image, CSV, etc.) to the chat"""
         try:
             # Look for file input element (hidden)
             file_input = self.page.query_selector('input[type="file"]')
             if file_input:
-                file_input.set_input_files(str(image_path))
+                file_input.set_input_files(str(file_path))
                 time.sleep(1)
-                print("  Image attached via file input")
+                print(f"  File attached via file input: {file_path.name}")
                 return True
 
             # Alternative: Click attach button and use file chooser
@@ -968,27 +974,31 @@ class CopilotHandler:
                 with self.page.expect_file_chooser() as fc_info:
                     attach_button.click()
                 file_chooser = fc_info.value
-                file_chooser.set_files(str(image_path))
+                file_chooser.set_files(str(file_path))
                 time.sleep(1)
-                print("  Image attached via button")
+                print(f"  File attached via button: {file_path.name}")
                 return True
 
             print("  Warning: Could not find attach mechanism")
             return False
 
         except Exception as e:
-            print(f"  Warning: Image attach failed: {e}")
+            print(f"  Warning: File attach failed: {e}")
             return False
 
-    def send_prompt(self, prompt: str, image_path: Optional[Path] = None) -> bool:
-        """Send prompt with optional image attachment"""
+    def send_prompt(self, prompt: str, image_path: Optional[Path] = None, glossary_path: Optional[Path] = None) -> bool:
+        """Send prompt with optional file attachments (image, glossary)"""
         try:
             # Bring browser to front so user can see progress
             self.page.bring_to_front()
 
-            # Attach image first if provided
+            # Attach glossary file first if provided
+            if glossary_path and glossary_path.exists():
+                self.attach_file(glossary_path)
+
+            # Attach image if provided
             if image_path and image_path.exists():
-                self.attach_image(image_path)
+                self.attach_file(image_path)
 
             self.page.click(CONFIG.selector_input)
             time.sleep(0.3)
@@ -1193,6 +1203,10 @@ class UniversalTranslator:
         if not prompt_header:
             return None
 
+        # Get glossary file path
+        from config_manager import get_config
+        glossary_path = get_config().get_glossary_file_path()
+
         # Build full prompt
         full_prompt = f"{prompt_header}\n{text}"
 
@@ -1202,8 +1216,8 @@ class UniversalTranslator:
             if not self.copilot.launch():
                 return None
 
-        # Send prompt
-        if not self.copilot.send_prompt(full_prompt):
+        # Send prompt with glossary attachment
+        if not self.copilot.send_prompt(full_prompt, glossary_path=glossary_path):
             return None
 
         # Get response
@@ -1419,7 +1433,9 @@ class TranslatorController:
                 prompt_header = prompt_file.read_text(encoding="utf-8")
                 # Add glossary reference if configured
                 from config_manager import get_config
-                glossary_addition = get_config().get_glossary_prompt_addition()
+                config = get_config()
+                glossary_addition = config.get_glossary_prompt_addition()
+                glossary_path = config.get_glossary_file_path()
                 if glossary_addition:
                     prompt_header = prompt_header + glossary_addition
             except Exception as e:
@@ -1502,6 +1518,7 @@ class TranslatorController:
                 prompt_header=prompt_header,
                 japanese_cells=japanese_cells,
                 screenshot_path=screenshot_path,
+                glossary_path=glossary_path,
             )
 
             # Close browser

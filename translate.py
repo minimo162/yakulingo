@@ -1551,7 +1551,8 @@ class UniversalTranslator:
             import win32con
             import win32clipboard
             import win32process
-            import pyautogui
+            import keyboard
+            import ctypes
 
             # Format output
             output = f"""=== Original ===
@@ -1613,7 +1614,7 @@ class UniversalTranslator:
                 print("  Warning: Failed to find new Notepad window")
                 return
 
-            # Activate Notepad window and paste using pyautogui
+            # Activate Notepad window and paste using keyboard library
             for attempt in range(5):  # Try up to 5 times
                 try:
                     # Restore if minimized
@@ -1621,22 +1622,24 @@ class UniversalTranslator:
                         win32gui.ShowWindow(notepad_hwnd, win32con.SW_RESTORE)
                         time.sleep(0.3)
 
-                    # Bring to front and activate
+                    # Bring to front using multiple methods for reliability
                     win32gui.ShowWindow(notepad_hwnd, win32con.SW_SHOW)
+
+                    # Use SetForegroundWindow with AllowSetForegroundWindow trick
+                    ctypes.windll.user32.AllowSetForegroundWindow(-1)  # ASFW_ANY
                     win32gui.SetForegroundWindow(notepad_hwnd)
                     time.sleep(0.5)
 
-                    # Get window rect and click in center to ensure focus
-                    rect = win32gui.GetWindowRect(notepad_hwnd)
-                    center_x = (rect[0] + rect[2]) // 2
-                    center_y = (rect[1] + rect[3]) // 2
-                    pyautogui.click(center_x, center_y)
-                    time.sleep(0.3)
+                    # Verify window is foreground
+                    if win32gui.GetForegroundWindow() != notepad_hwnd:
+                        # Try BringWindowToTop as fallback
+                        win32gui.BringWindowToTop(notepad_hwnd)
+                        time.sleep(0.3)
 
-                    # Use pyautogui for Ctrl+V paste
-                    pyautogui.hotkey('ctrl', 'v')
+                    # Use keyboard library for Ctrl+V paste
+                    keyboard.send('ctrl+v')
                     time.sleep(0.3)
-                    print("  Translation pasted to Notepad (pyautogui)")
+                    print("  Translation pasted to Notepad")
                     break
 
                 except Exception as e:
@@ -1734,7 +1737,8 @@ def open_notepad_with_excel_log(translation_pairs: list, direction: str = "JP â†
         import win32con
         import win32clipboard
         import win32process
-        import pyautogui
+        import keyboard
+        import ctypes
 
         # Format output with both original and translated text
         lines = [f"=== Excel Translation Log ({direction}) ===", ""]
@@ -1800,7 +1804,7 @@ def open_notepad_with_excel_log(translation_pairs: list, direction: str = "JP â†
             print("  Warning: Could not find new Notepad window")
             return
 
-        # Activate Notepad window and paste using pyautogui
+        # Activate Notepad window and paste using keyboard library
         for attempt in range(5):  # Try up to 5 times
             try:
                 # Restore if minimized
@@ -1808,22 +1812,24 @@ def open_notepad_with_excel_log(translation_pairs: list, direction: str = "JP â†
                     win32gui.ShowWindow(notepad_hwnd, win32con.SW_RESTORE)
                     time.sleep(0.3)
 
-                # Bring to front and activate
+                # Bring to front using multiple methods for reliability
                 win32gui.ShowWindow(notepad_hwnd, win32con.SW_SHOW)
+
+                # Use SetForegroundWindow with AllowSetForegroundWindow trick
+                ctypes.windll.user32.AllowSetForegroundWindow(-1)  # ASFW_ANY
                 win32gui.SetForegroundWindow(notepad_hwnd)
                 time.sleep(0.5)
 
-                # Get window rect and click in center to ensure focus
-                rect = win32gui.GetWindowRect(notepad_hwnd)
-                center_x = (rect[0] + rect[2]) // 2
-                center_y = (rect[1] + rect[3]) // 2
-                pyautogui.click(center_x, center_y)
-                time.sleep(0.3)
+                # Verify window is foreground
+                if win32gui.GetForegroundWindow() != notepad_hwnd:
+                    # Try BringWindowToTop as fallback
+                    win32gui.BringWindowToTop(notepad_hwnd)
+                    time.sleep(0.3)
 
-                # Use pyautogui for Ctrl+V paste
-                pyautogui.hotkey('ctrl', 'v')
+                # Use keyboard library for Ctrl+V paste
+                keyboard.send('ctrl+v')
                 time.sleep(0.3)
-                print("  Translation log pasted to Notepad (pyautogui)")
+                print("  Translation log pasted to Notepad")
                 break
 
             except Exception as e:

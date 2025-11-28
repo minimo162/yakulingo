@@ -2261,11 +2261,10 @@ class TranslatorController:
 # Main Entry Point
 # =============================================================================
 def main():
-    """Main entry point - launches UI with system tray"""
+    """Main entry point - launches UI"""
     import customtkinter as ctk
     from ui import TranslatorApp
     from config_manager import get_config
-    from system_tray import SystemTrayManager, setup_minimize_to_tray
 
     # Prevent multiple instances using Windows mutex
     import ctypes
@@ -2328,28 +2327,6 @@ def main():
             else:
                 universal_ctrl.translate_clipboard(TranslationMode.TEXT_EN_TO_JP)
 
-    # Setup system tray
-    tray_manager = None
-    if config.minimize_to_tray:
-        def show_window():
-            app.deiconify()
-            app.lift()
-            app.focus_force()
-
-        def quit_app():
-            app.destroy()
-
-        tray_manager = SystemTrayManager(
-            app,
-            on_show=show_window,
-            on_quit=quit_app,
-        )
-        setup_minimize_to_tray(app, tray_manager)
-
-        # Start minimized if configured
-        if config.start_minimized:
-            app.withdraw()
-
     # Show config status
     print("=" * 50)
     print("Universal Translator")
@@ -2361,18 +2338,13 @@ def main():
         print(f"  Glossary: {config.config.glossary.file}")
     else:
         print("  Glossary: Not set")
-    if config.minimize_to_tray:
-        print("  System Tray: Enabled (close to minimize)")
     print("=" * 50)
 
     try:
         # Run
         app.mainloop()
     finally:
-        # Cleanup
-        if tray_manager:
-            tray_manager.stop()
-        # Close shared Copilot connection
+        # Cleanup - close shared Copilot connection
         SharedCopilotManager.close()
 
 

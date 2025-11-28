@@ -1751,88 +1751,91 @@ class TranslatorApp(ctk.CTk):
         )
         self.action_btn.pack(pady=(0, THEME.space_md))
 
-        # === Shortcut Keys Section (prominent) ===
-        self.shortcut_section = ctk.CTkFrame(
+        # === Settings Section ===
+        self.settings_section = ctk.CTkFrame(
             self.footer,
             fg_color=THEME.bg_card,
             corner_radius=THEME.radius_md
         )
-        self.shortcut_section.pack(fill="x", pady=(0, THEME.space_md))
+        self.settings_section.pack(fill="x", pady=(0, THEME.space_md))
 
-        # Shortcuts title
-        self.shortcut_title = ctk.CTkLabel(
-            self.shortcut_section,
-            text="⌨️ Keyboard Shortcuts",
+        settings_inner = ctk.CTkFrame(self.settings_section, fg_color="transparent")
+        settings_inner.pack(fill="x", padx=THEME.space_md, pady=THEME.space_md)
+
+        # Load config
+        from config_manager import get_config
+        self.config = get_config()
+
+        # --- Glossary File Row ---
+        glossary_row = ctk.CTkFrame(settings_inner, fg_color="transparent")
+        glossary_row.pack(fill="x", pady=(0, THEME.space_sm))
+
+        ctk.CTkLabel(
+            glossary_row,
+            text="Glossary:",
             font=get_font("text", 14),
             text_color=THEME.text_secondary
+        ).pack(side="left")
+
+        self.glossary_label = ctk.CTkLabel(
+            glossary_row,
+            text=self.config.get_glossary_display_name(),
+            font=get_font("mono", 13),
+            text_color=THEME.accent if self.config.glossary_enabled else THEME.text_tertiary,
+            width=150,
+            anchor="w"
         )
-        self.shortcut_title.pack(pady=(THEME.space_sm, THEME.space_xs))
+        self.glossary_label.pack(side="left", padx=(THEME.space_sm, 0))
 
-        # Shortcuts container
-        self.shortcuts_frame = ctk.CTkFrame(self.shortcut_section, fg_color="transparent")
-        self.shortcuts_frame.pack(pady=(0, THEME.space_sm))
-
-        # Shortcut 1: JP → EN
-        self.shortcut1_frame = ctk.CTkFrame(self.shortcuts_frame, fg_color="transparent")
-        self.shortcut1_frame.pack(side="left", padx=THEME.space_md)
-
-        self.shortcut1_key = ctk.CTkLabel(
-            self.shortcut1_frame,
-            text="Ctrl + Shift + E",
-            font=get_font("text", 16, "bold"),
-            text_color=THEME.accent,
+        ctk.CTkButton(
+            glossary_row,
+            text="Clear",
+            font=get_font("text", 12),
             fg_color=THEME.bg_elevated,
-            corner_radius=6,
-            padx=10,
-            pady=5
-        )
-        self.shortcut1_key.pack()
-
-        self.shortcut1_desc = ctk.CTkLabel(
-            self.shortcut1_frame,
-            text="日本語→EN",
-            font=get_font("text", 14),
-            text_color=THEME.text_secondary
-        )
-        self.shortcut1_desc.pack(pady=(2, 0))
-
-        # Shortcut 2: EN → JP
-        self.shortcut2_frame = ctk.CTkFrame(self.shortcuts_frame, fg_color="transparent")
-        self.shortcut2_frame.pack(side="left", padx=THEME.space_md)
-
-        self.shortcut2_key = ctk.CTkLabel(
-            self.shortcut2_frame,
-            text="Ctrl + Shift + J",
-            font=get_font("text", 16, "bold"),
-            text_color=THEME.accent_blue,
-            fg_color=THEME.bg_elevated,
-            corner_radius=6,
-            padx=10,
-            pady=5
-        )
-        self.shortcut2_key.pack()
-
-        self.shortcut2_desc = ctk.CTkLabel(
-            self.shortcut2_frame,
-            text="EN→日本語",
-            font=get_font("text", 14),
-            text_color=THEME.text_secondary
-        )
-        self.shortcut2_desc.pack(pady=(2, 0))
-
-        # Settings button (more visible)
-        self.settings_btn = ctk.CTkButton(
-            self.footer,
-            text="⚙ Settings",
-            font=get_font("text", 14),
-            fg_color=THEME.bg_elevated,
-            hover_color=THEME.bg_card,
+            hover_color=THEME.bg_primary,
             text_color=THEME.text_secondary,
-            height=36,
-            corner_radius=8,
-            command=self._show_about
+            height=26,
+            width=50,
+            command=self._clear_glossary
+        ).pack(side="right", padx=(THEME.space_xs, 0))
+
+        ctk.CTkButton(
+            glossary_row,
+            text="📂 Browse",
+            font=get_font("text", 12),
+            fg_color=THEME.accent,
+            hover_color=THEME.gradient_active[1],
+            text_color="#ffffff",
+            height=26,
+            width=80,
+            command=self._browse_glossary
+        ).pack(side="right")
+
+        # --- Auto-start Row ---
+        autostart_row = ctk.CTkFrame(settings_inner, fg_color="transparent")
+        autostart_row.pack(fill="x")
+
+        ctk.CTkLabel(
+            autostart_row,
+            text="Start with Windows:",
+            font=get_font("text", 14),
+            text_color=THEME.text_secondary
+        ).pack(side="left")
+
+        self.autostart_var = ctk.BooleanVar(value=self.config.auto_start)
+        self.autostart_switch = ctk.CTkSwitch(
+            autostart_row,
+            text="",
+            variable=self.autostart_var,
+            onvalue=True,
+            offvalue=False,
+            command=self._toggle_autostart,
+            progress_color=THEME.accent,
+            button_color=THEME.text_secondary,
+            button_hover_color=THEME.text_primary,
+            width=40
         )
-        self.settings_btn.pack(fill="x", pady=(THEME.space_sm, 0))
+        self.autostart_switch.pack(side="right")
 
         # === Hero Section (center stage) - simplified ===
         self.hero = ctk.CTkFrame(self.container, fg_color="transparent")
@@ -1911,9 +1914,35 @@ class TranslatorApp(ctk.CTk):
         if self.on_cancel_callback:
             self.on_cancel_callback()
 
-    def _show_about(self):
-        """Open about dialog"""
-        SettingsSheet(self)
+    def _browse_glossary(self):
+        """Open file browser to select glossary file"""
+        file_path = filedialog.askopenfilename(
+            title="Select Glossary File",
+            filetypes=[
+                ("CSV files", "*.csv"),
+                ("All files", "*.*")
+            ],
+            parent=self
+        )
+        if file_path:
+            self.config.set_glossary_file(file_path)
+            self._update_glossary_display()
+
+    def _clear_glossary(self):
+        """Clear glossary file selection"""
+        self.config.set_glossary_file(None)
+        self._update_glossary_display()
+
+    def _update_glossary_display(self):
+        """Update the glossary label display"""
+        self.glossary_label.configure(
+            text=self.config.get_glossary_display_name(),
+            text_color=THEME.accent if self.config.glossary_enabled else THEME.text_tertiary
+        )
+
+    def _toggle_autostart(self):
+        """Toggle auto-start with Windows"""
+        self.config.set_auto_start(self.autostart_var.get())
 
     # === Public API ===
 
@@ -2131,193 +2160,6 @@ class TranslatorApp(ctk.CTk):
             fg_color=THEME.text_primary,  # White button
             text_color=THEME.bg_primary
         )
-
-
-# =============================================================================
-# Settings Sheet - About panel
-# =============================================================================
-class SettingsSheet(ctk.CTkToplevel):
-    """Settings panel - Clean, focused information."""
-
-    def __init__(self, parent):
-        super().__init__(parent)
-
-        self.title("Settings")
-        self.geometry("450x420")
-        self.configure(fg_color=THEME.bg_primary)
-        self.resizable(False, False)
-
-        self.transient(parent)
-        self.grab_set()
-
-        self._build_ui()
-        self._center(parent)
-
-    def _center(self, parent):
-        """Center over parent"""
-        self.update_idletasks()
-        px, py = parent.winfo_x(), parent.winfo_y()
-        pw, ph = parent.winfo_width(), parent.winfo_height()
-        w, h = self.winfo_width(), self.winfo_height()
-        x = px + (pw - w) // 2
-        y = py + (ph - h) // 2
-        self.geometry(f"+{x}+{y}")
-
-    def _build_ui(self):
-        """Build settings interface"""
-        container = ctk.CTkFrame(self, fg_color="transparent")
-        container.pack(fill="both", expand=True, padx=THEME.space_lg, pady=THEME.space_lg)
-
-        # Header
-        header = ctk.CTkLabel(
-            container,
-            text="Settings",
-            font=get_font("display", 24, "bold"),
-            text_color=THEME.text_primary
-        )
-        header.pack(anchor="w")
-
-        # Load config
-        from config_manager import get_config
-        self.config = get_config()
-
-        # Glossary settings
-        glossary_frame = GlassCard(container)
-        glossary_frame.pack(fill="x", pady=(THEME.space_lg, 0))
-
-        glossary_inner = ctk.CTkFrame(glossary_frame, fg_color="transparent")
-        glossary_inner.pack(fill="x", padx=THEME.space_md, pady=THEME.space_md)
-
-        ctk.CTkLabel(
-            glossary_inner,
-            text="Glossary File",
-            font=get_font("text", 18, "bold"),
-            text_color=THEME.text_primary
-        ).pack(anchor="w")
-
-        ctk.CTkLabel(
-            glossary_inner,
-            text="CSV file with translation terms",
-            font=get_font("text", 14),
-            text_color=THEME.text_tertiary
-        ).pack(anchor="w", pady=(4, THEME.space_sm))
-
-        # Current file display
-        self.glossary_label = ctk.CTkLabel(
-            glossary_inner,
-            text=self.config.get_glossary_display_name(),
-            font=get_font("mono", 15),
-            text_color=THEME.accent if self.config.glossary_enabled else THEME.text_tertiary,
-            wraplength=380
-        )
-        self.glossary_label.pack(anchor="w", pady=(0, THEME.space_sm))
-
-        # Buttons row
-        btn_row = ctk.CTkFrame(glossary_inner, fg_color="transparent")
-        btn_row.pack(fill="x")
-
-        browse_btn = ctk.CTkButton(
-            btn_row,
-            text="📂 Browse...",
-            font=get_font("text", 14),
-            fg_color=THEME.accent,
-            hover_color=THEME.gradient_active[1],
-            text_color="#ffffff",
-            height=36,
-            width=130,
-            command=self._browse_glossary
-        )
-        browse_btn.pack(side="left", padx=(0, THEME.space_sm))
-
-        clear_btn = ctk.CTkButton(
-            btn_row,
-            text="Clear",
-            font=get_font("text", 14),
-            fg_color=THEME.bg_elevated,
-            hover_color=THEME.bg_card,
-            text_color=THEME.text_secondary,
-            height=36,
-            width=90,
-            command=self._clear_glossary
-        )
-        clear_btn.pack(side="left")
-
-        # Auto-start settings
-        autostart_frame = GlassCard(container)
-        autostart_frame.pack(fill="x", pady=(THEME.space_lg, 0))
-
-        autostart_inner = ctk.CTkFrame(autostart_frame, fg_color="transparent")
-        autostart_inner.pack(fill="x", padx=THEME.space_md, pady=THEME.space_md)
-
-        ctk.CTkLabel(
-            autostart_inner,
-            text="Start with Windows",
-            font=get_font("text", 18, "bold"),
-            text_color=THEME.text_primary
-        ).pack(anchor="w")
-
-        ctk.CTkLabel(
-            autostart_inner,
-            text="Launch automatically when Windows starts",
-            font=get_font("text", 14),
-            text_color=THEME.text_tertiary
-        ).pack(anchor="w", pady=(4, THEME.space_sm))
-
-        self.autostart_var = ctk.BooleanVar(value=self.config.auto_start)
-        self.autostart_switch = ctk.CTkSwitch(
-            autostart_inner,
-            text="Enabled" if self.config.auto_start else "Disabled",
-            font=get_font("text", 15),
-            variable=self.autostart_var,
-            onvalue=True,
-            offvalue=False,
-            command=self._toggle_autostart,
-            progress_color=THEME.accent,
-            button_color=THEME.text_secondary,
-            button_hover_color=THEME.text_primary
-        )
-        self.autostart_switch.pack(anchor="w")
-
-        # Done button
-        done_btn = MinimalButton(
-            container,
-            text="Done",
-            variant="primary",
-            command=self.destroy
-        )
-        done_btn.pack(fill="x", side="bottom", pady=(THEME.space_lg, 0))
-
-    def _browse_glossary(self):
-        """Open file browser to select glossary file"""
-        file_path = filedialog.askopenfilename(
-            title="Select Glossary File",
-            filetypes=[
-                ("CSV files", "*.csv"),
-                ("All files", "*.*")
-            ],
-            parent=self
-        )
-        if file_path:
-            self.config.set_glossary_file(file_path)
-            self._update_glossary_display()
-
-    def _clear_glossary(self):
-        """Clear glossary file selection"""
-        self.config.set_glossary_file(None)
-        self._update_glossary_display()
-
-    def _update_glossary_display(self):
-        """Update the glossary label display"""
-        self.glossary_label.configure(
-            text=self.config.get_glossary_display_name(),
-            text_color=THEME.accent if self.config.glossary_enabled else THEME.text_tertiary
-        )
-
-    def _toggle_autostart(self):
-        """Toggle auto-start with Windows"""
-        enabled = self.autostart_var.get()
-        self.config.set_auto_start(enabled)
-        self.autostart_switch.configure(text="Enabled" if enabled else "Disabled")
 
 
 # =============================================================================

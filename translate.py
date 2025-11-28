@@ -2261,9 +2261,8 @@ class TranslatorController:
 # Main Entry Point
 # =============================================================================
 def main():
-    """Main entry point - launches UI with global hotkeys and system tray"""
+    """Main entry point - launches UI with system tray"""
     import customtkinter as ctk
-    import keyboard
     from ui import TranslatorApp
     from config_manager import get_config
     from system_tray import SystemTrayManager, setup_minimize_to_tray
@@ -2329,32 +2328,6 @@ def main():
             else:
                 universal_ctrl.translate_clipboard(TranslationMode.TEXT_EN_TO_JP)
 
-    # Global hotkey handlers (only 2 hotkeys now)
-    def on_hotkey_jp_to_en():
-        """Handle Ctrl+Alt+E hotkey - Japanese to English (auto-detect Excel)"""
-        app.after(0, lambda: _trigger_smart_translation(app, excel_controller, universal_controller, "jp_to_en"))
-
-    def on_hotkey_en_to_jp():
-        """Handle Ctrl+Alt+J hotkey - English to Japanese (auto-detect Excel)"""
-        app.after(0, lambda: _trigger_smart_translation(app, excel_controller, universal_controller, "en_to_jp"))
-
-    def _trigger_smart_translation(app, excel_ctrl, universal_ctrl, direction: str):
-        """Trigger smart translation from hotkey"""
-        try:
-            app.deiconify()
-            app.lift()
-            app.focus_force()
-            # Update UI to show the correct direction
-            app.set_mode(direction)
-            if not app.is_translating:
-                _smart_translate(app, excel_ctrl, universal_ctrl, direction)
-        except Exception:
-            pass
-
-    # Register global hotkeys
-    keyboard.add_hotkey(config.config.hotkeys.jp_to_en, on_hotkey_jp_to_en, suppress=False)
-    keyboard.add_hotkey(config.config.hotkeys.en_to_jp, on_hotkey_en_to_jp, suppress=False)
-
     # Setup system tray
     tray_manager = None
     if config.minimize_to_tray:
@@ -2370,8 +2343,6 @@ def main():
             app,
             on_show=show_window,
             on_quit=quit_app,
-            on_jp_to_en=lambda: _trigger_smart_translation(app, excel_controller, universal_controller, "jp_to_en"),
-            on_en_to_jp=lambda: _trigger_smart_translation(app, excel_controller, universal_controller, "en_to_jp"),
         )
         setup_minimize_to_tray(app, tray_manager)
 
@@ -2379,18 +2350,17 @@ def main():
         if config.start_minimized:
             app.withdraw()
 
-    # Show hotkey hints and config status
+    # Show config status
     print("=" * 50)
-    print("Universal Translator - Global Hotkeys")
+    print("Universal Translator")
     print("=" * 50)
-    print(f"  {config.config.hotkeys.jp_to_en.upper()} : Japanese → English")
-    print(f"  {config.config.hotkeys.en_to_jp.upper()} : English → Japanese")
+    print("  Use the UI buttons to translate")
     print("  (Excel is auto-detected)")
     print("-" * 50)
     if config.glossary_enabled:
         print(f"  Glossary: {config.config.glossary.file}")
     else:
-        print("  Glossary: Disabled (edit config.json to enable)")
+        print("  Glossary: Not set")
     if config.minimize_to_tray:
         print("  System Tray: Enabled (close to minimize)")
     print("=" * 50)
@@ -2400,7 +2370,6 @@ def main():
         app.mainloop()
     finally:
         # Cleanup
-        keyboard.unhook_all()
         if tray_manager:
             tray_manager.stop()
         # Close shared Copilot connection

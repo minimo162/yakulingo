@@ -1762,7 +1762,7 @@ class TranslatorApp(ctk.CTk):
         self.shortcut_title = ctk.CTkLabel(
             self.shortcut_section,
             text="⌨️ Keyboard Shortcuts",
-            font=get_font("text", 13),
+            font=get_font("text", 14),
             text_color=THEME.text_secondary
         )
         self.shortcut_title.pack(pady=(THEME.space_sm, THEME.space_xs))
@@ -1778,19 +1778,19 @@ class TranslatorApp(ctk.CTk):
         self.shortcut1_key = ctk.CTkLabel(
             self.shortcut1_frame,
             text="Ctrl + Shift + E",
-            font=get_font("text", 14, "bold"),
+            font=get_font("text", 16, "bold"),
             text_color=THEME.accent,
             fg_color=THEME.bg_elevated,
             corner_radius=6,
-            padx=8,
-            pady=4
+            padx=10,
+            pady=5
         )
         self.shortcut1_key.pack()
 
         self.shortcut1_desc = ctk.CTkLabel(
             self.shortcut1_frame,
             text="日本語→EN",
-            font=get_font("text", 12),
+            font=get_font("text", 14),
             text_color=THEME.text_secondary
         )
         self.shortcut1_desc.pack(pady=(2, 0))
@@ -1802,19 +1802,19 @@ class TranslatorApp(ctk.CTk):
         self.shortcut2_key = ctk.CTkLabel(
             self.shortcut2_frame,
             text="Ctrl + Shift + J",
-            font=get_font("text", 14, "bold"),
+            font=get_font("text", 16, "bold"),
             text_color=THEME.accent_blue,
             fg_color=THEME.bg_elevated,
             corner_radius=6,
-            padx=8,
-            pady=4
+            padx=10,
+            pady=5
         )
         self.shortcut2_key.pack()
 
         self.shortcut2_desc = ctk.CTkLabel(
             self.shortcut2_frame,
             text="EN→日本語",
-            font=get_font("text", 12),
+            font=get_font("text", 14),
             text_color=THEME.text_secondary
         )
         self.shortcut2_desc.pack(pady=(2, 0))

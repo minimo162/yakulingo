@@ -43,13 +43,36 @@ class TranslationMode(Enum):
 
 
 def is_excel_active() -> bool:
-    """Check if the active window is Microsoft Excel"""
+    """Check if Excel was the active window before TranslatorApp"""
     try:
         import win32gui
+        import win32con
+
         hwnd = win32gui.GetForegroundWindow()
         title = win32gui.GetWindowText(hwnd)
-        # Check for Excel window titles
-        return "Excel" in title or "EXCEL" in title
+
+        # If current foreground is Excel, return True
+        if "Excel" in title or "EXCEL" in title:
+            return True
+
+        # If current foreground is TranslatorApp, check the window below
+        # (the window that was active before clicking the button)
+        if hwnd:
+            # Get the next window in Z-order (the one behind current)
+            next_hwnd = win32gui.GetWindow(hwnd, win32con.GW_HWNDNEXT)
+
+            # Find the first visible window with a title below
+            while next_hwnd:
+                if win32gui.IsWindowVisible(next_hwnd):
+                    next_title = win32gui.GetWindowText(next_hwnd)
+                    if next_title:  # Skip windows without title
+                        if "Excel" in next_title or "EXCEL" in next_title:
+                            return True
+                        # Found a visible window with title, stop searching
+                        break
+                next_hwnd = win32gui.GetWindow(next_hwnd, win32con.GW_HWNDNEXT)
+
+        return False
     except Exception:
         return False
 

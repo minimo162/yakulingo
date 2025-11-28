@@ -186,12 +186,30 @@ echo [DONE] Python installed.
 echo.
 echo [3/4] Installing dependencies...
 uv.exe venv --native-tls
-uv.exe sync --native-tls
-if errorlevel 1 (
-    echo [ERROR] Failed to install dependencies.
+
+:: Try uv sync first
+uv.exe sync --native-tls 2>nul
+if not errorlevel 1 goto :deps_done
+
+:: If failed, try with manual proxy credentials
+echo [WARN] uv sync failed. Proxy authentication may be required.
+echo [INFO] Requesting proxy credentials for PyPI access...
+call :prompt_proxy_credentials
+if defined PROXY_USER (
+    echo [INFO] Retrying with proxy credentials...
+    uv.exe sync --native-tls
+    if errorlevel 1 (
+        echo [ERROR] Failed to install dependencies.
+        pause
+        exit /b 1
+    )
+) else (
+    echo [ERROR] Failed to install dependencies. Proxy credentials required.
     pause
     exit /b 1
 )
+
+:deps_done
 echo [DONE] Dependencies installed.
 
 :: ============================================================
@@ -199,12 +217,32 @@ echo [DONE] Dependencies installed.
 :: ============================================================
 echo.
 echo [4/4] Installing Playwright browser...
-uv.exe run --native-tls playwright install chromium
-if errorlevel 1 (
-    echo [ERROR] Failed to install Playwright browser.
+
+:: Try playwright install first
+uv.exe run --native-tls playwright install chromium 2>nul
+if not errorlevel 1 goto :playwright_done
+
+:: If failed, try with manual proxy credentials (if not already set)
+echo [WARN] Playwright install failed. Proxy authentication may be required.
+if not defined PROXY_USER (
+    echo [INFO] Requesting proxy credentials for Playwright download...
+    call :prompt_proxy_credentials
+)
+if defined PROXY_USER (
+    echo [INFO] Retrying Playwright install with proxy credentials...
+    uv.exe run --native-tls playwright install chromium
+    if errorlevel 1 (
+        echo [ERROR] Failed to install Playwright browser.
+        pause
+        exit /b 1
+    )
+) else (
+    echo [ERROR] Failed to install Playwright browser. Proxy credentials required.
     pause
     exit /b 1
 )
+
+:playwright_done
 echo [DONE] Playwright browser installed.
 
 echo.

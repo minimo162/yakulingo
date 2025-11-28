@@ -2331,11 +2331,11 @@ def main():
 
     # Global hotkey handlers (only 2 hotkeys now)
     def on_hotkey_jp_to_en():
-        """Handle Ctrl+Shift+E hotkey - Japanese to English (auto-detect Excel)"""
+        """Handle Ctrl+Alt+E hotkey - Japanese to English (auto-detect Excel)"""
         app.after(0, lambda: _trigger_smart_translation(app, excel_controller, universal_controller, "jp_to_en"))
 
     def on_hotkey_en_to_jp():
-        """Handle Ctrl+Shift+J hotkey - English to Japanese (auto-detect Excel)"""
+        """Handle Ctrl+Alt+J hotkey - English to Japanese (auto-detect Excel)"""
         app.after(0, lambda: _trigger_smart_translation(app, excel_controller, universal_controller, "en_to_jp"))
 
     def _trigger_smart_translation(app, excel_ctrl, universal_ctrl, direction: str):

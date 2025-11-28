@@ -28,8 +28,8 @@ class SystemTrayConfig:
 @dataclass
 class HotkeyConfig:
     """Hotkey configuration"""
-    jp_to_en: str = "ctrl+shift+e"
-    en_to_jp: str = "ctrl+shift+j"
+    jp_to_en: str = "ctrl+alt+e"
+    en_to_jp: str = "ctrl+alt+j"
 
 
 @dataclass

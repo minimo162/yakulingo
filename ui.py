@@ -1937,13 +1937,20 @@ class TranslatorApp(ctk.CTk):
             text_color=THEME.bg_primary
         )
 
-    def show_connecting(self):
-        """Connecting state - anticipation"""
+    def show_connecting(self, step: int = 0, message: str = "Starting browser..."):
+        """Connecting state - anticipation with progress"""
         self.is_translating = True
+
+        # Make window always on top during connection (so user can see progress)
+        self.attributes("-topmost", True)
+        self.lift()
+
+        # Progress based on step (0-5 steps in connection process)
+        progress = min(step / 5, 0.95) if step > 0 else 0.05
 
         # Dynamic Island - expand with status
         self.dynamic_island.expand()
-        self.dynamic_island.set_status("Connecting", "Starting browser...", 0.05)
+        self.dynamic_island.set_status("Connecting", message, progress)
         self.dynamic_island.start_pulse()
 
         # Ambient Glow - active mode (blue)
@@ -1951,7 +1958,7 @@ class TranslatorApp(ctk.CTk):
 
         # Kinetic Typography
         self.status_text.set_text("Connecting")
-        self.subtitle_text.set_text("Starting browser...")
+        self.subtitle_text.set_text(message)
 
         self.action_btn.configure(
             text="Cancel",
@@ -1959,9 +1966,19 @@ class TranslatorApp(ctk.CTk):
             text_color=THEME.text_primary
         )
 
+        # Force UI update
+        self.update_idletasks()
+
+    def hide_topmost(self):
+        """Remove always-on-top after connection"""
+        self.attributes("-topmost", False)
+
     def show_translating(self, current: int, total: int):
         """Translation in progress - focused energy"""
         self.is_translating = True
+
+        # Remove always-on-top (connection complete)
+        self.attributes("-topmost", False)
 
         progress = current / total if total > 0 else 0
         percent = int(progress * 100)
@@ -2049,6 +2066,9 @@ class TranslatorApp(ctk.CTk):
         """Error state - calm acknowledgment"""
         self.is_translating = False
 
+        # Remove always-on-top
+        self.attributes("-topmost", False)
+
         # Dynamic Island - error state
         self.dynamic_island.stop_pulse()
         self.dynamic_island.expand()
@@ -2077,6 +2097,9 @@ class TranslatorApp(ctk.CTk):
         """Cancelled state - graceful stop"""
         self.is_translating = False
         self.cancel_requested = False
+
+        # Remove always-on-top
+        self.attributes("-topmost", False)
 
         # Dynamic Island - compact with cancelled status
         self.dynamic_island.stop_pulse()

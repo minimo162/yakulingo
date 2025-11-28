@@ -911,24 +911,35 @@ class CopilotHandler:
             print(f" error: {e}")
             return False
     
-    def launch(self) -> bool:
-        """Launch dedicated Edge and open Copilot"""
+    def launch(self, on_progress: Optional[Callable[[int, str], None]] = None) -> bool:
+        """Launch dedicated Edge and open Copilot
+
+        Args:
+            on_progress: Optional callback (step, message) for progress updates
+        """
+        def progress(step: int, message: str):
+            print(f"  {message}", end="", flush=True)
+            if on_progress:
+                on_progress(step, message)
+
         try:
+            progress(1, "Starting Edge...")
             if not self._start_translator_edge():
                 show_message("Error", "Failed to start Edge.", "error")
                 return False
-            
-            print("  Connecting...", end="", flush=True)
+            print(" done")
+
+            progress(2, "Connecting to browser...")
             self.playwright = sync_playwright().start()
             self.browser = self.playwright.chromium.connect_over_cdp(
                 f"http://127.0.0.1:{self.cdp_port}"
             )
             print(" done")
-            
+
             # Get existing context
             contexts = self.browser.contexts
             self.context = contexts[0] if contexts else self.browser.new_context()
-            
+
             # Use first existing page, close others
             pages = self.context.pages
             if pages:
@@ -941,17 +952,17 @@ class CopilotHandler:
                         pass  # Ignore errors when closing extra tabs
             else:
                 self.page = self.context.new_page()
-            
+
             # Navigate to Copilot and wait for full page load
-            print("  Opening Copilot...", end="", flush=True)
+            progress(3, "Opening M365 Copilot...")
             self.page.goto(CONFIG.copilot_url, wait_until="networkidle", timeout=60000)
             print(" done")
-            
+
             # Bring browser to front
             self.page.bring_to_front()
-            
+
             # Wait for input field
-            print("  Waiting for Copilot...", end="", flush=True)
+            progress(4, "Waiting for Copilot to load...")
             try:
                 self.page.wait_for_selector(CONFIG.selector_input, state="visible", timeout=30000)
                 print(" ready")
@@ -959,12 +970,13 @@ class CopilotHandler:
                 print(" login required")
                 show_message("Login Required", "Please login to M365 Copilot.\nClick OK after logging in.")
                 self.page.wait_for_selector(CONFIG.selector_input, state="visible", timeout=300000)
-            
+
             # Enable GPT-5 if not already enabled
+            progress(5, "Enabling GPT-5...")
             self._enable_gpt5()
-            
+
             return True
-            
+
         except Exception as e:
             show_message("Error", f"Failed to connect to browser.\n{e}", "error")
             return False
@@ -1172,8 +1184,12 @@ class SharedCopilotManager:
             return False
 
     @classmethod
-    def get_copilot(cls) -> Optional[CopilotHandler]:
-        """Get the shared CopilotHandler, launching if needed"""
+    def get_copilot(cls, on_progress: Optional[Callable[[int, str], None]] = None) -> Optional[CopilotHandler]:
+        """Get the shared CopilotHandler, launching if needed
+
+        Args:
+            on_progress: Optional callback (step, message) for progress updates during initial connection
+        """
         with _shared_copilot_lock:
             # Check if existing connection is still valid
             if cls._instance is not None:
@@ -1182,6 +1198,8 @@ class SharedCopilotManager:
                 else:
                     # Connection is invalid, clean up and create new one
                     print("  Previous connection invalid, reconnecting...")
+                    if on_progress:
+                        on_progress(0, "Reconnecting...")
                     try:
                         cls._instance.close()
                     except Exception:
@@ -1190,7 +1208,7 @@ class SharedCopilotManager:
 
             # Create new instance
             cls._instance = CopilotHandler()
-            if not cls._instance.launch():
+            if not cls._instance.launch(on_progress=on_progress):
                 cls._instance = None
                 return None
             return cls._instance
@@ -1411,8 +1429,13 @@ class UniversalTranslator:
             show_message("Error", f"Failed to load prompt file.\n{e}", "error")
             return ""
 
-    def translate_text(self, text: str) -> Optional[str]:
-        """Translate text using Copilot"""
+    def translate_text(self, text: str, on_progress: Optional[Callable[[int, str], None]] = None) -> Optional[str]:
+        """Translate text using Copilot
+
+        Args:
+            text: Text to translate
+            on_progress: Optional callback (step, message) for connection progress updates
+        """
         if not text:
             return None
 
@@ -1430,7 +1453,9 @@ class UniversalTranslator:
 
         # Get or launch shared Copilot (reuse existing connection)
         already_connected = SharedCopilotManager.is_connected()
-        self.copilot = SharedCopilotManager.get_copilot()
+        self.copilot = SharedCopilotManager.get_copilot(
+            on_progress=on_progress if not already_connected else None
+        )
         if not self.copilot:
             return None
 
@@ -1494,9 +1519,9 @@ class UniversalTranslatorController:
 
             self.translator = UniversalTranslator(mode)
 
-            # Update UI
+            # Update UI - initial connecting state
             direction = "JP→EN" if mode == TranslationMode.TEXT_JP_TO_EN else "EN→JP"
-            self._update_ui(self.app.show_connecting)
+            self._update_ui(self.app.show_connecting, 0, "Preparing...")
 
             # Copy selected text
             self.translator.copy_selected_text()
@@ -1520,11 +1545,15 @@ class UniversalTranslatorController:
                 self._update_ui(self.app.show_cancelled)
                 return
 
-            # Update UI - translating
-            self._update_ui(self.app.show_translating, 1, 1)
+            # Progress callback for connection status
+            def on_connection_progress(step: int, message: str):
+                self._update_ui(self.app.show_connecting, step, message)
 
-            # Translate
-            translated = self.translator.translate_text(text)
+            # Translate (will connect to Copilot if needed)
+            translated = self.translator.translate_text(text, on_progress=on_connection_progress)
+
+            # Update UI - translating done
+            self._update_ui(self.app.show_translating, 1, 1)
 
             if self.cancel_requested:
                 self._update_ui(self.app.show_cancelled)
@@ -1705,7 +1734,14 @@ class TranslatorController:
 
             # Step 5: Get or launch Copilot (reuse existing connection)
             already_connected = SharedCopilotManager.is_connected()
-            self.copilot = SharedCopilotManager.get_copilot()
+
+            # Progress callback for connection status
+            def on_connection_progress(step: int, message: str):
+                self._update_ui(self.app.show_connecting, step, message)
+
+            self.copilot = SharedCopilotManager.get_copilot(
+                on_progress=on_connection_progress if not already_connected else None
+            )
             if not self.copilot:
                 self._update_ui(self.app.show_error, "Failed to launch browser")
                 self.excel.cleanup()

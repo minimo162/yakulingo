@@ -2031,34 +2031,12 @@ class TranslatorApp(ctk.CTk):
 
     def show_complete(self, count: int, translation_pairs: list = None, confidence: int = 100):
         """Complete state - celebration!"""
+        # Critical state reset (must happen even if animations fail)
         self.is_translating = False
+        self.cancel_requested = False
         self.last_translation_pairs = translation_pairs
 
-        # Dynamic Island - success state
-        self.dynamic_island.stop_pulse()
-        self.dynamic_island.set_status("Complete!", f"{count} cells translated", 1.0)
-
-        # Ambient Glow - success mode (green)
-        self.ambient_glow.set_mode("success")
-
-        # Stop regular glow, start celebration
-        self.progress_ring.stop_glow()
-        self.progress_ring.set_progress(1.0)
-        self.progress_ring.celebrate()  # Checkmark animation
-
-        # Particle burst from center (more particles for higher confidence)
-        self.particles.tkraise()  # Bring to front
-        center_x = self.winfo_width() // 2
-        center_y = int(self.winfo_height() * 0.40)
-        particle_count = max(20, int(50 * (confidence / 100)))
-        self.particles.burst(center_x, center_y, count=particle_count)
-
-        # Play success sound
-        SoundPlayer.play_success()
-
-        self.percent_label.configure(text="")
-
-        # Kinetic Typography - celebrate!
+        # Quality text calculation
         if confidence >= 95:
             quality_text = "Excellent"
         elif confidence >= 80:
@@ -2068,13 +2046,7 @@ class TranslatorApp(ctk.CTk):
         else:
             quality_text = "Review"
 
-        self.status_text.set_text("Complete")
-        self.status_text.celebrate()  # Wave animation!
-        self.subtitle_text.set_text(f"{count} cells | {quality_text} ({confidence}%)")
-
-        self.stat_left_value.configure(text=str(count))
-        self.stat_right_value.configure(text=f"{confidence}%")
-
+        # Update button state first (critical)
         self.action_btn.configure(
             text="Translate Again",
             state="normal",
@@ -2082,12 +2054,51 @@ class TranslatorApp(ctk.CTk):
             text_color=THEME.bg_primary
         )
 
-        # Compact Dynamic Island after celebration
-        self.after(2000, self.dynamic_island.compact)
+        # Update stats
+        self.stat_left_value.configure(text=str(count))
+        self.stat_right_value.configure(text=f"{confidence}%")
+        self.percent_label.configure(text="")
 
-        # Show results dialog after celebration
-        if translation_pairs:
-            self.after(800, lambda: ResultsSheet(self, translation_pairs, confidence))
+        # Update text displays
+        self.status_text.set_text("Complete")
+        self.subtitle_text.set_text(f"{count} cells | {quality_text} ({confidence}%)")
+
+        # Optional celebratory animations (wrapped in try-except)
+        try:
+            # Dynamic Island - success state
+            self.dynamic_island.stop_pulse()
+            self.dynamic_island.set_status("Complete!", f"{count} cells translated", 1.0)
+
+            # Ambient Glow - success mode (green)
+            self.ambient_glow.set_mode("success")
+
+            # Stop regular glow, start celebration
+            self.progress_ring.stop_glow()
+            self.progress_ring.set_progress(1.0)
+            self.progress_ring.celebrate()  # Checkmark animation
+
+            # Particle burst from center (more particles for higher confidence)
+            self.particles.tkraise()  # Bring to front
+            center_x = self.winfo_width() // 2
+            center_y = int(self.winfo_height() * 0.40)
+            particle_count = max(20, int(50 * (confidence / 100)))
+            self.particles.burst(center_x, center_y, count=particle_count)
+
+            # Play success sound
+            SoundPlayer.play_success()
+
+            # Kinetic Typography celebration
+            self.status_text.celebrate()  # Wave animation!
+
+            # Compact Dynamic Island after celebration
+            self.after(2000, self.dynamic_island.compact)
+
+            # Show results dialog after celebration
+            if translation_pairs:
+                self.after(800, lambda: ResultsSheet(self, translation_pairs, confidence))
+
+        except Exception as e:
+            print(f"Animation error (non-critical): {e}")
 
     def show_error(self, message: str):
         """Error state - calm acknowledgment"""

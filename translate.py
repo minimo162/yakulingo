@@ -1154,7 +1154,54 @@ class CopilotHandler:
             print("  GPT-5 button not found (timeout)")
         except Exception as e:
             print(f"  GPT-5 button error: {e}")
-    
+
+    def _scroll_to_bottom(self):
+        """Scroll chat to bottom with multiple attempts and methods"""
+        for attempt in range(3):
+            try:
+                self.page.evaluate("""
+                    () => {
+                        // M365 Copilot specific selectors
+                        const selectors = [
+                            '[data-testid="chat-messages"]',
+                            '[class*="ChatMessages"]',
+                            '[class*="chat-message"]',
+                            '[class*="MessageList"]',
+                            '[class*="message-list"]',
+                            '[class*="conversation"]',
+                            '[class*="chat"]',
+                            '[role="log"]',
+                            '[role="main"]',
+                            'main',
+                        ];
+
+                        let scrolled = false;
+                        for (const selector of selectors) {
+                            const elements = document.querySelectorAll(selector);
+                            for (const el of elements) {
+                                if (el.scrollHeight > el.clientHeight) {
+                                    el.scrollTop = el.scrollHeight;
+                                    scrolled = true;
+                                }
+                            }
+                        }
+
+                        // Also try scrolling the last message into view
+                        const messages = document.querySelectorAll('[class*="message"], [class*="Message"]');
+                        if (messages.length > 0) {
+                            messages[messages.length - 1].scrollIntoView({ behavior: 'auto', block: 'end' });
+                        }
+
+                        // Fallback: window scroll
+                        window.scrollTo(0, document.body.scrollHeight);
+
+                        return scrolled;
+                    }
+                """)
+                time.sleep(0.3)
+            except Exception:
+                pass
+
     def new_chat(self):
         """Start new chat"""
         try:
@@ -1229,21 +1276,7 @@ class CopilotHandler:
 
             # Wait for browser to stabilize after send, then scroll to bottom
             time.sleep(1.5)
-            try:
-                # Scroll chat container to bottom to see response
-                self.page.evaluate("""
-                    () => {
-                        const chatContainer = document.querySelector('[class*="chat"]') ||
-                                            document.querySelector('[class*="conversation"]') ||
-                                            document.querySelector('main');
-                        if (chatContainer) {
-                            chatContainer.scrollTop = chatContainer.scrollHeight;
-                        }
-                        window.scrollTo(0, document.body.scrollHeight);
-                    }
-                """)
-            except Exception:
-                pass  # Scroll is nice-to-have, not critical
+            self._scroll_to_bottom()
 
             return True
         except Exception as e:
@@ -1554,6 +1587,21 @@ class UniversalTranslator:
             import keyboard
             import ctypes
 
+            # Remove topmost from our UI window first so Notepad can get focus
+            def remove_topmost(hwnd, _):
+                if win32gui.IsWindowVisible(hwnd):
+                    title = win32gui.GetWindowText(hwnd)
+                    if "Translator" in title or "翻訳" in title:
+                        # Remove TOPMOST flag
+                        ctypes.windll.user32.SetWindowPos(
+                            hwnd, -2,  # HWND_NOTOPMOST
+                            0, 0, 0, 0,
+                            0x0001 | 0x0002  # SWP_NOMOVE | SWP_NOSIZE
+                        )
+                return True
+            win32gui.EnumWindows(remove_topmost, None)
+            time.sleep(0.1)
+
             # Format output
             output = f"""=== Original ===
 {original}
@@ -1739,6 +1787,21 @@ def open_notepad_with_excel_log(translation_pairs: list, direction: str = "JP �
         import win32process
         import keyboard
         import ctypes
+
+        # Remove topmost from our UI window first so Notepad can get focus
+        def remove_topmost(hwnd, _):
+            if win32gui.IsWindowVisible(hwnd):
+                title = win32gui.GetWindowText(hwnd)
+                if "Translator" in title or "翻訳" in title:
+                    # Remove TOPMOST flag
+                    ctypes.windll.user32.SetWindowPos(
+                        hwnd, -2,  # HWND_NOTOPMOST
+                        0, 0, 0, 0,
+                        0x0001 | 0x0002  # SWP_NOMOVE | SWP_NOSIZE
+                    )
+            return True
+        win32gui.EnumWindows(remove_topmost, None)
+        time.sleep(0.1)
 
         # Format output with both original and translated text
         lines = [f"=== Excel Translation Log ({direction}) ===", ""]

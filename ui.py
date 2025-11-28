@@ -2023,7 +2023,7 @@ class TranslatorApp(ctk.CTk):
             self.ambient_glow.set_mode("success")
 
             # Particle burst from center (more particles for higher confidence)
-            self.particles.tkraise()  # Bring to front
+            self.particles.lift()  # Bring to front
             center_x = self.winfo_width() // 2
             center_y = int(self.winfo_height() * 0.40)
             particle_count = max(20, int(50 * (confidence / 100)))

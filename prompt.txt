@@ -10,7 +10,7 @@ Critical Mission & Priorities
 1. 記号使用の絶対禁止 (NO SYMBOLS for Logic): 比較・変動・関係性を示す記号（> < = ↑ ↓ ~）は絶対に使用しない。文字数が増えても必ず英単語を使用する。
 2. 出力形式の厳守 (Strict Format): TSVデータ以外の文字（挨拶、Markdownの枠、解説）を1文字たりとも出力しない。
 3. 構造維持 (Structure): 入力行数と出力行数は完全に一致させる。
-4. 攻撃的な圧縮 (Aggressive Compression): 上記「記号禁止ルール」を守った上で、単語を短縮形にする。
+4. 積極的な短縮 (Smart Compression): 上記「記号禁止ルール」を守った上で、単語を短縮形にする。
 
 Processing Rules (Step-by-Step)
 
@@ -18,7 +18,7 @@ Step 1: 入力解析
 - 入力は [CellAddress] [TAB] [JapaneseText] の形式である。
 - 左列（CellAddress）は一文字も変更せずそのまま出力する。
 
-Step 2: 翻訳と超圧縮 (Aggressive Abbreviation)
+Step 2: 翻訳と効率的な短縮 (Smart Abbreviation)
 日本語を英語に翻訳し、以下のルールで短縮する。
 
 2-1. 文体と削除

@@ -1141,37 +1141,64 @@ class CopilotHandler:
 # =============================================================================
 # Shared Copilot Connection Manager
 # =============================================================================
+import threading as _threading
+_shared_copilot_lock = _threading.Lock()  # Module-level lock to avoid race condition
+
+
 class SharedCopilotManager:
     """
     Manages a shared CopilotHandler instance across translations.
     Keeps the browser open between translations for faster performance.
     """
     _instance: Optional[CopilotHandler] = None
-    _lock = None
 
     @classmethod
-    def _get_lock(cls):
-        """Lazy initialize the lock (needed for threading)"""
-        if cls._lock is None:
-            import threading
-            cls._lock = threading.Lock()
-        return cls._lock
+    def _is_connection_valid(cls) -> bool:
+        """Check if the current connection is still valid and working"""
+        if cls._instance is None:
+            return False
+        try:
+            # Check if browser and page objects exist
+            if cls._instance.browser is None or cls._instance.page is None:
+                return False
+            # Try to verify the page is still responsive
+            if not cls._instance.browser.is_connected():
+                return False
+            # Page might be closed or crashed
+            if cls._instance.page.is_closed():
+                return False
+            return True
+        except Exception:
+            return False
 
     @classmethod
     def get_copilot(cls) -> Optional[CopilotHandler]:
         """Get the shared CopilotHandler, launching if needed"""
-        with cls._get_lock():
-            if cls._instance is None:
-                cls._instance = CopilotHandler()
-                if not cls._instance.launch():
+        with _shared_copilot_lock:
+            # Check if existing connection is still valid
+            if cls._instance is not None:
+                if cls._is_connection_valid():
+                    return cls._instance
+                else:
+                    # Connection is invalid, clean up and create new one
+                    print("  Previous connection invalid, reconnecting...")
+                    try:
+                        cls._instance.close()
+                    except Exception:
+                        pass
                     cls._instance = None
-                    return None
+
+            # Create new instance
+            cls._instance = CopilotHandler()
+            if not cls._instance.launch():
+                cls._instance = None
+                return None
             return cls._instance
 
     @classmethod
     def is_connected(cls) -> bool:
-        """Check if Copilot is already connected"""
-        return cls._instance is not None and cls._instance.page is not None
+        """Check if Copilot is already connected and valid"""
+        return cls._is_connection_valid()
 
     @classmethod
     def new_chat(cls):
@@ -1182,7 +1209,7 @@ class SharedCopilotManager:
     @classmethod
     def close(cls):
         """Close the shared Copilot (called on app exit)"""
-        with cls._get_lock():
+        with _shared_copilot_lock:
             if cls._instance:
                 cls._instance.close()
                 cls._instance = None

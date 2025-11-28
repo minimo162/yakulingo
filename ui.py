@@ -2022,8 +2022,8 @@ class TranslatorApp(ctk.CTk):
         )
 
     def show_complete(self, count: int, translation_pairs: list = None, confidence: int = 100):
-        """Complete state - celebration!"""
-        # Critical state reset (must happen even if animations fail)
+        """Complete state - simple completion display (no animations)"""
+        # Critical state reset
         self.is_translating = False
         self.cancel_requested = False
         self.last_translation_pairs = translation_pairs
@@ -2041,53 +2041,29 @@ class TranslatorApp(ctk.CTk):
         else:
             quality_text = "Review"
 
-        # Update button state first (critical)
+        # Update button state
         self.action_btn.configure(
             text="Translate",
             state="normal",
-            fg_color=THEME.text_primary,  # White button
+            fg_color=THEME.text_primary,
             text_color=THEME.bg_primary
         )
 
-        # Update text displays
-        self.status_text.set_text("Complete")
-        self.subtitle_text.set_text(f"{count} cells | {quality_text} ({confidence}%)")
-
-        # Optional celebratory animations (wrapped in try-except)
+        # Update Dynamic Island - simple status update
         try:
-            # Dynamic Island - success state
             self.dynamic_island.stop_pulse()
-            self.dynamic_island.set_status("Complete!", f"{count} cells translated", 1.0)
+            self.dynamic_island.set_status("Complete!", f"{count} cells | {quality_text}", 1.0)
+        except Exception:
+            pass
 
-            # Ambient Glow - success mode (green)
-            self.ambient_glow.set_mode("success")
-
-            # Particle burst from center (more particles for higher confidence)
-            tk.Misc.lift(self.particles)  # Bring to front
-            center_x = self.winfo_width() // 2
-            center_y = int(self.winfo_height() * 0.40)
-            particle_count = max(20, int(50 * (confidence / 100)))
-            self.particles.burst(center_x, center_y, count=particle_count)
-
-            # Play success sound
+        # Play success sound
+        try:
             SoundPlayer.play_success()
+        except Exception:
+            pass
 
-            # Kinetic Typography celebration
-            self.status_text.celebrate()  # Wave animation!
-
-            # Compact Dynamic Island after celebration
-            self.after(2000, self.dynamic_island.compact)
-
-            # Reset to ready state after celebration (5 seconds)
-            self.after(5000, self.show_ready)
-
-            # Keep UI visible (don't show ResultsSheet dialog for Excel - use Notepad instead)
-            # Translation log is now shown in Notepad by TranslatorController
-
-        except Exception as e:
-            print(f"Animation error (non-critical): {e}")
-            # Even if animation fails, reset to ready state
-            self.after(2000, self.show_ready)
+        # Reset to ready state after 3 seconds
+        self.after(3000, self.show_ready)
 
     def show_error(self, message: str):
         """Error state - calm acknowledgment"""

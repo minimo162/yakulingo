@@ -1532,6 +1532,7 @@ class UniversalTranslator:
             import win32con
             import win32clipboard
             import keyboard
+            import win32process
 
             # Format output
             output = f"""=== Original ===
@@ -1540,29 +1541,49 @@ class UniversalTranslator:
 === Translation ({self._get_direction_label()}) ===
 {translated}
 """
-            # Open Notepad FIRST (before copying to clipboard)
+            # Get list of existing Notepad windows BEFORE opening new one
+            existing_notepad_hwnds = set()
+            def find_existing_notepad(hwnd, hwnds):
+                if win32gui.IsWindowVisible(hwnd):
+                    title = win32gui.GetWindowText(hwnd)
+                    if "メモ帳" in title or "Notepad" in title or "無題" in title or "Untitled" in title:
+                        hwnds.add(hwnd)
+                return True
+            win32gui.EnumWindows(find_existing_notepad, existing_notepad_hwnds)
+
+            # Open NEW Notepad
             local_cwd = os.environ.get("SYSTEMROOT", r"C:\Windows")
             notepad_path = os.path.join(local_cwd, "notepad.exe")
-            subprocess.Popen([notepad_path], cwd=local_cwd)
+            proc = subprocess.Popen([notepad_path], cwd=local_cwd)
+            new_pid = proc.pid
 
-            # Wait for Notepad to open and find its window
+            # Wait for NEW Notepad window (not in existing list)
             notepad_hwnd = None
             for _ in range(50):  # Try for up to 5 seconds
                 time.sleep(0.1)
-                def find_notepad(hwnd, hwnds):
+                def find_new_notepad(hwnd, result):
                     if win32gui.IsWindowVisible(hwnd):
                         title = win32gui.GetWindowText(hwnd)
                         if "メモ帳" in title or "Notepad" in title or "無題" in title or "Untitled" in title:
-                            hwnds.append(hwnd)
+                            # Check if this is NOT an existing window
+                            if hwnd not in existing_notepad_hwnds:
+                                # Verify it's our process
+                                try:
+                                    _, pid = win32process.GetWindowThreadProcessId(hwnd)
+                                    if pid == new_pid:
+                                        result.append(hwnd)
+                                except Exception:
+                                    # If can't get PID, still use it if not in existing
+                                    result.append(hwnd)
                     return True
-                hwnds = []
-                win32gui.EnumWindows(find_notepad, hwnds)
-                if hwnds:
-                    notepad_hwnd = hwnds[0]
+                result = []
+                win32gui.EnumWindows(find_new_notepad, result)
+                if result:
+                    notepad_hwnd = result[0]
                     break
 
             if not notepad_hwnd:
-                print("  Warning: Failed to find Notepad window")
+                print("  Warning: Failed to find new Notepad window")
                 return
 
             # Activate Notepad window and paste
@@ -1701,6 +1722,7 @@ def open_notepad_with_excel_log(translation_pairs: list, direction: str = "JP �
         import win32con
         import win32clipboard
         import keyboard
+        import win32process
 
         # Format output with both original and translated text
         lines = [f"=== Excel Translation Log ({direction}) ===", ""]
@@ -1713,29 +1735,49 @@ def open_notepad_with_excel_log(translation_pairs: list, direction: str = "JP �
         lines.append(f"=== {len(translation_pairs)} cells translated ===")
         output = "\n".join(lines)
 
-        # Open Notepad FIRST (before copying to clipboard)
+        # Get list of existing Notepad windows BEFORE opening new one
+        existing_notepad_hwnds = set()
+        def find_existing_notepad(hwnd, hwnds):
+            if win32gui.IsWindowVisible(hwnd):
+                title = win32gui.GetWindowText(hwnd)
+                if "メモ帳" in title or "Notepad" in title or "無題" in title or "Untitled" in title:
+                    hwnds.add(hwnd)
+            return True
+        win32gui.EnumWindows(find_existing_notepad, existing_notepad_hwnds)
+
+        # Open NEW Notepad
         local_cwd = os.environ.get("SYSTEMROOT", r"C:\Windows")
         notepad_path = os.path.join(local_cwd, "notepad.exe")
-        subprocess.Popen([notepad_path], cwd=local_cwd)
+        proc = subprocess.Popen([notepad_path], cwd=local_cwd)
+        new_pid = proc.pid
 
-        # Wait for Notepad to open and find its window
+        # Wait for NEW Notepad window (not in existing list)
         notepad_hwnd = None
         for _ in range(50):  # Try for up to 5 seconds
             time.sleep(0.1)
-            def find_notepad(hwnd, hwnds):
+            def find_new_notepad(hwnd, result):
                 if win32gui.IsWindowVisible(hwnd):
                     title = win32gui.GetWindowText(hwnd)
                     if "メモ帳" in title or "Notepad" in title or "無題" in title or "Untitled" in title:
-                        hwnds.append(hwnd)
+                        # Check if this is NOT an existing window
+                        if hwnd not in existing_notepad_hwnds:
+                            # Verify it's our process
+                            try:
+                                _, pid = win32process.GetWindowThreadProcessId(hwnd)
+                                if pid == new_pid:
+                                    result.append(hwnd)
+                            except Exception:
+                                # If can't get PID, still use it if not in existing
+                                result.append(hwnd)
                 return True
-            hwnds = []
-            win32gui.EnumWindows(find_notepad, hwnds)
-            if hwnds:
-                notepad_hwnd = hwnds[0]
+            result = []
+            win32gui.EnumWindows(find_new_notepad, result)
+            if result:
+                notepad_hwnd = result[0]
                 break
 
         if not notepad_hwnd:
-            print("  Warning: Could not find Notepad window")
+            print("  Warning: Could not find new Notepad window")
             return
 
         # Activate Notepad window and paste

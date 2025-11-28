@@ -2143,7 +2143,7 @@ class SettingsSheet(ctk.CTkToplevel):
         super().__init__(parent)
 
         self.title("Settings")
-        self.geometry("400x360")
+        self.geometry("420x400")
         self.configure(fg_color=THEME.bg_primary)
         self.resizable(False, False)
 
@@ -2191,23 +2191,24 @@ class SettingsSheet(ctk.CTkToplevel):
         ctk.CTkLabel(
             glossary_inner,
             text="Glossary File",
-            font=get_font("text", 16, "bold"),
+            font=get_font("text", 18, "bold"),
             text_color=THEME.text_primary
         ).pack(anchor="w")
 
         ctk.CTkLabel(
             glossary_inner,
             text="CSV file with translation terms",
-            font=get_font("text", 13),
+            font=get_font("text", 14),
             text_color=THEME.text_tertiary
-        ).pack(anchor="w", pady=(2, THEME.space_sm))
+        ).pack(anchor="w", pady=(4, THEME.space_sm))
 
         # Current file display
         self.glossary_label = ctk.CTkLabel(
             glossary_inner,
             text=self.config.get_glossary_display_name(),
-            font=get_font("mono", 13),
-            text_color=THEME.accent if self.config.glossary_enabled else THEME.text_tertiary
+            font=get_font("mono", 15),
+            text_color=THEME.accent if self.config.glossary_enabled else THEME.text_tertiary,
+            wraplength=350
         )
         self.glossary_label.pack(anchor="w", pady=(0, THEME.space_sm))
 
@@ -2251,25 +2252,22 @@ class SettingsSheet(ctk.CTkToplevel):
         ctk.CTkLabel(
             autostart_inner,
             text="Start with Windows",
-            font=get_font("text", 16, "bold"),
+            font=get_font("text", 18, "bold"),
             text_color=THEME.text_primary
         ).pack(anchor="w")
 
         ctk.CTkLabel(
             autostart_inner,
             text="Launch automatically when Windows starts",
-            font=get_font("text", 13),
+            font=get_font("text", 14),
             text_color=THEME.text_tertiary
-        ).pack(anchor="w", pady=(2, THEME.space_sm))
-
-        autostart_row = ctk.CTkFrame(autostart_inner, fg_color="transparent")
-        autostart_row.pack(fill="x")
+        ).pack(anchor="w", pady=(4, THEME.space_sm))
 
         self.autostart_var = ctk.BooleanVar(value=self.config.auto_start)
         self.autostart_switch = ctk.CTkSwitch(
-            autostart_row,
+            autostart_inner,
             text="Enabled" if self.config.auto_start else "Disabled",
-            font=get_font("text", 14),
+            font=get_font("text", 15),
             variable=self.autostart_var,
             onvalue=True,
             offvalue=False,
@@ -2278,7 +2276,7 @@ class SettingsSheet(ctk.CTkToplevel):
             button_color=THEME.text_secondary,
             button_hover_color=THEME.text_primary
         )
-        self.autostart_switch.pack(side="left")
+        self.autostart_switch.pack(anchor="w")
 
         # Done button
         done_btn = MinimalButton(

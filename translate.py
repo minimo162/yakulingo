@@ -1289,6 +1289,37 @@ class CopilotHandler:
             print(f"  Warning: File attach failed: {e}")
             return False
 
+    def attach_files(self, file_paths: list) -> bool:
+        """Attach multiple files at once"""
+        if not file_paths:
+            return True
+
+        try:
+            # Wait for file input to be available
+            for _ in range(10):
+                file_input = self.page.query_selector('input[type="file"]')
+                if file_input:
+                    break
+                time.sleep(0.5)
+
+            if file_input:
+                # set_input_files can accept a list of files
+                file_input.set_input_files(file_paths)
+                time.sleep(1.5)
+                file_names = [Path(f).name for f in file_paths]
+                print(f"  Files attached: {', '.join(file_names)}")
+                return True
+
+            # Fallback: attach one by one
+            for file_path in file_paths:
+                self.attach_file(Path(file_path))
+
+            return True
+
+        except Exception as e:
+            print(f"  Warning: Files attach failed: {e}")
+            return False
+
     def attach_file_via_clipboard(self, file_path: Path) -> bool:
         """Attach a file by copying to clipboard and pasting (like Ctrl+C in Explorer)"""
         try:
@@ -1339,13 +1370,16 @@ class CopilotHandler:
             # Bring browser to front so user can see progress (restore if minimized)
             bring_edge_translator_to_front()
 
-            # Attach glossary file via clipboard (Ctrl+C file, Ctrl+V to paste)
+            # Attach files via file input (more reliable than clipboard)
+            # If both glossary and image, attach them together
+            files_to_attach = []
             if glossary_path and glossary_path.exists():
-                self.attach_file_via_clipboard(glossary_path)
-
-            # Attach image via file input (more reliable for images)
+                files_to_attach.append(str(glossary_path))
             if image_path and image_path.exists():
-                self.attach_file(image_path)
+                files_to_attach.append(str(image_path))
+
+            if files_to_attach:
+                self.attach_files(files_to_attach)
 
             # Type prompt text
             self.page.click(CONFIG.selector_input)

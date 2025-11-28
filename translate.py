@@ -1554,6 +1554,21 @@ class UniversalTranslator:
             import keyboard
             import ctypes
 
+            # Remove topmost from our UI window first so Notepad can get focus
+            def remove_topmost(hwnd, _):
+                if win32gui.IsWindowVisible(hwnd):
+                    title = win32gui.GetWindowText(hwnd)
+                    if "Translator" in title or "翻訳" in title:
+                        # Remove TOPMOST flag
+                        ctypes.windll.user32.SetWindowPos(
+                            hwnd, -2,  # HWND_NOTOPMOST
+                            0, 0, 0, 0,
+                            0x0001 | 0x0002  # SWP_NOMOVE | SWP_NOSIZE
+                        )
+                return True
+            win32gui.EnumWindows(remove_topmost, None)
+            time.sleep(0.1)
+
             # Format output
             output = f"""=== Original ===
 {original}
@@ -1739,6 +1754,21 @@ def open_notepad_with_excel_log(translation_pairs: list, direction: str = "JP �
         import win32process
         import keyboard
         import ctypes
+
+        # Remove topmost from our UI window first so Notepad can get focus
+        def remove_topmost(hwnd, _):
+            if win32gui.IsWindowVisible(hwnd):
+                title = win32gui.GetWindowText(hwnd)
+                if "Translator" in title or "翻訳" in title:
+                    # Remove TOPMOST flag
+                    ctypes.windll.user32.SetWindowPos(
+                        hwnd, -2,  # HWND_NOTOPMOST
+                        0, 0, 0, 0,
+                        0x0001 | 0x0002  # SWP_NOMOVE | SWP_NOSIZE
+                    )
+            return True
+        win32gui.EnumWindows(remove_topmost, None)
+        time.sleep(0.1)
 
         # Format output with both original and translated text
         lines = [f"=== Excel Translation Log ({direction}) ===", ""]

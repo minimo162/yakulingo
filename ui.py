@@ -2143,7 +2143,7 @@ class SettingsSheet(ctk.CTkToplevel):
         super().__init__(parent)
 
         self.title("Settings")
-        self.geometry("420x380")
+        self.geometry("420x450")
         self.configure(fg_color=THEME.bg_primary)
         self.resizable(False, False)
 
@@ -2254,30 +2254,30 @@ class SettingsSheet(ctk.CTkToplevel):
 
         # Buttons row
         btn_row = ctk.CTkFrame(glossary_inner, fg_color="transparent")
-        btn_row.pack(fill="x")
+        btn_row.pack(fill="x", pady=(THEME.space_xs, 0))
 
         browse_btn = ctk.CTkButton(
             btn_row,
-            text="Browse...",
-            font=get_font("text", 12),
-            fg_color=THEME.bg_elevated,
-            hover_color=THEME.bg_card,
-            text_color=THEME.text_primary,
-            height=28,
-            width=80,
+            text="📂 Browse...",
+            font=get_font("text", 13),
+            fg_color=THEME.accent,
+            hover_color=THEME.gradient_active[1],
+            text_color="#ffffff",
+            height=32,
+            width=120,
             command=self._browse_glossary
         )
-        browse_btn.pack(side="left", padx=(0, THEME.space_xs))
+        browse_btn.pack(side="left", padx=(0, THEME.space_sm))
 
         clear_btn = ctk.CTkButton(
             btn_row,
             text="Clear",
-            font=get_font("text", 12),
+            font=get_font("text", 13),
             fg_color=THEME.bg_elevated,
             hover_color=THEME.bg_card,
-            text_color=THEME.text_tertiary,
-            height=28,
-            width=60,
+            text_color=THEME.text_secondary,
+            height=32,
+            width=80,
             command=self._clear_glossary
         )
         clear_btn.pack(side="left")

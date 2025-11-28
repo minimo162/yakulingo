@@ -1247,20 +1247,65 @@ class CopilotHandler:
             print(f"  Warning: File attach failed: {e}")
             return False
 
+    def attach_file_via_clipboard(self, file_path: Path) -> bool:
+        """Attach a file by copying to clipboard and pasting (like Ctrl+C in Explorer)"""
+        try:
+            import win32clipboard
+            import struct
+
+            # Convert path to absolute
+            file_path = Path(file_path).resolve()
+            if not file_path.exists():
+                print(f"  Warning: File not found: {file_path}")
+                return False
+
+            # Build DROPFILES structure for clipboard
+            # https://docs.microsoft.com/en-us/windows/win32/shell/clipboard#cf_hdrop
+            file_path_str = str(file_path) + '\0\0'  # Double null terminated
+            file_path_bytes = file_path_str.encode('utf-16-le')
+
+            # DROPFILES structure: 20 bytes header + file paths
+            # struct { DWORD pFiles; POINT pt; BOOL fNC; BOOL fWide; }
+            dropfiles = struct.pack('IIIii', 20, 0, 0, 0, 1)  # pFiles=20, pt=(0,0), fNC=0, fWide=1
+            data = dropfiles + file_path_bytes
+
+            # Copy to clipboard as CF_HDROP
+            CF_HDROP = 15
+            win32clipboard.OpenClipboard()
+            try:
+                win32clipboard.EmptyClipboard()
+                win32clipboard.SetClipboardData(CF_HDROP, data)
+            finally:
+                win32clipboard.CloseClipboard()
+
+            # Click input and paste
+            self.page.click(CONFIG.selector_input)
+            time.sleep(0.3)
+            self.page.keyboard.press("Control+v")
+            time.sleep(1.5)
+
+            print(f"  File attached via clipboard: {file_path.name}")
+            return True
+
+        except Exception as e:
+            print(f"  Warning: Clipboard file attach failed: {e}")
+            return False
+
     def send_prompt(self, prompt: str, image_path: Optional[Path] = None, glossary_path: Optional[Path] = None) -> bool:
         """Send prompt with optional file attachments (image, glossary)"""
         try:
             # Bring browser to front so user can see progress
             self.page.bring_to_front()
 
-            # Attach glossary file first if provided
+            # Attach glossary file via clipboard (Ctrl+C file, Ctrl+V to paste)
             if glossary_path and glossary_path.exists():
-                self.attach_file(glossary_path)
+                self.attach_file_via_clipboard(glossary_path)
 
-            # Attach image if provided
+            # Attach image via file input (more reliable for images)
             if image_path and image_path.exists():
                 self.attach_file(image_path)
 
+            # Type prompt text
             self.page.click(CONFIG.selector_input)
             time.sleep(0.3)
             self.page.evaluate(f"navigator.clipboard.writeText({repr(prompt)})")

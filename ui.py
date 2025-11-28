@@ -1820,15 +1820,19 @@ class TranslatorApp(ctk.CTk):
         )
         self.shortcut2_desc.pack(pady=(2, 0))
 
-        # About link
-        self.about_btn = MinimalButton(
+        # Settings button (more visible)
+        self.settings_btn = ctk.CTkButton(
             self.footer,
-            text="About",
-            variant="ghost",
+            text="⚙ Settings",
+            font=get_font("text", 14),
+            fg_color=THEME.bg_elevated,
+            hover_color=THEME.bg_card,
+            text_color=THEME.text_secondary,
             height=36,
+            corner_radius=8,
             command=self._show_about
         )
-        self.about_btn.pack(fill="x", pady=(THEME.space_sm, 0))
+        self.settings_btn.pack(fill="x", pady=(THEME.space_sm, 0))
 
         # === Hero Section (center stage) - simplified ===
         self.hero = ctk.CTkFrame(self.container, fg_color="transparent")

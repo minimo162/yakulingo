@@ -98,6 +98,48 @@ def is_excel_active() -> bool:
         return False
 
 
+def bring_window_to_front(title_contains: str) -> bool:
+    """Bring a window to front, restoring if minimized
+
+    Args:
+        title_contains: Partial window title to search for
+
+    Returns:
+        True if window was found and brought to front
+    """
+    try:
+        import win32gui
+        import win32con
+
+        def callback(hwnd, results):
+            if win32gui.IsWindowVisible(hwnd):
+                title = win32gui.GetWindowText(hwnd)
+                if title_contains.lower() in title.lower():
+                    results.append(hwnd)
+            return True
+
+        windows = []
+        win32gui.EnumWindows(callback, windows)
+
+        if windows:
+            hwnd = windows[0]
+            # Restore if minimized
+            if win32gui.IsIconic(hwnd):
+                win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+            # Bring to front
+            win32gui.SetForegroundWindow(hwnd)
+            return True
+        return False
+    except Exception:
+        return False
+
+
+def bring_edge_translator_to_front() -> bool:
+    """Bring the Edge translator window to front"""
+    # Try to find by user data dir name or Copilot title
+    return bring_window_to_front("Copilot") or bring_window_to_front("edge_translator")
+
+
 # =============================================================================
 # Configuration
 # =============================================================================
@@ -1108,8 +1150,8 @@ class CopilotHandler:
             self.page.goto(CONFIG.copilot_url, wait_until="domcontentloaded", timeout=60000)
             print(" done")
 
-            # Bring browser to front
-            self.page.bring_to_front()
+            # Bring browser to front (restore if minimized)
+            bring_edge_translator_to_front()
 
             # Wait for input field
             progress(4, "Waiting for Copilot to load...")
@@ -1294,8 +1336,8 @@ class CopilotHandler:
     def send_prompt(self, prompt: str, image_path: Optional[Path] = None, glossary_path: Optional[Path] = None) -> bool:
         """Send prompt with optional file attachments (image, glossary)"""
         try:
-            # Bring browser to front so user can see progress
-            self.page.bring_to_front()
+            # Bring browser to front so user can see progress (restore if minimized)
+            bring_edge_translator_to_front()
 
             # Attach glossary file via clipboard (Ctrl+C file, Ctrl+V to paste)
             if glossary_path and glossary_path.exists():
@@ -1663,6 +1705,9 @@ class UniversalTranslator:
 
             # Open the file (uses default application, typically Notepad)
             os.startfile(str(log_file))
+            time.sleep(0.5)  # Wait for app to start
+            # Bring Notepad to front (restore if minimized)
+            bring_window_to_front("メモ帳") or bring_window_to_front("Notepad")
             print("  Translation log opened")
 
         except Exception as e:
@@ -1778,6 +1823,9 @@ def open_notepad_with_excel_log(translation_pairs: list, direction: str = "JP �
 
         # Open the file (uses default application, typically Notepad)
         os.startfile(str(log_file))
+        time.sleep(0.5)  # Wait for app to start
+        # Bring Notepad to front (restore if minimized)
+        bring_window_to_front("メモ帳") or bring_window_to_front("Notepad")
         print("  Translation log opened")
 
     except Exception as e:

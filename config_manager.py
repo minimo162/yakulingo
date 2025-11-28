@@ -180,6 +180,34 @@ The glossary file contains source→target term mappings.
 You MUST use these exact translations when the source term appears.
 """
 
+    def set_glossary_file(self, file_path: Optional[str]):
+        """
+        Set the glossary file path and enable/disable glossary.
+        Args:
+            file_path: Absolute path to glossary file, or None to disable
+        """
+        if file_path is None:
+            self.config.glossary.enabled = False
+            self.config.glossary.file = "glossary.csv"
+        else:
+            # Store as relative path if in same directory, otherwise absolute
+            file_path = Path(file_path)
+            app_dir = Path(__file__).parent
+            try:
+                rel_path = file_path.relative_to(app_dir)
+                self.config.glossary.file = str(rel_path)
+            except ValueError:
+                # File is outside app directory, store absolute path
+                self.config.glossary.file = str(file_path)
+            self.config.glossary.enabled = True
+        self.save()
+
+    def get_glossary_display_name(self) -> str:
+        """Get display name for current glossary file"""
+        if not self.glossary_enabled:
+            return "Not set"
+        return Path(self.config.glossary.file).name
+
 
 # Global config instance
 _config_manager: Optional[ConfigManager] = None

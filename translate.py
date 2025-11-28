@@ -1215,8 +1215,14 @@ class CopilotHandler:
     def attach_file(self, file_path: Path) -> bool:
         """Attach a file (image, CSV, etc.) to the chat"""
         try:
+            # Wait for file input to be available (may take time after page load)
+            for _ in range(10):
+                file_input = self.page.query_selector('input[type="file"]')
+                if file_input:
+                    break
+                time.sleep(0.5)
+
             # Look for file input element (hidden)
-            file_input = self.page.query_selector('input[type="file"]')
             if file_input:
                 file_input.set_input_files(str(file_path))
                 time.sleep(1)
@@ -1587,29 +1593,17 @@ class UniversalTranslator:
             print(f"Copy error: {e}")
 
     def open_notepad_with_text(self, original: str, translated: str):
-        """Open Notepad and paste the translation result"""
+        """Save translation to file and open it"""
         try:
-            import win32gui
-            import win32con
-            import win32clipboard
-            import win32process
-            import keyboard
-            import ctypes
+            from datetime import datetime
 
-            # Remove topmost from our UI window first so Notepad can get focus
-            def remove_topmost(hwnd, _):
-                if win32gui.IsWindowVisible(hwnd):
-                    title = win32gui.GetWindowText(hwnd)
-                    if "Translator" in title or "翻訳" in title:
-                        # Remove TOPMOST flag
-                        ctypes.windll.user32.SetWindowPos(
-                            hwnd, -2,  # HWND_NOTOPMOST
-                            0, 0, 0, 0,
-                            0x0001 | 0x0002  # SWP_NOMOVE | SWP_NOSIZE
-                        )
-                return True
-            win32gui.EnumWindows(remove_topmost, None)
-            time.sleep(0.1)
+            # Create translation_logs folder
+            log_dir = Path(__file__).parent / "translation_logs"
+            log_dir.mkdir(exist_ok=True)
+
+            # Generate timestamped filename
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            log_file = log_dir / f"translation_{timestamp}.txt"
 
             # Format output
             output = f"""=== Original ===
@@ -1618,109 +1612,16 @@ class UniversalTranslator:
 === Translation ({self._get_direction_label()}) ===
 {translated}
 """
-            # Copy to clipboard FIRST
-            win32clipboard.OpenClipboard()
-            try:
-                win32clipboard.EmptyClipboard()
-                win32clipboard.SetClipboardData(win32clipboard.CF_UNICODETEXT, output)
-            finally:
-                win32clipboard.CloseClipboard()
+            # Write to file
+            log_file.write_text(output, encoding="utf-8")
+            print(f"  Translation saved: {log_file.name}")
 
-            # Get list of ALL existing Notepad windows BEFORE opening new one
-            # Include minimized windows to avoid pasting to wrong window
-            existing_notepad_hwnds = set()
-            def find_existing_notepad(hwnd, hwnds):
-                try:
-                    # Check all windows (including minimized) to avoid duplicates
-                    if win32gui.IsWindow(hwnd):
-                        title = win32gui.GetWindowText(hwnd)
-                        if any(x in title for x in ["メモ帳", "Notepad", "無題", "Untitled", "タイトルなし"]):
-                            hwnds.add(hwnd)
-                except Exception:
-                    pass
-                return True
-            win32gui.EnumWindows(find_existing_notepad, existing_notepad_hwnds)
-
-            # Open NEW Notepad
-            local_cwd = os.environ.get("SYSTEMROOT", r"C:\Windows")
-            notepad_path = os.path.join(local_cwd, "notepad.exe")
-            subprocess.Popen([notepad_path], cwd=local_cwd)
-
-            # Wait for NEW Notepad window (not in existing list)
-            notepad_hwnd = None
-            for _ in range(80):  # Try for up to 8 seconds
-                time.sleep(0.1)
-                def find_new_notepad(hwnd, result):
-                    try:
-                        if not win32gui.IsWindowVisible(hwnd):
-                            return True
-                        title = win32gui.GetWindowText(hwnd)
-                        if not title:
-                            return True
-                        # Check by title - simple and reliable
-                        if any(x in title for x in ["メモ帳", "Notepad", "無題", "Untitled", "タイトルなし"]):
-                            if hwnd not in existing_notepad_hwnds:
-                                result.append(hwnd)
-                    except Exception:
-                        pass
-                    return True
-                result = []
-                win32gui.EnumWindows(find_new_notepad, result)
-                if result:
-                    # Verify window is still valid before using
-                    candidate = result[0]
-                    try:
-                        if win32gui.IsWindow(candidate) and win32gui.IsWindowVisible(candidate):
-                            notepad_hwnd = candidate
-                            break
-                    except Exception:
-                        pass
-
-            if not notepad_hwnd:
-                print("  Warning: Failed to find new Notepad window")
-                return
-
-            # Activate Notepad window and paste using keyboard library
-            for attempt in range(5):  # Try up to 5 times
-                try:
-                    # Check window is still valid
-                    if not win32gui.IsWindow(notepad_hwnd):
-                        print(f"  Paste attempt {attempt + 1}: Window no longer valid")
-                        time.sleep(0.5)
-                        continue
-
-                    # Restore if minimized
-                    if win32gui.IsIconic(notepad_hwnd):
-                        win32gui.ShowWindow(notepad_hwnd, win32con.SW_RESTORE)
-                        time.sleep(0.3)
-
-                    # Bring to front using multiple methods for reliability
-                    win32gui.ShowWindow(notepad_hwnd, win32con.SW_SHOW)
-
-                    # Use SetForegroundWindow with AllowSetForegroundWindow trick
-                    ctypes.windll.user32.AllowSetForegroundWindow(-1)  # ASFW_ANY
-                    win32gui.SetForegroundWindow(notepad_hwnd)
-                    time.sleep(0.5)
-
-                    # Verify window is foreground
-                    if win32gui.GetForegroundWindow() != notepad_hwnd:
-                        # Try BringWindowToTop as fallback
-                        win32gui.BringWindowToTop(notepad_hwnd)
-                        time.sleep(0.3)
-
-                    # Use keyboard library for Ctrl+V paste
-                    keyboard.send('ctrl+v')
-                    time.sleep(0.3)
-                    print("  Translation pasted to Notepad")
-                    break
-
-                except Exception as e:
-                    print(f"  Paste attempt {attempt + 1} failed: {e}")
-                    time.sleep(0.5)
-                    continue
+            # Open the file (uses default application, typically Notepad)
+            os.startfile(str(log_file))
+            print("  Translation log opened")
 
         except Exception as e:
-            print(f"  Notepad error: {e}")
+            print(f"  Translation log error: {e}")
 
     def _get_direction_label(self) -> str:
         """Get human-readable direction label"""
@@ -1798,34 +1699,22 @@ class UniversalTranslator:
 
 
 def open_notepad_with_excel_log(translation_pairs: list, direction: str = "JP → EN"):
-    """Open Notepad with Excel translation log (original and translated text) with verification
+    """Save Excel translation log to file and open it
 
     Args:
         translation_pairs: List of (original, translated) tuples
         direction: Translation direction label
     """
     try:
-        import win32gui
-        import win32con
-        import win32clipboard
-        import win32process
-        import keyboard
-        import ctypes
+        from datetime import datetime
 
-        # Remove topmost from our UI window first so Notepad can get focus
-        def remove_topmost(hwnd, _):
-            if win32gui.IsWindowVisible(hwnd):
-                title = win32gui.GetWindowText(hwnd)
-                if "Translator" in title or "翻訳" in title:
-                    # Remove TOPMOST flag
-                    ctypes.windll.user32.SetWindowPos(
-                        hwnd, -2,  # HWND_NOTOPMOST
-                        0, 0, 0, 0,
-                        0x0001 | 0x0002  # SWP_NOMOVE | SWP_NOSIZE
-                    )
-            return True
-        win32gui.EnumWindows(remove_topmost, None)
-        time.sleep(0.1)
+        # Create translation_logs folder
+        log_dir = Path(__file__).parent / "translation_logs"
+        log_dir.mkdir(exist_ok=True)
+
+        # Generate timestamped filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        log_file = log_dir / f"excel_translation_{timestamp}.txt"
 
         # Format output with both original and translated text
         lines = [f"=== Excel Translation Log ({direction}) ===", ""]
@@ -1838,109 +1727,16 @@ def open_notepad_with_excel_log(translation_pairs: list, direction: str = "JP �
         lines.append(f"=== {len(translation_pairs)} cells translated ===")
         output = "\n".join(lines)
 
-        # Copy to clipboard FIRST (before opening Notepad)
-        win32clipboard.OpenClipboard()
-        try:
-            win32clipboard.EmptyClipboard()
-            win32clipboard.SetClipboardData(win32clipboard.CF_UNICODETEXT, output)
-        finally:
-            win32clipboard.CloseClipboard()
+        # Write to file
+        log_file.write_text(output, encoding="utf-8")
+        print(f"  Translation log saved: {log_file.name}")
 
-        # Get list of ALL existing Notepad windows BEFORE opening new one
-        # Include minimized windows to avoid pasting to wrong window
-        existing_notepad_hwnds = set()
-        def find_existing_notepad(hwnd, hwnds):
-            try:
-                # Check all windows (including minimized) to avoid duplicates
-                if win32gui.IsWindow(hwnd):
-                    title = win32gui.GetWindowText(hwnd)
-                    if any(x in title for x in ["メモ帳", "Notepad", "無題", "Untitled", "タイトルなし"]):
-                        hwnds.add(hwnd)
-            except Exception:
-                pass
-            return True
-        win32gui.EnumWindows(find_existing_notepad, existing_notepad_hwnds)
-
-        # Open NEW Notepad
-        local_cwd = os.environ.get("SYSTEMROOT", r"C:\Windows")
-        notepad_path = os.path.join(local_cwd, "notepad.exe")
-        subprocess.Popen([notepad_path], cwd=local_cwd)
-
-        # Wait for NEW Notepad window (not in existing list)
-        notepad_hwnd = None
-        for _ in range(80):  # Try for up to 8 seconds
-            time.sleep(0.1)
-            def find_new_notepad(hwnd, result):
-                try:
-                    if not win32gui.IsWindowVisible(hwnd):
-                        return True
-                    title = win32gui.GetWindowText(hwnd)
-                    if not title:
-                        return True
-                    # Check by title - simple and reliable
-                    if any(x in title for x in ["メモ帳", "Notepad", "無題", "Untitled", "タイトルなし"]):
-                        if hwnd not in existing_notepad_hwnds:
-                            result.append(hwnd)
-                except Exception:
-                    pass
-                return True
-            result = []
-            win32gui.EnumWindows(find_new_notepad, result)
-            if result:
-                # Verify window is still valid before using
-                candidate = result[0]
-                try:
-                    if win32gui.IsWindow(candidate) and win32gui.IsWindowVisible(candidate):
-                        notepad_hwnd = candidate
-                        break
-                except Exception:
-                    pass
-
-        if not notepad_hwnd:
-            print("  Warning: Could not find new Notepad window")
-            return
-
-        # Activate Notepad window and paste using keyboard library
-        for attempt in range(5):  # Try up to 5 times
-            try:
-                # Check window is still valid
-                if not win32gui.IsWindow(notepad_hwnd):
-                    print(f"  Paste attempt {attempt + 1}: Window no longer valid")
-                    time.sleep(0.5)
-                    continue
-
-                # Restore if minimized
-                if win32gui.IsIconic(notepad_hwnd):
-                    win32gui.ShowWindow(notepad_hwnd, win32con.SW_RESTORE)
-                    time.sleep(0.3)
-
-                # Bring to front using multiple methods for reliability
-                win32gui.ShowWindow(notepad_hwnd, win32con.SW_SHOW)
-
-                # Use SetForegroundWindow with AllowSetForegroundWindow trick
-                ctypes.windll.user32.AllowSetForegroundWindow(-1)  # ASFW_ANY
-                win32gui.SetForegroundWindow(notepad_hwnd)
-                time.sleep(0.5)
-
-                # Verify window is foreground
-                if win32gui.GetForegroundWindow() != notepad_hwnd:
-                    # Try BringWindowToTop as fallback
-                    win32gui.BringWindowToTop(notepad_hwnd)
-                    time.sleep(0.3)
-
-                # Use keyboard library for Ctrl+V paste
-                keyboard.send('ctrl+v')
-                time.sleep(0.3)
-                print("  Translation log pasted to Notepad")
-                break
-
-            except Exception as e:
-                print(f"  Paste attempt {attempt + 1} failed: {e}")
-                time.sleep(0.3)
-                continue
+        # Open the file (uses default application, typically Notepad)
+        os.startfile(str(log_file))
+        print("  Translation log opened")
 
     except Exception as e:
-        print(f"  Warning: Notepad log error: {e}")
+        print(f"  Warning: Translation log error: {e}")
 
 
 # =============================================================================

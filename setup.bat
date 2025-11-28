@@ -10,9 +10,9 @@ echo.
 cd /d "%~dp0"
 
 :: ============================================================
-:: Proxy Settings (配布者が事前に設定)
+:: Proxy Settings (Pre-configured by distributor)
 :: ============================================================
-:: 自動検出できない場合は、以下にプロキシサーバーを記入してください
+:: If auto-detection fails, set your proxy server below:
 :: set PROXY_SERVER=proxy.yourcompany.co.jp:8080
 :: ============================================================
 

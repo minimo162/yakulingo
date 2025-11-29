@@ -307,10 +307,11 @@ class AppSettings:
     # Reference Files (用語集、参考資料など)
     reference_files: list[Path] = field(default_factory=list)
 
-    # Output
-    add_language_suffix: bool = True    # Add _EN or _JP to filename
-    create_backup: bool = False         # Backup original file
+    # Output (常に別ファイルとして _EN/_JP 付きで保存)
     output_directory: Optional[Path] = None  # None = same as input
+
+    # Startup
+    start_with_windows: bool = False    # Windows起動時に自動起動
 
     # UI
     last_direction: str = "jp_to_en"
@@ -2244,9 +2245,8 @@ class RetryStrategy:
 // config/settings.json
 {
     "reference_files": [],
-    "add_language_suffix": true,
-    "create_backup": false,
     "output_directory": null,
+    "start_with_windows": false,
     "last_direction": "jp_to_en",
     "last_tab": "text",
     "window_width": 800,
@@ -2256,6 +2256,14 @@ class RetryStrategy:
     "max_retries": 3
 }
 ```
+
+**出力ファイルの命名規則（固定）:**
+| 方向 | 入力 | 出力 |
+|------|------|------|
+| JP → EN | `report.xlsx` | `report_EN.xlsx` |
+| EN → JP | `report.xlsx` | `report_JP.xlsx` |
+
+※ 元ファイルは変更しない。常に新規ファイルとして保存。
 
 ### 9.2 Reference Files (参考ファイル)
 

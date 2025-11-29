@@ -1,4 +1,4 @@
-# PDF翻訳機能 技術仕様書 v8.6
+# PDF翻訳機能 技術仕様書 v8.7
 
 ## 概要
 
@@ -134,7 +134,71 @@ PyMuPDF >= 1.24.0
 
 ## 3. Phase 1: PDF読込 (yomitoku準拠)
 
-### 3.1 load_pdf 関数
+### 3.1 バッチ処理設定
+
+大量ページのPDFを効率的に処理するため、バッチ処理を採用する。
+
+| 設定項目 | 値 | 説明 |
+|---------|-----|------|
+| バッチサイズ | 5ページ | 一度にメモリに読み込むページ数 |
+| 最大ページ数 | 制限なし | ページ数に上限なし |
+| DPI | 200 (固定) | 精度優先のため固定値 |
+
+### 3.2 ストリーミング読込
+
+```python
+import pypdfium2 as pdfium
+import numpy as np
+from typing import Iterator
+
+BATCH_SIZE = 5  # バッチサイズ
+DPI = 200       # 固定DPI
+
+def iterate_pdf_pages(
+    pdf_path: str,
+    batch_size: int = BATCH_SIZE,
+    dpi: int = DPI,
+) -> Iterator[tuple[int, list[np.ndarray]]]:
+    """
+    PDFをバッチ単位でストリーミング読込
+
+    Args:
+        pdf_path: PDFファイルパス
+        batch_size: バッチサイズ (デフォルト: 5)
+        dpi: 解像度 (デフォルト: 200, 固定)
+
+    Yields:
+        (batch_start_page, list[np.ndarray]): バッチ開始ページ番号と画像リスト
+    """
+    pdf = pdfium.PdfDocument(pdf_path)
+    total_pages = len(pdf)
+
+    for batch_start in range(0, total_pages, batch_size):
+        batch_end = min(batch_start + batch_size, total_pages)
+        batch_images = []
+
+        for page_idx in range(batch_start, batch_end):
+            page = pdf[page_idx]
+            # DPI固定で高精度レンダリング
+            bitmap = page.render(scale=dpi / 72)
+            img = bitmap.to_numpy()
+            # RGB to BGR (OpenCV互換)
+            img = img[:, :, ::-1].copy()
+            batch_images.append(img)
+
+        yield batch_start, batch_images
+
+    pdf.close()
+
+def get_total_pages(pdf_path: str) -> int:
+    """総ページ数を取得"""
+    pdf = pdfium.PdfDocument(pdf_path)
+    total = len(pdf)
+    pdf.close()
+    return total
+```
+
+### 3.3 load_pdf 関数 (互換性維持)
 
 ```python
 from yomitoku.data.functions import load_pdf
@@ -142,6 +206,8 @@ from yomitoku.data.functions import load_pdf
 def load_pdf_document(pdf_path: str, dpi: int = 200) -> list[np.ndarray]:
     """
     PDFファイルを読み込み、ページ画像のリストを返す
+
+    注意: 小規模PDF向け。大規模PDFはiterate_pdf_pages()を使用すること。
 
     Args:
         pdf_path: PDFファイルパス
@@ -780,6 +846,127 @@ def reconstruct_pdf(
     doc.close()
 ```
 
+### 7.7 バッチ処理パイプライン
+
+大量ページPDFを効率的に処理するメインパイプライン。
+
+```python
+from typing import Callable
+
+def translate_pdf_batch(
+    pdf_path: str,
+    output_path: str,
+    lang_in: str,
+    lang_out: str,
+    translation_engine: "TranslationEngine",
+    progress_callback: Callable[[int, int, str], None] = None,
+    batch_size: int = 5,
+) -> None:
+    """
+    バッチ処理によるPDF翻訳
+
+    Args:
+        pdf_path: 入力PDFパス
+        output_path: 出力PDFパス
+        lang_in: 入力言語 ("ja" or "en")
+        lang_out: 出力言語 ("ja" or "en")
+        translation_engine: 翻訳エンジンインスタンス
+        progress_callback: 進捗コールバック (current_page, total_pages, phase)
+        batch_size: バッチサイズ (デフォルト: 5)
+    """
+    total_pages = get_total_pages(pdf_path)
+    all_translations = {}
+    all_paragraph_data = []
+
+    # Phase 1-4: バッチごとに処理
+    for batch_start, batch_images in iterate_pdf_pages(pdf_path, batch_size):
+        for i, img in enumerate(batch_images):
+            page_num = batch_start + i + 1
+
+            # 進捗通知
+            if progress_callback:
+                progress_callback(page_num, total_pages, "layout")
+
+            # レイアウト解析
+            results = analyze_document(img)
+
+            # 翻訳データ準備
+            cells = prepare_translation_cells(results, page_num)
+            all_paragraph_data.extend(cells)
+
+            # 進捗通知
+            if progress_callback:
+                progress_callback(page_num, total_pages, "translation")
+
+            # Copilot翻訳 (バッチ内でも分割可能)
+            if cells:
+                tsv_data = "\n".join(
+                    f"{c['address']}\t{c['text']}" for c in cells
+                )
+                result = translation_engine.translate(
+                    prompt_header=get_prompt(lang_in, lang_out),
+                    data=tsv_data,
+                )
+                all_translations.update(result.translations)
+
+        # バッチ完了後にメモリ解放
+        del batch_images
+        import gc
+        gc.collect()
+
+    # Phase 5: PDF再構築 (全ページ一括)
+    if progress_callback:
+        progress_callback(total_pages, total_pages, "reconstruction")
+
+    reconstruct_pdf(
+        original_pdf_path=pdf_path,
+        translations=all_translations,
+        paragraph_data=all_paragraph_data,
+        lang_out=lang_out,
+        output_path=output_path,
+    )
+```
+
+### 7.8 Copilotトークン制限対応
+
+1回のリクエストで送信可能なテキスト量に制限がある場合の分割処理。
+
+```python
+MAX_CHARS_PER_REQUEST = 3000  # 1リクエストあたりの最大文字数
+
+def split_cells_for_translation(
+    cells: list[dict],
+    max_chars: int = MAX_CHARS_PER_REQUEST,
+) -> list[list[dict]]:
+    """
+    翻訳対象セルをトークン制限に応じて分割
+
+    Args:
+        cells: 翻訳対象セルリスト
+        max_chars: 1リクエストの最大文字数
+
+    Returns:
+        分割されたセルリストのリスト
+    """
+    chunks = []
+    current_chunk = []
+    current_chars = 0
+
+    for cell in cells:
+        cell_chars = len(cell["text"]) + len(cell["address"]) + 2  # タブと改行
+        if current_chars + cell_chars > max_chars and current_chunk:
+            chunks.append(current_chunk)
+            current_chunk = []
+            current_chars = 0
+        current_chunk.append(cell)
+        current_chars += cell_chars
+
+    if current_chunk:
+        chunks.append(current_chunk)
+
+    return chunks
+```
+
 ---
 
 ## 8. プロンプトファイル
@@ -1288,8 +1475,10 @@ def detect_input_type(file_path: str) -> str:
 
 {
     "pdf": {
-        "dpi": 200,                    # PDF読込解像度
+        "dpi": 200,                    # PDF読込解像度 (固定)
         "device": "cpu",               # "cpu" (デフォルト) or "cuda" (GPU高速化)
+        "batch_size": 5,               # バッチサイズ (ページ数)
+        "max_chars_per_request": 3000, # Copilot 1リクエストあたり最大文字数
         "reading_order": "auto",       # 読み順検出
         "include_headers": false,      # ヘッダー/フッター翻訳
         "font_path": "fonts/",         # フォントディレクトリ
@@ -1404,3 +1593,4 @@ def analyze_document(img: np.ndarray, device: str = "cpu") -> DocumentAnalyzerSc
 | v8.4 | 2024-11 | UI設計セクション追加 (PDFドラッグ&ドロップエリア、進捗表示) |
 | v8.5 | 2024-11 | API整合性修正: CellSchema→TableCellSchema、vflag()フォントパターン拡充、CustomTkinter+tkinterdnd2互換性対応 |
 | v8.6 | 2024-11 | CPU専用環境をデフォルトに変更、GPU高速化をオプション化 |
+| v8.7 | 2024-11 | バッチ処理追加 (大量ページ対応)、最大ページ数制限なし、DPI固定(200)、Copilotトークン制限対応 |

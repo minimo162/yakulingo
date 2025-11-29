@@ -1,8 +1,13 @@
-# ECM Translate - System Design Specification
+# YakuLingo - System Design Specification
 
 > **Version**: 2.0
 > **Date**: 2024
 > **Status**: Draft
+>
+> **App Name**: YakuLingo (訳リンゴ)
+> - 訳 (yaku) = translation in Japanese
+> - Lingo = playful term for language
+> - Inspired by [LocaLingo](https://github.com/soukouki/LocaLingo)
 
 ---
 
@@ -10,7 +15,7 @@
 
 ### 1.1 System Purpose
 
-ECM Translateは、日本語と英語の双方向翻訳を提供するデスクトップアプリケーション。
+YakuLingoは、日本語と英語の双方向翻訳を提供するデスクトップアプリケーション。
 テキストの即座翻訳と、ドキュメントファイルの一括翻訳をサポートする。
 
 ### 1.2 Key Features
@@ -40,7 +45,7 @@ ECM Translateは、日本語と英語の双方向翻訳を提供するデスク�
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                           ECM Translate                                 │
+│                            🍎 YakuLingo                                 │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                         │
 │  ┌───────────────────────────────────────────────────────────────────┐  │
@@ -2164,32 +2169,32 @@ Japanese,English
 ### 8.1 Error Types
 
 ```python
-class ECMTranslateError(Exception):
-    """Base exception for ECM Translate"""
+class YakuLingoError(Exception):
+    """Base exception for YakuLingo"""
     pass
 
 
-class ConnectionError(ECMTranslateError):
+class ConnectionError(YakuLingoError):
     """Failed to connect to Copilot"""
     pass
 
 
-class TranslationError(ECMTranslateError):
+class TranslationError(YakuLingoError):
     """Translation failed"""
     pass
 
 
-class FileProcessingError(ECMTranslateError):
+class FileProcessingError(YakuLingoError):
     """File processing failed"""
     pass
 
 
-class UnsupportedFileError(ECMTranslateError):
+class UnsupportedFileError(YakuLingoError):
     """Unsupported file type"""
     pass
 
 
-class CancellationError(ECMTranslateError):
+class CancellationError(YakuLingoError):
     """Operation was cancelled"""
     pass
 ```
@@ -2331,7 +2336,7 @@ import PyInstaller.__main__
 
 PyInstaller.__main__.run([
     'app.py',
-    '--name=ECM_Translate',
+    '--name=YakuLingo',
     '--windowed',
     '--onedir',
     '--collect-all=nicegui',
@@ -2344,8 +2349,8 @@ PyInstaller.__main__.run([
 ### 11.2 Distribution Structure
 
 ```
-ECM_Translate/
-├── ECM_Translate.exe
+YakuLingo/
+├── YakuLingo.exe
 ├── _internal/               # PyInstaller internals
 ├── prompts/
 │   └── *.txt

@@ -1,6 +1,11 @@
-# ECM Translate - UI Specification v4
+# YakuLingo - UI Specification v4
 ## Text + File Translation
 
+> **App Name**: YakuLingo (訳リンゴ)
+> - 訳 (yaku) = translation in Japanese
+> - Lingo = playful term for language
+> - Inspired by [LocaLingo](https://github.com/soukouki/LocaLingo)
+>
 > **Design Philosophy**: LocaLingoを参考に、テキスト翻訳をメインに、ファイル翻訳を追加機能として提供。
 > シンプルで直感的、すぐに使い始められるUI。
 
@@ -71,7 +76,7 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│  🌐 ECM Translate                              [ JP → EN  ⇄ ]   │
+│  🍎 YakuLingo                                  [ JP → EN  ⇄ ]   │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -79,8 +84,8 @@
 
 | Component | Description |
 |-----------|-------------|
-| Logo | Material icon `translate`, 28px |
-| Title | "ECM Translate", 20px, bold |
+| Logo | Apple emoji 🍎 (リンゴ pun), 24px |
+| Title | "YakuLingo", 20px, bold, gradient text (optional) |
 | Language Toggle | Pill button, shows current direction |
 
 ### 3.3 Language Toggle Behavior

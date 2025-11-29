@@ -53,8 +53,8 @@
 ```
 
 **重要**:
-- 既存の `reconstruct_pdf()` は PyMuPDF の `insert_textbox()` を使用するため座標変換不要
-- 新規の `reconstruct_pdf_low_level()` は PDF低レベルオペレータを使用するため **Y軸反転が必要**
+- ~~既存の `reconstruct_pdf()` は PyMuPDF の `insert_textbox()` を使用するため座標変換不要~~ （廃止予定・未使用）
+- `reconstruct_pdf_low_level()` は PDF低レベルオペレータを使用するため **Y軸反転が必要** ← **現在使用中**
 
 ---
 
@@ -111,7 +111,7 @@ pdf_translator.py (既存)
 ├── class FontManager              # 廃止: FontRegistryに置き換え
 ├── calculate_line_height()        # 維持: そのまま使用
 ├── estimate_font_size()           # 維持: そのまま使用
-└── reconstruct_pdf()              # 書き換え: 低レベル実装に変更
+└── reconstruct_pdf()              # 廃止予定: 低レベル実装に置き換え済み（互換性のため残存）
 
 pdf_translator.py (追加)
 ├── @dataclass FontInfo            # 新規
@@ -1159,19 +1159,15 @@ class TestIntegration:
 5. **Step 5**: メイン関数追加
    - `reconstruct_pdf_low_level()`
 
-6. **Step 6**: 切り替え
-   - `translate_pdf_batch()` の呼び出しを変更
+6. **Step 6**: 統合完了
+   - `translate_pdf_batch()` で `reconstruct_pdf_low_level()` を常時使用
 
-### 9.2 translate_pdf_batch() 切り替え方法
+### 9.2 translate_pdf_batch() の最終形態
 
-移行期間中は、フラグによる切り替えを実装：
+低レベルオペレータを常時使用する実装（切り替え機能なし）：
 
 ```python
 # pdf_translator.py
-
-# 移行フラグ（将来的に削除）
-USE_LOW_LEVEL_OPERATORS = False
-
 
 def translate_pdf_batch(
     pdf_path: str,
@@ -1186,41 +1182,24 @@ def translate_pdf_batch(
     reading_order: str = "auto",
     include_headers: bool = False,
     glossary_path: Path = None,
-    use_low_level: bool = None,  # 追加: 明示的な切り替え
 ) -> PdfTranslationResult:
     """
-    ...既存のドキュメント...
-
-    Args:
-        ...
-        use_low_level: 低レベルオペレータを使用するか
-                       None の場合は USE_LOW_LEVEL_OPERATORS を使用
+    Batch PDF translation pipeline.
+    常にPDFMathTranslate準拠の低レベルオペレータを使用
     """
     # ... 既存の処理 ...
 
-    # Phase 5: PDF reconstruction
+    # Phase 5: PDF reconstruction (PDFMathTranslate準拠の低レベルオペレータ)
     if progress_callback:
         progress_callback(total_pages, total_pages, "reconstruction")
 
-    # 切り替えロジック
-    _use_low_level = use_low_level if use_low_level is not None else USE_LOW_LEVEL_OPERATORS
-
-    if _use_low_level:
-        reconstruct_pdf_low_level(
-            original_pdf_path=pdf_path,
-            translations=all_translations,
-            cells=all_cells,
-            lang_out=lang_out,
-            output_path=output_path,
-        )
-    else:
-        reconstruct_pdf(
-            original_pdf_path=pdf_path,
-            translations=all_translations,
-            cells=all_cells,
-            lang_out=lang_out,
-            output_path=output_path,
-        )
+    reconstruct_pdf_low_level(
+        original_pdf_path=pdf_path,
+        translations=all_translations,
+        cells=all_cells,
+        lang_out=lang_out,
+        output_path=output_path,
+    )
 
     # ...
 ```
@@ -1228,36 +1207,37 @@ def translate_pdf_batch(
 ### 9.3 移行チェックリスト
 
 ```
-□ Step 1: FontInfo データクラスを追加
-□ Step 2: FontRegistry クラスを追加
-  □ register_font() 実装
-  □ embed_fonts() 実装
-  □ select_font_for_text(text, target_lang) 実装（CJK対応）
-□ Step 3: PdfOperatorGenerator クラスを追加
-  □ gen_op_txt() 実装
-  □ raw_string() 実装（CID/Simple対応）
-□ Step 4: ContentStreamReplacer クラスを追加
-  □ add_text_operator() 実装（font_id追跡付き）
-  □ add_redaction() 実装
-  □ apply_to_page() 実装（フォントリソース登録付き）
-□ Step 5: ヘルパー関数を追加
-  □ convert_to_pdf_coordinates() 実装
-  □ calculate_text_position() 実装
-  □ split_text_into_lines() 実装
-  □ _is_address_on_page() 実装
-□ Step 6: reconstruct_pdf_low_level() を追加
-  □ CJK全言語（ja/en/zh-CN/ko）のフォント登録
-  □ embed_fonts() をページループ前に配置
-  □ エラーハンドリング付きで実装
-  □ 単体テスト作成
-□ Step 7: translate_pdf_batch() に切り替えフラグを追加
+✓ Step 1: FontInfo データクラスを追加
+✓ Step 2: FontRegistry クラスを追加
+  ✓ register_font() 実装
+  ✓ embed_fonts() 実装
+  ✓ select_font_for_text(text, target_lang) 実装（CJK対応）
+✓ Step 3: PdfOperatorGenerator クラスを追加
+  ✓ gen_op_txt() 実装
+  ✓ raw_string() 実装（CID/Simple対応）
+✓ Step 4: ContentStreamReplacer クラスを追加
+  ✓ add_text_operator() 実装（font_id追跡付き）
+  ✓ add_redaction() 実装
+  ✓ apply_to_page() 実装（フォントリソース登録付き）
+✓ Step 5: ヘルパー関数を追加
+  ✓ convert_to_pdf_coordinates() 実装
+  ✓ calculate_text_position() 実装
+  ✓ split_text_into_lines() 実装
+  ✓ _is_address_on_page() 実装
+✓ Step 6: reconstruct_pdf_low_level() を追加
+  ✓ CJK全言語（ja/en/zh-CN/ko）のフォント登録
+  ✓ embed_fonts() をページループ前に配置
+  ✓ エラーハンドリング付きで実装
+  □ 単体テスト作成（TODO）
+✓ Step 7: translate_pdf_batch() で常時低レベルオペレータを使用
 □ Step 8: テスト実行
   □ 単体テストがパス
   □ 統合テストがパス
   □ 実PDFで動作確認（日本語/英語/中国語/韓国語）
-□ Step 9: USE_LOW_LEVEL_OPERATORS = True に変更
-□ Step 10: 旧コード (reconstruct_pdf, FontManager) を削除
 ```
+
+**Note**: 旧コード (`reconstruct_pdf()`, `FontManager`) は互換性のため残存しているが、
+`translate_pdf_batch()` からは呼び出されない。将来的に削除予定。
 
 ---
 
@@ -1265,27 +1245,27 @@ def translate_pdf_batch(
 
 ### 10.1 必須要件
 
-- [ ] `FontInfo` データクラスが追加されている
-- [ ] `FontRegistry` クラスが実装されている（CJK全言語対応）
-- [ ] `PdfOperatorGenerator` が PDFMathTranslate準拠
-- [ ] `ContentStreamReplacer` が実装されている
-- [ ] `reconstruct_pdf_low_level()` が動作する
-- [ ] 単体テストが全てパスする
+- [x] `FontInfo` データクラスが追加されている
+- [x] `FontRegistry` クラスが実装されている（CJK全言語対応）
+- [x] `PdfOperatorGenerator` が PDFMathTranslate準拠
+- [x] `ContentStreamReplacer` が実装されている
+- [x] `reconstruct_pdf_low_level()` が動作する
+- [ ] 単体テストが全てパスする（TODO）
 
 ### 10.2 PDFMathTranslate準拠チェック
 
-- [ ] `gen_op_txt(font, size, x, y, rtxt)` 形式
-- [ ] `raw_string()` でCID/Simple別エンコード
-- [ ] `subset_fonts(fallback=True)`
-- [ ] `garbage=3, deflate=True` で保存
+- [x] `gen_op_txt(font, size, x, y, rtxt)` 形式
+- [x] `raw_string()` でCID/Simple別エンコード
+- [x] `subset_fonts(fallback=True)`
+- [x] `garbage=3, deflate=True` で保存
 
 ### 10.3 CJK対応チェック
 
-- [ ] 日本語 (ja): MS-PMincho
-- [ ] 英語 (en): Arial
-- [ ] 中国語簡体字 (zh-CN): SimSun
-- [ ] 韓国語 (ko): Malgun Gothic
-- [ ] `select_font_for_text(text, target_lang)` でターゲット言語を考慮
+- [x] 日本語 (ja): MS-PMincho
+- [x] 英語 (en): Arial
+- [x] 中国語簡体字 (zh-CN): SimSun
+- [x] 韓国語 (ko): Malgun Gothic
+- [x] `select_font_for_text(text, target_lang)` でターゲット言語を考慮
 
 ---
 
@@ -1298,3 +1278,4 @@ def translate_pdf_batch(
 | 3.0 | 2025-01-XX | PDFMathTranslate完全準拠: raw_string追加、NotoグリフID対応、ContentStreamReplacerに変更 |
 | 4.0 | 2025-11-29 | 既存メソッドとの不整合修正: 座標系説明追加、register_font()からdoc引数削除、embed_fonts()のxref修正、apply_to_page()にフォントリソース登録追加、エラーハンドリング追加、テストコード修正、移行手順詳細化 |
 | 5.0 | 2025-11-29 | CJK言語対応: zh-CN (SimSun), ko (Malgun Gothic) 追加、Notoフォント削除、select_font_for_text()にtarget_lang引数追加、embed_fonts()をページループ前に移動、テストケース追加 |
+| 6.0 | 2025-11-29 | 実装との整合性修正: 切り替え機能を削除（常時低レベルオペレータ使用）、移行チェックリスト更新、完了基準更新 |

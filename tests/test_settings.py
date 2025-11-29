@@ -1,8 +1,6 @@
 # tests/test_settings.py
 """Tests for ecm_translate.config.settings"""
 
-import pytest
-import json
 import tempfile
 from pathlib import Path
 

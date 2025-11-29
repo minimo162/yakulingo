@@ -7,7 +7,7 @@ import asyncio
 from pathlib import Path
 from typing import Optional
 
-from nicegui import ui, app
+from nicegui import ui
 
 from ecm_translate.ui.state import AppState, Tab, FileState
 from ecm_translate.ui.styles import COMPLETE_CSS

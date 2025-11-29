@@ -1,14 +1,14 @@
 # ecm_translate/processors/pdf_processor.py
 """
 Processor for PDF files (.pdf).
-Uses yomitoku for OCR/layout analysis and PyMuPDF for reconstruction.
+Uses PyMuPDF (fitz) for text extraction and basic text replacement.
 
-Note: This processor integrates with the existing pdf_translator.py logic.
-For full PDF translation, the existing module is used directly.
+Note: This processor provides basic PDF translation by extracting text blocks
+and replacing them with translated text. Layout preservation is approximate.
 """
 
 from pathlib import Path
-from typing import Iterator, Optional
+from typing import Iterator
 
 from .base import FileProcessor
 from ecm_translate.models.types import TextBlock, FileInfo, FileType
@@ -27,35 +27,18 @@ def _get_fitz():
     return _fitz
 
 
-# PDFMathTranslate 準拠のフォント設定
-LANG_FONT_MAP = {
-    "ja": "SourceHanSerifJP-Regular.ttf",
-    "en": "tiro",  # Tiro Devanagari Latin
-    "zh-CN": "SourceHanSerifSC-Regular.ttf",
-    "zh-TW": "SourceHanSerifTC-Regular.ttf",
-    "ko": "SourceHanSerifKR-Regular.ttf",
-}
-
-DEFAULT_FONT = "GoNotoKurrent-Regular.ttf"
-
-# Line height ratios by language
-LINE_HEIGHT_RATIO = {
-    "zh-CN": 1.4,
-    "zh-TW": 1.4,
-    "ja": 1.3,
-    "en": 1.2,
-    "default": 1.2,
-}
-
-
 class PdfProcessor(FileProcessor):
     """
     Processor for PDF files.
-    Uses yomitoku for OCR/layout analysis and PyMuPDF for reconstruction.
+    Uses PyMuPDF for text extraction and basic text replacement.
 
-    For full PDF translation with advanced features (formula protection,
-    batch processing, etc.), use the translate_pdf_file() method which
-    integrates with pdf_translator.py.
+    Translation targets:
+    - Text blocks extracted from PDF pages
+
+    Limitations:
+    - Layout preservation is approximate (text is replaced in bounding boxes)
+    - Complex layouts may not render perfectly
+    - Embedded fonts are not preserved
     """
 
     @property
@@ -98,9 +81,8 @@ class PdfProcessor(FileProcessor):
         """
         Extract text blocks from PDF.
 
-        Note: For full PDF translation with layout preservation,
-        use translate_pdf_file() which uses yomitoku for analysis.
-        This method provides basic text extraction for simple cases.
+        Uses PyMuPDF to extract text blocks with their bounding boxes.
+        Each block contains text from multiple lines within the same area.
         """
         fitz = _get_fitz()
         doc = fitz.open(file_path)
@@ -142,27 +124,19 @@ class PdfProcessor(FileProcessor):
         direction: str = "jp_to_en",
     ) -> None:
         """
-        Apply translations to PDF.
+        Apply translations to PDF using PyMuPDF text replacement.
 
-        Note: This is a simplified implementation.
-        For full PDF translation with layout preservation,
-        use translate_pdf_file() which uses the complete pdf_translator.py logic.
+        This replaces text in each block's bounding box with the translated text.
+        The original text area is cleared (white fill) before inserting new text.
+
+        Args:
+            input_path: Path to original PDF
+            output_path: Path for translated PDF
+            translations: Mapping of block IDs to translated text
+            direction: Translation direction (for future font selection)
         """
-        # Import the full PDF translator for advanced translation
-        try:
-            from pdf_translator import translate_pdf as _translate_pdf_full
-            # Use existing pdf_translator logic
-            # This would need adaptation to use pre-computed translations
-            pass
-        except ImportError:
-            pass
-
-        # Simplified implementation using PyMuPDF text replacement
         fitz = _get_fitz()
         doc = fitz.open(input_path)
-
-        target_lang = "en" if direction == "jp_to_en" else "ja"
-        font_name = LANG_FONT_MAP.get(target_lang, DEFAULT_FONT)
 
         for page_idx, page in enumerate(doc):
             blocks = page.get_text("dict")["blocks"]
@@ -198,48 +172,3 @@ class PdfProcessor(FileProcessor):
 
         doc.save(output_path)
         doc.close()
-
-    def translate_pdf_file(
-        self,
-        input_path: Path,
-        output_path: Path,
-        translate_func,
-        direction: str = "jp_to_en",
-        on_progress=None,
-    ) -> None:
-        """
-        Full PDF translation using existing pdf_translator.py logic.
-
-        Args:
-            input_path: Path to input PDF
-            output_path: Path for output PDF
-            translate_func: Async function for translation (texts) -> translated_texts
-            direction: Translation direction
-            on_progress: Progress callback
-        """
-        # Import existing PDF translator
-        try:
-            from pdf_translator import PdfTranslator, TranslationConfig
-
-            config = TranslationConfig(
-                source_lang="ja" if direction == "jp_to_en" else "en",
-                target_lang="en" if direction == "jp_to_en" else "ja",
-            )
-
-            translator = PdfTranslator(config)
-            # Use the existing full translation logic
-            # translator.translate(input_path, output_path, translate_func, on_progress)
-
-        except ImportError:
-            # Fallback to simplified implementation
-            blocks = list(self.extract_text_blocks(input_path))
-            texts = [b.text for b in blocks]
-
-            # This would be called with the translate_func
-            # translations = await translate_func(texts)
-
-            # For now, raise an error indicating full PDF translation needs setup
-            raise NotImplementedError(
-                "Full PDF translation requires pdf_translator.py. "
-                "Use apply_translations() for simple text replacement."
-            )

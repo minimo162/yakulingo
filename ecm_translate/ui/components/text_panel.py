@@ -42,7 +42,7 @@ def create_text_panel(
                     ).props('flat dense round size=sm').tooltip('Clear')
 
                 # Textarea
-                source_textarea = ui.textarea(
+                ui.textarea(
                     placeholder=state.get_source_placeholder(),
                     value=state.source_text,
                     on_change=lambda e: on_source_change(e.value)

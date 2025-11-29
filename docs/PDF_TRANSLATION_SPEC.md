@@ -1,4 +1,4 @@
-# PDF翻訳機能 技術仕様書 v8.5
+# PDF翻訳機能 技術仕様書 v8.6
 
 ## 概要
 
@@ -118,9 +118,17 @@ PyMuPDF >= 1.24.0
 | 項目 | 要件 |
 |------|------|
 | Python | 3.10, 3.11, 3.12 (3.10 <= version < 3.13) |
-| CUDA | 11.8以上 (GPU使用時) |
-| VRAM | 8GB以上 (GPU使用時) |
 | 画像解像度 | 短辺720px以上推奨 |
+
+**注意**: デフォルトはCPU専用環境で動作。GPU高速化はオプション。
+
+#### オプション: GPU高速化
+
+| 項目 | 要件 |
+|------|------|
+| CUDA | 11.8以上 |
+| VRAM | 8GB以上推奨 |
+| 設定 | `device: "cuda"` に変更 |
 
 ---
 
@@ -171,7 +179,7 @@ from yomitoku import DocumentAnalyzer
 
 analyzer = DocumentAnalyzer(
     configs={},                    # カスタムモデル設定 (dict)
-    device="cuda",                 # "cuda" または "cpu"
+    device="cpu",                  # "cpu" (デフォルト) または "cuda" (GPU高速化)
     visualize=True,                # 可視化画像生成
     ignore_meta=False,             # ヘッダー/フッター除外
     reading_order="auto",          # 読み順: "auto", "left2right", "top2bottom", "right2left"
@@ -1281,7 +1289,7 @@ def detect_input_type(file_path: str) -> str:
 {
     "pdf": {
         "dpi": 200,                    # PDF読込解像度
-        "device": "cuda",              # yomitoku実行デバイス
+        "device": "cpu",               # "cpu" (デフォルト) or "cuda" (GPU高速化)
         "reading_order": "auto",       # 読み順検出
         "include_headers": false,      # ヘッダー/フッター翻訳
         "font_path": "fonts/",         # フォントディレクトリ
@@ -1297,24 +1305,38 @@ def detect_input_type(file_path: str) -> str:
 
 | エラー | 原因 | 対処 |
 |--------|------|------|
-| `yomitoku.CUDAOutOfMemoryError` | VRAM不足 | device="cpu"にフォールバック |
 | `pypdfium2.PdfiumError` | 破損PDF | エラーメッセージ表示 |
 | `fitz.FileDataError` | PDF書込エラー | 一時ファイル使用 |
 | `TranslationStatus.FAILED` | Copilot応答なし | リトライ or エラー表示 |
+| `torch.cuda.OutOfMemoryError` | GPU VRAM不足 (GPU使用時) | CPUにフォールバック |
 
-### 11.2 フォールバック戦略
+### 11.2 デバイス選択
 
 ```python
-def analyze_with_fallback(img: np.ndarray) -> DocumentAnalyzerSchema:
-    """GPU失敗時にCPUにフォールバック"""
-    try:
-        analyzer = DocumentAnalyzer(device="cuda")
-        return analyzer(img)
-    except Exception as e:
-        if "CUDA" in str(e) or "memory" in str(e).lower():
-            analyzer = DocumentAnalyzer(device="cpu")
-            return analyzer(img)
-        raise
+import torch
+
+def get_device(config_device: str = "cpu") -> str:
+    """
+    実行デバイスを決定
+
+    Args:
+        config_device: 設定値 ("cpu" or "cuda")
+
+    Returns:
+        使用するデバイス
+    """
+    if config_device == "cuda":
+        if torch.cuda.is_available():
+            return "cuda"
+        else:
+            print("Warning: CUDA not available, falling back to CPU")
+            return "cpu"
+    return "cpu"
+
+def analyze_document(img: np.ndarray, device: str = "cpu") -> DocumentAnalyzerSchema:
+    """レイアウト解析実行"""
+    analyzer = DocumentAnalyzer(device=device)
+    return analyzer(img)
 ```
 
 ---
@@ -1381,3 +1403,4 @@ def analyze_with_fallback(img: np.ndarray) -> DocumentAnalyzerSchema:
 | v8.3 | 2024-11 | バイリンガルPDF出力機能を削除 |
 | v8.4 | 2024-11 | UI設計セクション追加 (PDFドラッグ&ドロップエリア、進捗表示) |
 | v8.5 | 2024-11 | API整合性修正: CellSchema→TableCellSchema、vflag()フォントパターン拡充、CustomTkinter+tkinterdnd2互換性対応 |
+| v8.6 | 2024-11 | CPU専用環境をデフォルトに変更、GPU高速化をオプション化 |

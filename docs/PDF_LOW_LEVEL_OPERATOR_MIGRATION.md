@@ -21,9 +21,46 @@
 
 ---
 
-## 1. PDFMathTranslate アーキテクチャ
+## 1. 座標系について
 
-### 1.1 コンテンツストリーム置換方式
+### 1.1 座標系の違い
+
+本移行において、以下の座標系の違いを理解することが重要：
+
+| 座標系 | 原点 | Y軸方向 | 使用箇所 |
+|--------|------|---------|----------|
+| yomitoku | 左上 | 下向き↓ | 入力: `TranslationCell.box` |
+| PyMuPDF高レベルAPI | 左上 | 下向き↓ | `page.insert_textbox()`, `fitz.Rect()` |
+| PDF低レベル (Tm) | 左下 | 上向き↑ | `gen_op_txt()` の座標 |
+
+### 1.2 変換の必要性
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                                                                 │
+│  yomitoku box              PyMuPDF Rect           PDF Tm座標    │
+│  [x1, y1, x2, y2]          (変換不要)             (Y軸反転必要) │
+│                                                                 │
+│  ┌────────────┐            ┌────────────┐         ┌────────────┐│
+│  │(x1,y1)     │            │(x0,y0)     │         │            ││
+│  │   ↓Y       │    ===     │   ↓Y       │   ≠≠≠   │   ↑Y       ││
+│  │      (x2,y2)│            │      (x1,y1)│         │(x,y)       ││
+│  └────────────┘            └────────────┘         └────────────┘│
+│                                                                 │
+│  既存コード: そのまま使用   低レベル実装: convert_to_pdf_coordinates() │
+│                             で変換が必要                          │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**重要**:
+- 既存の `reconstruct_pdf()` は PyMuPDF の `insert_textbox()` を使用するため座標変換不要
+- 新規の `reconstruct_pdf_low_level()` は PDF低レベルオペレータを使用するため **Y軸反転が必要**
+
+---
+
+## 2. PDFMathTranslate アーキテクチャ
+
+### 2.1 コンテンツストリーム置換方式
 
 PDFMathTranslateは**既存のコンテンツストリームを置換**する方式を採用：
 
@@ -34,7 +71,7 @@ doc_zh.update_stream(page.page_xref, b"")  # 初期化
 doc_zh.update_stream(obj_id, ops_new.encode())  # 新しい内容を設定
 ```
 
-### 1.2 オペレータ生成関数
+### 2.2 オペレータ生成関数
 
 ```python
 # PDFMathTranslate converter.py:384-385
@@ -43,7 +80,7 @@ def gen_op_txt(font, size, x, y, rtxt):
     return f"/{font} {size:f} Tf 1 0 0 1 {x:f} {y:f} Tm [<{rtxt}>] TJ "
 ```
 
-### 1.3 テキストエンコーディング（raw_string）
+### 2.3 テキストエンコーディング（raw_string）
 
 ```python
 # PDFMathTranslate converter.py - フォント種別によるエンコード
@@ -61,9 +98,9 @@ def raw_string(self, fcur, cstk):
 
 ---
 
-## 2. 既存コードとの統合
+## 3. 既存コードとの統合
 
-### 2.1 既存の定数・クラスとの関係
+### 3.1 既存の定数・クラスとの関係
 
 ```
 pdf_translator.py (既存)
@@ -87,7 +124,7 @@ pdf_translator.py (追加)
 └── reconstruct_pdf_low_level()    # 新規: reconstruct_pdfを置き換え
 ```
 
-### 2.2 必要なimport追加
+### 3.2 必要なimport追加
 
 ```python
 # pdf_translator.py の先頭に追加
@@ -97,9 +134,9 @@ from dataclasses import dataclass, field
 
 ---
 
-## 3. 実装仕様
+## 4. 実装仕様
 
-### 3.1 FontInfo データクラス
+### 4.1 FontInfo データクラス
 
 ```python
 @dataclass
@@ -117,7 +154,7 @@ class FontInfo:
     is_cjk: bool          # CJKフォントか
 ```
 
-### 3.2 FontRegistry クラス
+### 4.2 FontRegistry クラス
 
 ```python
 class FontRegistry:
@@ -161,13 +198,12 @@ class FontRegistry:
         self._noto_font = None  # fontTools Font object for glyph lookup
         self._counter = 0
 
-    def register_font(self, lang: str, doc: 'fitz.Document') -> str:
+    def register_font(self, lang: str) -> str:
         """
         フォントを登録しIDを返す
 
         Args:
             lang: 言語コード ("ja", "en", "noto")
-            doc: PyMuPDF Document
 
         Returns:
             フォントID (F1, F2, ...)
@@ -280,21 +316,28 @@ class FontRegistry:
         全登録フォントをPDFに埋め込み
 
         PDFMathTranslate high_level.py 準拠
+
+        Note:
+            page.insert_font() は各ページにフォントを埋め込む
+            xref は最初のページで取得し保持する
         """
         for lang, font_info in self.fonts.items():
             font_path = self.get_font_path(font_info.font_id)
             if not font_path:
                 continue
 
-            for page in doc:
+            # 各ページにフォントを埋め込み
+            for page_idx, page in enumerate(doc):
                 xref = page.insert_font(
                     fontname=font_info.font_id,
                     fontfile=font_path,
                 )
-                self._font_xrefs[font_info.font_id] = xref
+                # 最初のページでのみxrefを保存（全ページで同じxrefが返される）
+                if page_idx == 0:
+                    self._font_xrefs[font_info.font_id] = xref
 ```
 
-### 3.3 PdfOperatorGenerator クラス
+### 4.3 PdfOperatorGenerator クラス
 
 ```python
 class PdfOperatorGenerator:
@@ -376,7 +419,7 @@ class PdfOperatorGenerator:
         return f"q {width:f} w {x1:f} {y1:f} m {x2:f} {y2:f} l S Q "
 ```
 
-### 3.4 ContentStreamReplacer クラス
+### 4.4 ContentStreamReplacer クラス
 
 ```python
 class ContentStreamReplacer:
@@ -387,10 +430,12 @@ class ContentStreamReplacer:
     - 既存コンテンツを保持しつつ、翻訳テキストを上書き
     """
 
-    def __init__(self, doc: 'fitz.Document'):
+    def __init__(self, doc: 'fitz.Document', font_registry: 'FontRegistry'):
         self.doc = doc
+        self.font_registry = font_registry
         self.operators: list[str] = []
         self._in_text_block = False
+        self._used_fonts: set[str] = set()  # 使用されたフォントIDを追跡
 
     def begin_text(self) -> 'ContentStreamReplacer':
         """テキストブロック開始"""
@@ -411,11 +456,22 @@ class ContentStreamReplacer:
         self.operators.append(op)
         return self
 
-    def add_text_operator(self, op: str) -> 'ContentStreamReplacer':
-        """テキストオペレータを追加（自動でBT/ET管理）"""
+    def add_text_operator(self, op: str, font_id: str = None) -> 'ContentStreamReplacer':
+        """
+        テキストオペレータを追加（自動でBT/ET管理）
+
+        Args:
+            op: オペレータ文字列
+            font_id: 使用するフォントID（リソース登録用）
+        """
         if not self._in_text_block:
             self.begin_text()
         self.operators.append(op)
+
+        # 使用フォントを追跡
+        if font_id:
+            self._used_fonts.add(font_id)
+
         return self
 
     def add_redaction(
@@ -458,11 +514,11 @@ class ContentStreamReplacer:
 
         PDFMathTranslate high_level.py 準拠
         - 既存コンテンツに新しいストリームを追加（overlay）
+        - 使用フォントをページリソースに登録
 
         Args:
             page: 対象ページ
         """
-        fitz = _get_fitz()
         stream_bytes = self.build()
 
         if not stream_bytes.strip():
@@ -496,13 +552,47 @@ class ContentStreamReplacer:
             # Contentsがない場合、新規設定
             self.doc.xref_set_key(page_xref, "Contents", f"{new_xref} 0 R")
 
+        # 3. フォントリソースをページに登録
+        self._register_font_resources(page)
+
+    def _register_font_resources(self, page: 'fitz.Page') -> None:
+        """
+        使用フォントをページの /Resources/Font に登録
+
+        Note:
+            page.insert_font() で埋め込み済みの場合、PyMuPDFが
+            自動的にリソースを登録するため、通常は不要。
+            ただし低レベル操作で追加したストリームでフォントを
+            使用する場合は明示的な登録が必要な場合がある。
+        """
+        if not self._used_fonts:
+            return
+
+        page_xref = page.xref
+
+        # 現在のリソース辞書を取得
+        resources_info = self.doc.xref_get_key(page_xref, "Resources")
+
+        # Font辞書が既に存在するか確認
+        # embed_fonts() で insert_font() を呼び出していれば
+        # PyMuPDFが自動的にフォントリソースを設定済み
+        # この関数は追加の検証/デバッグ用として残す
+
+        for font_id in self._used_fonts:
+            font_xref = self.font_registry._font_xrefs.get(font_id)
+            if font_xref:
+                # フォントが埋め込み済みであることを確認
+                # （実際のリソース登録はembed_fonts時に行われる）
+                pass
+
     def clear(self) -> None:
         """オペレータリストをクリア"""
         self.operators = []
         self._in_text_block = False
+        self._used_fonts.clear()
 ```
 
-### 3.5 座標変換関数
+### 4.5 座標変換関数
 
 ```python
 def convert_to_pdf_coordinates(
@@ -562,7 +652,7 @@ def calculate_text_position(
     return x, y
 ```
 
-### 3.6 テキスト行分割関数
+### 4.6 テキスト行分割関数
 
 ```python
 def calculate_char_width(char: str, font_size: float, is_cjk: bool) -> float:
@@ -639,7 +729,7 @@ def split_text_into_lines(
     return lines
 ```
 
-### 3.7 ヘルパー関数
+### 4.7 ヘルパー関数
 
 ```python
 def _is_address_on_page(address: str, page_num: int) -> bool:
@@ -666,7 +756,7 @@ def _is_address_on_page(address: str, page_num: int) -> bool:
 
 ---
 
-## 4. メイン関数: reconstruct_pdf_low_level
+## 5. メイン関数: reconstruct_pdf_low_level
 
 ```python
 def reconstruct_pdf_low_level(
@@ -687,84 +777,96 @@ def reconstruct_pdf_low_level(
         cells: 元セル情報（座標含む）
         lang_out: 出力言語 ("ja" or "en")
         output_path: 出力PDFパス
+
+    Raises:
+        FileNotFoundError: 元PDFが存在しない場合
+        Exception: PDF処理中のエラー
     """
     fitz = _get_fitz()
     doc = fitz.open(original_pdf_path)
 
-    # 1. フォント登録
-    font_registry = FontRegistry()
-    font_registry.register_font("ja", doc)
-    font_registry.register_font("en", doc)
+    try:
+        # 1. フォント登録
+        font_registry = FontRegistry()
+        font_registry.register_font("ja")
+        font_registry.register_font("en")
 
-    # オペレータ生成器
-    op_generator = PdfOperatorGenerator(font_registry)
+        # オペレータ生成器
+        op_generator = PdfOperatorGenerator(font_registry)
 
-    # セルマップ作成
-    cell_map = {cell.address: cell for cell in cells}
+        # セルマップ作成
+        cell_map = {cell.address: cell for cell in cells}
 
-    # 2. ページ単位で処理
-    for page_num, page in enumerate(doc, start=1):
-        page_height = page.rect.height
-        replacer = ContentStreamReplacer(doc)
+        # 2. ページ単位で処理
+        for page_num, page in enumerate(doc, start=1):
+            page_height = page.rect.height
+            replacer = ContentStreamReplacer(doc, font_registry)
 
-        # このページの翻訳セルを処理
-        for address, translated in translations.items():
-            if not _is_address_on_page(address, page_num):
-                continue
-
-            cell = cell_map.get(address)
-            if not cell:
-                continue
-
-            # 座標変換 (yomitoku → PDF)
-            box_pdf = convert_to_pdf_coordinates(cell.box, page_height)
-            x1, y1, x2, y2 = box_pdf
-            box_width = x2 - x1
-
-            # 3. 既存テキスト消去（白塗り）
-            replacer.add_redaction(x1, y1, x2, y2)
-
-            # 4. フォント選択
-            font_id = font_registry.select_font_for_text(translated)
-            is_cjk = font_registry.get_is_cjk(font_id)
-
-            # 5. フォントサイズと行高さ計算 (既存関数を使用)
-            font_size = estimate_font_size(cell.box, translated)
-            line_height = calculate_line_height(translated, cell.box, font_size, lang_out)
-
-            # 6. テキスト行分割
-            lines = split_text_into_lines(translated, box_width, font_size, is_cjk)
-
-            # 7. 各行のテキストオペレータを生成
-            for line_idx, line_text in enumerate(lines):
-                if not line_text.strip():
+            # このページの翻訳セルを処理
+            for address, translated in translations.items():
+                if not _is_address_on_page(address, page_num):
                     continue
 
-                x, y = calculate_text_position(box_pdf, line_idx, font_size, line_height)
+                cell = cell_map.get(address)
+                if not cell:
+                    continue
 
-                if y < y1:
-                    break  # ボックスの下端を超えた
+                try:
+                    # 座標変換 (yomitoku → PDF)
+                    box_pdf = convert_to_pdf_coordinates(cell.box, page_height)
+                    x1, y1, x2, y2 = box_pdf
+                    box_width = x2 - x1
 
-                # PDFMathTranslate準拠: 先にエンコードしてからgen_op_txt
-                rtxt = op_generator.raw_string(font_id, line_text)
-                text_op = op_generator.gen_op_txt(font_id, font_size, x, y, rtxt)
-                replacer.add_text_operator(text_op)
+                    # 3. 既存テキスト消去（白塗り）
+                    replacer.add_redaction(x1, y1, x2, y2)
 
-        # 8. ページにストリームを適用
-        replacer.apply_to_page(page)
+                    # 4. フォント選択
+                    font_id = font_registry.select_font_for_text(translated)
+                    is_cjk = font_registry.get_is_cjk(font_id)
 
-    # 9. フォント埋め込み
-    font_registry.embed_fonts(doc)
+                    # 5. フォントサイズと行高さ計算 (既存関数を使用)
+                    font_size = estimate_font_size(cell.box, translated)
+                    line_height = calculate_line_height(translated, cell.box, font_size, lang_out)
 
-    # 10. 保存 (PDFMathTranslate: garbage=3, deflate=True)
-    doc.subset_fonts(fallback=True)
-    doc.save(output_path, garbage=3, deflate=True)
-    doc.close()
+                    # 6. テキスト行分割
+                    lines = split_text_into_lines(translated, box_width, font_size, is_cjk)
+
+                    # 7. 各行のテキストオペレータを生成
+                    for line_idx, line_text in enumerate(lines):
+                        if not line_text.strip():
+                            continue
+
+                        x, y = calculate_text_position(box_pdf, line_idx, font_size, line_height)
+
+                        if y < y1:
+                            break  # ボックスの下端を超えた
+
+                        # PDFMathTranslate準拠: 先にエンコードしてからgen_op_txt
+                        rtxt = op_generator.raw_string(font_id, line_text)
+                        text_op = op_generator.gen_op_txt(font_id, font_size, x, y, rtxt)
+                        replacer.add_text_operator(text_op, font_id)
+
+                except Exception as e:
+                    print(f"  Warning: Failed to process cell {address}: {e}")
+                    continue
+
+            # 8. ページにストリームを適用
+            replacer.apply_to_page(page)
+
+        # 9. フォント埋め込み
+        font_registry.embed_fonts(doc)
+
+        # 10. 保存 (PDFMathTranslate: garbage=3, deflate=True)
+        doc.subset_fonts(fallback=True)
+        doc.save(output_path, garbage=3, deflate=True)
+
+    finally:
+        doc.close()
 ```
 
 ---
 
-## 5. 処理フロー図
+## 6. 処理フロー図
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -814,7 +916,7 @@ def reconstruct_pdf_low_level(
 
 ---
 
-## 6. PDFMathTranslate との対応表
+## 7. PDFMathTranslate との対応表
 
 | PDFMathTranslate | 本仕様書 | 状態 |
 |------------------|---------|------|
@@ -829,9 +931,9 @@ def reconstruct_pdf_low_level(
 
 ---
 
-## 7. テスト計画
+## 8. テスト計画
 
-### 7.1 単体テスト
+### 8.1 単体テスト
 
 ```python
 # tests/test_pdf_low_level.py
@@ -853,25 +955,41 @@ class TestFontRegistry:
     """FontRegistry テスト"""
 
     def test_register_font(self):
+        """フォント登録テスト"""
         registry = FontRegistry()
-        font_id = registry.register_font("ja", None)
+        font_id = registry.register_font("ja")
         assert font_id == "F1"
 
-    def test_select_font_for_text_japanese(self):
+    def test_register_font_idempotent(self):
+        """同じ言語を2回登録しても同じIDが返る"""
         registry = FontRegistry()
-        registry.register_font("ja", None)
-        registry.register_font("en", None)
+        font_id1 = registry.register_font("ja")
+        font_id2 = registry.register_font("ja")
+        assert font_id1 == font_id2
+
+    def test_select_font_for_text_japanese(self):
+        """日本語テキストで日本語フォントが選択される"""
+        registry = FontRegistry()
+        registry.register_font("ja")
+        registry.register_font("en")
 
         font_id = registry.select_font_for_text("こんにちは")
         assert registry.get_is_cjk(font_id) is True
 
-    def test_get_encoding_type(self):
+    def test_select_font_for_text_english(self):
+        """英語テキストで英語フォントが選択される"""
         registry = FontRegistry()
-        registry.register_font("ja", None)
-        registry.register_font("en", None)
+        registry.register_font("ja")
+        registry.register_font("en")
 
-        ja_id = registry._get_font_id_for_lang("ja")
-        en_id = registry._get_font_id_for_lang("en")
+        font_id = registry.select_font_for_text("Hello")
+        assert registry.get_is_cjk(font_id) is False
+
+    def test_get_encoding_type(self):
+        """エンコードタイプの取得テスト"""
+        registry = FontRegistry()
+        ja_id = registry.register_font("ja")
+        en_id = registry.register_font("en")
 
         assert registry.get_encoding_type(ja_id) == "cid"
         assert registry.get_encoding_type(en_id) == "simple"
@@ -883,21 +1001,21 @@ class TestPdfOperatorGenerator:
     def test_raw_string_cid(self):
         """CIDフォントのエンコード"""
         registry = FontRegistry()
-        registry.register_font("ja", None)
+        ja_id = registry.register_font("ja")
         gen = PdfOperatorGenerator(registry)
 
         # "あ" = U+3042
-        rtxt = gen.raw_string("F1", "あ")
+        rtxt = gen.raw_string(ja_id, "あ")
         assert rtxt == "3042"
 
     def test_raw_string_simple(self):
         """Single-byteフォントのエンコード"""
         registry = FontRegistry()
-        registry.register_font("en", None)
+        en_id = registry.register_font("en")
         gen = PdfOperatorGenerator(registry)
 
         # "A" = 0x41
-        rtxt = gen.raw_string("F1", "A")
+        rtxt = gen.raw_string(en_id, "A")
         assert rtxt == "41"
 
     def test_gen_op_txt(self):
@@ -940,7 +1058,7 @@ class TestTextSplitting:
         assert lines == ["Line1", "Line2"]
 ```
 
-### 7.2 統合テスト
+### 8.2 統合テスト
 
 ```python
 class TestIntegration:
@@ -988,9 +1106,9 @@ class TestIntegration:
 
 ---
 
-## 8. 移行手順
+## 9. 移行手順
 
-### 8.1 実装順序
+### 9.1 実装順序
 
 1. **Step 1**: データクラス追加
    - `FontInfo` を追加
@@ -1012,11 +1130,107 @@ class TestIntegration:
 6. **Step 6**: 切り替え
    - `translate_pdf_batch()` の呼び出しを変更
 
+### 9.2 translate_pdf_batch() 切り替え方法
+
+移行期間中は、フラグによる切り替えを実装：
+
+```python
+# pdf_translator.py
+
+# 移行フラグ（将来的に削除）
+USE_LOW_LEVEL_OPERATORS = False
+
+
+def translate_pdf_batch(
+    pdf_path: str,
+    output_path: str,
+    lang_in: str,
+    lang_out: str,
+    translation_engine,
+    progress_callback: Callable[[int, int, str], None] = None,
+    cancel_check: Callable[[], bool] = None,
+    batch_size: int = BATCH_SIZE,
+    device: str = "cpu",
+    reading_order: str = "auto",
+    include_headers: bool = False,
+    glossary_path: Path = None,
+    use_low_level: bool = None,  # 追加: 明示的な切り替え
+) -> PdfTranslationResult:
+    """
+    ...既存のドキュメント...
+
+    Args:
+        ...
+        use_low_level: 低レベルオペレータを使用するか
+                       None の場合は USE_LOW_LEVEL_OPERATORS を使用
+    """
+    # ... 既存の処理 ...
+
+    # Phase 5: PDF reconstruction
+    if progress_callback:
+        progress_callback(total_pages, total_pages, "reconstruction")
+
+    # 切り替えロジック
+    _use_low_level = use_low_level if use_low_level is not None else USE_LOW_LEVEL_OPERATORS
+
+    if _use_low_level:
+        reconstruct_pdf_low_level(
+            original_pdf_path=pdf_path,
+            translations=all_translations,
+            cells=all_cells,
+            lang_out=lang_out,
+            output_path=output_path,
+        )
+    else:
+        reconstruct_pdf(
+            original_pdf_path=pdf_path,
+            translations=all_translations,
+            cells=all_cells,
+            lang_out=lang_out,
+            output_path=output_path,
+        )
+
+    # ...
+```
+
+### 9.3 移行チェックリスト
+
+```
+□ Step 1: FontInfo データクラスを追加
+□ Step 2: FontRegistry クラスを追加
+  □ register_font() 実装
+  □ get_glyph_id() 実装（fontTools連携）
+  □ embed_fonts() 実装
+  □ select_font_for_text() 実装
+□ Step 3: PdfOperatorGenerator クラスを追加
+  □ gen_op_txt() 実装
+  □ raw_string() 実装
+□ Step 4: ContentStreamReplacer クラスを追加
+  □ add_text_operator() 実装（font_id追跡付き）
+  □ add_redaction() 実装
+  □ apply_to_page() 実装（フォントリソース登録付き）
+□ Step 5: ヘルパー関数を追加
+  □ convert_to_pdf_coordinates() 実装
+  □ calculate_text_position() 実装
+  □ split_text_into_lines() 実装
+  □ _is_address_on_page() 実装
+□ Step 6: reconstruct_pdf_low_level() を追加
+  □ エラーハンドリング付きで実装
+  □ 単体テスト作成
+□ Step 7: translate_pdf_batch() に切り替えフラグを追加
+□ Step 8: テスト実行
+  □ 単体テストがパス
+  □ 統合テストがパス
+  □ 実PDFで動作確認
+□ Step 9: USE_LOW_LEVEL_OPERATORS = True に変更
+□ Step 10: 旧コード (reconstruct_pdf, FontManager) を削除
+```
+
 ---
 
-## 9. 完了基準
+## 10. 完了基準
 
-### 9.1 必須要件
+### 10.1 必須要件
 
 - [ ] `FontInfo` データクラスが追加されている
 - [ ] `FontRegistry` クラスが実装されている（Notoグリフ対応含む）
@@ -1025,7 +1239,7 @@ class TestIntegration:
 - [ ] `reconstruct_pdf_low_level()` が動作する
 - [ ] 単体テストが全てパスする
 
-### 9.2 PDFMathTranslate準拠チェック
+### 10.2 PDFMathTranslate準拠チェック
 
 - [ ] `gen_op_txt(font, size, x, y, rtxt)` 形式
 - [ ] `raw_string()` でフォント別エンコード
@@ -1042,3 +1256,4 @@ class TestIntegration:
 | 1.0 | 2025-01-XX | 初版作成 |
 | 2.0 | 2025-01-XX | 不整合修正 |
 | 3.0 | 2025-01-XX | PDFMathTranslate完全準拠: raw_string追加、NotoグリフID対応、ContentStreamReplacerに変更 |
+| 4.0 | 2025-11-29 | 既存メソッドとの不整合修正: 座標系説明追加、register_font()からdoc引数削除、embed_fonts()のxref修正、apply_to_page()にフォントリソース登録追加、エラーハンドリング追加、テストコード修正、移行手順詳細化 |

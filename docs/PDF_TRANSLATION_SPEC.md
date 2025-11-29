@@ -1,4 +1,4 @@
-# PDF翻訳機能 技術仕様書 v8.8
+# PDF翻訳機能 技術仕様書 v8.9
 
 ## 概要
 
@@ -1104,61 +1104,128 @@ Input Data
 
 ---
 
-## 9. UI設計
+## 9. UI設計 (既存UI統合)
 
-### 9.1 PDFドラッグ&ドロップエリア
+### 9.1 設計方針
+
+既存の `TranslatorApp` (ui.py) を拡張し、PDF翻訳機能を統合する。
+
+| 方針 | 内容 |
+|------|------|
+| 既存UI維持 | Dynamic Island, Aurora Background, Settings Section を維持 |
+| 進捗表示 | 既存の Dynamic Island を使用 (新規コンポーネント不要) |
+| ファイル選択 | Hero Section にドロップエリアを追加 |
+| 入力自動判別 | Excel / PDF を自動判別して適切な処理を実行 |
+
+### 9.2 統合後レイアウト
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                          ECM Translate                                       │
-├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│              ┌─────────────────────────────────────┐                        │
+│              │  Dynamic Island (進捗表示)          │                        │
+│              │  "翻訳中" ページ 6/10               │                        │
+│              │  [████████████░░░░░░░░] 60%         │                        │
+│              └─────────────────────────────────────┘                        │
 │                                                                              │
 │  ┌────────────────────────────────────────────────────────────────────────┐ │
-│  │                                                                         │ │
-│  │              📄 PDFファイルをここにドラッグ&ドロップ                    │ │
-│  │                                                                         │ │
-│  │                      または                                             │ │
-│  │                                                                         │ │
-│  │                 [ファイルを選択...]                                     │ │
-│  │                                                                         │ │
-│  │              対応形式: .pdf                                             │ │
-│  │                                                                         │ │
+│  │                        Hero Section                                     │ │
+│  │  ┌──────────────────────────────────────────────────────────────────┐  │ │
+│  │  │  📄 ファイルをドラッグ&ドロップ                                   │  │ │
+│  │  │     または [ファイルを選択...]                                    │  │ │
+│  │  │     対応形式: .pdf, .xlsx, .xls                                  │  │ │
+│  │  └──────────────────────────────────────────────────────────────────┘  │ │
+│  │  [選択中: document.pdf (2.5 MB, 10ページ)]                             │ │
 │  └────────────────────────────────────────────────────────────────────────┘ │
 │                                                                              │
 │  ┌────────────────────────────────────────────────────────────────────────┐ │
-│  │  選択中: document.pdf (2.5 MB, 10ページ)                                │ │
+│  │  Direction Section (既存)                                              │ │
+│  │    [日本語 → English]     [English → 日本語]                           │ │
+│  │              [          Translate          ]                           │ │
 │  └────────────────────────────────────────────────────────────────────────┘ │
 │                                                                              │
-│         [JP → EN 翻訳]                      [EN → JP 翻訳]                  │
-│                                                                              │
 │  ┌────────────────────────────────────────────────────────────────────────┐ │
-│  │  進捗: ████████████░░░░░░░░░░░ 60%                                      │ │
-│  │  処理中: ページ 6/10 - レイアウト解析中...                               │ │
+│  │  Settings Section (既存)                                               │ │
+│  │    Glossary: [file.csv]  [Browse] [Clear]                             │ │
+│  │    Start with Windows: [switch]                                        │ │
 │  └────────────────────────────────────────────────────────────────────────┘ │
 │                                                                              │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 9.2 ルートウィンドウ設定
+### 9.3 ルートウィンドウ変更
 
-CustomTkinter と tkinterdnd2 を併用するには、ルートウィンドウにDnD機能を追加する必要がある。
+既存の `TranslatorApp` を `TkinterDnD.DnDWrapper` と統合する。
 
 ```python
+# ui.py の TranslatorApp クラスを変更
+
 import customtkinter as ctk
 from tkinterdnd2 import TkinterDnD
 
-class CTkDnD(ctk.CTk, TkinterDnD.DnDWrapper):
-    """CustomTkinter + tkinterdnd2 ハイブリッドルートウィンドウ"""
+class TranslatorApp(ctk.CTk, TkinterDnD.DnDWrapper):
+    """
+    Main application - 既存UIにDnD機能を追加
+    """
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.TkdndVersion = TkinterDnD._require(self)
+    def __init__(self):
+        super().__init__()
+        self.TkdndVersion = TkinterDnD._require(self)  # DnD初期化
 
-# アプリケーション起動時
-app = CTkDnD()  # ctk.CTk() の代わりに使用
+        # ... 既存の初期化コード ...
 ```
 
-### 9.3 ドラッグ&ドロップ実装
+### 9.4 Dynamic Island 進捗表示
+
+既存の `DynamicIsland` クラスを使用してPDF翻訳進捗を表示する。
+
+```python
+# 既存の DynamicIsland API を使用
+
+def update_pdf_progress(self, current_page: int, total_pages: int, phase: str):
+    """
+    PDF翻訳進捗を Dynamic Island に表示
+
+    Args:
+        current_page: 現在のページ番号
+        total_pages: 総ページ数
+        phase: 処理フェーズ名
+    """
+    phase_names = {
+        "loading": "PDF読込中",
+        "layout": "レイアウト解析中",
+        "formula": "数式保護中",
+        "translation": "翻訳中",
+        "reconstruction": "PDF再構築中",
+    }
+    phase_display = phase_names.get(phase, phase)
+
+    progress = current_page / total_pages if total_pages > 0 else 0
+
+    # Dynamic Island を拡大モードにして進捗表示
+    self.dynamic_island.expand()
+    self.dynamic_island.set_status(
+        text=phase_display,
+        subtitle=f"ページ {current_page}/{total_pages}",
+        progress=progress
+    )
+    self.dynamic_island.start_pulse()
+
+def complete_pdf_translation(self, output_path: str):
+    """翻訳完了時の表示"""
+    self.dynamic_island.set_status(
+        text="完了",
+        subtitle=Path(output_path).name,
+        progress=1.0
+    )
+    self.dynamic_island.stop_pulse()
+    # 3秒後にコンパクトモードに戻る
+    self.after(3000, self.dynamic_island.compact)
+```
+
+### 9.5 ファイルドロップエリア
+
+Hero Section 内にドロップエリアを追加する。
 
 ```python
 import tkinter as tk
@@ -1166,97 +1233,97 @@ import customtkinter as ctk
 from tkinterdnd2 import DND_FILES
 from pathlib import Path
 
-class PDFDropArea(ctk.CTkFrame):
-    """PDFファイルドラッグ&ドロップエリア"""
+class FileDropArea(ctk.CTkFrame):
+    """
+    ファイルドラッグ&ドロップエリア
+    PDF / Excel 両対応
+    """
 
-    def __init__(self, parent, on_file_selected: callable):
-        super().__init__(parent)
+    SUPPORTED_EXTENSIONS = {".pdf", ".xlsx", ".xls"}
+
+    def __init__(self, parent, on_file_selected: callable, theme):
+        super().__init__(parent, fg_color="transparent")
         self.on_file_selected = on_file_selected
+        self.theme = theme
         self.selected_file: Path = None
+        self.file_type: str = None  # "pdf" or "excel"
 
         self._setup_ui()
         self._setup_dnd()
 
     def _setup_ui(self):
-        """UI構築"""
-        # ドロップエリア (tkinter.Frame を使用 - DnD互換性のため)
+        """UI構築 - 既存テーマを使用"""
+        # ドロップエリア (tkinter.Frame - DnD互換性)
         self.drop_frame = tk.Frame(
             self,
-            width=500,
-            height=200,
-            bg="#2a2a2a",
+            bg=self.theme.bg_card,
             highlightthickness=2,
-            highlightbackground="#666666",
+            highlightbackground=self.theme.glass_border,
         )
-        self.drop_frame.pack(padx=20, pady=20, fill="both", expand=True)
-        self.drop_frame.pack_propagate(False)
+        self.drop_frame.pack(fill="both", expand=True, padx=10, pady=10)
 
-        # アイコンとテキスト (CTkLabelはtk.Frame内で使用可能)
+        # アイコン
         self.icon_label = ctk.CTkLabel(
             self.drop_frame,
             text="📄",
-            font=("", 48),
+            font=("", 36),
+            text_color=self.theme.text_secondary,
             fg_color="transparent",
         )
-        self.icon_label.pack(pady=(30, 10))
+        self.icon_label.pack(pady=(20, 5))
 
+        # メインテキスト
         self.drop_label = ctk.CTkLabel(
             self.drop_frame,
-            text="PDFファイルをここにドラッグ&ドロップ",
-            font=("", 16),
+            text="ファイルをドラッグ&ドロップ",
+            font=("", 14),
+            text_color=self.theme.text_primary,
             fg_color="transparent",
         )
         self.drop_label.pack()
 
-        self.or_label = ctk.CTkLabel(
+        # サブテキスト
+        self.format_label = ctk.CTkLabel(
             self.drop_frame,
-            text="または",
-            font=("", 12),
-            text_color="#888888",
+            text="対応形式: .pdf, .xlsx, .xls",
+            font=("", 10),
+            text_color=self.theme.text_tertiary,
             fg_color="transparent",
         )
-        self.or_label.pack(pady=10)
+        self.format_label.pack(pady=(5, 10))
 
         # ファイル選択ボタン
         self.select_button = ctk.CTkButton(
             self.drop_frame,
             text="ファイルを選択...",
             command=self._on_select_click,
-            width=150,
+            width=140,
+            height=32,
+            fg_color=self.theme.bg_elevated,
+            hover_color=self.theme.bg_primary,
+            text_color=self.theme.text_secondary,
+            corner_radius=8,
         )
-        self.select_button.pack()
-
-        self.format_label = ctk.CTkLabel(
-            self.drop_frame,
-            text="対応形式: .pdf",
-            font=("", 10),
-            text_color="#666666",
-            fg_color="transparent",
-        )
-        self.format_label.pack(pady=(15, 0))
+        self.select_button.pack(pady=(0, 15))
 
         # ファイル情報表示
-        self.file_info_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self.file_info_frame.pack(fill="x", padx=20)
-
         self.file_info_label = ctk.CTkLabel(
-            self.file_info_frame,
+            self,
             text="",
-            font=("", 12),
+            font=("", 11),
+            fg_color="transparent",
         )
-        self.file_info_label.pack(pady=5)
+        self.file_info_label.pack(pady=(0, 5))
 
     def _setup_dnd(self):
         """ドラッグ&ドロップ設定"""
-        # tk.Frame に対してDnD登録
         self.drop_frame.drop_target_register(DND_FILES)
         self.drop_frame.dnd_bind("<<Drop>>", self._on_drop)
         self.drop_frame.dnd_bind("<<DropEnter>>", self._on_drag_enter)
         self.drop_frame.dnd_bind("<<DropLeave>>", self._on_drag_leave)
 
     def _parse_drop_data(self, data: str) -> list[str]:
-        """ドロップデータをパース (複数ファイル・スペース対応)"""
-        # Tk の splitlist() を使用 - スペースを含むパスも正しく処理
+        """ドロップデータをパース"""
         return self.tk.splitlist(data)
 
     def _on_drop(self, event):
@@ -1267,8 +1334,8 @@ class PDFDropArea(ctk.CTkFrame):
         self._reset_drop_style()
 
     def _on_drag_enter(self, event):
-        """ドラッグ進入時"""
-        self.drop_frame.configure(highlightbackground="#0078d4")
+        """ドラッグ進入時 - アクセントカラーでハイライト"""
+        self.drop_frame.configure(highlightbackground=self.theme.accent)
 
     def _on_drag_leave(self, event):
         """ドラッグ退出時"""
@@ -1276,14 +1343,19 @@ class PDFDropArea(ctk.CTkFrame):
 
     def _reset_drop_style(self):
         """スタイルリセット"""
-        self.drop_frame.configure(highlightbackground="#666666")
+        self.drop_frame.configure(highlightbackground=self.theme.glass_border)
 
     def _on_select_click(self):
-        """ファイル選択ボタンクリック"""
+        """ファイル選択ダイアログ"""
         from tkinter import filedialog
         file_path = filedialog.askopenfilename(
-            title="PDFファイルを選択",
-            filetypes=[("PDF files", "*.pdf"), ("All files", "*.*")],
+            title="ファイルを選択",
+            filetypes=[
+                ("対応ファイル", "*.pdf *.xlsx *.xls"),
+                ("PDF files", "*.pdf"),
+                ("Excel files", "*.xlsx *.xls"),
+                ("All files", "*.*"),
+            ],
         )
         if file_path:
             self._validate_and_set_file(Path(file_path))
@@ -1294,137 +1366,111 @@ class PDFDropArea(ctk.CTkFrame):
             self._show_error("ファイルが見つかりません")
             return
 
-        if file_path.suffix.lower() != ".pdf":
-            self._show_error("PDFファイルのみ対応しています")
+        ext = file_path.suffix.lower()
+        if ext not in self.SUPPORTED_EXTENSIONS:
+            self._show_error("対応していないファイル形式です")
             return
 
         self.selected_file = file_path
+        self.file_type = "pdf" if ext == ".pdf" else "excel"
         self._update_file_info()
 
         if self.on_file_selected:
-            self.on_file_selected(file_path)
+            self.on_file_selected(file_path, self.file_type)
 
     def _update_file_info(self):
         """ファイル情報表示更新"""
         if self.selected_file:
             size_mb = self.selected_file.stat().st_size / (1024 * 1024)
-            # ページ数は後で取得
+            type_icon = "📄" if self.file_type == "pdf" else "📊"
             self.file_info_label.configure(
-                text=f"選択中: {self.selected_file.name} ({size_mb:.1f} MB)",
-                text_color="#00cc66",
+                text=f"{type_icon} {self.selected_file.name} ({size_mb:.1f} MB)",
+                text_color=self.theme.accent,
             )
 
     def _show_error(self, message: str):
         """エラー表示"""
         self.file_info_label.configure(
-            text=f"エラー: {message}",
-            text_color="#ff4444",
+            text=f"⚠️ {message}",
+            text_color="#ff6b6b",
         )
 
-    def get_selected_file(self) -> Path:
-        """選択ファイル取得"""
-        return self.selected_file
+    def clear(self):
+        """選択クリア"""
+        self.selected_file = None
+        self.file_type = None
+        self.file_info_label.configure(text="")
 ```
 
-### 9.4 進捗表示
+### 9.6 TranslatorApp への統合
 
 ```python
-class PDFProgressBar(ctk.CTkFrame):
-    """PDF翻訳進捗表示"""
+# ui.py の TranslatorApp._build_ui() に追加
 
-    def __init__(self, parent):
-        super().__init__(parent, fg_color="transparent")
-        self._setup_ui()
+def _build_ui(self):
+    # ... 既存コード ...
 
-    def _setup_ui(self):
-        """UI構築"""
-        self.progress_bar = ctk.CTkProgressBar(
-            self,
-            width=400,
-            height=20,
-        )
-        self.progress_bar.pack(fill="x", padx=20, pady=(10, 5))
-        self.progress_bar.set(0)
+    # === Hero Section (ファイルドロップエリア追加) ===
+    self.hero = ctk.CTkFrame(self.container, fg_color="transparent")
+    self.hero.pack(fill="both", expand=True)
 
-        self.status_label = ctk.CTkLabel(
-            self,
-            text="",
-            font=("", 11),
-            text_color="#888888",
-        )
-        self.status_label.pack()
+    # ファイルドロップエリア
+    self.file_drop_area = FileDropArea(
+        self.hero,
+        on_file_selected=self._on_file_selected,
+        theme=THEME,
+    )
+    self.file_drop_area.pack(fill="both", expand=True, pady=THEME.space_md)
 
-    def update_progress(self, progress: float, status: str):
-        """
-        進捗更新
+    # ... 既存コード ...
 
-        Args:
-            progress: 0.0 ~ 1.0
-            status: ステータステキスト
-        """
-        self.progress_bar.set(progress)
-        self.status_label.configure(text=status)
+def _on_file_selected(self, file_path: Path, file_type: str):
+    """ファイル選択時のコールバック"""
+    self.selected_file = file_path
+    self.selected_file_type = file_type
 
-    def set_phases(self, current_page: int, total_pages: int, phase: str):
-        """
-        フェーズ別進捗表示
+    # Dynamic Island で表示
+    if file_type == "pdf":
+        self.dynamic_island.set_status(f"PDF: {file_path.name}")
+    else:
+        self.dynamic_island.set_status(f"Excel: {file_path.name}")
 
-        Args:
-            current_page: 現在のページ
-            total_pages: 総ページ数
-            phase: 処理フェーズ名
-        """
-        phase_names = {
-            "loading": "PDF読込中",
-            "layout": "レイアウト解析中",
-            "formula": "数式保護中",
-            "translation": "翻訳中",
-            "reconstruction": "PDF再構築中",
-        }
-        phase_display = phase_names.get(phase, phase)
-
-        progress = current_page / total_pages if total_pages > 0 else 0
-        status = f"処理中: ページ {current_page}/{total_pages} - {phase_display}..."
-
-        self.update_progress(progress, status)
-
-    def complete(self, output_path: str = None):
-        """完了表示"""
-        self.progress_bar.set(1.0)
-        if output_path:
-            self.status_label.configure(
-                text=f"完了: {output_path}",
-                text_color="#00cc66",
-            )
-        else:
-            self.status_label.configure(
-                text="完了",
-                text_color="#00cc66",
-            )
-
-    def reset(self):
-        """リセット"""
-        self.progress_bar.set(0)
-        self.status_label.configure(text="", text_color="#888888")
+def _start(self):
+    """翻訳開始 - ファイルタイプで分岐"""
+    if hasattr(self, 'selected_file_type') and self.selected_file_type == "pdf":
+        # PDF翻訳
+        if self.current_mode == "jp_to_en" and self.on_pdf_jp_to_en_callback:
+            self.on_pdf_jp_to_en_callback(self.selected_file)
+        elif self.current_mode == "en_to_jp" and self.on_pdf_en_to_jp_callback:
+            self.on_pdf_en_to_jp_callback(self.selected_file)
+    else:
+        # Excel翻訳 (既存動作)
+        if self.current_mode == "jp_to_en" and self.on_jp_to_en_callback:
+            self.on_jp_to_en_callback()
+        elif self.current_mode == "en_to_jp" and self.on_en_to_jp_callback:
+            self.on_en_to_jp_callback()
 ```
 
-### 9.5 依存パッケージ
+### 9.7 新規コールバック
+
+```python
+# TranslatorApp に追加するコールバック設定メソッド
+
+def set_on_pdf_jp_to_en(self, callback: Callable[[Path], None]):
+    """PDF日本語→英語翻訳コールバック"""
+    self.on_pdf_jp_to_en_callback = callback
+
+def set_on_pdf_en_to_jp(self, callback: Callable[[Path], None]):
+    """PDF英語→日本語翻訳コールバック"""
+    self.on_pdf_en_to_jp_callback = callback
+```
+
+### 9.8 依存パッケージ
 
 ```python
 # requirements.txt 追加
 tkinterdnd2 >= 0.3.0   # ドラッグ&ドロップ対応
 ```
-
-### 9.6 既存UIとの統合
-
-既存のExcel翻訳UIとの統合方針:
-
-| 項目 | 方針 |
-|------|------|
-| ファイル選択 | PDF/Excelを自動判別し、適切な処理を実行 |
-| 翻訳ボタン | 共通 (JP → EN / EN → JP) |
-| 進捗表示 | PDF翻訳時のみ詳細進捗を表示 |
-| 出力先 | 同一ディレクトリに `*_translated.pdf` として保存 |
 
 ---
 
@@ -1588,3 +1634,4 @@ def analyze_document(img: np.ndarray, device: str = "cpu") -> DocumentAnalyzerSc
 | v8.6 | 2024-11 | CPU専用環境をデフォルトに変更、GPU高速化をオプション化 |
 | v8.7 | 2024-11 | バッチ処理追加 (大量ページ対応)、最大ページ数制限なし、DPI固定(200)、Copilotトークン制限対応 |
 | v8.8 | 2024-11 | API整合性修正: PyMuPDF subset_fonts()パラメータ修正、tkinterdnd2イベント名修正(DropEnter/DropLeave)、ファイルパース改善(splitlist使用) |
+| v8.9 | 2024-11 | UI設計を既存TranslatorAppと統合、Dynamic Islandで進捗表示、PDF/Excel両対応ドロップエリア、既存Settings維持 |

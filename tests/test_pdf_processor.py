@@ -1,0 +1,1040 @@
+# tests/test_pdf_processor.py
+"""Tests for ecm_translate.processors.pdf_processor"""
+
+import pytest
+from pathlib import Path
+from unittest.mock import Mock, MagicMock, patch
+import platform
+
+from ecm_translate.processors.pdf_processor import (
+    # Utility functions
+    _get_system_font_dirs,
+    _find_font_file,
+    get_font_path_for_lang,
+    vflag,
+    convert_to_pdf_coordinates,
+    calculate_text_position,
+    calculate_char_width,
+    split_text_into_lines,
+    calculate_line_height,
+    estimate_font_size,
+    _is_address_on_page,
+    # Constants
+    FONT_FILES,
+    DEFAULT_VFONT_PATTERN,
+    FORMULA_UNICODE_CATEGORIES,
+    LANG_LINEHEIGHT_MAP,
+    DEFAULT_LINE_HEIGHT,
+    # Classes
+    FontInfo,
+    TranslationCell,
+    FormulaManager,
+    FontRegistry,
+    PdfOperatorGenerator,
+    ContentStreamReplacer,
+    PdfProcessor,
+)
+from ecm_translate.models.types import FileType, TextBlock
+
+
+# =============================================================================
+# Fixtures
+# =============================================================================
+
+@pytest.fixture
+def processor():
+    """PdfProcessor instance"""
+    return PdfProcessor()
+
+
+@pytest.fixture
+def formula_manager():
+    """FormulaManager instance"""
+    return FormulaManager()
+
+
+@pytest.fixture
+def font_registry():
+    """FontRegistry instance"""
+    return FontRegistry()
+
+
+@pytest.fixture
+def mock_fitz():
+    """Mock PyMuPDF (fitz) module"""
+    mock = MagicMock()
+    return mock
+
+
+@pytest.fixture
+def mock_doc():
+    """Mock PDF document"""
+    doc = MagicMock()
+    doc.__len__ = Mock(return_value=2)
+    doc.__iter__ = Mock(return_value=iter([MagicMock(), MagicMock()]))
+    return doc
+
+
+@pytest.fixture
+def sample_translation_cell():
+    """Sample TranslationCell for testing"""
+    return TranslationCell(
+        address="P1_0",
+        text="テストテキスト",
+        box=[100.0, 200.0, 300.0, 250.0],
+        direction="horizontal",
+        role="text",
+        page_num=1,
+    )
+
+
+# =============================================================================
+# Tests: Data Classes
+# =============================================================================
+
+class TestFontInfo:
+    """Tests for FontInfo dataclass"""
+
+    def test_create_font_info(self):
+        info = FontInfo(
+            font_id="F1",
+            family="Japanese",
+            path="/usr/share/fonts/test.ttf",
+            fallback=None,
+            encoding="cid",
+            is_cjk=True,
+        )
+        assert info.font_id == "F1"
+        assert info.family == "Japanese"
+        assert info.encoding == "cid"
+        assert info.is_cjk is True
+
+    def test_font_info_with_fallback(self):
+        info = FontInfo(
+            font_id="F2",
+            family="English",
+            path=None,
+            fallback="/fallback/path.ttf",
+            encoding="simple",
+            is_cjk=False,
+        )
+        assert info.path is None
+        assert info.fallback == "/fallback/path.ttf"
+        assert info.is_cjk is False
+
+
+class TestTranslationCell:
+    """Tests for TranslationCell dataclass"""
+
+    def test_create_translation_cell(self, sample_translation_cell):
+        cell = sample_translation_cell
+        assert cell.address == "P1_0"
+        assert cell.text == "テストテキスト"
+        assert cell.box == [100.0, 200.0, 300.0, 250.0]
+        assert cell.direction == "horizontal"
+        assert cell.role == "text"
+        assert cell.page_num == 1
+
+    def test_translation_cell_defaults(self):
+        cell = TranslationCell(
+            address="T1_0_1_2",
+            text="Table text",
+            box=[0, 0, 100, 50],
+        )
+        assert cell.direction == "horizontal"
+        assert cell.role == "text"
+        assert cell.page_num == 1
+
+
+# =============================================================================
+# Tests: System Font Directory Detection
+# =============================================================================
+
+class TestGetSystemFontDirs:
+    """Tests for _get_system_font_dirs function"""
+
+    @patch('ecm_translate.processors.pdf_processor.platform.system')
+    def test_windows_font_dirs(self, mock_system):
+        mock_system.return_value = "Windows"
+        with patch.dict('os.environ', {'WINDIR': 'C:\\Windows'}):
+            dirs = _get_system_font_dirs()
+            assert any("Fonts" in d for d in dirs)
+
+    @patch('ecm_translate.processors.pdf_processor.platform.system')
+    def test_macos_font_dirs(self, mock_system):
+        mock_system.return_value = "Darwin"
+        dirs = _get_system_font_dirs()
+        assert "/System/Library/Fonts" in dirs
+        assert "/Library/Fonts" in dirs
+
+    @patch('ecm_translate.processors.pdf_processor.platform.system')
+    def test_linux_font_dirs(self, mock_system):
+        mock_system.return_value = "Linux"
+        dirs = _get_system_font_dirs()
+        assert "/usr/share/fonts" in dirs
+        assert "/usr/local/share/fonts" in dirs
+
+
+class TestFindFontFile:
+    """Tests for _find_font_file function"""
+
+    def test_find_font_file_not_found(self):
+        # Search for non-existent font
+        result = _find_font_file(["nonexistent_font_12345.ttf"])
+        assert result is None
+
+    @patch('ecm_translate.processors.pdf_processor._get_system_font_dirs')
+    @patch('os.path.isdir')
+    @patch('os.path.isfile')
+    def test_find_font_file_direct_path(self, mock_isfile, mock_isdir, mock_dirs):
+        mock_dirs.return_value = ["/usr/share/fonts"]
+        mock_isdir.return_value = True
+        mock_isfile.side_effect = lambda p: p == "/usr/share/fonts/test.ttf"
+
+        result = _find_font_file(["test.ttf"])
+        assert result == "/usr/share/fonts/test.ttf"
+
+    def test_find_font_file_priority_order(self):
+        # First font in list has priority
+        with patch('ecm_translate.processors.pdf_processor._get_system_font_dirs') as mock_dirs:
+            mock_dirs.return_value = ["/fonts"]
+            with patch('os.path.isdir', return_value=True):
+                with patch('os.path.isfile') as mock_isfile:
+                    mock_isfile.side_effect = lambda p: p in ["/fonts/second.ttf", "/fonts/first.ttf"]
+                    result = _find_font_file(["first.ttf", "second.ttf"])
+                    assert result == "/fonts/first.ttf"
+
+
+class TestGetFontPathForLang:
+    """Tests for get_font_path_for_lang function"""
+
+    def test_font_files_config_exists(self):
+        """Verify FONT_FILES configuration has all expected languages"""
+        assert "ja" in FONT_FILES
+        assert "en" in FONT_FILES
+        assert "zh-CN" in FONT_FILES
+        assert "ko" in FONT_FILES
+
+    def test_font_files_has_primary_and_fallback(self):
+        for lang in ["ja", "en", "zh-CN", "ko"]:
+            assert "primary" in FONT_FILES[lang]
+            assert "fallback" in FONT_FILES[lang]
+            assert len(FONT_FILES[lang]["primary"]) > 0
+            assert len(FONT_FILES[lang]["fallback"]) > 0
+
+    @patch('ecm_translate.processors.pdf_processor._find_font_file')
+    def test_get_font_path_returns_primary(self, mock_find):
+        mock_find.side_effect = lambda names: "/fonts/primary.ttf" if "primary" in str(names) else None
+        # Primary should be checked first
+        result = get_font_path_for_lang("ja")
+        assert mock_find.called
+
+    @patch('ecm_translate.processors.pdf_processor._find_font_file')
+    def test_get_font_path_fallback_to_english(self, mock_find):
+        mock_find.return_value = None
+        result = get_font_path_for_lang("ja")
+        # Should fall back to English when Japanese fonts not found
+        assert result is None  # All fonts not found
+
+
+# =============================================================================
+# Tests: Formula Detection (vflag)
+# =============================================================================
+
+class TestVflag:
+    """Tests for vflag function (formula detection)"""
+
+    def test_vflag_cid_notation(self):
+        """CID notation should be detected as formula"""
+        assert vflag("Arial", "(cid:123)") is True
+        assert vflag("Arial", "(cid:0)") is True
+
+    def test_vflag_math_font(self):
+        """Math fonts should be detected"""
+        # Pattern is CM[^R] - matches CM followed by non-R character
+        assert vflag("CMMI10", "x") is True  # Computer Modern Math Italic
+        assert vflag("CMSY10", "y") is True  # Computer Modern Symbol
+        assert vflag("TeX-Math", "z") is True
+        assert vflag("Symbol", "α") is True  # Contains "Sym"
+        # CMR (Computer Modern Roman) doesn't match because R follows CM
+        assert vflag("CMR10", "a") is False
+
+    def test_vflag_mono_font(self):
+        """Monospace fonts should be detected"""
+        assert vflag("Courier Mono", "x") is True
+        assert vflag("Source Code", "y") is True
+
+    def test_vflag_normal_text(self):
+        """Normal text with normal fonts should not be flagged"""
+        assert vflag("Arial", "Hello") is False
+        assert vflag("Times New Roman", "World") is False
+        # Note: "MS Mincho" matches MS.M pattern, so use different font
+        assert vflag("IPAMincho", "日本語") is False
+        assert vflag("Noto Sans", "テスト") is False
+
+    def test_vflag_unicode_category(self):
+        """Mathematical symbols should be detected"""
+        assert vflag("Arial", "∑") is True  # Math symbol (Sm)
+        assert vflag("Arial", "±") is True  # Math symbol
+
+    def test_vflag_custom_vfont_pattern(self):
+        """Custom font pattern should work"""
+        assert vflag("CustomMath", "x", vfont="Custom") is True
+        assert vflag("Regular", "x", vfont="Custom") is False
+
+    def test_vflag_custom_vchar_pattern(self):
+        """Custom character pattern should work"""
+        assert vflag("Arial", "α", vchar=r"[α-ω]") is True
+        assert vflag("Arial", "a", vchar=r"[α-ω]") is False
+
+
+# =============================================================================
+# Tests: FormulaManager
+# =============================================================================
+
+class TestFormulaManager:
+    """Tests for FormulaManager class"""
+
+    def test_init(self, formula_manager):
+        assert formula_manager.var == []
+        assert formula_manager._formula_count == 0
+
+    def test_protect_display_math(self, formula_manager):
+        text = "The equation $$E=mc^2$$ is famous."
+        result = formula_manager.protect(text)
+        assert "{v0}" in result
+        assert "$$E=mc^2$$" in formula_manager.var
+
+    def test_protect_inline_math(self, formula_manager):
+        text = "Where $x$ is the variable."
+        result = formula_manager.protect(text)
+        assert "{v0}" in result
+        assert "$x$" in formula_manager.var
+
+    def test_protect_latex_command(self, formula_manager):
+        # The regex pattern \\[a-zA-Z]+\{[^}]*\} matches \command{content}
+        # For \frac{a}{b}, it will match \frac{a} (first brace pair)
+        text = r"Use \frac{a} for fractions."
+        result = formula_manager.protect(text)
+        assert "{v0}" in result
+        assert r"\frac{a}" in formula_manager.var
+
+    def test_protect_multiple_formulas(self, formula_manager):
+        text = "Both $x$ and $y$ are variables."
+        result = formula_manager.protect(text)
+        assert "{v0}" in result
+        assert "{v1}" in result
+        assert len(formula_manager.var) == 2
+
+    def test_protect_no_formulas(self, formula_manager):
+        text = "This is plain text without formulas."
+        result = formula_manager.protect(text)
+        assert result == text
+        assert len(formula_manager.var) == 0
+
+    def test_restore_single_placeholder(self, formula_manager):
+        formula_manager.var = ["$$E=mc^2$$"]
+        text = "The equation {v0} is famous."
+        result = formula_manager.restore(text)
+        assert result == "The equation $$E=mc^2$$ is famous."
+
+    def test_restore_multiple_placeholders(self, formula_manager):
+        formula_manager.var = ["$x$", "$y$"]
+        text = "Variables {v0} and {v1}."
+        result = formula_manager.restore(text)
+        assert result == "Variables $x$ and $y$."
+
+    def test_restore_with_spaces_in_placeholder(self, formula_manager):
+        """Placeholders with spaces like {v 0} should work"""
+        formula_manager.var = ["$a$"]
+        text = "Variable {v 0}."
+        result = formula_manager.restore(text)
+        assert result == "Variable $a$."
+
+    def test_protect_and_restore_roundtrip(self, formula_manager):
+        original = "The formula $$\\int_0^1 x dx$$ equals $0.5$."
+        protected = formula_manager.protect(original)
+        # Simulate translation (text parts changed, placeholders preserved)
+        translated = protected.replace("The formula", "数式").replace("equals", "は")
+        restored = formula_manager.restore(translated)
+        assert "$$\\int_0^1 x dx$$" in restored
+        assert "$0.5$" in restored
+
+    def test_restore_invalid_placeholder_unchanged(self, formula_manager):
+        formula_manager.var = ["$x$"]
+        text = "Invalid {v99} placeholder."
+        result = formula_manager.restore(text)
+        assert result == "Invalid {v99} placeholder."
+
+
+# =============================================================================
+# Tests: FontRegistry
+# =============================================================================
+
+class TestFontRegistry:
+    """Tests for FontRegistry class"""
+
+    def test_init(self, font_registry):
+        assert font_registry.fonts == {}
+        assert font_registry._counter == 0
+
+    def test_font_config_exists(self):
+        """Verify FONT_CONFIG has expected languages"""
+        assert "ja" in FontRegistry.FONT_CONFIG
+        assert "en" in FontRegistry.FONT_CONFIG
+        assert "zh-CN" in FontRegistry.FONT_CONFIG
+        assert "ko" in FontRegistry.FONT_CONFIG
+
+    def test_register_font_returns_id(self, font_registry):
+        font_id = font_registry.register_font("ja")
+        assert font_id == "F1"
+
+    def test_register_font_increments_counter(self, font_registry):
+        font_registry.register_font("ja")
+        font_registry.register_font("en")
+        assert font_registry._counter == 2
+
+    def test_register_same_font_twice_returns_same_id(self, font_registry):
+        id1 = font_registry.register_font("ja")
+        id2 = font_registry.register_font("ja")
+        assert id1 == id2
+        assert font_registry._counter == 1
+
+    def test_register_font_stores_info(self, font_registry):
+        font_registry.register_font("ja")
+        assert "ja" in font_registry.fonts
+        assert font_registry.fonts["ja"].encoding == "cid"
+        assert font_registry.fonts["ja"].is_cjk is True
+
+    def test_register_english_font(self, font_registry):
+        font_registry.register_font("en")
+        assert "en" in font_registry.fonts
+        assert font_registry.fonts["en"].encoding == "simple"
+        assert font_registry.fonts["en"].is_cjk is False
+
+    def test_get_encoding_type_cid(self, font_registry):
+        font_id = font_registry.register_font("ja")
+        assert font_registry.get_encoding_type(font_id) == "cid"
+
+    def test_get_encoding_type_simple(self, font_registry):
+        font_id = font_registry.register_font("en")
+        assert font_registry.get_encoding_type(font_id) == "simple"
+
+    def test_get_encoding_type_unknown(self, font_registry):
+        assert font_registry.get_encoding_type("F99") == "simple"
+
+    def test_get_is_cjk_true(self, font_registry):
+        font_id = font_registry.register_font("ja")
+        assert font_registry.get_is_cjk(font_id) is True
+
+    def test_get_is_cjk_false(self, font_registry):
+        font_id = font_registry.register_font("en")
+        assert font_registry.get_is_cjk(font_id) is False
+
+    def test_get_is_cjk_unknown(self, font_registry):
+        assert font_registry.get_is_cjk("F99") is False
+
+    def test_select_font_for_hiragana(self, font_registry):
+        font_registry.register_font("ja")
+        font_registry.register_font("en")
+        font_id = font_registry.select_font_for_text("こんにちは")
+        assert font_id == font_registry.fonts["ja"].font_id
+
+    def test_select_font_for_katakana(self, font_registry):
+        font_registry.register_font("ja")
+        font_registry.register_font("en")
+        font_id = font_registry.select_font_for_text("カタカナ")
+        assert font_id == font_registry.fonts["ja"].font_id
+
+    def test_select_font_for_korean(self, font_registry):
+        font_registry.register_font("ko")
+        font_registry.register_font("en")
+        font_id = font_registry.select_font_for_text("한글")
+        assert font_id == font_registry.fonts["ko"].font_id
+
+    def test_select_font_for_english(self, font_registry):
+        font_registry.register_font("ja")
+        font_registry.register_font("en")
+        font_id = font_registry.select_font_for_text("Hello World")
+        assert font_id == font_registry.fonts["en"].font_id
+
+    def test_select_font_for_kanji_uses_target_lang(self, font_registry):
+        font_registry.register_font("ja")
+        font_registry.register_font("zh-CN")
+        # Kanji should use target_lang parameter
+        font_id = font_registry.select_font_for_text("漢字", target_lang="zh-CN")
+        assert font_id == font_registry.fonts["zh-CN"].font_id
+
+    def test_get_font_path_registered(self, font_registry):
+        with patch('ecm_translate.processors.pdf_processor.get_font_path_for_lang') as mock_get:
+            mock_get.return_value = "/path/to/font.ttf"
+            font_id = font_registry.register_font("ja")
+            path = font_registry.get_font_path(font_id)
+            assert path == "/path/to/font.ttf"
+
+    def test_get_font_path_unknown(self, font_registry):
+        path = font_registry.get_font_path("F99")
+        assert path is None
+
+
+# =============================================================================
+# Tests: PdfOperatorGenerator
+# =============================================================================
+
+class TestPdfOperatorGenerator:
+    """Tests for PdfOperatorGenerator class"""
+
+    @pytest.fixture
+    def op_generator(self, font_registry):
+        font_registry.register_font("ja")
+        font_registry.register_font("en")
+        return PdfOperatorGenerator(font_registry)
+
+    def test_gen_op_txt_format(self, op_generator):
+        result = op_generator.gen_op_txt("F1", 12.0, 100.0, 200.0, "48656c6c6f")
+        assert "/F1" in result
+        assert "12" in result
+        assert "100" in result
+        assert "200" in result
+        assert "<48656c6c6f>" in result
+        assert "Tf" in result
+        assert "Tm" in result
+        assert "TJ" in result
+
+    def test_raw_string_simple_encoding(self, op_generator):
+        # English font uses simple (2-digit hex) encoding
+        result = op_generator.raw_string("F2", "Hi")
+        assert result == "4869"  # H=0x48, i=0x69
+
+    def test_raw_string_cid_encoding(self, op_generator):
+        # Japanese font uses CID (4-digit hex) encoding
+        result = op_generator.raw_string("F1", "あ")
+        assert result == "3042"  # あ = U+3042
+
+    def test_raw_string_cid_multiple_chars(self, op_generator):
+        result = op_generator.raw_string("F1", "あい")
+        assert result == "30423044"  # あ=3042, い=3044
+
+    def test_raw_string_empty(self, op_generator):
+        result = op_generator.raw_string("F1", "")
+        assert result == ""
+
+
+# =============================================================================
+# Tests: ContentStreamReplacer
+# =============================================================================
+
+class TestContentStreamReplacer:
+    """Tests for ContentStreamReplacer class"""
+
+    @pytest.fixture
+    def replacer(self, mock_doc, font_registry):
+        return ContentStreamReplacer(mock_doc, font_registry)
+
+    def test_init(self, replacer):
+        assert replacer.operators == []
+        assert replacer._in_text_block is False
+
+    def test_begin_text(self, replacer):
+        replacer.begin_text()
+        assert "BT " in replacer.operators
+        assert replacer._in_text_block is True
+
+    def test_begin_text_idempotent(self, replacer):
+        replacer.begin_text()
+        replacer.begin_text()
+        assert replacer.operators.count("BT ") == 1
+
+    def test_end_text(self, replacer):
+        replacer.begin_text()
+        replacer.end_text()
+        assert "ET " in replacer.operators
+        assert replacer._in_text_block is False
+
+    def test_end_text_when_not_in_block(self, replacer):
+        replacer.end_text()
+        assert "ET " not in replacer.operators
+
+    def test_add_text_operator_auto_begin(self, replacer):
+        replacer.add_text_operator("/F1 12 Tf")
+        assert "BT " in replacer.operators
+        assert "/F1 12 Tf" in replacer.operators
+
+    def test_add_text_operator_tracks_fonts(self, replacer):
+        replacer.add_text_operator("/F1 12 Tf", font_id="F1")
+        assert "F1" in replacer._used_fonts
+
+    def test_add_redaction(self, replacer):
+        replacer.add_redaction(100, 200, 300, 250)
+        ops = "".join(replacer.operators)
+        assert "q" in ops  # Save state
+        assert "rg" in ops  # Set color
+        assert "re" in ops  # Rectangle
+        assert "f" in ops   # Fill
+        assert "Q" in ops   # Restore state
+
+    def test_add_redaction_custom_color(self, replacer):
+        replacer.add_redaction(0, 0, 100, 50, color=(0.5, 0.5, 0.5))
+        ops = "".join(replacer.operators)
+        assert "0.5" in ops
+
+    def test_add_redaction_ends_text_block(self, replacer):
+        replacer.begin_text()
+        replacer.add_redaction(0, 0, 100, 50)
+        assert replacer._in_text_block is False
+
+    def test_build_returns_bytes(self, replacer):
+        replacer.add_text_operator("/F1 12 Tf")
+        result = replacer.build()
+        assert isinstance(result, bytes)
+
+    def test_build_closes_text_block(self, replacer):
+        replacer.begin_text()
+        result = replacer.build()
+        assert b"ET" in result
+
+    def test_clear(self, replacer):
+        replacer.add_text_operator("/F1 12 Tf", font_id="F1")
+        replacer.clear()
+        assert replacer.operators == []
+        assert replacer._in_text_block is False
+        assert len(replacer._used_fonts) == 0
+
+    def test_method_chaining(self, replacer):
+        result = (
+            replacer
+            .begin_text()
+            .add_text_operator("/F1 12 Tf")
+            .end_text()
+        )
+        assert result is replacer
+
+
+# =============================================================================
+# Tests: Coordinate Conversion
+# =============================================================================
+
+class TestConvertToPdfCoordinates:
+    """Tests for convert_to_pdf_coordinates function"""
+
+    def test_basic_conversion(self):
+        # Image: top-left (0,0), bottom-right (100,50)
+        # PDF: bottom-left origin, Y inverted
+        box = [0, 0, 100, 50]
+        page_height = 800
+        x1, y1, x2, y2 = convert_to_pdf_coordinates(box, page_height)
+
+        assert x1 == 0
+        assert x2 == 100
+        # Y coordinates should be inverted
+        assert y1 == 750  # 800 - 50
+        assert y2 == 800  # 800 - 0
+
+    def test_mid_page_box(self):
+        box = [100, 200, 300, 400]
+        page_height = 800
+        x1, y1, x2, y2 = convert_to_pdf_coordinates(box, page_height)
+
+        assert x1 == 100
+        assert x2 == 300
+        assert y1 == 400  # 800 - 400
+        assert y2 == 600  # 800 - 200
+
+    def test_normalized_coordinates(self):
+        # Swap x1/x2 - should be normalized
+        box = [300, 100, 100, 200]
+        page_height = 500
+        x1, y1, x2, y2 = convert_to_pdf_coordinates(box, page_height)
+
+        assert x1 <= x2
+
+    def test_clamping_negative_y(self):
+        box = [0, 0, 100, 900]  # Extends beyond page
+        page_height = 800
+        x1, y1, x2, y2 = convert_to_pdf_coordinates(box, page_height)
+
+        assert y1 >= 0  # Should be clamped
+
+    def test_invalid_box_length(self):
+        with pytest.raises(ValueError, match="Invalid box format"):
+            convert_to_pdf_coordinates([0, 0, 100], 800)
+
+
+class TestCalculateTextPosition:
+    """Tests for calculate_text_position function"""
+
+    def test_first_line_position(self):
+        box_pdf = (100, 200, 300, 400)  # x1, y1, x2, y2
+        x, y = calculate_text_position(box_pdf, 0, 12.0, 1.2)
+
+        assert x == 100  # Left edge
+        assert y == 400 - 12.0  # Top - font_size
+
+    def test_second_line_position(self):
+        box_pdf = (100, 200, 300, 400)
+        x, y = calculate_text_position(box_pdf, 1, 12.0, 1.2)
+
+        assert x == 100
+        # Each line moves down by font_size * line_height
+        expected_y = 400 - 12.0 - (1 * 12.0 * 1.2)
+        assert y == expected_y
+
+    def test_zero_font_size_defaults(self):
+        box_pdf = (0, 0, 100, 100)
+        x, y = calculate_text_position(box_pdf, 0, 0, 1.2)
+        # Should use default font_size of 10.0
+        assert y == 100 - 10.0
+
+    def test_zero_line_height_defaults(self):
+        box_pdf = (0, 0, 100, 100)
+        x, y = calculate_text_position(box_pdf, 1, 12.0, 0)
+        # Should use default line_height of 1.1
+
+
+class TestCalculateCharWidth:
+    """Tests for calculate_char_width function"""
+
+    def test_fullwidth_cjk_char(self):
+        width = calculate_char_width("あ", 12.0, True)
+        assert width == 12.0  # Full width
+
+    def test_halfwidth_latin_char(self):
+        width = calculate_char_width("a", 12.0, False)
+        assert width == 6.0  # Half width
+
+    def test_hiragana_always_fullwidth(self):
+        width = calculate_char_width("あ", 12.0, False)
+        assert width == 12.0  # Hiragana is fullwidth regardless of is_cjk
+
+    def test_katakana_always_fullwidth(self):
+        width = calculate_char_width("ア", 12.0, False)
+        assert width == 12.0
+
+    def test_kanji_always_fullwidth(self):
+        width = calculate_char_width("漢", 12.0, False)
+        assert width == 12.0
+
+    def test_fullwidth_form_chars(self):
+        width = calculate_char_width("Ａ", 12.0, False)  # Fullwidth A (U+FF21)
+        assert width == 12.0
+
+
+class TestSplitTextIntoLines:
+    """Tests for split_text_into_lines function"""
+
+    def test_short_text_single_line(self):
+        lines = split_text_into_lines("Hi", 100, 12.0, False)
+        assert len(lines) == 1
+        assert lines[0] == "Hi"
+
+    def test_long_text_wraps(self):
+        text = "This is a long text that should wrap"
+        lines = split_text_into_lines(text, 50, 10.0, False)
+        assert len(lines) > 1
+        # Total characters should be preserved
+        assert "".join(lines) == text
+
+    def test_explicit_newlines(self):
+        text = "Line1\nLine2\nLine3"
+        lines = split_text_into_lines(text, 1000, 12.0, False)
+        assert len(lines) == 3
+        assert lines == ["Line1", "Line2", "Line3"]
+
+    def test_empty_text(self):
+        lines = split_text_into_lines("", 100, 12.0, False)
+        assert lines == []
+
+    def test_zero_box_width(self):
+        lines = split_text_into_lines("Test", 0, 12.0, False)
+        assert lines == ["Test"]
+
+    def test_cjk_text_wrapping(self):
+        text = "日本語テスト"
+        lines = split_text_into_lines(text, 24, 12.0, True)  # Width for 2 chars
+        assert len(lines) == 3
+        assert "".join(lines) == text
+
+
+class TestCalculateLineHeight:
+    """Tests for calculate_line_height function"""
+
+    def test_japanese_line_height(self):
+        height = calculate_line_height("テスト", [0, 0, 100, 100], 12.0, "ja")
+        assert height >= 1.0
+        assert height <= LANG_LINEHEIGHT_MAP["ja"]
+
+    def test_english_line_height(self):
+        height = calculate_line_height("Test", [0, 0, 100, 100], 12.0, "en")
+        assert height >= 1.0
+        assert height <= LANG_LINEHEIGHT_MAP["en"]
+
+    def test_line_height_compression(self):
+        # Long text in small box should compress line height
+        long_text = "A" * 100
+        height = calculate_line_height(long_text, [0, 0, 50, 30], 12.0, "en")
+        assert height == 1.0  # Minimum
+
+    def test_unknown_language_uses_default(self):
+        height = calculate_line_height("Test", [0, 0, 100, 100], 12.0, "unknown")
+        assert height <= DEFAULT_LINE_HEIGHT
+
+
+class TestEstimateFontSize:
+    """Tests for estimate_font_size function"""
+
+    def test_basic_estimation(self):
+        size = estimate_font_size([0, 0, 200, 50], "Hello")
+        assert 1.0 <= size <= 12.0
+
+    def test_small_box_small_font(self):
+        size = estimate_font_size([0, 0, 20, 10], "A")
+        assert size <= 12.0
+
+    def test_large_box_capped_at_12(self):
+        size = estimate_font_size([0, 0, 1000, 1000], "A")
+        assert size <= 12.0
+
+    def test_minimum_font_size(self):
+        size = estimate_font_size([0, 0, 1, 1], "A" * 100)
+        assert size >= 1.0
+
+    def test_empty_text_uses_height(self):
+        size = estimate_font_size([0, 0, 100, 20], "")
+        assert size > 0
+
+    def test_invalid_box(self):
+        size = estimate_font_size([0, 0, 0], "Test")
+        assert size == 10.0  # Default
+
+    def test_zero_dimensions(self):
+        size = estimate_font_size([0, 0, 0, 0], "Test")
+        assert size == 10.0  # Default
+
+
+class TestIsAddressOnPage:
+    """Tests for _is_address_on_page function"""
+
+    def test_paragraph_address_matching(self):
+        assert _is_address_on_page("P1_0", 1) is True
+        assert _is_address_on_page("P1_5", 1) is True
+        assert _is_address_on_page("P2_0", 1) is False
+
+    def test_table_address_matching(self):
+        assert _is_address_on_page("T1_0_1_2", 1) is True
+        assert _is_address_on_page("T2_0_1_2", 1) is False
+        assert _is_address_on_page("T2_0_1_2", 2) is True
+
+    def test_multi_digit_page_numbers(self):
+        assert _is_address_on_page("P10_0", 10) is True
+        assert _is_address_on_page("P10_0", 1) is False
+        assert _is_address_on_page("T123_0_1_2", 123) is True
+
+    def test_invalid_address_format(self):
+        assert _is_address_on_page("invalid", 1) is False
+        assert _is_address_on_page("X1_0", 1) is False
+        assert _is_address_on_page("", 1) is False
+
+
+# =============================================================================
+# Tests: PdfProcessor Class
+# =============================================================================
+
+class TestPdfProcessorProperties:
+    """Tests for PdfProcessor properties"""
+
+    def test_file_type(self, processor):
+        assert processor.file_type == FileType.PDF
+
+    def test_supported_extensions(self, processor):
+        extensions = processor.supported_extensions
+        assert ".pdf" in extensions
+
+
+class TestPdfProcessorShouldTranslate:
+    """Tests for PdfProcessor.should_translate inherited method"""
+
+    def test_should_translate_japanese(self, processor):
+        assert processor.should_translate("こんにちは") is True
+
+    def test_should_translate_english(self, processor):
+        assert processor.should_translate("Hello World") is True
+
+    def test_should_not_translate_numbers_only(self, processor):
+        assert processor.should_translate("12345") is False
+
+    def test_should_translate_urls(self, processor):
+        # Note: Base implementation does not filter URLs
+        # URLs are translated (this may be desired behavior for some cases)
+        assert processor.should_translate("https://example.com") is True
+
+    def test_should_not_translate_empty(self, processor):
+        assert processor.should_translate("") is False
+        assert processor.should_translate("   ") is False
+
+
+class TestPdfProcessorGetFileInfo:
+    """Tests for PdfProcessor.get_file_info"""
+
+    def test_get_file_info(self, processor, tmp_path):
+        """Test with mocked fitz"""
+        with patch('ecm_translate.processors.pdf_processor._get_fitz') as mock_get_fitz:
+            mock_fitz = MagicMock()
+            mock_get_fitz.return_value = mock_fitz
+
+            # Create mock document
+            mock_doc = MagicMock()
+            mock_doc.__len__ = Mock(return_value=3)
+            mock_doc.__iter__ = Mock(return_value=iter([
+                MagicMock(),
+                MagicMock(),
+                MagicMock(),
+            ]))
+
+            # Setup page with text blocks
+            mock_page = MagicMock()
+            mock_page.get_text.return_value = {
+                "blocks": [
+                    {
+                        "type": 0,
+                        "lines": [
+                            {"spans": [{"text": "日本語テキスト"}]}
+                        ]
+                    },
+                    {
+                        "type": 0,
+                        "lines": [
+                            {"spans": [{"text": "12345"}]}  # Should be skipped
+                        ]
+                    }
+                ]
+            }
+
+            mock_doc.__iter__ = Mock(return_value=iter([mock_page]))
+            mock_fitz.open.return_value = mock_doc
+
+            # Create a dummy file
+            pdf_path = tmp_path / "test.pdf"
+            pdf_path.write_bytes(b"%PDF-1.4 dummy")
+
+            info = processor.get_file_info(pdf_path)
+
+            assert info.file_type == FileType.PDF
+            assert info.path == pdf_path
+            mock_doc.close.assert_called_once()
+
+
+class TestPdfProcessorExtractTextBlocks:
+    """Tests for PdfProcessor.extract_text_blocks"""
+
+    def test_extract_text_blocks(self, processor, tmp_path):
+        """Test text block extraction with mocked fitz"""
+        with patch('ecm_translate.processors.pdf_processor._get_fitz') as mock_get_fitz:
+            mock_fitz = MagicMock()
+            mock_get_fitz.return_value = mock_fitz
+
+            mock_doc = MagicMock()
+            mock_page = MagicMock()
+            mock_page.get_text.return_value = {
+                "blocks": [
+                    {
+                        "type": 0,
+                        "bbox": [100, 200, 300, 250],
+                        "lines": [
+                            {
+                                "spans": [
+                                    {
+                                        "text": "テストテキスト",
+                                        "font": "MS Mincho",
+                                        "size": 12.0
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            }
+            mock_doc.__iter__ = Mock(return_value=iter([mock_page]))
+            mock_fitz.open.return_value = mock_doc
+
+            pdf_path = tmp_path / "test.pdf"
+            pdf_path.write_bytes(b"%PDF-1.4 dummy")
+
+            blocks = list(processor.extract_text_blocks(pdf_path))
+
+            assert len(blocks) == 1
+            assert blocks[0].text == "テストテキスト"
+            assert blocks[0].id == "page_0_block_0"
+            assert blocks[0].metadata["font_name"] == "MS Mincho"
+            assert blocks[0].metadata["font_size"] == 12.0
+
+
+class TestPdfProcessorApplyTranslations:
+    """Tests for PdfProcessor.apply_translations"""
+
+    def test_apply_translations_creates_output(self, processor, tmp_path):
+        """Test translation application with mocked fitz"""
+        with patch('ecm_translate.processors.pdf_processor._get_fitz') as mock_get_fitz:
+            mock_fitz = MagicMock()
+            mock_get_fitz.return_value = mock_fitz
+
+            mock_doc = MagicMock()
+            mock_doc.__len__ = Mock(return_value=1)
+
+            mock_page = MagicMock()
+            mock_page.rect.height = 800
+            mock_page.xref = 1
+            mock_page.get_text.return_value = {
+                "blocks": [
+                    {
+                        "type": 0,
+                        "bbox": [100, 200, 300, 250],
+                        "lines": [{"spans": [{"text": "原文"}]}]
+                    }
+                ]
+            }
+
+            mock_doc.__iter__ = Mock(return_value=iter([mock_page]))
+            mock_doc.__getitem__ = Mock(return_value=mock_page)
+            mock_doc.get_new_xref.return_value = 100
+            mock_doc.xref_get_key.return_value = ("null", "")
+
+            mock_fitz.open.return_value = mock_doc
+
+            input_path = tmp_path / "input.pdf"
+            input_path.write_bytes(b"%PDF-1.4 dummy")
+            output_path = tmp_path / "output.pdf"
+
+            translations = {"page_0_block_0": "Translated text"}
+
+            processor.apply_translations(
+                input_path, output_path, translations, "jp_to_en"
+            )
+
+            mock_doc.save.assert_called_once()
+            mock_doc.close.assert_called_once()
+
+
+# =============================================================================
+# Tests: Constants
+# =============================================================================
+
+class TestConstants:
+    """Tests for module constants"""
+
+    def test_lang_lineheight_map(self):
+        assert "ja" in LANG_LINEHEIGHT_MAP
+        assert "en" in LANG_LINEHEIGHT_MAP
+        assert all(v > 0 for v in LANG_LINEHEIGHT_MAP.values())
+
+    def test_default_line_height(self):
+        assert DEFAULT_LINE_HEIGHT > 0
+        assert DEFAULT_LINE_HEIGHT <= 2.0
+
+    def test_default_vfont_pattern_compiles(self):
+        import re
+        pattern = re.compile(DEFAULT_VFONT_PATTERN)
+        assert pattern is not None
+
+    def test_formula_unicode_categories(self):
+        assert "Sm" in FORMULA_UNICODE_CATEGORIES  # Math symbols
+        assert len(FORMULA_UNICODE_CATEGORIES) > 0

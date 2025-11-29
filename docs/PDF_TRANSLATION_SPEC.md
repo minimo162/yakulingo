@@ -1,4 +1,4 @@
-# PDF翻訳機能 技術仕様書 v8.7
+# PDF翻訳機能 技術仕様書 v8.8
 
 ## 概要
 
@@ -839,7 +839,7 @@ def reconstruct_pdf(
             )
 
     # フォントサブセット化
-    doc.subset_fonts(fallback=True)
+    doc.subset_fonts()
 
     # 保存
     doc.save(output_path, garbage=4, deflate=True)
@@ -1165,7 +1165,6 @@ import tkinter as tk
 import customtkinter as ctk
 from tkinterdnd2 import DND_FILES
 from pathlib import Path
-import re
 
 class PDFDropArea(ctk.CTkFrame):
     """PDFファイルドラッグ&ドロップエリア"""
@@ -1252,19 +1251,13 @@ class PDFDropArea(ctk.CTkFrame):
         # tk.Frame に対してDnD登録
         self.drop_frame.drop_target_register(DND_FILES)
         self.drop_frame.dnd_bind("<<Drop>>", self._on_drop)
-        self.drop_frame.dnd_bind("<<DragEnter>>", self._on_drag_enter)
-        self.drop_frame.dnd_bind("<<DragLeave>>", self._on_drag_leave)
+        self.drop_frame.dnd_bind("<<DropEnter>>", self._on_drag_enter)
+        self.drop_frame.dnd_bind("<<DropLeave>>", self._on_drag_leave)
 
     def _parse_drop_data(self, data: str) -> list[str]:
         """ドロップデータをパース (複数ファイル・スペース対応)"""
-        files = []
-        if "{" in data:
-            # 複数ファイルまたはスペース含むパス: {file1} {file2}
-            files = re.findall(r'\{([^}]+)\}', data)
-        else:
-            # 単一ファイル
-            files = [data.strip()]
-        return files
+        # Tk の splitlist() を使用 - スペースを含むパスも正しく処理
+        return self.tk.splitlist(data)
 
     def _on_drop(self, event):
         """ファイルドロップ時"""
@@ -1594,3 +1587,4 @@ def analyze_document(img: np.ndarray, device: str = "cpu") -> DocumentAnalyzerSc
 | v8.5 | 2024-11 | API整合性修正: CellSchema→TableCellSchema、vflag()フォントパターン拡充、CustomTkinter+tkinterdnd2互換性対応 |
 | v8.6 | 2024-11 | CPU専用環境をデフォルトに変更、GPU高速化をオプション化 |
 | v8.7 | 2024-11 | バッチ処理追加 (大量ページ対応)、最大ページ数制限なし、DPI固定(200)、Copilotトークン制限対応 |
+| v8.8 | 2024-11 | API整合性修正: PyMuPDF subset_fonts()パラメータ修正、tkinterdnd2イベント名修正(DropEnter/DropLeave)、ファイルパース改善(splitlist使用) |

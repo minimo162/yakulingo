@@ -127,7 +127,8 @@ ecm_translate/
 │   ├── services/                   # Service Layer
 │   │   ├── __init__.py
 │   │   ├── translation_service.py  # Main translation service
-│   │   └── copilot_handler.py      # Copilot automation
+│   │   ├── copilot_handler.py      # Copilot automation
+│   │   └── prompt_builder.py       # Unified prompt builder
 │   │
 │   ├── processors/                 # File Processors
 │   │   ├── __init__.py
@@ -152,11 +153,9 @@ ecm_translate/
 │       ├── text.py                 # Text processing utilities
 │       └── file.py                 # File utilities
 │
-├── prompts/                        # Translation prompts
-│   ├── text_jp_to_en.txt
-│   ├── text_en_to_jp.txt
-│   ├── file_jp_to_en.txt
-│   └── file_en_to_jp.txt
+├── prompts/                        # Translation prompts (統一プロンプト)
+│   ├── translate_jp_to_en.txt      # JP→EN (圧縮ルール込み)
+│   └── translate_en_to_jp.txt      # EN→JP (圧縮ルール込み)
 │
 ├── config/                         # User configuration
 │   ├── settings.json
@@ -1759,29 +1758,253 @@ class BatchTranslator:
         return batches
 ```
 
-### 7.2 Prompt Templates
+### 7.2 Unified Prompt Design
+
+テキスト翻訳とファイル翻訳で共通のプロンプトを使用。圧縮ルールは常に適用。
+
+#### Prompt Structure
 
 ```
-# prompts/file_jp_to_en.txt
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    統一プロンプト構造                                    │
+└─────────────────────────────────────────────────────────────────────────┘
 
-You are a professional translator. Translate the following Japanese texts to English.
+┌─────────────────────────────────────────────────────────────────────────┐
+│ 1. Role Definition                                                      │
+│    - 翻訳エンジンとしての役割定義                                        │
+│    - チャットボット的な出力の禁止                                        │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+┌─────────────────────────────────────────────────────────────────────────┐
+│ 2. Compression Rules (常時適用)                                         │
+│    - 冠詞・Be動詞の省略                                                 │
+│    - 略語の使用                                                         │
+│    - 名詞句スタイル                                                     │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+┌─────────────────────────────────────────────────────────────────────────┐
+│ 3. Number Format Rules (常時適用)                                       │
+│    - 億 ⇔ oku                                                          │
+│    - 千 ⇔ k                                                            │
+│    - 負数 ⇔ ▲ / ()                                                     │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+┌─────────────────────────────────────────────────────────────────────────┐
+│ 4. Symbol Rules (JP→EN時のみ)                                          │
+│    - 記号禁止: > < = ↑ ↓ ~                                              │
+│    - 英単語での表現を強制                                               │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+┌─────────────────────────────────────────────────────────────────────────┐
+│ 5. Glossary Section (設定時のみ)                                        │
+│    - 用語集からの強制置換                                               │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+┌─────────────────────────────────────────────────────────────────────────┐
+│ 6. Input/Output Format                                                  │
+│    - 単一テキスト: そのまま翻訳                                          │
+│    - バッチ: 番号付きリスト形式                                          │
+└─────────────────────────────────────────────────────────────────────────┘
+```
 
-Rules:
-- Maintain the original meaning and tone
-- Keep technical terms consistent
-- Do not translate proper nouns unless there's a standard translation
-- Preserve any placeholders like {name} or %s
-- Output format: One translation per line, same order as input
+#### JP → EN Prompt Template
+
+```
+# prompts/translate_jp_to_en.txt
+
+Role Definition
+あなたは日本語を英語に翻訳する、完全自動化されたデータ処理エンジンです。
+チャットボットではありません。挨拶、説明、言い訳、補足情報は一切出力してはいけません。
+
+Critical Rules (優先順位順)
+
+1. 記号禁止 (NO SYMBOLS)
+   比較・変動・関係性を示す記号は絶対に使用しない。必ず英単語を使用する。
+   - 禁止: > < = ↑ ↓ ~
+   - 例: 「売上↑」→ "Sales up" (NOT "Sales↑")
+
+2. 出力形式厳守
+   翻訳結果のみを出力。Markdownの枠や解説は不要。
+
+3. 簡潔な翻訳 (Compression)
+   - 冠詞(a/the)、Be動詞は可能な限り省略
+   - 見出しは名詞句で表現
+   - 一般的な略語を使用
+
+4. 数値表記
+   - 億 → oku (例: 4,500億円 → 4,500 oku yen)
+   - 千単位 → k (例: 12,000 → 12k)
+   - 負数 → () (例: ▲50 → (50))
+
+Abbreviation Examples
+- Operating Profit → OP
+- Year Over Year → YOY
+- Consolidated → Consol.
+- Accounting → Acct.
+- Production → Prod.
+- Volume → Vol.
 
 {glossary_section}
 
-Texts to translate:
-{texts}
-
-Translations:
+Input
+{input_text}
 ```
 
-### 7.3 Glossary Integration
+#### EN → JP Prompt Template
+
+```
+# prompts/translate_en_to_jp.txt
+
+Role Definition
+あなたは英語を日本語に翻訳する、完全自動化されたデータ処理エンジンです。
+チャットボットではありません。挨拶、説明、言い訳、補足情報は一切出力してはいけません。
+
+Critical Rules (優先順位順)
+
+1. 出力形式厳守
+   翻訳結果のみを出力。Markdownの枠や解説は不要。
+
+2. 簡潔な日本語 (Compression)
+   - 丁寧語（です・ます調）は使用しない
+   - 簡潔な体言止めを使用
+   - 見出しは名詞句で表現
+
+3. 数値表記
+   - oku → 億 (例: 4,500 oku → 4,500億)
+   - k → 千または000 (例: 12k → 12,000 または 1.2万)
+   - () → ▲ (例: (50) → ▲50)
+
+4. 略語変換
+   - OP → 営業利益
+   - YOY → 前年比
+   - QoQ → 前期比
+   - FY → 年度
+
+{glossary_section}
+
+Input
+{input_text}
+```
+
+#### Batch Format (ファイル翻訳時)
+
+```
+# バッチ翻訳時の入力形式
+
+Input
+1. 本システムの概要
+2. 営業利益の推移
+3. 前年比+15%増
+
+# 期待される出力
+1. System Overview
+2. OP Trend
+3. YOY up 15%
+```
+
+### 7.3 Prompt Builder
+
+```python
+# ecm_translate/services/prompt_builder.py
+
+from pathlib import Path
+from typing import Optional
+from ecm_translate.models.types import TranslationDirection
+
+
+class PromptBuilder:
+    """
+    Builds translation prompts with compression rules and glossary.
+    """
+
+    def __init__(self, prompts_dir: Path):
+        self.prompts_dir = prompts_dir
+        self._templates: dict[TranslationDirection, str] = {}
+        self._load_templates()
+
+    def _load_templates(self) -> None:
+        """Load prompt templates from files"""
+        jp_to_en = self.prompts_dir / "translate_jp_to_en.txt"
+        en_to_jp = self.prompts_dir / "translate_en_to_jp.txt"
+
+        if jp_to_en.exists():
+            self._templates[TranslationDirection.JP_TO_EN] = jp_to_en.read_text(encoding='utf-8')
+        if en_to_jp.exists():
+            self._templates[TranslationDirection.EN_TO_JP] = en_to_jp.read_text(encoding='utf-8')
+
+    def build(
+        self,
+        direction: TranslationDirection,
+        input_text: str,
+        glossary: Optional[dict[str, str]] = None,
+    ) -> str:
+        """
+        Build complete prompt with input text and glossary.
+
+        Args:
+            direction: Translation direction
+            input_text: Text or batch to translate
+            glossary: Optional term mappings
+
+        Returns:
+            Complete prompt string
+        """
+        template = self._templates.get(direction, "")
+
+        # Build glossary section
+        glossary_section = ""
+        if glossary:
+            glossary_section = self._build_glossary_section(direction, glossary)
+
+        # Replace placeholders
+        prompt = template.replace("{glossary_section}", glossary_section)
+        prompt = prompt.replace("{input_text}", input_text)
+
+        return prompt
+
+    def _build_glossary_section(
+        self,
+        direction: TranslationDirection,
+        glossary: dict[str, str],
+    ) -> str:
+        """Build glossary section for prompt"""
+        lines = ["Glossary (以下の用語を使用してください)"]
+
+        if direction == TranslationDirection.JP_TO_EN:
+            for jp, en in glossary.items():
+                lines.append(f"- {jp} → {en}")
+        else:
+            for jp, en in glossary.items():
+                lines.append(f"- {en} → {jp}")
+
+        return "\n".join(lines)
+
+    def build_batch(
+        self,
+        direction: TranslationDirection,
+        texts: list[str],
+        glossary: Optional[dict[str, str]] = None,
+    ) -> str:
+        """
+        Build prompt for batch translation.
+
+        Args:
+            direction: Translation direction
+            texts: List of texts to translate
+            glossary: Optional term mappings
+
+        Returns:
+            Complete prompt with numbered input
+        """
+        # Format as numbered list
+        numbered_input = "\n".join(
+            f"{i+1}. {text}" for i, text in enumerate(texts)
+        )
+
+        return self.build(direction, numbered_input, glossary)
+```
+
+### 7.4 Glossary Integration
 
 ```python
 class Glossary:

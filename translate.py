@@ -1994,6 +1994,154 @@ class UniversalTranslatorController:
 
 
 # =============================================================================
+# PDF Translation Controller
+# =============================================================================
+class PdfTranslatorController:
+    """Controls PDF translation with UI integration"""
+
+    def __init__(self, app):
+        self.app = app
+        self.cancel_requested = False
+
+    def translate_pdf(self, file_path: str, direction: str):
+        """Start PDF translation in background thread"""
+        import threading
+        self.cancel_requested = False
+        thread = threading.Thread(
+            target=self._run_pdf_translation,
+            args=(file_path, direction),
+            daemon=True
+        )
+        thread.start()
+
+    def request_cancel(self):
+        """Request cancellation"""
+        self.cancel_requested = True
+
+    def _update_ui(self, method, *args, **kwargs):
+        """Thread-safe UI update"""
+        self.app.after(0, lambda: method(*args, **kwargs))
+
+    def _run_pdf_translation(self, file_path: str, direction: str):
+        """Run PDF translation in background thread"""
+        try:
+            # Initialize COM for this thread
+            pythoncom.CoInitialize()
+
+            # Import PDF translator module
+            try:
+                from pdf_translator import (
+                    translate_pdf_batch,
+                    get_output_path,
+                    get_device,
+                )
+            except ImportError as e:
+                self._update_ui(
+                    self.app.show_error,
+                    f"PDF translation not available: {e}\nInstall requirements_pdf.txt"
+                )
+                return
+
+            # Load config
+            from config_manager import get_config
+            config = get_config()
+            pdf_config = config.config.pdf
+
+            # Determine languages
+            if direction == "jp_to_en":
+                lang_in, lang_out = "ja", "en"
+            else:
+                lang_in, lang_out = "en", "ja"
+
+            # Output path
+            output_path = get_output_path(file_path)
+
+            # Device selection
+            device = get_device(pdf_config.device)
+
+            # Glossary path
+            glossary_path = config.get_glossary_file_path()
+
+            # Progress callback
+            def on_progress(current_page: int, total_pages: int, phase: str):
+                if not self.cancel_requested:
+                    self._update_ui(
+                        self.app.show_pdf_progress,
+                        current_page, total_pages, phase
+                    )
+
+            # Cancel check
+            def cancel_check():
+                return self.cancel_requested
+
+            # Get or launch Copilot
+            already_connected = SharedCopilotManager.is_connected()
+
+            def on_connection_progress(step: int, message: str):
+                self._update_ui(self.app.show_connecting, step, message)
+
+            copilot = SharedCopilotManager.get_copilot(
+                on_progress=on_connection_progress if not already_connected else None
+            )
+            if not copilot:
+                self._update_ui(self.app.show_error, "Failed to launch browser")
+                return
+
+            # Start new chat if reusing connection
+            if already_connected:
+                print("  Reusing existing Copilot connection...")
+                SharedCopilotManager.new_chat()
+
+            # Create translation engine
+            engine = TranslationEngine(copilot=copilot)
+
+            # Run translation
+            result = translate_pdf_batch(
+                pdf_path=file_path,
+                output_path=output_path,
+                lang_in=lang_in,
+                lang_out=lang_out,
+                translation_engine=engine,
+                progress_callback=on_progress,
+                cancel_check=cancel_check,
+                batch_size=pdf_config.batch_size,
+                device=device,
+                reading_order=pdf_config.reading_order,
+                include_headers=pdf_config.include_headers,
+                glossary_path=glossary_path,
+            )
+
+            if self.cancel_requested:
+                self._update_ui(self.app.show_cancelled)
+                return
+
+            if result.success:
+                # Open output file location
+                try:
+                    os.startfile(str(result.output_path.parent))
+                except Exception:
+                    pass
+
+                self._update_ui(
+                    self.app.show_complete,
+                    result.cell_count,
+                    [],  # No translation pairs for PDF
+                    95,  # Default confidence
+                    str(result.output_path)
+                )
+            else:
+                self._update_ui(
+                    self.app.show_error,
+                    result.error_message or "PDF translation failed"
+                )
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            self._update_ui(self.app.show_error, str(e))
+
+
+# =============================================================================
 # Helper Functions
 # =============================================================================
 def format_cells_for_copilot(cells: list[dict]) -> str:
@@ -2293,12 +2441,18 @@ def main():
     # Create controllers
     excel_controller = TranslatorController(app)
     universal_controller = UniversalTranslatorController(app)
+    pdf_controller = PdfTranslatorController(app)
 
     # Connect callbacks for all modes
     app.set_on_start(excel_controller.start_translation)  # Excel mode (legacy)
     app.set_on_jp_to_en(lambda: _smart_translate(app, excel_controller, universal_controller, "jp_to_en"))
     app.set_on_en_to_jp(lambda: _smart_translate(app, excel_controller, universal_controller, "en_to_jp"))
-    app.set_on_cancel(lambda: (excel_controller.request_cancel(), universal_controller.request_cancel()))
+    app.set_on_pdf_translate(pdf_controller.translate_pdf)  # PDF mode
+    app.set_on_cancel(lambda: (
+        excel_controller.request_cancel(),
+        universal_controller.request_cancel(),
+        pdf_controller.request_cancel()
+    ))
 
     def _smart_translate(app, excel_ctrl, universal_ctrl, direction: str):
         """Smart translation: auto-detect Excel or use clipboard"""

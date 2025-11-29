@@ -18,8 +18,18 @@ from tkinter import filedialog
 import math
 import random
 import time
+from pathlib import Path
 from typing import Callable, Optional, List
 from dataclasses import dataclass
+
+# Optional: tkinterdnd2 for drag & drop
+try:
+    from tkinterdnd2 import TkinterDnD, DND_FILES
+    HAS_DND = True
+except ImportError:
+    HAS_DND = False
+    TkinterDnD = None
+    DND_FILES = None
 
 
 # =============================================================================
@@ -1483,6 +1493,276 @@ class BreathingCard(ctk.CTkFrame):
 
 
 # =============================================================================
+# File Drop Area - PDF drag & drop support
+# =============================================================================
+class FileDropArea(ctk.CTkFrame):
+    """
+    File drop area for PDF files.
+    Uses tkinterdnd2 for drag & drop support with CustomTkinter compatibility.
+
+    Strategy (spec 9.5):
+    - Use tk.Frame as inner container for DnD
+    - Wrap with CTkFrame for styling
+    """
+
+    def __init__(
+        self,
+        parent,
+        on_file_drop: Callable[[str], None] = None,
+        accepted_extensions: List[str] = None,
+        **kwargs
+    ):
+        super().__init__(
+            parent,
+            fg_color=THEME.bg_card,
+            corner_radius=THEME.radius_lg,
+            border_width=2,
+            border_color=THEME.glass_border,
+            **kwargs
+        )
+
+        self.on_file_drop = on_file_drop
+        self.accepted_extensions = accepted_extensions or [".pdf"]
+        self.current_file: Optional[Path] = None
+        self._is_hover = False
+
+        self._build_ui()
+        self._setup_dnd()
+
+    def _build_ui(self):
+        """Build drop area UI"""
+        # Inner container
+        self.inner = ctk.CTkFrame(self, fg_color="transparent")
+        self.inner.pack(fill="both", expand=True, padx=THEME.space_md, pady=THEME.space_md)
+
+        # Icon (document icon)
+        self.icon_label = ctk.CTkLabel(
+            self.inner,
+            text="📄",
+            font=("Segoe UI Emoji", 32),
+            text_color=THEME.text_muted
+        )
+        self.icon_label.pack(pady=(THEME.space_sm, THEME.space_xs))
+
+        # Main text
+        self.main_label = ctk.CTkLabel(
+            self.inner,
+            text="Drop PDF here",
+            font=get_font("text", 16, "bold"),
+            text_color=THEME.text_secondary
+        )
+        self.main_label.pack()
+
+        # Sub text
+        self.sub_label = ctk.CTkLabel(
+            self.inner,
+            text="or click to browse",
+            font=get_font("text", 12),
+            text_color=THEME.text_muted
+        )
+        self.sub_label.pack(pady=(THEME.space_xs, 0))
+
+        # File name display (hidden by default)
+        self.file_label = ctk.CTkLabel(
+            self.inner,
+            text="",
+            font=get_font("mono", 11),
+            text_color=THEME.accent
+        )
+
+        # Clear button (hidden by default)
+        self.clear_btn = ctk.CTkButton(
+            self.inner,
+            text="✕ Clear",
+            font=get_font("text", 11),
+            fg_color=THEME.bg_elevated,
+            hover_color=THEME.accent_red,
+            text_color=THEME.text_secondary,
+            width=60,
+            height=24,
+            corner_radius=THEME.radius_sm,
+            command=self._clear_file
+        )
+
+        # Click to browse
+        self.bind("<Button-1>", self._on_click)
+        self.inner.bind("<Button-1>", self._on_click)
+        self.icon_label.bind("<Button-1>", self._on_click)
+        self.main_label.bind("<Button-1>", self._on_click)
+        self.sub_label.bind("<Button-1>", self._on_click)
+
+        # Hover effects
+        self.bind("<Enter>", self._on_enter)
+        self.bind("<Leave>", self._on_leave)
+        self.inner.bind("<Enter>", self._on_enter)
+        self.inner.bind("<Leave>", self._on_leave)
+
+    def _setup_dnd(self):
+        """Setup drag and drop using tkinterdnd2"""
+        if not HAS_DND:
+            return
+
+        try:
+            # Create a tk.Frame overlay for DnD (workaround for CTk compatibility)
+            # This is invisible but handles DnD events
+            self.dnd_target = tk.Frame(self, bg="", highlightthickness=0)
+            self.dnd_target.place(x=0, y=0, relwidth=1, relheight=1)
+            self.dnd_target.lower()  # Put behind CTk widgets but still receive events
+
+            # Register for file drops
+            self.dnd_target.drop_target_register(DND_FILES)
+            self.dnd_target.dnd_bind('<<Drop>>', self._on_dnd_drop)
+            self.dnd_target.dnd_bind('<<DragEnter>>', self._on_dnd_enter)
+            self.dnd_target.dnd_bind('<<DragLeave>>', self._on_dnd_leave)
+        except Exception as e:
+            print(f"  Warning: DnD setup failed: {e}")
+
+    def _on_dnd_enter(self, event):
+        """DnD drag enter"""
+        self._set_hover(True)
+        return event.action
+
+    def _on_dnd_leave(self, event):
+        """DnD drag leave"""
+        self._set_hover(False)
+        return event.action
+
+    def _on_dnd_drop(self, event):
+        """Handle file drop"""
+        self._set_hover(False)
+
+        # Parse dropped file path(s)
+        file_path = event.data
+        # Handle Windows paths with curly braces
+        if file_path.startswith("{") and file_path.endswith("}"):
+            file_path = file_path[1:-1]
+        # Handle multiple files (take first)
+        if " " in file_path and not Path(file_path).exists():
+            file_path = file_path.split()[0]
+
+        self._handle_file(file_path)
+        return event.action
+
+    def _on_click(self, event=None):
+        """Handle click to browse"""
+        if self.current_file:
+            return  # Already has file, use clear button
+
+        file_path = filedialog.askopenfilename(
+            title="Select PDF File",
+            filetypes=[
+                ("PDF files", "*.pdf"),
+                ("All files", "*.*")
+            ],
+            parent=self.winfo_toplevel()
+        )
+        if file_path:
+            self._handle_file(file_path)
+
+    def _handle_file(self, file_path: str):
+        """Handle selected/dropped file"""
+        path = Path(file_path)
+
+        # Validate extension
+        if path.suffix.lower() not in self.accepted_extensions:
+            self._show_error(f"Only {', '.join(self.accepted_extensions)} files accepted")
+            return
+
+        # Validate existence
+        if not path.exists():
+            self._show_error("File not found")
+            return
+
+        self.current_file = path
+        self._show_file(path)
+
+        # Callback
+        if self.on_file_drop:
+            self.on_file_drop(str(path))
+
+    def _show_file(self, path: Path):
+        """Show selected file"""
+        # Update UI to show file
+        self.icon_label.configure(text="📑", text_color=THEME.accent)
+        self.main_label.configure(
+            text=path.name[:30] + ("..." if len(path.name) > 30 else ""),
+            text_color=THEME.text_primary
+        )
+        self.sub_label.pack_forget()
+        self.file_label.configure(text=f"{path.stat().st_size // 1024} KB")
+        self.file_label.pack(pady=(THEME.space_xs, 0))
+        self.clear_btn.pack(pady=(THEME.space_sm, 0))
+
+        # Update border to accent
+        self.configure(border_color=THEME.accent)
+
+    def _show_error(self, message: str):
+        """Show error message temporarily"""
+        original_text = self.main_label.cget("text")
+        original_color = self.main_label.cget("text_color")
+
+        self.main_label.configure(text=message, text_color=THEME.accent_red)
+        self.configure(border_color=THEME.accent_red)
+
+        def reset():
+            self.main_label.configure(text=original_text, text_color=original_color)
+            self.configure(border_color=THEME.glass_border)
+
+        self.after(2000, reset)
+
+    def _clear_file(self):
+        """Clear selected file"""
+        self.current_file = None
+
+        # Reset UI
+        self.icon_label.configure(text="📄", text_color=THEME.text_muted)
+        self.main_label.configure(text="Drop PDF here", text_color=THEME.text_secondary)
+        self.file_label.pack_forget()
+        self.clear_btn.pack_forget()
+        self.sub_label.pack(pady=(THEME.space_xs, 0))
+        self.configure(border_color=THEME.glass_border)
+
+    def _set_hover(self, is_hover: bool):
+        """Set hover state"""
+        self._is_hover = is_hover
+        if is_hover:
+            self.configure(
+                border_color=THEME.accent,
+                fg_color=THEME.bg_elevated
+            )
+        else:
+            self.configure(
+                border_color=THEME.accent if self.current_file else THEME.glass_border,
+                fg_color=THEME.bg_card
+            )
+
+    def _on_enter(self, event=None):
+        """Mouse enter"""
+        if not self.current_file:
+            self._set_hover(True)
+
+    def _on_leave(self, event=None):
+        """Mouse leave"""
+        self._set_hover(False)
+
+    def get_file_path(self) -> Optional[str]:
+        """Get current file path"""
+        return str(self.current_file) if self.current_file else None
+
+    def set_progress(self, progress: float, status: str = ""):
+        """Update progress during translation"""
+        if progress > 0:
+            percent = int(progress * 100)
+            self.main_label.configure(text=f"Translating... {percent}%")
+            if status:
+                self.file_label.configure(text=status)
+        else:
+            # Reset to file display
+            if self.current_file:
+                self._show_file(self.current_file)
+
+
+# =============================================================================
 # Minimal Button with Spring Animation
 # =============================================================================
 class MinimalButton(ctk.CTkButton):
@@ -1638,7 +1918,9 @@ class TranslatorApp(ctk.CTk):
         self.on_cancel_callback: Optional[Callable] = None
         self.on_jp_to_en_callback: Optional[Callable] = None  # JP→EN mode
         self.on_en_to_jp_callback: Optional[Callable] = None  # EN→JP mode
+        self.on_pdf_translate_callback: Optional[Callable[[str, str], None]] = None  # PDF mode (file_path, direction)
         self.last_translation_pairs = None
+        self.pending_pdf_file: Optional[str] = None  # PDF file waiting for translation
 
         # Track last active window (for Excel detection after button click)
         self.last_foreground_window = None
@@ -1900,9 +2182,19 @@ class TranslatorApp(ctk.CTk):
         )
         self.autostart_switch.pack(side="right")
 
-        # === Hero Section (center stage) - simplified ===
+        # === Hero Section (center stage) - with PDF drop area ===
         self.hero = ctk.CTkFrame(self.container, fg_color="transparent")
         self.hero.pack(fill="both", expand=True)
+
+        # PDF Drop Area (centered in hero)
+        self.pdf_drop_area = FileDropArea(
+            self.hero,
+            on_file_drop=self._on_pdf_file_selected,
+            accepted_extensions=[".pdf"],
+            width=400,
+            height=180
+        )
+        self.pdf_drop_area.pack(expand=True)
 
         # Dummy status_text and subtitle_text for compatibility (not displayed)
         class DummyLabel:
@@ -1958,10 +2250,22 @@ class TranslatorApp(ctk.CTk):
         else:
             self._start()
 
+    def _on_pdf_file_selected(self, file_path: str):
+        """Handle PDF file selection (from drop or browse)"""
+        self.pending_pdf_file = file_path
+        print(f"  [DEBUG] PDF file selected: {file_path}")
+
     def _start(self):
-        """Start translation based on current mode (2 modes - Excel auto-detected)"""
+        """Start translation based on current mode (Excel auto-detected, PDF if file selected)"""
         SoundPlayer.play_start()
 
+        # Check if PDF file is pending
+        if self.pending_pdf_file and self.on_pdf_translate_callback:
+            direction = "jp_to_en" if self.current_mode == "jp_to_en" else "en_to_jp"
+            self.on_pdf_translate_callback(self.pending_pdf_file, direction)
+            return
+
+        # Excel/Text translation (auto-detect Excel)
         if self.current_mode == "jp_to_en" and self.on_jp_to_en_callback:
             self.on_jp_to_en_callback()
         elif self.current_mode == "en_to_jp" and self.on_en_to_jp_callback:
@@ -2024,6 +2328,51 @@ class TranslatorApp(ctk.CTk):
     def set_on_en_to_jp(self, callback: Callable):
         """Set callback for English → Japanese translation"""
         self.on_en_to_jp_callback = callback
+
+    def set_on_pdf_translate(self, callback: Callable[[str, str], None]):
+        """Set callback for PDF translation (file_path, direction)"""
+        self.on_pdf_translate_callback = callback
+
+    def get_pdf_drop_area(self) -> 'FileDropArea':
+        """Get the PDF drop area widget"""
+        return self.pdf_drop_area
+
+    def clear_pdf_file(self):
+        """Clear the pending PDF file"""
+        self.pending_pdf_file = None
+        if hasattr(self, 'pdf_drop_area'):
+            self.pdf_drop_area._clear_file()
+
+    def show_pdf_progress(self, current_page: int, total_pages: int, phase: str):
+        """Show PDF translation progress"""
+        self.is_translating = True
+
+        progress = current_page / total_pages if total_pages > 0 else 0
+        percent = int(progress * 100)
+
+        # Phase labels
+        phase_labels = {
+            "layout": "Analyzing layout...",
+            "translation": "Translating...",
+            "reconstruction": "Building PDF...",
+        }
+        phase_text = phase_labels.get(phase, phase)
+
+        # Update Dynamic Island
+        self.dynamic_island.expand()
+        self.dynamic_island.set_status(
+            f"PDF {percent}%",
+            f"Page {current_page}/{total_pages} - {phase_text}",
+            progress
+        )
+
+        # Update drop area
+        if hasattr(self, 'pdf_drop_area'):
+            self.pdf_drop_area.set_progress(progress, phase_text)
+
+        # Keep UI on top
+        self.attributes("-topmost", True)
+        self.lift()
 
     def set_mode(self, mode: str):
         """Set translation mode from external source (e.g., hotkey)"""
@@ -2122,12 +2471,17 @@ class TranslatorApp(ctk.CTk):
             text_color=THEME.text_primary
         )
 
-    def show_complete(self, count: int, translation_pairs: list = None, confidence: int = 100):
+    def show_complete(self, count: int, translation_pairs: list = None, confidence: int = 100, output_path: str = None):
         """Complete state - simple completion display (no animations)"""
         # Critical state reset
         self.is_translating = False
         self.cancel_requested = False
         self.last_translation_pairs = translation_pairs
+
+        # Clear PDF file after completion
+        self.pending_pdf_file = None
+        if hasattr(self, 'pdf_drop_area'):
+            self.pdf_drop_area._clear_file()
 
         # Remove always-on-top after translation completes
         self.attributes("-topmost", False)

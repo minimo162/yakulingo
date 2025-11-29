@@ -1,0 +1,21 @@
+# PDF Translation Dependencies
+# Install with: pip install -r requirements_pdf.txt
+
+# yomitoku (Layout analysis & OCR)
+yomitoku>=0.8.0
+
+# yomitoku dependencies
+torch>=2.5.0
+torchvision>=0.20.0
+opencv-python>=4.10.0.84
+pypdfium2==4.30.0
+pydantic>=2.9.2
+omegaconf>=2.3.0
+shapely>=2.0.6
+huggingface-hub>=0.26.1
+
+# PDF reconstruction
+PyMuPDF>=1.24.0
+
+# Drag & Drop support
+tkinterdnd2>=0.3.0

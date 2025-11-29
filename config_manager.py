@@ -33,11 +33,23 @@ class HotkeyConfig:
 
 
 @dataclass
+class PdfConfig:
+    """PDF translation configuration"""
+    dpi: int = 200                      # PDF rendering resolution (fixed)
+    device: str = "cpu"                 # "cpu" (default) or "cuda" (GPU acceleration)
+    batch_size: int = 5                 # Pages per batch
+    max_chars_per_request: int = 6000   # Max chars per Copilot request
+    reading_order: str = "auto"         # "auto", "left2right", "top2bottom", "right2left"
+    include_headers: bool = False       # Include header/footer in translation
+
+
+@dataclass
 class AppConfig:
     """Application configuration"""
     glossary: GlossaryConfig = field(default_factory=GlossaryConfig)
     system_tray: SystemTrayConfig = field(default_factory=SystemTrayConfig)
     hotkeys: HotkeyConfig = field(default_factory=HotkeyConfig)
+    pdf: PdfConfig = field(default_factory=PdfConfig)
 
 
 class ConfigManager:
@@ -68,11 +80,13 @@ class ConfigManager:
             glossary = GlossaryConfig(**data.get('glossary', {}))
             system_tray = SystemTrayConfig(**data.get('system_tray', {}))
             hotkeys = HotkeyConfig(**data.get('hotkeys', {}))
+            pdf = PdfConfig(**data.get('pdf', {}))
 
             return AppConfig(
                 glossary=glossary,
                 system_tray=system_tray,
-                hotkeys=hotkeys
+                hotkeys=hotkeys,
+                pdf=pdf
             )
 
         except Exception as e:
@@ -89,6 +103,7 @@ class ConfigManager:
                 'glossary': asdict(config.glossary),
                 'system_tray': asdict(config.system_tray),
                 'hotkeys': asdict(config.hotkeys),
+                'pdf': asdict(config.pdf),
             }
 
             with open(self.config_path, 'w', encoding='utf-8') as f:

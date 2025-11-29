@@ -1,4 +1,4 @@
-# PDF翻訳機能 技術仕様書 v8.0
+# PDF翻訳機能 技術仕様書 v8.1
 
 ## 概要
 
@@ -71,7 +71,7 @@
 │  │  - gen_op_txt() によるPDFオペレータ生成                        │       │
 │  │  - 言語別行高さ調整 (LANG_LINEHEIGHT_MAP)                      │       │
 │  │  - 動的圧縮アルゴリズム (5%刻み)                               │       │
-│  │  - フォント埋め込み (tiro + noto)                              │       │
+│  │  - フォント埋め込み (MS P明朝 / Arial)                          │       │
 │  │  - 数式復元 ({v*} → 元の数式)                                  │       │
 │  └──────────────────────────────────────────────────────────────┘       │
 │         │                                                                 │
@@ -537,36 +537,11 @@ def gen_op_txt(font: str, size: float, x: float, y: float, rtxt: str) -> str:
 
 ```python
 # PDFMathTranslate converter.py:376-380 準拠
+# 本アプリでは日本語・英語のみ対応
 
 LANG_LINEHEIGHT_MAP = {
-    # CJK言語
-    "zh-cn": 1.4,
-    "zh-tw": 1.4,
-    "zh-hans": 1.4,
-    "zh-hant": 1.4,
-    "zh": 1.4,
-
-    # 東アジア
-    "ja": 1.1,
-    "ko": 1.2,
-
-    # ラテン系
-    "en": 1.2,
-    "de": 1.2,
-    "fr": 1.2,
-    "es": 1.2,
-    "it": 1.2,
-    "pt": 1.2,
-
-    # RTL言語
-    "ar": 1.0,
-
-    # キリル文字
-    "ru": 0.8,
-    "uk": 0.8,
-
-    # インド系
-    "ta": 0.8,
+    "ja": 1.1,   # 日本語
+    "en": 1.2,   # 英語
 }
 
 DEFAULT_LINE_HEIGHT = 1.1
@@ -639,34 +614,51 @@ def calculate_text_position(
 
 ```python
 # PDFMathTranslate high_level.py:187-203 準拠
+# 本アプリでは日本語・英語のみ対応
+
+# フォント定義
+FONT_CONFIG = {
+    "ja": {
+        "name": "MS-PMincho",           # MS P明朝
+        "path": "C:/Windows/Fonts/msmincho.ttc",
+        "fallback": "msgothic.ttc",     # MS ゴシック (フォールバック)
+    },
+    "en": {
+        "name": "Arial",                # Arial
+        "path": "C:/Windows/Fonts/arial.ttf",
+        "fallback": "times.ttf",        # Times New Roman (フォールバック)
+    },
+}
 
 class FontManager:
-    """デュアルフォントシステム"""
+    """デュアルフォントシステム (日本語: MS P明朝, 英語: Arial)"""
 
     def __init__(self, lang_out: str):
-        self.font_list = [
-            ("tiro", None),           # Latin (Tiro Devanagari)
-            (self._get_noto_name(lang_out), self._get_noto_path(lang_out)),
-        ]
+        """
+        Args:
+            lang_out: 出力言語 ("ja" or "en")
+        """
+        self.lang_out = lang_out
+        self.font_config = FONT_CONFIG.get(lang_out, FONT_CONFIG["en"])
         self.font_id = {}
 
-    def _get_noto_name(self, lang: str) -> str:
-        """言語に応じたNotoフォント名"""
-        if lang in ["ja"]:
-            return "NotoSansJP"
-        elif lang in ["zh-cn", "zh-hans"]:
-            return "NotoSansSC"
-        elif lang in ["zh-tw", "zh-hant"]:
-            return "NotoSansTC"
-        elif lang in ["ko"]:
-            return "NotoSansKR"
-        else:
-            return "NotoSans"
+    def get_font_name(self) -> str:
+        """出力言語に応じたフォント名を取得"""
+        return self.font_config["name"]
 
-    def _get_noto_path(self, lang: str) -> str:
-        """フォントファイルパス"""
-        # 実装時にフォントパスを設定
-        pass
+    def get_font_path(self) -> str:
+        """出力言語に応じたフォントパスを取得"""
+        import os
+        path = self.font_config["path"]
+        if os.path.exists(path):
+            return path
+        # フォールバック
+        fallback = self.font_config.get("fallback")
+        if fallback:
+            fallback_path = f"C:/Windows/Fonts/{fallback}"
+            if os.path.exists(fallback_path):
+                return fallback_path
+        return None
 
     def embed_fonts(self, doc: fitz.Document) -> None:
         """
@@ -674,21 +666,30 @@ class FontManager:
 
         PDFMathTranslate high_level.py:187-203 準拠
         """
+        font_path = self.get_font_path()
+        font_name = self.get_font_name()
+
         for page in doc:
-            for font_name, font_path in self.font_list:
-                self.font_id[font_name] = page.insert_font(font_name, font_path)
+            self.font_id[font_name] = page.insert_font(
+                fontname=font_name,
+                fontfile=font_path,
+            )
 
-    def select_font(self, char: str) -> str:
+    def select_font(self, text: str) -> str:
         """
-        文字に応じたフォントを選択
+        テキストに応じたフォントを選択
 
-        PDFMathTranslate converter.py:426-435 準拠
+        日本語文字を含む場合はMS P明朝、それ以外はArial
         """
-        # Latinフォントで表示可能か確認
-        if self._can_render(char, "tiro"):
-            return "tiro"
-        else:
-            return self.noto_name
+        # 日本語文字 (ひらがな、カタカナ、漢字) を含むかチェック
+        for char in text:
+            if '\u3040' <= char <= '\u309F':  # ひらがな
+                return FONT_CONFIG["ja"]["name"]
+            if '\u30A0' <= char <= '\u30FF':  # カタカナ
+                return FONT_CONFIG["ja"]["name"]
+            if '\u4E00' <= char <= '\u9FFF':  # 漢字
+                return FONT_CONFIG["ja"]["name"]
+        return FONT_CONFIG["en"]["name"]
 ```
 
 ### 7.6 PDF再構築メイン処理
@@ -798,27 +799,70 @@ def create_bilingual_pdf(
 
 ### 8.1 prompt_pdf_jp_to_en.txt
 
+既存のExcel翻訳プロンプト (prompt.txt) に準拠し、体裁維持のための圧縮ルールを適用。
+
 ```
 Role Definition
-あなたは、TSV形式の日本語テキストを英語に翻訳する、完全自動化されたデータ処理エンジンです。
+あなたは、TSV形式の日本語テキストを「PDFの段落幅に収まるよう短く圧縮した英語」に変換する、完全自動化されたヘッドレス・データ処理エンジンです。
 あなたはチャットボットではありません。人間のような挨拶、説明、言い訳、補足情報は一切出力してはいけません。
 
 Critical Mission & Priorities
-1. 出力形式の厳守 (Strict Format): TSVデータ以外の文字を出力しない。
-2. 構造維持 (Structure): 入力行数と出力行数は完全に一致させる。
-3. 自然な英語 (Natural English): 直訳ではなく、自然で読みやすい英語にする。
-4. 数式記法保持 (Formula): {v*} 形式の数式記法はそのまま保持する。
-5. 用語集の適用 (Glossary): 添付の用語集ファイルがある場合、その訳語を優先して使用する。
+以下の優先順位を厳守して処理を行ってください。
 
-Processing Rules
+1. 記号使用の絶対禁止 (NO SYMBOLS for Logic): 比較・変動・関係性を示す記号（> < = ↑ ↓ ~）は絶対に使用しない。文字数が増えても必ず英単語を使用する。
+2. 出力形式の厳守 (Strict Format): TSVデータ以外の文字（挨拶、Markdownの枠、解説）を1文字たりとも出力しない。
+3. 構造維持 (Structure): 入力行数と出力行数は完全に一致させる。
+4. 積極的な短縮 (Smart Compression): 上記「記号禁止ルール」を守った上で、単語を短縮形にする。
+5. 数式記法保持 (Formula): {v*} 形式の数式記法はそのまま保持する。
+6. 用語集の適用 (Glossary): 添付の用語集ファイルがある場合、その訳語を優先して使用する。
+
+Processing Rules (Step-by-Step)
+
 Step 1: 入力解析
 - 入力は [ParagraphAddress] [TAB] [JapaneseText] の形式である。
 - 左列（P1_1, P1_2, T1_1_0_0等）は一文字も変更せずそのまま出力する。
 
-Step 2: 翻訳
-- 日本語を自然な英語に翻訳する。
+Step 2: 翻訳と効率的な短縮 (Smart Abbreviation)
+日本語を英語に翻訳し、以下のルールで短縮する。
+
+2-1. 文体と削除
+- 見出しスタイル: 完全文（S+V+O）は禁止。名詞句にする。
+- 削除対象: 冠詞(a/the)、Be動詞、所有格(our/its)、明白な前置詞(of/for等)は削除する。
+
+2-2. 記号禁止と強制置換ルール (最重要・厳守)
+「意味の短縮」に記号を使うことは厳禁である。必ず英単語に置換せよ。
+- 禁止記号リスト:
+  - 禁止: [ > ]
+  - 禁止: [ < ]
+  - 禁止: [ = ]
+  - 禁止: [ ↑ ]
+  - 禁止: [ ↓ ]
+  - 禁止: [ ~ ]
+
+2-3. 一般的な単語短縮
+記号以外の手法（略語・カット）で短縮を行う。
+- Consolidated → Consol.
+- Accounting → Acct.
+- Production → Prod.
+- Volume → Vol.
+- Operating Profit → OP
+- Year Over Year → YOY
+- 億 → oku / 1,000単位 → k (例: 5k yen)
+- 負数 → (Number) (例: (50))
+
+2-4. 数式記法保持
 - {v0}, {v1}, {v2} などの数式記法はそのまま保持する。
-- 用語集に登録された用語は、指定された訳語を使用する。
+
+Step 3: 最終チェック (Final Check)
+- 出力文字列の中に `> < = ↑ ↓` が含まれていないか確認する。含まれている場合は必ず単語に直すこと。
+
+Few-Shot Examples (Reference)
+以下の短縮パターンに厳密に従ってください。
+| Input (JP) | Ideal Output (EN) | Note |
+|---|---|---|
+| P1_1	4,500億円 | P1_1	4,500 oku | oku rule |
+| P1_2	▲12,000円 | P1_2	(12k) yen | k & negative rule |
+| P1_3	売上高は{v0}で計算 | P1_3	Revenue calc by {v0} | formula preserved |
 
 Input Data
 これより下のデータを変換し、結果のみを出力せよ。
@@ -827,27 +871,57 @@ Input Data
 
 ### 8.2 prompt_pdf_en_to_jp.txt
 
+既存のExcel翻訳プロンプト (prompt_excel_en_to_jp.txt) に準拠し、体裁維持のための圧縮ルールを適用。
+
 ```
 Role Definition
-あなたは、TSV形式の英語テキストを日本語に翻訳する、完全自動化されたデータ処理エンジンです。
+あなたは、TSV形式の英語テキストを「PDFの段落幅に収まるよう短く圧縮した日本語」に変換する、完全自動化されたヘッドレス・データ処理エンジンです。
 あなたはチャットボットではありません。人間のような挨拶、説明、言い訳、補足情報は一切出力してはいけません。
 
 Critical Mission & Priorities
-1. 出力形式の厳守 (Strict Format): TSVデータ以外の文字を出力しない。
-2. 構造維持 (Structure): 入力行数と出力行数は完全に一致させる。
-3. 自然な日本語 (Natural Japanese): 直訳ではなく、自然で読みやすい日本語にする。
-4. 数式記法保持 (Formula): {v*} 形式の数式記法はそのまま保持する。
-5. 用語集の適用 (Glossary): 添付の用語集ファイルがある場合、その訳語を優先して使用する。
+以下の優先順位を厳守して処理を行ってください。
 
-Processing Rules
+1. 出力形式の厳守 (Strict Format): TSVデータ以外の文字（挨拶、Markdownの枠、解説）を1文字たりとも出力しない。
+2. 構造維持 (Structure): 入力行数と出力行数は完全に一致させる。
+3. 自然な日本語 (Natural Japanese): 直訳ではなく、ビジネス文書として自然で読みやすい日本語にする。
+4. 簡潔さ (Conciseness): PDFの段落幅を考慮し、冗長な表現を避けて簡潔に訳す。
+5. 数式記法保持 (Formula): {v*} 形式の数式記法はそのまま保持する。
+6. 用語集の適用 (Glossary): 添付の用語集ファイルがある場合、その訳語を優先して使用する。
+
+Processing Rules (Step-by-Step)
+
 Step 1: 入力解析
 - 入力は [ParagraphAddress] [TAB] [EnglishText] の形式である。
 - 左列（P1_1, P1_2, T1_1_0_0等）は一文字も変更せずそのまま出力する。
 
-Step 2: 翻訳
-- 英語を自然な日本語に翻訳する。
+Step 2: 翻訳と圧縮
+英語を日本語に翻訳し、以下のルールで圧縮する。
+
+2-1. 文体
+- ビジネス文書: 丁寧語（です・ます調）は使用しない。簡潔な体言止めを使用。
+- 見出しスタイル: 名詞句を使用。
+- 略語は一般的な日本語訳があればそれを使用。
+
+2-2. 数値表記
+- k → 千（例: 5k → 5千）または 億 を使用
+- oku → 億
+- 負数は▲を使用（例: (50) → ▲50）
+
+2-3. 数式記法保持
 - {v0}, {v1}, {v2} などの数式記法はそのまま保持する。
-- 用語集に登録された用語は、指定された訳語を使用する。
+
+Step 3: 最終チェック (Final Check)
+- 出力行数が入力行数と一致することを確認する。
+- 各行がTSV形式（アドレス + タブ + 翻訳）であることを確認する。
+
+Few-Shot Examples (Reference)
+以下のパターンに従ってください。
+| Input (EN) | Ideal Output (JP) | Note |
+|---|---|---|
+| P1_1	4,500 oku | P1_1	4,500億円 | oku rule |
+| P1_2	(12k) yen | P1_2	▲12,000円 | k & negative rule |
+| P1_3	YOY growth | P1_3	前年比成長 | abbreviation |
+| P1_4	Revenue calc by {v0} | P1_4	売上高は{v0}で計算 | formula preserved |
 
 Input Data
 これより下のデータを変換し、結果のみを出力せよ。
@@ -985,4 +1059,5 @@ def analyze_with_fallback(img: np.ndarray) -> DocumentAnalyzerSchema:
 | v5.0 | - | 座標変換、redactアプローチ |
 | v6.0 | - | PDFMathTranslate準拠 |
 | v7.0 | - | 既存Excel翻訳アプローチ採用 |
-| v8.0 | 2024-XX | 完全仕様 (簡易版なし)、yomitoku/PDFMathTranslate完全準拠 |
+| v8.0 | - | 完全仕様 (簡易版なし)、yomitoku/PDFMathTranslate完全準拠 |
+| v8.1 | 2024-11 | 言語対応を日本語・英語のみに限定、フォント変更 (MS P明朝/Arial)、プロンプトにExcel圧縮ルール追加 (記号禁止、数値圧縮、体言止め) |

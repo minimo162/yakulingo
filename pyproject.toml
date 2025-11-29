@@ -4,10 +4,17 @@ version = "20251127"
 description = "Excel Japanese to English Translation Tool (using M365 Copilot)"
 requires-python = ">=3.11"
 dependencies = [
+    # Core dependencies
     "playwright>=1.40.0",
     "pywin32>=306",
     "customtkinter>=5.2.0",
     "pillow>=10.0.0",
     "keyboard>=0.13.5",
     "pystray>=0.19.5",
+    # PDF translation dependencies
+    "numpy>=1.24.0",
+    "PyMuPDF>=1.24.0",
+    "yomitoku>=0.8.0",  # Includes: torch, torchvision, opencv-python, pypdfium2, etc.
+    # Drag & Drop support
+    "tkinterdnd2>=0.3.0",
 ]

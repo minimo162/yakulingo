@@ -22,14 +22,22 @@ from pathlib import Path
 from typing import Callable, Optional, List
 from dataclasses import dataclass
 
-# Optional: tkinterdnd2 for drag & drop
+# Optional: tkinterdnd2 for drag & drop (with CustomTkinter compatibility)
 try:
     from tkinterdnd2 import TkinterDnD, DND_FILES
     HAS_DND = True
+
+    class CTkDnD(ctk.CTk, TkinterDnD.DnDWrapper):
+        """CustomTkinter + TkinterDnD compatible base class"""
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.TkdndVersion = TkinterDnD._require(self)
+
 except ImportError:
     HAS_DND = False
     TkinterDnD = None
     DND_FILES = None
+    CTkDnD = ctk.CTk  # Fallback to regular CTk
 
 
 # =============================================================================
@@ -1603,17 +1611,12 @@ class FileDropArea(ctk.CTkFrame):
             return
 
         try:
-            # Create a tk.Frame overlay for DnD (workaround for CTk compatibility)
-            # This is invisible but handles DnD events
-            self.dnd_target = tk.Frame(self, bg="", highlightthickness=0)
-            self.dnd_target.place(x=0, y=0, relwidth=1, relheight=1)
-            self.dnd_target.lower()  # Put behind CTk widgets but still receive events
-
-            # Register for file drops
-            self.dnd_target.drop_target_register(DND_FILES)
-            self.dnd_target.dnd_bind('<<Drop>>', self._on_dnd_drop)
-            self.dnd_target.dnd_bind('<<DragEnter>>', self._on_dnd_enter)
-            self.dnd_target.dnd_bind('<<DragLeave>>', self._on_dnd_leave)
+            # Register this widget directly for file drops
+            # (works because root window inherits from TkinterDnD.DnDWrapper)
+            self.drop_target_register(DND_FILES)
+            self.dnd_bind('<<Drop>>', self._on_dnd_drop)
+            self.dnd_bind('<<DragEnter>>', self._on_dnd_enter)
+            self.dnd_bind('<<DragLeave>>', self._on_dnd_leave)
         except Exception as e:
             print(f"  Warning: DnD setup failed: {e}")
 
@@ -1890,7 +1893,7 @@ class MinimalButton(ctk.CTkButton):
 # =============================================================================
 # Main Application Window
 # =============================================================================
-class TranslatorApp(ctk.CTk):
+class TranslatorApp(CTkDnD):
     """
     Main application - A study in restraint and elegance.
     Every pixel has purpose. Every animation has meaning.

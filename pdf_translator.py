@@ -15,12 +15,128 @@ Features:
 
 import re
 import gc
+import os
+import platform
 import unicodedata
 from pathlib import Path
 from typing import Iterator, Optional, Callable
 from dataclasses import dataclass, field
 
 import numpy as np
+
+
+# =============================================================================
+# Font Path Resolution (Cross-Platform)
+# =============================================================================
+def _get_system_font_dirs() -> list[str]:
+    """
+    Get system font directories based on OS.
+
+    Returns:
+        List of font directory paths
+    """
+    system = platform.system()
+
+    if system == "Windows":
+        windir = os.environ.get("WINDIR", "C:\\Windows")
+        return [os.path.join(windir, "Fonts")]
+    elif system == "Darwin":  # macOS
+        return [
+            "/System/Library/Fonts",
+            "/Library/Fonts",
+            os.path.expanduser("~/Library/Fonts"),
+        ]
+    else:  # Linux and others
+        return [
+            "/usr/share/fonts",
+            "/usr/local/share/fonts",
+            os.path.expanduser("~/.fonts"),
+            os.path.expanduser("~/.local/share/fonts"),
+        ]
+
+
+def _find_font_file(font_names: list[str]) -> Optional[str]:
+    """
+    Search for font file in system font directories.
+
+    Args:
+        font_names: List of font file names to search for (in priority order)
+
+    Returns:
+        Full path to font file if found, None otherwise
+    """
+    font_dirs = _get_system_font_dirs()
+
+    for font_name in font_names:
+        for font_dir in font_dirs:
+            if not os.path.isdir(font_dir):
+                continue
+            # Direct path
+            direct_path = os.path.join(font_dir, font_name)
+            if os.path.isfile(direct_path):
+                return direct_path
+            # Recursive search (1 level deep for performance)
+            try:
+                for subdir in os.listdir(font_dir):
+                    subdir_path = os.path.join(font_dir, subdir)
+                    if os.path.isdir(subdir_path):
+                        font_path = os.path.join(subdir_path, font_name)
+                        if os.path.isfile(font_path):
+                            return font_path
+            except PermissionError:
+                continue
+
+    return None
+
+
+# Font file names by language (cross-platform)
+FONT_FILES = {
+    "ja": {
+        "primary": ["msmincho.ttc", "MS Mincho.ttf", "ipam.ttf", "IPAMincho.ttf", "NotoSansJP-Regular.ttf", "NotoSerifJP-Regular.ttf"],
+        "fallback": ["msgothic.ttc", "MS Gothic.ttf", "ipag.ttf", "IPAGothic.ttf", "NotoSansJP-Regular.otf"],
+    },
+    "en": {
+        "primary": ["arial.ttf", "Arial.ttf", "DejaVuSans.ttf", "LiberationSans-Regular.ttf"],
+        "fallback": ["times.ttf", "Times.ttf", "DejaVuSerif.ttf", "LiberationSerif-Regular.ttf"],
+    },
+    "zh-CN": {
+        "primary": ["simsun.ttc", "SimSun.ttf", "NotoSansSC-Regular.ttf", "NotoSerifSC-Regular.ttf"],
+        "fallback": ["msyh.ttc", "Microsoft YaHei.ttf", "NotoSansSC-Regular.otf"],
+    },
+    "ko": {
+        "primary": ["malgun.ttf", "Malgun Gothic.ttf", "NotoSansKR-Regular.ttf", "NotoSerifKR-Regular.ttf"],
+        "fallback": ["batang.ttc", "Batang.ttf", "NotoSansKR-Regular.otf"],
+    },
+}
+
+
+def get_font_path_for_lang(lang: str) -> Optional[str]:
+    """
+    Get font path for specified language (cross-platform).
+
+    Args:
+        lang: Language code ("ja", "en", "zh-CN", "ko")
+
+    Returns:
+        Font file path if found, None otherwise
+    """
+    font_info = FONT_FILES.get(lang, FONT_FILES["en"])
+
+    # Try primary fonts first
+    path = _find_font_file(font_info["primary"])
+    if path:
+        return path
+
+    # Try fallback fonts
+    path = _find_font_file(font_info["fallback"])
+    if path:
+        return path
+
+    # Last resort: try English fonts
+    if lang != "en":
+        return get_font_path_for_lang("en")
+
+    return None
 
 # Lazy imports for optional dependencies
 _pypdfium2 = None
@@ -72,20 +188,6 @@ def _get_torch():
 BATCH_SIZE = 5  # Pages per batch
 DPI = 200       # Fixed DPI for precision
 MAX_CHARS_PER_REQUEST = 6000  # Copilot token limit
-
-# Font configuration (Windows)
-FONT_CONFIG = {
-    "ja": {
-        "name": "MS-PMincho",
-        "path": "C:/Windows/Fonts/msmincho.ttc",
-        "fallback": "msgothic.ttc",
-    },
-    "en": {
-        "name": "Arial",
-        "path": "C:/Windows/Fonts/arial.ttf",
-        "fallback": "times.ttf",
-    },
-}
 
 # Language-specific line height (PDFMathTranslate reference)
 LANG_LINEHEIGHT_MAP = {
@@ -174,23 +276,24 @@ def iterate_pdf_pages(
     """
     pdfium = _get_pypdfium2()
     pdf = pdfium.PdfDocument(pdf_path)
-    total_pages = len(pdf)
+    try:
+        total_pages = len(pdf)
 
-    for batch_start in range(0, total_pages, batch_size):
-        batch_end = min(batch_start + batch_size, total_pages)
-        batch_images = []
+        for batch_start in range(0, total_pages, batch_size):
+            batch_end = min(batch_start + batch_size, total_pages)
+            batch_images = []
 
-        for page_idx in range(batch_start, batch_end):
-            page = pdf[page_idx]
-            bitmap = page.render(scale=dpi / 72)
-            img = bitmap.to_numpy()
-            # RGB to BGR (OpenCV compatible)
-            img = img[:, :, ::-1].copy()
-            batch_images.append(img)
+            for page_idx in range(batch_start, batch_end):
+                page = pdf[page_idx]
+                bitmap = page.render(scale=dpi / 72)
+                img = bitmap.to_numpy()
+                # RGB to BGR (OpenCV compatible)
+                img = img[:, :, ::-1].copy()
+                batch_images.append(img)
 
-        yield batch_start, batch_images
-
-    pdf.close()
+            yield batch_start, batch_images
+    finally:
+        pdf.close()
 
 
 def load_pdf_document(pdf_path: str, dpi: int = DPI) -> list[np.ndarray]:
@@ -226,6 +329,41 @@ def get_device(config_device: str = "cpu") -> str:
     return "cpu"
 
 
+# DocumentAnalyzerキャッシュ（GPUメモリ効率化）
+_analyzer_cache: dict[tuple[str, str], object] = {}
+
+
+def get_document_analyzer(device: str = "cpu", reading_order: str = "auto"):
+    """
+    Get or create a cached DocumentAnalyzer instance.
+
+    Args:
+        device: "cpu" or "cuda"
+        reading_order: Reading order setting
+
+    Returns:
+        Cached DocumentAnalyzer instance
+    """
+    cache_key = (device, reading_order)
+    if cache_key not in _analyzer_cache:
+        yomitoku = _get_yomitoku()
+        _analyzer_cache[cache_key] = yomitoku['DocumentAnalyzer'](
+            configs={},
+            device=device,
+            visualize=False,
+            ignore_meta=False,
+            reading_order=reading_order,
+            split_text_across_cells=False,
+        )
+    return _analyzer_cache[cache_key]
+
+
+def clear_analyzer_cache():
+    """Clear the DocumentAnalyzer cache to free GPU memory."""
+    global _analyzer_cache
+    _analyzer_cache.clear()
+
+
 def analyze_document(img: np.ndarray, device: str = "cpu", reading_order: str = "auto"):
     """
     Analyze document layout using yomitoku.
@@ -238,15 +376,7 @@ def analyze_document(img: np.ndarray, device: str = "cpu", reading_order: str = 
     Returns:
         DocumentAnalyzerSchema with paragraphs, tables, figures, words
     """
-    yomitoku = _get_yomitoku()
-    analyzer = yomitoku['DocumentAnalyzer'](
-        configs={},
-        device=device,
-        visualize=False,
-        ignore_meta=False,
-        reading_order=reading_order,
-        split_text_across_cells=False,
-    )
+    analyzer = get_document_analyzer(device, reading_order)
     results, _, _ = analyzer(img)
     return results
 
@@ -346,52 +476,27 @@ class FontRegistry:
 
     PDFMathTranslate high_level.py:187-203 準拠
     CJK言語対応（日本語/英語/中国語簡体字/韓国語）
+    クロスプラットフォーム対応（Windows/macOS/Linux）
     """
 
-    # デフォルトフォント定義 (Windows)
-    DEFAULT_FONTS = {
-        "ja": FontInfo(
-            font_id="F1",
-            family="MS-PMincho",
-            path="C:/Windows/Fonts/msmincho.ttc",
-            fallback="C:/Windows/Fonts/msgothic.ttc",
-            encoding="cid",
-            is_cjk=True,
-        ),
-        "en": FontInfo(
-            font_id="F2",
-            family="Arial",
-            path="C:/Windows/Fonts/arial.ttf",
-            fallback="C:/Windows/Fonts/times.ttf",
-            encoding="simple",
-            is_cjk=False,
-        ),
-        "zh-CN": FontInfo(
-            font_id="F3",
-            family="SimSun",
-            path="C:/Windows/Fonts/simsun.ttc",
-            fallback="C:/Windows/Fonts/msyh.ttc",  # Microsoft YaHei
-            encoding="cid",
-            is_cjk=True,
-        ),
-        "ko": FontInfo(
-            font_id="F4",
-            family="Malgun Gothic",
-            path="C:/Windows/Fonts/malgun.ttf",
-            fallback="C:/Windows/Fonts/batang.ttc",
-            encoding="cid",
-            is_cjk=True,
-        ),
+    # 言語別フォント設定（パスは動的に解決）
+    FONT_CONFIG = {
+        "ja": {"family": "Japanese", "encoding": "cid", "is_cjk": True},
+        "en": {"family": "English", "encoding": "simple", "is_cjk": False},
+        "zh-CN": {"family": "Chinese", "encoding": "cid", "is_cjk": True},
+        "ko": {"family": "Korean", "encoding": "cid", "is_cjk": True},
     }
 
     def __init__(self):
         self.fonts: dict[str, FontInfo] = {}
         self._font_xrefs: dict[str, int] = {}
+        self._font_by_id: dict[str, FontInfo] = {}  # フォントID逆引きキャッシュ
         self._counter = 0
+        self._missing_fonts: set[str] = set()  # 見つからなかったフォントを追跡
 
     def register_font(self, lang: str) -> str:
         """
-        フォントを登録しIDを返す
+        フォントを登録しIDを返す（クロスプラットフォーム対応）
 
         Args:
             lang: 言語コード ("ja", "en", "zh-CN", "ko")
@@ -405,50 +510,51 @@ class FontRegistry:
         self._counter += 1
         font_id = f"F{self._counter}"
 
-        default = self.DEFAULT_FONTS.get(lang, self.DEFAULT_FONTS["en"])
+        config = self.FONT_CONFIG.get(lang, self.FONT_CONFIG["en"])
+
+        # 動的にフォントパスを検索
+        font_path = get_font_path_for_lang(lang)
+        if not font_path and lang not in self._missing_fonts:
+            self._missing_fonts.add(lang)
+            print(f"  Warning: No font found for language '{lang}', text may not render correctly")
+
         font_info = FontInfo(
             font_id=font_id,
-            family=default.family,
-            path=default.path,
-            fallback=default.fallback,
-            encoding=default.encoding,
-            is_cjk=default.is_cjk,
+            family=config["family"],
+            path=font_path,
+            fallback=None,  # フォールバックは get_font_path_for_lang 内で処理済み
+            encoding=config["encoding"],
+            is_cjk=config["is_cjk"],
         )
 
         self.fonts[lang] = font_info
+        self._font_by_id[font_id] = font_info  # キャッシュに追加
         return font_id
 
     def get_font_path(self, font_id: str) -> Optional[str]:
-        """フォントIDからパスを取得（フォールバック対応）"""
-        import os
-        for font_info in self.fonts.values():
-            if font_info.font_id == font_id:
-                if font_info.path and os.path.exists(font_info.path):
-                    return font_info.path
-                if font_info.fallback and os.path.exists(font_info.fallback):
-                    return font_info.fallback
+        """フォントIDからパスを取得（キャッシュ対応）"""
+        font_info = self._font_by_id.get(font_id)
+        if font_info and font_info.path:
+            return font_info.path
         return None
 
     def get_encoding_type(self, font_id: str) -> str:
-        """フォントIDからエンコードタイプを取得"""
-        for font_info in self.fonts.values():
-            if font_info.font_id == font_id:
-                return font_info.encoding
+        """フォントIDからエンコードタイプを取得（キャッシュ対応）"""
+        font_info = self._font_by_id.get(font_id)
+        if font_info:
+            return font_info.encoding
         return "simple"
 
     def get_is_cjk(self, font_id: str) -> bool:
-        """フォントIDからCJK判定"""
-        for font_info in self.fonts.values():
-            if font_info.font_id == font_id:
-                return font_info.is_cjk
+        """フォントIDからCJK判定（キャッシュ対応）"""
+        font_info = self._font_by_id.get(font_id)
+        if font_info:
+            return font_info.is_cjk
         return False
 
     def get_font_by_id(self, font_id: str) -> Optional[FontInfo]:
-        """フォントIDからFontInfo取得"""
-        for font_info in self.fonts.values():
-            if font_info.font_id == font_id:
-                return font_info
-        return None
+        """フォントIDからFontInfo取得（キャッシュ対応）"""
+        return self._font_by_id.get(font_id)
 
     def select_font_for_text(self, text: str, target_lang: str = "ja") -> str:
         """
@@ -488,28 +594,34 @@ class FontRegistry:
 
     def embed_fonts(self, doc) -> None:
         """
-        全登録フォントをPDFに埋め込み
+        全登録フォントをPDFに埋め込み（最適化版）
 
         PDFMathTranslate high_level.py 準拠
 
         Note:
-            page.insert_font() は各ページにフォントを埋め込む
-            xref は最初のページで取得し保持する
+            最初のページでのみフォントを埋め込み。
+            PyMuPDFではフォントリソースはドキュメント全体で共有されるため、
+            全ページにinsert_fontを呼ぶ必要はない。
         """
+        if len(doc) == 0:
+            return
+
+        first_page = doc[0]
+
         for lang, font_info in self.fonts.items():
             font_path = self.get_font_path(font_info.font_id)
             if not font_path:
+                print(f"  Warning: Font path not found for '{lang}' ({font_info.font_id})")
                 continue
 
-            # 各ページにフォントを埋め込み
-            for page_idx, page in enumerate(doc):
-                xref = page.insert_font(
+            try:
+                xref = first_page.insert_font(
                     fontname=font_info.font_id,
                     fontfile=font_path,
                 )
-                # 最初のページでのみxrefを保存（全ページで同じxrefが返される）
-                if page_idx == 0:
-                    self._font_xrefs[font_info.font_id] = xref
+                self._font_xrefs[font_info.font_id] = xref
+            except Exception as e:
+                print(f"  Warning: Failed to embed font '{font_info.font_id}': {e}")
 
 
 class PdfOperatorGenerator:
@@ -764,13 +876,32 @@ def convert_to_pdf_coordinates(
 
     Returns:
         (x1, y1, x2, y2) PDF座標 (左下, 右上)
+
+    Raises:
+        ValueError: 座標が不正な場合
     """
+    if len(box) != 4:
+        raise ValueError(f"Invalid box format: expected 4 values, got {len(box)}")
+
     x1_img, y1_img, x2_img, y2_img = box
 
+    # 座標の正規化（x1 < x2, y1 < y2 を保証）
+    if x1_img > x2_img:
+        x1_img, x2_img = x2_img, x1_img
+    if y1_img > y2_img:
+        y1_img, y2_img = y2_img, y1_img
+
+    # 座標変換
     x1_pdf = x1_img
     y1_pdf = page_height - y2_img  # 下端
     x2_pdf = x2_img
     y2_pdf = page_height - y1_img  # 上端
+
+    # PDF座標が有効範囲内かチェック
+    if y1_pdf < 0:
+        y1_pdf = 0
+    if y2_pdf > page_height:
+        y2_pdf = page_height
 
     return (x1_pdf, y1_pdf, x2_pdf, y2_pdf)
 
@@ -797,11 +928,18 @@ def calculate_text_position(
     """
     x1, y1, x2, y2 = box_pdf
 
+    # フォントサイズと行高さのバリデーション
+    if font_size <= 0:
+        font_size = 10.0  # デフォルト値
+    if line_height <= 0:
+        line_height = 1.1  # デフォルト値
+
     x = x1
     # 上端から下方向に配置
     # PDFMathTranslate: y = y2 + dy - (lidx * size * line_height)
     y = y2 - font_size - (line_index * font_size * line_height)
 
+    # y座標が負にならないように（ただしボックス外はチェックで除外される）
     return x, y
 
 
@@ -851,6 +989,12 @@ def split_text_into_lines(
     """
     if not text:
         return []
+
+    # バリデーション: 無効な値の場合はテキストをそのまま返す
+    if box_width <= 0:
+        return [text]
+    if font_size <= 0:
+        font_size = 10.0  # デフォルト値
 
     lines = []
     current_line = ""
@@ -988,51 +1132,62 @@ def format_cells_as_tsv(cells: list[TranslationCell]) -> str:
 # Phase 5: PDF Reconstruction (PyMuPDF)
 # =============================================================================
 class FontManager:
-    """Dual font system (Japanese: MS P Mincho, English: Arial)"""
+    """Dual font system with cross-platform support"""
+
+    # フォント名マッピング
+    FONT_NAMES = {
+        "ja": "Japanese",
+        "en": "English",
+        "zh-CN": "Chinese",
+        "ko": "Korean",
+    }
 
     def __init__(self, lang_out: str):
         self.lang_out = lang_out
-        self.font_config = FONT_CONFIG.get(lang_out, FONT_CONFIG["en"])
+        self._font_path_cache: dict[str, Optional[str]] = {}
         self.font_id = {}
 
-    def get_font_name(self) -> str:
-        return self.font_config["name"]
+    def get_font_name(self, lang: str = None) -> str:
+        lang = lang or self.lang_out
+        return self.FONT_NAMES.get(lang, "English")
 
-    def get_font_path(self) -> Optional[str]:
-        import os
-        path = self.font_config["path"]
-        if os.path.exists(path):
-            return path
-        fallback = self.font_config.get("fallback")
-        if fallback:
-            fallback_path = f"C:/Windows/Fonts/{fallback}"
-            if os.path.exists(fallback_path):
-                return fallback_path
-        return None
+    def get_font_path(self, lang: str = None) -> Optional[str]:
+        lang = lang or self.lang_out
+        if lang not in self._font_path_cache:
+            self._font_path_cache[lang] = get_font_path_for_lang(lang)
+        return self._font_path_cache[lang]
 
     def embed_fonts(self, doc) -> None:
-        """Embed fonts in all pages"""
-        fitz = _get_fitz()
-        font_path = self.get_font_path()
-        font_name = self.get_font_name()
+        """Embed fonts in all pages (optimized: first page only for xref)"""
+        if len(doc) == 0:
+            return
 
-        if font_path:
-            for page in doc:
-                self.font_id[font_name] = page.insert_font(
-                    fontname=font_name,
-                    fontfile=font_path,
-                )
+        # 日本語と英語の両方を埋め込み
+        for lang in ["ja", "en"]:
+            font_path = self.get_font_path(lang)
+            font_name = self.get_font_name(lang)
+
+            if font_path:
+                # 最初のページでフォント埋め込み（xrefは全ページで共有）
+                first_page = doc[0]
+                try:
+                    self.font_id[font_name] = first_page.insert_font(
+                        fontname=font_name,
+                        fontfile=font_path,
+                    )
+                except Exception as e:
+                    print(f"  Warning: Failed to embed font '{font_name}': {e}")
 
     def select_font(self, text: str) -> str:
         """Select font based on text content"""
         for char in text:
             if '\u3040' <= char <= '\u309F':  # Hiragana
-                return FONT_CONFIG["ja"]["name"]
+                return self.get_font_name("ja")
             if '\u30A0' <= char <= '\u30FF':  # Katakana
-                return FONT_CONFIG["ja"]["name"]
+                return self.get_font_name("ja")
             if '\u4E00' <= char <= '\u9FFF':  # Kanji
-                return FONT_CONFIG["ja"]["name"]
-        return FONT_CONFIG["en"]["name"]
+                return self.get_font_name("ja")
+        return self.get_font_name("en")
 
 
 def calculate_line_height(
@@ -1063,17 +1218,38 @@ def calculate_line_height(
 
 
 def estimate_font_size(box: list[float], text: str) -> float:
-    """Estimate appropriate font size for box"""
+    """
+    Estimate appropriate font size for box.
+
+    Args:
+        box: [x1, y1, x2, y2] ボックス座標
+        text: 表示するテキスト
+
+    Returns:
+        推定フォントサイズ (最小1.0pt、最大12pt)
+    """
+    if len(box) != 4:
+        return 10.0  # デフォルト値
+
     x1, y1, x2, y2 = box
-    width = x2 - x1
-    height = y2 - y1
+    width = abs(x2 - x1)
+    height = abs(y2 - y1)
+
+    # 無効なサイズの場合はデフォルト値
+    if width <= 0 or height <= 0:
+        return 10.0
+
+    if not text:
+        return min(height * 0.8, 12.0)
 
     # Simple heuristic: base on box height and text length
     max_font_size = height * 0.8
     chars_per_line = max(1, len(text) / max(1, height / 14))
     width_based_size = width / max(1, chars_per_line) * 1.8
 
-    return min(max_font_size, width_based_size, 12)
+    # 最小1.0pt、最大12ptに制限
+    result = min(max_font_size, width_based_size, 12.0)
+    return max(result, 1.0)
 
 
 def reconstruct_pdf(
@@ -1095,67 +1271,75 @@ def reconstruct_pdf(
     """
     fitz = _get_fitz()
     doc = fitz.open(original_pdf_path)
-    font_manager = FontManager(lang_out)
+    try:
+        font_manager = FontManager(lang_out)
 
-    # Embed fonts
-    font_manager.embed_fonts(doc)
+        # Embed fonts
+        font_manager.embed_fonts(doc)
 
-    # Build cell lookup by address
-    cell_map = {cell.address: cell for cell in cells}
+        # Build cell lookup by address
+        cell_map = {cell.address: cell for cell in cells}
+        failed_cells = []  # エラー追跡用
 
-    for page_num, page in enumerate(doc, start=1):
-        for address, translated in translations.items():
-            # Filter by page
-            if address.startswith("P"):
-                match = re.match(r"P(\d+)_", address)
-                if match and int(match.group(1)) != page_num:
+        for page_num, page in enumerate(doc, start=1):
+            for address, translated in translations.items():
+                # Filter by page
+                if address.startswith("P"):
+                    match = re.match(r"P(\d+)_", address)
+                    if match and int(match.group(1)) != page_num:
+                        continue
+                elif address.startswith("T"):
+                    match = re.match(r"T(\d+)_", address)
+                    if match and int(match.group(1)) != page_num:
+                        continue
+                else:
                     continue
-            elif address.startswith("T"):
-                match = re.match(r"T(\d+)_", address)
-                if match and int(match.group(1)) != page_num:
+
+                if address not in cell_map:
                     continue
-            else:
-                continue
 
-            if address not in cell_map:
-                continue
+                cell = cell_map[address]
+                box = cell.box
 
-            cell = cell_map[address]
-            box = cell.box
+                # Create rect
+                rect = fitz.Rect(box[0], box[1], box[2], box[3])
 
-            # Create rect
-            rect = fitz.Rect(box[0], box[1], box[2], box[3])
+                # Redact original text (white fill)
+                page.draw_rect(rect, color=(1, 1, 1), fill=(1, 1, 1))
 
-            # Redact original text (white fill)
-            page.draw_rect(rect, color=(1, 1, 1), fill=(1, 1, 1))
+                # Calculate font size and line height
+                font_size = estimate_font_size(box, translated)
+                line_height = calculate_line_height(translated, box, font_size, lang_out)
 
-            # Calculate font size and line height
-            font_size = estimate_font_size(box, translated)
-            line_height = calculate_line_height(translated, box, font_size, lang_out)
+                # Select font
+                font_name = font_manager.select_font(translated[0] if translated else "A")
+                font_path = font_manager.get_font_path()
 
-            # Select font
-            font_name = font_manager.select_font(translated[0] if translated else "A")
-            font_path = font_manager.get_font_path()
+                # Insert translated text
+                try:
+                    page.insert_textbox(
+                        rect,
+                        translated,
+                        fontname=font_name,
+                        fontfile=font_path,
+                        fontsize=font_size,
+                        align=fitz.TEXT_ALIGN_LEFT,
+                    )
+                except Exception as e:
+                    failed_cells.append((address, str(e)))
+                    print(f"  Warning: Failed to insert text at {address}: {e}")
 
-            # Insert translated text
-            try:
-                page.insert_textbox(
-                    rect,
-                    translated,
-                    fontname=font_name,
-                    fontfile=font_path,
-                    fontsize=font_size,
-                    align=fitz.TEXT_ALIGN_LEFT,
-                )
-            except Exception as e:
-                print(f"  Warning: Failed to insert text at {address}: {e}")
+        # 失敗セルの警告
+        if failed_cells:
+            print(f"  Warning: {len(failed_cells)} cells failed to render")
 
-    # Subset fonts
-    doc.subset_fonts()
+        # Subset fonts
+        doc.subset_fonts()
 
-    # Save
-    doc.save(output_path, garbage=4, deflate=True)
-    doc.close()
+        # Save
+        doc.save(output_path, garbage=4, deflate=True)
+    finally:
+        doc.close()
 
 
 def reconstruct_pdf_low_level(

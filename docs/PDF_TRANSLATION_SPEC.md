@@ -1,4 +1,4 @@
-# PDF翻訳機能 技術仕様書 v8.1
+# PDF翻訳機能 技術仕様書 v8.2
 
 ## 概要
 
@@ -930,9 +930,19 @@ Input Data
 
 ---
 
-## 9. 設定・UI統合
+## 9. 出力仕様
 
-### 9.1 自動検出
+### 9.1 出力形式
+
+| 出力 | 形式 | 編集可否 |
+|------|------|---------|
+| 翻訳版PDF | PDF | ✗ 編集不可 |
+| バイリンガルPDF (オプション) | PDF | ✗ 編集不可 |
+
+**注意**: PDF翻訳の出力は最終版として扱い、編集機能は提供しない。
+翻訳結果の調整が必要な場合は、既存のExcel翻訳機能を使用すること。
+
+### 9.2 自動検出
 
 ```python
 def detect_input_type(file_path: str) -> str:
@@ -954,7 +964,7 @@ def detect_input_type(file_path: str) -> str:
         return "text"
 ```
 
-### 9.2 設定項目
+### 9.3 設定項目
 
 ```python
 # config.json 追加項目
@@ -1061,3 +1071,4 @@ def analyze_with_fallback(img: np.ndarray) -> DocumentAnalyzerSchema:
 | v7.0 | - | 既存Excel翻訳アプローチ採用 |
 | v8.0 | - | 完全仕様 (簡易版なし)、yomitoku/PDFMathTranslate完全準拠 |
 | v8.1 | 2024-11 | 言語対応を日本語・英語のみに限定、フォント変更 (MS P明朝/Arial)、プロンプトにExcel圧縮ルール追加 (記号禁止、数値圧縮、体言止め) |
+| v8.2 | 2024-11 | 出力仕様を明確化 (PDF出力のみ、編集不可)、編集が必要な場合は既存Excel翻訳を使用 |

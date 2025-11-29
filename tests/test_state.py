@@ -1,0 +1,300 @@
+# tests/test_state.py
+"""Tests for ecm_translate.ui.state"""
+
+import sys
+from pathlib import Path
+
+import pytest
+
+# Add project root to path for direct imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+# Import directly to avoid ui/__init__.py which imports nicegui
+from ecm_translate.ui.state import AppState, Tab, FileState
+from ecm_translate.models.types import TranslationDirection, FileType, FileInfo
+
+
+class TestTab:
+    """Tests for Tab enum"""
+
+    def test_tab_values(self):
+        assert Tab.TEXT.value == "text"
+        assert Tab.FILE.value == "file"
+
+
+class TestFileState:
+    """Tests for FileState enum"""
+
+    def test_file_state_values(self):
+        assert FileState.EMPTY.value == "empty"
+        assert FileState.SELECTED.value == "selected"
+        assert FileState.TRANSLATING.value == "translating"
+        assert FileState.COMPLETE.value == "complete"
+        assert FileState.ERROR.value == "error"
+
+
+class TestAppStateDefaults:
+    """Tests for AppState default values"""
+
+    def test_default_tab(self):
+        state = AppState()
+        assert state.current_tab == Tab.TEXT
+
+    def test_default_direction(self):
+        state = AppState()
+        assert state.direction == TranslationDirection.JP_TO_EN
+
+    def test_default_text_state(self):
+        state = AppState()
+        assert state.source_text == ""
+        assert state.target_text == ""
+        assert state.text_translating is False
+
+    def test_default_file_state(self):
+        state = AppState()
+        assert state.file_state == FileState.EMPTY
+        assert state.selected_file is None
+        assert state.file_info is None
+        assert state.translation_progress == 0.0
+        assert state.translation_status == ""
+        assert state.output_file is None
+        assert state.error_message == ""
+
+    def test_default_copilot_state(self):
+        state = AppState()
+        assert state.copilot_connected is False
+        assert state.copilot_connecting is False
+        assert state.copilot_error == ""
+
+    def test_default_reference_files(self):
+        state = AppState()
+        assert state.reference_files == []
+
+
+class TestAppStateSwapDirection:
+    """Tests for AppState.swap_direction()"""
+
+    def test_swap_jp_to_en_becomes_en_to_jp(self):
+        state = AppState(direction=TranslationDirection.JP_TO_EN)
+        state.swap_direction()
+        assert state.direction == TranslationDirection.EN_TO_JP
+
+    def test_swap_en_to_jp_becomes_jp_to_en(self):
+        state = AppState(direction=TranslationDirection.EN_TO_JP)
+        state.swap_direction()
+        assert state.direction == TranslationDirection.JP_TO_EN
+
+    def test_swap_clears_target_text(self):
+        state = AppState(
+            direction=TranslationDirection.JP_TO_EN,
+            target_text="Some translated text"
+        )
+        state.swap_direction()
+        assert state.target_text == ""
+
+    def test_swap_preserves_source_text(self):
+        state = AppState(
+            direction=TranslationDirection.JP_TO_EN,
+            source_text="Original text"
+        )
+        state.swap_direction()
+        assert state.source_text == "Original text"
+
+    def test_double_swap_returns_to_original(self):
+        state = AppState(direction=TranslationDirection.JP_TO_EN)
+        state.swap_direction()
+        state.swap_direction()
+        assert state.direction == TranslationDirection.JP_TO_EN
+
+
+class TestAppStateLabels:
+    """Tests for AppState label methods"""
+
+    def test_get_source_label_jp_to_en(self):
+        state = AppState(direction=TranslationDirection.JP_TO_EN)
+        assert state.get_source_label() == "日本語"
+
+    def test_get_source_label_en_to_jp(self):
+        state = AppState(direction=TranslationDirection.EN_TO_JP)
+        assert state.get_source_label() == "English"
+
+    def test_get_target_label_jp_to_en(self):
+        state = AppState(direction=TranslationDirection.JP_TO_EN)
+        assert state.get_target_label() == "English"
+
+    def test_get_target_label_en_to_jp(self):
+        state = AppState(direction=TranslationDirection.EN_TO_JP)
+        assert state.get_target_label() == "日本語"
+
+    def test_get_source_placeholder_jp_to_en(self):
+        state = AppState(direction=TranslationDirection.JP_TO_EN)
+        assert state.get_source_placeholder() == "日本語を入力..."
+
+    def test_get_source_placeholder_en_to_jp(self):
+        state = AppState(direction=TranslationDirection.EN_TO_JP)
+        assert state.get_source_placeholder() == "Enter English text..."
+
+
+class TestAppStateResetFileState:
+    """Tests for AppState.reset_file_state()"""
+
+    def test_reset_clears_file_state(self):
+        state = AppState(
+            file_state=FileState.COMPLETE,
+            selected_file=Path("/some/file.xlsx"),
+            file_info=FileInfo(
+                path=Path("/some/file.xlsx"),
+                file_type=FileType.EXCEL,
+                size_bytes=1000
+            ),
+            translation_progress=1.0,
+            translation_status="Complete",
+            output_file=Path("/some/file_EN.xlsx"),
+            error_message="Some error"
+        )
+
+        state.reset_file_state()
+
+        assert state.file_state == FileState.EMPTY
+        assert state.selected_file is None
+        assert state.file_info is None
+        assert state.translation_progress == 0.0
+        assert state.translation_status == ""
+        assert state.output_file is None
+        assert state.error_message == ""
+
+    def test_reset_preserves_other_state(self):
+        state = AppState(
+            current_tab=Tab.FILE,
+            direction=TranslationDirection.EN_TO_JP,
+            source_text="Some text",
+            copilot_connected=True,
+            file_state=FileState.COMPLETE
+        )
+
+        state.reset_file_state()
+
+        # These should be preserved
+        assert state.current_tab == Tab.FILE
+        assert state.direction == TranslationDirection.EN_TO_JP
+        assert state.source_text == "Some text"
+        assert state.copilot_connected is True
+
+
+class TestAppStateCanTranslate:
+    """Tests for AppState.can_translate()"""
+
+    def test_cannot_translate_without_copilot(self):
+        state = AppState(
+            copilot_connected=False,
+            current_tab=Tab.TEXT,
+            source_text="Some text"
+        )
+        assert state.can_translate() is False
+
+    def test_can_translate_text_tab_with_text(self):
+        state = AppState(
+            copilot_connected=True,
+            current_tab=Tab.TEXT,
+            source_text="Some text",
+            text_translating=False
+        )
+        assert state.can_translate() is True
+
+    def test_cannot_translate_text_tab_empty(self):
+        state = AppState(
+            copilot_connected=True,
+            current_tab=Tab.TEXT,
+            source_text="",
+            text_translating=False
+        )
+        assert state.can_translate() is False
+
+    def test_cannot_translate_text_tab_whitespace_only(self):
+        state = AppState(
+            copilot_connected=True,
+            current_tab=Tab.TEXT,
+            source_text="   \n\t  ",
+            text_translating=False
+        )
+        assert state.can_translate() is False
+
+    def test_cannot_translate_text_tab_already_translating(self):
+        state = AppState(
+            copilot_connected=True,
+            current_tab=Tab.TEXT,
+            source_text="Some text",
+            text_translating=True
+        )
+        assert state.can_translate() is False
+
+    def test_can_translate_file_tab_with_selection(self):
+        state = AppState(
+            copilot_connected=True,
+            current_tab=Tab.FILE,
+            file_state=FileState.SELECTED
+        )
+        assert state.can_translate() is True
+
+    def test_cannot_translate_file_tab_empty(self):
+        state = AppState(
+            copilot_connected=True,
+            current_tab=Tab.FILE,
+            file_state=FileState.EMPTY
+        )
+        assert state.can_translate() is False
+
+    def test_cannot_translate_file_tab_already_translating(self):
+        state = AppState(
+            copilot_connected=True,
+            current_tab=Tab.FILE,
+            file_state=FileState.TRANSLATING
+        )
+        assert state.can_translate() is False
+
+    def test_cannot_translate_file_tab_complete(self):
+        state = AppState(
+            copilot_connected=True,
+            current_tab=Tab.FILE,
+            file_state=FileState.COMPLETE
+        )
+        assert state.can_translate() is False
+
+
+class TestAppStateIsTranslating:
+    """Tests for AppState.is_translating()"""
+
+    def test_is_translating_text_tab_true(self):
+        state = AppState(
+            current_tab=Tab.TEXT,
+            text_translating=True
+        )
+        assert state.is_translating() is True
+
+    def test_is_translating_text_tab_false(self):
+        state = AppState(
+            current_tab=Tab.TEXT,
+            text_translating=False
+        )
+        assert state.is_translating() is False
+
+    def test_is_translating_file_tab_translating(self):
+        state = AppState(
+            current_tab=Tab.FILE,
+            file_state=FileState.TRANSLATING
+        )
+        assert state.is_translating() is True
+
+    def test_is_translating_file_tab_not_translating(self):
+        state = AppState(
+            current_tab=Tab.FILE,
+            file_state=FileState.SELECTED
+        )
+        assert state.is_translating() is False
+
+    def test_is_translating_file_tab_complete(self):
+        state = AppState(
+            current_tab=Tab.FILE,
+            file_state=FileState.COMPLETE
+        )
+        assert state.is_translating() is False

@@ -1,4 +1,4 @@
-# PDF翻訳機能 技術仕様書 v9.0
+# PDF翻訳機能 技術仕様書 v9.1
 
 ## 概要
 
@@ -1162,6 +1162,8 @@ Input Data
 
 import customtkinter as ctk
 from tkinterdnd2 import TkinterDnD
+from pathlib import Path
+from typing import Callable, Optional
 
 class TranslatorApp(ctk.CTk, TkinterDnD.DnDWrapper):
     """
@@ -1172,8 +1174,65 @@ class TranslatorApp(ctk.CTk, TkinterDnD.DnDWrapper):
         super().__init__()
         self.TkdndVersion = TkinterDnD._require(self)  # DnD初期化
 
-        # ... 既存の初期化コード ...
+        # === 既存の初期化コード ===
+        self.is_translating = False
+        self.cancel_requested = False
+        self.on_start_callback: Optional[Callable] = None
+        self.on_cancel_callback: Optional[Callable] = None
+        self.on_jp_to_en_callback: Optional[Callable] = None
+        self.on_en_to_jp_callback: Optional[Callable] = None
+        self.last_translation_pairs = None
+
+        # === PDF翻訳用の追加プロパティ ===
+        self.on_pdf_jp_to_en_callback: Optional[Callable[[Path], None]] = None
+        self.on_pdf_en_to_jp_callback: Optional[Callable[[Path], None]] = None
+        self.selected_file: Optional[Path] = None
+        self.selected_file_type: Optional[str] = None  # "pdf" or "excel"
+
+        # ... 残りの初期化コード ...
 ```
+
+### 9.3.1 キャンセル機構
+
+PDF翻訳のキャンセルは**既存のキャンセル機構**をそのまま使用する。
+
+| 状態 | ボタン表示 | 動作 |
+|------|-----------|------|
+| 待機中 | "Translate" | 翻訳開始 |
+| 翻訳中 | "Cancel" | キャンセル要求 |
+| キャンセル中 | "Canceling..." (無効) | 処理完了待ち |
+
+```python
+# 既存の _on_action メソッド (変更不要)
+def _on_action(self):
+    """Handle main action button"""
+    if self.is_translating:
+        self._request_cancel()  # 既存キャンセル処理
+    else:
+        self._start()
+
+def _request_cancel(self):
+    """Request cancellation - PDF/Excel共通"""
+    self.cancel_requested = True
+    self.action_btn.configure(text="Canceling...", state="disabled")
+    if self.on_cancel_callback:
+        self.on_cancel_callback()
+```
+
+**PDF翻訳でのキャンセル確認**:
+```python
+# translate_pdf_batch 内でキャンセルを確認
+def translate_pdf_batch(..., cancel_check: Callable[[], bool] = None):
+    for batch_start, batch_images in iterate_pdf_pages(pdf_path, batch_size):
+        for i, img in enumerate(batch_images):
+            # キャンセル確認
+            if cancel_check and cancel_check():
+                return  # 翻訳中断
+
+            # ... 翻訳処理 ...
+```
+
+**注意**: ×ボタン（ウィンドウ閉じる）はアプリ終了となるため、キャンセル目的では使用しない。
 
 ### 9.4 既存メソッド拡張 (状態管理)
 
@@ -1819,3 +1878,4 @@ def analyze_document(img: np.ndarray, device: str = "cpu") -> DocumentAnalyzerSc
 | v8.8 | 2024-11 | API整合性修正: PyMuPDF subset_fonts()パラメータ修正、tkinterdnd2イベント名修正(DropEnter/DropLeave)、ファイルパース改善(splitlist使用) |
 | v8.9 | 2024-11 | UI設計を既存TranslatorAppと統合、Dynamic Islandで進捗表示、PDF/Excel両対応ドロップエリア、既存Settings維持 |
 | v9.0 | 2024-11 | 既存メソッド拡張方式に変更 (show_translating/complete/error/ready)、SoundPlayer/AmbientGlow統合、状態管理フラグ追加 |
+| v9.1 | 2024-11 | `__init__`初期化追加 (PDF用コールバック・ファイル選択)、キャンセル機構明確化 (既存Cancel機構使用) |

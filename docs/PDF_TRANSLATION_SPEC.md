@@ -1,4 +1,4 @@
-# PDF翻訳機能 技術仕様書 v8.9
+# PDF翻訳機能 技術仕様書 v9.0
 
 ## 概要
 
@@ -1175,52 +1175,232 @@ class TranslatorApp(ctk.CTk, TkinterDnD.DnDWrapper):
         # ... 既存の初期化コード ...
 ```
 
-### 9.4 Dynamic Island 進捗表示
+### 9.4 既存メソッド拡張 (状態管理)
 
-既存の `DynamicIsland` クラスを使用してPDF翻訳進捗を表示する。
+既存の `show_translating`, `show_complete`, `show_error`, `show_ready` メソッドを拡張し、PDF翻訳に対応する。
+
+#### 9.4.1 show_translating 拡張
 
 ```python
-# 既存の DynamicIsland API を使用
-
-def update_pdf_progress(self, current_page: int, total_pages: int, phase: str):
+def show_translating(self, current: int, total: int, phase: str = None):
     """
-    PDF翻訳進捗を Dynamic Island に表示
+    翻訳進捗表示 - PDF/Excel両対応
 
     Args:
-        current_page: 現在のページ番号
-        total_pages: 総ページ数
-        phase: 処理フェーズ名
+        current: 現在の進捗 (ページ番号 or セル番号)
+        total: 総数
+        phase: PDF翻訳フェーズ (Excelの場合はNone)
     """
-    phase_names = {
-        "loading": "PDF読込中",
-        "layout": "レイアウト解析中",
-        "formula": "数式保護中",
-        "translation": "翻訳中",
-        "reconstruction": "PDF再構築中",
-    }
-    phase_display = phase_names.get(phase, phase)
+    self.is_translating = True
 
-    progress = current_page / total_pages if total_pages > 0 else 0
+    # 翻訳中は最前面に表示
+    self.attributes("-topmost", True)
+    self.lift()
 
-    # Dynamic Island を拡大モードにして進捗表示
-    self.dynamic_island.expand()
-    self.dynamic_island.set_status(
-        text=phase_display,
-        subtitle=f"ページ {current_page}/{total_pages}",
-        progress=progress
+    progress = current / total if total > 0 else 0
+    percent = int(progress * 100)
+
+    if phase:
+        # PDF翻訳の場合
+        phase_names = {
+            "loading": "PDF読込中",
+            "layout": "レイアウト解析中",
+            "formula": "数式保護中",
+            "translation": "翻訳中",
+            "reconstruction": "PDF再構築中",
+        }
+        phase_display = phase_names.get(phase, phase)
+
+        self.dynamic_island.expand()
+        self.dynamic_island.set_status(
+            phase_display,
+            f"ページ {current}/{total}",
+            progress
+        )
+        self.dynamic_island.start_pulse()
+
+        self.status_text.set_text(phase_display, animate=False)
+        self.subtitle_text.set_text(f"ページ {current}/{total}", animate=False)
+    else:
+        # Excel翻訳の場合 (既存動作)
+        self.dynamic_island.set_status(
+            f"Translating {percent}%",
+            f"Processing {total} cells...",
+            progress
+        )
+        self.status_text.set_text("Translating", animate=False)
+        self.subtitle_text.set_text(f"Processing {total} cells...", animate=False)
+
+    # アクションボタンをキャンセルモードに
+    self.action_btn.configure(
+        text="Cancel",
+        state="normal",
+        fg_color=THEME.bg_elevated,
+        text_color=THEME.text_primary
     )
-    self.dynamic_island.start_pulse()
 
-def complete_pdf_translation(self, output_path: str):
-    """翻訳完了時の表示"""
-    self.dynamic_island.set_status(
-        text="完了",
-        subtitle=Path(output_path).name,
-        progress=1.0
+    # Ambient Glow - 翻訳中モード
+    self.ambient_glow.set_mode("translating")
+```
+
+#### 9.4.2 show_complete 拡張
+
+```python
+def show_complete(self, count: int, translation_pairs: list = None,
+                  confidence: int = 100, output_path: str = None):
+    """
+    翻訳完了表示 - PDF/Excel両対応
+
+    Args:
+        count: 翻訳数 (セル数 or ページ数)
+        translation_pairs: 翻訳ペア (Excel用)
+        confidence: 信頼度 (Excel用)
+        output_path: 出力ファイルパス (PDF用)
+    """
+    # 状態リセット
+    self.is_translating = False
+    self.cancel_requested = False
+    self.last_translation_pairs = translation_pairs
+
+    # 最前面解除
+    self.attributes("-topmost", False)
+
+    # 品質テキスト
+    if confidence >= 95:
+        quality_text = "Excellent"
+    elif confidence >= 80:
+        quality_text = "Good"
+    elif confidence >= 60:
+        quality_text = "Fair"
+    else:
+        quality_text = "Review"
+
+    # ボタン状態リセット
+    self.action_btn.configure(
+        text="Translate",
+        state="normal",
+        fg_color=THEME.text_primary,
+        text_color=THEME.bg_primary
     )
+
+    # Dynamic Island 更新
     self.dynamic_island.stop_pulse()
-    # 3秒後にコンパクトモードに戻る
-    self.after(3000, self.dynamic_island.compact)
+
+    if output_path:
+        # PDF翻訳完了
+        self.dynamic_island.set_status(
+            "PDF Complete!",
+            Path(output_path).name,
+            1.0
+        )
+    else:
+        # Excel翻訳完了 (既存動作)
+        self.dynamic_island.set_status(
+            "Complete!",
+            f"{count} cells | {quality_text}",
+            1.0
+        )
+
+    # Ambient Glow - 待機モードに戻す
+    self.ambient_glow.set_mode("idle")
+
+    # サウンド再生
+    SoundPlayer.play_success()
+
+    # ファイル選択クリア
+    if hasattr(self, 'file_drop_area'):
+        self.file_drop_area.clear()
+
+    # 3秒後に待機状態に戻る
+    self.after(3000, self.show_ready)
+```
+
+#### 9.4.3 show_error 拡張
+
+```python
+def show_error(self, message: str):
+    """
+    エラー表示 - PDF/Excel共通
+
+    Args:
+        message: エラーメッセージ
+    """
+    self.is_translating = False
+    self.cancel_requested = False
+
+    # 最前面解除
+    self.attributes("-topmost", False)
+
+    # Dynamic Island - エラー状態
+    self.dynamic_island.stop_pulse()
+    self.dynamic_island.expand()
+    self.dynamic_island.set_status("Error", message[:40], 0)
+
+    # Ambient Glow - エラーモード (赤)
+    self.ambient_glow.set_mode("error")
+
+    # ボタン状態リセット
+    self.action_btn.configure(
+        text="Translate",
+        state="normal",
+        fg_color=THEME.text_primary,
+        text_color=THEME.bg_primary
+    )
+
+    # サウンド再生
+    SoundPlayer.play_error()
+
+    # Kinetic Typography
+    self.status_text.set_text("Error")
+    self.subtitle_text.set_text(message[:50])
+
+    # 5秒後に待機状態に戻る
+    self.after(5000, self.show_ready)
+```
+
+#### 9.4.4 show_ready (既存維持)
+
+```python
+def show_ready(self):
+    """待機状態 - PDF/Excel共通"""
+    self.is_translating = False
+    self.cancel_requested = False
+
+    # Dynamic Island - コンパクトモード
+    self.dynamic_island.compact()
+    self.dynamic_island.set_status("Ready")
+    self.dynamic_island.stop_pulse()
+
+    # Ambient Glow - 待機モード
+    self.ambient_glow.set_mode("idle")
+
+    # ボタン状態リセット
+    self.action_btn.configure(
+        text="Translate",
+        state="normal",
+        fg_color=THEME.text_primary,
+        text_color=THEME.bg_primary
+    )
+
+    # Kinetic Typography
+    self.status_text.set_text("Ready")
+    if self.current_mode == "jp_to_en":
+        self.subtitle_text.set_text("Japanese → English")
+    else:
+        self.subtitle_text.set_text("English → Japanese")
+```
+
+#### 9.4.5 SoundPlayer (既存クラス使用)
+
+```python
+# 翻訳開始時
+SoundPlayer.play_start()
+
+# 翻訳完了時
+SoundPlayer.play_success()
+
+# エラー時
+SoundPlayer.play_error()
 ```
 
 ### 9.5 ファイルドロップエリア
@@ -1437,6 +1617,9 @@ def _on_file_selected(self, file_path: Path, file_type: str):
 
 def _start(self):
     """翻訳開始 - ファイルタイプで分岐"""
+    # 開始サウンド
+    SoundPlayer.play_start()
+
     if hasattr(self, 'selected_file_type') and self.selected_file_type == "pdf":
         # PDF翻訳
         if self.current_mode == "jp_to_en" and self.on_pdf_jp_to_en_callback:
@@ -1635,3 +1818,4 @@ def analyze_document(img: np.ndarray, device: str = "cpu") -> DocumentAnalyzerSc
 | v8.7 | 2024-11 | バッチ処理追加 (大量ページ対応)、最大ページ数制限なし、DPI固定(200)、Copilotトークン制限対応 |
 | v8.8 | 2024-11 | API整合性修正: PyMuPDF subset_fonts()パラメータ修正、tkinterdnd2イベント名修正(DropEnter/DropLeave)、ファイルパース改善(splitlist使用) |
 | v8.9 | 2024-11 | UI設計を既存TranslatorAppと統合、Dynamic Islandで進捗表示、PDF/Excel両対応ドロップエリア、既存Settings維持 |
+| v9.0 | 2024-11 | 既存メソッド拡張方式に変更 (show_translating/complete/error/ready)、SoundPlayer/AmbientGlow統合、状態管理フラグ追加 |

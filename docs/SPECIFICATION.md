@@ -135,8 +135,8 @@ ECM_translate/
 │   │
 │   ├── processors/                 # File Processors
 │   │   ├── base.py                 # FileProcessor (ABC)
-│   │   ├── translators.py          # CellTranslator
-│   │   ├── font_manager.py         # FontManager
+│   │   ├── translators.py          # CellTranslator, ParagraphTranslator
+│   │   ├── font_manager.py         # FontManager, FontTypeDetector
 │   │   ├── excel_processor.py
 │   │   ├── word_processor.py
 │   │   ├── pptx_processor.py
@@ -514,22 +514,51 @@ class FileProcessor(ABC):
         """翻訳対象判定（空文字、数値のみ等を除外）"""
 ```
 
-### 7.2 CellTranslator
+### 7.2 翻訳判定クラス
 
-セル/テキストの翻訳判定ロジック。
+#### CellTranslator
+
+Excelセル、Word/PowerPointテーブルセル用の翻訳判定ロジック。
 
 ```python
 class CellTranslator:
     SKIP_PATTERNS = [
         r'^[\d\s\.,\-\+\(\)\/]+$',           # 数値のみ
-        r'^\d{4}[-/]\d{1,2}[-/]\d{1,2}$',    # 日付
+        r'^\d{4}[-/]\d{1,2}[-/]\d{1,2}$',    # 日付 (YYYY-MM-DD)
+        r'^\d{1,2}[-/]\d{1,2}[-/]\d{4}$',    # 日付 (DD/MM/YYYY)
         r'^[\w\.\-]+@[\w\.\-]+\.\w+$',       # メールアドレス
         r'^https?://\S+$',                    # URL
         r'^[A-Z]{2,5}[-_]?\d+$',             # コード（ABC-123）
+        r'^[\d\s%]+$',                        # パーセント付き数値
+        r'^[¥$€£]\s*[\d,\.]+$',               # 通貨記号付き数値
+        r'^\d+[年月日時分秒]',                  # 日本語日時
+    ]
+
+    def should_translate(text: str) -> bool:
+        """スキップパターンに一致しなければ翻訳対象（2文字未満も除外）"""
+```
+
+#### ParagraphTranslator
+
+Word/PowerPointの本文段落用の翻訳判定ロジック。
+
+```python
+class ParagraphTranslator:
+    SKIP_PATTERNS = [
+        r'^[\d\s\.,\-\+\(\)\/]+$',           # 数値のみ
+        r'^https?://\S+$',                    # URL
+        r'^[\w\.\-]+@[\w\.\-]+\.\w+$',       # メールアドレス
     ]
 
     def should_translate(text: str) -> bool:
         """スキップパターンに一致しなければ翻訳対象"""
+
+    def apply_translation_to_paragraph(para, translated_text: str) -> None:
+        """
+        段落スタイルを保持しながら翻訳を適用
+        - 最初のrunに翻訳テキストを設定
+        - 残りのrunはクリア
+        """
 ```
 
 ### 7.3 ExcelProcessor
@@ -556,7 +585,47 @@ class ExcelProcessor(FileProcessor):
     """
 ```
 
-### 7.4 PdfProcessor
+### 7.4 WordProcessor
+
+```python
+class WordProcessor(FileProcessor):
+    """
+    翻訳対象:
+    - 本文段落 (ParagraphTranslator)
+    - テーブルセル (CellTranslator - Excel互換ロジック)
+    - テキストボックス (ParagraphTranslator)
+
+    保持:
+    - 段落スタイル（見出し、本文等）
+    - テーブル構造・書式
+    - 画像・位置
+    - 箇条書き・番号リスト
+    - ページレイアウト
+
+    非対象:
+    - ヘッダー/フッター（翻訳しない）
+    """
+```
+
+### 7.5 PptxProcessor
+
+```python
+class PptxProcessor(FileProcessor):
+    """
+    翻訳対象:
+    - 図形テキスト (ParagraphTranslator)
+    - テーブルセル (CellTranslator - Excel互換ロジック)
+    - スピーカーノート (ParagraphTranslator)
+
+    保持:
+    - スライドレイアウト
+    - アニメーション
+    - トランジション
+    - 画像・グラフ
+    """
+```
+
+### 7.6 PdfProcessor
 
 ```python
 class PdfProcessor(FileProcessor):

@@ -1367,7 +1367,10 @@ def show_complete(self, count: int, translation_pairs: list = None,
     self.ambient_glow.set_mode("idle")
 
     # サウンド再生
-    SoundPlayer.play_success()
+    try:
+        SoundPlayer.play_success()
+    except Exception:
+        pass
 
     # ファイル選択クリア
     if hasattr(self, 'file_drop_area'):
@@ -1441,6 +1444,7 @@ def show_ready(self):
         text="Translate",
         state="normal",
         fg_color=THEME.text_primary,
+        hover_color=THEME.text_secondary,
         text_color=THEME.bg_primary
     )
 
@@ -2009,3 +2013,4 @@ def analyze_document(img: np.ndarray, device: str = "cpu") -> DocumentAnalyzerSc
 | v9.3 | 2024-11 | show_cancelled追加、show_error 5秒タイマー確定、show_readyサフィックス削除確定 |
 | v9.4 | 2024-11 | show_connecting追加 (Copilot接続フェーズ用、PDF/Excel共通) |
 | v9.5 | 2024-11 | translate.py拡張: ADDRESS_PATTERNにPDFアドレス形式(P#_#, T#_#_#_#)追加、SHAPE形式も含む |
+| v9.6 | 2024-11 | TkinterDnD継承廃止 (FileDropArea内で初期化)、show_complete try/except追加、show_ready hover_color追加 |

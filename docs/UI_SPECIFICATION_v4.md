@@ -204,7 +204,8 @@
 | Max height | 制限なし（ウィンドウサイズに追従） |
 | Placeholder (JP→EN) | "日本語を入力..." |
 | Placeholder (EN→JP) | "Enter English text..." |
-| Font size | 15px |
+| Font family | Meiryo UI (See Section 14.1) |
+| Font size | 16px |
 | Line height | 1.7 |
 | Padding | 16px |
 
@@ -626,23 +627,31 @@
 
 ```css
 font-family:
-    -apple-system,
-    BlinkMacSystemFont,
-    'Segoe UI',
+    'Meiryo UI',
+    'Meiryo',
+    'Yu Gothic UI',
+    'Hiragino Sans',
     'Noto Sans JP',
     sans-serif;
 ```
+
+> **Note**: Windows環境ではMeiryo UIを優先。Mac/Linuxでは代替フォントにフォールバック。
 
 ### 14.2 Type Scale
 
 | Use | Size | Weight |
 |-----|------|--------|
+| Logo | 24px | Bold |
 | Title | 20px | Bold |
-| Tab label | 14px | Medium |
-| Body | 14px | Regular |
+| Tab label | 15px | Medium |
+| Body | 15px | Regular |
+| Textarea | 16px | Regular |
 | Label | 14px | Medium |
-| Small | 12px | Regular |
-| Button | 14px | Semibold |
+| Small | 13px | Regular |
+| Button | 15px | Semibold |
+
+> **Design Note**: 日本語テキストは英語より視認性が低いため、
+> 本文サイズを15px以上に設定。テキストエリアは長時間の作業を考慮し16pxに。
 
 ---
 

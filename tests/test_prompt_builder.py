@@ -1,7 +1,6 @@
 # tests/test_prompt_builder.py
 """Tests for ecm_translate.services.prompt_builder"""
 
-import pytest
 import sys
 import tempfile
 from pathlib import Path

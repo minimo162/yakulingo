@@ -1,7 +1,6 @@
 # tests/test_models.py
 """Tests for ecm_translate.models.types"""
 
-import pytest
 from pathlib import Path
 
 from ecm_translate.models.types import (

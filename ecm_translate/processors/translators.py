@@ -6,7 +6,6 @@ ParagraphTranslator: For body paragraphs
 """
 
 import re
-from typing import Optional
 
 
 class CellTranslator:

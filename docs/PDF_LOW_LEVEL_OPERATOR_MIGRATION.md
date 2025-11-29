@@ -150,7 +150,7 @@ class FontInfo:
     family: str            # フォントファミリ名 (表示用)
     path: str              # フォントファイルパス
     fallback: Optional[str]  # フォールバックパス
-    encoding: str          # "cid", "noto", or "simple"
+    encoding: str          # "cid" or "simple"
     is_cjk: bool          # CJKフォントか
 ```
 
@@ -164,7 +164,7 @@ class FontRegistry:
     PDFMathTranslate high_level.py:187-203 準拠
     """
 
-    # デフォルトフォント定義
+    # デフォルトフォント定義 (Windows)
     DEFAULT_FONTS = {
         "ja": FontInfo(
             font_id="F1",
@@ -182,12 +182,20 @@ class FontRegistry:
             encoding="simple",
             is_cjk=False,
         ),
-        "noto": FontInfo(
+        "zh-CN": FontInfo(
             font_id="F3",
-            family="NotoSansCJK",
-            path=None,  # 動的解決
-            fallback=None,
-            encoding="noto",
+            family="SimSun",
+            path="C:/Windows/Fonts/simsun.ttc",
+            fallback="C:/Windows/Fonts/msyh.ttc",  # Microsoft YaHei
+            encoding="cid",
+            is_cjk=True,
+        ),
+        "ko": FontInfo(
+            font_id="F4",
+            family="Malgun Gothic",
+            path="C:/Windows/Fonts/malgun.ttf",
+            fallback="C:/Windows/Fonts/batang.ttc",
+            encoding="cid",
             is_cjk=True,
         ),
     }
@@ -195,7 +203,6 @@ class FontRegistry:
     def __init__(self):
         self.fonts: dict[str, FontInfo] = {}
         self._font_xrefs: dict[str, int] = {}
-        self._noto_font = None  # fontTools Font object for glyph lookup
         self._counter = 0
 
     def register_font(self, lang: str) -> str:
@@ -225,38 +232,7 @@ class FontRegistry:
         )
 
         self.fonts[lang] = font_info
-
-        # Notoフォントの場合、fontToolsでロード（グリフID取得用）
-        if default.encoding == "noto" and default.path:
-            self._load_noto_font(default.path)
-
         return font_id
-
-    def _load_noto_font(self, path: str) -> None:
-        """NotoフォントをfontToolsでロード（グリフID取得用）"""
-        try:
-            from fontTools.ttLib import TTFont
-            self._noto_font = TTFont(path)
-        except ImportError:
-            print("Warning: fontTools not installed, Noto glyph lookup disabled")
-        except Exception as e:
-            print(f"Warning: Failed to load Noto font: {e}")
-
-    def get_glyph_id(self, char: str) -> int:
-        """
-        NotoフォントのグリフIDを取得
-
-        PDFMathTranslate converter.py raw_string() 準拠
-        """
-        if self._noto_font is None:
-            return ord(char)
-
-        try:
-            cmap = self._noto_font.getBestCmap()
-            glyph_id = cmap.get(ord(char), 0)
-            return glyph_id if glyph_id else ord(char)
-        except Exception:
-            return ord(char)
 
     def get_font_path(self, font_id: str) -> Optional[str]:
         """フォントIDからパスを取得（フォールバック対応）"""
@@ -290,19 +266,34 @@ class FontRegistry:
                 return font_info
         return None
 
-    def select_font_for_text(self, text: str) -> str:
+    def select_font_for_text(self, text: str, target_lang: str = "ja") -> str:
         """
         テキスト内容から適切なフォントIDを選択
 
-        既存 FontManager.select_font() と同等
+        CJK言語対応版
+
+        Args:
+            text: 対象テキスト
+            target_lang: ターゲット言語 ("ja", "en", "zh-CN", "ko")
+                         漢字の判定に使用
+
+        Returns:
+            フォントID
         """
         for char in text:
+            # 日本語固有: ひらがな・カタカナ
             if '\u3040' <= char <= '\u309F':  # Hiragana
                 return self._get_font_id_for_lang("ja")
             if '\u30A0' <= char <= '\u30FF':  # Katakana
                 return self._get_font_id_for_lang("ja")
-            if '\u4E00' <= char <= '\u9FFF':  # Kanji
-                return self._get_font_id_for_lang("ja")
+            # 韓国語固有: ハングル
+            if '\uAC00' <= char <= '\uD7AF':  # Hangul Syllables
+                return self._get_font_id_for_lang("ko")
+            if '\u1100' <= char <= '\u11FF':  # Hangul Jamo
+                return self._get_font_id_for_lang("ko")
+            # CJK統合漢字: ターゲット言語に従う
+            if '\u4E00' <= char <= '\u9FFF':  # CJK Unified Ideographs
+                return self._get_font_id_for_lang(target_lang)
         return self._get_font_id_for_lang("en")
 
     def _get_font_id_for_lang(self, lang: str) -> str:
@@ -379,7 +370,7 @@ class PdfOperatorGenerator:
         """
         フォントタイプに応じたテキストエンコード
 
-        PDFMathTranslate converter.py raw_string() 完全準拠
+        PDFMathTranslate converter.py raw_string() 準拠
 
         Args:
             font_id: フォントID
@@ -390,13 +381,7 @@ class PdfOperatorGenerator:
         """
         encoding_type = self.font_registry.get_encoding_type(font_id)
 
-        if encoding_type == "noto":
-            # Notoフォント: グリフIDを使用
-            return "".join([
-                "%04x" % self.font_registry.get_glyph_id(c)
-                for c in text
-            ])
-        elif encoding_type == "cid":
+        if encoding_type == "cid":
             # CIDフォント: Unicodeコードポイント (4桁hex)
             return "".join(["%04x" % ord(c) for c in text])
         else:
@@ -769,13 +754,13 @@ def reconstruct_pdf_low_level(
     """
     低レベルPDFオペレータを使用したPDF再構築
 
-    PDFMathTranslate準拠の実装
+    PDFMathTranslate準拠の実装（CJK対応）
 
     Args:
         original_pdf_path: 元PDFパス
         translations: {address: translated_text}
         cells: 元セル情報（座標含む）
-        lang_out: 出力言語 ("ja" or "en")
+        lang_out: 出力言語 ("ja", "en", "zh-CN", "ko")
         output_path: 出力PDFパス
 
     Raises:
@@ -786,10 +771,12 @@ def reconstruct_pdf_low_level(
     doc = fitz.open(original_pdf_path)
 
     try:
-        # 1. フォント登録
+        # 1. フォント登録（CJK全言語対応）
         font_registry = FontRegistry()
         font_registry.register_font("ja")
         font_registry.register_font("en")
+        font_registry.register_font("zh-CN")
+        font_registry.register_font("ko")
 
         # オペレータ生成器
         op_generator = PdfOperatorGenerator(font_registry)
@@ -797,7 +784,10 @@ def reconstruct_pdf_low_level(
         # セルマップ作成
         cell_map = {cell.address: cell for cell in cells}
 
-        # 2. ページ単位で処理
+        # 2. フォント埋め込み（ページループの前に実行）
+        font_registry.embed_fonts(doc)
+
+        # 3. ページ単位で処理
         for page_num, page in enumerate(doc, start=1):
             page_height = page.rect.height
             replacer = ContentStreamReplacer(doc, font_registry)
@@ -817,21 +807,21 @@ def reconstruct_pdf_low_level(
                     x1, y1, x2, y2 = box_pdf
                     box_width = x2 - x1
 
-                    # 3. 既存テキスト消去（白塗り）
+                    # 4. 既存テキスト消去（白塗り）
                     replacer.add_redaction(x1, y1, x2, y2)
 
-                    # 4. フォント選択
-                    font_id = font_registry.select_font_for_text(translated)
+                    # 5. フォント選択（ターゲット言語を考慮）
+                    font_id = font_registry.select_font_for_text(translated, lang_out)
                     is_cjk = font_registry.get_is_cjk(font_id)
 
-                    # 5. フォントサイズと行高さ計算 (既存関数を使用)
+                    # 6. フォントサイズと行高さ計算 (既存関数を使用)
                     font_size = estimate_font_size(cell.box, translated)
                     line_height = calculate_line_height(translated, cell.box, font_size, lang_out)
 
-                    # 6. テキスト行分割
+                    # 7. テキスト行分割
                     lines = split_text_into_lines(translated, box_width, font_size, is_cjk)
 
-                    # 7. 各行のテキストオペレータを生成
+                    # 8. 各行のテキストオペレータを生成
                     for line_idx, line_text in enumerate(lines):
                         if not line_text.strip():
                             continue
@@ -850,11 +840,8 @@ def reconstruct_pdf_low_level(
                     print(f"  Warning: Failed to process cell {address}: {e}")
                     continue
 
-            # 8. ページにストリームを適用
+            # 9. ページにストリームを適用
             replacer.apply_to_page(page)
-
-        # 9. フォント埋め込み
-        font_registry.embed_fonts(doc)
 
         # 10. 保存 (PDFMathTranslate: garbage=3, deflate=True)
         doc.subset_fonts(fallback=True)
@@ -870,19 +857,24 @@ def reconstruct_pdf_low_level(
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│            reconstruct_pdf_low_level() - PDFMathTranslate準拠            │
+│     reconstruct_pdf_low_level() - PDFMathTranslate準拠 (CJK対応)         │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                         │
 │  ┌───────────────────────────────────────────────────────────────────┐  │
 │  │ 1. 初期化                                                          │  │
 │  │    ├── FontRegistry() 作成                                         │  │
-│  │    ├── register_font("ja") / register_font("en")                  │  │
+│  │    ├── register_font("ja"/"en"/"zh-CN"/"ko") ← CJK全言語対応       │  │
 │  │    ├── PdfOperatorGenerator(font_registry) 作成                    │  │
 │  │    └── cell_map = {address: cell} 作成                             │  │
 │  └───────────────────────────────────────────────────────────────────┘  │
 │                              ↓                                          │
 │  ┌───────────────────────────────────────────────────────────────────┐  │
-│  │ 2. ページループ                                                     │  │
+│  │ 2. フォント埋め込み（ページループの前に実行）                       │  │
+│  │    └── font_registry.embed_fonts(doc) ← 全フォントを先に埋め込み   │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                              ↓                                          │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │ 3. ページループ                                                     │  │
 │  │    │                                                               │  │
 │  │    ├── ContentStreamReplacer(doc) 作成                              │  │
 │  │    │                                                               │  │
@@ -892,7 +884,7 @@ def reconstruct_pdf_low_level(
 │  │         │                                                          │  │
 │  │         ├── add_redaction() で白塗り                                │  │
 │  │         │                                                          │  │
-│  │         ├── select_font_for_text() でフォント選択                   │  │
+│  │         ├── select_font_for_text(text, lang_out) でフォント選択    │  │
 │  │         ├── estimate_font_size() / calculate_line_height()         │  │
 │  │         ├── split_text_into_lines() で行分割                        │  │
 │  │         │                                                          │  │
@@ -905,8 +897,7 @@ def reconstruct_pdf_low_level(
 │  └───────────────────────────────────────────────────────────────────┘  │
 │                              ↓                                          │
 │  ┌───────────────────────────────────────────────────────────────────┐  │
-│  │ 3. 後処理                                                          │  │
-│  │    ├── font_registry.embed_fonts(doc)                              │  │
+│  │ 4. 後処理                                                          │  │
 │  │    ├── doc.subset_fonts(fallback=True)  ← PDFMathTranslate準拠     │  │
 │  │    └── doc.save(output_path, garbage=3, deflate=True)              │  │
 │  └───────────────────────────────────────────────────────────────────┘  │
@@ -922,12 +913,20 @@ def reconstruct_pdf_low_level(
 |------------------|---------|------|
 | `gen_op_txt(font, size, x, y, rtxt)` | `gen_op_txt(font_id, size, x, y, rtxt)` | ✅ 完全準拠 |
 | `raw_string(fcur, cstk)` | `raw_string(font_id, text)` | ✅ 完全準拠 |
-| Notoフォント: `noto.has_glyph(ord(c))` | `font_registry.get_glyph_id(c)` | ✅ 対応済 |
 | CIDフォント: `%04x % ord(c)` | `%04x % ord(c)` | ✅ 同一 |
 | Single-byte: `%02x % ord(c)` | `%02x % ord(c)` | ✅ 同一 |
 | `doc.update_stream(xref, ops.encode())` | `doc.update_stream(new_xref, stream_bytes)` | ✅ 同一 |
 | `subset_fonts(fallback=True)` | `subset_fonts(fallback=True)` | ✅ 同一 |
 | `garbage=3, deflate=True` | `garbage=3, deflate=True` | ✅ 同一 |
+
+### 7.1 CJK対応フォント
+
+| 言語 | フォントID | フォントファミリ | エンコード |
+|------|-----------|-----------------|-----------|
+| 日本語 (ja) | F1 | MS-PMincho | CID (4桁hex) |
+| 英語 (en) | F2 | Arial | Simple (2桁hex) |
+| 中国語簡体字 (zh-CN) | F3 | SimSun | CID (4桁hex) |
+| 韓国語 (ko) | F4 | Malgun Gothic | CID (4桁hex) |
 
 ---
 
@@ -985,14 +984,47 @@ class TestFontRegistry:
         font_id = registry.select_font_for_text("Hello")
         assert registry.get_is_cjk(font_id) is False
 
+    def test_select_font_for_text_korean(self):
+        """韓国語テキストで韓国語フォントが選択される"""
+        registry = FontRegistry()
+        registry.register_font("ja")
+        registry.register_font("en")
+        registry.register_font("ko")
+
+        # ハングル文字 "안녕하세요" (Hello in Korean)
+        font_id = registry.select_font_for_text("안녕하세요")
+        font_info = registry.get_font_by_id(font_id)
+        assert font_info.family == "Malgun Gothic"
+
+    def test_select_font_for_text_chinese_with_target_lang(self):
+        """漢字テキストでターゲット言語に応じたフォントが選択される"""
+        registry = FontRegistry()
+        registry.register_font("ja")
+        registry.register_font("en")
+        registry.register_font("zh-CN")
+
+        # 漢字のみのテキスト "中文" - target_langによって異なるフォントが選択される
+        font_id_ja = registry.select_font_for_text("中文", target_lang="ja")
+        font_id_zh = registry.select_font_for_text("中文", target_lang="zh-CN")
+
+        font_info_ja = registry.get_font_by_id(font_id_ja)
+        font_info_zh = registry.get_font_by_id(font_id_zh)
+
+        assert font_info_ja.family == "MS-PMincho"
+        assert font_info_zh.family == "SimSun"
+
     def test_get_encoding_type(self):
         """エンコードタイプの取得テスト"""
         registry = FontRegistry()
         ja_id = registry.register_font("ja")
         en_id = registry.register_font("en")
+        zh_id = registry.register_font("zh-CN")
+        ko_id = registry.register_font("ko")
 
         assert registry.get_encoding_type(ja_id) == "cid"
         assert registry.get_encoding_type(en_id) == "simple"
+        assert registry.get_encoding_type(zh_id) == "cid"
+        assert registry.get_encoding_type(ko_id) == "cid"
 
 
 class TestPdfOperatorGenerator:
@@ -1199,12 +1231,11 @@ def translate_pdf_batch(
 □ Step 1: FontInfo データクラスを追加
 □ Step 2: FontRegistry クラスを追加
   □ register_font() 実装
-  □ get_glyph_id() 実装（fontTools連携）
   □ embed_fonts() 実装
-  □ select_font_for_text() 実装
+  □ select_font_for_text(text, target_lang) 実装（CJK対応）
 □ Step 3: PdfOperatorGenerator クラスを追加
   □ gen_op_txt() 実装
-  □ raw_string() 実装
+  □ raw_string() 実装（CID/Simple対応）
 □ Step 4: ContentStreamReplacer クラスを追加
   □ add_text_operator() 実装（font_id追跡付き）
   □ add_redaction() 実装
@@ -1215,13 +1246,15 @@ def translate_pdf_batch(
   □ split_text_into_lines() 実装
   □ _is_address_on_page() 実装
 □ Step 6: reconstruct_pdf_low_level() を追加
+  □ CJK全言語（ja/en/zh-CN/ko）のフォント登録
+  □ embed_fonts() をページループ前に配置
   □ エラーハンドリング付きで実装
   □ 単体テスト作成
 □ Step 7: translate_pdf_batch() に切り替えフラグを追加
 □ Step 8: テスト実行
   □ 単体テストがパス
   □ 統合テストがパス
-  □ 実PDFで動作確認
+  □ 実PDFで動作確認（日本語/英語/中国語/韓国語）
 □ Step 9: USE_LOW_LEVEL_OPERATORS = True に変更
 □ Step 10: 旧コード (reconstruct_pdf, FontManager) を削除
 ```
@@ -1233,7 +1266,7 @@ def translate_pdf_batch(
 ### 10.1 必須要件
 
 - [ ] `FontInfo` データクラスが追加されている
-- [ ] `FontRegistry` クラスが実装されている（Notoグリフ対応含む）
+- [ ] `FontRegistry` クラスが実装されている（CJK全言語対応）
 - [ ] `PdfOperatorGenerator` が PDFMathTranslate準拠
 - [ ] `ContentStreamReplacer` が実装されている
 - [ ] `reconstruct_pdf_low_level()` が動作する
@@ -1242,10 +1275,17 @@ def translate_pdf_batch(
 ### 10.2 PDFMathTranslate準拠チェック
 
 - [ ] `gen_op_txt(font, size, x, y, rtxt)` 形式
-- [ ] `raw_string()` でフォント別エンコード
-- [ ] NotoフォントのグリフID対応
+- [ ] `raw_string()` でCID/Simple別エンコード
 - [ ] `subset_fonts(fallback=True)`
 - [ ] `garbage=3, deflate=True` で保存
+
+### 10.3 CJK対応チェック
+
+- [ ] 日本語 (ja): MS-PMincho
+- [ ] 英語 (en): Arial
+- [ ] 中国語簡体字 (zh-CN): SimSun
+- [ ] 韓国語 (ko): Malgun Gothic
+- [ ] `select_font_for_text(text, target_lang)` でターゲット言語を考慮
 
 ---
 
@@ -1257,3 +1297,4 @@ def translate_pdf_batch(
 | 2.0 | 2025-01-XX | 不整合修正 |
 | 3.0 | 2025-01-XX | PDFMathTranslate完全準拠: raw_string追加、NotoグリフID対応、ContentStreamReplacerに変更 |
 | 4.0 | 2025-11-29 | 既存メソッドとの不整合修正: 座標系説明追加、register_font()からdoc引数削除、embed_fonts()のxref修正、apply_to_page()にフォントリソース登録追加、エラーハンドリング追加、テストコード修正、移行手順詳細化 |
+| 5.0 | 2025-11-29 | CJK言語対応: zh-CN (SimSun), ko (Malgun Gothic) 追加、Notoフォント削除、select_font_for_text()にtarget_lang引数追加、embed_fonts()をページループ前に移動、テストケース追加 |

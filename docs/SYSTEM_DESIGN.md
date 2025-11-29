@@ -132,6 +132,7 @@ ecm_translate/
 │   ├── processors/                 # File Processors
 │   │   ├── __init__.py
 │   │   ├── base.py                 # Abstract base processor
+│   │   ├── translators.py          # CellTranslator, ParagraphTranslator
 │   │   ├── excel_processor.py      # Excel (.xlsx, .xls)
 │   │   ├── word_processor.py       # Word (.docx, .doc)
 │   │   ├── pptx_processor.py       # PowerPoint (.pptx, .ppt)
@@ -593,6 +594,188 @@ class FileProcessor(ABC):
         return True
 ```
 
+### 5.3.1 Translation Abstraction Layer
+
+Excel、Word、PowerPoint のセル/テーブル翻訳を統一するための共通ロジック。
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                       Translation Abstraction                            │
+└─────────────────────────────────────────────────────────────────────────┘
+
+                         TextTranslator (共通基底)
+                                  │
+                    ┌─────────────┴─────────────┐
+                    │                           │
+                    ▼                           ▼
+            CellTranslator              ParagraphTranslator
+           (テーブル/セル用)               (本文/段落用)
+                    │                           │
+        ┌───────────┼───────────┐               │
+        │           │           │               │
+        ▼           ▼           ▼               ▼
+   Excel Cell  Word Table  PPT Table      Word/PPT
+                  Cell        Cell       Paragraphs
+```
+
+#### CellTranslator（セル翻訳・Excel準拠）
+
+Excel セルと同じロジックで Word/PowerPoint のテーブルセルを処理。
+
+```python
+# ecm_translate/processors/translators.py
+
+import re
+from datetime import datetime
+from typing import Optional
+
+
+class CellTranslator:
+    """
+    Unified cell translation logic for Excel/Word/PowerPoint tables.
+    Follows Excel translation rules for consistency.
+    """
+
+    # 翻訳スキップパターン
+    SKIP_PATTERNS = [
+        r'^[\d\s\.,\-\+\(\)\/]+$',           # 数値のみ
+        r'^\d{4}[-/]\d{1,2}[-/]\d{1,2}$',    # 日付 (YYYY-MM-DD)
+        r'^\d{1,2}[-/]\d{1,2}[-/]\d{4}$',    # 日付 (DD/MM/YYYY)
+        r'^[\w\.\-]+@[\w\.\-]+\.\w+$',        # メールアドレス
+        r'^https?://\S+$',                    # URL
+        r'^[A-Z]{2,5}[-_]?\d+$',              # コード (ABC-123)
+    ]
+
+    def __init__(self):
+        self._skip_regex = [re.compile(p) for p in self.SKIP_PATTERNS]
+
+    def should_translate(self, text: str) -> bool:
+        """
+        Determine if cell text should be translated.
+        Same logic used for Excel cells, Word table cells, and PPT table cells.
+
+        Skip conditions:
+        - Empty or whitespace only
+        - Numbers only (with formatting characters)
+        - Date patterns
+        - Email addresses
+        - URLs
+        - Product/Document codes
+        """
+        if not text:
+            return False
+
+        text = text.strip()
+        if not text:
+            return False
+
+        # Check against skip patterns
+        for regex in self._skip_regex:
+            if regex.match(text):
+                return False
+
+        return True
+
+    def extract_cell_text(self, cell) -> Optional[str]:
+        """
+        Extract text from a cell (Excel/Word/PPT).
+        Implementation varies by cell type.
+        """
+        # Excel: cell.value
+        # Word: cell.text or cell.paragraphs[].text
+        # PPT: cell.text_frame.paragraphs[].text
+        raise NotImplementedError("Subclass must implement")
+
+    def apply_translation(self, cell, translated_text: str) -> None:
+        """
+        Apply translated text to cell while preserving formatting.
+        """
+        raise NotImplementedError("Subclass must implement")
+```
+
+#### ParagraphTranslator（段落翻訳）
+
+Word/PowerPoint の本文段落用。段落スタイルを維持しながら翻訳。
+
+```python
+class ParagraphTranslator:
+    """
+    Paragraph translation logic for Word/PowerPoint body text.
+    Preserves paragraph-level styles, but not individual run formatting.
+    """
+
+    def should_translate(self, text: str) -> bool:
+        """
+        Determine if paragraph should be translated.
+        Similar to CellTranslator but may have different rules.
+        """
+        if not text:
+            return False
+
+        text = text.strip()
+        if not text:
+            return False
+
+        # Skip very short text (likely labels/numbers)
+        if len(text) < 2:
+            return False
+
+        return True
+
+    def extract_paragraph_text(self, paragraph) -> str:
+        """Extract full text from paragraph"""
+        return paragraph.text
+
+    def apply_translation(self, paragraph, translated_text: str) -> None:
+        """
+        Apply translation while preserving paragraph style.
+
+        Strategy:
+        1. Clear all runs except the first
+        2. Set translated text to first run
+        3. Paragraph style (Heading 1, Body, etc.) is preserved
+        4. First run's basic formatting is preserved
+        """
+        if paragraph.runs:
+            # Keep first run's formatting, clear others
+            paragraph.runs[0].text = translated_text
+            for run in paragraph.runs[1:]:
+                run.text = ""
+        else:
+            paragraph.text = translated_text
+```
+
+#### Formatting Preservation Strategy
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                     書式保持の範囲と方針                                 │
+└─────────────────────────────────────────────────────────────────────────┘
+
+保持される書式:
+┌─────────────────────────────────────────┐
+│ ✓ 段落スタイル（見出し1、本文、etc.）    │
+│ ✓ テーブル構造（行数、列数、結合）       │
+│ ✓ セル書式（幅、高さ、罫線、背景色）     │
+│ ✓ テキスト配置（左寄せ、中央、右寄せ）   │
+│ ✓ フォント（段落/セル単位）             │
+│ ✓ 箇条書き・番号リスト                  │
+└─────────────────────────────────────────┘
+
+保持されない書式（ユーザーが手動で調整）:
+┌─────────────────────────────────────────┐
+│ ✗ 段落内の部分的な太字・斜体            │
+│ ✗ 段落内の部分的なフォント色変更         │
+│ ✗ 段落内の部分的なフォントサイズ変更     │
+│ ✗ ハイパーリンク（テキストは翻訳される） │
+└─────────────────────────────────────────┘
+
+理由:
+- Run（テキスト断片）単位の書式保持は翻訳品質を著しく低下させる
+- 「これは**重要な**テキスト」を個別翻訳すると文脈が失われる
+- 実用上、段落単位の書式保持で十分なケースが多い
+```
+
 ### 5.4 ExcelProcessor
 
 ```python
@@ -692,6 +875,110 @@ class ExcelProcessor(FileProcessor):
 
 ### 5.5 WordProcessor
 
+#### Word Document Structure
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        Word (.docx) 構造                                 │
+└─────────────────────────────────────────────────────────────────────────┘
+
+Document
+│
+├── Sections[]                          ← 文書セクション
+│   ├── Header                          ← ヘッダー（セクションごと）
+│   │   └── Paragraphs[]
+│   └── Footer                          ← フッター（セクションごと）
+│       └── Paragraphs[]
+│
+├── Paragraphs[]                        ← 本文段落
+│   ├── Style (Heading 1, Normal, etc.) ← 段落スタイル ✓保持
+│   ├── Alignment                       ← 配置 ✓保持
+│   └── Runs[]                          ← テキスト断片
+│       ├── text                        ← テキスト
+│       ├── bold, italic                ← 書式 ✗保持しない
+│       └── font (name, size, color)    ← フォント ✗保持しない
+│
+├── Tables[]                            ← テーブル（Excel準拠で処理）
+│   └── Rows[]
+│       └── Cells[]
+│           ├── width                   ← セル幅 ✓保持
+│           ├── vertical_alignment      ← 縦配置 ✓保持
+│           └── Paragraphs[]            ← セル内段落
+│
+└── InlineShapes[] / Shapes[]           ← 図形・テキストボックス
+    └── TextFrame
+        └── Paragraphs[]
+```
+
+#### Word Translation Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    Word 翻訳フロー                                       │
+└─────────────────────────────────────────────────────────────────────────┘
+
+[Input: document.docx]
+        │
+        ▼
+┌───────────────────────────────────────────────────────────────┐
+│ 1. Document 解析                                               │
+│    doc = Document(file_path)                                  │
+└───────────────────────────────────────────────────────────────┘
+        │
+        ▼
+┌───────────────────────────────────────────────────────────────┐
+│ 2. テキスト抽出（種別ごと）                                     │
+│                                                               │
+│    [本文段落] ─────→ ParagraphTranslator.should_translate()   │
+│         │                                                     │
+│         ▼                                                     │
+│    TextBlock(id="para_0", type="paragraph", style="Heading1") │
+│    TextBlock(id="para_1", type="paragraph", style="Normal")   │
+│                                                               │
+│    [テーブル] ─────→ CellTranslator.should_translate()        │
+│         │            (Excel準拠のスキップ判定)                  │
+│         ▼                                                     │
+│    TextBlock(id="table_0_r0_c0", type="table_cell")           │
+│    TextBlock(id="table_0_r0_c1", type="table_cell")           │
+│                                                               │
+│    [ヘッダー/フッター] ─────→ ParagraphTranslator              │
+│         │                                                     │
+│         ▼                                                     │
+│    TextBlock(id="header_0_0", type="header")                  │
+│    TextBlock(id="footer_0_0", type="footer")                  │
+│                                                               │
+│    [テキストボックス] ─────→ ParagraphTranslator               │
+│         │                                                     │
+│         ▼                                                     │
+│    TextBlock(id="shape_0_para_0", type="textbox")             │
+└───────────────────────────────────────────────────────────────┘
+        │
+        ▼
+┌───────────────────────────────────────────────────────────────┐
+│ 3. バッチ翻訳                                                  │
+│    - TextBlockをチャンクに分割                                 │
+│    - Copilot に送信                                           │
+│    - 結果を block_id でマッピング                              │
+└───────────────────────────────────────────────────────────────┘
+        │
+        ▼
+┌───────────────────────────────────────────────────────────────┐
+│ 4. 翻訳適用                                                    │
+│                                                               │
+│    [段落] para.runs[0].text = translated                      │
+│           para.runs[1:].text = ""  # 残りクリア               │
+│           → 段落スタイル保持、Run書式は最初のRunのみ           │
+│                                                               │
+│    [テーブル] cell.paragraphs[0].runs[0].text = translated    │
+│           → セル書式保持（Excel準拠）                          │
+│                                                               │
+│    [ヘッダー/フッター] 段落と同様                               │
+└───────────────────────────────────────────────────────────────┘
+        │
+        ▼
+[Output: document_EN.docx]
+```
+
 ```python
 # ecm_translate/processors/word_processor.py
 
@@ -701,13 +988,24 @@ from docx import Document
 from docx.shared import Inches
 
 from .base import FileProcessor
+from .translators import CellTranslator, ParagraphTranslator
 from ecm_translate.models.types import TextBlock, FileInfo, FileType
 
 
 class WordProcessor(FileProcessor):
     """
     Processor for Word files (.docx, .doc).
+
+    Translation targets:
+    - Body paragraphs (ParagraphTranslator)
+    - Table cells (CellTranslator - Excel-compatible)
+    - Headers/Footers (ParagraphTranslator)
+    - Text boxes (ParagraphTranslator)
     """
+
+    def __init__(self):
+        self.cell_translator = CellTranslator()
+        self.para_translator = ParagraphTranslator()
 
     @property
     def file_type(self) -> FileType:
@@ -721,17 +1019,29 @@ class WordProcessor(FileProcessor):
         """Get Word file info"""
         doc = Document(file_path)
 
-        paragraph_count = len(doc.paragraphs)
-        text_count = sum(
-            1 for p in doc.paragraphs
-            if p.text and self.should_translate(p.text)
-        )
+        text_count = 0
 
-        # Count table cells
+        # Count paragraphs
+        for para in doc.paragraphs:
+            if para.text and self.para_translator.should_translate(para.text):
+                text_count += 1
+
+        # Count table cells (Excel-compatible logic)
         for table in doc.tables:
             for row in table.rows:
                 for cell in row.cells:
-                    if cell.text and self.should_translate(cell.text):
+                    if cell.text and self.cell_translator.should_translate(cell.text):
+                        text_count += 1
+
+        # Count headers/footers
+        for section in doc.sections:
+            if section.header:
+                for para in section.header.paragraphs:
+                    if para.text and self.para_translator.should_translate(para.text):
+                        text_count += 1
+            if section.footer:
+                for para in section.footer.paragraphs:
+                    if para.text and self.para_translator.should_translate(para.text):
                         text_count += 1
 
         return FileInfo(
@@ -746,9 +1056,9 @@ class WordProcessor(FileProcessor):
         """Extract text from paragraphs, tables, headers, footers"""
         doc = Document(file_path)
 
-        # Paragraphs
+        # === Body Paragraphs ===
         for idx, para in enumerate(doc.paragraphs):
-            if para.text and self.should_translate(para.text):
+            if para.text and self.para_translator.should_translate(para.text):
                 yield TextBlock(
                     id=f"para_{idx}",
                     text=para.text,
@@ -760,14 +1070,15 @@ class WordProcessor(FileProcessor):
                     }
                 )
 
-        # Tables
+        # === Tables (Excel-compatible) ===
         for table_idx, table in enumerate(doc.tables):
             for row_idx, row in enumerate(table.rows):
                 for cell_idx, cell in enumerate(row.cells):
-                    if cell.text and self.should_translate(cell.text):
+                    cell_text = cell.text
+                    if cell_text and self.cell_translator.should_translate(cell_text):
                         yield TextBlock(
                             id=f"table_{table_idx}_r{row_idx}_c{cell_idx}",
-                            text=cell.text,
+                            text=cell_text,
                             location=f"Table {table_idx + 1}, Row {row_idx + 1}, Cell {cell_idx + 1}",
                             metadata={
                                 'type': 'table_cell',
@@ -777,28 +1088,35 @@ class WordProcessor(FileProcessor):
                             }
                         )
 
-        # Headers and footers
+        # === Headers ===
         for section_idx, section in enumerate(doc.sections):
-            # Header
             if section.header:
                 for para_idx, para in enumerate(section.header.paragraphs):
-                    if para.text and self.should_translate(para.text):
+                    if para.text and self.para_translator.should_translate(para.text):
                         yield TextBlock(
                             id=f"header_{section_idx}_{para_idx}",
                             text=para.text,
                             location=f"Header (Section {section_idx + 1})",
-                            metadata={'type': 'header'}
+                            metadata={
+                                'type': 'header',
+                                'section': section_idx,
+                                'para': para_idx,
+                            }
                         )
 
-            # Footer
+            # === Footers ===
             if section.footer:
                 for para_idx, para in enumerate(section.footer.paragraphs):
-                    if para.text and self.should_translate(para.text):
+                    if para.text and self.para_translator.should_translate(para.text):
                         yield TextBlock(
                             id=f"footer_{section_idx}_{para_idx}",
                             text=para.text,
                             location=f"Footer (Section {section_idx + 1})",
-                            metadata={'type': 'footer'}
+                            metadata={
+                                'type': 'footer',
+                                'section': section_idx,
+                                'para': para_idx,
+                            }
                         )
 
     def apply_translations(
@@ -810,24 +1128,187 @@ class WordProcessor(FileProcessor):
         """Apply translations while preserving formatting"""
         doc = Document(input_path)
 
-        # Apply to paragraphs (preserve runs/formatting)
+        # === Apply to paragraphs ===
         for idx, para in enumerate(doc.paragraphs):
             block_id = f"para_{idx}"
             if block_id in translations:
-                # Preserve formatting by updating first run
-                if para.runs:
-                    para.runs[0].text = translations[block_id]
-                    for run in para.runs[1:]:
-                        run.text = ""
-                else:
-                    para.text = translations[block_id]
+                self._apply_to_paragraph(para, translations[block_id])
 
-        # Apply to tables, headers, footers...
+        # === Apply to tables ===
+        for table_idx, table in enumerate(doc.tables):
+            for row_idx, row in enumerate(table.rows):
+                for cell_idx, cell in enumerate(row.cells):
+                    block_id = f"table_{table_idx}_r{row_idx}_c{cell_idx}"
+                    if block_id in translations:
+                        # Apply to first paragraph of cell
+                        if cell.paragraphs:
+                            self._apply_to_paragraph(
+                                cell.paragraphs[0],
+                                translations[block_id]
+                            )
+                            # Clear remaining paragraphs if any
+                            for para in cell.paragraphs[1:]:
+                                for run in para.runs:
+                                    run.text = ""
+
+        # === Apply to headers/footers ===
+        for section_idx, section in enumerate(doc.sections):
+            if section.header:
+                for para_idx, para in enumerate(section.header.paragraphs):
+                    block_id = f"header_{section_idx}_{para_idx}"
+                    if block_id in translations:
+                        self._apply_to_paragraph(para, translations[block_id])
+
+            if section.footer:
+                for para_idx, para in enumerate(section.footer.paragraphs):
+                    block_id = f"footer_{section_idx}_{para_idx}"
+                    if block_id in translations:
+                        self._apply_to_paragraph(para, translations[block_id])
 
         doc.save(output_path)
+
+    def _apply_to_paragraph(self, para, translated_text: str) -> None:
+        """
+        Apply translation to paragraph, preserving paragraph style.
+
+        Strategy:
+        - Keep first run's formatting
+        - Set translated text to first run
+        - Clear remaining runs
+        """
+        if para.runs:
+            para.runs[0].text = translated_text
+            for run in para.runs[1:]:
+                run.text = ""
+        else:
+            para.text = translated_text
 ```
 
 ### 5.6 PptxProcessor
+
+#### PowerPoint Presentation Structure
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    PowerPoint (.pptx) 構造                               │
+└─────────────────────────────────────────────────────────────────────────┘
+
+Presentation
+│
+├── Slides[]                            ← スライド
+│   │
+│   ├── Shapes[]                        ← 図形（テキストボックス、オートシェイプ等）
+│   │   ├── shape_type                  ← 図形タイプ
+│   │   ├── left, top, width, height    ← 位置・サイズ ✓保持
+│   │   └── TextFrame                   ← テキストフレーム
+│   │       └── Paragraphs[]
+│   │           ├── alignment           ← 配置 ✓保持
+│   │           ├── level               ← インデントレベル ✓保持
+│   │           └── Runs[]
+│   │               ├── text
+│   │               └── font (name, size, bold, italic, color)
+│   │
+│   ├── Tables[]                        ← テーブル（Excel準拠で処理）
+│   │   └── Rows[]
+│   │       └── Cells[]
+│   │           └── TextFrame
+│   │               └── Paragraphs[]
+│   │
+│   └── NotesSlide                      ← スピーカーノート
+│       └── notes_text_frame
+│           └── Paragraphs[]
+│
+└── SlideMasters[]                      ← スライドマスター
+    └── Shapes[] (プレースホルダー)      ← 通常は翻訳対象外
+```
+
+#### PowerPoint Translation Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    PowerPoint 翻訳フロー                                 │
+└─────────────────────────────────────────────────────────────────────────┘
+
+[Input: presentation.pptx]
+        │
+        ▼
+┌───────────────────────────────────────────────────────────────┐
+│ 1. Presentation 解析                                          │
+│    prs = Presentation(file_path)                              │
+└───────────────────────────────────────────────────────────────┘
+        │
+        ▼
+┌───────────────────────────────────────────────────────────────┐
+│ 2. スライドごとにテキスト抽出                                   │
+│                                                               │
+│    for slide in slides:                                       │
+│                                                               │
+│        [テキストシェイプ] ─────→ ParagraphTranslator           │
+│             │                                                 │
+│             ▼                                                 │
+│        TextBlock(id="s0_sh1_p0", type="shape")                │
+│        TextBlock(id="s0_sh1_p1", type="shape")                │
+│                                                               │
+│        [テーブル] ─────→ CellTranslator (Excel準拠)           │
+│             │                                                 │
+│             ▼                                                 │
+│        TextBlock(id="s0_tbl0_r0_c0", type="table_cell")       │
+│        TextBlock(id="s0_tbl0_r0_c1", type="table_cell")       │
+│                                                               │
+│        [スピーカーノート] ─────→ ParagraphTranslator           │
+│             │                                                 │
+│             ▼                                                 │
+│        TextBlock(id="s0_notes_0", type="notes")               │
+└───────────────────────────────────────────────────────────────┘
+        │
+        ▼
+┌───────────────────────────────────────────────────────────────┐
+│ 3. バッチ翻訳                                                  │
+│    - 全スライドの TextBlock を収集                             │
+│    - チャンクに分割して Copilot に送信                         │
+└───────────────────────────────────────────────────────────────┘
+        │
+        ▼
+┌───────────────────────────────────────────────────────────────┐
+│ 4. 翻訳適用                                                    │
+│                                                               │
+│    [シェイプ] para.runs[0].text = translated                  │
+│              para.runs[1:].text = ""                          │
+│              → 段落配置保持、Run書式は最初のRunのみ            │
+│                                                               │
+│    [テーブル] cell.text_frame.paragraphs[0].runs[0].text      │
+│              = translated                                     │
+│              → セル書式保持（Excel準拠）                       │
+│                                                               │
+│    [ノート] 段落と同様                                         │
+└───────────────────────────────────────────────────────────────┘
+        │
+        ▼
+[Output: presentation_EN.pptx]
+```
+
+#### Table Handling in PowerPoint
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│              PowerPoint テーブルの処理（Excel準拠）                      │
+└─────────────────────────────────────────────────────────────────────────┘
+
+PowerPoint Table
+│
+├── 構造は Excel と同様
+│   └── Rows[] → Cells[] → TextFrame → Paragraphs[]
+│
+├── 保持される書式
+│   ├── セル幅・高さ
+│   ├── セル結合
+│   ├── 罫線スタイル
+│   ├── セル背景色
+│   └── テキスト配置
+│
+└── 翻訳判定は CellTranslator.should_translate() を使用
+    └── 数値、日付、URL、コードなどをスキップ
+```
 
 ```python
 # ecm_translate/processors/pptx_processor.py
@@ -836,15 +1317,26 @@ from pathlib import Path
 from typing import Iterator
 from pptx import Presentation
 from pptx.util import Inches, Pt
+from pptx.enum.shapes import MSO_SHAPE_TYPE
 
 from .base import FileProcessor
+from .translators import CellTranslator, ParagraphTranslator
 from ecm_translate.models.types import TextBlock, FileInfo, FileType
 
 
 class PptxProcessor(FileProcessor):
     """
     Processor for PowerPoint files (.pptx, .ppt).
+
+    Translation targets:
+    - Shape text frames (ParagraphTranslator)
+    - Table cells (CellTranslator - Excel-compatible)
+    - Speaker notes (ParagraphTranslator)
     """
+
+    def __init__(self):
+        self.cell_translator = CellTranslator()
+        self.para_translator = ParagraphTranslator()
 
     @property
     def file_type(self) -> FileType:
@@ -863,10 +1355,25 @@ class PptxProcessor(FileProcessor):
 
         for slide in prs.slides:
             for shape in slide.shapes:
+                # Text shapes
                 if shape.has_text_frame:
                     for para in shape.text_frame.paragraphs:
-                        if para.text and self.should_translate(para.text):
+                        if para.text and self.para_translator.should_translate(para.text):
                             text_count += 1
+
+                # Tables (Excel-compatible)
+                if shape.has_table:
+                    for row in shape.table.rows:
+                        for cell in row.cells:
+                            cell_text = cell.text_frame.text if cell.text_frame else ""
+                            if cell_text and self.cell_translator.should_translate(cell_text):
+                                text_count += 1
+
+            # Speaker notes
+            if slide.has_notes_slide and slide.notes_slide.notes_text_frame:
+                for para in slide.notes_slide.notes_text_frame.paragraphs:
+                    if para.text and self.para_translator.should_translate(para.text):
+                        text_count += 1
 
         return FileInfo(
             path=file_path,
@@ -877,43 +1384,67 @@ class PptxProcessor(FileProcessor):
         )
 
     def extract_text_blocks(self, file_path: Path) -> Iterator[TextBlock]:
-        """Extract text from slides, shapes, notes"""
+        """Extract text from slides, shapes, tables, notes"""
         prs = Presentation(file_path)
 
         for slide_idx, slide in enumerate(prs.slides):
-            # Shapes
-            for shape_idx, shape in enumerate(slide.shapes):
+            shape_counter = 0
+            table_counter = 0
+
+            for shape in slide.shapes:
+                # === Text Shapes ===
                 if shape.has_text_frame:
                     for para_idx, para in enumerate(shape.text_frame.paragraphs):
-                        if para.text and self.should_translate(para.text):
+                        if para.text and self.para_translator.should_translate(para.text):
                             yield TextBlock(
-                                id=f"slide_{slide_idx}_shape_{shape_idx}_para_{para_idx}",
+                                id=f"s{slide_idx}_sh{shape_counter}_p{para_idx}",
                                 text=para.text,
-                                location=f"Slide {slide_idx + 1}, Shape {shape_idx + 1}",
+                                location=f"Slide {slide_idx + 1}, Shape {shape_counter + 1}",
                                 metadata={
                                     'type': 'shape',
                                     'slide': slide_idx,
-                                    'shape': shape_idx,
+                                    'shape': shape_counter,
                                     'para': para_idx,
                                 }
                             )
+                    shape_counter += 1
 
-            # Speaker notes
-            if slide.has_notes_slide:
+                # === Tables (Excel-compatible) ===
+                if shape.has_table:
+                    table = shape.table
+                    for row_idx, row in enumerate(table.rows):
+                        for cell_idx, cell in enumerate(row.cells):
+                            cell_text = cell.text_frame.text if cell.text_frame else ""
+                            if cell_text and self.cell_translator.should_translate(cell_text):
+                                yield TextBlock(
+                                    id=f"s{slide_idx}_tbl{table_counter}_r{row_idx}_c{cell_idx}",
+                                    text=cell_text,
+                                    location=f"Slide {slide_idx + 1}, Table {table_counter + 1}, Row {row_idx + 1}, Cell {cell_idx + 1}",
+                                    metadata={
+                                        'type': 'table_cell',
+                                        'slide': slide_idx,
+                                        'table': table_counter,
+                                        'row': row_idx,
+                                        'col': cell_idx,
+                                    }
+                                )
+                    table_counter += 1
+
+            # === Speaker Notes ===
+            if slide.has_notes_slide and slide.notes_slide.notes_text_frame:
                 notes_frame = slide.notes_slide.notes_text_frame
-                if notes_frame:
-                    for para_idx, para in enumerate(notes_frame.paragraphs):
-                        if para.text and self.should_translate(para.text):
-                            yield TextBlock(
-                                id=f"slide_{slide_idx}_notes_{para_idx}",
-                                text=para.text,
-                                location=f"Slide {slide_idx + 1}, Notes",
-                                metadata={
-                                    'type': 'notes',
-                                    'slide': slide_idx,
-                                    'para': para_idx,
-                                }
-                            )
+                for para_idx, para in enumerate(notes_frame.paragraphs):
+                    if para.text and self.para_translator.should_translate(para.text):
+                        yield TextBlock(
+                            id=f"s{slide_idx}_notes_{para_idx}",
+                            text=para.text,
+                            location=f"Slide {slide_idx + 1}, Notes",
+                            metadata={
+                                'type': 'notes',
+                                'slide': slide_idx,
+                                'para': para_idx,
+                            }
+                        )
 
     def apply_translations(
         self,
@@ -924,10 +1455,63 @@ class PptxProcessor(FileProcessor):
         """Apply translations to PowerPoint"""
         prs = Presentation(input_path)
 
-        # Apply translations to shapes and notes
-        # Preserve formatting (font, size, color)
+        for slide_idx, slide in enumerate(prs.slides):
+            shape_counter = 0
+            table_counter = 0
+
+            for shape in slide.shapes:
+                # === Apply to text shapes ===
+                if shape.has_text_frame:
+                    for para_idx, para in enumerate(shape.text_frame.paragraphs):
+                        block_id = f"s{slide_idx}_sh{shape_counter}_p{para_idx}"
+                        if block_id in translations:
+                            self._apply_to_paragraph(para, translations[block_id])
+                    shape_counter += 1
+
+                # === Apply to tables ===
+                if shape.has_table:
+                    table = shape.table
+                    for row_idx, row in enumerate(table.rows):
+                        for cell_idx, cell in enumerate(row.cells):
+                            block_id = f"s{slide_idx}_tbl{table_counter}_r{row_idx}_c{cell_idx}"
+                            if block_id in translations:
+                                if cell.text_frame and cell.text_frame.paragraphs:
+                                    self._apply_to_paragraph(
+                                        cell.text_frame.paragraphs[0],
+                                        translations[block_id]
+                                    )
+                                    # Clear remaining paragraphs
+                                    for para in cell.text_frame.paragraphs[1:]:
+                                        for run in para.runs:
+                                            run.text = ""
+                    table_counter += 1
+
+            # === Apply to speaker notes ===
+            if slide.has_notes_slide and slide.notes_slide.notes_text_frame:
+                notes_frame = slide.notes_slide.notes_text_frame
+                for para_idx, para in enumerate(notes_frame.paragraphs):
+                    block_id = f"s{slide_idx}_notes_{para_idx}"
+                    if block_id in translations:
+                        self._apply_to_paragraph(para, translations[block_id])
 
         prs.save(output_path)
+
+    def _apply_to_paragraph(self, para, translated_text: str) -> None:
+        """
+        Apply translation to paragraph, preserving paragraph style.
+
+        Strategy:
+        - Keep first run's formatting (font, size, color)
+        - Set translated text to first run
+        - Clear remaining runs
+        """
+        if para.runs:
+            para.runs[0].text = translated_text
+            for run in para.runs[1:]:
+                run.text = ""
+        else:
+            # No runs - add text directly
+            para.text = translated_text
 ```
 
 ### 5.7 PdfProcessor

@@ -1127,10 +1127,8 @@ class ExcelProcessor(FileProcessor):
 Document
 │
 ├── Sections[]                          ← 文書セクション
-│   ├── Header                          ← ヘッダー（セクションごと）
-│   │   └── Paragraphs[]
-│   └── Footer                          ← フッター（セクションごと）
-│       └── Paragraphs[]
+│   ├── Header                          ← ヘッダー ✗翻訳対象外
+│   └── Footer                          ← フッター ✗翻訳対象外
 │
 ├── Paragraphs[]                        ← 本文段落
 │   ├── Style (Heading 1, Normal, etc.) ← 段落スタイル ✓保持
@@ -1183,11 +1181,7 @@ Document
 │    TextBlock(id="table_0_r0_c0", type="table_cell")           │
 │    TextBlock(id="table_0_r0_c1", type="table_cell")           │
 │                                                               │
-│    [ヘッダー/フッター] ─────→ ParagraphTranslator              │
-│         │                                                     │
-│         ▼                                                     │
-│    TextBlock(id="header_0_0", type="header")                  │
-│    TextBlock(id="footer_0_0", type="footer")                  │
+│    [ヘッダー/フッター] ─────→ ✗ スキップ（翻訳対象外）          │
 │                                                               │
 │    [テキストボックス] ─────→ ParagraphTranslator               │
 │         │                                                     │
@@ -1213,8 +1207,6 @@ Document
 │                                                               │
 │    [テーブル] cell.paragraphs[0].runs[0].text = translated    │
 │           → セル書式保持（Excel準拠）                          │
-│                                                               │
-│    [ヘッダー/フッター] 段落と同様                               │
 └───────────────────────────────────────────────────────────────┘
         │
         ▼
@@ -1241,8 +1233,9 @@ class WordProcessor(FileProcessor):
     Translation targets:
     - Body paragraphs (ParagraphTranslator)
     - Table cells (CellTranslator - Excel-compatible)
-    - Headers/Footers (ParagraphTranslator)
     - Text boxes (ParagraphTranslator)
+
+    Note: Headers/Footers are NOT translated (excluded from processing)
     """
 
     def __init__(self):
@@ -1275,16 +1268,7 @@ class WordProcessor(FileProcessor):
                     if cell.text and self.cell_translator.should_translate(cell.text):
                         text_count += 1
 
-        # Count headers/footers
-        for section in doc.sections:
-            if section.header:
-                for para in section.header.paragraphs:
-                    if para.text and self.para_translator.should_translate(para.text):
-                        text_count += 1
-            if section.footer:
-                for para in section.footer.paragraphs:
-                    if para.text and self.para_translator.should_translate(para.text):
-                        text_count += 1
+        # Note: Headers/Footers are excluded from translation
 
         return FileInfo(
             path=file_path,
@@ -1330,36 +1314,7 @@ class WordProcessor(FileProcessor):
                             }
                         )
 
-        # === Headers ===
-        for section_idx, section in enumerate(doc.sections):
-            if section.header:
-                for para_idx, para in enumerate(section.header.paragraphs):
-                    if para.text and self.para_translator.should_translate(para.text):
-                        yield TextBlock(
-                            id=f"header_{section_idx}_{para_idx}",
-                            text=para.text,
-                            location=f"Header (Section {section_idx + 1})",
-                            metadata={
-                                'type': 'header',
-                                'section': section_idx,
-                                'para': para_idx,
-                            }
-                        )
-
-            # === Footers ===
-            if section.footer:
-                for para_idx, para in enumerate(section.footer.paragraphs):
-                    if para.text and self.para_translator.should_translate(para.text):
-                        yield TextBlock(
-                            id=f"footer_{section_idx}_{para_idx}",
-                            text=para.text,
-                            location=f"Footer (Section {section_idx + 1})",
-                            metadata={
-                                'type': 'footer',
-                                'section': section_idx,
-                                'para': para_idx,
-                            }
-                        )
+        # Note: Headers/Footers are excluded from translation
 
     def apply_translations(
         self,
@@ -1393,19 +1348,7 @@ class WordProcessor(FileProcessor):
                                 for run in para.runs:
                                     run.text = ""
 
-        # === Apply to headers/footers ===
-        for section_idx, section in enumerate(doc.sections):
-            if section.header:
-                for para_idx, para in enumerate(section.header.paragraphs):
-                    block_id = f"header_{section_idx}_{para_idx}"
-                    if block_id in translations:
-                        self._apply_to_paragraph(para, translations[block_id])
-
-            if section.footer:
-                for para_idx, para in enumerate(section.footer.paragraphs):
-                    block_id = f"footer_{section_idx}_{para_idx}"
-                    if block_id in translations:
-                        self._apply_to_paragraph(para, translations[block_id])
+        # Note: Headers/Footers are excluded from translation
 
         doc.save(output_path)
 

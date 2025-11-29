@@ -1,4 +1,4 @@
-# PDF翻訳機能 技術仕様書 v8.4
+# PDF翻訳機能 技術仕様書 v8.5
 
 ## 概要
 
@@ -238,10 +238,10 @@ class TableStructureRecognizerSchema:
     n_col: int                 # 列数
     rows: list[...]            # 水平グリッド線
     cols: list[...]            # 垂直グリッド線
-    cells: list[CellSchema]    # セルリスト
-    order: int                 # 読み順
+    cells: list[TableCellSchema]    # セルリスト
+    order: int                      # 読み順
 
-class CellSchema:
+class TableCellSchema:
     row: int                   # 行インデックス
     col: int                   # 列インデックス
     row_span: int              # 行スパン
@@ -279,11 +279,29 @@ class FigureSchema:
 import re
 import unicodedata
 
+# デフォルト数式フォントパターン (PDFMathTranslate converter.py:156-177 準拠)
+DEFAULT_VFONT_PATTERN = (
+    r"(CM[^R]|MS.M|XY|MT|BL|RM|EU|LA|RS|LINE|LCIRCLE|"
+    r"TeX-|rsfs|txsy|wasy|stmary|"
+    r".*Mono|.*Code|.*Ital|.*Sym|.*Math)"
+)
+
+# 数式として扱うUnicodeカテゴリ
+FORMULA_UNICODE_CATEGORIES = [
+    "Lm",  # Letter, modifier
+    "Mn",  # Mark, nonspacing
+    "Sk",  # Symbol, modifier
+    "Sm",  # Symbol, math
+    "Zl",  # Separator, line
+    "Zp",  # Separator, paragraph
+    "Zs",  # Separator, space
+]
+
 def vflag(font: str, char: str, vfont: str = None, vchar: str = None) -> bool:
     """
     文字が数式かどうかを判定
 
-    PDFMathTranslate converter.py:190-224 準拠
+    PDFMathTranslate converter.py:156-177 準拠
 
     Args:
         font: フォント名
@@ -300,22 +318,16 @@ def vflag(font: str, char: str, vfont: str = None, vchar: str = None) -> bool:
         return True
 
     # Rule 2: フォントベース検出
-    if vfont:
-        if re.match(vfont, font):
-            return True
-    else:
-        # デフォルトLaTeXフォント: CM*, MS*, XY, TeX-*, rsfs, wasy, etc.
-        if re.match(r"(CM[^R]|MS.M|XY|.*Math)", font):
-            return True
+    font_pattern = vfont if vfont else DEFAULT_VFONT_PATTERN
+    if re.match(font_pattern, font):
+        return True
 
     # Rule 3: 文字クラス検出
     if vchar:
         if re.match(vchar, char):
             return True
     else:
-        # Unicodeカテゴリ: Lm (修飾), Mn (マーク), Sk (記号), Sm (数学)
-        # + ギリシャ文字 (U+0370-U+03FF)
-        if char and unicodedata.category(char[0]) in ["Lm", "Mn", "Sk", "Sm"]:
+        if char and unicodedata.category(char[0]) in FORMULA_UNICODE_CATEGORIES:
             return True
 
     return False
@@ -932,12 +944,33 @@ Input Data
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 9.2 ドラッグ&ドロップ実装
+### 9.2 ルートウィンドウ設定
+
+CustomTkinter と tkinterdnd2 を併用するには、ルートウィンドウにDnD機能を追加する必要がある。
 
 ```python
 import customtkinter as ctk
-from tkinterdnd2 import DND_FILES, TkinterDnD
+from tkinterdnd2 import TkinterDnD
+
+class CTkDnD(ctk.CTk, TkinterDnD.DnDWrapper):
+    """CustomTkinter + tkinterdnd2 ハイブリッドルートウィンドウ"""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.TkdndVersion = TkinterDnD._require(self)
+
+# アプリケーション起動時
+app = CTkDnD()  # ctk.CTk() の代わりに使用
+```
+
+### 9.3 ドラッグ&ドロップ実装
+
+```python
+import tkinter as tk
+import customtkinter as ctk
+from tkinterdnd2 import DND_FILES
 from pathlib import Path
+import re
 
 class PDFDropArea(ctk.CTkFrame):
     """PDFファイルドラッグ&ドロップエリア"""
@@ -952,23 +985,24 @@ class PDFDropArea(ctk.CTkFrame):
 
     def _setup_ui(self):
         """UI構築"""
-        # ドロップエリア
-        self.drop_frame = ctk.CTkFrame(
+        # ドロップエリア (tkinter.Frame を使用 - DnD互換性のため)
+        self.drop_frame = tk.Frame(
             self,
             width=500,
             height=200,
-            border_width=2,
-            border_color="#666666",
-            fg_color="#2a2a2a",
+            bg="#2a2a2a",
+            highlightthickness=2,
+            highlightbackground="#666666",
         )
         self.drop_frame.pack(padx=20, pady=20, fill="both", expand=True)
         self.drop_frame.pack_propagate(False)
 
-        # アイコンとテキスト
+        # アイコンとテキスト (CTkLabelはtk.Frame内で使用可能)
         self.icon_label = ctk.CTkLabel(
             self.drop_frame,
             text="📄",
             font=("", 48),
+            fg_color="transparent",
         )
         self.icon_label.pack(pady=(30, 10))
 
@@ -976,6 +1010,7 @@ class PDFDropArea(ctk.CTkFrame):
             self.drop_frame,
             text="PDFファイルをここにドラッグ&ドロップ",
             font=("", 16),
+            fg_color="transparent",
         )
         self.drop_label.pack()
 
@@ -984,6 +1019,7 @@ class PDFDropArea(ctk.CTkFrame):
             text="または",
             font=("", 12),
             text_color="#888888",
+            fg_color="transparent",
         )
         self.or_label.pack(pady=10)
 
@@ -1001,6 +1037,7 @@ class PDFDropArea(ctk.CTkFrame):
             text="対応形式: .pdf",
             font=("", 10),
             text_color="#666666",
+            fg_color="transparent",
         )
         self.format_label.pack(pady=(15, 0))
 
@@ -1017,25 +1054,33 @@ class PDFDropArea(ctk.CTkFrame):
 
     def _setup_dnd(self):
         """ドラッグ&ドロップ設定"""
-        # tkinterdnd2を使用
+        # tk.Frame に対してDnD登録
         self.drop_frame.drop_target_register(DND_FILES)
         self.drop_frame.dnd_bind("<<Drop>>", self._on_drop)
         self.drop_frame.dnd_bind("<<DragEnter>>", self._on_drag_enter)
         self.drop_frame.dnd_bind("<<DragLeave>>", self._on_drag_leave)
 
+    def _parse_drop_data(self, data: str) -> list[str]:
+        """ドロップデータをパース (複数ファイル・スペース対応)"""
+        files = []
+        if "{" in data:
+            # 複数ファイルまたはスペース含むパス: {file1} {file2}
+            files = re.findall(r'\{([^}]+)\}', data)
+        else:
+            # 単一ファイル
+            files = [data.strip()]
+        return files
+
     def _on_drop(self, event):
         """ファイルドロップ時"""
-        file_path = event.data
-        # 複数ファイル対応 (最初の1つを使用)
-        if file_path.startswith("{"):
-            file_path = file_path.split("}")[0][1:]
-
-        self._validate_and_set_file(Path(file_path))
+        files = self._parse_drop_data(event.data)
+        if files:
+            self._validate_and_set_file(Path(files[0]))
         self._reset_drop_style()
 
     def _on_drag_enter(self, event):
         """ドラッグ進入時"""
-        self.drop_frame.configure(border_color="#0078d4")
+        self.drop_frame.configure(highlightbackground="#0078d4")
 
     def _on_drag_leave(self, event):
         """ドラッグ退出時"""
@@ -1043,7 +1088,7 @@ class PDFDropArea(ctk.CTkFrame):
 
     def _reset_drop_style(self):
         """スタイルリセット"""
-        self.drop_frame.configure(border_color="#666666")
+        self.drop_frame.configure(highlightbackground="#666666")
 
     def _on_select_click(self):
         """ファイル選択ボタンクリック"""
@@ -1093,7 +1138,7 @@ class PDFDropArea(ctk.CTkFrame):
         return self.selected_file
 ```
 
-### 9.3 進捗表示
+### 9.4 進捗表示
 
 ```python
 class PDFProgressBar(ctk.CTkFrame):
@@ -1175,14 +1220,14 @@ class PDFProgressBar(ctk.CTkFrame):
         self.status_label.configure(text="", text_color="#888888")
 ```
 
-### 9.4 依存パッケージ
+### 9.5 依存パッケージ
 
 ```python
 # requirements.txt 追加
 tkinterdnd2 >= 0.3.0   # ドラッグ&ドロップ対応
 ```
 
-### 9.5 既存UIとの統合
+### 9.6 既存UIとの統合
 
 既存のExcel翻訳UIとの統合方針:
 
@@ -1335,3 +1380,4 @@ def analyze_with_fallback(img: np.ndarray) -> DocumentAnalyzerSchema:
 | v8.2 | 2024-11 | 出力仕様を明確化 (PDF出力のみ、編集不可)、編集が必要な場合は既存Excel翻訳を使用 |
 | v8.3 | 2024-11 | バイリンガルPDF出力機能を削除 |
 | v8.4 | 2024-11 | UI設計セクション追加 (PDFドラッグ&ドロップエリア、進捗表示) |
+| v8.5 | 2024-11 | API整合性修正: CellSchema→TableCellSchema、vflag()フォントパターン拡充、CustomTkinter+tkinterdnd2互換性対応 |

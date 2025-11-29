@@ -384,13 +384,18 @@ class TranslationService:
         self,
         text: str,
         direction: TranslationDirection,
+        reference_files: Optional[list[Path]] = None,
     ) -> TranslationResult:
         """
         Translate plain text.
 
+        NOTE: Reference files (glossary, etc.) are attached to Copilot
+        for both text and file translations.
+
         Args:
             text: Source text to translate
             direction: Translation direction
+            reference_files: Optional list of reference files to attach
 
         Returns:
             TranslationResult with output_text
@@ -434,6 +439,9 @@ class TranslationService:
 
 ### 5.2 CopilotHandler
 
+> **既存コード再利用**: `translate.py` の `CopilotHandler` をリファクタリング。
+> メソッド名変更: `launch()` → `connect()`, `close()` → `disconnect()`
+
 ```python
 # ecm_translate/services/copilot_handler.py
 
@@ -458,6 +466,9 @@ class CopilotHandler:
         """
         Connect to Copilot.
         Launches browser and waits for ready state.
+
+        NOTE: Called automatically on app startup (background task).
+        UI shows "Connecting to Copilot..." until connected.
 
         Args:
             on_progress: Callback for connection status updates
@@ -1521,6 +1532,14 @@ class PptxProcessor(FileProcessor):
 
 ### 5.7 PdfProcessor
 
+> **重要**: PDF翻訳は既存の `pdf_translator.py` のロジックをすべて引き継ぎます。
+> 以下のコンポーネントを移行:
+> - **yomitoku**: OCR + レイアウト解析
+> - **FormulaManager**: 数式保護 (LaTeX, ${...}$)
+> - **FontRegistry**: 多言語フォント管理 (ja/en/zh-CN/ko)
+> - **ContentStreamReplacer**: PDFコンテンツストリーム置換
+> - **PdfOperatorGenerator**: PDF操作生成
+
 ```python
 # ecm_translate/processors/pdf_processor.py
 
@@ -1535,7 +1554,9 @@ from ecm_translate.models.types import TextBlock, FileInfo, FileType
 class PdfProcessor(FileProcessor):
     """
     Processor for PDF files.
-    Uses PyMuPDF for text extraction and PDF reconstruction.
+    Uses yomitoku for OCR/layout analysis and PyMuPDF for reconstruction.
+
+    Migrated from: pdf_translator.py
     """
 
     @property
@@ -1825,37 +1846,26 @@ Role Definition
 
 Critical Rules (優先順位順)
 
-1. 記号禁止 (NO SYMBOLS)
-   比較・変動・関係性を示す記号は絶対に使用しない。必ず英単語を使用する。
-   - 禁止: > < = ↑ ↓ ~
-   - 例: 「売上↑」→ "Sales up" (NOT "Sales↑")
-
-2. 出力形式厳守
+1. 出力形式厳守
    翻訳結果のみを出力。Markdownの枠や解説は不要。
 
-3. 簡潔な翻訳 (Compression)
-   - 冠詞(a/the)、Be動詞は可能な限り省略
-   - 見出しは名詞句で表現
-   - 一般的な略語を使用
+2. 自然な翻訳
+   - 読みやすく自然な英語に翻訳
+   - 過度な省略は避ける
 
-4. 数値表記
+3. 数値表記（必須ルール）
    - 億 → oku (例: 4,500億円 → 4,500 oku yen)
    - 千単位 → k (例: 12,000 → 12k)
    - 負数 → () (例: ▲50 → (50))
-
-Abbreviation Examples
-- Operating Profit → OP
-- Year Over Year → YOY
-- Consolidated → Consol.
-- Accounting → Acct.
-- Production → Prod.
-- Volume → Vol.
 
 {reference_section}
 
 Input
 {input_text}
 ```
+
+> **Note**: 以前のバージョンでは冠詞省略・略語強制などの圧縮ルールがありましたが、
+> より自然な翻訳を優先するため緩和されました。数値表記ルール（oku/k/負数）のみ維持。
 
 #### EN → JP Prompt Template
 
@@ -1871,21 +1881,14 @@ Critical Rules (優先順位順)
 1. 出力形式厳守
    翻訳結果のみを出力。Markdownの枠や解説は不要。
 
-2. 簡潔な日本語 (Compression)
-   - 丁寧語（です・ます調）は使用しない
-   - 簡潔な体言止めを使用
-   - 見出しは名詞句で表現
+2. 自然な翻訳
+   - 読みやすく自然な日本語に翻訳
+   - 文脈に応じた適切な表現を使用
 
-3. 数値表記
+3. 数値表記（必須ルール）
    - oku → 億 (例: 4,500 oku → 4,500億)
    - k → 千または000 (例: 12k → 12,000 または 1.2万)
    - () → ▲ (例: (50) → ▲50)
-
-4. 略語変換
-   - OP → 営業利益
-   - YOY → 前年比
-   - QoQ → 前期比
-   - FY → 年度
 
 {reference_section}
 
@@ -2072,7 +2075,33 @@ class CopilotHandler:
         pass
 ```
 
-### 7.5 Reference File Formats
+### 7.5 Reference Files Behavior
+
+**参考ファイルの動作仕様**:
+
+```
+起動時:
+  └→ settings.json の reference_files を読み込み
+     └→ デフォルト: ["glossary.csv"]
+     └→ 存在しないファイルは無視（エラーなし）
+
+翻訳時:
+  └→ 現在の参考ファイルリストをCopilotに添付
+
+UIでの操作:
+  └→ ファイルの追加/削除が可能
+  └→ セッション中のみ記憶（設定ファイルには保存しない）
+
+終了時:
+  └→ UIで追加したファイルは破棄
+  └→ 次回起動時は settings.json のリストに戻る
+```
+
+> **設計意図**: UIで一時的に追加したファイルは保存しないことで、
+> 毎回クリーンな状態から始められます。永続的に追加したい場合は
+> settings.json を直接編集してください。
+
+### 7.6 Reference File Formats
 
 参考ファイルとして以下の形式をサポート:
 
@@ -2091,7 +2120,7 @@ Japanese,English
 前年比,YOY
 ```
 
-### 7.6 Reference Files UI Component
+### 7.7 Reference Files UI Component
 
 翻訳ボタンの上に配置し、目立つ位置で参考ファイルを管理。
 
@@ -2249,7 +2278,7 @@ class RetryStrategy:
 ```json
 // config/settings.json
 {
-    "reference_files": [],
+    "reference_files": ["glossary.csv"],
     "output_directory": null,
     "start_with_windows": false,
     "last_direction": "jp_to_en",
@@ -2262,12 +2291,25 @@ class RetryStrategy:
 }
 ```
 
-**出力ファイルの命名規則（固定）:**
-| 方向 | 入力 | 出力 |
-|------|------|------|
-| JP → EN | `report.xlsx` | `report_EN.xlsx` |
-| EN → JP | `report.xlsx` | `report_JP.xlsx` |
+**参考ファイルの設定**:
+- デフォルト: `["glossary.csv"]`
+- 存在しないファイルは無視（エラーなし）
+- UIで追加したファイルは設定に保存されない（セッション中のみ）
 
+**出力ファイルの命名規則:**
+
+```
+基本ルール:
+  JP → EN: {filename}_EN.{ext}
+  EN → JP: {filename}_JP.{ext}
+
+重複時の自動番号付与:
+  report_EN.xlsx      ← 存在しない場合
+  report_EN_2.xlsx    ← report_EN.xlsx が存在する場合
+  report_EN_3.xlsx    ← report_EN_2.xlsx も存在する場合
+```
+
+※ 上書き確認ダイアログは表示しない。自動で一意な名前を生成。
 ※ 元ファイルは変更しない。常に新規ファイルとして保存。
 
 ### 9.2 Reference Files (参考ファイル)
@@ -2327,38 +2369,121 @@ tests/
 
 ## 11. Deployment
 
-### 11.1 PyInstaller Build
+### 11.1 配布方法
 
-```python
-# build.py
+PyInstallerは使用せず、`setup.bat` + `make_distribution.bat` でzip配布。
 
-import PyInstaller.__main__
+**理由**:
+- NiceGUI + yomitoku + torch の組み合わせはPyInstallerとの相性が悪い
+- uvによる環境構築が安定している
+- デバッグが容易
 
-PyInstaller.__main__.run([
-    'app.py',
-    '--name=YakuLingo',
-    '--windowed',
-    '--onedir',
-    '--collect-all=nicegui',
-    '--add-data=prompts:prompts',
-    '--add-data=config:config',
-    '--icon=assets/icon.ico',
-])
+### 11.2 Batch Scripts
+
+#### setup.bat（初回セットアップ）
+
+```batch
+# 主な処理:
+1. uv.exe のダウンロード
+2. Python 3.11 のインストール
+3. 依存関係のインストール (uv sync)
+4. Playwright ブラウザのインストール
 ```
 
-### 11.2 Distribution Structure
+#### ★run.bat（起動スクリプト）
+
+```batch
+# 主な処理:
+1. 仮想環境のアクティベート
+2. NiceGUI サーバー起動 (localhost:8765)
+3. ブラウザ自動オープン
+```
+
+#### make_distribution.bat（配布パッケージ作成）
+
+```batch
+# 主な処理:
+1. 不要ファイルのクリーンアップ
+2. パスの可搬性修正
+3. zip アーカイブ作成
+```
+
+### 11.3 Distribution Structure
 
 ```
-YakuLingo/
-├── YakuLingo.exe
-├── _internal/               # PyInstaller internals
+YakuLingo_YYYYMMDD.zip
+├── .venv/                    # Python仮想環境
+├── .uv-python/               # Python 3.11 本体
+├── .playwright-browsers/     # Chromium
+├── ecm_translate/            # メインパッケージ
+│   ├── __init__.py
+│   ├── ui/
+│   │   ├── __init__.py
+│   │   ├── app.py
+│   │   ├── state.py
+│   │   ├── styles.py
+│   │   └── components/
+│   ├── services/
+│   │   ├── __init__.py
+│   │   ├── translation_service.py
+│   │   ├── copilot_handler.py
+│   │   └── prompt_builder.py
+│   ├── processors/
+│   │   ├── __init__.py
+│   │   ├── base.py
+│   │   ├── translators.py
+│   │   ├── excel_processor.py
+│   │   ├── word_processor.py
+│   │   ├── pptx_processor.py
+│   │   └── pdf_processor.py
+│   ├── models/
+│   │   ├── __init__.py
+│   │   └── types.py
+│   └── config/
+│       ├── __init__.py
+│       └── settings.py
 ├── prompts/
-│   └── *.txt
+│   ├── translate_jp_to_en.txt
+│   └── translate_en_to_jp.txt
 ├── config/
 │   └── settings.json
-├── reference_files/         # 参考ファイル置き場
-│   └── (user files...)
-└── README.txt
+├── app.py                    # エントリーポイント
+├── glossary.csv              # デフォルト参考ファイル
+├── pyproject.toml
+├── uv.toml
+├── ★run.bat
+├── setup.bat
+└── README.md
+```
+
+### 11.4 System Requirements
+
+| 項目 | 要件 |
+|------|------|
+| OS | Windows 10/11 |
+| Python | 3.11（setup.batで自動インストール） |
+| ブラウザ | Chromium（Playwright自動インストール） |
+| ネットワーク | M365 Copilotへのアクセス |
+| ポート | 8765（localhost） |
+
+### 11.5 起動フロー
+
+```
+ユーザー: ★run.bat をダブルクリック
+    │
+    ▼
+★run.bat:
+    ├→ 仮想環境のパスを設定
+    ├→ PLAYWRIGHT_BROWSERS_PATH を設定
+    ├→ python app.py を実行
+    │
+    ▼
+app.py:
+    ├→ NiceGUI サーバー起動 (port=8765)
+    ├→ ブラウザ自動オープン (http://localhost:8765)
+    └→ コンソールにログ出力
+
+ユーザー: ブラウザでアプリを操作
 ```
 
 ---
@@ -2367,21 +2492,25 @@ YakuLingo/
 
 ### 12.1 Code Reuse
 
-| v1 Component | v2 Usage |
-|--------------|----------|
-| `CopilotHandler` | Refactor, reuse core logic |
-| `pdf_translator.py` | Migrate to `PdfProcessor` |
-| `TranslationValidator` | Reuse in `TranslationService` |
-| Prompt files | Reorganize, reuse content |
+| v1 Component | v2 Usage | 変更点 |
+|--------------|----------|--------|
+| `CopilotHandler` | Refactor, reuse core logic | `launch()`→`connect()`, `close()`→`disconnect()` |
+| `TranslationValidator` | **そのまま再利用** | 変更なし |
+| `IntelligentResponseParser` | **そのまま再利用** | 変更なし |
+| `SmartRetryStrategy` | **そのまま再利用** | 変更なし |
+| `pdf_translator.py` | Migrate to `PdfProcessor` | FileProcessor形式に適合 |
+| Prompt files | Reorganize, simplify | 圧縮ルール緩和、2ファイルに統合 |
 
 ### 12.2 Deprecated Components
 
 | Component | Reason |
 |-----------|--------|
-| `ExcelHandler` (COM) | Replaced by file-based processing |
+| `ExcelHandler` (COM) | Replaced by file-based processing (openpyxl) |
+| `UniversalTranslator` | Replaced by UI-based text translation |
 | Tkinter UI | Replaced by NiceGUI |
 | System tray | Not needed in new design |
-| Global hotkeys | Not needed (file-based workflow) |
+| Global hotkeys | Not needed (browser-based workflow) |
+| Selection screenshot | Not needed (file-based workflow) |
 
 ---
 

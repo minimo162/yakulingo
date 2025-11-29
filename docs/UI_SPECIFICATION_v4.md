@@ -216,9 +216,11 @@
 
 1. **Input**: User types in source textarea
 2. **Translate**: User clicks "Translate" button
-3. **Loading**: Button shows spinner, disabled
+3. **Loading**: Button shows spinner, disabled, **tab switching disabled**
 4. **Result**: Translation appears in target textarea
 5. **Copy**: User clicks copy button → toast "Copied!"
+
+> **Note**: テキスト翻訳時も参考ファイル（用語集等）がCopilotに添付されます。
 
 ### 5.6 Language Swap Effect
 
@@ -327,6 +329,16 @@
 | Progress bar | Full width, primary color fill |
 | Status text | Current operation (e.g., "Sheet 3 of 4") |
 | Time estimate | Approximate remaining time |
+
+#### UI State During Translation
+
+| 項目 | 状態 |
+|------|------|
+| タブ切り替え | **禁止**（グレーアウト） |
+| ファイル選択 | 禁止 |
+| 設定変更 | 禁止 |
+| キャンセルボタン | 有効 |
+| アプリ終了 | 許可（即終了、確認なし） |
 
 ### 6.4 State: Complete
 
@@ -666,6 +678,18 @@ NiceGUI (Python)
 └── Tailwind CSS (Styling)
 ```
 
+**実行形態**:
+- ブラウザベースUI（デスクトップアプリではない）
+- `★run.bat` でNiceGUIサーバー起動 → ブラウザ自動オープン
+- ポート番号: `8765` (固定)
+- URL: `http://localhost:8765`
+
+**Python要件**:
+- Python 3.11（yomitoku/torch互換性のため）
+
+> **Note**: 初回起動時にファイアウォール警告が表示される場合があります。
+> 「プライベートネットワーク」へのアクセスを許可してください。
+
 ### 15.2 File Processing Libraries
 
 | Format | Library |
@@ -673,7 +697,13 @@ NiceGUI (Python)
 | Excel | `openpyxl` |
 | Word | `python-docx` |
 | PowerPoint | `python-pptx` |
-| PDF | `PyMuPDF` + custom renderer |
+| PDF | `yomitoku` (OCR) + `PyMuPDF` (再構築) |
+
+> **PDF翻訳**: 既存の `pdf_translator.py` のロジックをすべて引き継ぎます。
+> - yomitoku（OCR + レイアウト解析）
+> - FormulaManager（数式保護）
+> - FontRegistry（多言語フォント管理）
+> - ContentStreamReplacer（PDF再構築）
 
 ### 15.3 Translation Backend
 
@@ -681,44 +711,124 @@ NiceGUI (Python)
 - Batch processing for large documents
 - Retry logic with exponential backoff
 
+### 15.4 Application Startup
+
+```
+アプリ起動フロー:
+  1. NiceGUI サーバー起動
+  2. ブラウザ自動オープン
+  3. Copilot 自動接続開始（バックグラウンド）
+  4. 接続完了まで翻訳ボタンは disabled
+  5. 接続完了後、翻訳機能が有効化
+```
+
+**Copilot接続状態の表示**:
+- 接続中: "Connecting to Copilot..." (spinner)
+- 接続完了: 表示なし（通常状態）
+- 接続失敗: エラーメッセージ + リトライボタン
+
+### 15.5 Error Handling & Auto-Retry
+
+翻訳失敗時は自動でリトライ（SmartRetryStrategy）:
+
+| リトライ回数 | 待機時間 | 動作 |
+|-------------|---------|------|
+| 1回目 | 2秒 | 同じプロンプトで再試行 |
+| 2回目 | 4秒 | より詳細な指示を追加 |
+| 3回目 | 8秒 | 最大限詳細な指示 |
+| 失敗 | - | エラー表示 + 手動リトライボタン |
+
+> 既存の `SmartRetryStrategy` をそのまま再利用
+
+### 15.6 Output File Naming
+
+出力ファイルは自動で一意な名前を生成（上書き確認なし）:
+
+```
+入力: report.xlsx (JP→EN)
+
+出力:
+  report_EN.xlsx      ← 存在しない場合
+  report_EN_2.xlsx    ← report_EN.xlsx が存在する場合
+  report_EN_3.xlsx    ← report_EN_2.xlsx も存在する場合
+```
+
 ---
 
-## 16. Migration Checklist
+## 16. Distribution
 
-### Phase 1: Core UI (2-3 days)
+### 16.1 配布方法
+
+PyInstallerは使用せず、`setup.bat` + `make_distribution.bat` でzip配布:
+
+```
+YakuLingo_YYYYMMDD.zip
+├── .venv/                    # 仮想環境
+├── .uv-python/               # Python 3.11
+├── .playwright-browsers/     # Chromium
+├── ecm_translate/            # メインパッケージ
+│   ├── ui/
+│   ├── services/
+│   ├── processors/
+│   ├── models/
+│   └── config/
+├── prompts/                  # 統一プロンプト
+│   ├── translate_jp_to_en.txt
+│   └── translate_en_to_jp.txt
+├── app.py                    # エントリーポイント
+├── glossary.csv              # デフォルト参考ファイル
+├── pyproject.toml
+├── uv.toml
+├── ★run.bat                  # 起動スクリプト
+├── setup.bat                 # 初回セットアップ
+└── README.md
+```
+
+### 16.2 セットアップ手順（ユーザー向け）
+
+1. zipを任意の場所に展開
+2. `★run.bat` をダブルクリック
+3. ブラウザが自動で開く (`http://localhost:8765`)
+
+---
+
+## 17. Migration Checklist
+
+### Phase 1: Core UI
 - [ ] NiceGUI project setup
-- [ ] Header with language toggle
-- [ ] Tab navigation
-- [ ] Text tab (input/output/translate)
-- [ ] Basic styling
+- [ ] Header component
+- [ ] Tab navigation (Text / File)
+- [ ] Text tab (input/output/swap/translate)
+- [ ] Basic styling (Tailwind CSS)
 
-### Phase 2: File Tab (3-4 days)
+### Phase 2: File Tab
 - [ ] Drop zone component
 - [ ] File info display
 - [ ] Progress indicator
 - [ ] Complete/Error states
+- [ ] Reference files UI
 
-### Phase 3: File Processing (5-7 days)
-- [ ] Excel processor
-- [ ] Word processor
-- [ ] PowerPoint processor
-- [ ] PDF processor (migrate existing)
+### Phase 3: File Processing
+- [ ] Excel processor (openpyxl)
+- [ ] Word processor (python-docx)
+- [ ] PowerPoint processor (python-pptx)
+- [ ] PDF processor (migrate existing yomitoku logic)
 
-### Phase 4: Integration (2-3 days)
+### Phase 4: Integration
 - [ ] Connect to Copilot translator
 - [ ] Settings panel
 - [ ] Error handling
-- [ ] Testing
+- [ ] Output file auto-naming
 
-### Phase 5: Polish (1-2 days)
+### Phase 5: Polish
 - [ ] Responsive layout
 - [ ] Keyboard shortcuts
-- [ ] Final testing
-- [ ] Documentation
+- [ ] Batch scripts update (setup.bat, make_distribution.bat, ★run.bat)
+- [ ] Documentation (README.md)
 
 ---
 
-## 17. References
+## 18. References
 
 - [LocaLingo](https://github.com/soukouki/LocaLingo) - UI inspiration
 - [NiceGUI Documentation](https://nicegui.io/documentation)

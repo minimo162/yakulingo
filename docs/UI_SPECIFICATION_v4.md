@@ -63,10 +63,13 @@
 
 | Property | Value |
 |----------|-------|
-| Default size | 800 x 600 px |
-| Minimum size | 600 x 500 px |
+| Default size | 900 x 700 px |
+| Minimum size | 700 x 550 px |
 | Resizable | Yes |
 | Theme | Light / Dark (system preference) |
+
+> **Design Note**: LocaLingoを参考に、テキストエリアに十分な領域を確保。
+> 翻訳作業では入力・出力を同時に確認できることが重要。
 
 ---
 
@@ -184,12 +187,17 @@ Click → Toggle between states
 
 | Property | Value |
 |----------|-------|
-| Min height | 200px |
-| Max height | 400px (then scroll) |
+| Height | **flex-grow: 1** (利用可能な領域を最大限使用) |
+| Min height | 250px |
+| Max height | 制限なし（ウィンドウサイズに追従） |
 | Placeholder (JP→EN) | "日本語を入力..." |
 | Placeholder (EN→JP) | "Enter English text..." |
-| Font size | 14px |
-| Line height | 1.6 |
+| Font size | 15px |
+| Line height | 1.7 |
+| Padding | 16px |
+
+> **LocaLingo Style**: テキストエリアはウィンドウの大部分を占め、
+> ユーザーがウィンドウをリサイズすると自動的に拡大/縮小する。
 
 ### 5.4 Behavior
 

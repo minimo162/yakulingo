@@ -321,8 +321,8 @@ class AppSettings:
     # UI
     last_direction: str = "jp_to_en"
     last_tab: str = "text"
-    window_width: int = 800
-    window_height: int = 600
+    window_width: int = 900
+    window_height: int = 700
 
     # Advanced
     max_batch_size: int = 50            # Max texts per Copilot request
@@ -2254,8 +2254,8 @@ class RetryStrategy:
     "start_with_windows": false,
     "last_direction": "jp_to_en",
     "last_tab": "text",
-    "window_width": 800,
-    "window_height": 600,
+    "window_width": 900,
+    "window_height": 700,
     "max_batch_size": 50,
     "request_timeout": 120,
     "max_retries": 3

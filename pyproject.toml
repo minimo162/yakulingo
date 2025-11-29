@@ -13,16 +13,8 @@ dependencies = [
     "pystray>=0.19.5",
     # PDF translation dependencies
     "numpy>=1.24.0",
-    "pypdfium2==4.30.0",
     "PyMuPDF>=1.24.0",
-    "yomitoku>=0.8.0",
-    "torch>=2.5.0",
-    "torchvision>=0.20.0",
-    "opencv-python>=4.10.0.84",
-    "pydantic>=2.9.2",
-    "omegaconf>=2.3.0",
-    "shapely>=2.0.6",
-    "huggingface-hub>=0.26.1",
+    "yomitoku>=0.8.0",  # Includes: torch, torchvision, opencv-python, pypdfium2, etc.
     # Drag & Drop support
     "tkinterdnd2>=0.3.0",
 ]

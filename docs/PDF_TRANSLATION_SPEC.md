@@ -1,4 +1,4 @@
-# PDF翻訳機能 技術仕様書 v8.2
+# PDF翻訳機能 技術仕様書 v8.3
 
 ## 概要
 
@@ -76,10 +76,9 @@
 │  └──────────────────────────────────────────────────────────────┘       │
 │         │                                                                 │
 │         ▼                                                                 │
-│  ┌──────────────┐    ┌──────────────┐                                   │
-│  │ 翻訳版PDF    │    │ バイリンガル  │ (オプション)                      │
-│  │ (mono)       │    │ PDF (dual)   │                                   │
-│  └──────────────┘    └──────────────┘                                   │
+│  ┌──────────────┐                                                        │
+│  │ 翻訳版PDF    │                                                        │
+│  └──────────────┘                                                        │
 │                                                                           │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
@@ -761,38 +760,6 @@ def reconstruct_pdf(
     doc.close()
 ```
 
-### 7.7 バイリンガル出力 (オプション)
-
-```python
-def create_bilingual_pdf(
-    original_pdf_path: str,
-    translated_pdf_path: str,
-    output_path: str,
-) -> None:
-    """
-    原文と翻訳を交互に配置したバイリンガルPDFを生成
-
-    PDFMathTranslate high_level.py:241-249 準拠
-
-    出力形式:
-        [orig_0, trans_0, orig_1, trans_1, ...]
-    """
-    doc_orig = fitz.open(original_pdf_path)
-    doc_trans = fitz.open(translated_pdf_path)
-
-    # 翻訳版を挿入
-    doc_orig.insert_file(doc_trans)
-
-    # ページを交互に配置
-    page_count = len(doc_trans)
-    for i in range(page_count):
-        doc_orig.move_page(page_count + i, i * 2 + 1)
-
-    doc_orig.save(output_path)
-    doc_orig.close()
-    doc_trans.close()
-```
-
 ---
 
 ## 8. プロンプトファイル
@@ -937,7 +904,6 @@ Input Data
 | 出力 | 形式 | 編集可否 |
 |------|------|---------|
 | 翻訳版PDF | PDF | ✗ 編集不可 |
-| バイリンガルPDF (オプション) | PDF | ✗ 編集不可 |
 
 **注意**: PDF翻訳の出力は最終版として扱い、編集機能は提供しない。
 翻訳結果の調整が必要な場合は、既存のExcel翻訳機能を使用すること。
@@ -975,7 +941,6 @@ def detect_input_type(file_path: str) -> str:
         "device": "cuda",              # yomitoku実行デバイス
         "reading_order": "auto",       # 読み順検出
         "include_headers": false,      # ヘッダー/フッター翻訳
-        "output_bilingual": false,     # バイリンガル出力
         "font_path": "fonts/",         # フォントディレクトリ
     }
 }
@@ -1032,7 +997,6 @@ def analyze_with_fallback(img: np.ndarray) -> DocumentAnalyzerSchema:
 | `test_en_to_jp_pdf` | 英語PDF→日本語PDF |
 | `test_mixed_content` | 段落+テーブル+図混在 |
 | `test_glossary` | 用語集適用確認 |
-| `test_bilingual` | バイリンガル出力 |
 
 ---
 
@@ -1048,7 +1012,6 @@ def analyze_with_fallback(img: np.ndarray) -> DocumentAnalyzerSchema:
 1. 数式保護 ({v*})
 2. 動的行高さ調整
 3. テーブル翻訳
-4. バイリンガル出力
 
 ### Phase 3 (最適化)
 1. GPU/CPUフォールバック
@@ -1072,3 +1035,4 @@ def analyze_with_fallback(img: np.ndarray) -> DocumentAnalyzerSchema:
 | v8.0 | - | 完全仕様 (簡易版なし)、yomitoku/PDFMathTranslate完全準拠 |
 | v8.1 | 2024-11 | 言語対応を日本語・英語のみに限定、フォント変更 (MS P明朝/Arial)、プロンプトにExcel圧縮ルール追加 (記号禁止、数値圧縮、体言止め) |
 | v8.2 | 2024-11 | 出力仕様を明確化 (PDF出力のみ、編集不可)、編集が必要な場合は既存Excel翻訳を使用 |
+| v8.3 | 2024-11 | バイリンガルPDF出力機能を削除 |

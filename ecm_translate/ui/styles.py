@@ -1,391 +1,185 @@
 # ecm_translate/ui/styles.py
 """
-CSS styles for YakuLingo UI.
-Based on UI_SPECIFICATION_v4.md color system.
+Simplified CSS styles for YakuLingo UI.
+Clean, minimal design inspired by LocaLingo.
 """
 
-# CSS Variables (Light/Dark mode)
-CSS_VARIABLES = """
+COMPLETE_CSS = """
+/* === Variables === */
 :root {
-    /* Primary */
-    --primary: #2563eb;
-    --primary-hover: #1d4ed8;
-    --primary-light: rgba(37, 99, 235, 0.1);
-
-    /* Background */
+    --primary: #3b82f6;
+    --primary-hover: #2563eb;
     --bg: #ffffff;
-    --bg-secondary: #f8fafc;
-    --bg-tertiary: #f1f5f9;
-
-    /* Border */
-    --border: #e2e8f0;
-
-    /* Text */
-    --text: #1e293b;
-    --text-secondary: #64748b;
-    --text-muted: #94a3b8;
-
-    /* Status */
-    --success: #22c55e;
-    --warning: #f59e0b;
+    --bg-alt: #f9fafb;
+    --border: #e5e7eb;
+    --text: #111827;
+    --text-dim: #6b7280;
+    --success: #10b981;
     --error: #ef4444;
 }
 
 @media (prefers-color-scheme: dark) {
     :root {
-        --primary: #3b82f6;
-        --primary-hover: #60a5fa;
-        --primary-light: rgba(59, 130, 246, 0.15);
-
-        --bg: #0f172a;
-        --bg-secondary: #1e293b;
-        --bg-tertiary: #334155;
-
-        --border: #334155;
-
-        --text: #f1f5f9;
-        --text-secondary: #94a3b8;
-        --text-muted: #64748b;
-
-        --success: #4ade80;
-        --warning: #fbbf24;
-        --error: #f87171;
+        --primary: #60a5fa;
+        --primary-hover: #3b82f6;
+        --bg: #111827;
+        --bg-alt: #1f2937;
+        --border: #374151;
+        --text: #f9fafb;
+        --text-dim: #9ca3af;
     }
 }
-"""
 
-# Main application styles
-APP_STYLES = """
-/* Font stack */
+/* === Base === */
 body {
-    font-family: 'Meiryo UI', 'Meiryo', 'Yu Gothic UI', 'Hiragino Sans', 'Noto Sans JP', sans-serif;
-    font-size: 15px;
-    line-height: 1.5;
-    color: var(--text);
-    background-color: var(--bg);
-}
-
-/* Header */
-.header {
-    display: flex;
-    align-items: center;
-    padding: 12px 24px;
-    background-color: var(--bg);
-    border-bottom: 1px solid var(--border);
-}
-
-.header-logo {
-    font-size: 24px;
-    margin-right: 8px;
-}
-
-.header-title {
-    font-size: 20px;
-    font-weight: bold;
+    font-family: -apple-system, BlinkMacSystemFont, 'Meiryo', sans-serif;
+    background: var(--bg);
     color: var(--text);
 }
 
-/* Tab bar */
-.tab-bar {
-    display: flex;
-    padding: 0 24px;
-    background-color: var(--bg);
+/* === Header === */
+.app-header {
+    background: var(--bg);
     border-bottom: 1px solid var(--border);
 }
 
-.tab-button {
-    padding: 12px 20px;
-    font-size: 15px;
-    font-weight: 500;
-    color: var(--text-secondary);
-    background: none;
-    border: none;
+/* === Tabs === */
+.tab-btn {
+    padding: 0.75rem 1.25rem;
+    color: var(--text-dim);
     border-bottom: 2px solid transparent;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.tab-button:hover {
-    color: var(--text);
-}
-
-.tab-button.active {
-    color: var(--primary);
-    border-bottom-color: var(--primary);
-}
-
-/* Text panel */
-.text-panel {
-    display: flex;
-    gap: 16px;
-    padding: 24px;
-    flex: 1;
-}
-
-.text-area-container {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-}
-
-.text-area-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 8px 12px;
-    background-color: var(--bg-secondary);
-    border: 1px solid var(--border);
-    border-bottom: none;
-    border-radius: 8px 8px 0 0;
-}
-
-.text-area-label {
-    font-size: 14px;
     font-weight: 500;
-    color: var(--text);
+    transition: all 0.15s;
 }
 
-.text-area {
-    flex: 1;
-    min-height: 250px;
-    padding: 16px;
-    font-family: 'Meiryo UI', 'Meiryo', sans-serif;
-    font-size: 16px;
-    line-height: 1.7;
-    color: var(--text);
-    background-color: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: 0 0 8px 8px;
-    resize: none;
-}
+.tab-btn:hover { color: var(--text); }
 
-.text-area:focus {
-    outline: none;
+.tab-btn.active {
+    color: var(--primary);
     border-color: var(--primary);
 }
 
-/* Swap button */
-.swap-button {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 40px;
-    height: 40px;
-    background-color: var(--bg-secondary);
+/* === Text Areas === */
+.text-box {
+    background: var(--bg);
     border: 1px solid var(--border);
-    border-radius: 50%;
-    cursor: pointer;
-    transition: all 0.2s;
-    align-self: center;
+    border-radius: 0.5rem;
+    overflow: hidden;
 }
 
-.swap-button:hover {
-    background-color: var(--primary-light);
-    border-color: var(--primary);
+.text-box:focus-within { border-color: var(--primary); }
+
+.text-label {
+    padding: 0.5rem 0.75rem;
+    background: var(--bg-alt);
+    border-bottom: 1px solid var(--border);
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--text-dim);
 }
 
-/* Translate button */
-.translate-button {
-    min-width: 160px;
-    padding: 12px 24px;
-    font-size: 15px;
-    font-weight: 600;
+/* === Buttons === */
+.btn-primary {
+    background: var(--primary);
     color: white;
-    background-color: var(--primary);
-    border: none;
-    border-radius: 8px;
-    cursor: pointer;
-    transition: all 0.2s;
+    padding: 0.75rem 2rem;
+    border-radius: 0.5rem;
+    font-weight: 500;
+    transition: background 0.15s;
 }
 
-.translate-button:hover {
-    background-color: var(--primary-hover);
+.btn-primary:hover:not(:disabled) { background: var(--primary-hover); }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-outline {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 0.5rem 1rem;
+    border-radius: 0.5rem;
 }
 
-.translate-button:disabled {
-    background-color: var(--text-muted);
-    cursor: not-allowed;
-}
+.btn-outline:hover { background: var(--bg-alt); }
 
-/* File drop zone */
-.drop-zone {
+.btn-icon {
+    width: 2rem;
+    height: 2rem;
+    border-radius: 50%;
     display: flex;
-    flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 48px;
+    color: var(--text-dim);
+}
+
+.btn-icon:hover {
+    background: var(--bg-alt);
+    color: var(--text);
+}
+
+/* === Swap Button === */
+.swap-btn {
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: 50%;
+    background: var(--bg-alt);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    transition: all 0.15s;
+}
+
+.swap-btn:hover {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: white;
+}
+
+/* === File Drop Zone === */
+.drop-zone {
     border: 2px dashed var(--border);
-    border-radius: 12px;
+    border-radius: 0.75rem;
+    padding: 3rem;
+    text-align: center;
+    transition: all 0.15s;
     cursor: pointer;
-    transition: all 0.2s;
 }
 
 .drop-zone:hover {
     border-color: var(--primary);
-    background-color: var(--primary-light);
+    background: rgba(59, 130, 246, 0.05);
 }
 
-.drop-zone.drag-over {
-    border-style: solid;
-    border-color: var(--primary);
-    background-color: rgba(37, 99, 235, 0.1);
-}
-
-.drop-zone-icon {
-    font-size: 48px;
-    color: var(--text-muted);
-    margin-bottom: 16px;
-}
-
-.drop-zone-text {
-    font-size: 16px;
-    color: var(--text-secondary);
-    margin-bottom: 8px;
-}
-
-.drop-zone-formats {
-    font-size: 13px;
-    color: var(--text-muted);
-}
-
-/* File info */
-.file-info {
-    padding: 24px;
-    background-color: var(--bg-secondary);
+/* === File Card === */
+.file-card {
+    background: var(--bg-alt);
     border: 1px solid var(--border);
-    border-radius: 12px;
+    border-radius: 0.75rem;
+    padding: 1.25rem;
 }
 
-.file-info-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 16px;
-}
-
-.file-info-name {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 16px;
-    font-weight: 500;
-}
-
-.file-info-icon {
-    font-size: 24px;
-}
-
-.file-info-details {
-    font-size: 14px;
-    color: var(--text-secondary);
-    line-height: 1.8;
-}
-
-/* Progress bar */
-.progress-container {
-    margin-top: 16px;
-}
-
-.progress-bar {
-    height: 8px;
-    background-color: var(--bg-tertiary);
-    border-radius: 4px;
+/* === Progress === */
+.progress-track {
+    height: 0.375rem;
+    background: var(--border);
+    border-radius: 1rem;
     overflow: hidden;
 }
 
-.progress-fill {
+.progress-bar {
     height: 100%;
-    background-color: var(--primary);
+    background: var(--primary);
     transition: width 0.3s;
 }
 
-.progress-text {
-    display: flex;
-    justify-content: space-between;
-    margin-top: 8px;
-    font-size: 13px;
-    color: var(--text-secondary);
+/* === Status === */
+.status-dot {
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    background: var(--error);
 }
 
-/* Settings panel */
-.settings-panel {
-    padding: 16px 24px;
-    background-color: var(--bg-secondary);
-    border-top: 1px solid var(--border);
-}
+.status-dot.connected { background: var(--success); }
 
-.settings-header {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    cursor: pointer;
-    font-size: 14px;
-    font-weight: 500;
-    color: var(--text-secondary);
-}
-
-.settings-content {
-    margin-top: 16px;
-    padding-top: 16px;
-    border-top: 1px solid var(--border);
-}
-
-/* Toast notifications */
-.toast {
-    position: fixed;
-    bottom: 24px;
-    left: 50%;
-    transform: translateX(-50%);
-    padding: 12px 24px;
-    background-color: var(--bg-secondary);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-    z-index: 1000;
-}
-
-.toast.success {
-    border-left: 4px solid var(--success);
-}
-
-.toast.error {
-    border-left: 4px solid var(--error);
-}
-
-/* Reference files */
-.reference-files {
-    padding: 16px;
-    background-color: var(--bg-secondary);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    margin-bottom: 16px;
-}
-
-.reference-files-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 12px;
-}
-
-.reference-file-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 8px 12px;
-    background-color: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    margin-bottom: 8px;
-}
-
-.reference-file-name {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 14px;
-}
+.text-success { color: var(--success); }
+.text-error { color: var(--error); }
 """
-
-# Complete CSS
-COMPLETE_CSS = CSS_VARIABLES + APP_STYLES

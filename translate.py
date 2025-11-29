@@ -417,6 +417,9 @@ class SmartRetryStrategy:
 class IntelligentResponseParser:
     """Advanced response parsing with multiple strategies"""
 
+    # Address pattern supporting Excel (R#C#), PDF paragraph (P#_#), PDF table (T#_#_#_#)
+    ADDRESS_PATTERN = r"(R\d+C\d+|P\d+_\d+|T\d+_\d+_\d+_\d+|SHAPE:\w+)"
+
     @staticmethod
     def parse_tsv(response: str) -> dict[str, str]:
         """Parse TSV format (primary strategy)"""
@@ -432,7 +435,7 @@ class IntelligentResponseParser:
             parts = line.split("\t", 1)
             if len(parts) == 2:
                 address, translated = parts[0].strip(), parts[1].strip()
-                if re.match(r"R\d+C\d+", address):
+                if re.match(IntelligentResponseParser.ADDRESS_PATTERN, address):
                     result[address] = translated
                     continue
 
@@ -440,7 +443,7 @@ class IntelligentResponseParser:
             parts = re.split(r'\s{2,}', line, maxsplit=1)
             if len(parts) == 2:
                 address, translated = parts[0].strip(), parts[1].strip()
-                if re.match(r"R\d+C\d+", address):
+                if re.match(IntelligentResponseParser.ADDRESS_PATTERN, address):
                     result[address] = translated
 
         return result
@@ -462,7 +465,7 @@ class IntelligentResponseParser:
                 if len(parts) >= 2:
                     address = parts[0].strip()
                     translated = parts[-1].strip()  # Last column is usually translation
-                    if re.match(r"R\d+C\d+", address):
+                    if re.match(IntelligentResponseParser.ADDRESS_PATTERN, address):
                         result[address] = clean_copilot_response(translated)
 
         return result
@@ -2009,7 +2012,7 @@ def parse_copilot_response(response: str) -> dict[str, str]:
         parts = line.split("\t", 1)
         if len(parts) == 2:
             address, translated = parts[0].strip(), parts[1].strip()
-            if re.match(r"R\d+C\d+", address):
+            if re.match(IntelligentResponseParser.ADDRESS_PATTERN, address):
                 result[address] = translated
     return result
 

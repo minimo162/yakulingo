@@ -120,6 +120,21 @@ class TranslationCell:
 
 
 @dataclass
+class FontInfo:
+    """
+    フォント情報
+
+    PDFMathTranslate high_level.py:187-203 準拠
+    """
+    font_id: str           # PDF内部ID (F1, F2, ...)
+    family: str            # フォントファミリ名 (表示用)
+    path: str              # フォントファイルパス
+    fallback: Optional[str]  # フォールバックパス
+    encoding: str          # "cid" or "simple"
+    is_cjk: bool           # CJKフォントか
+
+
+@dataclass
 class PdfTranslationResult:
     """PDF translation result"""
     success: bool = False
@@ -320,6 +335,570 @@ class FormulaManager:
             return match.group(0)
 
         return re.sub(pattern, replacer, text, flags=re.IGNORECASE)
+
+
+# =============================================================================
+# Phase 3.5: Low-Level PDF Classes (PDFMathTranslate準拠)
+# =============================================================================
+class FontRegistry:
+    """
+    フォント登録・管理
+
+    PDFMathTranslate high_level.py:187-203 準拠
+    CJK言語対応（日本語/英語/中国語簡体字/韓国語）
+    """
+
+    # デフォルトフォント定義 (Windows)
+    DEFAULT_FONTS = {
+        "ja": FontInfo(
+            font_id="F1",
+            family="MS-PMincho",
+            path="C:/Windows/Fonts/msmincho.ttc",
+            fallback="C:/Windows/Fonts/msgothic.ttc",
+            encoding="cid",
+            is_cjk=True,
+        ),
+        "en": FontInfo(
+            font_id="F2",
+            family="Arial",
+            path="C:/Windows/Fonts/arial.ttf",
+            fallback="C:/Windows/Fonts/times.ttf",
+            encoding="simple",
+            is_cjk=False,
+        ),
+        "zh-CN": FontInfo(
+            font_id="F3",
+            family="SimSun",
+            path="C:/Windows/Fonts/simsun.ttc",
+            fallback="C:/Windows/Fonts/msyh.ttc",  # Microsoft YaHei
+            encoding="cid",
+            is_cjk=True,
+        ),
+        "ko": FontInfo(
+            font_id="F4",
+            family="Malgun Gothic",
+            path="C:/Windows/Fonts/malgun.ttf",
+            fallback="C:/Windows/Fonts/batang.ttc",
+            encoding="cid",
+            is_cjk=True,
+        ),
+    }
+
+    def __init__(self):
+        self.fonts: dict[str, FontInfo] = {}
+        self._font_xrefs: dict[str, int] = {}
+        self._counter = 0
+
+    def register_font(self, lang: str) -> str:
+        """
+        フォントを登録しIDを返す
+
+        Args:
+            lang: 言語コード ("ja", "en", "zh-CN", "ko")
+
+        Returns:
+            フォントID (F1, F2, ...)
+        """
+        if lang in self.fonts:
+            return self.fonts[lang].font_id
+
+        self._counter += 1
+        font_id = f"F{self._counter}"
+
+        default = self.DEFAULT_FONTS.get(lang, self.DEFAULT_FONTS["en"])
+        font_info = FontInfo(
+            font_id=font_id,
+            family=default.family,
+            path=default.path,
+            fallback=default.fallback,
+            encoding=default.encoding,
+            is_cjk=default.is_cjk,
+        )
+
+        self.fonts[lang] = font_info
+        return font_id
+
+    def get_font_path(self, font_id: str) -> Optional[str]:
+        """フォントIDからパスを取得（フォールバック対応）"""
+        import os
+        for font_info in self.fonts.values():
+            if font_info.font_id == font_id:
+                if font_info.path and os.path.exists(font_info.path):
+                    return font_info.path
+                if font_info.fallback and os.path.exists(font_info.fallback):
+                    return font_info.fallback
+        return None
+
+    def get_encoding_type(self, font_id: str) -> str:
+        """フォントIDからエンコードタイプを取得"""
+        for font_info in self.fonts.values():
+            if font_info.font_id == font_id:
+                return font_info.encoding
+        return "simple"
+
+    def get_is_cjk(self, font_id: str) -> bool:
+        """フォントIDからCJK判定"""
+        for font_info in self.fonts.values():
+            if font_info.font_id == font_id:
+                return font_info.is_cjk
+        return False
+
+    def get_font_by_id(self, font_id: str) -> Optional[FontInfo]:
+        """フォントIDからFontInfo取得"""
+        for font_info in self.fonts.values():
+            if font_info.font_id == font_id:
+                return font_info
+        return None
+
+    def select_font_for_text(self, text: str, target_lang: str = "ja") -> str:
+        """
+        テキスト内容から適切なフォントIDを選択
+
+        CJK言語対応版
+
+        Args:
+            text: 対象テキスト
+            target_lang: ターゲット言語 ("ja", "en", "zh-CN", "ko")
+                         漢字の判定に使用
+
+        Returns:
+            フォントID
+        """
+        for char in text:
+            # 日本語固有: ひらがな・カタカナ
+            if '\u3040' <= char <= '\u309F':  # Hiragana
+                return self._get_font_id_for_lang("ja")
+            if '\u30A0' <= char <= '\u30FF':  # Katakana
+                return self._get_font_id_for_lang("ja")
+            # 韓国語固有: ハングル
+            if '\uAC00' <= char <= '\uD7AF':  # Hangul Syllables
+                return self._get_font_id_for_lang("ko")
+            if '\u1100' <= char <= '\u11FF':  # Hangul Jamo
+                return self._get_font_id_for_lang("ko")
+            # CJK統合漢字: ターゲット言語に従う
+            if '\u4E00' <= char <= '\u9FFF':  # CJK Unified Ideographs
+                return self._get_font_id_for_lang(target_lang)
+        return self._get_font_id_for_lang("en")
+
+    def _get_font_id_for_lang(self, lang: str) -> str:
+        """言語からフォントIDを取得"""
+        if lang in self.fonts:
+            return self.fonts[lang].font_id
+        return "F1"
+
+    def embed_fonts(self, doc) -> None:
+        """
+        全登録フォントをPDFに埋め込み
+
+        PDFMathTranslate high_level.py 準拠
+
+        Note:
+            page.insert_font() は各ページにフォントを埋め込む
+            xref は最初のページで取得し保持する
+        """
+        for lang, font_info in self.fonts.items():
+            font_path = self.get_font_path(font_info.font_id)
+            if not font_path:
+                continue
+
+            # 各ページにフォントを埋め込み
+            for page_idx, page in enumerate(doc):
+                xref = page.insert_font(
+                    fontname=font_info.font_id,
+                    fontfile=font_path,
+                )
+                # 最初のページでのみxrefを保存（全ページで同じxrefが返される）
+                if page_idx == 0:
+                    self._font_xrefs[font_info.font_id] = xref
+
+
+class PdfOperatorGenerator:
+    """
+    低レベルPDFオペレータ生成器
+
+    PDFMathTranslate converter.py:384-385 準拠
+    """
+
+    def __init__(self, font_registry: FontRegistry):
+        self.font_registry = font_registry
+
+    def gen_op_txt(
+        self,
+        font_id: str,
+        size: float,
+        x: float,
+        y: float,
+        rtxt: str,
+    ) -> str:
+        """
+        テキスト描画オペレータを生成
+
+        PDFMathTranslate converter.py:384-385 完全準拠
+
+        Args:
+            font_id: フォントID (F1, F2, ...)
+            size: フォントサイズ (pt)
+            x: X座標 (PDF座標系)
+            y: Y座標 (PDF座標系)
+            rtxt: **既にhexエンコード済み**のテキスト
+
+        Returns:
+            PDF演算子文字列
+        """
+        return f"/{font_id} {size:f} Tf 1 0 0 1 {x:f} {y:f} Tm [<{rtxt}>] TJ "
+
+    def raw_string(self, font_id: str, text: str) -> str:
+        """
+        フォントタイプに応じたテキストエンコード
+
+        PDFMathTranslate converter.py raw_string() 準拠
+
+        Args:
+            font_id: フォントID
+            text: エンコードするテキスト
+
+        Returns:
+            hexエンコード済み文字列
+        """
+        encoding_type = self.font_registry.get_encoding_type(font_id)
+
+        if encoding_type == "cid":
+            # CIDフォント: Unicodeコードポイント (4桁hex)
+            return "".join(["%04x" % ord(c) for c in text])
+        else:
+            # Single-byte フォント (2桁hex)
+            return "".join(["%02x" % ord(c) for c in text])
+
+    def gen_op_line(
+        self,
+        x1: float,
+        y1: float,
+        x2: float,
+        y2: float,
+        width: float = 1.0,
+    ) -> str:
+        """
+        線描画オペレータを生成
+
+        PDFMathTranslate形式準拠
+        """
+        return f"q {width:f} w {x1:f} {y1:f} m {x2:f} {y2:f} l S Q "
+
+
+class ContentStreamReplacer:
+    """
+    PDFコンテンツストリーム置換器
+
+    PDFMathTranslate high_level.py 準拠
+    - 既存コンテンツを保持しつつ、翻訳テキストを上書き
+    """
+
+    def __init__(self, doc, font_registry: FontRegistry):
+        self.doc = doc
+        self.font_registry = font_registry
+        self.operators: list[str] = []
+        self._in_text_block = False
+        self._used_fonts: set[str] = set()  # 使用されたフォントIDを追跡
+
+    def begin_text(self) -> 'ContentStreamReplacer':
+        """テキストブロック開始"""
+        if not self._in_text_block:
+            self.operators.append("BT ")
+            self._in_text_block = True
+        return self
+
+    def end_text(self) -> 'ContentStreamReplacer':
+        """テキストブロック終了"""
+        if self._in_text_block:
+            self.operators.append("ET ")
+            self._in_text_block = False
+        return self
+
+    def add_operator(self, op: str) -> 'ContentStreamReplacer':
+        """オペレータを追加"""
+        self.operators.append(op)
+        return self
+
+    def add_text_operator(self, op: str, font_id: str = None) -> 'ContentStreamReplacer':
+        """
+        テキストオペレータを追加（自動でBT/ET管理）
+
+        Args:
+            op: オペレータ文字列
+            font_id: 使用するフォントID（リソース登録用）
+        """
+        if not self._in_text_block:
+            self.begin_text()
+        self.operators.append(op)
+
+        # 使用フォントを追跡
+        if font_id:
+            self._used_fonts.add(font_id)
+
+        return self
+
+    def add_redaction(
+        self,
+        x1: float,
+        y1: float,
+        x2: float,
+        y2: float,
+        color: tuple[float, float, float] = (1, 1, 1),
+    ) -> 'ContentStreamReplacer':
+        """
+        矩形塗りつぶし（既存テキスト消去用）
+
+        Args:
+            x1, y1: 左下座標 (PDF座標系)
+            x2, y2: 右上座標 (PDF座標系)
+            color: RGB (0-1)
+        """
+        if self._in_text_block:
+            self.end_text()
+
+        r, g, b = color
+        width = x2 - x1
+        height = y2 - y1
+        op = f"q {r:f} {g:f} {b:f} rg {x1:f} {y1:f} {width:f} {height:f} re f Q "
+        self.operators.append(op)
+        return self
+
+    def build(self) -> bytes:
+        """コンテンツストリームをバイト列として構築"""
+        if self._in_text_block:
+            self.end_text()
+
+        stream = "".join(self.operators)
+        return stream.encode("latin-1")
+
+    def apply_to_page(self, page) -> None:
+        """
+        構築したストリームをページに適用
+
+        PDFMathTranslate high_level.py 準拠
+        - 既存コンテンツに新しいストリームを追加（overlay）
+        - 使用フォントをページリソースに登録
+
+        Args:
+            page: 対象ページ
+        """
+        stream_bytes = self.build()
+
+        if not stream_bytes.strip():
+            return
+
+        # PDFMathTranslate方式: 新しいコンテンツストリームを作成して追加
+        # 既存コンテンツは保持される
+
+        # 1. 新しいストリームオブジェクトを作成
+        new_xref = self.doc.get_new_xref()
+        self.doc.update_stream(new_xref, stream_bytes)
+
+        # 2. ページの Contents に追加
+        page_xref = page.xref
+        contents_info = self.doc.xref_get_key(page_xref, "Contents")
+
+        if contents_info[0] == "array":
+            # 既に配列の場合、末尾に追加
+            arr_str = contents_info[1]
+            new_arr = arr_str.rstrip("]") + f" {new_xref} 0 R]"
+            self.doc.xref_set_key(page_xref, "Contents", new_arr)
+        elif contents_info[0] == "xref":
+            # 単一xrefの場合、配列に変換
+            old_xref = int(contents_info[1].split()[0])
+            self.doc.xref_set_key(
+                page_xref,
+                "Contents",
+                f"[{old_xref} 0 R {new_xref} 0 R]"
+            )
+        else:
+            # Contentsがない場合、新規設定
+            self.doc.xref_set_key(page_xref, "Contents", f"{new_xref} 0 R")
+
+        # 3. フォントリソースをページに登録
+        self._register_font_resources(page)
+
+    def _register_font_resources(self, page) -> None:
+        """
+        使用フォントをページの /Resources/Font に登録
+
+        Note:
+            page.insert_font() で埋め込み済みの場合、PyMuPDFが
+            自動的にリソースを登録するため、通常は不要。
+            ただし低レベル操作で追加したストリームでフォントを
+            使用する場合は明示的な登録が必要な場合がある。
+        """
+        if not self._used_fonts:
+            return
+
+        for font_id in self._used_fonts:
+            font_xref = self.font_registry._font_xrefs.get(font_id)
+            if font_xref:
+                # フォントが埋め込み済みであることを確認
+                # （実際のリソース登録はembed_fonts時に行われる）
+                pass
+
+    def clear(self) -> None:
+        """オペレータリストをクリア"""
+        self.operators = []
+        self._in_text_block = False
+        self._used_fonts.clear()
+
+
+# =============================================================================
+# Phase 3.6: Low-Level PDF Helper Functions
+# =============================================================================
+def convert_to_pdf_coordinates(
+    box: list[float],
+    page_height: float,
+) -> tuple[float, float, float, float]:
+    """
+    yomitoku座標系からPDF座標系へ変換
+
+    yomitoku: 原点左上、Y軸下向き (画像座標系)
+    PDF: 原点左下、Y軸上向き
+
+    Args:
+        box: [x1, y1, x2, y2] yomitoku座標 (左上, 右下)
+        page_height: ページ高さ
+
+    Returns:
+        (x1, y1, x2, y2) PDF座標 (左下, 右上)
+    """
+    x1_img, y1_img, x2_img, y2_img = box
+
+    x1_pdf = x1_img
+    y1_pdf = page_height - y2_img  # 下端
+    x2_pdf = x2_img
+    y2_pdf = page_height - y1_img  # 上端
+
+    return (x1_pdf, y1_pdf, x2_pdf, y2_pdf)
+
+
+def calculate_text_position(
+    box_pdf: tuple[float, float, float, float],
+    line_index: int,
+    font_size: float,
+    line_height: float,
+) -> tuple[float, float]:
+    """
+    テキスト行のPDF座標を計算
+
+    PDFMathTranslate converter.py 準拠
+
+    Args:
+        box_pdf: (x1, y1, x2, y2) PDF座標 (左下, 右上)
+        line_index: 行インデックス (0始まり)
+        font_size: フォントサイズ
+        line_height: 行高さ倍率
+
+    Returns:
+        (x, y) テキスト開始位置 (PDF座標)
+    """
+    x1, y1, x2, y2 = box_pdf
+
+    x = x1
+    # 上端から下方向に配置
+    # PDFMathTranslate: y = y2 + dy - (lidx * size * line_height)
+    y = y2 - font_size - (line_index * font_size * line_height)
+
+    return x, y
+
+
+def calculate_char_width(char: str, font_size: float, is_cjk: bool) -> float:
+    """
+    文字幅を計算
+
+    Args:
+        char: 文字
+        font_size: フォントサイズ
+        is_cjk: CJK文字か
+
+    Returns:
+        文字幅 (pt)
+    """
+    is_fullwidth = (
+        is_cjk or
+        '\u3040' <= char <= '\u309F' or  # Hiragana
+        '\u30A0' <= char <= '\u30FF' or  # Katakana
+        '\u4E00' <= char <= '\u9FFF' or  # Kanji
+        '\uFF00' <= char <= '\uFFEF'     # Fullwidth forms
+    )
+
+    if is_fullwidth:
+        return font_size
+    else:
+        return font_size * 0.5
+
+
+def split_text_into_lines(
+    text: str,
+    box_width: float,
+    font_size: float,
+    is_cjk: bool,
+) -> list[str]:
+    """
+    テキストをボックス幅に収まるよう行分割
+
+    Args:
+        text: 分割対象テキスト
+        box_width: ボックス幅 (pt)
+        font_size: フォントサイズ
+        is_cjk: CJKフォントか
+
+    Returns:
+        分割された行のリスト
+    """
+    if not text:
+        return []
+
+    lines = []
+    current_line = ""
+    current_width = 0.0
+
+    for char in text:
+        if char == '\n':
+            lines.append(current_line)
+            current_line = ""
+            current_width = 0.0
+            continue
+
+        char_width = calculate_char_width(char, font_size, is_cjk)
+
+        if current_width + char_width > box_width and current_line:
+            lines.append(current_line)
+            current_line = char
+            current_width = char_width
+        else:
+            current_line += char
+            current_width += char_width
+
+    if current_line:
+        lines.append(current_line)
+
+    return lines
+
+
+def _is_address_on_page(address: str, page_num: int) -> bool:
+    """
+    アドレスが指定ページのものか判定
+
+    Args:
+        address: セルアドレス (P1_1, T2_1_0_0 等)
+        page_num: ページ番号 (1始まり)
+
+    Returns:
+        該当ページの場合 True
+    """
+    if address.startswith("P"):
+        match = re.match(r"P(\d+)_", address)
+        if match:
+            return int(match.group(1)) == page_num
+    elif address.startswith("T"):
+        match = re.match(r"T(\d+)_", address)
+        if match:
+            return int(match.group(1)) == page_num
+    return False
 
 
 # =============================================================================
@@ -579,6 +1158,117 @@ def reconstruct_pdf(
     doc.close()
 
 
+# 移行フラグ（将来的に削除）
+USE_LOW_LEVEL_OPERATORS = False
+
+
+def reconstruct_pdf_low_level(
+    original_pdf_path: str,
+    translations: dict[str, str],
+    cells: list[TranslationCell],
+    lang_out: str,
+    output_path: str,
+) -> None:
+    """
+    低レベルPDFオペレータを使用したPDF再構築
+
+    PDFMathTranslate準拠の実装（CJK対応）
+
+    Args:
+        original_pdf_path: 元PDFパス
+        translations: {address: translated_text}
+        cells: 元セル情報（座標含む）
+        lang_out: 出力言語 ("ja", "en", "zh-CN", "ko")
+        output_path: 出力PDFパス
+
+    Raises:
+        FileNotFoundError: 元PDFが存在しない場合
+        Exception: PDF処理中のエラー
+    """
+    fitz = _get_fitz()
+    doc = fitz.open(original_pdf_path)
+
+    try:
+        # 1. フォント登録（CJK全言語対応）
+        font_registry = FontRegistry()
+        font_registry.register_font("ja")
+        font_registry.register_font("en")
+        font_registry.register_font("zh-CN")
+        font_registry.register_font("ko")
+
+        # オペレータ生成器
+        op_generator = PdfOperatorGenerator(font_registry)
+
+        # セルマップ作成
+        cell_map = {cell.address: cell for cell in cells}
+
+        # 2. フォント埋め込み（ページループの前に実行）
+        font_registry.embed_fonts(doc)
+
+        # 3. ページ単位で処理
+        for page_num, page in enumerate(doc, start=1):
+            page_height = page.rect.height
+            replacer = ContentStreamReplacer(doc, font_registry)
+
+            # このページの翻訳セルを処理
+            for address, translated in translations.items():
+                if not _is_address_on_page(address, page_num):
+                    continue
+
+                cell = cell_map.get(address)
+                if not cell:
+                    continue
+
+                try:
+                    # 座標変換 (yomitoku → PDF)
+                    box_pdf = convert_to_pdf_coordinates(cell.box, page_height)
+                    x1, y1, x2, y2 = box_pdf
+                    box_width = x2 - x1
+
+                    # 4. 既存テキスト消去（白塗り）
+                    replacer.add_redaction(x1, y1, x2, y2)
+
+                    # 5. フォント選択（ターゲット言語を考慮）
+                    font_id = font_registry.select_font_for_text(translated, lang_out)
+                    is_cjk = font_registry.get_is_cjk(font_id)
+
+                    # 6. フォントサイズと行高さ計算 (既存関数を使用)
+                    font_size = estimate_font_size(cell.box, translated)
+                    line_height_val = calculate_line_height(translated, cell.box, font_size, lang_out)
+
+                    # 7. テキスト行分割
+                    lines = split_text_into_lines(translated, box_width, font_size, is_cjk)
+
+                    # 8. 各行のテキストオペレータを生成
+                    for line_idx, line_text in enumerate(lines):
+                        if not line_text.strip():
+                            continue
+
+                        x, y = calculate_text_position(box_pdf, line_idx, font_size, line_height_val)
+
+                        if y < y1:
+                            break  # ボックスの下端を超えた
+
+                        # PDFMathTranslate準拠: 先にエンコードしてからgen_op_txt
+                        rtxt = op_generator.raw_string(font_id, line_text)
+                        text_op = op_generator.gen_op_txt(font_id, font_size, x, y, rtxt)
+                        replacer.add_text_operator(text_op, font_id)
+
+                except Exception as e:
+                    print(f"  Warning: Failed to process cell {address}: {e}")
+                    continue
+
+            # 9. ページにストリームを適用
+            replacer.apply_to_page(page)
+
+        # 10. 保存 (PDFMathTranslate: garbage=3, deflate=True)
+        doc.subset_fonts(fallback=True)
+        doc.save(output_path, garbage=3, deflate=True)
+
+    finally:
+        doc.close()
+
+
 # =============================================================================
 # Main Pipeline
 # =============================================================================
@@ -595,6 +1285,7 @@ def translate_pdf_batch(
     reading_order: str = "auto",
     include_headers: bool = False,
     glossary_path: Path = None,
+    use_low_level: bool = None,
 ) -> PdfTranslationResult:
     """
     Batch PDF translation pipeline.
@@ -603,7 +1294,7 @@ def translate_pdf_batch(
         pdf_path: Input PDF path
         output_path: Output PDF path
         lang_in: Input language ("ja" or "en")
-        lang_out: Output language ("ja" or "en")
+        lang_out: Output language ("ja", "en", "zh-CN", "ko")
         translation_engine: TranslationEngine instance
         progress_callback: (current_page, total_pages, phase) callback
         cancel_check: Cancellation check callback
@@ -612,6 +1303,8 @@ def translate_pdf_batch(
         reading_order: Layout analysis reading order
         include_headers: Include headers/footers
         glossary_path: Path to glossary CSV
+        use_low_level: 低レベルオペレータを使用するか
+                       None の場合は USE_LOW_LEVEL_OPERATORS を使用
 
     Returns:
         PdfTranslationResult
@@ -684,13 +1377,25 @@ def translate_pdf_batch(
         if progress_callback:
             progress_callback(total_pages, total_pages, "reconstruction")
 
-        reconstruct_pdf(
-            original_pdf_path=pdf_path,
-            translations=all_translations,
-            cells=all_cells,
-            lang_out=lang_out,
-            output_path=output_path,
-        )
+        # 切り替えロジック
+        _use_low_level = use_low_level if use_low_level is not None else USE_LOW_LEVEL_OPERATORS
+
+        if _use_low_level:
+            reconstruct_pdf_low_level(
+                original_pdf_path=pdf_path,
+                translations=all_translations,
+                cells=all_cells,
+                lang_out=lang_out,
+                output_path=output_path,
+            )
+        else:
+            reconstruct_pdf(
+                original_pdf_path=pdf_path,
+                translations=all_translations,
+                cells=all_cells,
+                lang_out=lang_out,
+                output_path=output_path,
+            )
 
         return PdfTranslationResult(
             success=True,

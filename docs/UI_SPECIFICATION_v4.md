@@ -216,9 +216,11 @@
 
 1. **Input**: User types in source textarea
 2. **Translate**: User clicks "Translate" button
-3. **Loading**: Button shows spinner, disabled
+3. **Loading**: Button shows spinner, disabled, **tab switching disabled**
 4. **Result**: Translation appears in target textarea
 5. **Copy**: User clicks copy button → toast "Copied!"
+
+> **Note**: テキスト翻訳時も参考ファイル（用語集等）がCopilotに添付されます。
 
 ### 5.6 Language Swap Effect
 
@@ -327,6 +329,16 @@
 | Progress bar | Full width, primary color fill |
 | Status text | Current operation (e.g., "Sheet 3 of 4") |
 | Time estimate | Approximate remaining time |
+
+#### UI State During Translation
+
+| 項目 | 状態 |
+|------|------|
+| タブ切り替え | **禁止**（グレーアウト） |
+| ファイル選択 | 禁止 |
+| 設定変更 | 禁止 |
+| キャンセルボタン | 有効 |
+| アプリ終了 | 許可（即終了、確認なし） |
 
 ### 6.4 State: Complete
 
@@ -699,7 +711,36 @@ NiceGUI (Python)
 - Batch processing for large documents
 - Retry logic with exponential backoff
 
-### 15.4 Output File Naming
+### 15.4 Application Startup
+
+```
+アプリ起動フロー:
+  1. NiceGUI サーバー起動
+  2. ブラウザ自動オープン
+  3. Copilot 自動接続開始（バックグラウンド）
+  4. 接続完了まで翻訳ボタンは disabled
+  5. 接続完了後、翻訳機能が有効化
+```
+
+**Copilot接続状態の表示**:
+- 接続中: "Connecting to Copilot..." (spinner)
+- 接続完了: 表示なし（通常状態）
+- 接続失敗: エラーメッセージ + リトライボタン
+
+### 15.5 Error Handling & Auto-Retry
+
+翻訳失敗時は自動でリトライ（SmartRetryStrategy）:
+
+| リトライ回数 | 待機時間 | 動作 |
+|-------------|---------|------|
+| 1回目 | 2秒 | 同じプロンプトで再試行 |
+| 2回目 | 4秒 | より詳細な指示を追加 |
+| 3回目 | 8秒 | 最大限詳細な指示 |
+| 失敗 | - | エラー表示 + 手動リトライボタン |
+
+> 既存の `SmartRetryStrategy` をそのまま再利用
+
+### 15.6 Output File Naming
 
 出力ファイルは自動で一意な名前を生成（上書き確認なし）:
 

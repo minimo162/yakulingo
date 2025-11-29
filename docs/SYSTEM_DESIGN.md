@@ -384,13 +384,18 @@ class TranslationService:
         self,
         text: str,
         direction: TranslationDirection,
+        reference_files: Optional[list[Path]] = None,
     ) -> TranslationResult:
         """
         Translate plain text.
 
+        NOTE: Reference files (glossary, etc.) are attached to Copilot
+        for both text and file translations.
+
         Args:
             text: Source text to translate
             direction: Translation direction
+            reference_files: Optional list of reference files to attach
 
         Returns:
             TranslationResult with output_text
@@ -434,6 +439,9 @@ class TranslationService:
 
 ### 5.2 CopilotHandler
 
+> **既存コード再利用**: `translate.py` の `CopilotHandler` をリファクタリング。
+> メソッド名変更: `launch()` → `connect()`, `close()` → `disconnect()`
+
 ```python
 # ecm_translate/services/copilot_handler.py
 
@@ -458,6 +466,9 @@ class CopilotHandler:
         """
         Connect to Copilot.
         Launches browser and waits for ready state.
+
+        NOTE: Called automatically on app startup (background task).
+        UI shows "Connecting to Copilot..." until connected.
 
         Args:
             on_progress: Callback for connection status updates
@@ -2481,21 +2492,25 @@ app.py:
 
 ### 12.1 Code Reuse
 
-| v1 Component | v2 Usage |
-|--------------|----------|
-| `CopilotHandler` | Refactor, reuse core logic |
-| `pdf_translator.py` | Migrate to `PdfProcessor` |
-| `TranslationValidator` | Reuse in `TranslationService` |
-| Prompt files | Reorganize, reuse content |
+| v1 Component | v2 Usage | 変更点 |
+|--------------|----------|--------|
+| `CopilotHandler` | Refactor, reuse core logic | `launch()`→`connect()`, `close()`→`disconnect()` |
+| `TranslationValidator` | **そのまま再利用** | 変更なし |
+| `IntelligentResponseParser` | **そのまま再利用** | 変更なし |
+| `SmartRetryStrategy` | **そのまま再利用** | 変更なし |
+| `pdf_translator.py` | Migrate to `PdfProcessor` | FileProcessor形式に適合 |
+| Prompt files | Reorganize, simplify | 圧縮ルール緩和、2ファイルに統合 |
 
 ### 12.2 Deprecated Components
 
 | Component | Reason |
 |-----------|--------|
-| `ExcelHandler` (COM) | Replaced by file-based processing |
+| `ExcelHandler` (COM) | Replaced by file-based processing (openpyxl) |
+| `UniversalTranslator` | Replaced by UI-based text translation |
 | Tkinter UI | Replaced by NiceGUI |
 | System tray | Not needed in new design |
-| Global hotkeys | Not needed (file-based workflow) |
+| Global hotkeys | Not needed (browser-based workflow) |
+| Selection screenshot | Not needed (file-based workflow) |
 
 ---
 

@@ -1,7 +1,7 @@
 # ecm_translate/ui/app.py
 """
-Simplified NiceGUI application for YakuLingo.
-Clean, practical interface inspired by LocaLingo.
+YakuLingo - Emotional UI application.
+Simple yet warm design that responds to user actions.
 """
 
 import asyncio
@@ -49,12 +49,13 @@ class YakuLingoApp:
                 self.translation_service = TranslationService(
                     self.copilot, self.settings, get_default_prompts_dir()
                 )
-                ui.notify('Copilot connected', type='positive')
+                ui.notify('Ready to translate!', type='positive', icon='check_circle')
+                ui.navigate.reload()
             else:
-                ui.notify('Failed to connect', type='negative')
+                ui.notify('Connection failed. Please try again.', type='negative', icon='error')
 
         except Exception as e:
-            ui.notify(f'Error: {e}', type='negative')
+            ui.notify(f'Connection error: {e}', type='negative', icon='error')
 
         self.state.copilot_connecting = False
 
@@ -62,23 +63,31 @@ class YakuLingoApp:
         """Create the UI"""
         ui.add_head_html(f'<style>{COMPLETE_CSS}</style>')
 
-        # Header with tabs
-        with ui.header().classes('app-header items-center px-4'):
-            ui.label('YakuLingo').classes('text-xl font-semibold mr-8')
+        # Header with logo and tabs
+        with ui.header().classes('app-header items-center px-6 py-2'):
+            # Logo with gradient text
+            with ui.row().classes('items-center gap-2 mr-8'):
+                ui.label('🍎').classes('text-2xl')
+                ui.label('YakuLingo').classes('app-logo')
 
-            # Tabs
-            with ui.row().classes('gap-0'):
-                self._tab('Text', Tab.TEXT)
-                self._tab('File', Tab.FILE)
+            # Tabs with icons
+            with ui.row().classes('gap-1'):
+                self._tab('Text', Tab.TEXT, 'translate')
+                self._tab('File', Tab.FILE, 'description')
 
             ui.space()
 
-            # Connection status
-            with ui.row().classes('items-center gap-2'):
-                dot_class = 'status-dot connected' if self.state.copilot_connected else 'status-dot'
-                ui.element('div').classes(dot_class)
-                label = 'Connected' if self.state.copilot_connected else 'Connecting...'
-                ui.label(label).classes('text-sm text-gray-500')
+            # Connection status with animation
+            with ui.row().classes('items-center gap-3'):
+                if self.state.copilot_connected:
+                    ui.element('div').classes('status-dot connected')
+                    ui.label('Ready').classes('text-sm font-medium text-success')
+                elif self.state.copilot_connecting:
+                    ui.element('div').classes('status-dot connecting')
+                    ui.label('Connecting...').classes('text-sm text-muted animate-pulse')
+                else:
+                    ui.element('div').classes('status-dot')
+                    ui.label('Offline').classes('text-sm text-muted')
 
         # Main content
         with ui.column().classes('w-full max-w-6xl mx-auto p-6 flex-1'):
@@ -101,8 +110,8 @@ class YakuLingoApp:
                     on_reset=self._reset,
                 )
 
-    def _tab(self, label: str, tab: Tab):
-        """Tab button"""
+    def _tab(self, label: str, tab: Tab, icon: str = None):
+        """Tab button with optional icon"""
         classes = 'tab-btn active' if self.state.current_tab == tab else 'tab-btn'
         disabled = self.state.is_translating()
 
@@ -112,7 +121,11 @@ class YakuLingoApp:
                 self.settings.last_tab = tab.value
                 ui.navigate.reload()
 
-        btn = ui.button(label, on_click=on_click).props('flat').classes(classes)
+        with ui.button(on_click=on_click).props('flat no-caps').classes(classes) as btn:
+            if icon:
+                ui.icon(icon).classes('text-lg mr-1')
+            ui.label(label)
+
         if disabled:
             btn.props('disable')
 
@@ -129,7 +142,7 @@ class YakuLingoApp:
     def _copy(self):
         if self.state.target_text:
             ui.clipboard.write(self.state.target_text)
-            ui.notify('Copied', type='positive')
+            ui.notify('Copied to clipboard!', type='positive', icon='content_copy')
 
     async def _translate_text(self):
         if not self.translation_service:
@@ -180,14 +193,24 @@ class YakuLingoApp:
         self.state.translation_progress = 0.0
         self.state.translation_status = 'Starting...'
 
-        # Create progress UI elements that can be updated
-        with ui.dialog() as progress_dialog, ui.card().classes('w-96'):
-            with ui.column().classes('w-full gap-3 p-4'):
-                ui.label('Translating...').classes('text-lg font-medium')
-                progress_bar = ui.linear_progress(value=0).classes('w-full')
-                progress_label = ui.label('0%').classes('text-sm')
-                status_label = ui.label('Starting...').classes('text-sm text-gray-500')
-                ui.button('Cancel', on_click=lambda: self._cancel_and_close(progress_dialog)).classes('btn-outline')
+        # Create progress dialog with emotional feedback
+        with ui.dialog() as progress_dialog, ui.card().classes('w-96 rounded-2xl'):
+            with ui.column().classes('w-full gap-4 p-6 items-center'):
+                # Animated icon
+                ui.icon('auto_awesome').classes('text-5xl text-primary animate-pulse')
+
+                # Title
+                ui.label('Translating your document...').classes('text-lg font-semibold')
+
+                # Progress section
+                with ui.column().classes('w-full gap-2'):
+                    progress_bar = ui.linear_progress(value=0).classes('w-full').props('rounded color=primary')
+                    with ui.row().classes('w-full justify-between'):
+                        status_label = ui.label('Starting...').classes('text-sm text-muted')
+                        progress_label = ui.label('0%').classes('text-sm font-semibold text-primary')
+
+                # Cancel button
+                ui.button('Cancel', on_click=lambda: self._cancel_and_close(progress_dialog)).classes('btn-outline mt-2')
 
         progress_dialog.open()
 
@@ -214,14 +237,17 @@ class YakuLingoApp:
             if result.output_path:
                 self.state.output_file = result.output_path
                 self.state.file_state = FileState.COMPLETE
+                ui.notify('Translation complete!', type='positive', icon='celebration')
             else:
                 self.state.error_message = result.error_message or 'Error'
                 self.state.file_state = FileState.ERROR
+                ui.notify('Translation failed. Please try again.', type='negative', icon='error')
 
         except Exception as e:
             progress_dialog.close()
             self.state.error_message = str(e)
             self.state.file_state = FileState.ERROR
+            ui.notify('Something went wrong.', type='negative', icon='error')
 
         ui.navigate.reload()
 

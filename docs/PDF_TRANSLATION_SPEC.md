@@ -1298,8 +1298,8 @@ def show_translating(self, current: int, total: int, phase: str = None):
         text_color=THEME.text_primary
     )
 
-    # Ambient Glow - 翻訳中モード
-    self.ambient_glow.set_mode("translating")
+    # Ambient Glow - 翻訳中モード (青)
+    self.ambient_glow.set_mode("active")
 ```
 
 #### 9.4.2 show_complete 拡張
@@ -1878,4 +1878,4 @@ def analyze_document(img: np.ndarray, device: str = "cpu") -> DocumentAnalyzerSc
 | v8.8 | 2024-11 | API整合性修正: PyMuPDF subset_fonts()パラメータ修正、tkinterdnd2イベント名修正(DropEnter/DropLeave)、ファイルパース改善(splitlist使用) |
 | v8.9 | 2024-11 | UI設計を既存TranslatorAppと統合、Dynamic Islandで進捗表示、PDF/Excel両対応ドロップエリア、既存Settings維持 |
 | v9.0 | 2024-11 | 既存メソッド拡張方式に変更 (show_translating/complete/error/ready)、SoundPlayer/AmbientGlow統合、状態管理フラグ追加 |
-| v9.1 | 2024-11 | `__init__`初期化追加 (PDF用コールバック・ファイル選択)、キャンセル機構明確化 (既存Cancel機構使用) |
+| v9.1 | 2024-11 | `__init__`初期化追加 (PDF用コールバック・ファイル選択)、キャンセル機構明確化 (既存Cancel機構使用)、AmbientGlowモード修正 ("translating"→"active") |

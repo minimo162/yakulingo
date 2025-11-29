@@ -20,7 +20,7 @@ ECM Translateは、日本語と英語の双方向翻訳を提供するデスク�
 | Text Translation | テキスト入力の即座翻訳 |
 | File Translation | Excel/Word/PowerPoint/PDF の一括翻訳 |
 | Layout Preservation | 翻訳後もファイルの体裁を維持 |
-| Glossary Support | 用語集による一貫した翻訳 |
+| Reference Files | 用語集・参考資料による一貫した翻訳 |
 
 ### 1.3 Technology Stack
 
@@ -74,7 +74,7 @@ ECM Translateは、日本語と英語の双方向翻訳を提供するデスク�
 │  │   Copilot     │     │   File Processors   │     │    Config     │    │
 │  │   Handler     │     │                     │     │    Manager    │    │
 │  │               │     │  ┌───────────────┐  │     │               │    │
-│  │  - connect()  │     │  │ ExcelProcessor│  │     │  - glossary   │    │
+│  │  - connect()  │     │  │ ExcelProcessor│  │     │  - ref_files  │    │
 │  │  - translate()│     │  ├───────────────┤  │     │  - settings   │    │
 │  │  - disconnect │     │  │ WordProcessor │  │     │  - prompts    │    │
 │  │               │     │  ├───────────────┤  │     │               │    │
@@ -141,8 +141,7 @@ ecm_translate/
 │   │
 │   ├── config/                     # Configuration
 │   │   ├── __init__.py
-│   │   ├── settings.py             # App settings
-│   │   └── glossary.py             # Glossary management
+│   │   └── settings.py             # App settings
 │   │
 │   ├── models/                     # Data Models
 │   │   ├── __init__.py
@@ -158,8 +157,11 @@ ecm_translate/
 │   └── translate_en_to_jp.txt      # EN→JP (圧縮ルール込み)
 │
 ├── config/                         # User configuration
-│   ├── settings.json
-│   └── glossary.csv
+│   └── settings.json
+│
+├── reference_files/                # 参考ファイル置き場（ユーザー任意）
+│   ├── glossary.csv                # 用語集サンプル
+│   └── (user files...)
 │
 ├── tests/                          # Test suite
 │   ├── __init__.py
@@ -302,8 +304,8 @@ import json
 class AppSettings:
     """Application settings"""
 
-    # Glossary
-    glossary_path: Optional[Path] = None
+    # Reference Files (用語集、参考資料など)
+    reference_files: list[Path] = field(default_factory=list)
 
     # Output
     add_language_suffix: bool = True    # Add _EN or _JP to filename
@@ -356,11 +358,9 @@ class TranslationService:
         self,
         copilot: CopilotHandler,
         config: AppSettings,
-        glossary: Optional[Glossary] = None,
     ):
         self.copilot = copilot
         self.config = config
-        self.glossary = glossary
         self._cancel_requested = False
 
         # Register file processors
@@ -469,7 +469,7 @@ class CopilotHandler:
         self,
         texts: list[str],
         prompt_template: str,
-        glossary: Optional[dict[str, str]] = None,
+        reference_files: Optional[list[Path]] = None,
     ) -> list[str]:
         """
         Translate a batch of texts.
@@ -477,7 +477,7 @@ class CopilotHandler:
         Args:
             texts: List of texts to translate
             prompt_template: Translation prompt template
-            glossary: Optional term mappings
+            reference_files: Optional list of reference files to attach
 
         Returns:
             List of translated texts (same order as input)
@@ -488,10 +488,10 @@ class CopilotHandler:
         self,
         text: str,
         prompt_template: str,
-        glossary: Optional[dict[str, str]] = None,
+        reference_files: Optional[list[Path]] = None,
     ) -> str:
         """Translate a single text"""
-        results = await self.translate([text], prompt_template, glossary)
+        results = await self.translate([text], prompt_template, reference_files)
         return results[0] if results else ""
 
     @property
@@ -1796,9 +1796,9 @@ class BatchTranslator:
 └─────────────────────────────────────────────────────────────────────────┘
                                     │
 ┌─────────────────────────────────────────────────────────────────────────┐
-│ 5. Glossary Section (設定時のみ)                                        │
-│    - 添付された用語集ファイルを参照する指示                              │
-│    - 具体的な用語はプロンプトに含めない（ファイル添付で対応）            │
+│ 5. Reference Section (参考ファイル添付時のみ)                           │
+│    - 添付された参考ファイル（用語集、資料等）を参照する指示              │
+│    - ファイル添付で対応、プロンプトには参照指示のみ                      │
 └─────────────────────────────────────────────────────────────────────────┘
                                     │
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -1845,7 +1845,7 @@ Abbreviation Examples
 - Production → Prod.
 - Volume → Vol.
 
-{glossary_section}
+{reference_section}
 
 Input
 {input_text}
@@ -1881,26 +1881,30 @@ Critical Rules (優先順位順)
    - QoQ → 前期比
    - FY → 年度
 
-{glossary_section}
+{reference_section}
 
 Input
 {input_text}
 ```
 
-#### Glossary Section (用語集添付時のみ挿入)
+#### Reference Section (参考ファイル添付時のみ挿入)
 
 ```
-# 用語集ファイルが添付されている場合に挿入されるセクション
+# 参考ファイルが添付されている場合に挿入されるセクション
 
-Glossary
-添付の用語集ファイルを参照し、記載されている用語は必ずその訳語を使用してください。
+Reference Files
+添付の参考ファイル（用語集、参考資料等）を参照し、翻訳に活用してください。
+用語集がある場合は、記載されている用語は必ずその訳語を使用してください。
 複数のファイルが添付されている場合は、すべてのファイルを参照してください。
 ```
 
-**用語集の添付方法:**
-- Copilot にファイルとして glossary ファイルを添付
-- 複数ファイル添付対応（プロジェクト別、カテゴリ別など）
-- プロンプトには参照指示のみ含める
+**参考ファイルの添付方法:**
+- Copilot にファイルとして添付
+- 用途例:
+  - 用語集（CSV/Excel）- 訳語の統一
+  - 参考資料（Word/PDF）- 文脈・背景情報
+  - 過去の翻訳例 - スタイルの参考
+- 複数ファイル添付対応
 
 **Copilot ファイル添付制限:**
 | 項目 | 制限 |
@@ -1908,8 +1912,7 @@ Glossary
 | 最大ファイル数 | 20ファイル/会話 |
 | 最大ファイルサイズ | 50MB/ファイル |
 
-**注意:** 翻訳対象ファイル（Excel, Word等）はローカルでテキスト抽出するため、
-Copilotへのファイル添付は用語集のみ。実用的には5〜10ファイル程度を推奨
+**推奨:** 実用的には5〜10ファイル程度を推奨
 
 #### Batch Format (ファイル翻訳時)
 
@@ -1937,17 +1940,18 @@ from typing import Optional
 from ecm_translate.models.types import TranslationDirection
 
 
-# 用語集参照の指示文（ファイル添付時のみ挿入）
-GLOSSARY_INSTRUCTION = """
-Glossary
-添付の用語集ファイルを参照し、記載されている用語は必ずその訳語を使用してください。
+# 参考ファイル参照の指示文（ファイル添付時のみ挿入）
+REFERENCE_INSTRUCTION = """
+Reference Files
+添付の参考ファイル（用語集、参考資料等）を参照し、翻訳に活用してください。
+用語集がある場合は、記載されている用語は必ずその訳語を使用してください。
 """
 
 
 class PromptBuilder:
     """
     Builds translation prompts with compression rules.
-    Glossary is attached as a file, not embedded in prompt.
+    Reference files are attached to Copilot, not embedded in prompt.
     """
 
     def __init__(self, prompts_dir: Path):
@@ -1969,7 +1973,7 @@ class PromptBuilder:
         self,
         direction: TranslationDirection,
         input_text: str,
-        has_glossary: bool = False,
+        has_reference_files: bool = False,
     ) -> str:
         """
         Build complete prompt with input text.
@@ -1977,18 +1981,18 @@ class PromptBuilder:
         Args:
             direction: Translation direction
             input_text: Text or batch to translate
-            has_glossary: Whether glossary file is attached
+            has_reference_files: Whether reference files are attached
 
         Returns:
             Complete prompt string
         """
         template = self._templates.get(direction, "")
 
-        # Add glossary instruction only if file is attached
-        glossary_section = GLOSSARY_INSTRUCTION if has_glossary else ""
+        # Add reference instruction only if files are attached
+        reference_section = REFERENCE_INSTRUCTION if has_reference_files else ""
 
         # Replace placeholders
-        prompt = template.replace("{glossary_section}", glossary_section)
+        prompt = template.replace("{reference_section}", reference_section)
         prompt = prompt.replace("{input_text}", input_text)
 
         return prompt
@@ -1997,7 +2001,7 @@ class PromptBuilder:
         self,
         direction: TranslationDirection,
         texts: list[str],
-        has_glossary: bool = False,
+        has_reference_files: bool = False,
     ) -> str:
         """
         Build prompt for batch translation.
@@ -2005,7 +2009,7 @@ class PromptBuilder:
         Args:
             direction: Translation direction
             texts: List of texts to translate
-            has_glossary: Whether glossary file is attached
+            has_reference_files: Whether reference files are attached
 
         Returns:
             Complete prompt with numbered input
@@ -2015,28 +2019,28 @@ class PromptBuilder:
             f"{i+1}. {text}" for i, text in enumerate(texts)
         )
 
-        return self.build(direction, numbered_input, has_glossary)
+        return self.build(direction, numbered_input, has_reference_files)
 ```
 
-### 7.4 Copilot Glossary Attachment
+### 7.4 Copilot Reference Files Attachment
 
 ```python
-# CopilotHandler での用語集ファイル添付
+# CopilotHandler での参考ファイル添付
 
 class CopilotHandler:
     async def translate(
         self,
         texts: list[str],
         prompt: str,
-        glossary_path: Optional[Path] = None,  # 用語集ファイルパス
+        reference_files: Optional[list[Path]] = None,
     ) -> list[str]:
         """
-        Translate with optional glossary file attachment.
+        Translate with optional reference file attachments.
 
         Args:
             texts: Texts to translate
             prompt: Built prompt string
-            glossary_path: Path to glossary.csv (attached if provided)
+            reference_files: List of reference files to attach
 
         Returns:
             Translated texts
@@ -2044,9 +2048,11 @@ class CopilotHandler:
         # 1. プロンプトを入力
         await self._send_message(prompt)
 
-        # 2. 用語集ファイルを添付（設定されている場合）
-        if glossary_path and glossary_path.exists():
-            await self._attach_file(glossary_path)
+        # 2. 参考ファイルを添付（設定されている場合）
+        if reference_files:
+            for file_path in reference_files:
+                if file_path.exists():
+                    await self._attach_file(file_path)
 
         # 3. 送信して結果を取得
         result = await self._get_response()
@@ -2060,42 +2066,95 @@ class CopilotHandler:
         pass
 ```
 
-### 7.5 Glossary File Format
+### 7.5 Reference File Formats
 
-```python
-class Glossary:
-    """
-    Manages translation glossary (term mappings).
-    """
+参考ファイルとして以下の形式をサポート:
 
-    def __init__(self, csv_path: Optional[Path] = None):
-        self.terms: dict[str, str] = {}
-        if csv_path and csv_path.exists():
-            self.load(csv_path)
+| 形式 | 用途 | 説明 |
+|------|------|------|
+| CSV/Excel | 用語集 | 日本語,English 形式の対訳表 |
+| Word/PDF | 参考資料 | 文脈・背景情報、スタイルガイド |
+| Text | メモ | 翻訳時の注意点など |
 
-    def load(self, csv_path: Path) -> None:
-        """Load glossary from CSV"""
-        import csv
-        with open(csv_path, 'r', encoding='utf-8') as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                jp = row.get('Japanese', '').strip()
-                en = row.get('English', '').strip()
-                if jp and en:
-                    self.terms[jp] = en
+#### 用語集CSVの推奨フォーマット
 
-    def get_prompt_section(self, direction: TranslationDirection) -> str:
-        """Generate glossary section for prompt"""
-        if not self.terms:
-            return ""
-
-        if direction == TranslationDirection.JP_TO_EN:
-            lines = [f"- {jp} → {en}" for jp, en in self.terms.items()]
-        else:
-            lines = [f"- {en} → {jp}" for jp, en in self.terms.items()]
-
-        return "Glossary (use these translations):\n" + "\n".join(lines)
+```csv
+Japanese,English
+株式会社,Corp.
+営業利益,Operating Profit
+前年比,YOY
 ```
+
+### 7.6 Reference Files UI Component
+
+翻訳ボタンの上に配置し、目立つ位置で参考ファイルを管理。
+
+#### UI Layout
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        CONTENT AREA                             │
+│                      (翻訳入力エリア)                            │
+├─────────────────────────────────────────────────────────────────┤
+│  📎 参考ファイル (2)                                    [+追加]  │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │  📄 glossary.csv                                       [✕]  ││
+│  │  📄 style_guide.pdf                                    [✕]  ││
+│  └─────────────────────────────────────────────────────────────┘│
+│  用語集や参考資料をCopilotに添付します (最大20ファイル)         │
+├─────────────────────────────────────────────────────────────────┤
+│                        [ Translate ]                            │
+├─────────────────────────────────────────────────────────────────┤
+│  ▸ Settings                                                     │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### States
+
+**Empty State (ファイルなし):**
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  📎 参考ファイル (0)                                    [+追加]  │
+│  ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─│
+│  用語集や参考資料を追加して翻訳精度を向上                        │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**With Files (ファイルあり):**
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  📎 参考ファイル (3)                                    [+追加]  │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │  📊 glossary.csv              12KB                    [✕]  ││
+│  │  📄 style_guide.pdf           245KB                   [✕]  ││
+│  │  📝 notes.txt                 2KB                     [✕]  ││
+│  └─────────────────────────────────────────────────────────────┘│
+│  Copilotに添付されます (3/20)                                   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### Interactions
+
+| Action | Behavior |
+|--------|----------|
+| [+追加] クリック | ファイル選択ダイアログを開く |
+| [✕] クリック | ファイルをリストから削除 |
+| ファイルドロップ | リストに追加 |
+
+#### File Icons
+
+| 拡張子 | アイコン |
+|--------|----------|
+| .csv, .xlsx | 📊 |
+| .pdf | 📄 |
+| .docx | 📄 |
+| .txt | 📝 |
+
+#### Validation
+
+- 最大20ファイル（超過時はエラー表示）
+- 最大50MB/ファイル（超過時はエラー表示）
+- ファイル追加/削除は即座にsettings.jsonに保存
 
 ---
 
@@ -2184,7 +2243,7 @@ class RetryStrategy:
 ```json
 // config/settings.json
 {
-    "glossary_path": "config/glossary.csv",
+    "reference_files": [],
     "add_language_suffix": true,
     "create_backup": false,
     "output_directory": null,
@@ -2198,8 +2257,11 @@ class RetryStrategy:
 }
 ```
 
-### 9.2 Glossary File
+### 9.2 Reference Files (参考ファイル)
 
+参考ファイルはUIから追加・削除し、Copilotに直接添付される。
+
+**用語集CSVの例:**
 ```csv
 Japanese,English
 株式会社,Corp.
@@ -2208,6 +2270,11 @@ Japanese,English
 承知しました,Understood
 よろしくお願いします,Thank you
 ```
+
+**サポート形式:**
+- CSV/Excel - 用語集（対訳表）
+- Word/PDF - 参考資料
+- Text - メモ・注意事項
 
 ---
 
@@ -2239,7 +2306,7 @@ tests/
 
 | Category | Scope | Examples |
 |----------|-------|----------|
-| Unit | Individual classes | Processor extraction, Glossary loading |
+| Unit | Individual classes | Processor extraction, Settings loading |
 | Integration | Component interaction | Service + Processor |
 | E2E | Full workflow | UI → Translation → Output |
 
@@ -2275,8 +2342,9 @@ ECM_Translate/
 ├── prompts/
 │   └── *.txt
 ├── config/
-│   ├── settings.json
-│   └── glossary.csv
+│   └── settings.json
+├── reference_files/         # 参考ファイル置き場
+│   └── (user files...)
 └── README.txt
 ```
 

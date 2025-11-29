@@ -1346,22 +1346,25 @@ def show_complete(self, count: int, translation_pairs: list = None,
     )
 
     # Dynamic Island 更新
-    self.dynamic_island.stop_pulse()
+    try:
+        self.dynamic_island.stop_pulse()
 
-    if output_path:
-        # PDF翻訳完了
-        self.dynamic_island.set_status(
-            "PDF Complete!",
-            Path(output_path).name,
-            1.0
-        )
-    else:
-        # Excel翻訳完了 (既存動作)
-        self.dynamic_island.set_status(
-            "Complete!",
-            f"{count} cells | {quality_text}",
-            1.0
-        )
+        if output_path:
+            # PDF翻訳完了
+            self.dynamic_island.set_status(
+                "PDF Complete!",
+                Path(output_path).name,
+                1.0
+            )
+        else:
+            # Excel翻訳完了 (既存動作)
+            self.dynamic_island.set_status(
+                "Complete!",
+                f"{count} cells | {quality_text}",
+                1.0
+            )
+    except Exception:
+        pass
 
     # Ambient Glow - 待機モードに戻す
     self.ambient_glow.set_mode("idle")
@@ -1404,6 +1407,13 @@ def show_error(self, message: str):
     # Ambient Glow - エラーモード (赤)
     self.ambient_glow.set_mode("error")
 
+    # サウンド再生
+    SoundPlayer.play_error()
+
+    # Kinetic Typography
+    self.status_text.set_text("Error")
+    self.subtitle_text.set_text(message[:50])
+
     # ボタン状態リセット
     self.action_btn.configure(
         text="Translate",
@@ -1411,13 +1421,6 @@ def show_error(self, message: str):
         fg_color=THEME.text_primary,
         text_color=THEME.bg_primary
     )
-
-    # サウンド再生
-    SoundPlayer.play_error()
-
-    # Kinetic Typography
-    self.status_text.set_text("Error")
-    self.subtitle_text.set_text(message[:50])
 
     # 5秒後に待機状態に戻る
     self.after(5000, self.show_ready)
@@ -2014,3 +2017,4 @@ def analyze_document(img: np.ndarray, device: str = "cpu") -> DocumentAnalyzerSc
 | v9.4 | 2024-11 | show_connecting追加 (Copilot接続フェーズ用、PDF/Excel共通) |
 | v9.5 | 2024-11 | translate.py拡張: ADDRESS_PATTERNにPDFアドレス形式(P#_#, T#_#_#_#)追加、SHAPE形式も含む |
 | v9.6 | 2024-11 | TkinterDnD継承廃止 (FileDropArea内で初期化)、show_complete try/except追加、show_ready hover_color追加 |
+| v9.7 | 2024-11 | 既存実装との整合性修正: show_complete dynamic_island try/except追加、show_error 処理順序修正 (SoundPlayer→Typography→Button) |

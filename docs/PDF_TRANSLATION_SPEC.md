@@ -932,7 +932,7 @@ def translate_pdf_batch(
 1回のリクエストで送信可能なテキスト量に制限がある場合の分割処理。
 
 ```python
-MAX_CHARS_PER_REQUEST = 3000  # 1リクエストあたりの最大文字数
+MAX_CHARS_PER_REQUEST = 6000  # 1リクエストあたりの最大文字数
 
 def split_cells_for_translation(
     cells: list[dict],
@@ -1478,7 +1478,7 @@ def detect_input_type(file_path: str) -> str:
         "dpi": 200,                    # PDF読込解像度 (固定)
         "device": "cpu",               # "cpu" (デフォルト) or "cuda" (GPU高速化)
         "batch_size": 5,               # バッチサイズ (ページ数)
-        "max_chars_per_request": 3000, # Copilot 1リクエストあたり最大文字数
+        "max_chars_per_request": 6000, # Copilot 1リクエストあたり最大文字数
         "reading_order": "auto",       # 読み順検出
         "include_headers": false,      # ヘッダー/フッター翻訳
         "font_path": "fonts/",         # フォントディレクトリ

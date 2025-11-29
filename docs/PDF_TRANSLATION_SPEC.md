@@ -1,4 +1,4 @@
-# PDF翻訳機能 技術仕様書 v9.2
+# PDF翻訳機能 技術仕様書 v9.3
 
 ## 概要
 
@@ -1449,7 +1449,39 @@ def show_ready(self):
         self.subtitle_text.set_text("English → Japanese")
 ```
 
-#### 9.4.5 SoundPlayer (既存クラス使用)
+#### 9.4.5 show_cancelled (既存維持)
+
+```python
+def show_cancelled(self):
+    """キャンセル状態 - PDF/Excel共通"""
+    self.is_translating = False
+    self.cancel_requested = False
+
+    # 最前面解除
+    self.attributes("-topmost", False)
+
+    # Dynamic Island - コンパクトモードでキャンセル表示
+    self.dynamic_island.stop_pulse()
+    self.dynamic_island.compact()
+    self.dynamic_island.set_status("Cancelled")
+
+    # Ambient Glow - フェードアウト
+    self.ambient_glow.fade_out()
+
+    # Kinetic Typography
+    self.status_text.set_text("Cancelled")
+    self.subtitle_text.set_text("Translation stopped")
+
+    # ボタン状態リセット
+    self.action_btn.configure(
+        text="Translate",
+        state="normal",
+        fg_color=THEME.text_primary,
+        text_color=THEME.bg_primary
+    )
+```
+
+#### 9.4.6 SoundPlayer (既存クラス使用)
 
 ```python
 # 翻訳開始時
@@ -1883,3 +1915,4 @@ def analyze_document(img: np.ndarray, device: str = "cpu") -> DocumentAnalyzerSc
 | v9.0 | 2024-11 | 既存メソッド拡張方式に変更 (show_translating/complete/error/ready)、SoundPlayer/AmbientGlow統合、状態管理フラグ追加 |
 | v9.1 | 2024-11 | `__init__`初期化追加 (PDF用コールバック・ファイル選択)、キャンセル機構明確化 (既存Cancel機構使用)、AmbientGlowモード修正 ("translating"→"active")、`_start()`にon_start_callbackフォールバック追加 |
 | v9.2 | 2024-11 | ambient_glowをPDF/Excel共通で適用 (UI一貫性向上) |
+| v9.3 | 2024-11 | show_cancelled追加、show_error 5秒タイマー確定、show_readyサフィックス削除確定 |

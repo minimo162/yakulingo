@@ -47,11 +47,11 @@ if not exist "%VENV_DIR%\Scripts\python.exe" (
 
 echo.
 echo ============================================================
-echo Starting Excel Translation Tool...
+echo Starting YakuLingo...
 echo ============================================================
 echo.
 
-"%VENV_DIR%\Scripts\python.exe" translate.py
+"%VENV_DIR%\Scripts\python.exe" app.py
 
 if errorlevel 1 (
     echo.

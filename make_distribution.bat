@@ -3,7 +3,7 @@ setlocal enabledelayedexpansion
 
 echo.
 echo ============================================================
-echo Excel Translation Tool - Distribution Package Builder
+echo YakuLingo - Distribution Package Builder
 echo ============================================================
 echo.
 
@@ -28,8 +28,12 @@ if not exist ".playwright-browsers" (
     echo [ERROR] .playwright-browsers directory not found. Run setup.bat first.
     set MISSING_FILES=1
 )
-if not exist "translate.py" (
-    echo [ERROR] translate.py not found.
+if not exist "app.py" (
+    echo [ERROR] app.py not found.
+    set MISSING_FILES=1
+)
+if not exist "ecm_translate" (
+    echo [ERROR] ecm_translate directory not found.
     set MISSING_FILES=1
 )
 
@@ -96,10 +100,10 @@ echo.
 echo [4/5] Removing user-specific files...
 
 :: Remove config file (users should configure their own)
-if exist "translation_config.json" (
-    echo [INFO] Backing up translation_config.json to translation_config.json.bak
-    copy /y "translation_config.json" "translation_config.json.bak" >nul
-    del /q "translation_config.json"
+if exist "yakulingo_settings.json" (
+    echo [INFO] Backing up yakulingo_settings.json to yakulingo_settings.json.bak
+    copy /y "yakulingo_settings.json" "yakulingo_settings.json.bak" >nul
+    del /q "yakulingo_settings.json"
 )
 
 :: Remove any log files
@@ -117,7 +121,7 @@ echo [5/5] Creating distribution package...
 for /f "tokens=2 delims==" %%I in ('wmic os get localdatetime /format:list') do set datetime=%%I
 set DIST_DATE=%datetime:~0,8%
 
-set DIST_NAME=ExcelTranslator_%DIST_DATE%
+set DIST_NAME=YakuLingo_%DIST_DATE%
 set DIST_ZIP=%DIST_NAME%.zip
 
 :: Remove old distribution if exists
@@ -128,7 +132,7 @@ echo [INFO] Creating distribution archive...
 
 :: Build list of existing files
 set "FILE_LIST="
-for %%f in (".venv" ".uv-python" ".playwright-browsers" "translate.py" "ui.py" "config_manager.py" "system_tray.py" "pdf_translator.py" "prompt.txt" "prompt_jp_to_en.txt" "prompt_en_to_jp.txt" "prompt_excel_en_to_jp.txt" "prompt_pdf_jp_to_en.txt" "prompt_pdf_en_to_jp.txt" "glossary.csv" "pyproject.toml" "uv.toml" "★run.bat" "README.md" "DISTRIBUTION.md") do (
+for %%f in (".venv" ".uv-python" ".playwright-browsers" "app.py" "ecm_translate" "prompts" "glossary.csv" "pyproject.toml" "uv.toml" "★run.bat" "README.md" "DISTRIBUTION.md") do (
     if exist "%%~f" set "FILE_LIST=!FILE_LIST! %%~f"
 )
 
@@ -154,8 +158,8 @@ if exist "%DIST_ZIP%" (
 )
 
 :: Restore config backup if exists
-if exist "translation_config.json.bak" (
-    move /y "translation_config.json.bak" "translation_config.json" >nul
+if exist "yakulingo_settings.json.bak" (
+    move /y "yakulingo_settings.json.bak" "yakulingo_settings.json" >nul
 )
 
 echo.

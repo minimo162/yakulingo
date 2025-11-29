@@ -809,11 +809,14 @@ Excel/Word/PowerPoint のファイル翻訳用フォント設定。
 | Word | `run.font.name` (python-docx) |
 | PowerPoint | `run.font.name` (python-pptx) |
 
+**複数フォント混在時**: 段落/セル内に複数フォントがある場合は**最頻出フォント**を基準とする。
+
 ```python
 # ecm_translate/processors/font_manager.py
 
 import re
 from typing import Optional
+from collections import Counter
 
 class FontTypeDetector:
     """
@@ -858,6 +861,28 @@ class FontTypeDetector:
                 return "gothic"
 
         return "unknown"
+
+    def get_dominant_font(self, font_names: list[str]) -> Optional[str]:
+        """
+        複数フォントから最頻出フォントを取得
+
+        Args:
+            font_names: フォント名のリスト（段落内の各runから収集）
+
+        Returns:
+            最頻出フォント名、空リストの場合は None
+        """
+        if not font_names:
+            return None
+
+        # None や空文字を除外
+        valid_fonts = [f for f in font_names if f]
+        if not valid_fonts:
+            return None
+
+        # 最頻出フォントを返す
+        counter = Counter(valid_fonts)
+        return counter.most_common(1)[0][0]
 ```
 
 #### Font Mapping Table

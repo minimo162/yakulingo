@@ -1946,10 +1946,10 @@ class TranslatorApp(ctk.CTk):
         # Highlight active button and update subtitle
         if mode == "jp_to_en":
             self.mode_jp_en_btn.configure(**active_style_jp)
-            self.subtitle_text.set_text("Japanese → English (Excel auto-detected)")
+            self.subtitle_text.set_text("Japanese → English")
         else:  # en_to_jp
             self.mode_en_jp_btn.configure(**active_style_en)
-            self.subtitle_text.set_text("English → Japanese (Excel auto-detected)")
+            self.subtitle_text.set_text("English → Japanese")
 
     def _on_action(self):
         """Handle main action button"""
@@ -2045,9 +2045,9 @@ class TranslatorApp(ctk.CTk):
         # Kinetic Typography - show based on current mode
         self.status_text.set_text("Ready")
         if self.current_mode == "jp_to_en":
-            self.subtitle_text.set_text("Japanese → English (Excel auto-detected)")
+            self.subtitle_text.set_text("Japanese → English")
         else:
-            self.subtitle_text.set_text("English → Japanese (Excel auto-detected)")
+            self.subtitle_text.set_text("English → Japanese")
 
         self.action_btn.configure(
             text="Translate",
@@ -2157,6 +2157,9 @@ class TranslatorApp(ctk.CTk):
         except Exception:
             pass
 
+        # Ambient Glow - idle mode
+        self.ambient_glow.set_mode("idle")
+
         # Play success sound
         try:
             SoundPlayer.play_success()
@@ -2169,6 +2172,7 @@ class TranslatorApp(ctk.CTk):
     def show_error(self, message: str):
         """Error state - calm acknowledgment"""
         self.is_translating = False
+        self.cancel_requested = False
 
         # Remove always-on-top
         self.attributes("-topmost", False)
@@ -2194,8 +2198,8 @@ class TranslatorApp(ctk.CTk):
             text_color=THEME.bg_primary
         )
 
-        # Compact after showing error
-        self.after(3000, self.dynamic_island.compact)
+        # Reset to ready state after 5 seconds
+        self.after(5000, self.show_ready)
 
     def show_cancelled(self):
         """Cancelled state - graceful stop"""

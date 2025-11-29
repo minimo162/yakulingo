@@ -1797,7 +1797,8 @@ class BatchTranslator:
                                     │
 ┌─────────────────────────────────────────────────────────────────────────┐
 │ 5. Glossary Section (設定時のみ)                                        │
-│    - 用語集からの強制置換                                               │
+│    - 添付された用語集ファイルを参照する指示                              │
+│    - 具体的な用語はプロンプトに含めない（ファイル添付で対応）            │
 └─────────────────────────────────────────────────────────────────────────┘
                                     │
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -1886,6 +1887,20 @@ Input
 {input_text}
 ```
 
+#### Glossary Section (用語集添付時のみ挿入)
+
+```
+# 用語集ファイルが添付されている場合に挿入されるセクション
+
+Glossary
+添付の用語集ファイルを参照し、記載されている用語は必ずその訳語を使用してください。
+```
+
+**用語集の添付方法:**
+- Copilot にファイルとして glossary.csv を添付
+- プロンプトには参照指示のみ含める
+- 用語集のサイズ制限なし
+
 #### Batch Format (ファイル翻訳時)
 
 ```
@@ -1912,9 +1927,17 @@ from typing import Optional
 from ecm_translate.models.types import TranslationDirection
 
 
+# 用語集参照の指示文（ファイル添付時のみ挿入）
+GLOSSARY_INSTRUCTION = """
+Glossary
+添付の用語集ファイルを参照し、記載されている用語は必ずその訳語を使用してください。
+"""
+
+
 class PromptBuilder:
     """
-    Builds translation prompts with compression rules and glossary.
+    Builds translation prompts with compression rules.
+    Glossary is attached as a file, not embedded in prompt.
     """
 
     def __init__(self, prompts_dir: Path):
@@ -1936,25 +1959,23 @@ class PromptBuilder:
         self,
         direction: TranslationDirection,
         input_text: str,
-        glossary: Optional[dict[str, str]] = None,
+        has_glossary: bool = False,
     ) -> str:
         """
-        Build complete prompt with input text and glossary.
+        Build complete prompt with input text.
 
         Args:
             direction: Translation direction
             input_text: Text or batch to translate
-            glossary: Optional term mappings
+            has_glossary: Whether glossary file is attached
 
         Returns:
             Complete prompt string
         """
         template = self._templates.get(direction, "")
 
-        # Build glossary section
-        glossary_section = ""
-        if glossary:
-            glossary_section = self._build_glossary_section(direction, glossary)
+        # Add glossary instruction only if file is attached
+        glossary_section = GLOSSARY_INSTRUCTION if has_glossary else ""
 
         # Replace placeholders
         prompt = template.replace("{glossary_section}", glossary_section)
@@ -1962,28 +1983,11 @@ class PromptBuilder:
 
         return prompt
 
-    def _build_glossary_section(
-        self,
-        direction: TranslationDirection,
-        glossary: dict[str, str],
-    ) -> str:
-        """Build glossary section for prompt"""
-        lines = ["Glossary (以下の用語を使用してください)"]
-
-        if direction == TranslationDirection.JP_TO_EN:
-            for jp, en in glossary.items():
-                lines.append(f"- {jp} → {en}")
-        else:
-            for jp, en in glossary.items():
-                lines.append(f"- {en} → {jp}")
-
-        return "\n".join(lines)
-
     def build_batch(
         self,
         direction: TranslationDirection,
         texts: list[str],
-        glossary: Optional[dict[str, str]] = None,
+        has_glossary: bool = False,
     ) -> str:
         """
         Build prompt for batch translation.
@@ -1991,7 +1995,7 @@ class PromptBuilder:
         Args:
             direction: Translation direction
             texts: List of texts to translate
-            glossary: Optional term mappings
+            has_glossary: Whether glossary file is attached
 
         Returns:
             Complete prompt with numbered input
@@ -2001,10 +2005,52 @@ class PromptBuilder:
             f"{i+1}. {text}" for i, text in enumerate(texts)
         )
 
-        return self.build(direction, numbered_input, glossary)
+        return self.build(direction, numbered_input, has_glossary)
 ```
 
-### 7.4 Glossary Integration
+### 7.4 Copilot Glossary Attachment
+
+```python
+# CopilotHandler での用語集ファイル添付
+
+class CopilotHandler:
+    async def translate(
+        self,
+        texts: list[str],
+        prompt: str,
+        glossary_path: Optional[Path] = None,  # 用語集ファイルパス
+    ) -> list[str]:
+        """
+        Translate with optional glossary file attachment.
+
+        Args:
+            texts: Texts to translate
+            prompt: Built prompt string
+            glossary_path: Path to glossary.csv (attached if provided)
+
+        Returns:
+            Translated texts
+        """
+        # 1. プロンプトを入力
+        await self._send_message(prompt)
+
+        # 2. 用語集ファイルを添付（設定されている場合）
+        if glossary_path and glossary_path.exists():
+            await self._attach_file(glossary_path)
+
+        # 3. 送信して結果を取得
+        result = await self._get_response()
+
+        return self._parse_batch_result(result)
+
+    async def _attach_file(self, file_path: Path) -> None:
+        """Attach file to Copilot chat"""
+        # Playwright でファイル添付操作を実行
+        # 具体的な実装は Copilot UI の構造に依存
+        pass
+```
+
+### 7.5 Glossary File Format
 
 ```python
 class Glossary:

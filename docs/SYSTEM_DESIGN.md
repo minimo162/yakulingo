@@ -906,8 +906,17 @@ JP → EN 翻訳時、英語は日本語より文字数が増える傾向があ�
 
 | 翻訳方向 | サイズ調整 | 最小サイズ | 備考 |
 |---------|----------|----------|------|
-| **JP → EN** | **−2pt** | **6pt** | 文字数増加対策 |
+| **JP → EN** | **−2pt** | **6pt** | 文字数増加対策、元サイズを超えない |
 | **EN → JP** | なし | - | 文字数は減少傾向のため不要 |
+
+**調整例 (JP → EN):**
+
+| 元サイズ | 調整後 | 最終サイズ | 備考 |
+|---------|-------|----------|------|
+| 12pt | 10pt | 10pt | 通常の縮小 |
+| 8pt | 6pt | 6pt | 最小サイズ適用 |
+| 7pt | 5pt | 6pt | 最小サイズ適用 |
+| 5pt | 3pt | **5pt** | 元サイズを超えないため変更なし |
 
 ```python
 class FontSizeAdjuster:
@@ -919,10 +928,6 @@ class FontSizeAdjuster:
     # JP → EN: 縮小設定
     JP_TO_EN_ADJUSTMENT = -2.0  # pt
     JP_TO_EN_MIN_SIZE = 6.0     # pt
-
-    # EN → JP: 調整なし
-    EN_TO_JP_ADJUSTMENT = 0.0
-    EN_TO_JP_MIN_SIZE = 6.0
 
     def adjust_font_size(
         self,
@@ -938,13 +943,15 @@ class FontSizeAdjuster:
 
         Returns:
             調整後のフォントサイズ (pt)
+            - 元のサイズより大きくなることはない
         """
         if direction == "jp_to_en":
             adjusted = original_size + self.JP_TO_EN_ADJUSTMENT
-            return max(adjusted, self.JP_TO_EN_MIN_SIZE)
+            # 最小6pt、ただし元のサイズを超えない
+            return min(original_size, max(adjusted, self.JP_TO_EN_MIN_SIZE))
         else:
             # EN → JP は調整なし
-            return max(original_size, self.EN_TO_JP_MIN_SIZE)
+            return original_size
 ```
 
 #### FontManager (Unified)

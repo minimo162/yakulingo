@@ -1,65 +1,193 @@
-# Excel 日本語→英語 翻訳ツール
+# 🍎 YakuLingo - Text + File Translation
 
-M365 Copilotを使用してExcelの選択範囲の日本語を英訳します。
+日本語と英語の双方向翻訳アプリケーション。M365 Copilotを使用してテキストとファイルを翻訳します。
+
+> **App Name**: YakuLingo (訳リンゴ)
+> - 訳 (yaku) = translation in Japanese
+> - Lingo = playful term for language
+> - Inspired by [LocaLingo](https://github.com/soukouki/LocaLingo)
 
 ## 特徴
 
-- **スクリーンショット連携** - Excelの体裁を画像で認識し、レイアウトを考慮した翻訳
-- **攻撃的圧縮** - セル幅に収まるよう略語・短縮形を使用
-- **モダンUI** - Apple風の洗練されたダークモードインターフェース
-- **リアルタイム進捗表示** - 翻訳状況を視覚的に確認
-- **キャンセル機能** - いつでも翻訳を中断可能
-- **自動バッチ処理** - 大量セルも効率的に翻訳
+| 機能 | 説明 |
+|------|------|
+| **テキスト翻訳** | テキストを入力して即座に翻訳 |
+| **ファイル翻訳** | Excel/Word/PowerPoint/PDF の一括翻訳 |
+| **レイアウト保持** | 翻訳後もファイルの体裁を維持 |
+| **参考ファイル** | 用語集・参考資料による一貫した翻訳 |
+| **フォント自動調整** | 翻訳方向に応じた適切なフォント選択 |
+
+## 対応言語
+
+- 日本語 ↔ 英語（双方向）
+
+## 対応ファイル形式
+
+| 形式 | 拡張子 | 翻訳対象 |
+|------|--------|----------|
+| Excel | `.xlsx` `.xls` | セル、図形、グラフタイトル |
+| Word | `.docx` `.doc` | 段落、表、テキストボックス |
+| PowerPoint | `.pptx` `.ppt` | スライド、ノート、図形 |
+| PDF | `.pdf` | 全ページテキスト |
+
+> **Note**: ヘッダー/フッターは全形式で翻訳対象外
 
 ## 使用方法
 
-1. Excelで翻訳したい範囲を選択
-2. `★run.bat` をダブルクリック
-3. 「Start」ボタンをクリック
-4. 初回のみM365 Copilotにログイン
+### クイックスタート
+
+```bash
+# 起動
+python app.py
+```
+
+ブラウザで `http://localhost:8765` が自動的に開きます。
+
+### テキスト翻訳
+
+1. **Text** タブを選択
+2. 左側のテキストエリアに翻訳したいテキストを入力
+3. **Translate** ボタンをクリック
+4. 右側に翻訳結果が表示される
+
+### ファイル翻訳
+
+1. **File** タブを選択
+2. ファイルをドロップまたはクリックして選択
+3. **Translate File** ボタンをクリック
+4. 翻訳完了後、**Download** でファイルを取得
+
+### 言語切り替え
+
+- テキストエリア間の **⇄** ボタンをクリックで方向切り替え
+- 日本語 → 英語 / 英語 → 日本語
 
 ## 必要環境
 
-- Windows 10/11
-- Microsoft Excel
-- Microsoft Edge
-- M365 Copilotへのアクセス権
+| 項目 | 要件 |
+|------|------|
+| OS | Windows 10/11 |
+| Python | 3.11 |
+| ブラウザ | Microsoft Edge |
+| ネットワーク | M365 Copilotへのアクセス |
 
-## 制限事項
+## インストール
 
-- 日本語を含むセルのみが翻訳対象
+### 1. 依存関係のインストール
 
-## CLIモード
+```bash
+# uv を使用する場合
+uv sync
 
-従来のコマンドライン版を使用する場合：
+# pip を使用する場合
+pip install -r requirements.txt
 ```
-python translate.py --cli
+
+### 2. Playwrightブラウザのインストール
+
+```bash
+playwright install chromium
 ```
+
+### 3. 起動
+
+```bash
+python app.py
+```
+
+## ディレクトリ構造
+
+```
+YakuLingo/
+├── app.py                    # エントリーポイント
+├── ecm_translate/            # メインパッケージ
+│   ├── ui/                   # NiceGUI UIコンポーネント
+│   ├── services/             # サービス層
+│   ├── processors/           # ファイルプロセッサ
+│   ├── config/               # 設定管理
+│   └── models/               # データモデル
+├── prompts/                  # 翻訳プロンプト
+│   ├── translate_jp_to_en.txt
+│   └── translate_en_to_jp.txt
+├── config/
+│   └── settings.json         # アプリ設定
+├── glossary.csv              # デフォルト用語集
+└── ★run.bat                  # 起動スクリプト (Windows)
+```
+
+## 設定
+
+### config/settings.json
+
+```json
+{
+  "reference_files": ["glossary.csv"],
+  "output_directory": null,
+  "start_with_windows": false,
+  "last_direction": "jp_to_en",
+  "max_batch_size": 50,
+  "request_timeout": 120,
+  "max_retries": 3
+}
+```
+
+### 用語集 (glossary.csv)
+
+```csv
+Japanese,English
+株式会社,Corp.
+営業利益,Operating Profit
+前年比,YOY
+```
+
+## 数値表記ルール
+
+翻訳時に以下の数値表記が自動変換されます：
+
+| 日本語 | 英語 |
+|--------|------|
+| 4,500億円 | 4,500 oku yen |
+| 12,000 | 12k |
+| ▲50 | (50) |
 
 ## トラブルシューティング
 
-### Copilotにログインできない / セッションが切れた
+### Copilotに接続できない
 
-1. `★run.bat` を実行
-2. 開いたEdgeウィンドウでM365 Copilotに再ログイン
-3. 再度翻訳を実行
+1. Microsoft Edgeがインストールされているか確認
+2. M365 Copilotへのアクセス権があるか確認
+3. 別のEdgeプロセスが起動中の場合は終了
 
-### 「ポートが使用中」エラー
+### ファイル翻訳が失敗する
 
-別のEdgeプロセスがポート9333を使用しています。
+- ファイルが破損していないか確認
+- ファイルサイズが50MB以下か確認
+- 対応形式（.xlsx, .docx, .pptx, .pdf）か確認
 
-1. タスクマネージャーでEdgeを全て終了
-2. 再度 `★run.bat` を実行
+### 翻訳結果が期待と異なる
 
-### 翻訳結果がExcelに反映されない
+- 用語集（glossary.csv）に固有名詞を追加
+- 参考ファイルを添付して文脈を提供
 
-- Excelファイルが読み取り専用でないか確認
-- 選択範囲が正しいか確認
-- Copilotの応答が完了するまで待つ
+## キーボードショートカット
 
-### Edgeが起動しない
+| ショートカット | 動作 |
+|--------------|------|
+| `Ctrl + Enter` | 翻訳実行 (Text タブ) |
+| `Ctrl + Shift + C` | 結果をコピー |
+| `Ctrl + L` | 言語方向の切り替え |
+| `Escape` | 翻訳キャンセル |
 
-- Microsoft Edgeがインストールされているか確認
-- `C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe` が存在するか確認
+## 技術スタック
 
-## バージョン: 20251127
+- **UI**: NiceGUI (Python)
+- **翻訳**: M365 Copilot (Playwright)
+- **ファイル処理**: openpyxl, python-docx, python-pptx, PyMuPDF
+
+## ライセンス
+
+MIT License
+
+## バージョン
+
+2.0.0

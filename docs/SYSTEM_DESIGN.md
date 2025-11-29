@@ -792,10 +792,12 @@ class ParagraphTranslator:
 - 実用上、段落単位の書式保持で十分なケースが多い
 ```
 
-### 5.3.2 Font Settings (All File Types)
+### 5.3.2 Font Settings (Excel/Word/PowerPoint)
 
-ファイル翻訳（Excel/Word/PowerPoint/PDF）共通のフォント設定。
+Excel/Word/PowerPoint のファイル翻訳用フォント設定。
 元ファイルのフォント種類を自動検出し、翻訳方向に応じて適切なフォントにマッピングする。
+
+> **Note**: PDF翻訳のフォント設定は PDFMathTranslate 準拠の別方式を採用（5.7.1参照）
 
 #### Font Type Detection (自動検出)
 
@@ -806,7 +808,6 @@ class ParagraphTranslator:
 | Excel | `cell.font.name` (openpyxl) |
 | Word | `run.font.name` (python-docx) |
 | PowerPoint | `run.font.name` (python-pptx) |
-| PDF | `span["font"]` (PyMuPDF) |
 
 ```python
 # ecm_translate/processors/font_manager.py
@@ -817,7 +818,7 @@ from typing import Optional
 class FontTypeDetector:
     """
     元ファイルのフォント種類を自動検出
-    Excel/Word/PowerPoint/PDF 共通
+    Excel/Word/PowerPoint 用
     """
 
     # 明朝系/セリフ系フォントのパターン
@@ -912,7 +913,7 @@ JP → EN 翻訳時、英語は日本語より文字数が増える傾向があ�
 class FontSizeAdjuster:
     """
     翻訳方向に応じたフォントサイズ調整
-    Excel/Word/PowerPoint/PDF 共通
+    Excel/Word/PowerPoint 用
     """
 
     # JP → EN: 縮小設定
@@ -953,8 +954,8 @@ class FontSizeAdjuster:
 ```python
 class FontManager:
     """
-    ファイル翻訳共通のフォント管理
-    Excel/Word/PowerPoint/PDF で使用
+    ファイル翻訳のフォント管理
+    Excel/Word/PowerPoint で使用
     """
 
     def __init__(self, direction: str):
@@ -1014,7 +1015,8 @@ class FontManager:
 | **ExcelProcessor** | `cell.font = Font(name=output_font, size=adjusted_size)` |
 | **WordProcessor** | `run.font.name = output_font; run.font.size = Pt(adjusted_size)` |
 | **PptxProcessor** | `run.font.name = output_font; run.font.size = Pt(adjusted_size)` |
-| **PdfProcessor** | `FontRegistry.select_font_for_text()` + PyMuPDF 埋め込み |
+
+> **PdfProcessor** のフォント設定は 5.7.1 を参照
 
 ### 5.4 ExcelProcessor
 
@@ -1858,6 +1860,70 @@ class PdfProcessor(FileProcessor):
         """
         # Use existing pdf_translator logic or PyMuPDF text replacement
         pass
+```
+
+### 5.7.1 PDF Font Settings (PDFMathTranslate 準拠)
+
+PDF翻訳のフォント設定は [PDFMathTranslate](https://github.com/PDFMathTranslate/PDFMathTranslate) の方式に準拠する。
+Excel/Word/PowerPoint とは異なり、**元フォントの種類（明朝/ゴシック）は考慮しない**シンプルなアプローチを採用。
+
+#### 設計方針
+
+| 項目 | Excel/Word/PowerPoint | PDF |
+|------|----------------------|-----|
+| 元フォント検出 | ✓ する | ✗ しない |
+| フォントマッピング | 明朝→Arial/ゴシック→Calibri | 言語別固定フォント |
+| サイズ調整 | JP→EN: −2pt | 動的行高さ調整 |
+
+**理由**:
+- PDFは埋め込みフォントの情報取得が複雑で不安定
+- PDFMathTranslateで実績のある方式を踏襲し、安定性を優先
+
+#### Language-Based Font Selection
+
+ターゲット言語に基づいて固定フォントを選択:
+
+| ターゲット言語 | フォント | 備考 |
+|--------------|---------|------|
+| 日本語 | **Source Han Serif JP** | 源ノ明朝 |
+| 英語 | **Tiro Devanagari Latin** | ラテン文字用 |
+| 中国語(簡体) | Source Han Serif SC | |
+| 中国語(繁体) | Source Han Serif TC | |
+| 韓国語 | Source Han Serif KR | |
+| その他 | Go Noto Kurrent | 多言語対応 |
+
+```python
+# PDFMathTranslate 準拠のフォント設定
+LANG_FONT_MAP = {
+    "ja": "SourceHanSerifJP-Regular.ttf",
+    "en": "tiro",  # Tiro Devanagari Latin
+    "zh-CN": "SourceHanSerifSC-Regular.ttf",
+    "zh-TW": "SourceHanSerifTC-Regular.ttf",
+    "ko": "SourceHanSerifKR-Regular.ttf",
+}
+
+DEFAULT_FONT = "GoNotoKurrent-Regular.ttf"
+```
+
+#### Line Height Adjustment
+
+フォントサイズの固定縮小ではなく、言語別の行高さ倍率で動的調整:
+
+| 言語 | 行高さ倍率 |
+|-----|----------|
+| 中国語 | 1.4 |
+| 日本語 | 1.3 |
+| 英語 | 1.2 |
+| その他 | 1.2 |
+
+```python
+LINE_HEIGHT_RATIO = {
+    "zh-CN": 1.4,
+    "zh-TW": 1.4,
+    "ja": 1.3,
+    "en": 1.2,
+    "default": 1.2,
+}
 ```
 
 ---

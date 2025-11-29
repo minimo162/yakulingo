@@ -1,4 +1,4 @@
-# PDF翻訳機能 技術仕様書 v9.4
+# PDF翻訳機能 技術仕様書 v9.5
 
 ## 概要
 
@@ -522,8 +522,8 @@ class IntelligentResponseParser:
 # 変更前
 if re.match(r"R\d+C\d+", address):
 
-# 変更後
-ADDRESS_PATTERN = r"(R\d+C\d+|P\d+_\d+|T\d+_\d+_\d+_\d+)"
+# 変更後 (Excel SHAPE形式も含む)
+ADDRESS_PATTERN = r"(R\d+C\d+|P\d+_\d+|T\d+_\d+_\d+_\d+|SHAPE:\w+)"
 
 if re.match(ADDRESS_PATTERN, address):
 ```
@@ -1976,3 +1976,4 @@ def analyze_document(img: np.ndarray, device: str = "cpu") -> DocumentAnalyzerSc
 | v9.2 | 2024-11 | ambient_glowをPDF/Excel共通で適用 (UI一貫性向上) |
 | v9.3 | 2024-11 | show_cancelled追加、show_error 5秒タイマー確定、show_readyサフィックス削除確定 |
 | v9.4 | 2024-11 | show_connecting追加 (Copilot接続フェーズ用、PDF/Excel共通) |
+| v9.5 | 2024-11 | translate.py拡張: ADDRESS_PATTERNにPDFアドレス形式(P#_#, T#_#_#_#)追加、SHAPE形式も含む |

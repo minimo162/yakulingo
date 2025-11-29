@@ -1153,26 +1153,29 @@ Input Data
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 9.3 ルートウィンドウ変更
+### 9.3 TranslatorApp の拡張
 
-既存の `TranslatorApp` を `TkinterDnD.DnDWrapper` と統合する。
+既存の `TranslatorApp` クラスにPDF翻訳用のプロパティを追加する。
+
+**注意**: TkinterDnD の継承は行わない。ドラッグ&ドロップ機能は `FileDropArea` コンポーネント内で `tk.Frame` を使用して実装する（9.5節参照）。これにより CustomTkinter との互換性問題を回避する。
 
 ```python
 # ui.py の TranslatorApp クラスを変更
 
 import customtkinter as ctk
-from tkinterdnd2 import TkinterDnD
 from pathlib import Path
 from typing import Callable, Optional
 
-class TranslatorApp(ctk.CTk, TkinterDnD.DnDWrapper):
+class TranslatorApp(ctk.CTk):
     """
-    Main application - 既存UIにDnD機能を追加
+    Main application - 既存UIを維持しつつPDF機能を追加
+
+    注意: TkinterDnD.DnDWrapper は継承しない。
+    DnD機能は FileDropArea 内で tk.Frame を使用して実装する。
     """
 
     def __init__(self):
         super().__init__()
-        self.TkdndVersion = TkinterDnD._require(self)  # DnD初期化
 
         # === 既存の初期化コード ===
         self.is_translating = False
@@ -1557,19 +1560,28 @@ SoundPlayer.play_error()
 
 Hero Section 内にドロップエリアを追加する。
 
+**TkinterDnD 初期化について:**
+- `TranslatorApp` は `TkinterDnD.DnDWrapper` を継承しない（CustomTkinter との互換性問題を回避）
+- 代わりに `FileDropArea` 内で `TkinterDnD._require()` を使用してルートウィンドウを初期化
+- ドロップ対象は `tk.Frame`（標準 tkinter）を使用し、その中に `ctk` ウィジェットを配置
+
 ```python
 import tkinter as tk
 import customtkinter as ctk
-from tkinterdnd2 import DND_FILES
+from tkinterdnd2 import DND_FILES, TkinterDnD
 from pathlib import Path
 
 class FileDropArea(ctk.CTkFrame):
     """
     ファイルドラッグ&ドロップエリア
     PDF / Excel 両対応
+
+    TkinterDnD の初期化は本クラス内で行う。
+    ルートウィンドウ (TranslatorApp) の継承変更は不要。
     """
 
     SUPPORTED_EXTENSIONS = {".pdf", ".xlsx", ".xls"}
+    _dnd_initialized = False  # クラス変数: 初期化済みフラグ
 
     def __init__(self, parent, on_file_selected: callable, theme):
         super().__init__(parent, fg_color="transparent")
@@ -1579,7 +1591,20 @@ class FileDropArea(ctk.CTkFrame):
         self.file_type: str = None  # "pdf" or "excel"
 
         self._setup_ui()
+        self._init_tkdnd()  # TkinterDnD 初期化
         self._setup_dnd()
+
+    def _init_tkdnd(self):
+        """TkinterDnD をルートウィンドウに初期化（1回のみ）"""
+        if not FileDropArea._dnd_initialized:
+            try:
+                # ルートウィンドウを取得して TkinterDnD を初期化
+                root = self.winfo_toplevel()
+                TkinterDnD._require(root)
+                FileDropArea._dnd_initialized = True
+            except Exception as e:
+                print(f"Warning: TkinterDnD initialization failed: {e}")
+                # DnD が使えなくてもファイル選択ダイアログは使用可能
 
     def _setup_ui(self):
         """UI構築 - 既存テーマを使用"""
@@ -1647,10 +1672,17 @@ class FileDropArea(ctk.CTkFrame):
 
     def _setup_dnd(self):
         """ドラッグ&ドロップ設定"""
-        self.drop_frame.drop_target_register(DND_FILES)
-        self.drop_frame.dnd_bind("<<Drop>>", self._on_drop)
-        self.drop_frame.dnd_bind("<<DropEnter>>", self._on_drag_enter)
-        self.drop_frame.dnd_bind("<<DropLeave>>", self._on_drag_leave)
+        if not FileDropArea._dnd_initialized:
+            # TkinterDnD 初期化失敗時はスキップ（ファイル選択ダイアログは使用可能）
+            return
+
+        try:
+            self.drop_frame.drop_target_register(DND_FILES)
+            self.drop_frame.dnd_bind("<<Drop>>", self._on_drop)
+            self.drop_frame.dnd_bind("<<DropEnter>>", self._on_drag_enter)
+            self.drop_frame.dnd_bind("<<DropLeave>>", self._on_drag_leave)
+        except Exception as e:
+            print(f"Warning: DnD setup failed: {e}")
 
     def _parse_drop_data(self, data: str) -> list[str]:
         """ドロップデータをパース"""

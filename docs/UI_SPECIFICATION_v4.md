@@ -29,9 +29,11 @@
 | 形式 | 拡張子 | 翻訳対象 |
 |------|--------|----------|
 | Excel | `.xlsx` `.xls` | セル、図形、グラフタイトル |
-| Word | `.docx` `.doc` | 段落、表、ヘッダー/フッター |
+| Word | `.docx` `.doc` | 段落、表、テキストボックス |
 | PowerPoint | `.pptx` `.ppt` | スライド、ノート、図形 |
 | PDF | `.pdf` | 全ページテキスト |
+
+> **Note**: ヘッダー/フッターは全形式で翻訳対象外
 
 ---
 
@@ -494,7 +496,6 @@
 - Cell values (text only)
 - Shape text (TextBox, etc.)
 - Chart titles and labels
-- Header/Footer text
 
 **Preserved:**
 - Formulas (not translated)
@@ -508,13 +509,13 @@
 - Sheet names
 - Named ranges
 - Comments (optional)
+- Header/Footer text
 
 ### 11.2 Word (.docx)
 
 **Translated:**
 - Paragraphs
 - Tables (cell text)
-- Headers and footers
 - Text boxes
 - Footnotes and endnotes
 
@@ -524,6 +525,9 @@
 - Page layout
 - Lists (bullets, numbers)
 - Table formatting
+
+**Not translated:**
+- Headers and footers
 
 ### 11.3 PowerPoint (.pptx)
 

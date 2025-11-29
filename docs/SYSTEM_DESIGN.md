@@ -792,6 +792,264 @@ class ParagraphTranslator:
 - 実用上、段落単位の書式保持で十分なケースが多い
 ```
 
+### 5.3.2 Font Settings (Excel/Word/PowerPoint)
+
+Excel/Word/PowerPoint のファイル翻訳用フォント設定。
+元ファイルのフォント種類を自動検出し、翻訳方向に応じて適切なフォントにマッピングする。
+
+> **Note**: PDF翻訳のフォント設定は PDFMathTranslate 準拠の別方式を採用（5.7.1参照）
+
+#### Font Type Detection (自動検出)
+
+元ファイルからフォント情報を抽出し、明朝系（セリフ）/ゴシック系（サンセリフ）を判定する。
+
+| ファイル形式 | フォント情報取得方法 |
+|------------|-------------------|
+| Excel | `cell.font.name` (openpyxl) |
+| Word | `run.font.name` (python-docx) |
+| PowerPoint | `run.font.name` (python-pptx) |
+
+**複数フォント混在時**: 段落/セル内に複数フォントがある場合は**最頻出フォント**を基準とする。
+
+```python
+# ecm_translate/processors/font_manager.py
+
+import re
+from typing import Optional
+from collections import Counter
+
+class FontTypeDetector:
+    """
+    元ファイルのフォント種類を自動検出
+    Excel/Word/PowerPoint 用
+    """
+
+    # 明朝系/セリフ系フォントのパターン
+    MINCHO_PATTERNS = [
+        r"Mincho", r"明朝", r"Ming", r"Serif", r"Times", r"Georgia",
+        r"Cambria", r"Palatino", r"Garamond", r"Bookman", r"Century",
+    ]
+
+    # ゴシック系/サンセリフ系フォントのパターン
+    GOTHIC_PATTERNS = [
+        r"Gothic", r"ゴシック", r"Sans", r"Arial", r"Helvetica",
+        r"Calibri", r"Meiryo", r"メイリオ", r"Verdana", r"Tahoma",
+        r"Yu Gothic", r"游ゴシック", r"Hiragino.*Gothic", r"Segoe",
+    ]
+
+    def detect_font_type(self, font_name: Optional[str]) -> str:
+        """
+        フォント名から種類を判定
+
+        Args:
+            font_name: フォント名（None の場合は "unknown"）
+
+        Returns:
+            "mincho": 明朝系/セリフ系
+            "gothic": ゴシック系/サンセリフ系
+            "unknown": 判定不能（デフォルト扱い）
+        """
+        if not font_name:
+            return "unknown"
+
+        for pattern in self.MINCHO_PATTERNS:
+            if re.search(pattern, font_name, re.IGNORECASE):
+                return "mincho"
+
+        for pattern in self.GOTHIC_PATTERNS:
+            if re.search(pattern, font_name, re.IGNORECASE):
+                return "gothic"
+
+        return "unknown"
+
+    def get_dominant_font(self, font_names: list[str]) -> Optional[str]:
+        """
+        複数フォントから最頻出フォントを取得
+
+        Args:
+            font_names: フォント名のリスト（段落内の各runから収集）
+
+        Returns:
+            最頻出フォント名、空リストの場合は None
+        """
+        if not font_names:
+            return None
+
+        # None や空文字を除外
+        valid_fonts = [f for f in font_names if f]
+        if not valid_fonts:
+            return None
+
+        # 最頻出フォントを返す
+        counter = Counter(valid_fonts)
+        return counter.most_common(1)[0][0]
+```
+
+#### Font Mapping Table
+
+| 翻訳方向 | 元フォント種類 | 出力フォント | フォントファイル |
+|---------|--------------|-------------|----------------|
+| **JP → EN** | 明朝系 (default) | **Arial** | `arial.ttf` |
+| **JP → EN** | ゴシック系 | **Calibri** | `calibri.ttf` |
+| **EN → JP** | セリフ系 (default) | **MS P明朝** | `msmincho.ttc` |
+| **EN → JP** | サンセリフ系 | **Meiryo UI** | `meiryoui.ttc` |
+
+```python
+FONT_MAPPING = {
+    "jp_to_en": {
+        "mincho": {
+            "name": "Arial",
+            "file": "arial.ttf",
+            "fallback": ["DejaVuSans.ttf", "LiberationSans-Regular.ttf"],
+        },
+        "gothic": {
+            "name": "Calibri",
+            "file": "calibri.ttf",
+            "fallback": ["arial.ttf", "DejaVuSans.ttf"],
+        },
+        "default": "mincho",  # 判定不能時は明朝系扱い
+    },
+    "en_to_jp": {
+        "serif": {
+            "name": "MS P明朝",
+            "file": "msmincho.ttc",
+            "fallback": ["ipam.ttf", "NotoSerifJP-Regular.ttf"],
+        },
+        "sans-serif": {
+            "name": "Meiryo UI",
+            "file": "meiryoui.ttc",
+            "fallback": ["msgothic.ttc", "NotoSansJP-Regular.ttf"],
+        },
+        "default": "serif",  # 判定不能時はセリフ系扱い
+    },
+}
+```
+
+#### Font Size Auto-Adjustment
+
+JP → EN 翻訳時、英語は日本語より文字数が増える傾向があるため、フォントサイズを自動縮小する。
+
+| 翻訳方向 | サイズ調整 | 最小サイズ | 備考 |
+|---------|----------|----------|------|
+| **JP → EN** | **−2pt** | **6pt** | 文字数増加対策、元サイズを超えない |
+| **EN → JP** | なし | - | 文字数は減少傾向のため不要 |
+
+**調整例 (JP → EN):**
+
+| 元サイズ | 調整後 | 最終サイズ | 備考 |
+|---------|-------|----------|------|
+| 12pt | 10pt | 10pt | 通常の縮小 |
+| 8pt | 6pt | 6pt | 最小サイズ適用 |
+| 7pt | 5pt | 6pt | 最小サイズ適用 |
+| 5pt | 3pt | **5pt** | 元サイズを超えないため変更なし |
+
+```python
+class FontSizeAdjuster:
+    """
+    翻訳方向に応じたフォントサイズ調整
+    Excel/Word/PowerPoint 用
+    """
+
+    # JP → EN: 縮小設定
+    JP_TO_EN_ADJUSTMENT = -2.0  # pt
+    JP_TO_EN_MIN_SIZE = 6.0     # pt
+
+    def adjust_font_size(
+        self,
+        original_size: float,
+        direction: str,  # "jp_to_en" or "en_to_jp"
+    ) -> float:
+        """
+        翻訳方向に応じてフォントサイズを調整
+
+        Args:
+            original_size: 元のフォントサイズ (pt)
+            direction: 翻訳方向
+
+        Returns:
+            調整後のフォントサイズ (pt)
+            - 元のサイズより大きくなることはない
+        """
+        if direction == "jp_to_en":
+            adjusted = original_size + self.JP_TO_EN_ADJUSTMENT
+            # 最小6pt、ただし元のサイズを超えない
+            return min(original_size, max(adjusted, self.JP_TO_EN_MIN_SIZE))
+        else:
+            # EN → JP は調整なし
+            return original_size
+```
+
+#### FontManager (Unified)
+
+全ファイル形式で共通のフォント管理クラス。
+
+```python
+class FontManager:
+    """
+    ファイル翻訳のフォント管理
+    Excel/Word/PowerPoint で使用
+    """
+
+    def __init__(self, direction: str):
+        """
+        Args:
+            direction: "jp_to_en" or "en_to_jp"
+        """
+        self.direction = direction
+        self.font_type_detector = FontTypeDetector()
+        self.font_size_adjuster = FontSizeAdjuster()
+
+    def select_font(
+        self,
+        original_font_name: Optional[str],
+        original_font_size: float,
+    ) -> tuple[str, float]:
+        """
+        元フォント情報から翻訳後のフォントを選択
+
+        Args:
+            original_font_name: 元ファイルのフォント名
+            original_font_size: 元ファイルのフォントサイズ (pt)
+
+        Returns:
+            (output_font_name, adjusted_size)
+        """
+        # 1. 元フォントの種類を判定
+        font_type = self.font_type_detector.detect_font_type(original_font_name)
+
+        # 2. マッピングテーブルからフォントを選択
+        mapping = FONT_MAPPING[self.direction]
+        if font_type == "mincho":
+            font_key = "mincho" if self.direction == "jp_to_en" else "serif"
+        elif font_type == "gothic":
+            font_key = "gothic" if self.direction == "jp_to_en" else "sans-serif"
+        else:
+            font_key = mapping["default"]
+
+        font_config = mapping[font_key]
+        output_font_name = font_config["name"]
+
+        # 3. フォントサイズを調整
+        adjusted_size = self.font_size_adjuster.adjust_font_size(
+            original_font_size,
+            self.direction,
+        )
+
+        return (output_font_name, adjusted_size)
+```
+
+#### Processor-Specific Implementation
+
+各 FileProcessor でのフォント適用方法:
+
+| Processor | フォント適用方法 |
+|-----------|-----------------|
+| **ExcelProcessor** | `cell.font = Font(name=output_font, size=adjusted_size)` |
+| **WordProcessor** | `run.font.name = output_font; run.font.size = Pt(adjusted_size)` |
+| **PptxProcessor** | `run.font.name = output_font; run.font.size = Pt(adjusted_size)` |
+
+> **PdfProcessor** のフォント設定は 5.7.1 を参照
+
 ### 5.4 ExcelProcessor
 
 ```python
@@ -901,10 +1159,8 @@ class ExcelProcessor(FileProcessor):
 Document
 │
 ├── Sections[]                          ← 文書セクション
-│   ├── Header                          ← ヘッダー（セクションごと）
-│   │   └── Paragraphs[]
-│   └── Footer                          ← フッター（セクションごと）
-│       └── Paragraphs[]
+│   ├── Header                          ← ヘッダー ✗翻訳対象外
+│   └── Footer                          ← フッター ✗翻訳対象外
 │
 ├── Paragraphs[]                        ← 本文段落
 │   ├── Style (Heading 1, Normal, etc.) ← 段落スタイル ✓保持
@@ -957,11 +1213,7 @@ Document
 │    TextBlock(id="table_0_r0_c0", type="table_cell")           │
 │    TextBlock(id="table_0_r0_c1", type="table_cell")           │
 │                                                               │
-│    [ヘッダー/フッター] ─────→ ParagraphTranslator              │
-│         │                                                     │
-│         ▼                                                     │
-│    TextBlock(id="header_0_0", type="header")                  │
-│    TextBlock(id="footer_0_0", type="footer")                  │
+│    [ヘッダー/フッター] ─────→ ✗ スキップ（翻訳対象外）          │
 │                                                               │
 │    [テキストボックス] ─────→ ParagraphTranslator               │
 │         │                                                     │
@@ -987,8 +1239,6 @@ Document
 │                                                               │
 │    [テーブル] cell.paragraphs[0].runs[0].text = translated    │
 │           → セル書式保持（Excel準拠）                          │
-│                                                               │
-│    [ヘッダー/フッター] 段落と同様                               │
 └───────────────────────────────────────────────────────────────┘
         │
         ▼
@@ -1015,8 +1265,9 @@ class WordProcessor(FileProcessor):
     Translation targets:
     - Body paragraphs (ParagraphTranslator)
     - Table cells (CellTranslator - Excel-compatible)
-    - Headers/Footers (ParagraphTranslator)
     - Text boxes (ParagraphTranslator)
+
+    Note: Headers/Footers are NOT translated (excluded from processing)
     """
 
     def __init__(self):
@@ -1049,16 +1300,7 @@ class WordProcessor(FileProcessor):
                     if cell.text and self.cell_translator.should_translate(cell.text):
                         text_count += 1
 
-        # Count headers/footers
-        for section in doc.sections:
-            if section.header:
-                for para in section.header.paragraphs:
-                    if para.text and self.para_translator.should_translate(para.text):
-                        text_count += 1
-            if section.footer:
-                for para in section.footer.paragraphs:
-                    if para.text and self.para_translator.should_translate(para.text):
-                        text_count += 1
+        # Note: Headers/Footers are excluded from translation
 
         return FileInfo(
             path=file_path,
@@ -1104,36 +1346,7 @@ class WordProcessor(FileProcessor):
                             }
                         )
 
-        # === Headers ===
-        for section_idx, section in enumerate(doc.sections):
-            if section.header:
-                for para_idx, para in enumerate(section.header.paragraphs):
-                    if para.text and self.para_translator.should_translate(para.text):
-                        yield TextBlock(
-                            id=f"header_{section_idx}_{para_idx}",
-                            text=para.text,
-                            location=f"Header (Section {section_idx + 1})",
-                            metadata={
-                                'type': 'header',
-                                'section': section_idx,
-                                'para': para_idx,
-                            }
-                        )
-
-            # === Footers ===
-            if section.footer:
-                for para_idx, para in enumerate(section.footer.paragraphs):
-                    if para.text and self.para_translator.should_translate(para.text):
-                        yield TextBlock(
-                            id=f"footer_{section_idx}_{para_idx}",
-                            text=para.text,
-                            location=f"Footer (Section {section_idx + 1})",
-                            metadata={
-                                'type': 'footer',
-                                'section': section_idx,
-                                'para': para_idx,
-                            }
-                        )
+        # Note: Headers/Footers are excluded from translation
 
     def apply_translations(
         self,
@@ -1167,19 +1380,7 @@ class WordProcessor(FileProcessor):
                                 for run in para.runs:
                                     run.text = ""
 
-        # === Apply to headers/footers ===
-        for section_idx, section in enumerate(doc.sections):
-            if section.header:
-                for para_idx, para in enumerate(section.header.paragraphs):
-                    block_id = f"header_{section_idx}_{para_idx}"
-                    if block_id in translations:
-                        self._apply_to_paragraph(para, translations[block_id])
-
-            if section.footer:
-                for para_idx, para in enumerate(section.footer.paragraphs):
-                    block_id = f"footer_{section_idx}_{para_idx}"
-                    if block_id in translations:
-                        self._apply_to_paragraph(para, translations[block_id])
+        # Note: Headers/Footers are excluded from translation
 
         doc.save(output_path)
 
@@ -1634,6 +1835,70 @@ class PdfProcessor(FileProcessor):
         """
         # Use existing pdf_translator logic or PyMuPDF text replacement
         pass
+```
+
+### 5.7.1 PDF Font Settings (PDFMathTranslate 準拠)
+
+PDF翻訳のフォント設定は [PDFMathTranslate](https://github.com/PDFMathTranslate/PDFMathTranslate) の方式に準拠する。
+Excel/Word/PowerPoint とは異なり、**元フォントの種類（明朝/ゴシック）は考慮しない**シンプルなアプローチを採用。
+
+#### 設計方針
+
+| 項目 | Excel/Word/PowerPoint | PDF |
+|------|----------------------|-----|
+| 元フォント検出 | ✓ する | ✗ しない |
+| フォントマッピング | 明朝→Arial/ゴシック→Calibri | 言語別固定フォント |
+| サイズ調整 | JP→EN: −2pt | 動的行高さ調整 |
+
+**理由**:
+- PDFは埋め込みフォントの情報取得が複雑で不安定
+- PDFMathTranslateで実績のある方式を踏襲し、安定性を優先
+
+#### Language-Based Font Selection
+
+ターゲット言語に基づいて固定フォントを選択:
+
+| ターゲット言語 | フォント | 備考 |
+|--------------|---------|------|
+| 日本語 | **Source Han Serif JP** | 源ノ明朝 |
+| 英語 | **Tiro Devanagari Latin** | ラテン文字用 |
+| 中国語(簡体) | Source Han Serif SC | |
+| 中国語(繁体) | Source Han Serif TC | |
+| 韓国語 | Source Han Serif KR | |
+| その他 | Go Noto Kurrent | 多言語対応 |
+
+```python
+# PDFMathTranslate 準拠のフォント設定
+LANG_FONT_MAP = {
+    "ja": "SourceHanSerifJP-Regular.ttf",
+    "en": "tiro",  # Tiro Devanagari Latin
+    "zh-CN": "SourceHanSerifSC-Regular.ttf",
+    "zh-TW": "SourceHanSerifTC-Regular.ttf",
+    "ko": "SourceHanSerifKR-Regular.ttf",
+}
+
+DEFAULT_FONT = "GoNotoKurrent-Regular.ttf"
+```
+
+#### Line Height Adjustment
+
+フォントサイズの固定縮小ではなく、言語別の行高さ倍率で動的調整:
+
+| 言語 | 行高さ倍率 |
+|-----|----------|
+| 中国語 | 1.4 |
+| 日本語 | 1.3 |
+| 英語 | 1.2 |
+| その他 | 1.2 |
+
+```python
+LINE_HEIGHT_RATIO = {
+    "zh-CN": 1.4,
+    "zh-TW": 1.4,
+    "ja": 1.3,
+    "en": 1.2,
+    "default": 1.2,
+}
 ```
 
 ---

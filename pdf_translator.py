@@ -1158,10 +1158,6 @@ def reconstruct_pdf(
     doc.close()
 
 
-# 移行フラグ（将来的に削除）
-USE_LOW_LEVEL_OPERATORS = False
-
-
 def reconstruct_pdf_low_level(
     original_pdf_path: str,
     translations: dict[str, str],
@@ -1285,7 +1281,6 @@ def translate_pdf_batch(
     reading_order: str = "auto",
     include_headers: bool = False,
     glossary_path: Path = None,
-    use_low_level: bool = None,
 ) -> PdfTranslationResult:
     """
     Batch PDF translation pipeline.
@@ -1303,8 +1298,6 @@ def translate_pdf_batch(
         reading_order: Layout analysis reading order
         include_headers: Include headers/footers
         glossary_path: Path to glossary CSV
-        use_low_level: 低レベルオペレータを使用するか
-                       None の場合は USE_LOW_LEVEL_OPERATORS を使用
 
     Returns:
         PdfTranslationResult
@@ -1373,29 +1366,17 @@ def translate_pdf_batch(
             del batch_images
             gc.collect()
 
-        # Phase 5: PDF reconstruction
+        # Phase 5: PDF reconstruction (PDFMathTranslate準拠の低レベルオペレータ)
         if progress_callback:
             progress_callback(total_pages, total_pages, "reconstruction")
 
-        # 切り替えロジック
-        _use_low_level = use_low_level if use_low_level is not None else USE_LOW_LEVEL_OPERATORS
-
-        if _use_low_level:
-            reconstruct_pdf_low_level(
-                original_pdf_path=pdf_path,
-                translations=all_translations,
-                cells=all_cells,
-                lang_out=lang_out,
-                output_path=output_path,
-            )
-        else:
-            reconstruct_pdf(
-                original_pdf_path=pdf_path,
-                translations=all_translations,
-                cells=all_cells,
-                lang_out=lang_out,
-                output_path=output_path,
-            )
+        reconstruct_pdf_low_level(
+            original_pdf_path=pdf_path,
+            translations=all_translations,
+            cells=all_cells,
+            lang_out=lang_out,
+            output_path=output_path,
+        )
 
         return PdfTranslationResult(
             success=True,

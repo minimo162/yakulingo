@@ -792,6 +792,230 @@ class ParagraphTranslator:
 - 実用上、段落単位の書式保持で十分なケースが多い
 ```
 
+### 5.3.2 Font Settings (All File Types)
+
+ファイル翻訳（Excel/Word/PowerPoint/PDF）共通のフォント設定。
+元ファイルのフォント種類を自動検出し、翻訳方向に応じて適切なフォントにマッピングする。
+
+#### Font Type Detection (自動検出)
+
+元ファイルからフォント情報を抽出し、明朝系（セリフ）/ゴシック系（サンセリフ）を判定する。
+
+| ファイル形式 | フォント情報取得方法 |
+|------------|-------------------|
+| Excel | `cell.font.name` (openpyxl) |
+| Word | `run.font.name` (python-docx) |
+| PowerPoint | `run.font.name` (python-pptx) |
+| PDF | `span["font"]` (PyMuPDF) |
+
+```python
+# ecm_translate/processors/font_manager.py
+
+import re
+from typing import Optional
+
+class FontTypeDetector:
+    """
+    元ファイルのフォント種類を自動検出
+    Excel/Word/PowerPoint/PDF 共通
+    """
+
+    # 明朝系/セリフ系フォントのパターン
+    MINCHO_PATTERNS = [
+        r"Mincho", r"明朝", r"Ming", r"Serif", r"Times", r"Georgia",
+        r"Cambria", r"Palatino", r"Garamond", r"Bookman", r"Century",
+    ]
+
+    # ゴシック系/サンセリフ系フォントのパターン
+    GOTHIC_PATTERNS = [
+        r"Gothic", r"ゴシック", r"Sans", r"Arial", r"Helvetica",
+        r"Calibri", r"Meiryo", r"メイリオ", r"Verdana", r"Tahoma",
+        r"Yu Gothic", r"游ゴシック", r"Hiragino.*Gothic", r"Segoe",
+    ]
+
+    def detect_font_type(self, font_name: Optional[str]) -> str:
+        """
+        フォント名から種類を判定
+
+        Args:
+            font_name: フォント名（None の場合は "unknown"）
+
+        Returns:
+            "mincho": 明朝系/セリフ系
+            "gothic": ゴシック系/サンセリフ系
+            "unknown": 判定不能（デフォルト扱い）
+        """
+        if not font_name:
+            return "unknown"
+
+        for pattern in self.MINCHO_PATTERNS:
+            if re.search(pattern, font_name, re.IGNORECASE):
+                return "mincho"
+
+        for pattern in self.GOTHIC_PATTERNS:
+            if re.search(pattern, font_name, re.IGNORECASE):
+                return "gothic"
+
+        return "unknown"
+```
+
+#### Font Mapping Table
+
+| 翻訳方向 | 元フォント種類 | 出力フォント | フォントファイル |
+|---------|--------------|-------------|----------------|
+| **JP → EN** | 明朝系 (default) | **Arial** | `arial.ttf` |
+| **JP → EN** | ゴシック系 | **Calibri** | `calibri.ttf` |
+| **EN → JP** | セリフ系 (default) | **MS P明朝** | `msmincho.ttc` |
+| **EN → JP** | サンセリフ系 | **Meiryo UI** | `meiryoui.ttc` |
+
+```python
+FONT_MAPPING = {
+    "jp_to_en": {
+        "mincho": {
+            "name": "Arial",
+            "file": "arial.ttf",
+            "fallback": ["DejaVuSans.ttf", "LiberationSans-Regular.ttf"],
+        },
+        "gothic": {
+            "name": "Calibri",
+            "file": "calibri.ttf",
+            "fallback": ["arial.ttf", "DejaVuSans.ttf"],
+        },
+        "default": "mincho",  # 判定不能時は明朝系扱い
+    },
+    "en_to_jp": {
+        "serif": {
+            "name": "MS P明朝",
+            "file": "msmincho.ttc",
+            "fallback": ["ipam.ttf", "NotoSerifJP-Regular.ttf"],
+        },
+        "sans-serif": {
+            "name": "Meiryo UI",
+            "file": "meiryoui.ttc",
+            "fallback": ["msgothic.ttc", "NotoSansJP-Regular.ttf"],
+        },
+        "default": "serif",  # 判定不能時はセリフ系扱い
+    },
+}
+```
+
+#### Font Size Auto-Adjustment
+
+JP → EN 翻訳時、英語は日本語より文字数が増える傾向があるため、フォントサイズを自動縮小する。
+
+| 翻訳方向 | サイズ調整 | 最小サイズ | 備考 |
+|---------|----------|----------|------|
+| **JP → EN** | **−2pt** | **6pt** | 文字数増加対策 |
+| **EN → JP** | なし | - | 文字数は減少傾向のため不要 |
+
+```python
+class FontSizeAdjuster:
+    """
+    翻訳方向に応じたフォントサイズ調整
+    Excel/Word/PowerPoint/PDF 共通
+    """
+
+    # JP → EN: 縮小設定
+    JP_TO_EN_ADJUSTMENT = -2.0  # pt
+    JP_TO_EN_MIN_SIZE = 6.0     # pt
+
+    # EN → JP: 調整なし
+    EN_TO_JP_ADJUSTMENT = 0.0
+    EN_TO_JP_MIN_SIZE = 6.0
+
+    def adjust_font_size(
+        self,
+        original_size: float,
+        direction: str,  # "jp_to_en" or "en_to_jp"
+    ) -> float:
+        """
+        翻訳方向に応じてフォントサイズを調整
+
+        Args:
+            original_size: 元のフォントサイズ (pt)
+            direction: 翻訳方向
+
+        Returns:
+            調整後のフォントサイズ (pt)
+        """
+        if direction == "jp_to_en":
+            adjusted = original_size + self.JP_TO_EN_ADJUSTMENT
+            return max(adjusted, self.JP_TO_EN_MIN_SIZE)
+        else:
+            # EN → JP は調整なし
+            return max(original_size, self.EN_TO_JP_MIN_SIZE)
+```
+
+#### FontManager (Unified)
+
+全ファイル形式で共通のフォント管理クラス。
+
+```python
+class FontManager:
+    """
+    ファイル翻訳共通のフォント管理
+    Excel/Word/PowerPoint/PDF で使用
+    """
+
+    def __init__(self, direction: str):
+        """
+        Args:
+            direction: "jp_to_en" or "en_to_jp"
+        """
+        self.direction = direction
+        self.font_type_detector = FontTypeDetector()
+        self.font_size_adjuster = FontSizeAdjuster()
+
+    def select_font(
+        self,
+        original_font_name: Optional[str],
+        original_font_size: float,
+    ) -> tuple[str, float]:
+        """
+        元フォント情報から翻訳後のフォントを選択
+
+        Args:
+            original_font_name: 元ファイルのフォント名
+            original_font_size: 元ファイルのフォントサイズ (pt)
+
+        Returns:
+            (output_font_name, adjusted_size)
+        """
+        # 1. 元フォントの種類を判定
+        font_type = self.font_type_detector.detect_font_type(original_font_name)
+
+        # 2. マッピングテーブルからフォントを選択
+        mapping = FONT_MAPPING[self.direction]
+        if font_type == "mincho":
+            font_key = "mincho" if self.direction == "jp_to_en" else "serif"
+        elif font_type == "gothic":
+            font_key = "gothic" if self.direction == "jp_to_en" else "sans-serif"
+        else:
+            font_key = mapping["default"]
+
+        font_config = mapping[font_key]
+        output_font_name = font_config["name"]
+
+        # 3. フォントサイズを調整
+        adjusted_size = self.font_size_adjuster.adjust_font_size(
+            original_font_size,
+            self.direction,
+        )
+
+        return (output_font_name, adjusted_size)
+```
+
+#### Processor-Specific Implementation
+
+各 FileProcessor でのフォント適用方法:
+
+| Processor | フォント適用方法 |
+|-----------|-----------------|
+| **ExcelProcessor** | `cell.font = Font(name=output_font, size=adjusted_size)` |
+| **WordProcessor** | `run.font.name = output_font; run.font.size = Pt(adjusted_size)` |
+| **PptxProcessor** | `run.font.name = output_font; run.font.size = Pt(adjusted_size)` |
+| **PdfProcessor** | `FontRegistry.select_font_for_text()` + PyMuPDF 埋め込み |
+
 ### 5.4 ExcelProcessor
 
 ```python
@@ -1634,186 +1858,6 @@ class PdfProcessor(FileProcessor):
         """
         # Use existing pdf_translator logic or PyMuPDF text replacement
         pass
-```
-
-### 5.7.1 PDF Font Settings
-
-PDF翻訳時のフォント設定。元PDFのフォント種類を自動検出し、適切なフォントにマッピングする。
-
-#### Font Type Detection (自動検出)
-
-PyMuPDFを使用して元PDFからフォント情報を抽出し、明朝系/ゴシック系を判定する。
-
-```python
-class FontTypeDetector:
-    """
-    元PDFのフォント種類を自動検出
-    """
-
-    # 明朝系フォントのパターン
-    MINCHO_PATTERNS = [
-        r"Mincho", r"明朝", r"Ming", r"Serif", r"Times", r"Georgia",
-        r"Cambria", r"Palatino", r"Garamond", r"Bookman",
-    ]
-
-    # ゴシック系フォントのパターン
-    GOTHIC_PATTERNS = [
-        r"Gothic", r"ゴシック", r"Sans", r"Arial", r"Helvetica",
-        r"Calibri", r"Meiryo", r"メイリオ", r"Verdana", r"Tahoma",
-        r"Yu Gothic", r"游ゴシック", r"Hiragino.*Gothic",
-    ]
-
-    def detect_font_type(self, font_name: str) -> str:
-        """
-        フォント名から種類を判定
-
-        Returns:
-            "mincho": 明朝系/セリフ系
-            "gothic": ゴシック系/サンセリフ系
-            "unknown": 判定不能（デフォルト扱い）
-        """
-        pass
-
-    def get_dominant_font_type(self, page) -> str:
-        """
-        ページ内で最も使用されているフォント種類を取得
-        """
-        pass
-```
-
-#### Font Mapping Table
-
-| 翻訳方向 | 元フォント種類 | 出力フォント | フォントファイル |
-|---------|--------------|-------------|----------------|
-| **JP → EN** | 明朝系 (default) | **Arial** | `arial.ttf` |
-| **JP → EN** | ゴシック系 | **Calibri** | `calibri.ttf` |
-| **EN → JP** | セリフ系 (default) | **MS P明朝** | `msmincho.ttc` |
-| **EN → JP** | サンセリフ系 | **Meiryo UI** | `meiryoui.ttc` |
-
-```python
-FONT_MAPPING = {
-    "jp_to_en": {
-        "mincho": {
-            "name": "Arial",
-            "file": "arial.ttf",
-            "fallback": ["DejaVuSans.ttf", "LiberationSans-Regular.ttf"],
-        },
-        "gothic": {
-            "name": "Calibri",
-            "file": "calibri.ttf",
-            "fallback": ["arial.ttf", "DejaVuSans.ttf"],
-        },
-        "default": "mincho",  # 判定不能時
-    },
-    "en_to_jp": {
-        "serif": {
-            "name": "MS-PMincho",
-            "file": "msmincho.ttc",
-            "fallback": ["ipam.ttf", "NotoSerifJP-Regular.ttf"],
-        },
-        "sans-serif": {
-            "name": "Meiryo-UI",
-            "file": "meiryoui.ttc",
-            "fallback": ["msgothic.ttc", "NotoSansJP-Regular.ttf"],
-        },
-        "default": "serif",  # 判定不能時
-    },
-}
-```
-
-#### Font Size Auto-Adjustment
-
-JP → EN 翻訳時、英語は日本語より文字数が増える傾向があるため、フォントサイズを自動縮小する。
-
-| 翻訳方向 | サイズ調整 | 最小サイズ | 備考 |
-|---------|----------|----------|------|
-| **JP → EN** | **−2pt** | **6pt** | 文字数増加対策 |
-| **EN → JP** | なし | - | 文字数は減少傾向 |
-
-```python
-class FontSizeAdjuster:
-    """
-    翻訳方向に応じたフォントサイズ調整
-    """
-
-    # JP → EN: 縮小設定
-    JP_TO_EN_ADJUSTMENT = -2.0  # pt
-    JP_TO_EN_MIN_SIZE = 6.0     # pt
-
-    # EN → JP: 調整なし
-    EN_TO_JP_ADJUSTMENT = 0.0
-    EN_TO_JP_MIN_SIZE = 6.0
-
-    def adjust_font_size(
-        self,
-        original_size: float,
-        direction: str,  # "jp_to_en" or "en_to_jp"
-    ) -> float:
-        """
-        翻訳方向に応じてフォントサイズを調整
-
-        Args:
-            original_size: 元のフォントサイズ (pt)
-            direction: 翻訳方向
-
-        Returns:
-            調整後のフォントサイズ (pt)
-        """
-        if direction == "jp_to_en":
-            adjusted = original_size + self.JP_TO_EN_ADJUSTMENT
-            return max(adjusted, self.JP_TO_EN_MIN_SIZE)
-        else:
-            # EN → JP は調整なし
-            return max(original_size, self.EN_TO_JP_MIN_SIZE)
-```
-
-#### Integration with FontRegistry
-
-既存の `FontRegistry` クラスを拡張して、上記のフォントマッピングとサイズ調整を統合する。
-
-```python
-class FontRegistry:
-    """
-    Extended FontRegistry with automatic font type detection and size adjustment.
-    """
-
-    def __init__(self, direction: str):
-        self.direction = direction
-        self.font_type_detector = FontTypeDetector()
-        self.font_size_adjuster = FontSizeAdjuster()
-
-    def select_font_for_text(
-        self,
-        text: str,
-        original_font_name: str,
-        original_font_size: float,
-    ) -> tuple[str, str, float]:
-        """
-        テキストに対して適切なフォントを選択
-
-        Args:
-            text: 翻訳後テキスト
-            original_font_name: 元PDFのフォント名
-            original_font_size: 元PDFのフォントサイズ
-
-        Returns:
-            (font_name, font_file, adjusted_size)
-        """
-        # 1. 元フォントの種類を判定
-        font_type = self.font_type_detector.detect_font_type(original_font_name)
-
-        # 2. マッピングテーブルからフォントを選択
-        mapping = FONT_MAPPING[self.direction]
-        font_type_key = font_type if font_type in mapping else mapping["default"]
-        font_config = mapping[font_type_key]
-
-        # 3. フォントサイズを調整
-        adjusted_size = self.font_size_adjuster.adjust_font_size(
-            original_font_size,
-            self.direction,
-        )
-
-        return (font_config["name"], font_config["file"], adjusted_size)
 ```
 
 ---

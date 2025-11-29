@@ -40,8 +40,8 @@ class YakuLingoApp:
         self.state.copilot_connecting = True
 
         try:
-            success = await asyncio.get_event_loop().run_in_executor(
-                None, lambda: self.copilot.connect(lambda m: None)
+            success = await asyncio.to_thread(
+                lambda: self.copilot.connect(lambda m: None)
             )
 
             if success:
@@ -140,8 +140,7 @@ class YakuLingoApp:
         ui.navigate.reload()
 
         try:
-            result = await asyncio.get_event_loop().run_in_executor(
-                None,
+            result = await asyncio.to_thread(
                 lambda: self.translation_service.translate_text(
                     self.state.source_text,
                     self.state.direction,
@@ -161,6 +160,10 @@ class YakuLingoApp:
         ui.navigate.reload()
 
     def _select_file(self, file_path: Path):
+        if not self.translation_service:
+            ui.notify('Not connected', type='warning')
+            return
+
         try:
             self.state.file_info = self.translation_service.get_file_info(file_path)
             self.state.selected_file = file_path
@@ -174,15 +177,30 @@ class YakuLingoApp:
             return
 
         self.state.file_state = FileState.TRANSLATING
-        ui.navigate.reload()
+        self.state.translation_progress = 0.0
+        self.state.translation_status = 'Starting...'
+
+        # Create progress UI elements that can be updated
+        with ui.dialog() as progress_dialog, ui.card().classes('w-96'):
+            with ui.column().classes('w-full gap-3 p-4'):
+                ui.label('Translating...').classes('text-lg font-medium')
+                progress_bar = ui.linear_progress(value=0).classes('w-full')
+                progress_label = ui.label('0%').classes('text-sm')
+                status_label = ui.label('Starting...').classes('text-sm text-gray-500')
+                ui.button('Cancel', on_click=lambda: self._cancel_and_close(progress_dialog)).classes('btn-outline')
+
+        progress_dialog.open()
+
+        def on_progress(p: TranslationProgress):
+            self.state.translation_progress = p.percentage
+            self.state.translation_status = p.status
+            # Update UI elements directly
+            progress_bar.set_value(p.percentage)
+            progress_label.set_text(f'{int(p.percentage * 100)}%')
+            status_label.set_text(p.status or 'Translating...')
 
         try:
-            def on_progress(p: TranslationProgress):
-                self.state.translation_progress = p.percentage
-                self.state.translation_status = p.status
-
-            result = await asyncio.get_event_loop().run_in_executor(
-                None,
+            result = await asyncio.to_thread(
                 lambda: self.translation_service.translate_file(
                     self.state.selected_file,
                     self.state.direction,
@@ -190,6 +208,8 @@ class YakuLingoApp:
                     on_progress,
                 )
             )
+
+            progress_dialog.close()
 
             if result.output_path:
                 self.state.output_file = result.output_path
@@ -199,9 +219,18 @@ class YakuLingoApp:
                 self.state.file_state = FileState.ERROR
 
         except Exception as e:
+            progress_dialog.close()
             self.state.error_message = str(e)
             self.state.file_state = FileState.ERROR
 
+        ui.navigate.reload()
+
+    def _cancel_and_close(self, dialog):
+        """Cancel translation and close dialog"""
+        if self.translation_service:
+            self.translation_service.cancel()
+        dialog.close()
+        self.state.reset_file_state()
         ui.navigate.reload()
 
     def _cancel(self):

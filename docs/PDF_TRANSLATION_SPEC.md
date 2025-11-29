@@ -1,4 +1,4 @@
-# PDF翻訳機能 技術仕様書 v9.3
+# PDF翻訳機能 技術仕様書 v9.4
 
 ## 概要
 
@@ -1481,7 +1481,66 @@ def show_cancelled(self):
     )
 ```
 
-#### 9.4.6 SoundPlayer (既存クラス使用)
+#### 9.4.6 show_connecting (既存メソッド使用)
+
+PDF翻訳はCopilotを使用するため、既存の`show_connecting`メソッドを接続フェーズで使用する。
+
+```python
+def show_connecting(self, step: int = 0, message: str = "Starting browser..."):
+    """
+    接続状態表示 - PDF/Excel共通
+
+    Args:
+        step: 接続ステップ (0-5)
+        message: 表示メッセージ
+    """
+    self.is_translating = True
+
+    # 翻訳中は最前面に表示
+    self.attributes("-topmost", True)
+    self.lift()
+
+    # 進捗計算 (0-95%)
+    progress = min(step / 5, 0.95) if step > 0 else 0.05
+
+    # Dynamic Island - 接続中表示
+    self.dynamic_island.expand()
+    self.dynamic_island.set_status("Connecting", message, progress)
+    self.dynamic_island.start_pulse()
+
+    # Ambient Glow - 翻訳中モード
+    self.ambient_glow.set_mode("active")
+
+    # Kinetic Typography
+    self.status_text.set_text("Connecting")
+    self.subtitle_text.set_text(message)
+
+    # アクションボタンをキャンセルモードに
+    self.action_btn.configure(
+        text="Cancel",
+        fg_color=THEME.bg_elevated,
+        text_color=THEME.text_primary
+    )
+
+    self.update_idletasks()
+```
+
+**PDF翻訳での使用タイミング**:
+```python
+# Copilot接続開始時
+ui.show_connecting(0, "Copilotに接続中...")
+
+# ブラウザ起動後
+ui.show_connecting(1, "ブラウザを起動中...")
+
+# ページ読込後
+ui.show_connecting(2, "ページを読込中...")
+
+# 接続完了後、show_translating() に移行
+ui.show_translating(1, total_pages, "loading")
+```
+
+#### 9.4.7 SoundPlayer (既存クラス使用)
 
 ```python
 # 翻訳開始時
@@ -1916,3 +1975,4 @@ def analyze_document(img: np.ndarray, device: str = "cpu") -> DocumentAnalyzerSc
 | v9.1 | 2024-11 | `__init__`初期化追加 (PDF用コールバック・ファイル選択)、キャンセル機構明確化 (既存Cancel機構使用)、AmbientGlowモード修正 ("translating"→"active")、`_start()`にon_start_callbackフォールバック追加 |
 | v9.2 | 2024-11 | ambient_glowをPDF/Excel共通で適用 (UI一貫性向上) |
 | v9.3 | 2024-11 | show_cancelled追加、show_error 5秒タイマー確定、show_readyサフィックス削除確定 |
+| v9.4 | 2024-11 | show_connecting追加 (Copilot接続フェーズ用、PDF/Excel共通) |

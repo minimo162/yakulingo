@@ -3,17 +3,11 @@ setlocal enabledelayedexpansion
 
 echo.
 echo ============================================================
-echo Excel Translation Tool Setup
+echo YakuLingo Setup
 echo ============================================================
 echo.
 
 cd /d "%~dp0"
-
-:: ============================================================
-:: Proxy Settings (Pre-configured by distributor)
-:: ============================================================
-set PROXY_SERVER=136.131.63.233:8082
-:: ============================================================
 
 set UV_CACHE_DIR=.uv-cache
 set UV_PYTHON_INSTALL_DIR=.uv-python
@@ -247,7 +241,7 @@ echo [DONE] Playwright browser installed.
 echo.
 echo ============================================================
 echo Setup completed!
-echo Run the star-run.bat to start the translation tool.
+echo Run ★run.bat to start YakuLingo.
 echo ============================================================
 echo.
 pause

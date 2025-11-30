@@ -153,6 +153,7 @@ class YakuLingoApp:
                         on_cancel=self._cancel,
                         on_download=self._download,
                         on_reset=self._reset,
+                        on_swap=self._swap,
                     )
 
         self._main_content = main_content

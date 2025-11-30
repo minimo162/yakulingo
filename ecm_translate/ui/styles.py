@@ -360,4 +360,82 @@ body {
 .history-item:hover {
     background: var(--md-sys-color-primary-container);
 }
+
+/* === File Type Icon === */
+.file-type-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 3rem;
+    height: 3rem;
+    border-radius: var(--md-sys-shape-corner-medium);
+    flex-shrink: 0;
+}
+
+.file-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 200px;
+}
+
+/* === Chip Primary === */
+.chip-primary {
+    background: var(--md-sys-color-primary-container);
+    color: var(--md-sys-color-on-primary-container);
+}
+
+/* === Success Circle Animation === */
+.success-circle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 4rem;
+    height: 4rem;
+    border-radius: var(--md-sys-shape-corner-full);
+    background: var(--md-sys-color-success);
+    animation: scaleIn var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-standard);
+}
+
+.success-check {
+    font-size: 2rem;
+    color: var(--md-sys-color-on-success);
+}
+
+@keyframes scaleIn {
+    from {
+        transform: scale(0);
+        opacity: 0;
+    }
+    to {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+/* === Small Swap Button === */
+.swap-btn-small {
+    width: 2rem;
+    height: 2rem;
+    min-width: 2rem;
+    min-height: 2rem;
+    border-radius: var(--md-sys-shape-corner-full);
+    background: var(--md-sys-color-surface-container);
+    border: none;
+    color: var(--md-sys-color-on-surface-variant);
+    padding: 0;
+    transition: all var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-standard);
+}
+
+.swap-btn-small:hover {
+    background: var(--md-sys-color-primary-container);
+    color: var(--md-sys-color-on-primary-container);
+    transform: rotate(180deg);
+}
+
+/* === Direction Label === */
+.direction-label {
+    color: var(--md-sys-color-on-surface);
+    letter-spacing: 0.01em;
+}
 """

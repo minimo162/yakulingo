@@ -9,6 +9,13 @@ echo.
 
 cd /d "%~dp0"
 
+:: ============================================================
+:: Proxy Settings
+:: Override with environment variable: set PROXY_SERVER=your.proxy:port
+:: Set empty to disable: set PROXY_SERVER=
+:: ============================================================
+if not defined PROXY_SERVER set PROXY_SERVER=136.131.63.233:8082
+
 set UV_CACHE_DIR=.uv-cache
 set UV_PYTHON_INSTALL_DIR=.uv-python
 set PLAYWRIGHT_BROWSERS_PATH=.playwright-browsers

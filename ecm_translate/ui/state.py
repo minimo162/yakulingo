@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Optional, List
 from enum import Enum
 
-from ecm_translate.models.types import TranslationDirection, FileInfo, TextTranslationResult, HistoryEntry
+from ecm_translate.models.types import FileInfo, TextTranslationResult, HistoryEntry
 from ecm_translate.storage.history_db import HistoryDB, get_default_db_path
 
 
@@ -33,12 +33,13 @@ class AppState:
     Application state.
     Single source of truth for UI state.
     History is persisted to local SQLite database.
+
+    Translation is bidirectional (auto-detected):
+    - Japanese input → English output
+    - Other languages → Japanese output
     """
     # Current tab
     current_tab: Tab = Tab.TEXT
-
-    # Translation direction
-    direction: TranslationDirection = TranslationDirection.JP_TO_EN
 
     # Text tab state
     source_text: str = ""
@@ -85,33 +86,6 @@ class AppState:
             self._history_db = None
             self.history = []
 
-    def swap_direction(self) -> None:
-        """Swap translation direction"""
-        if self.direction == TranslationDirection.JP_TO_EN:
-            self.direction = TranslationDirection.EN_TO_JP
-        else:
-            self.direction = TranslationDirection.JP_TO_EN
-        # Clear translation results on direction change
-        self.text_result = None
-
-    def get_source_label(self) -> str:
-        """Get source language label"""
-        if self.direction == TranslationDirection.JP_TO_EN:
-            return "日本語"
-        return "English"
-
-    def get_target_label(self) -> str:
-        """Get target language label"""
-        if self.direction == TranslationDirection.JP_TO_EN:
-            return "English"
-        return "日本語"
-
-    def get_source_placeholder(self) -> str:
-        """Get source textarea placeholder"""
-        if self.direction == TranslationDirection.JP_TO_EN:
-            return "Enter Japanese text..."
-        return "Enter English text..."
-
     def reset_file_state(self) -> None:
         """Reset file tab state"""
         self.file_state = FileState.EMPTY
@@ -157,6 +131,18 @@ class AppState:
         # Keep only max_history_entries in memory
         if len(self.history) > self.max_history_entries:
             self.history = self.history[:self.max_history_entries]
+
+    def delete_history_entry(self, entry: HistoryEntry) -> None:
+        """Delete a specific history entry"""
+        # Delete from database
+        if self._history_db:
+            try:
+                self._history_db.delete_by_timestamp(entry.timestamp)
+            except Exception as e:
+                print(f"Warning: Failed to delete history entry: {e}")
+
+        # Remove from in-memory cache
+        self.history = [h for h in self.history if h.timestamp != entry.timestamp]
 
     def clear_history(self) -> None:
         """Clear all history from memory and database"""

@@ -1,7 +1,7 @@
 # ecm_translate/ui/styles.py
 """
 M3 Component-based styles for YakuLingo.
-Inspired by Nani Translate's clean, minimal design.
+Nani-inspired sidebar layout with clean, minimal design.
 """
 
 COMPLETE_CSS = """
@@ -51,6 +51,9 @@ COMPLETE_CSS = """
     /* Elevation */
     --md-sys-elevation-1: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06);
     --md-sys-elevation-2: 0 4px 6px rgba(0,0,0,0.1), 0 2px 4px rgba(0,0,0,0.06);
+
+    /* Sidebar */
+    --sidebar-width: 280px;
 }
 
 /* === Base === */
@@ -62,15 +65,39 @@ body {
     background-attachment: fixed;
     color: var(--md-sys-color-on-surface);
     line-height: 1.5;
+    margin: 0;
+    padding: 0;
 }
 
-/* === Header === */
-.app-header {
+/* === Sidebar Layout === */
+.sidebar {
+    width: var(--sidebar-width);
+    height: 100vh;
+    position: fixed;
+    left: 0;
+    top: 0;
     background: var(--md-sys-color-surface);
-    border-bottom: 1px solid var(--md-sys-color-outline-variant);
-    box-shadow: var(--md-sys-elevation-1);
+    border-right: 1px solid var(--md-sys-color-outline-variant);
+    display: flex;
+    flex-direction: column;
+    padding: 1rem;
+    gap: 0.75rem;
+    z-index: 100;
 }
 
+.sidebar-header {
+    padding: 0.5rem 0.5rem 0.75rem;
+}
+
+.main-area {
+    margin-left: var(--sidebar-width);
+    flex: 1;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+/* === Logo === */
 .app-logo {
     font-size: 1.25rem;
     font-weight: 600;
@@ -79,63 +106,161 @@ body {
 }
 
 .app-logo-icon {
-    width: 2rem;
-    height: 2rem;
+    width: 2.25rem;
+    height: 2.25rem;
     border-radius: var(--md-sys-shape-corner-small);
     background: var(--md-sys-color-primary);
     display: flex;
     align-items: center;
     justify-content: center;
     color: var(--md-sys-color-on-primary);
-    font-size: 1.25rem;
 }
 
-/* === M3 Segmented Button (Tabs) === */
-.tab-btn {
-    padding: 0.5rem 1rem;
+/* === Navigation === */
+.sidebar-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    margin-top: 0.5rem;
+}
+
+.nav-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.625rem 0.75rem;
+    border-radius: var(--md-sys-shape-corner-medium);
     font-size: 0.875rem;
     font-weight: 500;
-    color: var(--md-sys-color-on-surface);
-    border-radius: var(--md-sys-shape-corner-full);
+    color: var(--md-sys-color-on-surface-variant);
+    width: 100%;
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
 }
 
-.tab-btn:hover {
+.nav-item:hover {
     background: var(--md-sys-color-surface-container);
+    color: var(--md-sys-color-on-surface);
 }
 
-.tab-btn.active {
+.nav-item.active {
     background: var(--md-sys-color-primary-container);
     color: var(--md-sys-color-on-primary-container);
 }
 
-/* === M3 Filled Button (Primary) === */
-.btn-primary {
+/* === History Section === */
+.sidebar-history {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.history-scroll {
+    flex: 1;
+    min-height: 0;
+    max-height: calc(100vh - 280px);
+}
+
+.history-item {
+    display: flex;
+    padding: 0.5rem 0.625rem;
+    border-radius: var(--md-sys-shape-corner-small);
+    cursor: pointer;
+    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+    position: relative;
+}
+
+.history-item:hover {
+    background: var(--md-sys-color-surface-container);
+}
+
+/* History delete button - hidden by default, shown on hover */
+.history-delete-btn {
+    opacity: 0;
+    transition: opacity var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+    position: absolute;
+    right: 4px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: var(--md-sys-color-surface-container-high) !important;
+}
+
+.history-item:hover .history-delete-btn {
+    opacity: 1;
+}
+
+/* === Status Indicator === */
+.status-indicator {
     display: inline-flex;
     align-items: center;
-    justify-content: center;
     gap: 0.375rem;
-    background: var(--md-sys-color-on-surface);
-    color: var(--md-sys-color-surface);
-    padding: 0.75rem 1.25rem;
+    padding: 0.25rem 0.625rem;
     border-radius: var(--md-sys-shape-corner-full);
-    font-size: 0.9375rem;
-    font-weight: 600;
-    letter-spacing: -0.01em;
+    font-size: 0.75rem;
+    font-weight: 500;
+    background: var(--md-sys-color-surface-container);
+    color: var(--md-sys-color-on-surface-variant);
+    margin-left: 0.5rem;
+}
+
+.status-indicator.connected {
+    background: var(--md-sys-color-success-container);
+    color: var(--md-sys-color-on-success-container);
+}
+
+.status-indicator.connecting {
+    background: var(--md-sys-color-primary-container);
+    color: var(--md-sys-color-on-primary-container);
+}
+
+.status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: var(--md-sys-shape-corner-full);
+    background: var(--md-sys-color-outline);
+}
+
+.status-dot.connected {
+    background: var(--md-sys-color-success);
+}
+
+.status-dot.connecting {
+    background: var(--md-sys-color-primary);
+    animation: pulse 1.5s ease infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}
+
+/* === Main Card Container (Nani-style) === */
+.main-card {
+    background: var(--md-sys-color-surface);
+    border-radius: var(--md-sys-shape-corner-xl);
+    box-shadow: var(--md-sys-elevation-1);
+    padding: 0.375rem;
+    overflow: hidden;
+}
+
+.main-card-inner {
+    background: var(--md-sys-color-surface);
+    border-radius: calc(var(--md-sys-shape-corner-xl) - 0.375rem);
+    border: 1px solid var(--md-sys-color-outline-variant);
+}
+
+/* === M3 Text Field Container === */
+.text-box {
+    background: var(--md-sys-color-surface);
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: var(--md-sys-shape-corner-xl);
+    overflow: hidden;
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
 }
 
-.btn-primary:hover:not(:disabled) {
-    background: #374151;
-}
-
-.btn-primary:disabled {
-    background: var(--md-sys-color-outline);
-    cursor: default;
-}
-
-.btn-primary .arrow-icon {
-    transform: rotate(90deg);
+.text-box:focus-within {
+    border-color: var(--md-sys-color-primary);
+    box-shadow: 0 0 0 1px var(--md-sys-color-primary);
 }
 
 /* === Translate Button (Nani-style) === */
@@ -165,6 +290,36 @@ body {
     cursor: default;
 }
 
+/* === Keycap Style Shortcut Keys === */
+.shortcut-keys {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.keycap {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.5rem;
+    height: 1.25rem;
+    padding: 0 0.375rem;
+    background: rgba(255, 255, 255, 0.15);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 4px;
+    font-family: ui-monospace, monospace;
+    font-size: 0.625rem;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.9);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.keycap-plus {
+    font-size: 0.625rem;
+    color: rgba(255, 255, 255, 0.6);
+    margin: 0 1px;
+}
+
 /* === M3 Outlined Button === */
 .btn-outline {
     background: transparent;
@@ -181,83 +336,29 @@ body {
     background: var(--md-sys-color-primary-container);
 }
 
-/* === Main Card Container (Nani-inspired) === */
-.main-card {
-    background: var(--md-sys-color-surface);
-    border-radius: var(--md-sys-shape-corner-xl);
-    box-shadow: var(--md-sys-elevation-1);
-    padding: 0.375rem;
-    overflow: hidden;
-}
-
-.main-card-inner {
-    background: var(--md-sys-color-surface);
-    border-radius: calc(var(--md-sys-shape-corner-xl) - 0.375rem);
-    border: 1px solid var(--md-sys-color-outline-variant);
-}
-
-/* === M3 Text Field Container === */
-.text-box {
-    background: var(--md-sys-color-surface);
-    border: 1px solid var(--md-sys-color-outline-variant);
-    border-radius: var(--md-sys-shape-corner-xl);
-    overflow: hidden;
-    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
-}
-
-.text-box:focus-within {
-    border-color: var(--md-sys-color-primary);
-    box-shadow: 0 0 0 1px var(--md-sys-color-primary);
-}
-
-.text-label {
-    padding: 0.625rem 1rem;
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: var(--md-sys-color-on-surface-variant);
-    background: transparent;
-    letter-spacing: 0.02em;
-}
-
-/* === Language Switch Button (Nani-style) === */
-.lang-switch-btn {
+/* === M3 Filled Button (Primary) === */
+.btn-primary {
     display: inline-flex;
     align-items: center;
-    gap: 0.25rem;
-    padding: 0.5rem 0.75rem;
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: var(--md-sys-color-on-surface);
-    background: transparent;
-    border: none;
-    border-radius: var(--md-sys-shape-corner-medium);
-    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
-    cursor: pointer;
-}
-
-.lang-switch-btn:hover {
-    background: var(--md-sys-color-surface-container);
-}
-
-.lang-switch-btn .icon {
-    color: var(--md-sys-color-on-surface-variant);
-}
-
-/* === Swap Button === */
-.swap-btn {
-    width: 2.5rem;
-    height: 2.5rem;
+    justify-content: center;
+    gap: 0.375rem;
+    background: var(--md-sys-color-on-surface);
+    color: var(--md-sys-color-surface);
+    padding: 0.75rem 1.25rem;
     border-radius: var(--md-sys-shape-corner-full);
-    background: var(--md-sys-color-surface-container);
-    border: none;
-    color: var(--md-sys-color-on-surface-variant);
-    transition: all var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-standard);
+    font-size: 0.9375rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
 }
 
-.swap-btn:hover {
-    background: var(--md-sys-color-primary-container);
-    color: var(--md-sys-color-on-primary-container);
-    transform: rotate(180deg);
+.btn-primary:hover:not(:disabled) {
+    background: #374151;
+}
+
+.btn-primary:disabled {
+    background: var(--md-sys-color-outline);
+    cursor: default;
 }
 
 /* === Drop Zone === */
@@ -319,62 +420,6 @@ body {
     transition: width var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-standard);
 }
 
-/* === Status === */
-.status-indicator {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.25rem 0.625rem;
-    border-radius: var(--md-sys-shape-corner-full);
-    font-size: 0.75rem;
-    font-weight: 500;
-    background: var(--md-sys-color-surface-container);
-    color: var(--md-sys-color-on-surface-variant);
-}
-
-.status-indicator.connected {
-    background: var(--md-sys-color-success-container);
-    color: var(--md-sys-color-on-success-container);
-}
-
-.status-indicator.connecting {
-    background: var(--md-sys-color-primary-container);
-    color: var(--md-sys-color-on-primary-container);
-}
-
-.status-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: var(--md-sys-shape-corner-full);
-    background: var(--md-sys-color-outline);
-}
-
-.status-dot.connected {
-    background: var(--md-sys-color-success);
-}
-
-.status-dot.connecting {
-    background: var(--md-sys-color-primary);
-    animation: pulse 1.5s ease infinite;
-}
-
-@keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.4; }
-}
-
-/* === Success === */
-.success-icon {
-    font-size: 2.5rem;
-    color: var(--md-sys-color-success);
-}
-
-.success-text {
-    font-size: 1rem;
-    font-weight: 500;
-    color: var(--md-sys-color-on-success-container);
-}
-
 /* === Chip === */
 .chip {
     display: inline-block;
@@ -385,27 +430,9 @@ body {
     color: var(--md-sys-color-on-surface-variant);
 }
 
-/* === Utility === */
-.text-muted { color: var(--md-sys-color-on-surface-variant); }
-.text-primary { color: var(--md-sys-color-primary); }
-.text-error { color: var(--md-sys-color-error); }
-
-.animate-in {
-    animation: fadeIn var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-standard);
-}
-
-@keyframes fadeIn {
-    from { opacity: 0; transform: translateY(4px); }
-    to { opacity: 1; transform: translateY(0); }
-}
-
-/* === Dialog === */
-.q-card {
-    border-radius: var(--md-sys-shape-corner-large) !important;
-}
-
-.q-dialog__backdrop {
-    background: rgba(0, 0, 0, 0.32) !important;
+.chip-primary {
+    background: var(--md-sys-color-primary-container);
+    color: var(--md-sys-color-on-primary-container);
 }
 
 /* === Option Cards === */
@@ -452,69 +479,18 @@ body {
     color: var(--md-sys-color-on-surface-variant);
 }
 
-/* === Shortcut Hint === */
-.shortcut-hint {
-    opacity: 0.5;
-    font-family: ui-monospace, monospace;
-    font-size: 0.6875rem;
+/* === Success === */
+.success-icon {
+    font-size: 2.5rem;
+    color: var(--md-sys-color-success);
 }
 
-/* === History Button === */
-.history-btn {
-    color: var(--md-sys-color-on-surface-variant);
+.success-text {
+    font-size: 1rem;
+    font-weight: 500;
+    color: var(--md-sys-color-on-success-container);
 }
 
-.history-btn:hover {
-    background: var(--md-sys-color-surface-container);
-}
-
-/* === History Drawer === */
-.history-drawer {
-    background: var(--md-sys-color-surface);
-    width: 320px !important;
-}
-
-.history-drawer .border-b {
-    border-color: var(--md-sys-color-outline-variant);
-}
-
-/* === History Item === */
-.history-item {
-    background: var(--md-sys-color-surface-container);
-    border-radius: var(--md-sys-shape-corner-small);
-    padding: 0.75rem;
-    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
-}
-
-.history-item:hover {
-    background: var(--md-sys-color-primary-container);
-}
-
-/* === File Type Icon === */
-.file-type-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 3rem;
-    height: 3rem;
-    border-radius: var(--md-sys-shape-corner-medium);
-    flex-shrink: 0;
-}
-
-.file-name {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    max-width: 200px;
-}
-
-/* === Chip Primary === */
-.chip-primary {
-    background: var(--md-sys-color-primary-container);
-    color: var(--md-sys-color-on-primary-container);
-}
-
-/* === Success Circle Animation === */
 .success-circle {
     display: flex;
     align-items: center;
@@ -542,29 +518,52 @@ body {
     }
 }
 
-/* === Small Swap Button === */
-.swap-btn-small {
-    width: 2rem;
-    height: 2rem;
-    min-width: 2rem;
-    min-height: 2rem;
-    border-radius: var(--md-sys-shape-corner-full);
-    background: var(--md-sys-color-surface-container);
-    border: none;
-    color: var(--md-sys-color-on-surface-variant);
-    padding: 0;
-    transition: all var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-standard);
+/* === File Type Icon === */
+.file-type-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 3rem;
+    height: 3rem;
+    border-radius: var(--md-sys-shape-corner-medium);
+    flex-shrink: 0;
 }
 
-.swap-btn-small:hover {
-    background: var(--md-sys-color-primary-container);
-    color: var(--md-sys-color-on-primary-container);
-    transform: rotate(180deg);
+.file-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 200px;
 }
 
-/* === Direction Label === */
-.direction-label {
-    color: var(--md-sys-color-on-surface);
-    letter-spacing: 0.01em;
+/* === Utility === */
+.text-muted { color: var(--md-sys-color-on-surface-variant); }
+.text-primary { color: var(--md-sys-color-primary); }
+.text-error { color: var(--md-sys-color-error); }
+.text-2xs { font-size: 0.625rem; }
+
+.animate-in {
+    animation: fadeIn var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-standard);
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* === Dialog === */
+.q-card {
+    border-radius: var(--md-sys-shape-corner-large) !important;
+}
+
+.q-dialog__backdrop {
+    background: rgba(0, 0, 0, 0.32) !important;
+}
+
+/* === Truncate === */
+.truncate {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 """

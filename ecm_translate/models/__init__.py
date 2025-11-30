@@ -4,7 +4,6 @@ Data models for YakuLingo.
 """
 
 from .types import (
-    TranslationDirection,
     FileType,
     TranslationStatus,
     TextBlock,
@@ -15,7 +14,6 @@ from .types import (
 )
 
 __all__ = [
-    'TranslationDirection',
     'FileType',
     'TranslationStatus',
     'TextBlock',

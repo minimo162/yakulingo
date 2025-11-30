@@ -10,7 +10,6 @@ from unittest.mock import Mock, MagicMock
 
 from ecm_translate.config.settings import AppSettings
 from ecm_translate.models.types import (
-    TranslationDirection,
     FileType,
     FileInfo,
     TextBlock,
@@ -135,21 +134,3 @@ def sample_file_info():
     )
 
 
-# --- Direction fixtures ---
-
-@pytest.fixture(params=[TranslationDirection.JP_TO_EN, TranslationDirection.EN_TO_JP])
-def direction(request):
-    """Parametrized fixture for both translation directions"""
-    return request.param
-
-
-@pytest.fixture
-def jp_to_en():
-    """JP to EN direction"""
-    return TranslationDirection.JP_TO_EN
-
-
-@pytest.fixture
-def en_to_jp():
-    """EN to JP direction"""
-    return TranslationDirection.EN_TO_JP

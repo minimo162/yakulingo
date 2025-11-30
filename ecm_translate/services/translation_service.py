@@ -2,6 +2,7 @@
 """
 Main translation service.
 Coordinates between UI, Copilot, and file processors.
+Bidirectional translation: Japanese → English, Other → Japanese (auto-detected).
 """
 
 import time
@@ -11,7 +12,6 @@ from typing import Optional, List
 import re
 
 from ecm_translate.models.types import (
-    TranslationDirection,
     TranslationStatus,
     TranslationProgress,
     TranslationResult,
@@ -45,7 +45,6 @@ class BatchTranslator:
     def translate_blocks(
         self,
         blocks: list,
-        direction: TranslationDirection,
         reference_files: Optional[List[Path]] = None,
         on_progress: Optional[ProgressCallback] = None,
     ) -> dict[str, str]:
@@ -70,8 +69,8 @@ class BatchTranslator:
 
             texts = [b.text for b in batch]
 
-            # Build prompt
-            prompt = self.prompt_builder.build_batch(direction, texts, has_refs)
+            # Build prompt (unified bidirectional)
+            prompt = self.prompt_builder.build_batch(texts, has_refs)
 
             # Translate
             translations = self.copilot.translate_sync(texts, prompt, reference_files)
@@ -136,18 +135,16 @@ class TranslationService:
     def translate_text(
         self,
         text: str,
-        direction: TranslationDirection,
         reference_files: Optional[List[Path]] = None,
     ) -> TranslationResult:
         """
-        Translate plain text.
+        Translate plain text (bidirectional: JP→EN or Other→JP).
 
         NOTE: Reference files (glossary, etc.) are attached to Copilot
         for both text and file translations.
 
         Args:
             text: Source text to translate
-            direction: Translation direction
             reference_files: Optional list of reference files to attach
 
         Returns:
@@ -156,9 +153,9 @@ class TranslationService:
         start_time = time.time()
 
         try:
-            # Build prompt
+            # Build prompt (unified bidirectional)
             has_refs = bool(reference_files)
-            prompt = self.prompt_builder.build(direction, text, has_refs)
+            prompt = self.prompt_builder.build(text, has_refs)
 
             # Translate
             result = self.copilot.translate_single(text, prompt, reference_files)
@@ -181,7 +178,6 @@ class TranslationService:
     def translate_text_with_options(
         self,
         text: str,
-        direction: TranslationDirection,
         reference_files: Optional[List[Path]] = None,
     ) -> TextTranslationResult:
         """
@@ -189,7 +185,6 @@ class TranslationService:
 
         Args:
             text: Source text to translate
-            direction: Translation direction
             reference_files: Optional list of reference files to attach
 
         Returns:
@@ -197,14 +192,14 @@ class TranslationService:
         """
         try:
             # Load the multi-option prompt template
-            prompt_file = "text_translate_jp_to_en.txt" if direction == TranslationDirection.JP_TO_EN else "text_translate_en_to_jp.txt"
+            prompt_file = "text_translate.txt"
             prompt_path = self.prompt_builder.prompts_dir / prompt_file if self.prompt_builder.prompts_dir else None
 
             if prompt_path and prompt_path.exists():
                 template = prompt_path.read_text(encoding='utf-8')
             else:
                 # Fallback to basic translation
-                result = self.translate_text(text, direction, reference_files)
+                result = self.translate_text(text, reference_files)
                 if result.output_text:
                     return TextTranslationResult(
                         source_text=text,
@@ -257,7 +252,6 @@ class TranslationService:
         self,
         text: str,
         adjust_type: str,
-        direction: TranslationDirection,
     ) -> Optional[TranslationOption]:
         """
         Adjust a translation based on user request.
@@ -265,7 +259,6 @@ class TranslationService:
         Args:
             text: The translation text to adjust
             adjust_type: 'shorter', 'longer', or custom instruction
-            direction: Translation direction (for context)
 
         Returns:
             TranslationOption with adjusted text, or None on failure
@@ -343,16 +336,14 @@ class TranslationService:
     def translate_file(
         self,
         input_path: Path,
-        direction: TranslationDirection,
         reference_files: Optional[List[Path]] = None,
         on_progress: Optional[ProgressCallback] = None,
     ) -> TranslationResult:
         """
-        Translate a file.
+        Translate a file (bidirectional: JP→EN or Other→JP).
 
         Args:
             input_path: Path to input file
-            direction: Translation direction
             reference_files: Reference files to attach
             on_progress: Callback for progress updates
 
@@ -416,7 +407,6 @@ class TranslationService:
 
             translations = self.batch_translator.translate_blocks(
                 blocks,
-                direction,
                 reference_files,
                 batch_progress,
             )
@@ -436,12 +426,11 @@ class TranslationService:
                     status="Applying translations...",
                 ))
 
-            # Generate output path
-            output_path = self._generate_output_path(input_path, direction)
+            # Generate output path (with _translated suffix)
+            output_path = self._generate_output_path(input_path)
 
             # Apply translations
-            direction_str = direction.value
-            processor.apply_translations(input_path, output_path, translations, direction_str)
+            processor.apply_translations(input_path, output_path, translations, "bidirectional")
 
             # Report complete
             if on_progress:
@@ -482,12 +471,12 @@ class TranslationService:
             raise ValueError(f"Unsupported file type: {ext}")
         return self.processors[ext]
 
-    def _generate_output_path(self, input_path: Path, direction: TranslationDirection) -> Path:
+    def _generate_output_path(self, input_path: Path) -> Path:
         """
         Generate unique output path.
-        Adds _EN or _JP suffix, with numbering if file exists.
+        Adds _translated suffix, with numbering if file exists.
         """
-        suffix = "_EN" if direction == TranslationDirection.JP_TO_EN else "_JP"
+        suffix = "_translated"
         stem = input_path.stem
         ext = input_path.suffix
 

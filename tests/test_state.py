@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Import directly to avoid ui/__init__.py which imports nicegui
 from ecm_translate.ui.state import AppState, Tab, FileState
-from ecm_translate.models.types import TranslationDirection, FileType, FileInfo
+from ecm_translate.models.types import FileType, FileInfo
 
 
 class TestTab:
@@ -40,15 +40,11 @@ class TestAppStateDefaults:
         state = AppState()
         assert state.current_tab == Tab.TEXT
 
-    def test_default_direction(self):
-        state = AppState()
-        assert state.direction == TranslationDirection.JP_TO_EN
-
     def test_default_text_state(self):
         state = AppState()
         assert state.source_text == ""
-        assert state.target_text == ""
         assert state.text_translating is False
+        assert state.text_result is None
 
     def test_default_file_state(self):
         state = AppState()
@@ -71,70 +67,6 @@ class TestAppStateDefaults:
         assert state.reference_files == []
 
 
-class TestAppStateSwapDirection:
-    """Tests for AppState.swap_direction()"""
-
-    def test_swap_jp_to_en_becomes_en_to_jp(self):
-        state = AppState(direction=TranslationDirection.JP_TO_EN)
-        state.swap_direction()
-        assert state.direction == TranslationDirection.EN_TO_JP
-
-    def test_swap_en_to_jp_becomes_jp_to_en(self):
-        state = AppState(direction=TranslationDirection.EN_TO_JP)
-        state.swap_direction()
-        assert state.direction == TranslationDirection.JP_TO_EN
-
-    def test_swap_clears_target_text(self):
-        state = AppState(
-            direction=TranslationDirection.JP_TO_EN,
-            target_text="Some translated text"
-        )
-        state.swap_direction()
-        assert state.target_text == ""
-
-    def test_swap_preserves_source_text(self):
-        state = AppState(
-            direction=TranslationDirection.JP_TO_EN,
-            source_text="Original text"
-        )
-        state.swap_direction()
-        assert state.source_text == "Original text"
-
-    def test_double_swap_returns_to_original(self):
-        state = AppState(direction=TranslationDirection.JP_TO_EN)
-        state.swap_direction()
-        state.swap_direction()
-        assert state.direction == TranslationDirection.JP_TO_EN
-
-
-class TestAppStateLabels:
-    """Tests for AppState label methods"""
-
-    def test_get_source_label_jp_to_en(self):
-        state = AppState(direction=TranslationDirection.JP_TO_EN)
-        assert state.get_source_label() == "日本語"
-
-    def test_get_source_label_en_to_jp(self):
-        state = AppState(direction=TranslationDirection.EN_TO_JP)
-        assert state.get_source_label() == "English"
-
-    def test_get_target_label_jp_to_en(self):
-        state = AppState(direction=TranslationDirection.JP_TO_EN)
-        assert state.get_target_label() == "English"
-
-    def test_get_target_label_en_to_jp(self):
-        state = AppState(direction=TranslationDirection.EN_TO_JP)
-        assert state.get_target_label() == "日本語"
-
-    def test_get_source_placeholder_jp_to_en(self):
-        state = AppState(direction=TranslationDirection.JP_TO_EN)
-        assert state.get_source_placeholder() == "日本語を入力..."
-
-    def test_get_source_placeholder_en_to_jp(self):
-        state = AppState(direction=TranslationDirection.EN_TO_JP)
-        assert state.get_source_placeholder() == "Enter English text..."
-
-
 class TestAppStateResetFileState:
     """Tests for AppState.reset_file_state()"""
 
@@ -149,7 +81,7 @@ class TestAppStateResetFileState:
             ),
             translation_progress=1.0,
             translation_status="Complete",
-            output_file=Path("/some/file_EN.xlsx"),
+            output_file=Path("/some/file_translated.xlsx"),
             error_message="Some error"
         )
 
@@ -166,7 +98,6 @@ class TestAppStateResetFileState:
     def test_reset_preserves_other_state(self):
         state = AppState(
             current_tab=Tab.FILE,
-            direction=TranslationDirection.EN_TO_JP,
             source_text="Some text",
             copilot_connected=True,
             file_state=FileState.COMPLETE
@@ -176,7 +107,6 @@ class TestAppStateResetFileState:
 
         # These should be preserved
         assert state.current_tab == Tab.FILE
-        assert state.direction == TranslationDirection.EN_TO_JP
         assert state.source_text == "Some text"
         assert state.copilot_connected is True
 

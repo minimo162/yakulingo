@@ -2,6 +2,7 @@
 """
 Tests for UI component logic and state interactions.
 Since NiceGUI components are hard to test directly, we focus on the logic aspects.
+Bidirectional translation (no language direction selection).
 """
 
 import pytest
@@ -13,44 +14,11 @@ from unittest.mock import Mock, MagicMock, patch
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from ecm_translate.ui.state import AppState, Tab, FileState
-from ecm_translate.models.types import TranslationDirection, FileType, FileInfo
+from ecm_translate.models.types import FileType, FileInfo
 
 
 class TestTextPanelLogic:
-    """Tests for text panel logic"""
-
-    def test_source_language_label_jp_to_en(self):
-        """Source language should be 日本語 for JP to EN"""
-        state = AppState(direction=TranslationDirection.JP_TO_EN)
-
-        # This tests the logic that would be used in create_text_panel
-        source_lang = '日本語' if state.direction == TranslationDirection.JP_TO_EN else 'English'
-
-        assert source_lang == '日本語'
-
-    def test_source_language_label_en_to_jp(self):
-        """Source language should be English for EN to JP"""
-        state = AppState(direction=TranslationDirection.EN_TO_JP)
-
-        source_lang = '日本語' if state.direction == TranslationDirection.JP_TO_EN else 'English'
-
-        assert source_lang == 'English'
-
-    def test_target_language_label_jp_to_en(self):
-        """Target language should be English for JP to EN"""
-        state = AppState(direction=TranslationDirection.JP_TO_EN)
-
-        target_lang = 'English' if state.direction == TranslationDirection.JP_TO_EN else '日本語'
-
-        assert target_lang == 'English'
-
-    def test_target_language_label_en_to_jp(self):
-        """Target language should be 日本語 for EN to JP"""
-        state = AppState(direction=TranslationDirection.EN_TO_JP)
-
-        target_lang = 'English' if state.direction == TranslationDirection.JP_TO_EN else '日本語'
-
-        assert target_lang == '日本語'
+    """Tests for text panel logic - bidirectional translation"""
 
     def test_translate_button_disabled_when_not_connected(self):
         """Translate button should be disabled when not connected"""
@@ -433,49 +401,3 @@ class TestReferenceFiles:
         ]
 
         assert len(state.reference_files) == 2
-
-
-class TestSwapDirection:
-    """Tests for direction swap functionality"""
-
-    def test_swap_updates_direction(self):
-        """Swap should update direction"""
-        state = AppState(direction=TranslationDirection.JP_TO_EN)
-        state.swap_direction()
-
-        assert state.direction == TranslationDirection.EN_TO_JP
-
-    def test_swap_clears_result(self):
-        """Swap should clear translation result"""
-        from ecm_translate.models.types import TextTranslationResult, TranslationOption
-
-        result = TextTranslationResult(
-            source_text="Test",
-            source_char_count=4,
-            options=[TranslationOption(text="Previous", char_count=8, explanation="Test")]
-        )
-        state = AppState(
-            direction=TranslationDirection.JP_TO_EN,
-            text_result=result
-        )
-        state.swap_direction()
-
-        assert state.text_result is None
-
-    def test_swap_preserves_source(self):
-        """Swap should preserve source text"""
-        state = AppState(
-            direction=TranslationDirection.JP_TO_EN,
-            source_text="Original text"
-        )
-        state.swap_direction()
-
-        assert state.source_text == "Original text"
-
-    def test_double_swap_returns_original(self):
-        """Double swap should return to original direction"""
-        state = AppState(direction=TranslationDirection.JP_TO_EN)
-        state.swap_direction()
-        state.swap_direction()
-
-        assert state.direction == TranslationDirection.JP_TO_EN

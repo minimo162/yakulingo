@@ -7,7 +7,6 @@ from unittest.mock import Mock, MagicMock, patch, AsyncMock
 import asyncio
 
 from ecm_translate.models.types import (
-    TranslationDirection,
     TranslationProgress,
     TranslationResult,
     TranslationStatus,
@@ -25,7 +24,6 @@ from ecm_translate.ui.state import AppState, Tab, FileState
 def mock_settings():
     """Mock AppSettings"""
     settings = MagicMock()
-    settings.last_direction = "jp_to_en"
     settings.last_tab = "text"
     settings.get_reference_file_paths.return_value = []
     return settings
@@ -84,23 +82,14 @@ def app_state():
 # =============================================================================
 
 class TestAppState:
-    """Tests for AppState class"""
+    """Tests for AppState class - bidirectional translation"""
 
     def test_initial_state(self, app_state):
         """Test default state values"""
         assert app_state.current_tab == Tab.TEXT
-        assert app_state.direction == TranslationDirection.JP_TO_EN
         assert app_state.source_text == ""
         assert app_state.text_result is None
         assert app_state.file_state == FileState.EMPTY
-
-    def test_swap_direction(self, app_state):
-        """Test direction swapping"""
-        assert app_state.direction == TranslationDirection.JP_TO_EN
-        app_state.swap_direction()
-        assert app_state.direction == TranslationDirection.EN_TO_JP
-        app_state.swap_direction()
-        assert app_state.direction == TranslationDirection.JP_TO_EN
 
     def test_is_translating_text(self, app_state):
         """Test text translating state"""
@@ -201,7 +190,6 @@ class TestYakuLingoAppInit:
     ):
         """Test that app creates AppState on init"""
         mock_settings_class.load.return_value = MagicMock(
-            last_direction="jp_to_en",
             get_reference_file_paths=MagicMock(return_value=[]),
         )
 
@@ -223,7 +211,6 @@ class TestYakuLingoAppInit:
     ):
         """Test that app loads settings on init"""
         mock_settings = MagicMock(
-            last_direction="en_to_jp",
             get_reference_file_paths=MagicMock(return_value=[]),
         )
         mock_settings_class.load.return_value = mock_settings
@@ -231,8 +218,6 @@ class TestYakuLingoAppInit:
         from ecm_translate.ui.app import YakuLingoApp
         app = YakuLingoApp()
 
-        # Direction is loaded from settings
-        assert app.state.direction == TranslationDirection.EN_TO_JP
         # Verify settings object is stored
         assert app.settings is not None
 
@@ -270,15 +255,6 @@ class TestYakuLingoAppEventHandlers:
 
         assert app.state.current_tab == Tab.FILE
         assert app.settings.last_tab == "file"
-
-    def test_swap_changes_direction(self, app_with_mocks, mock_nicegui):
-        """Test swap direction handler"""
-        app = app_with_mocks
-        original_direction = app.state.direction
-
-        app._swap()
-
-        assert app.state.direction != original_direction
 
     def test_source_change_updates_state(self, app_with_mocks):
         """Test source text change updates state"""
@@ -455,7 +431,6 @@ class TestCreateApp:
     ):
         """Test create_app returns YakuLingoApp instance"""
         mock_settings_class.load.return_value = MagicMock(
-            last_direction="jp_to_en",
             get_reference_file_paths=MagicMock(return_value=[]),
         )
 

@@ -335,16 +335,20 @@ class TestSourceCodeOnlyUpdate:
         """Test that SOURCE_DIRS are properly defined"""
         assert "yakulingo" in AutoUpdater.SOURCE_DIRS
         assert "prompts" in AutoUpdater.SOURCE_DIRS
-        assert "config" in AutoUpdater.SOURCE_DIRS
         # Environment directories should NOT be in the list
         assert ".venv" not in AutoUpdater.SOURCE_DIRS
         assert ".uv-python" not in AutoUpdater.SOURCE_DIRS
         assert ".playwright-browsers" not in AutoUpdater.SOURCE_DIRS
+        # config is not in distribution ZIP (created by setup.ps1)
+        assert "config" not in AutoUpdater.SOURCE_DIRS
 
     def test_source_files_defined(self):
         """Test that SOURCE_FILES are properly defined"""
         assert "app.py" in AutoUpdater.SOURCE_FILES
         assert "pyproject.toml" in AutoUpdater.SOURCE_FILES
+        assert "uv.toml" in AutoUpdater.SOURCE_FILES
+        # requirements.txt is not in distribution ZIP
+        assert "requirements.txt" not in AutoUpdater.SOURCE_FILES
 
     def test_user_files_defined(self):
         """Test that USER_FILES are properly defined for backup"""

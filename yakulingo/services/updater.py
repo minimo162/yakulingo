@@ -492,8 +492,9 @@ class AutoUpdater:
 
     # ソースコードのみ更新するファイル/ディレクトリ一覧
     # 環境ファイル（.venv, .uv-python, .playwright-browsers）は含まない
-    SOURCE_DIRS = ["yakulingo", "prompts", "config"]
-    SOURCE_FILES = ["app.py", "pyproject.toml", "requirements.txt"]
+    # 配布ZIPに含まれるファイルと一致させる（make_distribution.bat 参照）
+    SOURCE_DIRS = ["yakulingo", "prompts"]
+    SOURCE_FILES = ["app.py", "pyproject.toml", "uv.toml"]
     # ユーザー設定ファイル（上書きしない）
     USER_FILES = ["glossary.csv", "config/settings.json"]
 

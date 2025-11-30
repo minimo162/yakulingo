@@ -493,17 +493,15 @@ class AutoUpdater:
     # 更新対象ファイル/ディレクトリ一覧
     # 環境ファイル（.venv, .uv-python, .playwright-browsers）は含まない
     # 配布ZIPに含まれるファイルと一致させる（make_distribution.bat 参照）
-    SOURCE_DIRS = ["yakulingo", "prompts"]
+    SOURCE_DIRS = ["yakulingo", "prompts", "config"]
     SOURCE_FILES = [
         "app.py",           # エントリーポイント
         "pyproject.toml",   # プロジェクト設定
         "uv.toml",          # UV設定
         "run.bat",          # 起動スクリプト
-        "setup.ps1",        # セットアップスクリプト（再インストール用）
         "remove.bat",       # 削除スクリプト
         "remove.ps1",       # 削除スクリプト
         "README.md",        # ドキュメント
-        # Note: setup.bat は配布ZIPのルートにあり、AppDataにはコピーされないため除外
     ]
     # ユーザー設定ファイル（上書きしない、バックアップ対象）
     USER_FILES = ["glossary.csv", "config/settings.json"]

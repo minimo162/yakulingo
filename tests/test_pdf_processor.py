@@ -25,6 +25,11 @@ from yakulingo.processors.pdf_processor import (
     FORMULA_UNICODE_CATEGORIES,
     LANG_LINEHEIGHT_MAP,
     DEFAULT_LINE_HEIGHT,
+    DEFAULT_FONT_SIZE,
+    MIN_FONT_SIZE,
+    MAX_FONT_SIZE,
+    MIN_LINE_HEIGHT,
+    LINE_HEIGHT_COMPRESSION_STEP,
     # Classes
     FontInfo,
     TranslationCell,
@@ -1038,3 +1043,106 @@ class TestConstants:
     def test_formula_unicode_categories(self):
         assert "Sm" in FORMULA_UNICODE_CATEGORIES  # Math symbols
         assert len(FORMULA_UNICODE_CATEGORIES) > 0
+
+    def test_font_size_constants(self):
+        """Test font size constants are properly defined"""
+        assert DEFAULT_FONT_SIZE == 10.0
+        assert MIN_FONT_SIZE == 1.0
+        assert MAX_FONT_SIZE == 12.0
+        assert MIN_FONT_SIZE < DEFAULT_FONT_SIZE < MAX_FONT_SIZE
+
+    def test_line_height_constants(self):
+        """Test line height constants are properly defined"""
+        assert MIN_LINE_HEIGHT == 1.0
+        assert LINE_HEIGHT_COMPRESSION_STEP == 0.05
+        assert LINE_HEIGHT_COMPRESSION_STEP > 0
+
+
+class TestVflagEmptyInputs:
+    """Additional tests for vflag with empty inputs"""
+
+    def test_vflag_empty_font(self):
+        """Empty font should not cause issues"""
+        assert vflag("", "text") is False
+
+    def test_vflag_empty_char(self):
+        """Empty char should return False"""
+        assert vflag("Arial", "") is False
+
+    def test_vflag_both_empty(self):
+        """Both empty should return False"""
+        assert vflag("", "") is False
+
+
+class TestConvertToPdfCoordinatesWithPageWidth:
+    """Tests for convert_to_pdf_coordinates with page_width parameter"""
+
+    def test_x_coordinate_clamping(self):
+        """Test that x coordinates are clamped when page_width is provided"""
+        box = [-10, 0, 200, 50]
+        page_height = 800
+        page_width = 150
+        x1, y1, x2, y2 = convert_to_pdf_coordinates(box, page_height, page_width)
+
+        assert x1 == 0  # Clamped from -10
+        assert x2 == 150  # Clamped from 200
+
+    def test_no_clamping_without_page_width(self):
+        """Test that x coordinates are not clamped when page_width is None"""
+        box = [-10, 0, 200, 50]
+        page_height = 800
+        x1, y1, x2, y2 = convert_to_pdf_coordinates(box, page_height)
+
+        assert x1 == -10  # Not clamped
+        assert x2 == 200  # Not clamped
+
+
+class TestApplyTranslationsResult:
+    """Tests for apply_translations return value"""
+
+    def test_apply_translations_returns_result_dict(self, processor, tmp_path):
+        """Test that apply_translations returns a result dictionary"""
+        with patch('yakulingo.processors.pdf_processor._get_fitz') as mock_get_fitz:
+            mock_fitz = MagicMock()
+            mock_get_fitz.return_value = mock_fitz
+
+            mock_doc = MagicMock()
+            mock_doc.__len__ = Mock(return_value=1)
+
+            mock_page = MagicMock()
+            mock_page.rect.height = 800
+            mock_page.xref = 1
+            mock_page.get_text.return_value = {
+                "blocks": [
+                    {
+                        "type": 0,
+                        "bbox": [100, 200, 300, 250],
+                        "lines": [{"spans": [{"text": "原文"}]}]
+                    }
+                ]
+            }
+
+            mock_doc.__iter__ = Mock(return_value=iter([mock_page]))
+            mock_doc.__getitem__ = Mock(return_value=mock_page)
+            mock_doc.get_new_xref.return_value = 100
+            mock_doc.xref_get_key.return_value = ("null", "")
+
+            mock_fitz.open.return_value = mock_doc
+
+            input_path = tmp_path / "input.pdf"
+            input_path.write_bytes(b"%PDF-1.4 dummy")
+            output_path = tmp_path / "output.pdf"
+
+            translations = {"page_0_block_0": "Translated text"}
+
+            result = processor.apply_translations(
+                input_path, output_path, translations, "jp_to_en"
+            )
+
+            # Check result structure
+            assert isinstance(result, dict)
+            assert 'total' in result
+            assert 'success' in result
+            assert 'failed' in result
+            assert 'failed_fonts' in result
+            assert result['total'] == 1

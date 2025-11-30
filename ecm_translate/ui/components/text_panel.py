@@ -4,7 +4,7 @@ Text translation panel with multiple options.
 Clean, minimal design inspired by nani translate.
 """
 
-from nicegui import ui, events
+from nicegui import ui
 from typing import Callable, Optional
 
 from ecm_translate.ui.state import AppState
@@ -48,14 +48,6 @@ def create_text_panel(
     source_lang = 'Japanese' if state.direction == TranslationDirection.JP_TO_EN else 'English'
     target_lang = 'English' if state.direction == TranslationDirection.JP_TO_EN else 'Japanese'
 
-    # Keyboard shortcut handler
-    def handle_key(e: events.KeyEventArguments):
-        if e.action.keydown and e.key == 'Enter' and e.modifiers.ctrl:
-            if state.can_translate() and not state.text_translating:
-                on_translate()
-
-    ui.keyboard(on_key=handle_key)
-
     with ui.column().classes('flex-1 w-full gap-4 animate-in'):
         # Source section
         with ui.column().classes('w-full text-box'):
@@ -66,11 +58,20 @@ def create_text_panel(
                         ui.label(f'{len(state.source_text)} chars').classes('text-xs text-muted')
                         ui.button(icon='close', on_click=on_clear).props('flat dense round size=sm')
 
-            ui.textarea(
+            # Textarea with Ctrl+Enter to submit
+            textarea = ui.textarea(
                 placeholder=state.get_source_placeholder(),
                 value=state.source_text,
                 on_change=lambda e: on_source_change(e.value)
             ).classes('w-full min-h-32 p-3').props('borderless autogrow')
+
+            # Handle Ctrl+Enter in textarea
+            async def handle_keydown(e):
+                if e.args.get('ctrlKey') and e.args.get('key') == 'Enter':
+                    if state.can_translate() and not state.text_translating:
+                        await on_translate()
+
+            textarea.on('keydown', handle_keydown)
 
         # Direction swap and translate button
         with ui.row().classes('justify-center items-center gap-4'):
@@ -83,7 +84,7 @@ def create_text_panel(
                 elif not state.can_translate():
                     btn.props('disable')
                 # Keyboard hint
-                ui.label('Ctrl+Enter').classes('text-xs text-muted shortcut-hint')
+                ui.label('Enter: newline / Ctrl+Enter: translate').classes('text-xs text-muted shortcut-hint')
 
         # Results section
         if state.text_result and state.text_result.options:

@@ -513,8 +513,9 @@ class CopilotHandler:
                 input_elem.fill(message)
 
                 # Find and click send button
+                # 実際のCopilot HTML: <button type="submit" aria-label="送信" class="... fai-SendButton ...">
                 send_button = self._page.query_selector(
-                    'button[data-testid="send-button"], button[aria-label*="Send"], button[aria-label*="送信"]'
+                    '.fai-SendButton, button[type="submit"][aria-label="送信"], button[aria-label*="Send"], button[aria-label*="送信"]'
                 )
                 if send_button:
                     send_button.click()

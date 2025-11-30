@@ -41,7 +41,9 @@ $files = @(
     "app.py",
     "pyproject.toml",
     "requirements.txt",
-    "glossary.csv"
+    "glossary.csv",
+    "remove.bat",
+    "remove.ps1"
 )
 
 # コピー対象フォルダ（アプリ + 依存関係）
@@ -54,8 +56,8 @@ $folders = @(
     ".playwright-browsers"
 )
 
-# ★run.bat を run.bat としてコピー
-$runBatSource = Join-Path $scriptDir "★run.bat"
+# run.bat をコピー
+$runBatSource = Join-Path $scriptDir "run.bat"
 if (Test-Path $runBatSource) {
     Copy-Item $runBatSource "$appDir\run.bat" -Force
 }

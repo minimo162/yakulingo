@@ -8,7 +8,7 @@ echo.
 echo YakuLingo セットアップを起動しています...
 echo.
 
-powershell -ExecutionPolicy Bypass -File "%~dp0setup.ps1"
+powershell -ExecutionPolicy Bypass -File "%~dp0_internal\setup.ps1"
 
 if errorlevel 1 (
     echo.

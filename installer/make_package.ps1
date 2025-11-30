@@ -15,6 +15,7 @@ $projectDir = Split-Path -Parent $scriptDir
 $outputDir = Join-Path $scriptDir "output"
 $tempDir = Join-Path $scriptDir "temp_package"
 $packageDir = Join-Path $tempDir "YakuLingo"  # zip内のフォルダ名
+$internalDir = Join-Path $packageDir "_internal"  # 内部ファイル用
 
 # 依存関係フォルダの確認
 $requiredDeps = @(".venv", ".uv-python", ".playwright-browsers")
@@ -51,6 +52,7 @@ if (Test-Path $tempDir) {
     Remove-Item -Path $tempDir -Recurse -Force
 }
 New-Item -ItemType Directory -Path $packageDir -Force | Out-Null
+New-Item -ItemType Directory -Path $internalDir -Force | Out-Null
 
 Write-Host ""
 Write-Host "[1/4] アプリファイルをコピー中..."
@@ -72,26 +74,28 @@ $appFolders = @(
     "config"
 )
 
-# ファイルをコピー
+# ファイルを _internal にコピー
 foreach ($file in $files) {
     $source = Join-Path $projectDir $file
     if (Test-Path $source) {
-        Copy-Item $source $packageDir -Force
+        Copy-Item $source $internalDir -Force
     }
 }
 
-# ★setup.bat と setup.ps1 をコピー
+# ★setup.bat をルートにコピー（ユーザーが見る唯一のファイル）
 Copy-Item (Join-Path $projectDir "★setup.bat") $packageDir -Force
-Copy-Item (Join-Path $projectDir "setup.ps1") $packageDir -Force
 
-# ★run.bat を run.bat としてコピー（★を外す）
-Copy-Item (Join-Path $projectDir "★run.bat") (Join-Path $packageDir "run.bat") -Force
+# setup.ps1 を _internal にコピー
+Copy-Item (Join-Path $projectDir "setup.ps1") $internalDir -Force
 
-# アプリフォルダをコピー
+# ★run.bat を _internal/run.bat としてコピー（★を外す）
+Copy-Item (Join-Path $projectDir "★run.bat") (Join-Path $internalDir "run.bat") -Force
+
+# アプリフォルダを _internal にコピー
 foreach ($folder in $appFolders) {
     $source = Join-Path $projectDir $folder
     if (Test-Path $source) {
-        Copy-Item $source $packageDir -Recurse -Force
+        Copy-Item $source $internalDir -Recurse -Force
     }
 }
 
@@ -99,11 +103,11 @@ Write-Host "[OK] アプリファイルコピー完了"
 
 Write-Host "[2/4] 依存関係をコピー中（時間がかかります）..."
 
-# 依存関係フォルダをコピー
+# 依存関係フォルダを _internal にコピー
 foreach ($dep in $requiredDeps) {
     $source = Join-Path $projectDir $dep
     Write-Host "  コピー中: $dep ..."
-    Copy-Item $source $packageDir -Recurse -Force
+    Copy-Item $source $internalDir -Recurse -Force
 }
 
 Write-Host "[OK] 依存関係コピー完了"

@@ -971,3 +971,338 @@ class TestParseSingleOptionResult:
         """Parse whitespace only returns None"""
         option = service._parse_single_option_result("   \n\t  ")
         assert option is None
+
+
+# =============================================================================
+# Tests: Batch Size Boundary Conditions
+# =============================================================================
+
+class TestBatchSizeBoundaries:
+    """Comprehensive tests for batch size boundaries"""
+
+    @pytest.fixture
+    def batch_translator(self):
+        """Create BatchTranslator with mocked dependencies"""
+        mock_copilot = Mock()
+        mock_copilot.translate_sync.return_value = []
+        mock_prompt_builder = Mock()
+        mock_prompt_builder.build_batch.return_value = "test prompt"
+        return BatchTranslator(mock_copilot, mock_prompt_builder)
+
+    # --- MAX_BATCH_SIZE (50) boundary tests ---
+
+    def test_exactly_49_blocks(self, batch_translator):
+        """49 blocks (one below limit) creates one batch"""
+        blocks = [
+            TextBlock(id=str(i), text=f"Text{i}", location=f"A{i}")
+            for i in range(49)
+        ]
+        batches = batch_translator._create_batches(blocks)
+
+        assert len(batches) == 1
+        assert len(batches[0]) == 49
+
+    def test_exactly_50_blocks(self, batch_translator):
+        """50 blocks (at limit) creates one batch"""
+        blocks = [
+            TextBlock(id=str(i), text=f"Text{i}", location=f"A{i}")
+            for i in range(50)
+        ]
+        batches = batch_translator._create_batches(blocks)
+
+        assert len(batches) == 1
+        assert len(batches[0]) == 50
+
+    def test_exactly_51_blocks(self, batch_translator):
+        """51 blocks (one over limit) creates two batches"""
+        blocks = [
+            TextBlock(id=str(i), text=f"Text{i}", location=f"A{i}")
+            for i in range(51)
+        ]
+        batches = batch_translator._create_batches(blocks)
+
+        assert len(batches) == 2
+        assert len(batches[0]) == 50
+        assert len(batches[1]) == 1
+
+    def test_exactly_100_blocks(self, batch_translator):
+        """100 blocks creates exactly two full batches"""
+        blocks = [
+            TextBlock(id=str(i), text=f"Text{i}", location=f"A{i}")
+            for i in range(100)
+        ]
+        batches = batch_translator._create_batches(blocks)
+
+        assert len(batches) == 2
+        assert len(batches[0]) == 50
+        assert len(batches[1]) == 50
+
+    def test_101_blocks(self, batch_translator):
+        """101 blocks creates three batches"""
+        blocks = [
+            TextBlock(id=str(i), text=f"Text{i}", location=f"A{i}")
+            for i in range(101)
+        ]
+        batches = batch_translator._create_batches(blocks)
+
+        assert len(batches) == 3
+        assert len(batches[0]) == 50
+        assert len(batches[1]) == 50
+        assert len(batches[2]) == 1
+
+    # --- MAX_CHARS_PER_BATCH (10000) boundary tests ---
+
+    def test_exactly_9999_chars_total(self, batch_translator):
+        """9999 characters (one below limit) stays in one batch"""
+        # Create blocks with exactly 9999 total characters
+        # 10 blocks with 999 chars each, plus 9 extra in first
+        text_999 = "x" * 999
+        text_1008 = "x" * 1008  # 999 + 9 = 1008 to get 9999 total
+        blocks = [TextBlock(id="0", text=text_1008, location="A0")]
+        for i in range(1, 10):
+            blocks.append(TextBlock(id=str(i), text=text_999, location=f"A{i}"))
+
+        # Total = 1008 + 9*999 = 1008 + 8991 = 9999
+        batches = batch_translator._create_batches(blocks)
+
+        assert len(batches) == 1
+
+    def test_exactly_10000_chars_total(self, batch_translator):
+        """10000 characters (at limit) stays in one batch"""
+        text_1000 = "x" * 1000
+        blocks = [
+            TextBlock(id=str(i), text=text_1000, location=f"A{i}")
+            for i in range(10)
+        ]
+
+        batches = batch_translator._create_batches(blocks)
+
+        # All 10 blocks should fit in one batch
+        assert len(batches) == 1
+        assert len(batches[0]) == 10
+
+    def test_10001_chars_splits_batch(self, batch_translator):
+        """10001 characters causes batch split"""
+        text_5001 = "x" * 5001
+        blocks = [
+            TextBlock(id="0", text=text_5001, location="A0"),
+            TextBlock(id="1", text=text_5001, location="A1"),
+        ]
+
+        # 5001 + 5001 = 10002 > 10000
+        batches = batch_translator._create_batches(blocks)
+
+        assert len(batches) == 2
+        assert len(batches[0]) == 1
+        assert len(batches[1]) == 1
+
+    def test_large_single_block_gets_own_batch(self, batch_translator):
+        """Very large single block (>10000 chars) gets its own batch"""
+        large_text = "x" * 15000
+        blocks = [
+            TextBlock(id="0", text="Short", location="A0"),
+            TextBlock(id="1", text=large_text, location="A1"),
+            TextBlock(id="2", text="Short", location="A2"),
+        ]
+
+        batches = batch_translator._create_batches(blocks)
+
+        # Each block should be in its own batch due to size
+        assert len(batches) >= 2
+
+    # --- Combined limit tests ---
+
+    def test_char_limit_triggers_before_count_limit(self, batch_translator):
+        """Character limit triggers split before reaching block count limit"""
+        # 20 blocks with 600 chars each = 12000 chars
+        text_600 = "x" * 600
+        blocks = [
+            TextBlock(id=str(i), text=text_600, location=f"A{i}")
+            for i in range(20)
+        ]
+
+        batches = batch_translator._create_batches(blocks)
+
+        # Should split due to character limit, not block count
+        # First batch: blocks 0-15 (16 * 600 = 9600)
+        # Actually: 16 blocks fit, 17th would exceed
+        assert len(batches) >= 2
+        # First batch should have < 50 blocks
+        assert len(batches[0]) < 50
+
+    def test_count_limit_triggers_before_char_limit(self, batch_translator):
+        """Block count limit triggers split before reaching character limit"""
+        # 60 blocks with 10 chars each = 600 chars (well under 10000)
+        blocks = [
+            TextBlock(id=str(i), text="0123456789", location=f"A{i}")
+            for i in range(60)
+        ]
+
+        batches = batch_translator._create_batches(blocks)
+
+        assert len(batches) == 2
+        assert len(batches[0]) == 50  # Count limit triggered
+        assert len(batches[1]) == 10
+
+    # --- Edge cases ---
+
+    def test_single_block_at_char_limit(self, batch_translator):
+        """Single block exactly at character limit"""
+        text_10000 = "x" * 10000
+        blocks = [TextBlock(id="0", text=text_10000, location="A0")]
+
+        batches = batch_translator._create_batches(blocks)
+
+        assert len(batches) == 1
+        assert len(batches[0]) == 1
+
+    def test_single_block_over_char_limit(self, batch_translator):
+        """Single block over character limit still creates one batch"""
+        text_20000 = "x" * 20000
+        blocks = [TextBlock(id="0", text=text_20000, location="A0")]
+
+        batches = batch_translator._create_batches(blocks)
+
+        # Single block should still be in its own batch
+        assert len(batches) == 1
+        assert len(batches[0]) == 1
+
+    def test_many_tiny_blocks(self, batch_translator):
+        """Many tiny blocks respect count limit"""
+        blocks = [
+            TextBlock(id=str(i), text="a", location=f"A{i}")
+            for i in range(200)
+        ]
+
+        batches = batch_translator._create_batches(blocks)
+
+        assert len(batches) == 4
+        assert len(batches[0]) == 50
+        assert len(batches[1]) == 50
+        assert len(batches[2]) == 50
+        assert len(batches[3]) == 50
+
+    def test_alternating_large_small_blocks(self, batch_translator):
+        """Alternating large and small blocks batch correctly"""
+        blocks = []
+        for i in range(20):
+            if i % 2 == 0:
+                blocks.append(TextBlock(id=str(i), text="x" * 1000, location=f"A{i}"))
+            else:
+                blocks.append(TextBlock(id=str(i), text="y", location=f"A{i}"))
+
+        batches = batch_translator._create_batches(blocks)
+
+        # Total chars = 10*1000 + 10*1 = 10010
+        # Should split into 2 batches
+        assert len(batches) >= 2
+
+    def test_batch_order_preserved(self, batch_translator):
+        """Block order is preserved within and across batches"""
+        blocks = [
+            TextBlock(id=str(i), text=f"Block_{i}", location=f"A{i}")
+            for i in range(120)
+        ]
+
+        batches = batch_translator._create_batches(blocks)
+
+        # Verify order within batches
+        all_ids = []
+        for batch in batches:
+            for block in batch:
+                all_ids.append(int(block.id))
+
+        # IDs should be in order
+        assert all_ids == list(range(120))
+
+
+class TestBatchTranslatorTranslateBlocks:
+    """Tests for BatchTranslator.translate_blocks() method"""
+
+    @pytest.fixture
+    def mock_copilot(self):
+        mock = Mock()
+        mock.translate_sync.return_value = ["Trans1", "Trans2", "Trans3"]
+        return mock
+
+    @pytest.fixture
+    def mock_prompt_builder(self):
+        mock = Mock()
+        mock.build_batch.return_value = "test prompt"
+        return mock
+
+    def test_translate_returns_dict(self, mock_copilot, mock_prompt_builder):
+        """translate_blocks returns dict of id -> translation"""
+        translator = BatchTranslator(mock_copilot, mock_prompt_builder)
+
+        blocks = [
+            TextBlock(id="a", text="Text1", location="A1"),
+            TextBlock(id="b", text="Text2", location="A2"),
+            TextBlock(id="c", text="Text3", location="A3"),
+        ]
+
+        mock_copilot.translate_sync.return_value = ["Trans1", "Trans2", "Trans3"]
+
+        results = translator.translate_blocks(blocks)
+
+        assert isinstance(results, dict)
+        assert results["a"] == "Trans1"
+        assert results["b"] == "Trans2"
+        assert results["c"] == "Trans3"
+
+    def test_translate_calls_copilot_per_batch(self, mock_copilot, mock_prompt_builder):
+        """Copilot is called once per batch"""
+        translator = BatchTranslator(mock_copilot, mock_prompt_builder)
+
+        # 60 blocks = 2 batches
+        blocks = [
+            TextBlock(id=str(i), text=f"Text{i}", location=f"A{i}")
+            for i in range(60)
+        ]
+
+        # Return enough translations for each call
+        mock_copilot.translate_sync.side_effect = [
+            [f"Trans{i}" for i in range(50)],
+            [f"Trans{i}" for i in range(50, 60)],
+        ]
+
+        translator.translate_blocks(blocks)
+
+        assert mock_copilot.translate_sync.call_count == 2
+
+    def test_translate_progress_callback(self, mock_copilot, mock_prompt_builder):
+        """Progress callback is called for each batch"""
+        translator = BatchTranslator(mock_copilot, mock_prompt_builder)
+
+        blocks = [
+            TextBlock(id=str(i), text=f"Text{i}", location=f"A{i}")
+            for i in range(60)
+        ]
+
+        progress_calls = []
+
+        def on_progress(progress):
+            progress_calls.append(progress)
+
+        mock_copilot.translate_sync.side_effect = [
+            [f"Trans{i}" for i in range(50)],
+            [f"Trans{i}" for i in range(50, 60)],
+        ]
+
+        translator.translate_blocks(blocks, on_progress=on_progress)
+
+        assert len(progress_calls) == 2
+
+    def test_translate_with_output_language(self, mock_copilot, mock_prompt_builder):
+        """Output language is passed to prompt builder"""
+        translator = BatchTranslator(mock_copilot, mock_prompt_builder)
+
+        blocks = [TextBlock(id="1", text="Test", location="A1")]
+        mock_copilot.translate_sync.return_value = ["翻訳"]
+
+        translator.translate_blocks(blocks, output_language="jp")
+
+        # Verify prompt builder was called with output_language
+        mock_prompt_builder.build_batch.assert_called()
+        call_args = mock_prompt_builder.build_batch.call_args
+        assert call_args[1].get('output_language') == "jp" or call_args[0][2] == "jp"

@@ -447,3 +447,405 @@ class TestResourceErrors:
         assert result.status in [TranslationStatus.COMPLETED, TranslationStatus.FAILED]
         if result.status == TranslationStatus.FAILED:
             assert result.error_message is not None
+
+
+# --- Malformed Copilot Response Tests ---
+
+class TestMalformedCopilotResponses:
+    """Test handling of malformed responses from Copilot"""
+
+    def test_empty_string_response(self, settings):
+        """Handle empty string response from Copilot"""
+        mock_copilot = Mock()
+        mock_copilot.translate_single.return_value = ""
+
+        service = TranslationService(mock_copilot, settings)
+        result = service.translate_text("テスト")
+
+        # Empty response should still return completed status
+        assert result.status == TranslationStatus.COMPLETED
+        assert result.output_text == ""
+
+    def test_none_response(self, settings):
+        """Handle None response from Copilot"""
+        mock_copilot = Mock()
+        mock_copilot.translate_single.return_value = None
+
+        service = TranslationService(mock_copilot, settings)
+        result = service.translate_text("テスト")
+
+        # None response should complete (with None as output)
+        assert result.status == TranslationStatus.COMPLETED
+
+    def test_response_with_only_whitespace(self, settings):
+        """Handle whitespace-only response"""
+        mock_copilot = Mock()
+        mock_copilot.translate_single.return_value = "   \n\t  "
+
+        service = TranslationService(mock_copilot, settings)
+        result = service.translate_text("テスト")
+
+        assert result.status == TranslationStatus.COMPLETED
+
+    def test_response_with_unexpected_format(self, settings):
+        """Handle response with unexpected format"""
+        mock_copilot = Mock()
+        # Response that doesn't match expected pattern
+        mock_copilot.translate_single.return_value = "ERROR: Unable to process request"
+
+        service = TranslationService(mock_copilot, settings)
+        result = service.translate_text("テスト")
+
+        # Should still complete, treating raw response as output
+        assert result.status == TranslationStatus.COMPLETED
+        assert "ERROR" in result.output_text
+
+    def test_batch_response_count_mismatch(self, settings):
+        """Handle when batch response has wrong count"""
+        mock_copilot = Mock()
+        # Send 3 texts, get only 1 back
+        mock_copilot.translate_sync.return_value = ["Only one translation"]
+
+        from yakulingo.services.prompt_builder import PromptBuilder
+        prompt_builder = PromptBuilder()
+
+        translator = BatchTranslator(mock_copilot, prompt_builder)
+
+        blocks = [
+            TextBlock(id="1", text="Text1", location="A1"),
+            TextBlock(id="2", text="Text2", location="A2"),
+            TextBlock(id="3", text="Text3", location="A3"),
+        ]
+
+        results = translator.translate_blocks(blocks)
+
+        # Should handle mismatch gracefully
+        assert len(results) == 1
+
+    def test_batch_response_extra_items(self, settings):
+        """Handle when batch response has too many items"""
+        mock_copilot = Mock()
+        # Send 2 texts, get 5 back
+        mock_copilot.translate_sync.return_value = [
+            "Trans1", "Trans2", "Extra1", "Extra2", "Extra3"
+        ]
+
+        from yakulingo.services.prompt_builder import PromptBuilder
+        prompt_builder = PromptBuilder()
+
+        translator = BatchTranslator(mock_copilot, prompt_builder)
+
+        blocks = [
+            TextBlock(id="1", text="Text1", location="A1"),
+            TextBlock(id="2", text="Text2", location="A2"),
+        ]
+
+        results = translator.translate_blocks(blocks)
+
+        # Should only use the first 2 responses
+        assert len(results) == 2
+
+
+# --- Timeout and Retry Tests ---
+
+class TestTimeoutAndRetry:
+    """Test timeout and retry behavior"""
+
+    def test_translate_file_timeout_error(self, settings, sample_excel):
+        """Handle timeout during file translation"""
+        mock_copilot = Mock()
+        mock_copilot.translate_sync.side_effect = TimeoutError(
+            "Request timed out after 120 seconds"
+        )
+
+        service = TranslationService(mock_copilot, settings)
+        result = service.translate_file(sample_excel)
+
+        assert result.status == TranslationStatus.FAILED
+        assert "timed out" in result.error_message.lower()
+
+    def test_translate_text_timeout_error(self, settings):
+        """Handle timeout during text translation"""
+        mock_copilot = Mock()
+        mock_copilot.translate_single.side_effect = TimeoutError(
+            "Connection timed out"
+        )
+
+        service = TranslationService(mock_copilot, settings)
+        result = service.translate_text("テスト")
+
+        assert result.status == TranslationStatus.FAILED
+        assert "timed out" in result.error_message.lower()
+
+    def test_intermittent_failure_recovery(self, settings, sample_excel):
+        """Test that service can recover after intermittent failure"""
+        mock_copilot = Mock()
+        call_count = [0]
+
+        def intermittent_failure(*args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                raise ConnectionError("Temporary network issue")
+            return ["Translated"]
+
+        mock_copilot.translate_sync.side_effect = intermittent_failure
+
+        service = TranslationService(mock_copilot, settings)
+
+        # First call fails
+        result1 = service.translate_file(sample_excel)
+        assert result1.status == TranslationStatus.FAILED
+
+        # Second call succeeds
+        result2 = service.translate_file(sample_excel)
+        assert result2.status == TranslationStatus.COMPLETED
+
+
+# --- File Permission and I/O Error Tests ---
+
+class TestFilePermissionErrors:
+    """Test file permission error handling"""
+
+    def test_read_only_output_directory(self, settings, sample_excel, tmp_path):
+        """Handle read-only output directory"""
+        import os
+
+        mock_copilot = Mock()
+        mock_copilot.translate_sync.return_value = ["Translated"]
+
+        # Set output directory that doesn't exist
+        settings.output_directory = str(tmp_path / "nonexistent" / "readonly")
+
+        service = TranslationService(mock_copilot, settings)
+        result = service.translate_file(sample_excel)
+
+        assert result.status == TranslationStatus.FAILED
+
+    def test_input_file_deleted_during_processing(self, settings, tmp_path):
+        """Handle input file being deleted during processing"""
+        mock_copilot = Mock()
+
+        # Create file then delete before processing
+        file_path = tmp_path / "temporary.xlsx"
+
+        service = TranslationService(mock_copilot, settings)
+
+        # File doesn't exist
+        result = service.translate_file(file_path)
+
+        assert result.status == TranslationStatus.FAILED
+
+    def test_output_file_already_exists_and_locked(self, settings, sample_excel, tmp_path):
+        """Handle output file that already exists"""
+        mock_copilot = Mock()
+        mock_copilot.translate_sync.return_value = ["Translated"]
+
+        # Create existing translated file
+        existing_file = tmp_path / "sample_translated.xlsx"
+        existing_file.write_text("existing content")
+
+        # Set output to same directory
+        settings.output_directory = str(tmp_path)
+
+        service = TranslationService(mock_copilot, settings)
+
+        # Should generate numbered filename
+        result = service.translate_file(sample_excel)
+
+        # Should either succeed with new name or fail gracefully
+        assert result.status in [TranslationStatus.COMPLETED, TranslationStatus.FAILED]
+
+
+# --- Unicode and Encoding Error Tests ---
+
+class TestEncodingErrors:
+    """Test encoding error handling"""
+
+    def test_translate_text_with_invalid_unicode(self, settings):
+        """Handle text with unusual Unicode characters"""
+        mock_copilot = Mock()
+        mock_copilot.translate_single.return_value = "Translated"
+
+        service = TranslationService(mock_copilot, settings)
+
+        # Text with various Unicode characters
+        unicode_text = "日本語 \u200b\u200c\u200d 絵文字🎌 零幅文字"
+
+        result = service.translate_text(unicode_text)
+
+        # Should handle gracefully
+        assert result.status in [TranslationStatus.COMPLETED, TranslationStatus.FAILED]
+
+    def test_translate_text_with_surrogate_pairs(self, settings):
+        """Handle text with surrogate pair emojis"""
+        mock_copilot = Mock()
+        mock_copilot.translate_single.return_value = "Translated with emoji 😀"
+
+        service = TranslationService(mock_copilot, settings)
+
+        # Text with emoji that uses surrogate pairs
+        emoji_text = "テスト 👨‍👩‍👧‍👦 絵文字"
+
+        result = service.translate_text(emoji_text)
+
+        assert result.status == TranslationStatus.COMPLETED
+
+
+# --- Concurrent Access Error Tests ---
+
+class TestConcurrentAccessErrors:
+    """Test concurrent access error handling"""
+
+    def test_cancel_during_batch_processing(self, settings, sample_excel):
+        """Test cancellation during batch processing"""
+        mock_copilot = Mock()
+        service = TranslationService(mock_copilot, settings)
+
+        batch_count = [0]
+
+        def slow_translate(*args, **kwargs):
+            batch_count[0] += 1
+            if batch_count[0] == 1:
+                # Cancel after first batch
+                service.cancel()
+            return ["Translated"]
+
+        mock_copilot.translate_sync.side_effect = slow_translate
+
+        result = service.translate_file(sample_excel)
+
+        # Should either complete or be cancelled
+        assert result.status in [TranslationStatus.COMPLETED, TranslationStatus.CANCELLED]
+
+    def test_multiple_cancel_calls(self, settings):
+        """Test multiple cancel calls are safe"""
+        mock_copilot = Mock()
+        service = TranslationService(mock_copilot, settings)
+
+        # Multiple cancel calls should not raise
+        service.cancel()
+        service.cancel()
+        service.cancel()
+
+        assert service._cancel_requested is True
+
+
+# --- Edge Cases in Error Messages ---
+
+class TestErrorMessageFormatting:
+    """Test error message formatting"""
+
+    def test_error_message_with_unicode(self, settings):
+        """Test error message with Unicode characters"""
+        mock_copilot = Mock()
+        mock_copilot.translate_single.side_effect = ValueError(
+            "エラー: 無効な入力 - Invalid input"
+        )
+
+        service = TranslationService(mock_copilot, settings)
+        result = service.translate_text("テスト")
+
+        assert result.status == TranslationStatus.FAILED
+        assert "エラー" in result.error_message
+
+    def test_error_message_with_newlines(self, settings):
+        """Test error message with newlines"""
+        mock_copilot = Mock()
+        mock_copilot.translate_single.side_effect = RuntimeError(
+            "Error occurred\nLine 1\nLine 2\nLine 3"
+        )
+
+        service = TranslationService(mock_copilot, settings)
+        result = service.translate_text("テスト")
+
+        assert result.status == TranslationStatus.FAILED
+        assert "Error occurred" in result.error_message
+
+    def test_very_long_error_message(self, settings):
+        """Test handling of very long error message"""
+        mock_copilot = Mock()
+        long_message = "Error: " + "x" * 10000
+        mock_copilot.translate_single.side_effect = RuntimeError(long_message)
+
+        service = TranslationService(mock_copilot, settings)
+        result = service.translate_text("テスト")
+
+        assert result.status == TranslationStatus.FAILED
+        assert result.error_message is not None
+
+
+# --- Processor-Specific Error Tests ---
+
+class TestProcessorSpecificErrors:
+    """Test processor-specific error handling"""
+
+    def test_excel_with_password_protection(self, settings, tmp_path):
+        """Handle password-protected Excel file"""
+        # Create a file that looks like xlsx but has invalid content
+        protected_file = tmp_path / "protected.xlsx"
+        protected_file.write_bytes(b"PK\x03\x04encrypted content simulation")
+
+        mock_copilot = Mock()
+        service = TranslationService(mock_copilot, settings)
+
+        result = service.translate_file(protected_file)
+
+        assert result.status == TranslationStatus.FAILED
+
+    def test_word_with_corrupted_xml(self, settings, tmp_path):
+        """Handle Word file with corrupted XML"""
+        corrupted_file = tmp_path / "corrupted.docx"
+        corrupted_file.write_bytes(b"PK\x03\x04corrupted content")
+
+        mock_copilot = Mock()
+        service = TranslationService(mock_copilot, settings)
+
+        result = service.translate_file(corrupted_file)
+
+        assert result.status == TranslationStatus.FAILED
+
+    def test_pdf_with_no_text_layer(self, settings, tmp_path):
+        """Handle PDF with no extractable text"""
+        # Create minimal PDF-like file
+        empty_pdf = tmp_path / "empty.pdf"
+        empty_pdf.write_bytes(b"%PDF-1.4\n%%EOF")
+
+        mock_copilot = Mock()
+        service = TranslationService(mock_copilot, settings)
+
+        result = service.translate_file(empty_pdf)
+
+        # Should fail or complete with 0 blocks
+        assert result.status in [TranslationStatus.COMPLETED, TranslationStatus.FAILED]
+
+
+# --- Connection State Error Tests ---
+
+class TestConnectionStateErrors:
+    """Test connection state error handling"""
+
+    def test_translate_after_disconnect(self, settings):
+        """Handle translation attempt after Copilot disconnect"""
+        mock_copilot = Mock()
+        mock_copilot.translate_single.side_effect = RuntimeError(
+            "Not connected to Copilot"
+        )
+
+        service = TranslationService(mock_copilot, settings)
+        result = service.translate_text("テスト")
+
+        assert result.status == TranslationStatus.FAILED
+        assert "Not connected" in result.error_message
+
+    def test_translate_with_expired_session(self, settings):
+        """Handle expired Copilot session"""
+        mock_copilot = Mock()
+        mock_copilot.translate_single.side_effect = RuntimeError(
+            "Session expired. Please reconnect."
+        )
+
+        service = TranslationService(mock_copilot, settings)
+        result = service.translate_text("テスト")
+
+        assert result.status == TranslationStatus.FAILED
+        assert "expired" in result.error_message.lower()

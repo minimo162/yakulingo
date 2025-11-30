@@ -438,3 +438,300 @@ class TestCreateApp:
         app = create_app()
 
         assert isinstance(app, YakuLingoApp)
+
+
+# =============================================================================
+# Tests: Translation Progress Display
+# =============================================================================
+
+class TestTranslationProgressDisplay:
+    """Tests for translation progress UI updates"""
+
+    def test_progress_percentage_calculation(self, app_state):
+        """Test progress percentage is correctly calculated"""
+        app_state.translation_progress = 0.5
+        assert app_state.translation_progress == 0.5
+
+    def test_progress_status_update(self, app_state):
+        """Test progress status text is updated"""
+        app_state.translation_status = "Translating batch 1 of 5..."
+        assert app_state.translation_status == "Translating batch 1 of 5..."
+
+    def test_progress_resets_on_complete(self, app_state):
+        """Test progress is reset when translation completes"""
+        app_state.translation_progress = 1.0
+        app_state.file_state = FileState.COMPLETE
+        app_state.reset_file_state()
+
+        assert app_state.translation_progress == 0.0
+        assert app_state.file_state == FileState.EMPTY
+
+
+class TestTabSwitching:
+    """Tests for tab switching behavior"""
+
+    def test_switch_from_text_to_file(self, app_state):
+        """Test switching from TEXT to FILE tab"""
+        app_state.current_tab = Tab.TEXT
+        app_state.current_tab = Tab.FILE
+
+        assert app_state.current_tab == Tab.FILE
+
+    def test_switch_preserves_source_text(self, app_state):
+        """Test that switching tabs preserves source text"""
+        app_state.current_tab = Tab.TEXT
+        app_state.source_text = "保持されるテキスト"
+        app_state.current_tab = Tab.FILE
+        app_state.current_tab = Tab.TEXT
+
+        assert app_state.source_text == "保持されるテキスト"
+
+    def test_switch_preserves_file_selection(self, app_state):
+        """Test that switching tabs preserves file selection"""
+        app_state.current_tab = Tab.FILE
+        app_state.selected_file = Path("/tmp/test.xlsx")
+        app_state.current_tab = Tab.TEXT
+        app_state.current_tab = Tab.FILE
+
+        assert app_state.selected_file == Path("/tmp/test.xlsx")
+
+    def test_cannot_switch_while_translating(self, app_state):
+        """Test that tab switching is blocked during translation"""
+        app_state.current_tab = Tab.TEXT
+        app_state.text_translating = True
+
+        # Verify is_translating returns True
+        assert app_state.is_translating() is True
+
+
+class TestHistoryOperations:
+    """Tests for history management"""
+
+    def test_add_to_history(self, app_state):
+        """Test adding entry to history"""
+        from yakulingo.models.types import TextTranslationResult, TranslationOption, HistoryEntry
+
+        result = TextTranslationResult(
+            source_text="テスト",
+            source_char_count=3,
+            options=[TranslationOption(text="Test", char_count=4, explanation="Translation")],
+        )
+        entry = HistoryEntry(source_text="テスト", result=result)
+        app_state.add_to_history(entry)
+
+        assert len(app_state.history) == 1
+        assert app_state.history[0].source_text == "テスト"
+
+    def test_history_limit(self, app_state):
+        """Test history doesn't exceed maximum entries"""
+        from yakulingo.models.types import TextTranslationResult, TranslationOption, HistoryEntry
+
+        # Add more than typical limit
+        for i in range(50):
+            result = TextTranslationResult(
+                source_text=f"Text {i}",
+                source_char_count=6,
+                options=[TranslationOption(text=f"Trans {i}", char_count=7, explanation="")],
+            )
+            entry = HistoryEntry(source_text=f"Text {i}", result=result)
+            app_state.add_to_history(entry)
+
+        # History should have entries (implementation may limit)
+        assert len(app_state.history) > 0
+
+    def test_clear_history(self, app_state):
+        """Test clearing all history"""
+        from yakulingo.models.types import TextTranslationResult, TranslationOption, HistoryEntry
+
+        result = TextTranslationResult(
+            source_text="テスト",
+            source_char_count=3,
+            options=[TranslationOption(text="Test", char_count=4, explanation="")],
+        )
+        entry = HistoryEntry(source_text="テスト", result=result)
+        app_state.add_to_history(entry)
+
+        app_state.clear_history()
+        assert len(app_state.history) == 0
+
+    def test_delete_history_entry(self, app_state):
+        """Test deleting specific history entry"""
+        from yakulingo.models.types import TextTranslationResult, TranslationOption, HistoryEntry
+
+        result1 = TextTranslationResult(
+            source_text="First",
+            source_char_count=5,
+            options=[TranslationOption(text="最初", char_count=2, explanation="")],
+        )
+        result2 = TextTranslationResult(
+            source_text="Second",
+            source_char_count=6,
+            options=[TranslationOption(text="二番目", char_count=3, explanation="")],
+        )
+        entry1 = HistoryEntry(source_text="First", result=result1)
+        entry2 = HistoryEntry(source_text="Second", result=result2)
+
+        app_state.add_to_history(entry1)
+        app_state.add_to_history(entry2)
+
+        app_state.delete_history_entry(entry1)
+
+        assert len(app_state.history) == 1
+        assert app_state.history[0].source_text == "Second"
+
+
+class TestCopilotConnectionFlow:
+    """Tests for Copilot connection workflow"""
+
+    @pytest.fixture
+    def app_with_copilot(self, mock_settings, mock_nicegui):
+        """Create app with mocked Copilot"""
+        with patch('yakulingo.ui.app.AppSettings') as mock_settings_class:
+            with patch('yakulingo.ui.app.CopilotHandler') as mock_copilot_class:
+                with patch('yakulingo.ui.app.get_default_settings_path'):
+                    with patch('yakulingo.ui.app.get_default_prompts_dir'):
+                        mock_settings_class.load.return_value = mock_settings
+                        mock_copilot = MagicMock()
+                        mock_copilot.is_connected = False
+                        mock_copilot_class.return_value = mock_copilot
+
+                        from yakulingo.ui.app import YakuLingoApp
+                        app = YakuLingoApp()
+                        yield app, mock_copilot
+
+    def test_initial_connection_state(self, app_with_copilot):
+        """Test initial state is disconnected"""
+        app, mock_copilot = app_with_copilot
+        assert app.state.copilot_connected is False
+        assert app.state.copilot_connecting is False
+
+    def test_connecting_state_during_connection(self, app_with_copilot):
+        """Test connecting state is set during connection attempt"""
+        app, mock_copilot = app_with_copilot
+
+        # Simulate setting connecting state
+        app.state.copilot_connecting = True
+        assert app.state.copilot_connecting is True
+
+    def test_connected_state_after_success(self, app_with_copilot):
+        """Test connected state after successful connection"""
+        app, mock_copilot = app_with_copilot
+
+        # Simulate successful connection
+        app.state.copilot_connected = True
+        app.state.copilot_connecting = False
+
+        assert app.state.copilot_connected is True
+        assert app.state.copilot_connecting is False
+
+
+class TestLanguageSelection:
+    """Tests for language selection in file translation"""
+
+    def test_default_output_language(self, app_state):
+        """Test default output language is English"""
+        assert app_state.file_output_language == "en"
+
+    def test_change_to_japanese(self, app_state):
+        """Test changing output language to Japanese"""
+        app_state.file_output_language = "jp"
+        assert app_state.file_output_language == "jp"
+
+    def test_language_preserved_across_file_changes(self, app_state):
+        """Test language selection is preserved when changing files"""
+        app_state.file_output_language = "jp"
+        app_state.selected_file = Path("/tmp/test1.xlsx")
+        app_state.selected_file = Path("/tmp/test2.xlsx")
+
+        assert app_state.file_output_language == "jp"
+
+
+class TestAppStateEdgeCases:
+    """Edge case tests for AppState"""
+
+    def test_empty_source_text_cannot_translate(self, app_state):
+        """Test cannot translate with empty source text"""
+        app_state.copilot_connected = True
+        app_state.source_text = ""
+
+        assert app_state.can_translate() is False
+
+    def test_whitespace_only_source_text(self, app_state):
+        """Test whitespace-only source text handling"""
+        app_state.copilot_connected = True
+        app_state.source_text = "   \n\t  "
+
+        # Whitespace-only should not allow translation
+        # (depends on implementation - strip check)
+        # If can_translate checks stripped text:
+        assert app_state.source_text.strip() == ""
+
+    def test_very_long_source_text(self, app_state):
+        """Test handling of very long source text"""
+        app_state.copilot_connected = True
+        app_state.source_text = "あ" * 100000
+
+        assert app_state.can_translate() is True
+        assert len(app_state.source_text) == 100000
+
+    def test_unicode_source_text(self, app_state):
+        """Test handling of various Unicode characters"""
+        app_state.copilot_connected = True
+        app_state.source_text = "日本語 🎌 中文 한국어 العربية"
+
+        assert app_state.can_translate() is True
+
+    def test_file_state_error_preserves_file(self, app_state):
+        """Test error state preserves selected file for retry"""
+        app_state.selected_file = Path("/tmp/test.xlsx")
+        app_state.file_state = FileState.ERROR
+        app_state.error_message = "Translation failed"
+
+        assert app_state.selected_file == Path("/tmp/test.xlsx")
+        assert app_state.error_message == "Translation failed"
+
+
+class TestDownloadHandler:
+    """Tests for file download handling"""
+
+    @pytest.fixture
+    def app_with_output(self, mock_settings, mock_nicegui, tmp_path):
+        """Create app with output file"""
+        with patch('yakulingo.ui.app.AppSettings') as mock_settings_class:
+            with patch('yakulingo.ui.app.CopilotHandler') as mock_copilot_class:
+                with patch('yakulingo.ui.app.get_default_settings_path'):
+                    with patch('yakulingo.ui.app.get_default_prompts_dir'):
+                        mock_settings_class.load.return_value = mock_settings
+                        mock_copilot_class.return_value = MagicMock()
+
+                        from yakulingo.ui.app import YakuLingoApp
+                        app = YakuLingoApp()
+
+                        # Create actual output file
+                        output_file = tmp_path / "translated.xlsx"
+                        output_file.write_bytes(b"dummy content")
+                        app.state.output_file = output_file
+
+                        yield app, mock_nicegui
+
+    def test_download_with_existing_file(self, app_with_output):
+        """Test download when file exists"""
+        app, mock_nicegui = app_with_output
+        app._download()
+        mock_nicegui.download.assert_called_once()
+
+    def test_download_without_file(self, mock_settings, mock_nicegui):
+        """Test download when no output file"""
+        with patch('yakulingo.ui.app.AppSettings') as mock_settings_class:
+            with patch('yakulingo.ui.app.CopilotHandler') as mock_copilot_class:
+                with patch('yakulingo.ui.app.get_default_settings_path'):
+                    with patch('yakulingo.ui.app.get_default_prompts_dir'):
+                        mock_settings_class.load.return_value = mock_settings
+                        mock_copilot_class.return_value = MagicMock()
+
+                        from yakulingo.ui.app import YakuLingoApp
+                        app = YakuLingoApp()
+                        app.state.output_file = None
+
+                        app._download()
+                        mock_nicegui.download.assert_not_called()

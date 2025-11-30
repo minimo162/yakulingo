@@ -416,3 +416,303 @@ class TestPromptBuilderEdgeCases:
         builder = PromptBuilder()
         template = builder._get_template("unknown")
         assert template == builder._to_en_template
+
+
+# =============================================================================
+# Tests: Glossary and Reference File Edge Cases
+# =============================================================================
+
+class TestGlossaryEdgeCases:
+    """Edge case tests for glossary/reference file handling"""
+
+    def test_prompt_with_reference_includes_instruction(self):
+        """Prompt with reference files includes reference instruction"""
+        builder = PromptBuilder()
+        prompt = builder.build("テスト", has_reference_files=True)
+
+        assert "Reference Files" in prompt
+        assert "添付の参考ファイル" in prompt
+        assert "用語集" in prompt
+
+    def test_prompt_without_reference_excludes_instruction(self):
+        """Prompt without reference files excludes reference instruction"""
+        builder = PromptBuilder()
+        prompt = builder.build("テスト", has_reference_files=False)
+
+        assert "Reference Files" not in prompt
+        assert "添付の参考ファイル" not in prompt
+
+    def test_batch_prompt_with_reference(self):
+        """Batch prompt includes reference instruction when enabled"""
+        builder = PromptBuilder()
+        texts = ["Text1", "Text2"]
+        prompt = builder.build_batch(texts, has_reference_files=True)
+
+        assert "Reference Files" in prompt
+        assert "添付の参考ファイル" in prompt
+
+    def test_batch_prompt_without_reference(self):
+        """Batch prompt excludes reference instruction when disabled"""
+        builder = PromptBuilder()
+        texts = ["Text1", "Text2"]
+        prompt = builder.build_batch(texts, has_reference_files=False)
+
+        assert "Reference Files" not in prompt
+        assert "添付の参考ファイル" not in prompt
+
+    def test_reference_instruction_format(self):
+        """Reference instruction has proper format"""
+        # Verify the reference instruction constant
+        assert "Reference Files" in REFERENCE_INSTRUCTION
+        assert "用語集がある場合" in REFERENCE_INSTRUCTION
+        assert "訳語を使用" in REFERENCE_INSTRUCTION
+
+    def test_reference_section_placeholder_replaced(self):
+        """Reference section placeholder is properly replaced"""
+        builder = PromptBuilder()
+
+        prompt_with_ref = builder.build("test", has_reference_files=True)
+        prompt_without_ref = builder.build("test", has_reference_files=False)
+
+        # No placeholder remains
+        assert "{reference_section}" not in prompt_with_ref
+        assert "{reference_section}" not in prompt_without_ref
+
+    def test_input_text_placeholder_replaced(self):
+        """Input text placeholder is properly replaced"""
+        builder = PromptBuilder()
+        prompt = builder.build("特定のテキスト")
+
+        assert "{input_text}" not in prompt
+        assert "特定のテキスト" in prompt
+
+
+class TestReferenceFileIntegration:
+    """Tests for reference file integration with translation service"""
+
+    def test_translation_service_accepts_reference_files(self):
+        """TranslationService accepts reference file paths"""
+        from unittest.mock import Mock
+        from yakulingo.config.settings import AppSettings
+        from yakulingo.services.translation_service import TranslationService
+
+        mock_copilot = Mock()
+        mock_copilot.translate_single.return_value = "Translated"
+
+        service = TranslationService(mock_copilot, AppSettings())
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ref_file = Path(tmpdir) / "glossary.csv"
+            ref_file.write_text("term,translation\nテスト,Test")
+
+            result = service.translate_text("テスト", reference_files=[ref_file])
+
+            # Translation should succeed
+            from yakulingo.models.types import TranslationStatus
+            assert result.status == TranslationStatus.COMPLETED
+
+    def test_translation_service_handles_none_reference(self):
+        """TranslationService handles None reference files"""
+        from unittest.mock import Mock
+        from yakulingo.config.settings import AppSettings
+        from yakulingo.services.translation_service import TranslationService
+
+        mock_copilot = Mock()
+        mock_copilot.translate_single.return_value = "Translated"
+
+        service = TranslationService(mock_copilot, AppSettings())
+
+        result = service.translate_text("テスト", reference_files=None)
+
+        from yakulingo.models.types import TranslationStatus
+        assert result.status == TranslationStatus.COMPLETED
+
+    def test_translation_service_handles_empty_reference_list(self):
+        """TranslationService handles empty reference file list"""
+        from unittest.mock import Mock
+        from yakulingo.config.settings import AppSettings
+        from yakulingo.services.translation_service import TranslationService
+
+        mock_copilot = Mock()
+        mock_copilot.translate_single.return_value = "Translated"
+
+        service = TranslationService(mock_copilot, AppSettings())
+
+        result = service.translate_text("テスト", reference_files=[])
+
+        from yakulingo.models.types import TranslationStatus
+        assert result.status == TranslationStatus.COMPLETED
+
+
+class TestGlossaryFileFormats:
+    """Tests for different glossary file format handling"""
+
+    def test_csv_glossary_reference(self):
+        """CSV glossary file as reference"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            glossary = Path(tmpdir) / "glossary.csv"
+            glossary.write_text("Japanese,English\n会議,meeting\n報告書,report")
+
+            from yakulingo.config.settings import AppSettings
+            settings = AppSettings(reference_files=["glossary.csv"])
+
+            paths = settings.get_reference_file_paths(Path(tmpdir))
+
+            assert len(paths) == 1
+            assert paths[0] == glossary
+
+    def test_excel_glossary_reference(self):
+        """Excel glossary file as reference"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            import openpyxl
+            glossary = Path(tmpdir) / "glossary.xlsx"
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws['A1'] = 'Japanese'
+            ws['B1'] = 'English'
+            ws['A2'] = '会議'
+            ws['B2'] = 'meeting'
+            wb.save(glossary)
+
+            from yakulingo.config.settings import AppSettings
+            settings = AppSettings(reference_files=["glossary.xlsx"])
+
+            paths = settings.get_reference_file_paths(Path(tmpdir))
+
+            assert len(paths) == 1
+            assert paths[0] == glossary
+
+    def test_mixed_reference_files(self):
+        """Multiple reference files of different types"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            csv_file = Path(tmpdir) / "terms.csv"
+            csv_file.write_text("term,translation")
+
+            txt_file = Path(tmpdir) / "notes.txt"
+            txt_file.write_text("Translation notes")
+
+            from yakulingo.config.settings import AppSettings
+            settings = AppSettings(reference_files=["terms.csv", "notes.txt"])
+
+            paths = settings.get_reference_file_paths(Path(tmpdir))
+
+            assert len(paths) == 2
+
+    def test_missing_reference_file_excluded(self):
+        """Missing reference files are excluded from list"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            existing = Path(tmpdir) / "exists.csv"
+            existing.write_text("data")
+
+            from yakulingo.config.settings import AppSettings
+            settings = AppSettings(reference_files=["exists.csv", "missing.csv"])
+
+            paths = settings.get_reference_file_paths(Path(tmpdir))
+
+            # Only existing file should be included
+            assert len(paths) == 1
+            assert paths[0] == existing
+
+
+class TestGlossaryEdgeCasesAdvanced:
+    """Advanced edge case tests for glossary handling"""
+
+    def test_empty_glossary_file(self):
+        """Handle empty glossary file"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            empty_glossary = Path(tmpdir) / "empty.csv"
+            empty_glossary.write_text("")
+
+            from yakulingo.config.settings import AppSettings
+            settings = AppSettings(reference_files=["empty.csv"])
+
+            paths = settings.get_reference_file_paths(Path(tmpdir))
+
+            # Empty file should still be included
+            assert len(paths) == 1
+
+    def test_glossary_with_unicode_filename(self):
+        """Handle glossary with Unicode filename"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            unicode_file = Path(tmpdir) / "用語集.csv"
+            unicode_file.write_text("term,translation")
+
+            from yakulingo.config.settings import AppSettings
+            settings = AppSettings(reference_files=["用語集.csv"])
+
+            paths = settings.get_reference_file_paths(Path(tmpdir))
+
+            assert len(paths) == 1
+            assert paths[0] == unicode_file
+
+    def test_glossary_with_special_characters(self):
+        """Handle glossary with special content"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            special_glossary = Path(tmpdir) / "special.csv"
+            special_glossary.write_text(
+                "term,translation\n"
+                "Ω,omega\n"
+                "∞,infinity\n"
+                "❤️,heart\n"
+            )
+
+            from yakulingo.config.settings import AppSettings
+            settings = AppSettings(reference_files=["special.csv"])
+
+            paths = settings.get_reference_file_paths(Path(tmpdir))
+
+            assert len(paths) == 1
+
+    def test_large_glossary_file(self):
+        """Handle large glossary file"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            large_glossary = Path(tmpdir) / "large.csv"
+
+            # Create large glossary with many entries
+            lines = ["term,translation"]
+            for i in range(10000):
+                lines.append(f"term{i},translation{i}")
+            large_glossary.write_text("\n".join(lines))
+
+            from yakulingo.config.settings import AppSettings
+            settings = AppSettings(reference_files=["large.csv"])
+
+            paths = settings.get_reference_file_paths(Path(tmpdir))
+
+            assert len(paths) == 1
+            assert paths[0].stat().st_size > 100000  # Should be a large file
+
+    def test_glossary_path_normalization(self):
+        """Handle different path formats for glossary"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            glossary = Path(tmpdir) / "glossary.csv"
+            glossary.write_text("term,translation")
+
+            from yakulingo.config.settings import AppSettings
+
+            # Relative path
+            settings1 = AppSettings(reference_files=["glossary.csv"])
+            paths1 = settings1.get_reference_file_paths(Path(tmpdir))
+            assert len(paths1) == 1
+
+            # Absolute path
+            settings2 = AppSettings(reference_files=[str(glossary)])
+            paths2 = settings2.get_reference_file_paths(Path(tmpdir))
+            assert len(paths2) == 1
+
+    def test_glossary_with_subdirectory(self):
+        """Handle glossary in subdirectory"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            subdir = Path(tmpdir) / "data" / "glossaries"
+            subdir.mkdir(parents=True)
+
+            glossary = subdir / "terms.csv"
+            glossary.write_text("term,translation")
+
+            from yakulingo.config.settings import AppSettings
+            settings = AppSettings(reference_files=["data/glossaries/terms.csv"])
+
+            paths = settings.get_reference_file_paths(Path(tmpdir))
+
+            assert len(paths) == 1
+            assert paths[0] == glossary

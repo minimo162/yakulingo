@@ -140,7 +140,7 @@ for %%f in ("run.bat" "remove.bat" "remove.ps1" "app.py" "glossary.csv" "pyproje
 )
 
 :: Copy folders to distribution
-for %%d in (".venv" ".uv-python" ".playwright-browsers" "yakulingo" "prompts") do (
+for %%d in (".venv" ".uv-python" ".playwright-browsers" "yakulingo" "prompts" "config") do (
     if exist "%%~d" (
         echo   Copying: %%~d ...
         xcopy /s /e /i /q "%%~d" "%DIST_DIR%\%%~d" >nul

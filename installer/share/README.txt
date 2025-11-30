@@ -47,8 +47,8 @@ REQUIREMENTS
 TROUBLESHOOTING
 
 Error: "Script execution is disabled"
-  -> Always run setup.bat (not .scripts\setup.ps1 directly)
-     The batch file handles execution policy
+  -> Always run setup.vbs (not .scripts\setup.ps1 directly)
+     The VBS file handles execution policy
 
 Error: "ZIP file not found"
   -> Ensure YakuLingo*.zip exists in the same folder

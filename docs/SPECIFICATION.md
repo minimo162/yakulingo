@@ -926,7 +926,7 @@ class AppSettings:
 python app.py
 
 # 配布版
-run.bat
+run.vbs
 ```
 
 ### 12.3 起動フロー
@@ -987,7 +987,7 @@ make_distribution.bat
 
 # 出力
 share_package/
-├── setup.bat          # ユーザー実行ファイル
+├── setup.vbs          # ユーザー実行ファイル
 ├── YakuLingo_*.zip    # 配布パッケージ
 └── .scripts/
     └── setup.ps1      # インストールスクリプト

@@ -320,11 +320,11 @@ class TestAppDirDetection:
     @patch("platform.system", return_value="Windows")
     @patch.dict("os.environ", {"LOCALAPPDATA": "/tmp/test_localappdata"})
     def test_get_app_dir_windows_fallback(self, mock_system):
-        """Test that _get_app_dir falls back when run.bat doesn't exist"""
+        """Test that _get_app_dir falls back when run.vbs doesn't exist"""
         updater = AutoUpdater()
         app_dir = updater._get_app_dir()
 
-        # Should fall back to source directory since run.bat doesn't exist
+        # Should fall back to source directory since run.vbs doesn't exist
         assert isinstance(app_dir, Path)
 
 
@@ -348,11 +348,11 @@ class TestSourceCodeOnlyUpdate:
         assert "pyproject.toml" in AutoUpdater.SOURCE_FILES
         assert "uv.toml" in AutoUpdater.SOURCE_FILES
         # Scripts
-        assert "run.bat" in AutoUpdater.SOURCE_FILES
+        assert "run.vbs" in AutoUpdater.SOURCE_FILES
         # Documentation
         assert "README.md" in AutoUpdater.SOURCE_FILES
         # Files NOT in distribution
-        assert "setup.bat" not in AutoUpdater.SOURCE_FILES
+        assert "setup.vbs" not in AutoUpdater.SOURCE_FILES
         assert "setup.ps1" not in AutoUpdater.SOURCE_FILES
         assert "requirements.txt" not in AutoUpdater.SOURCE_FILES
 

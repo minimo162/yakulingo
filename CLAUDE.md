@@ -366,7 +366,7 @@ The `AutoUpdater` class provides GitHub Releases-based updates:
 YakuLingo supports network share deployment:
 - Run `make_distribution.bat` to create distribution package
 - Copy `share_package/` to network share
-- Users run `setup.bat` for one-click installation
+- Users run `setup.vbs` for one-click installation
 - See `DISTRIBUTION.md` for detailed instructions
 
 ## Language Note

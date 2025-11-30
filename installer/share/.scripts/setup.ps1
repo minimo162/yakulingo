@@ -175,6 +175,16 @@ $StartShortcut.Description = "YakuLingo Translation Tool"
 $StartShortcut.Save()
 Write-Host "      Start Menu: $StartShortcutPath" -ForegroundColor Gray
 
+# Start Menu Remove shortcut
+$RemoveShortcutPath = Join-Path $StartMenuPath "$AppName Remove.lnk"
+$RemoveShortcut = $WshShell.CreateShortcut($RemoveShortcutPath)
+$RemoveShortcut.TargetPath = Join-Path $InstallPath "remove.bat"
+$RemoveShortcut.WorkingDirectory = $InstallPath
+$RemoveShortcut.IconLocation = "shell32.dll,131"
+$RemoveShortcut.Description = "Remove YakuLingo"
+$RemoveShortcut.Save()
+Write-Host "      Start Menu: $RemoveShortcutPath" -ForegroundColor Gray
+
 Write-Host "[OK] Shortcuts created" -ForegroundColor Green
 
 # ============================================================

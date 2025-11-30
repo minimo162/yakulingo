@@ -97,13 +97,21 @@ class TestTextPanelLogic:
         state = AppState(source_text="")
         assert bool(state.source_text) is False
 
-    def test_copy_button_visible_when_has_target_text(self):
-        """Copy button visibility based on target text"""
-        state = AppState(target_text="Translated text")
-        assert bool(state.target_text) is True
+    def test_copy_button_visible_when_has_result(self):
+        """Copy button visibility based on translation result"""
+        from ecm_translate.models.types import TextTranslationResult, TranslationOption
 
-        state = AppState(target_text="")
-        assert bool(state.target_text) is False
+        result = TextTranslationResult(
+            source_text="Test",
+            source_char_count=4,
+            options=[TranslationOption(text="Translated", char_count=10, explanation="Test")]
+        )
+        state = AppState(text_result=result)
+        assert state.text_result is not None
+        assert len(state.text_result.options) > 0
+
+        state = AppState(text_result=None)
+        assert state.text_result is None
 
 
 class TestFilePanelLogic:
@@ -437,15 +445,22 @@ class TestSwapDirection:
 
         assert state.direction == TranslationDirection.EN_TO_JP
 
-    def test_swap_clears_target(self):
-        """Swap should clear target text"""
+    def test_swap_clears_result(self):
+        """Swap should clear translation result"""
+        from ecm_translate.models.types import TextTranslationResult, TranslationOption
+
+        result = TextTranslationResult(
+            source_text="Test",
+            source_char_count=4,
+            options=[TranslationOption(text="Previous", char_count=8, explanation="Test")]
+        )
         state = AppState(
             direction=TranslationDirection.JP_TO_EN,
-            target_text="Previous translation"
+            text_result=result
         )
         state.swap_direction()
 
-        assert state.target_text == ""
+        assert state.text_result is None
 
     def test_swap_preserves_source(self):
         """Swap should preserve source text"""

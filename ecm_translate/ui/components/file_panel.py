@@ -82,7 +82,8 @@ def create_file_panel(
 
                 elif state.file_state == FileState.ERROR:
                     _error_card(state.error_message)
-                    ui.button('Try again', on_click=on_reset).classes('btn-outline mt-4')
+                    with ui.row().classes('gap-3 mt-4 justify-center'):
+                        ui.button('Select another file', on_click=on_reset).classes('btn-outline')
 
 
 def _drop_zone(on_file_select: Callable[[Path], None]):

@@ -91,7 +91,7 @@ class TestAppState:
         assert app_state.current_tab == Tab.TEXT
         assert app_state.direction == TranslationDirection.JP_TO_EN
         assert app_state.source_text == ""
-        assert app_state.target_text == ""
+        assert app_state.text_result is None
         assert app_state.file_state == FileState.EMPTY
 
     def test_swap_direction(self, app_state):
@@ -292,29 +292,33 @@ class TestYakuLingoAppEventHandlers:
     def test_clear_clears_text(self, app_with_mocks, mock_nicegui):
         """Test clear button handler"""
         app = app_with_mocks
+        from ecm_translate.models.types import TextTranslationResult, TranslationOption
+
         app.state.source_text = "Some text"
-        app.state.target_text = "Translated"
+        app.state.text_result = TextTranslationResult(
+            source_text="Some text",
+            source_char_count=9,
+            options=[TranslationOption(text="Translated", char_count=10, explanation="Test")]
+        )
 
         app._clear()
 
         assert app.state.source_text == ""
-        assert app.state.target_text == ""
+        assert app.state.text_result is None
 
-    def test_copy_with_target_text(self, app_with_mocks, mock_nicegui):
-        """Test copy button with target text"""
+    def test_copy_with_text(self, app_with_mocks, mock_nicegui):
+        """Test copy text handler with text"""
         app = app_with_mocks
-        app.state.target_text = "Translated text"
 
-        app._copy()
+        app._copy_text("Translated text")
 
         mock_nicegui.clipboard.write.assert_called_once_with("Translated text")
 
-    def test_copy_without_target_text(self, app_with_mocks, mock_nicegui):
-        """Test copy button without target text"""
+    def test_copy_without_text(self, app_with_mocks, mock_nicegui):
+        """Test copy text handler without text"""
         app = app_with_mocks
-        app.state.target_text = ""
 
-        app._copy()
+        app._copy_text("")
 
         mock_nicegui.clipboard.write.assert_not_called()
 
@@ -340,16 +344,16 @@ class TestYakuLingoAppEventHandlers:
 
         mock_translation_service.cancel.assert_called_once()
 
-    def test_cancel_sets_cancelled_state(self, app_with_mocks, mock_nicegui):
-        """Test cancel updates state correctly"""
+    def test_cancel_resets_file_state(self, app_with_mocks, mock_nicegui):
+        """Test cancel resets file state"""
         app = app_with_mocks
         app.state.file_state = FileState.TRANSLATING
 
-        # Cancel should call service cancel
+        # Cancel should reset state
         app._cancel()
 
-        # State remains translating until service callback
-        assert app.state.file_state == FileState.TRANSLATING
+        # State is reset to EMPTY after cancel
+        assert app.state.file_state == FileState.EMPTY
 
 
 # =============================================================================

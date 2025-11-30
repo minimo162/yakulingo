@@ -340,6 +340,28 @@ body {
 }
 
 /* === Status === */
+.status-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.25rem 0.625rem;
+    border-radius: var(--md-sys-shape-corner-full);
+    font-size: 0.75rem;
+    font-weight: 500;
+    background: var(--md-sys-color-surface-container);
+    color: var(--md-sys-color-on-surface-variant);
+}
+
+.status-indicator.connected {
+    background: var(--md-sys-color-success-container);
+    color: var(--md-sys-color-on-success-container);
+}
+
+.status-indicator.connecting {
+    background: var(--md-sys-color-primary-container);
+    color: var(--md-sys-color-on-primary-container);
+}
+
 .status-dot {
     width: 8px;
     height: 8px;

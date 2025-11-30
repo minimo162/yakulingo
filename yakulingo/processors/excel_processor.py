@@ -299,7 +299,7 @@ class ExcelProcessor(FileProcessor):
     Translation targets:
     - Cell values (text only)
     - Shape text (TextBox, etc.)
-    - Chart titles and labels
+    - Chart titles
 
     Preserved:
     - Formulas (not translated)

@@ -3,8 +3,11 @@
 Processor for Word files (.docx, .doc).
 """
 
+import re
+import zipfile
 from pathlib import Path
 from typing import Iterator
+from xml.etree import ElementTree as ET
 from docx import Document
 from docx.shared import Pt
 
@@ -12,6 +15,210 @@ from .base import FileProcessor
 from .translators import CellTranslator, ParagraphTranslator
 from .font_manager import FontManager, FontTypeDetector
 from yakulingo.models.types import TextBlock, FileInfo, FileType
+
+
+# =============================================================================
+# TextBox Extraction via XML (python-docx doesn't support this)
+# =============================================================================
+# XML namespaces used in Word documents
+WORD_NS = {
+    'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
+    'wp': 'http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing',
+    'wps': 'http://schemas.microsoft.com/office/word/2010/wordprocessingShape',
+    'a': 'http://schemas.openxmlformats.org/drawingml/2006/main',
+    'mc': 'http://schemas.openxmlformats.org/markup-compatibility/2006',
+    'v': 'urn:schemas-microsoft-com:vml',
+}
+
+
+def _extract_textboxes_from_docx(file_path: Path) -> list[dict]:
+    """
+    Extract TextBox content from docx file by parsing XML directly.
+
+    python-docx doesn't support TextBox text extraction, so we parse
+    the word/document.xml file directly from the docx archive.
+
+    Args:
+        file_path: Path to docx file
+
+    Returns:
+        List of dicts with 'textbox_index', 'text' keys
+    """
+    textboxes = []
+
+    try:
+        with zipfile.ZipFile(file_path, 'r') as zf:
+            # Read main document
+            if 'word/document.xml' not in zf.namelist():
+                return textboxes
+
+            xml_content = zf.read('word/document.xml')
+            root = ET.fromstring(xml_content)
+
+            textbox_index = 0
+
+            # Method 1: Modern Word textboxes (wps:txbx)
+            for txbx in root.findall('.//wps:txbx', WORD_NS):
+                txbxContent = txbx.find('.//w:txbxContent', WORD_NS)
+                if txbxContent is not None:
+                    text_parts = []
+                    for p in txbxContent.findall('.//w:p', WORD_NS):
+                        para_text = []
+                        for t in p.findall('.//w:t', WORD_NS):
+                            if t.text:
+                                para_text.append(t.text)
+                        if para_text:
+                            text_parts.append(''.join(para_text))
+
+                    if text_parts:
+                        full_text = '\n'.join(text_parts)
+                        if full_text.strip():
+                            textboxes.append({
+                                'textbox_index': textbox_index,
+                                'text': full_text.strip(),
+                            })
+                            textbox_index += 1
+
+            # Method 2: Legacy VML textboxes (v:textbox)
+            for textbox in root.findall('.//v:textbox', WORD_NS):
+                txbxContent = textbox.find('.//w:txbxContent', WORD_NS)
+                if txbxContent is not None:
+                    text_parts = []
+                    for p in txbxContent.findall('.//w:p', WORD_NS):
+                        para_text = []
+                        for t in p.findall('.//w:t', WORD_NS):
+                            if t.text:
+                                para_text.append(t.text)
+                        if para_text:
+                            text_parts.append(''.join(para_text))
+
+                    if text_parts:
+                        full_text = '\n'.join(text_parts)
+                        if full_text.strip():
+                            textboxes.append({
+                                'textbox_index': textbox_index,
+                                'text': full_text.strip(),
+                            })
+                            textbox_index += 1
+
+    except (zipfile.BadZipFile, ET.ParseError):
+        pass
+
+    return textboxes
+
+
+def _apply_textbox_translations_to_docx(
+    output_path: Path,
+    translations: dict[str, str],
+) -> None:
+    """
+    Apply translations to TextBox content by modifying XML directly.
+
+    Args:
+        output_path: Output docx file (must already exist from python-docx save)
+        translations: Dict mapping textbox IDs to translated text
+    """
+    import shutil
+    import tempfile
+
+    # Filter textbox translations
+    textbox_translations = {
+        k: v for k, v in translations.items()
+        if k.startswith('textbox_')
+    }
+
+    if not textbox_translations:
+        return
+
+    # Parse textbox IDs
+    textbox_map = {}  # textbox_index -> translated_text
+    for block_id, translated in textbox_translations.items():
+        match = re.match(r'textbox_(\d+)', block_id)
+        if match:
+            tb_idx = int(match.group(1))
+            textbox_map[tb_idx] = translated
+
+    if not textbox_map:
+        return
+
+    # Create a temporary copy to work with
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_docx = Path(temp_dir) / 'temp.docx'
+        shutil.copy(output_path, temp_docx)
+
+        try:
+            with zipfile.ZipFile(temp_docx, 'r') as zf_in:
+                with zipfile.ZipFile(output_path, 'w', zipfile.ZIP_DEFLATED) as zf_out:
+                    for item in zf_in.namelist():
+                        content = zf_in.read(item)
+
+                        if item == 'word/document.xml':
+                            content = _modify_docx_textboxes(content, textbox_map)
+
+                        zf_out.writestr(item, content)
+
+        except Exception:
+            shutil.copy(temp_docx, output_path)
+
+
+def _modify_docx_textboxes(xml_content: bytes, translations: dict[int, str]) -> bytes:
+    """
+    Modify document XML to apply textbox translations.
+    """
+    try:
+        root = ET.fromstring(xml_content)
+        textbox_index = 0
+
+        # Process modern textboxes (wps:txbx)
+        for txbx in root.findall('.//wps:txbx', WORD_NS):
+            txbxContent = txbx.find('.//w:txbxContent', WORD_NS)
+            if txbxContent is not None:
+                # Check if has text
+                has_text = any(
+                    t.text for p in txbxContent.findall('.//w:p', WORD_NS)
+                    for t in p.findall('.//w:t', WORD_NS) if t.text
+                )
+
+                if has_text and textbox_index in translations:
+                    # Apply translation to first text element, clear others
+                    first_t = None
+                    for p in txbxContent.findall('.//w:p', WORD_NS):
+                        for t in p.findall('.//w:t', WORD_NS):
+                            if first_t is None:
+                                first_t = t
+                                t.text = translations[textbox_index]
+                            else:
+                                t.text = ""
+
+                if has_text:
+                    textbox_index += 1
+
+        # Process legacy VML textboxes
+        for textbox in root.findall('.//v:textbox', WORD_NS):
+            txbxContent = textbox.find('.//w:txbxContent', WORD_NS)
+            if txbxContent is not None:
+                has_text = any(
+                    t.text for p in txbxContent.findall('.//w:p', WORD_NS)
+                    for t in p.findall('.//w:t', WORD_NS) if t.text
+                )
+
+                if has_text and textbox_index in translations:
+                    first_t = None
+                    for p in txbxContent.findall('.//w:p', WORD_NS):
+                        for t in p.findall('.//w:t', WORD_NS):
+                            if first_t is None:
+                                first_t = t
+                                t.text = translations[textbox_index]
+                            else:
+                                t.text = ""
+
+                if has_text:
+                    textbox_index += 1
+
+        return ET.tostring(root, encoding='unicode').encode('utf-8')
+
+    except ET.ParseError:
+        return xml_content
 
 
 class WordProcessor(FileProcessor):
@@ -65,6 +272,13 @@ class WordProcessor(FileProcessor):
                         text_count += 1
 
         # Note: Headers/Footers are excluded from translation
+
+        # Count TextBoxes (docx only)
+        if str(file_path).lower().endswith('.docx'):
+            textboxes = _extract_textboxes_from_docx(file_path)
+            for tb in textboxes:
+                if self.para_translator.should_translate(tb['text']):
+                    text_count += 1
 
         return FileInfo(
             path=file_path,
@@ -142,6 +356,24 @@ class WordProcessor(FileProcessor):
 
         # Note: Headers/Footers are excluded from translation
 
+        # === TextBoxes (via XML parsing, docx only) ===
+        if str(file_path).lower().endswith('.docx'):
+            textboxes = _extract_textboxes_from_docx(file_path)
+            for tb in textboxes:
+                text = tb['text']
+                tb_idx = tb['textbox_index']
+
+                if self.para_translator.should_translate(text):
+                    yield TextBlock(
+                        id=f"textbox_{tb_idx}",
+                        text=text,
+                        location=f"TextBox {tb_idx + 1}",
+                        metadata={
+                            'type': 'textbox',
+                            'textbox': tb_idx,
+                        }
+                    )
+
     def apply_translations(
         self,
         input_path: Path,
@@ -180,6 +412,11 @@ class WordProcessor(FileProcessor):
         # Note: Headers/Footers are excluded from translation
 
         doc.save(output_path)
+
+        # Apply TextBox translations via XML manipulation (python-docx doesn't support this)
+        # Only for .docx files
+        if str(input_path).lower().endswith('.docx'):
+            _apply_textbox_translations_to_docx(output_path, translations)
 
     def _apply_to_paragraph(self, para, translated_text: str, font_manager: FontManager) -> None:
         """

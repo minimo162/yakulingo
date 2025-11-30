@@ -19,10 +19,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Windows-specific dependencies (currently unused - reserved for future features)
-windows = [
-    "pywin32>=306",
-]
 # OCR support (heavy dependencies)
 ocr = [
     "yomitoku>=0.8.0",  # Includes: torch, torchvision, opencv-python, pypdfium2, etc.

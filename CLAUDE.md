@@ -65,9 +65,8 @@ YakuLingo/
 │   │   └── translators.py         # Translation decision logic
 │   ├── models/                    # Data structures
 │   │   └── types.py               # Enums, dataclasses, type aliases
-│   ├── config/                    # Configuration
-│   │   └── settings.py            # AppSettings with JSON persistence
-│   └── utils/                     # Utility functions (reserved)
+│   └── config/                    # Configuration
+│       └── settings.py            # AppSettings with JSON persistence
 ├── tests/                         # Test suite (15 test files)
 │   ├── conftest.py                # Shared fixtures and mocks
 │   └── test_*.py                  # Unit tests for each module
@@ -302,7 +301,6 @@ The `CopilotHandler` class automates Microsoft Edge browser:
 | `numpy>=1.24.0` | Numerical operations |
 
 ### Optional Dependencies
-- `[windows]`: pywin32 (Windows API access - reserved for future features)
 - `[ocr]`: yomitoku (PDF OCR with ML - heavy)
 - `[test]`: pytest, pytest-cov, pytest-asyncio
 

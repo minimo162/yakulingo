@@ -93,8 +93,3 @@ def get_default_settings_path() -> Path:
 def get_default_prompts_dir() -> Path:
     """Get default prompts directory"""
     return Path(__file__).parent.parent.parent / "prompts"
-
-
-def get_default_reference_dir() -> Path:
-    """Get default reference files directory"""
-    return Path(__file__).parent.parent.parent / "reference_files"

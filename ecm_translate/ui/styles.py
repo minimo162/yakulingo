@@ -1,477 +1,329 @@
 # ecm_translate/ui/styles.py
 """
-Emotional UI styles for YakuLingo.
-Simple yet warm design that responds to user actions.
+M3 Expressive-inspired styles for YakuLingo.
+Simple, practical, emotionally resonant design.
 """
 
 COMPLETE_CSS = """
-/* === Color Palette === */
+/* === M3 Expressive Design Tokens === */
 :root {
-    /* Warm, friendly primary colors */
-    --primary: #6366f1;
-    --primary-light: #818cf8;
-    --primary-dark: #4f46e5;
-    --primary-glow: rgba(99, 102, 241, 0.3);
+    /* Warm, friendly primary - coral/peach tones */
+    --primary: #E07B54;
+    --primary-container: #FFDAD1;
+    --on-primary: #FFFFFF;
+    --on-primary-container: #3A0B00;
 
-    /* Warm accent for success moments */
-    --success: #10b981;
-    --success-light: #34d399;
-    --success-glow: rgba(16, 185, 129, 0.3);
+    /* Surface colors - warm neutrals */
+    --surface: #FFFBFF;
+    --surface-container: #F5EDE8;
+    --surface-container-high: #EFE6E1;
+    --on-surface: #201A17;
+    --on-surface-variant: #53433E;
 
-    /* Gentle warning/error */
-    --warning: #f59e0b;
-    --error: #ef4444;
-    --error-light: #f87171;
+    /* Accent colors */
+    --secondary: #77574D;
+    --tertiary: #6C5D2F;
+    --success: #3D6B4D;
+    --error: #BA1A1A;
 
-    /* Soft backgrounds */
-    --bg: #fafafa;
-    --bg-warm: #fffbf5;
-    --bg-card: #ffffff;
-    --bg-elevated: #ffffff;
+    /* Expressive motion - spring physics */
+    --motion-spring: cubic-bezier(0.2, 0, 0, 1);
+    --motion-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+    --duration-short: 200ms;
+    --duration-medium: 350ms;
+    --duration-long: 500ms;
 
-    /* Text hierarchy */
-    --text: #1f2937;
-    --text-secondary: #6b7280;
-    --text-muted: #9ca3af;
+    /* Expressive shapes */
+    --radius-sm: 12px;
+    --radius-md: 16px;
+    --radius-lg: 28px;
+    --radius-full: 9999px;
 
-    /* Borders and shadows */
-    --border: #e5e7eb;
-    --border-focus: #c7d2fe;
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
-    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-    --shadow-glow: 0 0 20px var(--primary-glow);
+    /* Elevation */
+    --shadow-1: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06);
+    --shadow-2: 0 4px 8px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.06);
 }
 
-/* Dark mode - cozy, not harsh */
+/* Dark theme - cozy warmth */
 @media (prefers-color-scheme: dark) {
     :root {
-        --primary: #818cf8;
-        --primary-light: #a5b4fc;
-        --primary-dark: #6366f1;
+        --primary: #FFB5A0;
+        --primary-container: #6B2B17;
+        --on-primary: #5D1900;
+        --on-primary-container: #FFDAD1;
 
-        --bg: #0f172a;
-        --bg-warm: #1e1b2e;
-        --bg-card: #1e293b;
-        --bg-elevated: #334155;
+        --surface: #1A1110;
+        --surface-container: #271E1C;
+        --surface-container-high: #322824;
+        --on-surface: #F1DFDA;
+        --on-surface-variant: #D8C2BB;
 
-        --text: #f1f5f9;
-        --text-secondary: #94a3b8;
-        --text-muted: #64748b;
-
-        --border: #334155;
-        --border-focus: #6366f1;
+        --secondary: #E7BDB2;
+        --tertiary: #D9C68D;
     }
 }
 
-/* === Animations === */
-@keyframes fadeIn {
-    from { opacity: 0; transform: translateY(8px); }
-    to { opacity: 1; transform: translateY(0); }
+/* === Spring Keyframes === */
+@keyframes springIn {
+    0% { opacity: 0; transform: scale(0.9) translateY(8px); }
+    60% { transform: scale(1.02) translateY(-2px); }
+    100% { opacity: 1; transform: scale(1) translateY(0); }
 }
 
-@keyframes slideIn {
-    from { opacity: 0; transform: translateX(-10px); }
-    to { opacity: 1; transform: translateX(0); }
-}
-
-@keyframes pulse {
+@keyframes gentlePulse {
     0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
+    50% { opacity: 0.7; }
 }
 
-@keyframes breathe {
-    0%, 100% { transform: scale(1); }
-    50% { transform: scale(1.02); }
-}
-
-@keyframes celebrate {
+@keyframes springBounce {
     0% { transform: scale(1); }
-    25% { transform: scale(1.1) rotate(-2deg); }
-    50% { transform: scale(1.15) rotate(2deg); }
-    75% { transform: scale(1.1) rotate(-1deg); }
+    40% { transform: scale(1.08); }
     100% { transform: scale(1); }
-}
-
-@keyframes shimmer {
-    0% { background-position: -200% 0; }
-    100% { background-position: 200% 0; }
-}
-
-@keyframes bounce {
-    0%, 100% { transform: translateY(0); }
-    50% { transform: translateY(-4px); }
-}
-
-@keyframes spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
 }
 
 /* === Base === */
 body {
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Meiryo UI', sans-serif;
-    background: linear-gradient(135deg, var(--bg) 0%, var(--bg-warm) 100%);
-    color: var(--text);
-    min-height: 100vh;
+    background: var(--surface);
+    color: var(--on-surface);
 }
 
-/* === Header === */
+/* === Header - Clean & Minimal === */
 .app-header {
-    background: var(--bg-card);
-    border-bottom: 1px solid var(--border);
-    box-shadow: var(--shadow-sm);
-    backdrop-filter: blur(8px);
+    background: var(--surface);
+    border-bottom: 1px solid var(--surface-container);
 }
 
 .app-logo {
-    font-weight: 700;
     font-size: 1.25rem;
-    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+    font-weight: 600;
+    color: var(--primary);
+    letter-spacing: -0.02em;
 }
 
-/* === Tabs === */
+/* === Tabs - Pill Style === */
 .tab-btn {
-    padding: 0.75rem 1.5rem;
-    color: var(--text-secondary);
+    padding: 0.5rem 1rem;
+    color: var(--on-surface-variant);
     font-weight: 500;
-    border-radius: 0.5rem 0.5rem 0 0;
-    transition: all 0.2s ease;
-    position: relative;
+    font-size: 0.875rem;
+    border-radius: var(--radius-full);
+    transition: all var(--duration-short) var(--motion-spring);
 }
 
 .tab-btn:hover {
-    color: var(--primary);
-    background: rgba(99, 102, 241, 0.05);
+    background: var(--surface-container);
 }
 
 .tab-btn.active {
-    color: var(--primary);
-    background: rgba(99, 102, 241, 0.1);
+    background: var(--primary-container);
+    color: var(--on-primary-container);
 }
 
-.tab-btn.active::after {
-    content: '';
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    height: 3px;
-    background: linear-gradient(90deg, var(--primary) 0%, var(--primary-light) 100%);
-    border-radius: 3px 3px 0 0;
-}
-
-/* === Text Areas === */
+/* === Text Areas - Soft Container === */
 .text-box {
-    background: var(--bg-card);
-    border: 2px solid var(--border);
-    border-radius: 1rem;
+    background: var(--surface);
+    border: 1.5px solid var(--surface-container-high);
+    border-radius: var(--radius-lg);
     overflow: hidden;
-    transition: all 0.3s ease;
-    box-shadow: var(--shadow-sm);
-    animation: fadeIn 0.4s ease;
-}
-
-.text-box:hover {
-    border-color: var(--border-focus);
-    box-shadow: var(--shadow-md);
+    transition: all var(--duration-medium) var(--motion-spring);
+    animation: springIn var(--duration-medium) var(--motion-spring);
 }
 
 .text-box:focus-within {
     border-color: var(--primary);
-    box-shadow: var(--shadow-glow);
+    box-shadow: 0 0 0 3px rgba(224, 123, 84, 0.15);
 }
 
 .text-label {
     padding: 0.75rem 1rem;
-    background: linear-gradient(180deg, var(--bg-card) 0%, var(--bg) 100%);
-    border-bottom: 1px solid var(--border);
-    font-size: 0.875rem;
+    background: var(--surface-container);
+    font-size: 0.8125rem;
     font-weight: 600;
-    color: var(--text-secondary);
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
+    color: var(--on-surface-variant);
+    letter-spacing: 0.02em;
 }
 
-.text-label .flag {
-    font-size: 1.1rem;
-}
-
-/* === Primary Button === */
+/* === Primary Button - Expressive === */
 .btn-primary {
-    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
-    color: white;
-    padding: 0.875rem 2.5rem;
-    border-radius: 0.75rem;
+    background: var(--primary);
+    color: var(--on-primary);
+    padding: 0.875rem 2rem;
+    border-radius: var(--radius-full);
     font-weight: 600;
-    font-size: 1rem;
-    box-shadow: var(--shadow-md), 0 0 0 0 var(--primary-glow);
-    transition: all 0.3s ease;
-    position: relative;
-    overflow: hidden;
-}
-
-.btn-primary::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
-    transform: translateX(-100%);
-    transition: transform 0.5s ease;
+    font-size: 0.9375rem;
+    letter-spacing: 0.01em;
+    box-shadow: var(--shadow-1);
+    transition: all var(--duration-short) var(--motion-spring);
 }
 
 .btn-primary:hover:not(:disabled) {
-    transform: translateY(-2px);
-    box-shadow: var(--shadow-lg), 0 0 20px var(--primary-glow);
-}
-
-.btn-primary:hover:not(:disabled)::before {
-    transform: translateX(100%);
+    box-shadow: var(--shadow-2);
+    transform: translateY(-1px);
 }
 
 .btn-primary:active:not(:disabled) {
-    transform: translateY(0);
+    transform: scale(0.98);
 }
 
 .btn-primary:disabled {
-    opacity: 0.6;
+    opacity: 0.5;
     cursor: not-allowed;
-    background: var(--text-muted);
 }
 
-.btn-primary.loading {
-    animation: breathe 1.5s ease infinite;
-}
-
-/* === Outline Button === */
+/* === Secondary Button === */
 .btn-outline {
     background: transparent;
-    border: 2px solid var(--border);
-    color: var(--text);
-    padding: 0.625rem 1.25rem;
-    border-radius: 0.75rem;
+    border: 1.5px solid var(--surface-container-high);
+    color: var(--on-surface);
+    padding: 0.75rem 1.5rem;
+    border-radius: var(--radius-full);
     font-weight: 500;
-    transition: all 0.2s ease;
+    transition: all var(--duration-short) var(--motion-spring);
 }
 
 .btn-outline:hover {
-    border-color: var(--primary);
-    color: var(--primary);
-    background: rgba(99, 102, 241, 0.05);
+    background: var(--surface-container);
+    border-color: var(--on-surface-variant);
 }
 
-/* === Swap Button === */
+/* === Swap Button - Playful === */
 .swap-btn {
-    width: 3rem;
-    height: 3rem;
-    border-radius: 50%;
-    background: var(--bg-card);
-    border: 2px solid var(--border);
-    color: var(--text-secondary);
-    box-shadow: var(--shadow-md);
-    transition: all 0.3s ease;
+    width: 2.75rem;
+    height: 2.75rem;
+    border-radius: var(--radius-full);
+    background: var(--surface-container);
+    border: none;
+    color: var(--on-surface-variant);
+    transition: all var(--duration-medium) var(--motion-bounce);
 }
 
 .swap-btn:hover {
-    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
-    border-color: var(--primary);
-    color: white;
-    transform: rotate(180deg) scale(1.1);
-    box-shadow: var(--shadow-lg), 0 0 15px var(--primary-glow);
+    background: var(--primary-container);
+    color: var(--on-primary-container);
+    transform: rotate(180deg);
 }
 
-/* === File Drop Zone === */
+/* === Drop Zone - Inviting === */
 .drop-zone {
-    border: 2px dashed var(--border);
-    border-radius: 1.5rem;
-    padding: 4rem 2rem;
+    border: 2px dashed var(--surface-container-high);
+    border-radius: var(--radius-lg);
+    padding: 3rem 2rem;
     text-align: center;
-    transition: all 0.3s ease;
+    transition: all var(--duration-medium) var(--motion-spring);
     cursor: pointer;
-    background: var(--bg-card);
-    position: relative;
-    overflow: hidden;
-}
-
-.drop-zone::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(135deg, var(--primary-glow) 0%, transparent 50%);
-    opacity: 0;
-    transition: opacity 0.3s ease;
+    background: var(--surface);
 }
 
 .drop-zone:hover {
     border-color: var(--primary);
-    transform: scale(1.01);
-    box-shadow: var(--shadow-lg);
-}
-
-.drop-zone:hover::before {
-    opacity: 1;
+    background: var(--primary-container);
 }
 
 .drop-zone-icon {
-    font-size: 3.5rem;
+    font-size: 2.5rem;
     color: var(--primary);
-    margin-bottom: 1rem;
-    animation: bounce 2s ease infinite;
+    margin-bottom: 0.75rem;
 }
 
 .drop-zone-text {
-    font-size: 1.125rem;
+    font-size: 1rem;
     font-weight: 500;
-    color: var(--text);
-    margin-bottom: 0.5rem;
+    color: var(--on-surface);
 }
 
 .drop-zone-hint {
-    font-size: 0.875rem;
-    color: var(--text-muted);
+    font-size: 0.8125rem;
+    color: var(--on-surface-variant);
+    margin-top: 0.25rem;
 }
 
 /* === File Card === */
 .file-card {
-    background: var(--bg-card);
-    border: 2px solid var(--border);
-    border-radius: 1rem;
-    padding: 1.5rem;
-    box-shadow: var(--shadow-md);
-    animation: fadeIn 0.4s ease;
-    transition: all 0.3s ease;
-}
-
-.file-card:hover {
-    box-shadow: var(--shadow-lg);
+    background: var(--surface-container);
+    border: none;
+    border-radius: var(--radius-lg);
+    padding: 1.25rem;
+    animation: springIn var(--duration-medium) var(--motion-spring);
 }
 
 .file-card.success {
-    border-color: var(--success);
-    animation: celebrate 0.6s ease;
-}
-
-.file-card.success::before {
-    content: '';
-    position: absolute;
-    inset: -2px;
-    background: var(--success-glow);
-    border-radius: 1rem;
-    z-index: -1;
-    animation: pulse 2s ease infinite;
+    background: linear-gradient(135deg, #E8F5E9 0%, #C8E6C9 100%);
 }
 
 /* === Progress === */
-.progress-container {
-    padding: 2rem;
-    text-align: center;
-}
-
 .progress-track {
-    height: 0.5rem;
-    background: var(--border);
-    border-radius: 1rem;
+    height: 6px;
+    background: var(--surface-container-high);
+    border-radius: var(--radius-full);
     overflow: hidden;
-    position: relative;
 }
 
 .progress-bar {
     height: 100%;
-    background: linear-gradient(90deg, var(--primary) 0%, var(--primary-light) 50%, var(--primary) 100%);
-    background-size: 200% 100%;
-    border-radius: 1rem;
-    transition: width 0.3s ease;
-    animation: shimmer 2s linear infinite;
+    background: var(--primary);
+    border-radius: var(--radius-full);
+    transition: width var(--duration-medium) var(--motion-spring);
 }
 
-.progress-text {
-    font-size: 2rem;
-    font-weight: 700;
-    color: var(--primary);
-    margin-top: 1rem;
-}
-
-.progress-status {
-    font-size: 0.875rem;
-    color: var(--text-secondary);
-    margin-top: 0.5rem;
-}
-
-/* === Status Indicators === */
+/* === Status Dot === */
 .status-dot {
-    width: 0.625rem;
-    height: 0.625rem;
-    border-radius: 50%;
-    background: var(--error);
-    position: relative;
-}
-
-.status-dot::after {
-    content: '';
-    position: absolute;
-    inset: -3px;
-    border-radius: 50%;
-    background: var(--error);
-    opacity: 0.3;
-    animation: pulse 2s ease infinite;
+    width: 8px;
+    height: 8px;
+    border-radius: var(--radius-full);
+    background: var(--on-surface-variant);
 }
 
 .status-dot.connected {
     background: var(--success);
 }
 
-.status-dot.connected::after {
-    background: var(--success);
-}
-
 .status-dot.connecting {
-    background: var(--warning);
-    animation: pulse 1s ease infinite;
+    background: var(--primary);
+    animation: gentlePulse 1.5s ease infinite;
 }
 
 /* === Success State === */
 .success-icon {
-    font-size: 4rem;
+    font-size: 3rem;
     color: var(--success);
-    animation: celebrate 0.8s ease;
+    animation: springBounce var(--duration-long) var(--motion-bounce);
 }
 
 .success-text {
-    font-size: 1.5rem;
+    font-size: 1.25rem;
     font-weight: 600;
     color: var(--success);
-    margin-top: 1rem;
 }
 
-/* === Utility Classes === */
+/* === Utility === */
 .text-primary { color: var(--primary); }
 .text-success { color: var(--success); }
 .text-error { color: var(--error); }
-.text-muted { color: var(--text-muted); }
+.text-muted { color: var(--on-surface-variant); }
 
-.animate-fade-in { animation: fadeIn 0.4s ease; }
-.animate-slide-in { animation: slideIn 0.4s ease; }
-.animate-bounce { animation: bounce 2s ease infinite; }
-.animate-pulse { animation: pulse 2s ease infinite; }
+.animate-in { animation: springIn var(--duration-medium) var(--motion-spring); }
 
-/* === Dialog Enhancements === */
-.progress-dialog {
-    backdrop-filter: blur(8px);
-}
-
-.progress-dialog .q-card {
-    border-radius: 1.5rem;
-    box-shadow: var(--shadow-lg);
-    animation: fadeIn 0.3s ease;
-}
-
-/* === Notifications === */
-.q-notification {
-    border-radius: 0.75rem;
+/* === Chip/Badge === */
+.chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.25rem 0.75rem;
+    background: var(--surface-container);
+    border-radius: var(--radius-full);
+    font-size: 0.75rem;
     font-weight: 500;
+    color: var(--on-surface-variant);
+}
+
+/* === Dialog === */
+.q-card {
+    border-radius: var(--radius-lg) !important;
+}
+
+.q-dialog__backdrop {
+    background: rgba(0, 0, 0, 0.3) !important;
+    backdrop-filter: blur(4px);
 }
 """

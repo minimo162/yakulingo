@@ -1,7 +1,7 @@
 # ecm_translate/ui/components/text_panel.py
 """
-Emotional text translation panel for YakuLingo.
-Warm, responsive design with visual feedback.
+Text translation panel - M3 Expressive style.
+Simple, focused, warm.
 """
 
 from nicegui import ui
@@ -19,63 +19,46 @@ def create_text_panel(
     on_copy: Callable[[], None],
     on_clear: Callable[[], None],
 ):
-    """Create the text translation panel with emotional design"""
+    """Text translation panel"""
 
-    # Get language info based on direction
-    if state.direction == TranslationDirection.JP_TO_EN:
-        source_flag, source_lang = '🇯🇵', '日本語'
-        target_flag, target_lang = '🇺🇸', 'English'
-    else:
-        source_flag, source_lang = '🇺🇸', 'English'
-        target_flag, target_lang = '🇯🇵', '日本語'
+    # Language labels
+    source_lang = '日本語' if state.direction == TranslationDirection.JP_TO_EN else 'English'
+    target_lang = 'English' if state.direction == TranslationDirection.JP_TO_EN else '日本語'
 
-    with ui.row().classes('flex-1 gap-6 items-stretch animate-fade-in'):
-        # Source panel
+    with ui.row().classes('flex-1 gap-4 items-stretch animate-in'):
+        # Source
         with ui.column().classes('flex-1 text-box'):
             with ui.row().classes('text-label justify-between items-center'):
-                with ui.row().classes('items-center gap-2'):
-                    ui.label(source_flag).classes('text-xl')
-                    ui.label(source_lang).classes('font-semibold')
+                ui.label(source_lang)
                 if state.source_text:
-                    ui.button(icon='close', on_click=on_clear).props('flat dense round size=sm').tooltip('Clear')
+                    ui.button(icon='close', on_click=on_clear).props('flat dense round size=sm')
 
             ui.textarea(
                 placeholder=state.get_source_placeholder(),
                 value=state.source_text,
                 on_change=lambda e: on_source_change(e.value)
-            ).classes('flex-1 min-h-80 p-4 text-base').props('borderless autogrow input-class="leading-relaxed"')
+            ).classes('flex-1 min-h-72 p-3').props('borderless autogrow')
 
-        # Swap button with tooltip
-        ui.button(icon='swap_horiz', on_click=on_swap).classes('swap-btn self-center').tooltip('Swap languages')
+        # Swap
+        ui.button(icon='swap_horiz', on_click=on_swap).classes('swap-btn self-center')
 
-        # Target panel
+        # Target
         with ui.column().classes('flex-1 text-box'):
             with ui.row().classes('text-label justify-between items-center'):
-                with ui.row().classes('items-center gap-2'):
-                    ui.label(target_flag).classes('text-xl')
-                    ui.label(target_lang).classes('font-semibold')
+                ui.label(target_lang)
                 if state.target_text:
-                    ui.button(icon='content_copy', on_click=on_copy).props('flat dense round size=sm').tooltip('Copy')
+                    ui.button(icon='content_copy', on_click=on_copy).props('flat dense round size=sm')
 
-            # Show placeholder or result
             if state.target_text:
-                ui.textarea(
-                    value=state.target_text,
-                ).classes('flex-1 min-h-80 p-4 text-base').props('borderless readonly input-class="leading-relaxed"')
+                ui.textarea(value=state.target_text).classes('flex-1 min-h-72 p-3').props('borderless readonly')
             else:
-                with ui.column().classes('flex-1 items-center justify-center text-muted'):
-                    ui.icon('translate').classes('text-4xl mb-2 opacity-30')
-                    ui.label('Translation will appear here').classes('text-sm')
+                with ui.column().classes('flex-1 items-center justify-center'):
+                    ui.label('Translation appears here').classes('text-sm text-muted')
 
-    # Translate button section
-    with ui.row().classes('justify-center pt-6'):
+    # Action
+    with ui.row().classes('justify-center pt-4'):
+        btn = ui.button('Translate', on_click=on_translate).classes('btn-primary')
         if state.text_translating:
-            with ui.button().classes('btn-primary loading').props('loading disable'):
-                ui.label('Translating...')
-        else:
-            with ui.button(on_click=on_translate).classes('btn-primary') as btn:
-                ui.icon('auto_awesome').classes('mr-2')
-                ui.label('Translate')
-
-            if not state.can_translate():
-                btn.props('disable')
+            btn.props('loading disable')
+        elif not state.can_translate():
+            btn.props('disable')

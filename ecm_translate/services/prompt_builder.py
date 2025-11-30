@@ -1,7 +1,13 @@
 # ecm_translate/services/prompt_builder.py
 """
-Builds translation prompts with unified bidirectional translation.
-Japanese → English, Other languages → Japanese (auto-detected by AI).
+Builds translation prompts for YakuLingo.
+
+Prompt file structure:
+- translate.txt: Unified bidirectional (auto-detect) - for text translation
+- translate_jp_to_en.txt: File translation → English
+- translate_en_to_jp.txt: File translation → Japanese
+- text_translate_*.txt: Text translation with multiple options
+
 Reference files are attached to Copilot, not embedded in prompt.
 """
 
@@ -58,16 +64,10 @@ Input
 {input_text}
 """
 
-# Template for explicit "to English" translation (for file translation)
-TO_ENGLISH_TEMPLATE = """Role Definition
-あなたは英語への翻訳を行う、完全自動化されたデータ処理エンジンです。
+# Fallback template for → English (used when translate_jp_to_en.txt doesn't exist)
+DEFAULT_TO_EN_TEMPLATE = """Role Definition
+あなたは日本語を英語に翻訳する、完全自動化されたデータ処理エンジンです。
 チャットボットではありません。挨拶、説明、言い訳、補足情報は一切出力してはいけません。
-
-Translation Rule
-すべての入力テキストを英語に翻訳してください。
-- 日本語 → 英語に翻訳
-- 他の言語 → 英語に翻訳
-- 既に英語のテキスト → そのまま出力
 
 Critical Rules (優先順位順)
 
@@ -76,7 +76,6 @@ Critical Rules (優先順位順)
 
 2. 自然な翻訳
    - 読みやすく自然な英語に翻訳
-   - 文脈に応じた適切な表現を使用
    - 過度な省略は避ける
 
 3. 数値表記（必須ルール）
@@ -88,6 +87,7 @@ Critical Rules (優先順位順)
    - 原文の改行・段落構造をそのまま維持する
    - 冗長な表現を避け、簡潔な翻訳を心がける
    - 意味を損なわない範囲で、より短い表現を選択する
+   - 同じ意味なら文字数の少ない単語・表現を優先する
 
 {reference_section}
 
@@ -95,16 +95,10 @@ Input
 {input_text}
 """
 
-# Template for explicit "to Japanese" translation (for file translation)
-TO_JAPANESE_TEMPLATE = """Role Definition
-あなたは日本語への翻訳を行う、完全自動化されたデータ処理エンジンです。
+# Fallback template for → Japanese (used when translate_en_to_jp.txt doesn't exist)
+DEFAULT_TO_JP_TEMPLATE = """Role Definition
+あなたは英語を日本語に翻訳する、完全自動化されたデータ処理エンジンです。
 チャットボットではありません。挨拶、説明、言い訳、補足情報は一切出力してはいけません。
-
-Translation Rule
-すべての入力テキストを日本語に翻訳してください。
-- 英語 → 日本語に翻訳
-- 他の言語 → 日本語に翻訳
-- 既に日本語のテキスト → そのまま出力
 
 Critical Rules (優先順位順)
 
@@ -114,7 +108,6 @@ Critical Rules (優先順位順)
 2. 自然な翻訳
    - 読みやすく自然な日本語に翻訳
    - 文脈に応じた適切な表現を使用
-   - 過度な省略は避ける
 
 3. 数値表記（必須ルール）
    - oku → 億 (例: 4,500 oku → 4,500億)
@@ -125,6 +118,7 @@ Critical Rules (優先順位順)
    - 原文の改行・段落構造をそのまま維持する
    - 冗長な表現を避け、簡潔な翻訳を心がける
    - 意味を損なわない範囲で、より短い表現を選択する
+   - 同じ意味なら文字数の少ない単語・表現を優先する
 
 {reference_section}
 
@@ -156,23 +150,23 @@ class PromptBuilder:
             else:
                 self._template = DEFAULT_UNIFIED_TEMPLATE
 
-            # To English template
-            to_en_prompt = self.prompts_dir / "translate_to_en.txt"
+            # To English template (translate_jp_to_en.txt)
+            to_en_prompt = self.prompts_dir / "translate_jp_to_en.txt"
             if to_en_prompt.exists():
                 self._to_en_template = to_en_prompt.read_text(encoding='utf-8')
             else:
-                self._to_en_template = TO_ENGLISH_TEMPLATE
+                self._to_en_template = DEFAULT_TO_EN_TEMPLATE
 
-            # To Japanese template
-            to_jp_prompt = self.prompts_dir / "translate_to_jp.txt"
+            # To Japanese template (translate_en_to_jp.txt)
+            to_jp_prompt = self.prompts_dir / "translate_en_to_jp.txt"
             if to_jp_prompt.exists():
                 self._to_jp_template = to_jp_prompt.read_text(encoding='utf-8')
             else:
-                self._to_jp_template = TO_JAPANESE_TEMPLATE
+                self._to_jp_template = DEFAULT_TO_JP_TEMPLATE
         else:
             self._template = DEFAULT_UNIFIED_TEMPLATE
-            self._to_en_template = TO_ENGLISH_TEMPLATE
-            self._to_jp_template = TO_JAPANESE_TEMPLATE
+            self._to_en_template = DEFAULT_TO_EN_TEMPLATE
+            self._to_jp_template = DEFAULT_TO_JP_TEMPLATE
 
     def _get_template(self, output_language: Optional[str] = None) -> str:
         """Get appropriate template based on output language."""

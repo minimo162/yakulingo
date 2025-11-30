@@ -62,31 +62,40 @@ python app.py
 | 項目 | 要件 |
 |------|------|
 | OS | Windows 10/11 |
-| Python | 3.11+ |
 | ブラウザ | Microsoft Edge |
 | ネットワーク | M365 Copilotへのアクセス |
 
+> **Note**: Python は `setup.bat` で自動インストールされます
+
 ## インストール
 
-### 1. 依存関係のインストール
+### セットアップ（Windows）
+
+```
+setup.bat
+```
+
+これで以下が自動的にインストールされます：
+- Python 3.11
+- 依存パッケージ
+- Playwright ブラウザ
+
+### 起動
+
+```
+★run.bat
+```
+
+### 手動インストール（開発者向け）
 
 ```bash
-# uv を使用する場合（推奨）
+# 依存関係のインストール
 uv sync
 
-# pip を使用する場合
-pip install -r requirements.txt
-```
-
-### 2. Playwrightブラウザのインストール
-
-```bash
+# Playwrightブラウザのインストール
 playwright install chromium
-```
 
-### 3. 起動
-
-```bash
+# 起動
 python app.py
 ```
 
@@ -94,23 +103,19 @@ python app.py
 
 ```
 YakuLingo/
+├── setup.bat                 # セットアップスクリプト
+├── ★run.bat                  # 起動スクリプト
 ├── app.py                    # エントリーポイント
 ├── ecm_translate/            # メインパッケージ
-│   ├── ui/                   # NiceGUI UIコンポーネント (M3デザイン)
+│   ├── ui/                   # NiceGUI UIコンポーネント
 │   ├── services/             # サービス層
 │   ├── processors/           # ファイルプロセッサ
 │   ├── config/               # 設定管理
 │   └── models/               # データモデル
-├── tests/                    # テストスイート
 ├── prompts/                  # 翻訳プロンプト
-│   ├── translate_jp_to_en.txt
-│   └── translate_en_to_jp.txt
-├── docs/                     # ドキュメント
-│   └── SPECIFICATION.md      # 詳細仕様書
 ├── config/
 │   └── settings.json         # アプリ設定
-├── glossary.csv              # デフォルト用語集
-└── ★run.bat                  # 起動スクリプト (Windows)
+└── glossary.csv              # デフォルト用語集
 ```
 
 ## 設定

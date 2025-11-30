@@ -10,7 +10,6 @@ from unittest.mock import Mock, MagicMock, patch
 import openpyxl
 
 from ecm_translate.models.types import (
-    TranslationDirection,
     TranslationStatus,
     TextBlock,
 )
@@ -53,10 +52,7 @@ class TestCopilotConnectionErrors:
 
         service = TranslationService(mock_copilot, settings)
 
-        result = service.translate_text(
-            "テスト",
-            TranslationDirection.JP_TO_EN,
-        )
+        result = service.translate_text("テスト")
 
         assert result.status == TranslationStatus.FAILED
         assert result.error_message is not None
@@ -69,10 +65,7 @@ class TestCopilotConnectionErrors:
 
         service = TranslationService(mock_copilot, settings)
 
-        result = service.translate_file(
-            sample_excel,
-            TranslationDirection.JP_TO_EN,
-        )
+        result = service.translate_file(sample_excel)
 
         assert result.status == TranslationStatus.FAILED
         assert "session expired" in result.error_message.lower()
@@ -84,10 +77,7 @@ class TestCopilotConnectionErrors:
 
         service = TranslationService(mock_copilot, settings)
 
-        result = service.translate_file(
-            sample_excel,
-            TranslationDirection.JP_TO_EN,
-        )
+        result = service.translate_file(sample_excel)
 
         assert result.status == TranslationStatus.FAILED
         assert "timed out" in result.error_message.lower()
@@ -103,10 +93,7 @@ class TestFileErrors:
         mock_copilot = Mock()
         service = TranslationService(mock_copilot, settings)
 
-        result = service.translate_file(
-            Path("/nonexistent/file.xlsx"),
-            TranslationDirection.JP_TO_EN,
-        )
+        result = service.translate_file(Path("/nonexistent/file.xlsx"))
 
         assert result.status == TranslationStatus.FAILED
         assert result.error_message is not None
@@ -120,10 +107,7 @@ class TestFileErrors:
         mock_copilot = Mock()
         service = TranslationService(mock_copilot, settings)
 
-        result = service.translate_file(
-            txt_file,
-            TranslationDirection.JP_TO_EN,
-        )
+        result = service.translate_file(txt_file)
 
         assert result.status == TranslationStatus.FAILED
         assert "Unsupported" in result.error_message
@@ -137,10 +121,7 @@ class TestFileErrors:
         mock_copilot = Mock()
         service = TranslationService(mock_copilot, settings)
 
-        result = service.translate_file(
-            corrupt_file,
-            TranslationDirection.JP_TO_EN,
-        )
+        result = service.translate_file(corrupt_file)
 
         assert result.status == TranslationStatus.FAILED
         assert result.error_message is not None
@@ -155,10 +136,7 @@ class TestFileErrors:
 
         service = TranslationService(mock_copilot, settings)
 
-        result = service.translate_file(
-            sample_excel,
-            TranslationDirection.JP_TO_EN,
-        )
+        result = service.translate_file(sample_excel)
 
         # Should fail when trying to write output
         assert result.status == TranslationStatus.FAILED
@@ -190,7 +168,7 @@ class TestBatchTranslationErrors:
         ]
 
         with pytest.raises(Exception) as exc:
-            translator.translate_blocks(blocks, TranslationDirection.JP_TO_EN)
+            translator.translate_blocks(blocks)
 
         assert "Batch 2 failed" in str(exc.value)
 
@@ -207,7 +185,7 @@ class TestBatchTranslationErrors:
         blocks = [TextBlock(id="1", text="Test", location="A1")]
 
         # Should handle empty response gracefully
-        results = translator.translate_blocks(blocks, TranslationDirection.JP_TO_EN)
+        results = translator.translate_blocks(blocks)
 
         # Results should be empty or handle mismatch
         assert len(results) == 0 or "1" not in results
@@ -229,7 +207,7 @@ class TestBatchTranslationErrors:
             TextBlock(id="3", text="Text3", location="A3"),
         ]
 
-        results = translator.translate_blocks(blocks, TranslationDirection.JP_TO_EN)
+        results = translator.translate_blocks(blocks)
 
         # Should only have 2 results (zip truncates)
         assert len(results) == 2
@@ -247,10 +225,7 @@ class TestTranslationServiceErrors:
 
         service = TranslationService(mock_copilot, settings)
 
-        result = service.translate_text(
-            "テスト",
-            TranslationDirection.JP_TO_EN,
-        )
+        result = service.translate_text("テスト")
 
         assert result.status == TranslationStatus.FAILED
         assert "Invalid input" in result.error_message
@@ -263,10 +238,7 @@ class TestTranslationServiceErrors:
 
         service = TranslationService(mock_copilot, settings)
 
-        result = service.translate_file(
-            sample_excel,
-            TranslationDirection.JP_TO_EN,
-        )
+        result = service.translate_file(sample_excel)
 
         assert result.status == TranslationStatus.FAILED
         assert "Translation failed" in result.error_message
@@ -304,10 +276,7 @@ class TestCancellationHandling:
 
         mock_copilot.translate_sync.side_effect = cancel_on_second_call
 
-        result = service.translate_file(
-            sample_excel,
-            TranslationDirection.JP_TO_EN,
-        )
+        result = service.translate_file(sample_excel)
 
         # Single batch completes, cancellation flag set for next check
         # Result depends on whether cancellation is checked after batch
@@ -325,10 +294,7 @@ class TestCancellationHandling:
         assert service._cancel_requested is True
 
         # Start translation - flag should reset
-        result = service.translate_file(
-            sample_excel,
-            TranslationDirection.JP_TO_EN,
-        )
+        result = service.translate_file(sample_excel)
 
         # Translation should complete because flag was reset at start
         assert result.status == TranslationStatus.COMPLETED
@@ -355,10 +321,7 @@ class TestSettingsErrors:
 
         service = TranslationService(mock_copilot, settings)
 
-        result = service.translate_file(
-            file_path,
-            TranslationDirection.JP_TO_EN,
-        )
+        result = service.translate_file(file_path)
 
         # Should fail due to invalid output directory
         assert result.status == TranslationStatus.FAILED
@@ -399,10 +362,7 @@ class TestProcessorErrors:
         mock_copilot = Mock()
         service = TranslationService(mock_copilot, settings)
 
-        result = service.translate_file(
-            file_path,
-            TranslationDirection.JP_TO_EN,
-        )
+        result = service.translate_file(file_path)
 
         # Should complete with warning about no translatable text
         assert result.status == TranslationStatus.COMPLETED
@@ -426,10 +386,7 @@ class TestProcessorErrors:
         mock_copilot = Mock()
         service = TranslationService(mock_copilot, settings)
 
-        result = service.translate_file(
-            file_path,
-            TranslationDirection.JP_TO_EN,
-        )
+        result = service.translate_file(file_path)
 
         assert result.status == TranslationStatus.COMPLETED
         assert result.blocks_total == 0
@@ -451,10 +408,7 @@ class TestNetworkErrors:
 
         service = TranslationService(mock_copilot, settings)
 
-        result = service.translate_file(
-            sample_excel,
-            TranslationDirection.JP_TO_EN,
-        )
+        result = service.translate_file(sample_excel)
 
         assert result.status == TranslationStatus.FAILED
         assert "Network" in result.error_message or "unreachable" in result.error_message
@@ -466,10 +420,7 @@ class TestNetworkErrors:
 
         service = TranslationService(mock_copilot, settings)
 
-        result = service.translate_file(
-            sample_excel,
-            TranslationDirection.JP_TO_EN,
-        )
+        result = service.translate_file(sample_excel)
 
         assert result.status == TranslationStatus.FAILED
         assert "SSL" in result.error_message
@@ -490,10 +441,7 @@ class TestResourceErrors:
         # Create very large text (100KB)
         large_text = "あ" * 100000
 
-        result = service.translate_text(
-            large_text,
-            TranslationDirection.JP_TO_EN,
-        )
+        result = service.translate_text(large_text)
 
         # Should either succeed or fail gracefully
         assert result.status in [TranslationStatus.COMPLETED, TranslationStatus.FAILED]

@@ -16,14 +16,13 @@ class AppSettings:
     # Reference Files (用語集、参考資料など)
     reference_files: list[str] = field(default_factory=lambda: ["glossary.csv"])
 
-    # Output (常に別ファイルとして _EN/_JP 付きで保存)
+    # Output (常に別ファイルとして _translated 付きで保存)
     output_directory: Optional[str] = None  # None = same as input
 
     # UI
-    last_direction: str = "jp_to_en"
     last_tab: str = "text"
-    window_width: int = 900
-    window_height: int = 700
+    window_width: int = 960
+    window_height: int = 720
 
     # Advanced
     max_batch_size: int = 50            # Max texts per Copilot request
@@ -37,6 +36,8 @@ class AppSettings:
             try:
                 with open(path, 'r', encoding='utf-8') as f:
                     data = json.load(f)
+                    # Remove deprecated fields
+                    data.pop('last_direction', None)
                     # Convert reference_files paths if needed
                     return cls(**data)
             except (json.JSONDecodeError, TypeError) as e:
@@ -50,7 +51,6 @@ class AppSettings:
         data = {
             "reference_files": self.reference_files,
             "output_directory": self.output_directory,
-            "last_direction": self.last_direction,
             "last_tab": self.last_tab,
             "window_width": self.window_width,
             "window_height": self.window_height,

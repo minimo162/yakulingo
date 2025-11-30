@@ -7,7 +7,6 @@ from pathlib import Path
 from unittest.mock import Mock, MagicMock, patch
 
 from ecm_translate.models.types import (
-    TranslationDirection,
     TranslationStatus,
     TextBlock,
 )
@@ -185,42 +184,27 @@ class TestTranslationServiceSupportedFiles:
 
 
 class TestTranslationServiceGenerateOutputPath:
-    """Tests for TranslationService._generate_output_path()"""
+    """Tests for TranslationService._generate_output_path() - bidirectional"""
 
     @pytest.fixture
     def service(self):
         return TranslationService(Mock(), AppSettings())
 
-    def test_jp_to_en_adds_en_suffix(self, service):
+    def test_adds_translated_suffix(self, service):
         with tempfile.TemporaryDirectory() as tmpdir:
             input_path = Path(tmpdir) / "report.xlsx"
             input_path.touch()
 
-            output = service._generate_output_path(
-                input_path, TranslationDirection.JP_TO_EN
-            )
+            output = service._generate_output_path(input_path)
 
-            assert output.name == "report_EN.xlsx"
-
-    def test_en_to_jp_adds_jp_suffix(self, service):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            input_path = Path(tmpdir) / "report.xlsx"
-            input_path.touch()
-
-            output = service._generate_output_path(
-                input_path, TranslationDirection.EN_TO_JP
-            )
-
-            assert output.name == "report_JP.xlsx"
+            assert output.name == "report_translated.xlsx"
 
     def test_preserves_extension(self, service):
         with tempfile.TemporaryDirectory() as tmpdir:
             for ext in ['.xlsx', '.docx', '.pptx', '.pdf']:
                 input_path = Path(tmpdir) / f"file{ext}"
 
-                output = service._generate_output_path(
-                    input_path, TranslationDirection.JP_TO_EN
-                )
+                output = service._generate_output_path(input_path)
 
                 assert output.suffix == ext
 
@@ -229,40 +213,34 @@ class TestTranslationServiceGenerateOutputPath:
             input_path = Path(tmpdir) / "report.xlsx"
             input_path.touch()
 
-            # Create the _EN file
-            existing = Path(tmpdir) / "report_EN.xlsx"
+            # Create the _translated file
+            existing = Path(tmpdir) / "report_translated.xlsx"
             existing.touch()
 
-            output = service._generate_output_path(
-                input_path, TranslationDirection.JP_TO_EN
-            )
+            output = service._generate_output_path(input_path)
 
-            assert output.name == "report_EN_2.xlsx"
+            assert output.name == "report_translated_2.xlsx"
 
     def test_increments_number_until_unique(self, service):
         with tempfile.TemporaryDirectory() as tmpdir:
             input_path = Path(tmpdir) / "report.xlsx"
             input_path.touch()
 
-            # Create multiple _EN files
-            (Path(tmpdir) / "report_EN.xlsx").touch()
-            (Path(tmpdir) / "report_EN_2.xlsx").touch()
-            (Path(tmpdir) / "report_EN_3.xlsx").touch()
+            # Create multiple _translated files
+            (Path(tmpdir) / "report_translated.xlsx").touch()
+            (Path(tmpdir) / "report_translated_2.xlsx").touch()
+            (Path(tmpdir) / "report_translated_3.xlsx").touch()
 
-            output = service._generate_output_path(
-                input_path, TranslationDirection.JP_TO_EN
-            )
+            output = service._generate_output_path(input_path)
 
-            assert output.name == "report_EN_4.xlsx"
+            assert output.name == "report_translated_4.xlsx"
 
     def test_output_in_same_directory_by_default(self, service):
         with tempfile.TemporaryDirectory() as tmpdir:
             input_path = Path(tmpdir) / "report.xlsx"
             input_path.touch()
 
-            output = service._generate_output_path(
-                input_path, TranslationDirection.JP_TO_EN
-            )
+            output = service._generate_output_path(input_path)
 
             assert output.parent == input_path.parent
 
@@ -276,9 +254,7 @@ class TestTranslationServiceGenerateOutputPath:
 
             input_path = Path(tmpdir) / "report.xlsx"
 
-            output = service._generate_output_path(
-                input_path, TranslationDirection.JP_TO_EN
-            )
+            output = service._generate_output_path(input_path)
 
             assert output.parent == output_dir
 
@@ -336,9 +312,7 @@ class TestBatchTranslatorTranslateBlocks:
             TextBlock(id="2", text="世界", location="A2"),
         ]
 
-        results = translator.translate_blocks(
-            blocks, TranslationDirection.JP_TO_EN
-        )
+        results = translator.translate_blocks(blocks)
 
         assert results["1"] == "Hello"
         assert results["2"] == "World"
@@ -364,9 +338,7 @@ class TestBatchTranslatorTranslateBlocks:
             for i in range(60)
         ]
 
-        results = translator.translate_blocks(
-            blocks, TranslationDirection.JP_TO_EN
-        )
+        results = translator.translate_blocks(blocks)
 
         assert len(results) == 60
         assert results["0"] == "Trans0"
@@ -389,9 +361,7 @@ class TestBatchTranslatorTranslateBlocks:
         def on_progress(progress):
             progress_calls.append(progress)
 
-        translator.translate_blocks(
-            blocks, TranslationDirection.JP_TO_EN, on_progress=on_progress
-        )
+        translator.translate_blocks(blocks, on_progress=on_progress)
 
         assert len(progress_calls) == 1
         assert progress_calls[0].current == 0
@@ -401,7 +371,7 @@ class TestBatchTranslatorTranslateBlocks:
 # --- Tests: translate_text() ---
 
 class TestTranslationServiceTranslateText:
-    """Tests for TranslationService.translate_text()"""
+    """Tests for TranslationService.translate_text() - bidirectional"""
 
     @pytest.fixture
     def mock_copilot(self):
@@ -413,12 +383,9 @@ class TestTranslationServiceTranslateText:
     def service(self, mock_copilot):
         return TranslationService(mock_copilot, AppSettings())
 
-    def test_translate_text_jp_to_en(self, service, mock_copilot):
-        """Translate Japanese text to English"""
-        result = service.translate_text(
-            "こんにちは",
-            TranslationDirection.JP_TO_EN,
-        )
+    def test_translate_text_japanese(self, service, mock_copilot):
+        """Translate Japanese text (should detect and translate to English)"""
+        result = service.translate_text("こんにちは")
 
         assert result.status == TranslationStatus.COMPLETED
         assert result.output_text == "Translated text"
@@ -429,12 +396,9 @@ class TestTranslationServiceTranslateText:
         # Verify copilot was called
         mock_copilot.translate_single.assert_called_once()
 
-    def test_translate_text_en_to_jp(self, service, mock_copilot):
-        """Translate English text to Japanese"""
-        result = service.translate_text(
-            "Hello World",
-            TranslationDirection.EN_TO_JP,
-        )
+    def test_translate_text_english(self, service, mock_copilot):
+        """Translate English text (should detect and translate to Japanese)"""
+        result = service.translate_text("Hello World")
 
         assert result.status == TranslationStatus.COMPLETED
         assert result.output_text == "Translated text"
@@ -446,7 +410,6 @@ class TestTranslationServiceTranslateText:
 
         result = service.translate_text(
             "テスト文章",
-            TranslationDirection.JP_TO_EN,
             reference_files=[glossary],
         )
 
@@ -462,10 +425,7 @@ class TestTranslationServiceTranslateText:
 
         service = TranslationService(mock_copilot, AppSettings())
 
-        result = service.translate_text(
-            "テスト",
-            TranslationDirection.JP_TO_EN,
-        )
+        result = service.translate_text("テスト")
 
         assert result.status == TranslationStatus.FAILED
         assert result.error_message == "Translation error"
@@ -473,10 +433,7 @@ class TestTranslationServiceTranslateText:
 
     def test_translate_text_records_duration(self, service, mock_copilot):
         """Translation records duration"""
-        result = service.translate_text(
-            "テスト",
-            TranslationDirection.JP_TO_EN,
-        )
+        result = service.translate_text("テスト")
 
         assert result.duration_seconds is not None
         assert result.duration_seconds >= 0
@@ -485,7 +442,7 @@ class TestTranslationServiceTranslateText:
 # --- Tests: translate_file() ---
 
 class TestTranslationServiceTranslateFile:
-    """Tests for TranslationService.translate_file()"""
+    """Tests for TranslationService.translate_file() - bidirectional"""
 
     @pytest.fixture
     def mock_copilot(self):
@@ -519,15 +476,12 @@ class TestTranslationServiceTranslateFile:
         """Basic file translation"""
         service = TranslationService(mock_copilot, AppSettings())
 
-        result = service.translate_file(
-            sample_xlsx,
-            TranslationDirection.JP_TO_EN,
-        )
+        result = service.translate_file(sample_xlsx)
 
         assert result.status == TranslationStatus.COMPLETED
         assert result.output_path is not None
         assert result.output_path.exists()
-        assert "_EN" in result.output_path.name
+        assert "_translated" in result.output_path.name
         assert result.blocks_translated == 2
         assert result.blocks_total == 2
 
@@ -535,10 +489,7 @@ class TestTranslationServiceTranslateFile:
         """Output file is created"""
         service = TranslationService(mock_copilot, AppSettings())
 
-        result = service.translate_file(
-            sample_xlsx,
-            TranslationDirection.JP_TO_EN,
-        )
+        result = service.translate_file(sample_xlsx)
 
         assert result.output_path.exists()
         assert result.output_path.suffix == ".xlsx"
@@ -554,7 +505,6 @@ class TestTranslationServiceTranslateFile:
 
         result = service.translate_file(
             sample_xlsx,
-            TranslationDirection.JP_TO_EN,
             on_progress=on_progress,
         )
 
@@ -567,10 +517,7 @@ class TestTranslationServiceTranslateFile:
         """Empty file returns completed with warning"""
         service = TranslationService(mock_copilot, AppSettings())
 
-        result = service.translate_file(
-            empty_xlsx,
-            TranslationDirection.JP_TO_EN,
-        )
+        result = service.translate_file(empty_xlsx)
 
         assert result.status == TranslationStatus.COMPLETED
         assert result.blocks_total == 0
@@ -586,7 +533,6 @@ class TestTranslationServiceTranslateFile:
 
         result = service.translate_file(
             sample_xlsx,
-            TranslationDirection.JP_TO_EN,
             reference_files=[glossary],
         )
 
@@ -605,10 +551,7 @@ class TestTranslationServiceTranslateFile:
 
         mock_copilot.translate_sync.side_effect = cancel_during_translate
 
-        result = service.translate_file(
-            sample_xlsx,
-            TranslationDirection.JP_TO_EN,
-        )
+        result = service.translate_file(sample_xlsx)
 
         # Cancellation is checked after batch translation completes
         # Result is CANCELLED because flag was set during translation
@@ -621,10 +564,7 @@ class TestTranslationServiceTranslateFile:
 
         service = TranslationService(mock_copilot, AppSettings())
 
-        result = service.translate_file(
-            sample_xlsx,
-            TranslationDirection.JP_TO_EN,
-        )
+        result = service.translate_file(sample_xlsx)
 
         assert result.status == TranslationStatus.FAILED
         assert "API Error" in result.error_message
@@ -637,10 +577,7 @@ class TestTranslationServiceTranslateFile:
         settings = AppSettings(output_directory=str(output_dir))
         service = TranslationService(mock_copilot, settings)
 
-        result = service.translate_file(
-            sample_xlsx,
-            TranslationDirection.JP_TO_EN,
-        )
+        result = service.translate_file(sample_xlsx)
 
         assert result.status == TranslationStatus.COMPLETED
         assert result.output_path.parent == output_dir

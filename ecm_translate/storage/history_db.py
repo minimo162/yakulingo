@@ -14,7 +14,6 @@ from ecm_translate.models.types import (
     HistoryEntry,
     TextTranslationResult,
     TranslationOption,
-    TranslationDirection,
 )
 
 
@@ -39,11 +38,13 @@ class HistoryDB:
     def _init_db(self):
         """Initialize database schema"""
         with sqlite3.connect(self.db_path) as conn:
+            # Create table with backward-compatible schema
+            # (direction column kept for backward compatibility with existing DBs)
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS history (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     source_text TEXT NOT NULL,
-                    direction TEXT NOT NULL,
+                    direction TEXT DEFAULT 'bidirectional',
                     result_json TEXT NOT NULL,
                     timestamp TEXT NOT NULL,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -71,7 +72,7 @@ class HistoryDB:
                 ''',
                 (
                     entry.source_text,
-                    entry.direction.value,
+                    'bidirectional',  # Always bidirectional now
                     result_json,
                     entry.timestamp,
                 )
@@ -116,6 +117,16 @@ class HistoryDB:
             cursor = conn.execute(
                 'DELETE FROM history WHERE id = ?',
                 (entry_id,)
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def delete_by_timestamp(self, timestamp: str) -> bool:
+        """Delete a history entry by timestamp"""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(
+                'DELETE FROM history WHERE timestamp = ?',
+                (timestamp,)
             )
             conn.commit()
             return cursor.rowcount > 0
@@ -218,7 +229,6 @@ class HistoryDB:
         result = self._deserialize_result(row['result_json'])
         return HistoryEntry(
             source_text=row['source_text'],
-            direction=TranslationDirection(row['direction']),
             result=result,
             timestamp=row['timestamp'],
         )

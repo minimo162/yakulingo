@@ -3,6 +3,7 @@
 Extended integration tests for YakuLingo.
 Covers additional scenarios: async operations, concurrent workflows,
 cancellation during translation, and full UI state workflows.
+Bidirectional translation: Japanese → English, Other → Japanese.
 """
 
 import pytest
@@ -16,7 +17,6 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from ecm_translate.models.types import (
-    TranslationDirection,
     TranslationStatus,
     TranslationProgress,
     TextBlock,
@@ -62,7 +62,7 @@ def sample_excel(tmp_path):
 # --- State Workflow Tests ---
 
 class TestStateWorkflowIntegration:
-    """Test complete state workflows"""
+    """Test complete state workflows - bidirectional translation"""
 
     def test_text_translation_state_flow(self):
         """Test state transitions during text translation"""
@@ -72,7 +72,6 @@ class TestStateWorkflowIntegration:
         assert state.current_tab == Tab.TEXT
         assert state.text_translating is False
         assert state.source_text == ""
-        assert state.target_text == ""
 
         # User enters text
         state.source_text = "テスト文章"
@@ -88,10 +87,8 @@ class TestStateWorkflowIntegration:
         assert state.can_translate() is False
 
         # Translation complete
-        state.target_text = "Translated text"
         state.text_translating = False
         assert state.is_translating() is False
-        assert state.target_text == "Translated text"
 
     def test_file_translation_state_flow(self):
         """Test state transitions during file translation"""
@@ -129,30 +126,9 @@ class TestStateWorkflowIntegration:
 
         # Complete
         state.file_state = FileState.COMPLETE
-        state.output_file = Path("/tmp/test_EN.xlsx")
+        state.output_file = Path("/tmp/test_translated.xlsx")
         assert state.is_translating() is False
         assert state.can_translate() is False  # Already complete
-
-    def test_direction_swap_state_flow(self):
-        """Test direction swap state transitions"""
-        state = AppState(
-            direction=TranslationDirection.JP_TO_EN,
-            source_text="日本語テキスト",
-            target_text="English text"
-        )
-
-        # Verify labels
-        assert state.get_source_label() == "日本語"
-        assert state.get_target_label() == "English"
-
-        # Swap direction
-        state.swap_direction()
-
-        assert state.direction == TranslationDirection.EN_TO_JP
-        assert state.get_source_label() == "English"
-        assert state.get_target_label() == "日本語"
-        assert state.source_text == "日本語テキスト"  # Preserved
-        assert state.target_text == ""  # Cleared
 
     def test_reset_file_state_flow(self):
         """Test reset file state transitions"""
@@ -165,7 +141,7 @@ class TestStateWorkflowIntegration:
                 file_type=FileType.EXCEL,
                 size_bytes=1024
             ),
-            output_file=Path("/tmp/test_EN.xlsx"),
+            output_file=Path("/tmp/test_translated.xlsx"),
             translation_progress=1.0,
             translation_status="Complete",
             error_message=""
@@ -223,10 +199,7 @@ class TestCancellationWorkflow:
 
         mock_copilot.translate_sync.side_effect = translate_with_cancel
 
-        result = service.translate_file(
-            sample_excel,
-            TranslationDirection.JP_TO_EN,
-        )
+        result = service.translate_file(sample_excel)
 
         # Should be cancelled
         assert result.status == TranslationStatus.CANCELLED
@@ -240,10 +213,7 @@ class TestCancellationWorkflow:
         assert service._cancel_requested is True
 
         # Start new translation - flag should reset
-        result = service.translate_file(
-            sample_excel,
-            TranslationDirection.JP_TO_EN,
-        )
+        result = service.translate_file(sample_excel)
 
         assert result.status == TranslationStatus.COMPLETED
 
@@ -257,9 +227,7 @@ class TestBatchProcessingEdgeCases:
         """Handle empty block list"""
         service = TranslationService(mock_copilot, settings)
 
-        results = service.batch_translator.translate_blocks(
-            [], TranslationDirection.JP_TO_EN
-        )
+        results = service.batch_translator.translate_blocks([])
 
         assert results == {}
         mock_copilot.translate_sync.assert_not_called()
@@ -271,9 +239,7 @@ class TestBatchProcessingEdgeCases:
 
         blocks = [TextBlock(id="1", text="テスト", location="A1")]
 
-        results = service.batch_translator.translate_blocks(
-            blocks, TranslationDirection.JP_TO_EN
-        )
+        results = service.batch_translator.translate_blocks(blocks)
 
         assert len(results) == 1
         assert results["1"] == "Translated"
@@ -289,9 +255,7 @@ class TestBatchProcessingEdgeCases:
             for i in range(50)
         ]
 
-        results = service.batch_translator.translate_blocks(
-            blocks, TranslationDirection.JP_TO_EN
-        )
+        results = service.batch_translator.translate_blocks(blocks)
 
         assert len(results) == 50
         assert mock_copilot.translate_sync.call_count == 1
@@ -309,9 +273,7 @@ class TestBatchProcessingEdgeCases:
             for i in range(51)
         ]
 
-        results = service.batch_translator.translate_blocks(
-            blocks, TranslationDirection.JP_TO_EN
-        )
+        results = service.batch_translator.translate_blocks(blocks)
 
         assert len(results) == 51
         assert mock_copilot.translate_sync.call_count == 2
@@ -327,10 +289,7 @@ class TestErrorRecovery:
         mock_copilot.translate_sync.side_effect = RuntimeError("API Error")
         service = TranslationService(mock_copilot, settings)
 
-        result = service.translate_file(
-            sample_excel,
-            TranslationDirection.JP_TO_EN,
-        )
+        result = service.translate_file(sample_excel)
 
         assert result.status == TranslationStatus.FAILED
         assert "API Error" in result.error_message
@@ -339,10 +298,7 @@ class TestErrorRecovery:
         """Handle file not found"""
         service = TranslationService(mock_copilot, settings)
 
-        result = service.translate_file(
-            Path("/nonexistent/file.xlsx"),
-            TranslationDirection.JP_TO_EN,
-        )
+        result = service.translate_file(Path("/nonexistent/file.xlsx"))
 
         assert result.status == TranslationStatus.FAILED
         assert result.error_message is not None
@@ -354,10 +310,7 @@ class TestErrorRecovery:
 
         service = TranslationService(mock_copilot, settings)
 
-        result = service.translate_file(
-            corrupt_file,
-            TranslationDirection.JP_TO_EN,
-        )
+        result = service.translate_file(corrupt_file)
 
         assert result.status == TranslationStatus.FAILED
 
@@ -365,28 +318,16 @@ class TestErrorRecovery:
 # --- Output Path Generation Tests ---
 
 class TestOutputPathGeneration:
-    """Test output path generation logic"""
+    """Test output path generation logic - bidirectional uses _translated suffix"""
 
-    def test_jp_to_en_suffix(self, mock_copilot, settings, sample_excel):
-        """JP to EN adds _EN suffix"""
+    def test_translated_suffix(self, mock_copilot, settings, sample_excel):
+        """Bidirectional translation adds _translated suffix"""
         service = TranslationService(mock_copilot, settings)
 
-        output_path = service._generate_output_path(
-            sample_excel, TranslationDirection.JP_TO_EN
-        )
+        output_path = service._generate_output_path(sample_excel)
 
-        assert "_EN" in output_path.name
+        assert "_translated" in output_path.name
         assert output_path.suffix == ".xlsx"
-
-    def test_en_to_jp_suffix(self, mock_copilot, settings, sample_excel):
-        """EN to JP adds _JP suffix"""
-        service = TranslationService(mock_copilot, settings)
-
-        output_path = service._generate_output_path(
-            sample_excel, TranslationDirection.EN_TO_JP
-        )
-
-        assert "_JP" in output_path.name
 
     def test_incremental_numbering(self, mock_copilot, settings, tmp_path):
         """Handle existing output files with incremental numbering"""
@@ -396,16 +337,14 @@ class TestOutputPathGeneration:
         wb.save(input_file)
 
         # Create existing output files
-        (tmp_path / "test_EN.xlsx").touch()
-        (tmp_path / "test_EN_2.xlsx").touch()
+        (tmp_path / "test_translated.xlsx").touch()
+        (tmp_path / "test_translated_2.xlsx").touch()
 
         service = TranslationService(mock_copilot, settings)
 
-        output_path = service._generate_output_path(
-            input_file, TranslationDirection.JP_TO_EN
-        )
+        output_path = service._generate_output_path(input_file)
 
-        assert output_path.name == "test_EN_3.xlsx"
+        assert output_path.name == "test_translated_3.xlsx"
 
     def test_custom_output_directory(self, mock_copilot, settings, tmp_path):
         """Output to custom directory"""
@@ -419,9 +358,7 @@ class TestOutputPathGeneration:
         settings.output_directory = str(output_dir)
         service = TranslationService(mock_copilot, settings)
 
-        output_path = service._generate_output_path(
-            input_file, TranslationDirection.JP_TO_EN
-        )
+        output_path = service._generate_output_path(input_file)
 
         assert output_path.parent == output_dir
 
@@ -494,10 +431,7 @@ class TestSettingsIntegration:
         settings = AppSettings(output_directory=str(output_dir))
         service = TranslationService(mock_copilot, settings)
 
-        result = service.translate_file(
-            sample_excel,
-            TranslationDirection.JP_TO_EN,
-        )
+        result = service.translate_file(sample_excel)
 
         assert result.output_path.parent == output_dir
 
@@ -516,7 +450,6 @@ class TestReferenceFilesIntegration:
 
         service.translate_file(
             sample_excel,
-            TranslationDirection.JP_TO_EN,
             reference_files=[glossary],
         )
 
@@ -536,48 +469,52 @@ class TestReferenceFilesIntegration:
 
         result = service.translate_file(
             sample_excel,
-            TranslationDirection.JP_TO_EN,
             reference_files=[glossary1, glossary2],
         )
 
         assert result.status == TranslationStatus.COMPLETED
 
 
-# --- Direction-Specific Tests ---
+# --- Bidirectional Translation Tests ---
 
-class TestDirectionSpecificBehavior:
-    """Test direction-specific behavior"""
+class TestBidirectionalBehavior:
+    """Test bidirectional translation behavior"""
 
-    def test_jp_to_en_prompt_selection(self, mock_copilot, settings, sample_excel):
-        """JP to EN uses correct prompt template"""
+    def test_unified_prompt_used(self, mock_copilot, settings, sample_excel):
+        """Bidirectional translation uses unified prompt"""
         service = TranslationService(mock_copilot, settings)
 
-        service.translate_file(
-            sample_excel,
-            TranslationDirection.JP_TO_EN,
-        )
+        service.translate_file(sample_excel)
 
-        # Verify prompt contains JP to EN indicators
+        # Verify prompt contains language detection rules
         call_args = mock_copilot.translate_sync.call_args
         prompt = call_args[0][1]  # Second positional arg is prompt
-        assert "英語" in prompt or "English" in prompt
+        # The unified prompt should have language detection
+        assert "Language Detection Rule" in prompt or "日本語" in prompt
 
-    def test_en_to_jp_prompt_selection(self, mock_copilot, settings, tmp_path):
-        """EN to JP uses correct prompt template"""
+    def test_japanese_input_translation(self, mock_copilot, settings, sample_excel):
+        """Japanese input should be auto-detected and translated"""
+        service = TranslationService(mock_copilot, settings)
+
+        result = service.translate_file(sample_excel)
+
+        assert result.status == TranslationStatus.COMPLETED
+        assert result.output_path is not None
+        assert "_translated" in result.output_path.name
+
+    def test_english_input_translation(self, mock_copilot, settings, tmp_path):
+        """English input should be auto-detected and translated"""
         # Create English content file
         file_path = tmp_path / "english.xlsx"
         wb = openpyxl.Workbook()
         ws = wb.active
         ws["A1"] = "Hello World"
+        ws["A2"] = "This is a test"
         wb.save(file_path)
 
         service = TranslationService(mock_copilot, settings)
 
-        service.translate_file(
-            file_path,
-            TranslationDirection.EN_TO_JP,
-        )
+        result = service.translate_file(file_path)
 
-        call_args = mock_copilot.translate_sync.call_args
-        prompt = call_args[0][1]
-        assert "日本語" in prompt or "Japanese" in prompt
+        assert result.status == TranslationStatus.COMPLETED
+        assert result.output_path is not None

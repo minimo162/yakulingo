@@ -4,7 +4,6 @@
 from pathlib import Path
 
 from ecm_translate.models.types import (
-    TranslationDirection,
     FileType,
     TranslationStatus,
     TextBlock,
@@ -12,20 +11,6 @@ from ecm_translate.models.types import (
     TranslationProgress,
     TranslationResult,
 )
-
-
-class TestTranslationDirection:
-    """Tests for TranslationDirection enum"""
-
-    def test_jp_to_en_value(self):
-        assert TranslationDirection.JP_TO_EN.value == "jp_to_en"
-
-    def test_en_to_jp_value(self):
-        assert TranslationDirection.EN_TO_JP.value == "en_to_jp"
-
-    def test_from_string(self):
-        assert TranslationDirection("jp_to_en") == TranslationDirection.JP_TO_EN
-        assert TranslationDirection("en_to_jp") == TranslationDirection.EN_TO_JP
 
 
 class TestFileType:
@@ -109,7 +94,7 @@ class TestFileInfo:
             file_type=FileType.EXCEL,
             size_bytes=1000
         )
-        assert info.icon == "📊"
+        assert info.icon == "grid_on"
 
     def test_icon_word(self):
         info = FileInfo(
@@ -117,7 +102,15 @@ class TestFileInfo:
             file_type=FileType.WORD,
             size_bytes=1000
         )
-        assert info.icon == "📄"
+        assert info.icon == "description"
+
+    def test_icon_powerpoint(self):
+        info = FileInfo(
+            path=Path("test.pptx"),
+            file_type=FileType.POWERPOINT,
+            size_bytes=1000
+        )
+        assert info.icon == "slideshow"
 
     def test_icon_pdf(self):
         info = FileInfo(
@@ -125,7 +118,7 @@ class TestFileInfo:
             file_type=FileType.PDF,
             size_bytes=1000
         )
-        assert info.icon == "📕"
+        assert info.icon == "picture_as_pdf"
 
 
 class TestTranslationProgress:

@@ -10,14 +10,14 @@ from typing import Callable, Optional
 from pathlib import Path
 
 from ecm_translate.ui.state import AppState, FileState
-from ecm_translate.models.types import FileInfo, FileType, TranslationDirection
+from ecm_translate.models.types import FileInfo, FileType
 
 
 SUPPORTED_FORMATS = ".xlsx,.xls,.docx,.doc,.pptx,.ppt,.pdf"
 
 # File type icons (Material Icons)
 FILE_TYPE_ICONS = {
-    FileType.EXCEL: 'table_chart',
+    FileType.EXCEL: 'grid_on',
     FileType.WORD: 'description',
     FileType.POWERPOINT: 'slideshow',
     FileType.PDF: 'picture_as_pdf',
@@ -39,24 +39,12 @@ def create_file_panel(
     on_cancel: Callable[[], None],
     on_download: Callable[[], None],
     on_reset: Callable[[], None],
-    on_swap: Optional[Callable[[], None]] = None,
 ):
     """File translation panel - Nani-inspired design"""
-
-    # Direction display
-    target_lang = 'English' if state.direction == TranslationDirection.JP_TO_EN else 'Japanese'
 
     with ui.column().classes('flex-1 items-center w-full animate-in gap-5'):
         # Main card container (Nani-style)
         with ui.element('div').classes('main-card w-full'):
-            # Language switch button at top
-            if on_swap:
-                with ui.row().classes('px-3 pt-2 pb-0 items-center'):
-                    with ui.button(on_click=on_swap).classes('lang-switch-btn').props('flat no-caps'):
-                        ui.icon('swap_horiz').classes('text-lg icon')
-                        ui.label(target_lang).classes('font-semibold')
-                        ui.icon('expand_more').classes('text-sm opacity-60')
-
             # Content container
             with ui.element('div').classes('main-card-inner mx-1.5 mb-1.5 p-4'):
                 if state.file_state == FileState.EMPTY:
@@ -84,6 +72,11 @@ def create_file_panel(
                     _error_card(state.error_message)
                     with ui.row().classes('gap-3 mt-4 justify-center'):
                         ui.button('Select another file', on_click=on_reset).classes('btn-outline')
+
+        # Hint text
+        with ui.row().classes('items-center gap-2 text-muted justify-center'):
+            ui.icon('swap_horiz').classes('text-lg')
+            ui.label('日本語 → 英語、それ以外 → 日本語に自動翻訳').classes('text-xs')
 
 
 def _drop_zone(on_file_select: Callable[[Path], None]):
@@ -136,9 +129,12 @@ def _file_card(file_info: FileInfo, on_remove: Callable[[], None]):
 
 
 def _progress_card(file_info: FileInfo, progress: float, status: str):
-    """Progress card"""
+    """Progress card with improved animation"""
     with ui.card().classes('file-card w-full max-w-md'):
-        ui.label(file_info.path.name).classes('font-medium mb-3')
+        with ui.row().classes('items-center gap-3 mb-3'):
+            # Animated spinner
+            ui.spinner('dots', size='md').classes('text-primary')
+            ui.label(file_info.path.name).classes('font-medium')
 
         with ui.element('div').classes('progress-track w-full'):
             ui.element('div').classes('progress-bar').style(f'width: {int(progress * 100)}%')

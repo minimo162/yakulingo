@@ -9,12 +9,6 @@ from pathlib import Path
 from typing import Optional, Callable
 
 
-class TranslationDirection(Enum):
-    """Translation direction"""
-    JP_TO_EN = "jp_to_en"
-    EN_TO_JP = "en_to_jp"
-
-
 class FileType(Enum):
     """Supported file types"""
     EXCEL = "excel"
@@ -75,12 +69,12 @@ class FileInfo:
     def icon(self) -> str:
         """Get icon for file type"""
         icons = {
-            FileType.EXCEL: "📊",
-            FileType.WORD: "📄",
-            FileType.POWERPOINT: "📽️",
-            FileType.PDF: "📕",
+            FileType.EXCEL: "grid_on",
+            FileType.WORD: "description",
+            FileType.POWERPOINT: "slideshow",
+            FileType.PDF: "picture_as_pdf",
         }
-        return icons.get(self.file_type, "📄")
+        return icons.get(self.file_type, "description")
 
 
 @dataclass
@@ -148,9 +142,9 @@ class TranslationResult:
 class HistoryEntry:
     """
     A single translation history entry.
+    Language direction is auto-detected, so we just store source and result.
     """
     source_text: str                         # Original text
-    direction: TranslationDirection          # Translation direction
     result: TextTranslationResult            # Translation result
     timestamp: str = ""                      # ISO format timestamp
 
@@ -166,11 +160,6 @@ class HistoryEntry:
         if len(self.source_text) <= max_len:
             return self.source_text
         return self.source_text[:max_len] + "..."
-
-    @property
-    def direction_label(self) -> str:
-        """Get direction label"""
-        return "JP → EN" if self.direction == TranslationDirection.JP_TO_EN else "EN → JP"
 
 
 # Callback types

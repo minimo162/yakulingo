@@ -2,6 +2,7 @@
 """
 Integration tests for YakuLingo translation workflows.
 Tests end-to-end scenarios from input to output.
+Bidirectional translation: Japanese → English, Other → Japanese.
 """
 
 import pytest
@@ -11,7 +12,6 @@ import openpyxl
 from openpyxl.styles import Font
 
 from ecm_translate.models.types import (
-    TranslationDirection,
     TranslationStatus,
     TranslationProgress,
     TextBlock,
@@ -31,24 +31,18 @@ from ecm_translate.processors.pptx_processor import PptxProcessor
 def mock_copilot_with_translation():
     """
     Mock CopilotHandler that returns predictable translations.
-    JP text -> "EN: {original}"
-    EN text -> "JP: {original}"
+    Bidirectional - returns translations based on input.
     """
     mock = MagicMock()
     mock.is_connected = True
 
     def translate_single(text, prompt, reference_files=None):
-        if "日本語" in prompt or "Japanese" in prompt.lower():
-            return f"EN: {text}"
-        else:
-            return f"JP: {text}"
+        # Bidirectional translation mock
+        return f"Translated: {text}"
 
     def translate_sync(texts, prompt, reference_files=None):
-        # Determine direction from prompt
-        if "English" in prompt:
-            return [f"EN: {t}" for t in texts]
-        else:
-            return [f"JP: {t}" for t in texts]
+        # Bidirectional batch translation mock
+        return [f"Translated: {t}" for t in texts]
 
     mock.translate_single.side_effect = translate_single
     mock.translate_sync.side_effect = translate_sync
@@ -141,30 +135,24 @@ def excel_file_multi_sheet(tmp_path):
 # --- Integration Tests: Text Translation Workflow ---
 
 class TestTextTranslationWorkflow:
-    """Test complete text translation workflow"""
+    """Test complete text translation workflow - bidirectional"""
 
-    def test_jp_to_en_text_translation(self, mock_copilot_with_translation, settings):
-        """Complete JP to EN text translation"""
+    def test_japanese_text_translation(self, mock_copilot_with_translation, settings):
+        """Complete Japanese text translation (should auto-detect and translate to English)"""
         service = TranslationService(mock_copilot_with_translation, settings)
 
-        result = service.translate_text(
-            "こんにちは世界",
-            TranslationDirection.JP_TO_EN,
-        )
+        result = service.translate_text("こんにちは世界")
 
         assert result.status == TranslationStatus.COMPLETED
         assert result.output_text is not None
         assert result.blocks_translated == 1
         assert result.duration_seconds >= 0
 
-    def test_en_to_jp_text_translation(self, mock_copilot_with_translation, settings):
-        """Complete EN to JP text translation"""
+    def test_english_text_translation(self, mock_copilot_with_translation, settings):
+        """Complete English text translation (should auto-detect and translate to Japanese)"""
         service = TranslationService(mock_copilot_with_translation, settings)
 
-        result = service.translate_text(
-            "Hello World",
-            TranslationDirection.EN_TO_JP,
-        )
+        result = service.translate_text("Hello World")
 
         assert result.status == TranslationStatus.COMPLETED
         assert result.output_text is not None
@@ -182,7 +170,6 @@ class TestTextTranslationWorkflow:
 
         result = service.translate_text(
             "りんごを食べる",
-            TranslationDirection.JP_TO_EN,
             reference_files=[glossary_path],
         )
 
@@ -196,12 +183,12 @@ class TestTextTranslationWorkflow:
 # --- Integration Tests: File Translation Workflow ---
 
 class TestFileTranslationWorkflow:
-    """Test complete file translation workflow"""
+    """Test complete file translation workflow - bidirectional"""
 
-    def test_excel_jp_to_en_workflow(
+    def test_excel_jp_workflow(
         self, mock_copilot_with_translation, settings, excel_file_jp, tmp_path
     ):
-        """Complete Excel JP to EN translation workflow"""
+        """Complete Excel Japanese file translation workflow"""
         settings.output_directory = str(tmp_path / "output")
         Path(settings.output_directory).mkdir()
 
@@ -215,7 +202,6 @@ class TestFileTranslationWorkflow:
 
         result = service.translate_file(
             excel_file_jp,
-            TranslationDirection.JP_TO_EN,
             on_progress=on_progress,
         )
 
@@ -223,7 +209,7 @@ class TestFileTranslationWorkflow:
         assert result.status == TranslationStatus.COMPLETED
         assert result.output_path is not None
         assert result.output_path.exists()
-        assert "_EN" in result.output_path.name
+        assert "_translated" in result.output_path.name
         assert result.blocks_translated > 0
         assert result.blocks_total > 0
 
@@ -239,20 +225,17 @@ class TestFileTranslationWorkflow:
         assert ws["B2"].value == "100"
         assert ws["B3"].value == "80"
 
-    def test_excel_en_to_jp_workflow(
+    def test_excel_en_workflow(
         self, mock_copilot_with_translation, settings, excel_file_en, tmp_path
     ):
-        """Complete Excel EN to JP translation workflow"""
+        """Complete Excel English file translation workflow"""
         service = TranslationService(mock_copilot_with_translation, settings)
 
-        result = service.translate_file(
-            excel_file_en,
-            TranslationDirection.EN_TO_JP,
-        )
+        result = service.translate_file(excel_file_en)
 
         assert result.status == TranslationStatus.COMPLETED
         assert result.output_path is not None
-        assert "_JP" in result.output_path.name
+        assert "_translated" in result.output_path.name
 
     def test_multi_sheet_excel_workflow(
         self, mock_copilot_with_translation, settings, excel_file_multi_sheet
@@ -260,10 +243,7 @@ class TestFileTranslationWorkflow:
         """Translation workflow with multiple sheets"""
         service = TranslationService(mock_copilot_with_translation, settings)
 
-        result = service.translate_file(
-            excel_file_multi_sheet,
-            TranslationDirection.JP_TO_EN,
-        )
+        result = service.translate_file(excel_file_multi_sheet)
 
         assert result.status == TranslationStatus.COMPLETED
         # Should have translated from both sheets
@@ -282,7 +262,6 @@ class TestFileTranslationWorkflow:
 
         result = service.translate_file(
             excel_file_jp,
-            TranslationDirection.JP_TO_EN,
             reference_files=[glossary_path],
         )
 
@@ -304,9 +283,7 @@ class TestBatchProcessingWorkflow:
             for i in range(10)
         ]
 
-        results = service.batch_translator.translate_blocks(
-            blocks, TranslationDirection.JP_TO_EN
-        )
+        results = service.batch_translator.translate_blocks(blocks)
 
         assert len(results) == 10
         assert mock_copilot_with_translation.translate_sync.call_count == 1
@@ -327,7 +304,7 @@ class TestBatchProcessingWorkflow:
             progress_updates.append(progress)
 
         results = service.batch_translator.translate_blocks(
-            blocks, TranslationDirection.JP_TO_EN, on_progress=on_progress
+            blocks, on_progress=on_progress
         )
 
         assert len(results) == 75
@@ -345,9 +322,7 @@ class TestBatchProcessingWorkflow:
             for i in range(3)
         ]
 
-        results = service.batch_translator.translate_blocks(
-            blocks, TranslationDirection.JP_TO_EN
-        )
+        results = service.batch_translator.translate_blocks(blocks)
 
         assert len(results) == 3
         # 5000 + 5000 > 10000, so should split
@@ -372,7 +347,6 @@ class TestProgressCallbackIntegration:
 
         service.translate_file(
             excel_file_jp,
-            TranslationDirection.JP_TO_EN,
             on_progress=on_progress,
         )
 
@@ -395,7 +369,6 @@ class TestProgressCallbackIntegration:
 
         service.translate_file(
             excel_file_jp,
-            TranslationDirection.JP_TO_EN,
             on_progress=on_progress,
         )
 
@@ -425,10 +398,7 @@ class TestEdgeCaseWorkflows:
 
         service = TranslationService(mock_copilot_with_translation, settings)
 
-        result = service.translate_file(
-            file_path,
-            TranslationDirection.JP_TO_EN,
-        )
+        result = service.translate_file(file_path)
 
         assert result.status == TranslationStatus.COMPLETED
         assert result.blocks_total == 0
@@ -446,10 +416,7 @@ class TestEdgeCaseWorkflows:
         service.cancel()
         assert service._cancel_requested is True
 
-        result = service.translate_file(
-            excel_file_jp,
-            TranslationDirection.JP_TO_EN,
-        )
+        result = service.translate_file(excel_file_jp)
 
         # Translation completes because flag is reset at start
         assert result.status == TranslationStatus.COMPLETED
@@ -459,19 +426,16 @@ class TestEdgeCaseWorkflows:
     ):
         """Handle output path conflicts"""
         # Create existing output file
-        existing_output = excel_file_jp.parent / "japanese_doc_EN.xlsx"
+        existing_output = excel_file_jp.parent / "japanese_doc_translated.xlsx"
         existing_output.touch()
 
         service = TranslationService(mock_copilot_with_translation, settings)
 
-        result = service.translate_file(
-            excel_file_jp,
-            TranslationDirection.JP_TO_EN,
-        )
+        result = service.translate_file(excel_file_jp)
 
         assert result.status == TranslationStatus.COMPLETED
-        # Should create _EN_2.xlsx
-        assert "_EN_2" in result.output_path.name
+        # Should create _translated_2.xlsx
+        assert "_translated_2" in result.output_path.name
 
 
 # --- Integration Tests: Font Handling ---
@@ -499,10 +463,7 @@ class TestFontHandlingWorkflow:
 
         service = TranslationService(mock_copilot_with_translation, settings)
 
-        result = service.translate_file(
-            file_path,
-            TranslationDirection.JP_TO_EN,
-        )
+        result = service.translate_file(file_path)
 
         assert result.status == TranslationStatus.COMPLETED
 
@@ -518,7 +479,7 @@ class TestFontHandlingWorkflow:
     def test_font_size_adjustment(
         self, mock_copilot_with_translation, settings, tmp_path
     ):
-        """Font size adjusted for JP to EN translation"""
+        """Font size adjusted during translation"""
         file_path = tmp_path / "font_size.xlsx"
         wb = openpyxl.Workbook()
         ws = wb.active
@@ -531,10 +492,7 @@ class TestFontHandlingWorkflow:
 
         service = TranslationService(mock_copilot_with_translation, settings)
 
-        result = service.translate_file(
-            file_path,
-            TranslationDirection.JP_TO_EN,
-        )
+        result = service.translate_file(file_path)
 
         wb_out = openpyxl.load_workbook(result.output_path)
         ws_out = wb_out.active

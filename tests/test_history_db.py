@@ -12,7 +12,6 @@ from ecm_translate.models.types import (
     HistoryEntry,
     TextTranslationResult,
     TranslationOption,
-    TranslationDirection,
 )
 
 
@@ -26,7 +25,7 @@ def temp_db():
 
 @pytest.fixture
 def sample_entry():
-    """Create a sample history entry"""
+    """Create a sample history entry (bidirectional - no direction field)"""
     result = TextTranslationResult(
         source_text='Hello, world!',
         source_char_count=13,
@@ -43,7 +42,6 @@ def sample_entry():
     )
     return HistoryEntry(
         source_text='Hello, world!',
-        direction=TranslationDirection.EN_TO_JP,
         result=result,
     )
 
@@ -88,7 +86,6 @@ class TestHistoryDB:
             )
             entry = HistoryEntry(
                 source_text=f'Entry {i}',
-                direction=TranslationDirection.EN_TO_JP,
                 result=result,
             )
             temp_db.add(entry)
@@ -108,7 +105,6 @@ class TestHistoryDB:
             )
             entry = HistoryEntry(
                 source_text=f'Entry {i}',
-                direction=TranslationDirection.EN_TO_JP,
                 result=result,
             )
             temp_db.add(entry)
@@ -142,6 +138,15 @@ class TestHistoryDB:
         result = temp_db.delete(9999)
         assert result is False
 
+    def test_delete_by_timestamp(self, temp_db, sample_entry):
+        """Test deleting an entry by timestamp"""
+        temp_db.add(sample_entry)
+        assert temp_db.get_count() == 1
+
+        result = temp_db.delete_by_timestamp(sample_entry.timestamp)
+        assert result is True
+        assert temp_db.get_count() == 0
+
     def test_clear_all(self, temp_db, sample_entry):
         """Test clearing all entries"""
         for _ in range(5):
@@ -167,12 +172,10 @@ class TestHistoryDB:
 
         temp_db.add(HistoryEntry(
             source_text='Hello world',
-            direction=TranslationDirection.EN_TO_JP,
             result=result1,
         ))
         temp_db.add(HistoryEntry(
             source_text='Goodbye world',
-            direction=TranslationDirection.EN_TO_JP,
             result=result2,
         ))
 
@@ -203,7 +206,6 @@ class TestHistoryDB:
             )
             entry = HistoryEntry(
                 source_text=f'Entry {i}',
-                direction=TranslationDirection.EN_TO_JP,
                 result=result,
             )
             temp_db.add(entry)
@@ -222,24 +224,6 @@ class TestHistoryDB:
         deleted = temp_db.cleanup_old_entries(max_entries=10)
         assert deleted == 0
         assert temp_db.get_count() == 5
-
-    def test_direction_preserved(self, temp_db):
-        """Test that translation direction is preserved"""
-        result = TextTranslationResult(
-            source_text='テスト',
-            source_char_count=3,
-            options=[]
-        )
-
-        entry_jp_to_en = HistoryEntry(
-            source_text='テスト',
-            direction=TranslationDirection.JP_TO_EN,
-            result=result,
-        )
-
-        temp_db.add(entry_jp_to_en)
-        entries = temp_db.get_recent(1)
-        assert entries[0].direction == TranslationDirection.JP_TO_EN
 
 
 class TestGetDefaultDbPath:

@@ -117,6 +117,8 @@ class YakuLingoApp:
 
     def create_ui(self):
         """Create the UI - Nani-inspired sidebar layout"""
+        # Viewport for proper scaling on all displays
+        ui.add_head_html('<meta name="viewport" content="width=device-width, initial-scale=1.0">')
         ui.add_head_html(f'<style>{COMPLETE_CSS}</style>')
 
         # Main container with sidebar

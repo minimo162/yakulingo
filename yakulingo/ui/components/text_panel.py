@@ -67,7 +67,7 @@ def create_text_panel(
                     placeholder='翻訳したいテキストを入力...',
                     value=state.source_text,
                     on_change=lambda e: on_source_change(e.value)
-                ).classes('w-full p-4').props('borderless autogrow input-style="min-height: 160px"')
+                ).classes('w-full p-4').props('borderless autogrow').style('min-height: 160px')
 
                 # Handle Ctrl+Enter in textarea
                 async def handle_keydown(e):
@@ -380,7 +380,7 @@ def _show_question_dialog(
                     ui.button(
                         q,
                         on_click=lambda question=q: _do_follow_up(dialog, 'question', question, on_follow_up)
-                    ).props('flat no-caps align=left').classes('w-full justify-start text-left')
+                    ).props('flat no-caps').classes('w-full justify-start text-left')
 
             # Custom question
             ui.separator()

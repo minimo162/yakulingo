@@ -238,6 +238,7 @@ class YakuLingoApp:
                         on_copy=self._copy_text,
                         on_clear=self._clear,
                         on_adjust=self._adjust_text,
+                        on_follow_up=self._follow_up_action,
                     )
                 else:
                     create_file_panel(
@@ -247,6 +248,7 @@ class YakuLingoApp:
                         on_cancel=self._cancel,
                         on_download=self._download,
                         on_reset=self._reset,
+                        on_language_change=self._on_language_change,
                     )
 
         self._main_content = main_content
@@ -343,6 +345,125 @@ class YakuLingoApp:
         self.state.text_translating = False
         self._refresh_content()
 
+    async def _follow_up_action(self, action_type: str, content: str):
+        """Handle follow-up actions for →Japanese translations"""
+        if not self.translation_service:
+            ui.notify('Not connected', type='warning')
+            return
+
+        self.state.text_translating = True
+        self._refresh_content()
+
+        try:
+            # Build context from current translation
+            source_text = self.state.source_text
+            translation = self.state.text_result.options[0].text if self.state.text_result and self.state.text_result.options else ""
+
+            if action_type == 'review':
+                # Review the original text (grammar, style check)
+                prompt = f"""以下の英文をレビューしてください。
+
+原文:
+{source_text}
+
+日本語訳:
+{translation}
+
+レビューの観点:
+- 文法的な正確さ
+- 表現の自然さ
+- ビジネス文書として適切か
+- 改善案があれば提案
+
+出力形式:
+訳文: （レビュー結果のサマリー）
+解説: （詳細な分析と改善提案）"""
+
+            elif action_type == 'question':
+                # Answer a question about the translation
+                prompt = f"""以下の翻訳について質問に答えてください。
+
+原文:
+{source_text}
+
+日本語訳:
+{translation}
+
+質問:
+{content}
+
+出力形式:
+訳文: （質問への回答の要約）
+解説: （詳細な説明）"""
+
+            elif action_type == 'reply':
+                # Create a reply in the original language
+                prompt = f"""以下の原文に対する返信を作成してください。
+
+原文:
+{source_text}
+
+ユーザーの返信意図:
+{content}
+
+指示:
+- 原文と同じ言語で返信を作成
+- ビジネスメールとして適切なトーンで
+- 自然で流暢な文章に
+
+出力形式:
+訳文: （作成した返信文）
+解説: （この返信のポイントと使用場面の説明）"""
+
+            else:
+                ui.notify('Unknown action type', type='warning')
+                self.state.text_translating = False
+                self._refresh_content()
+                return
+
+            # Send to Copilot
+            result = await asyncio.to_thread(
+                lambda: self.copilot.translate_single(source_text, prompt, None)
+            )
+
+            # Parse result and update UI
+            if result:
+                from ecm_translate.models.types import TranslationOption
+
+                # Parse the result
+                import re
+                text_match = re.search(r'訳文:\s*(.+?)(?=解説:|$)', result, re.DOTALL)
+                explanation_match = re.search(r'解説:\s*(.+)', result, re.DOTALL)
+
+                text = text_match.group(1).strip() if text_match else result.strip()
+                explanation = explanation_match.group(1).strip() if explanation_match else ""
+
+                # Add as new result option
+                new_option = TranslationOption(text=text, explanation=explanation)
+
+                if self.state.text_result:
+                    self.state.text_result.options.append(new_option)
+                else:
+                    self.state.text_result = TextTranslationResult(
+                        source_text=source_text,
+                        source_char_count=len(source_text),
+                        options=[new_option],
+                        output_language="jp",
+                    )
+            else:
+                ui.notify('Failed to get response', type='negative')
+
+        except Exception as e:
+            ui.notify(f'Error: {e}', type='negative')
+
+        self.state.text_translating = False
+        self._refresh_content()
+
+    def _on_language_change(self, lang: str):
+        """Handle output language change for file translation"""
+        self.state.file_output_language = lang
+        self._refresh_content()
+
     def _select_file(self, file_path: Path):
         """Select file for translation"""
         if not self.translation_service:
@@ -396,6 +517,7 @@ class YakuLingoApp:
                     self.state.selected_file,
                     self.state.reference_files or None,
                     on_progress,
+                    output_language=self.state.file_output_language,
                 )
             )
 

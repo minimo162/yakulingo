@@ -8,8 +8,55 @@ Bidirectional translation: Japanese → English, Other → Japanese (auto-detect
 import time
 from pathlib import Path
 from typing import Optional, List
+import unicodedata
 
 import re
+
+
+def is_japanese_text(text: str, threshold: float = 0.3) -> bool:
+    """
+    Detect if text is primarily Japanese.
+
+    Uses Unicode character ranges to identify Japanese characters:
+    - Hiragana: U+3040 - U+309F
+    - Katakana: U+30A0 - U+30FF
+    - CJK Unified Ideographs (Kanji): U+4E00 - U+9FFF
+    - Katakana Phonetic Extensions: U+31F0 - U+31FF
+    - Halfwidth Katakana: U+FF65 - U+FF9F
+
+    Args:
+        text: Text to analyze
+        threshold: Minimum ratio of Japanese characters (default 0.3)
+
+    Returns:
+        True if text is primarily Japanese
+    """
+    if not text:
+        return False
+
+    japanese_count = 0
+    total_chars = 0
+
+    for char in text:
+        # Skip whitespace and punctuation
+        if char.isspace() or unicodedata.category(char).startswith('P'):
+            continue
+
+        total_chars += 1
+        code = ord(char)
+
+        # Check Japanese character ranges
+        if (0x3040 <= code <= 0x309F or  # Hiragana
+            0x30A0 <= code <= 0x30FF or  # Katakana
+            0x4E00 <= code <= 0x9FFF or  # CJK Kanji
+            0x31F0 <= code <= 0x31FF or  # Katakana extensions
+            0xFF65 <= code <= 0xFF9F):   # Halfwidth Katakana
+            japanese_count += 1
+
+    if total_chars == 0:
+        return False
+
+    return (japanese_count / total_chars) >= threshold
 
 from ecm_translate.models.types import (
     TranslationStatus,
@@ -47,9 +94,16 @@ class BatchTranslator:
         blocks: list,
         reference_files: Optional[List[Path]] = None,
         on_progress: Optional[ProgressCallback] = None,
+        output_language: str = "en",
     ) -> dict[str, str]:
         """
         Translate blocks in batches.
+
+        Args:
+            blocks: List of TextBlock to translate
+            reference_files: Optional reference files
+            on_progress: Progress callback
+            output_language: "en" for English, "jp" for Japanese
 
         Returns:
             Mapping of block_id -> translated_text
@@ -69,8 +123,8 @@ class BatchTranslator:
 
             texts = [b.text for b in batch]
 
-            # Build prompt (unified bidirectional)
-            prompt = self.prompt_builder.build_batch(texts, has_refs)
+            # Build prompt with explicit output language
+            prompt = self.prompt_builder.build_batch(texts, has_refs, output_language)
 
             # Translate
             translations = self.copilot.translate_sync(texts, prompt, reference_files)
@@ -181,18 +235,28 @@ class TranslationService:
         reference_files: Optional[List[Path]] = None,
     ) -> TextTranslationResult:
         """
-        Translate text and return multiple options.
+        Translate text with language-specific handling:
+        - Japanese input → English output (3 options with different lengths)
+        - Other input → Japanese output (single translation + detailed explanation)
 
         Args:
             text: Source text to translate
             reference_files: Optional list of reference files to attach
 
         Returns:
-            TextTranslationResult with multiple options
+            TextTranslationResult with options and output_language
         """
         try:
-            # Load the multi-option prompt template
-            prompt_file = "text_translate.txt"
+            # Detect input language to determine output language
+            is_japanese = is_japanese_text(text)
+            output_language = "en" if is_japanese else "jp"
+
+            # Select appropriate prompt file
+            if output_language == "en":
+                prompt_file = "text_translate_to_en.txt"
+            else:
+                prompt_file = "text_translate_to_jp.txt"
+
             prompt_path = self.prompt_builder.prompts_dir / prompt_file if self.prompt_builder.prompts_dir else None
 
             if prompt_path and prompt_path.exists():
@@ -207,11 +271,13 @@ class TranslationService:
                         options=[TranslationOption(
                             text=result.output_text,
                             explanation="標準的な翻訳です",
-                        )]
+                        )],
+                        output_language=output_language,
                     )
                 return TextTranslationResult(
                     source_text=text,
                     source_char_count=len(text),
+                    output_language=output_language,
                     error_message=result.error_message,
                 )
 
@@ -221,14 +287,20 @@ class TranslationService:
             # Translate
             raw_result = self.copilot.translate_single(text, prompt, reference_files)
 
-            # Parse the result
-            options = self._parse_multi_option_result(raw_result)
+            # Parse the result based on output language
+            if output_language == "en":
+                # English output: multiple options
+                options = self._parse_multi_option_result(raw_result)
+            else:
+                # Japanese output: single option with detailed explanation
+                options = self._parse_single_translation_result(raw_result)
 
             if options:
                 return TextTranslationResult(
                     source_text=text,
                     source_char_count=len(text),
                     options=options,
+                    output_language=output_language,
                 )
             else:
                 # Fallback: treat the whole result as a single option
@@ -238,13 +310,15 @@ class TranslationService:
                     options=[TranslationOption(
                         text=raw_result.strip(),
                         explanation="翻訳結果です",
-                    )]
+                    )],
+                    output_language=output_language,
                 )
 
         except Exception as e:
             return TextTranslationResult(
                 source_text=text,
                 source_char_count=len(text),
+                output_language="en",  # Default
                 error_message=str(e),
             )
 
@@ -297,7 +371,7 @@ class TranslationService:
             return None
 
     def _parse_multi_option_result(self, raw_result: str) -> List[TranslationOption]:
-        """Parse multi-option result from Copilot."""
+        """Parse multi-option result from Copilot (for →en translation)."""
         options = []
 
         # Pattern to match [1], [2], [3] sections
@@ -314,6 +388,31 @@ class TranslationService:
                 ))
 
         return options
+
+    def _parse_single_translation_result(self, raw_result: str) -> List[TranslationOption]:
+        """Parse single translation result from Copilot (for →jp translation)."""
+        # Pattern: 訳文: ... 解説: ...
+        text_match = re.search(r'訳文:\s*(.+?)(?=解説:|$)', raw_result, re.DOTALL)
+        explanation_match = re.search(r'解説:\s*(.+)', raw_result, re.DOTALL)
+
+        if text_match:
+            text = text_match.group(1).strip()
+            explanation = explanation_match.group(1).strip() if explanation_match else "翻訳結果です"
+
+            if text:
+                return [TranslationOption(text=text, explanation=explanation)]
+
+        # Fallback: try to extract any meaningful content
+        # Sometimes the AI might not follow the exact format
+        lines = raw_result.strip().split('\n')
+        if lines:
+            # Use first non-empty line as text
+            text = lines[0].strip()
+            explanation = '\n'.join(lines[1:]).strip() if len(lines) > 1 else "翻訳結果です"
+            if text:
+                return [TranslationOption(text=text, explanation=explanation)]
+
+        return []
 
     def _parse_single_option_result(self, raw_result: str) -> Optional[TranslationOption]:
         """Parse single option result from adjustment."""
@@ -338,14 +437,16 @@ class TranslationService:
         input_path: Path,
         reference_files: Optional[List[Path]] = None,
         on_progress: Optional[ProgressCallback] = None,
+        output_language: str = "en",
     ) -> TranslationResult:
         """
-        Translate a file (bidirectional: JP→EN or Other→JP).
+        Translate a file to specified output language.
 
         Args:
             input_path: Path to input file
             reference_files: Reference files to attach
             on_progress: Callback for progress updates
+            output_language: "en" for English, "jp" for Japanese
 
         Returns:
             TranslationResult with output_path
@@ -409,6 +510,7 @@ class TranslationService:
                 blocks,
                 reference_files,
                 batch_progress,
+                output_language=output_language,
             )
 
             # Check for cancellation

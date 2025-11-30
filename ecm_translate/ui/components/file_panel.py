@@ -39,6 +39,7 @@ def create_file_panel(
     on_cancel: Callable[[], None],
     on_download: Callable[[], None],
     on_reset: Callable[[], None],
+    on_language_change: Optional[Callable[[str], None]] = None,
 ):
     """File translation panel - Nani-inspired design"""
 
@@ -52,6 +53,8 @@ def create_file_panel(
 
                 elif state.file_state == FileState.SELECTED:
                     _file_card(state.file_info, on_reset)
+                    # Output language selector
+                    _language_selector(state, on_language_change)
                     with ui.row().classes('justify-center mt-4'):
                         with ui.button(on_click=on_translate).classes('translate-btn').props('no-caps'):
                             ui.label('Translate')
@@ -74,9 +77,30 @@ def create_file_panel(
                         ui.button('Select another file', on_click=on_reset).classes('btn-outline')
 
         # Hint text
-        with ui.row().classes('items-center gap-2 text-muted justify-center'):
-            ui.icon('swap_horiz').classes('text-lg')
-            ui.label('日本語 → 英語、それ以外 → 日本語に自動翻訳').classes('text-xs')
+        with ui.row().classes('items-center gap-1 text-muted justify-center'):
+            ui.icon('smart_toy').classes('text-sm')
+            ui.label('M365 Copilot による翻訳').classes('text-2xs')
+
+
+def _language_selector(state: AppState, on_change: Optional[Callable[[str], None]]):
+    """Output language selector - segmented button style"""
+    with ui.row().classes('w-full justify-center mt-4'):
+        with ui.element('div').classes('language-selector'):
+            # English option
+            en_classes = 'lang-btn lang-btn-left'
+            if state.file_output_language == 'en':
+                en_classes += ' lang-btn-active'
+            with ui.button(on_click=lambda: on_change and on_change('en')).classes(en_classes).props('flat no-caps'):
+                ui.icon('arrow_forward').classes('text-sm')
+                ui.label('English')
+
+            # Japanese option
+            jp_classes = 'lang-btn lang-btn-right'
+            if state.file_output_language == 'jp':
+                jp_classes += ' lang-btn-active'
+            with ui.button(on_click=lambda: on_change and on_change('jp')).classes(jp_classes).props('flat no-caps'):
+                ui.icon('arrow_forward').classes('text-sm')
+                ui.label('日本語')
 
 
 def _drop_zone(on_file_select: Callable[[Path], None]):

@@ -50,6 +50,7 @@ class AppState:
     file_state: FileState = FileState.EMPTY
     selected_file: Optional[Path] = None
     file_info: Optional[FileInfo] = None
+    file_output_language: str = "en"  # "en" or "jp" - explicit output language for file translation
     translation_progress: float = 0.0
     translation_status: str = ""
     output_file: Optional[Path] = None

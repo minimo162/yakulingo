@@ -112,15 +112,29 @@ class TranslationOption:
 class TextTranslationResult:
     """
     Result of text translation with multiple options.
+    Output language is auto-detected:
+    - Japanese input → English output (multiple options)
+    - Other input → Japanese output (single translation + explanation)
     """
     source_text: str                         # Original text
     source_char_count: int                   # Original character count
     options: list[TranslationOption] = field(default_factory=list)
+    output_language: str = "en"              # "en" or "jp" - detected output language
     error_message: Optional[str] = None
 
     def __post_init__(self):
         if self.source_char_count == 0:
             self.source_char_count = len(self.source_text)
+
+    @property
+    def is_to_japanese(self) -> bool:
+        """True if translation output is Japanese (input was non-Japanese)"""
+        return self.output_language == "jp"
+
+    @property
+    def is_to_english(self) -> bool:
+        """True if translation output is English (input was Japanese)"""
+        return self.output_language == "en"
 
 
 @dataclass

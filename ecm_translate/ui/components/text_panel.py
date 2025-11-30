@@ -1,18 +1,19 @@
 # ecm_translate/ui/components/text_panel.py
 """
-Text translation panel with multiple options.
-Clean, minimal design inspired by Nani Translate.
-Bidirectional: Japanese → English, Other → Japanese (auto-detected).
+Text translation panel with language-specific UI.
+- Japanese → English: Multiple options with length adjustment
+- Other → Japanese: Single translation with detailed explanation + follow-up actions
+Designed for Japanese users.
 """
 
 from nicegui import ui
 from typing import Callable, Optional
 
 from ecm_translate.ui.state import AppState
-from ecm_translate.models.types import TranslationOption
+from ecm_translate.models.types import TranslationOption, TextTranslationResult
 
 
-# Tone icons for translation explanations
+# Tone icons for translation explanations (for →en)
 TONE_ICONS = {
     'formal': 'business_center',
     'business': 'business_center',
@@ -22,6 +23,13 @@ TONE_ICONS = {
     'polite': 'sentiment_satisfied',
     'direct': 'arrow_forward',
     'neutral': 'remove',
+}
+
+# Action icons for →jp follow-up features
+ACTION_ICONS = {
+    'review': 'rate_review',
+    'question': 'help_outline',
+    'reply': 'reply',
 }
 
 
@@ -41,8 +49,13 @@ def create_text_panel(
     on_copy: Callable[[str], None],
     on_clear: Callable[[], None],
     on_adjust: Optional[Callable[[str, str], None]] = None,
+    on_follow_up: Optional[Callable[[str, str], None]] = None,  # (action_type, context)
 ):
-    """Text translation panel - Nani-inspired design with bidirectional translation"""
+    """
+    Text translation panel with language-specific UI.
+    - Japanese input → English: Multiple options with length adjustment
+    - Other input → Japanese: Single translation + follow-up actions
+    """
 
     with ui.column().classes('flex-1 w-full gap-5 animate-in'):
         # Main card container (Nani-style)
@@ -100,13 +113,23 @@ def create_text_panel(
                 ui.icon('smart_toy').classes('text-sm')
                 ui.label('M365 Copilot による翻訳').classes('text-2xs')
 
-        # Results section
+        # Results section - language-specific UI
         if state.text_result and state.text_result.options:
-            _render_results(
-                state.text_result,
-                on_copy,
-                on_adjust,
-            )
+            if state.text_result.is_to_japanese:
+                # →Japanese: Single result with detailed explanation + follow-up actions
+                _render_results_to_jp(
+                    state.text_result,
+                    state.source_text,
+                    on_copy,
+                    on_follow_up,
+                )
+            else:
+                # →English: Multiple options with adjustment
+                _render_results_to_en(
+                    state.text_result,
+                    on_copy,
+                    on_adjust,
+                )
         elif state.text_translating:
             _render_loading()
 
@@ -122,12 +145,12 @@ def _render_loading():
                 ui.label('M365 Copilot に問い合わせています').classes('text-xs text-muted')
 
 
-def _render_results(
-    result,  # TextTranslationResult
+def _render_results_to_en(
+    result: TextTranslationResult,
     on_copy: Callable[[str], None],
     on_adjust: Optional[Callable[[str, str], None]],
 ):
-    """Render translation results with multiple options - Nani-inspired design"""
+    """Render →English results: multiple options with length adjustment"""
 
     with ui.element('div').classes('result-section w-full'):
         # Result header
@@ -138,7 +161,7 @@ def _render_results(
         # Options list
         with ui.column().classes('w-full p-3 gap-3'):
             for i, option in enumerate(result.options):
-                _render_option(
+                _render_option_en(
                     option,
                     on_copy,
                     on_adjust,
@@ -147,14 +170,105 @@ def _render_results(
                 )
 
 
-def _render_option(
+def _render_results_to_jp(
+    result: TextTranslationResult,
+    source_text: str,
+    on_copy: Callable[[str], None],
+    on_follow_up: Optional[Callable[[str, str], None]],
+):
+    """Render →Japanese results: single translation with detailed explanation + follow-up actions"""
+
+    if not result.options:
+        return
+
+    option = result.options[0]  # Single option for →jp
+
+    with ui.element('div').classes('result-section w-full'):
+        # Result header
+        with ui.row().classes('result-header justify-between items-center'):
+            ui.label('翻訳結果').classes('font-semibold')
+            ui.label(f'{option.char_count} 文字').classes('text-xs text-muted font-normal')
+
+        # Main translation card
+        with ui.card().classes('jp-result-card w-full'):
+            with ui.column().classes('w-full gap-4'):
+                # Translation text
+                ui.label(option.text).classes('jp-result-text text-lg leading-relaxed')
+
+                # Copy button
+                with ui.row().classes('w-full justify-end'):
+                    ui.button(
+                        'コピー',
+                        icon='content_copy',
+                        on_click=lambda: on_copy(option.text)
+                    ).props('flat dense no-caps').classes('text-primary')
+
+        # Detailed explanation section
+        if option.explanation:
+            with ui.card().classes('explanation-card w-full mt-3'):
+                with ui.column().classes('w-full gap-2'):
+                    with ui.row().classes('items-center gap-2'):
+                        ui.icon('lightbulb').classes('text-amber-500')
+                        ui.label('解説').classes('font-semibold text-sm')
+
+                    # Parse and render explanation (may have bullet points)
+                    _render_explanation(option.explanation)
+
+        # Follow-up actions section
+        with ui.element('div').classes('follow-up-section w-full mt-4'):
+            with ui.column().classes('w-full gap-2'):
+                ui.label('次のアクション').classes('text-xs text-muted font-semibold mb-1')
+
+                with ui.row().classes('w-full gap-2 flex-wrap'):
+                    # Review original text
+                    ui.button(
+                        '原文をレビュー',
+                        icon='rate_review',
+                        on_click=lambda: on_follow_up and on_follow_up('review', source_text)
+                    ).props('outline no-caps').classes('follow-up-btn')
+
+                    # Ask question about translation
+                    ui.button(
+                        '質問する',
+                        icon='help_outline',
+                        on_click=lambda: _show_question_dialog(source_text, option.text, on_follow_up)
+                    ).props('outline no-caps').classes('follow-up-btn')
+
+                    # Create reply
+                    ui.button(
+                        '返信を作成',
+                        icon='reply',
+                        on_click=lambda: _show_reply_dialog(source_text, option.text, on_follow_up)
+                    ).props('outline no-caps').classes('follow-up-btn')
+
+
+def _render_explanation(explanation: str):
+    """Render explanation text, handling bullet points"""
+    lines = explanation.strip().split('\n')
+
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+
+        # Check if it's a bullet point
+        if line.startswith('- ') or line.startswith('・'):
+            text = line[2:].strip() if line.startswith('- ') else line[1:].strip()
+            with ui.row().classes('items-start gap-2'):
+                ui.label('•').classes('text-muted')
+                ui.label(text).classes('text-sm text-muted flex-1')
+        else:
+            ui.label(line).classes('text-sm text-muted')
+
+
+def _render_option_en(
     option: TranslationOption,
     on_copy: Callable[[str], None],
     on_adjust: Optional[Callable[[str, str], None]],
     is_last: bool = False,
     index: int = 0,
 ):
-    """Render a single translation option as a card - Nani-inspired design"""
+    """Render a single English translation option as a card"""
 
     tone_icon = _get_tone_icon(option.explanation)
 
@@ -232,3 +346,110 @@ def _do_adjust(dialog, text: str, adjust_type: str, on_adjust: Callable[[str, st
     if adjust_type and adjust_type.strip():
         dialog.close()
         on_adjust(text, adjust_type.strip())
+
+
+def _show_question_dialog(
+    source_text: str,
+    translation: str,
+    on_follow_up: Optional[Callable[[str, str], None]],
+):
+    """Show dialog for asking questions about the translation"""
+
+    with ui.dialog() as dialog, ui.card().classes('w-[28rem]'):
+        with ui.column().classes('w-full gap-4 p-4'):
+            # Header
+            with ui.row().classes('w-full justify-between items-center'):
+                ui.label('質問する').classes('text-base font-medium')
+                ui.button(icon='close', on_click=dialog.close).props('flat dense round')
+
+            # Context preview
+            with ui.element('div').classes('bg-gray-50 rounded-lg p-3'):
+                ui.label('原文:').classes('text-xs text-muted font-semibold')
+                ui.label(source_text[:100] + ('...' if len(source_text) > 100 else '')).classes('text-sm')
+
+            # Quick questions
+            ui.label('よくある質問').classes('text-xs text-muted font-semibold')
+            with ui.column().classes('w-full gap-2'):
+                quick_questions = [
+                    'この表現は自然ですか？',
+                    '他の言い方はありますか？',
+                    'この単語の使い方を詳しく教えてください',
+                    'フォーマル/カジュアルな言い方は？',
+                ]
+                for q in quick_questions:
+                    ui.button(
+                        q,
+                        on_click=lambda question=q: _do_follow_up(dialog, 'question', question, on_follow_up)
+                    ).props('flat no-caps align=left').classes('w-full justify-start text-left')
+
+            # Custom question
+            ui.separator()
+            custom_input = ui.textarea(
+                placeholder='自由に質問を入力...'
+            ).classes('w-full').props('rows=2')
+
+            ui.button(
+                '質問する',
+                icon='send',
+                on_click=lambda: _do_follow_up(dialog, 'question', custom_input.value, on_follow_up)
+            ).classes('btn-primary self-end')
+
+    dialog.open()
+
+
+def _show_reply_dialog(
+    source_text: str,
+    translation: str,
+    on_follow_up: Optional[Callable[[str, str], None]],
+):
+    """Show dialog for creating a reply to the original text"""
+
+    with ui.dialog() as dialog, ui.card().classes('w-[28rem]'):
+        with ui.column().classes('w-full gap-4 p-4'):
+            # Header
+            with ui.row().classes('w-full justify-between items-center'):
+                ui.label('返信を作成').classes('text-base font-medium')
+                ui.button(icon='close', on_click=dialog.close).props('flat dense round')
+
+            # Context preview
+            with ui.element('div').classes('bg-gray-50 rounded-lg p-3'):
+                ui.label('原文:').classes('text-xs text-muted font-semibold')
+                ui.label(source_text[:100] + ('...' if len(source_text) > 100 else '')).classes('text-sm')
+
+            # Reply content
+            ui.label('返信内容（日本語で入力）').classes('text-xs text-muted font-semibold')
+            reply_input = ui.textarea(
+                placeholder='返信したい内容を日本語で入力...\n例: 了解しました。来週までに対応します。'
+            ).classes('w-full').props('rows=3')
+
+            # Tone selection
+            ui.label('トーン').classes('text-xs text-muted font-semibold')
+            tone = ui.toggle(
+                ['フォーマル', 'ニュートラル', 'カジュアル'],
+                value='ニュートラル'
+            ).classes('w-full')
+
+            ui.button(
+                '返信を作成',
+                icon='reply',
+                on_click=lambda: _do_follow_up(
+                    dialog,
+                    'reply',
+                    f"トーン: {tone.value}\n内容: {reply_input.value}",
+                    on_follow_up
+                )
+            ).classes('btn-primary self-end')
+
+    dialog.open()
+
+
+def _do_follow_up(
+    dialog,
+    action_type: str,
+    content: str,
+    on_follow_up: Optional[Callable[[str, str], None]],
+):
+    """Execute follow-up action and close dialog"""
+    if content and content.strip() and on_follow_up:
+        dialog.close()
+        on_follow_up(action_type, content.strip())

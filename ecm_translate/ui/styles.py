@@ -607,4 +607,53 @@ body {
     color: var(--md-sys-color-on-surface);
     box-shadow: var(--md-sys-elevation-1);
 }
+
+/* === →Japanese Translation Result Card === */
+.jp-result-card {
+    background: var(--md-sys-color-surface);
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: var(--md-sys-shape-corner-large);
+    padding: 1.25rem;
+}
+
+.jp-result-text {
+    line-height: 1.8;
+    word-break: break-word;
+    color: var(--md-sys-color-on-surface);
+}
+
+/* === Explanation Card === */
+.explanation-card {
+    background: var(--md-sys-color-surface-container);
+    border: none;
+    border-radius: var(--md-sys-shape-corner-medium);
+    padding: 1rem;
+}
+
+/* === Follow-up Actions === */
+.follow-up-section {
+    padding: 0.5rem 0;
+}
+
+.follow-up-btn {
+    font-size: 0.8125rem !important;
+    padding: 0.5rem 0.875rem !important;
+    border-color: var(--md-sys-color-outline-variant) !important;
+    color: var(--md-sys-color-on-surface-variant) !important;
+    border-radius: var(--md-sys-shape-corner-medium) !important;
+    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard) !important;
+}
+
+.follow-up-btn:hover {
+    background: var(--md-sys-color-surface-container-high) !important;
+    border-color: var(--md-sys-color-outline) !important;
+    color: var(--md-sys-color-on-surface) !important;
+}
+
+/* === Additional Result Cards (for follow-up responses) === */
+.additional-result {
+    border-left: 3px solid var(--md-sys-color-primary);
+    padding-left: 1rem;
+    margin-top: 1rem;
+}
 """

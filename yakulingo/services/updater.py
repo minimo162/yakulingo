@@ -290,7 +290,7 @@ class AutoUpdater:
         """
         アプリケーションディレクトリを取得
 
-        配布版は %LOCALAPPDATA%\YakuLingo にインストールされる
+        配布版は %LOCALAPPDATA%\\YakuLingo にインストールされる
         """
         if platform.system() == "Windows":
             app_dir = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "YakuLingo"

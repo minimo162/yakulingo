@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Optional, List
 from enum import Enum
 
-from ecm_translate.models.types import TranslationDirection, FileInfo
+from ecm_translate.models.types import TranslationDirection, FileInfo, TextTranslationResult
 
 
 class Tab(Enum):
@@ -40,8 +40,9 @@ class AppState:
 
     # Text tab state
     source_text: str = ""
-    target_text: str = ""
+    target_text: str = ""  # Legacy, kept for compatibility
     text_translating: bool = False
+    text_result: Optional[TextTranslationResult] = None  # New: multiple options
 
     # File tab state
     file_state: FileState = FileState.EMPTY
@@ -66,8 +67,9 @@ class AppState:
             self.direction = TranslationDirection.EN_TO_JP
         else:
             self.direction = TranslationDirection.JP_TO_EN
-        # Clear target text on direction change
+        # Clear translation results on direction change
         self.target_text = ""
+        self.text_result = None
 
     def get_source_label(self) -> str:
         """Get source language label"""

@@ -100,13 +100,43 @@ class TranslationProgress:
 
 
 @dataclass
+class TranslationOption:
+    """
+    A single translation option with text and explanation.
+    Used for text translation with multiple alternatives.
+    """
+    text: str                        # Translated text
+    explanation: str                 # Why this translation, usage context
+    char_count: int = 0              # Character count
+
+    def __post_init__(self):
+        if self.char_count == 0:
+            self.char_count = len(self.text)
+
+
+@dataclass
+class TextTranslationResult:
+    """
+    Result of text translation with multiple options.
+    """
+    source_text: str                         # Original text
+    source_char_count: int                   # Original character count
+    options: list[TranslationOption] = field(default_factory=list)
+    error_message: Optional[str] = None
+
+    def __post_init__(self):
+        if self.source_char_count == 0:
+            self.source_char_count = len(self.source_text)
+
+
+@dataclass
 class TranslationResult:
     """
-    Result of a translation operation.
+    Result of a translation operation (for file translation).
     """
     status: TranslationStatus
     output_path: Optional[Path] = None       # For file translation
-    output_text: Optional[str] = None        # For text translation
+    output_text: Optional[str] = None        # For text translation (legacy)
     blocks_translated: int = 0
     blocks_total: int = 0
     duration_seconds: float = 0.0

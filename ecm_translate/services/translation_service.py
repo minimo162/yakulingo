@@ -8,11 +8,15 @@ import time
 from pathlib import Path
 from typing import Optional, List
 
+import re
+
 from ecm_translate.models.types import (
     TranslationDirection,
     TranslationStatus,
     TranslationProgress,
     TranslationResult,
+    TextTranslationResult,
+    TranslationOption,
     FileInfo,
     ProgressCallback,
 )
@@ -173,6 +177,168 @@ class TranslationService:
                 error_message=str(e),
                 duration_seconds=time.time() - start_time,
             )
+
+    def translate_text_with_options(
+        self,
+        text: str,
+        direction: TranslationDirection,
+        reference_files: Optional[List[Path]] = None,
+    ) -> TextTranslationResult:
+        """
+        Translate text and return multiple options.
+
+        Args:
+            text: Source text to translate
+            direction: Translation direction
+            reference_files: Optional list of reference files to attach
+
+        Returns:
+            TextTranslationResult with multiple options
+        """
+        try:
+            # Load the multi-option prompt template
+            prompt_file = "text_translate_jp_to_en.txt" if direction == TranslationDirection.JP_TO_EN else "text_translate_en_to_jp.txt"
+            prompt_path = self.prompt_builder.prompts_dir / prompt_file if self.prompt_builder.prompts_dir else None
+
+            if prompt_path and prompt_path.exists():
+                template = prompt_path.read_text(encoding='utf-8')
+            else:
+                # Fallback to basic translation
+                result = self.translate_text(text, direction, reference_files)
+                if result.output_text:
+                    return TextTranslationResult(
+                        source_text=text,
+                        source_char_count=len(text),
+                        options=[TranslationOption(
+                            text=result.output_text,
+                            explanation="標準的な翻訳です",
+                        )]
+                    )
+                return TextTranslationResult(
+                    source_text=text,
+                    source_char_count=len(text),
+                    error_message=result.error_message,
+                )
+
+            # Build prompt
+            prompt = template.replace("{input_text}", text)
+
+            # Translate
+            raw_result = self.copilot.translate_single(text, prompt, reference_files)
+
+            # Parse the result
+            options = self._parse_multi_option_result(raw_result)
+
+            if options:
+                return TextTranslationResult(
+                    source_text=text,
+                    source_char_count=len(text),
+                    options=options,
+                )
+            else:
+                # Fallback: treat the whole result as a single option
+                return TextTranslationResult(
+                    source_text=text,
+                    source_char_count=len(text),
+                    options=[TranslationOption(
+                        text=raw_result.strip(),
+                        explanation="翻訳結果です",
+                    )]
+                )
+
+        except Exception as e:
+            return TextTranslationResult(
+                source_text=text,
+                source_char_count=len(text),
+                error_message=str(e),
+            )
+
+    def adjust_translation(
+        self,
+        text: str,
+        adjust_type: str,
+        direction: TranslationDirection,
+    ) -> Optional[TranslationOption]:
+        """
+        Adjust a translation based on user request.
+
+        Args:
+            text: The translation text to adjust
+            adjust_type: 'shorter', 'longer', or custom instruction
+            direction: Translation direction (for context)
+
+        Returns:
+            TranslationOption with adjusted text, or None on failure
+        """
+        try:
+            # Determine which prompt to use
+            if adjust_type == 'shorter':
+                prompt_file = "adjust_shorter.txt"
+            elif adjust_type == 'longer':
+                prompt_file = "adjust_longer.txt"
+            else:
+                prompt_file = "adjust_custom.txt"
+
+            prompt_path = self.prompt_builder.prompts_dir / prompt_file if self.prompt_builder.prompts_dir else None
+
+            if prompt_path and prompt_path.exists():
+                template = prompt_path.read_text(encoding='utf-8')
+            else:
+                # Simple fallback
+                template = f"以下の文を調整してください。指示: {adjust_type}\n\n入力: {{input_text}}"
+
+            # Build prompt
+            prompt = template.replace("{input_text}", text)
+            if adjust_type not in ('shorter', 'longer'):
+                prompt = prompt.replace("{user_instruction}", adjust_type)
+
+            # Get adjusted translation
+            raw_result = self.copilot.translate_single(text, prompt, None)
+
+            # Parse the result
+            option = self._parse_single_option_result(raw_result)
+
+            return option
+
+        except Exception as e:
+            return None
+
+    def _parse_multi_option_result(self, raw_result: str) -> List[TranslationOption]:
+        """Parse multi-option result from Copilot."""
+        options = []
+
+        # Pattern to match [1], [2], [3] sections
+        pattern = r'\[(\d+)\]\s*訳文:\s*(.+?)\s*解説:\s*(.+?)(?=\[\d+\]|$)'
+        matches = re.findall(pattern, raw_result, re.DOTALL)
+
+        for num, text, explanation in matches:
+            text = text.strip()
+            explanation = explanation.strip()
+            if text:
+                options.append(TranslationOption(
+                    text=text,
+                    explanation=explanation,
+                ))
+
+        return options
+
+    def _parse_single_option_result(self, raw_result: str) -> Optional[TranslationOption]:
+        """Parse single option result from adjustment."""
+        # Try to extract 訳文 and 解説
+        text_match = re.search(r'訳文:\s*(.+?)(?=解説:|$)', raw_result, re.DOTALL)
+        explanation_match = re.search(r'解説:\s*(.+)', raw_result, re.DOTALL)
+
+        if text_match:
+            text = text_match.group(1).strip()
+            explanation = explanation_match.group(1).strip() if explanation_match else "調整後の翻訳です"
+            return TranslationOption(text=text, explanation=explanation)
+
+        # Fallback: use the whole result as text
+        text = raw_result.strip()
+        if text:
+            return TranslationOption(text=text, explanation="調整後の翻訳です")
+
+        return None
 
     def translate_file(
         self,

@@ -241,7 +241,6 @@ sans-serif → Meiryo UI
 {
   "reference_files": ["glossary.csv"],
   "output_directory": null,
-  "start_with_windows": false,
   "last_direction": "jp_to_en",
   "last_tab": "text",
   "window_width": 900,

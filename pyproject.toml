@@ -24,6 +24,10 @@ dependencies = [
 ocr = [
     "yomitoku>=0.8.0",  # Includes: torch, torchvision, opencv-python, pypdfium2, etc.
 ]
+# Windows NTLM proxy authentication support
+proxy-auth = [
+    "pywin32>=306; sys_platform == 'win32'",  # Windows認証プロキシ対応
+]
 # Test dependencies
 test = [
     "pytest>=8.0.0",

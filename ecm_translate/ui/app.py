@@ -14,6 +14,7 @@ from ecm_translate.ui.state import AppState, Tab, FileState
 from ecm_translate.ui.styles import COMPLETE_CSS
 from ecm_translate.ui.components.text_panel import create_text_panel
 from ecm_translate.ui.components.file_panel import create_file_panel
+from ecm_translate.ui.components.update_notification import UpdateNotification, check_updates_on_startup
 
 from ecm_translate.models.types import TranslationProgress, TranslationStatus, TextTranslationResult, TranslationOption, HistoryEntry
 from ecm_translate.config.settings import AppSettings, get_default_settings_path, get_default_prompts_dir
@@ -39,6 +40,9 @@ class YakuLingoApp:
         self._main_content = None
         self._tabs_container = None
         self._history_list = None
+
+        # Auto-update
+        self._update_notification: Optional[UpdateNotification] = None
 
     async def connect_copilot(self, silent: bool = False):
         """Connect to Copilot."""
@@ -78,6 +82,18 @@ class YakuLingoApp:
         """Pre-establish Copilot connection in background."""
         await asyncio.sleep(0.5)
         await self.connect_copilot(silent=True)
+
+    async def check_for_updates(self):
+        """Check for updates in background."""
+        await asyncio.sleep(1.0)  # アプリ起動後に少し待ってからチェック
+
+        notification = await check_updates_on_startup(self.settings)
+        if notification:
+            self._update_notification = notification
+            notification.create_update_banner()
+
+            # 設定を保存（最終チェック日時を更新）
+            self.settings.save(get_default_settings_path())
 
     def _refresh_status(self):
         """Refresh status dot only"""
@@ -605,6 +621,7 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
     async def main_page():
         app.create_ui()
         asyncio.create_task(app.preconnect_copilot())
+        asyncio.create_task(app.check_for_updates())
 
     ui.run(
         host=host,

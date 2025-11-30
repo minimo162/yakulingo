@@ -63,6 +63,7 @@ class AppState:
     # Copilot connection
     copilot_connected: bool = False
     copilot_connecting: bool = False
+    copilot_login_required: bool = False  # ログインが必要な状態
     copilot_error: str = ""
 
     # Translation history (in-memory cache, backed by SQLite)

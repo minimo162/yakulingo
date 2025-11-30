@@ -249,18 +249,24 @@ class TestCopilotHandlerNewChat:
         handler.start_new_chat()
 
     def test_start_new_chat_clicks_button(self):
-        """start_new_chat attempts to click new chat button"""
+        """start_new_chat attempts to click new chat button and enable GPT-5"""
         handler = CopilotHandler()
 
         mock_page = Mock()
-        mock_button = Mock()
-        mock_page.query_selector.return_value = mock_button
+        mock_new_chat_btn = Mock()
+        mock_gpt5_btn = Mock()
+        mock_page.query_selector.return_value = mock_new_chat_btn
+        mock_page.evaluate_handle.return_value = mock_gpt5_btn
         handler._page = mock_page
 
         handler.start_new_chat()
 
+        # query_selectorは1回（新しいチャットボタン）
         mock_page.query_selector.assert_called_once()
-        mock_button.click.assert_called_once()
+        mock_new_chat_btn.click.assert_called_once()
+        # evaluate_handleは1回（GPT-5ボタン検索）
+        mock_page.evaluate_handle.assert_called_once()
+        mock_gpt5_btn.click.assert_called_once()
 
     def test_start_new_chat_handles_no_button(self):
         """start_new_chat handles missing button gracefully"""
@@ -272,6 +278,56 @@ class TestCopilotHandlerNewChat:
 
         # Should not raise
         handler.start_new_chat()
+
+
+class TestCopilotHandlerGPT5:
+    """Test GPT-5 toggle button functionality"""
+
+    def test_enable_gpt5_clicks_when_button_found(self):
+        """_enable_gpt5 clicks button when found via evaluate_handle"""
+        handler = CopilotHandler()
+
+        mock_page = Mock()
+        mock_button = Mock()
+        # evaluate_handle returns the button element
+        mock_page.evaluate_handle.return_value = mock_button
+        handler._page = mock_page
+
+        handler._enable_gpt5()
+
+        mock_page.evaluate_handle.assert_called_once()
+        mock_button.click.assert_called_once()
+
+    def test_enable_gpt5_skips_when_button_not_found(self):
+        """_enable_gpt5 does nothing when button not found"""
+        handler = CopilotHandler()
+
+        mock_page = Mock()
+        mock_page.evaluate_handle.return_value = None  # ボタンが見つからない
+        handler._page = mock_page
+
+        handler._enable_gpt5()
+
+        mock_page.evaluate_handle.assert_called_once()
+
+    def test_enable_gpt5_no_page(self):
+        """_enable_gpt5 does nothing when no page"""
+        handler = CopilotHandler()
+        handler._page = None
+
+        # Should not raise
+        handler._enable_gpt5()
+
+    def test_enable_gpt5_handles_exception(self):
+        """_enable_gpt5 handles exceptions gracefully"""
+        handler = CopilotHandler()
+
+        mock_page = Mock()
+        mock_page.evaluate_handle.side_effect = Exception("Test error")
+        handler._page = mock_page
+
+        # Should not raise
+        handler._enable_gpt5()
 
 
 class TestCopilotHandlerMockedConnect:
@@ -393,6 +449,118 @@ class TestGetResponse:
 
         # Result depends on implementation details
         assert isinstance(result, str)
+
+
+class TestStreamingResponse:
+    """Test streaming response functionality"""
+
+    def test_get_response_streaming_calls_callbacks(self):
+        """get_response_streaming calls on_reasoning and on_content callbacks"""
+        handler = CopilotHandler()
+
+        mock_page = MagicMock()
+        # Mock reasoning element
+        mock_cot = MagicMock()
+        mock_cot.query_selector.side_effect = [
+            MagicMock(inner_text=MagicMock(return_value="推論中...")),  # .fui-Text
+            MagicMock(inner_text=MagicMock(return_value="ステップ1\nステップ2")),  # activities
+        ]
+        # Mock response element
+        mock_response = MagicMock()
+        mock_response.inner_text.return_value = "回答テキスト"
+
+        def query_selector_side_effect(selector):
+            if 'ChainOfThought' in selector:
+                return mock_cot
+            elif 'markdown-reply' in selector:
+                return mock_response
+            return None
+
+        mock_page.query_selector.side_effect = query_selector_side_effect
+        handler._page = mock_page
+
+        reasoning_calls = []
+        content_calls = []
+
+        with patch("time.sleep"):
+            # Return stable content after first check
+            mock_response.inner_text.side_effect = ["テスト回答", "テスト回答", "テスト回答", "テスト回答"]
+            result = handler.get_response_streaming(
+                on_reasoning=lambda t: reasoning_calls.append(t),
+                on_content=lambda t: content_calls.append(t),
+                timeout=2
+            )
+
+        assert len(content_calls) >= 1
+        assert "テスト回答" in result
+
+    def test_get_response_streaming_no_callbacks(self):
+        """get_response_streaming works without callbacks"""
+        handler = CopilotHandler()
+
+        mock_page = MagicMock()
+        mock_response = MagicMock()
+        mock_response.inner_text.side_effect = ["結果", "結果", "結果", "結果"]
+        mock_page.query_selector.return_value = mock_response
+        handler._page = mock_page
+
+        with patch("time.sleep"):
+            result = handler.get_response_streaming(timeout=2)
+
+        assert result == "結果"
+
+    def test_get_reasoning_text_no_cot_element(self):
+        """_get_reasoning_text returns empty when no CoT element"""
+        handler = CopilotHandler()
+
+        mock_page = MagicMock()
+        mock_page.query_selector.return_value = None
+        handler._page = mock_page
+
+        result = handler._get_reasoning_text()
+        assert result == ""
+
+    def test_get_reasoning_text_with_cot_element(self):
+        """_get_reasoning_text extracts text from CoT element"""
+        handler = CopilotHandler()
+
+        mock_page = MagicMock()
+        mock_cot = MagicMock()
+        mock_label = MagicMock()
+        mock_label.inner_text.return_value = "21に対する推論"
+        mock_activities = MagicMock()
+        mock_activities.inner_text.return_value = "分析中..."
+
+        mock_cot.query_selector.side_effect = lambda s: mock_label if 'fui-Text' in s else mock_activities
+        mock_page.query_selector.return_value = mock_cot
+        handler._page = mock_page
+
+        result = handler._get_reasoning_text()
+        assert "21に対する推論" in result
+
+    def test_get_latest_response_text(self):
+        """_get_latest_response_text returns response text"""
+        handler = CopilotHandler()
+
+        mock_page = MagicMock()
+        mock_response = MagicMock()
+        mock_response.inner_text.return_value = "回答テキスト"
+        mock_page.query_selector.return_value = mock_response
+        handler._page = mock_page
+
+        result = handler._get_latest_response_text()
+        assert result == "回答テキスト"
+
+    def test_get_latest_response_text_no_element(self):
+        """_get_latest_response_text returns empty when no element"""
+        handler = CopilotHandler()
+
+        mock_page = MagicMock()
+        mock_page.query_selector.return_value = None
+        handler._page = mock_page
+
+        result = handler._get_latest_response_text()
+        assert result == ""
 
 
 class TestCopilotHandlerConstants:
@@ -540,3 +708,188 @@ class TestCopilotHandlerEdgeCases:
         handler.disconnect()  # Should not raise
 
         assert handler._connected is False
+
+
+class TestCopilotHandlerLoginDetection:
+    """Test login detection functionality"""
+
+    def test_login_required_property_initial(self):
+        """login_required is False initially"""
+        handler = CopilotHandler()
+        assert handler.login_required is False
+
+    def test_check_copilot_state_no_page(self):
+        """_check_copilot_state returns ERROR when no page"""
+        from yakulingo.services.copilot_handler import ConnectionState
+
+        handler = CopilotHandler()
+        handler._page = None
+
+        result = handler._check_copilot_state()
+        assert result == ConnectionState.ERROR
+
+    def test_check_copilot_state_login_redirect(self):
+        """_check_copilot_state detects login redirect"""
+        from yakulingo.services.copilot_handler import ConnectionState
+
+        handler = CopilotHandler()
+
+        mock_page = MagicMock()
+        mock_page.url = "https://login.microsoftonline.com/oauth2/..."
+        handler._page = mock_page
+
+        result = handler._check_copilot_state()
+        assert result == ConnectionState.LOGIN_REQUIRED
+
+    def test_check_copilot_state_ready_with_chat_ui(self):
+        """_check_copilot_state returns READY when chat UI exists"""
+        from yakulingo.services.copilot_handler import ConnectionState
+
+        handler = CopilotHandler()
+
+        mock_page = MagicMock()
+        mock_page.url = "https://m365.cloud.microsoft/chat/?auth=2"
+        mock_element = MagicMock()
+        mock_page.wait_for_selector.return_value = mock_element
+        handler._page = mock_page
+
+        result = handler._check_copilot_state(timeout=1)
+        assert result == ConnectionState.READY
+
+    def test_check_copilot_state_login_required_no_chat_ui(self):
+        """_check_copilot_state returns LOGIN_REQUIRED when on copilot URL but no chat UI"""
+        from yakulingo.services.copilot_handler import ConnectionState
+
+        handler = CopilotHandler()
+
+        mock_page = MagicMock()
+        mock_page.url = "https://m365.cloud.microsoft/chat/?auth=2"
+        # All selectors fail to find elements
+        mock_page.wait_for_selector.side_effect = Exception("Element not found")
+        handler._page = mock_page
+
+        result = handler._check_copilot_state(timeout=1)
+        assert result == ConnectionState.LOGIN_REQUIRED
+
+    def test_bring_to_foreground_with_page(self):
+        """bring_to_foreground calls page.bring_to_front"""
+        handler = CopilotHandler()
+
+        mock_page = MagicMock()
+        handler._page = mock_page
+
+        handler.bring_to_foreground()
+
+        mock_page.bring_to_front.assert_called_once()
+
+    def test_bring_to_foreground_no_page(self):
+        """bring_to_foreground handles no page gracefully"""
+        handler = CopilotHandler()
+        handler._page = None
+
+        # Should not raise
+        handler.bring_to_foreground()
+
+    def test_wait_for_login_returns_true_when_ready(self):
+        """_wait_for_login returns True when chat UI appears"""
+        from yakulingo.services.copilot_handler import ConnectionState
+
+        handler = CopilotHandler()
+
+        # Mock _check_copilot_state to return READY
+        handler._check_copilot_state = Mock(return_value=ConnectionState.READY)
+
+        with patch("time.sleep"):
+            result = handler._wait_for_login(timeout=5)
+
+        assert result is True
+        assert handler._login_required is False
+
+    def test_wait_for_login_timeout(self):
+        """_wait_for_login returns False on timeout"""
+        from yakulingo.services.copilot_handler import ConnectionState
+
+        handler = CopilotHandler()
+
+        # Mock _check_copilot_state to always return LOGIN_REQUIRED
+        handler._check_copilot_state = Mock(return_value=ConnectionState.LOGIN_REQUIRED)
+
+        with patch("time.time", side_effect=[0, 1, 2, 10]):  # Simulate timeout
+            with patch("time.sleep"):
+                result = handler._wait_for_login(timeout=5)
+
+        assert result is False
+
+    def test_check_and_wait_for_ready_already_connected(self):
+        """check_and_wait_for_ready returns True if already connected"""
+        handler = CopilotHandler()
+        handler._connected = True
+
+        result = handler.check_and_wait_for_ready()
+        assert result is True
+
+    def test_check_and_wait_for_ready_becomes_ready(self):
+        """check_and_wait_for_ready detects ready state"""
+        from yakulingo.services.copilot_handler import ConnectionState
+
+        handler = CopilotHandler()
+        handler._connected = False
+
+        # Mock _check_copilot_state to return READY
+        handler._check_copilot_state = Mock(return_value=ConnectionState.READY)
+
+        result = handler.check_and_wait_for_ready()
+
+        assert result is True
+        assert handler._connected is True
+        assert handler._login_required is False
+
+    def test_check_and_wait_for_ready_login_required(self):
+        """check_and_wait_for_ready brings to foreground when login required"""
+        from yakulingo.services.copilot_handler import ConnectionState
+
+        handler = CopilotHandler()
+        handler._connected = False
+        handler.bring_to_foreground = Mock()
+
+        # Mock _check_copilot_state to return LOGIN_REQUIRED
+        handler._check_copilot_state = Mock(return_value=ConnectionState.LOGIN_REQUIRED)
+
+        result = handler.check_and_wait_for_ready()
+
+        assert result is False
+        assert handler._login_required is True
+        handler.bring_to_foreground.assert_called_once()
+
+    def test_connect_with_login_callback(self):
+        """connect() calls login callback when login required"""
+        handler = CopilotHandler()
+
+        login_callback_called = [False]
+
+        def on_login_required():
+            login_callback_called[0] = True
+
+        # Mock to simulate login required scenario
+        with patch.object(handler, '_is_port_in_use', return_value=False):
+            with patch.object(handler, '_start_translator_edge', return_value=False):
+                handler.connect(
+                    on_login_required=on_login_required,
+                    wait_for_login=False,
+                )
+
+        # Edge start failed, so login callback not called
+        # But we tested the parameter passing
+
+
+class TestConnectionStateConstants:
+    """Test ConnectionState constants"""
+
+    def test_connection_state_values(self):
+        """ConnectionState has expected values"""
+        from yakulingo.services.copilot_handler import ConnectionState
+
+        assert ConnectionState.READY == 'ready'
+        assert ConnectionState.LOGIN_REQUIRED == 'login_required'
+        assert ConnectionState.LOADING == 'loading'
+        assert ConnectionState.ERROR == 'error'

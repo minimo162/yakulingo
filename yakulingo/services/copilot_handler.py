@@ -30,6 +30,14 @@ def _get_playwright():
     return _playwright, _sync_playwright
 
 
+class ConnectionState:
+    """Connection state constants"""
+    READY = 'ready'              # チャットUI表示済み、使用可能
+    LOGIN_REQUIRED = 'login_required'  # ログインが必要
+    LOADING = 'loading'          # 読み込み中
+    ERROR = 'error'              # エラー
+
+
 class CopilotHandler:
     """
     Handles communication with M365 Copilot via Playwright.
@@ -43,6 +51,7 @@ class CopilotHandler:
         self._context = None
         self._page = None
         self._connected = False
+        self._login_required = False  # ログインが必要な状態かどうか
         self.cdp_port = 9333  # Dedicated port for translator
         self.profile_dir = None
         self.edge_process = None
@@ -51,6 +60,11 @@ class CopilotHandler:
     def is_connected(self) -> bool:
         """Check if connected to Copilot"""
         return self._connected
+
+    @property
+    def login_required(self) -> bool:
+        """Check if login is required"""
+        return self._login_required
 
     def _find_edge_exe(self) -> Optional[str]:
         """Find Edge executable"""
@@ -156,22 +170,31 @@ class CopilotHandler:
     def connect(
         self,
         on_progress: Optional[Callable[[str], None]] = None,
+        on_login_required: Optional[Callable[[], None]] = None,
+        wait_for_login: bool = True,
+        login_timeout: int = 300,
     ) -> bool:
         """
         Connect to Copilot.
         Launches browser and waits for ready state.
+        If login is required, brings Edge to foreground and optionally waits.
 
         NOTE: Called automatically on app startup (background task).
         UI shows "Connecting to Copilot..." until connected.
 
         Args:
             on_progress: Callback for connection status updates
+            on_login_required: Callback when login is required (Edge brought to foreground)
+            wait_for_login: If True, wait for user to complete login
+            login_timeout: Timeout for waiting for login (seconds)
 
         Returns:
             True if connected successfully
         """
         if self._connected:
             return True
+
+        self._login_required = False
 
         def report(msg: str):
             if on_progress:
@@ -216,34 +239,176 @@ class CopilotHandler:
                 copilot_page.goto(self.COPILOT_URL)
 
             self._page = copilot_page
-            self._page.bring_to_front()
 
-            # Wait for Copilot to be ready
-            report("Waiting for Copilot ready...")
-            self._wait_for_copilot_ready()
+            # Check Copilot state (login required?)
+            report("Checking Copilot state...")
+            state = self._check_copilot_state(timeout=5)
 
-            self._connected = True
-            report("Connected to Copilot")
-            return True
+            if state == ConnectionState.READY:
+                # Already logged in, ready to use
+                self._connected = True
+                self._login_required = False
+                report("Connected to Copilot")
+                return True
+
+            elif state == ConnectionState.LOGIN_REQUIRED:
+                # Login required - bring Edge to foreground
+                self._login_required = True
+                report("Login required - please sign in to Copilot")
+                self._page.bring_to_front()
+
+                # Notify caller that login is required
+                if on_login_required:
+                    on_login_required()
+
+                if wait_for_login:
+                    # Wait for user to complete login
+                    report("Waiting for login...")
+                    if self._wait_for_login(timeout=login_timeout):
+                        self._connected = True
+                        self._login_required = False
+                        report("Connected to Copilot")
+                        return True
+                    else:
+                        report("Login timeout")
+                        return False
+                else:
+                    # Don't wait, return False but keep browser open
+                    return False
+            else:
+                # Error state
+                report("Failed to determine Copilot state")
+                return False
 
         except Exception as e:
             report(f"Connection failed: {e}")
             self._connected = False
             return False
 
+    def _wait_for_login(self, timeout: int = 300) -> bool:
+        """
+        Wait for user to complete login.
+        Polls for chat UI to appear.
+
+        Args:
+            timeout: Maximum wait time in seconds
+
+        Returns:
+            True if login completed successfully
+        """
+        start_time = time.time()
+        check_interval = 2  # Check every 2 seconds
+
+        while time.time() - start_time < timeout:
+            state = self._check_copilot_state(timeout=3)
+            if state == ConnectionState.READY:
+                self._login_required = False
+                return True
+
+            time.sleep(check_interval)
+
+        return False
+
+    def check_and_wait_for_ready(self, timeout: int = 60) -> bool:
+        """
+        Check if Copilot is ready, wait if login is in progress.
+        Can be called to re-check after login notification.
+
+        Returns:
+            True if ready, False if still needs login or error
+        """
+        if self._connected:
+            return True
+
+        state = self._check_copilot_state(timeout=5)
+
+        if state == ConnectionState.READY:
+            self._connected = True
+            self._login_required = False
+            return True
+
+        if state == ConnectionState.LOGIN_REQUIRED:
+            # Still need login, bring to foreground again
+            self._login_required = True
+            self.bring_to_foreground()
+            return False
+
+        return False
+
+    def _check_copilot_state(self, timeout: int = 5) -> str:
+        """
+        Copilotの状態を検出（逆検出方式）
+
+        チャットUIが表示されているかどうかで判断する。
+        ログインページのURL検出に依存しないため、URLが変更されても動作する。
+
+        Args:
+            timeout: チャットUI検出のタイムアウト（秒）
+
+        Returns:
+            ConnectionState.READY - チャットUI表示済み、使用可能
+            ConnectionState.LOGIN_REQUIRED - ログインが必要（リダイレクトされた or チャットUIなし）
+            ConnectionState.LOADING - まだ読み込み中
+            ConnectionState.ERROR - その他のエラー
+        """
+        if not self._page:
+            return ConnectionState.ERROR
+
+        try:
+            current_url = self._page.url
+
+            # 1. Copilot URLにいるか確認
+            if 'm365.cloud.microsoft' not in current_url:
+                # リダイレクトされた = ログインが必要
+                return ConnectionState.LOGIN_REQUIRED
+
+            # 2. チャットUIが存在するか確認（短いタイムアウト）
+            # 実際のCopilot HTML: <span role="combobox" contenteditable="true" id="m365-chat-editor-target-element" ...>
+            chat_selectors = [
+                '#m365-chat-editor-target-element',  # 最も確実 - Copilotのチャット入力ID
+                '[data-lexical-editor="true"]',      # Lexicalエディタの属性
+                '[contenteditable="true"]',          # 一般的なcontenteditable（要素タイプ非依存）
+            ]
+
+            for selector in chat_selectors:
+                try:
+                    element = self._page.wait_for_selector(selector, timeout=timeout * 1000)
+                    if element:
+                        return ConnectionState.READY
+                except Exception:
+                    continue
+
+            # 3. Copilot URLにいるがチャットUIがない
+            # = 埋め込みログイン画面、または読み込み中
+            return ConnectionState.LOGIN_REQUIRED
+
+        except Exception as e:
+            print(f"Error checking Copilot state: {e}")
+            return ConnectionState.ERROR
+
+    def bring_to_foreground(self) -> None:
+        """Edgeウィンドウを前面に表示"""
+        if self._page:
+            try:
+                self._page.bring_to_front()
+            except Exception:
+                pass
+
     def _wait_for_copilot_ready(self, timeout: int = 60):
         """Wait for Copilot chat interface to be ready"""
         try:
             # Wait for the message input area
+            # 実際のCopilot HTML: <span role="combobox" contenteditable="true" id="m365-chat-editor-target-element" ...>
             self._page.wait_for_selector(
-                'div[data-testid="chat-input"], textarea[placeholder*="message"], div[contenteditable="true"]',
+                '#m365-chat-editor-target-element, [data-lexical-editor="true"], [contenteditable="true"]',
                 timeout=timeout * 1000
             )
         except Exception:
             # Try alternative selectors
             try:
+                # 実際のCopilot HTML: <button id="new-chat-button" data-testid="newChatButton" aria-label="新しいチャット">
                 self._page.wait_for_selector(
-                    'button:has-text("New chat"), button:has-text("新しいチャット")',
+                    '#new-chat-button, [data-testid="newChatButton"], button[aria-label="新しいチャット"]',
                     timeout=10000
                 )
             except Exception:
@@ -340,7 +505,8 @@ class CopilotHandler:
         """Send message to Copilot (sync)"""
         try:
             # Find input area
-            input_selector = 'div[data-testid="chat-input"], textarea, div[contenteditable="true"]'
+            # 実際のCopilot HTML: <span role="combobox" contenteditable="true" id="m365-chat-editor-target-element" ...>
+            input_selector = '#m365-chat-editor-target-element, [data-lexical-editor="true"], [contenteditable="true"]'
             input_elem = self._page.wait_for_selector(input_selector, timeout=10000)
 
             if input_elem:
@@ -348,8 +514,9 @@ class CopilotHandler:
                 input_elem.fill(message)
 
                 # Find and click send button
+                # 実際のCopilot HTML: <button type="submit" aria-label="送信" class="... fai-SendButton ...">
                 send_button = self._page.query_selector(
-                    'button[data-testid="send-button"], button[aria-label*="Send"], button[aria-label*="送信"]'
+                    '.fai-SendButton, button[type="submit"][aria-label="送信"], button[aria-label*="Send"], button[aria-label*="送信"]'
                 )
                 if send_button:
                     send_button.click()
@@ -379,8 +546,9 @@ class CopilotHandler:
 
             while max_wait > 0:
                 # Get the latest message
+                # 実際のCopilot HTML: <div data-testid="markdown-reply" data-message-type="Chat">
                 response_elem = self._page.query_selector(
-                    'div[data-testid="message-content"]:last-child, div.message-content:last-child'
+                    '[data-testid="markdown-reply"]:last-of-type, div[data-message-type="Chat"]:last-of-type'
                 )
 
                 if response_elem:
@@ -407,6 +575,121 @@ class CopilotHandler:
         """Get response from Copilot (async wrapper)"""
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, self._get_response, timeout)
+
+    def get_response_streaming(
+        self,
+        on_reasoning: Optional[Callable[[str], None]] = None,
+        on_content: Optional[Callable[[str], None]] = None,
+        timeout: int = 120
+    ) -> str:
+        """
+        Copilotの回答をストリーミングで取得。
+        推論プロセスと回答テキストをリアルタイムでコールバック経由で通知。
+
+        Args:
+            on_reasoning: 推論ステップ更新時に呼ばれるコールバック
+            on_content: 回答テキスト更新時に呼ばれるコールバック
+            timeout: タイムアウト（秒）
+
+        Returns:
+            最終的な回答テキスト
+
+        実際のCopilot HTML:
+        - 推論要素: <div class="fai-ChainOfThought ...">
+        - 回答要素: <div data-testid="markdown-reply" data-message-type="Chat">
+        """
+        try:
+            time.sleep(1)  # Initial wait for response to start
+
+            max_wait = timeout
+            last_reasoning = ""
+            last_content = ""
+            stable_count = 0
+
+            while max_wait > 0:
+                # 1. 推論要素をチェック（Chain of Thought）
+                if on_reasoning:
+                    reasoning_text = self._get_reasoning_text()
+                    if reasoning_text and reasoning_text != last_reasoning:
+                        on_reasoning(reasoning_text)
+                        last_reasoning = reasoning_text
+
+                # 2. 回答テキストをチェック
+                current_content = self._get_latest_response_text()
+
+                if current_content:
+                    if current_content != last_content:
+                        if on_content:
+                            on_content(current_content)
+                        last_content = current_content
+                        stable_count = 0
+                    else:
+                        stable_count += 1
+                        # テキストが安定したら完了
+                        if stable_count >= 3:
+                            return current_content
+
+                time.sleep(0.5)  # より頻繁にポーリング
+                max_wait -= 0.5
+
+            return last_content
+
+        except Exception as e:
+            print(f"Error getting streaming response: {e}")
+            return ""
+
+    def _get_reasoning_text(self) -> str:
+        """
+        Chain of Thought（推論）要素からテキストを取得。
+
+        Returns:
+            推論ステップのテキスト（例: "分析中の財務会計の概念フレームワーク"）
+        """
+        try:
+            # 推論要素を探す
+            cot_elem = self._page.query_selector('.fai-ChainOfThought')
+            if not cot_elem:
+                return ""
+
+            # 推論のステップテキストを取得
+            # ボタン内のテキスト（例: "21に対する推論"）と
+            # アクティビティパネル内のステップを結合
+            reasoning_parts = []
+
+            # メインのラベル
+            label_elem = cot_elem.query_selector('.fui-Text')
+            if label_elem:
+                reasoning_parts.append(label_elem.inner_text())
+
+            # アクティビティパネル内のステップ
+            activities_elem = cot_elem.query_selector('.fai-ChainOfThought__activitiesPanel')
+            if activities_elem:
+                # アコーディオン内の各ステップを取得
+                step_texts = activities_elem.inner_text()
+                if step_texts:
+                    reasoning_parts.append(step_texts)
+
+            return "\n".join(reasoning_parts).strip()
+
+        except Exception:
+            return ""
+
+    def _get_latest_response_text(self) -> str:
+        """
+        最新の回答テキストを取得。
+
+        Returns:
+            回答テキスト
+        """
+        try:
+            response_elem = self._page.query_selector(
+                '[data-testid="markdown-reply"]:last-of-type, div[data-message-type="Chat"]:last-of-type'
+            )
+            if response_elem:
+                return response_elem.inner_text()
+            return ""
+        except Exception:
+            return ""
 
     async def _attach_file_async(self, file_path: Path) -> None:
         """Attach file to Copilot chat (async)"""
@@ -445,11 +728,58 @@ class CopilotHandler:
             return
 
         try:
+            # 実際のCopilot HTML: <button id="new-chat-button" data-testid="newChatButton" aria-label="新しいチャット">
             new_chat_btn = self._page.query_selector(
-                'button:has-text("New chat"), button:has-text("新しいチャット")'
+                '#new-chat-button, [data-testid="newChatButton"], button[aria-label="新しいチャット"]'
             )
             if new_chat_btn:
                 new_chat_btn.click()
                 time.sleep(1)
+                # 新しいチャット開始後、GPT-5を有効化
+                self._enable_gpt5()
         except Exception:
+            pass
+
+    def _enable_gpt5(self) -> None:
+        """
+        GPT-5トグルボタンを有効化する。
+        ボタンが押されていない状態（aria-pressed="false"）の場合のみクリック。
+
+        注意: ボタンのテキストは頻繁に変更される可能性があり、
+        将来的にGPT-5がデフォルトになりボタン自体がなくなる可能性もある。
+        そのため、テキストに依存しないセレクタを使用し、
+        ボタンが存在しない場合は静かにスキップする。
+
+        実際のCopilot HTML:
+        - 押されていない: <button aria-pressed="false" class="... fui-ToggleButton ...">Try GPT-5</button>
+        - 押されている: <button aria-pressed="true" class="... fui-ToggleButton ...">GPT-5 On</button>
+        - 新しいチャットボタンの左隣のdiv内に配置
+        """
+        if not self._page:
+            return
+
+        try:
+            # 新しいチャットボタンの左隣にあるトグルボタンを探す
+            # JavaScript で親要素内のトグルボタンを探す
+            gpt5_btn = self._page.evaluate_handle('''() => {
+                const newChatBtn = document.querySelector('#new-chat-button, [data-testid="newChatButton"]');
+                if (!newChatBtn) return null;
+
+                // 親要素を遡ってトグルボタンを探す
+                let parent = newChatBtn.parentElement;
+                for (let i = 0; i < 3 && parent; i++) {
+                    const toggleBtn = parent.querySelector('button.fui-ToggleButton[aria-pressed="false"]');
+                    if (toggleBtn && toggleBtn !== newChatBtn) {
+                        return toggleBtn;
+                    }
+                    parent = parent.parentElement;
+                }
+                return null;
+            }''')
+
+            if gpt5_btn:
+                gpt5_btn.click()
+                time.sleep(0.5)
+        except Exception:
+            # ボタンが存在しない場合は静かにスキップ（オプション機能）
             pass

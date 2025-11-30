@@ -243,26 +243,6 @@ body {
     color: var(--md-sys-color-on-surface-variant);
 }
 
-/* === Auto-detect Hint === */
-.auto-detect-hint {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-size: 0.75rem;
-    color: var(--md-sys-color-on-surface-variant);
-    line-height: 1.5;
-}
-
-.auto-detect-hint .icon {
-    color: var(--md-sys-color-on-surface-variant);
-    animation: arrowFlow 2.4s ease infinite;
-}
-
-@keyframes arrowFlow {
-    0%, 100% { opacity: 0.5; }
-    50% { opacity: 1; }
-}
-
 /* === Swap Button === */
 .swap-btn {
     width: 2.5rem;

@@ -33,14 +33,6 @@ def _get_tone_icon(explanation: str) -> str:
     return 'translate'
 
 
-def _get_auto_detect_hint(direction: TranslationDirection) -> str:
-    """Get auto-detect hint message based on direction"""
-    if direction == TranslationDirection.JP_TO_EN:
-        return 'AI detects language: Japanese -> English, others -> Japanese'
-    else:
-        return 'AI detects language: English -> Japanese, others -> English'
-
-
 def create_text_panel(
     state: AppState,
     on_translate: Callable[[], None],
@@ -106,11 +98,6 @@ def create_text_panel(
                             btn.props('loading disable')
                         elif not state.can_translate():
                             btn.props('disable')
-
-        # Auto-detect hint (Nani-style)
-        with ui.row().classes('auto-detect-hint justify-center px-4'):
-            ui.icon('swap_horiz').classes('text-lg icon')
-            ui.label(_get_auto_detect_hint(state.direction))
 
         # Results section
         if state.text_result and state.text_result.options:

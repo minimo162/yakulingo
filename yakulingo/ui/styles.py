@@ -10,18 +10,18 @@ COMPLETE_CSS = """
     /* Primary - warm coral */
     --md-sys-color-primary: #C04000;
     --md-sys-color-on-primary: #FFFFFF;
-    --md-sys-color-primary-container: #FFDBD0;
+    --md-sys-color-primary-container: #FFEEE8;
     --md-sys-color-on-primary-container: #390C00;
 
-    /* Surface - Nani-inspired light palette */
+    /* Surface - Nani-inspired warm light palette */
     --md-sys-color-surface: #FFFFFF;
-    --md-sys-color-surface-dim: #F4F6F8;
-    --md-sys-color-surface-container: #F0F2F4;
-    --md-sys-color-surface-container-high: #E8EAEC;
+    --md-sys-color-surface-dim: #FFF9F5;
+    --md-sys-color-surface-container: #FFF5F0;
+    --md-sys-color-surface-container-high: #FFEDE5;
     --md-sys-color-on-surface: #1A1C1E;
     --md-sys-color-on-surface-variant: #5C5F62;
-    --md-sys-color-outline: #9CA3AF;
-    --md-sys-color-outline-variant: #E5E7EB;
+    --md-sys-color-outline: #B8A8A0;
+    --md-sys-color-outline-variant: #F0E8E4;
 
     /* States */
     --md-sys-color-error: #BA1A1A;
@@ -60,8 +60,8 @@ COMPLETE_CSS = """
 body {
     font-family: system-ui, -apple-system, 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif;
     background-color: var(--md-sys-color-surface-dim);
-    background-image: radial-gradient(circle, rgba(0,0,0,0.03) 1px, transparent 1px);
-    background-size: 20px 20px;
+    background-image: radial-gradient(circle, rgba(192,64,0,0.02) 1px, transparent 1px);
+    background-size: 24px 24px;
     background-attachment: fixed;
     color: var(--md-sys-color-on-surface);
     line-height: 1.5;

@@ -303,12 +303,17 @@ class YakuLingoApp:
 
     async def _translate_text(self):
         """Translate text with multiple options."""
+        import time
+
         if not self.translation_service:
             ui.notify('Not connected', type='warning')
             return
 
         source_text = self.state.source_text
         reference_files = self.state.reference_files or None
+
+        # Track translation time
+        start_time = time.time()
 
         # Start translation in background
         translation_task = asyncio.create_task(
@@ -323,10 +328,15 @@ class YakuLingoApp:
         # Update UI
         self.state.text_translating = True
         self.state.text_result = None
+        self.state.text_translation_elapsed_time = None
         self._refresh_content()
 
         try:
             result = await translation_task
+
+            # Calculate elapsed time
+            elapsed_time = time.time() - start_time
+            self.state.text_translation_elapsed_time = elapsed_time
 
             if result and result.options:
                 self.state.text_result = result

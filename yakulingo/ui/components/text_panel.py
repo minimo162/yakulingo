@@ -90,6 +90,8 @@ def create_text_panel(
     - Japanese input → English: Multiple options with length adjustment
     - Other input → Japanese: Single translation + follow-up actions
     """
+    # Get elapsed time for display
+    elapsed_time = state.text_translation_elapsed_time
 
     with ui.column().classes('flex-1 w-full gap-5 animate-in'):
         # Main card container (Nani-style)
@@ -156,6 +158,7 @@ def create_text_panel(
                     state.source_text,
                     on_copy,
                     on_follow_up,
+                    elapsed_time,
                 )
             else:
                 # →English: Multiple options with adjustment
@@ -163,6 +166,7 @@ def create_text_panel(
                     state.text_result,
                     on_copy,
                     on_adjust,
+                    elapsed_time,
                 )
         elif state.text_translating:
             _render_loading()
@@ -181,17 +185,20 @@ def _render_results_to_en(
     result: TextTranslationResult,
     on_copy: Callable[[str], None],
     on_adjust: Optional[Callable[[str, str], None]],
+    elapsed_time: Optional[float] = None,
 ):
     """Render →English results: multiple options with length adjustment"""
 
     with ui.element('div').classes('result-section w-full'):
-        # Result header with success character
+        # Result header with success character and elapsed time
         with ui.row().classes('result-header justify-between items-center'):
             with ui.row().classes('items-center gap-2'):
                 ui.label('翻訳結果').classes('font-semibold')
             with ui.element('div').classes('result-count-badge'):
                 ui.label('🍎').classes('emoji')
-                ui.label(f'{len(result.options)} パターン考えました')
+                # Show pattern count with elapsed time
+                time_str = f" ({elapsed_time:.1f}秒)" if elapsed_time else ""
+                ui.label(f'{len(result.options)} パターン考えました{time_str}')
 
         # Options list
         with ui.column().classes('w-full p-3 gap-3'):
@@ -210,6 +217,7 @@ def _render_results_to_jp(
     source_text: str,
     on_copy: Callable[[str], None],
     on_follow_up: Optional[Callable[[str, str], None]],
+    elapsed_time: Optional[float] = None,
 ):
     """Render →Japanese results: single translation with detailed explanation + follow-up actions"""
 
@@ -219,9 +227,13 @@ def _render_results_to_jp(
     option = result.options[0]  # Single option for →jp
 
     with ui.element('div').classes('result-section w-full'):
-        # Result header
+        # Result header with elapsed time
         with ui.row().classes('result-header justify-between items-center'):
-            ui.label('翻訳結果').classes('font-semibold')
+            with ui.row().classes('items-center gap-2'):
+                ui.label('翻訳結果').classes('font-semibold')
+                # Show elapsed time if available
+                if elapsed_time:
+                    ui.label(f'({elapsed_time:.1f}秒)').classes('text-xs text-muted font-normal')
             ui.label(f'{option.char_count} 文字').classes('text-xs text-muted font-normal')
 
         # Main translation card

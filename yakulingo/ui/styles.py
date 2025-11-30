@@ -156,6 +156,12 @@ body {
     color: var(--md-sys-color-on-primary-container);
 }
 
+.nav-item.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
 /* === History Section === */
 .sidebar-history {
     display: flex;

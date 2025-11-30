@@ -198,8 +198,12 @@ class YakuLingoApp:
     def _create_nav_item(self, label: str, icon: str, tab: Tab):
         """Create a navigation item"""
         is_active = self.state.current_tab == tab
-        classes = 'nav-item active' if is_active else 'nav-item'
         disabled = self.state.is_translating()
+        classes = 'nav-item'
+        if is_active:
+            classes += ' active'
+        if disabled:
+            classes += ' disabled'
 
         def on_click():
             if not disabled and self.state.current_tab != tab:
@@ -211,8 +215,6 @@ class YakuLingoApp:
         with ui.button(on_click=on_click).props('flat no-caps align=left').classes(classes):
             ui.icon(icon).classes('text-lg')
             ui.label(label).classes('flex-1')
-        if disabled:
-            pass  # Can add disabled styling if needed
 
     def _create_history_item(self, entry: HistoryEntry):
         """Create a history item with hover delete button"""

@@ -238,7 +238,7 @@ class ExcelProcessor(FileProcessor):
                 # === Chart Titles and Labels ===
                 for chart_idx, chart in enumerate(sheet.charts):
                     try:
-                        api_chart = chart.api[1]  # Access the chart object
+                        api_chart = chart.api[1]  # xlwings COM object (1-indexed)
 
                         # Chart title
                         if api_chart.HasTitle:

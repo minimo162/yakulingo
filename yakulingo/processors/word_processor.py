@@ -289,7 +289,7 @@ class WordProcessor(FileProcessor):
         )
 
     def extract_text_blocks(self, file_path: Path) -> Iterator[TextBlock]:
-        """Extract text from paragraphs, tables"""
+        """Extract text from paragraphs, tables, and textboxes (.docx only)"""
         doc = Document(file_path)
 
         # === Body Paragraphs ===

@@ -272,7 +272,6 @@ class YakuLingoApp:
 
                 # Delete button (visible on hover via CSS)
                 def delete_entry(e):
-                    e.args  # Stop propagation by accessing args
                     self.state.delete_history_entry(entry)
                     self._refresh_history()
 

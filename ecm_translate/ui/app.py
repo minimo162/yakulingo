@@ -247,6 +247,7 @@ class YakuLingoApp:
                         on_cancel=self._cancel,
                         on_download=self._download,
                         on_reset=self._reset,
+                        on_language_change=self._on_language_change,
                     )
 
         self._main_content = main_content
@@ -343,6 +344,11 @@ class YakuLingoApp:
         self.state.text_translating = False
         self._refresh_content()
 
+    def _on_language_change(self, lang: str):
+        """Handle output language change for file translation"""
+        self.state.file_output_language = lang
+        self._refresh_content()
+
     def _select_file(self, file_path: Path):
         """Select file for translation"""
         if not self.translation_service:
@@ -396,6 +402,7 @@ class YakuLingoApp:
                     self.state.selected_file,
                     self.state.reference_files or None,
                     on_progress,
+                    output_language=self.state.file_output_language,
                 )
             )
 

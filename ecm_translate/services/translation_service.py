@@ -47,9 +47,16 @@ class BatchTranslator:
         blocks: list,
         reference_files: Optional[List[Path]] = None,
         on_progress: Optional[ProgressCallback] = None,
+        output_language: str = "en",
     ) -> dict[str, str]:
         """
         Translate blocks in batches.
+
+        Args:
+            blocks: List of TextBlock to translate
+            reference_files: Optional reference files
+            on_progress: Progress callback
+            output_language: "en" for English, "jp" for Japanese
 
         Returns:
             Mapping of block_id -> translated_text
@@ -69,8 +76,8 @@ class BatchTranslator:
 
             texts = [b.text for b in batch]
 
-            # Build prompt (unified bidirectional)
-            prompt = self.prompt_builder.build_batch(texts, has_refs)
+            # Build prompt with explicit output language
+            prompt = self.prompt_builder.build_batch(texts, has_refs, output_language)
 
             # Translate
             translations = self.copilot.translate_sync(texts, prompt, reference_files)
@@ -338,14 +345,16 @@ class TranslationService:
         input_path: Path,
         reference_files: Optional[List[Path]] = None,
         on_progress: Optional[ProgressCallback] = None,
+        output_language: str = "en",
     ) -> TranslationResult:
         """
-        Translate a file (bidirectional: JP→EN or Other→JP).
+        Translate a file to specified output language.
 
         Args:
             input_path: Path to input file
             reference_files: Reference files to attach
             on_progress: Callback for progress updates
+            output_language: "en" for English, "jp" for Japanese
 
         Returns:
             TranslationResult with output_path
@@ -409,6 +418,7 @@ class TranslationService:
                 blocks,
                 reference_files,
                 batch_progress,
+                output_language=output_language,
             )
 
             # Check for cancellation

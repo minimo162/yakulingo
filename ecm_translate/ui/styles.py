@@ -566,4 +566,45 @@ body {
     text-overflow: ellipsis;
     white-space: nowrap;
 }
+
+/* === Language Selector (Segmented Button) === */
+.language-selector {
+    display: inline-flex;
+    background: var(--md-sys-color-surface-container);
+    border-radius: var(--md-sys-shape-corner-full);
+    padding: 4px;
+    gap: 0;
+}
+
+.lang-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--md-sys-color-on-surface-variant);
+    background: transparent;
+    border: none;
+    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+    cursor: pointer;
+}
+
+.lang-btn-left {
+    border-radius: var(--md-sys-shape-corner-full) 0 0 var(--md-sys-shape-corner-full);
+}
+
+.lang-btn-right {
+    border-radius: 0 var(--md-sys-shape-corner-full) var(--md-sys-shape-corner-full) 0;
+}
+
+.lang-btn:hover:not(.lang-btn-active) {
+    background: var(--md-sys-color-surface-container-high);
+}
+
+.lang-btn-active {
+    background: var(--md-sys-color-surface);
+    color: var(--md-sys-color-on-surface);
+    box-shadow: var(--md-sys-elevation-1);
+}
 """

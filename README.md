@@ -102,10 +102,11 @@ setup.bat
 ### 用語集 (glossary.csv)
 
 ```csv
-Japanese,English
-株式会社,Corp.
+# YakuLingo - Glossary File
+# Format: source_term,translated_term
+(億円),(oku)
+(千円),(k yen)
 営業利益,Operating Profit
-前年比,YOY
 ```
 
 ## トラブルシューティング

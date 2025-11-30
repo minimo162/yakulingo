@@ -80,12 +80,12 @@ foreach ($file in $files) {
     }
 }
 
-# ★setup.bat/ps1 をコピー
+# ★setup.bat と setup.ps1 をコピー
 Copy-Item (Join-Path $projectDir "★setup.bat") $packageDir -Force
-Copy-Item (Join-Path $projectDir "★setup.ps1") $packageDir -Force
+Copy-Item (Join-Path $projectDir "setup.ps1") $packageDir -Force
 
-# ★run.bat をコピー
-Copy-Item (Join-Path $projectDir "★run.bat") $packageDir -Force
+# ★run.bat を run.bat としてコピー（★を外す）
+Copy-Item (Join-Path $projectDir "★run.bat") (Join-Path $packageDir "run.bat") -Force
 
 # アプリフォルダをコピー
 foreach ($folder in $appFolders) {

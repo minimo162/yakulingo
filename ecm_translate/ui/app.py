@@ -15,7 +15,7 @@ from ecm_translate.ui.styles import COMPLETE_CSS
 from ecm_translate.ui.components.text_panel import create_text_panel
 from ecm_translate.ui.components.file_panel import create_file_panel
 
-from ecm_translate.models.types import TranslationDirection, TranslationProgress
+from ecm_translate.models.types import TranslationDirection, TranslationProgress, TextTranslationResult, TranslationOption
 from ecm_translate.config.settings import AppSettings, get_default_settings_path, get_default_prompts_dir
 from ecm_translate.services.copilot_handler import CopilotHandler
 from ecm_translate.services.translation_service import TranslationService
@@ -127,8 +127,9 @@ class YakuLingoApp:
                         on_swap=self._swap,
                         on_source_change=self._on_source_change,
                         on_target_change=self._on_target_change,
-                        on_copy=self._copy,
+                        on_copy=self._copy_text,
                         on_clear=self._clear,
+                        on_adjust=self._adjust_text,
                     )
                 else:
                     create_file_panel(
@@ -178,16 +179,51 @@ class YakuLingoApp:
         """Clear text fields"""
         self.state.source_text = ""
         self.state.target_text = ""
+        self.state.text_result = None
         self._refresh_content()
 
-    def _copy(self):
-        """Copy target text"""
-        if self.state.target_text:
-            ui.clipboard.write(self.state.target_text)
-            ui.notify('Copied', type='positive')
+    def _copy_text(self, text: str):
+        """Copy specified text to clipboard"""
+        if text:
+            ui.clipboard.write(text)
+            ui.notify('コピーしました', type='positive')
 
     async def _translate_text(self):
-        """Translate text"""
+        """Translate text with multiple options"""
+        if not self.translation_service:
+            ui.notify('Not connected', type='warning')
+            return
+
+        self.state.text_translating = True
+        self.state.text_result = None
+        self._refresh_content()
+
+        try:
+            result = await asyncio.to_thread(
+                lambda: self.translation_service.translate_text_with_options(
+                    self.state.source_text,
+                    self.state.direction,
+                    self.state.reference_files or None,
+                )
+            )
+
+            if result and result.options:
+                self.state.text_result = result
+                # Also set target_text for compatibility
+                if result.options:
+                    self.state.target_text = result.options[0].text
+            else:
+                error_msg = result.error_message if result else 'Unknown error'
+                ui.notify(f'Error: {error_msg}', type='negative')
+
+        except Exception as e:
+            ui.notify(f'Error: {e}', type='negative')
+
+        self.state.text_translating = False
+        self._refresh_content()
+
+    async def _adjust_text(self, text: str, adjust_type: str):
+        """Adjust translation based on user request"""
         if not self.translation_service:
             ui.notify('Not connected', type='warning')
             return
@@ -197,17 +233,25 @@ class YakuLingoApp:
 
         try:
             result = await asyncio.to_thread(
-                lambda: self.translation_service.translate_text(
-                    self.state.source_text,
+                lambda: self.translation_service.adjust_translation(
+                    text,
+                    adjust_type,
                     self.state.direction,
-                    self.state.reference_files or None,
                 )
             )
 
-            if result.output_text:
-                self.state.target_text = result.output_text
+            if result:
+                # Add the new option to the existing results
+                if self.state.text_result:
+                    self.state.text_result.options.append(result)
+                else:
+                    self.state.text_result = TextTranslationResult(
+                        source_text=self.state.source_text,
+                        source_char_count=len(self.state.source_text),
+                        options=[result]
+                    )
             else:
-                ui.notify(f'Error: {result.error_message}', type='negative')
+                ui.notify('調整に失敗しました', type='negative')
 
         except Exception as e:
             ui.notify(f'Error: {e}', type='negative')

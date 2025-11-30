@@ -1,7 +1,7 @@
 # YakuLingo - 技術仕様書
 
-> **Version**: 2.0
-> **Date**: 2024-11
+> **Version**: 2.1
+> **Date**: 2025-11
 > **App Name**: YakuLingo (訳リンゴ)
 
 ---
@@ -17,7 +17,9 @@
 7. [ファイルプロセッサ](#7-ファイルプロセッサ)
 8. [フォント管理](#8-フォント管理)
 9. [プロンプト設計](#9-プロンプト設計)
-10. [設定・配布](#10-設定配布)
+10. [ストレージ](#10-ストレージ)
+11. [自動更新](#11-自動更新)
+12. [設定・配布](#12-設定配布)
 
 ---
 
@@ -32,12 +34,23 @@ M365 Copilotを翻訳エンジンとして使用し、テキストとドキュ�
 
 | 機能 | 説明 |
 |------|------|
-| **Text Translation** | テキストを入力して即座に翻訳 |
+| **Text Translation** | テキストを入力して即座に翻訳（言語自動検出） |
 | **File Translation** | Excel/Word/PowerPoint/PDF の一括翻訳 |
 | **Layout Preservation** | 翻訳後もファイルの体裁を維持 |
 | **Reference Files** | 用語集による一貫した翻訳 |
+| **Translation History** | 過去の翻訳をローカルに保存・検索 |
+| **Auto Update** | GitHub Releases経由で自動更新 |
 
-### 1.3 対応ファイル形式
+### 1.3 言語自動検出
+
+入力テキストの言語を自動検出し、適切な方向に翻訳：
+
+| 入力言語 | 出力 |
+|---------|------|
+| 日本語 | 英語（複数の訳文オプション付き） |
+| その他 | 日本語（解説・使用例付き） |
+
+### 1.4 対応ファイル形式
 
 | 形式 | 拡張子 | ライブラリ |
 |------|--------|----------|
@@ -46,14 +59,16 @@ M365 Copilotを翻訳エンジンとして使用し、テキストとドキュ�
 | PowerPoint | `.pptx` `.ppt` | python-pptx |
 | PDF | `.pdf` | PyMuPDF, yomitoku |
 
-### 1.4 技術スタック
+### 1.5 技術スタック
 
 | Layer | Technology |
 |-------|------------|
-| UI | NiceGUI (Python) |
+| UI | NiceGUI + pywebview (Material Design 3) |
 | Backend | FastAPI (via NiceGUI) |
 | Translation | M365 Copilot (Playwright + Edge) |
 | File Processing | openpyxl, python-docx, python-pptx, PyMuPDF |
+| Storage | SQLite (translation history) |
+| Auto Update | GitHub Releases API |
 
 ---
 
@@ -68,26 +83,26 @@ M365 Copilotを翻訳エンジンとして使用し、テキストとドキュ�
 │                                                                         │
 │  ┌───────────────────────────────────────────────────────────────────┐  │
 │  │                        Presentation Layer                         │  │
-│  │                           (NiceGUI)                               │  │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐               │  │
-│  │  │   Header    │  │  Text Tab   │  │  File Tab   │               │  │
-│  │  └─────────────┘  └─────────────┘  └─────────────┘               │  │
+│  │                     (NiceGUI + pywebview)                         │  │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐   │  │
+│  │  │  Text Tab   │  │  File Tab   │  │  Update Notification    │   │  │
+│  │  └─────────────┘  └─────────────┘  └─────────────────────────┘   │  │
 │  └───────────────────────────────────────────────────────────────────┘  │
 │                                    │                                    │
 │                                    ▼                                    │
 │  ┌───────────────────────────────────────────────────────────────────┐  │
 │  │                         Service Layer                             │  │
-│  │  ┌─────────────────────────────────────────────────────────────┐  │  │
-│  │  │ TranslationService        │ BatchTranslator                 │  │  │
-│  │  │ + translate_text()        │ + translate_blocks()            │  │  │
-│  │  │ + translate_file()        │                                 │  │  │
-│  │  └─────────────────────────────────────────────────────────────┘  │  │
+│  │  ┌──────────────────┐  ┌──────────────────┐  ┌────────────────┐  │  │
+│  │  │TranslationService│  │ BatchTranslator  │  │    Updater     │  │  │
+│  │  │+ translate_text()│  │+ translate_blocks│  │+ check_update()│  │  │
+│  │  │+ translate_file()│  │                  │  │+ download()    │  │  │
+│  │  └──────────────────┘  └──────────────────┘  └────────────────┘  │  │
 │  └───────────────────────────────────────────────────────────────────┘  │
 │          │                         │                         │          │
 │          ▼                         ▼                         ▼          │
 │  ┌───────────────┐     ┌─────────────────────┐     ┌───────────────┐    │
-│  │ CopilotHandler│     │   File Processors   │     │  AppSettings  │    │
-│  │ (Edge+        │     │ Excel/Word/PPT/PDF  │     │  (JSON)       │    │
+│  │ CopilotHandler│     │   File Processors   │     │   HistoryDB   │    │
+│  │ (Edge+        │     │ Excel/Word/PPT/PDF  │     │   (SQLite)    │    │
 │  │  Playwright)  │     │                     │     │               │    │
 │  └───────────────┘     └─────────────────────┘     └───────────────┘    │
 │                                                                         │
@@ -98,10 +113,11 @@ M365 Copilotを翻訳エンジンとして使用し、テキストとドキュ�
 
 | Layer | Responsibility |
 |-------|----------------|
-| **Presentation** | NiceGUIによるUI、タブ管理、状態表示 |
-| **Service** | 翻訳処理の調整、バッチ処理、プログレス管理 |
+| **Presentation** | NiceGUI + pywebviewによるUI、状態表示 |
+| **Service** | 翻訳処理の調整、バッチ処理、自動更新 |
 | **CopilotHandler** | Edge起動、Playwright接続、メッセージ送受信 |
 | **File Processors** | ファイル解析、テキスト抽出、翻訳適用 |
+| **Storage** | 翻訳履歴の永続化（SQLite） |
 | **Config** | 設定読み込み/保存、参照ファイル管理 |
 
 ---
@@ -112,25 +128,26 @@ M365 Copilotを翻訳エンジンとして使用し、テキストとドキュ�
 YakuLingo/
 ├── app.py                          # エントリーポイント
 ├── pyproject.toml
+├── uv.lock                         # 依存関係ロックファイル
 ├── requirements.txt
 │
-├── yakulingo/                  # メインパッケージ
+├── yakulingo/                      # メインパッケージ
 │   ├── __init__.py
 │   │
 │   ├── ui/                         # Presentation Layer
 │   │   ├── app.py                  # YakuLingoApp クラス
-│   │   ├── state.py                # AppState, Tab, FileState
-│   │   ├── styles.py               # CSS定義
+│   │   ├── state.py                # AppState
+│   │   ├── styles.py               # M3 デザイントークン & CSS
 │   │   └── components/
-│   │       ├── header.py
-│   │       ├── tabs.py
-│   │       ├── text_panel.py
-│   │       └── file_panel.py
+│   │       ├── text_panel.py       # テキスト翻訳パネル
+│   │       ├── file_panel.py       # ファイル翻訳パネル
+│   │       └── update_notification.py  # 更新通知UI
 │   │
 │   ├── services/                   # Service Layer
 │   │   ├── translation_service.py  # TranslationService
 │   │   ├── copilot_handler.py      # CopilotHandler
-│   │   └── prompt_builder.py       # PromptBuilder
+│   │   ├── prompt_builder.py       # PromptBuilder
+│   │   └── updater.py              # 自動更新サービス
 │   │
 │   ├── processors/                 # File Processors
 │   │   ├── base.py                 # FileProcessor (ABC)
@@ -141,11 +158,18 @@ YakuLingo/
 │   │   ├── pptx_processor.py
 │   │   └── pdf_processor.py
 │   │
+│   ├── storage/                    # Storage Layer
+│   │   └── history_db.py           # HistoryDB (SQLite)
+│   │
 │   ├── models/
 │   │   └── types.py                # 型定義
 │   │
 │   └── config/
 │       └── settings.py             # AppSettings
+│
+├── tests/                          # テストスイート（25ファイル）
+│   ├── conftest.py
+│   └── test_*.py
 │
 ├── prompts/                        # 翻訳プロンプト
 │   ├── translate_jp_to_en.txt
@@ -155,6 +179,8 @@ YakuLingo/
 │   └── settings.json               # ユーザー設定
 │
 ├── glossary.csv                    # 参照用語集
+│
+├── installer/                      # 配布用インストーラ
 │
 └── docs/
     └── SPECIFICATION.md            # この仕様書
@@ -167,10 +193,6 @@ YakuLingo/
 ### 4.1 列挙型
 
 ```python
-class TranslationDirection(Enum):
-    JP_TO_EN = "jp_to_en"
-    EN_TO_JP = "en_to_jp"
-
 class FileType(Enum):
     EXCEL = "excel"
     WORD = "word"
@@ -184,15 +206,12 @@ class TranslationStatus(Enum):
     FAILED = "failed"
     CANCELLED = "cancelled"
 
-class Tab(Enum):
-    TEXT = "text"
-    FILE = "file"
-
-class FileState(Enum):
-    EMPTY = "empty"
-    SELECTED = "selected"
-    TRANSLATING = "translating"
-    COMPLETE = "complete"
+# 自動更新用
+class UpdateStatus(Enum):
+    UP_TO_DATE = "up_to_date"
+    UPDATE_AVAILABLE = "update_available"
+    DOWNLOADING = "downloading"
+    READY_TO_INSTALL = "ready_to_install"
     ERROR = "error"
 ```
 
@@ -222,17 +241,49 @@ class TranslationProgress:
     total: int
     status: str
     percentage: float = 0.0
+    estimated_remaining: Optional[int] = None
+
+@dataclass
+class TranslationOption:
+    """単一の翻訳オプション"""
+    text: str                        # 翻訳テキスト
+    explanation: str                 # 使用文脈・説明
+    char_count: int = 0
+
+@dataclass
+class TextTranslationResult:
+    """テキスト翻訳結果（複数オプション付き）"""
+    source_text: str
+    source_char_count: int
+    options: list[TranslationOption]
+    output_language: str = "en"      # "en" or "jp" - 自動検出された出力言語
+    error_message: Optional[str] = None
 
 @dataclass
 class TranslationResult:
+    """ファイル翻訳結果"""
     status: TranslationStatus
-    output_path: Optional[Path]     # ファイル翻訳
-    output_text: Optional[str]      # テキスト翻訳
+    output_path: Optional[Path]
     blocks_translated: int
     blocks_total: int
     duration_seconds: float
     error_message: Optional[str]
     warnings: list[str]
+
+@dataclass
+class HistoryEntry:
+    """翻訳履歴エントリ"""
+    source_text: str
+    result: TextTranslationResult
+    timestamp: str                   # ISO format
+
+@dataclass
+class VersionInfo:
+    """バージョン情報（自動更新用）"""
+    version: str
+    release_date: str
+    download_url: str
+    release_notes: str
 ```
 
 ### 4.3 アプリケーション状態
@@ -240,19 +291,12 @@ class TranslationResult:
 ```python
 @dataclass
 class AppState:
-    # タブ
-    current_tab: Tab = Tab.TEXT
-
-    # 翻訳方向
-    direction: TranslationDirection = TranslationDirection.JP_TO_EN
-
     # テキストタブ
     source_text: str = ""
-    target_text: str = ""
+    text_result: Optional[TextTranslationResult] = None
     text_translating: bool = False
 
     # ファイルタブ
-    file_state: FileState = FileState.EMPTY
     selected_file: Optional[Path] = None
     file_info: Optional[FileInfo] = None
     translation_progress: float = 0.0
@@ -267,6 +311,10 @@ class AppState:
     copilot_connected: bool = False
     copilot_connecting: bool = False
     copilot_error: str = ""
+
+    # 自動更新
+    update_available: bool = False
+    update_info: Optional[VersionInfo] = None
 ```
 
 ---
@@ -277,26 +325,25 @@ class AppState:
 
 | Property | Value |
 |----------|-------|
+| Mode | Native window (pywebview) |
 | Host | 127.0.0.1 |
 | Port | 8765 |
 | Title | YakuLingo |
 | Favicon | 🍎 |
-| Theme | System preference (Light/Dark) |
+| Theme | Light (M3 Design) |
 
 ### 5.2 全体レイアウト
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│  🍎 YakuLingo                                        HEADER     │
+│  🍎 YakuLingo                              [Update Available]    │
 ├─────────────────────────────────────────────────────────────────┤
-│  [ 📝 Text ]  [ 📁 File ]                            TAB BAR    │
+│  [ Text ]  [ File ]                                   TAB BAR    │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │                        CONTENT AREA                             │
 │                      (Tab-specific UI)                          │
 │                                                                 │
-├─────────────────────────────────────────────────────────────────┤
-│  ▸ Settings                                    COLLAPSIBLE      │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -304,17 +351,26 @@ class AppState:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │ 翻訳したいテキストを入力...                           [✕]   ││
+│  │                                                             ││
+│  │   (Source Textarea - 言語自動検出)                          ││
+│  │                                                             ││
+│  │─────────────────────────────────────────────────────────────││
+│  │ 123 文字                              [翻訳する] Ctrl+Enter ││
+│  └─────────────────────────────────────────────────────────────┘│
 │                                                                 │
-│  ┌─────────────────────────┐       ┌─────────────────────────┐  │
-│  │ 日本語               [✕]│       │ English             [📋]│  │
-│  ├─────────────────────────┤       ├─────────────────────────┤  │
-│  │                         │       │                         │  │
-│  │   (Source Textarea)     │ [⇄]  │   (Target Textarea)     │  │
-│  │                         │       │                         │  │
-│  └─────────────────────────┘       └─────────────────────────┘  │
-│                                                                 │
-│                        [ Translate ]                            │
-│                                                                 │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │ Translation Options (日本語入力時)                          ││
+│  │ ┌─────────────────────────────────────────────────────────┐ ││
+│  │ │ Option 1: "Translation text..."                    [📋] │ ││
+│  │ │ Formal business tone                                    │ ││
+│  │ └─────────────────────────────────────────────────────────┘ ││
+│  │ ┌─────────────────────────────────────────────────────────┐ ││
+│  │ │ Option 2: "Another translation..."                 [📋] │ ││
+│  │ │ Casual conversational style                             │ ││
+│  │ └─────────────────────────────────────────────────────────┘ ││
+│  └─────────────────────────────────────────────────────────────┘│
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -322,10 +378,9 @@ class AppState:
 
 | Property | Value |
 |----------|-------|
-| Min height | 250px |
-| Font | Meiryo UI |
-| Font size | 16px |
-| Line height | 1.7 |
+| Min height | 160px |
+| Font | System default |
+| Auto-grow | Yes |
 | Padding | 16px |
 
 ### 5.4 File Tab
@@ -363,41 +418,55 @@ class AppState:
 
 ### 5.5 出力ファイル命名
 
-| Direction | Input | Output |
-|-----------|-------|--------|
-| JP → EN | `report.xlsx` | `report_EN.xlsx` |
-| EN → JP | `report.xlsx` | `report_JP.xlsx` |
+| Input Language | Input | Output |
+|----------------|-------|--------|
+| Japanese | `report.xlsx` | `report_EN.xlsx` |
+| English | `report.xlsx` | `report_JP.xlsx` |
 | 既存時 | `report.xlsx` | `report_EN_2.xlsx` |
 
-### 5.6 カラーシステム
+### 5.6 カラーシステム (Material Design 3)
 
-**Light Mode:**
 ```css
---primary: #2563eb;
---primary-hover: #1d4ed8;
---bg: #ffffff;
---bg-secondary: #f8fafc;
---border: #e2e8f0;
---text: #1e293b;
---text-secondary: #64748b;
---success: #22c55e;
---error: #ef4444;
+:root {
+  /* Primary - warm coral palette */
+  --md-sys-color-primary: #C04000;
+  --md-sys-color-primary-container: #FFDBD0;
+  --md-sys-color-on-primary: #FFFFFF;
+  --md-sys-color-on-primary-container: #3A0A00;
+
+  /* Secondary */
+  --md-sys-color-secondary: #77574D;
+  --md-sys-color-secondary-container: #FFDBD0;
+
+  /* Surface */
+  --md-sys-color-surface: #FFFBFF;
+  --md-sys-color-surface-container: #F3EDE9;
+  --md-sys-color-surface-container-high: #EDE7E3;
+  --md-sys-color-on-surface: #231917;
+  --md-sys-color-on-surface-variant: #534340;
+
+  /* Outline */
+  --md-sys-color-outline: #85736E;
+  --md-sys-color-outline-variant: #D8C2BC;
+
+  /* Status */
+  --md-sys-color-error: #BA1A1A;
+  --md-sys-color-success: #2E7D32;
+}
 ```
 
-**Dark Mode:**
+### 5.7 シェイプシステム
+
 ```css
---primary: #3b82f6;
---primary-hover: #60a5fa;
---bg: #0f172a;
---bg-secondary: #1e293b;
---border: #334155;
---text: #f1f5f9;
---text-secondary: #94a3b8;
---success: #4ade80;
---error: #f87171;
+:root {
+  --md-sys-shape-corner-full: 9999px;   /* Pills, FABs */
+  --md-sys-shape-corner-large: 16px;    /* Cards, Dialogs */
+  --md-sys-shape-corner-medium: 12px;   /* Text fields */
+  --md-sys-shape-corner-small: 8px;     /* Chips */
+}
 ```
 
-### 5.7 フォント
+### 5.8 フォント
 
 ```css
 font-family: 'Meiryo UI', 'Meiryo', 'Yu Gothic UI',
@@ -457,10 +526,14 @@ class TranslationService:
         '.pdf': PdfProcessor(),
     }
 
-    def translate_text(text, direction, reference_files) -> TranslationResult:
-        """テキスト翻訳"""
+    def translate_text(text, reference_files) -> TextTranslationResult:
+        """
+        テキスト翻訳（言語自動検出）
+        - 日本語入力 → 英語（複数オプション）
+        - その他入力 → 日本語（解説付き）
+        """
 
-    def translate_file(input_path, direction, reference_files, on_progress) -> TranslationResult:
+    def translate_file(input_path, reference_files, on_progress) -> TranslationResult:
         """
         1. プロセッサを取得
         2. テキストブロックを抽出
@@ -481,7 +554,7 @@ class BatchTranslator:
     MAX_BATCH_SIZE = 50          # ブロック数上限
     MAX_CHARS_PER_BATCH = 10000  # 文字数上限
 
-    def translate_blocks(blocks, direction, reference_files, on_progress) -> dict[str, str]:
+    def translate_blocks(blocks, reference_files, on_progress) -> dict[str, str]:
         """
         1. ブロックをバッチに分割
         2. 各バッチを翻訳
@@ -678,14 +751,15 @@ class PdfProcessor(FileProcessor):
 
 ```python
 class PromptBuilder:
-    def build(direction, input_text, has_reference_files) -> str:
+    def build(input_text, has_reference_files) -> str:
         """
-        1. テンプレート読み込み（prompts/translate_*.txt）
-        2. 参照ファイル指示を挿入（添付時のみ）
-        3. 入力テキストを埋め込み
+        1. 言語を自動検出
+        2. 適切なテンプレート選択（prompts/translate_*.txt）
+        3. 参照ファイル指示を挿入（添付時のみ）
+        4. 入力テキストを埋め込み
         """
 
-    def build_batch(direction, texts, has_reference_files) -> str:
+    def build_batch(texts, has_reference_files) -> str:
         """番号付きリストとして入力"""
 ```
 
@@ -726,16 +800,112 @@ Reference Files
 
 ---
 
-## 10. 設定・配布
+## 10. ストレージ
 
-### 10.1 AppSettings
+### 10.1 HistoryDB
+
+翻訳履歴をSQLiteで永続化。
+
+```python
+class HistoryDB:
+    """
+    データベースパス: ~/.yakulingo/history.db
+
+    テーブル: history
+    - id: INTEGER PRIMARY KEY
+    - source_text: TEXT
+    - result_json: TEXT (TextTranslationResult をJSON化)
+    - timestamp: TEXT (ISO format)
+    - created_at: TIMESTAMP
+    """
+
+    def add_entry(entry: HistoryEntry) -> int:
+        """履歴エントリを追加"""
+
+    def get_recent(limit: int = 50) -> List[HistoryEntry]:
+        """最近の履歴を取得"""
+
+    def search(query: str) -> List[HistoryEntry]:
+        """キーワード検索"""
+
+    def delete_entry(entry_id: int) -> bool:
+        """エントリを削除"""
+
+    def clear_all() -> None:
+        """全履歴を削除"""
+```
+
+### 10.2 データ保存場所
+
+| データ | パス |
+|--------|------|
+| アプリ設定 | `config/settings.json` |
+| 翻訳履歴 | `~/.yakulingo/history.db` |
+| 用語集 | `glossary.csv` |
+
+---
+
+## 11. 自動更新
+
+### 11.1 Updater
+
+GitHub Releases経由で自動更新。
+
+```python
+class Updater:
+    """
+    GitHub Releases APIを使用した自動更新
+
+    機能:
+    - バージョンチェック
+    - ダウンロード（プログレス付き）
+    - インストール（ZIP展開）
+    - Windows NTLMプロキシ対応
+    """
+
+    def check_for_updates() -> Optional[VersionInfo]:
+        """最新バージョンをチェック"""
+
+    def download_update(version_info: VersionInfo, on_progress: Callable) -> Path:
+        """アップデートをダウンロード"""
+
+    def install_update(downloaded_path: Path) -> bool:
+        """アップデートをインストール"""
+```
+
+### 11.2 プロキシ対応
+
+```python
+# Windowsシステムプロキシを自動検出
+# レジストリから設定を読み取り
+
+# NTLM認証プロキシ対応（pywin32が必要）
+if HAS_PYWIN32:
+    # SSPI経由でNTLM認証
+```
+
+### 11.3 更新フロー
+
+```
+1. アプリ起動時にバックグラウンドでバージョンチェック
+2. 新バージョンがあれば通知を表示
+3. ユーザーが「更新」をクリック
+4. バックグラウンドでダウンロード（プログレス表示）
+5. ダウンロード完了後、インストール確認
+6. アプリ再起動で更新完了
+```
+
+---
+
+## 12. 設定・配布
+
+### 12.1 AppSettings
 
 ```python
 @dataclass
 class AppSettings:
     reference_files: list[str] = ["glossary.csv"]
     output_directory: Optional[str] = None  # None = 入力と同じ
-    last_direction: str = "jp_to_en"
     last_tab: str = "text"
     window_width: int = 900
     window_height: int = 700
@@ -746,24 +916,27 @@ class AppSettings:
 
 **設定ファイル:** `config/settings.json`
 
-### 10.2 起動方法
+### 12.2 起動方法
 
 ```bash
+# 開発環境
 python app.py
-# ブラウザで http://localhost:8765 を開く
+
+# 配布版
+run.bat
 ```
 
-### 10.3 起動フロー
+### 12.3 起動フロー
 
 ```
-1. NiceGUIサーバー起動（port=8765）
-2. ブラウザで自動アクセス
+1. pywebviewでネイティブウィンドウを起動
+2. NiceGUIサーバー起動（port=8765）
 3. Copilot接続開始（バックグラウンド）
-4. 接続完了まで翻訳ボタンは disabled
+4. 自動更新チェック（バックグラウンド）
 5. 接続完了後、翻訳機能が有効化
 ```
 
-### 10.4 システム要件
+### 12.4 システム要件
 
 | 項目 | 要件 |
 |------|------|
@@ -772,16 +945,52 @@ python app.py
 | Browser | Microsoft Edge |
 | M365 | Copilot アクセス権 |
 
-### 10.5 依存パッケージ
+### 12.5 依存パッケージ
 
 ```
 nicegui>=1.4.0
+pywebview>=5.0.0
 playwright>=1.40.0
 openpyxl>=3.1.0
-python-docx>=1.0.0
-python-pptx>=0.6.0
+python-docx>=1.1.0
+python-pptx>=0.6.23
 PyMuPDF>=1.24.0
+pillow>=10.0.0
+numpy>=1.24.0
 ```
+
+### 12.6 オプション依存
+
+```
+# OCRサポート
+yomitoku>=0.8.0
+
+# Windows NTLMプロキシ
+pywin32>=306
+
+# テスト
+pytest>=8.0.0
+pytest-cov>=5.0.0
+pytest-asyncio>=0.23.0
+```
+
+### 12.7 配布
+
+ネットワーク共有からのワンクリックインストール対応。
+
+```bash
+# 配布パッケージ作成
+make_distribution.bat
+
+# 出力
+share_package/
+├── setup.bat          # ユーザー実行ファイル
+├── YakuLingo_*.zip    # 配布パッケージ
+└── .scripts/
+    └── setup.ps1      # インストールスクリプト
+```
+
+詳細は `DISTRIBUTION.md` を参照。
 
 ---
 
@@ -789,6 +998,7 @@ PyMuPDF>=1.24.0
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.1 | 2025-11 | 言語自動検出、翻訳履歴、自動更新、M3デザイン対応 |
 | 2.0 | 2024-11 | 実装コードに基づく完全な仕様書作成 |
 
 ---

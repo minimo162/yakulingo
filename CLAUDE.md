@@ -41,20 +41,20 @@ playwright install chromium
 ```
 YakuLingo/
 ├── app.py                         # Entry point - launches NiceGUI app
-├── yakulingo/                 # Main Python package
+├── yakulingo/                     # Main Python package
 │   ├── ui/                        # Presentation layer (NiceGUI)
 │   │   ├── app.py                 # YakuLingoApp main orchestrator
 │   │   ├── state.py               # AppState management
 │   │   ├── styles.py              # M3 design tokens & CSS
 │   │   └── components/            # Reusable UI components
-│   │       ├── header.py
-│   │       ├── tabs.py
-│   │       ├── text_panel.py
-│   │       └── file_panel.py
+│   │       ├── file_panel.py      # File translation panel
+│   │       ├── text_panel.py      # Text translation panel
+│   │       └── update_notification.py  # Auto-update notifications
 │   ├── services/                  # Business logic layer
 │   │   ├── translation_service.py # Main translation orchestrator
 │   │   ├── copilot_handler.py     # M365 Copilot browser automation
-│   │   └── prompt_builder.py      # Translation prompt construction
+│   │   ├── prompt_builder.py      # Translation prompt construction
+│   │   └── updater.py             # GitHub Releases auto-updater
 │   ├── processors/                # File processing layer
 │   │   ├── base.py                # Abstract FileProcessor class
 │   │   ├── excel_processor.py     # .xlsx/.xls handling
@@ -65,9 +65,11 @@ YakuLingo/
 │   │   └── translators.py         # Translation decision logic
 │   ├── models/                    # Data structures
 │   │   └── types.py               # Enums, dataclasses, type aliases
+│   ├── storage/                   # Persistence layer
+│   │   └── history_db.py          # SQLite-based translation history
 │   └── config/                    # Configuration
 │       └── settings.py            # AppSettings with JSON persistence
-├── tests/                         # Test suite (15 test files)
+├── tests/                         # Test suite (25 test files)
 │   ├── conftest.py                # Shared fixtures and mocks
 │   └── test_*.py                  # Unit tests for each module
 ├── prompts/                       # Translation prompt templates
@@ -77,8 +79,10 @@ YakuLingo/
 │   └── settings.json              # User configuration
 ├── docs/
 │   └── SPECIFICATION.md           # Detailed technical specification
+├── installer/                     # Distribution installer files
 ├── glossary.csv                   # Default translation glossary
 ├── pyproject.toml                 # Project metadata & dependencies
+├── uv.lock                        # Lock file for reproducible builds
 ├── requirements.txt               # Core pip dependencies
 └── requirements_pdf.txt           # Optional OCR dependencies
 ```
@@ -88,8 +92,9 @@ YakuLingo/
 | Layer | Location | Responsibility |
 |-------|----------|----------------|
 | **UI** | `yakulingo/ui/` | NiceGUI components, M3 styling, state management, user interactions |
-| **Services** | `yakulingo/services/` | Translation orchestration, Copilot communication, prompt building |
+| **Services** | `yakulingo/services/` | Translation orchestration, Copilot communication, prompt building, auto-updates |
 | **Processors** | `yakulingo/processors/` | File format handling, text extraction, translation application |
+| **Storage** | `yakulingo/storage/` | SQLite-based translation history persistence |
 | **Models** | `yakulingo/models/` | Data types, enums, shared structures |
 | **Config** | `yakulingo/config/` | Settings management, persistence |
 
@@ -97,28 +102,44 @@ YakuLingo/
 
 | File | Purpose | Lines |
 |------|---------|-------|
-| `yakulingo/ui/app.py` | Main application orchestrator, handles UI events and coordinates services | ~278 |
-| `yakulingo/services/translation_service.py` | Coordinates file processors and batch translation | ~351 |
+| `yakulingo/ui/app.py` | Main application orchestrator, handles UI events and coordinates services | ~664 |
+| `yakulingo/services/translation_service.py` | Coordinates file processors and batch translation | ~610 |
 | `yakulingo/services/copilot_handler.py` | Browser automation for M365 Copilot | ~455 |
-| `yakulingo/ui/styles.py` | M3 design tokens, CSS styling definitions | ~289 |
-| `yakulingo/ui/state.py` | Application state management | ~119 |
-| `yakulingo/models/types.py` | Core data types: TextBlock, FileInfo, TranslationProgress | ~118 |
+| `yakulingo/services/updater.py` | GitHub Releases-based auto-update with Windows proxy support | ~746 |
+| `yakulingo/ui/styles.py` | M3 design tokens, CSS styling definitions | ~720 |
+| `yakulingo/ui/state.py` | Application state management | ~170 |
+| `yakulingo/models/types.py` | Core data types: TextBlock, FileInfo, TranslationResult, HistoryEntry | ~180 |
+| `yakulingo/storage/history_db.py` | SQLite database for translation history | ~200 |
 | `yakulingo/processors/base.py` | Abstract base class for all file processors | ~97 |
 
 ## Core Data Types
 
 ```python
 # Key enums (yakulingo/models/types.py)
-TranslationDirection: JP_TO_EN, EN_TO_JP
 FileType: EXCEL, WORD, POWERPOINT, PDF
 TranslationStatus: PENDING, PROCESSING, COMPLETED, FAILED, CANCELLED
 
 # Key dataclasses
-TextBlock(id, text, location, metadata)      # Unit of translatable text
-FileInfo(path, file_type, size_bytes, ...)   # File metadata
-TranslationProgress(current, total, status)  # Progress tracking
-TranslationResult(status, output_path, ...)  # Translation outcome
+TextBlock(id, text, location, metadata)       # Unit of translatable text
+FileInfo(path, file_type, size_bytes, ...)    # File metadata
+TranslationProgress(current, total, status)   # Progress tracking
+TranslationResult(status, output_path, ...)   # File translation outcome
+TranslationOption(text, explanation)          # Single translation option
+TextTranslationResult(source_text, options)   # Text translation with multiple options
+HistoryEntry(source_text, result, timestamp)  # Translation history entry
+
+# Auto-update types (yakulingo/services/updater.py)
+UpdateStatus: UP_TO_DATE, UPDATE_AVAILABLE, DOWNLOADING, READY_TO_INSTALL, ERROR
+VersionInfo(version, release_date, download_url, release_notes)
 ```
+
+## Auto-Detected Translation Direction
+
+The application now auto-detects language direction:
+- **Japanese input** → English output (multiple translation options)
+- **Non-Japanese input** → Japanese output (single translation + explanation)
+
+No manual direction selection is required.
 
 ## File Processor Pattern
 
@@ -164,23 +185,18 @@ The application uses M3 (Material Design 3) component-based styling:
 - `.drop-zone` - File drop area with dashed border
 - `.file-card` - M3 card for file items
 - `.tab-btn` - Segmented button for tabs
-- `.swap-btn` - Direction swap with rotation animation
 
 ## Testing Conventions
 
 - **Framework**: pytest with pytest-asyncio
 - **Test Path**: `tests/`
-- **Test Files**: 15 test files covering all major modules
+- **Test Files**: 25 test files covering all major modules
 - **Naming**: `test_*.py` files, `Test*` classes, `test_*` functions
 - **Fixtures**: Defined in `tests/conftest.py`
 - **Async Mode**: Auto-configured via pyproject.toml
 
 Key fixture patterns:
 ```python
-# Direction parametrization (tests both JP→EN and EN→JP)
-@pytest.fixture(params=[TranslationDirection.JP_TO_EN, TranslationDirection.EN_TO_JP])
-def direction(request): return request.param
-
 # Mock Copilot handler
 @pytest.fixture
 def mock_copilot(): ...
@@ -188,6 +204,10 @@ def mock_copilot(): ...
 # Temporary file paths
 @pytest.fixture
 def sample_xlsx_path(temp_dir): ...
+
+# History database fixture
+@pytest.fixture
+def history_db(tmp_path): ...
 ```
 
 ### Test Coverage
@@ -249,6 +269,12 @@ sans-serif → Meiryo UI
 }
 ```
 
+### Translation History
+History is stored locally in SQLite:
+```
+~/.yakulingo/history.db
+```
+
 ## M365 Copilot Integration
 
 The `CopilotHandler` class automates Microsoft Edge browser:
@@ -257,6 +283,14 @@ The `CopilotHandler` class automates Microsoft Edge browser:
 - Endpoint: `https://m365.cloud.microsoft/chat/?auth=2`
 - Handles Windows proxy detection from registry
 - Methods: `connect()`, `disconnect()`, `translate_sync()`
+
+## Auto-Update System
+
+The `Updater` class provides GitHub Releases-based updates:
+- Checks for updates from GitHub Releases API
+- Supports Windows NTLM proxy authentication (requires pywin32)
+- Downloads and extracts updates to local installation
+- Provides UI notifications via `update_notification.py`
 
 ## Common Tasks for AI Assistants
 
@@ -286,12 +320,18 @@ The `CopilotHandler` class automates Microsoft Edge browser:
 3. Use standard motion easing: `var(--md-sys-motion-easing-standard)`
 4. Apply appropriate corner radius from shape system
 
+### Working with Translation History
+1. Use `HistoryDB` class in `yakulingo/storage/history_db.py`
+2. Store `HistoryEntry` objects with `TextTranslationResult`
+3. Query history with `get_recent()`, search with `search()`
+
 ## Dependencies Overview
 
 ### Core Dependencies
 | Package | Purpose |
 |---------|---------|
 | `nicegui>=1.4.0` | Web-based GUI framework |
+| `pywebview>=5.0.0` | Native window mode (no browser needed) |
 | `playwright>=1.40.0` | Browser automation for Copilot |
 | `openpyxl>=3.1.0` | Excel file processing |
 | `python-docx>=1.1.0` | Word document processing |
@@ -302,6 +342,7 @@ The `CopilotHandler` class automates Microsoft Edge browser:
 
 ### Optional Dependencies
 - `[ocr]`: yomitoku (PDF OCR with ML - heavy)
+- `[proxy-auth]`: pywin32 (Windows NTLM proxy authentication)
 - `[test]`: pytest, pytest-cov, pytest-asyncio
 
 ## Platform Notes
@@ -309,7 +350,15 @@ The `CopilotHandler` class automates Microsoft Edge browser:
 - **Primary Target**: Windows 10/11
 - **Browser Requirement**: Microsoft Edge (for Copilot access)
 - **Network**: Requires M365 Copilot access
-- **Proxy Support**: Auto-detects Windows proxy settings
+- **Proxy Support**: Auto-detects Windows proxy settings, supports NTLM with pywin32
+
+## Distribution
+
+YakuLingo supports network share deployment:
+- Run `make_distribution.bat` to create distribution package
+- Copy `share_package/` to network share
+- Users run `setup.bat` for one-click installation
+- See `DISTRIBUTION.md` for detailed instructions
 
 ## Language Note
 
@@ -325,10 +374,11 @@ The AGENTS.md file specifies that all responses should be in Japanese (すべて
 ## Recent Development Focus
 
 Based on recent commits:
-- **M3 UI Redesign**: Applied Material Design 3 component-based design tokens
-- **Simplified Design**: Removed dark mode for simplicity, focusing on clean light theme
-- **Test Coverage**: Comprehensive test improvements across all modules
-- **NiceGUI API Fixes**: Resolved API compatibility issues for better UX
+- **Auto-Update System**: GitHub Releases-based automatic updates with Windows proxy support
+- **Translation History**: SQLite-based local history storage
+- **Test Coverage Expansion**: Increased from 15 to 25 test files (73% → 82% coverage)
+- **Reproducible Builds**: Added `uv.lock` for dependency locking
+- **Distribution Improvements**: Simplified network share deployment
 
 ## Git Workflow
 
@@ -336,4 +386,4 @@ Based on recent commits:
 - Testing branches: `claude/testing-*`
 - Feature branches: `claude/claude-md-*`
 - Commit messages: descriptive, focus on "why" not "what"
-- Recent merge activity shows active development cycle
+- Lock file (`uv.lock`) included for reproducible dependency resolution

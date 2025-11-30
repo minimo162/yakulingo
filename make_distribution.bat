@@ -86,7 +86,7 @@ for /f "tokens=2 delims==" %%v in ('type ".venv\pyvenv.cfg" ^| findstr /i "^vers
     set PYTHON_VERSION=%%v
 )
 
-:: Rewrite pyvenv.cfg with placeholder (will be fixed by run.bat on first run)
+:: Rewrite pyvenv.cfg with placeholder (will be fixed by run.vbs on first run)
 echo home = __PYTHON_HOME__> ".venv\pyvenv.cfg"
 echo include-system-site-packages = false>> ".venv\pyvenv.cfg"
 echo version =%PYTHON_VERSION%>> ".venv\pyvenv.cfg"
@@ -135,7 +135,7 @@ mkdir "%DIST_DIR%" 2>nul
 
 :: Copy files to distribution folder
 echo   Copying files...
-for %%f in ("run.bat" "app.py" "glossary.csv" "pyproject.toml" "uv.lock" "uv.toml" "README.md") do (
+for %%f in ("run.vbs" "app.py" "glossary.csv" "pyproject.toml" "uv.lock" "uv.toml" "README.md") do (
     if exist "%%~f" copy /y "%%~f" "%DIST_DIR%\" >nul
 )
 
@@ -166,7 +166,7 @@ if exist "%DIST_ZIP%" (
     echo.
     echo Structure:
     echo   YakuLingo/
-    echo     run.bat            ^<-- Application launcher
+    echo     run.vbs            ^<-- Application launcher
     echo     app.py, yakulingo/, ...
     echo.
     echo ============================================================
@@ -181,14 +181,14 @@ if exist "%DIST_ZIP%" (
 
     :: Copy ZIP and installer files
     copy /y "%DIST_ZIP%" "%SHARE_DIR%\" >nul
-    copy /y "installer\share\setup.bat" "%SHARE_DIR%\" >nul
+    copy /y "installer\share\setup.vbs" "%SHARE_DIR%\" >nul
     copy /y "installer\share\README.txt" "%SHARE_DIR%\" >nul
     xcopy /s /e /i /q "installer\share\.scripts" "%SHARE_DIR%\.scripts" >nul
 
     echo [SUCCESS] Share folder package created!
     echo.
     echo   Folder: %SHARE_DIR%\
-    echo     - setup.bat    ^<-- Users run this
+    echo     - setup.vbs    ^<-- Users run this
     echo     - %DIST_ZIP%
     echo     - README.txt
     echo.

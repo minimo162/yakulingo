@@ -25,7 +25,7 @@ make_distribution.bat
 ```
 YakuLingo_YYYYMMDD.zip    # 配布用ZIP
 share_package/            # 共有フォルダ用パッケージ
-├── setup.bat             # ユーザーが実行するファイル
+├── setup.vbs             # ユーザーが実行するファイル
 ├── YakuLingo_*.zip       # 配布パッケージ
 ├── README.txt            # 管理者向けガイド
 └── .scripts/             # 内部スクリプト
@@ -40,7 +40,7 @@ share_package/            # 共有フォルダ用パッケージ
 
 ```
 \\server\share\YakuLingo\
-├── setup.bat
+├── setup.vbs
 ├── YakuLingo_YYYYMMDD.zip
 ├── README.txt
 └── .scripts\
@@ -59,8 +59,8 @@ share_package/            # 共有フォルダ用パッケージ
 ## ユーザー向けインストール手順
 
 1. `\\server\share\YakuLingo` を開く
-2. `setup.bat` をダブルクリック
-3. `Y` を入力して確認
+2. `setup.vbs` をダブルクリック
+3. セットアップ完了を待つ
 4. 完了後、デスクトップのショートカットから起動
 
 ### インストール先
@@ -107,7 +107,7 @@ setup.ps1は以下を実行：
 | 種類 | 対象 |
 |------|------|
 | **ディレクトリ** | `yakulingo/`, `prompts/`, `config/` |
-| **ファイル** | `app.py`, `pyproject.toml`, `uv.lock`, `uv.toml`, `run.bat`, `README.md` |
+| **ファイル** | `app.py`, `pyproject.toml`, `uv.lock`, `uv.toml`, `run.vbs`, `README.md` |
 | **保持（上書きしない）** | `glossary.csv`, `config/settings.json` |
 | **保持（更新対象外）** | `.venv/`, `.uv-python/`, `.playwright-browsers/` |
 
@@ -137,8 +137,9 @@ setup.ps1は以下を実行：
 
 ## トラブルシューティング
 
-### setup.batが実行できない
+### setup.vbsが実行できない
 
+PowerShellから直接実行：
 ```
 powershell -ExecutionPolicy Bypass -File ".scripts\setup.ps1"
 ```

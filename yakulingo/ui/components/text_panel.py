@@ -32,6 +32,13 @@ ACTION_ICONS = {
     'reply': 'reply',
 }
 
+# YakuLingo avatar SVG (Apple icon - Nani-inspired)
+AVATAR_SVG = '''
+<svg viewBox="0 0 24 24" fill="currentColor" class="avatar-icon">
+    <path d="M17.318 5.955c-.834-.952-1.964-1.455-3.068-1.455-.789 0-1.475.194-2.072.487-.399.196-.748.436-1.178.436-.462 0-.865-.256-1.29-.468-.564-.281-1.195-.455-1.96-.455-1.14 0-2.322.529-3.168 1.534C3.41 7.425 3 9.26 3 11.314c0 2.554.944 5.298 2.432 7.106.847 1.03 1.63 1.58 2.568 1.58.652 0 1.061-.213 1.605-.473.579-.276 1.298-.619 2.395-.619 1.065 0 1.763.336 2.323.61.53.258.923.482 1.577.482.99 0 1.828-.639 2.632-1.594 1.127-1.337 1.672-2.728 1.962-3.555-1.313-.596-2.494-2.03-2.494-4.143 0-1.813.994-3.166 2.13-3.835-.844-1.143-2.044-1.918-3.332-1.918-.82 0-1.464.284-2.025.556a4.27 4.27 0 0 1-.387.175c.063-.033.128-.068.194-.106.524-.303 1.181-.681 1.736-.681.476 0 .829.139 1.148.28zM12.5 3c.735 0 1.578-.326 2.168-.902.533-.52.892-1.228.892-2.008 0-.053-.003-.107-.01-.158-.793.03-1.703.451-2.293 1.045-.51.507-.933 1.231-.933 2.023 0 .069.007.137.016.191.05.009.11.014.16.014z"/>
+</svg>
+'''
+
 # Language detection animated SVG (Nani-inspired)
 LANG_DETECT_SVG = '''
 <svg viewBox="0 0 24 24" fill="none" class="lang-detect-icon" stroke-width="2">
@@ -187,25 +194,28 @@ def _render_results_to_en(
     on_adjust: Optional[Callable[[str, str], None]],
     elapsed_time: Optional[float] = None,
 ):
-    """Render →English results: multiple options with length adjustment"""
+    """Render →English results: multiple options with length adjustment (Nani-style)"""
 
-    with ui.element('div').classes('result-section w-full'):
-        # Result header (nani-style simple)
-        with ui.row().classes('result-header items-center gap-2'):
-            ui.label('🍎').classes('text-lg')
-            time_str = f"({elapsed_time:.1f}秒)" if elapsed_time else ""
-            ui.label(f'翻訳しました {time_str}').classes('text-sm text-muted')
+    # Avatar and status row (Nani-style)
+    with ui.element('div').classes('avatar-status-row'):
+        with ui.element('span').classes('avatar-container'):
+            ui.html(AVATAR_SVG)
+        with ui.element('div').classes('status-text'):
+            ui.label('翻訳しました').classes('status-label')
 
-        # Options list
-        with ui.column().classes('w-full p-3 gap-3'):
-            for i, option in enumerate(result.options):
-                _render_option_en(
-                    option,
-                    on_copy,
-                    on_adjust,
-                    is_last=(i == len(result.options) - 1),
-                    index=i,
-                )
+    # Translation results container
+    with ui.element('div').classes('result-container'):
+        with ui.element('div').classes('result-section w-full'):
+            # Options list
+            with ui.column().classes('w-full gap-3 p-4'):
+                for i, option in enumerate(result.options):
+                    _render_option_en(
+                        option,
+                        on_copy,
+                        on_adjust,
+                        is_last=(i == len(result.options) - 1),
+                        index=i,
+                    )
 
 
 def _render_results_to_jp(
@@ -215,43 +225,38 @@ def _render_results_to_jp(
     on_follow_up: Optional[Callable[[str, str], None]],
     elapsed_time: Optional[float] = None,
 ):
-    """Render →Japanese results: single translation with detailed explanation + follow-up actions"""
+    """Render →Japanese results: single translation with detailed explanation + follow-up actions (Nani-style)"""
 
     if not result.options:
         return
 
     option = result.options[0]  # Single option for →jp
 
-    with ui.element('div').classes('result-section w-full'):
-        # Result header (nani-style simple)
-        with ui.row().classes('result-header items-center gap-2'):
-            ui.label('🍎').classes('text-lg')
-            time_str = f"({elapsed_time:.1f}秒)" if elapsed_time else ""
-            ui.label(f'翻訳しました {time_str}').classes('text-sm text-muted')
+    # Avatar and status row (Nani-style)
+    with ui.element('div').classes('avatar-status-row'):
+        with ui.element('span').classes('avatar-container'):
+            ui.html(AVATAR_SVG)
+        with ui.element('div').classes('status-text'):
+            ui.label('翻訳しました').classes('status-label')
 
-        # Main translation card
-        with ui.card().classes('jp-result-card w-full'):
-            with ui.column().classes('w-full gap-4'):
+    # Translation results container
+    with ui.element('div').classes('result-container'):
+        with ui.element('section').classes('nani-result-card'):
+            # Main translation area
+            with ui.element('div').classes('nani-result-content'):
                 # Translation text
-                ui.label(option.text).classes('jp-result-text text-lg leading-relaxed')
+                ui.label(option.text).classes('nani-result-text')
 
-                # Copy button
-                with ui.row().classes('w-full justify-end'):
+                # Action toolbar (copy only)
+                with ui.element('div').classes('nani-toolbar'):
                     ui.button(
-                        'コピー',
                         icon='content_copy',
                         on_click=lambda: on_copy(option.text)
-                    ).props('flat dense no-caps').classes('text-primary')
+                    ).props('flat dense round size=sm').classes('nani-toolbar-btn').tooltip('コピー')
 
-        # Detailed explanation section
-        if option.explanation:
-            with ui.card().classes('explanation-card w-full mt-3'):
-                with ui.column().classes('w-full gap-2'):
-                    with ui.row().classes('items-center gap-2'):
-                        ui.icon('lightbulb').classes('text-amber-500')
-                        ui.label('解説').classes('font-semibold text-sm')
-
-                    # Parse and render explanation (may have bullet points)
+            # Detailed explanation section (Nani-style background)
+            if option.explanation:
+                with ui.element('div').classes('nani-explanation'):
                     _render_explanation(option.explanation)
 
         # Follow-up actions section
@@ -283,8 +288,12 @@ def _render_results_to_jp(
 
 
 def _render_explanation(explanation: str):
-    """Render explanation text, handling bullet points"""
+    """Render explanation text as HTML with bullet points (Nani-style)"""
+    import re
+
     lines = explanation.strip().split('\n')
+    bullet_items = []
+    non_bullet_lines = []
 
     for line in lines:
         line = line.strip()
@@ -294,11 +303,23 @@ def _render_explanation(explanation: str):
         # Check if it's a bullet point
         if line.startswith('- ') or line.startswith('・'):
             text = line[2:].strip() if line.startswith('- ') else line[1:].strip()
-            with ui.row().classes('items-start gap-2'):
-                ui.label('•').classes('text-muted')
-                ui.label(text).classes('text-sm text-muted flex-1')
+            # Convert markdown-style formatting to HTML
+            # **text** → <strong>text</strong>
+            text = re.sub(r'\*\*([^*]+)\*\*', r'<strong>\1</strong>', text)
+            # "text" → <strong><i>"</i>text<i>"</i></strong> for quoted terms
+            text = re.sub(r'"([^"]+)"', r'<strong><i>"</i>\1<i>"</i></strong>', text)
+            bullet_items.append(text)
         else:
-            ui.label(line).classes('text-sm text-muted')
+            non_bullet_lines.append(line)
+
+    # Render as HTML list if there are bullet items
+    if bullet_items:
+        html_content = '<ul>' + ''.join(f'<li>{item}</li>' for item in bullet_items) + '</ul>'
+        ui.html(html_content)
+
+    # Render non-bullet lines as regular text
+    for line in non_bullet_lines:
+        ui.label(line)
 
 
 def _render_option_en(

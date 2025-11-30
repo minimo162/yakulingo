@@ -706,6 +706,123 @@ body {
     padding: 1.25rem;
 }
 
+/* === Nani-style Avatar and Status === */
+.avatar-status-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-left: 0.25rem;
+    margin-top: 1.375rem;
+    margin-bottom: 0.625rem;
+}
+
+.avatar-container {
+    width: 1.75rem;
+    height: 1.75rem;
+    flex-shrink: 0;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 11px;
+    background: var(--md-sys-color-primary-container);
+}
+
+.avatar-container .avatar-icon {
+    width: 1.125rem;
+    height: 1.125rem;
+    color: var(--md-sys-color-primary);
+}
+
+.status-text {
+    min-width: 0;
+}
+
+.status-label {
+    font-size: 0.875rem;
+    line-height: 1.5;
+    color: var(--md-sys-color-on-surface-variant);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.result-container {
+    display: flex;
+    flex-direction: column;
+    gap: 0.875rem;
+    margin-top: 0.625rem;
+}
+
+/* === Nani-style Result Card === */
+.nani-result-card {
+    border-radius: calc(var(--md-sys-shape-corner-2xl) + 0.25rem);
+    padding: 0.25rem;
+    position: relative;
+    background: var(--md-sys-color-surface);
+    box-shadow: var(--md-sys-elevation-1);
+    border: 1px solid var(--md-sys-color-outline-variant);
+}
+
+.nani-result-content {
+    padding: 0.75rem 1rem 0.625rem;
+}
+
+.nani-result-text {
+    white-space: pre-wrap;
+    flex: 1;
+    font-size: 1rem;
+    line-height: 1.5;
+    color: var(--md-sys-color-on-surface);
+    word-break: break-word;
+}
+
+.nani-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.625rem;
+    margin-left: -0.25rem;
+}
+
+.nani-toolbar-btn {
+    opacity: 0.6;
+    transition: opacity var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+}
+
+.nani-toolbar-btn:hover {
+    opacity: 1;
+}
+
+/* === Nani-style Explanation === */
+.nani-explanation {
+    background: var(--md-sys-color-primary-container);
+    padding: 0.875rem;
+    margin-top: 0.25rem;
+    color: var(--md-sys-color-on-primary-container);
+    border-radius: 1rem;
+    font-size: 0.875rem;
+    line-height: 1.85;
+}
+
+.nani-explanation ul {
+    margin: 0;
+    padding-left: 1.25rem;
+}
+
+.nani-explanation li {
+    margin-bottom: 0.25rem;
+}
+
+.nani-explanation strong {
+    font-weight: 600;
+}
+
+.nani-explanation i {
+    font-style: normal;
+    opacity: 0.7;
+}
+
 /* === Follow-up Actions === */
 .follow-up-section {
     padding: 0.75rem 0;

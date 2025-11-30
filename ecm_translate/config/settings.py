@@ -33,7 +33,7 @@ class AppSettings:
     auto_update_enabled: bool = True            # 起動時に自動チェック
     auto_update_check_interval: int = 86400     # チェック間隔（秒）: 24時間
     github_repo_owner: str = "minimo162"        # GitHubリポジトリオーナー
-    github_repo_name: str = "ECM_translate"     # GitHubリポジトリ名
+    github_repo_name: str = "yakulingo"         # GitHubリポジトリ名
     last_update_check: Optional[str] = None     # 最後のチェック日時（ISO形式）
     skipped_version: Optional[str] = None       # スキップしたバージョン
 

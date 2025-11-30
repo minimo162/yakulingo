@@ -248,7 +248,7 @@ class AutoUpdater:
 
     # GitHubリポジトリ設定（ユーザーが設定可能）
     DEFAULT_REPO_OWNER = "minimo162"
-    DEFAULT_REPO_NAME = "ECM_translate"
+    DEFAULT_REPO_NAME = "yakulingo"
 
     def __init__(
         self,

@@ -4,7 +4,9 @@
 $ErrorActionPreference = "SilentlyContinue"
 
 $appDir = "$env:LOCALAPPDATA\YakuLingo"
-$startMenuDir = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\YakuLingo"
+$startMenuDir = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs"
+$startMenuShortcut = "$startMenuDir\YakuLingo.lnk"
+$startMenuRemoveShortcut = "$startMenuDir\YakuLingo を削除.lnk"
 $desktopShortcut = [Environment]::GetFolderPath("Desktop") + "\YakuLingo.lnk"
 
 Write-Host ""
@@ -20,9 +22,13 @@ if (Test-Path $appDir) {
     Write-Host "  - $appDir"
     $toDelete += $appDir
 }
-if (Test-Path $startMenuDir) {
+if (Test-Path $startMenuShortcut) {
     Write-Host "  - スタートメニュー: YakuLingo"
-    $toDelete += $startMenuDir
+    $toDelete += $startMenuShortcut
+}
+if (Test-Path $startMenuRemoveShortcut) {
+    Write-Host "  - スタートメニュー: YakuLingo を削除"
+    $toDelete += $startMenuRemoveShortcut
 }
 if (Test-Path $desktopShortcut) {
     Write-Host "  - デスクトップショートカット"
@@ -53,10 +59,14 @@ if (Test-Path $appDir) {
     Write-Host "[OK] アプリフォルダを削除しました"
 }
 
-# スタートメニュー削除
-if (Test-Path $startMenuDir) {
-    Remove-Item -Path $startMenuDir -Recurse -Force
-    Write-Host "[OK] スタートメニューを削除しました"
+# スタートメニューショートカット削除
+if (Test-Path $startMenuShortcut) {
+    Remove-Item -Path $startMenuShortcut -Force
+    Write-Host "[OK] スタートメニュー (YakuLingo) を削除しました"
+}
+if (Test-Path $startMenuRemoveShortcut) {
+    Remove-Item -Path $startMenuRemoveShortcut -Force
+    Write-Host "[OK] スタートメニュー (削除) を削除しました"
 }
 
 # デスクトップショートカット削除

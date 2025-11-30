@@ -95,6 +95,14 @@ $shortcut.IconLocation = "%SystemRoot%\System32\shell32.dll,13"
 $shortcut.Description = "YakuLingo - 日英翻訳ツール"
 $shortcut.Save()
 
+# YakuLingo 削除ショートカット
+$removeShortcut = $shell.CreateShortcut("$startMenuDir\YakuLingo を削除.lnk")
+$removeShortcut.TargetPath = "$appDir\remove.bat"
+$removeShortcut.WorkingDirectory = $appDir
+$removeShortcut.IconLocation = "%SystemRoot%\System32\shell32.dll,131"
+$removeShortcut.Description = "YakuLingo をアンインストール"
+$removeShortcut.Save()
+
 Write-Host "[OK] スタートメニューに追加しました"
 
 # デスクトップショートカット（オプション）

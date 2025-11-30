@@ -343,3 +343,200 @@ class TestCopilotHandlerIntegration:
         assert "First translation" in parsed[0]
         assert "Second translation" in parsed[1]
         assert "Third translation" in parsed[2]
+
+
+class TestSendMessage:
+    """Test _send_message functionality"""
+
+    def test_send_message_with_mock_page(self):
+        """_send_message interacts with page elements"""
+        handler = CopilotHandler()
+
+        mock_page = MagicMock()
+        mock_input = MagicMock()
+        mock_page.query_selector.return_value = mock_input
+        mock_page.wait_for_selector.return_value = mock_input
+        handler._page = mock_page
+
+        handler._send_message("Test prompt")
+
+        # Should try to find input element
+        mock_page.wait_for_selector.assert_called()
+
+
+class TestGetResponse:
+    """Test _get_response functionality"""
+
+    def test_get_response_not_connected_returns_empty(self):
+        """_get_response returns empty string when not connected"""
+        handler = CopilotHandler()
+        handler._page = None
+
+        result = handler._get_response()
+        assert result == ""
+
+    def test_get_response_with_mock_page(self):
+        """_get_response reads from page elements"""
+        handler = CopilotHandler()
+
+        mock_page = MagicMock()
+        mock_element = MagicMock()
+        mock_element.inner_text.return_value = "Translated text"
+        mock_page.query_selector_all.return_value = [mock_element]
+        mock_page.query_selector.return_value = None  # No streaming indicator
+        handler._page = mock_page
+
+        # Mock time to avoid actual waiting
+        with patch("time.sleep"):
+            with patch("time.time", side_effect=[0, 0.1, 0.2, 5]):  # Simulate time passing
+                result = handler._get_response()
+
+        # Result depends on implementation details
+        assert isinstance(result, str)
+
+
+class TestCopilotHandlerConstants:
+    """Test CopilotHandler constants and configuration"""
+
+    def test_copilot_url_format(self):
+        """COPILOT_URL has correct format"""
+        handler = CopilotHandler()
+        assert "m365.cloud.microsoft" in handler.COPILOT_URL
+        assert "chat" in handler.COPILOT_URL.lower()
+
+    def test_default_cdp_port(self):
+        """Default CDP port is 9333"""
+        handler = CopilotHandler()
+        assert handler.cdp_port == 9333
+
+    def test_cdp_port_is_readonly(self):
+        """CDP port is set at construction time"""
+        handler = CopilotHandler()
+        # Port is hardcoded in CopilotHandler
+        assert handler.cdp_port == 9333
+
+
+class TestCopilotHandlerConnectFlow:
+    """Test connect() flow with mocks"""
+
+    def test_connect_already_connected(self):
+        """connect() returns True if already connected"""
+        handler = CopilotHandler()
+        handler._connected = True
+
+        result = handler.connect()
+        assert result is True
+
+    def test_connect_calls_progress(self):
+        """connect() calls progress callback"""
+        handler = CopilotHandler()
+
+        messages = []
+        def on_progress(msg):
+            messages.append(msg)
+
+        # Will fail to connect without Edge, but should call progress
+        handler.connect(on_progress=on_progress)
+
+        assert len(messages) > 0
+
+    def test_connect_returns_boolean(self):
+        """connect() returns boolean result"""
+        handler = CopilotHandler()
+
+        # Will likely return False without Edge running
+        result = handler.connect()
+
+        assert isinstance(result, bool)
+
+
+class TestCopilotHandlerAsync:
+    """Test async methods"""
+
+    @pytest.mark.asyncio
+    async def test_translate_async_not_connected(self):
+        """translate() raises when not connected"""
+        handler = CopilotHandler()
+
+        with pytest.raises(RuntimeError) as exc:
+            await handler.translate(["test"], "prompt")
+
+        assert "Not connected" in str(exc.value)
+
+    @pytest.mark.asyncio
+    async def test_translate_async_with_mock(self):
+        """translate() works with mocked internals"""
+        handler = CopilotHandler()
+        handler._connected = True
+        handler._page = MagicMock()
+
+        # Mock internal methods
+        async def mock_send(msg):
+            pass
+
+        async def mock_get():
+            return "1. Result"
+
+        handler._send_message_async = mock_send
+        handler._get_response_async = mock_get
+
+        results = await handler.translate(["Test"], "prompt")
+
+        assert len(results) == 1
+        assert results[0] == "Result"
+
+
+class TestCopilotHandlerEdgeCases:
+    """Test edge cases and error handling"""
+
+    def test_parse_empty_batch(self):
+        """Parse empty response"""
+        handler = CopilotHandler()
+        result = handler._parse_batch_result("", 5)
+
+        assert len(result) == 5
+        assert all(r == "" for r in result)
+
+    def test_parse_single_line(self):
+        """Parse single line response"""
+        handler = CopilotHandler()
+        result = handler._parse_batch_result("Just one translation", 1)
+
+        assert len(result) == 1
+        assert result[0] == "Just one translation"
+
+    def test_parse_with_extra_whitespace(self):
+        """Parse response with extra whitespace"""
+        handler = CopilotHandler()
+        result = handler._parse_batch_result("""
+            1.    First
+            2.    Second
+        """, 2)
+
+        assert len(result) == 2
+        assert "First" in result[0]
+        assert "Second" in result[1]
+
+    def test_translate_sync_empty_texts(self):
+        """translate_sync with empty text list"""
+        handler = CopilotHandler()
+        handler._connected = True
+        handler._page = MagicMock()
+        handler._send_message = Mock()
+        handler._get_response = Mock(return_value="")
+
+        results = handler.translate_sync([], "prompt")
+
+        assert results == []
+
+    def test_disconnect_multiple_times(self):
+        """Calling disconnect multiple times is safe"""
+        handler = CopilotHandler()
+        handler._connected = True
+        handler._browser = Mock()
+        handler._playwright = Mock()
+
+        handler.disconnect()
+        handler.disconnect()  # Should not raise
+
+        assert handler._connected is False

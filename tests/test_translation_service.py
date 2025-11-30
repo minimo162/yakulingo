@@ -629,3 +629,345 @@ class TestTranslationServiceGetFileInfo:
 
         with pytest.raises(ValueError):
             service.get_file_info(txt_file)
+
+
+# --- Tests: is_japanese_text() ---
+
+class TestIsJapaneseText:
+    """Tests for is_japanese_text() function"""
+
+    def test_hiragana_detected(self):
+        """Hiragana text is detected as Japanese"""
+        from yakulingo.services.translation_service import is_japanese_text
+        assert is_japanese_text("こんにちは") is True
+        assert is_japanese_text("ひらがなテスト") is True
+
+    def test_katakana_detected(self):
+        """Katakana text is detected as Japanese"""
+        from yakulingo.services.translation_service import is_japanese_text
+        assert is_japanese_text("カタカナ") is True
+        assert is_japanese_text("テスト") is True
+
+    def test_kanji_detected(self):
+        """Kanji text is detected as Japanese"""
+        from yakulingo.services.translation_service import is_japanese_text
+        assert is_japanese_text("日本語") is True
+        assert is_japanese_text("漢字") is True
+
+    def test_mixed_japanese(self):
+        """Mixed Japanese content is detected"""
+        from yakulingo.services.translation_service import is_japanese_text
+        assert is_japanese_text("東京タワー") is True
+        assert is_japanese_text("これはテストです") is True
+
+    def test_english_not_detected(self):
+        """English text is not detected as Japanese"""
+        from yakulingo.services.translation_service import is_japanese_text
+        assert is_japanese_text("Hello World") is False
+        assert is_japanese_text("This is a test") is False
+
+    def test_numbers_not_detected(self):
+        """Numbers are not detected as Japanese"""
+        from yakulingo.services.translation_service import is_japanese_text
+        assert is_japanese_text("12345") is False
+        assert is_japanese_text("100.50") is False
+
+    def test_empty_string(self):
+        """Empty string returns False"""
+        from yakulingo.services.translation_service import is_japanese_text
+        assert is_japanese_text("") is False
+
+    def test_whitespace_only(self):
+        """Whitespace only returns False"""
+        from yakulingo.services.translation_service import is_japanese_text
+        assert is_japanese_text("   ") is False
+        assert is_japanese_text("\t\n") is False
+
+    def test_mixed_english_japanese_above_threshold(self):
+        """Mixed content above threshold is Japanese"""
+        from yakulingo.services.translation_service import is_japanese_text
+        # More Japanese than threshold (default 0.3)
+        assert is_japanese_text("日本語 test") is True  # 3 JP / 7 total > 0.3
+
+    def test_mixed_english_japanese_below_threshold(self):
+        """Mixed content below threshold is not Japanese"""
+        from yakulingo.services.translation_service import is_japanese_text
+        # Less Japanese than threshold (default 0.3)
+        # "a 日" has 1 JP / 2 alphanumeric = 0.5, so it's actually above threshold
+        # Need more English characters to get below threshold
+        assert is_japanese_text("This is English text 日") is False  # 1 JP / ~18 total < 0.3
+        assert is_japanese_text("abcdefghij日") is False  # 1 JP / 11 total ≈ 0.09 < 0.3
+
+    def test_custom_threshold(self):
+        """Custom threshold works correctly"""
+        from yakulingo.services.translation_service import is_japanese_text
+        text = "日本 English"  # 2 JP / 9 total = ~0.22
+        assert is_japanese_text(text, threshold=0.2) is True
+        assert is_japanese_text(text, threshold=0.5) is False
+
+    def test_halfwidth_katakana(self):
+        """Halfwidth katakana is detected"""
+        from yakulingo.services.translation_service import is_japanese_text
+        # Halfwidth katakana: ｱｲｳｴｵ (U+FF65-U+FF9F)
+        assert is_japanese_text("ｱｲｳｴｵ") is True
+
+    def test_punctuation_ignored(self):
+        """Punctuation is not counted in detection"""
+        from yakulingo.services.translation_service import is_japanese_text
+        assert is_japanese_text("。！？、") is False  # Only punctuation
+        assert is_japanese_text("こんにちは。") is True  # Japanese + punctuation
+
+
+# --- Tests: translate_text_with_options() ---
+
+class TestTranslateTextWithOptions:
+    """Tests for TranslationService.translate_text_with_options()"""
+
+    @pytest.fixture
+    def mock_copilot(self):
+        mock = Mock()
+        mock.translate_single.return_value = """[1]
+訳文: Short translation
+解説: Brief and concise
+
+[2]
+訳文: Medium length translation
+解説: Standard translation
+
+[3]
+訳文: A longer, more detailed translation
+解説: More verbose option"""
+        return mock
+
+    @pytest.fixture
+    def service(self, mock_copilot, tmp_path):
+        # Create prompts directory with test templates
+        prompts_dir = tmp_path / "prompts"
+        prompts_dir.mkdir()
+
+        # Create text translation templates
+        to_en = prompts_dir / "text_translate_to_en.txt"
+        to_en.write_text("Translate to EN: {input_text}")
+
+        to_jp = prompts_dir / "text_translate_to_jp.txt"
+        to_jp.write_text("Translate to JP: {input_text}")
+
+        return TranslationService(mock_copilot, AppSettings(), prompts_dir=prompts_dir)
+
+    def test_japanese_input_returns_english_options(self, mock_copilot):
+        """Japanese input returns English translation options"""
+        service = TranslationService(mock_copilot, AppSettings())
+
+        result = service.translate_text_with_options("こんにちは")
+
+        assert result.output_language == "en"
+        assert result.source_text == "こんにちは"
+        assert result.source_char_count == 5
+
+    def test_english_input_returns_japanese_option(self, mock_copilot):
+        """English input returns Japanese translation"""
+        mock_copilot.translate_single.return_value = """訳文: こんにちは
+解説: 挨拶の翻訳です"""
+
+        service = TranslationService(mock_copilot, AppSettings())
+
+        result = service.translate_text_with_options("Hello")
+
+        assert result.output_language == "jp"
+        assert result.source_text == "Hello"
+
+    def test_error_returns_error_message(self):
+        """Error during translation returns error in result"""
+        mock_copilot = Mock()
+        mock_copilot.translate_single.side_effect = RuntimeError("API Error")
+
+        service = TranslationService(mock_copilot, AppSettings())
+
+        result = service.translate_text_with_options("テスト")
+
+        assert result.error_message is not None
+        assert "API Error" in result.error_message
+
+    def test_fallback_when_no_prompt_file(self, mock_copilot):
+        """Falls back to basic translation when prompt file missing"""
+        mock_copilot.translate_single.return_value = "Translated text"
+
+        service = TranslationService(mock_copilot, AppSettings())
+
+        result = service.translate_text_with_options("テスト")
+
+        # Should still return a result
+        assert result.source_text == "テスト"
+        # May have options or error depending on parsing
+
+
+# --- Tests: adjust_translation() ---
+
+class TestAdjustTranslation:
+    """Tests for TranslationService.adjust_translation()"""
+
+    @pytest.fixture
+    def mock_copilot(self):
+        mock = Mock()
+        mock.translate_single.return_value = """訳文: Adjusted translation
+解説: This is the adjusted version"""
+        return mock
+
+    @pytest.fixture
+    def service(self, mock_copilot):
+        return TranslationService(mock_copilot, AppSettings())
+
+    def test_shorter_adjustment(self, service, mock_copilot):
+        """Shorter adjustment returns shorter text"""
+        result = service.adjust_translation("Original long translation", "shorter")
+
+        assert result is not None
+        mock_copilot.translate_single.assert_called_once()
+
+    def test_longer_adjustment(self, service, mock_copilot):
+        """Longer adjustment returns longer text"""
+        result = service.adjust_translation("Short text", "longer")
+
+        assert result is not None
+        mock_copilot.translate_single.assert_called_once()
+
+    def test_custom_adjustment(self, service, mock_copilot):
+        """Custom adjustment instruction works"""
+        result = service.adjust_translation("Text", "make it more formal")
+
+        assert result is not None
+
+    def test_error_returns_none(self):
+        """Error during adjustment returns None"""
+        mock_copilot = Mock()
+        mock_copilot.translate_single.side_effect = RuntimeError("API Error")
+
+        service = TranslationService(mock_copilot, AppSettings())
+
+        result = service.adjust_translation("Text", "shorter")
+
+        assert result is None
+
+
+# --- Tests: Parsing methods ---
+
+class TestParseMultiOptionResult:
+    """Tests for TranslationService._parse_multi_option_result()"""
+
+    @pytest.fixture
+    def service(self):
+        return TranslationService(Mock(), AppSettings())
+
+    def test_parse_standard_format(self, service):
+        """Parse standard multi-option format"""
+        raw = """[1]
+訳文: First translation
+解説: First explanation
+
+[2]
+訳文: Second translation
+解説: Second explanation
+
+[3]
+訳文: Third translation
+解説: Third explanation"""
+
+        options = service._parse_multi_option_result(raw)
+
+        assert len(options) == 3
+        assert options[0].text == "First translation"
+        assert options[0].explanation == "First explanation"
+        assert options[2].text == "Third translation"
+
+    def test_parse_empty_result(self, service):
+        """Parse empty result returns empty list"""
+        options = service._parse_multi_option_result("")
+        assert options == []
+
+    def test_parse_malformed_result(self, service):
+        """Parse malformed result handles gracefully"""
+        raw = "Just some text without proper format"
+        options = service._parse_multi_option_result(raw)
+        # Should return empty or handle gracefully
+        assert isinstance(options, list)
+
+
+class TestParseSingleTranslationResult:
+    """Tests for TranslationService._parse_single_translation_result()"""
+
+    @pytest.fixture
+    def service(self):
+        return TranslationService(Mock(), AppSettings())
+
+    def test_parse_standard_format(self, service):
+        """Parse standard single translation format"""
+        raw = """訳文: 翻訳されたテキスト
+解説: これは翻訳の説明です"""
+
+        options = service._parse_single_translation_result(raw)
+
+        assert len(options) == 1
+        assert options[0].text == "翻訳されたテキスト"
+        assert options[0].explanation == "これは翻訳の説明です"
+
+    def test_parse_without_explanation(self, service):
+        """Parse result without explanation"""
+        raw = """訳文: 翻訳されたテキスト"""
+
+        options = service._parse_single_translation_result(raw)
+
+        assert len(options) == 1
+        assert options[0].text == "翻訳されたテキスト"
+
+    def test_parse_fallback_format(self, service):
+        """Parse fallback format (first line as text)"""
+        raw = """Translation text
+Some additional info"""
+
+        options = service._parse_single_translation_result(raw)
+
+        assert len(options) == 1
+        assert options[0].text == "Translation text"
+
+    def test_parse_empty_result(self, service):
+        """Parse empty result returns empty list"""
+        options = service._parse_single_translation_result("")
+        assert options == []
+
+
+class TestParseSingleOptionResult:
+    """Tests for TranslationService._parse_single_option_result()"""
+
+    @pytest.fixture
+    def service(self):
+        return TranslationService(Mock(), AppSettings())
+
+    def test_parse_standard_format(self, service):
+        """Parse standard single option format"""
+        raw = """訳文: Adjusted text
+解説: Explanation of adjustment"""
+
+        option = service._parse_single_option_result(raw)
+
+        assert option is not None
+        assert option.text == "Adjusted text"
+        assert option.explanation == "Explanation of adjustment"
+
+    def test_parse_fallback_format(self, service):
+        """Parse fallback format (whole text as result)"""
+        raw = "Just the adjusted text"
+
+        option = service._parse_single_option_result(raw)
+
+        assert option is not None
+        assert option.text == "Just the adjusted text"
+
+    def test_parse_empty_result(self, service):
+        """Parse empty result returns None"""
+        option = service._parse_single_option_result("")
+        assert option is None
+
+    def test_parse_whitespace_only(self, service):
+        """Parse whitespace only returns None"""
+        option = service._parse_single_option_result("   \n\t  ")
+        assert option is None

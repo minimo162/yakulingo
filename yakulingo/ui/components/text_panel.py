@@ -196,9 +196,9 @@ def _render_results_to_en(
                 ui.label('翻訳結果').classes('font-semibold')
             with ui.element('div').classes('result-count-badge'):
                 ui.label('🍎').classes('emoji')
-                # Show pattern count with elapsed time
-                time_str = f" ({elapsed_time:.1f}秒)" if elapsed_time else ""
-                ui.label(f'{len(result.options)} パターン考えました{time_str}')
+                # Show elapsed time
+                time_str = f"({elapsed_time:.1f}秒)" if elapsed_time else ""
+                ui.label(f'翻訳しました {time_str}')
 
         # Options list
         with ui.column().classes('w-full p-3 gap-3'):

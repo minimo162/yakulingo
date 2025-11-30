@@ -498,7 +498,8 @@ class AutoUpdater:
         "pyproject.toml",   # プロジェクト設定
         "uv.lock",          # 依存関係ロックファイル
         "uv.toml",          # UV設定
-        "run.bat",          # 起動スクリプト
+        "run.bat",          # 起動スクリプト（コンソール版）
+        "run.vbs",          # 起動スクリプト（サイレント版）
         "README.md",        # ドキュメント
     ]
     # ユーザー設定ファイル（上書きしない、バックアップ対象）

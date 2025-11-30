@@ -1,7 +1,7 @@
 # ecm_translate/ui/app.py
 """
-YakuLingo - M3 Expressive UI.
-Simple, practical, emotionally resonant.
+YakuLingo - Reactive UI with @ui.refreshable.
+No more full page reloads.
 """
 
 import asyncio
@@ -22,7 +22,7 @@ from ecm_translate.services.translation_service import TranslationService
 
 
 class YakuLingoApp:
-    """Main application - simplified"""
+    """Main application - reactive UI"""
 
     def __init__(self):
         self.state = AppState()
@@ -35,9 +35,15 @@ class YakuLingoApp:
         base_dir = Path(__file__).parent.parent.parent
         self.state.reference_files = self.settings.get_reference_file_paths(base_dir)
 
+        # UI references for refresh
+        self._header_status: Optional[ui.element] = None
+        self._main_content = None
+        self._tabs_container = None
+
     async def connect_copilot(self):
         """Connect to Copilot"""
         self.state.copilot_connecting = True
+        self._refresh_status()
 
         try:
             success = await asyncio.to_thread(
@@ -50,7 +56,6 @@ class YakuLingoApp:
                     self.copilot, self.settings, get_default_prompts_dir()
                 )
                 ui.notify('Ready', type='positive')
-                ui.navigate.reload()
             else:
                 ui.notify('Connection failed', type='negative')
 
@@ -58,85 +63,137 @@ class YakuLingoApp:
             ui.notify(f'Error: {e}', type='negative')
 
         self.state.copilot_connecting = False
+        self._refresh_status()
+        self._refresh_content()
+
+    def _refresh_status(self):
+        """Refresh status dot only"""
+        if self._header_status:
+            self._header_status.refresh()
+
+    def _refresh_content(self):
+        """Refresh main content area"""
+        if self._main_content:
+            self._main_content.refresh()
+
+    def _refresh_tabs(self):
+        """Refresh tab buttons"""
+        if self._tabs_container:
+            self._tabs_container.refresh()
 
     def create_ui(self):
         """Create the UI"""
         ui.add_head_html(f'<style>{COMPLETE_CSS}</style>')
 
-        # Header - clean and minimal
+        # Header
         with ui.header().classes('app-header items-center px-6 py-3'):
             ui.label('YakuLingo').classes('app-logo mr-6')
 
-            # Pill-style tabs
-            with ui.row().classes('gap-1'):
-                self._tab('Text', Tab.TEXT)
-                self._tab('File', Tab.FILE)
+            # Refreshable tabs
+            @ui.refreshable
+            def tabs_container():
+                with ui.row().classes('gap-1'):
+                    self._create_tab('Text', Tab.TEXT)
+                    self._create_tab('File', Tab.FILE)
+
+            self._tabs_container = tabs_container
+            tabs_container()
 
             ui.space()
 
-            # Simple status
-            with ui.row().classes('items-center gap-2'):
-                dot_class = 'status-dot connected' if self.state.copilot_connected else 'status-dot connecting' if self.state.copilot_connecting else 'status-dot'
-                ui.element('div').classes(dot_class)
+            # Refreshable status
+            @ui.refreshable
+            def header_status():
+                with ui.row().classes('items-center gap-2'):
+                    if self.state.copilot_connected:
+                        dot_class = 'status-dot connected'
+                    elif self.state.copilot_connecting:
+                        dot_class = 'status-dot connecting'
+                    else:
+                        dot_class = 'status-dot'
+                    ui.element('div').classes(dot_class)
 
-        # Main content
-        with ui.column().classes('w-full max-w-6xl mx-auto p-6 flex-1'):
-            if self.state.current_tab == Tab.TEXT:
-                create_text_panel(
-                    self.state,
-                    on_translate=self._translate_text,
-                    on_swap=self._swap,
-                    on_source_change=lambda t: setattr(self.state, 'source_text', t),
-                    on_copy=self._copy,
-                    on_clear=self._clear,
-                )
-            else:
-                create_file_panel(
-                    self.state,
-                    on_file_select=self._select_file,
-                    on_translate=self._translate_file,
-                    on_cancel=self._cancel,
-                    on_download=self._download,
-                    on_reset=self._reset,
-                )
+            self._header_status = header_status
+            header_status()
 
-    def _tab(self, label: str, tab: Tab):
-        """Pill-style tab button"""
-        classes = 'tab-btn active' if self.state.current_tab == tab else 'tab-btn'
+        # Refreshable main content
+        @ui.refreshable
+        def main_content():
+            with ui.column().classes('w-full max-w-6xl mx-auto p-6 flex-1'):
+                if self.state.current_tab == Tab.TEXT:
+                    create_text_panel(
+                        state=self.state,
+                        on_translate=self._translate_text,
+                        on_swap=self._swap,
+                        on_source_change=self._on_source_change,
+                        on_target_change=self._on_target_change,
+                        on_copy=self._copy,
+                        on_clear=self._clear,
+                    )
+                else:
+                    create_file_panel(
+                        state=self.state,
+                        on_file_select=self._select_file,
+                        on_translate=self._translate_file,
+                        on_cancel=self._cancel,
+                        on_download=self._download,
+                        on_reset=self._reset,
+                    )
+
+        self._main_content = main_content
+        main_content()
+
+    def _create_tab(self, label: str, tab: Tab):
+        """Create a tab button"""
+        is_active = self.state.current_tab == tab
+        classes = 'tab-btn active' if is_active else 'tab-btn'
         disabled = self.state.is_translating()
 
         def on_click():
-            if not disabled:
+            if not disabled and self.state.current_tab != tab:
                 self.state.current_tab = tab
                 self.settings.last_tab = tab.value
-                ui.navigate.reload()
+                self._refresh_tabs()
+                self._refresh_content()
 
         btn = ui.button(label, on_click=on_click).props('flat no-caps').classes(classes)
         if disabled:
             btn.props('disable')
 
     def _swap(self):
+        """Swap translation direction"""
         self.state.swap_direction()
         self.settings.last_direction = self.state.direction.value
-        ui.navigate.reload()
+        self._refresh_content()
+
+    def _on_source_change(self, text: str):
+        """Handle source text change - no refresh needed"""
+        self.state.source_text = text
+
+    def _on_target_change(self, text: str):
+        """Handle target text change - no refresh needed"""
+        self.state.target_text = text
 
     def _clear(self):
+        """Clear text fields"""
         self.state.source_text = ""
         self.state.target_text = ""
-        ui.navigate.reload()
+        self._refresh_content()
 
     def _copy(self):
+        """Copy target text"""
         if self.state.target_text:
             ui.clipboard.write(self.state.target_text)
             ui.notify('Copied', type='positive')
 
     async def _translate_text(self):
+        """Translate text"""
         if not self.translation_service:
             ui.notify('Not connected', type='warning')
             return
 
         self.state.text_translating = True
-        ui.navigate.reload()
+        self._refresh_content()
 
         try:
             result = await asyncio.to_thread(
@@ -156,9 +213,10 @@ class YakuLingoApp:
             ui.notify(f'Error: {e}', type='negative')
 
         self.state.text_translating = False
-        ui.navigate.reload()
+        self._refresh_content()
 
     def _select_file(self, file_path: Path):
+        """Select file for translation"""
         if not self.translation_service:
             ui.notify('Not connected', type='warning')
             return
@@ -169,9 +227,10 @@ class YakuLingoApp:
             self.state.file_state = FileState.SELECTED
         except Exception as e:
             ui.notify(f'Error: {e}', type='negative')
-        ui.navigate.reload()
+        self._refresh_content()
 
     async def _translate_file(self):
+        """Translate file with progress dialog"""
         if not self.translation_service or not self.state.selected_file:
             return
 
@@ -179,7 +238,7 @@ class YakuLingoApp:
         self.state.translation_progress = 0.0
         self.state.translation_status = 'Starting...'
 
-        # Clean progress dialog
+        # Progress dialog
         with ui.dialog() as progress_dialog, ui.card().classes('w-80'):
             with ui.column().classes('w-full gap-4 p-5'):
                 ui.label('Translating...').classes('text-base font-semibold')
@@ -197,7 +256,6 @@ class YakuLingoApp:
         def on_progress(p: TranslationProgress):
             self.state.translation_progress = p.percentage
             self.state.translation_status = p.status
-            # Update UI elements directly
             progress_bar.set_value(p.percentage)
             progress_label.set_text(f'{int(p.percentage * 100)}%')
             status_label.set_text(p.status or 'Translating...')
@@ -229,7 +287,7 @@ class YakuLingoApp:
             self.state.file_state = FileState.ERROR
             ui.notify('Error', type='negative')
 
-        ui.navigate.reload()
+        self._refresh_content()
 
     def _cancel_and_close(self, dialog):
         """Cancel translation and close dialog"""
@@ -237,21 +295,24 @@ class YakuLingoApp:
             self.translation_service.cancel()
         dialog.close()
         self.state.reset_file_state()
-        ui.navigate.reload()
+        self._refresh_content()
 
     def _cancel(self):
+        """Cancel file translation"""
         if self.translation_service:
             self.translation_service.cancel()
         self.state.reset_file_state()
-        ui.navigate.reload()
+        self._refresh_content()
 
     def _download(self):
+        """Download translated file"""
         if self.state.output_file and self.state.output_file.exists():
             ui.download(self.state.output_file)
 
     def _reset(self):
+        """Reset file state"""
         self.state.reset_file_state()
-        ui.navigate.reload()
+        self._refresh_content()
 
 
 def create_app() -> YakuLingoApp:

@@ -16,6 +16,7 @@ def create_text_panel(
     on_translate: Callable[[], None],
     on_swap: Callable[[], None],
     on_source_change: Callable[[str], None],
+    on_target_change: Callable[[str], None],
     on_copy: Callable[[], None],
     on_clear: Callable[[], None],
 ):
@@ -50,7 +51,10 @@ def create_text_panel(
                     ui.button(icon='content_copy', on_click=on_copy).props('flat dense round size=sm')
 
             if state.target_text:
-                ui.textarea(value=state.target_text).classes('flex-1 min-h-72 p-3').props('borderless readonly')
+                ui.textarea(
+                    value=state.target_text,
+                    on_change=lambda e: on_target_change(e.value)
+                ).classes('flex-1 min-h-72 p-3').props('borderless readonly')
             else:
                 with ui.column().classes('flex-1 items-center justify-center'):
                     ui.label('Translation appears here').classes('text-sm text-muted')

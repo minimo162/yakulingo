@@ -480,17 +480,17 @@ class TestReferenceFilesIntegration:
 class TestBidirectionalBehavior:
     """Test bidirectional translation behavior"""
 
-    def test_unified_prompt_used(self, mock_copilot, settings, sample_excel):
-        """Bidirectional translation uses unified prompt"""
+    def test_translation_prompt_used(self, mock_copilot, settings, sample_excel):
+        """Translation uses proper prompt template"""
         service = TranslationService(mock_copilot, settings)
 
         service.translate_file(sample_excel)
 
-        # Verify prompt contains language detection rules
+        # Verify prompt contains translation rules
         call_args = mock_copilot.translate_sync.call_args
         prompt = call_args[0][1]  # Second positional arg is prompt
-        # The unified prompt should have language detection
-        assert "Language Detection Rule" in prompt or "日本語" in prompt
+        # The prompt should contain translation instructions
+        assert "Translation Rule" in prompt or "翻訳" in prompt
 
     def test_japanese_input_translation(self, mock_copilot, settings, sample_excel):
         """Japanese input should be auto-detected and translated"""

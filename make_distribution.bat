@@ -131,23 +131,19 @@ if exist "dist_temp" rd /s /q "dist_temp"
 
 :: Create distribution folder structure
 echo [INFO] Creating folder structure...
-mkdir "%DIST_DIR%\_internal" 2>nul
+mkdir "%DIST_DIR%" 2>nul
 
-:: Copy root-level files (entry points only)
-echo   Copying: setup.bat (root)
-copy /y "setup.bat" "%DIST_DIR%\" >nul
-
-:: Copy files to _internal folder
-echo   Copying files to _internal...
-for %%f in ("run.bat" "setup.ps1" "remove.bat" "remove.ps1" "app.py" "glossary.csv" "pyproject.toml" "uv.toml" "README.md") do (
-    if exist "%%~f" copy /y "%%~f" "%DIST_DIR%\_internal\" >nul
+:: Copy files to distribution folder
+echo   Copying files...
+for %%f in ("run.bat" "remove.bat" "remove.ps1" "app.py" "glossary.csv" "pyproject.toml" "uv.toml" "README.md") do (
+    if exist "%%~f" copy /y "%%~f" "%DIST_DIR%\" >nul
 )
 
-:: Copy folders to _internal
-for %%d in (".venv" ".uv-python" ".playwright-browsers" "yakulingo" "prompts") do (
+:: Copy folders to distribution
+for %%d in (".venv" ".uv-python" ".playwright-browsers" "yakulingo" "prompts" "config") do (
     if exist "%%~d" (
         echo   Copying: %%~d ...
-        xcopy /s /e /i /q "%%~d" "%DIST_DIR%\_internal\%%~d" >nul
+        xcopy /s /e /i /q "%%~d" "%DIST_DIR%\%%~d" >nul
     )
 )
 
@@ -170,15 +166,33 @@ if exist "%DIST_ZIP%" (
     echo.
     echo Structure:
     echo   YakuLingo/
-    echo     setup.bat          ^<-- Entry point for installation
-    echo     _internal/
-    echo       run.bat          ^<-- Application launcher
-    echo       app.py, yakulingo/, ...
+    echo     run.bat            ^<-- Application launcher
+    echo     app.py, yakulingo/, ...
     echo.
-    echo Instructions for users:
-    echo   1. Extract the zip file to any location
-    echo   2. Double-click "setup.bat" to install
-    echo   3. Launch from Desktop shortcut or Start Menu
+    echo ============================================================
+    echo.
+    echo Creating share folder package...
+    echo.
+
+    :: Create share folder with network installer
+    set SHARE_DIR=share_package
+    if exist "%SHARE_DIR%" rd /s /q "%SHARE_DIR%"
+    mkdir "%SHARE_DIR%"
+
+    :: Copy ZIP and installer files
+    copy /y "%DIST_ZIP%" "%SHARE_DIR%\" >nul
+    copy /y "installer\share\setup.bat" "%SHARE_DIR%\" >nul
+    copy /y "installer\share\README.txt" "%SHARE_DIR%\" >nul
+    xcopy /s /e /i /q "installer\share\.scripts" "%SHARE_DIR%\.scripts" >nul
+
+    echo [SUCCESS] Share folder package created!
+    echo.
+    echo   Folder: %SHARE_DIR%\
+    echo     - setup.bat    ^<-- Users run this
+    echo     - %DIST_ZIP%
+    echo     - README.txt
+    echo.
+    echo Deploy the contents of "%SHARE_DIR%" to your network share.
     echo ============================================================
 ) else (
     echo [ERROR] Failed to create distribution package.

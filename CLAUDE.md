@@ -73,8 +73,11 @@ YakuLingo/
 │   ├── conftest.py                # Shared fixtures and mocks
 │   └── test_*.py                  # Unit tests for each module
 ├── prompts/                       # Translation prompt templates
-│   ├── translate_jp_to_en.txt
-│   └── translate_en_to_jp.txt
+│   ├── translate_to_en.txt        # File translation (JP→EN)
+│   ├── translate_to_jp.txt        # File translation (EN→JP)
+│   ├── text_translate_to_en.txt   # Text translation (JP→EN)
+│   ├── text_translate_to_jp.txt   # Text translation (EN→JP)
+│   └── ...                        # Additional prompts for adjustments
 ├── config/
 │   └── settings.json              # User configuration
 ├── docs/

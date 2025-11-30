@@ -125,8 +125,7 @@ ECM_translate/
 │   │       ├── header.py
 │   │       ├── tabs.py
 │   │       ├── text_panel.py
-│   │       ├── file_panel.py
-│   │       └── settings_panel.py
+│   │       └── file_panel.py
 │   │
 │   ├── services/                   # Service Layer
 │   │   ├── translation_service.py  # TranslationService

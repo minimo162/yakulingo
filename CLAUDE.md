@@ -50,8 +50,7 @@ YakuLingo/
 │   │       ├── header.py
 │   │       ├── tabs.py
 │   │       ├── text_panel.py
-│   │       ├── file_panel.py
-│   │       └── settings_panel.py
+│   │       └── file_panel.py
 │   ├── services/                  # Business logic layer
 │   │   ├── translation_service.py # Main translation orchestrator
 │   │   ├── copilot_handler.py     # M365 Copilot browser automation

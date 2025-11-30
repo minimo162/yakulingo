@@ -98,10 +98,10 @@ def create_text_panel(
                                 'flat dense round size=sm'
                             ).classes('text-muted')
 
-                        # Translate button (Nani-style)
+                        # Translate button (Nani-style) with shortcut hint
                         with ui.button(on_click=on_translate).classes('translate-btn').props('no-caps') as btn:
                             ui.label('Translate')
-                            ui.icon('south').classes('text-base')
+                            ui.label('Ctrl+Enter').classes('shortcut-hint ml-1')
                         if state.text_translating:
                             btn.props('loading disable')
                         elif not state.can_translate():

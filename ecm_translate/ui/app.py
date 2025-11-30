@@ -40,6 +40,7 @@ class YakuLingoApp:
         self._main_content = None
         self._tabs_container = None
         self._history_drawer: Optional[ui.element] = None
+        self._history_panel = None
 
     async def connect_copilot(self, silent: bool = False):
         """
@@ -142,17 +143,18 @@ class YakuLingoApp:
             # Refreshable status
             @ui.refreshable
             def header_status():
-                with ui.row().classes('items-center gap-2 ml-2'):
-                    if self.state.copilot_connected:
-                        dot_class = 'status-dot connected'
-                        tooltip = 'Connected to Copilot'
-                    elif self.state.copilot_connecting:
-                        dot_class = 'status-dot connecting'
-                        tooltip = 'Connecting...'
-                    else:
-                        dot_class = 'status-dot'
-                        tooltip = 'Not connected'
-                    ui.element('div').classes(dot_class).tooltip(tooltip)
+                if self.state.copilot_connected:
+                    with ui.element('div').classes('status-indicator connected'):
+                        ui.element('div').classes('status-dot connected')
+                        ui.label('Ready')
+                elif self.state.copilot_connecting:
+                    with ui.element('div').classes('status-indicator connecting'):
+                        ui.element('div').classes('status-dot connecting')
+                        ui.label('Connecting...')
+                else:
+                    with ui.element('div').classes('status-indicator'):
+                        ui.element('div').classes('status-dot')
+                        ui.label('Offline')
 
             self._header_status = header_status
             header_status()
@@ -160,7 +162,13 @@ class YakuLingoApp:
         # History drawer (right side)
         with ui.right_drawer(value=False).classes('history-drawer') as drawer:
             self._history_drawer = drawer
-            self._create_history_panel()
+
+            @ui.refreshable
+            def history_panel():
+                self._create_history_panel()
+
+            self._history_panel = history_panel
+            history_panel()
 
         # Refreshable main content
         @ui.refreshable
@@ -495,8 +503,8 @@ class YakuLingoApp:
     def _clear_history(self):
         """Clear all history"""
         self.state.clear_history()
-        if self._history_drawer:
-            self._history_drawer.update()
+        if self._history_panel:
+            self._history_panel.refresh()
         self._refresh_content()
 
     def _add_to_history(self, result: TextTranslationResult):

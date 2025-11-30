@@ -293,8 +293,8 @@ class AutoUpdater:
         """
         if platform.system() == "Windows":
             app_dir = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "YakuLingo"
-            # インストール済みかチェック（run.bat の存在で判断）
-            if (app_dir / "run.bat").exists():
+            # インストール済みかチェック（run.vbs の存在で判断）
+            if (app_dir / "run.vbs").exists():
                 return app_dir
 
         # フォールバック: 現在のスクリプトの場所から推測
@@ -498,8 +498,7 @@ class AutoUpdater:
         "pyproject.toml",   # プロジェクト設定
         "uv.lock",          # 依存関係ロックファイル
         "uv.toml",          # UV設定
-        "run.bat",          # 起動スクリプト（コンソール版）
-        "run.vbs",          # 起動スクリプト（サイレント版）
+        "run.vbs",          # 起動スクリプト
         "README.md",        # ドキュメント
     ]
     # ユーザー設定ファイル（上書きしない、バックアップ対象）

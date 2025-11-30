@@ -7,8 +7,7 @@ FOLDER STRUCTURE
 Place these files in your shared folder:
 
   \\server\share\YakuLingo\
-    setup.vbs              <-- Users run this (recommended, no console)
-    setup.bat              <-- Alternative (shows console window)
+    setup.vbs              <-- Users run this
     YakuLingo_YYYYMMDD.zip <-- Distribution package
     README.txt             <-- This file
     .scripts\              <-- Internal scripts (do not modify)
@@ -21,11 +20,8 @@ Share these steps with your users:
 
   1. Open \\server\share\YakuLingo
   2. Double-click "setup.vbs"
-  3. Click "Yes" to confirm
+  3. Wait for setup to complete
   4. Done! Launch from desktop shortcut
-
-Note: setup.vbs provides a GUI-only experience without showing
-      a command prompt window.
 
 ------------------------------------------------------------
 

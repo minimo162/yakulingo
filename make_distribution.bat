@@ -135,7 +135,7 @@ mkdir "%DIST_DIR%" 2>nul
 
 :: Copy files to distribution folder
 echo   Copying files...
-for %%f in ("run.bat" "run.vbs" "app.py" "glossary.csv" "pyproject.toml" "uv.lock" "uv.toml" "README.md") do (
+for %%f in ("run.vbs" "app.py" "glossary.csv" "pyproject.toml" "uv.lock" "uv.toml" "README.md") do (
     if exist "%%~f" copy /y "%%~f" "%DIST_DIR%\" >nul
 )
 
@@ -166,8 +166,7 @@ if exist "%DIST_ZIP%" (
     echo.
     echo Structure:
     echo   YakuLingo/
-    echo     run.vbs            ^<-- Application launcher ^(no console^)
-    echo     run.bat            ^<-- Alternative launcher ^(shows console^)
+    echo     run.vbs            ^<-- Application launcher
     echo     app.py, yakulingo/, ...
     echo.
     echo ============================================================
@@ -183,15 +182,13 @@ if exist "%DIST_ZIP%" (
     :: Copy ZIP and installer files
     copy /y "%DIST_ZIP%" "%SHARE_DIR%\" >nul
     copy /y "installer\share\setup.vbs" "%SHARE_DIR%\" >nul
-    copy /y "installer\share\setup.bat" "%SHARE_DIR%\" >nul
     copy /y "installer\share\README.txt" "%SHARE_DIR%\" >nul
     xcopy /s /e /i /q "installer\share\.scripts" "%SHARE_DIR%\.scripts" >nul
 
     echo [SUCCESS] Share folder package created!
     echo.
     echo   Folder: %SHARE_DIR%\
-    echo     - setup.vbs    ^<-- Users run this ^(no console^)
-    echo     - setup.bat    ^<-- Alternative ^(shows console^)
+    echo     - setup.vbs    ^<-- Users run this
     echo     - %DIST_ZIP%
     echo     - README.txt
     echo.

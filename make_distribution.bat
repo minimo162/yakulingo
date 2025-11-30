@@ -112,7 +112,7 @@ del /q "*.log" 2>nul
 echo [OK] User-specific files removed.
 
 :: ============================================================
-:: Step 5: Create distribution package
+:: Step 5: Create distribution package with _internal structure
 :: ============================================================
 echo.
 echo [5/5] Creating distribution package...
@@ -123,21 +123,42 @@ set DIST_DATE=%datetime:~0,8%
 
 set DIST_NAME=YakuLingo_%DIST_DATE%
 set DIST_ZIP=%DIST_NAME%.zip
+set DIST_DIR=dist_temp\YakuLingo
 
 :: Remove old distribution if exists
 if exist "%DIST_ZIP%" del /q "%DIST_ZIP%"
+if exist "dist_temp" rd /s /q "dist_temp"
 
-:: Create file list for distribution
-echo [INFO] Creating distribution archive...
+:: Create distribution folder structure
+echo [INFO] Creating folder structure...
+mkdir "%DIST_DIR%\_internal" 2>nul
 
-:: Build list of existing files
-set "FILE_LIST="
-for %%f in (".venv" ".uv-python" ".playwright-browsers" "app.py" "yakulingo" "prompts" "glossary.csv" "pyproject.toml" "uv.toml" "run.bat" "setup.bat" "setup.ps1" "remove.bat" "remove.ps1" "README.md") do (
-    if exist "%%~f" set "FILE_LIST=!FILE_LIST! %%~f"
+:: Copy root-level files (entry points only)
+echo   Copying: setup.bat (root)
+copy /y "setup.bat" "%DIST_DIR%\" >nul
+
+:: Copy files to _internal folder
+echo   Copying files to _internal...
+for %%f in ("run.bat" "setup.ps1" "remove.bat" "remove.ps1" "app.py" "glossary.csv" "pyproject.toml" "uv.toml" "README.md") do (
+    if exist "%%~f" copy /y "%%~f" "%DIST_DIR%\_internal\" >nul
 )
 
-:: Use tar (Windows 10+) - much faster than PowerShell Compress-Archive
-tar -a -cf "%DIST_ZIP%" %FILE_LIST% 2>nul
+:: Copy folders to _internal
+for %%d in (".venv" ".uv-python" ".playwright-browsers" "yakulingo" "prompts") do (
+    if exist "%%~d" (
+        echo   Copying: %%~d ...
+        xcopy /s /e /i /q "%%~d" "%DIST_DIR%\_internal\%%~d" >nul
+    )
+)
+
+:: Create ZIP archive
+echo [INFO] Creating distribution archive...
+cd dist_temp
+tar -a -cf "..\%DIST_ZIP%" YakuLingo 2>nul
+cd ..
+
+:: Cleanup temp folder
+rd /s /q "dist_temp" 2>nul
 
 if exist "%DIST_ZIP%" (
     echo.
@@ -147,9 +168,17 @@ if exist "%DIST_ZIP%" (
     echo   File: %DIST_ZIP%
     for %%A in ("%DIST_ZIP%") do echo   Size: %%~zA bytes
     echo.
+    echo Structure:
+    echo   YakuLingo/
+    echo     setup.bat          ^<-- Entry point for installation
+    echo     _internal/
+    echo       run.bat          ^<-- Application launcher
+    echo       app.py, yakulingo/, ...
+    echo.
     echo Instructions for users:
     echo   1. Extract the zip file to any location
-    echo   2. Double-click "setup.bat" to install, then "run.bat" to start
+    echo   2. Double-click "setup.bat" to install
+    echo   3. Launch from Desktop shortcut or Start Menu
     echo ============================================================
 ) else (
     echo [ERROR] Failed to create distribution package.

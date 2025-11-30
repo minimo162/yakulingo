@@ -348,14 +348,15 @@ class TestSourceCodeOnlyUpdate:
         assert "app.py" in AutoUpdater.SOURCE_FILES
         assert "pyproject.toml" in AutoUpdater.SOURCE_FILES
         assert "uv.toml" in AutoUpdater.SOURCE_FILES
-        # Scripts
+        # Scripts (in _internal folder)
         assert "run.bat" in AutoUpdater.SOURCE_FILES
-        assert "setup.bat" in AutoUpdater.SOURCE_FILES
         assert "setup.ps1" in AutoUpdater.SOURCE_FILES
         assert "remove.bat" in AutoUpdater.SOURCE_FILES
         assert "remove.ps1" in AutoUpdater.SOURCE_FILES
         # Documentation
         assert "README.md" in AutoUpdater.SOURCE_FILES
+        # setup.bat is at root level (not in _internal), not copied to AppData
+        assert "setup.bat" not in AutoUpdater.SOURCE_FILES
         # Files NOT in distribution
         assert "requirements.txt" not in AutoUpdater.SOURCE_FILES
 

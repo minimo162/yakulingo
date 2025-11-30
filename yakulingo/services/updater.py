@@ -499,11 +499,11 @@ class AutoUpdater:
         "pyproject.toml",   # プロジェクト設定
         "uv.toml",          # UV設定
         "run.bat",          # 起動スクリプト
-        "setup.bat",        # セットアップスクリプト
-        "setup.ps1",        # セットアップスクリプト
+        "setup.ps1",        # セットアップスクリプト（再インストール用）
         "remove.bat",       # 削除スクリプト
         "remove.ps1",       # 削除スクリプト
         "README.md",        # ドキュメント
+        # Note: setup.bat は配布ZIPのルートにあり、AppDataにはコピーされないため除外
     ]
     # ユーザー設定ファイル（上書きしない、バックアップ対象）
     USER_FILES = ["glossary.csv", "config/settings.json"]
@@ -538,6 +538,11 @@ class AutoUpdater:
                     source_dir = extracted_dirs[0]
                 else:
                     source_dir = temp_path
+
+                # _internal フォルダがあればそれをソースとして使用（配布ZIP形式）
+                internal_dir = source_dir / "_internal"
+                if internal_dir.exists() and internal_dir.is_dir():
+                    source_dir = internal_dir
 
                 # バックアップを作成
                 backup_dir = self.cache_dir / "backup"

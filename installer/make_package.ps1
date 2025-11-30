@@ -57,21 +57,23 @@ New-Item -ItemType Directory -Path $internalDir -Force | Out-Null
 Write-Host ""
 Write-Host "[1/4] Copying app files..."
 
-# Files to copy
+# Files to copy to _internal
 $files = @(
     "app.py",
     "pyproject.toml",
-    "requirements.txt",
+    "uv.toml",
     "glossary.csv",
+    "run.bat",
+    "setup.ps1",
     "remove.bat",
-    "remove.ps1"
+    "remove.ps1",
+    "README.md"
 )
 
-# App folders to copy
+# App folders to copy to _internal
 $appFolders = @(
     "yakulingo",
-    "prompts",
-    "config"
+    "prompts"
 )
 
 # Copy files to _internal
@@ -82,12 +84,8 @@ foreach ($file in $files) {
     }
 }
 
-# Copy setup files to root
+# Copy setup.bat to root (entry point)
 Copy-Item (Join-Path $projectDir "setup.bat") $packageDir -Force
-Copy-Item (Join-Path $projectDir "setup.ps1") $packageDir -Force
-
-# Copy run.bat to _internal
-Copy-Item (Join-Path $projectDir "run.bat") (Join-Path $internalDir "run.bat") -Force
 
 # Copy app folders to _internal
 foreach ($folder in $appFolders) {

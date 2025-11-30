@@ -35,31 +35,32 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-; メインファイル
-Source: "..\app.py"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\pyproject.toml"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\requirements.txt"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\glossary.csv"; DestDir: "{app}"; Flags: ignoreversion
-
-; パッケージ
-Source: "..\yakulingo\*"; DestDir: "{app}\yakulingo"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "..\prompts\*"; DestDir: "{app}\prompts"; Flags: ignoreversion recursesubdirs createallsubdirs
-
-; バッチファイル
+; ルートレベル (エントリーポイント)
 Source: "..\setup.bat"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\run.bat"; DestDir: "{app}"; Flags: ignoreversion
 
-; 設定ディレクトリ (空フォルダ作成)
-Source: "..\config\*"; DestDir: "{app}\config"; Flags: ignoreversion recursesubdirs createallsubdirs
+; _internal フォルダ内のメインファイル
+Source: "..\app.py"; DestDir: "{app}\_internal"; Flags: ignoreversion
+Source: "..\pyproject.toml"; DestDir: "{app}\_internal"; Flags: ignoreversion
+Source: "..\uv.toml"; DestDir: "{app}\_internal"; Flags: ignoreversion
+Source: "..\glossary.csv"; DestDir: "{app}\_internal"; Flags: ignoreversion
+Source: "..\run.bat"; DestDir: "{app}\_internal"; Flags: ignoreversion
+Source: "..\setup.ps1"; DestDir: "{app}\_internal"; Flags: ignoreversion
+Source: "..\remove.bat"; DestDir: "{app}\_internal"; Flags: ignoreversion
+Source: "..\remove.ps1"; DestDir: "{app}\_internal"; Flags: ignoreversion
+Source: "..\README.md"; DestDir: "{app}\_internal"; Flags: ignoreversion
+
+; パッケージ (_internal 内)
+Source: "..\yakulingo\*"; DestDir: "{app}\_internal\yakulingo"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\prompts\*"; DestDir: "{app}\_internal\prompts"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 ; スタートメニュー
-Name: "{group}\{#MyAppName}"; Filename: "{app}\run.bat"; WorkingDir: "{app}"; IconFilename: "{sys}\shell32.dll"; IconIndex: 13
+Name: "{group}\{#MyAppName}"; Filename: "{app}\_internal\run.bat"; WorkingDir: "{app}\_internal"; IconFilename: "{sys}\shell32.dll"; IconIndex: 13
 Name: "{group}\{#MyAppName} セットアップ"; Filename: "{app}\setup.bat"; WorkingDir: "{app}"
 Name: "{group}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"
 
 ; デスクトップ
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\run.bat"; WorkingDir: "{app}"; IconFilename: "{sys}\shell32.dll"; IconIndex: 13; Tasks: desktopicon
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\_internal\run.bat"; WorkingDir: "{app}\_internal"; IconFilename: "{sys}\shell32.dll"; IconIndex: 13; Tasks: desktopicon
 
 [Run]
 ; インストール後にセットアップを実行
@@ -67,9 +68,11 @@ Filename: "{app}\setup.bat"; Description: "依存関係をインストール (�
 
 [UninstallDelete]
 ; アンインストール時に削除するフォルダ
-Type: filesandordirs; Name: "{app}\.venv"
-Type: filesandordirs; Name: "{app}\__pycache__"
-Type: filesandordirs; Name: "{app}\*.pyc"
+Type: filesandordirs; Name: "{app}\_internal\.venv"
+Type: filesandordirs; Name: "{app}\_internal\.uv-python"
+Type: filesandordirs; Name: "{app}\_internal\.playwright-browsers"
+Type: filesandordirs; Name: "{app}\_internal\__pycache__"
+Type: filesandordirs; Name: "{app}\_internal\*.pyc"
 
 [Messages]
 japanese.WelcomeLabel1=YakuLingo セットアップウィザードへようこそ

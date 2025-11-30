@@ -138,20 +138,4 @@ Write-Host ""
 Write-Host "Location: $appDir"
 Write-Host ""
 
-# Auto-delete extracted folder
-$zipFolder = Split-Path -Parent $scriptDir  # YakuLingo folder (parent of _internal)
-$cleanupScript = "$env:TEMP\yakulingo_cleanup.ps1"
-
-@"
-Start-Sleep -Seconds 3
-Remove-Item -Path '$zipFolder' -Recurse -Force -ErrorAction SilentlyContinue
-Remove-Item -Path '$cleanupScript' -Force -ErrorAction SilentlyContinue
-"@ | Out-File $cleanupScript -Encoding UTF8
-
-# Run in separate process (hidden)
-Start-Process powershell -WindowStyle Hidden -ArgumentList "-ExecutionPolicy Bypass -File `"$cleanupScript`""
-
-Write-Host ""
-Write-Host "[INFO] The extracted folder will be deleted in a few seconds"
-Write-Host ""
 Read-Host "Press Enter to exit"

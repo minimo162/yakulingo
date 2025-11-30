@@ -4,6 +4,8 @@ Processor for Word files (.docx, .doc).
 """
 
 import re
+import shutil
+import tempfile
 import zipfile
 from pathlib import Path
 from typing import Iterator
@@ -118,9 +120,6 @@ def _apply_textbox_translations_to_docx(
         output_path: Output docx file (must already exist from python-docx save)
         translations: Dict mapping textbox IDs to translated text
     """
-    import shutil
-    import tempfile
-
     # Filter textbox translations
     textbox_translations = {
         k: v for k, v in translations.items()
@@ -289,7 +288,7 @@ class WordProcessor(FileProcessor):
         )
 
     def extract_text_blocks(self, file_path: Path) -> Iterator[TextBlock]:
-        """Extract text from paragraphs, tables"""
+        """Extract text from paragraphs, tables, and textboxes (.docx only)"""
         doc = Document(file_path)
 
         # === Body Paragraphs ===

@@ -12,6 +12,7 @@ Prompt file structure:
 Reference files are attached to Copilot, not embedded in prompt.
 """
 
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -206,7 +207,6 @@ class PromptBuilder:
                 continue
 
             # Remove numbering prefix (e.g., "1. ", "2. ")
-            import re
             match = re.match(r'^\d+\.\s*(.+)$', line)
             if match:
                 translations.append(match.group(1))

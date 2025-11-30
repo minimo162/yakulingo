@@ -7,6 +7,7 @@ Refactored from translate.py with method name changes:
 """
 
 import os
+import re
 import sys
 import time
 import socket
@@ -311,11 +312,17 @@ class CopilotHandler:
 
     def check_and_wait_for_ready(self, timeout: int = 60) -> bool:
         """
-        Check if Copilot is ready, wait if login is in progress.
-        Can be called to re-check after login notification.
+        Check if Copilot is ready (single check, no waiting).
+
+        Note: Despite the name, this method does not wait. It performs a single
+        state check with a short timeout (5 seconds) and returns immediately.
+        Use connect() with wait_for_login=True for actual waiting behavior.
+
+        Args:
+            timeout: Unused parameter (kept for API compatibility)
 
         Returns:
-            True if ready, False if still needs login or error
+            True if ready, False if login required or error
         """
         if self._connected:
             return True
@@ -394,26 +401,6 @@ class CopilotHandler:
             except Exception:
                 pass
 
-    def _wait_for_copilot_ready(self, timeout: int = 60):
-        """Wait for Copilot chat interface to be ready"""
-        try:
-            # Wait for the message input area
-            # 実際のCopilot HTML: <span role="combobox" contenteditable="true" id="m365-chat-editor-target-element" ...>
-            self._page.wait_for_selector(
-                '#m365-chat-editor-target-element, [data-lexical-editor="true"], [contenteditable="true"]',
-                timeout=timeout * 1000
-            )
-        except Exception:
-            # Try alternative selectors
-            try:
-                # 実際のCopilot HTML: <button id="new-chat-button" data-testid="newChatButton" aria-label="新しいチャット">
-                self._page.wait_for_selector(
-                    '#new-chat-button, [data-testid="newChatButton"], button[aria-label="新しいチャット"]',
-                    timeout=10000
-                )
-            except Exception:
-                pass
-
     def disconnect(self) -> None:
         """Close browser and cleanup"""
         self._connected = False
@@ -478,6 +465,14 @@ class CopilotHandler:
     ) -> List[str]:
         """
         Synchronous version of translate for non-async contexts.
+
+        Args:
+            texts: List of text strings to translate (used for result parsing)
+            prompt: The translation prompt to send to Copilot
+            reference_files: Currently unused (file attachment not implemented)
+
+        Returns:
+            List of translated strings parsed from Copilot's response
         """
         if not self._connected or not self._page:
             raise RuntimeError("Not connected to Copilot")
@@ -692,15 +687,21 @@ class CopilotHandler:
             return ""
 
     async def _attach_file_async(self, file_path: Path) -> None:
-        """Attach file to Copilot chat (async)"""
-        # File attachment implementation depends on Copilot UI
-        # This is a placeholder - actual implementation needs UI inspection
+        """
+        Attach file to Copilot chat (async).
+
+        Note: This method is not yet implemented. File attachment functionality
+        requires inspection of the Copilot UI to determine the correct selectors
+        and interaction pattern.
+
+        Args:
+            file_path: Path to the file to attach (currently unused)
+        """
+        # TODO: Implement file attachment when Copilot UI details are available
         pass
 
     def _parse_batch_result(self, result: str, expected_count: int) -> List[str]:
         """Parse batch translation result back to list"""
-        import re
-
         lines = result.strip().split('\n')
         translations = []
 

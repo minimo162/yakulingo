@@ -5,6 +5,7 @@ Japanese → English, Other → Japanese (auto-detected by AI).
 """
 
 import asyncio
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -272,7 +273,6 @@ class YakuLingoApp:
 
                 # Delete button (visible on hover via CSS)
                 def delete_entry(e):
-                    e.args  # Stop propagation by accessing args
                     self.state.delete_history_entry(entry)
                     self._refresh_history()
 
@@ -520,10 +520,7 @@ class YakuLingoApp:
 
             # Parse result and update UI
             if result:
-                from yakulingo.models.types import TranslationOption
-
                 # Parse the result
-                import re
                 text_match = re.search(r'訳文:\s*(.+?)(?=解説:|$)', result, re.DOTALL)
                 explanation_match = re.search(r'解説:\s*(.+)', result, re.DOTALL)
 

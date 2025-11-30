@@ -6,8 +6,10 @@ Text translation panel with language-specific UI.
 Designed for Japanese users.
 """
 
-from nicegui import ui
+import re
 from typing import Callable, Optional
+
+from nicegui import ui
 
 from yakulingo.ui.state import AppState
 from yakulingo.models.types import TranslationOption, TextTranslationResult
@@ -289,8 +291,6 @@ def _render_results_to_jp(
 
 def _render_explanation(explanation: str):
     """Render explanation text as HTML with bullet points (Nani-style)"""
-    import re
-
     lines = explanation.strip().split('\n')
     bullet_items = []
     non_bullet_lines = []

@@ -8,7 +8,8 @@ dependencies = [
     "playwright>=1.40.0",
     "pillow>=10.0.0",
     # File processing
-    "openpyxl>=3.1.0",
+    "xlwings>=0.32.0; sys_platform == 'win32' or sys_platform == 'darwin'",  # Excel with shapes/textbox support (requires Excel)
+    "openpyxl>=3.1.0",  # Fallback for Linux or no Excel installed
     "python-docx>=1.1.0",
     "python-pptx>=0.6.23",
     # PDF translation dependencies
@@ -17,16 +18,14 @@ dependencies = [
     # Web UI
     "nicegui>=1.4.0",
     "pywebview>=5.0.0",  # Native window mode (no browser needed)
+    # Windows NTLM proxy authentication support (for auto-update)
+    "pywin32>=306; sys_platform == 'win32'",
 ]
 
 [project.optional-dependencies]
 # OCR support (heavy dependencies)
 ocr = [
     "yomitoku>=0.8.0",  # Includes: torch, torchvision, opencv-python, pypdfium2, etc.
-]
-# Windows NTLM proxy authentication support
-proxy-auth = [
-    "pywin32>=306; sys_platform == 'win32'",  # Windows認証プロキシ対応
 ]
 # Test dependencies
 test = [

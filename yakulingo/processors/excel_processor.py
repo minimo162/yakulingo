@@ -1,18 +1,51 @@
 # yakulingo/processors/excel_processor.py
 """
 Processor for Excel files (.xlsx, .xls).
+
+Uses xlwings for full Excel functionality (shapes, charts, textboxes).
+Falls back to openpyxl if xlwings is not available (Linux or no Excel installed).
 """
 
 from pathlib import Path
-from typing import Iterator
-import openpyxl
-from openpyxl.utils import get_column_letter
-from openpyxl.styles import Font
+from typing import Iterator, Optional
 
 from .base import FileProcessor
 from .translators import CellTranslator
 from .font_manager import FontManager, FontTypeDetector
 from yakulingo.models.types import TextBlock, FileInfo, FileType
+
+
+# =============================================================================
+# xlwings detection (requires Excel on Windows/macOS)
+# =============================================================================
+_xlwings = None
+HAS_XLWINGS = False
+
+def _get_xlwings():
+    """Lazy import xlwings."""
+    global _xlwings, HAS_XLWINGS
+    if _xlwings is None:
+        try:
+            import xlwings as xw
+            _xlwings = xw
+            HAS_XLWINGS = True
+        except ImportError:
+            HAS_XLWINGS = False
+    return _xlwings
+
+
+def is_xlwings_available() -> bool:
+    """Check if xlwings is available."""
+    _get_xlwings()
+    return HAS_XLWINGS
+
+
+# =============================================================================
+# openpyxl fallback
+# =============================================================================
+import openpyxl
+from openpyxl.utils import get_column_letter
+from openpyxl.styles import Font
 
 
 class ExcelProcessor(FileProcessor):
@@ -21,8 +54,8 @@ class ExcelProcessor(FileProcessor):
 
     Translation targets:
     - Cell values (text only)
-    - Shape text (TextBox, etc.)
-    - Chart titles and labels
+    - Shape text (TextBox, etc.) - xlwings only
+    - Chart titles and labels - xlwings only
 
     Preserved:
     - Formulas (not translated)
@@ -53,6 +86,63 @@ class ExcelProcessor(FileProcessor):
 
     def get_file_info(self, file_path: Path) -> FileInfo:
         """Get Excel file info"""
+        xw = _get_xlwings()
+
+        if HAS_XLWINGS:
+            return self._get_file_info_xlwings(file_path, xw)
+        else:
+            return self._get_file_info_openpyxl(file_path)
+
+    def _get_file_info_xlwings(self, file_path: Path, xw) -> FileInfo:
+        """Get file info using xlwings"""
+        app = xw.App(visible=False, add_book=False)
+        try:
+            wb = app.books.open(str(file_path))
+            sheet_count = len(wb.sheets)
+            text_count = 0
+
+            for sheet in wb.sheets:
+                # Count cells with text
+                used_range = sheet.used_range
+                if used_range is not None:
+                    for row in used_range.rows:
+                        for cell in row:
+                            if cell.value and isinstance(cell.value, str):
+                                if self.cell_translator.should_translate(str(cell.value)):
+                                    text_count += 1
+
+                # Count shapes with text (TextBox, etc.)
+                for shape in sheet.shapes:
+                    try:
+                        if hasattr(shape, 'text') and shape.text:
+                            if self.cell_translator.should_translate(shape.text):
+                                text_count += 1
+                    except Exception:
+                        pass
+
+                # Count chart titles
+                for chart in sheet.charts:
+                    try:
+                        if hasattr(chart, 'chart') and chart.chart.has_title:
+                            title = chart.chart.chart_title.text_frame.text
+                            if title and self.cell_translator.should_translate(title):
+                                text_count += 1
+                    except Exception:
+                        pass
+
+            wb.close()
+            return FileInfo(
+                path=file_path,
+                file_type=FileType.EXCEL,
+                size_bytes=file_path.stat().st_size,
+                sheet_count=sheet_count,
+                text_block_count=text_count,
+            )
+        finally:
+            app.quit()
+
+    def _get_file_info_openpyxl(self, file_path: Path) -> FileInfo:
+        """Get file info using openpyxl (fallback)"""
         wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
 
         sheet_count = len(wb.sheetnames)
@@ -76,22 +166,138 @@ class ExcelProcessor(FileProcessor):
         )
 
     def extract_text_blocks(self, file_path: Path) -> Iterator[TextBlock]:
-        """Extract text from cells and shapes"""
+        """Extract text from cells, shapes, and charts"""
+        xw = _get_xlwings()
+
+        if HAS_XLWINGS:
+            yield from self._extract_text_blocks_xlwings(file_path, xw)
+        else:
+            yield from self._extract_text_blocks_openpyxl(file_path)
+
+    def _extract_text_blocks_xlwings(self, file_path: Path, xw) -> Iterator[TextBlock]:
+        """Extract text using xlwings"""
+        app = xw.App(visible=False, add_book=False)
+        try:
+            wb = app.books.open(str(file_path))
+
+            for sheet in wb.sheets:
+                sheet_name = sheet.name
+
+                # === Cells ===
+                used_range = sheet.used_range
+                if used_range is not None:
+                    for row_idx, row in enumerate(used_range.rows, start=1):
+                        for col_idx, cell in enumerate(row, start=1):
+                            if cell.value and isinstance(cell.value, str):
+                                if self.cell_translator.should_translate(str(cell.value)):
+                                    col_letter = get_column_letter(col_idx)
+
+                                    # Get font info
+                                    font_name = None
+                                    font_size = 11.0
+                                    try:
+                                        font_name = cell.font.name
+                                        font_size = cell.font.size or 11.0
+                                    except Exception:
+                                        pass
+
+                                    yield TextBlock(
+                                        id=f"{sheet_name}_{col_letter}{row_idx}",
+                                        text=str(cell.value),
+                                        location=f"{sheet_name}, {col_letter}{row_idx}",
+                                        metadata={
+                                            'sheet': sheet_name,
+                                            'row': row_idx,
+                                            'col': col_idx,
+                                            'type': 'cell',
+                                            'font_name': font_name,
+                                            'font_size': font_size,
+                                        }
+                                    )
+
+                # === Shapes (TextBox, etc.) ===
+                for shape_idx, shape in enumerate(sheet.shapes):
+                    try:
+                        if hasattr(shape, 'text') and shape.text:
+                            text = shape.text.strip()
+                            if text and self.cell_translator.should_translate(text):
+                                yield TextBlock(
+                                    id=f"{sheet_name}_shape_{shape_idx}",
+                                    text=text,
+                                    location=f"{sheet_name}, Shape '{shape.name}'",
+                                    metadata={
+                                        'sheet': sheet_name,
+                                        'shape': shape_idx,
+                                        'shape_name': shape.name,
+                                        'type': 'shape',
+                                    }
+                                )
+                    except Exception:
+                        pass
+
+                # === Chart Titles and Labels ===
+                for chart_idx, chart in enumerate(sheet.charts):
+                    try:
+                        api_chart = chart.api[1]  # Access the chart object
+
+                        # Chart title
+                        if api_chart.HasTitle:
+                            title = api_chart.ChartTitle.Text
+                            if title and self.cell_translator.should_translate(title):
+                                yield TextBlock(
+                                    id=f"{sheet_name}_chart_{chart_idx}_title",
+                                    text=title,
+                                    location=f"{sheet_name}, Chart {chart_idx + 1} Title",
+                                    metadata={
+                                        'sheet': sheet_name,
+                                        'chart': chart_idx,
+                                        'type': 'chart_title',
+                                    }
+                                )
+
+                        # Axis titles
+                        for axis_type, axis_name in [(1, 'category'), (2, 'value')]:
+                            try:
+                                axis = api_chart.Axes(axis_type)
+                                if axis.HasTitle:
+                                    axis_title = axis.AxisTitle.Text
+                                    if axis_title and self.cell_translator.should_translate(axis_title):
+                                        yield TextBlock(
+                                            id=f"{sheet_name}_chart_{chart_idx}_axis_{axis_name}",
+                                            text=axis_title,
+                                            location=f"{sheet_name}, Chart {chart_idx + 1} {axis_name.title()} Axis",
+                                            metadata={
+                                                'sheet': sheet_name,
+                                                'chart': chart_idx,
+                                                'axis': axis_name,
+                                                'type': 'chart_axis_title',
+                                            }
+                                        )
+                            except Exception:
+                                pass
+
+                    except Exception:
+                        pass
+
+            wb.close()
+        finally:
+            app.quit()
+
+    def _extract_text_blocks_openpyxl(self, file_path: Path) -> Iterator[TextBlock]:
+        """Extract text using openpyxl (fallback - cells only)"""
         wb = openpyxl.load_workbook(file_path, data_only=True)
 
         for sheet_name in wb.sheetnames:
             sheet = wb[sheet_name]
 
-            # Extract cell text
             for row_idx, row in enumerate(sheet.iter_rows(), start=1):
                 for col_idx, cell in enumerate(row, start=1):
                     if cell.value and isinstance(cell.value, str):
                         if self.cell_translator.should_translate(str(cell.value)):
                             col_letter = get_column_letter(col_idx)
 
-                            # Get font info for metadata
                             font_name = None
-                            font_size = 11.0  # default
+                            font_size = 11.0
                             if cell.font:
                                 font_name = cell.font.name
                                 if cell.font.size:
@@ -111,23 +317,6 @@ class ExcelProcessor(FileProcessor):
                                 }
                             )
 
-            # Extract shape text (TextBox, etc.)
-            if hasattr(sheet, '_charts'):
-                for chart_idx, chart in enumerate(sheet._charts):
-                    if hasattr(chart, 'title') and chart.title:
-                        title_text = str(chart.title)
-                        if self.cell_translator.should_translate(title_text):
-                            yield TextBlock(
-                                id=f"{sheet_name}_chart_{chart_idx}_title",
-                                text=title_text,
-                                location=f"{sheet_name}, Chart {chart_idx + 1} Title",
-                                metadata={
-                                    'sheet': sheet_name,
-                                    'chart': chart_idx,
-                                    'type': 'chart_title',
-                                }
-                            )
-
         wb.close()
 
     def apply_translations(
@@ -138,6 +327,115 @@ class ExcelProcessor(FileProcessor):
         direction: str = "jp_to_en",
     ) -> None:
         """Apply translations to Excel file"""
+        xw = _get_xlwings()
+
+        if HAS_XLWINGS:
+            self._apply_translations_xlwings(input_path, output_path, translations, direction, xw)
+        else:
+            self._apply_translations_openpyxl(input_path, output_path, translations, direction)
+
+    def _apply_translations_xlwings(
+        self,
+        input_path: Path,
+        output_path: Path,
+        translations: dict[str, str],
+        direction: str,
+        xw,
+    ) -> None:
+        """Apply translations using xlwings"""
+        font_manager = FontManager(direction)
+        app = xw.App(visible=False, add_book=False)
+
+        try:
+            wb = app.books.open(str(input_path))
+
+            for sheet in wb.sheets:
+                sheet_name = sheet.name
+
+                # === Apply to cells ===
+                used_range = sheet.used_range
+                if used_range is not None:
+                    for row_idx, row in enumerate(used_range.rows, start=1):
+                        for col_idx, cell in enumerate(row, start=1):
+                            col_letter = get_column_letter(col_idx)
+                            block_id = f"{sheet_name}_{col_letter}{row_idx}"
+
+                            if block_id in translations:
+                                translated_text = translations[block_id]
+
+                                # Get original font info
+                                original_font_name = None
+                                original_font_size = 11.0
+                                try:
+                                    original_font_name = cell.font.name
+                                    original_font_size = cell.font.size or 11.0
+                                except Exception:
+                                    pass
+
+                                # Get new font settings
+                                new_font_name, new_font_size = font_manager.select_font(
+                                    original_font_name,
+                                    original_font_size
+                                )
+
+                                # Apply translation
+                                cell.value = translated_text
+
+                                # Apply new font
+                                try:
+                                    cell.font.name = new_font_name
+                                    cell.font.size = new_font_size
+                                except Exception:
+                                    pass
+
+                # === Apply to shapes ===
+                for shape_idx, shape in enumerate(sheet.shapes):
+                    block_id = f"{sheet_name}_shape_{shape_idx}"
+                    if block_id in translations:
+                        try:
+                            shape.text = translations[block_id]
+                        except Exception:
+                            pass
+
+                # === Apply to chart titles and labels ===
+                for chart_idx, chart in enumerate(sheet.charts):
+                    try:
+                        api_chart = chart.api[1]
+
+                        # Chart title
+                        title_id = f"{sheet_name}_chart_{chart_idx}_title"
+                        if title_id in translations and api_chart.HasTitle:
+                            api_chart.ChartTitle.Text = translations[title_id]
+
+                        # Axis titles
+                        for axis_type, axis_name in [(1, 'category'), (2, 'value')]:
+                            axis_id = f"{sheet_name}_chart_{chart_idx}_axis_{axis_name}"
+                            if axis_id in translations:
+                                try:
+                                    axis = api_chart.Axes(axis_type)
+                                    if axis.HasTitle:
+                                        axis.AxisTitle.Text = translations[axis_id]
+                                except Exception:
+                                    pass
+
+                    except Exception:
+                        pass
+
+            # Save to output path
+            wb.save(str(output_path))
+            wb.close()
+
+        finally:
+            app.quit()
+
+    def _apply_translations_openpyxl(
+        self,
+        input_path: Path,
+        output_path: Path,
+        translations: dict[str, str],
+        direction: str,
+    ) -> None:
+        """Apply translations using openpyxl (fallback - cells only)"""
         wb = openpyxl.load_workbook(input_path)
         font_manager = FontManager(direction)
 
@@ -152,20 +450,16 @@ class ExcelProcessor(FileProcessor):
                     if block_id in translations:
                         translated_text = translations[block_id]
 
-                        # Get original font info
                         original_font_name = cell.font.name if cell.font else None
                         original_font_size = cell.font.size if cell.font and cell.font.size else 11.0
 
-                        # Get new font settings
                         new_font_name, new_font_size = font_manager.select_font(
                             original_font_name,
                             original_font_size
                         )
 
-                        # Apply translation
                         cell.value = translated_text
 
-                        # Apply new font (preserve other formatting)
                         if cell.font:
                             cell.font = Font(
                                 name=new_font_name,

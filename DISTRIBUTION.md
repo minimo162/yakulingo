@@ -7,7 +7,14 @@ YakuLingoはネットワーク共有フォルダからのワンクリックセ�
 
 ## 配布パッケージの作成
 
-開発環境で以下を実行：
+### 前提条件
+
+開発環境で先に `install_deps.bat` を実行し、以下のフォルダが存在すること：
+- `.venv` (Python仮想環境)
+- `.uv-python` (Python本体)
+- `.playwright-browsers` (ブラウザ)
+
+### 実行
 
 ```batch
 make_distribution.bat
@@ -92,6 +99,17 @@ setup.ps1は以下を実行：
 2. 新バージョンがあれば通知を表示
 3. ユーザーが更新を選択すると自動ダウンロード・インストール
 4. 再起動後に新バージョンが有効化
+
+### 更新対象ファイル
+
+自動更新では以下のファイルのみ更新され、環境フォルダは保持されます：
+
+| 種類 | 対象 |
+|------|------|
+| **ディレクトリ** | `yakulingo/`, `prompts/`, `config/` |
+| **ファイル** | `app.py`, `pyproject.toml`, `uv.lock`, `uv.toml`, `run.bat`, `README.md` |
+| **保持（上書きしない）** | `glossary.csv`, `config/settings.json` |
+| **保持（更新対象外）** | `.venv/`, `.uv-python/`, `.playwright-browsers/` |
 
 ### プロキシ環境での動作
 

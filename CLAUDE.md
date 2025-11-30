@@ -341,16 +341,17 @@ The `AutoUpdater` class provides GitHub Releases-based updates:
 | `nicegui>=1.4.0` | Web-based GUI framework |
 | `pywebview>=5.0.0` | Native window mode (no browser needed) |
 | `playwright>=1.40.0` | Browser automation for Copilot |
-| `openpyxl>=3.1.0` | Excel file processing |
+| `xlwings>=0.32.0` | Excel with shapes/charts (Windows/macOS, requires Excel) |
+| `openpyxl>=3.1.0` | Excel fallback (Linux or no Excel) |
 | `python-docx>=1.1.0` | Word document processing |
 | `python-pptx>=0.6.23` | PowerPoint processing |
 | `PyMuPDF>=1.24.0` | PDF text extraction |
 | `pillow>=10.0.0` | Image handling |
 | `numpy>=1.24.0` | Numerical operations |
+| `pywin32>=306` | Windows NTLM proxy authentication (Windows only) |
 
 ### Optional Dependencies
 - `[ocr]`: yomitoku (PDF OCR with ML - heavy)
-- `[proxy-auth]`: pywin32 (Windows NTLM proxy authentication)
 - `[test]`: pytest, pytest-cov, pytest-asyncio
 
 ## Platform Notes

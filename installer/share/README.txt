@@ -27,7 +27,9 @@ Share these steps with your users:
 
 UPDATING THE PACKAGE
 
-1. Run make_distribution.bat in the development environment
+1. In the development environment:
+   a. Run install_deps.bat first (if not already done)
+   b. Run make_distribution.bat
 2. Copy the new YakuLingo_YYYYMMDD.zip to the shared folder
 3. Delete old ZIP files
    (setup.ps1 automatically uses the newest ZIP)

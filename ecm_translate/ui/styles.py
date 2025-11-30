@@ -1,329 +1,318 @@
 # ecm_translate/ui/styles.py
 """
-M3 Expressive-inspired styles for YakuLingo.
-Simple, practical, emotionally resonant design.
+M3 Component-based styles for YakuLingo.
+Following Material Design 3 component guidelines.
 """
 
 COMPLETE_CSS = """
-/* === M3 Expressive Design Tokens === */
+/* === M3 Design Tokens === */
 :root {
-    /* Warm, friendly primary - coral/peach tones */
-    --primary: #E07B54;
-    --primary-container: #FFDAD1;
-    --on-primary: #FFFFFF;
-    --on-primary-container: #3A0B00;
+    /* Primary - warm coral */
+    --md-sys-color-primary: #C04000;
+    --md-sys-color-on-primary: #FFFFFF;
+    --md-sys-color-primary-container: #FFDBD0;
+    --md-sys-color-on-primary-container: #390C00;
 
-    /* Surface colors - warm neutrals */
-    --surface: #FFFBFF;
-    --surface-container: #F5EDE8;
-    --surface-container-high: #EFE6E1;
-    --on-surface: #201A17;
-    --on-surface-variant: #53433E;
+    /* Surface */
+    --md-sys-color-surface: #FFFBFF;
+    --md-sys-color-surface-container: #F3EDE9;
+    --md-sys-color-surface-container-high: #EDE7E3;
+    --md-sys-color-on-surface: #201A17;
+    --md-sys-color-on-surface-variant: #52443D;
+    --md-sys-color-outline: #85746B;
+    --md-sys-color-outline-variant: #D7C2B9;
 
-    /* Accent colors */
-    --secondary: #77574D;
-    --tertiary: #6C5D2F;
-    --success: #3D6B4D;
-    --error: #BA1A1A;
+    /* States */
+    --md-sys-color-error: #BA1A1A;
+    --md-sys-color-on-error: #FFFFFF;
 
-    /* Expressive motion - spring physics */
-    --motion-spring: cubic-bezier(0.2, 0, 0, 1);
-    --motion-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
-    --duration-short: 200ms;
-    --duration-medium: 350ms;
-    --duration-long: 500ms;
+    /* Shape */
+    --md-sys-shape-corner-full: 9999px;
+    --md-sys-shape-corner-large: 16px;
+    --md-sys-shape-corner-medium: 12px;
+    --md-sys-shape-corner-small: 8px;
 
-    /* Expressive shapes */
-    --radius-sm: 12px;
-    --radius-md: 16px;
-    --radius-lg: 28px;
-    --radius-full: 9999px;
+    /* Motion - M3 standard easing */
+    --md-sys-motion-easing-standard: cubic-bezier(0.2, 0, 0, 1);
+    --md-sys-motion-duration-short: 200ms;
+    --md-sys-motion-duration-medium: 300ms;
 
     /* Elevation */
-    --shadow-1: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06);
-    --shadow-2: 0 4px 8px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.06);
+    --md-sys-elevation-1: 0 1px 2px rgba(0,0,0,0.1);
+    --md-sys-elevation-2: 0 2px 6px rgba(0,0,0,0.12);
 }
 
-/* Dark theme - cozy warmth */
+/* Dark */
 @media (prefers-color-scheme: dark) {
     :root {
-        --primary: #FFB5A0;
-        --primary-container: #6B2B17;
-        --on-primary: #5D1900;
-        --on-primary-container: #FFDAD1;
-
-        --surface: #1A1110;
-        --surface-container: #271E1C;
-        --surface-container-high: #322824;
-        --on-surface: #F1DFDA;
-        --on-surface-variant: #D8C2BB;
-
-        --secondary: #E7BDB2;
-        --tertiary: #D9C68D;
+        --md-sys-color-primary: #FFB5A0;
+        --md-sys-color-on-primary: #5D1800;
+        --md-sys-color-primary-container: #7E2E0C;
+        --md-sys-color-on-primary-container: #FFDBD0;
+        --md-sys-color-surface: #1A1110;
+        --md-sys-color-surface-container: #251E1C;
+        --md-sys-color-surface-container-high: #302824;
+        --md-sys-color-on-surface: #F0DED8;
+        --md-sys-color-on-surface-variant: #D7C2B9;
+        --md-sys-color-outline: #9F8D84;
+        --md-sys-color-outline-variant: #52443D;
     }
-}
-
-/* === Spring Keyframes === */
-@keyframes springIn {
-    0% { opacity: 0; transform: scale(0.9) translateY(8px); }
-    60% { transform: scale(1.02) translateY(-2px); }
-    100% { opacity: 1; transform: scale(1) translateY(0); }
-}
-
-@keyframes gentlePulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.7; }
-}
-
-@keyframes springBounce {
-    0% { transform: scale(1); }
-    40% { transform: scale(1.08); }
-    100% { transform: scale(1); }
 }
 
 /* === Base === */
 body {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Meiryo UI', sans-serif;
-    background: var(--surface);
-    color: var(--on-surface);
+    font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+    background: var(--md-sys-color-surface);
+    color: var(--md-sys-color-on-surface);
+    line-height: 1.5;
 }
 
-/* === Header - Clean & Minimal === */
+/* === Header === */
 .app-header {
-    background: var(--surface);
-    border-bottom: 1px solid var(--surface-container);
+    background: var(--md-sys-color-surface);
+    border-bottom: 1px solid var(--md-sys-color-outline-variant);
 }
 
 .app-logo {
-    font-size: 1.25rem;
-    font-weight: 600;
-    color: var(--primary);
-    letter-spacing: -0.02em;
+    font-size: 1.125rem;
+    font-weight: 500;
+    color: var(--md-sys-color-primary);
+    letter-spacing: -0.01em;
 }
 
-/* === Tabs - Pill Style === */
+/* === M3 Segmented Button (Tabs) === */
 .tab-btn {
     padding: 0.5rem 1rem;
-    color: var(--on-surface-variant);
-    font-weight: 500;
     font-size: 0.875rem;
-    border-radius: var(--radius-full);
-    transition: all var(--duration-short) var(--motion-spring);
+    font-weight: 500;
+    color: var(--md-sys-color-on-surface);
+    border-radius: var(--md-sys-shape-corner-full);
+    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
 }
 
 .tab-btn:hover {
-    background: var(--surface-container);
+    background: var(--md-sys-color-surface-container);
 }
 
 .tab-btn.active {
-    background: var(--primary-container);
-    color: var(--on-primary-container);
+    background: var(--md-sys-color-primary-container);
+    color: var(--md-sys-color-on-primary-container);
 }
 
-/* === Text Areas - Soft Container === */
-.text-box {
-    background: var(--surface);
-    border: 1.5px solid var(--surface-container-high);
-    border-radius: var(--radius-lg);
-    overflow: hidden;
-    transition: all var(--duration-medium) var(--motion-spring);
-    animation: springIn var(--duration-medium) var(--motion-spring);
-}
-
-.text-box:focus-within {
-    border-color: var(--primary);
-    box-shadow: 0 0 0 3px rgba(224, 123, 84, 0.15);
-}
-
-.text-label {
-    padding: 0.75rem 1rem;
-    background: var(--surface-container);
-    font-size: 0.8125rem;
-    font-weight: 600;
-    color: var(--on-surface-variant);
-    letter-spacing: 0.02em;
-}
-
-/* === Primary Button - Expressive === */
+/* === M3 Filled Button (Primary) === */
 .btn-primary {
-    background: var(--primary);
-    color: var(--on-primary);
-    padding: 0.875rem 2rem;
-    border-radius: var(--radius-full);
-    font-weight: 600;
-    font-size: 0.9375rem;
+    background: var(--md-sys-color-primary);
+    color: var(--md-sys-color-on-primary);
+    padding: 0.625rem 1.5rem;
+    border-radius: var(--md-sys-shape-corner-full);
+    font-size: 0.875rem;
+    font-weight: 500;
     letter-spacing: 0.01em;
-    box-shadow: var(--shadow-1);
-    transition: all var(--duration-short) var(--motion-spring);
+    box-shadow: var(--md-sys-elevation-1);
+    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
 }
 
 .btn-primary:hover:not(:disabled) {
-    box-shadow: var(--shadow-2);
-    transform: translateY(-1px);
-}
-
-.btn-primary:active:not(:disabled) {
-    transform: scale(0.98);
+    box-shadow: var(--md-sys-elevation-2);
 }
 
 .btn-primary:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
+    opacity: 0.38;
+    cursor: default;
 }
 
-/* === Secondary Button === */
+/* === M3 Outlined Button === */
 .btn-outline {
     background: transparent;
-    border: 1.5px solid var(--surface-container-high);
-    color: var(--on-surface);
-    padding: 0.75rem 1.5rem;
-    border-radius: var(--radius-full);
+    border: 1px solid var(--md-sys-color-outline);
+    color: var(--md-sys-color-primary);
+    padding: 0.5rem 1.25rem;
+    border-radius: var(--md-sys-shape-corner-full);
+    font-size: 0.875rem;
     font-weight: 500;
-    transition: all var(--duration-short) var(--motion-spring);
+    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
 }
 
 .btn-outline:hover {
-    background: var(--surface-container);
-    border-color: var(--on-surface-variant);
+    background: var(--md-sys-color-primary-container);
 }
 
-/* === Swap Button - Playful === */
+/* === M3 Text Field Container === */
+.text-box {
+    background: var(--md-sys-color-surface);
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: var(--md-sys-shape-corner-medium);
+    overflow: hidden;
+    transition: border-color var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+}
+
+.text-box:focus-within {
+    border-color: var(--md-sys-color-primary);
+    border-width: 2px;
+}
+
+.text-label {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--md-sys-color-on-surface-variant);
+    background: var(--md-sys-color-surface-container);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+/* === Swap Button === */
 .swap-btn {
-    width: 2.75rem;
-    height: 2.75rem;
-    border-radius: var(--radius-full);
-    background: var(--surface-container);
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: var(--md-sys-shape-corner-full);
+    background: var(--md-sys-color-surface-container);
     border: none;
-    color: var(--on-surface-variant);
-    transition: all var(--duration-medium) var(--motion-bounce);
+    color: var(--md-sys-color-on-surface-variant);
+    transition: all var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-standard);
 }
 
 .swap-btn:hover {
-    background: var(--primary-container);
-    color: var(--on-primary-container);
+    background: var(--md-sys-color-primary-container);
+    color: var(--md-sys-color-on-primary-container);
     transform: rotate(180deg);
 }
 
-/* === Drop Zone - Inviting === */
+/* === Drop Zone === */
 .drop-zone {
-    border: 2px dashed var(--surface-container-high);
-    border-radius: var(--radius-lg);
-    padding: 3rem 2rem;
+    border: 1px dashed var(--md-sys-color-outline);
+    border-radius: var(--md-sys-shape-corner-large);
+    padding: 2.5rem 1.5rem;
     text-align: center;
-    transition: all var(--duration-medium) var(--motion-spring);
     cursor: pointer;
-    background: var(--surface);
+    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
 }
 
 .drop-zone:hover {
-    border-color: var(--primary);
-    background: var(--primary-container);
+    border-color: var(--md-sys-color-primary);
+    background: var(--md-sys-color-primary-container);
 }
 
 .drop-zone-icon {
-    font-size: 2.5rem;
-    color: var(--primary);
-    margin-bottom: 0.75rem;
+    font-size: 2rem;
+    color: var(--md-sys-color-on-surface-variant);
+    margin-bottom: 0.5rem;
 }
 
 .drop-zone-text {
-    font-size: 1rem;
+    font-size: 0.875rem;
     font-weight: 500;
-    color: var(--on-surface);
+    color: var(--md-sys-color-on-surface);
 }
 
 .drop-zone-hint {
-    font-size: 0.8125rem;
-    color: var(--on-surface-variant);
+    font-size: 0.75rem;
+    color: var(--md-sys-color-on-surface-variant);
     margin-top: 0.25rem;
 }
 
-/* === File Card === */
+/* === M3 Card === */
 .file-card {
-    background: var(--surface-container);
-    border: none;
-    border-radius: var(--radius-lg);
-    padding: 1.25rem;
-    animation: springIn var(--duration-medium) var(--motion-spring);
+    background: var(--md-sys-color-surface-container);
+    border-radius: var(--md-sys-shape-corner-medium);
+    padding: 1rem;
 }
 
 .file-card.success {
-    background: linear-gradient(135deg, #E8F5E9 0%, #C8E6C9 100%);
+    background: #E8F5E9;
 }
 
-/* === Progress === */
+@media (prefers-color-scheme: dark) {
+    .file-card.success {
+        background: #1B3D25;
+    }
+}
+
+/* === M3 Progress Indicator === */
 .progress-track {
-    height: 6px;
-    background: var(--surface-container-high);
-    border-radius: var(--radius-full);
+    height: 4px;
+    background: var(--md-sys-color-surface-container-high);
+    border-radius: 2px;
     overflow: hidden;
 }
 
 .progress-bar {
     height: 100%;
-    background: var(--primary);
-    border-radius: var(--radius-full);
-    transition: width var(--duration-medium) var(--motion-spring);
+    background: var(--md-sys-color-primary);
+    border-radius: 2px;
+    transition: width var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-standard);
 }
 
-/* === Status Dot === */
+/* === Status === */
 .status-dot {
     width: 8px;
     height: 8px;
-    border-radius: var(--radius-full);
-    background: var(--on-surface-variant);
+    border-radius: var(--md-sys-shape-corner-full);
+    background: var(--md-sys-color-outline);
 }
 
 .status-dot.connected {
-    background: var(--success);
+    background: #4CAF50;
 }
 
 .status-dot.connecting {
-    background: var(--primary);
-    animation: gentlePulse 1.5s ease infinite;
+    background: var(--md-sys-color-primary);
+    animation: pulse 1.5s ease infinite;
 }
 
-/* === Success State === */
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}
+
+/* === Success === */
 .success-icon {
-    font-size: 3rem;
-    color: var(--success);
-    animation: springBounce var(--duration-long) var(--motion-bounce);
+    font-size: 2.5rem;
+    color: #4CAF50;
 }
 
 .success-text {
-    font-size: 1.25rem;
-    font-weight: 600;
-    color: var(--success);
+    font-size: 1rem;
+    font-weight: 500;
+    color: #2E7D32;
+}
+
+@media (prefers-color-scheme: dark) {
+    .success-text {
+        color: #81C784;
+    }
+}
+
+/* === Chip === */
+.chip {
+    display: inline-block;
+    padding: 0.25rem 0.5rem;
+    background: var(--md-sys-color-surface-container-high);
+    border-radius: var(--md-sys-shape-corner-small);
+    font-size: 0.6875rem;
+    color: var(--md-sys-color-on-surface-variant);
 }
 
 /* === Utility === */
-.text-primary { color: var(--primary); }
-.text-success { color: var(--success); }
-.text-error { color: var(--error); }
-.text-muted { color: var(--on-surface-variant); }
+.text-muted { color: var(--md-sys-color-on-surface-variant); }
+.text-primary { color: var(--md-sys-color-primary); }
+.text-error { color: var(--md-sys-color-error); }
 
-.animate-in { animation: springIn var(--duration-medium) var(--motion-spring); }
+.animate-in {
+    animation: fadeIn var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-standard);
+}
 
-/* === Chip/Badge === */
-.chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
-    padding: 0.25rem 0.75rem;
-    background: var(--surface-container);
-    border-radius: var(--radius-full);
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: var(--on-surface-variant);
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
 }
 
 /* === Dialog === */
 .q-card {
-    border-radius: var(--radius-lg) !important;
+    border-radius: var(--md-sys-shape-corner-large) !important;
 }
 
 .q-dialog__backdrop {
-    background: rgba(0, 0, 0, 0.3) !important;
-    backdrop-filter: blur(4px);
+    background: rgba(0, 0, 0, 0.32) !important;
 }
 """

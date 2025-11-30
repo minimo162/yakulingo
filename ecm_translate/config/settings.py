@@ -19,9 +19,6 @@ class AppSettings:
     # Output (常に別ファイルとして _EN/_JP 付きで保存)
     output_directory: Optional[str] = None  # None = same as input
 
-    # Startup
-    start_with_windows: bool = False    # Windows起動時に自動起動
-
     # UI
     last_direction: str = "jp_to_en"
     last_tab: str = "text"
@@ -53,7 +50,6 @@ class AppSettings:
         data = {
             "reference_files": self.reference_files,
             "output_directory": self.output_directory,
-            "start_with_windows": self.start_with_windows,
             "last_direction": self.last_direction,
             "last_tab": self.last_tab,
             "window_width": self.window_width,

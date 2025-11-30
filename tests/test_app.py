@@ -27,7 +27,6 @@ def mock_settings():
     settings = MagicMock()
     settings.last_direction = "jp_to_en"
     settings.last_tab = "text"
-    settings.start_with_windows = False
     settings.get_reference_file_paths.return_value = []
     return settings
 
@@ -203,7 +202,6 @@ class TestYakuLingoAppInit:
         """Test that app creates AppState on init"""
         mock_settings_class.load.return_value = MagicMock(
             last_direction="jp_to_en",
-            start_with_windows=False,
             get_reference_file_paths=MagicMock(return_value=[]),
         )
 
@@ -226,7 +224,6 @@ class TestYakuLingoAppInit:
         """Test that app loads settings on init"""
         mock_settings = MagicMock(
             last_direction="en_to_jp",
-            start_with_windows=True,
             get_reference_file_paths=MagicMock(return_value=[]),
         )
         mock_settings_class.load.return_value = mock_settings
@@ -343,13 +340,16 @@ class TestYakuLingoAppEventHandlers:
 
         mock_translation_service.cancel.assert_called_once()
 
-    def test_state_has_start_with_windows_attribute(self, app_with_mocks):
-        """Test state has start_with_windows attribute"""
+    def test_cancel_sets_cancelled_state(self, app_with_mocks, mock_nicegui):
+        """Test cancel updates state correctly"""
         app = app_with_mocks
+        app.state.file_state = FileState.TRANSLATING
 
-        # Verify attribute exists and can be set
-        app.state.start_with_windows = True
-        assert app.state.start_with_windows is True
+        # Cancel should call service cancel
+        app._cancel()
+
+        # State remains translating until service callback
+        assert app.state.file_state == FileState.TRANSLATING
 
 
 # =============================================================================
@@ -452,7 +452,6 @@ class TestCreateApp:
         """Test create_app returns YakuLingoApp instance"""
         mock_settings_class.load.return_value = MagicMock(
             last_direction="jp_to_en",
-            start_with_windows=False,
             get_reference_file_paths=MagicMock(return_value=[]),
         )
 

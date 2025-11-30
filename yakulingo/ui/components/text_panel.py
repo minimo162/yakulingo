@@ -32,6 +32,40 @@ ACTION_ICONS = {
     'reply': 'reply',
 }
 
+# Language detection animated SVG (Nani-inspired)
+LANG_DETECT_SVG = '''
+<svg viewBox="0 0 24 24" fill="none" class="lang-detect-icon" stroke-width="2">
+    <defs>
+        <mask id="flow-top-mask">
+            <rect x="-12" y="0" width="10" height="24" fill="white">
+                <animate attributeName="x" values="-12; 26" dur="1.2s" begin="0s" repeatCount="indefinite"/>
+            </rect>
+        </mask>
+        <mask id="flow-bottom-mask">
+            <rect x="-12" y="0" width="10" height="24" fill="white">
+                <animate attributeName="x" values="-12; 26" dur="1.2s" begin="1.2s" repeatCount="indefinite"/>
+            </rect>
+        </mask>
+    </defs>
+    <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+        <g stroke="currentColor" opacity="0.4">
+            <path d="M21 18H15.603C13.9714 17.9999 12.4425 17.0444 11.507 15.4404L10.993 14.5596C10.0575 12.9556 8.52857 12.0001 6.897 12H3"/>
+            <path d="M21 6H15.605C13.9724 5.99991 12.4425 6.95635 11.507 8.562L10.997 9.438C10.0617 11.0433 8.53229 11.9997 6.9 12H3"/>
+            <path d="M18.5 8.5L21 6L18.5 3.5"/>
+            <path d="M18.5 20.5L21 18L18.5 15.5"/>
+        </g>
+        <g stroke="currentColor" mask="url(#flow-top-mask)">
+            <path d="M21 6H15.605C13.9724 5.99991 12.4425 6.95635 11.507 8.562L10.997 9.438C10.0617 11.0433 8.53229 11.9997 6.9 12H3"/>
+            <path d="M18.5 8.5L21 6L18.5 3.5"/>
+        </g>
+        <g stroke="currentColor" mask="url(#flow-bottom-mask)">
+            <path d="M21 18H15.603C13.9714 17.9999 12.4425 17.0444 11.507 15.4404L10.993 14.5596C10.0575 12.9556 8.52857 12.0001 6.897 12H3"/>
+            <path d="M18.5 20.5L21 18L18.5 15.5"/>
+        </g>
+    </g>
+</svg>
+'''
+
 
 def _get_tone_icon(explanation: str) -> str:
     """Get icon based on explanation keywords"""
@@ -56,15 +90,17 @@ def create_text_panel(
     - Japanese input → English: Multiple options with length adjustment
     - Other input → Japanese: Single translation + follow-up actions
     """
+    # Get elapsed time for display
+    elapsed_time = state.text_translation_elapsed_time
 
     with ui.column().classes('flex-1 w-full gap-5 animate-in'):
         # Main card container (Nani-style)
         with ui.element('div').classes('main-card w-full'):
             # Input container
-            with ui.element('div').classes('main-card-inner mx-1.5 mb-1.5'):
-                # Textarea
+            with ui.element('div').classes('main-card-inner'):
+                # Textarea with improved placeholder
                 textarea = ui.textarea(
-                    placeholder='翻訳したいテキストを入力...',
+                    placeholder='好きな言語で入力…',
                     value=state.source_text,
                     on_change=lambda e: on_source_change(e.value)
                 ).classes('w-full p-4').props('borderless autogrow').style('min-height: 160px')
@@ -104,12 +140,12 @@ def create_text_panel(
                         elif not state.can_translate():
                             btn.props('disable')
 
-        # Hint text with M365 Copilot notice
-        with ui.column().classes('items-center gap-1'):
-            with ui.row().classes('items-center gap-2 text-muted'):
-                ui.icon('swap_horiz').classes('text-lg')
-                ui.label('日本語 → 英語、それ以外 → 日本語に自動翻訳').classes('text-xs')
-            with ui.row().classes('items-center gap-1 text-muted opacity-60'):
+        # Hint text with animated language detection icon (Nani-inspired)
+        with ui.element('div').classes('hint-section'):
+            with ui.element('div').classes('hint-primary'):
+                ui.html(LANG_DETECT_SVG)
+                ui.label('AIが言語を検出し、日本語なら英語へ、それ以外なら日本語へ翻訳します').classes('text-xs')
+            with ui.element('div').classes('hint-secondary'):
                 ui.icon('smart_toy').classes('text-sm')
                 ui.label('M365 Copilot による翻訳').classes('text-2xs')
 
@@ -122,6 +158,7 @@ def create_text_panel(
                     state.source_text,
                     on_copy,
                     on_follow_up,
+                    elapsed_time,
                 )
             else:
                 # →English: Multiple options with adjustment
@@ -129,34 +166,39 @@ def create_text_panel(
                     state.text_result,
                     on_copy,
                     on_adjust,
+                    elapsed_time,
                 )
         elif state.text_translating:
             _render_loading()
 
 
 def _render_loading():
-    """Render improved loading state"""
-    with ui.column().classes('w-full items-center justify-center py-8'):
-        # Animated loading indicator
-        with ui.row().classes('items-center gap-3'):
-            ui.spinner('dots', size='lg').classes('text-primary')
-            with ui.column().classes('gap-1'):
-                ui.label('翻訳中...').classes('text-sm font-medium')
-                ui.label('M365 Copilot に問い合わせています').classes('text-xs text-muted')
+    """Render improved loading state with apple character"""
+    with ui.element('div').classes('loading-character'):
+        # Apple character thinking
+        ui.label('🍎').classes('emoji')
+        ui.label('翻訳中...').classes('message')
+        ui.label('M365 Copilot に問い合わせています').classes('submessage')
 
 
 def _render_results_to_en(
     result: TextTranslationResult,
     on_copy: Callable[[str], None],
     on_adjust: Optional[Callable[[str, str], None]],
+    elapsed_time: Optional[float] = None,
 ):
     """Render →English results: multiple options with length adjustment"""
 
     with ui.element('div').classes('result-section w-full'):
-        # Result header
+        # Result header with success character and elapsed time
         with ui.row().classes('result-header justify-between items-center'):
-            ui.label('翻訳結果').classes('font-semibold')
-            ui.label(f'{len(result.options)} パターン').classes('text-xs text-muted font-normal')
+            with ui.row().classes('items-center gap-2'):
+                ui.label('翻訳結果').classes('font-semibold')
+            with ui.element('div').classes('result-count-badge'):
+                ui.label('🍎').classes('emoji')
+                # Show pattern count with elapsed time
+                time_str = f" ({elapsed_time:.1f}秒)" if elapsed_time else ""
+                ui.label(f'{len(result.options)} パターン考えました{time_str}')
 
         # Options list
         with ui.column().classes('w-full p-3 gap-3'):
@@ -175,6 +217,7 @@ def _render_results_to_jp(
     source_text: str,
     on_copy: Callable[[str], None],
     on_follow_up: Optional[Callable[[str, str], None]],
+    elapsed_time: Optional[float] = None,
 ):
     """Render →Japanese results: single translation with detailed explanation + follow-up actions"""
 
@@ -184,9 +227,13 @@ def _render_results_to_jp(
     option = result.options[0]  # Single option for →jp
 
     with ui.element('div').classes('result-section w-full'):
-        # Result header
+        # Result header with elapsed time
         with ui.row().classes('result-header justify-between items-center'):
-            ui.label('翻訳結果').classes('font-semibold')
+            with ui.row().classes('items-center gap-2'):
+                ui.label('翻訳結果').classes('font-semibold')
+                # Show elapsed time if available
+                if elapsed_time:
+                    ui.label(f'({elapsed_time:.1f}秒)').classes('text-xs text-muted font-normal')
             ui.label(f'{option.char_count} 文字').classes('text-xs text-muted font-normal')
 
         # Main translation card

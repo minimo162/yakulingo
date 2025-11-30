@@ -83,23 +83,23 @@ def create_file_panel(
 
 
 def _language_selector(state: AppState, on_change: Optional[Callable[[str], None]]):
-    """Output language selector - segmented button style"""
+    """Output language selector - segmented button style with flag icons"""
     with ui.row().classes('w-full justify-center mt-4'):
         with ui.element('div').classes('language-selector'):
-            # English option
+            # English option with flag
             en_classes = 'lang-btn lang-btn-left'
             if state.file_output_language == 'en':
                 en_classes += ' lang-btn-active'
             with ui.button(on_click=lambda: on_change and on_change('en')).classes(en_classes).props('flat no-caps'):
-                ui.icon('arrow_forward').classes('text-sm')
+                ui.label('🇬🇧').classes('flag-icon')
                 ui.label('English')
 
-            # Japanese option
+            # Japanese option with flag
             jp_classes = 'lang-btn lang-btn-right'
             if state.file_output_language == 'jp':
                 jp_classes += ' lang-btn-active'
             with ui.button(on_click=lambda: on_change and on_change('jp')).classes(jp_classes).props('flat no-caps'):
-                ui.icon('arrow_forward').classes('text-sm')
+                ui.label('🇯🇵').classes('flag-icon')
                 ui.label('日本語')
 
 

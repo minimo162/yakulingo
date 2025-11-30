@@ -170,10 +170,21 @@ class YakuLingoApp:
 
         ui.separator().classes('my-2 opacity-30')
 
-        # History section
+        # History section with security badge
         with ui.column().classes('sidebar-history flex-1'):
             with ui.row().classes('items-center justify-between px-2 mb-2'):
-                ui.label('履歴').classes('text-xs font-semibold text-muted')
+                with ui.row().classes('items-center gap-1'):
+                    ui.label('履歴').classes('text-xs font-semibold text-muted')
+                    # Security badge with tooltip (Nani-inspired)
+                    with ui.element('div').classes('security-badge relative'):
+                        ui.html('''
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                <path fill-rule="evenodd" clip-rule="evenodd" d="M13.6445 16.1466C13.6445 17.0548 12.9085 17.7912 11.9995 17.7912C11.0915 17.7912 10.3555 17.0548 10.3555 16.1466C10.3555 15.2385 11.0915 14.502 11.9995 14.502C12.9085 14.502 13.6445 15.2385 13.6445 16.1466Z" fill="currentColor"/>
+                                <path d="M16.4497 10.4139V8.31757C16.4197 5.86047 14.4027 3.89397 11.9457 3.92417C9.53974 3.95447 7.59273 5.89267 7.55273 8.29807V10.4139"/>
+                                <path d="M9.30374 21.9406H14.6957C16.2907 21.9406 17.0887 21.9406 17.7047 21.645C18.3187 21.3498 18.8147 20.854 19.1097 20.2392C19.4057 19.6236 19.4057 18.8259 19.4057 17.2306V15.0987C19.4057 13.5034 19.4057 12.7058 19.1097 12.0901C18.8147 11.4754 18.3187 10.9796 17.7047 10.6844C17.0887 10.3887 16.2907 10.3887 14.6957 10.3887H9.30374C7.70874 10.3887 6.91074 10.3887 6.29474 10.6844C5.68074 10.9796 5.18474 11.4754 4.88974 12.0901C4.59374 12.7058 4.59375 13.5034 4.59375 15.0987V17.2306C4.59375 18.8259 4.59374 19.6236 4.88974 20.2392C5.18474 20.854 5.68074 21.3498 6.29474 21.645C6.91074 21.9406 7.70874 21.9406 9.30374 21.9406Z"/>
+                            </svg>
+                        ''')
+                        ui.element('div').classes('security-tooltip').text('データは端末に安全に保存されます')
                 if self.state.history:
                     ui.button(
                         icon='delete_sweep',
@@ -292,12 +303,17 @@ class YakuLingoApp:
 
     async def _translate_text(self):
         """Translate text with multiple options."""
+        import time
+
         if not self.translation_service:
             ui.notify('Not connected', type='warning')
             return
 
         source_text = self.state.source_text
         reference_files = self.state.reference_files or None
+
+        # Track translation time
+        start_time = time.time()
 
         # Start translation in background
         translation_task = asyncio.create_task(
@@ -312,10 +328,15 @@ class YakuLingoApp:
         # Update UI
         self.state.text_translating = True
         self.state.text_result = None
+        self.state.text_translation_elapsed_time = None
         self._refresh_content()
 
         try:
             result = await translation_task
+
+            # Calculate elapsed time
+            elapsed_time = time.time() - start_time
+            self.state.text_translation_elapsed_time = elapsed_time
 
             if result and result.options:
                 self.state.text_result = result

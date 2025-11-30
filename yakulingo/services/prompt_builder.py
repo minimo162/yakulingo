@@ -5,7 +5,8 @@ Builds translation prompts for YakuLingo.
 Prompt file structure:
 - translate_to_en.txt: File translation → English
 - translate_to_jp.txt: File translation → Japanese
-- text_translate.txt: Text translation with 3 options (auto-detect)
+- text_translate_to_en.txt: Text translation → English (with 3 options)
+- text_translate_to_jp.txt: Text translation → Japanese (with explanation)
 - adjust_*.txt: Adjustment prompts (shorter, longer, custom)
 
 Reference files are attached to Copilot, not embedded in prompt.

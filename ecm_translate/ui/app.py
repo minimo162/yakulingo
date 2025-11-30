@@ -273,6 +273,6 @@ def run_app(host: str = '127.0.0.1', port: int = 8765):
         port=port,
         title='YakuLingo',
         favicon='🍎',
-        dark=None,
+        dark=False,
         reload=False,
     )

@@ -42,23 +42,6 @@ COMPLETE_CSS = """
     --md-sys-elevation-2: 0 2px 6px rgba(0,0,0,0.12);
 }
 
-/* Dark */
-@media (prefers-color-scheme: dark) {
-    :root {
-        --md-sys-color-primary: #FFB5A0;
-        --md-sys-color-on-primary: #5D1800;
-        --md-sys-color-primary-container: #7E2E0C;
-        --md-sys-color-on-primary-container: #FFDBD0;
-        --md-sys-color-surface: #1A1110;
-        --md-sys-color-surface-container: #251E1C;
-        --md-sys-color-surface-container-high: #302824;
-        --md-sys-color-on-surface: #F0DED8;
-        --md-sys-color-on-surface-variant: #D7C2B9;
-        --md-sys-color-outline: #9F8D84;
-        --md-sys-color-outline-variant: #52443D;
-    }
-}
-
 /* === Base === */
 body {
     font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
@@ -222,12 +205,6 @@ body {
     background: #E8F5E9;
 }
 
-@media (prefers-color-scheme: dark) {
-    .file-card.success {
-        background: #1B3D25;
-    }
-}
-
 /* === M3 Progress Indicator === */
 .progress-track {
     height: 4px;
@@ -275,12 +252,6 @@ body {
     font-size: 1rem;
     font-weight: 500;
     color: #2E7D32;
-}
-
-@media (prefers-color-scheme: dark) {
-    .success-text {
-        color: #81C784;
-    }
 }
 
 /* === Chip === */

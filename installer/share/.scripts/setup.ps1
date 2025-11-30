@@ -14,12 +14,13 @@ $ErrorActionPreference = "Stop"
 # ============================================================
 $AppName = "YakuLingo"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$ShareDir = Split-Path -Parent $ScriptDir  # Parent of .scripts folder
 
 # Auto-detect ZIP file (use newest one)
-$ZipFiles = Get-ChildItem -Path $ScriptDir -Filter "YakuLingo*.zip" | Sort-Object LastWriteTime -Descending
+$ZipFiles = Get-ChildItem -Path $ShareDir -Filter "YakuLingo*.zip" | Sort-Object LastWriteTime -Descending
 if ($ZipFiles.Count -eq 0) {
     Write-Host "[ERROR] YakuLingo*.zip not found." -ForegroundColor Red
-    Write-Host "        Please place the ZIP file in the same folder as this script." -ForegroundColor Red
+    Write-Host "        Please place the ZIP file in the setup folder." -ForegroundColor Red
     exit 1
 }
 $ZipFile = $ZipFiles[0].FullName

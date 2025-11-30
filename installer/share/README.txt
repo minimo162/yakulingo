@@ -8,9 +8,9 @@ Place these files in your shared folder:
 
   \\server\share\YakuLingo\
     setup.bat              <-- Users run this
-    setup.ps1              <-- Setup script
     YakuLingo_YYYYMMDD.zip <-- Distribution package
     README.txt             <-- This file
+    .scripts\              <-- Internal scripts (do not modify)
 
 ------------------------------------------------------------
 
@@ -45,7 +45,7 @@ REQUIREMENTS
 TROUBLESHOOTING
 
 Error: "Script execution is disabled"
-  -> Run setup.bat instead of setup.ps1 directly
+  -> Always run setup.bat (not .scripts\setup.ps1 directly)
      The batch file handles execution policy
 
 Error: "ZIP file not found"

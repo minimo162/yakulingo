@@ -28,7 +28,7 @@ echo.
 echo Starting setup...
 echo.
 
-powershell -ExecutionPolicy Bypass -File "%~dp0setup.ps1"
+powershell -ExecutionPolicy Bypass -File "%~dp0.scripts\setup.ps1"
 
 if errorlevel 1 (
     echo.

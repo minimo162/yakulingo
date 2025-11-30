@@ -3,7 +3,7 @@
 Processor for Excel files (.xlsx, .xls).
 
 Uses xlwings for full Excel functionality (shapes, charts, textboxes).
-Falls back to openpyxl if xlwings is not available (non-Windows or no Excel).
+Falls back to openpyxl if xlwings is not available (Linux or no Excel installed).
 """
 
 from pathlib import Path
@@ -16,7 +16,7 @@ from yakulingo.models.types import TextBlock, FileInfo, FileType
 
 
 # =============================================================================
-# xlwings detection (requires Excel on Windows)
+# xlwings detection (requires Excel on Windows/macOS)
 # =============================================================================
 _xlwings = None
 HAS_XLWINGS = False

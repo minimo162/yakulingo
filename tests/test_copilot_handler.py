@@ -451,6 +451,118 @@ class TestGetResponse:
         assert isinstance(result, str)
 
 
+class TestStreamingResponse:
+    """Test streaming response functionality"""
+
+    def test_get_response_streaming_calls_callbacks(self):
+        """get_response_streaming calls on_reasoning and on_content callbacks"""
+        handler = CopilotHandler()
+
+        mock_page = MagicMock()
+        # Mock reasoning element
+        mock_cot = MagicMock()
+        mock_cot.query_selector.side_effect = [
+            MagicMock(inner_text=MagicMock(return_value="推論中...")),  # .fui-Text
+            MagicMock(inner_text=MagicMock(return_value="ステップ1\nステップ2")),  # activities
+        ]
+        # Mock response element
+        mock_response = MagicMock()
+        mock_response.inner_text.return_value = "回答テキスト"
+
+        def query_selector_side_effect(selector):
+            if 'ChainOfThought' in selector:
+                return mock_cot
+            elif 'markdown-reply' in selector:
+                return mock_response
+            return None
+
+        mock_page.query_selector.side_effect = query_selector_side_effect
+        handler._page = mock_page
+
+        reasoning_calls = []
+        content_calls = []
+
+        with patch("time.sleep"):
+            # Return stable content after first check
+            mock_response.inner_text.side_effect = ["テスト回答", "テスト回答", "テスト回答", "テスト回答"]
+            result = handler.get_response_streaming(
+                on_reasoning=lambda t: reasoning_calls.append(t),
+                on_content=lambda t: content_calls.append(t),
+                timeout=2
+            )
+
+        assert len(content_calls) >= 1
+        assert "テスト回答" in result
+
+    def test_get_response_streaming_no_callbacks(self):
+        """get_response_streaming works without callbacks"""
+        handler = CopilotHandler()
+
+        mock_page = MagicMock()
+        mock_response = MagicMock()
+        mock_response.inner_text.side_effect = ["結果", "結果", "結果", "結果"]
+        mock_page.query_selector.return_value = mock_response
+        handler._page = mock_page
+
+        with patch("time.sleep"):
+            result = handler.get_response_streaming(timeout=2)
+
+        assert result == "結果"
+
+    def test_get_reasoning_text_no_cot_element(self):
+        """_get_reasoning_text returns empty when no CoT element"""
+        handler = CopilotHandler()
+
+        mock_page = MagicMock()
+        mock_page.query_selector.return_value = None
+        handler._page = mock_page
+
+        result = handler._get_reasoning_text()
+        assert result == ""
+
+    def test_get_reasoning_text_with_cot_element(self):
+        """_get_reasoning_text extracts text from CoT element"""
+        handler = CopilotHandler()
+
+        mock_page = MagicMock()
+        mock_cot = MagicMock()
+        mock_label = MagicMock()
+        mock_label.inner_text.return_value = "21に対する推論"
+        mock_activities = MagicMock()
+        mock_activities.inner_text.return_value = "分析中..."
+
+        mock_cot.query_selector.side_effect = lambda s: mock_label if 'fui-Text' in s else mock_activities
+        mock_page.query_selector.return_value = mock_cot
+        handler._page = mock_page
+
+        result = handler._get_reasoning_text()
+        assert "21に対する推論" in result
+
+    def test_get_latest_response_text(self):
+        """_get_latest_response_text returns response text"""
+        handler = CopilotHandler()
+
+        mock_page = MagicMock()
+        mock_response = MagicMock()
+        mock_response.inner_text.return_value = "回答テキスト"
+        mock_page.query_selector.return_value = mock_response
+        handler._page = mock_page
+
+        result = handler._get_latest_response_text()
+        assert result == "回答テキスト"
+
+    def test_get_latest_response_text_no_element(self):
+        """_get_latest_response_text returns empty when no element"""
+        handler = CopilotHandler()
+
+        mock_page = MagicMock()
+        mock_page.query_selector.return_value = None
+        handler._page = mock_page
+
+        result = handler._get_latest_response_text()
+        assert result == ""
+
+
 class TestCopilotHandlerConstants:
     """Test CopilotHandler constants and configuration"""
 

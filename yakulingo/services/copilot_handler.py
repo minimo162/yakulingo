@@ -576,6 +576,121 @@ class CopilotHandler:
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, self._get_response, timeout)
 
+    def get_response_streaming(
+        self,
+        on_reasoning: Optional[Callable[[str], None]] = None,
+        on_content: Optional[Callable[[str], None]] = None,
+        timeout: int = 120
+    ) -> str:
+        """
+        Copilotの回答をストリーミングで取得。
+        推論プロセスと回答テキストをリアルタイムでコールバック経由で通知。
+
+        Args:
+            on_reasoning: 推論ステップ更新時に呼ばれるコールバック
+            on_content: 回答テキスト更新時に呼ばれるコールバック
+            timeout: タイムアウト（秒）
+
+        Returns:
+            最終的な回答テキスト
+
+        実際のCopilot HTML:
+        - 推論要素: <div class="fai-ChainOfThought ...">
+        - 回答要素: <div data-testid="markdown-reply" data-message-type="Chat">
+        """
+        try:
+            time.sleep(1)  # Initial wait for response to start
+
+            max_wait = timeout
+            last_reasoning = ""
+            last_content = ""
+            stable_count = 0
+
+            while max_wait > 0:
+                # 1. 推論要素をチェック（Chain of Thought）
+                if on_reasoning:
+                    reasoning_text = self._get_reasoning_text()
+                    if reasoning_text and reasoning_text != last_reasoning:
+                        on_reasoning(reasoning_text)
+                        last_reasoning = reasoning_text
+
+                # 2. 回答テキストをチェック
+                current_content = self._get_latest_response_text()
+
+                if current_content:
+                    if current_content != last_content:
+                        if on_content:
+                            on_content(current_content)
+                        last_content = current_content
+                        stable_count = 0
+                    else:
+                        stable_count += 1
+                        # テキストが安定したら完了
+                        if stable_count >= 3:
+                            return current_content
+
+                time.sleep(0.5)  # より頻繁にポーリング
+                max_wait -= 0.5
+
+            return last_content
+
+        except Exception as e:
+            print(f"Error getting streaming response: {e}")
+            return ""
+
+    def _get_reasoning_text(self) -> str:
+        """
+        Chain of Thought（推論）要素からテキストを取得。
+
+        Returns:
+            推論ステップのテキスト（例: "分析中の財務会計の概念フレームワーク"）
+        """
+        try:
+            # 推論要素を探す
+            cot_elem = self._page.query_selector('.fai-ChainOfThought')
+            if not cot_elem:
+                return ""
+
+            # 推論のステップテキストを取得
+            # ボタン内のテキスト（例: "21に対する推論"）と
+            # アクティビティパネル内のステップを結合
+            reasoning_parts = []
+
+            # メインのラベル
+            label_elem = cot_elem.query_selector('.fui-Text')
+            if label_elem:
+                reasoning_parts.append(label_elem.inner_text())
+
+            # アクティビティパネル内のステップ
+            activities_elem = cot_elem.query_selector('.fai-ChainOfThought__activitiesPanel')
+            if activities_elem:
+                # アコーディオン内の各ステップを取得
+                step_texts = activities_elem.inner_text()
+                if step_texts:
+                    reasoning_parts.append(step_texts)
+
+            return "\n".join(reasoning_parts).strip()
+
+        except Exception:
+            return ""
+
+    def _get_latest_response_text(self) -> str:
+        """
+        最新の回答テキストを取得。
+
+        Returns:
+            回答テキスト
+        """
+        try:
+            response_elem = self._page.query_selector(
+                '[data-testid="markdown-reply"]:last-of-type, div[data-message-type="Chat"]:last-of-type'
+            )
+            if response_elem:
+                return response_elem.inner_text()
+            return ""
+        except Exception:
+            return ""
+
     async def _attach_file_async(self, file_path: Path) -> None:
         """Attach file to Copilot chat (async)"""
         # File attachment implementation depends on Copilot UI

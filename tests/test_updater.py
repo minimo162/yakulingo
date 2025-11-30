@@ -9,7 +9,7 @@ from pathlib import Path
 import json
 import platform
 
-from ecm_translate.services.updater import (
+from yakulingo.services.updater import (
     AutoUpdater,
     UpdateStatus,
     UpdateResult,
@@ -122,7 +122,7 @@ class TestAutoUpdater:
         assert updater.repo_owner == "test"
         assert updater.repo_name == "repo"
 
-    @patch("ecm_translate.services.updater.AutoUpdater._make_request")
+    @patch("yakulingo.services.updater.AutoUpdater._make_request")
     def test_check_for_updates_available(self, mock_request):
         """Test update check when update is available"""
         mock_response = {
@@ -142,7 +142,7 @@ class TestAutoUpdater:
         assert result.version_info is not None
         assert result.version_info.version == "2.0.0"
 
-    @patch("ecm_translate.services.updater.AutoUpdater._make_request")
+    @patch("yakulingo.services.updater.AutoUpdater._make_request")
     def test_check_for_updates_up_to_date(self, mock_request):
         """Test update check when already up to date"""
         mock_response = {
@@ -160,7 +160,7 @@ class TestAutoUpdater:
         assert result.status == UpdateStatus.UP_TO_DATE
         assert result.current_version == "1.0.0"
 
-    @patch("ecm_translate.services.updater.AutoUpdater._make_request")
+    @patch("yakulingo.services.updater.AutoUpdater._make_request")
     def test_check_for_updates_with_assets(self, mock_request):
         """Test update check with release assets"""
         mock_response = {
@@ -185,7 +185,7 @@ class TestAutoUpdater:
         assert result.version_info.file_size == 1024000
         assert "yakulingo-2.0.0.zip" in result.version_info.download_url
 
-    @patch("ecm_translate.services.updater.AutoUpdater._make_request")
+    @patch("yakulingo.services.updater.AutoUpdater._make_request")
     def test_check_for_updates_network_error(self, mock_request):
         """Test update check with network error"""
         import urllib.error

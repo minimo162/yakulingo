@@ -11,18 +11,18 @@ from unittest.mock import Mock, MagicMock, patch
 import openpyxl
 from openpyxl.styles import Font
 
-from ecm_translate.models.types import (
+from yakulingo.models.types import (
     TranslationStatus,
     TranslationProgress,
     TextBlock,
     FileType,
 )
-from ecm_translate.config.settings import AppSettings
-from ecm_translate.services.translation_service import TranslationService, BatchTranslator
-from ecm_translate.services.prompt_builder import PromptBuilder
-from ecm_translate.processors.excel_processor import ExcelProcessor
-from ecm_translate.processors.word_processor import WordProcessor
-from ecm_translate.processors.pptx_processor import PptxProcessor
+from yakulingo.config.settings import AppSettings
+from yakulingo.services.translation_service import TranslationService, BatchTranslator
+from yakulingo.services.prompt_builder import PromptBuilder
+from yakulingo.processors.excel_processor import ExcelProcessor
+from yakulingo.processors.word_processor import WordProcessor
+from yakulingo.processors.pptx_processor import PptxProcessor
 
 
 # --- Fixtures ---

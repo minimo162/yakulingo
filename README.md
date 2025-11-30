@@ -150,7 +150,7 @@ python app.py
 pytest
 
 # カバレッジ付き
-pytest --cov=ecm_translate --cov-report=term-missing
+pytest --cov=yakulingo --cov-report=term-missing
 ```
 
 ### 配布パッケージの作成
@@ -166,7 +166,7 @@ YakuLingo/
 ├── setup.bat                 # セットアップスクリプト
 ├── ★run.bat                  # 起動スクリプト
 ├── app.py                    # エントリーポイント
-├── ecm_translate/            # メインパッケージ
+├── yakulingo/            # メインパッケージ
 │   ├── ui/                   # UIコンポーネント
 │   ├── services/             # サービス層
 │   ├── processors/           # ファイルプロセッサ

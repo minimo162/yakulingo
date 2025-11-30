@@ -13,8 +13,8 @@ from unittest.mock import Mock, MagicMock, patch
 # Add project root to path for direct imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from ecm_translate.ui.state import AppState, Tab, FileState
-from ecm_translate.models.types import FileType, FileInfo
+from yakulingo.ui.state import AppState, Tab, FileState
+from yakulingo.models.types import FileType, FileInfo
 
 
 class TestTextPanelLogic:
@@ -67,7 +67,7 @@ class TestTextPanelLogic:
 
     def test_copy_button_visible_when_has_result(self):
         """Copy button visibility based on translation result"""
-        from ecm_translate.models.types import TextTranslationResult, TranslationOption
+        from yakulingo.models.types import TextTranslationResult, TranslationOption
 
         result = TextTranslationResult(
             source_text="Test",

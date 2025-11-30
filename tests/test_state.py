@@ -1,5 +1,5 @@
 # tests/test_state.py
-"""Tests for ecm_translate.ui.state"""
+"""Tests for yakulingo.ui.state"""
 
 import sys
 from pathlib import Path
@@ -10,8 +10,8 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Import directly to avoid ui/__init__.py which imports nicegui
-from ecm_translate.ui.state import AppState, Tab, FileState
-from ecm_translate.models.types import FileType, FileInfo
+from yakulingo.ui.state import AppState, Tab, FileState
+from yakulingo.models.types import FileType, FileInfo
 
 
 class TestTab:

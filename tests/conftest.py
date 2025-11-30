@@ -1,6 +1,6 @@
 # tests/conftest.py
 """
-Shared pytest fixtures for ecm_translate tests.
+Shared pytest fixtures for yakulingo tests.
 """
 
 import pytest
@@ -8,8 +8,8 @@ import tempfile
 from pathlib import Path
 from unittest.mock import Mock, MagicMock
 
-from ecm_translate.config.settings import AppSettings
-from ecm_translate.models.types import (
+from yakulingo.config.settings import AppSettings
+from yakulingo.models.types import (
     FileType,
     FileInfo,
     TextBlock,

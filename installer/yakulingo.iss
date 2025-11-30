@@ -42,7 +42,7 @@ Source: "..\requirements.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\glossary.csv"; DestDir: "{app}"; Flags: ignoreversion
 
 ; パッケージ
-Source: "..\ecm_translate\*"; DestDir: "{app}\ecm_translate"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\yakulingo\*"; DestDir: "{app}\yakulingo"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\prompts\*"; DestDir: "{app}\prompts"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 ; バッチファイル

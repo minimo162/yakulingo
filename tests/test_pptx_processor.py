@@ -1,13 +1,13 @@
 # tests/test_pptx_processor.py
-"""Tests for ecm_translate.processors.pptx_processor"""
+"""Tests for yakulingo.processors.pptx_processor"""
 
 import pytest
 from pathlib import Path
 from pptx import Presentation
 from pptx.util import Inches, Pt
 
-from ecm_translate.processors.pptx_processor import PptxProcessor
-from ecm_translate.models.types import FileType
+from yakulingo.processors.pptx_processor import PptxProcessor
+from yakulingo.models.types import FileType
 
 
 # --- Fixtures ---

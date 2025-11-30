@@ -1,10 +1,10 @@
 # tests/test_settings.py
-"""Tests for ecm_translate.config.settings"""
+"""Tests for yakulingo.config.settings"""
 
 import tempfile
 from pathlib import Path
 
-from ecm_translate.config.settings import AppSettings
+from yakulingo.config.settings import AppSettings
 
 
 class TestAppSettings:

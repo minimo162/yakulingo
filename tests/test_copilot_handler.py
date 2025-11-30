@@ -1,11 +1,11 @@
 # tests/test_copilot_handler.py
-"""Tests for ecm_translate.services.copilot_handler"""
+"""Tests for yakulingo.services.copilot_handler"""
 
 import pytest
 from unittest.mock import Mock, MagicMock, patch
 from pathlib import Path
 
-from ecm_translate.services.copilot_handler import CopilotHandler
+from yakulingo.services.copilot_handler import CopilotHandler
 
 
 class TestCopilotHandlerInit:
@@ -277,7 +277,7 @@ class TestCopilotHandlerNewChat:
 class TestCopilotHandlerMockedConnect:
     """Test CopilotHandler.connect() with mocked Playwright"""
 
-    @patch('ecm_translate.services.copilot_handler._get_playwright')
+    @patch('yakulingo.services.copilot_handler._get_playwright')
     def test_connect_already_connected_returns_true(self, mock_get_pw):
         """connect() returns True if already connected"""
         handler = CopilotHandler()

@@ -1,19 +1,19 @@
 # tests/test_app.py
-"""Tests for ecm_translate.ui.app - YakuLingoApp class"""
+"""Tests for yakulingo.ui.app - YakuLingoApp class"""
 
 import pytest
 from pathlib import Path
 from unittest.mock import Mock, MagicMock, patch, AsyncMock
 import asyncio
 
-from ecm_translate.models.types import (
+from yakulingo.models.types import (
     TranslationProgress,
     TranslationResult,
     TranslationStatus,
     FileInfo,
     FileType,
 )
-from ecm_translate.ui.state import AppState, Tab, FileState
+from yakulingo.ui.state import AppState, Tab, FileState
 
 
 # =============================================================================
@@ -62,7 +62,7 @@ def mock_translation_service():
 @pytest.fixture
 def mock_nicegui():
     """Mock NiceGUI module"""
-    with patch('ecm_translate.ui.app.ui') as mock_ui:
+    with patch('yakulingo.ui.app.ui') as mock_ui:
         mock_ui.notify = MagicMock()
         mock_ui.navigate = MagicMock()
         mock_ui.navigate.reload = MagicMock()
@@ -177,10 +177,10 @@ class TestAppStateFileWorkflow:
 class TestYakuLingoAppInit:
     """Tests for YakuLingoApp initialization"""
 
-    @patch('ecm_translate.ui.app.AppSettings')
-    @patch('ecm_translate.ui.app.CopilotHandler')
-    @patch('ecm_translate.ui.app.get_default_settings_path')
-    @patch('ecm_translate.ui.app.get_default_prompts_dir')
+    @patch('yakulingo.ui.app.AppSettings')
+    @patch('yakulingo.ui.app.CopilotHandler')
+    @patch('yakulingo.ui.app.get_default_settings_path')
+    @patch('yakulingo.ui.app.get_default_prompts_dir')
     def test_app_creates_state(
         self,
         mock_prompts_dir,
@@ -193,15 +193,15 @@ class TestYakuLingoAppInit:
             get_reference_file_paths=MagicMock(return_value=[]),
         )
 
-        from ecm_translate.ui.app import YakuLingoApp
+        from yakulingo.ui.app import YakuLingoApp
         app = YakuLingoApp()
 
         assert isinstance(app.state, AppState)
 
-    @patch('ecm_translate.ui.app.AppSettings')
-    @patch('ecm_translate.ui.app.CopilotHandler')
-    @patch('ecm_translate.ui.app.get_default_settings_path')
-    @patch('ecm_translate.ui.app.get_default_prompts_dir')
+    @patch('yakulingo.ui.app.AppSettings')
+    @patch('yakulingo.ui.app.CopilotHandler')
+    @patch('yakulingo.ui.app.get_default_settings_path')
+    @patch('yakulingo.ui.app.get_default_prompts_dir')
     def test_app_loads_settings(
         self,
         mock_prompts_dir,
@@ -215,7 +215,7 @@ class TestYakuLingoAppInit:
         )
         mock_settings_class.load.return_value = mock_settings
 
-        from ecm_translate.ui.app import YakuLingoApp
+        from yakulingo.ui.app import YakuLingoApp
         app = YakuLingoApp()
 
         # Verify settings object is stored
@@ -232,14 +232,14 @@ class TestYakuLingoAppEventHandlers:
     @pytest.fixture
     def app_with_mocks(self, mock_settings, mock_copilot, mock_nicegui):
         """Create app with mocked dependencies"""
-        with patch('ecm_translate.ui.app.AppSettings') as mock_settings_class:
-            with patch('ecm_translate.ui.app.CopilotHandler') as mock_copilot_class:
-                with patch('ecm_translate.ui.app.get_default_settings_path'):
-                    with patch('ecm_translate.ui.app.get_default_prompts_dir'):
+        with patch('yakulingo.ui.app.AppSettings') as mock_settings_class:
+            with patch('yakulingo.ui.app.CopilotHandler') as mock_copilot_class:
+                with patch('yakulingo.ui.app.get_default_settings_path'):
+                    with patch('yakulingo.ui.app.get_default_prompts_dir'):
                         mock_settings_class.load.return_value = mock_settings
                         mock_copilot_class.return_value = mock_copilot
 
-                        from ecm_translate.ui.app import YakuLingoApp
+                        from yakulingo.ui.app import YakuLingoApp
                         app = YakuLingoApp()
                         app.copilot = mock_copilot
                         app.settings = mock_settings
@@ -268,7 +268,7 @@ class TestYakuLingoAppEventHandlers:
     def test_clear_clears_text(self, app_with_mocks, mock_nicegui):
         """Test clear button handler"""
         app = app_with_mocks
-        from ecm_translate.models.types import TextTranslationResult, TranslationOption
+        from yakulingo.models.types import TextTranslationResult, TranslationOption
 
         app.state.source_text = "Some text"
         app.state.text_result = TextTranslationResult(
@@ -342,14 +342,14 @@ class TestYakuLingoAppFileSelection:
     @pytest.fixture
     def app_with_service(self, mock_settings, mock_copilot, mock_translation_service, mock_nicegui):
         """Create app with translation service"""
-        with patch('ecm_translate.ui.app.AppSettings') as mock_settings_class:
-            with patch('ecm_translate.ui.app.CopilotHandler') as mock_copilot_class:
-                with patch('ecm_translate.ui.app.get_default_settings_path'):
-                    with patch('ecm_translate.ui.app.get_default_prompts_dir'):
+        with patch('yakulingo.ui.app.AppSettings') as mock_settings_class:
+            with patch('yakulingo.ui.app.CopilotHandler') as mock_copilot_class:
+                with patch('yakulingo.ui.app.get_default_settings_path'):
+                    with patch('yakulingo.ui.app.get_default_prompts_dir'):
                         mock_settings_class.load.return_value = mock_settings
                         mock_copilot_class.return_value = mock_copilot
 
-                        from ecm_translate.ui.app import YakuLingoApp
+                        from yakulingo.ui.app import YakuLingoApp
                         app = YakuLingoApp()
                         app.translation_service = mock_translation_service
                         yield app
@@ -418,10 +418,10 @@ class TestFileStateEnum:
 class TestCreateApp:
     """Tests for create_app factory function"""
 
-    @patch('ecm_translate.ui.app.AppSettings')
-    @patch('ecm_translate.ui.app.CopilotHandler')
-    @patch('ecm_translate.ui.app.get_default_settings_path')
-    @patch('ecm_translate.ui.app.get_default_prompts_dir')
+    @patch('yakulingo.ui.app.AppSettings')
+    @patch('yakulingo.ui.app.CopilotHandler')
+    @patch('yakulingo.ui.app.get_default_settings_path')
+    @patch('yakulingo.ui.app.get_default_prompts_dir')
     def test_create_app_returns_yakulingo_app(
         self,
         mock_prompts_dir,
@@ -434,7 +434,7 @@ class TestCreateApp:
             get_reference_file_paths=MagicMock(return_value=[]),
         )
 
-        from ecm_translate.ui.app import create_app, YakuLingoApp
+        from yakulingo.ui.app import create_app, YakuLingoApp
         app = create_app()
 
         assert isinstance(app, YakuLingoApp)

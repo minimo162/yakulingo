@@ -1,13 +1,13 @@
 # tests/test_excel_processor.py
-"""Tests for ecm_translate.processors.excel_processor"""
+"""Tests for yakulingo.processors.excel_processor"""
 
 import pytest
 from pathlib import Path
 import openpyxl
 from openpyxl.styles import Font
 
-from ecm_translate.processors.excel_processor import ExcelProcessor
-from ecm_translate.models.types import FileType
+from yakulingo.processors.excel_processor import ExcelProcessor
+from yakulingo.models.types import FileType
 
 
 # --- Fixtures ---

@@ -59,7 +59,7 @@ $files = @(
 
 # Folders to copy (app + dependencies)
 $folders = @(
-    "ecm_translate",
+    "yakulingo",
     "prompts",
     "config",
     ".venv",

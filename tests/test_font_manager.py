@@ -1,9 +1,9 @@
 # tests/test_font_manager.py
-"""Tests for ecm_translate.processors.font_manager"""
+"""Tests for yakulingo.processors.font_manager"""
 
 import pytest
 
-from ecm_translate.processors.font_manager import (
+from yakulingo.processors.font_manager import (
     FontTypeDetector,
     FontSizeAdjuster,
     FontManager,

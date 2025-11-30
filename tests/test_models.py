@@ -1,9 +1,9 @@
 # tests/test_models.py
-"""Tests for ecm_translate.models.types"""
+"""Tests for yakulingo.models.types"""
 
 from pathlib import Path
 
-from ecm_translate.models.types import (
+from yakulingo.models.types import (
     FileType,
     TranslationStatus,
     TextBlock,

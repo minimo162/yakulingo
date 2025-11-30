@@ -16,16 +16,16 @@ import sys
 # Add project root to path for direct imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from ecm_translate.models.types import (
+from yakulingo.models.types import (
     TranslationStatus,
     TranslationProgress,
     TextBlock,
     FileType,
     FileInfo,
 )
-from ecm_translate.config.settings import AppSettings
-from ecm_translate.services.translation_service import TranslationService, BatchTranslator
-from ecm_translate.ui.state import AppState, Tab, FileState
+from yakulingo.config.settings import AppSettings
+from yakulingo.services.translation_service import TranslationService, BatchTranslator
+from yakulingo.ui.state import AppState, Tab, FileState
 
 
 # --- Fixtures ---

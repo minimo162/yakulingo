@@ -114,7 +114,7 @@ YakuLingo/
 ├── pyproject.toml
 ├── requirements.txt
 │
-├── ecm_translate/                  # メインパッケージ
+├── yakulingo/                  # メインパッケージ
 │   ├── __init__.py
 │   │
 │   ├── ui/                         # Presentation Layer

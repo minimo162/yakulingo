@@ -3,10 +3,11 @@
 Builds translation prompts for YakuLingo.
 
 Prompt file structure:
-- translate.txt: Unified bidirectional (auto-detect) - for text translation
-- translate_jp_to_en.txt: File translation → English
-- translate_en_to_jp.txt: File translation → Japanese
-- text_translate_*.txt: Text translation with multiple options
+- translate.txt: Unified bidirectional (auto-detect) - for file batch translation
+- translate_jp_to_en.txt: File translation → English (explicit direction)
+- translate_en_to_jp.txt: File translation → Japanese (explicit direction)
+- text_translate.txt: Text translation with 3 options (auto-detect)
+- adjust_*.txt: Adjustment prompts (shorter, longer, custom)
 
 Reference files are attached to Copilot, not embedded in prompt.
 """

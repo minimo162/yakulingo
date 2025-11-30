@@ -630,23 +630,28 @@ class CopilotHandler:
         GPT-5トグルボタンを有効化する。
         ボタンが押されていない状態（aria-pressed="false"）の場合のみクリック。
 
+        注意: ボタンのテキストは頻繁に変更される可能性があり、
+        将来的にGPT-5がデフォルトになりボタン自体がなくなる可能性もある。
+        そのため、テキストに依存しないセレクタを使用し、
+        ボタンが存在しない場合は静かにスキップする。
+
         実際のCopilot HTML:
         - 押されていない: <button aria-pressed="false" class="... fui-ToggleButton ...">Try GPT-5</button>
         - 押されている: <button aria-pressed="true" class="... fui-ToggleButton ...">GPT-5 On</button>
+        - 新しいチャットボタンの左隣のdiv内に配置
         """
         if not self._page:
             return
 
         try:
-            # GPT-5ボタンを探す（押されていない状態）
+            # トグルボタンを探す（テキストに依存しない）
+            # 新しいチャットボタンの近くにあるfui-ToggleButtonでaria-pressed="false"のもの
             gpt5_btn = self._page.query_selector(
-                'button.fui-ToggleButton[aria-pressed="false"]:has-text("GPT-5"), '
-                'button.fui-ToggleButton[aria-pressed="false"]:has-text("Try GPT")'
+                'button.fui-ToggleButton[aria-pressed="false"]'
             )
             if gpt5_btn:
                 gpt5_btn.click()
                 time.sleep(0.5)
-                print("GPT-5 enabled")
-        except Exception as e:
-            # GPT-5ボタンが存在しない場合は無視（オプション機能）
-            print(f"GPT-5 button not found or already enabled: {e}")
+        except Exception:
+            # ボタンが存在しない場合は静かにスキップ（オプション機能）
+            pass

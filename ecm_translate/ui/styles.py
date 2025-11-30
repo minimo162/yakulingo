@@ -25,6 +25,14 @@ COMPLETE_CSS = """
     /* States */
     --md-sys-color-error: #BA1A1A;
     --md-sys-color-on-error: #FFFFFF;
+    --md-sys-color-error-container: #FFDAD6;
+    --md-sys-color-on-error-container: #410002;
+
+    /* Success (extended) */
+    --md-sys-color-success: #2E7D32;
+    --md-sys-color-on-success: #FFFFFF;
+    --md-sys-color-success-container: #C8E6C9;
+    --md-sys-color-on-success-container: #1B5E20;
 
     /* Shape */
     --md-sys-shape-corner-full: 9999px;
@@ -202,7 +210,7 @@ body {
 }
 
 .file-card.success {
-    background: #E8F5E9;
+    background: var(--md-sys-color-success-container);
 }
 
 /* === M3 Progress Indicator === */
@@ -229,7 +237,7 @@ body {
 }
 
 .status-dot.connected {
-    background: #4CAF50;
+    background: var(--md-sys-color-success);
 }
 
 .status-dot.connecting {
@@ -245,13 +253,13 @@ body {
 /* === Success === */
 .success-icon {
     font-size: 2.5rem;
-    color: #4CAF50;
+    color: var(--md-sys-color-success);
 }
 
 .success-text {
     font-size: 1rem;
     font-weight: 500;
-    color: #2E7D32;
+    color: var(--md-sys-color-on-success-container);
 }
 
 /* === Chip === */

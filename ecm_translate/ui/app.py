@@ -126,7 +126,6 @@ class YakuLingoApp:
                         on_translate=self._translate_text,
                         on_swap=self._swap,
                         on_source_change=self._on_source_change,
-                        on_target_change=self._on_target_change,
                         on_copy=self._copy_text,
                         on_clear=self._clear,
                         on_adjust=self._adjust_text,
@@ -171,14 +170,9 @@ class YakuLingoApp:
         """Handle source text change - no refresh needed"""
         self.state.source_text = text
 
-    def _on_target_change(self, text: str):
-        """Handle target text change - no refresh needed"""
-        self.state.target_text = text
-
     def _clear(self):
         """Clear text fields"""
         self.state.source_text = ""
-        self.state.target_text = ""
         self.state.text_result = None
         self._refresh_content()
 
@@ -186,7 +180,7 @@ class YakuLingoApp:
         """Copy specified text to clipboard"""
         if text:
             ui.clipboard.write(text)
-            ui.notify('コピーしました', type='positive')
+            ui.notify('Copied', type='positive')
 
     async def _translate_text(self):
         """Translate text with multiple options"""
@@ -209,9 +203,6 @@ class YakuLingoApp:
 
             if result and result.options:
                 self.state.text_result = result
-                # Also set target_text for compatibility
-                if result.options:
-                    self.state.target_text = result.options[0].text
             else:
                 error_msg = result.error_message if result else 'Unknown error'
                 ui.notify(f'Error: {error_msg}', type='negative')
@@ -251,7 +242,7 @@ class YakuLingoApp:
                         options=[result]
                     )
             else:
-                ui.notify('調整に失敗しました', type='negative')
+                ui.notify('Adjustment failed', type='negative')
 
         except Exception as e:
             ui.notify(f'Error: {e}', type='negative')

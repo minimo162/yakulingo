@@ -40,9 +40,8 @@ class AppState:
 
     # Text tab state
     source_text: str = ""
-    target_text: str = ""  # Legacy, kept for compatibility
     text_translating: bool = False
-    text_result: Optional[TextTranslationResult] = None  # New: multiple options
+    text_result: Optional[TextTranslationResult] = None
 
     # File tab state
     file_state: FileState = FileState.EMPTY
@@ -68,7 +67,6 @@ class AppState:
         else:
             self.direction = TranslationDirection.JP_TO_EN
         # Clear translation results on direction change
-        self.target_text = ""
         self.text_result = None
 
     def get_source_label(self) -> str:
@@ -86,7 +84,7 @@ class AppState:
     def get_source_placeholder(self) -> str:
         """Get source textarea placeholder"""
         if self.direction == TranslationDirection.JP_TO_EN:
-            return "日本語を入力..."
+            return "Enter Japanese text..."
         return "Enter English text..."
 
     def reset_file_state(self) -> None:

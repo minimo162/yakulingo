@@ -10,7 +10,7 @@ from typing import Callable
 from pathlib import Path
 
 from ecm_translate.ui.state import AppState, FileState
-from ecm_translate.models.types import FileInfo
+from ecm_translate.models.types import FileInfo, TranslationDirection
 
 
 SUPPORTED_FORMATS = ".xlsx,.xls,.docx,.doc,.pptx,.ppt,.pdf"
@@ -26,7 +26,16 @@ def create_file_panel(
 ):
     """File translation panel"""
 
+    # Direction display
+    source_lang = 'Japanese' if state.direction == TranslationDirection.JP_TO_EN else 'English'
+    target_lang = 'English' if state.direction == TranslationDirection.JP_TO_EN else 'Japanese'
+
     with ui.column().classes('flex-1 items-center justify-center w-full animate-in'):
+        # Show translation direction
+        with ui.row().classes('items-center gap-2 mb-4'):
+            ui.label(source_lang).classes('text-sm font-medium')
+            ui.icon('arrow_forward').classes('text-muted')
+            ui.label(target_lang).classes('text-sm font-medium')
         if state.file_state == FileState.EMPTY:
             _drop_zone(on_file_select)
 

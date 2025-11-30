@@ -644,11 +644,24 @@ class CopilotHandler:
             return
 
         try:
-            # トグルボタンを探す（テキストに依存しない）
-            # 新しいチャットボタンの近くにあるfui-ToggleButtonでaria-pressed="false"のもの
-            gpt5_btn = self._page.query_selector(
-                'button.fui-ToggleButton[aria-pressed="false"]'
-            )
+            # 新しいチャットボタンの左隣にあるトグルボタンを探す
+            # JavaScript で親要素内のトグルボタンを探す
+            gpt5_btn = self._page.evaluate_handle('''() => {
+                const newChatBtn = document.querySelector('#new-chat-button, [data-testid="newChatButton"]');
+                if (!newChatBtn) return null;
+
+                // 親要素を遡ってトグルボタンを探す
+                let parent = newChatBtn.parentElement;
+                for (let i = 0; i < 3 && parent; i++) {
+                    const toggleBtn = parent.querySelector('button.fui-ToggleButton[aria-pressed="false"]');
+                    if (toggleBtn && toggleBtn !== newChatBtn) {
+                        return toggleBtn;
+                    }
+                    parent = parent.parentElement;
+                }
+                return null;
+            }''')
+
             if gpt5_btn:
                 gpt5_btn.click()
                 time.sleep(0.5)

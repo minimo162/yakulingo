@@ -249,20 +249,24 @@ class TestCopilotHandlerNewChat:
         handler.start_new_chat()
 
     def test_start_new_chat_clicks_button(self):
-        """start_new_chat attempts to click new chat button"""
+        """start_new_chat attempts to click new chat button and enable GPT-5"""
         handler = CopilotHandler()
 
         mock_page = Mock()
-        mock_button = Mock()
-        mock_page.query_selector.return_value = mock_button
+        mock_new_chat_btn = Mock()
+        mock_gpt5_btn = Mock()
+        mock_page.query_selector.return_value = mock_new_chat_btn
+        mock_page.evaluate_handle.return_value = mock_gpt5_btn
         handler._page = mock_page
 
         handler.start_new_chat()
 
-        # query_selectorは2回呼ばれる（新しいチャットボタン + GPT-5ボタン）
-        assert mock_page.query_selector.call_count == 2
-        # クリックも2回（新しいチャットボタン + GPT-5ボタン）
-        assert mock_button.click.call_count == 2
+        # query_selectorは1回（新しいチャットボタン）
+        mock_page.query_selector.assert_called_once()
+        mock_new_chat_btn.click.assert_called_once()
+        # evaluate_handleは1回（GPT-5ボタン検索）
+        mock_page.evaluate_handle.assert_called_once()
+        mock_gpt5_btn.click.assert_called_once()
 
     def test_start_new_chat_handles_no_button(self):
         """start_new_chat handles missing button gracefully"""
@@ -279,31 +283,32 @@ class TestCopilotHandlerNewChat:
 class TestCopilotHandlerGPT5:
     """Test GPT-5 toggle button functionality"""
 
-    def test_enable_gpt5_clicks_when_not_pressed(self):
-        """_enable_gpt5 clicks button when aria-pressed is false"""
+    def test_enable_gpt5_clicks_when_button_found(self):
+        """_enable_gpt5 clicks button when found via evaluate_handle"""
         handler = CopilotHandler()
 
         mock_page = Mock()
         mock_button = Mock()
-        mock_page.query_selector.return_value = mock_button
+        # evaluate_handle returns the button element
+        mock_page.evaluate_handle.return_value = mock_button
         handler._page = mock_page
 
         handler._enable_gpt5()
 
-        mock_page.query_selector.assert_called_once()
+        mock_page.evaluate_handle.assert_called_once()
         mock_button.click.assert_called_once()
 
-    def test_enable_gpt5_skips_when_already_pressed(self):
-        """_enable_gpt5 does nothing when button not found (already pressed)"""
+    def test_enable_gpt5_skips_when_button_not_found(self):
+        """_enable_gpt5 does nothing when button not found"""
         handler = CopilotHandler()
 
         mock_page = Mock()
-        mock_page.query_selector.return_value = None  # ボタンが見つからない=既に有効
+        mock_page.evaluate_handle.return_value = None  # ボタンが見つからない
         handler._page = mock_page
 
         handler._enable_gpt5()
 
-        mock_page.query_selector.assert_called_once()
+        mock_page.evaluate_handle.assert_called_once()
 
     def test_enable_gpt5_no_page(self):
         """_enable_gpt5 does nothing when no page"""
@@ -318,7 +323,7 @@ class TestCopilotHandlerGPT5:
         handler = CopilotHandler()
 
         mock_page = Mock()
-        mock_page.query_selector.side_effect = Exception("Test error")
+        mock_page.evaluate_handle.side_effect = Exception("Test error")
         handler._page = mock_page
 
         # Should not raise

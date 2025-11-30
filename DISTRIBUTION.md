@@ -3,6 +3,7 @@
 ## 概要
 
 YakuLingoはネットワーク共有フォルダからのワンクリックセットアップに対応しています。
+インストール後は、GitHub Releases経由で自動更新されます。
 
 ## 配布パッケージの作成
 
@@ -46,6 +47,8 @@ share_package/            # 共有フォルダ用パッケージ
 2. 古いZIPファイルを削除
    - setup.ps1は自動的に最新のZIPを使用
 
+> **Note**: インストール済みのユーザーは自動更新機能で更新されるため、共有フォルダの更新は新規インストール用のみ
+
 ## ユーザー向けインストール手順
 
 1. `\\server\share\YakuLingo` を開く
@@ -81,6 +84,39 @@ setup.ps1は以下を実行：
 - `.uv-python` (Python本体)
 - `.playwright-browsers` (ブラウザ)
 
+## 自動更新機能
+
+### 仕組み
+
+1. アプリケーション起動時にGitHub Releases APIをチェック
+2. 新バージョンがあれば通知を表示
+3. ユーザーが更新を選択すると自動ダウンロード・インストール
+4. 再起動後に新バージョンが有効化
+
+### プロキシ環境での動作
+
+- Windowsシステムプロキシ設定を自動検出
+- NTLM認証プロキシ対応（pywin32が必要）
+
+### 管理者向け情報
+
+自動更新はGitHubリポジトリのReleasesから取得します。
+社内ネットワークでGitHubへのアクセスがブロックされている場合：
+- 共有フォルダからの手動更新を案内してください
+- または、プロキシ設定でGitHubへのアクセスを許可してください
+
+## データの保存場所
+
+ユーザーデータは以下の場所に保存されます：
+
+| データ | 場所 | 更新時の扱い |
+|--------|------|-------------|
+| アプリ設定 | `%LOCALAPPDATA%\YakuLingo\config\settings.json` | 保持 |
+| 翻訳履歴 | `%USERPROFILE%\.yakulingo\history.db` | 保持 |
+| 用語集 | `%LOCALAPPDATA%\YakuLingo\glossary.csv` | 保持 |
+
+> **Note**: 翻訳履歴はアプリケーションフォルダ外に保存されるため、アンインストール後も残ります
+
 ## トラブルシューティング
 
 ### setup.batが実行できない
@@ -97,6 +133,12 @@ powershell -ExecutionPolicy Bypass -File ".scripts\setup.ps1"
 
 - 共有フォルダへの読み取り権限を確認
 
+### 自動更新が動作しない
+
+- GitHubへのネットワーク接続を確認
+- プロキシ環境の場合、pywin32がインストールされているか確認
+- 共有フォルダからの手動更新を試行
+
 ## アンインストール
 
 手動で以下を削除：
@@ -105,6 +147,10 @@ powershell -ExecutionPolicy Bypass -File ".scripts\setup.ps1"
 2. デスクトップの `YakuLingo.lnk`
 3. スタートメニューの `YakuLingo.lnk`
 
+### 翻訳履歴も削除する場合
+
+4. `%USERPROFILE%\.yakulingo`
+
 ## システム要件
 
 | 項目 | 要件 |
@@ -112,3 +158,4 @@ powershell -ExecutionPolicy Bypass -File ".scripts\setup.ps1"
 | OS | Windows 10/11 |
 | PowerShell | 5.1以上（Windows標準） |
 | ネットワーク | 共有フォルダへのアクセス |
+| 自動更新 | GitHubへのアクセス（オプション） |

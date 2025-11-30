@@ -45,7 +45,7 @@ YakuLingo/
 │   ├── ui/                        # Presentation layer (NiceGUI)
 │   │   ├── app.py                 # YakuLingoApp main orchestrator
 │   │   ├── state.py               # AppState management
-│   │   ├── styles.py              # CSS styling definitions
+│   │   ├── styles.py              # M3 design tokens & CSS
 │   │   └── components/            # Reusable UI components
 │   │       ├── header.py
 │   │       ├── tabs.py
@@ -66,8 +66,9 @@ YakuLingo/
 │   │   └── translators.py         # Translation decision logic
 │   ├── models/                    # Data structures
 │   │   └── types.py               # Enums, dataclasses, type aliases
-│   └── config/                    # Configuration
-│       └── settings.py            # AppSettings with JSON persistence
+│   ├── config/                    # Configuration
+│   │   └── settings.py            # AppSettings with JSON persistence
+│   └── utils/                     # Utility functions (reserved)
 ├── tests/                         # Test suite (15 test files)
 │   ├── conftest.py                # Shared fixtures and mocks
 │   └── test_*.py                  # Unit tests for each module
@@ -76,6 +77,8 @@ YakuLingo/
 │   └── translate_en_to_jp.txt
 ├── config/
 │   └── settings.json              # User configuration
+├── docs/
+│   └── SPECIFICATION.md           # Detailed technical specification
 ├── glossary.csv                   # Default translation glossary
 ├── pyproject.toml                 # Project metadata & dependencies
 ├── requirements.txt               # Core pip dependencies
@@ -86,7 +89,7 @@ YakuLingo/
 
 | Layer | Location | Responsibility |
 |-------|----------|----------------|
-| **UI** | `ecm_translate/ui/` | NiceGUI components, state management, user interactions |
+| **UI** | `ecm_translate/ui/` | NiceGUI components, M3 styling, state management, user interactions |
 | **Services** | `ecm_translate/services/` | Translation orchestration, Copilot communication, prompt building |
 | **Processors** | `ecm_translate/processors/` | File format handling, text extraction, translation application |
 | **Models** | `ecm_translate/models/` | Data types, enums, shared structures |
@@ -96,11 +99,13 @@ YakuLingo/
 
 | File | Purpose | Lines |
 |------|---------|-------|
-| `ecm_translate/ui/app.py` | Main application orchestrator, handles UI events and coordinates services | ~290 |
-| `ecm_translate/services/translation_service.py` | Coordinates file processors and batch translation | ~350 |
+| `ecm_translate/ui/app.py` | Main application orchestrator, handles UI events and coordinates services | ~278 |
+| `ecm_translate/services/translation_service.py` | Coordinates file processors and batch translation | ~351 |
 | `ecm_translate/services/copilot_handler.py` | Browser automation for M365 Copilot | ~455 |
+| `ecm_translate/ui/styles.py` | M3 design tokens, CSS styling definitions | ~289 |
+| `ecm_translate/ui/state.py` | Application state management | ~119 |
+| `ecm_translate/models/types.py` | Core data types: TextBlock, FileInfo, TranslationProgress | ~118 |
 | `ecm_translate/processors/base.py` | Abstract base class for all file processors | ~97 |
-| `ecm_translate/models/types.py` | Core data types: TextBlock, FileInfo, TranslationProgress | ~100 |
 
 ## Core Data Types
 
@@ -133,10 +138,41 @@ class FileProcessor(ABC):
     def apply_translations(input_path, output_path, translations, direction)
 ```
 
+## UI Design System (Material Design 3)
+
+The application uses M3 (Material Design 3) component-based styling:
+
+### Design Tokens (in `styles.py`)
+```css
+/* Primary - warm coral palette */
+--md-sys-color-primary: #C04000;
+--md-sys-color-primary-container: #FFDBD0;
+
+/* Surface colors */
+--md-sys-color-surface: #FFFBFF;
+--md-sys-color-surface-container: #F3EDE9;
+
+/* Shape system */
+--md-sys-shape-corner-full: 9999px;   /* Pills/FABs */
+--md-sys-shape-corner-large: 16px;    /* Cards/Dialogs */
+--md-sys-shape-corner-medium: 12px;   /* Text fields */
+--md-sys-shape-corner-small: 8px;     /* Chips */
+```
+
+### Key CSS Classes
+- `.btn-primary` - M3 filled button
+- `.btn-outline` - M3 outlined button
+- `.text-box` - M3 text field container
+- `.drop-zone` - File drop area with dashed border
+- `.file-card` - M3 card for file items
+- `.tab-btn` - Segmented button for tabs
+- `.swap-btn` - Direction swap with rotation animation
+
 ## Testing Conventions
 
 - **Framework**: pytest with pytest-asyncio
 - **Test Path**: `tests/`
+- **Test Files**: 15 test files covering all major modules
 - **Naming**: `test_*.py` files, `Test*` classes, `test_*` functions
 - **Fixtures**: Defined in `tests/conftest.py`
 - **Async Mode**: Auto-configured via pyproject.toml
@@ -154,6 +190,14 @@ def mock_copilot(): ...
 # Temporary file paths
 @pytest.fixture
 def sample_xlsx_path(temp_dir): ...
+```
+
+### Test Coverage
+```bash
+# Run with coverage report
+pytest --cov=ecm_translate --cov-report=term-missing
+
+# Coverage excludes UI code (harder to test) and __init__.py files
 ```
 
 ## Development Conventions
@@ -237,7 +281,13 @@ The `CopilotHandler` class automates Microsoft Edge browser:
 1. Create component in `ecm_translate/ui/components/`
 2. Update state in `ecm_translate/ui/state.py` if needed
 3. Integrate in `ecm_translate/ui/app.py`
-4. Add styles in `ecm_translate/ui/styles.py`
+4. Add styles in `ecm_translate/ui/styles.py` using M3 design tokens
+
+### Modifying Styles
+1. Use M3 design tokens defined in `styles.py` (`:root` CSS variables)
+2. Follow M3 component patterns (filled buttons, outlined buttons, etc.)
+3. Use standard motion easing: `var(--md-sys-motion-easing-standard)`
+4. Apply appropriate corner radius from shape system
 
 ## Dependencies Overview
 
@@ -254,7 +304,7 @@ The `CopilotHandler` class automates Microsoft Edge browser:
 | `numpy>=1.24.0` | Numerical operations |
 
 ### Optional Dependencies
-- `[windows]`: pywin32, keyboard, pystray (Windows integration)
+- `[windows]`: pywin32, keyboard, pystray, customtkinter, tkinterdnd2 (Windows integration)
 - `[ocr]`: yomitoku (PDF OCR with ML - heavy)
 - `[test]`: pytest, pytest-cov, pytest-asyncio
 
@@ -271,14 +321,23 @@ The AGENTS.md file specifies that all responses should be in Japanese (すべて
 
 ## Documentation References
 
-- `README.md` - User guide and quick start
-- `docs/SPECIFICATION.md` - Detailed technical specification (800+ lines)
+- `README.md` - User guide and quick start (Japanese)
+- `docs/SPECIFICATION.md` - Detailed technical specification (~800 lines)
 - `DISTRIBUTION.md` - Deployment and distribution guide
 - `AGENTS.md` - Agent configuration (Japanese language preference)
+
+## Recent Development Focus
+
+Based on recent commits:
+- **M3 UI Redesign**: Applied Material Design 3 component-based design tokens
+- **Simplified Design**: Removed dark mode for simplicity, focusing on clean light theme
+- **Test Coverage**: Comprehensive test improvements across all modules
+- **NiceGUI API Fixes**: Resolved API compatibility issues for better UX
 
 ## Git Workflow
 
 - Main development happens on feature branches
 - Testing branches: `claude/testing-*`
-- Recent focus: comprehensive test coverage, dependency fixes
+- Feature branches: `claude/claude-md-*`
 - Commit messages: descriptive, focus on "why" not "what"
+- Recent merge activity shows active development cycle

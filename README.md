@@ -49,7 +49,7 @@ setup.bat
 ### 2. 起動
 
 ```
-★run.bat
+run.bat
 ```
 
 ブラウザで `http://localhost:8765` が自動的に開きます。
@@ -164,7 +164,7 @@ make_distribution.bat
 ```
 YakuLingo/
 ├── setup.bat                 # セットアップスクリプト
-├── ★run.bat                  # 起動スクリプト
+├── run.bat                   # 起動スクリプト
 ├── app.py                    # エントリーポイント
 ├── yakulingo/            # メインパッケージ
 │   ├── ui/                   # UIコンポーネント

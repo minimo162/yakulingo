@@ -54,6 +54,7 @@ class VersionInfo:
     download_url: str
     release_notes: str
     file_size: int = 0
+    requires_reinstall: bool = False  # 依存関係変更により再セットアップが必要
 
 
 @dataclass
@@ -285,6 +286,21 @@ class AutoUpdater:
         else:
             return Path.home() / ".yakulingo" / "updates"
 
+    def _get_app_dir(self) -> Path:
+        """
+        アプリケーションディレクトリを取得
+
+        配布版は %LOCALAPPDATA%\\YakuLingo にインストールされる
+        """
+        if platform.system() == "Windows":
+            app_dir = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "YakuLingo"
+            # インストール済みかチェック（run.bat の存在で判断）
+            if (app_dir / "run.bat").exists():
+                return app_dir
+
+        # フォールバック: 現在のスクリプトの場所から推測
+        return Path(__file__).parent.parent.parent
+
     def _build_opener(self) -> None:
         """URLオープナーを構築"""
         handlers = []
@@ -360,12 +376,16 @@ class AutoUpdater:
             if not download_url:
                 download_url = release_info.get("zipball_url", "")
 
+            # 依存関係変更の検出（リリースノートに [REQUIRES_REINSTALL] が含まれているか）
+            requires_reinstall = "[REQUIRES_REINSTALL]" in release_notes
+
             version_info = VersionInfo(
                 version=latest_version,
                 release_date=release_date,
                 download_url=download_url,
                 release_notes=release_notes,
                 file_size=file_size,
+                requires_reinstall=requires_reinstall,
             )
 
             # バージョン比較
@@ -470,9 +490,29 @@ class AutoUpdater:
 
         return download_path
 
+    # 更新対象ファイル/ディレクトリ一覧
+    # 環境ファイル（.venv, .uv-python, .playwright-browsers）は含まない
+    # 配布ZIPに含まれるファイルと一致させる（make_distribution.bat 参照）
+    SOURCE_DIRS = ["yakulingo", "prompts"]
+    SOURCE_FILES = [
+        "app.py",           # エントリーポイント
+        "pyproject.toml",   # プロジェクト設定
+        "uv.toml",          # UV設定
+        "run.bat",          # 起動スクリプト
+        "setup.ps1",        # セットアップスクリプト（再インストール用）
+        "remove.bat",       # 削除スクリプト
+        "remove.ps1",       # 削除スクリプト
+        "README.md",        # ドキュメント
+        # Note: setup.bat は配布ZIPのルートにあり、AppDataにはコピーされないため除外
+    ]
+    # ユーザー設定ファイル（上書きしない、バックアップ対象）
+    USER_FILES = ["glossary.csv", "config/settings.json"]
+
     def install_update(self, zip_path: Path) -> bool:
         """
         ダウンロードしたアップデートをインストール
+
+        ソースコードのみを更新し、Python環境やPlaywrightブラウザはそのまま保持します。
 
         Args:
             zip_path: ダウンロードしたZIPファイルのパス
@@ -481,8 +521,8 @@ class AutoUpdater:
             bool: インストール成功かどうか
         """
         try:
-            # 現在のアプリケーションディレクトリ
-            app_dir = Path(__file__).parent.parent.parent
+            # アプリケーションディレクトリを取得
+            app_dir = self._get_app_dir()
 
             # 一時ディレクトリに展開
             with tempfile.TemporaryDirectory() as temp_dir:
@@ -492,21 +532,25 @@ class AutoUpdater:
                 with zipfile.ZipFile(zip_path, 'r') as zf:
                     zf.extractall(temp_path)
 
-                # 展開されたディレクトリを特定（通常、1つのルートディレクトリ）
+                # 展開されたディレクトリを特定（GitHub zipball は1つのルートディレクトリを持つ）
                 extracted_dirs = list(temp_path.iterdir())
                 if len(extracted_dirs) == 1 and extracted_dirs[0].is_dir():
                     source_dir = extracted_dirs[0]
                 else:
                     source_dir = temp_path
 
+                # _internal フォルダがあればそれをソースとして使用（配布ZIP形式）
+                internal_dir = source_dir / "_internal"
+                if internal_dir.exists() and internal_dir.is_dir():
+                    source_dir = internal_dir
+
                 # バックアップを作成
                 backup_dir = self.cache_dir / "backup"
                 if backup_dir.exists():
                     shutil.rmtree(backup_dir)
 
-                # 重要なファイルをバックアップ
-                files_to_backup = ["config/settings.json", "glossary.csv"]
-                for file_rel in files_to_backup:
+                # ユーザー設定ファイルをバックアップ
+                for file_rel in self.USER_FILES:
                     src = app_dir / file_rel
                     if src.exists():
                         dst = backup_dir / file_rel
@@ -524,36 +568,70 @@ class AutoUpdater:
             return False
 
     def _install_windows(self, source_dir: Path, app_dir: Path, backup_dir: Path) -> bool:
-        """Windowsでのインストール処理"""
+        """Windowsでのインストール処理（ソースコードのみ更新）"""
         # アップデートバッチファイルを作成
         batch_path = self.cache_dir / "update.bat"
 
+        # 更新対象のディレクトリとファイルをリスト化
+        dirs_to_update = " ".join(self.SOURCE_DIRS)
+        files_to_update = " ".join(self.SOURCE_FILES)
+
         batch_content = f'''@echo off
 chcp 65001 >nul
+echo.
+echo ============================================================
 echo YakuLingo アップデート中...
+echo ============================================================
+echo.
 
 REM アプリケーションの終了を待機
-timeout /t 2 /nobreak >nul
+echo アプリケーションの終了を待機しています...
+timeout /t 3 /nobreak >nul
 
-REM 古いファイルを削除（設定ファイルは除く）
 cd /d "{app_dir}"
-for /d %%d in (yakulingo prompts docs) do (
-    if exist "%%d" rmdir /s /q "%%d"
+
+REM ソースコードディレクトリを削除（環境ファイルは残す）
+echo ソースコードを更新しています...
+for %%d in ({dirs_to_update}) do (
+    if exist "%%d" (
+        echo   削除: %%d
+        rmdir /s /q "%%d"
+    )
 )
 
-REM 新しいファイルをコピー
-xcopy /e /y /i "{source_dir}\\*" "{app_dir}\\"
+REM ソースコードディレクトリをコピー
+for %%d in ({dirs_to_update}) do (
+    if exist "{source_dir}\\%%d" (
+        echo   コピー: %%d
+        xcopy /e /y /i /q "{source_dir}\\%%d" "{app_dir}\\%%d\\" >nul
+    )
+)
 
-REM バックアップから設定を復元
+REM ソースコードファイルをコピー
+for %%f in ({files_to_update}) do (
+    if exist "{source_dir}\\%%f" (
+        echo   コピー: %%f
+        copy /y "{source_dir}\\%%f" "{app_dir}\\%%f" >nul
+    )
+)
+
+REM バックアップからユーザー設定を復元
+echo ユーザー設定を復元しています...
 if exist "{backup_dir}\\config\\settings.json" (
-    copy /y "{backup_dir}\\config\\settings.json" "{app_dir}\\config\\settings.json"
+    if not exist "{app_dir}\\config" mkdir "{app_dir}\\config"
+    copy /y "{backup_dir}\\config\\settings.json" "{app_dir}\\config\\settings.json" >nul
 )
 if exist "{backup_dir}\\glossary.csv" (
-    copy /y "{backup_dir}\\glossary.csv" "{app_dir}\\glossary.csv"
+    copy /y "{backup_dir}\\glossary.csv" "{app_dir}\\glossary.csv" >nul
 )
 
+echo.
+echo ============================================================
 echo アップデート完了！
+echo ============================================================
+echo.
 echo アプリケーションを再起動してください。
+echo.
 pause
 
 REM 自身を削除
@@ -572,31 +650,65 @@ del "%~f0"
         return True
 
     def _install_unix(self, source_dir: Path, app_dir: Path, backup_dir: Path) -> bool:
-        """Unix系OSでのインストール処理"""
+        """Unix系OSでのインストール処理（ソースコードのみ更新）"""
         # シェルスクリプトを作成
         script_path = self.cache_dir / "update.sh"
 
+        # 更新対象のディレクトリとファイルをリスト化
+        dirs_to_update = " ".join(self.SOURCE_DIRS)
+        files_to_update = " ".join(self.SOURCE_FILES)
+
         script_content = f'''#!/bin/bash
+echo ""
+echo "============================================================"
 echo "YakuLingo アップデート中..."
+echo "============================================================"
+echo ""
 
-sleep 2
+sleep 3
 
-# 古いファイルを削除（設定ファイルは除く）
 cd "{app_dir}"
-rm -rf yakulingo prompts docs
 
-# 新しいファイルをコピー
-cp -r "{source_dir}/"* "{app_dir}/"
+# ソースコードディレクトリを削除（環境ファイルは残す）
+echo "ソースコードを更新しています..."
+for dir in {dirs_to_update}; do
+    if [ -d "$dir" ]; then
+        echo "  削除: $dir"
+        rm -rf "$dir"
+    fi
+done
 
-# バックアップから設定を復元
+# ソースコードディレクトリをコピー
+for dir in {dirs_to_update}; do
+    if [ -d "{source_dir}/$dir" ]; then
+        echo "  コピー: $dir"
+        cp -r "{source_dir}/$dir" "{app_dir}/$dir"
+    fi
+done
+
+# ソースコードファイルをコピー
+for file in {files_to_update}; do
+    if [ -f "{source_dir}/$file" ]; then
+        echo "  コピー: $file"
+        cp "{source_dir}/$file" "{app_dir}/$file"
+    fi
+done
+
+# バックアップからユーザー設定を復元
+echo "ユーザー設定を復元しています..."
 if [ -f "{backup_dir}/config/settings.json" ]; then
+    mkdir -p "{app_dir}/config"
     cp "{backup_dir}/config/settings.json" "{app_dir}/config/settings.json"
 fi
 if [ -f "{backup_dir}/glossary.csv" ]; then
     cp "{backup_dir}/glossary.csv" "{app_dir}/glossary.csv"
 fi
 
+echo ""
+echo "============================================================"
 echo "アップデート完了！"
+echo "============================================================"
+echo ""
 echo "アプリケーションを再起動してください。"
 
 # 自身を削除

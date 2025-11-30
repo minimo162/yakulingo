@@ -87,16 +87,32 @@ class UpdateNotification:
         ):
             return None
 
-        with ui.element('div').classes(
+        info = self.update_result.version_info
+        requires_reinstall = info.requires_reinstall if info else False
+
+        # 再セットアップ必要時は警告色のバナー
+        banner_classes = (
             'update-banner fixed top-0 left-0 right-0 z-50 '
-            'bg-primary text-white px-4 py-2 flex items-center justify-center gap-4'
-        ) as banner:
+            'px-4 py-2 flex items-center justify-center gap-4 '
+        )
+        if requires_reinstall:
+            banner_classes += 'bg-amber-500 text-white'
+        else:
+            banner_classes += 'bg-primary text-white'
+
+        with ui.element('div').classes(banner_classes) as banner:
             self._notification_banner = banner
 
-            ui.icon('system_update').classes('text-lg')
-            ui.label(
-                f'新しいバージョン {self.update_result.latest_version} が利用可能です'
-            ).classes('text-sm')
+            if requires_reinstall:
+                ui.icon('warning').classes('text-lg')
+                ui.label(
+                    f'バージョン {self.update_result.latest_version} は再セットアップが必要です'
+                ).classes('text-sm')
+            else:
+                ui.icon('system_update').classes('text-lg')
+                ui.label(
+                    f'新しいバージョン {self.update_result.latest_version} が利用可能です'
+                ).classes('text-sm')
 
             with ui.row().classes('gap-2'):
                 ui.button(
@@ -137,6 +153,23 @@ class UpdateNotification:
                     on_click=dialog.close,
                 ).props('flat dense round')
 
+            # 再セットアップ必要警告
+            if info.requires_reinstall:
+                with ui.element('div').classes(
+                    'w-full bg-amber-100 border border-amber-300 rounded-lg p-3 mb-3'
+                ):
+                    with ui.row().classes('items-start gap-2'):
+                        ui.icon('warning').classes('text-amber-600 text-lg')
+                        with ui.column().classes('gap-1'):
+                            ui.label('再セットアップが必要').classes(
+                                'text-sm font-semibold text-amber-800'
+                            )
+                            ui.label(
+                                'このバージョンは依存関係が変更されています。'
+                                '自動アップデートではなく、新しい配布パッケージを'
+                                'ダウンロードして再セットアップしてください。'
+                            ).classes('text-xs text-amber-700')
+
             # バージョン情報
             with ui.column().classes('w-full gap-3'):
                 with ui.row().classes('w-full justify-between items-center'):
@@ -161,20 +194,40 @@ class UpdateNotification:
                 ui.separator().classes('my-3')
                 ui.label('変更内容').classes('text-sm font-medium mb-2')
                 with ui.scroll_area().classes('w-full max-h-40 border rounded p-2'):
-                    ui.markdown(info.release_notes).classes('text-xs')
+                    # リリースノートから [REQUIRES_REINSTALL] マーカーを除去して表示
+                    display_notes = info.release_notes.replace('[REQUIRES_REINSTALL]', '').strip()
+                    ui.markdown(display_notes).classes('text-xs')
 
             # アクションボタン
             ui.separator().classes('my-3')
-            with ui.row().classes('w-full justify-end gap-2'):
-                ui.button(
-                    'スキップ',
-                    on_click=lambda: self._skip_version(info.version, dialog),
-                ).props('flat').classes('text-muted')
 
-                ui.button(
-                    'ダウンロード',
-                    on_click=lambda: self._start_download(info, dialog),
-                ).props('color=primary')
+            if info.requires_reinstall:
+                # 再セットアップ必要な場合は、ダウンロードページへの誘導のみ
+                with ui.column().classes('w-full gap-2'):
+                    ui.label(
+                        '管理者から新しい配布パッケージを入手してください。'
+                    ).classes('text-xs text-muted text-center')
+                    with ui.row().classes('w-full justify-end gap-2'):
+                        ui.button(
+                            'スキップ',
+                            on_click=lambda: self._skip_version(info.version, dialog),
+                        ).props('flat').classes('text-muted')
+                        ui.button(
+                            '閉じる',
+                            on_click=dialog.close,
+                        ).props('color=primary')
+            else:
+                # 通常のアップデート
+                with ui.row().classes('w-full justify-end gap-2'):
+                    ui.button(
+                        'スキップ',
+                        on_click=lambda: self._skip_version(info.version, dialog),
+                    ).props('flat').classes('text-muted')
+
+                    ui.button(
+                        'ダウンロード',
+                        on_click=lambda: self._start_download(info, dialog),
+                    ).props('color=primary')
 
         dialog.open()
 

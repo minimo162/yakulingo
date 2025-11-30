@@ -251,3 +251,102 @@ class TestVersionInfo:
         assert info.version == "2.0.0"
         assert info.release_date == "2025-01-01"
         assert info.file_size == 1024000
+        assert info.requires_reinstall is False
+
+    def test_version_info_requires_reinstall(self):
+        """Test VersionInfo with requires_reinstall flag"""
+        info = VersionInfo(
+            version="2.0.0",
+            release_date="2025-01-01",
+            download_url="https://example.com/download.zip",
+            release_notes="Major update",
+            file_size=1024000,
+            requires_reinstall=True,
+        )
+
+        assert info.requires_reinstall is True
+
+
+class TestRequiresReinstallDetection:
+    """Test detection of [REQUIRES_REINSTALL] marker in release notes"""
+
+    @patch("yakulingo.services.updater.AutoUpdater._make_request")
+    def test_detects_requires_reinstall_marker(self, mock_request):
+        """Test that [REQUIRES_REINSTALL] marker is detected"""
+        mock_response = {
+            "tag_name": "v2.0.0",
+            "published_at": "2025-01-01T00:00:00Z",
+            "body": "[REQUIRES_REINSTALL]\n\nThis version requires a fresh install due to dependency changes.",
+            "zipball_url": "https://api.github.com/repos/test/repo/zipball/v2.0.0",
+            "assets": [],
+        }
+        mock_request.return_value = json.dumps(mock_response).encode("utf-8")
+
+        updater = AutoUpdater(current_version="1.0.0")
+        result = updater.check_for_updates()
+
+        assert result.status == UpdateStatus.UPDATE_AVAILABLE
+        assert result.version_info.requires_reinstall is True
+
+    @patch("yakulingo.services.updater.AutoUpdater._make_request")
+    def test_no_reinstall_marker(self, mock_request):
+        """Test that missing marker means no reinstall required"""
+        mock_response = {
+            "tag_name": "v2.0.0",
+            "published_at": "2025-01-01T00:00:00Z",
+            "body": "Regular update with bug fixes.",
+            "zipball_url": "https://api.github.com/repos/test/repo/zipball/v2.0.0",
+            "assets": [],
+        }
+        mock_request.return_value = json.dumps(mock_response).encode("utf-8")
+
+        updater = AutoUpdater(current_version="1.0.0")
+        result = updater.check_for_updates()
+
+        assert result.status == UpdateStatus.UPDATE_AVAILABLE
+        assert result.version_info.requires_reinstall is False
+
+
+class TestAppDirDetection:
+    """Test application directory detection"""
+
+    def test_get_app_dir_returns_path(self):
+        """Test that _get_app_dir returns a Path object"""
+        updater = AutoUpdater()
+        app_dir = updater._get_app_dir()
+
+        assert isinstance(app_dir, Path)
+
+    @patch("platform.system", return_value="Windows")
+    @patch.dict("os.environ", {"LOCALAPPDATA": "/tmp/test_localappdata"})
+    def test_get_app_dir_windows_fallback(self, mock_system):
+        """Test that _get_app_dir falls back when run.bat doesn't exist"""
+        updater = AutoUpdater()
+        app_dir = updater._get_app_dir()
+
+        # Should fall back to source directory since run.bat doesn't exist
+        assert isinstance(app_dir, Path)
+
+
+class TestSourceCodeOnlyUpdate:
+    """Test that only source code is updated, not environment files"""
+
+    def test_source_dirs_defined(self):
+        """Test that SOURCE_DIRS are properly defined"""
+        assert "yakulingo" in AutoUpdater.SOURCE_DIRS
+        assert "prompts" in AutoUpdater.SOURCE_DIRS
+        assert "config" in AutoUpdater.SOURCE_DIRS
+        # Environment directories should NOT be in the list
+        assert ".venv" not in AutoUpdater.SOURCE_DIRS
+        assert ".uv-python" not in AutoUpdater.SOURCE_DIRS
+        assert ".playwright-browsers" not in AutoUpdater.SOURCE_DIRS
+
+    def test_source_files_defined(self):
+        """Test that SOURCE_FILES are properly defined"""
+        assert "app.py" in AutoUpdater.SOURCE_FILES
+        assert "pyproject.toml" in AutoUpdater.SOURCE_FILES
+
+    def test_user_files_defined(self):
+        """Test that USER_FILES are properly defined for backup"""
+        assert "glossary.csv" in AutoUpdater.USER_FILES
+        assert "config/settings.json" in AutoUpdater.USER_FILES

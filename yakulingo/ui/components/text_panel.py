@@ -190,15 +190,11 @@ def _render_results_to_en(
     """Render →English results: multiple options with length adjustment"""
 
     with ui.element('div').classes('result-section w-full'):
-        # Result header with success character and elapsed time
-        with ui.row().classes('result-header justify-between items-center'):
-            with ui.row().classes('items-center gap-2'):
-                ui.label('翻訳結果').classes('font-semibold')
-            with ui.element('div').classes('result-count-badge'):
-                ui.label('🍎').classes('emoji')
-                # Show elapsed time
-                time_str = f"({elapsed_time:.1f}秒)" if elapsed_time else ""
-                ui.label(f'翻訳しました {time_str}')
+        # Result header (nani-style simple)
+        with ui.row().classes('result-header items-center gap-2'):
+            ui.label('🍎').classes('text-lg')
+            time_str = f"({elapsed_time:.1f}秒)" if elapsed_time else ""
+            ui.label(f'翻訳しました {time_str}').classes('text-sm text-muted')
 
         # Options list
         with ui.column().classes('w-full p-3 gap-3'):
@@ -227,14 +223,11 @@ def _render_results_to_jp(
     option = result.options[0]  # Single option for →jp
 
     with ui.element('div').classes('result-section w-full'):
-        # Result header with elapsed time
-        with ui.row().classes('result-header justify-between items-center'):
-            with ui.row().classes('items-center gap-2'):
-                ui.label('翻訳結果').classes('font-semibold')
-                # Show elapsed time if available
-                if elapsed_time:
-                    ui.label(f'({elapsed_time:.1f}秒)').classes('text-xs text-muted font-normal')
-            ui.label(f'{option.char_count} 文字').classes('text-xs text-muted font-normal')
+        # Result header (nani-style simple)
+        with ui.row().classes('result-header items-center gap-2'):
+            ui.label('🍎').classes('text-lg')
+            time_str = f"({elapsed_time:.1f}秒)" if elapsed_time else ""
+            ui.label(f'翻訳しました {time_str}').classes('text-sm text-muted')
 
         # Main translation card
         with ui.card().classes('jp-result-card w-full'):

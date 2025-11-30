@@ -129,4 +129,24 @@ Write-Host ""
 Write-Host "配置先: $appDir"
 Write-Host ""
 
+# 展開フォルダの削除（オプション）
+$zipFolder = Split-Path -Parent $scriptDir  # YakuLingo フォルダ（_internal の親）
+$cleanupResponse = Read-Host "展開フォルダを削除しますか? (Y/N)"
+if ($cleanupResponse -eq "Y" -or $cleanupResponse -eq "y") {
+    # クリーンアップスクリプトを一時フォルダに作成
+    $cleanupScript = "$env:TEMP\yakulingo_cleanup.ps1"
+
+    @"
+Start-Sleep -Seconds 3
+Remove-Item -Path '$zipFolder' -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -Path '$cleanupScript' -Force -ErrorAction SilentlyContinue
+"@ | Out-File $cleanupScript -Encoding UTF8
+
+    # 別プロセスで実行（非表示）
+    Start-Process powershell -WindowStyle Hidden -ArgumentList "-ExecutionPolicy Bypass -File `"$cleanupScript`""
+    Write-Host ""
+    Write-Host "[INFO] 展開フォルダは数秒後に自動削除されます"
+}
+
+Write-Host ""
 Read-Host "Enterキーで終了"

@@ -175,10 +175,31 @@ if exist "%DIST_ZIP%" (
     echo       run.bat          ^<-- Application launcher
     echo       app.py, yakulingo/, ...
     echo.
-    echo Instructions for users:
-    echo   1. Extract the zip file to any location
-    echo   2. Double-click "setup.bat" to install
-    echo   3. Launch from Desktop shortcut or Start Menu
+    echo ============================================================
+    echo.
+    echo Creating share folder package...
+    echo.
+
+    :: Create share folder with network installer
+    set SHARE_DIR=share_package
+    if exist "%SHARE_DIR%" rd /s /q "%SHARE_DIR%"
+    mkdir "%SHARE_DIR%"
+
+    :: Copy ZIP and installer files
+    copy /y "%DIST_ZIP%" "%SHARE_DIR%\" >nul
+    copy /y "installer\share\インストール.bat" "%SHARE_DIR%\" >nul
+    copy /y "installer\share\install.ps1" "%SHARE_DIR%\" >nul
+    copy /y "installer\share\README_配布方法.txt" "%SHARE_DIR%\" >nul
+
+    echo [SUCCESS] Share folder package created!
+    echo.
+    echo   Folder: %SHARE_DIR%\
+    echo     - インストール.bat      ^<-- Users run this
+    echo     - install.ps1
+    echo     - %DIST_ZIP%
+    echo     - README_配布方法.txt
+    echo.
+    echo Deploy the contents of "%SHARE_DIR%" to your network share.
     echo ============================================================
 ) else (
     echo [ERROR] Failed to create distribution package.

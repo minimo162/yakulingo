@@ -3,9 +3,9 @@
 Builds translation prompts for YakuLingo.
 
 Prompt file structure:
-- translate.txt: Unified bidirectional (auto-detect) - for file batch translation
-- translate_jp_to_en.txt: File translation → English (explicit direction)
-- translate_en_to_jp.txt: File translation → Japanese (explicit direction)
+- translate.txt: Unified bidirectional (auto-detect) - fallback
+- translate_to_en.txt: File translation → English
+- translate_to_jp.txt: File translation → Japanese
 - text_translate.txt: Text translation with 3 options (auto-detect)
 - adjust_*.txt: Adjustment prompts (shorter, longer, custom)
 
@@ -65,10 +65,14 @@ Input
 {input_text}
 """
 
-# Fallback template for → English (used when translate_jp_to_en.txt doesn't exist)
+# Fallback template for → English (used when translate_to_en.txt doesn't exist)
 DEFAULT_TO_EN_TEMPLATE = """Role Definition
-あなたは日本語を英語に翻訳する、完全自動化されたデータ処理エンジンです。
+あなたは英語への翻訳を行う、完全自動化されたデータ処理エンジンです。
 チャットボットではありません。挨拶、説明、言い訳、補足情報は一切出力してはいけません。
+
+Translation Rule
+- すべてのテキストを英語に翻訳
+- 既に英語のテキスト → そのまま出力
 
 Critical Rules (優先順位順)
 
@@ -96,10 +100,14 @@ Input
 {input_text}
 """
 
-# Fallback template for → Japanese (used when translate_en_to_jp.txt doesn't exist)
+# Fallback template for → Japanese (used when translate_to_jp.txt doesn't exist)
 DEFAULT_TO_JP_TEMPLATE = """Role Definition
-あなたは英語を日本語に翻訳する、完全自動化されたデータ処理エンジンです。
+あなたは日本語への翻訳を行う、完全自動化されたデータ処理エンジンです。
 チャットボットではありません。挨拶、説明、言い訳、補足情報は一切出力してはいけません。
+
+Translation Rule
+- すべてのテキストを日本語に翻訳
+- 既に日本語のテキスト → そのまま出力
 
 Critical Rules (優先順位順)
 
@@ -151,15 +159,15 @@ class PromptBuilder:
             else:
                 self._template = DEFAULT_UNIFIED_TEMPLATE
 
-            # To English template (translate_jp_to_en.txt)
-            to_en_prompt = self.prompts_dir / "translate_jp_to_en.txt"
+            # To English template (translate_to_en.txt)
+            to_en_prompt = self.prompts_dir / "translate_to_en.txt"
             if to_en_prompt.exists():
                 self._to_en_template = to_en_prompt.read_text(encoding='utf-8')
             else:
                 self._to_en_template = DEFAULT_TO_EN_TEMPLATE
 
-            # To Japanese template (translate_en_to_jp.txt)
-            to_jp_prompt = self.prompts_dir / "translate_en_to_jp.txt"
+            # To Japanese template (translate_to_jp.txt)
+            to_jp_prompt = self.prompts_dir / "translate_to_jp.txt"
             if to_jp_prompt.exists():
                 self._to_jp_template = to_jp_prompt.read_text(encoding='utf-8')
             else:

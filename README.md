@@ -1,4 +1,4 @@
-# 🍎 YakuLingo - Text + File Translation
+# YakuLingo - Text + File Translation
 
 日本語と英語の双方向翻訳アプリケーション。M365 Copilotを使用してテキストとファイルを翻訳します。
 
@@ -67,7 +67,7 @@ python app.py
 | 項目 | 要件 |
 |------|------|
 | OS | Windows 10/11 |
-| Python | 3.11 |
+| Python | 3.11+ |
 | ブラウザ | Microsoft Edge |
 | ネットワーク | M365 Copilotへのアクセス |
 
@@ -76,7 +76,7 @@ python app.py
 ### 1. 依存関係のインストール
 
 ```bash
-# uv を使用する場合
+# uv を使用する場合（推奨）
 uv sync
 
 # pip を使用する場合
@@ -101,14 +101,17 @@ python app.py
 YakuLingo/
 ├── app.py                    # エントリーポイント
 ├── ecm_translate/            # メインパッケージ
-│   ├── ui/                   # NiceGUI UIコンポーネント
+│   ├── ui/                   # NiceGUI UIコンポーネント (M3デザイン)
 │   ├── services/             # サービス層
 │   ├── processors/           # ファイルプロセッサ
 │   ├── config/               # 設定管理
 │   └── models/               # データモデル
+├── tests/                    # テストスイート
 ├── prompts/                  # 翻訳プロンプト
 │   ├── translate_jp_to_en.txt
 │   └── translate_en_to_jp.txt
+├── docs/                     # ドキュメント
+│   └── SPECIFICATION.md      # 詳細仕様書
 ├── config/
 │   └── settings.json         # アプリ設定
 ├── glossary.csv              # デフォルト用語集
@@ -178,11 +181,38 @@ Japanese,English
 | `Ctrl + L` | 言語方向の切り替え |
 | `Escape` | 翻訳キャンセル |
 
+## 開発
+
+### テストの実行
+
+```bash
+# 全テスト実行
+pytest
+
+# カバレッジ付き
+pytest --cov=ecm_translate --cov-report=term-missing
+
+# 特定のテストファイル
+pytest tests/test_translation_service.py -v
+```
+
+### 配布パッケージの作成
+
+```bash
+# Windows環境で実行
+make_distribution.bat
+```
+
 ## 技術スタック
 
-- **UI**: NiceGUI (Python)
-- **翻訳**: M365 Copilot (Playwright)
-- **ファイル処理**: openpyxl, python-docx, python-pptx, PyMuPDF
+| カテゴリ | 技術 |
+|---------|------|
+| UI | NiceGUI (Material Design 3) |
+| 翻訳エンジン | M365 Copilot (Playwright) |
+| Excel処理 | openpyxl |
+| Word処理 | python-docx |
+| PowerPoint処理 | python-pptx |
+| PDF処理 | PyMuPDF |
 
 ## ライセンス
 
@@ -190,4 +220,4 @@ MIT License
 
 ## バージョン
 
-2.0.0
+20251127 (2.0.0)

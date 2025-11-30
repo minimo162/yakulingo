@@ -259,8 +259,10 @@ class TestCopilotHandlerNewChat:
 
         handler.start_new_chat()
 
-        mock_page.query_selector.assert_called_once()
-        mock_button.click.assert_called_once()
+        # query_selectorは2回呼ばれる（新しいチャットボタン + GPT-5ボタン）
+        assert mock_page.query_selector.call_count == 2
+        # クリックも2回（新しいチャットボタン + GPT-5ボタン）
+        assert mock_button.click.call_count == 2
 
     def test_start_new_chat_handles_no_button(self):
         """start_new_chat handles missing button gracefully"""
@@ -272,6 +274,55 @@ class TestCopilotHandlerNewChat:
 
         # Should not raise
         handler.start_new_chat()
+
+
+class TestCopilotHandlerGPT5:
+    """Test GPT-5 toggle button functionality"""
+
+    def test_enable_gpt5_clicks_when_not_pressed(self):
+        """_enable_gpt5 clicks button when aria-pressed is false"""
+        handler = CopilotHandler()
+
+        mock_page = Mock()
+        mock_button = Mock()
+        mock_page.query_selector.return_value = mock_button
+        handler._page = mock_page
+
+        handler._enable_gpt5()
+
+        mock_page.query_selector.assert_called_once()
+        mock_button.click.assert_called_once()
+
+    def test_enable_gpt5_skips_when_already_pressed(self):
+        """_enable_gpt5 does nothing when button not found (already pressed)"""
+        handler = CopilotHandler()
+
+        mock_page = Mock()
+        mock_page.query_selector.return_value = None  # ボタンが見つからない=既に有効
+        handler._page = mock_page
+
+        handler._enable_gpt5()
+
+        mock_page.query_selector.assert_called_once()
+
+    def test_enable_gpt5_no_page(self):
+        """_enable_gpt5 does nothing when no page"""
+        handler = CopilotHandler()
+        handler._page = None
+
+        # Should not raise
+        handler._enable_gpt5()
+
+    def test_enable_gpt5_handles_exception(self):
+        """_enable_gpt5 handles exceptions gracefully"""
+        handler = CopilotHandler()
+
+        mock_page = Mock()
+        mock_page.query_selector.side_effect = Exception("Test error")
+        handler._page = mock_page
+
+        # Should not raise
+        handler._enable_gpt5()
 
 
 class TestCopilotHandlerMockedConnect:

@@ -620,5 +620,33 @@ class CopilotHandler:
             if new_chat_btn:
                 new_chat_btn.click()
                 time.sleep(1)
+                # 新しいチャット開始後、GPT-5を有効化
+                self._enable_gpt5()
         except Exception:
             pass
+
+    def _enable_gpt5(self) -> None:
+        """
+        GPT-5トグルボタンを有効化する。
+        ボタンが押されていない状態（aria-pressed="false"）の場合のみクリック。
+
+        実際のCopilot HTML:
+        - 押されていない: <button aria-pressed="false" class="... fui-ToggleButton ...">Try GPT-5</button>
+        - 押されている: <button aria-pressed="true" class="... fui-ToggleButton ...">GPT-5 On</button>
+        """
+        if not self._page:
+            return
+
+        try:
+            # GPT-5ボタンを探す（押されていない状態）
+            gpt5_btn = self._page.query_selector(
+                'button.fui-ToggleButton[aria-pressed="false"]:has-text("GPT-5"), '
+                'button.fui-ToggleButton[aria-pressed="false"]:has-text("Try GPT")'
+            )
+            if gpt5_btn:
+                gpt5_btn.click()
+                time.sleep(0.5)
+                print("GPT-5 enabled")
+        except Exception as e:
+            # GPT-5ボタンが存在しない場合は無視（オプション機能）
+            print(f"GPT-5 button not found or already enabled: {e}")

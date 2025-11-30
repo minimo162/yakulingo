@@ -1,6 +1,6 @@
 # ============================================================
-# YakuLingo ネットワークインストーラー
-# 共有フォルダからローカルへのインストールを行います
+# YakuLingo Network Setup Script
+# Copies from shared folder to local machine
 # ============================================================
 
 param(
@@ -10,37 +10,37 @@ param(
 $ErrorActionPreference = "Stop"
 
 # ============================================================
-# 設定
+# Configuration
 # ============================================================
 $AppName = "YakuLingo"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
-# ZIPファイルを自動検出（最新のものを使用）
+# Auto-detect ZIP file (use newest one)
 $ZipFiles = Get-ChildItem -Path $ScriptDir -Filter "YakuLingo*.zip" | Sort-Object LastWriteTime -Descending
 if ($ZipFiles.Count -eq 0) {
-    Write-Host "[エラー] YakuLingo*.zip が見つかりません。" -ForegroundColor Red
-    Write-Host "        このスクリプトと同じフォルダにZIPファイルを配置してください。" -ForegroundColor Red
+    Write-Host "[ERROR] YakuLingo*.zip not found." -ForegroundColor Red
+    Write-Host "        Please place the ZIP file in the same folder as this script." -ForegroundColor Red
     exit 1
 }
 $ZipFile = $ZipFiles[0].FullName
 $ZipFileName = $ZipFiles[0].Name
-Write-Host "[INFO] 使用するZIPファイル: $ZipFileName" -ForegroundColor Cyan
+Write-Host "[INFO] Using: $ZipFileName" -ForegroundColor Cyan
 
-# インストール先（デフォルト: LocalAppData\YakuLingo）
+# Default path: LocalAppData\YakuLingo
 if ([string]::IsNullOrEmpty($InstallPath)) {
     $InstallPath = Join-Path $env:LOCALAPPDATA $AppName
 }
 
 # ============================================================
-# Step 1: 既存インストールのチェック
+# Step 1: Check existing installation
 # ============================================================
 Write-Host ""
-Write-Host "[1/4] インストール先を確認しています..." -ForegroundColor Yellow
+Write-Host "[1/4] Checking destination..." -ForegroundColor Yellow
 
 if (Test-Path $InstallPath) {
-    Write-Host "      既存のインストールが見つかりました: $InstallPath" -ForegroundColor Gray
+    Write-Host "      Found existing installation: $InstallPath" -ForegroundColor Gray
 
-    # ユーザー設定のバックアップ
+    # Backup user files
     $BackupDir = Join-Path $env:TEMP "YakuLingo_backup_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
     $UserFiles = @("glossary.csv", "config\settings.json")
 
@@ -53,52 +53,51 @@ if (Test-Path $InstallPath) {
                 New-Item -ItemType Directory -Path $dstDir -Force | Out-Null
             }
             Copy-Item -Path $srcPath -Destination $dstPath -Force
-            Write-Host "      バックアップ: $file" -ForegroundColor Gray
+            Write-Host "      Backed up: $file" -ForegroundColor Gray
         }
     }
 
-    # 既存フォルダを削除（環境ファイル以外）
-    Write-Host "      既存のソースコードを削除しています..." -ForegroundColor Gray
+    # Remove old files (keep environment folders)
+    Write-Host "      Removing old source files..." -ForegroundColor Gray
     $KeepDirs = @(".venv", ".uv-python", ".playwright-browsers")
     Get-ChildItem -Path $InstallPath | Where-Object {
         $_.Name -notin $KeepDirs
     } | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 }
 
-Write-Host "[OK] インストール先: $InstallPath" -ForegroundColor Green
+Write-Host "[OK] Destination: $InstallPath" -ForegroundColor Green
 
 # ============================================================
-# Step 2: ZIPファイルをローカルにコピー
+# Step 2: Copy ZIP to local
 # ============================================================
 Write-Host ""
-Write-Host "[2/4] ZIPファイルをコピーしています..." -ForegroundColor Yellow
+Write-Host "[2/4] Copying files..." -ForegroundColor Yellow
 
-$TempDir = Join-Path $env:TEMP "YakuLingo_install_$(Get-Date -Format 'yyyyMMddHHmmss')"
+$TempDir = Join-Path $env:TEMP "YakuLingo_setup_$(Get-Date -Format 'yyyyMMddHHmmss')"
 New-Item -ItemType Directory -Path $TempDir -Force | Out-Null
 
 $LocalZip = Join-Path $TempDir $ZipFileName
 Copy-Item -Path $ZipFile -Destination $LocalZip -Force
 
-Write-Host "[OK] コピー完了" -ForegroundColor Green
+Write-Host "[OK] Copy completed" -ForegroundColor Green
 
 # ============================================================
-# Step 3: ZIPを展開
+# Step 3: Extract ZIP
 # ============================================================
 Write-Host ""
-Write-Host "[3/4] ZIPファイルを展開しています..." -ForegroundColor Yellow
+Write-Host "[3/4] Extracting files..." -ForegroundColor Yellow
 
-# 展開
 Expand-Archive -Path $LocalZip -DestinationPath $TempDir -Force
 
-# 展開されたフォルダを特定（YakuLingoフォルダ）
+# Find extracted folder (YakuLingo*)
 $ExtractedDir = Get-ChildItem -Path $TempDir -Directory | Where-Object { $_.Name -like "YakuLingo*" } | Select-Object -First 1
 
 if (-not $ExtractedDir) {
-    Write-Host "[エラー] ZIPファイルの展開に失敗しました。" -ForegroundColor Red
+    Write-Host "[ERROR] Failed to extract ZIP file." -ForegroundColor Red
     exit 1
 }
 
-# _internal フォルダの内容をインストール先にコピー
+# Use _internal folder if present
 $InternalDir = Join-Path $ExtractedDir.FullName "_internal"
 if (Test-Path $InternalDir) {
     $SourceDir = $InternalDir
@@ -106,16 +105,16 @@ if (Test-Path $InternalDir) {
     $SourceDir = $ExtractedDir.FullName
 }
 
-# インストール先ディレクトリを作成
+# Create destination directory
 if (-not (Test-Path $InstallPath)) {
     New-Item -ItemType Directory -Path $InstallPath -Force | Out-Null
 }
 
-# ファイルをコピー
+# Copy files
 Get-ChildItem -Path $SourceDir | ForEach-Object {
     $dest = Join-Path $InstallPath $_.Name
     if ($_.PSIsContainer) {
-        # ディレクトリの場合、環境フォルダはスキップ（既存を保持）
+        # Skip environment folders if they already exist
         if ($_.Name -in @(".venv", ".uv-python", ".playwright-browsers")) {
             if (-not (Test-Path $dest)) {
                 Copy-Item -Path $_.FullName -Destination $dest -Recurse -Force
@@ -128,9 +127,9 @@ Get-ChildItem -Path $SourceDir | ForEach-Object {
     }
 }
 
-# バックアップからユーザー設定を復元
+# Restore user files from backup
 if ($BackupDir -and (Test-Path $BackupDir)) {
-    Write-Host "      ユーザー設定を復元しています..." -ForegroundColor Gray
+    Write-Host "      Restoring user settings..." -ForegroundColor Gray
     Get-ChildItem -Path $BackupDir -Recurse -File | ForEach-Object {
         $relativePath = $_.FullName.Substring($BackupDir.Length + 1)
         $destPath = Join-Path $InstallPath $relativePath
@@ -143,58 +142,58 @@ if ($BackupDir -and (Test-Path $BackupDir)) {
     Remove-Item -Path $BackupDir -Recurse -Force -ErrorAction SilentlyContinue
 }
 
-Write-Host "[OK] 展開完了" -ForegroundColor Green
+Write-Host "[OK] Extraction completed" -ForegroundColor Green
 
 # ============================================================
-# Step 4: ショートカット作成
+# Step 4: Create shortcuts
 # ============================================================
 Write-Host ""
-Write-Host "[4/4] ショートカットを作成しています..." -ForegroundColor Yellow
+Write-Host "[4/4] Creating shortcuts..." -ForegroundColor Yellow
 
 $WshShell = New-Object -ComObject WScript.Shell
 
-# デスクトップショートカット
+# Desktop shortcut
 $DesktopPath = [Environment]::GetFolderPath("Desktop")
 $ShortcutPath = Join-Path $DesktopPath "$AppName.lnk"
 $Shortcut = $WshShell.CreateShortcut($ShortcutPath)
 $Shortcut.TargetPath = Join-Path $InstallPath "run.bat"
 $Shortcut.WorkingDirectory = $InstallPath
 $Shortcut.IconLocation = "shell32.dll,21"
-$Shortcut.Description = "YakuLingo - 翻訳ツール"
+$Shortcut.Description = "YakuLingo Translation Tool"
 $Shortcut.Save()
-Write-Host "      デスクトップ: $ShortcutPath" -ForegroundColor Gray
+Write-Host "      Desktop: $ShortcutPath" -ForegroundColor Gray
 
-# スタートメニュー
+# Start Menu shortcut
 $StartMenuPath = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs"
 $StartShortcutPath = Join-Path $StartMenuPath "$AppName.lnk"
 $StartShortcut = $WshShell.CreateShortcut($StartShortcutPath)
 $StartShortcut.TargetPath = Join-Path $InstallPath "run.bat"
 $StartShortcut.WorkingDirectory = $InstallPath
 $StartShortcut.IconLocation = "shell32.dll,21"
-$StartShortcut.Description = "YakuLingo - 翻訳ツール"
+$StartShortcut.Description = "YakuLingo Translation Tool"
 $StartShortcut.Save()
-Write-Host "      スタートメニュー: $StartShortcutPath" -ForegroundColor Gray
+Write-Host "      Start Menu: $StartShortcutPath" -ForegroundColor Gray
 
-Write-Host "[OK] ショートカット作成完了" -ForegroundColor Green
+Write-Host "[OK] Shortcuts created" -ForegroundColor Green
 
 # ============================================================
-# クリーンアップ
+# Cleanup
 # ============================================================
 Remove-Item -Path $TempDir -Recurse -Force -ErrorAction SilentlyContinue
 
 # ============================================================
-# 完了
+# Done
 # ============================================================
 Write-Host ""
 Write-Host "============================================================" -ForegroundColor Green
-Write-Host " インストールが完了しました！" -ForegroundColor Green
+Write-Host " Setup completed!" -ForegroundColor Green
 Write-Host "============================================================" -ForegroundColor Green
 Write-Host ""
-Write-Host " インストール先: $InstallPath" -ForegroundColor White
+Write-Host " Location: $InstallPath" -ForegroundColor White
 Write-Host ""
-Write-Host " 起動方法:" -ForegroundColor White
-Write-Host "   - デスクトップの「$AppName」ショートカットをダブルクリック" -ForegroundColor Gray
-Write-Host "   - またはスタートメニューから「$AppName」を検索" -ForegroundColor Gray
+Write-Host " To launch:" -ForegroundColor White
+Write-Host "   - Double-click the '$AppName' shortcut on your desktop" -ForegroundColor Gray
+Write-Host "   - Or search '$AppName' in the Start Menu" -ForegroundColor Gray
 Write-Host ""
 
 exit 0

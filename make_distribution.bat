@@ -187,17 +187,17 @@ if exist "%DIST_ZIP%" (
 
     :: Copy ZIP and installer files
     copy /y "%DIST_ZIP%" "%SHARE_DIR%\" >nul
-    copy /y "installer\share\インストール.bat" "%SHARE_DIR%\" >nul
-    copy /y "installer\share\install.ps1" "%SHARE_DIR%\" >nul
-    copy /y "installer\share\README_配布方法.txt" "%SHARE_DIR%\" >nul
+    copy /y "installer\share\setup.bat" "%SHARE_DIR%\" >nul
+    copy /y "installer\share\setup.ps1" "%SHARE_DIR%\" >nul
+    copy /y "installer\share\README.txt" "%SHARE_DIR%\" >nul
 
     echo [SUCCESS] Share folder package created!
     echo.
     echo   Folder: %SHARE_DIR%\
-    echo     - インストール.bat      ^<-- Users run this
-    echo     - install.ps1
+    echo     - setup.bat    ^<-- Users run this
+    echo     - setup.ps1
     echo     - %DIST_ZIP%
-    echo     - README_配布方法.txt
+    echo     - README.txt
     echo.
     echo Deploy the contents of "%SHARE_DIR%" to your network share.
     echo ============================================================

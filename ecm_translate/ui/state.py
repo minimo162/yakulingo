@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Optional, List
 from enum import Enum
 
-from ecm_translate.models.types import TranslationDirection, FileInfo, TextTranslationResult
+from ecm_translate.models.types import TranslationDirection, FileInfo, TextTranslationResult, HistoryEntry
 
 
 class Tab(Enum):
@@ -59,6 +59,11 @@ class AppState:
     copilot_connected: bool = False
     copilot_connecting: bool = False
     copilot_error: str = ""
+
+    # Translation history
+    history: List[HistoryEntry] = field(default_factory=list)
+    history_drawer_open: bool = False
+    max_history_entries: int = 50
 
     def swap_direction(self) -> None:
         """Swap translation direction"""
@@ -114,3 +119,18 @@ class AppState:
         elif self.current_tab == Tab.FILE:
             return self.file_state == FileState.TRANSLATING
         return False
+
+    def add_to_history(self, entry: HistoryEntry) -> None:
+        """Add entry to history (most recent first)"""
+        self.history.insert(0, entry)
+        # Keep only max_history_entries
+        if len(self.history) > self.max_history_entries:
+            self.history = self.history[:self.max_history_entries]
+
+    def clear_history(self) -> None:
+        """Clear all history"""
+        self.history = []
+
+    def toggle_history_drawer(self) -> None:
+        """Toggle history drawer visibility"""
+        self.history_drawer_open = not self.history_drawer_open

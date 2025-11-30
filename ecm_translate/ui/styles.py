@@ -294,4 +294,70 @@ body {
 .q-dialog__backdrop {
     background: rgba(0, 0, 0, 0.32) !important;
 }
+
+/* === Option Cards === */
+.option-card {
+    background: var(--md-sys-color-surface);
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: var(--md-sys-shape-corner-medium);
+    padding: 0.875rem;
+    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+}
+
+.option-card:hover {
+    border-color: var(--md-sys-color-primary);
+    box-shadow: var(--md-sys-elevation-1);
+}
+
+.option-text {
+    line-height: 1.6;
+    word-break: break-word;
+}
+
+.option-action {
+    opacity: 0.6;
+    transition: opacity var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+}
+
+.option-card:hover .option-action {
+    opacity: 1;
+}
+
+/* === Shortcut Hint === */
+.shortcut-hint {
+    opacity: 0.5;
+    font-family: ui-monospace, monospace;
+    font-size: 0.6875rem;
+}
+
+/* === History Button === */
+.history-btn {
+    color: var(--md-sys-color-on-surface-variant);
+}
+
+.history-btn:hover {
+    background: var(--md-sys-color-surface-container);
+}
+
+/* === History Drawer === */
+.history-drawer {
+    background: var(--md-sys-color-surface);
+    width: 320px !important;
+}
+
+.history-drawer .border-b {
+    border-color: var(--md-sys-color-outline-variant);
+}
+
+/* === History Item === */
+.history-item {
+    background: var(--md-sys-color-surface-container);
+    border-radius: var(--md-sys-shape-corner-small);
+    padding: 0.75rem;
+    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+}
+
+.history-item:hover {
+    background: var(--md-sys-color-primary-container);
+}
 """

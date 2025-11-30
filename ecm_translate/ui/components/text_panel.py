@@ -4,11 +4,33 @@ Text translation panel with multiple options.
 Clean, minimal design inspired by nani translate.
 """
 
-from nicegui import ui
+from nicegui import ui, events
 from typing import Callable, Optional
 
 from ecm_translate.ui.state import AppState
 from ecm_translate.models.types import TranslationDirection, TranslationOption
+
+
+# Tone icons for translation explanations
+TONE_ICONS = {
+    'formal': 'business_center',
+    'business': 'business_center',
+    'casual': 'chat_bubble',
+    'conversational': 'chat_bubble',
+    'literary': 'menu_book',
+    'polite': 'sentiment_satisfied',
+    'direct': 'arrow_forward',
+    'neutral': 'remove',
+}
+
+
+def _get_tone_icon(explanation: str) -> str:
+    """Get icon based on explanation keywords"""
+    explanation_lower = explanation.lower()
+    for keyword, icon in TONE_ICONS.items():
+        if keyword in explanation_lower:
+            return icon
+    return 'translate'
 
 
 def create_text_panel(
@@ -25,6 +47,14 @@ def create_text_panel(
     # Language labels
     source_lang = 'Japanese' if state.direction == TranslationDirection.JP_TO_EN else 'English'
     target_lang = 'English' if state.direction == TranslationDirection.JP_TO_EN else 'Japanese'
+
+    # Keyboard shortcut handler
+    def handle_key(e: events.KeyEventArguments):
+        if e.action.keydown and e.key == 'Enter' and e.modifiers.ctrl:
+            if state.can_translate() and not state.text_translating:
+                on_translate()
+
+    ui.keyboard(on_key=handle_key)
 
     with ui.column().classes('flex-1 w-full gap-4 animate-in'):
         # Source section
@@ -46,11 +76,14 @@ def create_text_panel(
         with ui.row().classes('justify-center items-center gap-4'):
             ui.button(icon='swap_horiz', on_click=on_swap).classes('swap-btn')
 
-            btn = ui.button('Translate', on_click=on_translate).classes('btn-primary')
-            if state.text_translating:
-                btn.props('loading disable')
-            elif not state.can_translate():
-                btn.props('disable')
+            with ui.column().classes('items-center gap-1'):
+                btn = ui.button('Translate', on_click=on_translate).classes('btn-primary')
+                if state.text_translating:
+                    btn.props('loading disable')
+                elif not state.can_translate():
+                    btn.props('disable')
+                # Keyboard hint
+                ui.label('Ctrl+Enter').classes('text-xs text-muted shortcut-hint')
 
         # Results section
         if state.text_result and state.text_result.options:
@@ -77,10 +110,17 @@ def _render_results(
     with ui.column().classes('w-full text-box'):
         with ui.row().classes('text-label justify-between items-center'):
             ui.label(target_lang)
+            ui.label(f'{len(result.options)} options').classes('text-xs text-muted')
 
         with ui.column().classes('w-full p-3 gap-3'):
             for i, option in enumerate(result.options):
-                _render_option(option, on_copy, on_adjust, is_last=(i == len(result.options) - 1))
+                _render_option(
+                    option,
+                    on_copy,
+                    on_adjust,
+                    is_last=(i == len(result.options) - 1),
+                    index=i,
+                )
 
 
 def _render_option(
@@ -88,38 +128,43 @@ def _render_option(
     on_copy: Callable[[str], None],
     on_adjust: Optional[Callable[[str, str], None]],
     is_last: bool = False,
+    index: int = 0,
 ):
-    """Render a single translation option"""
+    """Render a single translation option as a card"""
 
-    with ui.column().classes('w-full gap-1'):
-        # Translation text
-        ui.label(option.text).classes('text-base')
+    tone_icon = _get_tone_icon(option.explanation)
 
-        # Explanation and actions row
-        with ui.row().classes('w-full justify-between items-center'):
-            # Explanation
-            ui.label(option.explanation).classes('text-xs text-muted flex-1')
+    with ui.card().classes('option-card w-full'):
+        with ui.column().classes('w-full gap-2'):
+            # Header with tone icon and option number
+            with ui.row().classes('w-full items-center gap-2'):
+                ui.icon(tone_icon).classes('text-primary text-lg')
+                ui.label(f'Option {index + 1}').classes('text-xs font-medium text-muted uppercase')
+                ui.space()
+                ui.label(f'{option.char_count} chars').classes('text-xs text-muted')
 
-            # Actions
-            with ui.row().classes('items-center gap-1'):
-                ui.label(f'{option.char_count} chars').classes('text-xs text-muted mr-2')
+            # Translation text
+            ui.label(option.text).classes('text-base option-text')
 
-                # Copy button
-                ui.button(
-                    icon='content_copy',
-                    on_click=lambda o=option: on_copy(o.text)
-                ).props('flat dense round size=sm').tooltip('Copy')
+            # Explanation and actions row
+            with ui.row().classes('w-full justify-between items-center mt-1'):
+                # Explanation with icon
+                ui.label(option.explanation).classes('text-xs text-muted flex-1 italic')
 
-                # Adjust button
-                if on_adjust:
+                # Actions
+                with ui.row().classes('items-center gap-1'):
+                    # Copy button
                     ui.button(
-                        icon='tune',
-                        on_click=lambda o=option: _show_adjust_dialog(o.text, on_adjust)
-                    ).props('flat dense round size=sm').tooltip('Adjust')
+                        icon='content_copy',
+                        on_click=lambda o=option: on_copy(o.text)
+                    ).props('flat dense round size=sm').classes('option-action').tooltip('Copy (Ctrl+C)')
 
-        # Separator (except for last item)
-        if not is_last:
-            ui.separator().classes('my-2')
+                    # Adjust button
+                    if on_adjust:
+                        ui.button(
+                            icon='tune',
+                            on_click=lambda o=option: _show_adjust_dialog(o.text, on_adjust)
+                        ).props('flat dense round size=sm').classes('option-action').tooltip('Adjust')
 
 
 def _show_adjust_dialog(text: str, on_adjust: Callable[[str, str], None]):

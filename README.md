@@ -2,11 +2,6 @@
 
 日本語と英語の双方向翻訳アプリケーション。M365 Copilotを使用してテキストとファイルを翻訳します。
 
-> **App Name**: YakuLingo (訳リンゴ)
-> - 訳 (yaku) = translation in Japanese
-> - Lingo = playful term for language
-> - Inspired by [LocaLingo](https://github.com/soukouki/LocaLingo)
-
 ## 特徴
 
 | 機能 | 説明 |

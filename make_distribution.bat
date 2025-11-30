@@ -135,7 +135,7 @@ mkdir "%DIST_DIR%" 2>nul
 
 :: Copy files to distribution folder
 echo   Copying files...
-for %%f in ("run.bat" "remove.bat" "remove.ps1" "app.py" "glossary.csv" "pyproject.toml" "uv.toml" "README.md") do (
+for %%f in ("run.bat" "app.py" "glossary.csv" "pyproject.toml" "uv.toml" "README.md") do (
     if exist "%%~f" copy /y "%%~f" "%DIST_DIR%\" >nul
 )
 

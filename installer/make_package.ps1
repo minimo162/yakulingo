@@ -36,7 +36,9 @@ $files = @(
     "glossary.csv",
     "setup.bat",
     "setup_shortcut.bat",
-    "setup_shortcut.ps1"
+    "setup_shortcut.ps1",
+    "uninstall.bat",
+    "uninstall.ps1"
 )
 
 # コピー対象フォルダ

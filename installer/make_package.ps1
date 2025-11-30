@@ -82,14 +82,12 @@ foreach ($file in $files) {
     }
 }
 
-# Copy setup.bat to root (the only file users see)
-Copy-Item (Join-Path $projectDir "★setup.bat") $packageDir -Force
+# Copy setup files to root
+Copy-Item (Join-Path $projectDir "setup.bat") $packageDir -Force
+Copy-Item (Join-Path $projectDir "setup.ps1") $packageDir -Force
 
-# Copy setup.ps1 to _internal
-Copy-Item (Join-Path $projectDir "setup.ps1") $internalDir -Force
-
-# Copy run.bat to _internal (remove star)
-Copy-Item (Join-Path $projectDir "★run.bat") (Join-Path $internalDir "run.bat") -Force
+# Copy run.bat to _internal
+Copy-Item (Join-Path $projectDir "run.bat") (Join-Path $internalDir "run.bat") -Force
 
 # Copy app folders to _internal
 foreach ($folder in $appFolders) {

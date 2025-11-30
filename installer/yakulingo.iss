@@ -47,7 +47,7 @@ Source: "..\prompts\*"; DestDir: "{app}\prompts"; Flags: ignoreversion recursesu
 
 ; バッチファイル
 Source: "..\setup.bat"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\★run.bat"; DestDir: "{app}"; DestName: "run.bat"; Flags: ignoreversion
+Source: "..\run.bat"; DestDir: "{app}"; Flags: ignoreversion
 
 ; 設定ディレクトリ (空フォルダ作成)
 Source: "..\config\*"; DestDir: "{app}\config"; Flags: ignoreversion recursesubdirs createallsubdirs

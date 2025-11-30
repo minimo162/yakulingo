@@ -132,7 +132,7 @@ echo [INFO] Creating distribution archive...
 
 :: Build list of existing files
 set "FILE_LIST="
-for %%f in (".venv" ".uv-python" ".playwright-browsers" "app.py" "yakulingo" "prompts" "glossary.csv" "pyproject.toml" "uv.toml" "★run.bat" "README.md" "DISTRIBUTION.md") do (
+for %%f in (".venv" ".uv-python" ".playwright-browsers" "app.py" "yakulingo" "prompts" "glossary.csv" "pyproject.toml" "uv.toml" "run.bat" "setup.bat" "setup.ps1" "remove.bat" "remove.ps1" "README.md") do (
     if exist "%%~f" set "FILE_LIST=!FILE_LIST! %%~f"
 )
 
@@ -149,7 +149,7 @@ if exist "%DIST_ZIP%" (
     echo.
     echo Instructions for users:
     echo   1. Extract the zip file to any location
-    echo   2. Double-click "★run.bat" to start
+    echo   2. Double-click "setup.bat" to install, then "run.bat" to start
     echo ============================================================
 ) else (
     echo [ERROR] Failed to create distribution package.

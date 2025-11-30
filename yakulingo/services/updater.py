@@ -490,12 +490,22 @@ class AutoUpdater:
 
         return download_path
 
-    # ソースコードのみ更新するファイル/ディレクトリ一覧
+    # 更新対象ファイル/ディレクトリ一覧
     # 環境ファイル（.venv, .uv-python, .playwright-browsers）は含まない
     # 配布ZIPに含まれるファイルと一致させる（make_distribution.bat 参照）
     SOURCE_DIRS = ["yakulingo", "prompts"]
-    SOURCE_FILES = ["app.py", "pyproject.toml", "uv.toml"]
-    # ユーザー設定ファイル（上書きしない）
+    SOURCE_FILES = [
+        "app.py",           # エントリーポイント
+        "pyproject.toml",   # プロジェクト設定
+        "uv.toml",          # UV設定
+        "run.bat",          # 起動スクリプト
+        "setup.bat",        # セットアップスクリプト
+        "setup.ps1",        # セットアップスクリプト
+        "remove.bat",       # 削除スクリプト
+        "remove.ps1",       # 削除スクリプト
+        "README.md",        # ドキュメント
+    ]
+    # ユーザー設定ファイル（上書きしない、バックアップ対象）
     USER_FILES = ["glossary.csv", "config/settings.json"]
 
     def install_update(self, zip_path: Path) -> bool:

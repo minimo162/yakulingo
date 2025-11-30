@@ -23,7 +23,7 @@ ExcelTranslator/
 ├── prompt.txt            # プロンプト
 ├── pyproject.toml        # 依存関係定義
 ├── setup.bat             # インストーラー（uvを自動ダウンロード）
-└── ★run.bat              # 実行用バッチ
+└── run.bat               # 実行用バッチ
 ```
 
 ### インストール手順（ユーザー）
@@ -34,7 +34,7 @@ ExcelTranslator/
    - Python 3.11 を自動インストール
    - 依存関係を自動インストール
    - Playwright ブラウザを自動インストール
-3. `★run.bat` をダブルクリックして起動
+3. `run.bat` をダブルクリックして起動
 
 ### setup.bat の動作
 
@@ -145,7 +145,7 @@ set PROXY_SERVER=proxy.yourcompany.co.jp:8080
 - パスワードはマスク表示され、ファイルに保存されません
 - Windows認証環境では、多くの場合ID/パスワード入力も不要
 
-### Q: ★run.batで起動しない
+### Q: run.batで起動しない
 - まず `setup.bat` を実行したか確認
 - `.venv` フォルダが存在するか確認
 

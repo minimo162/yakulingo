@@ -80,6 +80,4 @@ Write-Host "============================================================" -Foreg
 Write-Host "削除完了!" -ForegroundColor Green
 Write-Host "============================================================" -ForegroundColor Green
 Write-Host ""
-Write-Host "※ このzipを展開したフォルダは手動で削除してください。"
-Write-Host ""
 Read-Host "Enterキーで終了"

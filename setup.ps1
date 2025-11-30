@@ -6,25 +6,36 @@ $ErrorActionPreference = "Stop"
 # 配置先
 $appDir = "$env:LOCALAPPDATA\YakuLingo"
 
+# 確認ダイアログ
+Add-Type -AssemblyName System.Windows.Forms
+
+$message = @"
+YakuLingo をセットアップしますか?
+
+配置先: $appDir
+
+このスクリプトは以下を行います:
+  • ファイルを上記フォルダにコピー
+  • スタートメニューとデスクトップにショートカットを作成
+  • 展開フォルダを自動削除
+"@
+
+$result = [System.Windows.Forms.MessageBox]::Show(
+    $message,
+    "YakuLingo セットアップ",
+    [System.Windows.Forms.MessageBoxButtons]::OKCancel,
+    [System.Windows.Forms.MessageBoxIcon]::Question
+)
+
+if ($result -ne [System.Windows.Forms.DialogResult]::OK) {
+    exit 0
+}
+
 Write-Host ""
 Write-Host "============================================================" -ForegroundColor Cyan
 Write-Host "YakuLingo セットアップ" -ForegroundColor Cyan
 Write-Host "============================================================" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "配置先: $appDir"
-Write-Host ""
-Write-Host "このスクリプトは以下を行います:"
-Write-Host "  - ファイルを上記フォルダにコピー（時間がかかります）"
-Write-Host "  - スタートメニューとデスクトップにショートカットを作成"
-Write-Host "  - 展開フォルダを自動削除"
-Write-Host ""
-
-# 確認
-$response = Read-Host "続行しますか? (Y/N)"
-if ($response -ne "Y" -and $response -ne "y") {
-    Write-Host "キャンセルしました。"
-    exit 0
-}
 
 # 配置先フォルダ作成
 if (Test-Path $appDir) {
@@ -100,7 +111,7 @@ $removeShortcut = $shell.CreateShortcut("$startMenuDir\YakuLingo を削除.lnk")
 $removeShortcut.TargetPath = "$appDir\remove.bat"
 $removeShortcut.WorkingDirectory = $appDir
 $removeShortcut.IconLocation = "%SystemRoot%\System32\shell32.dll,131"
-$removeShortcut.Description = "YakuLingo をアンインストール"
+$removeShortcut.Description = "YakuLingo を削除"
 $removeShortcut.Save()
 
 Write-Host "[OK] スタートメニューに追加しました"

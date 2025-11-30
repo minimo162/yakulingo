@@ -30,6 +30,13 @@ from yakulingo.models.types import TextBlock, FileInfo, FileType
 # Lazy Imports
 # =============================================================================
 _fitz = None
+_pypdfium2 = None
+_yomitoku = None
+_torch = None
+_np = None
+
+# yomitoku availability flag
+HAS_YOMITOKU = False
 
 
 def _get_fitz():
@@ -39,6 +46,66 @@ def _get_fitz():
         import fitz
         _fitz = fitz
     return _fitz
+
+
+def _get_numpy():
+    """Lazy import numpy"""
+    global _np
+    if _np is None:
+        import numpy as np
+        _np = np
+    return _np
+
+
+def _get_pypdfium2():
+    """Lazy import pypdfium2 (for PDF to image conversion)"""
+    global _pypdfium2
+    if _pypdfium2 is None:
+        try:
+            import pypdfium2 as pdfium
+            _pypdfium2 = pdfium
+        except ImportError:
+            raise ImportError(
+                "pypdfium2 is required for OCR. Install with: pip install yomitoku"
+            )
+    return _pypdfium2
+
+
+def _get_yomitoku():
+    """Lazy import yomitoku (OCR and layout analysis)"""
+    global _yomitoku, HAS_YOMITOKU
+    if _yomitoku is None:
+        try:
+            from yomitoku import DocumentAnalyzer
+            from yomitoku.data.functions import load_pdf
+            _yomitoku = {'DocumentAnalyzer': DocumentAnalyzer, 'load_pdf': load_pdf}
+            HAS_YOMITOKU = True
+        except ImportError:
+            raise ImportError(
+                "yomitoku is required for OCR. Install with: pip install yomitoku"
+            )
+    return _yomitoku
+
+
+def _get_torch():
+    """Lazy import torch (for GPU/CPU selection)"""
+    global _torch
+    if _torch is None:
+        try:
+            import torch
+            _torch = torch
+        except ImportError:
+            _torch = None
+    return _torch
+
+
+def is_yomitoku_available() -> bool:
+    """Check if yomitoku is available"""
+    try:
+        _get_yomitoku()
+        return True
+    except ImportError:
+        return False
 
 
 # =============================================================================
@@ -829,6 +896,191 @@ def _is_address_on_page(address: str, page_num: int) -> bool:
 
 
 # =============================================================================
+# OCR / Layout Analysis (yomitoku integration)
+# =============================================================================
+# Constants for OCR
+OCR_BATCH_SIZE = 5  # Pages per batch
+OCR_DPI = 200       # Fixed DPI for precision
+
+# DocumentAnalyzer cache (for GPU memory efficiency)
+_analyzer_cache: dict[tuple[str, str], object] = {}
+
+
+def get_total_pages(pdf_path: str) -> int:
+    """Get total page count using pypdfium2."""
+    pdfium = _get_pypdfium2()
+    pdf = pdfium.PdfDocument(pdf_path)
+    total = len(pdf)
+    pdf.close()
+    return total
+
+
+def iterate_pdf_pages(
+    pdf_path: str,
+    batch_size: int = OCR_BATCH_SIZE,
+    dpi: int = OCR_DPI,
+):
+    """
+    Stream PDF pages as images in batches.
+
+    Args:
+        pdf_path: Path to PDF file
+        batch_size: Pages per batch
+        dpi: Resolution (default 200)
+
+    Yields:
+        (batch_start_page, list[np.ndarray]): Batch start index and BGR images
+    """
+    np = _get_numpy()
+    pdfium = _get_pypdfium2()
+    pdf = pdfium.PdfDocument(pdf_path)
+    try:
+        total_pages = len(pdf)
+
+        for batch_start in range(0, total_pages, batch_size):
+            batch_end = min(batch_start + batch_size, total_pages)
+            batch_images = []
+
+            for page_idx in range(batch_start, batch_end):
+                page = pdf[page_idx]
+                bitmap = page.render(scale=dpi / 72)
+                img = bitmap.to_numpy()
+                # RGB to BGR (OpenCV compatible)
+                img = img[:, :, ::-1].copy()
+                batch_images.append(img)
+
+            yield batch_start, batch_images
+    finally:
+        pdf.close()
+
+
+def load_pdf_as_images(pdf_path: str, dpi: int = OCR_DPI) -> list:
+    """
+    Load entire PDF as images using yomitoku's load_pdf.
+
+    Note: For large PDFs, use iterate_pdf_pages() instead.
+    """
+    yomitoku = _get_yomitoku()
+    return yomitoku['load_pdf'](pdf_path, dpi=dpi)
+
+
+def get_device(config_device: str = "cpu") -> str:
+    """
+    Determine execution device for yomitoku.
+
+    Args:
+        config_device: "cpu" or "cuda"
+
+    Returns:
+        Actual device to use
+    """
+    if config_device == "cuda":
+        torch = _get_torch()
+        if torch is not None and torch.cuda.is_available():
+            return "cuda"
+        else:
+            print("Warning: CUDA not available, falling back to CPU")
+            return "cpu"
+    return "cpu"
+
+
+def get_document_analyzer(device: str = "cpu", reading_order: str = "auto"):
+    """
+    Get or create a cached DocumentAnalyzer instance.
+
+    Args:
+        device: "cpu" or "cuda"
+        reading_order: Reading order setting ("auto", "left2right", "top2bottom")
+
+    Returns:
+        Cached DocumentAnalyzer instance
+    """
+    cache_key = (device, reading_order)
+    if cache_key not in _analyzer_cache:
+        yomitoku = _get_yomitoku()
+        _analyzer_cache[cache_key] = yomitoku['DocumentAnalyzer'](
+            configs={},
+            device=device,
+            visualize=False,
+            ignore_meta=False,
+            reading_order=reading_order,
+        )
+    return _analyzer_cache[cache_key]
+
+
+def clear_analyzer_cache():
+    """Clear the DocumentAnalyzer cache to free GPU memory."""
+    global _analyzer_cache
+    _analyzer_cache.clear()
+
+
+def analyze_document(img, device: str = "cpu", reading_order: str = "auto"):
+    """
+    Analyze document layout using yomitoku.
+
+    Args:
+        img: BGR image (numpy array)
+        device: "cpu" or "cuda"
+        reading_order: "auto", "left2right", "top2bottom", "right2left"
+
+    Returns:
+        DocumentAnalyzerSchema with paragraphs, tables, figures, words
+    """
+    analyzer = get_document_analyzer(device, reading_order)
+    results, _, _ = analyzer(img)
+    return results
+
+
+def prepare_translation_cells(
+    results,
+    page_num: int,
+    include_headers: bool = False,
+) -> list[TranslationCell]:
+    """
+    Convert yomitoku results to translation cells.
+
+    Args:
+        results: DocumentAnalyzerSchema from yomitoku
+        page_num: Page number (1-based)
+        include_headers: Include page header/footer
+
+    Returns:
+        List of TranslationCell
+    """
+    cells = []
+
+    # Paragraphs
+    for para in sorted(results.paragraphs, key=lambda p: p.order):
+        if not include_headers and para.role in ["page_header", "page_footer"]:
+            continue
+
+        if para.contents.strip():
+            cells.append(TranslationCell(
+                address=f"P{page_num}_{para.order}",
+                text=para.contents,
+                box=para.box,
+                direction=para.direction,
+                role=para.role,
+                page_num=page_num,
+            ))
+
+    # Tables
+    for table in results.tables:
+        for cell in table.cells:
+            if cell.contents.strip():
+                cells.append(TranslationCell(
+                    address=f"T{page_num}_{table.order}_{cell.row}_{cell.col}",
+                    text=cell.contents,
+                    box=cell.box,
+                    direction="horizontal",
+                    role="table_cell",
+                    page_num=page_num,
+                ))
+
+    return cells
+
+
+# =============================================================================
 # PDF Processor Class
 # =============================================================================
 class PdfProcessor(FileProcessor):
@@ -1143,3 +1395,98 @@ class PdfProcessor(FileProcessor):
 
         finally:
             doc.close()
+
+    def extract_text_blocks_with_ocr(
+        self,
+        file_path: Path,
+        device: str = "cpu",
+        reading_order: str = "auto",
+    ) -> Iterator[TextBlock]:
+        """
+        Extract text blocks from PDF using OCR (yomitoku).
+
+        This method is for scanned PDFs or PDFs with embedded images.
+        Requires yomitoku to be installed.
+
+        Args:
+            file_path: Path to PDF file
+            device: "cpu" or "cuda"
+            reading_order: Reading order for yomitoku
+
+        Yields:
+            TextBlock objects with OCR-extracted text
+        """
+        if not is_yomitoku_available():
+            raise ImportError(
+                "yomitoku is required for OCR. Install with: pip install yomitoku"
+            )
+
+        actual_device = get_device(device)
+
+        for batch_start, batch_images in iterate_pdf_pages(str(file_path)):
+            for img_idx, img in enumerate(batch_images):
+                page_num = batch_start + img_idx + 1
+
+                # Analyze with yomitoku
+                results = analyze_document(img, actual_device, reading_order)
+
+                # Convert to translation cells
+                cells = prepare_translation_cells(results, page_num)
+
+                # Yield as TextBlocks
+                for cell in cells:
+                    if cell.text and self.should_translate(cell.text):
+                        yield TextBlock(
+                            id=cell.address,
+                            text=cell.text,
+                            location=f"Page {page_num}",
+                            metadata={
+                                'type': 'ocr_cell',
+                                'page': page_num - 1,
+                                'address': cell.address,
+                                'bbox': cell.box,
+                                'direction': cell.direction,
+                                'role': cell.role,
+                            }
+                        )
+
+        # Clear analyzer cache to free memory
+        clear_analyzer_cache()
+
+    def get_translation_cells_with_ocr(
+        self,
+        file_path: Path,
+        device: str = "cpu",
+        reading_order: str = "auto",
+    ) -> list[TranslationCell]:
+        """
+        Get translation cells from PDF using OCR (yomitoku).
+
+        Returns TranslationCell objects for use with apply_translations_with_cells.
+
+        Args:
+            file_path: Path to PDF file
+            device: "cpu" or "cuda"
+            reading_order: Reading order for yomitoku
+
+        Returns:
+            List of TranslationCell objects
+        """
+        if not is_yomitoku_available():
+            raise ImportError(
+                "yomitoku is required for OCR. Install with: pip install yomitoku"
+            )
+
+        actual_device = get_device(device)
+        all_cells = []
+
+        for batch_start, batch_images in iterate_pdf_pages(str(file_path)):
+            for img_idx, img in enumerate(batch_images):
+                page_num = batch_start + img_idx + 1
+
+                results = analyze_document(img, actual_device, reading_order)
+                cells = prepare_translation_cells(results, page_num)
+                all_cells.extend(cells)
+
+        clear_analyzer_cache()
+        return all_cells

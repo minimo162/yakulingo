@@ -46,8 +46,8 @@ Source: "..\ecm_translate\*"; DestDir: "{app}\ecm_translate"; Flags: ignoreversi
 Source: "..\prompts\*"; DestDir: "{app}\prompts"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 ; バッチファイル
-Source: "setup.bat"; DestDir: "{app}"; Flags: ignoreversion
-Source: "run.bat"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\setup.bat"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\★run.bat"; DestDir: "{app}"; DestName: "run.bat"; Flags: ignoreversion
 
 ; 設定ディレクトリ (空フォルダ作成)
 Source: "..\config\*"; DestDir: "{app}\config"; Flags: ignoreversion recursesubdirs createallsubdirs

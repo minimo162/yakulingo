@@ -1,31 +1,36 @@
-# YakuLingo インストールスクリプト
-# 右クリック → PowerShellで実行 または install.bat から実行
+# YakuLingo ショートカット作成スクリプト
+# ファイルを配置し、スタートメニュー・デスクトップにショートカットを作成します
 
 $ErrorActionPreference = "Stop"
 
-# インストール先
-$installDir = "$env:LOCALAPPDATA\YakuLingo"
+# 配置先
+$appDir = "$env:LOCALAPPDATA\YakuLingo"
 
 Write-Host ""
 Write-Host "============================================================" -ForegroundColor Cyan
-Write-Host "YakuLingo インストーラー" -ForegroundColor Cyan
+Write-Host "YakuLingo セットアップ" -ForegroundColor Cyan
 Write-Host "============================================================" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "インストール先: $installDir"
+Write-Host "配置先: $appDir"
+Write-Host ""
+Write-Host "このスクリプトは以下を行います:"
+Write-Host "  - ファイルを上記フォルダにコピー"
+Write-Host "  - スタートメニューにショートカットを作成"
+Write-Host "  - (オプション) デスクトップにショートカットを作成"
 Write-Host ""
 
 # 確認
-$response = Read-Host "インストールを続行しますか? (Y/N)"
+$response = Read-Host "続行しますか? (Y/N)"
 if ($response -ne "Y" -and $response -ne "y") {
     Write-Host "キャンセルしました。"
     exit 0
 }
 
-# インストール先フォルダ作成
-if (Test-Path $installDir) {
-    Write-Host "[INFO] 既存のインストールを上書きします..."
+# 配置先フォルダ作成
+if (Test-Path $appDir) {
+    Write-Host "[INFO] 既存のファイルを上書きします..."
 }
-New-Item -ItemType Directory -Path $installDir -Force | Out-Null
+New-Item -ItemType Directory -Path $appDir -Force | Out-Null
 
 # ファイルをコピー
 Write-Host "[1/3] ファイルをコピー中..."
@@ -43,20 +48,20 @@ $items = @(
     "config"
 )
 
-# ★run.bat は run.bat としてコピー
+# ★run.bat を run.bat としてコピー
 if (Test-Path "$scriptDir\★run.bat") {
-    Copy-Item "$scriptDir\★run.bat" "$installDir\run.bat" -Force
+    Copy-Item "$scriptDir\★run.bat" "$appDir\run.bat" -Force
 }
 if (Test-Path "$scriptDir\run.bat") {
-    Copy-Item "$scriptDir\run.bat" "$installDir\run.bat" -Force
+    Copy-Item "$scriptDir\run.bat" "$appDir\run.bat" -Force
 }
 
 foreach ($item in $items) {
     $source = Join-Path $scriptDir $item
     if (Test-Path $source) {
-        $dest = Join-Path $installDir $item
+        $dest = Join-Path $appDir $item
         if (Test-Path $source -PathType Container) {
-            Copy-Item $source $installDir -Recurse -Force
+            Copy-Item $source $appDir -Recurse -Force
         } else {
             Copy-Item $source $dest -Force
         }
@@ -73,17 +78,17 @@ $shell = New-Object -ComObject WScript.Shell
 
 # YakuLingo ショートカット
 $shortcut = $shell.CreateShortcut("$startMenuDir\YakuLingo.lnk")
-$shortcut.TargetPath = "$installDir\run.bat"
-$shortcut.WorkingDirectory = $installDir
+$shortcut.TargetPath = "$appDir\run.bat"
+$shortcut.WorkingDirectory = $appDir
 $shortcut.IconLocation = "%SystemRoot%\System32\shell32.dll,13"
 $shortcut.Description = "YakuLingo - 日英翻訳ツール"
 $shortcut.Save()
 
-# セットアップ ショートカット
-$shortcut2 = $shell.CreateShortcut("$startMenuDir\YakuLingo セットアップ.lnk")
-$shortcut2.TargetPath = "$installDir\setup.bat"
-$shortcut2.WorkingDirectory = $installDir
-$shortcut2.Description = "YakuLingo 依存関係インストール"
+# 依存関係セットアップ ショートカット
+$shortcut2 = $shell.CreateShortcut("$startMenuDir\YakuLingo 依存関係セットアップ.lnk")
+$shortcut2.TargetPath = "$appDir\setup.bat"
+$shortcut2.WorkingDirectory = $appDir
+$shortcut2.Description = "YakuLingo 依存関係の取得"
 $shortcut2.Save()
 
 Write-Host "[OK] スタートメニューに追加しました"
@@ -93,33 +98,33 @@ $desktopResponse = Read-Host "デスクトップにショートカットを作�
 if ($desktopResponse -eq "Y" -or $desktopResponse -eq "y") {
     $desktopPath = [Environment]::GetFolderPath("Desktop")
     $desktopShortcut = $shell.CreateShortcut("$desktopPath\YakuLingo.lnk")
-    $desktopShortcut.TargetPath = "$installDir\run.bat"
-    $desktopShortcut.WorkingDirectory = $installDir
+    $desktopShortcut.TargetPath = "$appDir\run.bat"
+    $desktopShortcut.WorkingDirectory = $appDir
     $desktopShortcut.IconLocation = "%SystemRoot%\System32\shell32.dll,13"
     $desktopShortcut.Description = "YakuLingo - 日英翻訳ツール"
     $desktopShortcut.Save()
     Write-Host "[OK] デスクトップに追加しました"
 }
 
-Write-Host "[3/3] 初回セットアップを実行中..."
+Write-Host "[3/3] 完了処理..."
 Write-Host ""
 Write-Host "============================================================" -ForegroundColor Green
-Write-Host "インストール完了!" -ForegroundColor Green
+Write-Host "セットアップ完了!" -ForegroundColor Green
 Write-Host "============================================================" -ForegroundColor Green
 Write-Host ""
 Write-Host "次のステップ:"
-Write-Host "  1. スタートメニューから「YakuLingo セットアップ」を実行 (初回のみ)"
+Write-Host "  1. スタートメニューから「YakuLingo 依存関係セットアップ」を実行 (初回のみ)"
 Write-Host "  2. スタートメニューから「YakuLingo」を起動"
 Write-Host ""
-Write-Host "インストール先: $installDir"
+Write-Host "配置先: $appDir"
 Write-Host ""
 
 # セットアップを実行するか確認
-$setupResponse = Read-Host "今すぐセットアップを実行しますか? (Y/N)"
+$setupResponse = Read-Host "今すぐ依存関係セットアップを実行しますか? (Y/N)"
 if ($setupResponse -eq "Y" -or $setupResponse -eq "y") {
-    Start-Process -FilePath "$installDir\setup.bat" -WorkingDirectory $installDir -Wait
+    Start-Process -FilePath "$appDir\setup.bat" -WorkingDirectory $appDir -Wait
 }
 
 Write-Host ""
-Write-Host "完了しました。ウィンドウを閉じてください。"
+Write-Host "完了しました。"
 Read-Host "Enterキーで終了"

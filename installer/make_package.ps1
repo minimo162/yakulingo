@@ -35,8 +35,8 @@ $files = @(
     "requirements.txt",
     "glossary.csv",
     "setup.bat",
-    "install.bat",
-    "install.ps1"
+    "setup_shortcut.bat",
+    "setup_shortcut.ps1"
 )
 
 # コピー対象フォルダ
@@ -106,7 +106,8 @@ Write-Host "サイズ: $zipSizeStr"
 Write-Host ""
 Write-Host "配布方法:"
 Write-Host "  1. YakuLingo.zip をユーザーに送る"
-Write-Host "  2. ユーザーは展開後 install.bat を実行"
+Write-Host "  2. ユーザーは展開後 setup_shortcut.bat を実行（ショートカット作成）"
+Write-Host "     または ★run.bat を直接実行（ショートカット不要の場合）"
 Write-Host ""
 
 Read-Host "Enterキーで終了"

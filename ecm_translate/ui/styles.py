@@ -1,391 +1,318 @@
 # ecm_translate/ui/styles.py
 """
-CSS styles for YakuLingo UI.
-Based on UI_SPECIFICATION_v4.md color system.
+M3 Component-based styles for YakuLingo.
+Following Material Design 3 component guidelines.
 """
 
-# CSS Variables (Light/Dark mode)
-CSS_VARIABLES = """
+COMPLETE_CSS = """
+/* === M3 Design Tokens === */
 :root {
-    /* Primary */
-    --primary: #2563eb;
-    --primary-hover: #1d4ed8;
-    --primary-light: rgba(37, 99, 235, 0.1);
+    /* Primary - warm coral */
+    --md-sys-color-primary: #C04000;
+    --md-sys-color-on-primary: #FFFFFF;
+    --md-sys-color-primary-container: #FFDBD0;
+    --md-sys-color-on-primary-container: #390C00;
 
-    /* Background */
-    --bg: #ffffff;
-    --bg-secondary: #f8fafc;
-    --bg-tertiary: #f1f5f9;
+    /* Surface */
+    --md-sys-color-surface: #FFFBFF;
+    --md-sys-color-surface-container: #F3EDE9;
+    --md-sys-color-surface-container-high: #EDE7E3;
+    --md-sys-color-on-surface: #201A17;
+    --md-sys-color-on-surface-variant: #52443D;
+    --md-sys-color-outline: #85746B;
+    --md-sys-color-outline-variant: #D7C2B9;
 
-    /* Border */
-    --border: #e2e8f0;
+    /* States */
+    --md-sys-color-error: #BA1A1A;
+    --md-sys-color-on-error: #FFFFFF;
 
-    /* Text */
-    --text: #1e293b;
-    --text-secondary: #64748b;
-    --text-muted: #94a3b8;
+    /* Shape */
+    --md-sys-shape-corner-full: 9999px;
+    --md-sys-shape-corner-large: 16px;
+    --md-sys-shape-corner-medium: 12px;
+    --md-sys-shape-corner-small: 8px;
 
-    /* Status */
-    --success: #22c55e;
-    --warning: #f59e0b;
-    --error: #ef4444;
+    /* Motion - M3 standard easing */
+    --md-sys-motion-easing-standard: cubic-bezier(0.2, 0, 0, 1);
+    --md-sys-motion-duration-short: 200ms;
+    --md-sys-motion-duration-medium: 300ms;
+
+    /* Elevation */
+    --md-sys-elevation-1: 0 1px 2px rgba(0,0,0,0.1);
+    --md-sys-elevation-2: 0 2px 6px rgba(0,0,0,0.12);
 }
 
+/* Dark */
 @media (prefers-color-scheme: dark) {
     :root {
-        --primary: #3b82f6;
-        --primary-hover: #60a5fa;
-        --primary-light: rgba(59, 130, 246, 0.15);
-
-        --bg: #0f172a;
-        --bg-secondary: #1e293b;
-        --bg-tertiary: #334155;
-
-        --border: #334155;
-
-        --text: #f1f5f9;
-        --text-secondary: #94a3b8;
-        --text-muted: #64748b;
-
-        --success: #4ade80;
-        --warning: #fbbf24;
-        --error: #f87171;
+        --md-sys-color-primary: #FFB5A0;
+        --md-sys-color-on-primary: #5D1800;
+        --md-sys-color-primary-container: #7E2E0C;
+        --md-sys-color-on-primary-container: #FFDBD0;
+        --md-sys-color-surface: #1A1110;
+        --md-sys-color-surface-container: #251E1C;
+        --md-sys-color-surface-container-high: #302824;
+        --md-sys-color-on-surface: #F0DED8;
+        --md-sys-color-on-surface-variant: #D7C2B9;
+        --md-sys-color-outline: #9F8D84;
+        --md-sys-color-outline-variant: #52443D;
     }
 }
-"""
 
-# Main application styles
-APP_STYLES = """
-/* Font stack */
+/* === Base === */
 body {
-    font-family: 'Meiryo UI', 'Meiryo', 'Yu Gothic UI', 'Hiragino Sans', 'Noto Sans JP', sans-serif;
-    font-size: 15px;
+    font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+    background: var(--md-sys-color-surface);
+    color: var(--md-sys-color-on-surface);
     line-height: 1.5;
-    color: var(--text);
-    background-color: var(--bg);
 }
 
-/* Header */
-.header {
-    display: flex;
-    align-items: center;
-    padding: 12px 24px;
-    background-color: var(--bg);
-    border-bottom: 1px solid var(--border);
+/* === Header === */
+.app-header {
+    background: var(--md-sys-color-surface);
+    border-bottom: 1px solid var(--md-sys-color-outline-variant);
 }
 
-.header-logo {
-    font-size: 24px;
-    margin-right: 8px;
-}
-
-.header-title {
-    font-size: 20px;
-    font-weight: bold;
-    color: var(--text);
-}
-
-/* Tab bar */
-.tab-bar {
-    display: flex;
-    padding: 0 24px;
-    background-color: var(--bg);
-    border-bottom: 1px solid var(--border);
-}
-
-.tab-button {
-    padding: 12px 20px;
-    font-size: 15px;
+.app-logo {
+    font-size: 1.125rem;
     font-weight: 500;
-    color: var(--text-secondary);
-    background: none;
-    border: none;
-    border-bottom: 2px solid transparent;
-    cursor: pointer;
-    transition: all 0.2s;
+    color: var(--md-sys-color-primary);
+    letter-spacing: -0.01em;
 }
 
-.tab-button:hover {
-    color: var(--text);
-}
-
-.tab-button.active {
-    color: var(--primary);
-    border-bottom-color: var(--primary);
-}
-
-/* Text panel */
-.text-panel {
-    display: flex;
-    gap: 16px;
-    padding: 24px;
-    flex: 1;
-}
-
-.text-area-container {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-}
-
-.text-area-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 8px 12px;
-    background-color: var(--bg-secondary);
-    border: 1px solid var(--border);
-    border-bottom: none;
-    border-radius: 8px 8px 0 0;
-}
-
-.text-area-label {
-    font-size: 14px;
+/* === M3 Segmented Button (Tabs) === */
+.tab-btn {
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
     font-weight: 500;
-    color: var(--text);
+    color: var(--md-sys-color-on-surface);
+    border-radius: var(--md-sys-shape-corner-full);
+    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
 }
 
-.text-area {
-    flex: 1;
-    min-height: 250px;
-    padding: 16px;
-    font-family: 'Meiryo UI', 'Meiryo', sans-serif;
-    font-size: 16px;
-    line-height: 1.7;
-    color: var(--text);
-    background-color: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: 0 0 8px 8px;
-    resize: none;
+.tab-btn:hover {
+    background: var(--md-sys-color-surface-container);
 }
 
-.text-area:focus {
-    outline: none;
-    border-color: var(--primary);
+.tab-btn.active {
+    background: var(--md-sys-color-primary-container);
+    color: var(--md-sys-color-on-primary-container);
 }
 
-/* Swap button */
-.swap-button {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 40px;
-    height: 40px;
-    background-color: var(--bg-secondary);
-    border: 1px solid var(--border);
-    border-radius: 50%;
-    cursor: pointer;
-    transition: all 0.2s;
-    align-self: center;
+/* === M3 Filled Button (Primary) === */
+.btn-primary {
+    background: var(--md-sys-color-primary);
+    color: var(--md-sys-color-on-primary);
+    padding: 0.625rem 1.5rem;
+    border-radius: var(--md-sys-shape-corner-full);
+    font-size: 0.875rem;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    box-shadow: var(--md-sys-elevation-1);
+    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
 }
 
-.swap-button:hover {
-    background-color: var(--primary-light);
-    border-color: var(--primary);
+.btn-primary:hover:not(:disabled) {
+    box-shadow: var(--md-sys-elevation-2);
 }
 
-/* Translate button */
-.translate-button {
-    min-width: 160px;
-    padding: 12px 24px;
-    font-size: 15px;
-    font-weight: 600;
-    color: white;
-    background-color: var(--primary);
+.btn-primary:disabled {
+    opacity: 0.38;
+    cursor: default;
+}
+
+/* === M3 Outlined Button === */
+.btn-outline {
+    background: transparent;
+    border: 1px solid var(--md-sys-color-outline);
+    color: var(--md-sys-color-primary);
+    padding: 0.5rem 1.25rem;
+    border-radius: var(--md-sys-shape-corner-full);
+    font-size: 0.875rem;
+    font-weight: 500;
+    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+}
+
+.btn-outline:hover {
+    background: var(--md-sys-color-primary-container);
+}
+
+/* === M3 Text Field Container === */
+.text-box {
+    background: var(--md-sys-color-surface);
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: var(--md-sys-shape-corner-medium);
+    overflow: hidden;
+    transition: border-color var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+}
+
+.text-box:focus-within {
+    border-color: var(--md-sys-color-primary);
+    border-width: 2px;
+}
+
+.text-label {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--md-sys-color-on-surface-variant);
+    background: var(--md-sys-color-surface-container);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+/* === Swap Button === */
+.swap-btn {
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: var(--md-sys-shape-corner-full);
+    background: var(--md-sys-color-surface-container);
     border: none;
-    border-radius: 8px;
-    cursor: pointer;
-    transition: all 0.2s;
+    color: var(--md-sys-color-on-surface-variant);
+    transition: all var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-standard);
 }
 
-.translate-button:hover {
-    background-color: var(--primary-hover);
+.swap-btn:hover {
+    background: var(--md-sys-color-primary-container);
+    color: var(--md-sys-color-on-primary-container);
+    transform: rotate(180deg);
 }
 
-.translate-button:disabled {
-    background-color: var(--text-muted);
-    cursor: not-allowed;
-}
-
-/* File drop zone */
+/* === Drop Zone === */
 .drop-zone {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 48px;
-    border: 2px dashed var(--border);
-    border-radius: 12px;
+    border: 1px dashed var(--md-sys-color-outline);
+    border-radius: var(--md-sys-shape-corner-large);
+    padding: 2.5rem 1.5rem;
+    text-align: center;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
 }
 
 .drop-zone:hover {
-    border-color: var(--primary);
-    background-color: var(--primary-light);
-}
-
-.drop-zone.drag-over {
-    border-style: solid;
-    border-color: var(--primary);
-    background-color: rgba(37, 99, 235, 0.1);
+    border-color: var(--md-sys-color-primary);
+    background: var(--md-sys-color-primary-container);
 }
 
 .drop-zone-icon {
-    font-size: 48px;
-    color: var(--text-muted);
-    margin-bottom: 16px;
+    font-size: 2rem;
+    color: var(--md-sys-color-on-surface-variant);
+    margin-bottom: 0.5rem;
 }
 
 .drop-zone-text {
-    font-size: 16px;
-    color: var(--text-secondary);
-    margin-bottom: 8px;
-}
-
-.drop-zone-formats {
-    font-size: 13px;
-    color: var(--text-muted);
-}
-
-/* File info */
-.file-info {
-    padding: 24px;
-    background-color: var(--bg-secondary);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-}
-
-.file-info-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 16px;
-}
-
-.file-info-name {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 16px;
+    font-size: 0.875rem;
     font-weight: 500;
+    color: var(--md-sys-color-on-surface);
 }
 
-.file-info-icon {
-    font-size: 24px;
+.drop-zone-hint {
+    font-size: 0.75rem;
+    color: var(--md-sys-color-on-surface-variant);
+    margin-top: 0.25rem;
 }
 
-.file-info-details {
-    font-size: 14px;
-    color: var(--text-secondary);
-    line-height: 1.8;
+/* === M3 Card === */
+.file-card {
+    background: var(--md-sys-color-surface-container);
+    border-radius: var(--md-sys-shape-corner-medium);
+    padding: 1rem;
 }
 
-/* Progress bar */
-.progress-container {
-    margin-top: 16px;
+.file-card.success {
+    background: #E8F5E9;
 }
 
-.progress-bar {
-    height: 8px;
-    background-color: var(--bg-tertiary);
-    border-radius: 4px;
+@media (prefers-color-scheme: dark) {
+    .file-card.success {
+        background: #1B3D25;
+    }
+}
+
+/* === M3 Progress Indicator === */
+.progress-track {
+    height: 4px;
+    background: var(--md-sys-color-surface-container-high);
+    border-radius: 2px;
     overflow: hidden;
 }
 
-.progress-fill {
+.progress-bar {
     height: 100%;
-    background-color: var(--primary);
-    transition: width 0.3s;
+    background: var(--md-sys-color-primary);
+    border-radius: 2px;
+    transition: width var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-standard);
 }
 
-.progress-text {
-    display: flex;
-    justify-content: space-between;
-    margin-top: 8px;
-    font-size: 13px;
-    color: var(--text-secondary);
+/* === Status === */
+.status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: var(--md-sys-shape-corner-full);
+    background: var(--md-sys-color-outline);
 }
 
-/* Settings panel */
-.settings-panel {
-    padding: 16px 24px;
-    background-color: var(--bg-secondary);
-    border-top: 1px solid var(--border);
+.status-dot.connected {
+    background: #4CAF50;
 }
 
-.settings-header {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    cursor: pointer;
-    font-size: 14px;
+.status-dot.connecting {
+    background: var(--md-sys-color-primary);
+    animation: pulse 1.5s ease infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}
+
+/* === Success === */
+.success-icon {
+    font-size: 2.5rem;
+    color: #4CAF50;
+}
+
+.success-text {
+    font-size: 1rem;
     font-weight: 500;
-    color: var(--text-secondary);
+    color: #2E7D32;
 }
 
-.settings-content {
-    margin-top: 16px;
-    padding-top: 16px;
-    border-top: 1px solid var(--border);
+@media (prefers-color-scheme: dark) {
+    .success-text {
+        color: #81C784;
+    }
 }
 
-/* Toast notifications */
-.toast {
-    position: fixed;
-    bottom: 24px;
-    left: 50%;
-    transform: translateX(-50%);
-    padding: 12px 24px;
-    background-color: var(--bg-secondary);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-    z-index: 1000;
+/* === Chip === */
+.chip {
+    display: inline-block;
+    padding: 0.25rem 0.5rem;
+    background: var(--md-sys-color-surface-container-high);
+    border-radius: var(--md-sys-shape-corner-small);
+    font-size: 0.6875rem;
+    color: var(--md-sys-color-on-surface-variant);
 }
 
-.toast.success {
-    border-left: 4px solid var(--success);
+/* === Utility === */
+.text-muted { color: var(--md-sys-color-on-surface-variant); }
+.text-primary { color: var(--md-sys-color-primary); }
+.text-error { color: var(--md-sys-color-error); }
+
+.animate-in {
+    animation: fadeIn var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-standard);
 }
 
-.toast.error {
-    border-left: 4px solid var(--error);
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
 }
 
-/* Reference files */
-.reference-files {
-    padding: 16px;
-    background-color: var(--bg-secondary);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    margin-bottom: 16px;
+/* === Dialog === */
+.q-card {
+    border-radius: var(--md-sys-shape-corner-large) !important;
 }
 
-.reference-files-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 12px;
-}
-
-.reference-file-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 8px 12px;
-    background-color: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    margin-bottom: 8px;
-}
-
-.reference-file-name {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 14px;
+.q-dialog__backdrop {
+    background: rgba(0, 0, 0, 0.32) !important;
 }
 """
-
-# Complete CSS
-COMPLETE_CSS = CSS_VARIABLES + APP_STYLES

@@ -396,3 +396,299 @@ class TestBatchTranslatorTranslateBlocks:
         assert len(progress_calls) == 1
         assert progress_calls[0].current == 0
         assert progress_calls[0].total == 1
+
+
+# --- Tests: translate_text() ---
+
+class TestTranslationServiceTranslateText:
+    """Tests for TranslationService.translate_text()"""
+
+    @pytest.fixture
+    def mock_copilot(self):
+        mock = Mock()
+        mock.translate_single.return_value = "Translated text"
+        return mock
+
+    @pytest.fixture
+    def service(self, mock_copilot):
+        return TranslationService(mock_copilot, AppSettings())
+
+    def test_translate_text_jp_to_en(self, service, mock_copilot):
+        """Translate Japanese text to English"""
+        result = service.translate_text(
+            "こんにちは",
+            TranslationDirection.JP_TO_EN,
+        )
+
+        assert result.status == TranslationStatus.COMPLETED
+        assert result.output_text == "Translated text"
+        assert result.blocks_translated == 1
+        assert result.blocks_total == 1
+        assert result.duration_seconds >= 0
+
+        # Verify copilot was called
+        mock_copilot.translate_single.assert_called_once()
+
+    def test_translate_text_en_to_jp(self, service, mock_copilot):
+        """Translate English text to Japanese"""
+        result = service.translate_text(
+            "Hello World",
+            TranslationDirection.EN_TO_JP,
+        )
+
+        assert result.status == TranslationStatus.COMPLETED
+        assert result.output_text == "Translated text"
+
+    def test_translate_text_with_reference_files(self, service, mock_copilot, tmp_path):
+        """Translation with reference files passes them to copilot"""
+        glossary = tmp_path / "glossary.csv"
+        glossary.write_text("JP,EN\nテスト,Test\n")
+
+        result = service.translate_text(
+            "テスト文章",
+            TranslationDirection.JP_TO_EN,
+            reference_files=[glossary],
+        )
+
+        assert result.status == TranslationStatus.COMPLETED
+
+        # Check reference files were passed
+        call_args = mock_copilot.translate_single.call_args
+        assert call_args[0][2] == [glossary]
+
+    def test_translate_text_error_returns_failed(self, mock_copilot):
+        """Error during translation returns FAILED status"""
+        mock_copilot.translate_single.side_effect = RuntimeError("Translation error")
+
+        service = TranslationService(mock_copilot, AppSettings())
+
+        result = service.translate_text(
+            "テスト",
+            TranslationDirection.JP_TO_EN,
+        )
+
+        assert result.status == TranslationStatus.FAILED
+        assert result.error_message == "Translation error"
+        assert result.duration_seconds >= 0
+
+    def test_translate_text_records_duration(self, service, mock_copilot):
+        """Translation records duration"""
+        result = service.translate_text(
+            "テスト",
+            TranslationDirection.JP_TO_EN,
+        )
+
+        assert result.duration_seconds is not None
+        assert result.duration_seconds >= 0
+
+
+# --- Tests: translate_file() ---
+
+class TestTranslationServiceTranslateFile:
+    """Tests for TranslationService.translate_file()"""
+
+    @pytest.fixture
+    def mock_copilot(self):
+        mock = Mock()
+        mock.translate_sync.return_value = ["Translated 1", "Translated 2"]
+        return mock
+
+    @pytest.fixture
+    def sample_xlsx(self, tmp_path):
+        """Create sample Excel file with translatable content"""
+        import openpyxl
+        file_path = tmp_path / "sample.xlsx"
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Sheet1"
+        ws["A1"] = "テスト1"
+        ws["A2"] = "テスト2"
+        wb.save(file_path)
+        return file_path
+
+    @pytest.fixture
+    def empty_xlsx(self, tmp_path):
+        """Create empty Excel file"""
+        import openpyxl
+        file_path = tmp_path / "empty.xlsx"
+        wb = openpyxl.Workbook()
+        wb.save(file_path)
+        return file_path
+
+    def test_translate_file_basic(self, mock_copilot, sample_xlsx):
+        """Basic file translation"""
+        service = TranslationService(mock_copilot, AppSettings())
+
+        result = service.translate_file(
+            sample_xlsx,
+            TranslationDirection.JP_TO_EN,
+        )
+
+        assert result.status == TranslationStatus.COMPLETED
+        assert result.output_path is not None
+        assert result.output_path.exists()
+        assert "_EN" in result.output_path.name
+        assert result.blocks_translated == 2
+        assert result.blocks_total == 2
+
+    def test_translate_file_creates_output(self, mock_copilot, sample_xlsx):
+        """Output file is created"""
+        service = TranslationService(mock_copilot, AppSettings())
+
+        result = service.translate_file(
+            sample_xlsx,
+            TranslationDirection.JP_TO_EN,
+        )
+
+        assert result.output_path.exists()
+        assert result.output_path.suffix == ".xlsx"
+
+    def test_translate_file_progress_callback(self, mock_copilot, sample_xlsx):
+        """Progress callback is called during translation"""
+        service = TranslationService(mock_copilot, AppSettings())
+
+        progress_updates = []
+
+        def on_progress(progress):
+            progress_updates.append(progress)
+
+        result = service.translate_file(
+            sample_xlsx,
+            TranslationDirection.JP_TO_EN,
+            on_progress=on_progress,
+        )
+
+        assert result.status == TranslationStatus.COMPLETED
+        assert len(progress_updates) > 0
+        # Final progress should be 100
+        assert progress_updates[-1].current == 100
+
+    def test_translate_file_empty_returns_warning(self, mock_copilot, empty_xlsx):
+        """Empty file returns completed with warning"""
+        service = TranslationService(mock_copilot, AppSettings())
+
+        result = service.translate_file(
+            empty_xlsx,
+            TranslationDirection.JP_TO_EN,
+        )
+
+        assert result.status == TranslationStatus.COMPLETED
+        assert result.blocks_total == 0
+        assert result.warnings is not None
+        assert any("No translatable" in w for w in result.warnings)
+
+    def test_translate_file_with_reference(self, mock_copilot, sample_xlsx, tmp_path):
+        """File translation with reference files"""
+        glossary = tmp_path / "glossary.csv"
+        glossary.write_text("JP,EN\n")
+
+        service = TranslationService(mock_copilot, AppSettings())
+
+        result = service.translate_file(
+            sample_xlsx,
+            TranslationDirection.JP_TO_EN,
+            reference_files=[glossary],
+        )
+
+        assert result.status == TranslationStatus.COMPLETED
+
+    def test_translate_file_cancellation(self, mock_copilot, sample_xlsx):
+        """Cancellation during translation stops the process"""
+        # Note: _cancel_requested is reset at start of translate_file()
+        # So cancellation only works if triggered during translation
+        service = TranslationService(mock_copilot, AppSettings())
+
+        # Simulate cancellation during batch translation
+        def cancel_during_translate(*args, **kwargs):
+            service.cancel()
+            return ["Translated 1", "Translated 2"]
+
+        mock_copilot.translate_sync.side_effect = cancel_during_translate
+
+        result = service.translate_file(
+            sample_xlsx,
+            TranslationDirection.JP_TO_EN,
+        )
+
+        # Cancellation is checked after batch translation completes
+        # Result is CANCELLED because flag was set during translation
+        assert result.status == TranslationStatus.CANCELLED
+
+    def test_translate_file_error(self, sample_xlsx):
+        """Error during translation returns FAILED"""
+        mock_copilot = Mock()
+        mock_copilot.translate_sync.side_effect = RuntimeError("API Error")
+
+        service = TranslationService(mock_copilot, AppSettings())
+
+        result = service.translate_file(
+            sample_xlsx,
+            TranslationDirection.JP_TO_EN,
+        )
+
+        assert result.status == TranslationStatus.FAILED
+        assert "API Error" in result.error_message
+
+    def test_translate_file_custom_output_dir(self, mock_copilot, sample_xlsx, tmp_path):
+        """Output goes to custom directory when configured"""
+        output_dir = tmp_path / "custom_output"
+        output_dir.mkdir()
+
+        settings = AppSettings(output_directory=str(output_dir))
+        service = TranslationService(mock_copilot, settings)
+
+        result = service.translate_file(
+            sample_xlsx,
+            TranslationDirection.JP_TO_EN,
+        )
+
+        assert result.status == TranslationStatus.COMPLETED
+        assert result.output_path.parent == output_dir
+
+
+# --- Tests: get_file_info() ---
+
+class TestTranslationServiceGetFileInfo:
+    """Tests for TranslationService.get_file_info()"""
+
+    @pytest.fixture
+    def service(self):
+        return TranslationService(Mock(), AppSettings())
+
+    @pytest.fixture
+    def sample_xlsx(self, tmp_path):
+        import openpyxl
+        file_path = tmp_path / "info_test.xlsx"
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Sheet1"
+        ws["A1"] = "テスト"
+        ws["A2"] = "テスト2"
+        wb.save(file_path)
+        return file_path
+
+    def test_get_file_info_returns_info(self, service, sample_xlsx):
+        """get_file_info returns FileInfo object"""
+        from ecm_translate.models.types import FileInfo, FileType
+
+        info = service.get_file_info(sample_xlsx)
+
+        assert isinstance(info, FileInfo)
+        assert info.path == sample_xlsx
+        assert info.file_type == FileType.EXCEL
+        assert info.size_bytes > 0
+
+    def test_get_file_info_delegates_to_processor(self, service, sample_xlsx):
+        """get_file_info uses correct processor"""
+        info = service.get_file_info(sample_xlsx)
+
+        # Excel processor should count translatable blocks
+        assert info.text_block_count == 2
+
+    def test_get_file_info_unsupported_raises(self, service, tmp_path):
+        """get_file_info raises for unsupported file type"""
+        txt_file = tmp_path / "test.txt"
+        txt_file.write_text("content")
+
+        with pytest.raises(ValueError):
+            service.get_file_info(txt_file)

@@ -41,10 +41,20 @@ class YakuLingoApp:
         self._tabs_container = None
         self._history_drawer: Optional[ui.element] = None
 
-    async def connect_copilot(self):
-        """Connect to Copilot"""
+    async def connect_copilot(self, silent: bool = False):
+        """
+        Connect to Copilot.
+
+        Args:
+            silent: If True, don't show UI notifications (for background pre-connection)
+        """
+        # Skip if already connected or connecting
+        if self.state.copilot_connected or self.state.copilot_connecting:
+            return
+
         self.state.copilot_connecting = True
-        self._refresh_status()
+        if not silent:
+            self._refresh_status()
 
         try:
             success = await asyncio.to_thread(
@@ -56,16 +66,30 @@ class YakuLingoApp:
                 self.translation_service = TranslationService(
                     self.copilot, self.settings, get_default_prompts_dir()
                 )
-                ui.notify('Ready', type='positive')
+                if not silent:
+                    ui.notify('Ready', type='positive')
             else:
-                ui.notify('Connection failed', type='negative')
+                if not silent:
+                    ui.notify('Connection failed', type='negative')
 
         except Exception as e:
-            ui.notify(f'Error: {e}', type='negative')
+            if not silent:
+                ui.notify(f'Error: {e}', type='negative')
 
         self.state.copilot_connecting = False
         self._refresh_status()
-        self._refresh_content()
+        if not silent:
+            self._refresh_content()
+
+    async def preconnect_copilot(self):
+        """
+        Pre-establish Copilot connection in background.
+        Called at app startup for faster first translation.
+        Inspired by Nani Translate's preflight optimization.
+        """
+        # Small delay to let UI render first
+        await asyncio.sleep(0.5)
+        await self.connect_copilot(silent=True)
 
     def _refresh_status(self):
         """Refresh status dot only"""
@@ -199,27 +223,44 @@ class YakuLingoApp:
             ui.notify('Copied', type='positive')
 
     async def _translate_text(self):
-        """Translate text with multiple options"""
+        """
+        Translate text with multiple options.
+        Optimization: Start API request before UI update for faster perceived response.
+        Inspired by Nani Translate's approach.
+        """
         if not self.translation_service:
             ui.notify('Not connected', type='warning')
             return
 
+        # Capture current values before starting
+        source_text = self.state.source_text
+        direction = self.state.direction
+        reference_files = self.state.reference_files or None
+
+        # OPTIMIZATION: Start the translation request FIRST (non-blocking)
+        # This allows the API call to begin while we update the UI
+        translation_task = asyncio.create_task(
+            asyncio.to_thread(
+                lambda: self.translation_service.translate_text_with_options(
+                    source_text,
+                    direction,
+                    reference_files,
+                )
+            )
+        )
+
+        # Now update the UI (happens in parallel with the API request)
         self.state.text_translating = True
         self.state.text_result = None
         self._refresh_content()
 
         try:
-            result = await asyncio.to_thread(
-                lambda: self.translation_service.translate_text_with_options(
-                    self.state.source_text,
-                    self.state.direction,
-                    self.state.reference_files or None,
-                )
-            )
+            # Wait for the translation result
+            result = await translation_task
 
             if result and result.options:
                 self.state.text_result = result
-                # Add to history
+                # Add to history (now persisted to SQLite)
                 self._add_to_history(result)
             else:
                 error_msg = result.error_message if result else 'Unknown error'
@@ -479,7 +520,9 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
     @ui.page('/')
     async def main_page():
         app.create_ui()
-        asyncio.create_task(app.connect_copilot())
+        # Pre-establish Copilot connection in background
+        # This starts the connection silently while user sees the UI
+        asyncio.create_task(app.preconnect_copilot())
 
     ui.run(
         host=host,

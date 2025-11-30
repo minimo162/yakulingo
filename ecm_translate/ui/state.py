@@ -9,6 +9,7 @@ from typing import Optional, List
 from enum import Enum
 
 from ecm_translate.models.types import TranslationDirection, FileInfo, TextTranslationResult, HistoryEntry
+from ecm_translate.storage.history_db import HistoryDB, get_default_db_path
 
 
 class Tab(Enum):
@@ -31,6 +32,7 @@ class AppState:
     """
     Application state.
     Single source of truth for UI state.
+    History is persisted to local SQLite database.
     """
     # Current tab
     current_tab: Tab = Tab.TEXT
@@ -60,10 +62,28 @@ class AppState:
     copilot_connecting: bool = False
     copilot_error: str = ""
 
-    # Translation history
+    # Translation history (in-memory cache, backed by SQLite)
     history: List[HistoryEntry] = field(default_factory=list)
     history_drawer_open: bool = False
     max_history_entries: int = 50
+
+    # History database (initialized after dataclass creation)
+    _history_db: Optional[HistoryDB] = field(default=None, repr=False)
+
+    def __post_init__(self):
+        """Initialize history database and load recent entries"""
+        self._init_history_db()
+
+    def _init_history_db(self):
+        """Initialize history database"""
+        try:
+            self._history_db = HistoryDB(get_default_db_path())
+            # Load recent history from database
+            self.history = self._history_db.get_recent(self.max_history_entries)
+        except Exception as e:
+            print(f"Warning: Failed to initialize history database: {e}")
+            self._history_db = None
+            self.history = []
 
     def swap_direction(self) -> None:
         """Swap translation direction"""
@@ -121,15 +141,42 @@ class AppState:
         return False
 
     def add_to_history(self, entry: HistoryEntry) -> None:
-        """Add entry to history (most recent first)"""
+        """Add entry to history (most recent first), persisted to SQLite"""
+        # Add to database first
+        if self._history_db:
+            try:
+                self._history_db.add(entry)
+                # Cleanup old entries periodically (keep max 500 in DB)
+                if len(self.history) >= self.max_history_entries:
+                    self._history_db.cleanup_old_entries(500)
+            except Exception as e:
+                print(f"Warning: Failed to save history: {e}")
+
+        # Update in-memory cache
         self.history.insert(0, entry)
-        # Keep only max_history_entries
+        # Keep only max_history_entries in memory
         if len(self.history) > self.max_history_entries:
             self.history = self.history[:self.max_history_entries]
 
     def clear_history(self) -> None:
-        """Clear all history"""
+        """Clear all history from memory and database"""
+        # Clear database
+        if self._history_db:
+            try:
+                self._history_db.clear_all()
+            except Exception as e:
+                print(f"Warning: Failed to clear history database: {e}")
+
+        # Clear in-memory cache
         self.history = []
+
+    def reload_history(self) -> None:
+        """Reload history from database"""
+        if self._history_db:
+            try:
+                self.history = self._history_db.get_recent(self.max_history_entries)
+            except Exception as e:
+                print(f"Warning: Failed to reload history: {e}")
 
     def toggle_history_drawer(self) -> None:
         """Toggle history drawer visibility"""

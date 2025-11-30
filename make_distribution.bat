@@ -17,15 +17,15 @@ echo [1/5] Checking required files...
 set MISSING_FILES=0
 
 if not exist ".venv" (
-    echo [ERROR] .venv directory not found. Run setup.bat first.
+    echo [ERROR] .venv directory not found. Run install_deps.bat first.
     set MISSING_FILES=1
 )
 if not exist ".uv-python" (
-    echo [ERROR] .uv-python directory not found. Run setup.bat first.
+    echo [ERROR] .uv-python directory not found. Run install_deps.bat first.
     set MISSING_FILES=1
 )
 if not exist ".playwright-browsers" (
-    echo [ERROR] .playwright-browsers directory not found. Run setup.bat first.
+    echo [ERROR] .playwright-browsers directory not found. Run install_deps.bat first.
     set MISSING_FILES=1
 )
 if not exist "app.py" (
@@ -39,7 +39,7 @@ if not exist "yakulingo" (
 
 if !MISSING_FILES! equ 1 (
     echo.
-    echo [ERROR] Missing required files. Please run setup.bat first.
+    echo [ERROR] Missing required files. Please run install_deps.bat first.
     pause
     exit /b 1
 )

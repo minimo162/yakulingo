@@ -375,9 +375,19 @@ class YakuLingoApp:
             source_text = self.state.source_text
             translation = self.state.text_result.options[0].text if self.state.text_result and self.state.text_result.options else ""
 
+            # Get prompts directory
+            prompts_dir = get_default_prompts_dir()
+
             if action_type == 'review':
                 # Review the original text (grammar, style check)
-                prompt = f"""以下の英文をレビューしてください。
+                prompt_file = prompts_dir / "text_review_en.txt"
+                if prompt_file.exists():
+                    prompt = prompt_file.read_text(encoding='utf-8')
+                    prompt = prompt.replace("{input_text}", source_text)
+                    prompt = prompt.replace("{translation}", translation)
+                else:
+                    # Fallback to inline prompt
+                    prompt = f"""以下の英文をレビューしてください。
 
 原文:
 {source_text}
@@ -397,7 +407,15 @@ class YakuLingoApp:
 
             elif action_type == 'question':
                 # Answer a question about the translation
-                prompt = f"""以下の翻訳について質問に答えてください。
+                prompt_file = prompts_dir / "text_question.txt"
+                if prompt_file.exists():
+                    prompt = prompt_file.read_text(encoding='utf-8')
+                    prompt = prompt.replace("{input_text}", source_text)
+                    prompt = prompt.replace("{translation}", translation)
+                    prompt = prompt.replace("{question}", content)
+                else:
+                    # Fallback to inline prompt
+                    prompt = f"""以下の翻訳について質問に答えてください。
 
 原文:
 {source_text}
@@ -414,7 +432,15 @@ class YakuLingoApp:
 
             elif action_type == 'reply':
                 # Create a reply in the original language
-                prompt = f"""以下の原文に対する返信を作成してください。
+                prompt_file = prompts_dir / "text_reply_email.txt"
+                if prompt_file.exists():
+                    prompt = prompt_file.read_text(encoding='utf-8')
+                    prompt = prompt.replace("{input_text}", source_text)
+                    prompt = prompt.replace("{translation}", translation)
+                    prompt = prompt.replace("{reply_intent}", content)
+                else:
+                    # Fallback to inline prompt
+                    prompt = f"""以下の原文に対する返信を作成してください。
 
 原文:
 {source_text}

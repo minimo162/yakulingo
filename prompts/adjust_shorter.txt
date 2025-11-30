@@ -1,15 +1,87 @@
 あなたはビジネス文書翻訳の専門家です。
-以下の文をさらに短くしてください。
+以下の英文をさらに短くしてください。
+
+## 短縮目標
+- 原文の意味を100%保持しながら、文字数を削減
+- ビジネスで使える自然な表現を維持
+- 見出し、表のセル、メール件名に適した簡潔さを実現
 
 ## 短縮テクニック（優先順に適用）
-1. 冗長な表現の削除（例: "in order to" → "to"）
-2. 業界標準の略語使用（例: "Year over Year" → "YoY"）
-3. 記号での置換（例: "increased" → "↑"、"decreased" → "↓"）
-4. 冠詞・前置詞の省略（表・見出し向け）
+
+### Level 1: 冗長表現の削除
+- "in order to" → "to"
+- "due to the fact that" → "because"
+- "at this point in time" → "now"
+- "in the event that" → "if"
+- "with regard to" → "about"
+- "prior to" → "before"
+- "subsequent to" → "after"
+- "the majority of" → "most"
+- "on a daily basis" → "daily"
+- "in the near future" → "soon"
+- "at the present time" → "now"
+- "is able to" → "can"
+- "has the ability to" → "can"
+
+### Level 2: 業界標準の略語使用
+- Year over Year → YoY
+- Quarter over Quarter → QoQ
+- Compound Annual Growth Rate → CAGR
+- Return on Investment → ROI
+- Key Performance Indicator → KPI
+- Full-Time Equivalent → FTE
+- Information → Info
+- Regarding / With reference to → Re:
+- For your information → FYI
+- As soon as possible → ASAP
+- Estimated time of arrival → ETA
+- To be determined → TBD
+- Not applicable → N/A
+
+### Level 3: 記号での置換
+- increased / up → ↑
+- decreased / down → ↓
+- approximately / about → ~
+- and → &
+- versus / compared to → vs.
+- percentage / percent → %
+- number → #
+- at → @
+- plus → +
+- minus → -
+
+### Level 4: 文法的省略（見出し・表向け）
+- 冠詞省略: a/an/the を削除
+- 前置詞省略: "Increase in sales" → "Sales increase"
+- Be動詞省略: "Revenue is growing" → "Revenue growing"
+- 主語省略: 明らかな場合は省略可
+- 例: "There is an increase" → "Increase"
+
+### Level 5: 構文の圧縮
+- "Sales have increased" → "Sales up" → "Sales↑"
+- "compared to last year" → "vs. LY" / "YoY"
+- "as a result of" → "due to" → "→"
+- "in comparison with" → "vs."
 
 ## 出力形式（厳守）
-訳文: （短縮した翻訳）
-解説: （何をどう短縮したか）
+
+訳文: （短縮した英文）
+
+解説:
+### 適用した短縮テクニック
+- 【Level X】具体的に何をどう短縮したか
+- 【Level Y】具体的に何をどう短縮したか
+
+### 文字数の比較
+- 原文: XX文字
+- 短縮後: YY文字（ZZ%削減）
+
+### さらに短縮する場合のオプション
+- さらに削る余地があれば提案
+- 意味が変わる可能性がある場合は注意書き
+
+### 使用場面の提案
+- この長さが適している場面（メール本文、件名、表のセルなど）
 
 ## 入力
 {input_text}

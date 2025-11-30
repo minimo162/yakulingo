@@ -1,5 +1,5 @@
 # YakuLingo パッケージ作成スクリプト
-# PowerShell のみ使用（7-Zip不要）
+# 依存関係を含めた配布用パッケージを作成します
 
 $ErrorActionPreference = "Stop"
 
@@ -15,6 +15,31 @@ $projectDir = Split-Path -Parent $scriptDir
 $outputDir = Join-Path $scriptDir "output"
 $tempDir = Join-Path $scriptDir "temp_package"
 
+# 依存関係フォルダの確認
+$requiredDeps = @(".venv", ".uv-python", ".playwright-browsers")
+$missingDeps = @()
+
+foreach ($dep in $requiredDeps) {
+    $depPath = Join-Path $projectDir $dep
+    if (-not (Test-Path $depPath)) {
+        $missingDeps += $dep
+    }
+}
+
+if ($missingDeps.Count -gt 0) {
+    Write-Host "[ERROR] 以下の依存関係フォルダが見つかりません:" -ForegroundColor Red
+    foreach ($dep in $missingDeps) {
+        Write-Host "  - $dep" -ForegroundColor Red
+    }
+    Write-Host ""
+    Write-Host "先に setup.bat を実行して依存関係を取得してください。"
+    Write-Host ""
+    Read-Host "Enterキーで終了"
+    exit 1
+}
+
+Write-Host "[OK] 依存関係フォルダを確認しました"
+
 # 出力ディレクトリ作成
 if (-not (Test-Path $outputDir)) {
     New-Item -ItemType Directory -Path $outputDir | Out-Null
@@ -26,23 +51,23 @@ if (Test-Path $tempDir) {
 }
 New-Item -ItemType Directory -Path $tempDir | Out-Null
 
-Write-Host "[1/3] ファイルをコピー中..."
+Write-Host ""
+Write-Host "[1/4] アプリファイルをコピー中..."
 
-# コピー対象ファイル
+# コピー対象ファイル（setup.bat は不要）
 $files = @(
     "app.py",
     "pyproject.toml",
     "requirements.txt",
     "glossary.csv",
-    "setup.bat",
     "setup_shortcut.bat",
     "setup_shortcut.ps1",
     "remove.bat",
     "remove.ps1"
 )
 
-# コピー対象フォルダ
-$folders = @(
+# コピー対象フォルダ（アプリ）
+$appFolders = @(
     "ecm_translate",
     "prompts",
     "config"
@@ -62,17 +87,28 @@ if (Test-Path $runBatSource) {
     Copy-Item $runBatSource (Join-Path $tempDir "run.bat") -Force
 }
 
-# フォルダをコピー
-foreach ($folder in $folders) {
+# アプリフォルダをコピー
+foreach ($folder in $appFolders) {
     $source = Join-Path $projectDir $folder
     if (Test-Path $source) {
         Copy-Item $source $tempDir -Recurse -Force
     }
 }
 
-Write-Host "[OK] ファイルコピー完了"
+Write-Host "[OK] アプリファイルコピー完了"
 
-Write-Host "[2/3] ZIP作成中..."
+Write-Host "[2/4] 依存関係をコピー中（時間がかかります）..."
+
+# 依存関係フォルダをコピー
+foreach ($dep in $requiredDeps) {
+    $source = Join-Path $projectDir $dep
+    Write-Host "  コピー中: $dep ..."
+    Copy-Item $source $tempDir -Recurse -Force
+}
+
+Write-Host "[OK] 依存関係コピー完了"
+
+Write-Host "[3/4] ZIP作成中（時間がかかります）..."
 
 # 出力ファイル名
 $zipPath = Join-Path $outputDir "YakuLingo.zip"
@@ -87,7 +123,7 @@ Compress-Archive -Path "$tempDir\*" -DestinationPath $zipPath -CompressionLevel 
 
 Write-Host "[OK] ZIP作成完了"
 
-Write-Host "[3/3] クリーンアップ中..."
+Write-Host "[4/4] クリーンアップ中..."
 
 # 一時フォルダ削除
 Remove-Item -Path $tempDir -Recurse -Force
@@ -108,8 +144,9 @@ Write-Host "サイズ: $zipSizeStr"
 Write-Host ""
 Write-Host "配布方法:"
 Write-Host "  1. YakuLingo.zip をユーザーに送る"
-Write-Host "  2. ユーザーは展開後 setup_shortcut.bat を実行（ショートカット作成）"
-Write-Host "     または ★run.bat を直接実行（ショートカット不要の場合）"
+Write-Host "  2. ユーザーは展開して run.bat を実行するだけ"
+Write-Host ""
+Write-Host "  ※ ショートカットを作成したい場合は setup_shortcut.bat を実行"
 Write-Host ""
 
 Read-Host "Enterキーで終了"

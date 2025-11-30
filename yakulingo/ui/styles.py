@@ -228,6 +228,11 @@ body {
     color: var(--md-sys-color-on-primary-container);
 }
 
+.status-indicator.login-required {
+    background: #FFF3E0;
+    color: #E65100;
+}
+
 .status-dot {
     width: 8px;
     height: 8px;
@@ -241,6 +246,11 @@ body {
 
 .status-dot.connecting {
     background: var(--md-sys-color-primary);
+    animation: pulse 1.5s ease infinite;
+}
+
+.status-dot.login-required {
+    background: #FF9800;
     animation: pulse 1.5s ease infinite;
 }
 

@@ -50,23 +50,44 @@ class YakuLingoApp:
             return
 
         self.state.copilot_connecting = True
+        self.state.copilot_login_required = False
         if not silent:
             self._refresh_status()
 
+        login_required_notified = False
+
+        def on_login_required():
+            """Callback when login is required"""
+            nonlocal login_required_notified
+            login_required_notified = True
+            self.state.copilot_login_required = True
+            self._refresh_status()
+            # UI notification will be shown after thread completes
+
         try:
             success = await asyncio.to_thread(
-                lambda: self.copilot.connect(lambda m: None)
+                lambda: self.copilot.connect(
+                    on_progress=lambda m: None,
+                    on_login_required=on_login_required,
+                    wait_for_login=True,
+                    login_timeout=300,  # 5 minutes
+                )
             )
 
             if success:
                 self.state.copilot_connected = True
+                self.state.copilot_login_required = False
                 self.translation_service = TranslationService(
                     self.copilot, self.settings, get_default_prompts_dir()
                 )
                 if not silent:
                     ui.notify('Ready', type='positive')
             else:
-                if not silent:
+                if login_required_notified and not self.state.copilot_connected:
+                    # Login was required but timed out
+                    if not silent:
+                        ui.notify('ログインがタイムアウトしました', type='warning')
+                elif not silent:
                     ui.notify('Connection failed', type='negative')
 
         except Exception as e:
@@ -81,7 +102,7 @@ class YakuLingoApp:
     async def preconnect_copilot(self):
         """Pre-establish Copilot connection in background."""
         await asyncio.sleep(0.5)
-        await self.connect_copilot(silent=True)
+        await self.connect_copilot(silent=False)  # Show login notification if needed
 
     async def check_for_updates(self):
         """Check for updates in background."""
@@ -146,6 +167,10 @@ class YakuLingoApp:
                 with ui.element('div').classes('status-indicator connected'):
                     ui.element('div').classes('status-dot connected')
                     ui.label('Ready')
+            elif self.state.copilot_login_required:
+                with ui.element('div').classes('status-indicator login-required'):
+                    ui.element('div').classes('status-dot login-required')
+                    ui.label('ログインしてください')
             elif self.state.copilot_connecting:
                 with ui.element('div').classes('status-indicator connecting'):
                     ui.element('div').classes('status-dot connecting')

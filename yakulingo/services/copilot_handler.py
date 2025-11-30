@@ -30,6 +30,14 @@ def _get_playwright():
     return _playwright, _sync_playwright
 
 
+class ConnectionState:
+    """Connection state constants"""
+    READY = 'ready'              # チャットUI表示済み、使用可能
+    LOGIN_REQUIRED = 'login_required'  # ログインが必要
+    LOADING = 'loading'          # 読み込み中
+    ERROR = 'error'              # エラー
+
+
 class CopilotHandler:
     """
     Handles communication with M365 Copilot via Playwright.
@@ -43,6 +51,7 @@ class CopilotHandler:
         self._context = None
         self._page = None
         self._connected = False
+        self._login_required = False  # ログインが必要な状態かどうか
         self.cdp_port = 9333  # Dedicated port for translator
         self.profile_dir = None
         self.edge_process = None
@@ -51,6 +60,11 @@ class CopilotHandler:
     def is_connected(self) -> bool:
         """Check if connected to Copilot"""
         return self._connected
+
+    @property
+    def login_required(self) -> bool:
+        """Check if login is required"""
+        return self._login_required
 
     def _find_edge_exe(self) -> Optional[str]:
         """Find Edge executable"""
@@ -156,22 +170,31 @@ class CopilotHandler:
     def connect(
         self,
         on_progress: Optional[Callable[[str], None]] = None,
+        on_login_required: Optional[Callable[[], None]] = None,
+        wait_for_login: bool = True,
+        login_timeout: int = 300,
     ) -> bool:
         """
         Connect to Copilot.
         Launches browser and waits for ready state.
+        If login is required, brings Edge to foreground and optionally waits.
 
         NOTE: Called automatically on app startup (background task).
         UI shows "Connecting to Copilot..." until connected.
 
         Args:
             on_progress: Callback for connection status updates
+            on_login_required: Callback when login is required (Edge brought to foreground)
+            wait_for_login: If True, wait for user to complete login
+            login_timeout: Timeout for waiting for login (seconds)
 
         Returns:
             True if connected successfully
         """
         if self._connected:
             return True
+
+        self._login_required = False
 
         def report(msg: str):
             if on_progress:
@@ -216,20 +239,159 @@ class CopilotHandler:
                 copilot_page.goto(self.COPILOT_URL)
 
             self._page = copilot_page
-            self._page.bring_to_front()
 
-            # Wait for Copilot to be ready
-            report("Waiting for Copilot ready...")
-            self._wait_for_copilot_ready()
+            # Check Copilot state (login required?)
+            report("Checking Copilot state...")
+            state = self._check_copilot_state(timeout=5)
 
-            self._connected = True
-            report("Connected to Copilot")
-            return True
+            if state == ConnectionState.READY:
+                # Already logged in, ready to use
+                self._connected = True
+                self._login_required = False
+                report("Connected to Copilot")
+                return True
+
+            elif state == ConnectionState.LOGIN_REQUIRED:
+                # Login required - bring Edge to foreground
+                self._login_required = True
+                report("Login required - please sign in to Copilot")
+                self._page.bring_to_front()
+
+                # Notify caller that login is required
+                if on_login_required:
+                    on_login_required()
+
+                if wait_for_login:
+                    # Wait for user to complete login
+                    report("Waiting for login...")
+                    if self._wait_for_login(timeout=login_timeout):
+                        self._connected = True
+                        self._login_required = False
+                        report("Connected to Copilot")
+                        return True
+                    else:
+                        report("Login timeout")
+                        return False
+                else:
+                    # Don't wait, return False but keep browser open
+                    return False
+            else:
+                # Error state
+                report("Failed to determine Copilot state")
+                return False
 
         except Exception as e:
             report(f"Connection failed: {e}")
             self._connected = False
             return False
+
+    def _wait_for_login(self, timeout: int = 300) -> bool:
+        """
+        Wait for user to complete login.
+        Polls for chat UI to appear.
+
+        Args:
+            timeout: Maximum wait time in seconds
+
+        Returns:
+            True if login completed successfully
+        """
+        start_time = time.time()
+        check_interval = 2  # Check every 2 seconds
+
+        while time.time() - start_time < timeout:
+            state = self._check_copilot_state(timeout=3)
+            if state == ConnectionState.READY:
+                self._login_required = False
+                return True
+
+            time.sleep(check_interval)
+
+        return False
+
+    def check_and_wait_for_ready(self, timeout: int = 60) -> bool:
+        """
+        Check if Copilot is ready, wait if login is in progress.
+        Can be called to re-check after login notification.
+
+        Returns:
+            True if ready, False if still needs login or error
+        """
+        if self._connected:
+            return True
+
+        state = self._check_copilot_state(timeout=5)
+
+        if state == ConnectionState.READY:
+            self._connected = True
+            self._login_required = False
+            return True
+
+        if state == ConnectionState.LOGIN_REQUIRED:
+            # Still need login, bring to foreground again
+            self._login_required = True
+            self.bring_to_foreground()
+            return False
+
+        return False
+
+    def _check_copilot_state(self, timeout: int = 5) -> str:
+        """
+        Copilotの状態を検出（逆検出方式）
+
+        チャットUIが表示されているかどうかで判断する。
+        ログインページのURL検出に依存しないため、URLが変更されても動作する。
+
+        Args:
+            timeout: チャットUI検出のタイムアウト（秒）
+
+        Returns:
+            ConnectionState.READY - チャットUI表示済み、使用可能
+            ConnectionState.LOGIN_REQUIRED - ログインが必要（リダイレクトされた or チャットUIなし）
+            ConnectionState.LOADING - まだ読み込み中
+            ConnectionState.ERROR - その他のエラー
+        """
+        if not self._page:
+            return ConnectionState.ERROR
+
+        try:
+            current_url = self._page.url
+
+            # 1. Copilot URLにいるか確認
+            if 'm365.cloud.microsoft' not in current_url:
+                # リダイレクトされた = ログインが必要
+                return ConnectionState.LOGIN_REQUIRED
+
+            # 2. チャットUIが存在するか確認（短いタイムアウト）
+            chat_selectors = [
+                'div[data-testid="chat-input"]',
+                'textarea[placeholder*="message"]',
+                'div[contenteditable="true"]',
+            ]
+
+            for selector in chat_selectors:
+                try:
+                    element = self._page.wait_for_selector(selector, timeout=timeout * 1000)
+                    if element:
+                        return ConnectionState.READY
+                except Exception:
+                    continue
+
+            # 3. Copilot URLにいるがチャットUIがない
+            # = 埋め込みログイン画面、または読み込み中
+            return ConnectionState.LOGIN_REQUIRED
+
+        except Exception as e:
+            print(f"Error checking Copilot state: {e}")
+            return ConnectionState.ERROR
+
+    def bring_to_foreground(self) -> None:
+        """Edgeウィンドウを前面に表示"""
+        if self._page:
+            try:
+                self._page.bring_to_front()
+            except Exception:
+                pass
 
     def _wait_for_copilot_ready(self, timeout: int = 60):
         """Wait for Copilot chat interface to be ready"""

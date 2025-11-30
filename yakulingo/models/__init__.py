@@ -10,6 +10,9 @@ from .types import (
     FileInfo,
     TranslationProgress,
     TranslationResult,
+    TranslationOption,
+    TextTranslationResult,
+    HistoryEntry,
     ProgressCallback,
 )
 
@@ -20,5 +23,8 @@ __all__ = [
     'FileInfo',
     'TranslationProgress',
     'TranslationResult',
+    'TranslationOption',
+    'TextTranslationResult',
+    'HistoryEntry',
     'ProgressCallback',
 ]

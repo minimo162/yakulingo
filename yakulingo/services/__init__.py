@@ -6,7 +6,7 @@ Service layer for YakuLingo.
 from .copilot_handler import CopilotHandler
 from .prompt_builder import PromptBuilder
 from .translation_service import TranslationService, BatchTranslator
-from .updater import AutoUpdater, UpdateStatus, UpdateResult, ProxyConfig
+from .updater import AutoUpdater, UpdateStatus, UpdateResult, ProxyConfig, VersionInfo
 
 __all__ = [
     'CopilotHandler',
@@ -17,4 +17,5 @@ __all__ = [
     'UpdateStatus',
     'UpdateResult',
     'ProxyConfig',
+    'VersionInfo',
 ]

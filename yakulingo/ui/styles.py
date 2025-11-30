@@ -35,12 +35,13 @@ COMPLETE_CSS = """
     --md-sys-color-success-container: #C8E6C9;
     --md-sys-color-on-success-container: #1B5E20;
 
-    /* Shape - more rounded corners */
+    /* Shape - Nani-inspired extra rounded corners */
     --md-sys-shape-corner-full: 9999px;
-    --md-sys-shape-corner-xl: 24px;
-    --md-sys-shape-corner-large: 16px;
-    --md-sys-shape-corner-medium: 12px;
-    --md-sys-shape-corner-small: 8px;
+    --md-sys-shape-corner-3xl: 32px;   /* Extra large cards */
+    --md-sys-shape-corner-xl: 24px;    /* Main cards */
+    --md-sys-shape-corner-large: 20px; /* Cards, dialogs */
+    --md-sys-shape-corner-medium: 16px; /* Buttons, inputs */
+    --md-sys-shape-corner-small: 12px;  /* Chips, small elements */
 
     /* Motion - M3 standard easing */
     --md-sys-motion-easing-standard: cubic-bezier(0.2, 0, 0, 1);
@@ -48,9 +49,9 @@ COMPLETE_CSS = """
     --md-sys-motion-duration-short: 200ms;
     --md-sys-motion-duration-medium: 300ms;
 
-    /* Elevation */
-    --md-sys-elevation-1: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06);
-    --md-sys-elevation-2: 0 4px 6px rgba(0,0,0,0.1), 0 2px 4px rgba(0,0,0,0.06);
+    /* Elevation - softer, more subtle shadows */
+    --md-sys-elevation-1: 0 2px 8px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.03);
+    --md-sys-elevation-2: 0 4px 12px rgba(0,0,0,0.06), 0 2px 4px rgba(0,0,0,0.04);
 
     /* Sidebar */
     --sidebar-width: 280px;
@@ -113,14 +114,15 @@ body {
 }
 
 .app-logo-icon {
-    width: 2.25rem;
-    height: 2.25rem;
-    border-radius: var(--md-sys-shape-corner-small);
-    background: var(--md-sys-color-primary);
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: var(--md-sys-shape-corner-medium);
+    background: linear-gradient(135deg, var(--md-sys-color-primary) 0%, #D85000 100%);
     display: flex;
     align-items: center;
     justify-content: center;
     color: var(--md-sys-color-on-primary);
+    box-shadow: 0 2px 8px rgba(192, 64, 0, 0.25);
 }
 
 /* === Navigation === */
@@ -135,8 +137,8 @@ body {
     display: flex;
     align-items: center;
     gap: 0.75rem;
-    padding: 0.625rem 0.75rem;
-    border-radius: var(--md-sys-shape-corner-medium);
+    padding: 0.75rem 1rem;
+    border-radius: var(--md-sys-shape-corner-large);
     font-size: 0.875rem;
     font-weight: 500;
     color: var(--md-sys-color-on-surface-variant);
@@ -170,8 +172,8 @@ body {
 
 .history-item {
     display: flex;
-    padding: 0.5rem 0.625rem;
-    border-radius: var(--md-sys-shape-corner-small);
+    padding: 0.625rem 0.75rem;
+    border-radius: var(--md-sys-shape-corner-medium);
     cursor: pointer;
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
     position: relative;
@@ -244,15 +246,15 @@ body {
 /* === Main Card Container (Nani-style) === */
 .main-card {
     background: var(--md-sys-color-surface);
-    border-radius: var(--md-sys-shape-corner-xl);
+    border-radius: var(--md-sys-shape-corner-3xl);
     box-shadow: var(--md-sys-elevation-1);
-    padding: 0.375rem;
+    padding: 0.5rem;
     overflow: hidden;
 }
 
 .main-card-inner {
     background: var(--md-sys-color-surface);
-    border-radius: calc(var(--md-sys-shape-corner-xl) - 0.375rem);
+    border-radius: calc(var(--md-sys-shape-corner-3xl) - 0.5rem);
     border: 1px solid var(--md-sys-color-outline-variant);
 }
 
@@ -260,14 +262,14 @@ body {
 .text-box {
     background: var(--md-sys-color-surface);
     border: 1px solid var(--md-sys-color-outline-variant);
-    border-radius: var(--md-sys-shape-corner-xl);
+    border-radius: var(--md-sys-shape-corner-3xl);
     overflow: hidden;
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
 }
 
 .text-box:focus-within {
     border-color: var(--md-sys-color-primary);
-    box-shadow: 0 0 0 1px var(--md-sys-color-primary);
+    box-shadow: 0 0 0 2px rgba(192, 64, 0, 0.15);
 }
 
 /* === Translate Button (Nani-style) === */
@@ -275,10 +277,10 @@ body {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 0.375rem;
+    gap: 0.5rem;
     background: var(--md-sys-color-on-surface);
     color: var(--md-sys-color-surface);
-    padding: 0.75rem 1.25rem;
+    padding: 0.875rem 1.5rem;
     border-radius: var(--md-sys-shape-corner-full);
     font-size: 0.9375rem;
     font-weight: 600;
@@ -286,15 +288,19 @@ body {
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
     border: none;
     cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
 }
 
 .translate-btn:hover:not(:disabled) {
     background: #374151;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
 .translate-btn:disabled {
     background: var(--md-sys-color-outline);
     cursor: default;
+    box-shadow: none;
 }
 
 /* === Keycap Style Shortcut Keys === */
@@ -308,17 +314,17 @@ body {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 1.5rem;
-    height: 1.375rem;
-    padding: 0 0.4rem;
-    background: rgba(255, 255, 255, 0.18);
-    border: 1px solid rgba(255, 255, 255, 0.25);
-    border-radius: 4px;
+    min-width: 1.625rem;
+    height: 1.5rem;
+    padding: 0 0.5rem;
+    background: rgba(255, 255, 255, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 6px;
     font-family: ui-monospace, monospace;
     font-size: 0.6875rem;  /* 11px - improved readability */
     font-weight: 500;
     color: rgba(255, 255, 255, 0.95);
-    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.15);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
 .keycap-plus {
@@ -330,9 +336,9 @@ body {
 /* === M3 Outlined Button === */
 .btn-outline {
     background: transparent;
-    border: 1px solid var(--md-sys-color-outline);
-    color: var(--md-sys-color-primary);
-    padding: 0.5rem 1.25rem;
+    border: 1.5px solid var(--md-sys-color-outline-variant);
+    color: var(--md-sys-color-on-surface);
+    padding: 0.625rem 1.25rem;
     border-radius: var(--md-sys-shape-corner-full);
     font-size: 0.875rem;
     font-weight: 500;
@@ -340,7 +346,8 @@ body {
 }
 
 .btn-outline:hover {
-    background: var(--md-sys-color-primary-container);
+    background: var(--md-sys-color-surface-container);
+    border-color: var(--md-sys-color-outline);
 }
 
 /* === M3 Filled Button (Primary) === */
@@ -348,39 +355,45 @@ body {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 0.375rem;
+    gap: 0.5rem;
     background: var(--md-sys-color-on-surface);
     color: var(--md-sys-color-surface);
-    padding: 0.75rem 1.25rem;
+    padding: 0.875rem 1.5rem;
     border-radius: var(--md-sys-shape-corner-full);
     font-size: 0.9375rem;
     font-weight: 600;
     letter-spacing: -0.01em;
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
 }
 
 .btn-primary:hover:not(:disabled) {
     background: #374151;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
 .btn-primary:disabled {
     background: var(--md-sys-color-outline);
     cursor: default;
+    box-shadow: none;
 }
 
 /* === Drop Zone === */
 .drop-zone {
-    border: 1px dashed var(--md-sys-color-outline);
-    border-radius: var(--md-sys-shape-corner-large);
-    padding: 2.5rem 1.5rem;
+    border: 2px dashed var(--md-sys-color-outline-variant);
+    border-radius: var(--md-sys-shape-corner-xl);
+    padding: 3rem 2rem;
     text-align: center;
     cursor: pointer;
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+    background: var(--md-sys-color-surface);
 }
 
 .drop-zone:hover {
     border-color: var(--md-sys-color-primary);
     background: var(--md-sys-color-primary-container);
+    transform: scale(1.01);
 }
 
 .drop-zone-icon {
@@ -404,8 +417,8 @@ body {
 /* === M3 Card === */
 .file-card {
     background: var(--md-sys-color-surface-container);
-    border-radius: var(--md-sys-shape-corner-medium);
-    padding: 1rem;
+    border-radius: var(--md-sys-shape-corner-large);
+    padding: 1.25rem;
 }
 
 .file-card.success {
@@ -414,25 +427,25 @@ body {
 
 /* === M3 Progress Indicator === */
 .progress-track {
-    height: 4px;
+    height: 6px;
     background: var(--md-sys-color-surface-container-high);
-    border-radius: 2px;
+    border-radius: var(--md-sys-shape-corner-full);
     overflow: hidden;
 }
 
 .progress-bar {
     height: 100%;
-    background: var(--md-sys-color-primary);
-    border-radius: 2px;
+    background: linear-gradient(90deg, var(--md-sys-color-primary) 0%, #D85000 100%);
+    border-radius: var(--md-sys-shape-corner-full);
     transition: width var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-standard);
 }
 
 /* === Chip === */
 .chip {
     display: inline-block;
-    padding: 0.25rem 0.5rem;
+    padding: 0.375rem 0.75rem;
     background: var(--md-sys-color-surface-container-high);
-    border-radius: var(--md-sys-shape-corner-small);
+    border-radius: var(--md-sys-shape-corner-full);
     font-size: 0.75rem;  /* 12px - improved readability */
     color: var(--md-sys-color-on-surface-variant);
 }
@@ -446,14 +459,15 @@ body {
 .option-card {
     background: var(--md-sys-color-surface);
     border: 1px solid var(--md-sys-color-outline-variant);
-    border-radius: var(--md-sys-shape-corner-large);
-    padding: 1rem;
+    border-radius: var(--md-sys-shape-corner-xl);
+    padding: 1.25rem;
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
 }
 
 .option-card:hover {
     border-color: var(--md-sys-color-outline);
-    box-shadow: var(--md-sys-elevation-1);
+    box-shadow: var(--md-sys-elevation-2);
+    transform: translateY(-2px);
 }
 
 .option-text {
@@ -474,12 +488,13 @@ body {
 /* === Result Section === */
 .result-section {
     background: var(--md-sys-color-surface);
-    border-radius: var(--md-sys-shape-corner-xl);
+    border-radius: var(--md-sys-shape-corner-3xl);
     box-shadow: var(--md-sys-elevation-1);
+    overflow: hidden;
 }
 
 .result-header {
-    padding: 0.75rem 1rem;
+    padding: 1rem 1.25rem;
     border-bottom: 1px solid var(--md-sys-color-outline-variant);
     font-size: 0.8125rem;  /* 13px - improved readability */
     font-weight: 600;
@@ -530,9 +545,9 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 3rem;
-    height: 3rem;
-    border-radius: var(--md-sys-shape-corner-medium);
+    width: 3.5rem;
+    height: 3.5rem;
+    border-radius: var(--md-sys-shape-corner-large);
     flex-shrink: 0;
 }
 
@@ -596,11 +611,13 @@ body {
 
 /* === Dialog === */
 .q-card {
-    border-radius: var(--md-sys-shape-corner-large) !important;
+    border-radius: var(--md-sys-shape-corner-xl) !important;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12) !important;
 }
 
 .q-dialog__backdrop {
-    background: rgba(0, 0, 0, 0.32) !important;
+    background: rgba(0, 0, 0, 0.25) !important;
+    backdrop-filter: blur(4px);
 }
 
 /* === Truncate === */
@@ -655,8 +672,8 @@ body {
 .jp-result-card {
     background: var(--md-sys-color-surface);
     border: 1px solid var(--md-sys-color-outline-variant);
-    border-radius: var(--md-sys-shape-corner-large);
-    padding: 1.25rem;
+    border-radius: var(--md-sys-shape-corner-xl);
+    padding: 1.5rem;
 }
 
 .jp-result-text {
@@ -669,21 +686,21 @@ body {
 .explanation-card {
     background: var(--md-sys-color-surface-container);
     border: none;
-    border-radius: var(--md-sys-shape-corner-medium);
-    padding: 1rem;
+    border-radius: var(--md-sys-shape-corner-large);
+    padding: 1.25rem;
 }
 
 /* === Follow-up Actions === */
 .follow-up-section {
-    padding: 0.5rem 0;
+    padding: 0.75rem 0;
 }
 
 .follow-up-btn {
     font-size: 0.8125rem !important;
-    padding: 0.5rem 0.875rem !important;
+    padding: 0.625rem 1rem !important;
     border-color: var(--md-sys-color-outline-variant) !important;
     color: var(--md-sys-color-on-surface-variant) !important;
-    border-radius: var(--md-sys-shape-corner-medium) !important;
+    border-radius: var(--md-sys-shape-corner-full) !important;
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard) !important;
 }
 
@@ -691,6 +708,7 @@ body {
     background: var(--md-sys-color-surface-container-high) !important;
     border-color: var(--md-sys-color-outline) !important;
     color: var(--md-sys-color-on-surface) !important;
+    transform: translateY(-1px) !important;
 }
 
 /* === Additional Result Cards (for follow-up responses) === */

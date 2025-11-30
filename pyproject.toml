@@ -19,13 +19,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Windows-specific dependencies
+# Windows-specific dependencies (currently unused - reserved for future features)
 windows = [
     "pywin32>=306",
-    "keyboard>=0.13.5",
-    "pystray>=0.19.5",
-    "customtkinter>=5.2.0",
-    "tkinterdnd2>=0.3.0",
 ]
 # OCR support (heavy dependencies)
 ocr = [

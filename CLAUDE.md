@@ -304,7 +304,7 @@ The `CopilotHandler` class automates Microsoft Edge browser:
 | `numpy>=1.24.0` | Numerical operations |
 
 ### Optional Dependencies
-- `[windows]`: pywin32, keyboard, pystray, customtkinter, tkinterdnd2 (Windows integration)
+- `[windows]`: pywin32 (Windows API access - reserved for future features)
 - `[ocr]`: yomitoku (PDF OCR with ML - heavy)
 - `[test]`: pytest, pytest-cov, pytest-asyncio
 

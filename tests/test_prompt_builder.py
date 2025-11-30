@@ -1,5 +1,5 @@
 # tests/test_prompt_builder.py
-"""Tests for ecm_translate.services.prompt_builder"""
+"""Tests for yakulingo.services.prompt_builder"""
 
 import sys
 import tempfile
@@ -9,7 +9,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Import prompt_builder directly (not through services __init__)
-from ecm_translate.services.prompt_builder import (
+from yakulingo.services.prompt_builder import (
     PromptBuilder,
     REFERENCE_INSTRUCTION,
     DEFAULT_UNIFIED_TEMPLATE,

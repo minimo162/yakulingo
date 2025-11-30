@@ -1,17 +1,17 @@
 # tests/test_translation_service.py
-"""Tests for ecm_translate.services.translation_service"""
+"""Tests for yakulingo.services.translation_service"""
 
 import pytest
 import tempfile
 from pathlib import Path
 from unittest.mock import Mock, MagicMock, patch
 
-from ecm_translate.models.types import (
+from yakulingo.models.types import (
     TranslationStatus,
     TextBlock,
 )
-from ecm_translate.config.settings import AppSettings
-from ecm_translate.services.translation_service import (
+from yakulingo.config.settings import AppSettings
+from yakulingo.services.translation_service import (
     BatchTranslator,
     TranslationService,
 )
@@ -606,7 +606,7 @@ class TestTranslationServiceGetFileInfo:
 
     def test_get_file_info_returns_info(self, service, sample_xlsx):
         """get_file_info returns FileInfo object"""
-        from ecm_translate.models.types import FileInfo, FileType
+        from yakulingo.models.types import FileInfo, FileType
 
         info = service.get_file_info(sample_xlsx)
 

@@ -32,8 +32,8 @@ if not exist "app.py" (
     echo [ERROR] app.py not found.
     set MISSING_FILES=1
 )
-if not exist "ecm_translate" (
-    echo [ERROR] ecm_translate directory not found.
+if not exist "yakulingo" (
+    echo [ERROR] yakulingo directory not found.
     set MISSING_FILES=1
 )
 
@@ -132,7 +132,7 @@ echo [INFO] Creating distribution archive...
 
 :: Build list of existing files
 set "FILE_LIST="
-for %%f in (".venv" ".uv-python" ".playwright-browsers" "app.py" "ecm_translate" "prompts" "glossary.csv" "pyproject.toml" "uv.toml" "★run.bat" "README.md" "DISTRIBUTION.md") do (
+for %%f in (".venv" ".uv-python" ".playwright-browsers" "app.py" "yakulingo" "prompts" "glossary.csv" "pyproject.toml" "uv.toml" "★run.bat" "README.md" "DISTRIBUTION.md") do (
     if exist "%%~f" set "FILE_LIST=!FILE_LIST! %%~f"
 )
 

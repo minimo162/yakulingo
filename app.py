@@ -13,7 +13,7 @@ from pathlib import Path
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
-from ecm_translate.ui.app import run_app
+from yakulingo.ui.app import run_app
 
 
 def main():

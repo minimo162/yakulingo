@@ -1,5 +1,5 @@
 # tests/test_word_processor.py
-"""Tests for ecm_translate.processors.word_processor"""
+"""Tests for yakulingo.processors.word_processor"""
 
 import pytest
 from pathlib import Path
@@ -7,8 +7,8 @@ from docx import Document
 from docx.shared import Pt
 from docx.enum.style import WD_STYLE_TYPE
 
-from ecm_translate.processors.word_processor import WordProcessor
-from ecm_translate.models.types import FileType
+from yakulingo.processors.word_processor import WordProcessor
+from yakulingo.models.types import FileType
 
 
 # --- Fixtures ---

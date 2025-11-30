@@ -7,8 +7,8 @@ import pytest
 import tempfile
 from pathlib import Path
 
-from ecm_translate.storage.history_db import HistoryDB, get_default_db_path
-from ecm_translate.models.types import (
+from yakulingo.storage.history_db import HistoryDB, get_default_db_path
+from yakulingo.models.types import (
     HistoryEntry,
     TextTranslationResult,
     TranslationOption,

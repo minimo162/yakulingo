@@ -9,14 +9,14 @@ from pathlib import Path
 from unittest.mock import Mock, MagicMock, patch
 import openpyxl
 
-from ecm_translate.models.types import (
+from yakulingo.models.types import (
     TranslationStatus,
     TextBlock,
 )
-from ecm_translate.config.settings import AppSettings
-from ecm_translate.services.translation_service import TranslationService, BatchTranslator
-from ecm_translate.services.copilot_handler import CopilotHandler
-from ecm_translate.services.prompt_builder import PromptBuilder
+from yakulingo.config.settings import AppSettings
+from yakulingo.services.translation_service import TranslationService, BatchTranslator
+from yakulingo.services.copilot_handler import CopilotHandler
+from yakulingo.services.prompt_builder import PromptBuilder
 
 
 # --- Fixtures ---

@@ -69,7 +69,7 @@ $files = @(
 
 # App folders to copy
 $appFolders = @(
-    "ecm_translate",
+    "yakulingo",
     "prompts",
     "config"
 )

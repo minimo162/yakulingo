@@ -9,7 +9,7 @@ from unittest.mock import Mock, MagicMock, patch, PropertyMock
 from pathlib import Path
 import socket
 
-from ecm_translate.services.copilot_handler import CopilotHandler
+from yakulingo.services.copilot_handler import CopilotHandler
 
 
 class TestCopilotHandlerEdgePath:
@@ -112,7 +112,7 @@ class TestCopilotHandlerConnectFlow:
         """connect() handles when Playwright is not available"""
         handler = CopilotHandler()
 
-        with patch('ecm_translate.services.copilot_handler._get_playwright') as mock_pw:
+        with patch('yakulingo.services.copilot_handler._get_playwright') as mock_pw:
             mock_pw.side_effect = ImportError("No module named 'playwright'")
 
             result = handler.connect()
@@ -125,7 +125,7 @@ class TestCopilotHandlerConnectFlow:
         handler = CopilotHandler()
 
         with patch.object(handler, '_is_port_in_use', return_value=True):
-            with patch('ecm_translate.services.copilot_handler._get_playwright') as mock_pw:
+            with patch('yakulingo.services.copilot_handler._get_playwright') as mock_pw:
                 mock_sync_playwright = Mock()
                 mock_playwright_instance = Mock()
                 mock_playwright_instance.chromium.connect_over_cdp.side_effect = Exception(

@@ -21,7 +21,7 @@ python app.py
 pytest
 
 # Run tests with coverage
-pytest --cov=ecm_translate --cov-report=term-missing
+pytest --cov=yakulingo --cov-report=term-missing
 
 # Run specific test file
 pytest tests/test_translation_service.py -v
@@ -41,7 +41,7 @@ playwright install chromium
 ```
 YakuLingo/
 ├── app.py                         # Entry point - launches NiceGUI app
-├── ecm_translate/                 # Main Python package
+├── yakulingo/                 # Main Python package
 │   ├── ui/                        # Presentation layer (NiceGUI)
 │   │   ├── app.py                 # YakuLingoApp main orchestrator
 │   │   ├── state.py               # AppState management
@@ -87,28 +87,28 @@ YakuLingo/
 
 | Layer | Location | Responsibility |
 |-------|----------|----------------|
-| **UI** | `ecm_translate/ui/` | NiceGUI components, M3 styling, state management, user interactions |
-| **Services** | `ecm_translate/services/` | Translation orchestration, Copilot communication, prompt building |
-| **Processors** | `ecm_translate/processors/` | File format handling, text extraction, translation application |
-| **Models** | `ecm_translate/models/` | Data types, enums, shared structures |
-| **Config** | `ecm_translate/config/` | Settings management, persistence |
+| **UI** | `yakulingo/ui/` | NiceGUI components, M3 styling, state management, user interactions |
+| **Services** | `yakulingo/services/` | Translation orchestration, Copilot communication, prompt building |
+| **Processors** | `yakulingo/processors/` | File format handling, text extraction, translation application |
+| **Models** | `yakulingo/models/` | Data types, enums, shared structures |
+| **Config** | `yakulingo/config/` | Settings management, persistence |
 
 ## Key Files to Understand
 
 | File | Purpose | Lines |
 |------|---------|-------|
-| `ecm_translate/ui/app.py` | Main application orchestrator, handles UI events and coordinates services | ~278 |
-| `ecm_translate/services/translation_service.py` | Coordinates file processors and batch translation | ~351 |
-| `ecm_translate/services/copilot_handler.py` | Browser automation for M365 Copilot | ~455 |
-| `ecm_translate/ui/styles.py` | M3 design tokens, CSS styling definitions | ~289 |
-| `ecm_translate/ui/state.py` | Application state management | ~119 |
-| `ecm_translate/models/types.py` | Core data types: TextBlock, FileInfo, TranslationProgress | ~118 |
-| `ecm_translate/processors/base.py` | Abstract base class for all file processors | ~97 |
+| `yakulingo/ui/app.py` | Main application orchestrator, handles UI events and coordinates services | ~278 |
+| `yakulingo/services/translation_service.py` | Coordinates file processors and batch translation | ~351 |
+| `yakulingo/services/copilot_handler.py` | Browser automation for M365 Copilot | ~455 |
+| `yakulingo/ui/styles.py` | M3 design tokens, CSS styling definitions | ~289 |
+| `yakulingo/ui/state.py` | Application state management | ~119 |
+| `yakulingo/models/types.py` | Core data types: TextBlock, FileInfo, TranslationProgress | ~118 |
+| `yakulingo/processors/base.py` | Abstract base class for all file processors | ~97 |
 
 ## Core Data Types
 
 ```python
-# Key enums (ecm_translate/models/types.py)
+# Key enums (yakulingo/models/types.py)
 TranslationDirection: JP_TO_EN, EN_TO_JP
 FileType: EXCEL, WORD, POWERPOINT, PDF
 TranslationStatus: PENDING, PROCESSING, COMPLETED, FAILED, CANCELLED
@@ -193,7 +193,7 @@ def sample_xlsx_path(temp_dir): ...
 ### Test Coverage
 ```bash
 # Run with coverage report
-pytest --cov=ecm_translate --cov-report=term-missing
+pytest --cov=yakulingo --cov-report=term-missing
 
 # Coverage excludes UI code (harder to test) and __init__.py files
 ```
@@ -261,7 +261,7 @@ The `CopilotHandler` class automates Microsoft Edge browser:
 ## Common Tasks for AI Assistants
 
 ### Adding a New File Processor
-1. Create new processor in `ecm_translate/processors/`
+1. Create new processor in `yakulingo/processors/`
 2. Extend `FileProcessor` abstract class
 3. Implement: `get_file_info()`, `extract_text_blocks()`, `apply_translations()`
 4. Register in `TranslationService.get_processor()`
@@ -269,16 +269,16 @@ The `CopilotHandler` class automates Microsoft Edge browser:
 6. Create corresponding test file in `tests/`
 
 ### Modifying Translation Logic
-1. Check `ecm_translate/services/translation_service.py` for orchestration
-2. Check `ecm_translate/processors/translators.py` for skip patterns
+1. Check `yakulingo/services/translation_service.py` for orchestration
+2. Check `yakulingo/processors/translators.py` for skip patterns
 3. Check prompt templates in `prompts/translate_*.txt`
 4. Update tests in `tests/test_translation_service.py`
 
 ### Adding UI Components
-1. Create component in `ecm_translate/ui/components/`
-2. Update state in `ecm_translate/ui/state.py` if needed
-3. Integrate in `ecm_translate/ui/app.py`
-4. Add styles in `ecm_translate/ui/styles.py` using M3 design tokens
+1. Create component in `yakulingo/ui/components/`
+2. Update state in `yakulingo/ui/state.py` if needed
+3. Integrate in `yakulingo/ui/app.py`
+4. Add styles in `yakulingo/ui/styles.py` using M3 design tokens
 
 ### Modifying Styles
 1. Use M3 design tokens defined in `styles.py` (`:root` CSS variables)

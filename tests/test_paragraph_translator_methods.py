@@ -6,7 +6,7 @@ These methods were identified as untested in the coverage analysis.
 
 import pytest
 from unittest.mock import Mock, MagicMock
-from ecm_translate.processors.translators import ParagraphTranslator
+from yakulingo.processors.translators import ParagraphTranslator
 
 
 class TestExtractParagraphText:

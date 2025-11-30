@@ -1,8 +1,8 @@
 # tests/test_translators.py
-"""Tests for ecm_translate.processors.translators"""
+"""Tests for yakulingo.processors.translators"""
 
 import pytest
-from ecm_translate.processors.translators import CellTranslator, ParagraphTranslator
+from yakulingo.processors.translators import CellTranslator, ParagraphTranslator
 
 
 class TestCellTranslator:

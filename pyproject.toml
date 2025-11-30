@@ -47,13 +47,13 @@ addopts = [
 ]
 
 # Coverage configuration (run with --cov to enable)
-# Example: pytest --cov=ecm_translate --cov-report=term-missing
+# Example: pytest --cov=yakulingo --cov-report=term-missing
 
 [tool.coverage.run]
-source = ["ecm_translate"]
+source = ["yakulingo"]
 branch = true
 omit = [
-    "ecm_translate/ui/*",  # UI code is harder to test
+    "yakulingo/ui/*",  # UI code is harder to test
     "*/__init__.py",
 ]
 

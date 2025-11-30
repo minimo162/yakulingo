@@ -320,8 +320,14 @@ def create_app() -> YakuLingoApp:
     return YakuLingoApp()
 
 
-def run_app(host: str = '127.0.0.1', port: int = 8765):
-    """Run the application"""
+def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
+    """Run the application
+
+    Args:
+        host: Host to bind to
+        port: Port to listen on
+        native: If True, run in native window mode (no browser needed)
+    """
     app = create_app()
 
     @ui.page('/')
@@ -336,4 +342,7 @@ def run_app(host: str = '127.0.0.1', port: int = 8765):
         favicon='🍎',
         dark=False,
         reload=False,
+        native=native,
+        window_size=(960, 720),
+        frameless=False,
     )

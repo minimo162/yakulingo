@@ -19,12 +19,12 @@ from ecm_translate.ui.app import run_app
 def main():
     """Main entry point"""
     print("Starting YakuLingo...")
-    print("Open http://localhost:8765 in your browser")
     print()
 
     run_app(
         host='127.0.0.1',
-        port=8765
+        port=8765,
+        native=True,  # Native window mode (no browser needed)
     )
 
 

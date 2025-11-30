@@ -1,11 +1,16 @@
 {
   "reference_files": ["glossary.csv"],
   "output_directory": null,
-  "last_direction": "jp_to_en",
   "last_tab": "text",
-  "window_width": 900,
-  "window_height": 700,
+  "window_width": 960,
+  "window_height": 720,
   "max_batch_size": 50,
   "request_timeout": 120,
-  "max_retries": 3
+  "max_retries": 3,
+  "auto_update_enabled": true,
+  "auto_update_check_interval": 86400,
+  "github_repo_owner": "minimo162",
+  "github_repo_name": "yakulingo",
+  "last_update_check": null,
+  "skipped_version": null
 }

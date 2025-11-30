@@ -69,12 +69,15 @@ YakuLingo/
 │   │   └── history_db.py          # SQLite-based translation history
 │   └── config/                    # Configuration
 │       └── settings.py            # AppSettings with JSON persistence
-├── tests/                         # Test suite (25 test files)
+├── tests/                         # Test suite (23 test files)
 │   ├── conftest.py                # Shared fixtures and mocks
 │   └── test_*.py                  # Unit tests for each module
 ├── prompts/                       # Translation prompt templates
-│   ├── translate_jp_to_en.txt
-│   └── translate_en_to_jp.txt
+│   ├── translate_to_en.txt        # File translation (JP→EN)
+│   ├── translate_to_jp.txt        # File translation (EN→JP)
+│   ├── text_translate_to_en.txt   # Text translation (JP→EN)
+│   ├── text_translate_to_jp.txt   # Text translation (EN→JP)
+│   └── ...                        # Additional prompts for adjustments
 ├── config/
 │   └── settings.json              # User configuration
 ├── docs/
@@ -109,7 +112,7 @@ YakuLingo/
 | `yakulingo/ui/styles.py` | M3 design tokens, CSS styling definitions | ~720 |
 | `yakulingo/ui/state.py` | Application state management | ~170 |
 | `yakulingo/models/types.py` | Core data types: TextBlock, FileInfo, TranslationResult, HistoryEntry | ~180 |
-| `yakulingo/storage/history_db.py` | SQLite database for translation history | ~200 |
+| `yakulingo/storage/history_db.py` | SQLite database for translation history | ~234 |
 | `yakulingo/processors/base.py` | Abstract base class for all file processors | ~97 |
 
 ## Core Data Types
@@ -190,7 +193,7 @@ The application uses M3 (Material Design 3) component-based styling:
 
 - **Framework**: pytest with pytest-asyncio
 - **Test Path**: `tests/`
-- **Test Files**: 25 test files covering all major modules
+- **Test Files**: 23 test files covering all major modules
 - **Naming**: `test_*.py` files, `Test*` classes, `test_*` functions
 - **Fixtures**: Defined in `tests/conftest.py`
 - **Async Mode**: Auto-configured via pyproject.toml
@@ -259,13 +262,18 @@ sans-serif → Meiryo UI
 {
   "reference_files": ["glossary.csv"],
   "output_directory": null,
-  "last_direction": "jp_to_en",
   "last_tab": "text",
-  "window_width": 900,
-  "window_height": 700,
+  "window_width": 960,
+  "window_height": 720,
   "max_batch_size": 50,
   "request_timeout": 120,
-  "max_retries": 3
+  "max_retries": 3,
+  "auto_update_enabled": true,
+  "auto_update_check_interval": 86400,
+  "github_repo_owner": "minimo162",
+  "github_repo_name": "yakulingo",
+  "last_update_check": null,
+  "skipped_version": null
 }
 ```
 
@@ -286,7 +294,7 @@ The `CopilotHandler` class automates Microsoft Edge browser:
 
 ## Auto-Update System
 
-The `Updater` class provides GitHub Releases-based updates:
+The `AutoUpdater` class provides GitHub Releases-based updates:
 - Checks for updates from GitHub Releases API
 - Supports Windows NTLM proxy authentication (requires pywin32)
 - Downloads and extracts updates to local installation
@@ -376,7 +384,7 @@ The AGENTS.md file specifies that all responses should be in Japanese (すべて
 Based on recent commits:
 - **Auto-Update System**: GitHub Releases-based automatic updates with Windows proxy support
 - **Translation History**: SQLite-based local history storage
-- **Test Coverage Expansion**: Increased from 15 to 25 test files (73% → 82% coverage)
+- **Test Coverage Expansion**: Increased from 15 to 23 test files (73% → 82% coverage)
 - **Reproducible Builds**: Added `uv.lock` for dependency locking
 - **Distribution Improvements**: Simplified network share deployment
 

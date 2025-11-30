@@ -46,9 +46,11 @@ class AppSettings:
                     data = json.load(f)
                     # Remove deprecated fields
                     data.pop('last_direction', None)
-                    # Convert reference_files paths if needed
-                    return cls(**data)
-            except (json.JSONDecodeError, TypeError) as e:
+                    # Filter to only known fields to handle future version settings
+                    known_fields = {f.name for f in cls.__dataclass_fields__.values()}
+                    filtered_data = {k: v for k, v in data.items() if k in known_fields}
+                    return cls(**filtered_data)
+            except (json.JSONDecodeError, TypeError, UnicodeDecodeError) as e:
                 print(f"Warning: Failed to load settings: {e}")
                 return cls()
         return cls()

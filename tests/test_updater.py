@@ -349,8 +349,6 @@ class TestSourceCodeOnlyUpdate:
         assert "uv.toml" in AutoUpdater.SOURCE_FILES
         # Scripts
         assert "run.bat" in AutoUpdater.SOURCE_FILES
-        assert "remove.bat" in AutoUpdater.SOURCE_FILES
-        assert "remove.ps1" in AutoUpdater.SOURCE_FILES
         # Documentation
         assert "README.md" in AutoUpdater.SOURCE_FILES
         # Files NOT in distribution

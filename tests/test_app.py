@@ -73,8 +73,10 @@ def mock_nicegui():
 
 @pytest.fixture
 def app_state():
-    """Fresh AppState instance"""
-    return AppState()
+    """Fresh AppState instance with cleared history for test isolation"""
+    state = AppState()
+    state.clear_history()  # Ensure clean state for each test
+    return state
 
 
 # =============================================================================

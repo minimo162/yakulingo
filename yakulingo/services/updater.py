@@ -499,8 +499,6 @@ class AutoUpdater:
         "pyproject.toml",   # プロジェクト設定
         "uv.toml",          # UV設定
         "run.bat",          # 起動スクリプト
-        "remove.bat",       # 削除スクリプト
-        "remove.ps1",       # 削除スクリプト
         "README.md",        # ドキュメント
     ]
     # ユーザー設定ファイル（上書きしない、バックアップ対象）

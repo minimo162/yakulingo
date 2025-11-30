@@ -32,7 +32,7 @@ if ($missingDeps.Count -gt 0) {
         Write-Host "  - $dep" -ForegroundColor Red
     }
     Write-Host ""
-    Write-Host "先に setup.bat を実行して依存関係を取得してください。"
+    Write-Host "先に install_deps.bat を実行して依存関係を取得してください。"
     Write-Host ""
     Read-Host "Enterキーで終了"
     exit 1
@@ -54,14 +54,14 @@ New-Item -ItemType Directory -Path $tempDir | Out-Null
 Write-Host ""
 Write-Host "[1/4] アプリファイルをコピー中..."
 
-# コピー対象ファイル（setup.bat は不要）
+# コピー対象ファイル
 $files = @(
     "app.py",
     "pyproject.toml",
     "requirements.txt",
     "glossary.csv",
-    "setup_shortcut.bat",
-    "setup_shortcut.ps1",
+    "setup.bat",
+    "setup.ps1",
     "remove.bat",
     "remove.ps1"
 )
@@ -144,9 +144,8 @@ Write-Host "サイズ: $zipSizeStr"
 Write-Host ""
 Write-Host "配布方法:"
 Write-Host "  1. YakuLingo.zip をユーザーに送る"
-Write-Host "  2. ユーザーは展開して run.bat を実行するだけ"
-Write-Host ""
-Write-Host "  ※ ショートカットを作成したい場合は setup_shortcut.bat を実行"
+Write-Host "  2. ユーザーは展開して setup.bat を実行"
+Write-Host "  3. スタートメニュー or デスクトップから起動"
 Write-Host ""
 
 Read-Host "Enterキーで終了"

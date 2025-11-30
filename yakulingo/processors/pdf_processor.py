@@ -14,13 +14,19 @@ Features:
 - Low-level PDF operator generation
 """
 
+import logging
 import os
 import platform
 import re
+import threading
 import unicodedata
-from dataclasses import dataclass
+from contextlib import contextmanager
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterator, Optional
+
+# Module logger
+logger = logging.getLogger(__name__)
 
 from .base import FileProcessor
 from yakulingo.models.types import TextBlock, FileInfo, FileType
@@ -252,6 +258,15 @@ LANG_LINEHEIGHT_MAP = {
 }
 DEFAULT_LINE_HEIGHT = 1.1
 
+# Font size constants
+DEFAULT_FONT_SIZE = 10.0
+MIN_FONT_SIZE = 1.0
+MAX_FONT_SIZE = 12.0
+
+# Line height compression constants
+MIN_LINE_HEIGHT = 1.0
+LINE_HEIGHT_COMPRESSION_STEP = 0.05
+
 # Formula font pattern (PDFMathTranslate reference)
 DEFAULT_VFONT_PATTERN = (
     r"(CM[^R]|MS.M|XY|MT|BL|RM|EU|LA|RS|LINE|LCIRCLE|"
@@ -261,6 +276,12 @@ DEFAULT_VFONT_PATTERN = (
 
 # Unicode categories for formula detection
 FORMULA_UNICODE_CATEGORIES = ["Lm", "Mn", "Sk", "Sm", "Zl", "Zp", "Zs"]
+
+# Pre-compiled regex patterns for performance
+_RE_CID_NOTATION = re.compile(r"\(cid:")
+_RE_PARAGRAPH_ADDRESS = re.compile(r"P(\d+)_")
+_RE_TABLE_ADDRESS = re.compile(r"T(\d+)_")
+_RE_FORMULA_PLACEHOLDER = re.compile(r"\{\s*v([\d\s]+)\}", re.IGNORECASE)
 
 
 # =============================================================================
@@ -300,19 +321,29 @@ def vflag(font: str, char: str, vfont: str = None, vchar: str = None) -> bool:
     Check if character is a formula.
 
     PDFMathTranslate converter.py:156-177 compatible.
+
+    Args:
+        font: Font name (can be empty)
+        char: Character to check (can be empty)
+        vfont: Custom font pattern (optional)
+        vchar: Custom character pattern (optional)
+
+    Returns:
+        True if character appears to be a formula element
     """
     # Rule 1: CID notation
-    if re.match(r"\(cid:", char):
+    if char and _RE_CID_NOTATION.match(char):
         return True
 
     # Rule 2: Font-based detection
-    font_pattern = vfont if vfont else DEFAULT_VFONT_PATTERN
-    if re.match(font_pattern, font):
-        return True
+    if font:
+        font_pattern = vfont if vfont else DEFAULT_VFONT_PATTERN
+        if re.match(font_pattern, font):
+            return True
 
     # Rule 3: Character class detection
     if vchar:
-        if re.match(vchar, char):
+        if char and re.match(vchar, char):
             return True
     else:
         if char and unicodedata.category(char[0]) in FORMULA_UNICODE_CATEGORIES:
@@ -365,15 +396,13 @@ class FormulaManager:
 
         PDFMathTranslate converter.py:409-420 compatible.
         """
-        pattern = r"\{\s*v([\d\s]+)\}"
-
         def replacer(match):
             vid = int(match.group(1).replace(" ", ""))
             if 0 <= vid < len(self.var):
                 return self.var[vid]
             return match.group(0)
 
-        return re.sub(pattern, replacer, text, flags=re.IGNORECASE)
+        return _RE_FORMULA_PLACEHOLDER.sub(replacer, text)
 
 
 # =============================================================================
@@ -488,21 +517,31 @@ class FontRegistry:
             return self.fonts[lang].font_id
         return "F1"
 
-    def embed_fonts(self, doc) -> None:
+    def embed_fonts(self, doc) -> list[str]:
         """
         Embed all registered fonts into PDF.
 
         PDFMathTranslate high_level.py compliant.
         Only embeds on first page (shared across document).
+
+        Returns:
+            List of font IDs that failed to embed
         """
+        failed_fonts = []
+
         if len(doc) == 0:
-            return
+            return failed_fonts
 
         first_page = doc[0]
 
         for lang, font_info in self.fonts.items():
             font_path = self.get_font_path(font_info.font_id)
             if not font_path:
+                logger.warning(
+                    "No font path available for '%s' (lang=%s)",
+                    font_info.font_id, lang
+                )
+                failed_fonts.append(font_info.font_id)
                 continue
 
             try:
@@ -512,7 +551,13 @@ class FontRegistry:
                 )
                 self._font_xrefs[font_info.font_id] = xref
             except Exception as e:
-                print(f"  Warning: Failed to embed font '{font_info.font_id}': {e}")
+                logger.warning(
+                    "Failed to embed font '%s' from '%s': %s",
+                    font_info.font_id, font_path, e
+                )
+                failed_fonts.append(font_info.font_id)
+
+        return failed_fonts
 
 
 # =============================================================================
@@ -705,6 +750,7 @@ class ContentStreamReplacer:
 def convert_to_pdf_coordinates(
     box: list[float],
     page_height: float,
+    page_width: float = None,
 ) -> tuple[float, float, float, float]:
     """
     Convert from image coordinates to PDF coordinates.
@@ -715,6 +761,7 @@ def convert_to_pdf_coordinates(
     Args:
         box: [x1, y1, x2, y2] image coordinates (top-left, bottom-right)
         page_height: Page height
+        page_width: Page width (optional, for x-coordinate clamping)
 
     Returns:
         (x1, y1, x2, y2) PDF coordinates (bottom-left, top-right)
@@ -736,11 +783,18 @@ def convert_to_pdf_coordinates(
     x2_pdf = x2_img
     y2_pdf = page_height - y1_img
 
-    # Clamp to valid range
+    # Clamp to valid range (Y coordinates)
     if y1_pdf < 0:
         y1_pdf = 0
     if y2_pdf > page_height:
         y2_pdf = page_height
+
+    # Clamp X coordinates if page_width is provided
+    if page_width is not None:
+        if x1_pdf < 0:
+            x1_pdf = 0
+        if x2_pdf > page_width:
+            x2_pdf = page_width
 
     return (x1_pdf, y1_pdf, x2_pdf, y2_pdf)
 
@@ -759,9 +813,9 @@ def calculate_text_position(
     x1, y1, x2, y2 = box_pdf
 
     if font_size <= 0:
-        font_size = 10.0
+        font_size = DEFAULT_FONT_SIZE
     if line_height <= 0:
-        line_height = 1.1
+        line_height = DEFAULT_LINE_HEIGHT
 
     x = x1
     y = y2 - font_size - (line_index * font_size * line_height)
@@ -798,31 +852,31 @@ def split_text_into_lines(
     if box_width <= 0:
         return [text]
     if font_size <= 0:
-        font_size = 10.0
+        font_size = DEFAULT_FONT_SIZE
 
     lines = []
-    current_line = ""
+    current_line_chars: list[str] = []  # Use list for O(1) append
     current_width = 0.0
 
     for char in text:
         if char == '\n':
-            lines.append(current_line)
-            current_line = ""
+            lines.append(''.join(current_line_chars))
+            current_line_chars = []
             current_width = 0.0
             continue
 
         char_width = calculate_char_width(char, font_size, is_cjk)
 
-        if current_width + char_width > box_width and current_line:
-            lines.append(current_line)
-            current_line = char
+        if current_width + char_width > box_width and current_line_chars:
+            lines.append(''.join(current_line_chars))
+            current_line_chars = [char]
             current_width = char_width
         else:
-            current_line += char
+            current_line_chars.append(char)
             current_width += char_width
 
-    if current_line:
-        lines.append(current_line)
+    if current_line_chars:
+        lines.append(''.join(current_line_chars))
 
     return lines
 
@@ -847,11 +901,19 @@ def calculate_line_height(
     chars_per_line = max(1, (x2 - x1) / (font_size * 0.5))
     lines_needed = max(1, len(translated_text) / chars_per_line)
 
-    # Dynamic compression (5% steps)
-    while (lines_needed + 1) * font_size * line_height > height and line_height >= 1.0:
-        line_height -= 0.05
+    # Dynamic compression with iteration limit to prevent infinite loop
+    max_iterations = int((line_height - MIN_LINE_HEIGHT) / LINE_HEIGHT_COMPRESSION_STEP) + 1
+    iteration = 0
 
-    return max(line_height, 1.0)
+    while (
+        (lines_needed + 1) * font_size * line_height > height
+        and line_height >= MIN_LINE_HEIGHT
+        and iteration < max_iterations
+    ):
+        line_height -= LINE_HEIGHT_COMPRESSION_STEP
+        iteration += 1
+
+    return max(line_height, MIN_LINE_HEIGHT)
 
 
 def estimate_font_size(box: list[float], text: str) -> float:
@@ -859,37 +921,37 @@ def estimate_font_size(box: list[float], text: str) -> float:
     Estimate appropriate font size for box.
 
     Returns:
-        Estimated font size (min 1.0pt, max 12pt)
+        Estimated font size (min MIN_FONT_SIZE, max MAX_FONT_SIZE)
     """
     if len(box) != 4:
-        return 10.0
+        return DEFAULT_FONT_SIZE
 
     x1, y1, x2, y2 = box
     width = abs(x2 - x1)
     height = abs(y2 - y1)
 
     if width <= 0 or height <= 0:
-        return 10.0
+        return DEFAULT_FONT_SIZE
 
     if not text:
-        return min(height * 0.8, 12.0)
+        return min(height * 0.8, MAX_FONT_SIZE)
 
     max_font_size = height * 0.8
     chars_per_line = max(1, len(text) / max(1, height / 14))
     width_based_size = width / max(1, chars_per_line) * 1.8
 
-    result = min(max_font_size, width_based_size, 12.0)
-    return max(result, 1.0)
+    result = min(max_font_size, width_based_size, MAX_FONT_SIZE)
+    return max(result, MIN_FONT_SIZE)
 
 
 def _is_address_on_page(address: str, page_num: int) -> bool:
     """Check if address belongs to specified page."""
     if address.startswith("P"):
-        match = re.match(r"P(\d+)_", address)
+        match = _RE_PARAGRAPH_ADDRESS.match(address)
         if match:
             return int(match.group(1)) == page_num
     elif address.startswith("T"):
-        match = re.match(r"T(\d+)_", address)
+        match = _RE_TABLE_ADDRESS.match(address)
         if match:
             return int(match.group(1)) == page_num
     return False
@@ -902,8 +964,9 @@ def _is_address_on_page(address: str, page_num: int) -> bool:
 OCR_BATCH_SIZE = 5  # Pages per batch
 OCR_DPI = 200       # Fixed DPI for precision
 
-# DocumentAnalyzer cache (for GPU memory efficiency)
+# DocumentAnalyzer cache (for GPU memory efficiency) with thread safety
 _analyzer_cache: dict[tuple[str, str], object] = {}
+_analyzer_cache_lock = threading.Lock()
 
 
 def get_total_pages(pdf_path: str) -> int:
@@ -913,6 +976,22 @@ def get_total_pages(pdf_path: str) -> int:
     total = len(pdf)
     pdf.close()
     return total
+
+
+@contextmanager
+def _open_pdf_document(pdf_path: str):
+    """
+    Context manager for safely opening and closing PDF documents.
+
+    Ensures the PDF is properly closed even if the caller doesn't
+    fully consume the generator or an exception occurs.
+    """
+    pdfium = _get_pypdfium2()
+    pdf = pdfium.PdfDocument(pdf_path)
+    try:
+        yield pdf
+    finally:
+        pdf.close()
 
 
 def iterate_pdf_pages(
@@ -930,11 +1009,14 @@ def iterate_pdf_pages(
 
     Yields:
         (batch_start_page, list[np.ndarray]): Batch start index and BGR images
+
+    Note:
+        Uses a context manager to ensure PDF is closed even if generator
+        is not fully consumed.
     """
     np = _get_numpy()
-    pdfium = _get_pypdfium2()
-    pdf = pdfium.PdfDocument(pdf_path)
-    try:
+
+    with _open_pdf_document(pdf_path) as pdf:
         total_pages = len(pdf)
 
         for batch_start in range(0, total_pages, batch_size):
@@ -950,8 +1032,6 @@ def iterate_pdf_pages(
                 batch_images.append(img)
 
             yield batch_start, batch_images
-    finally:
-        pdf.close()
 
 
 def load_pdf_as_images(pdf_path: str, dpi: int = OCR_DPI) -> list:
@@ -979,7 +1059,7 @@ def get_device(config_device: str = "cpu") -> str:
         if torch is not None and torch.cuda.is_available():
             return "cuda"
         else:
-            print("Warning: CUDA not available, falling back to CPU")
+            logger.warning("CUDA not available, falling back to CPU")
             return "cpu"
     return "cpu"
 
@@ -987,6 +1067,9 @@ def get_device(config_device: str = "cpu") -> str:
 def get_document_analyzer(device: str = "cpu", reading_order: str = "auto"):
     """
     Get or create a cached DocumentAnalyzer instance.
+
+    Thread-safe: uses a lock to prevent race conditions when
+    creating or accessing the cache.
 
     Args:
         device: "cpu" or "cuda"
@@ -996,22 +1079,31 @@ def get_document_analyzer(device: str = "cpu", reading_order: str = "auto"):
         Cached DocumentAnalyzer instance
     """
     cache_key = (device, reading_order)
+
+    # Double-checked locking pattern for thread safety
     if cache_key not in _analyzer_cache:
-        yomitoku = _get_yomitoku()
-        _analyzer_cache[cache_key] = yomitoku['DocumentAnalyzer'](
-            configs={},
-            device=device,
-            visualize=False,
-            ignore_meta=False,
-            reading_order=reading_order,
-        )
+        with _analyzer_cache_lock:
+            # Check again after acquiring lock
+            if cache_key not in _analyzer_cache:
+                yomitoku = _get_yomitoku()
+                _analyzer_cache[cache_key] = yomitoku['DocumentAnalyzer'](
+                    configs={},
+                    device=device,
+                    visualize=False,
+                    ignore_meta=False,
+                    reading_order=reading_order,
+                )
     return _analyzer_cache[cache_key]
 
 
 def clear_analyzer_cache():
-    """Clear the DocumentAnalyzer cache to free GPU memory."""
-    global _analyzer_cache
-    _analyzer_cache.clear()
+    """
+    Clear the DocumentAnalyzer cache to free GPU memory.
+
+    Thread-safe: uses a lock to prevent race conditions.
+    """
+    with _analyzer_cache_lock:
+        _analyzer_cache.clear()
 
 
 def analyze_document(img, device: str = "cpu", reading_order: str = "auto"):
@@ -1193,7 +1285,7 @@ class PdfProcessor(FileProcessor):
         output_path: Path,
         translations: dict[str, str],
         direction: str = "jp_to_en",
-    ) -> None:
+    ) -> dict[str, str]:
         """
         Apply translations to PDF using low-level operators.
 
@@ -1204,9 +1296,23 @@ class PdfProcessor(FileProcessor):
             output_path: Path for translated PDF
             translations: Mapping of block IDs to translated text
             direction: Translation direction
+
+        Returns:
+            Dictionary with processing statistics:
+            - 'total': Total blocks to translate
+            - 'success': Successfully translated blocks
+            - 'failed': List of failed block IDs
+            - 'failed_fonts': List of fonts that failed to embed
         """
         fitz = _get_fitz()
         doc = fitz.open(input_path)
+
+        result = {
+            'total': len(translations),
+            'success': 0,
+            'failed': [],
+            'failed_fonts': [],
+        }
 
         try:
             # Determine target language
@@ -1223,7 +1329,7 @@ class PdfProcessor(FileProcessor):
             op_generator = PdfOperatorGenerator(font_registry)
 
             # 2. Embed fonts (before page loop)
-            font_registry.embed_fonts(doc)
+            result['failed_fonts'] = font_registry.embed_fonts(doc)
 
             # 3. Process each page
             for page_idx, page in enumerate(doc):
@@ -1283,8 +1389,14 @@ class PdfProcessor(FileProcessor):
                             text_op = op_generator.gen_op_txt(font_id, font_size, x, y, rtxt)
                             replacer.add_text_operator(text_op, font_id)
 
+                        result['success'] += 1
+
                     except Exception as e:
-                        print(f"  Warning: Failed to process block {block_id}: {e}")
+                        logger.warning(
+                            "Failed to process block '%s': %s",
+                            block_id, e
+                        )
+                        result['failed'].append(block_id)
                         continue
 
                 # 9. Apply stream to page
@@ -1294,8 +1406,17 @@ class PdfProcessor(FileProcessor):
             doc.subset_fonts(fallback=True)
             doc.save(str(output_path), garbage=3, deflate=True)
 
+            # Log summary if there were failures
+            if result['failed']:
+                logger.warning(
+                    "PDF translation completed with %d/%d blocks failed",
+                    len(result['failed']), result['total']
+                )
+
         finally:
             doc.close()
+
+        return result
 
     def apply_translations_with_cells(
         self,
@@ -1304,7 +1425,7 @@ class PdfProcessor(FileProcessor):
         translations: dict[str, str],
         cells: list[TranslationCell],
         direction: str = "jp_to_en",
-    ) -> None:
+    ) -> dict[str, str]:
         """
         Apply translations using TranslationCell data (yomitoku integration).
 
@@ -1317,9 +1438,23 @@ class PdfProcessor(FileProcessor):
             translations: Mapping of addresses to translated text
             cells: TranslationCell list with position info
             direction: Translation direction
+
+        Returns:
+            Dictionary with processing statistics:
+            - 'total': Total cells to translate
+            - 'success': Successfully translated cells
+            - 'failed': List of failed cell addresses
+            - 'failed_fonts': List of fonts that failed to embed
         """
         fitz = _get_fitz()
         doc = fitz.open(input_path)
+
+        result = {
+            'total': len(translations),
+            'success': 0,
+            'failed': [],
+            'failed_fonts': [],
+        }
 
         try:
             target_lang = "en" if direction == "jp_to_en" else "ja"
@@ -1337,7 +1472,7 @@ class PdfProcessor(FileProcessor):
             cell_map = {cell.address: cell for cell in cells}
 
             # 2. Embed fonts
-            font_registry.embed_fonts(doc)
+            result['failed_fonts'] = font_registry.embed_fonts(doc)
 
             # 3. Process each page
             for page_num, page in enumerate(doc, start=1):
@@ -1384,8 +1519,14 @@ class PdfProcessor(FileProcessor):
                             text_op = op_generator.gen_op_txt(font_id, font_size, x, y, rtxt)
                             replacer.add_text_operator(text_op, font_id)
 
+                        result['success'] += 1
+
                     except Exception as e:
-                        print(f"  Warning: Failed to process cell {address}: {e}")
+                        logger.warning(
+                            "Failed to process cell '%s': %s",
+                            address, e
+                        )
+                        result['failed'].append(address)
                         continue
 
                 replacer.apply_to_page(page)
@@ -1393,8 +1534,17 @@ class PdfProcessor(FileProcessor):
             doc.subset_fonts(fallback=True)
             doc.save(str(output_path), garbage=3, deflate=True)
 
+            # Log summary if there were failures
+            if result['failed']:
+                logger.warning(
+                    "PDF translation completed with %d/%d cells failed",
+                    len(result['failed']), result['total']
+                )
+
         finally:
             doc.close()
+
+        return result
 
     def extract_text_blocks_with_ocr(
         self,

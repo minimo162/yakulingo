@@ -532,7 +532,9 @@ class TranslationService:
             output_path = self._generate_output_path(input_path)
 
             # Apply translations
-            processor.apply_translations(input_path, output_path, translations, "bidirectional")
+            # Convert output_language to direction for font mapping
+            direction = "jp_to_en" if output_language == "en" else "en_to_jp"
+            processor.apply_translations(input_path, output_path, translations, direction)
 
             # Report complete
             if on_progress:

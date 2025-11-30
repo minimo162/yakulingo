@@ -69,7 +69,11 @@ from yakulingo.models.types import (
 )
 from yakulingo.config.settings import AppSettings
 from yakulingo.services.copilot_handler import CopilotHandler
-from yakulingo.services.prompt_builder import PromptBuilder
+from yakulingo.services.prompt_builder import (
+    PromptBuilder,
+    load_glossary_content,
+    build_reference_section,
+)
 from yakulingo.processors.base import FileProcessor
 from yakulingo.processors.excel_processor import ExcelProcessor
 from yakulingo.processors.word_processor import WordProcessor
@@ -101,7 +105,7 @@ class BatchTranslator:
 
         Args:
             blocks: List of TextBlock to translate
-            reference_files: Optional reference files
+            reference_files: Optional reference files (glossary CSV)
             on_progress: Progress callback
             output_language: "en" for English, "jp" for Japanese
 
@@ -111,7 +115,9 @@ class BatchTranslator:
         results = {}
         batches = self._create_batches(blocks)
 
-        has_refs = bool(reference_files)
+        # Load glossary content from reference files
+        glossary_entries = load_glossary_content(reference_files)
+        glossary_content = build_reference_section(glossary_entries)
 
         for i, batch in enumerate(batches):
             if on_progress:
@@ -123,11 +129,11 @@ class BatchTranslator:
 
             texts = [b.text for b in batch]
 
-            # Build prompt with explicit output language
-            prompt = self.prompt_builder.build_batch(texts, has_refs, output_language)
+            # Build prompt with glossary content embedded
+            prompt = self.prompt_builder.build_batch(texts, glossary_content, output_language)
 
-            # Translate
-            translations = self.copilot.translate_sync(texts, prompt, reference_files)
+            # Translate (reference_files no longer needed - glossary is in prompt)
+            translations = self.copilot.translate_sync(texts, prompt)
 
             for block, translation in zip(batch, translations):
                 results[block.id] = translation
@@ -194,12 +200,11 @@ class TranslationService:
         """
         Translate plain text (bidirectional: JP→EN or Other→JP).
 
-        NOTE: Reference files (glossary, etc.) are attached to Copilot
-        for both text and file translations.
+        Glossary content from reference files is embedded directly in the prompt.
 
         Args:
             text: Source text to translate
-            reference_files: Optional list of reference files to attach
+            reference_files: Optional list of reference files (glossary CSV)
 
         Returns:
             TranslationResult with output_text
@@ -207,12 +212,15 @@ class TranslationService:
         start_time = time.time()
 
         try:
-            # Build prompt (unified bidirectional)
-            has_refs = bool(reference_files)
-            prompt = self.prompt_builder.build(text, has_refs)
+            # Load glossary content from reference files
+            glossary_entries = load_glossary_content(reference_files)
+            glossary_content = build_reference_section(glossary_entries)
+
+            # Build prompt with glossary embedded
+            prompt = self.prompt_builder.build(text, glossary_content)
 
             # Translate
-            result = self.copilot.translate_single(text, prompt, reference_files)
+            result = self.copilot.translate_single(text, prompt)
 
             return TranslationResult(
                 status=TranslationStatus.COMPLETED,
@@ -239,9 +247,11 @@ class TranslationService:
         - Japanese input → English output (3 options with different lengths)
         - Other input → Japanese output (single translation + detailed explanation)
 
+        Glossary content from reference files is embedded directly in the prompt.
+
         Args:
             text: Source text to translate
-            reference_files: Optional list of reference files to attach
+            reference_files: Optional list of reference files (glossary CSV)
 
         Returns:
             TextTranslationResult with options and output_language
@@ -250,6 +260,10 @@ class TranslationService:
             # Detect input language to determine output language
             is_japanese = is_japanese_text(text)
             output_language = "en" if is_japanese else "jp"
+
+            # Load glossary content from reference files
+            glossary_entries = load_glossary_content(reference_files)
+            glossary_content = build_reference_section(glossary_entries)
 
             # Select appropriate prompt file
             if output_language == "en":
@@ -281,11 +295,12 @@ class TranslationService:
                     error_message=result.error_message,
                 )
 
-            # Build prompt
-            prompt = template.replace("{input_text}", text)
+            # Build prompt with glossary and input text
+            prompt = template.replace("{reference_section}", glossary_content)
+            prompt = prompt.replace("{input_text}", text)
 
             # Translate
-            raw_result = self.copilot.translate_single(text, prompt, reference_files)
+            raw_result = self.copilot.translate_single(text, prompt)
 
             # Parse the result based on output language
             if output_language == "en":

@@ -426,15 +426,13 @@ class CopilotHandler:
         self,
         texts: List[str],
         prompt: str,
-        reference_files: Optional[List[Path]] = None,
     ) -> List[str]:
         """
         Translate a batch of texts.
 
         Args:
             texts: List of texts to translate
-            prompt: Built prompt string
-            reference_files: Optional list of reference files to attach
+            prompt: Built prompt string (glossary should be embedded in prompt)
 
         Returns:
             List of translated texts (same order as input)
@@ -444,12 +442,6 @@ class CopilotHandler:
 
         # Send the prompt
         await self._send_message_async(prompt)
-
-        # Attach reference files if provided
-        if reference_files:
-            for file_path in reference_files:
-                if file_path.exists():
-                    await self._attach_file_async(file_path)
 
         # Get response
         result = await self._get_response_async()
@@ -461,7 +453,6 @@ class CopilotHandler:
         self,
         texts: List[str],
         prompt: str,
-        reference_files: Optional[List[Path]] = None,
     ) -> List[str]:
         """
         Synchronous version of translate for non-async contexts.
@@ -469,7 +460,6 @@ class CopilotHandler:
         Args:
             texts: List of text strings to translate (used for result parsing)
             prompt: The translation prompt to send to Copilot
-            reference_files: Currently unused (file attachment not implemented)
 
         Returns:
             List of translated strings parsed from Copilot's response
@@ -490,10 +480,9 @@ class CopilotHandler:
         self,
         text: str,
         prompt: str,
-        reference_files: Optional[List[Path]] = None,
     ) -> str:
         """Translate a single text (sync)"""
-        results = self.translate_sync([text], prompt, reference_files)
+        results = self.translate_sync([text], prompt)
         return results[0] if results else ""
 
     def _send_message(self, message: str) -> None:
@@ -685,20 +674,6 @@ class CopilotHandler:
             return ""
         except Exception:
             return ""
-
-    async def _attach_file_async(self, file_path: Path) -> None:
-        """
-        Attach file to Copilot chat (async).
-
-        Note: This method is not yet implemented. File attachment functionality
-        requires inspection of the Copilot UI to determine the correct selectors
-        and interaction pattern.
-
-        Args:
-            file_path: Path to the file to attach (currently unused)
-        """
-        # TODO: Implement file attachment when Copilot UI details are available
-        pass
 
     def _parse_batch_result(self, result: str, expected_count: int) -> List[str]:
         """Parse batch translation result back to list"""

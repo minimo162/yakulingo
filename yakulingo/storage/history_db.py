@@ -194,6 +194,7 @@ class HistoryDB:
         data = {
             'source_text': result.source_text,
             'source_char_count': result.source_char_count,
+            'output_language': result.output_language,
             'options': [
                 {
                     'text': opt.text,
@@ -220,6 +221,7 @@ class HistoryDB:
         return TextTranslationResult(
             source_text=data['source_text'],
             source_char_count=data.get('source_char_count', 0),
+            output_language=data.get('output_language', 'en'),
             options=options,
             error_message=data.get('error_message'),
         )

@@ -406,8 +406,9 @@ class CopilotHandler:
         except Exception:
             # Try alternative selectors
             try:
+                # 実際のCopilot HTML: <button id="new-chat-button" data-testid="newChatButton" aria-label="新しいチャット">
                 self._page.wait_for_selector(
-                    'button:has-text("New chat"), button:has-text("新しいチャット")',
+                    '#new-chat-button, [data-testid="newChatButton"], button[aria-label="新しいチャット"]',
                     timeout=10000
                 )
             except Exception:
@@ -545,8 +546,9 @@ class CopilotHandler:
 
             while max_wait > 0:
                 # Get the latest message
+                # 実際のCopilot HTML: <div data-testid="markdown-reply" data-message-type="Chat">
                 response_elem = self._page.query_selector(
-                    'div[data-testid="message-content"]:last-child, div.message-content:last-child'
+                    '[data-testid="markdown-reply"]:last-of-type, div[data-message-type="Chat"]:last-of-type'
                 )
 
                 if response_elem:
@@ -611,8 +613,9 @@ class CopilotHandler:
             return
 
         try:
+            # 実際のCopilot HTML: <button id="new-chat-button" data-testid="newChatButton" aria-label="新しいチャット">
             new_chat_btn = self._page.query_selector(
-                'button:has-text("New chat"), button:has-text("新しいチャット")'
+                '#new-chat-button, [data-testid="newChatButton"], button[aria-label="新しいチャット"]'
             )
             if new_chat_btn:
                 new_chat_btn.click()

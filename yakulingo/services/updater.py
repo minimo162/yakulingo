@@ -497,6 +497,7 @@ class AutoUpdater:
     SOURCE_FILES = [
         "app.py",           # エントリーポイント
         "pyproject.toml",   # プロジェクト設定
+        "uv.lock",          # 依存関係ロックファイル
         "uv.toml",          # UV設定
         "run.bat",          # 起動スクリプト
         "README.md",        # ドキュメント

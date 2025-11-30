@@ -1,7 +1,7 @@
 # ecm_translate/ui/styles.py
 """
 M3 Component-based styles for YakuLingo.
-Following Material Design 3 component guidelines.
+Inspired by Nani Translate's clean, minimal design.
 """
 
 COMPLETE_CSS = """
@@ -13,14 +13,15 @@ COMPLETE_CSS = """
     --md-sys-color-primary-container: #FFDBD0;
     --md-sys-color-on-primary-container: #390C00;
 
-    /* Surface */
-    --md-sys-color-surface: #FFFBFF;
-    --md-sys-color-surface-container: #F3EDE9;
-    --md-sys-color-surface-container-high: #EDE7E3;
-    --md-sys-color-on-surface: #201A17;
-    --md-sys-color-on-surface-variant: #52443D;
-    --md-sys-color-outline: #85746B;
-    --md-sys-color-outline-variant: #D7C2B9;
+    /* Surface - Nani-inspired light palette */
+    --md-sys-color-surface: #FFFFFF;
+    --md-sys-color-surface-dim: #F4F6F8;
+    --md-sys-color-surface-container: #F0F2F4;
+    --md-sys-color-surface-container-high: #E8EAEC;
+    --md-sys-color-on-surface: #1A1C1E;
+    --md-sys-color-on-surface-variant: #5C5F62;
+    --md-sys-color-outline: #9CA3AF;
+    --md-sys-color-outline-variant: #E5E7EB;
 
     /* States */
     --md-sys-color-error: #BA1A1A;
@@ -34,26 +35,31 @@ COMPLETE_CSS = """
     --md-sys-color-success-container: #C8E6C9;
     --md-sys-color-on-success-container: #1B5E20;
 
-    /* Shape */
+    /* Shape - more rounded corners */
     --md-sys-shape-corner-full: 9999px;
+    --md-sys-shape-corner-xl: 24px;
     --md-sys-shape-corner-large: 16px;
     --md-sys-shape-corner-medium: 12px;
     --md-sys-shape-corner-small: 8px;
 
     /* Motion - M3 standard easing */
     --md-sys-motion-easing-standard: cubic-bezier(0.2, 0, 0, 1);
+    --md-sys-motion-easing-spring: cubic-bezier(0.175, 0.885, 0.32, 1.275);
     --md-sys-motion-duration-short: 200ms;
     --md-sys-motion-duration-medium: 300ms;
 
     /* Elevation */
-    --md-sys-elevation-1: 0 1px 2px rgba(0,0,0,0.1);
-    --md-sys-elevation-2: 0 2px 6px rgba(0,0,0,0.12);
+    --md-sys-elevation-1: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06);
+    --md-sys-elevation-2: 0 4px 6px rgba(0,0,0,0.1), 0 2px 4px rgba(0,0,0,0.06);
 }
 
 /* === Base === */
 body {
-    font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
-    background: var(--md-sys-color-surface);
+    font-family: system-ui, -apple-system, 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif;
+    background-color: var(--md-sys-color-surface-dim);
+    background-image: radial-gradient(circle, rgba(0,0,0,0.03) 1px, transparent 1px);
+    background-size: 20px 20px;
+    background-attachment: fixed;
     color: var(--md-sys-color-on-surface);
     line-height: 1.5;
 }
@@ -62,13 +68,26 @@ body {
 .app-header {
     background: var(--md-sys-color-surface);
     border-bottom: 1px solid var(--md-sys-color-outline-variant);
+    box-shadow: var(--md-sys-elevation-1);
 }
 
 .app-logo {
-    font-size: 1.125rem;
-    font-weight: 500;
+    font-size: 1.25rem;
+    font-weight: 600;
     color: var(--md-sys-color-primary);
-    letter-spacing: -0.01em;
+    letter-spacing: -0.02em;
+}
+
+.app-logo-icon {
+    width: 2rem;
+    height: 2rem;
+    border-radius: var(--md-sys-shape-corner-small);
+    background: var(--md-sys-color-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--md-sys-color-on-primary);
+    font-size: 1.25rem;
 }
 
 /* === M3 Segmented Button (Tabs) === */
@@ -92,23 +111,57 @@ body {
 
 /* === M3 Filled Button (Primary) === */
 .btn-primary {
-    background: var(--md-sys-color-primary);
-    color: var(--md-sys-color-on-primary);
-    padding: 0.625rem 1.5rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    background: var(--md-sys-color-on-surface);
+    color: var(--md-sys-color-surface);
+    padding: 0.75rem 1.25rem;
     border-radius: var(--md-sys-shape-corner-full);
-    font-size: 0.875rem;
-    font-weight: 500;
-    letter-spacing: 0.01em;
-    box-shadow: var(--md-sys-elevation-1);
+    font-size: 0.9375rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
 }
 
 .btn-primary:hover:not(:disabled) {
-    box-shadow: var(--md-sys-elevation-2);
+    background: #374151;
 }
 
 .btn-primary:disabled {
-    opacity: 0.38;
+    background: var(--md-sys-color-outline);
+    cursor: default;
+}
+
+.btn-primary .arrow-icon {
+    transform: rotate(90deg);
+}
+
+/* === Translate Button (Nani-style) === */
+.translate-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    background: var(--md-sys-color-on-surface);
+    color: var(--md-sys-color-surface);
+    padding: 0.75rem 1.25rem;
+    border-radius: var(--md-sys-shape-corner-full);
+    font-size: 0.9375rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+    border: none;
+    cursor: pointer;
+}
+
+.translate-btn:hover:not(:disabled) {
+    background: #374151;
+}
+
+.translate-btn:disabled {
+    background: var(--md-sys-color-outline);
     cursor: default;
 }
 
@@ -128,28 +181,86 @@ body {
     background: var(--md-sys-color-primary-container);
 }
 
+/* === Main Card Container (Nani-inspired) === */
+.main-card {
+    background: var(--md-sys-color-surface);
+    border-radius: var(--md-sys-shape-corner-xl);
+    box-shadow: var(--md-sys-elevation-1);
+    padding: 0.375rem;
+    overflow: hidden;
+}
+
+.main-card-inner {
+    background: var(--md-sys-color-surface);
+    border-radius: calc(var(--md-sys-shape-corner-xl) - 0.375rem);
+    border: 1px solid var(--md-sys-color-outline-variant);
+}
+
 /* === M3 Text Field Container === */
 .text-box {
     background: var(--md-sys-color-surface);
     border: 1px solid var(--md-sys-color-outline-variant);
-    border-radius: var(--md-sys-shape-corner-medium);
+    border-radius: var(--md-sys-shape-corner-xl);
     overflow: hidden;
-    transition: border-color var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
 }
 
 .text-box:focus-within {
     border-color: var(--md-sys-color-primary);
-    border-width: 2px;
+    box-shadow: 0 0 0 1px var(--md-sys-color-primary);
 }
 
 .text-label {
-    padding: 0.5rem 0.75rem;
+    padding: 0.625rem 1rem;
     font-size: 0.75rem;
-    font-weight: 500;
+    font-weight: 600;
     color: var(--md-sys-color-on-surface-variant);
+    background: transparent;
+    letter-spacing: 0.02em;
+}
+
+/* === Language Switch Button (Nani-style) === */
+.lang-switch-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--md-sys-color-on-surface);
+    background: transparent;
+    border: none;
+    border-radius: var(--md-sys-shape-corner-medium);
+    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+    cursor: pointer;
+}
+
+.lang-switch-btn:hover {
     background: var(--md-sys-color-surface-container);
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
+}
+
+.lang-switch-btn .icon {
+    color: var(--md-sys-color-on-surface-variant);
+}
+
+/* === Auto-detect Hint === */
+.auto-detect-hint {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+    color: var(--md-sys-color-on-surface-variant);
+    line-height: 1.5;
+}
+
+.auto-detect-hint .icon {
+    color: var(--md-sys-color-on-surface-variant);
+    animation: arrowFlow 2.4s ease infinite;
+}
+
+@keyframes arrowFlow {
+    0%, 100% { opacity: 0.5; }
+    50% { opacity: 1; }
 }
 
 /* === Swap Button === */
@@ -299,28 +410,44 @@ body {
 .option-card {
     background: var(--md-sys-color-surface);
     border: 1px solid var(--md-sys-color-outline-variant);
-    border-radius: var(--md-sys-shape-corner-medium);
-    padding: 0.875rem;
+    border-radius: var(--md-sys-shape-corner-large);
+    padding: 1rem;
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
 }
 
 .option-card:hover {
-    border-color: var(--md-sys-color-primary);
+    border-color: var(--md-sys-color-outline);
     box-shadow: var(--md-sys-elevation-1);
 }
 
 .option-text {
-    line-height: 1.6;
+    line-height: 1.65;
     word-break: break-word;
+    font-size: 0.9375rem;
 }
 
 .option-action {
-    opacity: 0.6;
+    opacity: 0.5;
     transition: opacity var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
 }
 
 .option-card:hover .option-action {
     opacity: 1;
+}
+
+/* === Result Section === */
+.result-section {
+    background: var(--md-sys-color-surface);
+    border-radius: var(--md-sys-shape-corner-xl);
+    box-shadow: var(--md-sys-elevation-1);
+}
+
+.result-header {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--md-sys-color-outline-variant);
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--md-sys-color-on-surface-variant);
 }
 
 /* === Shortcut Hint === */

@@ -107,12 +107,16 @@ class YakuLingoApp:
             self._tabs_container.refresh()
 
     def create_ui(self):
-        """Create the UI"""
+        """Create the UI - Nani-inspired clean design"""
         ui.add_head_html(f'<style>{COMPLETE_CSS}</style>')
 
         # Header
-        with ui.header().classes('app-header items-center px-6 py-3'):
-            ui.label('YakuLingo').classes('app-logo mr-6')
+        with ui.header().classes('app-header items-center px-5 py-2'):
+            # Logo with icon
+            with ui.row().classes('items-center gap-2 mr-6'):
+                with ui.element('div').classes('app-logo-icon'):
+                    ui.html('<svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M12.87 15.07l-2.54-2.51.03-.03c1.74-1.94 2.98-4.17 3.71-6.53H17V4h-7V2H8v2H1v1.99h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11.76-2.04zM18.5 10h-2L12 22h2l1.12-3h4.75L21 22h2l-4.5-12zm-2.62 7l1.62-4.33L19.12 17h-3.24z"/></svg>')
+                ui.label('YakuLingo').classes('app-logo')
 
             # Refreshable tabs
             @ui.refreshable
@@ -138,14 +142,17 @@ class YakuLingoApp:
             # Refreshable status
             @ui.refreshable
             def header_status():
-                with ui.row().classes('items-center gap-2'):
+                with ui.row().classes('items-center gap-2 ml-2'):
                     if self.state.copilot_connected:
                         dot_class = 'status-dot connected'
+                        tooltip = 'Connected to Copilot'
                     elif self.state.copilot_connecting:
                         dot_class = 'status-dot connecting'
+                        tooltip = 'Connecting...'
                     else:
                         dot_class = 'status-dot'
-                    ui.element('div').classes(dot_class)
+                        tooltip = 'Not connected'
+                    ui.element('div').classes(dot_class).tooltip(tooltip)
 
             self._header_status = header_status
             header_status()
@@ -158,7 +165,7 @@ class YakuLingoApp:
         # Refreshable main content
         @ui.refreshable
         def main_content():
-            with ui.column().classes('w-full max-w-6xl mx-auto p-6 flex-1'):
+            with ui.column().classes('w-full max-w-2xl mx-auto px-4 py-8 flex-1'):
                 if self.state.current_tab == Tab.TEXT:
                     create_text_panel(
                         state=self.state,

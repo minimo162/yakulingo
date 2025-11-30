@@ -1,6 +1,6 @@
 # ecm_translate/ui/components/file_panel.py
 """
-File translation panel - M3 Expressive style.
+File translation panel - Nani-inspired clean design.
 Simple, focused, warm.
 """
 
@@ -41,41 +41,48 @@ def create_file_panel(
     on_reset: Callable[[], None],
     on_swap: Optional[Callable[[], None]] = None,
 ):
-    """File translation panel"""
+    """File translation panel - Nani-inspired design"""
 
     # Direction display
-    source_lang = 'Japanese' if state.direction == TranslationDirection.JP_TO_EN else 'English'
     target_lang = 'English' if state.direction == TranslationDirection.JP_TO_EN else 'Japanese'
 
-    with ui.column().classes('flex-1 items-center justify-center w-full animate-in'):
-        # Direction bar with swap button
-        with ui.row().classes('items-center gap-3 mb-6'):
-            ui.label(source_lang).classes('text-sm font-medium direction-label')
+    with ui.column().classes('flex-1 items-center w-full animate-in gap-5'):
+        # Main card container (Nani-style)
+        with ui.element('div').classes('main-card w-full'):
+            # Language switch button at top
             if on_swap:
-                ui.button(icon='swap_horiz', on_click=on_swap).classes('swap-btn-small')
-            else:
-                ui.icon('arrow_forward').classes('text-muted')
-            ui.label(target_lang).classes('text-sm font-medium direction-label')
+                with ui.row().classes('px-3 pt-2 pb-0 items-center'):
+                    with ui.button(on_click=on_swap).classes('lang-switch-btn').props('flat no-caps'):
+                        ui.icon('swap_horiz').classes('text-lg icon')
+                        ui.label(target_lang).classes('font-semibold')
+                        ui.icon('expand_more').classes('text-sm opacity-60')
 
-        if state.file_state == FileState.EMPTY:
-            _drop_zone(on_file_select)
+            # Content container
+            with ui.element('div').classes('main-card-inner mx-1.5 mb-1.5 p-4'):
+                if state.file_state == FileState.EMPTY:
+                    _drop_zone(on_file_select)
 
-        elif state.file_state == FileState.SELECTED:
-            _file_card(state.file_info, on_reset)
-            ui.button('Translate', on_click=on_translate).classes('btn-primary mt-4')
+                elif state.file_state == FileState.SELECTED:
+                    _file_card(state.file_info, on_reset)
+                    with ui.row().classes('justify-center mt-4'):
+                        with ui.button(on_click=on_translate).classes('translate-btn').props('no-caps'):
+                            ui.label('Translate')
+                            ui.icon('south').classes('text-base')
 
-        elif state.file_state == FileState.TRANSLATING:
-            _progress_card(state.file_info, state.translation_progress, state.translation_status)
+                elif state.file_state == FileState.TRANSLATING:
+                    _progress_card(state.file_info, state.translation_progress, state.translation_status)
 
-        elif state.file_state == FileState.COMPLETE:
-            _complete_card(state.output_file)
-            with ui.row().classes('gap-3 mt-4'):
-                ui.button('Download', on_click=on_download).classes('btn-primary')
-                ui.button('New', on_click=on_reset).classes('btn-outline')
+                elif state.file_state == FileState.COMPLETE:
+                    _complete_card(state.output_file)
+                    with ui.row().classes('gap-3 mt-4 justify-center'):
+                        with ui.button(on_click=on_download).classes('translate-btn').props('no-caps'):
+                            ui.label('Download')
+                            ui.icon('download').classes('text-base')
+                        ui.button('New', on_click=on_reset).classes('btn-outline')
 
-        elif state.file_state == FileState.ERROR:
-            _error_card(state.error_message)
-            ui.button('Try again', on_click=on_reset).classes('btn-outline mt-4')
+                elif state.file_state == FileState.ERROR:
+                    _error_card(state.error_message)
+                    ui.button('Try again', on_click=on_reset).classes('btn-outline mt-4')
 
 
 def _drop_zone(on_file_select: Callable[[Path], None]):

@@ -29,6 +29,14 @@ class AppSettings:
     request_timeout: int = 120          # Seconds
     max_retries: int = 3
 
+    # Auto Update
+    auto_update_enabled: bool = True            # 起動時に自動チェック
+    auto_update_check_interval: int = 86400     # チェック間隔（秒）: 24時間
+    github_repo_owner: str = "minimo162"        # GitHubリポジトリオーナー
+    github_repo_name: str = "yakulingo"         # GitHubリポジトリ名
+    last_update_check: Optional[str] = None     # 最後のチェック日時（ISO形式）
+    skipped_version: Optional[str] = None       # スキップしたバージョン
+
     @classmethod
     def load(cls, path: Path) -> "AppSettings":
         """Load settings from JSON file"""
@@ -57,6 +65,13 @@ class AppSettings:
             "max_batch_size": self.max_batch_size,
             "request_timeout": self.request_timeout,
             "max_retries": self.max_retries,
+            # Auto Update
+            "auto_update_enabled": self.auto_update_enabled,
+            "auto_update_check_interval": self.auto_update_check_interval,
+            "github_repo_owner": self.github_repo_owner,
+            "github_repo_name": self.github_repo_name,
+            "last_update_check": self.last_update_check,
+            "skipped_version": self.skipped_version,
         }
         with open(path, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=2, ensure_ascii=False)

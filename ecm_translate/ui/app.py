@@ -15,7 +15,7 @@ from ecm_translate.ui.styles import COMPLETE_CSS
 from ecm_translate.ui.components.text_panel import create_text_panel
 from ecm_translate.ui.components.file_panel import create_file_panel
 
-from ecm_translate.models.types import TranslationDirection, TranslationProgress, TextTranslationResult, TranslationOption, HistoryEntry
+from ecm_translate.models.types import TranslationDirection, TranslationProgress, TranslationStatus, TextTranslationResult, TranslationOption, HistoryEntry
 from ecm_translate.config.settings import AppSettings, get_default_settings_path, get_default_prompts_dir
 from ecm_translate.services.copilot_handler import CopilotHandler
 from ecm_translate.services.translation_service import TranslationService
@@ -381,10 +381,13 @@ class YakuLingoApp:
 
             progress_dialog.close()
 
-            if result.output_path:
+            if result.status == TranslationStatus.COMPLETED and result.output_path:
                 self.state.output_file = result.output_path
                 self.state.file_state = FileState.COMPLETE
                 ui.notify('Done', type='positive')
+            elif result.status == TranslationStatus.CANCELLED:
+                self.state.reset_file_state()
+                ui.notify('Cancelled', type='info')
             else:
                 self.state.error_message = result.error_message or 'Error'
                 self.state.file_state = FileState.ERROR

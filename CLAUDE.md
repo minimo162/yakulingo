@@ -304,9 +304,11 @@ The `CopilotHandler` class automates Microsoft Edge browser:
 | `numpy>=1.24.0` | Numerical operations |
 
 ### Optional Dependencies
-- `[windows]`: pywin32, keyboard, pystray, customtkinter, tkinterdnd2 (Windows integration)
+- `[windows]`: pywin32, keyboard, pystray (Windows integration - system tray, hotkeys)
 - `[ocr]`: yomitoku (PDF OCR with ML - heavy)
 - `[test]`: pytest, pytest-cov, pytest-asyncio
+
+> **Note**: `customtkinter` and `tkinterdnd2` in pyproject.toml are legacy dependencies from before the NiceGUI migration and can be removed.
 
 ## Platform Notes
 

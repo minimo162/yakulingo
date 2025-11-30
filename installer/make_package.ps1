@@ -14,6 +14,7 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $projectDir = Split-Path -Parent $scriptDir
 $outputDir = Join-Path $scriptDir "output"
 $tempDir = Join-Path $scriptDir "temp_package"
+$packageDir = Join-Path $tempDir "YakuLingo"  # zip内のフォルダ名
 
 # 依存関係フォルダの確認
 $requiredDeps = @(".venv", ".uv-python", ".playwright-browsers")
@@ -49,7 +50,7 @@ if (-not (Test-Path $outputDir)) {
 if (Test-Path $tempDir) {
     Remove-Item -Path $tempDir -Recurse -Force
 }
-New-Item -ItemType Directory -Path $tempDir | Out-Null
+New-Item -ItemType Directory -Path $packageDir -Force | Out-Null
 
 Write-Host ""
 Write-Host "[1/4] アプリファイルをコピー中..."
@@ -60,8 +61,6 @@ $files = @(
     "pyproject.toml",
     "requirements.txt",
     "glossary.csv",
-    "setup.bat",
-    "setup.ps1",
     "remove.bat",
     "remove.ps1"
 )
@@ -77,21 +76,22 @@ $appFolders = @(
 foreach ($file in $files) {
     $source = Join-Path $projectDir $file
     if (Test-Path $source) {
-        Copy-Item $source $tempDir -Force
+        Copy-Item $source $packageDir -Force
     }
 }
 
-# ★run.bat を run.bat としてコピー
-$runBatSource = Join-Path $projectDir "★run.bat"
-if (Test-Path $runBatSource) {
-    Copy-Item $runBatSource (Join-Path $tempDir "run.bat") -Force
-}
+# ★setup.bat/ps1 をコピー
+Copy-Item (Join-Path $projectDir "★setup.bat") $packageDir -Force
+Copy-Item (Join-Path $projectDir "★setup.ps1") $packageDir -Force
+
+# ★run.bat をコピー
+Copy-Item (Join-Path $projectDir "★run.bat") $packageDir -Force
 
 # アプリフォルダをコピー
 foreach ($folder in $appFolders) {
     $source = Join-Path $projectDir $folder
     if (Test-Path $source) {
-        Copy-Item $source $tempDir -Recurse -Force
+        Copy-Item $source $packageDir -Recurse -Force
     }
 }
 
@@ -103,7 +103,7 @@ Write-Host "[2/4] 依存関係をコピー中（時間がかかります）..."
 foreach ($dep in $requiredDeps) {
     $source = Join-Path $projectDir $dep
     Write-Host "  コピー中: $dep ..."
-    Copy-Item $source $tempDir -Recurse -Force
+    Copy-Item $source $packageDir -Recurse -Force
 }
 
 Write-Host "[OK] 依存関係コピー完了"
@@ -118,8 +118,8 @@ if (Test-Path $zipPath) {
     Remove-Item $zipPath -Force
 }
 
-# ZIP作成
-Compress-Archive -Path "$tempDir\*" -DestinationPath $zipPath -CompressionLevel Optimal
+# ZIP作成（YakuLingoフォルダごと圧縮）
+Compress-Archive -Path $packageDir -DestinationPath $zipPath -CompressionLevel Optimal
 
 Write-Host "[OK] ZIP作成完了"
 
@@ -144,7 +144,7 @@ Write-Host "サイズ: $zipSizeStr"
 Write-Host ""
 Write-Host "配布方法:"
 Write-Host "  1. YakuLingo.zip をユーザーに送る"
-Write-Host "  2. ユーザーは展開して setup.bat を実行"
+Write-Host "  2. ユーザーは展開して ★setup.bat を実行"
 Write-Host "  3. スタートメニュー or デスクトップから起動"
 Write-Host ""
 

@@ -54,9 +54,10 @@ $folders = @(
     ".playwright-browsers"
 )
 
-# run.bat をコピー
-if (Test-Path "$scriptDir\run.bat") {
-    Copy-Item "$scriptDir\run.bat" "$appDir\run.bat" -Force
+# ★run.bat を run.bat としてコピー
+$runBatSource = Join-Path $scriptDir "★run.bat"
+if (Test-Path $runBatSource) {
+    Copy-Item $runBatSource "$appDir\run.bat" -Force
 }
 
 # ファイルをコピー

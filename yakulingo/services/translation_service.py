@@ -397,6 +397,8 @@ class TranslationService:
 
         if text_match:
             text = text_match.group(1).strip()
+            # Remove markdown separators (*** or ---) from text
+            text = re.sub(r'\n?\s*[\*\-]{3,}\s*$', '', text).strip()
             explanation = explanation_match.group(1).strip() if explanation_match else "翻訳結果です"
 
             if text:

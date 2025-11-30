@@ -15,8 +15,8 @@ Write-Host "配置先: $appDir"
 Write-Host ""
 Write-Host "このスクリプトは以下を行います:"
 Write-Host "  - ファイルを上記フォルダにコピー（時間がかかります）"
-Write-Host "  - スタートメニューにショートカットを作成"
-Write-Host "  - (オプション) デスクトップにショートカットを作成"
+Write-Host "  - スタートメニューとデスクトップにショートカットを作成"
+Write-Host "  - 展開フォルダを自動削除"
 Write-Host ""
 
 # 確認
@@ -105,18 +105,16 @@ $removeShortcut.Save()
 
 Write-Host "[OK] スタートメニューに追加しました"
 
-# デスクトップショートカット（オプション）
-$desktopResponse = Read-Host "デスクトップにショートカットを作成しますか? (Y/N)"
-if ($desktopResponse -eq "Y" -or $desktopResponse -eq "y") {
-    $desktopPath = [Environment]::GetFolderPath("Desktop")
-    $desktopShortcut = $shell.CreateShortcut("$desktopPath\YakuLingo.lnk")
-    $desktopShortcut.TargetPath = "$appDir\run.bat"
-    $desktopShortcut.WorkingDirectory = $appDir
-    $desktopShortcut.IconLocation = "%SystemRoot%\System32\shell32.dll,13"
-    $desktopShortcut.Description = "YakuLingo - 日英翻訳ツール"
-    $desktopShortcut.Save()
-    Write-Host "[OK] デスクトップに追加しました"
-}
+# デスクトップショートカット
+$desktopPath = [Environment]::GetFolderPath("Desktop")
+$desktopShortcut = $shell.CreateShortcut("$desktopPath\YakuLingo.lnk")
+$desktopShortcut.TargetPath = "$appDir\run.bat"
+$desktopShortcut.WorkingDirectory = $appDir
+$desktopShortcut.IconLocation = "%SystemRoot%\System32\shell32.dll,13"
+$desktopShortcut.Description = "YakuLingo - 日英翻訳ツール"
+$desktopShortcut.Save()
+
+Write-Host "[OK] デスクトップに追加しました"
 
 Write-Host "[3/3] 完了"
 Write-Host ""
@@ -129,24 +127,20 @@ Write-Host ""
 Write-Host "配置先: $appDir"
 Write-Host ""
 
-# 展開フォルダの削除（オプション）
+# 展開フォルダの自動削除
 $zipFolder = Split-Path -Parent $scriptDir  # YakuLingo フォルダ（_internal の親）
-$cleanupResponse = Read-Host "展開フォルダを削除しますか? (Y/N)"
-if ($cleanupResponse -eq "Y" -or $cleanupResponse -eq "y") {
-    # クリーンアップスクリプトを一時フォルダに作成
-    $cleanupScript = "$env:TEMP\yakulingo_cleanup.ps1"
+$cleanupScript = "$env:TEMP\yakulingo_cleanup.ps1"
 
-    @"
+@"
 Start-Sleep -Seconds 3
 Remove-Item -Path '$zipFolder' -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item -Path '$cleanupScript' -Force -ErrorAction SilentlyContinue
 "@ | Out-File $cleanupScript -Encoding UTF8
 
-    # 別プロセスで実行（非表示）
-    Start-Process powershell -WindowStyle Hidden -ArgumentList "-ExecutionPolicy Bypass -File `"$cleanupScript`""
-    Write-Host ""
-    Write-Host "[INFO] 展開フォルダは数秒後に自動削除されます"
-}
+# 別プロセスで実行（非表示）
+Start-Process powershell -WindowStyle Hidden -ArgumentList "-ExecutionPolicy Bypass -File `"$cleanupScript`""
 
+Write-Host ""
+Write-Host "[INFO] 展開フォルダは数秒後に自動削除されます"
 Write-Host ""
 Read-Host "Enterキーで終了"

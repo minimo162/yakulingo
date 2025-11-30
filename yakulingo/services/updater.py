@@ -19,9 +19,11 @@ import tempfile
 import zipfile
 
 # HTTP関連
+import base64
 import urllib.request
 import urllib.error
 import ssl
+from urllib.parse import urlparse
 
 # Windows固有のモジュール（条件付きインポート）
 if platform.system() == "Windows":
@@ -127,7 +129,6 @@ class ProxyConfig:
 
     def should_bypass(self, url: str) -> bool:
         """指定URLがプロキシバイパス対象かチェック"""
-        from urllib.parse import urlparse
         parsed = urlparse(url)
         host = parsed.hostname or ""
 
@@ -186,9 +187,7 @@ class NTLMProxyHandler(urllib.request.BaseHandler):
             ctx = sspi.ClientAuth(scheme)
 
             # Type 1 メッセージ（NEGOTIATE）を生成
-            err, out_buf = ctx.authorize(None)
-
-            import base64
+            _, out_buf = ctx.authorize(None)
             auth_token = base64.b64encode(out_buf[0].Buffer).decode('ascii')
 
             # 認証トークン付きでリクエストを再送
@@ -217,7 +216,7 @@ class NTLMProxyHandler(urllib.request.BaseHandler):
 
                         # Type 3 メッセージ（AUTHENTICATE）を生成
                         challenge_bytes = base64.b64decode(challenge_token)
-                        err, out_buf = ctx.authorize(challenge_bytes)
+                        _, out_buf = ctx.authorize(challenge_bytes)
                         auth_token = base64.b64encode(out_buf[0].Buffer).decode('ascii')
 
                         # 最終認証リクエスト

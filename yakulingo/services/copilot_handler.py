@@ -7,6 +7,7 @@ Refactored from translate.py with method name changes:
 """
 
 import os
+import re
 import sys
 import time
 import socket
@@ -400,26 +401,6 @@ class CopilotHandler:
             except Exception:
                 pass
 
-    def _wait_for_copilot_ready(self, timeout: int = 60):
-        """Wait for Copilot chat interface to be ready"""
-        try:
-            # Wait for the message input area
-            # 実際のCopilot HTML: <span role="combobox" contenteditable="true" id="m365-chat-editor-target-element" ...>
-            self._page.wait_for_selector(
-                '#m365-chat-editor-target-element, [data-lexical-editor="true"], [contenteditable="true"]',
-                timeout=timeout * 1000
-            )
-        except Exception:
-            # Try alternative selectors
-            try:
-                # 実際のCopilot HTML: <button id="new-chat-button" data-testid="newChatButton" aria-label="新しいチャット">
-                self._page.wait_for_selector(
-                    '#new-chat-button, [data-testid="newChatButton"], button[aria-label="新しいチャット"]',
-                    timeout=10000
-                )
-            except Exception:
-                pass
-
     def disconnect(self) -> None:
         """Close browser and cleanup"""
         self._connected = False
@@ -721,8 +702,6 @@ class CopilotHandler:
 
     def _parse_batch_result(self, result: str, expected_count: int) -> List[str]:
         """Parse batch translation result back to list"""
-        import re
-
         lines = result.strip().split('\n')
         translations = []
 

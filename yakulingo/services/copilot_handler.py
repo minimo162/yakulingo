@@ -363,10 +363,11 @@ class CopilotHandler:
                 return ConnectionState.LOGIN_REQUIRED
 
             # 2. チャットUIが存在するか確認（短いタイムアウト）
+            # 実際のCopilot HTML: <span role="combobox" contenteditable="true" id="m365-chat-editor-target-element" ...>
             chat_selectors = [
-                'div[data-testid="chat-input"]',
-                'textarea[placeholder*="message"]',
-                'div[contenteditable="true"]',
+                '#m365-chat-editor-target-element',  # 最も確実 - Copilotのチャット入力ID
+                '[data-lexical-editor="true"]',      # Lexicalエディタの属性
+                '[contenteditable="true"]',          # 一般的なcontenteditable（要素タイプ非依存）
             ]
 
             for selector in chat_selectors:
@@ -397,8 +398,9 @@ class CopilotHandler:
         """Wait for Copilot chat interface to be ready"""
         try:
             # Wait for the message input area
+            # 実際のCopilot HTML: <span role="combobox" contenteditable="true" id="m365-chat-editor-target-element" ...>
             self._page.wait_for_selector(
-                'div[data-testid="chat-input"], textarea[placeholder*="message"], div[contenteditable="true"]',
+                '#m365-chat-editor-target-element, [data-lexical-editor="true"], [contenteditable="true"]',
                 timeout=timeout * 1000
             )
         except Exception:
@@ -502,7 +504,8 @@ class CopilotHandler:
         """Send message to Copilot (sync)"""
         try:
             # Find input area
-            input_selector = 'div[data-testid="chat-input"], textarea, div[contenteditable="true"]'
+            # 実際のCopilot HTML: <span role="combobox" contenteditable="true" id="m365-chat-editor-target-element" ...>
+            input_selector = '#m365-chat-editor-target-element, [data-lexical-editor="true"], [contenteditable="true"]'
             input_elem = self._page.wait_for_selector(input_selector, timeout=10000)
 
             if input_elem:

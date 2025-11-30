@@ -19,9 +19,9 @@ COMPLETE_CSS = """
     --md-sys-color-surface-container: #FFF5F0;
     --md-sys-color-surface-container-high: #FFEDE5;
     --md-sys-color-on-surface: #1A1C1E;
-    --md-sys-color-on-surface-variant: #5C5F62;
-    --md-sys-color-outline: #B8A8A0;
-    --md-sys-color-outline-variant: #F0E8E4;
+    --md-sys-color-on-surface-variant: #4A4D50;  /* Darker for better contrast */
+    --md-sys-color-outline: #8A7A72;  /* Darker for better visibility */
+    --md-sys-color-outline-variant: #E8DED8;
 
     /* States */
     --md-sys-color-error: #BA1A1A;
@@ -57,6 +57,10 @@ COMPLETE_CSS = """
 }
 
 /* === Base === */
+html {
+    font-size: 16px;  /* Explicit base for rem calculations */
+}
+
 body {
     font-family: system-ui, -apple-system, 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif;
     background-color: var(--md-sys-color-surface-dim);
@@ -64,9 +68,12 @@ body {
     background-size: 24px 24px;
     background-attachment: fixed;
     color: var(--md-sys-color-on-surface);
-    line-height: 1.5;
+    font-size: 0.9375rem;  /* 15px - comfortable reading size */
+    line-height: 1.6;
     margin: 0;
     padding: 0;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 }
 
 /* === Sidebar Layout === */
@@ -194,9 +201,9 @@ body {
     display: inline-flex;
     align-items: center;
     gap: 0.375rem;
-    padding: 0.25rem 0.625rem;
+    padding: 0.3rem 0.75rem;
     border-radius: var(--md-sys-shape-corner-full);
-    font-size: 0.75rem;
+    font-size: 0.8125rem;  /* 13px - better readability */
     font-weight: 500;
     background: var(--md-sys-color-surface-container);
     color: var(--md-sys-color-on-surface-variant);
@@ -302,22 +309,22 @@ body {
     align-items: center;
     justify-content: center;
     min-width: 1.5rem;
-    height: 1.25rem;
-    padding: 0 0.375rem;
-    background: rgba(255, 255, 255, 0.15);
-    border: 1px solid rgba(255, 255, 255, 0.2);
+    height: 1.375rem;
+    padding: 0 0.4rem;
+    background: rgba(255, 255, 255, 0.18);
+    border: 1px solid rgba(255, 255, 255, 0.25);
     border-radius: 4px;
     font-family: ui-monospace, monospace;
-    font-size: 0.625rem;
+    font-size: 0.6875rem;  /* 11px - improved readability */
     font-weight: 500;
-    color: rgba(255, 255, 255, 0.9);
-    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.95);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.15);
 }
 
 .keycap-plus {
-    font-size: 0.625rem;
-    color: rgba(255, 255, 255, 0.6);
-    margin: 0 1px;
+    font-size: 0.6875rem;
+    color: rgba(255, 255, 255, 0.7);
+    margin: 0 2px;
 }
 
 /* === M3 Outlined Button === */
@@ -389,7 +396,7 @@ body {
 }
 
 .drop-zone-hint {
-    font-size: 0.75rem;
+    font-size: 0.8125rem;  /* 13px - improved readability */
     color: var(--md-sys-color-on-surface-variant);
     margin-top: 0.25rem;
 }
@@ -426,7 +433,7 @@ body {
     padding: 0.25rem 0.5rem;
     background: var(--md-sys-color-surface-container-high);
     border-radius: var(--md-sys-shape-corner-small);
-    font-size: 0.6875rem;
+    font-size: 0.75rem;  /* 12px - improved readability */
     color: var(--md-sys-color-on-surface-variant);
 }
 
@@ -474,7 +481,7 @@ body {
 .result-header {
     padding: 0.75rem 1rem;
     border-bottom: 1px solid var(--md-sys-color-outline-variant);
-    font-size: 0.75rem;
+    font-size: 0.8125rem;  /* 13px - improved readability */
     font-weight: 600;
     color: var(--md-sys-color-on-surface-variant);
 }
@@ -540,7 +547,7 @@ body {
 .text-muted { color: var(--md-sys-color-on-surface-variant); }
 .text-primary { color: var(--md-sys-color-primary); }
 .text-error { color: var(--md-sys-color-error); }
-.text-2xs { font-size: 0.625rem; }
+.text-2xs { font-size: 0.6875rem; }  /* 11px - minimum readable size */
 
 .animate-in {
     animation: fadeIn var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-standard);
@@ -549,6 +556,42 @@ body {
 @keyframes fadeIn {
     from { opacity: 0; transform: translateY(4px); }
     to { opacity: 1; transform: translateY(0); }
+}
+
+/* === Responsive Design === */
+@media (max-width: 1024px) {
+    :root {
+        --sidebar-width: 240px;
+    }
+}
+
+@media (max-width: 768px) {
+    :root {
+        --sidebar-width: 220px;
+    }
+
+    .main-area {
+        margin-left: 0;
+    }
+
+    .sidebar {
+        width: 100%;
+        height: auto;
+        position: relative;
+        border-right: none;
+        border-bottom: 1px solid var(--md-sys-color-outline-variant);
+    }
+
+    .history-scroll {
+        max-height: 150px;
+    }
+}
+
+/* High DPI display adjustments */
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+    html {
+        font-size: 16px;
+    }
 }
 
 /* === Dialog === */

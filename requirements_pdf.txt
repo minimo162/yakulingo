@@ -16,6 +16,3 @@ huggingface-hub>=0.26.1
 
 # PDF reconstruction
 PyMuPDF>=1.24.0
-
-# Drag & Drop support
-tkinterdnd2>=0.3.0

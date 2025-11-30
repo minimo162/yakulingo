@@ -1,23 +1,23 @@
-# YakuLingo パッケージ作成スクリプト
-# 依存関係を含めた配布用パッケージを作成します
+# YakuLingo Package Creation Script
+# Creates a distribution package with bundled dependencies
 
 $ErrorActionPreference = "Stop"
 
 Write-Host ""
 Write-Host "============================================================" -ForegroundColor Cyan
-Write-Host "YakuLingo パッケージ作成" -ForegroundColor Cyan
+Write-Host "YakuLingo Package Creator" -ForegroundColor Cyan
 Write-Host "============================================================" -ForegroundColor Cyan
 Write-Host ""
 
-# パス設定
+# Path settings
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $projectDir = Split-Path -Parent $scriptDir
 $outputDir = Join-Path $scriptDir "output"
 $tempDir = Join-Path $scriptDir "temp_package"
-$packageDir = Join-Path $tempDir "YakuLingo"  # zip内のフォルダ名
-$internalDir = Join-Path $packageDir "_internal"  # 内部ファイル用
+$packageDir = Join-Path $tempDir "YakuLingo"  # Folder name in zip
+$internalDir = Join-Path $packageDir "_internal"  # Internal files
 
-# 依存関係フォルダの確認
+# Check for dependency folders
 $requiredDeps = @(".venv", ".uv-python", ".playwright-browsers")
 $missingDeps = @()
 
@@ -29,25 +29,25 @@ foreach ($dep in $requiredDeps) {
 }
 
 if ($missingDeps.Count -gt 0) {
-    Write-Host "[ERROR] 以下の依存関係フォルダが見つかりません:" -ForegroundColor Red
+    Write-Host "[ERROR] The following dependency folders are missing:" -ForegroundColor Red
     foreach ($dep in $missingDeps) {
         Write-Host "  - $dep" -ForegroundColor Red
     }
     Write-Host ""
-    Write-Host "先に install_deps.bat を実行して依存関係を取得してください。"
+    Write-Host "Please run install_deps.bat first to get dependencies."
     Write-Host ""
-    Read-Host "Enterキーで終了"
+    Read-Host "Press Enter to exit"
     exit 1
 }
 
-Write-Host "[OK] 依存関係フォルダを確認しました"
+Write-Host "[OK] Dependency folders verified"
 
-# 出力ディレクトリ作成
+# Create output directory
 if (-not (Test-Path $outputDir)) {
     New-Item -ItemType Directory -Path $outputDir | Out-Null
 }
 
-# 一時ディレクトリをクリーンアップ
+# Clean up temp directory
 if (Test-Path $tempDir) {
     Remove-Item -Path $tempDir -Recurse -Force
 }
@@ -55,9 +55,9 @@ New-Item -ItemType Directory -Path $packageDir -Force | Out-Null
 New-Item -ItemType Directory -Path $internalDir -Force | Out-Null
 
 Write-Host ""
-Write-Host "[1/4] アプリファイルをコピー中..."
+Write-Host "[1/4] Copying app files..."
 
-# コピー対象ファイル
+# Files to copy
 $files = @(
     "app.py",
     "pyproject.toml",
@@ -67,14 +67,14 @@ $files = @(
     "remove.ps1"
 )
 
-# コピー対象フォルダ（アプリ）
+# App folders to copy
 $appFolders = @(
     "ecm_translate",
     "prompts",
     "config"
 )
 
-# ファイルを _internal にコピー
+# Copy files to _internal
 foreach ($file in $files) {
     $source = Join-Path $projectDir $file
     if (Test-Path $source) {
@@ -82,16 +82,16 @@ foreach ($file in $files) {
     }
 }
 
-# ★setup.bat をルートにコピー（ユーザーが見る唯一のファイル）
+# Copy setup.bat to root (the only file users see)
 Copy-Item (Join-Path $projectDir "★setup.bat") $packageDir -Force
 
-# setup.ps1 を _internal にコピー
+# Copy setup.ps1 to _internal
 Copy-Item (Join-Path $projectDir "setup.ps1") $internalDir -Force
 
-# ★run.bat を _internal/run.bat としてコピー（★を外す）
+# Copy run.bat to _internal (remove star)
 Copy-Item (Join-Path $projectDir "★run.bat") (Join-Path $internalDir "run.bat") -Force
 
-# アプリフォルダを _internal にコピー
+# Copy app folders to _internal
 foreach ($folder in $appFolders) {
     $source = Join-Path $projectDir $folder
     if (Test-Path $source) {
@@ -99,57 +99,57 @@ foreach ($folder in $appFolders) {
     }
 }
 
-Write-Host "[OK] アプリファイルコピー完了"
+Write-Host "[OK] App files copied"
 
-Write-Host "[2/4] 依存関係をコピー中（時間がかかります）..."
+Write-Host "[2/4] Copying dependencies (this may take a while)..."
 
-# 依存関係フォルダを _internal にコピー
+# Copy dependency folders to _internal
 foreach ($dep in $requiredDeps) {
     $source = Join-Path $projectDir $dep
-    Write-Host "  コピー中: $dep ..."
+    Write-Host "  Copying: $dep ..."
     Copy-Item $source $internalDir -Recurse -Force
 }
 
-Write-Host "[OK] 依存関係コピー完了"
+Write-Host "[OK] Dependencies copied"
 
-Write-Host "[3/4] ZIP作成中（時間がかかります）..."
+Write-Host "[3/4] Creating ZIP (this may take a while)..."
 
-# 出力ファイル名
+# Output file name
 $zipPath = Join-Path $outputDir "YakuLingo.zip"
 
-# 既存のzipを削除
+# Delete existing zip
 if (Test-Path $zipPath) {
     Remove-Item $zipPath -Force
 }
 
-# ZIP作成（YakuLingoフォルダごと圧縮）
+# Create ZIP (compress entire YakuLingo folder)
 Compress-Archive -Path $packageDir -DestinationPath $zipPath -CompressionLevel Optimal
 
-Write-Host "[OK] ZIP作成完了"
+Write-Host "[OK] ZIP created"
 
-Write-Host "[4/4] クリーンアップ中..."
+Write-Host "[4/4] Cleaning up..."
 
-# 一時フォルダ削除
+# Delete temp folder
 Remove-Item -Path $tempDir -Recurse -Force
 
-Write-Host "[OK] クリーンアップ完了"
+Write-Host "[OK] Cleanup complete"
 
-# ファイルサイズ表示
+# Display file size
 $zipSize = (Get-Item $zipPath).Length / 1MB
 $zipSizeStr = "{0:N2} MB" -f $zipSize
 
 Write-Host ""
 Write-Host "============================================================" -ForegroundColor Green
-Write-Host "パッケージ作成完了!" -ForegroundColor Green
+Write-Host "Package Created!" -ForegroundColor Green
 Write-Host "============================================================" -ForegroundColor Green
 Write-Host ""
-Write-Host "出力ファイル: $zipPath"
-Write-Host "サイズ: $zipSizeStr"
+Write-Host "Output: $zipPath"
+Write-Host "Size: $zipSizeStr"
 Write-Host ""
-Write-Host "配布方法:"
-Write-Host "  1. YakuLingo.zip をユーザーに送る"
-Write-Host "  2. ユーザーは展開して ★setup.bat を実行"
-Write-Host "  3. スタートメニュー or デスクトップから起動"
+Write-Host "Distribution:"
+Write-Host "  1. Send YakuLingo.zip to users"
+Write-Host "  2. Users extract and run setup.bat"
+Write-Host "  3. Launch from Start Menu or Desktop"
 Write-Host ""
 
-Read-Host "Enterキーで終了"
+Read-Host "Press Enter to exit"

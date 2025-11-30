@@ -1,17 +1,17 @@
 @echo off
-:: YakuLingo セットアップ
-:: ファイルを配置し、スタートメニューにショートカットを作成します
+:: YakuLingo Setup
+:: Copies files and creates shortcuts
 
 cd /d "%~dp0"
 
 echo.
-echo YakuLingo セットアップを起動しています...
+echo Starting YakuLingo Setup...
 echo.
 
 powershell -ExecutionPolicy Bypass -File "%~dp0_internal\setup.ps1"
 
 if errorlevel 1 (
     echo.
-    echo [ERROR] セットアップに失敗しました。
+    echo [ERROR] Setup failed.
     pause
 )

@@ -14,7 +14,7 @@ for /d %%d in ("%~dp0.uv-python\cpython-*") do (
 
 if not defined PYTHON_DIR (
     echo [ERROR] Python not found in .uv-python directory.
-    echo Please run setup.bat first.
+    echo Please reinstall the application.
     pause
     exit /b 1
 )
@@ -40,7 +40,7 @@ set VIRTUAL_ENV=%VENV_DIR%
 
 if not exist "%VENV_DIR%\Scripts\python.exe" (
     echo [ERROR] .venv not found.
-    echo Please run setup.bat first.
+    echo Please reinstall the application.
     pause
     exit /b 1
 )

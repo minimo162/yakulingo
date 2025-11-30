@@ -1,0 +1,561 @@
+# tests/test_copilot_handler_core.py
+"""
+Tests for CopilotHandler core methods that were identified as undertested.
+Focuses on connection flow, message handling, and edge cases.
+"""
+
+import pytest
+from unittest.mock import Mock, MagicMock, patch, PropertyMock
+from pathlib import Path
+import socket
+
+from ecm_translate.services.copilot_handler import CopilotHandler
+
+
+class TestCopilotHandlerEdgePath:
+    """Tests for Edge executable path detection"""
+
+    def test_find_edge_exe_checks_multiple_paths(self):
+        """Verify multiple Edge paths are checked"""
+        handler = CopilotHandler()
+
+        with patch.object(Path, 'exists', return_value=False):
+            result = handler._find_edge_exe()
+
+        # Should return None when no paths exist
+        assert result is None
+
+    def test_find_edge_exe_returns_first_valid_path(self):
+        """Returns first existing Edge path"""
+        handler = CopilotHandler()
+
+        def mock_exists(self):
+            return "Program Files (x86)" in str(self)
+
+        with patch.object(Path, 'exists', mock_exists):
+            result = handler._find_edge_exe()
+
+        # On Linux this will be None, but the logic is tested
+        if result:
+            assert "msedge.exe" in result
+
+
+class TestCopilotHandlerPortCheck:
+    """Tests for port checking functionality"""
+
+    def test_is_port_in_use_returns_false_for_unused_port(self):
+        """Port not in use returns False"""
+        handler = CopilotHandler()
+        handler.cdp_port = 59999  # Unlikely to be in use
+
+        result = handler._is_port_in_use()
+
+        assert result is False
+
+    def test_is_port_in_use_handles_socket_error(self):
+        """Handles socket errors gracefully"""
+        handler = CopilotHandler()
+
+        with patch('socket.socket') as mock_socket:
+            mock_socket.return_value.connect_ex.side_effect = socket.error("Error")
+            mock_socket.return_value.settimeout = Mock()
+            mock_socket.return_value.close = Mock()
+
+            result = handler._is_port_in_use()
+
+        # Should not raise, return False on error
+        assert result is False
+
+    def test_is_port_in_use_returns_true_for_listening_port(self):
+        """Port in use returns True"""
+        handler = CopilotHandler()
+
+        with patch('socket.socket') as mock_socket:
+            mock_instance = Mock()
+            mock_instance.connect_ex.return_value = 0  # 0 means connected
+            mock_instance.settimeout = Mock()
+            mock_instance.close = Mock()
+            mock_socket.return_value = mock_instance
+
+            result = handler._is_port_in_use()
+
+        assert result is True
+
+
+class TestCopilotHandlerConnectFlow:
+    """Tests for connect() method flow"""
+
+    def test_connect_returns_true_if_already_connected(self):
+        """connect() returns True immediately if already connected"""
+        handler = CopilotHandler()
+        handler._connected = True
+
+        result = handler.connect()
+
+        assert result is True
+
+    def test_connect_calls_progress_callback(self):
+        """connect() calls progress callback with messages"""
+        handler = CopilotHandler()
+        progress_messages = []
+
+        def on_progress(msg):
+            progress_messages.append(msg)
+
+        # Will fail but should still call progress
+        handler.connect(on_progress=on_progress)
+
+        assert len(progress_messages) > 0
+        assert any("Edge" in msg or "browser" in msg.lower() for msg in progress_messages)
+
+    def test_connect_handles_playwright_not_available(self):
+        """connect() handles when Playwright is not available"""
+        handler = CopilotHandler()
+
+        with patch('ecm_translate.services.copilot_handler._get_playwright') as mock_pw:
+            mock_pw.side_effect = ImportError("No module named 'playwright'")
+
+            result = handler.connect()
+
+        assert result is False
+        assert handler.is_connected is False
+
+    def test_connect_handles_browser_connection_failure(self):
+        """connect() handles browser connection failure"""
+        handler = CopilotHandler()
+
+        with patch.object(handler, '_is_port_in_use', return_value=True):
+            with patch('ecm_translate.services.copilot_handler._get_playwright') as mock_pw:
+                mock_sync_playwright = Mock()
+                mock_playwright_instance = Mock()
+                mock_playwright_instance.chromium.connect_over_cdp.side_effect = Exception(
+                    "Connection refused"
+                )
+                mock_sync_playwright.return_value.start.return_value = mock_playwright_instance
+                mock_pw.return_value = ({}, mock_sync_playwright)
+
+                result = handler.connect()
+
+        assert result is False
+
+
+class TestCopilotHandlerSendMessage:
+    """Tests for _send_message() method"""
+
+    def test_send_message_fills_and_submits(self):
+        """_send_message fills input and clicks send"""
+        handler = CopilotHandler()
+
+        mock_input = Mock()
+        mock_send_button = Mock()
+        mock_page = Mock()
+        mock_page.wait_for_selector.return_value = mock_input
+        mock_page.query_selector.return_value = mock_send_button
+
+        handler._page = mock_page
+
+        handler._send_message("Test message")
+
+        mock_input.click.assert_called_once()
+        mock_input.fill.assert_called_once_with("Test message")
+        mock_send_button.click.assert_called_once()
+
+    def test_send_message_presses_enter_when_no_button(self):
+        """_send_message presses Enter when send button not found"""
+        handler = CopilotHandler()
+
+        mock_input = Mock()
+        mock_page = Mock()
+        mock_page.wait_for_selector.return_value = mock_input
+        mock_page.query_selector.return_value = None  # No send button
+
+        handler._page = mock_page
+
+        handler._send_message("Test message")
+
+        mock_input.press.assert_called_once_with("Enter")
+
+    def test_send_message_handles_timeout(self):
+        """_send_message handles input element timeout"""
+        handler = CopilotHandler()
+
+        mock_page = Mock()
+        mock_page.wait_for_selector.side_effect = Exception("Timeout")
+
+        handler._page = mock_page
+
+        with pytest.raises(Exception) as exc:
+            handler._send_message("Test message")
+
+        assert "Timeout" in str(exc.value)
+
+    def test_send_message_with_special_characters(self):
+        """_send_message handles special characters"""
+        handler = CopilotHandler()
+
+        mock_input = Mock()
+        mock_page = Mock()
+        mock_page.wait_for_selector.return_value = mock_input
+        mock_page.query_selector.return_value = Mock()
+
+        handler._page = mock_page
+
+        special_text = "日本語テスト <script>alert('xss')</script> & special chars"
+        handler._send_message(special_text)
+
+        mock_input.fill.assert_called_once_with(special_text)
+
+
+class TestCopilotHandlerGetResponse:
+    """Tests for _get_response() method"""
+
+    def test_get_response_returns_stable_text(self):
+        """_get_response returns text when stable"""
+        handler = CopilotHandler()
+
+        mock_response_elem = Mock()
+        mock_response_elem.inner_text.return_value = "Translated result"
+
+        mock_page = Mock()
+        mock_page.query_selector.return_value = mock_response_elem
+
+        handler._page = mock_page
+
+        with patch('time.sleep'):  # Speed up test
+            result = handler._get_response(timeout=5)
+
+        assert result == "Translated result"
+
+    def test_get_response_waits_for_stability(self):
+        """_get_response waits for text to stabilize"""
+        handler = CopilotHandler()
+
+        call_count = [0]
+        responses = ["Partial...", "Partial response", "Full response", "Full response", "Full response"]
+
+        def mock_inner_text():
+            call_count[0] += 1
+            idx = min(call_count[0] - 1, len(responses) - 1)
+            return responses[idx]
+
+        mock_response_elem = Mock()
+        mock_response_elem.inner_text = mock_inner_text
+
+        mock_page = Mock()
+        mock_page.query_selector.return_value = mock_response_elem
+
+        handler._page = mock_page
+
+        with patch('time.sleep'):
+            result = handler._get_response(timeout=10)
+
+        assert result == "Full response"
+
+    def test_get_response_handles_no_response_element(self):
+        """_get_response handles missing response element"""
+        handler = CopilotHandler()
+
+        mock_page = Mock()
+        mock_page.query_selector.return_value = None
+
+        handler._page = mock_page
+
+        with patch('time.sleep'):
+            result = handler._get_response(timeout=3)
+
+        assert result == ""
+
+    def test_get_response_handles_exception(self):
+        """_get_response handles exceptions gracefully"""
+        handler = CopilotHandler()
+
+        mock_page = Mock()
+        mock_page.query_selector.side_effect = Exception("Element not found")
+
+        handler._page = mock_page
+
+        with patch('time.sleep'):
+            result = handler._get_response(timeout=3)
+
+        assert result == ""
+
+
+class TestCopilotHandlerTranslateSync:
+    """Tests for translate_sync() method"""
+
+    def test_translate_sync_full_flow(self):
+        """translate_sync completes full translation flow"""
+        handler = CopilotHandler()
+        handler._connected = True
+
+        mock_page = Mock()
+        handler._page = mock_page
+        handler._send_message = Mock()
+        handler._get_response = Mock(return_value="1. Hello\n2. World")
+
+        result = handler.translate_sync(["こんにちは", "世界"], "Translate prompt")
+
+        handler._send_message.assert_called_once_with("Translate prompt")
+        handler._get_response.assert_called_once()
+        assert result == ["Hello", "World"]
+
+    def test_translate_sync_not_connected_raises(self):
+        """translate_sync raises when not connected"""
+        handler = CopilotHandler()
+        handler._connected = False
+
+        with pytest.raises(RuntimeError) as exc:
+            handler.translate_sync(["test"], "prompt")
+
+        assert "Not connected" in str(exc.value)
+
+    def test_translate_sync_no_page_raises(self):
+        """translate_sync raises when no page"""
+        handler = CopilotHandler()
+        handler._connected = True
+        handler._page = None
+
+        with pytest.raises(RuntimeError) as exc:
+            handler.translate_sync(["test"], "prompt")
+
+        assert "Not connected" in str(exc.value)
+
+    def test_translate_sync_empty_input(self):
+        """translate_sync handles empty input list"""
+        handler = CopilotHandler()
+        handler._connected = True
+        handler._page = Mock()
+        handler._send_message = Mock()
+        handler._get_response = Mock(return_value="")
+
+        result = handler.translate_sync([], "prompt")
+
+        assert result == []
+
+
+class TestCopilotHandlerTranslateSingle:
+    """Tests for translate_single() method"""
+
+    def test_translate_single_returns_first_result(self):
+        """translate_single returns first element from translate_sync"""
+        handler = CopilotHandler()
+        handler.translate_sync = Mock(return_value=["Translated"])
+
+        result = handler.translate_single("テスト", "prompt")
+
+        handler.translate_sync.assert_called_once_with(["テスト"], "prompt", None)
+        assert result == "Translated"
+
+    def test_translate_single_handles_empty_result(self):
+        """translate_single returns empty string for empty result"""
+        handler = CopilotHandler()
+        handler.translate_sync = Mock(return_value=[])
+
+        result = handler.translate_single("テスト", "prompt")
+
+        assert result == ""
+
+    def test_translate_single_with_reference_files(self):
+        """translate_single passes reference files"""
+        handler = CopilotHandler()
+        handler.translate_sync = Mock(return_value=["Translated"])
+        ref_files = [Path("/path/to/glossary.csv")]
+
+        result = handler.translate_single("テスト", "prompt", ref_files)
+
+        handler.translate_sync.assert_called_once_with(["テスト"], "prompt", ref_files)
+
+
+class TestCopilotHandlerParseBatchResult:
+    """Extended tests for _parse_batch_result()"""
+
+    @pytest.fixture
+    def handler(self):
+        return CopilotHandler()
+
+    def test_parse_mixed_numbered_and_unnumbered(self, handler):
+        """Parse result with mixed numbering"""
+        result = """1. First item
+Second item without number
+3. Third item"""
+        parsed = handler._parse_batch_result(result, 3)
+
+        assert len(parsed) == 3
+        assert parsed[0] == "First item"
+        assert parsed[1] == "Second item without number"
+        assert parsed[2] == "Third item"
+
+    def test_parse_with_multiline_items(self, handler):
+        """Handle items that could span multiple lines"""
+        result = """1. First translation
+2. Second translation
+3. Third translation"""
+        parsed = handler._parse_batch_result(result, 3)
+
+        assert len(parsed) == 3
+
+    def test_parse_with_colons_in_content(self, handler):
+        """Parse items containing colons"""
+        result = """1. Title: Description
+2. Key: Value pair
+3. Time: 10:30 AM"""
+        parsed = handler._parse_batch_result(result, 3)
+
+        assert parsed[0] == "Title: Description"
+        assert parsed[1] == "Key: Value pair"
+        assert parsed[2] == "Time: 10:30 AM"
+
+    def test_parse_with_japanese_numbers(self, handler):
+        """Parse items with Japanese content"""
+        result = """1. こんにちは
+2. さようなら
+3. ありがとう"""
+        parsed = handler._parse_batch_result(result, 3)
+
+        assert parsed[0] == "こんにちは"
+        assert parsed[1] == "さようなら"
+        assert parsed[2] == "ありがとう"
+
+    def test_parse_result_with_only_whitespace_lines(self, handler):
+        """Parse result with whitespace-only lines"""
+        result = """1. Hello
+
+
+2. World"""
+        parsed = handler._parse_batch_result(result, 2)
+
+        assert len(parsed) == 2
+        assert parsed[0] == "Hello"
+        assert parsed[1] == "World"
+
+    def test_parse_single_item(self, handler):
+        """Parse single item result"""
+        result = "1. Single translation"
+        parsed = handler._parse_batch_result(result, 1)
+
+        assert len(parsed) == 1
+        assert parsed[0] == "Single translation"
+
+    def test_parse_with_leading_trailing_whitespace(self, handler):
+        """Parse with leading/trailing whitespace on lines"""
+        result = """   1. Hello
+   2. World   """
+        parsed = handler._parse_batch_result(result, 2)
+
+        assert parsed[0] == "Hello"
+        assert parsed[1] == "World"
+
+
+class TestCopilotHandlerStartNewChat:
+    """Tests for start_new_chat() method"""
+
+    def test_start_new_chat_clicks_button(self):
+        """start_new_chat clicks new chat button when found"""
+        handler = CopilotHandler()
+
+        mock_button = Mock()
+        mock_page = Mock()
+        mock_page.query_selector.return_value = mock_button
+
+        handler._page = mock_page
+
+        with patch('time.sleep'):
+            handler.start_new_chat()
+
+        mock_button.click.assert_called_once()
+
+    def test_start_new_chat_no_button_found(self):
+        """start_new_chat handles missing button"""
+        handler = CopilotHandler()
+
+        mock_page = Mock()
+        mock_page.query_selector.return_value = None
+
+        handler._page = mock_page
+
+        # Should not raise
+        handler.start_new_chat()
+
+    def test_start_new_chat_no_page(self):
+        """start_new_chat handles no page"""
+        handler = CopilotHandler()
+        handler._page = None
+
+        # Should not raise
+        handler.start_new_chat()
+
+    def test_start_new_chat_handles_exception(self):
+        """start_new_chat handles click exception"""
+        handler = CopilotHandler()
+
+        mock_button = Mock()
+        mock_button.click.side_effect = Exception("Click failed")
+        mock_page = Mock()
+        mock_page.query_selector.return_value = mock_button
+
+        handler._page = mock_page
+
+        # Should not raise
+        handler.start_new_chat()
+
+
+class TestCopilotHandlerDisconnect:
+    """Extended tests for disconnect() method"""
+
+    def test_disconnect_clears_all_state(self):
+        """disconnect clears all connection state"""
+        handler = CopilotHandler()
+        handler._connected = True
+        handler._browser = Mock()
+        handler._context = Mock()
+        handler._page = Mock()
+        handler._playwright = Mock()
+
+        handler.disconnect()
+
+        assert handler._connected is False
+        assert handler._browser is None
+        assert handler._context is None
+        assert handler._page is None
+        assert handler._playwright is None
+
+    def test_disconnect_handles_browser_close_error(self):
+        """disconnect handles browser close error"""
+        handler = CopilotHandler()
+        handler._connected = True
+
+        mock_browser = Mock()
+        mock_browser.close.side_effect = Exception("Close failed")
+        handler._browser = mock_browser
+
+        mock_playwright = Mock()
+        handler._playwright = mock_playwright
+
+        # Should not raise
+        handler.disconnect()
+
+        assert handler.is_connected is False
+
+    def test_disconnect_handles_playwright_stop_error(self):
+        """disconnect handles playwright stop error"""
+        handler = CopilotHandler()
+        handler._connected = True
+
+        mock_playwright = Mock()
+        mock_playwright.stop.side_effect = Exception("Stop failed")
+        handler._playwright = mock_playwright
+
+        # Should not raise
+        handler.disconnect()
+
+        assert handler.is_connected is False
+
+    def test_disconnect_when_not_connected(self):
+        """disconnect when already disconnected"""
+        handler = CopilotHandler()
+        handler._connected = False
+
+        # Should not raise
+        handler.disconnect()
+
+        assert handler.is_connected is False

@@ -60,9 +60,6 @@ class AppState:
     copilot_connecting: bool = False
     copilot_error: str = ""
 
-    # Settings
-    start_with_windows: bool = False
-
     def swap_direction(self) -> None:
         """Swap translation direction"""
         if self.direction == TranslationDirection.JP_TO_EN:

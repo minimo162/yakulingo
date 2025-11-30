@@ -14,7 +14,6 @@ class TestAppSettings:
         settings = AppSettings()
         assert settings.reference_files == ["glossary.csv"]
         assert settings.output_directory is None
-        assert settings.start_with_windows is False
         assert settings.last_direction == "jp_to_en"
         assert settings.max_batch_size == 50
         assert settings.request_timeout == 120

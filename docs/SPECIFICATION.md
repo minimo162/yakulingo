@@ -125,8 +125,7 @@ ECM_translate/
 │   │       ├── header.py
 │   │       ├── tabs.py
 │   │       ├── text_panel.py
-│   │       ├── file_panel.py
-│   │       └── settings_panel.py
+│   │       └── file_panel.py
 │   │
 │   ├── services/                   # Service Layer
 │   │   ├── translation_service.py  # TranslationService
@@ -268,9 +267,6 @@ class AppState:
     copilot_connected: bool = False
     copilot_connecting: bool = False
     copilot_error: str = ""
-
-    # 設定
-    start_with_windows: bool = False
 ```
 
 ---
@@ -739,7 +735,6 @@ Reference Files
 class AppSettings:
     reference_files: list[str] = ["glossary.csv"]
     output_directory: Optional[str] = None  # None = 入力と同じ
-    start_with_windows: bool = False
     last_direction: str = "jp_to_en"
     last_tab: str = "text"
     window_width: int = 900

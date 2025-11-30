@@ -15,7 +15,7 @@ from ecm_translate.ui.styles import COMPLETE_CSS
 from ecm_translate.ui.components.text_panel import create_text_panel
 from ecm_translate.ui.components.file_panel import create_file_panel
 
-from ecm_translate.models.types import TranslationDirection, TranslationProgress, TextTranslationResult, TranslationOption
+from ecm_translate.models.types import TranslationDirection, TranslationProgress, TextTranslationResult, TranslationOption, HistoryEntry
 from ecm_translate.config.settings import AppSettings, get_default_settings_path, get_default_prompts_dir
 from ecm_translate.services.copilot_handler import CopilotHandler
 from ecm_translate.services.translation_service import TranslationService
@@ -39,6 +39,7 @@ class YakuLingoApp:
         self._header_status: Optional[ui.element] = None
         self._main_content = None
         self._tabs_container = None
+        self._history_drawer: Optional[ui.element] = None
 
     async def connect_copilot(self):
         """Connect to Copilot"""
@@ -101,6 +102,15 @@ class YakuLingoApp:
 
             ui.space()
 
+            # History button
+            history_btn = ui.button(
+                icon='history',
+                on_click=self._toggle_history
+            ).props('flat round').classes('history-btn')
+            if self.state.history:
+                with history_btn:
+                    ui.badge(str(len(self.state.history))).props('floating color=primary')
+
             # Refreshable status
             @ui.refreshable
             def header_status():
@@ -116,6 +126,11 @@ class YakuLingoApp:
             self._header_status = header_status
             header_status()
 
+        # History drawer (right side)
+        with ui.right_drawer(value=False).classes('history-drawer') as drawer:
+            self._history_drawer = drawer
+            self._create_history_panel()
+
         # Refreshable main content
         @ui.refreshable
         def main_content():
@@ -126,7 +141,6 @@ class YakuLingoApp:
                         on_translate=self._translate_text,
                         on_swap=self._swap,
                         on_source_change=self._on_source_change,
-                        on_target_change=self._on_target_change,
                         on_copy=self._copy_text,
                         on_clear=self._clear,
                         on_adjust=self._adjust_text,
@@ -139,6 +153,7 @@ class YakuLingoApp:
                         on_cancel=self._cancel,
                         on_download=self._download,
                         on_reset=self._reset,
+                        on_swap=self._swap,
                     )
 
         self._main_content = main_content
@@ -171,14 +186,9 @@ class YakuLingoApp:
         """Handle source text change - no refresh needed"""
         self.state.source_text = text
 
-    def _on_target_change(self, text: str):
-        """Handle target text change - no refresh needed"""
-        self.state.target_text = text
-
     def _clear(self):
         """Clear text fields"""
         self.state.source_text = ""
-        self.state.target_text = ""
         self.state.text_result = None
         self._refresh_content()
 
@@ -186,7 +196,7 @@ class YakuLingoApp:
         """Copy specified text to clipboard"""
         if text:
             ui.clipboard.write(text)
-            ui.notify('コピーしました', type='positive')
+            ui.notify('Copied', type='positive')
 
     async def _translate_text(self):
         """Translate text with multiple options"""
@@ -209,9 +219,8 @@ class YakuLingoApp:
 
             if result and result.options:
                 self.state.text_result = result
-                # Also set target_text for compatibility
-                if result.options:
-                    self.state.target_text = result.options[0].text
+                # Add to history
+                self._add_to_history(result)
             else:
                 error_msg = result.error_message if result else 'Unknown error'
                 ui.notify(f'Error: {error_msg}', type='negative')
@@ -251,7 +260,7 @@ class YakuLingoApp:
                         options=[result]
                     )
             else:
-                ui.notify('調整に失敗しました', type='negative')
+                ui.notify('Adjustment failed', type='negative')
 
         except Exception as e:
             ui.notify(f'Error: {e}', type='negative')
@@ -357,6 +366,99 @@ class YakuLingoApp:
         """Reset file state"""
         self.state.reset_file_state()
         self._refresh_content()
+
+    def _toggle_history(self):
+        """Toggle history drawer"""
+        if self._history_drawer:
+            if self._history_drawer.value:
+                self._history_drawer.hide()
+            else:
+                self._history_drawer.show()
+
+    def _create_history_panel(self):
+        """Create history panel content"""
+        with ui.column().classes('w-full h-full'):
+            # Header
+            with ui.row().classes('w-full justify-between items-center p-4 border-b'):
+                ui.label('History').classes('text-base font-medium')
+                with ui.row().classes('gap-1'):
+                    if self.state.history:
+                        ui.button(
+                            icon='delete_sweep',
+                            on_click=self._clear_history
+                        ).props('flat dense round').tooltip('Clear all')
+                    ui.button(
+                        icon='close',
+                        on_click=lambda: self._history_drawer.hide()
+                    ).props('flat dense round')
+
+            # History list
+            if not self.state.history:
+                with ui.column().classes('flex-1 items-center justify-center p-4'):
+                    ui.icon('history').classes('text-4xl text-muted')
+                    ui.label('No history yet').classes('text-sm text-muted mt-2')
+            else:
+                with ui.scroll_area().classes('flex-1'):
+                    with ui.column().classes('w-full gap-2 p-3'):
+                        for entry in self.state.history:
+                            self._create_history_item(entry)
+
+    def _create_history_item(self, entry: HistoryEntry):
+        """Create a history item card"""
+        with ui.card().classes('history-item w-full cursor-pointer').on(
+            'click',
+            lambda e, ent=entry: self._load_from_history(ent)
+        ):
+            with ui.column().classes('w-full gap-1'):
+                # Direction and time
+                with ui.row().classes('w-full justify-between items-center'):
+                    ui.label(entry.direction_label).classes('text-xs font-medium text-primary')
+                    # Format timestamp
+                    from datetime import datetime
+                    try:
+                        dt = datetime.fromisoformat(entry.timestamp)
+                        time_str = dt.strftime('%H:%M')
+                    except:
+                        time_str = ''
+                    ui.label(time_str).classes('text-xs text-muted')
+
+                # Source preview
+                ui.label(entry.preview).classes('text-sm')
+
+                # Result preview
+                if entry.result.options:
+                    first_option = entry.result.options[0].text
+                    preview = first_option[:40] + '...' if len(first_option) > 40 else first_option
+                    ui.label(preview).classes('text-xs text-muted italic')
+
+    def _load_from_history(self, entry: HistoryEntry):
+        """Load translation from history"""
+        self.state.source_text = entry.source_text
+        self.state.direction = entry.direction
+        self.state.text_result = entry.result
+        self.state.current_tab = Tab.TEXT
+
+        if self._history_drawer:
+            self._history_drawer.hide()
+
+        self._refresh_tabs()
+        self._refresh_content()
+
+    def _clear_history(self):
+        """Clear all history"""
+        self.state.clear_history()
+        if self._history_drawer:
+            self._history_drawer.update()
+        self._refresh_content()
+
+    def _add_to_history(self, result: TextTranslationResult):
+        """Add translation result to history"""
+        entry = HistoryEntry(
+            source_text=self.state.source_text,
+            direction=self.state.direction,
+            result=result,
+        )
+        self.state.add_to_history(entry)
 
 
 def create_app() -> YakuLingoApp:

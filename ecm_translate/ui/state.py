@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Optional, List
 from enum import Enum
 
-from ecm_translate.models.types import TranslationDirection, FileInfo, TextTranslationResult
+from ecm_translate.models.types import TranslationDirection, FileInfo, TextTranslationResult, HistoryEntry
 
 
 class Tab(Enum):
@@ -40,9 +40,8 @@ class AppState:
 
     # Text tab state
     source_text: str = ""
-    target_text: str = ""  # Legacy, kept for compatibility
     text_translating: bool = False
-    text_result: Optional[TextTranslationResult] = None  # New: multiple options
+    text_result: Optional[TextTranslationResult] = None
 
     # File tab state
     file_state: FileState = FileState.EMPTY
@@ -61,6 +60,11 @@ class AppState:
     copilot_connecting: bool = False
     copilot_error: str = ""
 
+    # Translation history
+    history: List[HistoryEntry] = field(default_factory=list)
+    history_drawer_open: bool = False
+    max_history_entries: int = 50
+
     def swap_direction(self) -> None:
         """Swap translation direction"""
         if self.direction == TranslationDirection.JP_TO_EN:
@@ -68,7 +72,6 @@ class AppState:
         else:
             self.direction = TranslationDirection.JP_TO_EN
         # Clear translation results on direction change
-        self.target_text = ""
         self.text_result = None
 
     def get_source_label(self) -> str:
@@ -86,7 +89,7 @@ class AppState:
     def get_source_placeholder(self) -> str:
         """Get source textarea placeholder"""
         if self.direction == TranslationDirection.JP_TO_EN:
-            return "日本語を入力..."
+            return "Enter Japanese text..."
         return "Enter English text..."
 
     def reset_file_state(self) -> None:
@@ -116,3 +119,18 @@ class AppState:
         elif self.current_tab == Tab.FILE:
             return self.file_state == FileState.TRANSLATING
         return False
+
+    def add_to_history(self, entry: HistoryEntry) -> None:
+        """Add entry to history (most recent first)"""
+        self.history.insert(0, entry)
+        # Keep only max_history_entries
+        if len(self.history) > self.max_history_entries:
+            self.history = self.history[:self.max_history_entries]
+
+    def clear_history(self) -> None:
+        """Clear all history"""
+        self.history = []
+
+    def toggle_history_drawer(self) -> None:
+        """Toggle history drawer visibility"""
+        self.history_drawer_open = not self.history_drawer_open

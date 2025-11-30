@@ -11,12 +11,33 @@ from ecm_translate.ui.state import AppState
 from ecm_translate.models.types import TranslationDirection, TranslationOption
 
 
+# Tone icons for translation explanations
+TONE_ICONS = {
+    'formal': 'business_center',
+    'business': 'business_center',
+    'casual': 'chat_bubble',
+    'conversational': 'chat_bubble',
+    'literary': 'menu_book',
+    'polite': 'sentiment_satisfied',
+    'direct': 'arrow_forward',
+    'neutral': 'remove',
+}
+
+
+def _get_tone_icon(explanation: str) -> str:
+    """Get icon based on explanation keywords"""
+    explanation_lower = explanation.lower()
+    for keyword, icon in TONE_ICONS.items():
+        if keyword in explanation_lower:
+            return icon
+    return 'translate'
+
+
 def create_text_panel(
     state: AppState,
     on_translate: Callable[[], None],
     on_swap: Callable[[], None],
     on_source_change: Callable[[str], None],
-    on_target_change: Callable[[str], None],
     on_copy: Callable[[str], None],
     on_clear: Callable[[], None],
     on_adjust: Optional[Callable[[str, str], None]] = None,
@@ -24,8 +45,8 @@ def create_text_panel(
     """Text translation panel with multiple options"""
 
     # Language labels
-    source_lang = '日本語' if state.direction == TranslationDirection.JP_TO_EN else 'English'
-    target_lang = 'English' if state.direction == TranslationDirection.JP_TO_EN else '日本語'
+    source_lang = 'Japanese' if state.direction == TranslationDirection.JP_TO_EN else 'English'
+    target_lang = 'English' if state.direction == TranslationDirection.JP_TO_EN else 'Japanese'
 
     with ui.column().classes('flex-1 w-full gap-4 animate-in'):
         # Source section
@@ -34,24 +55,36 @@ def create_text_panel(
                 ui.label(source_lang)
                 with ui.row().classes('items-center gap-2'):
                     if state.source_text:
-                        ui.label(f'{len(state.source_text)}文字').classes('text-xs text-muted')
+                        ui.label(f'{len(state.source_text)} chars').classes('text-xs text-muted')
                         ui.button(icon='close', on_click=on_clear).props('flat dense round size=sm')
 
-            ui.textarea(
+            # Textarea with Ctrl+Enter to submit
+            textarea = ui.textarea(
                 placeholder=state.get_source_placeholder(),
                 value=state.source_text,
                 on_change=lambda e: on_source_change(e.value)
             ).classes('w-full min-h-32 p-3').props('borderless autogrow')
 
+            # Handle Ctrl+Enter in textarea
+            async def handle_keydown(e):
+                if e.args.get('ctrlKey') and e.args.get('key') == 'Enter':
+                    if state.can_translate() and not state.text_translating:
+                        await on_translate()
+
+            textarea.on('keydown', handle_keydown)
+
         # Direction swap and translate button
         with ui.row().classes('justify-center items-center gap-4'):
             ui.button(icon='swap_horiz', on_click=on_swap).classes('swap-btn')
 
-            btn = ui.button('翻訳', on_click=on_translate).classes('btn-primary')
-            if state.text_translating:
-                btn.props('loading disable')
-            elif not state.can_translate():
-                btn.props('disable')
+            with ui.column().classes('items-center gap-1'):
+                btn = ui.button('Translate', on_click=on_translate).classes('btn-primary')
+                if state.text_translating:
+                    btn.props('loading disable')
+                elif not state.can_translate():
+                    btn.props('disable')
+                # Keyboard hint
+                ui.label('Enter: newline / Ctrl+Enter: translate').classes('text-xs text-muted shortcut-hint')
 
         # Results section
         if state.text_result and state.text_result.options:
@@ -64,7 +97,7 @@ def create_text_panel(
         elif state.text_translating:
             with ui.column().classes('w-full items-center justify-center py-8'):
                 ui.spinner(size='lg')
-                ui.label('翻訳中...').classes('text-sm text-muted mt-2')
+                ui.label('Translating...').classes('text-sm text-muted mt-2')
 
 
 def _render_results(
@@ -78,10 +111,17 @@ def _render_results(
     with ui.column().classes('w-full text-box'):
         with ui.row().classes('text-label justify-between items-center'):
             ui.label(target_lang)
+            ui.label(f'{len(result.options)} options').classes('text-xs text-muted')
 
         with ui.column().classes('w-full p-3 gap-3'):
             for i, option in enumerate(result.options):
-                _render_option(option, on_copy, on_adjust, is_last=(i == len(result.options) - 1))
+                _render_option(
+                    option,
+                    on_copy,
+                    on_adjust,
+                    is_last=(i == len(result.options) - 1),
+                    index=i,
+                )
 
 
 def _render_option(
@@ -89,38 +129,43 @@ def _render_option(
     on_copy: Callable[[str], None],
     on_adjust: Optional[Callable[[str, str], None]],
     is_last: bool = False,
+    index: int = 0,
 ):
-    """Render a single translation option"""
+    """Render a single translation option as a card"""
 
-    with ui.column().classes('w-full gap-1'):
-        # Translation text
-        ui.label(option.text).classes('text-base')
+    tone_icon = _get_tone_icon(option.explanation)
 
-        # Explanation and actions row
-        with ui.row().classes('w-full justify-between items-center'):
-            # Explanation
-            ui.label(option.explanation).classes('text-xs text-muted flex-1')
+    with ui.card().classes('option-card w-full'):
+        with ui.column().classes('w-full gap-2'):
+            # Header with tone icon and option number
+            with ui.row().classes('w-full items-center gap-2'):
+                ui.icon(tone_icon).classes('text-primary text-lg')
+                ui.label(f'Option {index + 1}').classes('text-xs font-medium text-muted uppercase')
+                ui.space()
+                ui.label(f'{option.char_count} chars').classes('text-xs text-muted')
 
-            # Actions
-            with ui.row().classes('items-center gap-1'):
-                ui.label(f'{option.char_count}文字').classes('text-xs text-muted mr-2')
+            # Translation text
+            ui.label(option.text).classes('text-base option-text')
 
-                # Copy button
-                ui.button(
-                    icon='content_copy',
-                    on_click=lambda o=option: on_copy(o.text)
-                ).props('flat dense round size=sm').tooltip('コピー')
+            # Explanation and actions row
+            with ui.row().classes('w-full justify-between items-center mt-1'):
+                # Explanation with icon
+                ui.label(option.explanation).classes('text-xs text-muted flex-1 italic')
 
-                # Adjust button
-                if on_adjust:
+                # Actions
+                with ui.row().classes('items-center gap-1'):
+                    # Copy button
                     ui.button(
-                        icon='tune',
-                        on_click=lambda o=option: _show_adjust_dialog(o.text, on_adjust)
-                    ).props('flat dense round size=sm').tooltip('調整')
+                        icon='content_copy',
+                        on_click=lambda o=option: on_copy(o.text)
+                    ).props('flat dense round size=sm').classes('option-action').tooltip('Copy (Ctrl+C)')
 
-        # Separator (except for last item)
-        if not is_last:
-            ui.separator().classes('my-2')
+                    # Adjust button
+                    if on_adjust:
+                        ui.button(
+                            icon='tune',
+                            on_click=lambda o=option: _show_adjust_dialog(o.text, on_adjust)
+                        ).props('flat dense round size=sm').classes('option-action').tooltip('Adjust')
 
 
 def _show_adjust_dialog(text: str, on_adjust: Callable[[str, str], None]):
@@ -130,7 +175,7 @@ def _show_adjust_dialog(text: str, on_adjust: Callable[[str, str], None]):
         with ui.column().classes('w-full gap-4 p-4'):
             # Header
             with ui.row().classes('w-full justify-between items-center'):
-                ui.label('調整').classes('text-base font-medium')
+                ui.label('Adjust').classes('text-base font-medium')
                 ui.button(icon='close', on_click=dialog.close).props('flat dense round')
 
             # Current text
@@ -139,22 +184,22 @@ def _show_adjust_dialog(text: str, on_adjust: Callable[[str, str], None]):
             # Quick actions
             with ui.row().classes('gap-2'):
                 ui.button(
-                    'もう少し短く',
+                    'Shorter',
                     on_click=lambda: _do_adjust(dialog, text, 'shorter', on_adjust)
                 ).props('outline').classes('flex-1')
 
                 ui.button(
-                    'もう少し詳しく',
+                    'More detailed',
                     on_click=lambda: _do_adjust(dialog, text, 'longer', on_adjust)
                 ).props('outline').classes('flex-1')
 
             # Custom input
             custom_input = ui.input(
-                placeholder='その他のリクエスト...'
+                placeholder='Other requests...'
             ).classes('w-full')
 
             ui.button(
-                '送信',
+                'Submit',
                 on_click=lambda: _do_adjust(dialog, text, custom_input.value, on_adjust)
             ).classes('btn-primary self-end')
 
@@ -163,6 +208,6 @@ def _show_adjust_dialog(text: str, on_adjust: Callable[[str, str], None]):
 
 def _do_adjust(dialog, text: str, adjust_type: str, on_adjust: Callable[[str, str], None]):
     """Execute adjustment and close dialog"""
-    if adjust_type:
+    if adjust_type and adjust_type.strip():
         dialog.close()
-        on_adjust(text, adjust_type)
+        on_adjust(text, adjust_type.strip())

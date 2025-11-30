@@ -25,6 +25,14 @@ COMPLETE_CSS = """
     /* States */
     --md-sys-color-error: #BA1A1A;
     --md-sys-color-on-error: #FFFFFF;
+    --md-sys-color-error-container: #FFDAD6;
+    --md-sys-color-on-error-container: #410002;
+
+    /* Success (extended) */
+    --md-sys-color-success: #2E7D32;
+    --md-sys-color-on-success: #FFFFFF;
+    --md-sys-color-success-container: #C8E6C9;
+    --md-sys-color-on-success-container: #1B5E20;
 
     /* Shape */
     --md-sys-shape-corner-full: 9999px;
@@ -202,7 +210,7 @@ body {
 }
 
 .file-card.success {
-    background: #E8F5E9;
+    background: var(--md-sys-color-success-container);
 }
 
 /* === M3 Progress Indicator === */
@@ -229,7 +237,7 @@ body {
 }
 
 .status-dot.connected {
-    background: #4CAF50;
+    background: var(--md-sys-color-success);
 }
 
 .status-dot.connecting {
@@ -245,13 +253,13 @@ body {
 /* === Success === */
 .success-icon {
     font-size: 2.5rem;
-    color: #4CAF50;
+    color: var(--md-sys-color-success);
 }
 
 .success-text {
     font-size: 1rem;
     font-weight: 500;
-    color: #2E7D32;
+    color: var(--md-sys-color-on-success-container);
 }
 
 /* === Chip === */
@@ -285,5 +293,149 @@ body {
 
 .q-dialog__backdrop {
     background: rgba(0, 0, 0, 0.32) !important;
+}
+
+/* === Option Cards === */
+.option-card {
+    background: var(--md-sys-color-surface);
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: var(--md-sys-shape-corner-medium);
+    padding: 0.875rem;
+    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+}
+
+.option-card:hover {
+    border-color: var(--md-sys-color-primary);
+    box-shadow: var(--md-sys-elevation-1);
+}
+
+.option-text {
+    line-height: 1.6;
+    word-break: break-word;
+}
+
+.option-action {
+    opacity: 0.6;
+    transition: opacity var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+}
+
+.option-card:hover .option-action {
+    opacity: 1;
+}
+
+/* === Shortcut Hint === */
+.shortcut-hint {
+    opacity: 0.5;
+    font-family: ui-monospace, monospace;
+    font-size: 0.6875rem;
+}
+
+/* === History Button === */
+.history-btn {
+    color: var(--md-sys-color-on-surface-variant);
+}
+
+.history-btn:hover {
+    background: var(--md-sys-color-surface-container);
+}
+
+/* === History Drawer === */
+.history-drawer {
+    background: var(--md-sys-color-surface);
+    width: 320px !important;
+}
+
+.history-drawer .border-b {
+    border-color: var(--md-sys-color-outline-variant);
+}
+
+/* === History Item === */
+.history-item {
+    background: var(--md-sys-color-surface-container);
+    border-radius: var(--md-sys-shape-corner-small);
+    padding: 0.75rem;
+    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+}
+
+.history-item:hover {
+    background: var(--md-sys-color-primary-container);
+}
+
+/* === File Type Icon === */
+.file-type-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 3rem;
+    height: 3rem;
+    border-radius: var(--md-sys-shape-corner-medium);
+    flex-shrink: 0;
+}
+
+.file-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 200px;
+}
+
+/* === Chip Primary === */
+.chip-primary {
+    background: var(--md-sys-color-primary-container);
+    color: var(--md-sys-color-on-primary-container);
+}
+
+/* === Success Circle Animation === */
+.success-circle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 4rem;
+    height: 4rem;
+    border-radius: var(--md-sys-shape-corner-full);
+    background: var(--md-sys-color-success);
+    animation: scaleIn var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-standard);
+}
+
+.success-check {
+    font-size: 2rem;
+    color: var(--md-sys-color-on-success);
+}
+
+@keyframes scaleIn {
+    from {
+        transform: scale(0);
+        opacity: 0;
+    }
+    to {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+/* === Small Swap Button === */
+.swap-btn-small {
+    width: 2rem;
+    height: 2rem;
+    min-width: 2rem;
+    min-height: 2rem;
+    border-radius: var(--md-sys-shape-corner-full);
+    background: var(--md-sys-color-surface-container);
+    border: none;
+    color: var(--md-sys-color-on-surface-variant);
+    padding: 0;
+    transition: all var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-standard);
+}
+
+.swap-btn-small:hover {
+    background: var(--md-sys-color-primary-container);
+    color: var(--md-sys-color-on-primary-container);
+    transform: rotate(180deg);
+}
+
+/* === Direction Label === */
+.direction-label {
+    color: var(--md-sys-color-on-surface);
+    letter-spacing: 0.01em;
 }
 """

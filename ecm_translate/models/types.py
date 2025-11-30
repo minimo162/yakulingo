@@ -144,5 +144,34 @@ class TranslationResult:
     warnings: list[str] = field(default_factory=list)
 
 
+@dataclass
+class HistoryEntry:
+    """
+    A single translation history entry.
+    """
+    source_text: str                         # Original text
+    direction: TranslationDirection          # Translation direction
+    result: TextTranslationResult            # Translation result
+    timestamp: str = ""                      # ISO format timestamp
+
+    def __post_init__(self):
+        if not self.timestamp:
+            from datetime import datetime
+            self.timestamp = datetime.now().isoformat()
+
+    @property
+    def preview(self) -> str:
+        """Get preview of source text (truncated)"""
+        max_len = 50
+        if len(self.source_text) <= max_len:
+            return self.source_text
+        return self.source_text[:max_len] + "..."
+
+    @property
+    def direction_label(self) -> str:
+        """Get direction label"""
+        return "JP → EN" if self.direction == TranslationDirection.JP_TO_EN else "EN → JP"
+
+
 # Callback types
 ProgressCallback = Callable[[TranslationProgress], None]

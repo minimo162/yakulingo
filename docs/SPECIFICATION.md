@@ -109,7 +109,7 @@ M365 Copilotを翻訳エンジンとして使用し、テキストとドキュ�
 ## 3. ディレクトリ構造
 
 ```
-ECM_translate/
+YakuLingo/
 ├── app.py                          # エントリーポイント
 ├── pyproject.toml
 ├── requirements.txt

@@ -114,7 +114,7 @@ class TestAutoUpdater:
         """Test default initialization"""
         updater = AutoUpdater()
         assert updater.repo_owner == "minimo162"
-        assert updater.repo_name == "ECM_translate"
+        assert updater.repo_name == "yakulingo"
 
     def test_init_custom_repo(self):
         """Test custom repository initialization"""

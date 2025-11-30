@@ -37,8 +37,8 @@ $files = @(
     "setup.bat",
     "setup_shortcut.bat",
     "setup_shortcut.ps1",
-    "uninstall.bat",
-    "uninstall.ps1"
+    "remove.bat",
+    "remove.ps1"
 )
 
 # コピー対象フォルダ

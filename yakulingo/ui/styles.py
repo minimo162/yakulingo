@@ -76,15 +76,20 @@ body {
     /* Yu Gothic UI: Windows 8.1+用、UI最適化版 */
     /* Hiragino Sans: macOS用 */
     font-family: 'BIZ UDPGothic', 'Yu Gothic UI', 'Hiragino Sans', 'Segoe UI', -apple-system, sans-serif;
-    background-color: var(--md-sys-color-surface-dim);
-    background-image: radial-gradient(circle, rgba(192,64,0,0.02) 1px, transparent 1px);
-    background-size: 24px 24px;
+    /* Nani-inspired gradient background with subtle pattern */
+    background:
+        radial-gradient(circle at 20% 20%, rgba(192, 64, 0, 0.03) 0%, transparent 50%),
+        radial-gradient(circle at 80% 80%, rgba(255, 150, 100, 0.03) 0%, transparent 50%),
+        radial-gradient(circle, rgba(192,64,0,0.015) 1px, transparent 1px),
+        linear-gradient(180deg, #FFFBF8 0%, #FFF5EE 100%);
+    background-size: 100% 100%, 100% 100%, 20px 20px, 100% 100%;
     background-attachment: fixed;
     color: var(--md-sys-color-on-surface);
     font-size: 0.9375rem;  /* 15px - comfortable reading size */
     line-height: 1.6;
     margin: 0;
     padding: 0;
+    min-height: 100vh;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
 }
@@ -96,7 +101,8 @@ body {
     position: fixed;
     left: 0;
     top: 0;
-    background: var(--md-sys-color-surface);
+    /* Nani-inspired subtle gradient sidebar */
+    background: linear-gradient(180deg, #FFFFFF 0%, #FFFAF7 100%);
     border-right: 1px solid var(--md-sys-color-outline-variant);
     display: flex;
     flex-direction: column;
@@ -129,12 +135,15 @@ body {
     width: 2.5rem;
     height: 2.5rem;
     border-radius: var(--md-sys-shape-corner-medium);
-    background: linear-gradient(135deg, var(--md-sys-color-primary) 0%, #D85000 100%);
+    /* Nani-inspired vibrant gradient */
+    background: linear-gradient(135deg, #E84A00 0%, #FF6B35 50%, #C04000 100%);
     display: flex;
     align-items: center;
     justify-content: center;
     color: var(--md-sys-color-on-primary);
-    box-shadow: 0 2px 8px rgba(192, 64, 0, 0.25);
+    box-shadow:
+        0 4px 12px rgba(232, 74, 0, 0.3),
+        0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 /* === Navigation === */
@@ -456,7 +465,8 @@ body {
 
 .progress-bar {
     height: 100%;
-    background: linear-gradient(90deg, var(--md-sys-color-primary) 0%, #D85000 100%);
+    /* Nani-inspired vibrant progress gradient */
+    background: linear-gradient(90deg, #E84A00 0%, #FF6B35 50%, #FF8C42 100%);
     border-radius: var(--md-sys-shape-corner-full);
     transition: width var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-standard);
     position: relative;

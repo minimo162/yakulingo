@@ -46,24 +46,27 @@
 | ブラウザ | Microsoft Edge |
 | ネットワーク | M365 Copilotへのアクセス |
 
-> **Note**: Python は自動インストールされます（システム汚染なし）
-
 ## インストールと起動
 
-### ネットワーク共有からのインストール（推奨）
+```bash
+# リポジトリをクローン
+git clone https://github.com/minimo162/yakulingo.git
+cd yakulingo
 
-1. 共有フォルダ内の `setup.vbs` をダブルクリック
-2. セットアップ完了を待つ
-3. デスクトップに作成されたショートカットから起動
+# 依存関係のインストール（uv推奨）
+uv sync
 
-### 直接起動（開発者向け）
+# または pip を使用
+pip install -r requirements.txt
 
-配布ZIPを展開後：
+# Playwrightブラウザのインストール
+playwright install chromium
+
+# 起動
+python app.py
 ```
-run.vbs
-```
 
-ネイティブウィンドウでアプリケーションが起動します。
+> **Note**: Python 3.11以上が必要です
 
 ## 使用方法
 
@@ -175,19 +178,6 @@ run.vbs
 - ネットワーク接続を確認
 
 ## 開発者向け
-
-### 手動インストール
-
-```bash
-# 依存関係のインストール
-uv sync
-
-# Playwrightブラウザのインストール
-playwright install chromium
-
-# 起動
-python app.py
-```
 
 ### テストの実行
 

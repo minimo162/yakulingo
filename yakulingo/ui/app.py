@@ -295,8 +295,8 @@ class YakuLingoApp:
                         on_clear=self._clear,
                         on_adjust=self._adjust_text,
                         on_follow_up=self._follow_up_action,
-                        on_attach_glossary=self._attach_glossary,
-                        on_remove_glossary=self._remove_glossary,
+                        on_attach_reference_file=self._attach_reference_file,
+                        on_remove_reference_file=self._remove_reference_file,
                         on_back_translate=self._back_translate,
                         on_settings=self._show_settings_dialog,
                     )
@@ -331,17 +331,17 @@ class YakuLingoApp:
             ui.clipboard.write(text)
             ui.notify('コピーしました', type='positive')
 
-    async def _attach_glossary(self):
-        """Open file picker to attach a glossary file"""
+    async def _attach_reference_file(self):
+        """Open file picker to attach a reference file (glossary, style guide, etc.)"""
         # Use NiceGUI's native file upload approach
         with ui.dialog() as dialog, ui.card().classes('w-96'):
             with ui.column().classes('w-full gap-4 p-4'):
                 # Header
                 with ui.row().classes('w-full justify-between items-center'):
-                    ui.label('用語集ファイルを選択').classes('text-base font-medium')
+                    ui.label('参照ファイルを選択').classes('text-base font-medium')
                     ui.button(icon='close', on_click=dialog.close).props('flat dense round')
 
-                ui.label('CSV形式: 原文,訳文').classes('text-xs text-muted')
+                ui.label('用語集、スタイルガイド、参考資料など').classes('text-xs text-muted')
 
                 async def handle_upload(e):
                     if e.content:
@@ -358,14 +358,14 @@ class YakuLingoApp:
                     on_upload=handle_upload,
                     auto_upload=True,
                     max_files=1,
-                ).classes('w-full').props('accept=".csv,.txt"')
+                ).classes('w-full').props('accept=".csv,.txt,.pdf,.docx,.xlsx,.pptx,.md,.json"')
 
                 ui.button('キャンセル', on_click=dialog.close).props('flat')
 
         dialog.open()
 
-    def _remove_glossary(self, index: int):
-        """Remove a glossary file by index"""
+    def _remove_reference_file(self, index: int):
+        """Remove a reference file by index"""
         if 0 <= index < len(self.state.reference_files):
             removed = self.state.reference_files.pop(index)
             ui.notify(f'削除しました: {removed.name}', type='info')

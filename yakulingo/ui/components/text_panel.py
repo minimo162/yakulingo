@@ -117,8 +117,8 @@ def create_text_panel(
     on_clear: Callable[[], None],
     on_adjust: Optional[Callable[[str, str], None]] = None,
     on_follow_up: Optional[Callable[[str, str], None]] = None,  # (action_type, context)
-    on_attach_glossary: Optional[Callable[[], None]] = None,  # Glossary file picker
-    on_remove_glossary: Optional[Callable[[int], None]] = None,  # Remove glossary by index
+    on_attach_reference_file: Optional[Callable[[], None]] = None,  # Reference file picker
+    on_remove_reference_file: Optional[Callable[[int], None]] = None,  # Remove reference file by index
     on_back_translate: Optional[Callable[[str], None]] = None,  # Back-translate to check
     on_settings: Optional[Callable[[], None]] = None,  # Translation settings (Nani-style)
 ):
@@ -126,7 +126,7 @@ def create_text_panel(
     Text translation panel with language-specific UI.
     - Japanese input → English: Multiple options with inline adjustment (Nani-inspired)
     - Other input → Japanese: Single translation + follow-up actions
-    - Nani-style glossary attachment button for reference files
+    - Reference file attachment button (glossary, style guide, etc.)
     - Back-translate feature to verify translations
     """
     # Get elapsed time for display
@@ -160,15 +160,15 @@ def create_text_panel(
                         if state.source_text:
                             ui.label(f'{len(state.source_text)} 文字').classes('text-xs text-muted')
 
-                        # Attached glossary files indicator
+                        # Attached reference files indicator
                         if state.reference_files:
                             for i, ref_file in enumerate(state.reference_files):
                                 with ui.element('div').classes('attach-file-indicator'):
                                     ui.label(ref_file.name).classes('file-name')
-                                    if on_remove_glossary:
+                                    if on_remove_reference_file:
                                         ui.button(
                                             icon='close',
-                                            on_click=lambda idx=i: on_remove_glossary(idx)
+                                            on_click=lambda idx=i: on_remove_reference_file(idx)
                                         ).props('flat dense round size=xs').classes('remove-btn')
 
                     with ui.row().classes('items-center gap-2'):
@@ -180,15 +180,15 @@ def create_text_panel(
                             ).props('flat dense round size=sm').classes('settings-btn')
                             settings_btn.tooltip('翻訳の設定')
 
-                        # Nani-style glossary attachment button
-                        if on_attach_glossary:
+                        # Reference file attachment button
+                        if on_attach_reference_file:
                             has_files = bool(state.reference_files)
                             attach_btn = ui.button(
-                                on_click=on_attach_glossary
+                                on_click=on_attach_reference_file
                             ).classes(f'attach-btn {"has-file" if has_files else ""}').props('flat')
                             with attach_btn:
                                 ui.html(ATTACH_SVG)
-                            attach_btn.tooltip('用語集を添付' if not has_files else '用語集を追加')
+                            attach_btn.tooltip('参照ファイルを添付' if not has_files else '参照ファイルを追加')
 
                         # Clear button
                         if state.source_text:

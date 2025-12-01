@@ -5,7 +5,6 @@ Japanese → English, Other → Japanese (auto-detected by AI).
 """
 
 import asyncio
-import re
 from pathlib import Path
 from typing import Optional
 
@@ -16,6 +15,7 @@ from yakulingo.ui.styles import COMPLETE_CSS
 from yakulingo.ui.components.text_panel import create_text_panel
 from yakulingo.ui.components.file_panel import create_file_panel
 from yakulingo.ui.components.update_notification import UpdateNotification, check_updates_on_startup
+from yakulingo.ui.utils import temp_file_manager, parse_translation_result
 
 from yakulingo.models.types import TranslationProgress, TranslationStatus, TextTranslationResult, TranslationOption, HistoryEntry
 from yakulingo.config.settings import AppSettings, get_default_settings_path, get_default_prompts_dir
@@ -330,56 +330,26 @@ class YakuLingoApp:
 
     async def _attach_glossary(self):
         """Open file picker to attach a glossary file"""
-        from pathlib import Path
-
-        result = await ui.run_javascript('''
-            return new Promise((resolve) => {
-                const input = document.createElement('input');
-                input.type = 'file';
-                input.accept = '.csv,.txt';
-                input.onchange = (e) => {
-                    if (e.target.files.length > 0) {
-                        resolve(e.target.files[0].name);
-                    } else {
-                        resolve(null);
-                    }
-                };
-                input.click();
-            });
-        ''', timeout=60.0)
-
-        if result:
-            # For web-based file picker, we need to handle uploaded file
-            # For now, use native NiceGUI file upload dialog
-            pass
-
         # Use NiceGUI's native file upload approach
         with ui.dialog() as dialog, ui.card().classes('w-96'):
             with ui.column().classes('w-full gap-4 p-4'):
-                ui.label('用語集ファイルを選択').classes('text-base font-medium')
+                # Header
+                with ui.row().classes('w-full justify-between items-center'):
+                    ui.label('用語集ファイルを選択').classes('text-base font-medium')
+                    ui.button(icon='close', on_click=dialog.close).props('flat dense round')
+
                 ui.label('CSV形式: 原文,訳文').classes('text-xs text-muted')
 
-                uploaded_path = None
-
                 async def handle_upload(e):
-                    nonlocal uploaded_path
                     if e.content:
-                        # Save to temp location
-                        import tempfile
-                        with tempfile.NamedTemporaryFile(
-                            mode='wb',
-                            suffix='.csv',
-                            delete=False
-                        ) as f:
-                            content = e.content.read()
-                            f.write(content)
-                            uploaded_path = Path(f.name)
+                        content = e.content.read()
+                        # Use temp file manager for automatic cleanup
+                        uploaded_path = temp_file_manager.create_temp_file(content, e.name)
                         ui.notify(f'ファイルをアップロードしました: {e.name}', type='positive')
                         dialog.close()
                         # Add to reference files
-                        if uploaded_path:
-                            self.state.reference_files.append(uploaded_path)
-                            self._refresh_content()
+                        self.state.reference_files.append(uploaded_path)
+                        self._refresh_content()
 
                 ui.upload(
                     on_upload=handle_upload,
@@ -592,12 +562,8 @@ class YakuLingoApp:
 
             # Parse result and update UI
             if result:
-                # Parse the result
-                text_match = re.search(r'訳文:\s*(.+?)(?=解説:|$)', result, re.DOTALL)
-                explanation_match = re.search(r'解説:\s*(.+)', result, re.DOTALL)
-
-                text = text_match.group(1).strip() if text_match else result.strip()
-                explanation = explanation_match.group(1).strip() if explanation_match else ""
+                # Parse the result using utility function
+                text, explanation = parse_translation_result(result)
 
                 # Add as new result option
                 new_option = TranslationOption(text=text, explanation=explanation)
@@ -647,6 +613,7 @@ class YakuLingoApp:
         self.state.file_state = FileState.TRANSLATING
         self.state.translation_progress = 0.0
         self.state.translation_status = 'Starting...'
+        self.state.output_file = None  # Clear any previous output
 
         # Progress dialog
         with ui.dialog() as progress_dialog, ui.card().classes('w-80'):
@@ -682,8 +649,6 @@ class YakuLingoApp:
                 )
             )
 
-            progress_dialog.close()
-
             if result.status == TranslationStatus.COMPLETED and result.output_path:
                 self.state.output_file = result.output_path
                 self.state.file_state = FileState.COMPLETE
@@ -694,13 +659,21 @@ class YakuLingoApp:
             else:
                 self.state.error_message = result.error_message or 'Error'
                 self.state.file_state = FileState.ERROR
+                self.state.output_file = None
                 ui.notify('失敗しました', type='negative')
 
         except Exception as e:
-            progress_dialog.close()
             self.state.error_message = str(e)
             self.state.file_state = FileState.ERROR
-            ui.notify('Error', type='negative')
+            self.state.output_file = None
+            ui.notify(f'エラー: {e}', type='negative')
+
+        finally:
+            # Ensure dialog is always closed
+            try:
+                progress_dialog.close()
+            except Exception:
+                pass
 
         self._refresh_content()
 

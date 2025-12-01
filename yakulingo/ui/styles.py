@@ -35,6 +35,12 @@ COMPLETE_CSS = """
     --md-sys-color-success-container: #C8E6C9;
     --md-sys-color-on-success-container: #1B5E20;
 
+    /* Warning (extended) */
+    --md-sys-color-warning: #FF9800;
+    --md-sys-color-on-warning: #FFFFFF;
+    --md-sys-color-warning-container: #FFF3E0;
+    --md-sys-color-on-warning-container: #E65100;
+
     /* Shape - Nani-inspired extra rounded corners */
     --md-sys-shape-corner-full: 9999px;
     --md-sys-shape-corner-3xl: 32px;   /* Extra large cards */
@@ -189,20 +195,7 @@ body {
     background: var(--md-sys-color-surface-container);
 }
 
-/* History delete button - hidden by default, shown on hover */
-.history-delete-btn {
-    opacity: 0;
-    transition: opacity var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
-    position: absolute;
-    right: 4px;
-    top: 50%;
-    transform: translateY(-50%);
-    background: var(--md-sys-color-surface-container-high) !important;
-}
-
-.history-item:hover .history-delete-btn {
-    opacity: 1;
-}
+/* Note: .history-delete-btn is defined below in the Nani-inspired enhancements section */
 
 /* === Status Indicator === */
 .status-indicator {
@@ -229,8 +222,8 @@ body {
 }
 
 .status-indicator.login-required {
-    background: #FFF3E0;
-    color: #E65100;
+    background: var(--md-sys-color-warning-container);
+    color: var(--md-sys-color-on-warning-container);
 }
 
 .status-dot {
@@ -250,7 +243,7 @@ body {
 }
 
 .status-dot.login-required {
-    background: #FF9800;
+    background: var(--md-sys-color-warning);
     animation: pulse 1.5s ease infinite;
 }
 
@@ -261,16 +254,16 @@ body {
 
 /* === Main Card Container (Nani-style) === */
 .main-card {
-    background: var(--md-sys-color-surface);
+    background: var(--md-sys-color-surface-container);
     border-radius: var(--md-sys-shape-corner-3xl);
     box-shadow: var(--md-sys-elevation-1);
-    padding: 0.5rem;
+    padding: 0.375rem;
     overflow: hidden;
 }
 
 .main-card-inner {
     background: var(--md-sys-color-surface);
-    border-radius: calc(var(--md-sys-shape-corner-3xl) - 0.5rem);
+    border-radius: calc(var(--md-sys-shape-corner-3xl) - 0.375rem);
     border: 1px solid var(--md-sys-color-outline-variant);
 }
 
@@ -288,36 +281,8 @@ body {
     box-shadow: 0 0 0 2px rgba(192, 64, 0, 0.15);
 }
 
-/* === Translate Button (Nani-style) === */
-.translate-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    background: var(--md-sys-color-on-surface);
-    color: var(--md-sys-color-surface);
-    padding: 0.875rem 1.5rem;
-    border-radius: var(--md-sys-shape-corner-full);
-    font-size: 0.9375rem;
-    font-weight: 600;
-    letter-spacing: -0.01em;
-    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
-    border: none;
-    cursor: pointer;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
-}
-
-.translate-btn:hover:not(:disabled) {
-    background: #374151;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-}
-
-.translate-btn:disabled {
-    background: var(--md-sys-color-outline);
-    cursor: default;
-    box-shadow: none;
-}
+/* === Translate Button (alias for btn-primary) === */
+/* Note: .translate-btn is an alias for .btn-primary for backward compatibility */
 
 /* === Keycap Style Shortcut Keys === */
 .shortcut-keys {
@@ -367,7 +332,9 @@ body {
 }
 
 /* === M3 Filled Button (Primary) === */
-.btn-primary {
+/* .translate-btn is an alias for backward compatibility */
+.btn-primary,
+.translate-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -380,16 +347,20 @@ body {
     font-weight: 600;
     letter-spacing: -0.01em;
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+    border: none;
+    cursor: pointer;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
 }
 
-.btn-primary:hover:not(:disabled) {
+.btn-primary:hover:not(:disabled),
+.translate-btn:hover:not(:disabled) {
     background: #374151;
     transform: translateY(-1px);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
-.btn-primary:disabled {
+.btn-primary:disabled,
+.translate-btn:disabled {
     background: var(--md-sys-color-outline);
     cursor: default;
     box-shadow: none;
@@ -598,7 +569,7 @@ body {
 
 @media (max-width: 768px) {
     :root {
-        --sidebar-width: 220px;
+        --sidebar-width: 100%;
     }
 
     .main-area {
@@ -611,10 +582,39 @@ body {
         position: relative;
         border-right: none;
         border-bottom: 1px solid var(--md-sys-color-outline-variant);
+        padding: 0.75rem;
+    }
+
+    .sidebar-header {
+        padding: 0.25rem 0.5rem 0.5rem;
+    }
+
+    .sidebar-nav {
+        flex-direction: row;
+        gap: 0.5rem;
+        margin-top: 0.25rem;
+    }
+
+    .nav-item {
+        flex: 1;
+        justify-content: center;
+        padding: 0.5rem 0.75rem;
+    }
+
+    .sidebar-history {
+        display: none;  /* Hide history on mobile for cleaner layout */
     }
 
     .history-scroll {
-        max-height: 150px;
+        max-height: 200px;
+    }
+
+    /* Improve touch targets on mobile */
+    .btn-primary,
+    .translate-btn,
+    .btn-outline {
+        min-height: 44px;
+        padding: 0.75rem 1.25rem;
     }
 }
 
@@ -911,20 +911,7 @@ body {
     height: 0.875rem;
 }
 
-/* Enhanced floating card effect */
-.main-card {
-    background: var(--md-sys-color-surface-container);
-    border-radius: var(--md-sys-shape-corner-3xl);
-    box-shadow: var(--md-sys-elevation-1);
-    padding: 0.375rem;
-    overflow: hidden;
-}
-
-.main-card-inner {
-    background: var(--md-sys-color-surface);
-    border-radius: calc(var(--md-sys-shape-corner-3xl) - 0.375rem);
-    border: 1px solid var(--md-sys-color-outline-variant);
-}
+/* Note: .main-card and .main-card-inner are defined above (lines 268-281) */
 
 /* Apple character for translation states */
 .apple-character {

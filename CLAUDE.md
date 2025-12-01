@@ -83,7 +83,7 @@ YakuLingo/
 ├── docs/
 │   └── SPECIFICATION.md           # Detailed technical specification
 ├── installer/                     # Distribution installer files
-├── glossary.csv                   # Default translation glossary
+├── glossary.csv                   # Default reference file (glossary, style guide, etc.)
 ├── pyproject.toml                 # Project metadata & dependencies
 ├── uv.lock                        # Lock file for reproducible builds
 ├── requirements.txt               # Core pip dependencies

@@ -37,7 +37,7 @@ M365 Copilotを翻訳エンジンとして使用し、テキストとドキュ�
 | **Text Translation** | テキストを入力して即座に翻訳（言語自動検出） |
 | **File Translation** | Excel/Word/PowerPoint/PDF の一括翻訳 |
 | **Layout Preservation** | 翻訳後もファイルの体裁を維持 |
-| **Reference Files** | 用語集による一貫した翻訳 |
+| **Reference Files** | 用語集・スタイルガイド・参考資料による一貫した翻訳 |
 | **Translation History** | 過去の翻訳をローカルに保存・検索 |
 | **Auto Update** | GitHub Releases経由で自動更新 |
 
@@ -181,7 +181,7 @@ YakuLingo/
 ├── config/
 │   └── settings.json               # ユーザー設定
 │
-├── glossary.csv                    # 参照用語集
+├── glossary.csv                    # デフォルト参照ファイル（用語集）
 │
 ├── installer/                      # 配布用インストーラ
 │
@@ -860,7 +860,7 @@ class HistoryDB:
 |--------|------|
 | アプリ設定 | `config/settings.json` |
 | 翻訳履歴 | `~/.yakulingo/history.db` |
-| 用語集 | `glossary.csv` |
+| 参照ファイル | `glossary.csv`（デフォルト） |
 
 ---
 

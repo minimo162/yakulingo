@@ -346,10 +346,12 @@ pytest --cov=yakulingo --cov-report=term-missing
 
 ### Code Style
 - Python 3.11+ features (type hints, dataclasses, match statements)
-- All modules have `__init__.py` with explicit exports
+- All modules have `__init__.py` with explicit exports and lazy loading via `__getattr__`
+- Heavy imports (openpyxl, python-docx, etc.) are deferred until first use for fast startup
 - Prefer composition over inheritance
 - Use async/await for I/O operations
 - Use `logging` module instead of `print()` statements
+- Pre-compile regex patterns at module level for performance
 
 ### Translation Logic
 - **CellTranslator**: For Excel cells - skips numbers, dates, URLs, emails, codes
@@ -546,6 +548,12 @@ The AGENTS.md file specifies that all responses should be in Japanese (すべて
 ## Recent Development Focus
 
 Based on recent commits:
+- **Performance Optimizations**:
+  - **Startup**: Lazy imports via `__getattr__` in `__init__.py` files defer heavy module loading (openpyxl, python-docx, python-pptx, PyMuPDF, Playwright) until first use
+  - **Database**: Thread-local SQLite connection pooling with WAL mode for better concurrent reads
+  - **Caching**: Reference file path resolution cached to avoid repeated I/O
+  - **Regex**: Pre-compiled patterns at module level in utils.py, translation_service.py, copilot_handler.py, font_manager.py
+  - **Language Detection**: Optimized `unicodedata.category()` calls with dedicated `_is_punctuation()` helper
 - **Bilingual Output**: All file processors (Excel, Word, PowerPoint, PDF) can generate bilingual output files with original and translated content side-by-side
 - **Glossary CSV Export**: Automatic extraction of source/translation pairs to CSV for terminology management
 - **Translation Completion Dialog**: Shows all output files (translated, bilingual, glossary) with "Open" and "Show in Folder" action buttons

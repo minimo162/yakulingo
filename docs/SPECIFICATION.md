@@ -1,6 +1,6 @@
 # YakuLingo - 技術仕様書
 
-> **Version**: 2.4
+> **Version**: 2.5
 > **Date**: 2025-12
 > **App Name**: YakuLingo (訳リンゴ)
 
@@ -20,6 +20,7 @@
 10. [ストレージ](#10-ストレージ)
 11. [自動更新](#11-自動更新)
 12. [設定・配布](#12-設定配布)
+13. [パフォーマンス最適化](#13-パフォーマンス最適化)
 
 ---
 
@@ -1089,10 +1090,145 @@ share_package/
 
 ---
 
+## 13. パフォーマンス最適化
+
+### 13.1 起動時間最適化
+
+#### 遅延インポート (Lazy Import)
+
+重いモジュールの読み込みを初回アクセス時まで遅延させることで、起動時間を短縮。
+
+```python
+# yakulingo/processors/__init__.py
+_LAZY_IMPORTS = {
+    'ExcelProcessor': 'excel_processor',
+    'WordProcessor': 'word_processor',
+    'PptxProcessor': 'pptx_processor',
+    'PdfProcessor': 'pdf_processor',
+}
+
+_SUBMODULES = {'excel_processor', 'word_processor', 'pptx_processor', 'pdf_processor'}
+
+def __getattr__(name: str):
+    """遅延ロード: 初回アクセス時にモジュールをインポート"""
+    import importlib
+    if name in _SUBMODULES:
+        return importlib.import_module(f'.{name}', __package__)
+    if name in _LAZY_IMPORTS:
+        module_name = _LAZY_IMPORTS[name]
+        module = importlib.import_module(f'.{module_name}', __package__)
+        return getattr(module, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+```
+
+**適用パッケージ:**
+- `yakulingo.processors` - ファイルプロセッサ（Excel, Word, PowerPoint, PDF）
+- `yakulingo.services` - サービス（CopilotHandler, AutoUpdater等）
+- `yakulingo.ui` - UIコンポーネント（YakuLingoApp等）
+
+**`_SUBMODULES`パターン:**
+`unittest.mock.patch`でサブモジュールをパッチする場合に必要。これにより`patch('yakulingo.processors.excel_processor')`が正常に動作する。
+
+### 13.2 ランタイム最適化
+
+#### 正規表現の事前コンパイル
+
+頻繁に使用される正規表現パターンをモジュールレベルで事前コンパイル。
+
+```python
+# yakulingo/ui/utils.py
+_RE_BOLD = re.compile(r'\*\*([^*]+)\*\*')
+_RE_QUOTE = re.compile(r'"([^"]+)"')
+_RE_TRANSLATION_TEXT = re.compile(r'訳文:\s*(.+?)(?=解説:|$)', re.DOTALL)
+_RE_EXPLANATION = re.compile(r'解説:\s*(.+)', re.DOTALL)
+
+# yakulingo/services/translation_service.py
+_RE_MULTI_OPTION = re.compile(r'\[(\d+)\]\s*訳文:\s*(.+?)\s*解説:\s*(.+?)(?=\[\d+\]|$)', re.DOTALL)
+_RE_MARKDOWN_SEPARATOR = re.compile(r'\n?\s*[\*\-]{3,}\s*')
+
+# yakulingo/services/copilot_handler.py
+_RE_NUMBERING_PREFIX = re.compile(r'^\d+\.\s*(.+)')
+```
+
+**最適化効果:**
+- 毎回の`re.compile()`呼び出しを回避
+- 複数回使用時のパターンコンパイルコストを削減
+
+#### 遅延コンパイルパターン
+
+使用頻度が低いパターンは遅延コンパイルで初回使用時のみコンパイル。
+
+```python
+# yakulingo/processors/font_manager.py
+class FontTypeDetector:
+    _compiled_mincho: Optional[list] = None
+    _compiled_gothic: Optional[list] = None
+
+    @classmethod
+    def _get_mincho_patterns(cls) -> list:
+        if cls._compiled_mincho is None:
+            cls._compiled_mincho = [
+                re.compile(p, re.IGNORECASE)
+                for p in cls.MINCHO_PATTERNS
+            ]
+        return cls._compiled_mincho
+```
+
+#### 句読点判定の最適化
+
+`unicodedata`カテゴリの先頭文字チェックで句読点判定を高速化。
+
+```python
+# Before (遅い)
+def _is_punctuation(char: str) -> bool:
+    cat = unicodedata.category(char)
+    return cat.startswith('P')  # 文字列メソッド呼び出し
+
+# After (高速)
+def _is_punctuation(char: str) -> bool:
+    cat = unicodedata.category(char)
+    return cat[0] == 'P'  # 直接インデックスアクセス
+```
+
+### 13.3 データベース最適化
+
+#### スレッドローカル接続プーリング
+
+SQLite接続をスレッドごとに再利用し、接続オーバーヘッドを削減。
+
+```python
+# yakulingo/storage/history_db.py
+class HistoryDB:
+    _local = threading.local()
+
+    def _get_connection(self) -> sqlite3.Connection:
+        if not hasattr(self._local, 'conn') or self._local.conn is None:
+            self._local.conn = sqlite3.connect(
+                self.db_path,
+                timeout=DB_TIMEOUT,
+                check_same_thread=False
+            )
+            self._local.conn.execute('PRAGMA journal_mode=WAL')
+        return self._local.conn
+```
+
+**WALモード:**
+Write-Ahead Loggingモードにより、読み取りと書き込みの並行実行が可能。
+
+### 13.4 パフォーマンス測定
+
+起動時間の測定:
+```bash
+python -c "import time; t=time.time(); from yakulingo.ui import run_app; print(f'Import: {time.time()-t:.3f}s')"
+```
+
+---
+
 ## 変更履歴
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.5 | 2025-12 | パフォーマンス最適化（遅延インポート、正規表現事前コンパイル、DB接続プーリング）、ウィンドウサイズ設定対応 |
 | 2.4 | 2025-12 | 対訳出力・用語集CSV機能追加（全ファイル形式対応）、翻訳完了ダイアログ改善（出力ファイル一覧・アクションボタン） |
 | 2.3 | 2025-12 | Copilot Free対応（動的プロンプト切り替え）、コード品質向上（例外処理、リソース管理、定数化） |
 | 2.2 | 2025-12 | 参照ファイル機能拡張（用語集→汎用参照ファイル対応）、設定項目追加 |

@@ -61,7 +61,7 @@ def create_file_panel(
                         _pdf_mode_selector(state, on_pdf_fast_mode_change)
                     with ui.row().classes('justify-center mt-4'):
                         with ui.button(on_click=on_translate).classes('translate-btn').props('no-caps'):
-                            ui.label('Translate')
+                            ui.label('翻訳する')
                             ui.icon('south').classes('text-base')
 
                 elif state.file_state == FileState.TRANSLATING:
@@ -71,14 +71,14 @@ def create_file_panel(
                     _complete_card(state.output_file)
                     with ui.row().classes('gap-3 mt-4 justify-center'):
                         with ui.button(on_click=on_download).classes('translate-btn').props('no-caps'):
-                            ui.label('Download')
+                            ui.label('ダウンロード')
                             ui.icon('download').classes('text-base')
-                        ui.button('New', on_click=on_reset).classes('btn-outline')
+                        ui.button('新規', on_click=on_reset).classes('btn-outline')
 
                 elif state.file_state == FileState.ERROR:
                     _error_card(state.error_message)
                     with ui.row().classes('gap-3 mt-4 justify-center'):
-                        ui.button('Select another file', on_click=on_reset).classes('btn-outline')
+                        ui.button('別のファイルを選択', on_click=on_reset).classes('btn-outline')
 
         # Hint text
         with ui.row().classes('items-center gap-1 text-muted justify-center'):
@@ -111,13 +111,13 @@ def _pdf_mode_selector(state: AppState, on_change: Optional[Callable[[bool], Non
     """PDF processing mode selector - checkbox for fast mode"""
     with ui.row().classes('w-full justify-center mt-3 items-center gap-2'):
         ui.checkbox(
-            'Fast mode',
+            '高速モード',
             value=state.pdf_fast_mode,
             on_change=lambda e: on_change and on_change(e.value),
         ).classes('pdf-mode-checkbox')
         ui.tooltip(
-            'Skip OCR layout analysis for faster processing.\n'
-            'Best for text-based PDFs. May reduce accuracy for scanned documents or complex layouts.'
+            'OCRレイアウト解析をスキップして高速処理します。\n'
+            'テキストベースのPDFに最適。スキャン文書や複雑なレイアウトでは精度が低下する場合があります。'
         ).classes('text-xs')
 
 
@@ -135,7 +135,7 @@ def _drop_zone(on_file_select: Callable[[Path], None]):
         auto_upload=True,
     ).classes('drop-zone w-full max-w-md').props(f'accept="{SUPPORTED_FORMATS}"'):
         ui.icon('upload_file').classes('drop-zone-icon')
-        ui.label('Drop file here').classes('drop-zone-text')
+        ui.label('ファイルをドロップ').classes('drop-zone-text')
         ui.label('Excel, Word, PowerPoint, PDF').classes('drop-zone-hint')
 
 
@@ -162,12 +162,12 @@ def _file_card(file_info: FileInfo, on_remove: Callable[[], None]):
         # Stats chips
         with ui.row().classes('gap-2 mt-3 flex-wrap'):
             if file_info.sheet_count:
-                ui.label(f'{file_info.sheet_count} sheets').classes('chip')
+                ui.label(f'{file_info.sheet_count} シート').classes('chip')
             if file_info.page_count:
-                ui.label(f'{file_info.page_count} pages').classes('chip')
+                ui.label(f'{file_info.page_count} ページ').classes('chip')
             if file_info.slide_count:
-                ui.label(f'{file_info.slide_count} slides').classes('chip')
-            ui.label(f'{file_info.text_block_count} blocks').classes('chip chip-primary')
+                ui.label(f'{file_info.slide_count} スライド').classes('chip')
+            ui.label(f'{file_info.text_block_count} ブロック').classes('chip chip-primary')
 
 
 def _progress_card(file_info: FileInfo, progress: float, status: str):
@@ -182,7 +182,7 @@ def _progress_card(file_info: FileInfo, progress: float, status: str):
             ui.element('div').classes('progress-bar').style(f'width: {int(progress * 100)}%')
 
         with ui.row().classes('justify-between w-full mt-2'):
-            ui.label(status or 'Processing...').classes('text-xs text-muted')
+            ui.label(status or '処理中...').classes('text-xs text-muted')
             ui.label(f'{int(progress * 100)}%').classes('text-xs font-medium')
 
 
@@ -194,7 +194,7 @@ def _complete_card(output_file: Path):
             with ui.element('div').classes('success-circle'):
                 ui.icon('check').classes('success-check')
 
-            ui.label('Translation Complete').classes('success-text')
+            ui.label('翻訳完了').classes('success-text')
 
             # Output file name
             if output_file:
@@ -208,5 +208,5 @@ def _error_card(error_message: str):
     with ui.card().classes('file-card w-full max-w-md'):
         with ui.column().classes('items-center gap-2'):
             ui.icon('error_outline').classes('text-3xl text-error')
-            ui.label('Error').classes('font-medium text-error')
+            ui.label('エラー').classes('font-medium text-error')
             ui.label(error_message).classes('text-xs text-muted text-center')

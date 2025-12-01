@@ -137,12 +137,12 @@ def create_text_panel(
         with ui.element('div').classes('main-card w-full'):
             # Input container
             with ui.element('div').classes('main-card-inner'):
-                # Textarea with improved placeholder
+                # Textarea with improved placeholder and accessibility
                 textarea = ui.textarea(
                     placeholder='好きな言語で入力…',
                     value=state.source_text,
                     on_change=lambda e: on_source_change(e.value)
-                ).classes('w-full p-4').props('borderless autogrow').style('min-height: 160px')
+                ).classes('w-full p-4').props('borderless autogrow aria-label="翻訳するテキスト"').style('min-height: 160px')
 
                 # Handle Ctrl+Enter in textarea
                 async def handle_keydown(e):
@@ -193,7 +193,7 @@ def create_text_panel(
                         # Clear button
                         if state.source_text:
                             ui.button(icon='close', on_click=on_clear).props(
-                                'flat dense round size=sm'
+                                'flat dense round size=sm aria-label="クリア"'
                             ).classes('text-muted')
 
                         # Translate button with keycap-style shortcut
@@ -243,10 +243,10 @@ def create_text_panel(
 
 
 def _render_loading():
-    """Render improved loading state with apple character"""
+    """Render improved loading state with spinner"""
     with ui.element('div').classes('loading-character'):
-        # Apple character thinking
-        ui.label('🍎').classes('emoji')
+        # Loading spinner
+        ui.spinner('dots', size='lg').classes('text-primary')
         ui.label('翻訳中...').classes('message')
         ui.label('M365 Copilot に問い合わせています').classes('submessage')
 
@@ -327,7 +327,7 @@ def _render_results_to_jp(
                     ui.button(
                         icon='content_copy',
                         on_click=lambda: on_copy(option.text)
-                    ).props('flat dense round size=sm').classes('nani-toolbar-btn').tooltip('コピー')
+                    ).props('flat dense round size=sm aria-label="コピー"').classes('nani-toolbar-btn').tooltip('コピー')
 
                     # Back-translate button
                     if on_back_translate:
@@ -441,7 +441,7 @@ def _render_option_en(
                     ui.button(
                         icon='content_copy',
                         on_click=lambda o=option: on_copy(o.text)
-                    ).props('flat dense round size=sm').classes('option-action').tooltip('コピー')
+                    ).props('flat dense round size=sm aria-label="コピー"').classes('option-action').tooltip('コピー')
 
                     # Back-translate button
                     if on_back_translate:
@@ -608,15 +608,12 @@ def _render_inline_adjust_section(text: str, on_adjust: Callable[[str, str], Non
     """Render Nani-inspired inline adjustment options section"""
 
     with ui.element('div').classes('inline-adjust-section'):
-        # Connector line with refresh icon
+        # Connector line with refresh icon (visual decoration)
         with ui.element('div').classes('inline-adjust-connector'):
             with ui.element('div').classes('connector-line'):
                 with ui.element('div').classes('connector-branch'):
                     pass
-                ui.button(
-                    icon='refresh',
-                    on_click=lambda: None  # Visual only
-                ).props('flat dense round size=xs').classes('connector-icon')
+                ui.icon('tune').classes('connector-icon text-sm')
 
         # Adjustment options panel
         with ui.element('div').classes('inline-adjust-panel'):

@@ -165,20 +165,20 @@ class YakuLingoApp:
         @ui.refreshable
         def header_status():
             if self.state.copilot_connected:
-                with ui.element('div').classes('status-indicator connected'):
-                    ui.element('div').classes('status-dot connected')
+                with ui.element('div').classes('status-indicator connected').props('role="status" aria-live="polite"'):
+                    ui.element('div').classes('status-dot connected').props('aria-hidden="true"')
                     ui.label('Ready')
             elif self.state.copilot_login_required:
-                with ui.element('div').classes('status-indicator login-required'):
-                    ui.element('div').classes('status-dot login-required')
+                with ui.element('div').classes('status-indicator login-required').props('role="status" aria-live="polite"'):
+                    ui.element('div').classes('status-dot login-required').props('aria-hidden="true"')
                     ui.label('ログインしてください')
             elif self.state.copilot_connecting:
-                with ui.element('div').classes('status-indicator connecting'):
-                    ui.element('div').classes('status-dot connecting')
+                with ui.element('div').classes('status-indicator connecting').props('role="status" aria-live="polite"'):
+                    ui.element('div').classes('status-dot connecting').props('aria-hidden="true"')
                     ui.label('Connecting...')
             else:
-                with ui.element('div').classes('status-indicator'):
-                    ui.element('div').classes('status-dot')
+                with ui.element('div').classes('status-indicator').props('role="status" aria-live="polite"'):
+                    ui.element('div').classes('status-dot').props('aria-hidden="true"')
                     ui.label('Offline')
 
         self._header_status = header_status
@@ -187,7 +187,7 @@ class YakuLingoApp:
         # Navigation tabs
         @ui.refreshable
         def tabs_container():
-            with ui.column().classes('sidebar-nav'):
+            with ui.element('nav').classes('sidebar-nav').props('role="navigation" aria-label="Main navigation"'):
                 self._create_nav_item('テキスト翻訳', 'translate', Tab.TEXT)
                 self._create_nav_item('ファイル翻訳', 'description', Tab.FILE)
 
@@ -215,7 +215,7 @@ class YakuLingoApp:
                     ui.button(
                         icon='delete_sweep',
                         on_click=self._clear_history
-                    ).props('flat dense round size=xs').classes('text-muted').tooltip('すべて削除')
+                    ).props('flat dense round size=xs aria-label="履歴をすべて削除"').classes('text-muted').tooltip('すべて削除')
 
             @ui.refreshable
             def history_list():
@@ -348,7 +348,7 @@ class YakuLingoApp:
                         content = e.content.read()
                         # Use temp file manager for automatic cleanup
                         uploaded_path = temp_file_manager.create_temp_file(content, e.name)
-                        ui.notify(f'ファイルをアップロードしました: {e.name}', type='positive')
+                        ui.notify(f'アップロードしました: {e.name}', type='positive')
                         dialog.close()
                         # Add to reference files
                         self.state.reference_files.append(uploaded_path)
@@ -451,7 +451,7 @@ class YakuLingoApp:
                 ui.notify('調整に失敗しました', type='negative')
 
         except Exception as e:
-            ui.notify(f'Error: {e}', type='negative')
+            ui.notify(f'エラー: {e}', type='negative')
 
         self.state.text_translating = False
         self._refresh_content()
@@ -511,7 +511,7 @@ class YakuLingoApp:
                 ui.notify('戻し訳に失敗しました', type='negative')
 
         except Exception as e:
-            ui.notify(f'Error: {e}', type='negative')
+            ui.notify(f'エラー: {e}', type='negative')
 
         self.state.text_translating = False
         self._refresh_content()
@@ -762,7 +762,7 @@ class YakuLingoApp:
                 with ui.column().classes('w-full gap-2'):
                     progress_bar = ui.linear_progress(value=0).classes('w-full')
                     with ui.row().classes('w-full justify-between'):
-                        status_label = ui.label('Starting...').classes('text-xs text-muted')
+                        status_label = ui.label('開始中...').classes('text-xs text-muted')
                         progress_label = ui.label('0%').classes('text-xs font-medium text-primary')
 
                 ui.button('キャンセル', on_click=lambda: self._cancel_and_close(progress_dialog)).props('flat').classes('self-end text-muted')
@@ -798,7 +798,7 @@ class YakuLingoApp:
                 self.state.reset_file_state()
                 ui.notify('キャンセルしました', type='info')
             else:
-                self.state.error_message = result.error_message or 'Error'
+                self.state.error_message = result.error_message or 'エラー'
                 self.state.file_state = FileState.ERROR
                 self.state.output_file = None
                 ui.notify('失敗しました', type='negative')

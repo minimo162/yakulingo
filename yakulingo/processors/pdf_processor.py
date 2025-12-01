@@ -753,14 +753,23 @@ def convert_to_pdf_coordinates(
     page_width: float = None,
 ) -> tuple[float, float, float, float]:
     """
-    Convert from image coordinates to PDF coordinates.
+    Convert from image/yomitoku coordinates to PDF coordinates.
 
-    Image: origin top-left, Y-axis downward
-    PDF: origin bottom-left, Y-axis upward
+    Coordinate Systems:
+    - Image/yomitoku: origin at top-left, Y-axis points downward
+      - box format: [x1, y1, x2, y2] where (x1, y1) is top-left corner
+    - PDF: origin at bottom-left, Y-axis points upward
+      - box format: (x1, y1, x2, y2) where (x1, y1) is bottom-left corner
+
+    Note on PyMuPDF:
+    - PyMuPDF's get_text("dict") returns bboxes in the same coordinate system
+      as images (origin top-left), so this function is also applicable.
+    - The bbox from PyMuPDF represents [x0, y0, x1, y1] where (x0, y0) is
+      top-left and (x1, y1) is bottom-right.
 
     Args:
         box: [x1, y1, x2, y2] image coordinates (top-left, bottom-right)
-        page_height: Page height
+        page_height: Page height in PDF units (points)
         page_width: Page width (optional, for x-coordinate clamping)
 
     Returns:
@@ -1291,6 +1300,12 @@ class PdfProcessor(FileProcessor):
 
         PDFMathTranslate-compliant implementation with CJK support.
 
+        Coordinate System Notes:
+            - PyMuPDF's get_text("dict") returns bboxes with origin at top-left
+            - These are converted to PDF coordinates (origin bottom-left) using
+              convert_to_pdf_coordinates() before text placement
+            - All text positioning uses the converted PDF coordinates
+
         Args:
             input_path: Path to original PDF
             output_path: Path for translated PDF
@@ -1351,10 +1366,11 @@ class PdfProcessor(FileProcessor):
                         continue
 
                     try:
-                        # Convert coordinates
+                        # Convert coordinates from image/PyMuPDF to PDF coordinate system
                         box_pdf = convert_to_pdf_coordinates(list(bbox), page_height)
                         x1, y1, x2, y2 = box_pdf
                         box_width = x2 - x1
+                        box_height = y2 - y1
 
                         # 4. Clear existing text (white fill)
                         replacer.add_redaction(x1, y1, x2, y2)
@@ -1363,10 +1379,12 @@ class PdfProcessor(FileProcessor):
                         font_id = font_registry.select_font_for_text(translated, target_lang)
                         is_cjk = font_registry.get_is_cjk(font_id)
 
-                        # 6. Calculate font size and line height
-                        font_size = estimate_font_size(list(bbox), translated)
+                        # 6. Calculate font size and line height using PDF coordinates
+                        # Note: Using converted box_pdf for consistency
+                        box_pdf_list = [x1, y1, x2, y2]
+                        font_size = estimate_font_size(box_pdf_list, translated)
                         line_height_val = calculate_line_height(
-                            translated, list(bbox), font_size, target_lang
+                            translated, box_pdf_list, font_size, target_lang
                         )
 
                         # 7. Split text into lines
@@ -1432,11 +1450,17 @@ class PdfProcessor(FileProcessor):
         This method uses cell coordinates from yomitoku analysis
         for more accurate text placement.
 
+        Coordinate System Notes:
+            - yomitoku returns bboxes in image coordinates (origin top-left)
+            - These are converted to PDF coordinates (origin bottom-left) using
+              convert_to_pdf_coordinates() before text placement
+            - The TranslationCell.box field uses image coordinates
+
         Args:
             input_path: Path to original PDF
             output_path: Path for translated PDF
             translations: Mapping of addresses to translated text
-            cells: TranslationCell list with position info
+            cells: TranslationCell list with position info (image coordinates)
             direction: Translation direction
 
         Returns:
@@ -1488,18 +1512,23 @@ class PdfProcessor(FileProcessor):
                         continue
 
                     try:
+                        # Convert coordinates from yomitoku (image) to PDF coordinate system
                         box_pdf = convert_to_pdf_coordinates(cell.box, page_height)
                         x1, y1, x2, y2 = box_pdf
                         box_width = x2 - x1
+                        box_height = y2 - y1
 
                         replacer.add_redaction(x1, y1, x2, y2)
 
                         font_id = font_registry.select_font_for_text(translated, target_lang)
                         is_cjk = font_registry.get_is_cjk(font_id)
 
-                        font_size = estimate_font_size(cell.box, translated)
+                        # Calculate font size and line height using PDF coordinates
+                        # Note: Using converted box_pdf for consistency
+                        box_pdf_list = [x1, y1, x2, y2]
+                        font_size = estimate_font_size(box_pdf_list, translated)
                         line_height_val = calculate_line_height(
-                            translated, cell.box, font_size, target_lang
+                            translated, box_pdf_list, font_size, target_lang
                         )
 
                         lines = split_text_into_lines(translated, box_width, font_size, is_cjk)

@@ -1,14 +1,18 @@
 # yakulingo/processors/pptx_processor.py
 """
-Processor for PowerPoint files (.pptx, .ppt).
+Processor for PowerPoint files (.pptx).
 """
 
+import logging
 from pathlib import Path
 from typing import Iterator
 from pptx import Presentation
 from pptx.util import Pt
 
 from .base import FileProcessor
+
+# Module logger
+logger = logging.getLogger(__name__)
 from .translators import CellTranslator, ParagraphTranslator
 from .font_manager import FontManager, FontTypeDetector
 from yakulingo.models.types import TextBlock, FileInfo, FileType
@@ -42,7 +46,9 @@ class PptxProcessor(FileProcessor):
 
     @property
     def supported_extensions(self) -> list[str]:
-        return ['.pptx', '.ppt']
+        # Note: .ppt (legacy format) is not supported by python-pptx
+        # Only .pptx (Office Open XML) is supported
+        return ['.pptx']
 
     def get_file_info(self, file_path: Path) -> FileInfo:
         """Get PowerPoint file info"""

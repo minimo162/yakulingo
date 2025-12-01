@@ -1,8 +1,9 @@
 # yakulingo/processors/word_processor.py
 """
-Processor for Word files (.docx, .doc).
+Processor for Word files (.docx).
 """
 
+import logging
 import re
 import shutil
 import tempfile
@@ -14,6 +15,9 @@ from docx import Document
 from docx.shared import Pt
 
 from .base import FileProcessor
+
+# Module logger
+logger = logging.getLogger(__name__)
 from .translators import CellTranslator, ParagraphTranslator
 from .font_manager import FontManager, FontTypeDetector
 from yakulingo.models.types import TextBlock, FileInfo, FileType
@@ -250,7 +254,9 @@ class WordProcessor(FileProcessor):
 
     @property
     def supported_extensions(self) -> list[str]:
-        return ['.docx', '.doc']
+        # Note: .doc (legacy format) is not supported by python-docx
+        # Only .docx (Office Open XML) is supported
+        return ['.docx']
 
     def get_file_info(self, file_path: Path) -> FileInfo:
         """Get Word file info"""
@@ -264,9 +270,16 @@ class WordProcessor(FileProcessor):
                 text_count += 1
 
         # Count table cells (Excel-compatible logic)
+        # Track processed cells to avoid counting merged cells multiple times
         for table in doc.tables:
+            processed_cells = set()
             for row in table.rows:
                 for cell in row.cells:
+                    # Use cell's _tc element id to identify unique cells
+                    cell_id = id(cell._tc)
+                    if cell_id in processed_cells:
+                        continue
+                    processed_cells.add(cell_id)
                     if cell.text and self.cell_translator.should_translate(cell.text):
                         text_count += 1
 
@@ -324,9 +337,17 @@ class WordProcessor(FileProcessor):
                 )
 
         # === Tables (Excel-compatible) ===
+        # Track processed cells to avoid extracting merged cells multiple times
         for table_idx, table in enumerate(doc.tables):
+            processed_cells = set()
             for row_idx, row in enumerate(table.rows):
                 for cell_idx, cell in enumerate(row.cells):
+                    # Use cell's _tc element id to identify unique cells
+                    cell_id = id(cell._tc)
+                    if cell_id in processed_cells:
+                        continue
+                    processed_cells.add(cell_id)
+
                     cell_text = cell.text
                     if cell_text and self.cell_translator.should_translate(cell_text):
                         # Get font info from first paragraph's first run
@@ -391,9 +412,17 @@ class WordProcessor(FileProcessor):
                 self._apply_to_paragraph(para, translations[block_id], font_manager)
 
         # === Apply to tables ===
+        # Track processed cells to avoid applying to merged cells multiple times
         for table_idx, table in enumerate(doc.tables):
+            processed_cells = set()
             for row_idx, row in enumerate(table.rows):
                 for cell_idx, cell in enumerate(row.cells):
+                    # Use cell's _tc element id to identify unique cells
+                    cell_id = id(cell._tc)
+                    if cell_id in processed_cells:
+                        continue
+                    processed_cells.add(cell_id)
+
                     block_id = f"table_{table_idx}_r{row_idx}_c{cell_idx}"
                     if block_id in translations:
                         # Apply to first paragraph of cell

@@ -356,7 +356,7 @@ def create_completion_dialog(
                 # Close button
                 with ui.row().classes('w-full justify-end pt-2'):
                     ui.button('閉じる', on_click=lambda: _close_dialog(dialog, on_close)).classes(
-                        'px-4 py-1.5 text-sm'
+                        'btn-primary'
                     )
 
     dialog.open()

@@ -807,7 +807,9 @@ class YakuLingoApp:
                     ui.label('翻訳中...').classes('text-base font-semibold')
 
                 with ui.column().classes('w-full gap-2'):
-                    progress_bar = ui.linear_progress(value=0).classes('w-full')
+                    # Custom progress bar matching file_panel style
+                    with ui.element('div').classes('progress-track w-full'):
+                        progress_bar_inner = ui.element('div').classes('progress-bar').style('width: 0%')
                     with ui.row().classes('w-full justify-between'):
                         status_label = ui.label('開始中...').classes('text-xs text-muted')
                         progress_label = ui.label('0%').classes('text-xs font-medium text-primary')
@@ -819,7 +821,7 @@ class YakuLingoApp:
         def on_progress(p: TranslationProgress):
             self.state.translation_progress = p.percentage
             self.state.translation_status = p.status
-            progress_bar.set_value(p.percentage)
+            progress_bar_inner.style(f'width: {int(p.percentage * 100)}%')
             progress_label.set_text(f'{int(p.percentage * 100)}%')
             status_label.set_text(p.status or 'Translating...')
 

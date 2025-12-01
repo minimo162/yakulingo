@@ -1789,6 +1789,12 @@ a:hover {
     color: var(--md-sys-color-on-warning);
 }
 
+/* Primary banner (for update notifications) */
+.primary-banner {
+    background-color: var(--md-sys-color-primary);
+    color: var(--md-sys-color-on-primary);
+}
+
 /* Warning container box */
 .warning-box {
     background-color: var(--md-sys-color-warning-container);
@@ -1823,6 +1829,15 @@ a:hover {
     background-color: var(--md-sys-color-surface-container);
     border-radius: var(--md-sys-shape-corner-large);
     padding: 0.75rem;
+}
+
+/* === File Panel Checkbox === */
+.pdf-mode-checkbox {
+    font-size: 0.875rem;
+}
+
+.pdf-mode-checkbox .q-checkbox__label {
+    color: var(--md-sys-color-on-surface-variant);
 }
 
 /* === M3 File Type Icon Backgrounds === */

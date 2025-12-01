@@ -23,7 +23,7 @@ import unicodedata
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterator, Optional
+from typing import Any, Iterator, Optional
 
 # Module logger
 logger = logging.getLogger(__name__)
@@ -1294,7 +1294,7 @@ class PdfProcessor(FileProcessor):
         output_path: Path,
         translations: dict[str, str],
         direction: str = "jp_to_en",
-    ) -> dict[str, str]:
+    ) -> dict[str, Any]:
         """
         Apply translations to PDF using low-level operators.
 
@@ -1370,7 +1370,6 @@ class PdfProcessor(FileProcessor):
                         box_pdf = convert_to_pdf_coordinates(list(bbox), page_height)
                         x1, y1, x2, y2 = box_pdf
                         box_width = x2 - x1
-                        box_height = y2 - y1
 
                         # 4. Clear existing text (white fill)
                         replacer.add_redaction(x1, y1, x2, y2)
@@ -1443,7 +1442,7 @@ class PdfProcessor(FileProcessor):
         translations: dict[str, str],
         cells: list[TranslationCell],
         direction: str = "jp_to_en",
-    ) -> dict[str, str]:
+    ) -> dict[str, Any]:
         """
         Apply translations using TranslationCell data (yomitoku integration).
 
@@ -1516,7 +1515,6 @@ class PdfProcessor(FileProcessor):
                         box_pdf = convert_to_pdf_coordinates(cell.box, page_height)
                         x1, y1, x2, y2 = box_pdf
                         box_width = x2 - x1
-                        box_height = y2 - y1
 
                         replacer.add_redaction(x1, y1, x2, y2)
 

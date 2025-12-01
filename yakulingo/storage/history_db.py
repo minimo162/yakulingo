@@ -7,7 +7,7 @@ Inspired by Nani Translate's local-first approach.
 import sqlite3
 import json
 from pathlib import Path
-from typing import List, Optional
+from typing import Optional
 from datetime import datetime
 
 from yakulingo.models.types import (
@@ -87,7 +87,7 @@ class HistoryDB:
             conn.commit()
             return cursor.lastrowid
 
-    def get_recent(self, limit: int = 50) -> List[HistoryEntry]:
+    def get_recent(self, limit: int = 50) -> list[HistoryEntry]:
         """Get most recent history entries"""
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
@@ -145,7 +145,7 @@ class HistoryDB:
             conn.commit()
             return cursor.rowcount
 
-    def search(self, query: str, limit: int = 20) -> List[HistoryEntry]:
+    def search(self, query: str, limit: int = 20) -> list[HistoryEntry]:
         """Search history by source text"""
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row

@@ -6,7 +6,7 @@ Application state management for YakuLingo.
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional
 from enum import Enum
 
 from yakulingo.models.types import FileInfo, TextTranslationResult, HistoryEntry
@@ -65,7 +65,7 @@ class AppState:
     pdf_fast_mode: bool = False  # If True, skip yomitoku OCR for faster processing
 
     # Reference files
-    reference_files: List[Path] = field(default_factory=list)
+    reference_files: list[Path] = field(default_factory=list)
 
     # Copilot connection
     copilot_connected: bool = False
@@ -74,7 +74,7 @@ class AppState:
     copilot_error: str = ""
 
     # Translation history (in-memory cache, backed by SQLite)
-    history: List[HistoryEntry] = field(default_factory=list)
+    history: list[HistoryEntry] = field(default_factory=list)
     history_drawer_open: bool = False
     max_history_entries: int = 50
 

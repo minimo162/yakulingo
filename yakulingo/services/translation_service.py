@@ -8,7 +8,7 @@ Bidirectional translation: Japanese → English, Other → Japanese (auto-detect
 import logging
 import time
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional
 import unicodedata
 
 import re
@@ -143,8 +143,8 @@ class BatchTranslator:
 
     def translate_blocks(
         self,
-        blocks: List[TextBlock],
-        reference_files: Optional[List[Path]] = None,
+        blocks: list[TextBlock],
+        reference_files: Optional[list[Path]] = None,
         on_progress: Optional[ProgressCallback] = None,
         output_language: str = "en",
     ) -> dict[str, str]:
@@ -171,8 +171,8 @@ class BatchTranslator:
 
     def translate_blocks_with_result(
         self,
-        blocks: List[TextBlock],
-        reference_files: Optional[List[Path]] = None,
+        blocks: list[TextBlock],
+        reference_files: Optional[list[Path]] = None,
         on_progress: Optional[ProgressCallback] = None,
         output_language: str = "en",
     ) -> 'BatchTranslationResult':
@@ -258,7 +258,7 @@ class BatchTranslator:
 
         return result
 
-    def _create_batches(self, blocks: List[TextBlock]) -> List[List[TextBlock]]:
+    def _create_batches(self, blocks: list[TextBlock]) -> list[list[TextBlock]]:
         """Split blocks into batches based on configured limits."""
         batches = []
         current_batch = []
@@ -318,7 +318,7 @@ class TranslationService:
     def translate_text(
         self,
         text: str,
-        reference_files: Optional[List[Path]] = None,
+        reference_files: Optional[list[Path]] = None,
     ) -> TranslationResult:
         """
         Translate plain text (bidirectional: JP→EN or Other→JP).
@@ -351,7 +351,15 @@ class TranslationService:
                 duration_seconds=time.time() - start_time,
             )
 
+        except (OSError, IOError) as e:
+            logger.warning("File I/O error during translation: %s", e)
+            return TranslationResult(
+                status=TranslationStatus.FAILED,
+                error_message=str(e),
+                duration_seconds=time.time() - start_time,
+            )
         except Exception as e:
+            logger.exception("Unexpected error during text translation: %s", e)
             return TranslationResult(
                 status=TranslationStatus.FAILED,
                 error_message=str(e),
@@ -361,7 +369,7 @@ class TranslationService:
     def translate_text_with_options(
         self,
         text: str,
-        reference_files: Optional[List[Path]] = None,
+        reference_files: Optional[list[Path]] = None,
     ) -> TextTranslationResult:
         """
         Translate text with language-specific handling:
@@ -445,7 +453,16 @@ class TranslationService:
                     output_language=output_language,
                 )
 
+        except (OSError, IOError) as e:
+            logger.warning("File I/O error during translation: %s", e)
+            return TextTranslationResult(
+                source_text=text,
+                source_char_count=len(text),
+                output_language="en",  # Default
+                error_message=str(e),
+            )
         except Exception as e:
+            logger.exception("Unexpected error during text translation with options: %s", e)
             return TextTranslationResult(
                 source_text=text,
                 source_char_count=len(text),
@@ -498,10 +515,14 @@ class TranslationService:
 
             return option
 
+        except (OSError, IOError) as e:
+            logger.warning("File I/O error during translation adjustment: %s", e)
+            return None
         except Exception as e:
+            logger.exception("Unexpected error during translation adjustment: %s", e)
             return None
 
-    def _parse_multi_option_result(self, raw_result: str) -> List[TranslationOption]:
+    def _parse_multi_option_result(self, raw_result: str) -> list[TranslationOption]:
         """Parse multi-option result from Copilot (for →en translation)."""
         options = []
 
@@ -520,7 +541,7 @@ class TranslationService:
 
         return options
 
-    def _parse_single_translation_result(self, raw_result: str) -> List[TranslationOption]:
+    def _parse_single_translation_result(self, raw_result: str) -> list[TranslationOption]:
         """Parse single translation result from Copilot (for →jp translation)."""
         # Pattern: 訳文: ... 解説: ...
         text_match = re.search(r'訳文:\s*(.+?)(?=解説:|$)', raw_result, re.DOTALL)
@@ -568,7 +589,7 @@ class TranslationService:
     def translate_file(
         self,
         input_path: Path,
-        reference_files: Optional[List[Path]] = None,
+        reference_files: Optional[list[Path]] = None,
         on_progress: Optional[ProgressCallback] = None,
         output_language: str = "en",
         use_ocr: bool = True,
@@ -632,7 +653,7 @@ class TranslationService:
         self,
         input_path: Path,
         processor: FileProcessor,
-        reference_files: Optional[List[Path]],
+        reference_files: Optional[list[Path]],
         on_progress: Optional[ProgressCallback],
         output_language: str,
         start_time: float,
@@ -735,7 +756,7 @@ class TranslationService:
         self,
         input_path: Path,
         processor: PdfProcessor,
-        reference_files: Optional[List[Path]],
+        reference_files: Optional[list[Path]],
         on_progress: Optional[ProgressCallback],
         output_language: str,
         use_ocr: bool,
@@ -956,6 +977,6 @@ class TranslationService:
         ext = file_path.suffix.lower()
         return ext in self.processors
 
-    def get_supported_extensions(self) -> List[str]:
+    def get_supported_extensions(self) -> list[str]:
         """Get list of supported file extensions"""
         return list(self.processors.keys())

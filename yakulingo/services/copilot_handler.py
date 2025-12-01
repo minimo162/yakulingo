@@ -15,7 +15,7 @@ import socket
 import subprocess
 import asyncio
 from pathlib import Path
-from typing import Optional, Callable, List
+from typing import Optional, Callable
 
 # Module logger
 logger = logging.getLogger(__name__)
@@ -508,10 +508,10 @@ class CopilotHandler:
 
     async def translate(
         self,
-        texts: List[str],
+        texts: list[str],
         prompt: str,
-        reference_files: Optional[List[Path]] = None,
-    ) -> List[str]:
+        reference_files: Optional[list[Path]] = None,
+    ) -> list[str]:
         """
         Translate a batch of texts.
 
@@ -543,10 +543,10 @@ class CopilotHandler:
 
     def translate_sync(
         self,
-        texts: List[str],
+        texts: list[str],
         prompt: str,
-        reference_files: Optional[List[Path]] = None,
-    ) -> List[str]:
+        reference_files: Optional[list[Path]] = None,
+    ) -> list[str]:
         """
         Synchronous version of translate for non-async contexts.
 
@@ -584,7 +584,7 @@ class CopilotHandler:
         self,
         text: str,
         prompt: str,
-        reference_files: Optional[List[Path]] = None,
+        reference_files: Optional[list[Path]] = None,
     ) -> str:
         """Translate a single text (sync)"""
         results = self.translate_sync([text], prompt, reference_files)
@@ -952,7 +952,7 @@ class CopilotHandler:
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, self._attach_file, file_path)
 
-    def _parse_batch_result(self, result: str, expected_count: int) -> List[str]:
+    def _parse_batch_result(self, result: str, expected_count: int) -> list[str]:
         """Parse batch translation result back to list"""
         lines = result.strip().split('\n')
         translations = []

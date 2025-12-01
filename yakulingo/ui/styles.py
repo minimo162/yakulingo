@@ -71,10 +71,11 @@ html {
 }
 
 body {
+    /* 日本語フォントを優先（system-uiは汎用的すぎるため避ける） */
     /* BIZ UDPGothic: Windows 10+用、UIの上下中央揃えが正確 */
     /* Yu Gothic UI: Windows 8.1+用、UI最適化版 */
-    /* Meiryoは上下余白の問題があるため除外 */
-    font-family: system-ui, -apple-system, 'Segoe UI', 'Hiragino Sans', 'BIZ UDPGothic', 'Yu Gothic UI', sans-serif;
+    /* Hiragino Sans: macOS用 */
+    font-family: 'BIZ UDPGothic', 'Yu Gothic UI', 'Hiragino Sans', 'Segoe UI', -apple-system, sans-serif;
     background-color: var(--md-sys-color-surface-dim);
     background-image: radial-gradient(circle, rgba(192,64,0,0.02) 1px, transparent 1px);
     background-size: 24px 24px;

@@ -262,6 +262,11 @@ class CopilotHandler:
                 on_progress(msg)
             logger.info(msg)
 
+        # Get Playwright error types for specific exception handling
+        error_types = _get_playwright_errors()
+        PlaywrightError = error_types['Error']
+        PlaywrightTimeoutError = error_types['TimeoutError']
+
         try:
             # Start Edge if needed
             if not self._is_port_in_use():
@@ -341,8 +346,12 @@ class CopilotHandler:
                 report("Failed to determine Copilot state")
                 return False
 
-        except Exception as e:
-            report(f"Connection failed: {e}")
+        except (PlaywrightError, PlaywrightTimeoutError) as e:
+            report(f"Browser connection failed: {e}")
+            self._connected = False
+            return False
+        except (ConnectionError, OSError) as e:
+            report(f"Network connection failed: {e}")
             self._connected = False
             return False
 
@@ -370,16 +379,15 @@ class CopilotHandler:
 
         return False
 
-    def check_and_wait_for_ready(self, timeout: int = 60) -> bool:
+    def check_and_wait_for_ready(self, timeout: int = 5) -> bool:
         """
-        Check if Copilot is ready (single check, no waiting).
+        Check if Copilot is ready with a configurable timeout.
 
-        Note: Despite the name, this method does not wait. It performs a single
-        state check with a short timeout (5 seconds) and returns immediately.
+        Performs a single state check and returns immediately.
         Use connect() with wait_for_login=True for actual waiting behavior.
 
         Args:
-            timeout: Unused parameter (kept for API compatibility)
+            timeout: Timeout in seconds for checking Copilot state (default: 5)
 
         Returns:
             True if ready, False if login required or error
@@ -387,7 +395,9 @@ class CopilotHandler:
         if self._connected:
             return True
 
-        state = self._check_copilot_state(timeout=5)
+        # Use the provided timeout for state check
+        check_timeout = max(1, min(timeout, 30))  # Clamp between 1-30 seconds
+        state = self._check_copilot_state(timeout=check_timeout)
 
         if state == ConnectionState.READY:
             self._connected = True
@@ -421,6 +431,11 @@ class CopilotHandler:
         if not self._page:
             return ConnectionState.ERROR
 
+        # Get Playwright error types
+        error_types = _get_playwright_errors()
+        PlaywrightError = error_types['Error']
+        PlaywrightTimeoutError = error_types['TimeoutError']
+
         try:
             current_url = self._page.url
 
@@ -442,40 +457,49 @@ class CopilotHandler:
                     element = self._page.wait_for_selector(selector, timeout=timeout * 1000)
                     if element:
                         return ConnectionState.READY
-                except Exception:
+                except PlaywrightTimeoutError:
+                    # Selector not found within timeout, try next
+                    continue
+                except PlaywrightError:
+                    # Other Playwright errors, try next selector
                     continue
 
             # 3. Copilot URLにいるがチャットUIがない
             # = 埋め込みログイン画面、または読み込み中
             return ConnectionState.LOGIN_REQUIRED
 
-        except Exception as e:
-            logger.warning("Error checking Copilot state: %s", e)
+        except (PlaywrightError, PlaywrightTimeoutError) as e:
+            logger.warning("Playwright error checking Copilot state: %s", e)
+            return ConnectionState.ERROR
+        except (AttributeError, TypeError) as e:
+            logger.warning("Page state error: %s", e)
             return ConnectionState.ERROR
 
     def bring_to_foreground(self) -> None:
         """Edgeウィンドウを前面に表示"""
         if self._page:
+            error_types = _get_playwright_errors()
+            PlaywrightError = error_types['Error']
             try:
                 self._page.bring_to_front()
-            except Exception as e:
+            except PlaywrightError as e:
                 logger.debug("Failed to bring window to foreground: %s", e)
 
     def disconnect(self) -> None:
         """Close browser and cleanup"""
+        from contextlib import suppress
+
         self._connected = False
 
-        try:
+        # Use suppress for cleanup - we want to continue even if errors occur
+        # Catch all exceptions during cleanup to ensure resources are released
+        with suppress(Exception):
             if self._browser:
                 self._browser.close()
-        except Exception as e:
-            logger.debug("Error closing browser: %s", e)
 
-        try:
+        with suppress(Exception):
             if self._playwright:
                 self._playwright.stop()
-        except Exception as e:
-            logger.debug("Error stopping playwright: %s", e)
 
         self._browser = None
         self._context = None
@@ -568,6 +592,10 @@ class CopilotHandler:
 
     def _send_message(self, message: str) -> None:
         """Send message to Copilot (sync)"""
+        error_types = _get_playwright_errors()
+        PlaywrightError = error_types['Error']
+        PlaywrightTimeoutError = error_types['TimeoutError']
+
         try:
             # Find input area
             # 実際のCopilot HTML: <span role="combobox" contenteditable="true" id="m365-chat-editor-target-element" ...>
@@ -604,14 +632,17 @@ class CopilotHandler:
                         # Fallback to Enter key
                         self._ensure_gpt5_enabled()
                         input_elem.press("Enter")
-                except Exception:
+                except PlaywrightTimeoutError:
                     # Timeout waiting for button, try Enter key
                     self._ensure_gpt5_enabled()
                     input_elem.press("Enter")
 
-        except Exception as e:
-            logger.error("Error sending message: %s", e)
-            raise
+        except PlaywrightTimeoutError as e:
+            logger.error("Timeout finding input element: %s", e)
+            raise RuntimeError(f"Copilot input not found: {e}") from e
+        except PlaywrightError as e:
+            logger.error("Browser error sending message: %s", e)
+            raise RuntimeError(f"Failed to send message: {e}") from e
 
     async def _send_message_async(self, message: str) -> None:
         """Send message to Copilot (async wrapper)"""
@@ -620,12 +651,16 @@ class CopilotHandler:
 
     def _get_response(self, timeout: int = 120) -> str:
         """Get response from Copilot (sync)"""
+        error_types = _get_playwright_errors()
+        PlaywrightError = error_types['Error']
+        PlaywrightTimeoutError = error_types['TimeoutError']
+
         try:
             # Wait for response element to appear (instead of fixed sleep)
             response_selector = '[data-testid="markdown-reply"], div[data-message-type="Chat"]'
             try:
                 self._page.wait_for_selector(response_selector, timeout=10000, state='visible')
-            except Exception:
+            except PlaywrightTimeoutError:
                 # Response may already be present or selector changed, continue polling
                 pass
 
@@ -657,8 +692,11 @@ class CopilotHandler:
 
             return last_text
 
-        except Exception as e:
-            logger.error("Error getting response: %s", e)
+        except PlaywrightError as e:
+            logger.error("Browser error getting response: %s", e)
+            return ""
+        except (AttributeError, TypeError) as e:
+            logger.error("Page state error: %s", e)
             return ""
 
     async def _get_response_async(self, timeout: int = 120) -> str:
@@ -688,6 +726,9 @@ class CopilotHandler:
         - 推論要素: <div class="fai-ChainOfThought ...">
         - 回答要素: <div data-testid="markdown-reply" data-message-type="Chat">
         """
+        error_types = _get_playwright_errors()
+        PlaywrightError = error_types['Error']
+
         try:
             time.sleep(1)  # Initial wait for response to start
 
@@ -724,8 +765,11 @@ class CopilotHandler:
 
             return last_content
 
-        except Exception as e:
-            logger.error("Error getting streaming response: %s", e)
+        except PlaywrightError as e:
+            logger.error("Browser error getting streaming response: %s", e)
+            return ""
+        except (AttributeError, TypeError) as e:
+            logger.error("Page state error: %s", e)
             return ""
 
     def _get_reasoning_text(self) -> str:
@@ -735,6 +779,9 @@ class CopilotHandler:
         Returns:
             推論ステップのテキスト（例: "分析中の財務会計の概念フレームワーク"）
         """
+        error_types = _get_playwright_errors()
+        PlaywrightError = error_types['Error']
+
         try:
             # 推論要素を探す
             cot_elem = self._page.query_selector('.fai-ChainOfThought')
@@ -761,7 +808,7 @@ class CopilotHandler:
 
             return "\n".join(reasoning_parts).strip()
 
-        except Exception:
+        except PlaywrightError:
             return ""
 
     def _get_latest_response_text(self) -> str:
@@ -771,6 +818,9 @@ class CopilotHandler:
         Returns:
             回答テキスト
         """
+        error_types = _get_playwright_errors()
+        PlaywrightError = error_types['Error']
+
         try:
             response_elem = self._page.query_selector(
                 '[data-testid="markdown-reply"]:last-of-type, div[data-message-type="Chat"]:last-of-type'
@@ -778,7 +828,7 @@ class CopilotHandler:
             if response_elem:
                 return response_elem.inner_text()
             return ""
-        except Exception:
+        except PlaywrightError:
             return ""
 
     def _attach_file(self, file_path: Path) -> bool:

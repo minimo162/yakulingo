@@ -992,7 +992,7 @@ def get_total_pages(pdf_path: str) -> int:
 @contextmanager
 def _open_pdf_document(pdf_path: str):
     """
-    Context manager for safely opening and closing PDF documents.
+    Context manager for safely opening and closing PDF documents (pypdfium2).
 
     Ensures the PDF is properly closed even if the caller doesn't
     fully consume the generator or an exception occurs.
@@ -1003,6 +1003,28 @@ def _open_pdf_document(pdf_path: str):
         yield pdf
     finally:
         pdf.close()
+
+
+@contextmanager
+def _open_fitz_document(file_path):
+    """
+    Context manager for safely opening and closing PyMuPDF documents.
+
+    Ensures the PDF is properly closed even if an exception occurs
+    or a generator is not fully consumed.
+
+    Args:
+        file_path: Path to PDF file (str or Path)
+
+    Yields:
+        PyMuPDF Document object
+    """
+    fitz = _get_fitz()
+    doc = fitz.open(file_path)
+    try:
+        yield doc
+    finally:
+        doc.close()
 
 
 def iterate_pdf_pages(
@@ -1205,6 +1227,29 @@ class PdfProcessor(FileProcessor):
     - Scanned PDFs require OCR integration (yomitoku)
     """
 
+    # Estimated OCR time per page (seconds) - for progress estimation
+    CPU_OCR_TIME_PER_PAGE = 30  # CPU is slow
+    GPU_OCR_TIME_PER_PAGE = 3   # GPU is much faster
+
+    def __init__(self):
+        """Initialize PDF processor with cancellation support."""
+        self._cancel_requested = False
+        self._failed_pages: list[int] = []
+
+    def cancel(self) -> None:
+        """Request cancellation of OCR processing."""
+        self._cancel_requested = True
+
+    def reset_cancel(self) -> None:
+        """Reset cancellation flag for new processing."""
+        self._cancel_requested = False
+        self._failed_pages = []
+
+    @property
+    def failed_pages(self) -> list[int]:
+        """Get list of pages that failed during OCR."""
+        return self._failed_pages.copy()
+
     @property
     def file_type(self) -> FileType:
         return FileType.PDF
@@ -1215,23 +1260,19 @@ class PdfProcessor(FileProcessor):
 
     def get_file_info(self, file_path: Path) -> FileInfo:
         """Get PDF file info."""
-        fitz = _get_fitz()
-        doc = fitz.open(file_path)
+        with _open_fitz_document(file_path) as doc:
+            page_count = len(doc)
+            text_count = 0
 
-        page_count = len(doc)
-        text_count = 0
-
-        for page in doc:
-            blocks = page.get_text("dict")["blocks"]
-            for block in blocks:
-                if block.get("type") == 0:  # Text block
-                    for line in block.get("lines", []):
-                        for span in line.get("spans", []):
-                            text = span.get("text", "").strip()
-                            if text and self.should_translate(text):
-                                text_count += 1
-
-        doc.close()
+            for page in doc:
+                blocks = page.get_text("dict")["blocks"]
+                for block in blocks:
+                    if block.get("type") == 0:  # Text block
+                        for line in block.get("lines", []):
+                            for span in line.get("spans", []):
+                                text = span.get("text", "").strip()
+                                if text and self.should_translate(text):
+                                    text_count += 1
 
         return FileInfo(
             path=file_path,
@@ -1246,49 +1287,47 @@ class PdfProcessor(FileProcessor):
         Extract text blocks from PDF.
 
         Uses PyMuPDF to extract text blocks with their bounding boxes.
+        The context manager ensures proper cleanup even if the generator
+        is not fully consumed.
         """
-        fitz = _get_fitz()
-        doc = fitz.open(file_path)
+        with _open_fitz_document(file_path) as doc:
+            for page_idx, page in enumerate(doc):
+                blocks = page.get_text("dict")["blocks"]
+                for block_idx, block in enumerate(blocks):
+                    if block.get("type") == 0:  # Text block
+                        text_parts = []
+                        for line in block.get("lines", []):
+                            line_text = ""
+                            for span in line.get("spans", []):
+                                line_text += span.get("text", "")
+                            text_parts.append(line_text)
 
-        for page_idx, page in enumerate(doc):
-            blocks = page.get_text("dict")["blocks"]
-            for block_idx, block in enumerate(blocks):
-                if block.get("type") == 0:  # Text block
-                    text_parts = []
-                    for line in block.get("lines", []):
-                        line_text = ""
-                        for span in line.get("spans", []):
-                            line_text += span.get("text", "")
-                        text_parts.append(line_text)
+                        text = "\n".join(text_parts).strip()
 
-                    text = "\n".join(text_parts).strip()
+                        if text and self.should_translate(text):
+                            # Get font info from first span
+                            font_name = None
+                            font_size = 11.0
+                            if block.get("lines"):
+                                first_line = block["lines"][0]
+                                if first_line.get("spans"):
+                                    first_span = first_line["spans"][0]
+                                    font_name = first_span.get("font")
+                                    font_size = first_span.get("size", 11.0)
 
-                    if text and self.should_translate(text):
-                        # Get font info from first span
-                        font_name = None
-                        font_size = 11.0
-                        if block.get("lines"):
-                            first_line = block["lines"][0]
-                            if first_line.get("spans"):
-                                first_span = first_line["spans"][0]
-                                font_name = first_span.get("font")
-                                font_size = first_span.get("size", 11.0)
-
-                        yield TextBlock(
-                            id=f"page_{page_idx}_block_{block_idx}",
-                            text=text,
-                            location=f"Page {page_idx + 1}",
-                            metadata={
-                                'type': 'text_block',
-                                'page': page_idx,
-                                'block': block_idx,
-                                'bbox': block.get("bbox"),
-                                'font_name': font_name,
-                                'font_size': font_size,
-                            }
-                        )
-
-        doc.close()
+                            yield TextBlock(
+                                id=f"page_{page_idx}_block_{block_idx}",
+                                text=text,
+                                location=f"Page {page_idx + 1}",
+                                metadata={
+                                    'type': 'text_block',
+                                    'page': page_idx,
+                                    'block': block_idx,
+                                    'bbox': block.get("bbox"),
+                                    'font_name': font_name,
+                                    'font_size': font_size,
+                                }
+                            )
 
     def apply_translations(
         self,
@@ -1710,10 +1749,8 @@ class PdfProcessor(FileProcessor):
                 # Can also translate page_blocks immediately here
             ```
         """
-        fitz = _get_fitz()
-        doc = fitz.open(file_path)
-        total_pages = len(doc)
-        doc.close()
+        with _open_fitz_document(file_path) as doc:
+            total_pages = len(doc)
 
         if use_ocr and is_yomitoku_available():
             # Use yomitoku OCR with streaming
@@ -1738,48 +1775,117 @@ class PdfProcessor(FileProcessor):
         Extract text blocks using yomitoku OCR with streaming.
 
         Yields one page at a time with progress updates.
+
+        Features:
+        - Per-page error handling (continues on failure)
+        - Cancellation support
+        - Estimated time remaining
+        - Failed pages are tracked in self._failed_pages
         """
+        import time as time_module
+
         actual_device = get_device(device)
+        is_cpu = actual_device == "cpu"
         pages_processed = 0
+        start_time = time_module.time()
+        self._failed_pages = []
+
+        # Estimate time per page based on device
+        estimated_time_per_page = (
+            self.CPU_OCR_TIME_PER_PAGE if is_cpu else self.GPU_OCR_TIME_PER_PAGE
+        )
 
         for batch_start, batch_images in iterate_pdf_pages(str(file_path)):
             for img_idx, img in enumerate(batch_images):
+                # Check for cancellation
+                if self._cancel_requested:
+                    logger.info("OCR processing cancelled at page %d/%d",
+                               pages_processed + 1, total_pages)
+                    clear_analyzer_cache()
+                    return
+
                 page_num = batch_start + img_idx + 1
                 pages_processed += 1
 
-                # Report progress
+                # Calculate estimated remaining time
+                elapsed = time_module.time() - start_time
+                if pages_processed > 1:
+                    # Use actual time for better estimation
+                    actual_time_per_page = elapsed / (pages_processed - 1)
+                    remaining_pages = total_pages - pages_processed
+                    estimated_remaining = int(actual_time_per_page * remaining_pages)
+                else:
+                    # First page - use device-based estimate
+                    remaining_pages = total_pages - 1
+                    estimated_remaining = int(estimated_time_per_page * remaining_pages)
+
+                # Report progress with estimated time
                 if on_progress:
+                    status_msg = f"OCR processing page {page_num}/{total_pages}..."
+                    if is_cpu and total_pages > 1:
+                        # Add time estimate for CPU users
+                        if estimated_remaining > 60:
+                            time_str = f"(approx. {estimated_remaining // 60}m remaining)"
+                        else:
+                            time_str = f"(approx. {estimated_remaining}s remaining)"
+                        status_msg = f"{status_msg} {time_str}"
+
                     on_progress(TranslationProgress(
                         current=pages_processed,
                         total=total_pages,
-                        status=f"OCR processing page {page_num}/{total_pages}...",
+                        status=status_msg,
                         phase=TranslationPhase.OCR,
                         phase_detail=f"Page {page_num}/{total_pages}",
+                        estimated_remaining=estimated_remaining if estimated_remaining > 0 else None,
                     ))
 
-                # Analyze with yomitoku
-                results = analyze_document(img, actual_device, reading_order)
-                cells = prepare_translation_cells(results, page_num)
+                # Analyze with yomitoku - with error handling
+                try:
+                    results = analyze_document(img, actual_device, reading_order)
+                    cells = prepare_translation_cells(results, page_num)
 
-                # Convert cells to TextBlocks
-                blocks = []
-                for cell in cells:
-                    if cell.text and self.should_translate(cell.text):
-                        blocks.append(TextBlock(
-                            id=cell.address,
-                            text=cell.text,
-                            location=f"Page {page_num}",
-                            metadata={
-                                'type': 'ocr_cell',
-                                'page': page_num - 1,
-                                'address': cell.address,
-                                'bbox': cell.box,
-                                'direction': cell.direction,
-                                'role': cell.role,
-                            }
+                    # Convert cells to TextBlocks
+                    blocks = []
+                    for cell in cells:
+                        if cell.text and self.should_translate(cell.text):
+                            blocks.append(TextBlock(
+                                id=cell.address,
+                                text=cell.text,
+                                location=f"Page {page_num}",
+                                metadata={
+                                    'type': 'ocr_cell',
+                                    'page': page_num - 1,
+                                    'address': cell.address,
+                                    'bbox': cell.box,
+                                    'direction': cell.direction,
+                                    'role': cell.role,
+                                }
+                            ))
+
+                    yield blocks, cells
+
+                except Exception as e:
+                    # Log error but continue processing other pages
+                    logger.error("OCR failed for page %d: %s", page_num, e)
+                    self._failed_pages.append(page_num)
+
+                    # Yield empty result for this page
+                    yield [], []
+
+                    # Report error in progress
+                    if on_progress:
+                        on_progress(TranslationProgress(
+                            current=pages_processed,
+                            total=total_pages,
+                            status=f"Page {page_num} failed: {str(e)[:50]}...",
+                            phase=TranslationPhase.OCR,
+                            phase_detail=f"Error on page {page_num}",
                         ))
 
-                yield blocks, cells
+        # Log summary if there were failures
+        if self._failed_pages:
+            logger.warning("OCR completed with %d failed pages: %s",
+                          len(self._failed_pages), self._failed_pages)
 
         # Clean up GPU memory
         clear_analyzer_cache()
@@ -1794,11 +1900,10 @@ class PdfProcessor(FileProcessor):
         Extract text blocks using PyMuPDF only (fast, for text-based PDFs).
 
         Yields one page at a time with progress updates.
+        The context manager ensures proper cleanup even if the generator
+        is not fully consumed.
         """
-        fitz = _get_fitz()
-        doc = fitz.open(file_path)
-
-        try:
+        with _open_fitz_document(file_path) as doc:
             for page_idx, page in enumerate(doc):
                 page_num = page_idx + 1
 
@@ -1851,13 +1956,8 @@ class PdfProcessor(FileProcessor):
                             ))
 
                 yield blocks, None
-        finally:
-            doc.close()
 
     def get_page_count(self, file_path: Path) -> int:
         """Get total page count of PDF."""
-        fitz = _get_fitz()
-        doc = fitz.open(file_path)
-        count = len(doc)
-        doc.close()
-        return count
+        with _open_fitz_document(file_path) as doc:
+            return len(doc)

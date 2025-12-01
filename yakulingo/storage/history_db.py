@@ -50,10 +50,17 @@ class HistoryDB:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
-            # Create index for faster queries
+            # Create index for faster timestamp-based queries
             conn.execute('''
                 CREATE INDEX IF NOT EXISTS idx_history_timestamp
                 ON history(timestamp DESC)
+            ''')
+            # Create index for search queries
+            # Note: LIKE '%query%' won't use index, but LIKE 'query%' will
+            # This index helps with prefix searches and sorting during search
+            conn.execute('''
+                CREATE INDEX IF NOT EXISTS idx_history_source_text
+                ON history(source_text COLLATE NOCASE)
             ''')
             conn.commit()
 

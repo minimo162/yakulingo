@@ -128,7 +128,8 @@ class TestCopilotHandlerConnectFlow:
             with patch('yakulingo.services.copilot_handler._get_playwright') as mock_pw:
                 mock_sync_playwright = Mock()
                 mock_playwright_instance = Mock()
-                mock_playwright_instance.chromium.connect_over_cdp.side_effect = Exception(
+                # Use ConnectionError which is caught by the implementation
+                mock_playwright_instance.chromium.connect_over_cdp.side_effect = ConnectionError(
                     "Connection refused"
                 )
                 mock_sync_playwright.return_value.start.return_value = mock_playwright_instance
@@ -148,11 +149,13 @@ class TestCopilotHandlerSendMessage:
 
         mock_input = Mock()
         mock_send_button = Mock()
+        mock_send_button.get_attribute.return_value = None  # Button is enabled
         mock_page = Mock()
-        mock_page.wait_for_selector.return_value = mock_input
-        mock_page.query_selector.return_value = mock_send_button
+        # First call returns input, second call returns send button
+        mock_page.wait_for_selector.side_effect = [mock_input, mock_send_button]
 
         handler._page = mock_page
+        handler._ensure_gpt5_enabled = Mock()  # Mock GPT-5 check
 
         handler._send_message("Test message")
 
@@ -270,7 +273,9 @@ class TestCopilotHandlerGetResponse:
         handler = CopilotHandler()
 
         mock_page = Mock()
-        mock_page.query_selector.side_effect = Exception("Element not found")
+        # Use AttributeError which is caught by the implementation
+        mock_page.query_selector.side_effect = AttributeError("Element not found")
+        mock_page.wait_for_selector.return_value = None
 
         handler._page = mock_page
 

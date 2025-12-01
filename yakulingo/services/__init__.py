@@ -23,12 +23,18 @@ _LAZY_IMPORTS = {
     'VersionInfo': 'updater',
 }
 
+# Submodules that can be accessed via __getattr__ (for patching support)
+_SUBMODULES = {'copilot_handler', 'translation_service', 'updater', 'prompt_builder'}
+
 
 def __getattr__(name: str):
     """Lazy-load heavy service modules on first access."""
+    import importlib
+    # Support accessing submodules directly (for unittest.mock.patch)
+    if name in _SUBMODULES:
+        return importlib.import_module(f'.{name}', __package__)
     if name in _LAZY_IMPORTS:
         module_name = _LAZY_IMPORTS[name]
-        import importlib
         module = importlib.import_module(f'.{module_name}', __package__)
         return getattr(module, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

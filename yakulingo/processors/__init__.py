@@ -20,12 +20,19 @@ _LAZY_IMPORTS = {
     'PdfProcessor': 'pdf_processor',
 }
 
+# Submodules that can be accessed via __getattr__ (for patching support)
+_SUBMODULES = {'excel_processor', 'word_processor', 'pptx_processor', 'pdf_processor',
+               'base', 'translators', 'font_manager'}
+
 
 def __getattr__(name: str):
     """Lazy-load heavy processor modules on first access."""
+    import importlib
+    # Support accessing submodules directly (for unittest.mock.patch)
+    if name in _SUBMODULES:
+        return importlib.import_module(f'.{name}', __package__)
     if name in _LAZY_IMPORTS:
         module_name = _LAZY_IMPORTS[name]
-        import importlib
         module = importlib.import_module(f'.{module_name}', __package__)
         return getattr(module, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

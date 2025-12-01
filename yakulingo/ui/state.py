@@ -3,6 +3,7 @@
 Application state management for YakuLingo.
 """
 
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, List
@@ -10,6 +11,9 @@ from enum import Enum
 
 from yakulingo.models.types import FileInfo, TextTranslationResult, HistoryEntry
 from yakulingo.storage.history_db import HistoryDB, get_default_db_path
+
+# Module logger
+logger = logging.getLogger(__name__)
 
 
 class Tab(Enum):
@@ -88,7 +92,7 @@ class AppState:
             # Load recent history from database
             self.history = self._history_db.get_recent(self.max_history_entries)
         except Exception as e:
-            print(f"Warning: Failed to initialize history database: {e}")
+            logger.warning("Failed to initialize history database: %s", e)
             self._history_db = None
             self.history = []
 
@@ -131,7 +135,7 @@ class AppState:
                 if len(self.history) >= self.max_history_entries:
                     self._history_db.cleanup_old_entries(500)
             except Exception as e:
-                print(f"Warning: Failed to save history: {e}")
+                logger.warning("Failed to save history: %s", e)
 
         # Update in-memory cache
         self.history.insert(0, entry)
@@ -146,7 +150,7 @@ class AppState:
             try:
                 self._history_db.delete_by_timestamp(entry.timestamp)
             except Exception as e:
-                print(f"Warning: Failed to delete history entry: {e}")
+                logger.warning("Failed to delete history entry: %s", e)
 
         # Remove from in-memory cache
         self.history = [h for h in self.history if h.timestamp != entry.timestamp]
@@ -158,7 +162,7 @@ class AppState:
             try:
                 self._history_db.clear_all()
             except Exception as e:
-                print(f"Warning: Failed to clear history database: {e}")
+                logger.warning("Failed to clear history database: %s", e)
 
         # Clear in-memory cache
         self.history = []
@@ -169,7 +173,7 @@ class AppState:
             try:
                 self.history = self._history_db.get_recent(self.max_history_entries)
             except Exception as e:
-                print(f"Warning: Failed to reload history: {e}")
+                logger.warning("Failed to reload history: %s", e)
 
     def toggle_history_drawer(self) -> None:
         """Toggle history drawer visibility"""

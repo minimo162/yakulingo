@@ -3,10 +3,14 @@
 Application settings management for YakuLingo.
 """
 
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 import json
+
+# Module logger
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -52,7 +56,7 @@ class AppSettings:
                     filtered_data = {k: v for k, v in data.items() if k in known_fields}
                     return cls(**filtered_data)
             except (json.JSONDecodeError, TypeError, UnicodeDecodeError) as e:
-                print(f"Warning: Failed to load settings: {e}")
+                logger.warning("Failed to load settings: %s", e)
                 return cls()
         return cls()
 

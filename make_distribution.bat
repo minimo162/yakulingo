@@ -176,23 +176,23 @@ if exist "%DIST_ZIP%" (
 
     :: Create share folder with network installer
     set SHARE_DIR=share_package
-    if exist "%SHARE_DIR%" rd /s /q "%SHARE_DIR%"
-    mkdir "%SHARE_DIR%"
+    if exist "!SHARE_DIR!" rd /s /q "!SHARE_DIR!"
+    mkdir "!SHARE_DIR!"
 
     :: Copy ZIP and installer files
-    copy /y "%DIST_ZIP%" "%SHARE_DIR%\" >nul
-    copy /y "installer\share\setup.vbs" "%SHARE_DIR%\" >nul
-    copy /y "installer\share\README.txt" "%SHARE_DIR%\" >nul
-    xcopy /s /e /i /q "installer\share\.scripts" "%SHARE_DIR%\.scripts" >nul
+    copy /y "!DIST_ZIP!" "!SHARE_DIR!\" >nul
+    copy /y "installer\share\setup.vbs" "!SHARE_DIR!\" >nul
+    copy /y "installer\share\README.txt" "!SHARE_DIR!\" >nul
+    xcopy /s /e /i /q "installer\share\.scripts" "!SHARE_DIR!\.scripts" >nul
 
     echo [SUCCESS] Share folder package created!
     echo.
-    echo   Folder: %SHARE_DIR%\
+    echo   Folder: !SHARE_DIR!\
     echo     - setup.vbs    ^<-- Users run this
-    echo     - %DIST_ZIP%
+    echo     - !DIST_ZIP!
     echo     - README.txt
     echo.
-    echo Deploy the contents of "%SHARE_DIR%" to your network share.
+    echo Deploy the contents of "!SHARE_DIR!" to your network share.
     echo ============================================================
 ) else (
     echo [ERROR] Failed to create distribution package.

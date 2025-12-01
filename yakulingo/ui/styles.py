@@ -307,14 +307,14 @@ body {
     border: 1px solid rgba(255, 255, 255, 0.3);
     border-radius: 6px;
     font-family: ui-monospace, monospace;
-    font-size: 0.6875rem;  /* 11px - improved readability */
+    font-size: 0.75rem;  /* 12px - improved readability */
     font-weight: 500;
     color: rgba(255, 255, 255, 0.95);
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
 .keycap-plus {
-    font-size: 0.6875rem;
+    font-size: 0.75rem;
     color: rgba(255, 255, 255, 0.7);
     margin: 0 2px;
 }
@@ -334,6 +334,8 @@ body {
 .btn-outline:hover {
     background: var(--md-sys-color-surface-container);
     border-color: var(--md-sys-color-outline);
+    transform: translateY(-1px);
+    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-spring);
 }
 
 /* === M3 Filled Button (Primary) === */
@@ -360,8 +362,9 @@ body {
 .btn-primary:hover:not(:disabled),
 .translate-btn:hover:not(:disabled) {
     background: #374151;
-    transform: translateY(-1px);
+    transform: translateY(-2px) scale(1.02);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-spring);
 }
 
 .btn-primary:disabled,
@@ -385,7 +388,8 @@ body {
 .drop-zone:hover {
     border-color: var(--md-sys-color-primary);
     background: var(--md-sys-color-primary-container);
-    transform: scale(1.01);
+    transform: scale(1.02);
+    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-spring);
 }
 
 .drop-zone-icon {
@@ -459,7 +463,8 @@ body {
 .option-card:hover {
     border-color: var(--md-sys-color-outline);
     box-shadow: var(--md-sys-elevation-2);
-    transform: translateY(-2px);
+    transform: translateY(-3px) scale(1.01);
+    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-spring);
 }
 
 .option-text {
@@ -554,7 +559,7 @@ body {
 .text-muted { color: var(--md-sys-color-on-surface-variant); }
 .text-primary { color: var(--md-sys-color-primary); }
 .text-error { color: var(--md-sys-color-error); }
-.text-2xs { font-size: 0.6875rem; }  /* 11px - minimum readable size */
+.text-2xs { font-size: 0.75rem; }  /* 12px - minimum readable size */
 
 .animate-in {
     animation: fadeIn var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-standard);
@@ -932,7 +937,7 @@ body {
     gap: 0.25rem;
     padding: 0.125rem 0.5rem;
     border-radius: var(--md-sys-shape-corner-full);
-    font-size: 0.6875rem;
+    font-size: 0.75rem;
     color: var(--md-sys-color-on-surface-variant);
     cursor: pointer;
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
@@ -1140,7 +1145,7 @@ body {
     gap: 0.375rem;
     color: var(--md-sys-color-on-surface-variant);
     opacity: 0.6;
-    font-size: 0.6875rem;
+    font-size: 0.75rem;
 }
 
 /* Security tooltip */
@@ -1153,7 +1158,7 @@ body {
     color: var(--md-sys-color-surface);
     padding: 0.5rem 0.75rem;
     border-radius: var(--md-sys-shape-corner-small);
-    font-size: 0.6875rem;
+    font-size: 0.75rem;
     white-space: nowrap;
     opacity: 0;
     visibility: hidden;
@@ -1364,7 +1369,7 @@ body {
 }
 
 .quick-chip {
-    font-size: 0.6875rem !important;
+    font-size: 0.75rem !important;
     padding: 0.25rem 0.625rem !important;
     border: 1px solid var(--md-sys-color-outline-variant) !important;
     border-radius: var(--md-sys-shape-corner-small) !important;
@@ -1421,7 +1426,7 @@ body {
 
 /* === Elapsed Time Badge === */
 .elapsed-time-badge {
-    font-size: 0.6875rem;
+    font-size: 0.75rem;
     color: var(--md-sys-color-on-surface-variant);
     background: var(--md-sys-color-surface-container);
     padding: 0.125rem 0.5rem;

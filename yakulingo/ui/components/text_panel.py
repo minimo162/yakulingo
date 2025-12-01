@@ -187,7 +187,7 @@ def create_text_panel(
                                 on_click=on_attach_reference_file
                             ).classes(f'attach-btn {"has-file" if has_files else ""}').props('flat')
                             with attach_btn:
-                                ui.html(ATTACH_SVG)
+                                ui.html(ATTACH_SVG, sanitize=False)
                             attach_btn.tooltip('参照ファイルを添付' if not has_files else '参照ファイルを追加')
 
                         # Clear button
@@ -211,7 +211,7 @@ def create_text_panel(
         # Hint text with animated language detection icon (Nani-inspired)
         with ui.element('div').classes('hint-section'):
             with ui.element('div').classes('hint-primary'):
-                ui.html(LANG_DETECT_SVG)
+                ui.html(LANG_DETECT_SVG, sanitize=False)
                 ui.label('AIが言語を検出し、日本語なら英語へ、それ以外なら日本語へ翻訳します').classes('text-xs')
             with ui.element('div').classes('hint-secondary'):
                 ui.icon('smart_toy').classes('text-sm')
@@ -263,7 +263,7 @@ def _render_results_to_en(
     # Avatar and status row (Nani-style) with elapsed time
     with ui.element('div').classes('avatar-status-row'):
         with ui.element('span').classes('avatar-container'):
-            ui.html(AVATAR_SVG)
+            ui.html(AVATAR_SVG, sanitize=False)
         with ui.element('div').classes('status-text'):
             with ui.row().classes('items-center gap-2'):
                 ui.label('翻訳しました').classes('status-label')
@@ -307,7 +307,7 @@ def _render_results_to_jp(
     # Avatar and status row (Nani-style) with elapsed time
     with ui.element('div').classes('avatar-status-row'):
         with ui.element('span').classes('avatar-container'):
-            ui.html(AVATAR_SVG)
+            ui.html(AVATAR_SVG, sanitize=False)
         with ui.element('div').classes('status-text'):
             with ui.row().classes('items-center gap-2'):
                 ui.label('翻訳しました').classes('status-label')
@@ -402,7 +402,7 @@ def _render_explanation(explanation: str):
     # Render as HTML list if there are bullet items
     if bullet_items:
         html_content = '<ul>' + ''.join(f'<li>{item}</li>' for item in bullet_items) + '</ul>'
-        ui.html(html_content)
+        ui.html(html_content, sanitize=False)
 
     # Render non-bullet lines as regular text
     for line in non_bullet_lines:

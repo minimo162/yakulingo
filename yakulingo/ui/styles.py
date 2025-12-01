@@ -71,7 +71,10 @@ html {
 }
 
 body {
-    font-family: system-ui, -apple-system, 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif;
+    /* BIZ UDPGothic: Windows 10+用、UIの上下中央揃えが正確 */
+    /* Yu Gothic UI: Windows 8.1+用、UI最適化版 */
+    /* Meiryoは上下余白の問題があるため除外 */
+    font-family: system-ui, -apple-system, 'Segoe UI', 'Hiragino Sans', 'BIZ UDPGothic', 'Yu Gothic UI', sans-serif;
     background-color: var(--md-sys-color-surface-dim);
     background-image: radial-gradient(circle, rgba(192,64,0,0.02) 1px, transparent 1px);
     background-size: 24px 24px;

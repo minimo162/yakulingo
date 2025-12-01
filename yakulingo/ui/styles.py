@@ -18,6 +18,7 @@ COMPLETE_CSS = """
     --md-sys-color-surface-dim: #FFF9F5;
     --md-sys-color-surface-container: #FFF5F0;
     --md-sys-color-surface-container-high: #FFEDE5;
+    --md-sys-color-surface-container-highest: #FFE5DA;
     --md-sys-color-on-surface: #1A1C1E;
     --md-sys-color-on-surface-variant: #4A4D50;  /* Darker for better contrast */
     --md-sys-color-outline: #8A7A72;  /* Darker for better visibility */
@@ -44,6 +45,7 @@ COMPLETE_CSS = """
     /* Shape - Nani-inspired extra rounded corners */
     --md-sys-shape-corner-full: 9999px;
     --md-sys-shape-corner-3xl: 32px;   /* Extra large cards */
+    --md-sys-shape-corner-2xl: 28px;   /* Large rounded cards */
     --md-sys-shape-corner-xl: 24px;    /* Main cards */
     --md-sys-shape-corner-large: 20px; /* Cards, dialogs */
     --md-sys-shape-corner-medium: 16px; /* Buttons, inputs */
@@ -602,11 +604,43 @@ body {
     }
 
     .sidebar-history {
-        display: none;  /* Hide history on mobile for cleaner layout */
+        display: flex;
+        flex-direction: row;
+        min-height: auto;
+        overflow: hidden;
+        padding: 0.5rem 0;
+    }
+
+    .sidebar-history > .items-center {
+        display: none;  /* Hide header on mobile */
     }
 
     .history-scroll {
-        max-height: 200px;
+        max-height: 80px;
+        overflow-x: auto;
+        overflow-y: hidden;
+    }
+
+    .history-scroll > .column {
+        flex-direction: row;
+        gap: 0.5rem;
+        padding: 0 0.5rem;
+    }
+
+    .history-item {
+        flex-shrink: 0;
+        max-width: 150px;
+        padding: 0.5rem;
+        background: var(--md-sys-color-surface-container);
+        border-radius: var(--md-sys-shape-corner-small);
+    }
+
+    .history-item .column {
+        max-width: 120px;
+    }
+
+    .history-delete-btn {
+        display: none;  /* Hide delete on mobile for space */
     }
 
     /* Improve touch targets on mobile */

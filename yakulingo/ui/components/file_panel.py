@@ -83,7 +83,7 @@ def create_file_panel(
         # Hint text
         with ui.row().classes('items-center gap-1 text-muted justify-center'):
             ui.icon('smart_toy').classes('text-sm')
-            ui.label('M365 Copilot による翻訳').classes('text-2xs')
+            ui.label('Powered by M365 Copilot').classes('text-2xs')
 
 
 def _language_selector(state: AppState, on_change: Optional[Callable[[str], None]]):
@@ -104,7 +104,7 @@ def _language_selector(state: AppState, on_change: Optional[Callable[[str], None
                 jp_classes += ' lang-btn-active'
             with ui.button(on_click=lambda: on_change and on_change('jp')).classes(jp_classes).props('flat no-caps'):
                 ui.label('🇯🇵').classes('flag-icon')
-                ui.label('日本語')
+                ui.label('Japanese')
 
 
 def _pdf_mode_selector(state: AppState, on_change: Optional[Callable[[bool], None]]):

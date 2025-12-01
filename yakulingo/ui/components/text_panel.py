@@ -36,22 +36,22 @@ ACTION_ICONS = {
 
 # Nani-inspired inline adjustment options (pairs)
 ADJUST_OPTIONS_PAIRS = [
-    ('casual', 'カジュアルに', 'polite', 'ていねいに'),
-    ('dry', '淡々と', 'engaging', 'キャッチーに'),
-    ('shorter', 'もう少し短く', 'detailed', 'より詳しく'),
+    ('casual', 'More casual', 'polite', 'More polite'),
+    ('dry', 'More concise', 'engaging', 'More engaging'),
+    ('shorter', 'Shorter', 'detailed', 'More detailed'),
 ]
 
 # Nani-inspired single adjustment options
 ADJUST_OPTIONS_SINGLE = [
-    ('native', 'ネイティブらしく自然に'),
-    ('less_ai', 'AIっぽさを消して'),
-    ('alternatives', '他の言い方は？'),
+    ('native', 'Sound more native'),
+    ('less_ai', 'Less AI-like'),
+    ('alternatives', 'Other ways to say this?'),
 ]
 
 # Paperclip/Attachment SVG icon (Nani-inspired) with aria-label for accessibility
 ATTACH_SVG = '''
-<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="用語集を添付">
-    <title>添付</title>
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Attach glossary">
+    <title>Attach</title>
     <path d="M21 12.3955L14.6912 18.7043C12.5027 20.8928 9.00168 20.8928 6.81321 18.7043C4.62474 16.5158 4.62474 13.0148 6.81321 10.8263L13.7574 3.88213C15.1624 2.47712 17.4266 2.47712 18.8316 3.88213C20.2366 5.28714 20.2366 7.55135 18.8316 8.95636L11.7861 15.9019C11.0836 16.6044 9.95152 16.6044 9.24902 15.9019C8.54651 15.1994 8.54651 14.0673 9.24902 13.3648L15.3588 7.25501"/>
 </svg>
 '''
@@ -59,15 +59,15 @@ ATTACH_SVG = '''
 # YakuLingo avatar SVG (Apple icon - Nani-inspired) with aria-label for accessibility
 AVATAR_SVG = '''
 <svg viewBox="0 0 24 24" fill="currentColor" class="avatar-icon" role="img" aria-label="YakuLingo">
-    <title>YakuLingo アシスタント</title>
+    <title>YakuLingo Assistant</title>
     <path d="M17.318 5.955c-.834-.952-1.964-1.455-3.068-1.455-.789 0-1.475.194-2.072.487-.399.196-.748.436-1.178.436-.462 0-.865-.256-1.29-.468-.564-.281-1.195-.455-1.96-.455-1.14 0-2.322.529-3.168 1.534C3.41 7.425 3 9.26 3 11.314c0 2.554.944 5.298 2.432 7.106.847 1.03 1.63 1.58 2.568 1.58.652 0 1.061-.213 1.605-.473.579-.276 1.298-.619 2.395-.619 1.065 0 1.763.336 2.323.61.53.258.923.482 1.577.482.99 0 1.828-.639 2.632-1.594 1.127-1.337 1.672-2.728 1.962-3.555-1.313-.596-2.494-2.03-2.494-4.143 0-1.813.994-3.166 2.13-3.835-.844-1.143-2.044-1.918-3.332-1.918-.82 0-1.464.284-2.025.556a4.27 4.27 0 0 1-.387.175c.063-.033.128-.068.194-.106.524-.303 1.181-.681 1.736-.681.476 0 .829.139 1.148.28zM12.5 3c.735 0 1.578-.326 2.168-.902.533-.52.892-1.228.892-2.008 0-.053-.003-.107-.01-.158-.793.03-1.703.451-2.293 1.045-.51.507-.933 1.231-.933 2.023 0 .069.007.137.016.191.05.009.11.014.16.014z"/>
 </svg>
 '''
 
 # Language detection animated SVG (Nani-inspired) with aria-label for accessibility
 LANG_DETECT_SVG = '''
-<svg viewBox="0 0 24 24" fill="none" class="lang-detect-icon" stroke-width="2" role="img" aria-label="言語自動検出">
-    <title>言語を自動検出</title>
+<svg viewBox="0 0 24 24" fill="none" class="lang-detect-icon" stroke-width="2" role="img" aria-label="Auto language detection">
+    <title>Auto-detect language</title>
     <defs>
         <mask id="yakulingo-flow-top-mask">
             <rect x="-12" y="0" width="10" height="24" fill="white">
@@ -137,12 +137,12 @@ def create_text_panel(
         with ui.element('div').classes('main-card w-full'):
             # Input container
             with ui.element('div').classes('main-card-inner'):
-                # Textarea with improved placeholder
+                # Textarea with improved placeholder and accessibility
                 textarea = ui.textarea(
-                    placeholder='好きな言語で入力…',
+                    placeholder='Enter text in any language...',
                     value=state.source_text,
                     on_change=lambda e: on_source_change(e.value)
-                ).classes('w-full p-4').props('borderless autogrow').style('min-height: 160px')
+                ).classes('w-full p-4').props('borderless autogrow aria-label="Source text for translation"').style('min-height: 160px')
 
                 # Handle Ctrl+Enter in textarea
                 async def handle_keydown(e):
@@ -158,7 +158,7 @@ def create_text_panel(
                     with ui.row().classes('items-center gap-2 flex-1'):
                         # Character count
                         if state.source_text:
-                            ui.label(f'{len(state.source_text)} 文字').classes('text-xs text-muted')
+                            ui.label(f'{len(state.source_text)} chars').classes('text-xs text-muted')
 
                         # Attached glossary files indicator
                         if state.reference_files:
@@ -178,7 +178,7 @@ def create_text_panel(
                                 icon='tune',
                                 on_click=on_settings
                             ).props('flat dense round size=sm').classes('settings-btn')
-                            settings_btn.tooltip('翻訳の設定')
+                            settings_btn.tooltip('Settings')
 
                         # Nani-style glossary attachment button
                         if on_attach_glossary:
@@ -188,17 +188,17 @@ def create_text_panel(
                             ).classes(f'attach-btn {"has-file" if has_files else ""}').props('flat')
                             with attach_btn:
                                 ui.html(ATTACH_SVG)
-                            attach_btn.tooltip('用語集を添付' if not has_files else '用語集を追加')
+                            attach_btn.tooltip('Attach glossary' if not has_files else 'Add glossary')
 
                         # Clear button
                         if state.source_text:
                             ui.button(icon='close', on_click=on_clear).props(
-                                'flat dense round size=sm'
+                                'flat dense round size=sm aria-label="Clear text"'
                             ).classes('text-muted')
 
                         # Translate button with keycap-style shortcut
                         with ui.button(on_click=on_translate).classes('translate-btn').props('no-caps') as btn:
-                            ui.label('翻訳する')
+                            ui.label('Translate')
                             with ui.row().classes('shortcut-keys ml-2'):
                                 ui.element('span').classes('keycap').text('Ctrl')
                                 ui.element('span').classes('keycap-plus').text('+')
@@ -212,10 +212,10 @@ def create_text_panel(
         with ui.element('div').classes('hint-section'):
             with ui.element('div').classes('hint-primary'):
                 ui.html(LANG_DETECT_SVG)
-                ui.label('AIが言語を検出し、日本語なら英語へ、それ以外なら日本語へ翻訳します').classes('text-xs')
+                ui.label('AI detects language: Japanese to English, others to Japanese').classes('text-xs')
             with ui.element('div').classes('hint-secondary'):
                 ui.icon('smart_toy').classes('text-sm')
-                ui.label('M365 Copilot による翻訳').classes('text-2xs')
+                ui.label('Powered by M365 Copilot').classes('text-2xs')
 
         # Results section - language-specific UI
         if state.text_result and state.text_result.options:
@@ -243,12 +243,12 @@ def create_text_panel(
 
 
 def _render_loading():
-    """Render improved loading state with apple character"""
+    """Render improved loading state with spinner"""
     with ui.element('div').classes('loading-character'):
-        # Apple character thinking
-        ui.label('🍎').classes('emoji')
-        ui.label('翻訳中...').classes('message')
-        ui.label('M365 Copilot に問い合わせています').classes('submessage')
+        # Loading spinner
+        ui.spinner('dots', size='lg').classes('text-primary')
+        ui.label('Translating...').classes('message')
+        ui.label('Querying M365 Copilot').classes('submessage')
 
 
 def _render_results_to_en(
@@ -266,9 +266,9 @@ def _render_results_to_en(
             ui.html(AVATAR_SVG)
         with ui.element('div').classes('status-text'):
             with ui.row().classes('items-center gap-2'):
-                ui.label('翻訳しました').classes('status-label')
+                ui.label('Translated').classes('status-label')
                 if elapsed_time:
-                    ui.label(f'{elapsed_time:.1f}秒').classes('elapsed-time-badge')
+                    ui.label(f'{elapsed_time:.1f}s').classes('elapsed-time-badge')
 
     # Translation results container
     with ui.element('div').classes('result-container'):
@@ -310,9 +310,9 @@ def _render_results_to_jp(
             ui.html(AVATAR_SVG)
         with ui.element('div').classes('status-text'):
             with ui.row().classes('items-center gap-2'):
-                ui.label('翻訳しました').classes('status-label')
+                ui.label('Translated').classes('status-label')
                 if elapsed_time:
-                    ui.label(f'{elapsed_time:.1f}秒').classes('elapsed-time-badge')
+                    ui.label(f'{elapsed_time:.1f}s').classes('elapsed-time-badge')
 
     # Translation results container
     with ui.element('div').classes('result-container'):
@@ -327,26 +327,26 @@ def _render_results_to_jp(
                     ui.button(
                         icon='content_copy',
                         on_click=lambda: on_copy(option.text)
-                    ).props('flat dense round size=sm').classes('nani-toolbar-btn').tooltip('コピー')
+                    ).props('flat dense round size=sm aria-label="Copy translation"').classes('nani-toolbar-btn').tooltip('Copy')
 
                     # Back-translate button
                     if on_back_translate:
                         ui.button(
-                            '戻し訳',
+                            'Back-translate',
                             icon='g_translate',
                             on_click=lambda o=option: on_back_translate(o.text)
-                        ).props('flat no-caps size=sm').classes('back-translate-btn').tooltip('別のAIモデルで元の言語に戻してチェック')
+                        ).props('flat no-caps size=sm').classes('back-translate-btn').tooltip('Translate back to original language to verify')
 
             # Detailed explanation section (Nani-style background)
             if option.explanation:
                 with ui.element('div').classes('nani-explanation'):
                     _render_explanation(option.explanation)
 
-                    # "もっと詳しく解説して" button (Nani-inspired)
+                    # "Explain more" button (Nani-inspired)
                     if on_follow_up:
                         with ui.element('div').classes('explain-more-section'):
                             ui.button(
-                                'もっと詳しく解説して',
+                                'Explain more',
                                 icon='lightbulb',
                                 on_click=lambda: on_follow_up('explain_more', source_text)
                             ).props('flat no-caps').classes('explain-more-btn')
@@ -354,26 +354,26 @@ def _render_results_to_jp(
         # Follow-up actions section
         with ui.element('div').classes('follow-up-section w-full mt-4'):
             with ui.column().classes('w-full gap-2'):
-                ui.label('次のアクション').classes('text-xs text-muted font-semibold mb-1')
+                ui.label('Next actions').classes('text-xs text-muted font-semibold mb-1')
 
                 with ui.row().classes('w-full gap-2 flex-wrap'):
                     # Review original text
                     ui.button(
-                        '原文をレビュー',
+                        'Review original',
                         icon='rate_review',
                         on_click=lambda: on_follow_up and on_follow_up('review', source_text)
                     ).props('outline no-caps').classes('follow-up-btn')
 
                     # Ask question about translation
                     ui.button(
-                        '質問する',
+                        'Ask question',
                         icon='help_outline',
                         on_click=lambda: _show_question_dialog(source_text, option.text, on_follow_up)
                     ).props('outline no-caps').classes('follow-up-btn')
 
                     # Create reply
                     ui.button(
-                        '返信を作成',
+                        'Write reply',
                         icon='reply',
                         on_click=lambda: _show_reply_dialog(source_text, option.text, on_follow_up)
                     ).props('outline no-caps').classes('follow-up-btn')
@@ -425,7 +425,7 @@ def _render_option_en(
             # Header with tone indicator
             with ui.row().classes('w-full items-center gap-2'):
                 ui.icon(tone_icon).classes('text-primary text-base')
-                ui.label(f'{option.char_count} 文字').classes('text-xs text-muted')
+                ui.label(f'{option.char_count} chars').classes('text-xs text-muted')
 
             # Translation text
             ui.label(option.text).classes('option-text py-1')
@@ -441,15 +441,15 @@ def _render_option_en(
                     ui.button(
                         icon='content_copy',
                         on_click=lambda o=option: on_copy(o.text)
-                    ).props('flat dense round size=sm').classes('option-action').tooltip('コピー')
+                    ).props('flat dense round size=sm aria-label="Copy translation"').classes('option-action').tooltip('Copy')
 
                     # Back-translate button
                     if on_back_translate:
                         ui.button(
-                            '戻し訳',
+                            'Back-translate',
                             icon='g_translate',
                             on_click=lambda o=option: on_back_translate(o.text)
-                        ).props('flat no-caps size=sm').classes('back-translate-btn').tooltip('別のAIモデルで日本語に戻してチェック')
+                        ).props('flat no-caps size=sm').classes('back-translate-btn').tooltip('Translate back to Japanese to verify')
 
 
 def _show_adjust_dialog(text: str, on_adjust: Callable[[str, str], None]):
@@ -459,7 +459,7 @@ def _show_adjust_dialog(text: str, on_adjust: Callable[[str, str], None]):
         with ui.column().classes('w-full gap-4 p-4'):
             # Header
             with ui.row().classes('w-full justify-between items-center'):
-                ui.label('調整').classes('text-base font-medium')
+                ui.label('Adjust').classes('text-base font-medium')
                 ui.button(icon='close', on_click=dialog.close).props('flat dense round')
 
             # Current text
@@ -468,22 +468,22 @@ def _show_adjust_dialog(text: str, on_adjust: Callable[[str, str], None]):
             # Quick actions
             with ui.row().classes('gap-2'):
                 ui.button(
-                    '短く',
+                    'Shorter',
                     on_click=lambda: _do_adjust(dialog, text, 'shorter', on_adjust)
                 ).props('outline').classes('flex-1')
 
                 ui.button(
-                    '詳しく',
+                    'Longer',
                     on_click=lambda: _do_adjust(dialog, text, 'longer', on_adjust)
                 ).props('outline').classes('flex-1')
 
             # Custom input
             custom_input = ui.input(
-                placeholder='その他のリクエスト...'
+                placeholder='Other requests...'
             ).classes('w-full')
 
             ui.button(
-                '送信',
+                'Submit',
                 on_click=lambda: _do_adjust(dialog, text, custom_input.value, on_adjust)
             ).classes('btn-primary self-end')
 
@@ -508,22 +508,22 @@ def _show_question_dialog(
         with ui.column().classes('w-full gap-4 p-4'):
             # Header
             with ui.row().classes('w-full justify-between items-center'):
-                ui.label('質問する').classes('text-base font-medium')
+                ui.label('Ask a question').classes('text-base font-medium')
                 ui.button(icon='close', on_click=dialog.close).props('flat dense round')
 
             # Context preview
             with ui.element('div').classes('bg-gray-50 rounded-lg p-3'):
-                ui.label('原文:').classes('text-xs text-muted font-semibold')
+                ui.label('Original:').classes('text-xs text-muted font-semibold')
                 ui.label(source_text[:100] + ('...' if len(source_text) > 100 else '')).classes('text-sm')
 
             # Quick questions
-            ui.label('よくある質問').classes('text-xs text-muted font-semibold')
+            ui.label('Common questions').classes('text-xs text-muted font-semibold')
             with ui.column().classes('w-full gap-2'):
                 quick_questions = [
-                    'この表現は自然ですか？',
-                    '他の言い方はありますか？',
-                    'この単語の使い方を詳しく教えてください',
-                    'フォーマル/カジュアルな言い方は？',
+                    'Is this expression natural?',
+                    'Are there other ways to say this?',
+                    'Can you explain this word usage in detail?',
+                    'What is the formal/casual version?',
                 ]
                 for q in quick_questions:
                     ui.button(
@@ -534,11 +534,11 @@ def _show_question_dialog(
             # Custom question
             ui.separator()
             custom_input = ui.textarea(
-                placeholder='自由に質問を入力...'
+                placeholder='Enter your question...'
             ).classes('w-full').props('rows=2')
 
             ui.button(
-                '質問する',
+                'Ask',
                 icon='send',
                 on_click=lambda: _do_follow_up(dialog, 'question', custom_input.value, on_follow_up)
             ).classes('btn-primary self-end')
@@ -557,34 +557,34 @@ def _show_reply_dialog(
         with ui.column().classes('w-full gap-4 p-4'):
             # Header
             with ui.row().classes('w-full justify-between items-center'):
-                ui.label('返信を作成').classes('text-base font-medium')
+                ui.label('Write reply').classes('text-base font-medium')
                 ui.button(icon='close', on_click=dialog.close).props('flat dense round')
 
             # Context preview
             with ui.element('div').classes('bg-gray-50 rounded-lg p-3'):
-                ui.label('原文:').classes('text-xs text-muted font-semibold')
+                ui.label('Original:').classes('text-xs text-muted font-semibold')
                 ui.label(source_text[:100] + ('...' if len(source_text) > 100 else '')).classes('text-sm')
 
             # Reply content
-            ui.label('返信内容（日本語で入力）').classes('text-xs text-muted font-semibold')
+            ui.label('Reply content').classes('text-xs text-muted font-semibold')
             reply_input = ui.textarea(
-                placeholder='返信したい内容を日本語で入力...\n例: 了解しました。来週までに対応します。'
+                placeholder='Enter what you want to reply...\ne.g., Understood. I will handle this by next week.'
             ).classes('w-full').props('rows=3')
 
             # Tone selection
-            ui.label('トーン').classes('text-xs text-muted font-semibold')
+            ui.label('Tone').classes('text-xs text-muted font-semibold')
             tone = ui.toggle(
-                ['フォーマル', 'ニュートラル', 'カジュアル'],
-                value='ニュートラル'
+                ['Formal', 'Neutral', 'Casual'],
+                value='Neutral'
             ).classes('w-full')
 
             ui.button(
-                '返信を作成',
+                'Create reply',
                 icon='reply',
                 on_click=lambda: _do_follow_up(
                     dialog,
                     'reply',
-                    f"トーン: {tone.value}\n内容: {reply_input.value}",
+                    f"Tone: {tone.value}\nContent: {reply_input.value}",
                     on_follow_up
                 )
             ).classes('btn-primary self-end')
@@ -608,15 +608,12 @@ def _render_inline_adjust_section(text: str, on_adjust: Callable[[str, str], Non
     """Render Nani-inspired inline adjustment options section"""
 
     with ui.element('div').classes('inline-adjust-section'):
-        # Connector line with refresh icon
+        # Connector line with refresh icon (visual decoration)
         with ui.element('div').classes('inline-adjust-connector'):
             with ui.element('div').classes('connector-line'):
                 with ui.element('div').classes('connector-branch'):
                     pass
-                ui.button(
-                    icon='refresh',
-                    on_click=lambda: None  # Visual only
-                ).props('flat dense round size=xs').classes('connector-icon')
+                ui.icon('tune').classes('connector-icon text-sm')
 
         # Adjustment options panel
         with ui.element('div').classes('inline-adjust-panel'):
@@ -648,13 +645,13 @@ def _render_inline_adjust_section(text: str, on_adjust: Callable[[str, str], Non
                     # Quick suggestion chip
                     with ui.row().classes('items-center gap-1'):
                         ui.button(
-                            'これはどう？',
-                            on_click=lambda: on_adjust(text, 'これはどう？')
+                            'How about this?',
+                            on_click=lambda: on_adjust(text, 'How about this?')
                         ).props('flat no-caps dense').classes('quick-chip')
 
                     # Text input
                     question_input = ui.input(
-                        placeholder='追加で質問する'
+                        placeholder='Ask follow-up question'
                     ).classes('w-full question-input')
 
                 # Send button

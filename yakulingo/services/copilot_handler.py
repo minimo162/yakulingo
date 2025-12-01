@@ -113,6 +113,12 @@ class CopilotHandler:
     RESPONSE_STABLE_COUNT = 3  # Number of stable checks before considering response complete
     DEFAULT_RESPONSE_TIMEOUT = 120  # Default timeout for response in seconds
 
+    # Copilot character limits (Free: 8000, Paid: 128000)
+    DEFAULT_CHAR_LIMIT = 7500  # Default to free with margin
+
+    # Trigger text for file attachment mode
+    FILE_ATTACHMENT_TRIGGER = "Please follow the instructions in the attached file and translate accordingly."
+
     def __init__(self):
         self._playwright = None
         self._browser = None
@@ -572,18 +578,20 @@ class CopilotHandler:
         texts: list[str],
         prompt: str,
         reference_files: Optional[list[Path]] = None,
+        char_limit: Optional[int] = None,
     ) -> list[str]:
         """
         Synchronous version of translate for non-async contexts.
 
         Attaches reference files (glossary, etc.) to Copilot before sending.
-        This allows using glossaries without embedding them in the prompt,
-        which is important for Copilot Free (8000 char limit).
+        If prompt exceeds char_limit, automatically switches to file attachment mode.
+        This handles Copilot Free (8000 char limit) vs Paid (128000 char limit).
 
         Args:
             texts: List of text strings to translate (used for result parsing)
             prompt: The translation prompt to send to Copilot
             reference_files: Optional list of reference files to attach
+            char_limit: Max characters for direct input (uses DEFAULT_CHAR_LIMIT if None)
 
         Returns:
             List of translated strings parsed from Copilot's response
@@ -597,8 +605,8 @@ class CopilotHandler:
                 if file_path.exists():
                     self._attach_file(file_path)
 
-        # Send the prompt
-        self._send_message(prompt)
+        # Send the prompt (auto-switches to file attachment if too long)
+        self._send_prompt_smart(prompt, char_limit)
 
         # Get response
         result = self._get_response()
@@ -611,10 +619,59 @@ class CopilotHandler:
         text: str,
         prompt: str,
         reference_files: Optional[list[Path]] = None,
+        char_limit: Optional[int] = None,
     ) -> str:
         """Translate a single text (sync)"""
-        results = self.translate_sync([text], prompt, reference_files)
+        results = self.translate_sync([text], prompt, reference_files, char_limit)
         return results[0] if results else ""
+
+    def _send_prompt_smart(
+        self,
+        prompt: str,
+        char_limit: Optional[int] = None,
+    ) -> None:
+        """
+        Send prompt with automatic switching based on length.
+
+        If prompt exceeds char_limit, saves it to a temp file and attaches it,
+        then sends a trigger message. This handles Copilot Free's 8000 char limit.
+
+        Args:
+            prompt: The prompt text to send
+            char_limit: Max characters for direct input (default: DEFAULT_CHAR_LIMIT)
+        """
+        import tempfile
+
+        limit = char_limit or self.DEFAULT_CHAR_LIMIT
+
+        if len(prompt) <= limit:
+            # Direct input - prompt fits within limit
+            self._send_message(prompt)
+        else:
+            # File attachment mode - prompt too long
+            logger.info(
+                "Prompt length (%d) exceeds limit (%d), using file attachment mode",
+                len(prompt), limit
+            )
+
+            # Create temp file with prompt
+            with tempfile.NamedTemporaryFile(
+                mode='w',
+                suffix='_instructions.txt',
+                delete=False,
+                encoding='utf-8'
+            ) as f:
+                f.write(prompt)
+                prompt_file = Path(f.name)
+
+            try:
+                # Attach the prompt file
+                self._attach_file(prompt_file)
+                # Send trigger text to enable send button
+                self._send_message(self.FILE_ATTACHMENT_TRIGGER)
+            finally:
+                # Clean up temp file
+                prompt_file.unlink(missing_ok=True)
 
     def _send_message(self, message: str) -> None:
         """Send message to Copilot (sync)"""

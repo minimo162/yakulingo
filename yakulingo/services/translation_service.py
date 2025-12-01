@@ -122,6 +122,7 @@ class BatchTranslator:
     # Default values (used when settings not provided)
     DEFAULT_MAX_BATCH_SIZE = 50      # Blocks per request
     DEFAULT_MAX_CHARS_PER_BATCH = 10000  # Characters per request
+    DEFAULT_COPILOT_CHAR_LIMIT = 7500  # Copilot input limit (Free: 8000, Paid: 128000)
 
     def __init__(
         self,
@@ -129,6 +130,7 @@ class BatchTranslator:
         prompt_builder: PromptBuilder,
         max_batch_size: Optional[int] = None,
         max_chars_per_batch: Optional[int] = None,
+        copilot_char_limit: Optional[int] = None,
     ):
         self.copilot = copilot
         self.prompt_builder = prompt_builder
@@ -137,6 +139,7 @@ class BatchTranslator:
         # Use provided values or defaults
         self.max_batch_size = max_batch_size or self.DEFAULT_MAX_BATCH_SIZE
         self.max_chars_per_batch = max_chars_per_batch or self.DEFAULT_MAX_CHARS_PER_BATCH
+        self.copilot_char_limit = copilot_char_limit or self.DEFAULT_COPILOT_CHAR_LIMIT
 
     def cancel(self) -> None:
         """Request cancellation of batch translation."""
@@ -223,8 +226,10 @@ class BatchTranslator:
             # Build prompt with explicit output language
             prompt = self.prompt_builder.build_batch(texts, has_refs, output_language)
 
-            # Translate
-            batch_translations = self.copilot.translate_sync(texts, prompt, reference_files)
+            # Translate (with char_limit for auto file attachment mode)
+            batch_translations = self.copilot.translate_sync(
+                texts, prompt, reference_files, self.copilot_char_limit
+            )
 
             # Validate translation count matches batch size
             if len(batch_translations) != len(batch):
@@ -306,6 +311,7 @@ class TranslationService:
             self.prompt_builder,
             max_batch_size=config.max_batch_size if config else None,
             max_chars_per_batch=config.max_chars_per_batch if config else None,
+            copilot_char_limit=config.copilot_char_limit if config else None,
         )
         self._cancel_requested = False
 
@@ -345,8 +351,9 @@ class TranslationService:
             has_refs = bool(reference_files)
             prompt = self.prompt_builder.build(text, has_refs)
 
-            # Translate
-            result = self.copilot.translate_single(text, prompt, reference_files)
+            # Translate (with char_limit for auto file attachment mode)
+            char_limit = self.config.copilot_char_limit if self.config else None
+            result = self.copilot.translate_single(text, prompt, reference_files, char_limit)
 
             return TranslationResult(
                 status=TranslationStatus.COMPLETED,
@@ -428,8 +435,9 @@ class TranslationService:
             prompt = template.replace("{reference_section}", reference_section)
             prompt = prompt.replace("{input_text}", text)
 
-            # Translate (files are attached by copilot handler)
-            raw_result = self.copilot.translate_single(text, prompt, reference_files)
+            # Translate (with char_limit for auto file attachment mode)
+            char_limit = self.config.copilot_char_limit if self.config else None
+            raw_result = self.copilot.translate_single(text, prompt, reference_files, char_limit)
 
             # Parse the result based on output language
             if output_language == "en":
@@ -512,8 +520,9 @@ class TranslationService:
             if adjust_type not in ('shorter', 'longer'):
                 prompt = prompt.replace("{user_instruction}", adjust_type)
 
-            # Get adjusted translation
-            raw_result = self.copilot.translate_single(text, prompt, None)
+            # Get adjusted translation (with char_limit for auto file attachment mode)
+            char_limit = self.config.copilot_char_limit if self.config else None
+            raw_result = self.copilot.translate_single(text, prompt, None, char_limit)
 
             # Parse the result
             option = self._parse_single_option_result(raw_result)

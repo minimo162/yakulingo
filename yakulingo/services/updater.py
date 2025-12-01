@@ -445,7 +445,7 @@ class AutoUpdater:
 
         try:
             return parse_version(latest) > parse_version(current)
-        except Exception:
+        except (TypeError, ValueError):
             # 比較できない場合は文字列比較
             return latest > current
 

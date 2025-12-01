@@ -156,7 +156,13 @@ body {
     color: var(--md-sys-color-on-surface-variant);
     width: 100%;
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+    animation: fadeIn var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-standard) backwards;
 }
+
+/* Staggered nav item animations */
+.nav-item:nth-child(1) { animation-delay: 50ms; }
+.nav-item:nth-child(2) { animation-delay: 100ms; }
+.nav-item:nth-child(3) { animation-delay: 150ms; }
 
 .nav-item:hover {
     background: var(--md-sys-color-surface-container);
@@ -195,7 +201,15 @@ body {
     cursor: pointer;
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
     position: relative;
+    animation: fadeIn var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-standard) backwards;
 }
+
+/* Staggered history item animations */
+.history-item:nth-child(1) { animation-delay: 0ms; }
+.history-item:nth-child(2) { animation-delay: 40ms; }
+.history-item:nth-child(3) { animation-delay: 80ms; }
+.history-item:nth-child(4) { animation-delay: 120ms; }
+.history-item:nth-child(5) { animation-delay: 160ms; }
 
 .history-item:hover {
     background: var(--md-sys-color-surface-container);
@@ -265,6 +279,7 @@ body {
     box-shadow: var(--md-sys-elevation-1);
     padding: 0.375rem;
     overflow: hidden;
+    animation: fadeInSpring 400ms var(--md-sys-motion-easing-spring);
 }
 
 .main-card-inner {
@@ -416,6 +431,7 @@ body {
     background: var(--md-sys-color-surface-container);
     border-radius: var(--md-sys-shape-corner-large);
     padding: 1.25rem;
+    animation: fadeIn var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-standard);
 }
 
 .file-card.success {
@@ -489,6 +505,7 @@ body {
     border-radius: var(--md-sys-shape-corner-3xl);
     box-shadow: var(--md-sys-elevation-1);
     overflow: hidden;
+    animation: fadeInSpring 400ms var(--md-sys-motion-easing-spring);
 }
 
 .result-header {
@@ -566,9 +583,25 @@ body {
     animation: fadeIn var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-standard);
 }
 
+/* Staggered fadeIn animations */
+.animate-stagger-1 { animation: fadeIn var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-standard) 50ms backwards; }
+.animate-stagger-2 { animation: fadeIn var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-standard) 100ms backwards; }
+.animate-stagger-3 { animation: fadeIn var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-standard) 150ms backwards; }
+.animate-stagger-4 { animation: fadeIn var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-standard) 200ms backwards; }
+
+/* fadeIn with spring easing for more dynamic feel */
+.animate-in-spring {
+    animation: fadeInSpring 400ms var(--md-sys-motion-easing-spring);
+}
+
 @keyframes fadeIn {
     from { opacity: 0; transform: translateY(4px); }
     to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeInSpring {
+    from { opacity: 0; transform: translateY(8px) scale(0.98); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 /* === Responsive Design === */
@@ -672,10 +705,12 @@ body {
 .q-card {
     border-radius: var(--md-sys-shape-corner-xl) !important;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12) !important;
+    animation: fadeInSpring 300ms var(--md-sys-motion-easing-spring) !important;
 }
 
 .q-dialog__backdrop {
     background: rgba(0, 0, 0, 0.25) !important;
+    animation: fadeIn 200ms var(--md-sys-motion-easing-standard) !important;
     backdrop-filter: blur(4px);
 }
 

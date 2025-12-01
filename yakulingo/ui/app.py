@@ -297,6 +297,8 @@ class YakuLingoApp:
                         on_follow_up=self._follow_up_action,
                         on_attach_glossary=self._attach_glossary,
                         on_remove_glossary=self._remove_glossary,
+                        on_back_translate=self._back_translate,
+                        on_settings=self._show_settings_dialog,
                     )
                 else:
                     create_file_panel(
@@ -454,12 +456,72 @@ class YakuLingoApp:
         self.state.text_translating = False
         self._refresh_content()
 
+    async def _back_translate(self, text: str):
+        """Back-translate text to verify translation quality"""
+        if not self.translation_service:
+            ui.notify('Not connected', type='warning')
+            return
+
+        self.state.text_translating = True
+        self._refresh_content()
+
+        try:
+            # Build back-translation prompt
+            prompt = f"""以下の翻訳文を元の言語に戻して翻訳してください。
+これは翻訳の正確性をチェックするための「戻し訳」です。
+
+## 翻訳文
+{text}
+
+## 出力形式（厳守）
+訳文: （元の言語への翻訳）
+解説:
+- 戻し訳の結果から分かる翻訳の正確性
+- 意味のずれがあれば指摘
+- 改善案があれば提案
+
+## 禁止事項
+- 「続けますか？」「他に質問はありますか？」などの対話継続の質問
+- 指定形式以外の追加説明やコメント
+"""
+
+            # Send to Copilot
+            result = await asyncio.to_thread(
+                lambda: self.copilot.translate_single(text, prompt, None)
+            )
+
+            # Parse result and add to options
+            if result:
+                from yakulingo.ui.utils import parse_translation_result
+                text_result, explanation = parse_translation_result(result)
+                new_option = TranslationOption(
+                    text=f"【戻し訳】{text_result}",
+                    explanation=explanation
+                )
+
+                if self.state.text_result:
+                    self.state.text_result.options.append(new_option)
+                else:
+                    self.state.text_result = TextTranslationResult(
+                        source_text=self.state.source_text,
+                        source_char_count=len(self.state.source_text),
+                        options=[new_option],
+                    )
+            else:
+                ui.notify('戻し訳に失敗しました', type='negative')
+
+        except Exception as e:
+            ui.notify(f'Error: {e}', type='negative')
+
+        self.state.text_translating = False
+        self._refresh_content()
+
     def _build_follow_up_prompt(self, action_type: str, source_text: str, translation: str, content: str = "") -> Optional[str]:
         """
         Build prompt for follow-up actions.
 
         Args:
-            action_type: 'review', 'question', or 'reply'
+            action_type: 'review', 'question', 'reply', or 'explain_more'
             source_text: Original source text
             translation: Current translation
             content: Additional content (question text, reply intent, etc.)
@@ -471,6 +533,51 @@ class YakuLingoApp:
 
         # Prompt file mapping and fallback templates
         prompt_configs = {
+            'explain_more': {
+                'file': 'text_explain_more.txt',
+                'fallback': f"""以下の翻訳について、より詳しい解説を提供してください。
+
+## 原文
+{source_text}
+
+## 現在の訳文と解説
+{translation}
+
+## タスク
+以下の観点からより詳細な解説を提供してください：
+
+### 文法・構文の詳細分析
+- 文の構造を分解して説明
+- 使用されている文法項目の詳細
+- 関連する文法ルールや例外
+
+### 語彙・表現の深掘り
+- キーワードの語源や由来
+- 類義語・対義語との比較
+- コロケーション（よく一緒に使われる語句）
+
+### 文化・背景知識
+- この表現が使われる文化的背景
+- ビジネスシーンでの使用頻度や場面
+- 日本語との発想の違い
+
+### 応用・発展
+- この表現を使った応用例
+- 関連する表現パターン
+- 覚えておくと便利な関連フレーズ
+
+## 出力形式（厳守）
+訳文: （追加解説の要約タイトル）
+解説: （上記観点からの詳細解説）
+
+## 禁止事項
+- 「続けますか？」「他に質問はありますか？」などの対話継続の質問
+- 指定形式以外の追加説明やコメント""",
+                'replacements': {
+                    '{input_text}': source_text,
+                    '{translation}': translation,
+                }
+            },
             'review': {
                 'file': 'text_review_en.txt',
                 'fallback': f"""以下の英文をレビューしてください。
@@ -758,6 +865,70 @@ class YakuLingoApp:
         )
         self.state.add_to_history(entry)
         self._refresh_history()
+
+    def _show_settings_dialog(self):
+        """Show translation settings dialog (Nani-inspired quick settings)"""
+        with ui.dialog() as dialog, ui.card().classes('w-96 settings-dialog'):
+            with ui.column().classes('w-full gap-4 p-4'):
+                # Header
+                with ui.row().classes('w-full justify-between items-center'):
+                    with ui.row().classes('items-center gap-2'):
+                        ui.icon('tune').classes('text-lg text-primary')
+                        ui.label('翻訳の設定').classes('text-base font-semibold')
+                    ui.button(icon='close', on_click=dialog.close).props('flat dense round')
+
+                ui.separator()
+
+                # Batch size setting
+                with ui.column().classes('w-full gap-1'):
+                    ui.label('バッチサイズ').classes('text-sm font-medium')
+                    ui.label('一度に翻訳するテキストブロック数').classes('text-xs text-muted')
+                    batch_label = ui.label(f'{self.settings.max_batch_size} ブロック').classes('text-xs text-primary')
+                    batch_slider = ui.slider(
+                        min=10, max=100, step=10,
+                        value=self.settings.max_batch_size,
+                        on_change=lambda e: batch_label.set_text(f'{int(e.value)} ブロック')
+                    ).classes('w-full')
+
+                # Request timeout setting
+                with ui.column().classes('w-full gap-1'):
+                    ui.label('タイムアウト').classes('text-sm font-medium')
+                    ui.label('Copilotからの応答待ち時間').classes('text-xs text-muted')
+                    timeout_label = ui.label(f'{self.settings.request_timeout} 秒').classes('text-xs text-primary')
+                    timeout_slider = ui.slider(
+                        min=30, max=300, step=30,
+                        value=self.settings.request_timeout,
+                        on_change=lambda e: timeout_label.set_text(f'{int(e.value)} 秒')
+                    ).classes('w-full')
+
+                # Max retries setting
+                with ui.column().classes('w-full gap-1'):
+                    ui.label('リトライ回数').classes('text-sm font-medium')
+                    ui.label('翻訳失敗時の再試行回数').classes('text-xs text-muted')
+                    retry_label = ui.label(f'{self.settings.max_retries} 回').classes('text-xs text-primary')
+                    retry_slider = ui.slider(
+                        min=0, max=5, step=1,
+                        value=self.settings.max_retries,
+                        on_change=lambda e: retry_label.set_text(f'{int(e.value)} 回')
+                    ).classes('w-full')
+
+                ui.separator()
+
+                # Action buttons
+                with ui.row().classes('w-full justify-end gap-2'):
+                    ui.button('キャンセル', on_click=dialog.close).props('flat').classes('text-muted')
+
+                    def save_settings():
+                        self.settings.max_batch_size = int(batch_slider.value)
+                        self.settings.request_timeout = int(timeout_slider.value)
+                        self.settings.max_retries = int(retry_slider.value)
+                        self.settings.save(get_default_settings_path())
+                        dialog.close()
+                        ui.notify('設定を保存しました', type='positive')
+
+                    ui.button('保存', on_click=save_settings).classes('btn-primary')
+
+        dialog.open()
 
 
 def create_app() -> YakuLingoApp:

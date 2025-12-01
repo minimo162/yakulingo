@@ -5,10 +5,14 @@ Japanese → English, Other → Japanese (auto-detected by AI).
 """
 
 import asyncio
+import logging
 from pathlib import Path
 from typing import Optional
 
 from nicegui import ui
+
+# Module logger
+logger = logging.getLogger(__name__)
 
 from yakulingo.ui.state import AppState, Tab, FileState
 from yakulingo.ui.styles import COMPLETE_CSS

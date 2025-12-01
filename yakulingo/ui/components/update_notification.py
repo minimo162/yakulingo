@@ -289,11 +289,11 @@ class UpdateNotification:
                 ).classes('text-sm text-center text-muted')
 
                 with ui.row().classes('w-full justify-end gap-2 mt-2'):
-                    ui.button('後で', on_click=dialog.close).props('flat')
+                    ui.button('後で', on_click=dialog.close).props('flat').classes('text-muted')
                     ui.button(
                         'インストール',
                         on_click=lambda: self._do_install(zip_path, dialog),
-                    ).props('color=primary')
+                    ).classes('btn-primary')
 
         dialog.open()
 

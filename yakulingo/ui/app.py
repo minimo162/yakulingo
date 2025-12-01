@@ -131,16 +131,20 @@ class YakuLingoApp:
         """Check for updates in background."""
         await asyncio.sleep(1.0)  # アプリ起動後に少し待ってからチェック
 
-        # Lazy import for faster startup
-        from yakulingo.ui.components.update_notification import check_updates_on_startup
+        try:
+            # Lazy import for faster startup
+            from yakulingo.ui.components.update_notification import check_updates_on_startup
 
-        notification = await check_updates_on_startup(self.settings)
-        if notification:
-            self._update_notification = notification
-            notification.create_update_banner()
+            notification = await check_updates_on_startup(self.settings)
+            if notification:
+                self._update_notification = notification
+                notification.create_update_banner()
 
-            # 設定を保存（最終チェック日時を更新）
-            self.settings.save(get_default_settings_path())
+                # 設定を保存（最終チェック日時を更新）
+                self.settings.save(get_default_settings_path())
+        except (OSError, ValueError, RuntimeError) as e:
+            # サイレントに失敗（バックグラウンド処理なのでユーザーには通知しない）
+            logger.debug("Failed to check for updates: %s", e)
 
     def _refresh_status(self):
         """Refresh status dot only"""
@@ -378,15 +382,18 @@ class YakuLingoApp:
 
                 async def handle_upload(e):
                     if e.content:
-                        content = e.content.read()
-                        # Use temp file manager for automatic cleanup
-                        from yakulingo.ui.utils import temp_file_manager
-                        uploaded_path = temp_file_manager.create_temp_file(content, e.name)
-                        ui.notify(f'アップロードしました: {e.name}', type='positive')
-                        dialog.close()
-                        # Add to reference files
-                        self.state.reference_files.append(uploaded_path)
-                        self._refresh_content()
+                        try:
+                            content = e.content.read()
+                            # Use temp file manager for automatic cleanup
+                            from yakulingo.ui.utils import temp_file_manager
+                            uploaded_path = temp_file_manager.create_temp_file(content, e.name)
+                            ui.notify(f'アップロードしました: {e.name}', type='positive')
+                            dialog.close()
+                            # Add to reference files
+                            self.state.reference_files.append(uploaded_path)
+                            self._refresh_content()
+                        except OSError as err:
+                            ui.notify(f'ファイルの読み込みに失敗しました: {err}', type='negative')
 
                 ui.upload(
                     on_upload=handle_upload,
@@ -894,6 +901,8 @@ class YakuLingoApp:
         """Download translated file"""
         if self.state.output_file and self.state.output_file.exists():
             ui.download(self.state.output_file)
+        else:
+            ui.notify('ダウンロードするファイルが見つかりません', type='negative')
 
     def _reset(self):
         """Reset file state"""

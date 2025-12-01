@@ -1018,8 +1018,10 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
     @ui.page('/')
     async def main_page():
         app.create_ui()
-        _close_splash_screen()  # Close splash screen when UI is ready
-        asyncio.create_task(app.preconnect_copilot())
+        # Wait for Copilot connection (success or failure) before showing main UI
+        # This ensures YakuLingo window appears after Edge, naturally in foreground
+        await app.preconnect_copilot()
+        _close_splash_screen()  # Close splash screen after connection attempt
         asyncio.create_task(app.check_for_updates())
 
     # Use window size from settings

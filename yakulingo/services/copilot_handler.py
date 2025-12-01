@@ -700,8 +700,9 @@ class CopilotHandler:
         """
         Attach file to Copilot chat input (sync).
 
-        Uses Playwright's file_chooser handling to attach files.
-        Copilot accepts file attachments via the clip/attachment button.
+        M365 Copilot uses a two-step process:
+        1. Click the "+" button (PlusMenuButton) to open the menu
+        2. Click "画像とファイルのアップロード" menu item to open file picker
 
         Args:
             file_path: Path to the file to attach
@@ -713,54 +714,44 @@ class CopilotHandler:
             return False
 
         try:
-            # Find the attachment/clip button
-            # M365 Copilot uses various selectors for the attachment button
-            attach_selectors = [
-                'button[aria-label*="添付"]',
-                'button[aria-label*="Attach"]',
-                'button[aria-label*="ファイル"]',
-                'button[aria-label*="File"]',
-                '.fai-AttachButton',
-                '[data-testid="attach-button"]',
-                'button[aria-label*="clip"]',
-            ]
+            # Step 1: Click the "+" button to open the menu
+            plus_btn = self._page.query_selector('[data-testid="PlusMenuButton"]')
+            if not plus_btn:
+                # Fallback selectors
+                plus_btn = self._page.query_selector(
+                    'button[aria-label*="コンテンツ"], button[aria-label*="追加"], button[aria-haspopup="menu"]'
+                )
 
-            attach_btn = None
-            for selector in attach_selectors:
-                attach_btn = self._page.query_selector(selector)
-                if attach_btn:
-                    break
+            if plus_btn:
+                plus_btn.click()
+                time.sleep(0.3)  # Wait for menu to appear
 
-            if not attach_btn:
-                # Try to find by icon content (paperclip icon)
-                attach_btn = self._page.evaluate_handle('''() => {
-                    const buttons = document.querySelectorAll('button');
-                    for (const btn of buttons) {
-                        // Check for paperclip SVG or attachment-related classes
-                        if (btn.querySelector('svg path[d*="M21 12.3955"]') ||
-                            btn.className.includes('attach') ||
-                            btn.className.includes('clip')) {
-                            return btn;
-                        }
-                    }
-                    return null;
-                }''')
-
-            if attach_btn:
-                # Use file_chooser to handle the file input
+                # Step 2: Click the upload menu item
+                # Use file_chooser context to handle the file dialog
                 with self._page.expect_file_chooser() as fc_info:
-                    attach_btn.click()
+                    # Find and click the upload menu item
+                    upload_item = self._page.query_selector(
+                        'div[role="menuitem"]:has-text("アップロード"), '
+                        'div[role="menuitem"]:has-text("Upload"), '
+                        '[role="menuitem"] >> text=画像とファイル'
+                    )
+                    if upload_item:
+                        upload_item.click()
+                    else:
+                        # Try clicking by text content
+                        self._page.get_by_role("menuitem", name="画像とファイルのアップロード").click()
+
                 file_chooser = fc_info.value
                 file_chooser.set_files(str(file_path))
                 time.sleep(0.5)  # Wait for file to be attached
                 return True
-            else:
-                # Fallback: Try to find hidden file input directly
-                file_input = self._page.query_selector('input[type="file"]')
-                if file_input:
-                    file_input.set_input_files(str(file_path))
-                    time.sleep(0.5)
-                    return True
+
+            # Fallback: Try to find hidden file input directly
+            file_input = self._page.query_selector('input[type="file"]')
+            if file_input:
+                file_input.set_input_files(str(file_path))
+                time.sleep(0.5)
+                return True
 
             print(f"Warning: Could not find attachment button for file: {file_path}")
             return False

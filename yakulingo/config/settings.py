@@ -30,9 +30,14 @@ class AppSettings:
 
     # Advanced
     max_batch_size: int = 50            # Max texts per Copilot request
-    max_chars_per_batch: int = 10000    # Max characters per Copilot request
+    max_chars_per_batch: int = 7000     # Max characters per batch (fits in 8000 with template)
     request_timeout: int = 120          # Seconds
     max_retries: int = 3
+
+    # Copilot License
+    # Free: 8000 chars, Paid: 128000 chars
+    # Default to free (7500 with margin) for safety
+    copilot_char_limit: int = 7500      # Max prompt chars before switching to file attachment
 
     # Auto Update
     auto_update_enabled: bool = True            # 起動時に自動チェック
@@ -73,6 +78,7 @@ class AppSettings:
             "max_chars_per_batch": self.max_chars_per_batch,
             "request_timeout": self.request_timeout,
             "max_retries": self.max_retries,
+            "copilot_char_limit": self.copilot_char_limit,
             # Auto Update
             "auto_update_enabled": self.auto_update_enabled,
             "auto_update_check_interval": self.auto_update_check_interval,

@@ -27,8 +27,19 @@ class CellTranslator:
         r'^\d+[年月日時分秒]',                  # 日本語日時
     ]
 
+    # Class-level compiled regex patterns (shared across all instances)
+    _compiled_skip_regex = None
+
+    @classmethod
+    def _get_skip_regex(cls):
+        """Get compiled skip regex patterns (lazy initialization)."""
+        if cls._compiled_skip_regex is None:
+            cls._compiled_skip_regex = [re.compile(p) for p in cls.SKIP_PATTERNS]
+        return cls._compiled_skip_regex
+
     def __init__(self):
-        self._skip_regex = [re.compile(p) for p in self.SKIP_PATTERNS]
+        # Use class-level compiled patterns
+        self._skip_regex = self._get_skip_regex()
 
     def should_translate(self, text: str) -> bool:
         """
@@ -75,8 +86,19 @@ class ParagraphTranslator:
         r'^[\w\.\-]+@[\w\.\-]+\.\w+$',        # メールアドレス
     ]
 
+    # Class-level compiled regex patterns (shared across all instances)
+    _compiled_skip_regex = None
+
+    @classmethod
+    def _get_skip_regex(cls):
+        """Get compiled skip regex patterns (lazy initialization)."""
+        if cls._compiled_skip_regex is None:
+            cls._compiled_skip_regex = [re.compile(p) for p in cls.SKIP_PATTERNS]
+        return cls._compiled_skip_regex
+
     def __init__(self):
-        self._skip_regex = [re.compile(p) for p in self.SKIP_PATTERNS]
+        # Use class-level compiled patterns
+        self._skip_regex = self._get_skip_regex()
 
     def should_translate(self, text: str) -> bool:
         """

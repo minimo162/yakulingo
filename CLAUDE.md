@@ -307,7 +307,7 @@ pytest --cov=yakulingo --cov-report=term-missing
 - **CellTranslator**: For Excel cells - skips numbers, dates, URLs, emails, codes
 - **ParagraphTranslator**: For Word/PPT paragraphs - less restrictive filtering
 - **Batch size**: Max 50 text blocks per Copilot request
-- **Character limit**: Max 10,000 chars per batch
+- **Character limit**: Max 7,000 chars per batch (fits within Copilot Free 8,000 limit with template)
 
 ### Font Mapping Rules
 ```python
@@ -340,9 +340,10 @@ sans-serif → Meiryo UI
   "window_width": 960,
   "window_height": 720,
   "max_batch_size": 50,
-  "max_chars_per_batch": 10000,
+  "max_chars_per_batch": 7000,
   "request_timeout": 120,
   "max_retries": 3,
+  "copilot_char_limit": 7500,
   "auto_update_enabled": true,
   "auto_update_check_interval": 86400,
   "github_repo_owner": "minimo162",
@@ -372,6 +373,17 @@ The `CopilotHandler` class automates Microsoft Edge browser:
 - Endpoint: `https://m365.cloud.microsoft/chat/?auth=2`
 - Handles Windows proxy detection from registry
 - Methods: `connect()`, `disconnect()`, `translate_sync()`
+
+### Copilot Character Limits
+M365 Copilot has different input limits based on license:
+- **Free license**: 8,000 characters max
+- **Paid license**: 128,000 characters max
+
+The application handles this with dynamic prompt switching:
+- If prompt exceeds `copilot_char_limit` (default: 7,500), saves prompt to temp file
+- Attaches file to Copilot instead of direct input
+- Uses trigger message: "Please follow the instructions in the attached file and translate accordingly."
+- This allows compatibility with both Free and Paid Copilot users
 
 ### Browser Automation Reliability
 The handler uses explicit waits instead of fixed delays:
@@ -490,7 +502,15 @@ Based on recent commits:
 - **Nani-Inspired UI**: Inline adjustment buttons, gear icon for settings, elapsed time badge
 - **Back-Translate Feature**: Verify translations by translating back to original language
 - **Accessibility Improvements**: ARIA labels and SVG titles for screen reader support
-- **Code Quality**: Replaced print() with logger, improved exception handling
+- **Code Quality Improvements**:
+  - Replaced broad `except Exception:` with specific exception types (PlaywrightError, OSError, etc.)
+  - Added try-finally blocks for proper file resource cleanup in Excel processor
+  - Added `_cleanup_on_error()` method for browser connection cleanup
+  - Updated deprecated `asyncio.get_event_loop()` to `asyncio.get_running_loop()`
+  - Moved regex compilation to class level for memory efficiency
+  - Replaced magic numbers with named constants in CopilotHandler
+  - Added DB_TIMEOUT constant for SQLite connections
+- **Copilot Free Compatibility**: Dynamic prompt switching with file attachment fallback for long prompts
 - **PDF OCR Improvements**: Better handling for CPU environments
 - **Auto-Update System**: GitHub Releases-based automatic updates with Windows proxy support
 - **Translation History**: SQLite-based local history storage

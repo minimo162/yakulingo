@@ -1,6 +1,6 @@
 # YakuLingo - 技術仕様書
 
-> **Version**: 2.2
+> **Version**: 2.3
 > **Date**: 2025-12
 > **App Name**: YakuLingo (訳リンゴ)
 
@@ -529,6 +529,18 @@ class CopilotHandler:
 - ファイル添付: 添付インジケータをポーリングで確認
 - GPT-5トグル: 送信直前に状態確認・必要に応じて有効化
 
+**Copilot文字数制限:**
+- Free ライセンス: 8,000文字
+- Paid ライセンス: 128,000文字
+
+**動的プロンプト切り替え:**
+プロンプトが`copilot_char_limit`（デフォルト: 7,500文字）を超える場合、自動的にファイル添付モードに切り替え：
+1. プロンプトを一時ファイルとして保存
+2. Copilotにファイルを添付
+3. トリガーメッセージを送信: "Please follow the instructions in the attached file and translate accordingly."
+
+これにより、FreeとPaidの両方のCopilotユーザーに対応。
+
 ### 6.2 TranslationService
 
 翻訳処理の中心クラス。
@@ -570,8 +582,8 @@ class TranslationService:
 
 ```python
 class BatchTranslator:
-    MAX_BATCH_SIZE = 50          # ブロック数上限
-    MAX_CHARS_PER_BATCH = 10000  # 文字数上限
+    MAX_BATCH_SIZE = 50         # ブロック数上限
+    MAX_CHARS_PER_BATCH = 7000  # 文字数上限（Copilot Free 8000制限対応）
 
     def translate_blocks(blocks, reference_files, on_progress) -> dict[str, str]:
         """
@@ -934,9 +946,12 @@ class AppSettings:
 
     # Advanced
     max_batch_size: int = 50
-    max_chars_per_batch: int = 10000
+    max_chars_per_batch: int = 7000      # Copilot Free 8000制限対応
     request_timeout: int = 120
     max_retries: int = 3
+
+    # Copilot License
+    copilot_char_limit: int = 7500       # ファイル添付切り替え閾値
 
     # Auto Update
     auto_update_enabled: bool = True
@@ -1031,6 +1046,7 @@ share_package/
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.3 | 2025-12 | Copilot Free対応（動的プロンプト切り替え）、コード品質向上（例外処理、リソース管理、定数化） |
 | 2.2 | 2025-12 | 参照ファイル機能拡張（用語集→汎用参照ファイル対応）、設定項目追加 |
 | 2.1 | 2025-11 | 言語自動検出、翻訳履歴、自動更新、M3デザイン対応 |
 | 2.0 | 2024-11 | 実装コードに基づく完全な仕様書作成 |

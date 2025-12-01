@@ -7,6 +7,7 @@ Falls back to openpyxl if xlwings is not available (Linux or no Excel installed)
 """
 
 import logging
+import zipfile
 from pathlib import Path
 from typing import Iterator, Optional
 
@@ -147,19 +148,25 @@ class ExcelProcessor(FileProcessor):
 
     def _get_file_info_openpyxl(self, file_path: Path) -> FileInfo:
         """Get file info using openpyxl (fallback)"""
-        wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
-
-        sheet_count = len(wb.sheetnames)
+        sheet_count = 0
         text_count = 0
 
-        for sheet in wb:
-            for row in sheet.iter_rows():
-                for cell in row:
-                    if cell.value and isinstance(cell.value, str):
-                        if self.cell_translator.should_translate(str(cell.value)):
-                            text_count += 1
+        try:
+            wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
+            try:
+                sheet_count = len(wb.sheetnames)
 
-        wb.close()
+                for sheet in wb:
+                    for row in sheet.iter_rows():
+                        for cell in row:
+                            if cell.value and isinstance(cell.value, str):
+                                if self.cell_translator.should_translate(str(cell.value)):
+                                    text_count += 1
+            finally:
+                wb.close()
+        except (OSError, zipfile.BadZipFile, KeyError) as e:
+            logger.warning("Error reading Excel file info: %s", e)
+            raise
 
         return FileInfo(
             path=file_path,
@@ -291,40 +298,41 @@ class ExcelProcessor(FileProcessor):
         """Extract text using openpyxl (fallback - cells only)"""
         wb = openpyxl.load_workbook(file_path, data_only=True)
 
-        for sheet_name in wb.sheetnames:
-            sheet = wb[sheet_name]
+        try:
+            for sheet_name in wb.sheetnames:
+                sheet = wb[sheet_name]
 
-            for row in sheet.iter_rows():
-                for cell in row:
-                    if cell.value and isinstance(cell.value, str):
-                        if self.cell_translator.should_translate(str(cell.value)):
-                            # Use cell's actual row and column attributes
-                            row_idx = cell.row
-                            col_idx = cell.column
-                            col_letter = get_column_letter(col_idx)
+                for row in sheet.iter_rows():
+                    for cell in row:
+                        if cell.value and isinstance(cell.value, str):
+                            if self.cell_translator.should_translate(str(cell.value)):
+                                # Use cell's actual row and column attributes
+                                row_idx = cell.row
+                                col_idx = cell.column
+                                col_letter = get_column_letter(col_idx)
 
-                            font_name = None
-                            font_size = 11.0
-                            if cell.font:
-                                font_name = cell.font.name
-                                if cell.font.size:
-                                    font_size = cell.font.size
+                                font_name = None
+                                font_size = 11.0
+                                if cell.font:
+                                    font_name = cell.font.name
+                                    if cell.font.size:
+                                        font_size = cell.font.size
 
-                            yield TextBlock(
-                                id=f"{sheet_name}_{col_letter}{row_idx}",
-                                text=str(cell.value),
-                                location=f"{sheet_name}, {col_letter}{row_idx}",
-                                metadata={
-                                    'sheet': sheet_name,
-                                    'row': row_idx,
-                                    'col': col_idx,
-                                    'type': 'cell',
-                                    'font_name': font_name,
-                                    'font_size': font_size,
-                                }
-                            )
-
-        wb.close()
+                                yield TextBlock(
+                                    id=f"{sheet_name}_{col_letter}{row_idx}",
+                                    text=str(cell.value),
+                                    location=f"{sheet_name}, {col_letter}{row_idx}",
+                                    metadata={
+                                        'sheet': sheet_name,
+                                        'row': row_idx,
+                                        'col': col_idx,
+                                        'type': 'cell',
+                                        'font_name': font_name,
+                                        'font_size': font_size,
+                                    }
+                                )
+        finally:
+            wb.close()
 
     def apply_translations(
         self,
@@ -446,42 +454,44 @@ class ExcelProcessor(FileProcessor):
         wb = openpyxl.load_workbook(input_path)
         font_manager = FontManager(direction)
 
-        for sheet_name in wb.sheetnames:
-            sheet = wb[sheet_name]
+        try:
+            for sheet_name in wb.sheetnames:
+                sheet = wb[sheet_name]
 
-            for row in sheet.iter_rows():
-                for cell in row:
-                    # Use cell's actual row and column attributes
-                    row_idx = cell.row
-                    col_idx = cell.column
-                    col_letter = get_column_letter(col_idx)
-                    block_id = f"{sheet_name}_{col_letter}{row_idx}"
+                for row in sheet.iter_rows():
+                    for cell in row:
+                        # Use cell's actual row and column attributes
+                        row_idx = cell.row
+                        col_idx = cell.column
+                        col_letter = get_column_letter(col_idx)
+                        block_id = f"{sheet_name}_{col_letter}{row_idx}"
 
-                    if block_id in translations:
-                        translated_text = translations[block_id]
+                        if block_id in translations:
+                            translated_text = translations[block_id]
 
-                        original_font_name = cell.font.name if cell.font else None
-                        original_font_size = cell.font.size if cell.font and cell.font.size else 11.0
+                            original_font_name = cell.font.name if cell.font else None
+                            original_font_size = cell.font.size if cell.font and cell.font.size else 11.0
 
-                        new_font_name, new_font_size = font_manager.select_font(
-                            original_font_name,
-                            original_font_size
-                        )
-
-                        cell.value = translated_text
-
-                        if cell.font:
-                            cell.font = Font(
-                                name=new_font_name,
-                                size=new_font_size,
-                                bold=cell.font.bold,
-                                italic=cell.font.italic,
-                                underline=cell.font.underline,
-                                strike=cell.font.strike,
-                                color=cell.font.color,
+                            new_font_name, new_font_size = font_manager.select_font(
+                                original_font_name,
+                                original_font_size
                             )
-                        else:
-                            cell.font = Font(name=new_font_name, size=new_font_size)
 
-        wb.save(output_path)
-        wb.close()
+                            cell.value = translated_text
+
+                            if cell.font:
+                                cell.font = Font(
+                                    name=new_font_name,
+                                    size=new_font_size,
+                                    bold=cell.font.bold,
+                                    italic=cell.font.italic,
+                                    underline=cell.font.underline,
+                                    strike=cell.font.strike,
+                                    color=cell.font.color,
+                                )
+                            else:
+                                cell.font = Font(name=new_font_name, size=new_font_size)
+
+            wb.save(output_path)
+        finally:
+            wb.close()

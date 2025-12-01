@@ -106,6 +106,19 @@ class CopilotHandler:
 
     COPILOT_URL = "https://m365.cloud.microsoft/chat/?auth=2"
 
+    # Configuration constants
+    DEFAULT_CDP_PORT = 9333  # Dedicated port for translator
+    EDGE_STARTUP_MAX_ATTEMPTS = 20  # Maximum iterations to wait for Edge startup
+    EDGE_STARTUP_CHECK_INTERVAL = 0.3  # Seconds between startup checks
+    RESPONSE_STABLE_COUNT = 3  # Number of stable checks before considering response complete
+    DEFAULT_RESPONSE_TIMEOUT = 120  # Default timeout for response in seconds
+
+    # Copilot character limits (Free: 8000, Paid: 128000)
+    DEFAULT_CHAR_LIMIT = 7500  # Default to free with margin
+
+    # Trigger text for file attachment mode
+    FILE_ATTACHMENT_TRIGGER = "Please follow the instructions in the attached file and translate accordingly."
+
     def __init__(self):
         self._playwright = None
         self._browser = None
@@ -113,7 +126,7 @@ class CopilotHandler:
         self._page = None
         self._connected = False
         self._login_required = False  # ログインが必要な状態かどうか
-        self.cdp_port = 9333  # Dedicated port for translator
+        self.cdp_port = self.DEFAULT_CDP_PORT
         self.profile_dir = None
         self.edge_process = None
 
@@ -216,15 +229,15 @@ class CopilotHandler:
                creationflags=creation_flags)
 
             # Wait for Edge to start
-            for i in range(20):
-                time.sleep(0.3)
+            for i in range(self.EDGE_STARTUP_MAX_ATTEMPTS):
+                time.sleep(self.EDGE_STARTUP_CHECK_INTERVAL)
                 if self._is_port_in_use():
                     logger.info("Edge started successfully")
                     return True
 
             logger.warning("Edge startup timeout")
             return False
-        except Exception as e:
+        except (OSError, subprocess.SubprocessError) as e:
             logger.error("Edge startup failed: %s", e)
             return False
 
@@ -348,12 +361,31 @@ class CopilotHandler:
 
         except (PlaywrightError, PlaywrightTimeoutError) as e:
             report(f"Browser connection failed: {e}")
-            self._connected = False
+            self._cleanup_on_error()
             return False
         except (ConnectionError, OSError) as e:
             report(f"Network connection failed: {e}")
-            self._connected = False
+            self._cleanup_on_error()
             return False
+
+    def _cleanup_on_error(self) -> None:
+        """Clean up resources when connection fails."""
+        from contextlib import suppress
+
+        self._connected = False
+
+        with suppress(Exception):
+            if self._browser:
+                self._browser.close()
+
+        with suppress(Exception):
+            if self._playwright:
+                self._playwright.stop()
+
+        self._browser = None
+        self._context = None
+        self._page = None
+        self._playwright = None
 
     def _wait_for_login(self, timeout: int = 300) -> bool:
         """
@@ -546,18 +578,20 @@ class CopilotHandler:
         texts: list[str],
         prompt: str,
         reference_files: Optional[list[Path]] = None,
+        char_limit: Optional[int] = None,
     ) -> list[str]:
         """
         Synchronous version of translate for non-async contexts.
 
         Attaches reference files (glossary, etc.) to Copilot before sending.
-        This allows using glossaries without embedding them in the prompt,
-        which is important for Copilot Free (8000 char limit).
+        If prompt exceeds char_limit, automatically switches to file attachment mode.
+        This handles Copilot Free (8000 char limit) vs Paid (128000 char limit).
 
         Args:
             texts: List of text strings to translate (used for result parsing)
             prompt: The translation prompt to send to Copilot
             reference_files: Optional list of reference files to attach
+            char_limit: Max characters for direct input (uses DEFAULT_CHAR_LIMIT if None)
 
         Returns:
             List of translated strings parsed from Copilot's response
@@ -571,8 +605,8 @@ class CopilotHandler:
                 if file_path.exists():
                     self._attach_file(file_path)
 
-        # Send the prompt
-        self._send_message(prompt)
+        # Send the prompt (auto-switches to file attachment if too long)
+        self._send_prompt_smart(prompt, char_limit)
 
         # Get response
         result = self._get_response()
@@ -585,10 +619,59 @@ class CopilotHandler:
         text: str,
         prompt: str,
         reference_files: Optional[list[Path]] = None,
+        char_limit: Optional[int] = None,
     ) -> str:
         """Translate a single text (sync)"""
-        results = self.translate_sync([text], prompt, reference_files)
+        results = self.translate_sync([text], prompt, reference_files, char_limit)
         return results[0] if results else ""
+
+    def _send_prompt_smart(
+        self,
+        prompt: str,
+        char_limit: Optional[int] = None,
+    ) -> None:
+        """
+        Send prompt with automatic switching based on length.
+
+        If prompt exceeds char_limit, saves it to a temp file and attaches it,
+        then sends a trigger message. This handles Copilot Free's 8000 char limit.
+
+        Args:
+            prompt: The prompt text to send
+            char_limit: Max characters for direct input (default: DEFAULT_CHAR_LIMIT)
+        """
+        import tempfile
+
+        limit = char_limit or self.DEFAULT_CHAR_LIMIT
+
+        if len(prompt) <= limit:
+            # Direct input - prompt fits within limit
+            self._send_message(prompt)
+        else:
+            # File attachment mode - prompt too long
+            logger.info(
+                "Prompt length (%d) exceeds limit (%d), using file attachment mode",
+                len(prompt), limit
+            )
+
+            # Create temp file with prompt
+            with tempfile.NamedTemporaryFile(
+                mode='w',
+                suffix='_instructions.txt',
+                delete=False,
+                encoding='utf-8'
+            ) as f:
+                f.write(prompt)
+                prompt_file = Path(f.name)
+
+            try:
+                # Attach the prompt file
+                self._attach_file(prompt_file)
+                # Send trigger text to enable send button
+                self._send_message(self.FILE_ATTACHMENT_TRIGGER)
+            finally:
+                # Clean up temp file
+                prompt_file.unlink(missing_ok=True)
 
     def _send_message(self, message: str) -> None:
         """Send message to Copilot (sync)"""
@@ -646,7 +729,7 @@ class CopilotHandler:
 
     async def _send_message_async(self, message: str) -> None:
         """Send message to Copilot (async wrapper)"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, self._send_message, message)
 
     def _get_response(self, timeout: int = 120) -> str:
@@ -681,7 +764,7 @@ class CopilotHandler:
 
                     if current_text == last_text:
                         stable_count += 1
-                        if stable_count >= 3:  # Text stable for 3 checks
+                        if stable_count >= self.RESPONSE_STABLE_COUNT:
                             return current_text
                     else:
                         stable_count = 0
@@ -701,7 +784,7 @@ class CopilotHandler:
 
     async def _get_response_async(self, timeout: int = 120) -> str:
         """Get response from Copilot (async wrapper)"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, self._get_response, timeout)
 
     def get_response_streaming(
@@ -757,7 +840,7 @@ class CopilotHandler:
                     else:
                         stable_count += 1
                         # テキストが安定したら完了
-                        if stable_count >= 3:
+                        if stable_count >= self.RESPONSE_STABLE_COUNT:
                             return current_content
 
                 time.sleep(0.5)  # より頻繁にポーリング
@@ -846,6 +929,11 @@ class CopilotHandler:
         if not self._page or not file_path.exists():
             return False
 
+        # Get Playwright error types for specific exception handling
+        error_types = _get_playwright_errors()
+        PlaywrightError = error_types['Error']
+        PlaywrightTimeoutError = error_types['TimeoutError']
+
         try:
             # Priority 1: Direct file input (most stable)
             file_input = self._page.query_selector('input[type="file"]')
@@ -870,7 +958,7 @@ class CopilotHandler:
                 menu_selector = 'div[role="menu"], div[role="menuitem"]'
                 try:
                     self._page.wait_for_selector(menu_selector, timeout=3000, state='visible')
-                except Exception:
+                except (PlaywrightTimeoutError, PlaywrightError):
                     # Menu didn't appear, retry click
                     plus_btn.click()
                     self._page.wait_for_selector(menu_selector, timeout=3000, state='visible')
@@ -895,7 +983,7 @@ class CopilotHandler:
             logger.warning("Could not find attachment mechanism for file: %s", file_path)
             return False
 
-        except Exception as e:
+        except (PlaywrightError, PlaywrightTimeoutError, OSError) as e:
             logger.warning("Error attaching file %s: %s", file_path, e)
             return False
 
@@ -910,6 +998,9 @@ class CopilotHandler:
         Returns:
             True if file attachment was confirmed
         """
+        error_types = _get_playwright_errors()
+        PlaywrightError = error_types['Error']
+
         try:
             # Look for file chip/preview that appears after attachment
             # Common patterns: file name displayed, attachment indicator, etc.
@@ -929,14 +1020,14 @@ class CopilotHandler:
                         elem = self._page.query_selector(selector)
                         if elem:
                             return True
-                    except Exception:
+                    except PlaywrightError:
                         continue
                 time.sleep(0.3)
 
             # If no indicator found, assume success after timeout
             # (some UI may not show clear indicators)
             return True
-        except Exception:
+        except (PlaywrightError, AttributeError):
             return True  # Don't fail the operation if we can't verify
 
     async def _attach_file_async(self, file_path: Path) -> bool:
@@ -949,7 +1040,7 @@ class CopilotHandler:
         Returns:
             True if file was attached successfully
         """
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, self._attach_file, file_path)
 
     def _parse_batch_result(self, result: str, expected_count: int) -> list[str]:
@@ -980,6 +1071,10 @@ class CopilotHandler:
         if not self._page:
             return
 
+        error_types = _get_playwright_errors()
+        PlaywrightError = error_types['Error']
+        PlaywrightTimeoutError = error_types['TimeoutError']
+
         try:
             # 実際のCopilot HTML: <button id="new-chat-button" data-testid="newChatButton" aria-label="新しいチャット">
             new_chat_btn = self._page.query_selector(
@@ -992,14 +1087,14 @@ class CopilotHandler:
                 input_selector = '#m365-chat-editor-target-element, [data-lexical-editor="true"], [contenteditable="true"]'
                 try:
                     self._page.wait_for_selector(input_selector, timeout=5000, state='visible')
-                except Exception:
+                except PlaywrightTimeoutError:
                     # Fallback: wait a bit if selector doesn't appear
                     time.sleep(1)
 
                 # 新しいチャット開始後、GPT-5を有効化
                 # （送信時にも再確認するが、UIの安定性のため先に試行）
                 self._ensure_gpt5_enabled()
-        except Exception:
+        except (PlaywrightError, AttributeError):
             pass
 
     def _ensure_gpt5_enabled(self, max_wait: float = 1.0) -> bool:
@@ -1023,6 +1118,10 @@ class CopilotHandler:
         """
         if not self._page:
             return True
+
+        error_types = _get_playwright_errors()
+        PlaywrightError = error_types['Error']
+        PlaywrightTimeoutError = error_types['TimeoutError']
 
         try:
             # まず、既に有効化されているか確認
@@ -1093,10 +1192,10 @@ class CopilotHandler:
                     state='attached'
                 )
                 return True
-            except Exception:
+            except PlaywrightTimeoutError:
                 # 状態変更が確認できなくても、クリックは成功したかもしれない
                 return True
 
-        except Exception:
+        except (PlaywrightError, PlaywrightTimeoutError, AttributeError):
             # エラーが発生しても翻訳処理は続行
             return True

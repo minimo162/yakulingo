@@ -30,14 +30,21 @@ class HistoryDB:
     Data is stored locally on user's device for privacy.
     """
 
+    # Database configuration
+    DB_TIMEOUT = 30.0  # Connection timeout in seconds
+
     def __init__(self, db_path: Optional[Path] = None):
         self.db_path = db_path or get_default_db_path()
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
 
+    def _connect(self):
+        """Create a database connection with timeout."""
+        return sqlite3.connect(self.db_path, timeout=self.DB_TIMEOUT)
+
     def _init_db(self):
         """Initialize database schema"""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._connect() as conn:
             # Create table with backward-compatible schema
             # (direction column kept for backward compatibility with existing DBs)
             conn.execute('''
@@ -71,7 +78,7 @@ class HistoryDB:
         """
         result_json = self._serialize_result(entry.result)
 
-        with sqlite3.connect(self.db_path) as conn:
+        with self._connect() as conn:
             cursor = conn.execute(
                 '''
                 INSERT INTO history (source_text, direction, result_json, timestamp)
@@ -89,7 +96,7 @@ class HistoryDB:
 
     def get_recent(self, limit: int = 50) -> list[HistoryEntry]:
         """Get most recent history entries"""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._connect() as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 '''
@@ -105,7 +112,7 @@ class HistoryDB:
 
     def get_by_id(self, entry_id: int) -> Optional[HistoryEntry]:
         """Get a specific history entry by ID"""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._connect() as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 '''
@@ -120,7 +127,7 @@ class HistoryDB:
 
     def delete(self, entry_id: int) -> bool:
         """Delete a history entry"""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._connect() as conn:
             cursor = conn.execute(
                 'DELETE FROM history WHERE id = ?',
                 (entry_id,)
@@ -130,7 +137,7 @@ class HistoryDB:
 
     def delete_by_timestamp(self, timestamp: str) -> bool:
         """Delete a history entry by timestamp"""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._connect() as conn:
             cursor = conn.execute(
                 'DELETE FROM history WHERE timestamp = ?',
                 (timestamp,)
@@ -140,14 +147,14 @@ class HistoryDB:
 
     def clear_all(self) -> int:
         """Clear all history entries. Returns number of deleted entries."""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._connect() as conn:
             cursor = conn.execute('DELETE FROM history')
             conn.commit()
             return cursor.rowcount
 
     def search(self, query: str, limit: int = 20) -> list[HistoryEntry]:
         """Search history by source text"""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._connect() as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 '''
@@ -164,7 +171,7 @@ class HistoryDB:
 
     def get_count(self) -> int:
         """Get total number of history entries"""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._connect() as conn:
             result = conn.execute('SELECT COUNT(*) FROM history').fetchone()
             return result[0] if result else 0
 
@@ -173,7 +180,7 @@ class HistoryDB:
         Remove old entries to keep database size manageable.
         Returns number of deleted entries.
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with self._connect() as conn:
             # Get count
             count = conn.execute('SELECT COUNT(*) FROM history').fetchone()[0]
 

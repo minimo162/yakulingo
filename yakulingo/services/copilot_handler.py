@@ -6,6 +6,7 @@ Refactored from translate.py with method name changes:
 - close() -> disconnect()
 """
 
+import logging
 import os
 import re
 import sys
@@ -16,19 +17,78 @@ import asyncio
 from pathlib import Path
 from typing import Optional, Callable, List
 
-# Playwright imports (lazy loaded)
-_playwright = None
-_sync_playwright = None
+# Module logger
+logger = logging.getLogger(__name__)
+
+
+class PlaywrightManager:
+    """
+    Thread-safe singleton manager for Playwright imports.
+
+    Provides lazy loading of Playwright modules to avoid import errors
+    when Playwright is not installed or browser is not available.
+    """
+
+    _instance = None
+    _lock = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            import threading
+            cls._lock = threading.Lock()
+            with cls._lock:
+                # Double-check locking pattern
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+                    cls._instance._playwright_types = None
+                    cls._instance._sync_playwright = None
+                    cls._instance._error_types = None
+                    cls._instance._initialized = False
+        return cls._instance
+
+    def _ensure_initialized(self):
+        """Lazy initialization of Playwright imports."""
+        if not self._initialized:
+            with self._lock:
+                if not self._initialized:
+                    from playwright.sync_api import (
+                        sync_playwright,
+                        Page,
+                        BrowserContext,
+                        TimeoutError as PlaywrightTimeoutError,
+                        Error as PlaywrightError,
+                    )
+                    self._playwright_types = {'Page': Page, 'BrowserContext': BrowserContext}
+                    self._sync_playwright = sync_playwright
+                    self._error_types = {
+                        'TimeoutError': PlaywrightTimeoutError,
+                        'Error': PlaywrightError,
+                    }
+                    self._initialized = True
+
+    def get_playwright(self):
+        """Get Playwright types and sync_playwright function."""
+        self._ensure_initialized()
+        return self._playwright_types, self._sync_playwright
+
+    def get_error_types(self):
+        """Get Playwright error types for exception handling."""
+        self._ensure_initialized()
+        return self._error_types
+
+
+# Global singleton instance
+_playwright_manager = PlaywrightManager()
 
 
 def _get_playwright():
-    """Lazy import playwright"""
-    global _playwright, _sync_playwright
-    if _playwright is None:
-        from playwright.sync_api import sync_playwright, Page, BrowserContext
-        _playwright = {'Page': Page, 'BrowserContext': BrowserContext}
-        _sync_playwright = sync_playwright
-    return _playwright, _sync_playwright
+    """Get Playwright types (backward compatible wrapper)."""
+    return _playwright_manager.get_playwright()
+
+
+def _get_playwright_errors():
+    """Get Playwright error types (backward compatible wrapper)."""
+    return _playwright_manager.get_error_types()
 
 
 class ConnectionState:
@@ -114,13 +174,13 @@ class CopilotHandler:
                         time.sleep(1)
                         break
         except (subprocess.SubprocessError, OSError, TimeoutError) as e:
-            print(f"Warning: Failed to kill existing Edge: {e}")
+            logger.warning("Failed to kill existing Edge: %s", e)
 
     def _start_translator_edge(self) -> bool:
         """Start dedicated Edge instance for translation"""
         edge_exe = self._find_edge_exe()
         if not edge_exe:
-            print("Error: Microsoft Edge not found.")
+            logger.error("Microsoft Edge not found")
             return False
 
         # Use user-local profile directory
@@ -133,13 +193,13 @@ class CopilotHandler:
 
         # Kill any existing process on our port
         if self._is_port_in_use():
-            print("Closing previous Edge...", end="", flush=True)
+            logger.info("Closing previous Edge...")
             self._kill_existing_translator_edge()
             time.sleep(1)
-            print(" done")
+            logger.info("Previous Edge closed")
 
         # Start new Edge with our dedicated port and profile
-        print("Starting translator Edge...", end="", flush=True)
+        logger.info("Starting translator Edge...")
         try:
             local_cwd = os.environ.get("SYSTEMROOT", r"C:\Windows")
             creation_flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
@@ -159,13 +219,13 @@ class CopilotHandler:
             for i in range(20):
                 time.sleep(0.3)
                 if self._is_port_in_use():
-                    print(" done")
+                    logger.info("Edge started successfully")
                     return True
 
-            print(" timeout")
+            logger.warning("Edge startup timeout")
             return False
         except Exception as e:
-            print(f" failed: {e}")
+            logger.error("Edge startup failed: %s", e)
             return False
 
     def connect(
@@ -200,7 +260,7 @@ class CopilotHandler:
         def report(msg: str):
             if on_progress:
                 on_progress(msg)
-            print(msg)
+            logger.info(msg)
 
         try:
             # Start Edge if needed
@@ -390,7 +450,7 @@ class CopilotHandler:
             return ConnectionState.LOGIN_REQUIRED
 
         except Exception as e:
-            print(f"Error checking Copilot state: {e}")
+            logger.warning("Error checking Copilot state: %s", e)
             return ConnectionState.ERROR
 
     def bring_to_foreground(self) -> None:
@@ -398,8 +458,8 @@ class CopilotHandler:
         if self._page:
             try:
                 self._page.bring_to_front()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Failed to bring window to foreground: %s", e)
 
     def disconnect(self) -> None:
         """Close browser and cleanup"""
@@ -408,14 +468,14 @@ class CopilotHandler:
         try:
             if self._browser:
                 self._browser.close()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Error closing browser: %s", e)
 
         try:
             if self._playwright:
                 self._playwright.stop()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Error stopping playwright: %s", e)
 
         self._browser = None
         self._context = None
@@ -550,7 +610,7 @@ class CopilotHandler:
                     input_elem.press("Enter")
 
         except Exception as e:
-            print(f"Error sending message: {e}")
+            logger.error("Error sending message: %s", e)
             raise
 
     async def _send_message_async(self, message: str) -> None:
@@ -561,8 +621,13 @@ class CopilotHandler:
     def _get_response(self, timeout: int = 120) -> str:
         """Get response from Copilot (sync)"""
         try:
-            # Wait for response to appear
-            time.sleep(2)  # Initial wait for response to start
+            # Wait for response element to appear (instead of fixed sleep)
+            response_selector = '[data-testid="markdown-reply"], div[data-message-type="Chat"]'
+            try:
+                self._page.wait_for_selector(response_selector, timeout=10000, state='visible')
+            except Exception:
+                # Response may already be present or selector changed, continue polling
+                pass
 
             # Wait for response completion
             max_wait = timeout
@@ -593,7 +658,7 @@ class CopilotHandler:
             return last_text
 
         except Exception as e:
-            print(f"Error getting response: {e}")
+            logger.error("Error getting response: %s", e)
             return ""
 
     async def _get_response_async(self, timeout: int = 120) -> str:
@@ -660,7 +725,7 @@ class CopilotHandler:
             return last_content
 
         except Exception as e:
-            print(f"Error getting streaming response: {e}")
+            logger.error("Error getting streaming response: %s", e)
             return ""
 
     def _get_reasoning_text(self) -> str:
@@ -777,11 +842,11 @@ class CopilotHandler:
                 self._wait_for_file_attached(file_path)
                 return True
 
-            print(f"Warning: Could not find attachment mechanism for file: {file_path}")
+            logger.warning("Could not find attachment mechanism for file: %s", file_path)
             return False
 
         except Exception as e:
-            print(f"Error attaching file {file_path}: {e}")
+            logger.warning("Error attaching file %s: %s", file_path, e)
             return False
 
     def _wait_for_file_attached(self, file_path: Path, timeout: int = 5) -> bool:

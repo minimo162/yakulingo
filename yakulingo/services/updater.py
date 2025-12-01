@@ -5,6 +5,7 @@
 Windows認証プロキシに対応した自動アップデート機能を提供します。
 """
 
+import logging
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -24,6 +25,9 @@ import urllib.request
 import urllib.error
 import ssl
 from urllib.parse import urlparse
+
+# Module logger
+logger = logging.getLogger(__name__)
 
 # Windows固有のモジュール（条件付きインポート）
 if platform.system() == "Windows":
@@ -110,7 +114,7 @@ class ProxyConfig:
                     except FileNotFoundError:
                         pass
         except Exception as e:
-            print(f"プロキシ設定の検出に失敗: {e}")
+            logger.warning("プロキシ設定の検出に失敗: %s", e)
 
     def get_proxy_dict(self) -> dict[str, str]:
         """urllib用のプロキシ辞書を返す"""
@@ -232,7 +236,7 @@ class NTLMProxyHandler(urllib.request.BaseHandler):
                 return response
 
         except Exception as e:
-            print(f"NTLM認証に失敗: {e}")
+            logger.error("NTLM認証に失敗: %s", e)
             raise
 
         return None
@@ -560,7 +564,7 @@ class AutoUpdater:
                     return self._install_unix(source_dir, app_dir, backup_dir)
 
         except Exception as e:
-            print(f"インストールに失敗: {e}")
+            logger.error("インストールに失敗: %s", e)
             return False
 
     def _install_windows(self, source_dir: Path, app_dir: Path, backup_dir: Path) -> bool:

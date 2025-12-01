@@ -3,10 +3,14 @@
 Application settings management for YakuLingo.
 """
 
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 import json
+
+# Module logger
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -26,6 +30,7 @@ class AppSettings:
 
     # Advanced
     max_batch_size: int = 50            # Max texts per Copilot request
+    max_chars_per_batch: int = 10000    # Max characters per Copilot request
     request_timeout: int = 120          # Seconds
     max_retries: int = 3
 
@@ -51,7 +56,7 @@ class AppSettings:
                     filtered_data = {k: v for k, v in data.items() if k in known_fields}
                     return cls(**filtered_data)
             except (json.JSONDecodeError, TypeError, UnicodeDecodeError) as e:
-                print(f"Warning: Failed to load settings: {e}")
+                logger.warning("Failed to load settings: %s", e)
                 return cls()
         return cls()
 
@@ -65,6 +70,7 @@ class AppSettings:
             "window_width": self.window_width,
             "window_height": self.window_height,
             "max_batch_size": self.max_batch_size,
+            "max_chars_per_batch": self.max_chars_per_batch,
             "request_timeout": self.request_timeout,
             "max_retries": self.max_retries,
             # Auto Update
@@ -81,15 +87,30 @@ class AppSettings:
     def get_reference_file_paths(self, base_dir: Path) -> list[Path]:
         """
         Get resolved reference file paths.
-        Returns only existing files.
+        Returns only existing files within the base directory.
+
+        Security: Validates paths to prevent path traversal attacks.
         """
         paths = []
+        base_dir_resolved = base_dir.resolve()
+
         for ref_file in self.reference_files:
             path = Path(ref_file)
             if not path.is_absolute():
                 path = base_dir / path
-            if path.exists():
-                paths.append(path)
+
+            # Resolve to absolute path and check for path traversal
+            resolved_path = path.resolve()
+
+            # Ensure the resolved path is within the base directory
+            try:
+                resolved_path.relative_to(base_dir_resolved)
+            except ValueError:
+                # Path is outside base directory - skip for security
+                continue
+
+            if resolved_path.exists():
+                paths.append(resolved_path)
         return paths
 
     def get_output_directory(self, input_path: Path) -> Path:

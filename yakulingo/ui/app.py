@@ -454,33 +454,26 @@ class YakuLingoApp:
         self.state.text_translating = False
         self._refresh_content()
 
-    async def _follow_up_action(self, action_type: str, content: str):
-        """Handle follow-up actions for →Japanese translations"""
-        if not self.translation_service:
-            ui.notify('Not connected', type='warning')
-            return
+    def _build_follow_up_prompt(self, action_type: str, source_text: str, translation: str, content: str = "") -> Optional[str]:
+        """
+        Build prompt for follow-up actions.
 
-        self.state.text_translating = True
-        self._refresh_content()
+        Args:
+            action_type: 'review', 'question', or 'reply'
+            source_text: Original source text
+            translation: Current translation
+            content: Additional content (question text, reply intent, etc.)
 
-        try:
-            # Build context from current translation
-            source_text = self.state.source_text
-            translation = self.state.text_result.options[0].text if self.state.text_result and self.state.text_result.options else ""
+        Returns:
+            Built prompt string, or None if action_type is unknown
+        """
+        prompts_dir = get_default_prompts_dir()
 
-            # Get prompts directory
-            prompts_dir = get_default_prompts_dir()
-
-            if action_type == 'review':
-                # Review the original text (grammar, style check)
-                prompt_file = prompts_dir / "text_review_en.txt"
-                if prompt_file.exists():
-                    prompt = prompt_file.read_text(encoding='utf-8')
-                    prompt = prompt.replace("{input_text}", source_text)
-                    prompt = prompt.replace("{translation}", translation)
-                else:
-                    # Fallback to inline prompt
-                    prompt = f"""以下の英文をレビューしてください。
+        # Prompt file mapping and fallback templates
+        prompt_configs = {
+            'review': {
+                'file': 'text_review_en.txt',
+                'fallback': f"""以下の英文をレビューしてください。
 
 原文:
 {source_text}
@@ -496,19 +489,15 @@ class YakuLingoApp:
 
 出力形式:
 訳文: （レビュー結果のサマリー）
-解説: （詳細な分析と改善提案）"""
-
-            elif action_type == 'question':
-                # Answer a question about the translation
-                prompt_file = prompts_dir / "text_question.txt"
-                if prompt_file.exists():
-                    prompt = prompt_file.read_text(encoding='utf-8')
-                    prompt = prompt.replace("{input_text}", source_text)
-                    prompt = prompt.replace("{translation}", translation)
-                    prompt = prompt.replace("{question}", content)
-                else:
-                    # Fallback to inline prompt
-                    prompt = f"""以下の翻訳について質問に答えてください。
+解説: （詳細な分析と改善提案）""",
+                'replacements': {
+                    '{input_text}': source_text,
+                    '{translation}': translation,
+                }
+            },
+            'question': {
+                'file': 'text_question.txt',
+                'fallback': f"""以下の翻訳について質問に答えてください。
 
 原文:
 {source_text}
@@ -521,19 +510,16 @@ class YakuLingoApp:
 
 出力形式:
 訳文: （質問への回答の要約）
-解説: （詳細な説明）"""
-
-            elif action_type == 'reply':
-                # Create a reply in the original language
-                prompt_file = prompts_dir / "text_reply_email.txt"
-                if prompt_file.exists():
-                    prompt = prompt_file.read_text(encoding='utf-8')
-                    prompt = prompt.replace("{input_text}", source_text)
-                    prompt = prompt.replace("{translation}", translation)
-                    prompt = prompt.replace("{reply_intent}", content)
-                else:
-                    # Fallback to inline prompt
-                    prompt = f"""以下の原文に対する返信を作成してください。
+解説: （詳細な説明）""",
+                'replacements': {
+                    '{input_text}': source_text,
+                    '{translation}': translation,
+                    '{question}': content,
+                }
+            },
+            'reply': {
+                'file': 'text_reply_email.txt',
+                'fallback': f"""以下の原文に対する返信を作成してください。
 
 原文:
 {source_text}
@@ -548,9 +534,60 @@ class YakuLingoApp:
 
 出力形式:
 訳文: （作成した返信文）
-解説: （この返信のポイントと使用場面の説明）"""
+解説: （この返信のポイントと使用場面の説明）""",
+                'replacements': {
+                    '{input_text}': source_text,
+                    '{translation}': translation,
+                    '{reply_intent}': content,
+                }
+            },
+        }
 
-            else:
+        if action_type not in prompt_configs:
+            return None
+
+        config = prompt_configs[action_type]
+        prompt_file = prompts_dir / config['file']
+
+        if prompt_file.exists():
+            prompt = prompt_file.read_text(encoding='utf-8')
+            for placeholder, value in config['replacements'].items():
+                prompt = prompt.replace(placeholder, value)
+            return prompt
+        else:
+            return config['fallback']
+
+    def _add_follow_up_result(self, source_text: str, text: str, explanation: str):
+        """Add follow-up result to current translation options."""
+        new_option = TranslationOption(text=text, explanation=explanation)
+
+        if self.state.text_result:
+            self.state.text_result.options.append(new_option)
+        else:
+            self.state.text_result = TextTranslationResult(
+                source_text=source_text,
+                source_char_count=len(source_text),
+                options=[new_option],
+                output_language="jp",
+            )
+
+    async def _follow_up_action(self, action_type: str, content: str):
+        """Handle follow-up actions for →Japanese translations"""
+        if not self.translation_service:
+            ui.notify('Not connected', type='warning')
+            return
+
+        self.state.text_translating = True
+        self._refresh_content()
+
+        try:
+            # Build context from current translation
+            source_text = self.state.source_text
+            translation = self.state.text_result.options[0].text if self.state.text_result and self.state.text_result.options else ""
+
+            # Build prompt
+            prompt = self._build_follow_up_prompt(action_type, source_text, translation, content)
+            if prompt is None:
                 ui.notify('Unknown action type', type='warning')
                 self.state.text_translating = False
                 self._refresh_content()
@@ -563,21 +600,8 @@ class YakuLingoApp:
 
             # Parse result and update UI
             if result:
-                # Parse the result using utility function
                 text, explanation = parse_translation_result(result)
-
-                # Add as new result option
-                new_option = TranslationOption(text=text, explanation=explanation)
-
-                if self.state.text_result:
-                    self.state.text_result.options.append(new_option)
-                else:
-                    self.state.text_result = TextTranslationResult(
-                        source_text=source_text,
-                        source_char_count=len(source_text),
-                        options=[new_option],
-                        output_language="jp",
-                    )
+                self._add_follow_up_result(source_text, text, explanation)
             else:
                 ui.notify('Failed to get response', type='negative')
 

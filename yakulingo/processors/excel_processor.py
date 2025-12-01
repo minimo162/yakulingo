@@ -122,7 +122,7 @@ class ExcelProcessor(FileProcessor):
                             if self.cell_translator.should_translate(shape.text):
                                 text_count += 1
                     except Exception as e:
-                        logger.debug("Error reading shape text in sheet '%s': %s", sheet_name, e)
+                        logger.debug("Error reading shape text in sheet '%s': %s", sheet.name, e)
 
                 # Count chart titles
                 for chart in sheet.charts:
@@ -132,7 +132,7 @@ class ExcelProcessor(FileProcessor):
                             if title and self.cell_translator.should_translate(title):
                                 text_count += 1
                     except Exception as e:
-                        logger.debug("Error reading chart title in sheet '%s': %s", sheet_name, e)
+                        logger.debug("Error reading chart title in sheet '%s': %s", sheet.name, e)
 
             wb.close()
             return FileInfo(

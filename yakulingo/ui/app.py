@@ -307,6 +307,7 @@ class YakuLingoApp:
                         on_download=self._download,
                         on_reset=self._reset,
                         on_language_change=self._on_language_change,
+                        on_pdf_fast_mode_change=self._on_pdf_fast_mode_change,
                     )
 
         self._main_content = main_content
@@ -591,6 +592,11 @@ class YakuLingoApp:
         self.state.file_output_language = lang
         self._refresh_content()
 
+    def _on_pdf_fast_mode_change(self, fast_mode: bool):
+        """Handle PDF fast mode toggle"""
+        self.state.pdf_fast_mode = fast_mode
+        # No need to refresh content, checkbox state is handled by NiceGUI
+
     def _select_file(self, file_path: Path):
         """Select file for translation"""
         if not self.translation_service:
@@ -640,12 +646,16 @@ class YakuLingoApp:
             status_label.set_text(p.status or 'Translating...')
 
         try:
+            # For PDFs, use_ocr is the inverse of fast_mode
+            use_ocr = not self.state.pdf_fast_mode
+
             result = await asyncio.to_thread(
                 lambda: self.translation_service.translate_file(
                     self.state.selected_file,
                     self.state.reference_files or None,
                     on_progress,
                     output_language=self.state.file_output_language,
+                    use_ocr=use_ocr,
                 )
             )
 

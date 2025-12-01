@@ -40,6 +40,7 @@ def create_file_panel(
     on_download: Callable[[], None],
     on_reset: Callable[[], None],
     on_language_change: Optional[Callable[[str], None]] = None,
+    on_pdf_fast_mode_change: Optional[Callable[[bool], None]] = None,
 ):
     """File translation panel - Nani-inspired design"""
 
@@ -55,6 +56,9 @@ def create_file_panel(
                     _file_card(state.file_info, on_reset)
                     # Output language selector
                     _language_selector(state, on_language_change)
+                    # PDF fast mode option (only for PDF files)
+                    if state.file_info and state.file_info.file_type == FileType.PDF:
+                        _pdf_mode_selector(state, on_pdf_fast_mode_change)
                     with ui.row().classes('justify-center mt-4'):
                         with ui.button(on_click=on_translate).classes('translate-btn').props('no-caps'):
                             ui.label('Translate')
@@ -101,6 +105,20 @@ def _language_selector(state: AppState, on_change: Optional[Callable[[str], None
             with ui.button(on_click=lambda: on_change and on_change('jp')).classes(jp_classes).props('flat no-caps'):
                 ui.label('🇯🇵').classes('flag-icon')
                 ui.label('日本語')
+
+
+def _pdf_mode_selector(state: AppState, on_change: Optional[Callable[[bool], None]]):
+    """PDF processing mode selector - checkbox for fast mode"""
+    with ui.row().classes('w-full justify-center mt-3 items-center gap-2'):
+        ui.checkbox(
+            'Fast mode',
+            value=state.pdf_fast_mode,
+            on_change=lambda e: on_change and on_change(e.value),
+        ).classes('pdf-mode-checkbox')
+        ui.tooltip(
+            'Skip OCR layout analysis for faster processing.\n'
+            'Best for text-based PDFs. May reduce accuracy for scanned documents or complex layouts.'
+        ).classes('text-xs')
 
 
 def _drop_zone(on_file_select: Callable[[Path], None]):

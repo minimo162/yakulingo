@@ -251,12 +251,15 @@ def _render_results_to_en(
 ):
     """Render →English results: multiple options with inline adjustment (Nani-style)"""
 
-    # Avatar and status row (Nani-style)
+    # Avatar and status row (Nani-style) with elapsed time
     with ui.element('div').classes('avatar-status-row'):
         with ui.element('span').classes('avatar-container'):
             ui.html(AVATAR_SVG)
         with ui.element('div').classes('status-text'):
-            ui.label('翻訳しました').classes('status-label')
+            with ui.row().classes('items-center gap-2'):
+                ui.label('翻訳しました').classes('status-label')
+                if elapsed_time:
+                    ui.label(f'{elapsed_time:.1f}秒').classes('elapsed-time-badge')
 
     # Translation results container
     with ui.element('div').classes('result-container'):
@@ -292,12 +295,15 @@ def _render_results_to_jp(
 
     option = result.options[0]  # Single option for →jp
 
-    # Avatar and status row (Nani-style)
+    # Avatar and status row (Nani-style) with elapsed time
     with ui.element('div').classes('avatar-status-row'):
         with ui.element('span').classes('avatar-container'):
             ui.html(AVATAR_SVG)
         with ui.element('div').classes('status-text'):
-            ui.label('翻訳しました').classes('status-label')
+            with ui.row().classes('items-center gap-2'):
+                ui.label('翻訳しました').classes('status-label')
+                if elapsed_time:
+                    ui.label(f'{elapsed_time:.1f}秒').classes('elapsed-time-badge')
 
     # Translation results container
     with ui.element('div').classes('result-container'):
@@ -326,6 +332,15 @@ def _render_results_to_jp(
             if option.explanation:
                 with ui.element('div').classes('nani-explanation'):
                     _render_explanation(option.explanation)
+
+                    # "もっと詳しく解説して" button (Nani-inspired)
+                    if on_follow_up:
+                        with ui.element('div').classes('explain-more-section'):
+                            ui.button(
+                                'もっと詳しく解説して',
+                                icon='lightbulb',
+                                on_click=lambda: on_follow_up('explain_more', source_text)
+                            ).props('flat no-caps').classes('explain-more-btn')
 
         # Follow-up actions section
         with ui.element('div').classes('follow-up-section w-full mt-4'):

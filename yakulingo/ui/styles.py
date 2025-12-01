@@ -1381,4 +1381,43 @@ body {
 .back-translate-btn .q-icon {
     margin-right: 0.25rem;
 }
+
+/* === Elapsed Time Badge === */
+.elapsed-time-badge {
+    font-size: 0.6875rem;
+    color: var(--md-sys-color-on-surface-variant);
+    background: var(--md-sys-color-surface-container);
+    padding: 0.125rem 0.5rem;
+    border-radius: var(--md-sys-shape-corner-full);
+    font-weight: 500;
+}
+
+/* === Explain More Button (Nani-inspired) === */
+.explain-more-section {
+    margin-top: 1rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--md-sys-color-outline-variant);
+    display: flex;
+    justify-content: center;
+}
+
+.explain-more-btn {
+    font-size: 0.8125rem !important;
+    color: var(--md-sys-color-primary) !important;
+    padding: 0.5rem 1rem !important;
+    border-radius: var(--md-sys-shape-corner-full) !important;
+    background: transparent !important;
+    border: 1px solid var(--md-sys-color-outline-variant) !important;
+    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard) !important;
+}
+
+.explain-more-btn:hover {
+    background: var(--md-sys-color-primary-container) !important;
+    border-color: var(--md-sys-color-primary) !important;
+}
+
+.explain-more-btn .q-icon {
+    color: var(--md-sys-color-primary);
+    margin-right: 0.25rem;
+}
 """

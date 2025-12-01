@@ -25,8 +25,8 @@ class AppSettings:
 
     # UI
     last_tab: str = "text"
-    window_width: int = 960
-    window_height: int = 720
+    window_width: int = 1100
+    window_height: int = 750
 
     # Advanced
     max_batch_size: int = 50            # Max texts per Copilot request

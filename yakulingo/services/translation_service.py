@@ -38,10 +38,15 @@ def is_japanese_text(text: str, threshold: float = 0.3) -> bool:
     if not text:
         return False
 
+    # Limit analysis to first 10,000 characters for performance
+    # This is sufficient to determine the language of the text
+    MAX_ANALYSIS_LENGTH = 10000
+    sample_text = text[:MAX_ANALYSIS_LENGTH] if len(text) > MAX_ANALYSIS_LENGTH else text
+
     japanese_count = 0
     total_chars = 0
 
-    for char in text:
+    for char in sample_text:
         # Skip whitespace and punctuation
         if char.isspace() or unicodedata.category(char).startswith('P'):
             continue

@@ -168,7 +168,8 @@ def _apply_textbox_translations_to_docx(
 
                         zf_out.writestr(item, content)
 
-        except Exception:
+        except (zipfile.BadZipFile, ET.ParseError, OSError) as e:
+            logger.warning("Error modifying docx textboxes: %s", e)
             shutil.copy(temp_docx, output_path)
 
 

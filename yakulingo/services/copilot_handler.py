@@ -106,6 +106,13 @@ class CopilotHandler:
 
     COPILOT_URL = "https://m365.cloud.microsoft/chat/?auth=2"
 
+    # Configuration constants
+    DEFAULT_CDP_PORT = 9333  # Dedicated port for translator
+    EDGE_STARTUP_MAX_ATTEMPTS = 20  # Maximum iterations to wait for Edge startup
+    EDGE_STARTUP_CHECK_INTERVAL = 0.3  # Seconds between startup checks
+    RESPONSE_STABLE_COUNT = 3  # Number of stable checks before considering response complete
+    DEFAULT_RESPONSE_TIMEOUT = 120  # Default timeout for response in seconds
+
     def __init__(self):
         self._playwright = None
         self._browser = None
@@ -113,7 +120,7 @@ class CopilotHandler:
         self._page = None
         self._connected = False
         self._login_required = False  # ログインが必要な状態かどうか
-        self.cdp_port = 9333  # Dedicated port for translator
+        self.cdp_port = self.DEFAULT_CDP_PORT
         self.profile_dir = None
         self.edge_process = None
 
@@ -216,15 +223,15 @@ class CopilotHandler:
                creationflags=creation_flags)
 
             # Wait for Edge to start
-            for i in range(20):
-                time.sleep(0.3)
+            for i in range(self.EDGE_STARTUP_MAX_ATTEMPTS):
+                time.sleep(self.EDGE_STARTUP_CHECK_INTERVAL)
                 if self._is_port_in_use():
                     logger.info("Edge started successfully")
                     return True
 
             logger.warning("Edge startup timeout")
             return False
-        except Exception as e:
+        except (OSError, subprocess.SubprocessError) as e:
             logger.error("Edge startup failed: %s", e)
             return False
 
@@ -348,12 +355,31 @@ class CopilotHandler:
 
         except (PlaywrightError, PlaywrightTimeoutError) as e:
             report(f"Browser connection failed: {e}")
-            self._connected = False
+            self._cleanup_on_error()
             return False
         except (ConnectionError, OSError) as e:
             report(f"Network connection failed: {e}")
-            self._connected = False
+            self._cleanup_on_error()
             return False
+
+    def _cleanup_on_error(self) -> None:
+        """Clean up resources when connection fails."""
+        from contextlib import suppress
+
+        self._connected = False
+
+        with suppress(Exception):
+            if self._browser:
+                self._browser.close()
+
+        with suppress(Exception):
+            if self._playwright:
+                self._playwright.stop()
+
+        self._browser = None
+        self._context = None
+        self._page = None
+        self._playwright = None
 
     def _wait_for_login(self, timeout: int = 300) -> bool:
         """
@@ -646,7 +672,7 @@ class CopilotHandler:
 
     async def _send_message_async(self, message: str) -> None:
         """Send message to Copilot (async wrapper)"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, self._send_message, message)
 
     def _get_response(self, timeout: int = 120) -> str:
@@ -681,7 +707,7 @@ class CopilotHandler:
 
                     if current_text == last_text:
                         stable_count += 1
-                        if stable_count >= 3:  # Text stable for 3 checks
+                        if stable_count >= self.RESPONSE_STABLE_COUNT:
                             return current_text
                     else:
                         stable_count = 0
@@ -701,7 +727,7 @@ class CopilotHandler:
 
     async def _get_response_async(self, timeout: int = 120) -> str:
         """Get response from Copilot (async wrapper)"""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, self._get_response, timeout)
 
     def get_response_streaming(
@@ -757,7 +783,7 @@ class CopilotHandler:
                     else:
                         stable_count += 1
                         # テキストが安定したら完了
-                        if stable_count >= 3:
+                        if stable_count >= self.RESPONSE_STABLE_COUNT:
                             return current_content
 
                 time.sleep(0.5)  # より頻繁にポーリング
@@ -846,6 +872,11 @@ class CopilotHandler:
         if not self._page or not file_path.exists():
             return False
 
+        # Get Playwright error types for specific exception handling
+        error_types = _get_playwright_errors()
+        PlaywrightError = error_types['Error']
+        PlaywrightTimeoutError = error_types['TimeoutError']
+
         try:
             # Priority 1: Direct file input (most stable)
             file_input = self._page.query_selector('input[type="file"]')
@@ -870,7 +901,7 @@ class CopilotHandler:
                 menu_selector = 'div[role="menu"], div[role="menuitem"]'
                 try:
                     self._page.wait_for_selector(menu_selector, timeout=3000, state='visible')
-                except Exception:
+                except (PlaywrightTimeoutError, PlaywrightError):
                     # Menu didn't appear, retry click
                     plus_btn.click()
                     self._page.wait_for_selector(menu_selector, timeout=3000, state='visible')
@@ -895,7 +926,7 @@ class CopilotHandler:
             logger.warning("Could not find attachment mechanism for file: %s", file_path)
             return False
 
-        except Exception as e:
+        except (PlaywrightError, PlaywrightTimeoutError, OSError) as e:
             logger.warning("Error attaching file %s: %s", file_path, e)
             return False
 
@@ -910,6 +941,9 @@ class CopilotHandler:
         Returns:
             True if file attachment was confirmed
         """
+        error_types = _get_playwright_errors()
+        PlaywrightError = error_types['Error']
+
         try:
             # Look for file chip/preview that appears after attachment
             # Common patterns: file name displayed, attachment indicator, etc.
@@ -929,14 +963,14 @@ class CopilotHandler:
                         elem = self._page.query_selector(selector)
                         if elem:
                             return True
-                    except Exception:
+                    except PlaywrightError:
                         continue
                 time.sleep(0.3)
 
             # If no indicator found, assume success after timeout
             # (some UI may not show clear indicators)
             return True
-        except Exception:
+        except (PlaywrightError, AttributeError):
             return True  # Don't fail the operation if we can't verify
 
     async def _attach_file_async(self, file_path: Path) -> bool:
@@ -949,7 +983,7 @@ class CopilotHandler:
         Returns:
             True if file was attached successfully
         """
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, self._attach_file, file_path)
 
     def _parse_batch_result(self, result: str, expected_count: int) -> list[str]:
@@ -980,6 +1014,10 @@ class CopilotHandler:
         if not self._page:
             return
 
+        error_types = _get_playwright_errors()
+        PlaywrightError = error_types['Error']
+        PlaywrightTimeoutError = error_types['TimeoutError']
+
         try:
             # 実際のCopilot HTML: <button id="new-chat-button" data-testid="newChatButton" aria-label="新しいチャット">
             new_chat_btn = self._page.query_selector(
@@ -992,14 +1030,14 @@ class CopilotHandler:
                 input_selector = '#m365-chat-editor-target-element, [data-lexical-editor="true"], [contenteditable="true"]'
                 try:
                     self._page.wait_for_selector(input_selector, timeout=5000, state='visible')
-                except Exception:
+                except PlaywrightTimeoutError:
                     # Fallback: wait a bit if selector doesn't appear
                     time.sleep(1)
 
                 # 新しいチャット開始後、GPT-5を有効化
                 # （送信時にも再確認するが、UIの安定性のため先に試行）
                 self._ensure_gpt5_enabled()
-        except Exception:
+        except (PlaywrightError, AttributeError):
             pass
 
     def _ensure_gpt5_enabled(self, max_wait: float = 1.0) -> bool:
@@ -1023,6 +1061,10 @@ class CopilotHandler:
         """
         if not self._page:
             return True
+
+        error_types = _get_playwright_errors()
+        PlaywrightError = error_types['Error']
+        PlaywrightTimeoutError = error_types['TimeoutError']
 
         try:
             # まず、既に有効化されているか確認
@@ -1093,10 +1135,10 @@ class CopilotHandler:
                     state='attached'
                 )
                 return True
-            except Exception:
+            except PlaywrightTimeoutError:
                 # 状態変更が確認できなくても、クリックは成功したかもしれない
                 return True
 
-        except Exception:
+        except (PlaywrightError, PlaywrightTimeoutError, AttributeError):
             # エラーが発生しても翻訳処理は続行
             return True

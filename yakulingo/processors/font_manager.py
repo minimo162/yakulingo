@@ -60,6 +60,24 @@ class FontTypeDetector:
         r"Yu Gothic", r"游ゴシック", r"Hiragino.*Gothic", r"Segoe",
     ]
 
+    # Pre-compiled patterns (lazy initialization for performance)
+    _compiled_mincho: Optional[list] = None
+    _compiled_gothic: Optional[list] = None
+
+    @classmethod
+    def _get_mincho_patterns(cls) -> list:
+        """Get pre-compiled mincho patterns."""
+        if cls._compiled_mincho is None:
+            cls._compiled_mincho = [re.compile(p, re.IGNORECASE) for p in cls.MINCHO_PATTERNS]
+        return cls._compiled_mincho
+
+    @classmethod
+    def _get_gothic_patterns(cls) -> list:
+        """Get pre-compiled gothic patterns."""
+        if cls._compiled_gothic is None:
+            cls._compiled_gothic = [re.compile(p, re.IGNORECASE) for p in cls.GOTHIC_PATTERNS]
+        return cls._compiled_gothic
+
     def detect_font_type(self, font_name: Optional[str]) -> str:
         """
         フォント名から種類を判定
@@ -75,12 +93,12 @@ class FontTypeDetector:
         if not font_name:
             return "unknown"
 
-        for pattern in self.MINCHO_PATTERNS:
-            if re.search(pattern, font_name, re.IGNORECASE):
+        for pattern in self._get_mincho_patterns():
+            if pattern.search(font_name):
                 return "mincho"
 
-        for pattern in self.GOTHIC_PATTERNS:
-            if re.search(pattern, font_name, re.IGNORECASE):
+        for pattern in self._get_gothic_patterns():
+            if pattern.search(font_name):
                 return "gothic"
 
         return "unknown"

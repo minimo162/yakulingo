@@ -20,6 +20,9 @@ from typing import Optional, Callable
 # Module logger
 logger = logging.getLogger(__name__)
 
+# Pre-compiled regex pattern for batch result parsing
+_RE_NUMBERING_PREFIX = re.compile(r'^\d+\.\s*(.+)$')
+
 
 class PlaywrightManager:
     """
@@ -478,23 +481,23 @@ class CopilotHandler:
 
             # 2. チャットUIが存在するか確認（短いタイムアウト）
             # 実際のCopilot HTML: <span role="combobox" contenteditable="true" id="m365-chat-editor-target-element" ...>
-            chat_selectors = [
-                '#m365-chat-editor-target-element',  # 最も確実 - Copilotのチャット入力ID
-                '[data-lexical-editor="true"]',      # Lexicalエディタの属性
-                '[contenteditable="true"]',          # 一般的なcontenteditable（要素タイプ非依存）
-            ]
+            # Performance: Use combined CSS selector to check all at once instead of sequential timeouts
+            combined_selector = (
+                '#m365-chat-editor-target-element, '  # 最も確実 - Copilotのチャット入力ID
+                '[data-lexical-editor="true"], '      # Lexicalエディタの属性
+                '[contenteditable="true"]'            # 一般的なcontenteditable（要素タイプ非依存）
+            )
 
-            for selector in chat_selectors:
-                try:
-                    element = self._page.wait_for_selector(selector, timeout=timeout * 1000)
-                    if element:
-                        return ConnectionState.READY
-                except PlaywrightTimeoutError:
-                    # Selector not found within timeout, try next
-                    continue
-                except PlaywrightError:
-                    # Other Playwright errors, try next selector
-                    continue
+            try:
+                element = self._page.wait_for_selector(combined_selector, timeout=timeout * 1000)
+                if element:
+                    return ConnectionState.READY
+            except PlaywrightTimeoutError:
+                # None of the selectors found within timeout
+                pass
+            except PlaywrightError:
+                # Other Playwright errors
+                pass
 
             # 3. Copilot URLにいるがチャットUIがない
             # = 埋め込みログイン画面、または読み込み中
@@ -1053,8 +1056,8 @@ class CopilotHandler:
             if not line:
                 continue
 
-            # Remove numbering prefix
-            match = re.match(r'^\d+\.\s*(.+)$', line)
+            # Remove numbering prefix using pre-compiled pattern
+            match = _RE_NUMBERING_PREFIX.match(line)
             if match:
                 translations.append(match.group(1))
             else:

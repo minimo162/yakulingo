@@ -17,6 +17,30 @@ import re
 # Module logger
 logger = logging.getLogger(__name__)
 
+# Pre-compiled regex patterns for performance
+_RE_MULTI_OPTION = re.compile(r'\[(\d+)\]\s*訳文:\s*(.+?)\s*解説:\s*(.+?)(?=\[\d+\]|$)', re.DOTALL)
+_RE_TRANSLATION_TEXT = re.compile(r'訳文:\s*(.+?)(?=解説:|$)', re.DOTALL)
+_RE_EXPLANATION = re.compile(r'解説:\s*(.+)', re.DOTALL)
+_RE_MARKDOWN_SEPARATOR = re.compile(r'\n?\s*[\*\-]{3,}\s*$')
+
+# Punctuation categories to skip in language detection (cached set for performance)
+_PUNCTUATION_CATEGORIES = frozenset(['Pc', 'Pd', 'Ps', 'Pe', 'Pi', 'Pf', 'Po'])
+
+
+def _is_japanese_char(code: int) -> bool:
+    """Check if a Unicode code point is a Japanese character."""
+    return (0x3040 <= code <= 0x309F or  # Hiragana
+            0x30A0 <= code <= 0x30FF or  # Katakana
+            0x4E00 <= code <= 0x9FFF or  # CJK Kanji
+            0x31F0 <= code <= 0x31FF or  # Katakana extensions
+            0xFF65 <= code <= 0xFF9F)    # Halfwidth Katakana
+
+
+def _is_punctuation(char: str) -> bool:
+    """Check if char is punctuation (optimized with category prefix check)."""
+    cat = unicodedata.category(char)
+    return cat[0] == 'P'  # All punctuation categories start with 'P'
+
 
 def is_japanese_text(text: str, threshold: float = 0.3) -> bool:
     """
@@ -35,38 +59,52 @@ def is_japanese_text(text: str, threshold: float = 0.3) -> bool:
 
     Returns:
         True if text is primarily Japanese
+
+    Performance: Uses early exit for short text and samples for long text.
     """
     if not text:
         return False
 
-    # Limit analysis to first 10,000 characters for performance
-    # This is sufficient to determine the language of the text
-    MAX_ANALYSIS_LENGTH = 10000
-    sample_text = text[:MAX_ANALYSIS_LENGTH] if len(text) > MAX_ANALYSIS_LENGTH else text
+    text_len = len(text)
+
+    # Early exit for very short text (< 20 chars): check all chars directly
+    if text_len < 20:
+        meaningful_chars = [c for c in text if not c.isspace() and not _is_punctuation(c)]
+        if not meaningful_chars:
+            return False
+        jp_count = sum(1 for c in meaningful_chars if _is_japanese_char(ord(c)))
+        return (jp_count / len(meaningful_chars)) >= threshold
+
+    # For longer text, sample the first portion
+    # 500 chars is enough to reliably detect language
+    MAX_ANALYSIS_LENGTH = 500
+    sample_text = text[:MAX_ANALYSIS_LENGTH] if text_len > MAX_ANALYSIS_LENGTH else text
 
     japanese_count = 0
     total_chars = 0
 
     for char in sample_text:
         # Skip whitespace and punctuation
-        if char.isspace() or unicodedata.category(char).startswith('P'):
+        if char.isspace() or _is_punctuation(char):
             continue
 
         total_chars += 1
-        code = ord(char)
-
-        # Check Japanese character ranges
-        if (0x3040 <= code <= 0x309F or  # Hiragana
-            0x30A0 <= code <= 0x30FF or  # Katakana
-            0x4E00 <= code <= 0x9FFF or  # CJK Kanji
-            0x31F0 <= code <= 0x31FF or  # Katakana extensions
-            0xFF65 <= code <= 0xFF9F):   # Halfwidth Katakana
+        if _is_japanese_char(ord(char)):
             japanese_count += 1
+
+        # Early exit: if we have enough samples and result is clear
+        if total_chars >= 50:
+            ratio = japanese_count / total_chars
+            # If clearly Japanese (>60%) or clearly not (<10%), exit early
+            if ratio > 0.6 or ratio < 0.1:
+                return ratio >= threshold
 
     if total_chars == 0:
         return False
 
     return (japanese_count / total_chars) >= threshold
+
+from typing import TYPE_CHECKING
 
 from yakulingo.models.types import (
     TranslationStatus,
@@ -84,10 +122,13 @@ from yakulingo.config.settings import AppSettings
 from yakulingo.services.copilot_handler import CopilotHandler
 from yakulingo.services.prompt_builder import PromptBuilder, REFERENCE_INSTRUCTION
 from yakulingo.processors.base import FileProcessor
-from yakulingo.processors.excel_processor import ExcelProcessor
-from yakulingo.processors.word_processor import WordProcessor
-from yakulingo.processors.pptx_processor import PptxProcessor
-from yakulingo.processors.pdf_processor import PdfProcessor
+
+# Lazy-loaded processors for faster startup
+if TYPE_CHECKING:
+    from yakulingo.processors.excel_processor import ExcelProcessor
+    from yakulingo.processors.word_processor import WordProcessor
+    from yakulingo.processors.pptx_processor import PptxProcessor
+    from yakulingo.processors.pdf_processor import PdfProcessor
 
 
 def scale_progress(progress: TranslationProgress, start: int, end: int, phase: TranslationPhase, phase_detail: Optional[str] = None) -> TranslationProgress:
@@ -342,16 +383,32 @@ class TranslationService:
         )
         self._cancel_requested = False
 
-        # Register file processors
-        # Note: Legacy formats (.doc, .ppt) are not supported
-        # Only Office Open XML formats are supported for Word/PowerPoint
-        self.processors: dict[str, FileProcessor] = {
-            '.xlsx': ExcelProcessor(),
-            '.xls': ExcelProcessor(),
-            '.docx': WordProcessor(),
-            '.pptx': PptxProcessor(),
-            '.pdf': PdfProcessor(),
-        }
+        # Lazy-loaded file processors for faster startup
+        self._processors: Optional[dict[str, FileProcessor]] = None
+
+    @property
+    def processors(self) -> dict[str, FileProcessor]:
+        """
+        Lazy-load file processors on first access.
+        This significantly improves startup time by deferring heavy imports
+        (xlwings, openpyxl, python-docx, python-pptx, PyMuPDF) until needed.
+        """
+        if self._processors is None:
+            from yakulingo.processors.excel_processor import ExcelProcessor
+            from yakulingo.processors.word_processor import WordProcessor
+            from yakulingo.processors.pptx_processor import PptxProcessor
+            from yakulingo.processors.pdf_processor import PdfProcessor
+
+            # Note: Legacy formats (.doc, .ppt) are not supported
+            # Only Office Open XML formats are supported for Word/PowerPoint
+            self._processors = {
+                '.xlsx': ExcelProcessor(),
+                '.xls': ExcelProcessor(),
+                '.docx': WordProcessor(),
+                '.pptx': PptxProcessor(),
+                '.pdf': PdfProcessor(),
+            }
+        return self._processors
 
     def translate_text(
         self,
@@ -567,9 +624,8 @@ class TranslationService:
         """Parse multi-option result from Copilot (for →en translation)."""
         options = []
 
-        # Pattern to match [1], [2], [3] sections
-        pattern = r'\[(\d+)\]\s*訳文:\s*(.+?)\s*解説:\s*(.+?)(?=\[\d+\]|$)'
-        matches = re.findall(pattern, raw_result, re.DOTALL)
+        # Use pre-compiled pattern for [1], [2], [3] sections
+        matches = _RE_MULTI_OPTION.findall(raw_result)
 
         for num, text, explanation in matches:
             text = text.strip()
@@ -584,14 +640,14 @@ class TranslationService:
 
     def _parse_single_translation_result(self, raw_result: str) -> list[TranslationOption]:
         """Parse single translation result from Copilot (for →jp translation)."""
-        # Pattern: 訳文: ... 解説: ...
-        text_match = re.search(r'訳文:\s*(.+?)(?=解説:|$)', raw_result, re.DOTALL)
-        explanation_match = re.search(r'解説:\s*(.+)', raw_result, re.DOTALL)
+        # Use pre-compiled patterns for 訳文: ... 解説: ...
+        text_match = _RE_TRANSLATION_TEXT.search(raw_result)
+        explanation_match = _RE_EXPLANATION.search(raw_result)
 
         if text_match:
             text = text_match.group(1).strip()
             # Remove markdown separators (*** or ---) from text
-            text = re.sub(r'\n?\s*[\*\-]{3,}\s*$', '', text).strip()
+            text = _RE_MARKDOWN_SEPARATOR.sub('', text).strip()
             explanation = explanation_match.group(1).strip() if explanation_match else "翻訳結果です"
 
             if text:
@@ -611,9 +667,9 @@ class TranslationService:
 
     def _parse_single_option_result(self, raw_result: str) -> Optional[TranslationOption]:
         """Parse single option result from adjustment."""
-        # Try to extract 訳文 and 解説
-        text_match = re.search(r'訳文:\s*(.+?)(?=解説:|$)', raw_result, re.DOTALL)
-        explanation_match = re.search(r'解説:\s*(.+)', raw_result, re.DOTALL)
+        # Use pre-compiled patterns to extract 訳文 and 解説
+        text_match = _RE_TRANSLATION_TEXT.search(raw_result)
+        explanation_match = _RE_EXPLANATION.search(raw_result)
 
         if text_match:
             text = text_match.group(1).strip()
@@ -832,7 +888,7 @@ class TranslationService:
     def _translate_pdf_streaming(
         self,
         input_path: Path,
-        processor: PdfProcessor,
+        processor: "PdfProcessor",
         reference_files: Optional[list[Path]],
         on_progress: Optional[ProgressCallback],
         output_language: str,

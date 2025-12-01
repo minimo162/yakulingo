@@ -180,14 +180,12 @@ class TestYakuLingoAppInit:
     """Tests for YakuLingoApp initialization"""
 
     @patch('yakulingo.ui.app.AppSettings')
-    @patch('yakulingo.ui.app.CopilotHandler')
     @patch('yakulingo.ui.app.get_default_settings_path')
     @patch('yakulingo.ui.app.get_default_prompts_dir')
     def test_app_creates_state(
         self,
         mock_prompts_dir,
         mock_settings_path,
-        mock_copilot_class,
         mock_settings_class,
     ):
         """Test that app creates AppState on init"""
@@ -201,14 +199,12 @@ class TestYakuLingoAppInit:
         assert isinstance(app.state, AppState)
 
     @patch('yakulingo.ui.app.AppSettings')
-    @patch('yakulingo.ui.app.CopilotHandler')
     @patch('yakulingo.ui.app.get_default_settings_path')
     @patch('yakulingo.ui.app.get_default_prompts_dir')
     def test_app_loads_settings(
         self,
         mock_prompts_dir,
         mock_settings_path,
-        mock_copilot_class,
         mock_settings_class,
     ):
         """Test that app loads settings on init"""
@@ -235,17 +231,16 @@ class TestYakuLingoAppEventHandlers:
     def app_with_mocks(self, mock_settings, mock_copilot, mock_nicegui):
         """Create app with mocked dependencies"""
         with patch('yakulingo.ui.app.AppSettings') as mock_settings_class:
-            with patch('yakulingo.ui.app.CopilotHandler') as mock_copilot_class:
-                with patch('yakulingo.ui.app.get_default_settings_path'):
-                    with patch('yakulingo.ui.app.get_default_prompts_dir'):
-                        mock_settings_class.load.return_value = mock_settings
-                        mock_copilot_class.return_value = mock_copilot
+            with patch('yakulingo.ui.app.get_default_settings_path'):
+                with patch('yakulingo.ui.app.get_default_prompts_dir'):
+                    mock_settings_class.load.return_value = mock_settings
 
-                        from yakulingo.ui.app import YakuLingoApp
-                        app = YakuLingoApp()
-                        app.copilot = mock_copilot
-                        app.settings = mock_settings
-                        yield app
+                    from yakulingo.ui.app import YakuLingoApp
+                    app = YakuLingoApp()
+                    # Inject mock copilot directly (CopilotHandler is lazy-loaded)
+                    app._copilot = mock_copilot
+                    app.settings = mock_settings
+                    yield app
 
     def test_tab_change_updates_state(self, app_with_mocks, mock_nicegui):
         """Test tab change updates state"""
@@ -345,16 +340,15 @@ class TestYakuLingoAppFileSelection:
     def app_with_service(self, mock_settings, mock_copilot, mock_translation_service, mock_nicegui):
         """Create app with translation service"""
         with patch('yakulingo.ui.app.AppSettings') as mock_settings_class:
-            with patch('yakulingo.ui.app.CopilotHandler') as mock_copilot_class:
-                with patch('yakulingo.ui.app.get_default_settings_path'):
-                    with patch('yakulingo.ui.app.get_default_prompts_dir'):
-                        mock_settings_class.load.return_value = mock_settings
-                        mock_copilot_class.return_value = mock_copilot
+            with patch('yakulingo.ui.app.get_default_settings_path'):
+                with patch('yakulingo.ui.app.get_default_prompts_dir'):
+                    mock_settings_class.load.return_value = mock_settings
 
-                        from yakulingo.ui.app import YakuLingoApp
-                        app = YakuLingoApp()
-                        app.translation_service = mock_translation_service
-                        yield app
+                    from yakulingo.ui.app import YakuLingoApp
+                    app = YakuLingoApp()
+                    app._copilot = mock_copilot
+                    app.translation_service = mock_translation_service
+                    yield app
 
     def test_select_file_success(
         self, app_with_service, mock_translation_service, mock_nicegui
@@ -421,14 +415,12 @@ class TestCreateApp:
     """Tests for create_app factory function"""
 
     @patch('yakulingo.ui.app.AppSettings')
-    @patch('yakulingo.ui.app.CopilotHandler')
     @patch('yakulingo.ui.app.get_default_settings_path')
     @patch('yakulingo.ui.app.get_default_prompts_dir')
     def test_create_app_returns_yakulingo_app(
         self,
         mock_prompts_dir,
         mock_settings_path,
-        mock_copilot_class,
         mock_settings_class,
     ):
         """Test create_app returns YakuLingoApp instance"""
@@ -589,17 +581,16 @@ class TestCopilotConnectionFlow:
     def app_with_copilot(self, mock_settings, mock_nicegui):
         """Create app with mocked Copilot"""
         with patch('yakulingo.ui.app.AppSettings') as mock_settings_class:
-            with patch('yakulingo.ui.app.CopilotHandler') as mock_copilot_class:
-                with patch('yakulingo.ui.app.get_default_settings_path'):
-                    with patch('yakulingo.ui.app.get_default_prompts_dir'):
-                        mock_settings_class.load.return_value = mock_settings
-                        mock_copilot = MagicMock()
-                        mock_copilot.is_connected = False
-                        mock_copilot_class.return_value = mock_copilot
+            with patch('yakulingo.ui.app.get_default_settings_path'):
+                with patch('yakulingo.ui.app.get_default_prompts_dir'):
+                    mock_settings_class.load.return_value = mock_settings
+                    mock_copilot = MagicMock()
+                    mock_copilot.is_connected = False
 
-                        from yakulingo.ui.app import YakuLingoApp
-                        app = YakuLingoApp()
-                        yield app, mock_copilot
+                    from yakulingo.ui.app import YakuLingoApp
+                    app = YakuLingoApp()
+                    app._copilot = mock_copilot
+                    yield app, mock_copilot
 
     def test_initial_connection_state(self, app_with_copilot):
         """Test initial state is disconnected"""
@@ -700,21 +691,21 @@ class TestDownloadHandler:
     def app_with_output(self, mock_settings, mock_nicegui, tmp_path):
         """Create app with output file"""
         with patch('yakulingo.ui.app.AppSettings') as mock_settings_class:
-            with patch('yakulingo.ui.app.CopilotHandler') as mock_copilot_class:
-                with patch('yakulingo.ui.app.get_default_settings_path'):
-                    with patch('yakulingo.ui.app.get_default_prompts_dir'):
-                        mock_settings_class.load.return_value = mock_settings
-                        mock_copilot_class.return_value = MagicMock()
+            with patch('yakulingo.ui.app.get_default_settings_path'):
+                with patch('yakulingo.ui.app.get_default_prompts_dir'):
+                    mock_settings_class.load.return_value = mock_settings
 
-                        from yakulingo.ui.app import YakuLingoApp
-                        app = YakuLingoApp()
+                    from yakulingo.ui.app import YakuLingoApp
+                    app = YakuLingoApp()
+                    # CopilotHandler is lazy-loaded, inject mock directly
+                    app._copilot = MagicMock()
 
-                        # Create actual output file
-                        output_file = tmp_path / "translated.xlsx"
-                        output_file.write_bytes(b"dummy content")
-                        app.state.output_file = output_file
+                    # Create actual output file
+                    output_file = tmp_path / "translated.xlsx"
+                    output_file.write_bytes(b"dummy content")
+                    app.state.output_file = output_file
 
-                        yield app, mock_nicegui
+                    yield app, mock_nicegui
 
     def test_download_with_existing_file(self, app_with_output):
         """Test download when file exists"""
@@ -725,15 +716,15 @@ class TestDownloadHandler:
     def test_download_without_file(self, mock_settings, mock_nicegui):
         """Test download when no output file"""
         with patch('yakulingo.ui.app.AppSettings') as mock_settings_class:
-            with patch('yakulingo.ui.app.CopilotHandler') as mock_copilot_class:
-                with patch('yakulingo.ui.app.get_default_settings_path'):
-                    with patch('yakulingo.ui.app.get_default_prompts_dir'):
-                        mock_settings_class.load.return_value = mock_settings
-                        mock_copilot_class.return_value = MagicMock()
+            with patch('yakulingo.ui.app.get_default_settings_path'):
+                with patch('yakulingo.ui.app.get_default_prompts_dir'):
+                    mock_settings_class.load.return_value = mock_settings
 
-                        from yakulingo.ui.app import YakuLingoApp
-                        app = YakuLingoApp()
-                        app.state.output_file = None
+                    from yakulingo.ui.app import YakuLingoApp
+                    app = YakuLingoApp()
+                    # CopilotHandler is lazy-loaded, inject mock directly
+                    app._copilot = MagicMock()
+                    app.state.output_file = None
 
-                        app._download()
-                        mock_nicegui.download.assert_not_called()
+                    app._download()
+                    mock_nicegui.download.assert_not_called()

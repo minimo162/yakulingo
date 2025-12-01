@@ -348,7 +348,7 @@ class TestCopilotHandlerTranslateSingle:
 
         result = handler.translate_single("テスト", "prompt")
 
-        handler.translate_sync.assert_called_once_with(["テスト"], "prompt", None)
+        handler.translate_sync.assert_called_once_with(["テスト"], "prompt", None, None)
         assert result == "Translated"
 
     def test_translate_single_handles_empty_result(self):
@@ -368,7 +368,7 @@ class TestCopilotHandlerTranslateSingle:
 
         result = handler.translate_single("テスト", "prompt", ref_files)
 
-        handler.translate_sync.assert_called_once_with(["テスト"], "prompt", ref_files)
+        handler.translate_sync.assert_called_once_with(["テスト"], "prompt", ref_files, None)
 
 
 class TestCopilotHandlerParseBatchResult:
@@ -494,13 +494,14 @@ class TestCopilotHandlerStartNewChat:
         handler = CopilotHandler()
 
         mock_button = Mock()
-        mock_button.click.side_effect = Exception("Click failed")
+        # Use AttributeError which is caught by start_new_chat
+        mock_button.click.side_effect = AttributeError("Click failed")
         mock_page = Mock()
         mock_page.query_selector.return_value = mock_button
 
         handler._page = mock_page
 
-        # Should not raise
+        # Should not raise (AttributeError is caught)
         handler.start_new_chat()
 
 

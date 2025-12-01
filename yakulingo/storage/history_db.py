@@ -6,9 +6,9 @@ Inspired by Nani Translate's local-first approach.
 
 import sqlite3
 import json
+import threading
 from pathlib import Path
 from typing import Optional
-from datetime import datetime
 
 from yakulingo.models.types import (
     HistoryEntry,
@@ -28,6 +28,8 @@ class HistoryDB:
     """
     SQLite database for storing translation history.
     Data is stored locally on user's device for privacy.
+
+    Uses connection pooling for better performance.
     """
 
     # Database configuration
@@ -36,15 +38,43 @@ class HistoryDB:
     def __init__(self, db_path: Optional[Path] = None):
         self.db_path = db_path or get_default_db_path()
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Thread-local storage for connections (one per thread)
+        self._local = threading.local()
+        self._lock = threading.Lock()
+
         self._init_db()
 
-    def _connect(self):
-        """Create a database connection with timeout."""
-        return sqlite3.connect(self.db_path, timeout=self.DB_TIMEOUT)
+    def _get_connection(self) -> sqlite3.Connection:
+        """
+        Get a database connection for the current thread.
+        Reuses existing connection if available (connection pooling).
+        """
+        conn = getattr(self._local, 'connection', None)
+        if conn is None:
+            conn = sqlite3.connect(
+                self.db_path,
+                timeout=self.DB_TIMEOUT,
+                check_same_thread=False
+            )
+            # Enable WAL mode for better concurrent read performance
+            conn.execute('PRAGMA journal_mode=WAL')
+            # Enable foreign keys
+            conn.execute('PRAGMA foreign_keys=ON')
+            self._local.connection = conn
+        return conn
+
+    def close(self):
+        """Close the connection for the current thread."""
+        conn = getattr(self._local, 'connection', None)
+        if conn is not None:
+            conn.close()
+            self._local.connection = None
 
     def _init_db(self):
         """Initialize database schema"""
-        with self._connect() as conn:
+        conn = self._get_connection()
+        with self._lock:
             # Create table with backward-compatible schema
             # (direction column kept for backward compatibility with existing DBs)
             conn.execute('''
@@ -77,8 +107,9 @@ class HistoryDB:
         Returns the ID of the inserted entry.
         """
         result_json = self._serialize_result(entry.result)
+        conn = self._get_connection()
 
-        with self._connect() as conn:
+        with self._lock:
             cursor = conn.execute(
                 '''
                 INSERT INTO history (source_text, direction, result_json, timestamp)
@@ -96,38 +127,39 @@ class HistoryDB:
 
     def get_recent(self, limit: int = 50) -> list[HistoryEntry]:
         """Get most recent history entries"""
-        with self._connect() as conn:
-            conn.row_factory = sqlite3.Row
-            rows = conn.execute(
-                '''
-                SELECT id, source_text, direction, result_json, timestamp
-                FROM history
-                ORDER BY timestamp DESC
-                LIMIT ?
-                ''',
-                (limit,)
-            ).fetchall()
+        conn = self._get_connection()
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            '''
+            SELECT id, source_text, direction, result_json, timestamp
+            FROM history
+            ORDER BY timestamp DESC
+            LIMIT ?
+            ''',
+            (limit,)
+        ).fetchall()
 
-            return [self._row_to_entry(row) for row in rows]
+        return [self._row_to_entry(row) for row in rows]
 
     def get_by_id(self, entry_id: int) -> Optional[HistoryEntry]:
         """Get a specific history entry by ID"""
-        with self._connect() as conn:
-            conn.row_factory = sqlite3.Row
-            row = conn.execute(
-                '''
-                SELECT id, source_text, direction, result_json, timestamp
-                FROM history
-                WHERE id = ?
-                ''',
-                (entry_id,)
-            ).fetchone()
+        conn = self._get_connection()
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            '''
+            SELECT id, source_text, direction, result_json, timestamp
+            FROM history
+            WHERE id = ?
+            ''',
+            (entry_id,)
+        ).fetchone()
 
-            return self._row_to_entry(row) if row else None
+        return self._row_to_entry(row) if row else None
 
     def delete(self, entry_id: int) -> bool:
         """Delete a history entry"""
-        with self._connect() as conn:
+        conn = self._get_connection()
+        with self._lock:
             cursor = conn.execute(
                 'DELETE FROM history WHERE id = ?',
                 (entry_id,)
@@ -137,7 +169,8 @@ class HistoryDB:
 
     def delete_by_timestamp(self, timestamp: str) -> bool:
         """Delete a history entry by timestamp"""
-        with self._connect() as conn:
+        conn = self._get_connection()
+        with self._lock:
             cursor = conn.execute(
                 'DELETE FROM history WHERE timestamp = ?',
                 (timestamp,)
@@ -147,58 +180,55 @@ class HistoryDB:
 
     def clear_all(self) -> int:
         """Clear all history entries. Returns number of deleted entries."""
-        with self._connect() as conn:
+        conn = self._get_connection()
+        with self._lock:
             cursor = conn.execute('DELETE FROM history')
             conn.commit()
             return cursor.rowcount
 
     def search(self, query: str, limit: int = 20) -> list[HistoryEntry]:
         """Search history by source text"""
-        with self._connect() as conn:
-            conn.row_factory = sqlite3.Row
-            rows = conn.execute(
-                '''
-                SELECT id, source_text, direction, result_json, timestamp
-                FROM history
-                WHERE source_text LIKE ?
-                ORDER BY timestamp DESC
-                LIMIT ?
-                ''',
-                (f'%{query}%', limit)
-            ).fetchall()
+        conn = self._get_connection()
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            '''
+            SELECT id, source_text, direction, result_json, timestamp
+            FROM history
+            WHERE source_text LIKE ?
+            ORDER BY timestamp DESC
+            LIMIT ?
+            ''',
+            (f'%{query}%', limit)
+        ).fetchall()
 
-            return [self._row_to_entry(row) for row in rows]
+        return [self._row_to_entry(row) for row in rows]
 
     def get_count(self) -> int:
         """Get total number of history entries"""
-        with self._connect() as conn:
-            result = conn.execute('SELECT COUNT(*) FROM history').fetchone()
-            return result[0] if result else 0
+        conn = self._get_connection()
+        result = conn.execute('SELECT COUNT(*) FROM history').fetchone()
+        return result[0] if result else 0
 
     def cleanup_old_entries(self, max_entries: int = 500) -> int:
         """
         Remove old entries to keep database size manageable.
         Returns number of deleted entries.
+
+        Optimized: Uses single query instead of count + delete.
         """
-        with self._connect() as conn:
-            # Get count
-            count = conn.execute('SELECT COUNT(*) FROM history').fetchone()[0]
-
-            if count <= max_entries:
-                return 0
-
-            # Delete oldest entries
-            to_delete = count - max_entries
+        conn = self._get_connection()
+        with self._lock:
+            # Single query: delete entries not in the most recent max_entries
             cursor = conn.execute(
                 '''
                 DELETE FROM history
-                WHERE id IN (
+                WHERE id NOT IN (
                     SELECT id FROM history
-                    ORDER BY timestamp ASC
+                    ORDER BY timestamp DESC
                     LIMIT ?
                 )
                 ''',
-                (to_delete,)
+                (max_entries,)
             )
             conn.commit()
             return cursor.rowcount

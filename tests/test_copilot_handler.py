@@ -195,7 +195,7 @@ class TestCopilotHandlerTranslateSingle:
 
         result = handler.translate_single("Test", "prompt")
 
-        handler.translate_sync.assert_called_once_with(["Test"], "prompt", None)
+        handler.translate_sync.assert_called_once_with(["Test"], "prompt", None, None)
         assert result == "Translated"
 
     def test_translate_single_empty_result(self):
@@ -323,10 +323,11 @@ class TestCopilotHandlerGPT5:
         handler = CopilotHandler()
 
         mock_page = Mock()
-        mock_page.query_selector.side_effect = Exception("Test error")
+        # Use AttributeError which is caught by _ensure_gpt5_enabled
+        mock_page.query_selector.side_effect = AttributeError("Test error")
         handler._page = mock_page
 
-        # Should not raise and return True
+        # Should not raise and return True (AttributeError is caught)
         result = handler._ensure_gpt5_enabled()
         assert result is True
 

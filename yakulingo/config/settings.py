@@ -20,6 +20,11 @@ class AppSettings:
     # Reference Files (用語集、参考資料など)
     reference_files: list[str] = field(default_factory=lambda: ["glossary.csv"])
 
+    # Cache for resolved reference file paths (not persisted)
+    _ref_paths_cache: Optional[tuple[str, list[Path]]] = field(
+        default=None, repr=False, compare=False
+    )
+
     # Output (常に別ファイルとして _translated 付きで保存)
     output_directory: Optional[str] = None  # None = same as input
 
@@ -112,7 +117,21 @@ class AppSettings:
         Returns only existing files within the base directory.
 
         Security: Validates paths to prevent path traversal attacks.
+
+        Performance: Caches results to avoid repeated path resolution.
+        Cache is invalidated when base_dir or reference_files change.
         """
+        # Create cache key from base_dir and reference_files
+        base_dir_str = str(base_dir.resolve())
+        cache_key = f"{base_dir_str}:{','.join(self.reference_files)}"
+
+        # Check cache
+        if self._ref_paths_cache is not None:
+            cached_key, cached_paths = self._ref_paths_cache
+            if cached_key == cache_key:
+                return cached_paths
+
+        # Resolve paths
         paths = []
         base_dir_resolved = base_dir.resolve()
 
@@ -133,7 +152,14 @@ class AppSettings:
 
             if resolved_path.exists():
                 paths.append(resolved_path)
+
+        # Update cache
+        self._ref_paths_cache = (cache_key, paths)
         return paths
+
+    def invalidate_reference_cache(self):
+        """Invalidate the reference file paths cache."""
+        self._ref_paths_cache = None
 
     def get_output_directory(self, input_path: Path) -> Path:
         """

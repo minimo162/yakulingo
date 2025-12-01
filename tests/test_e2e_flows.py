@@ -43,7 +43,7 @@ def mock_copilot():
     mock = MagicMock()
     mock.is_connected = True
 
-    def smart_translate_single(text, prompt, reference_files=None):
+    def smart_translate_single(text, prompt, reference_files=None, char_limit=None):
         """Simulate realistic translation response based on input"""
         if is_japanese_text(text):
             # Japanese → English
@@ -54,7 +54,7 @@ def mock_copilot():
             return f"""訳文: 「{text[:20]}...」の翻訳
 解説: これは標準的な翻訳です。"""
 
-    def smart_translate_batch(texts, prompt, reference_files=None):
+    def smart_translate_batch(texts, prompt, reference_files=None, char_limit=None):
         """Simulate batch translation"""
         results = []
         for text in texts:
@@ -381,7 +381,7 @@ class TestE2EFileTranslation:
         fail_then_succeed = MagicMock()
         call_count = [0]
 
-        def conditional_fail(texts, prompt, ref=None):
+        def conditional_fail(texts, prompt, ref=None, char_limit=None):
             call_count[0] += 1
             if call_count[0] == 1:
                 raise RuntimeError("Temporary API error")

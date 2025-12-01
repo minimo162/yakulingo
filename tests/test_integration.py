@@ -36,11 +36,11 @@ def mock_copilot_with_translation():
     mock = MagicMock()
     mock.is_connected = True
 
-    def translate_single(text, prompt, reference_files=None):
+    def translate_single(text, prompt, reference_files=None, char_limit=None):
         # Bidirectional translation mock
         return f"Translated: {text}"
 
-    def translate_sync(texts, prompt, reference_files=None):
+    def translate_sync(texts, prompt, reference_files=None, char_limit=None):
         # Bidirectional batch translation mock
         return [f"Translated: {t}" for t in texts]
 

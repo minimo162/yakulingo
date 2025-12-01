@@ -39,11 +39,23 @@ class TestCellTranslator:
         assert translator.should_translate("   ") is False
         assert translator.should_translate("\t\n") is False
 
-    def test_skip_short_text(self, translator):
-        """Very short text (< 2 chars) should not be translated"""
+    def test_skip_short_text_non_japanese(self, translator):
+        """Single non-Japanese characters should not be translated"""
         assert translator.should_translate("A") is False
         assert translator.should_translate("1") is False
-        assert translator.should_translate("あ") is False
+        assert translator.should_translate("@") is False
+
+    def test_translate_single_japanese_char(self, translator):
+        """Single Japanese characters (units, etc.) should be translated"""
+        # Common unit characters
+        assert translator.should_translate("億") is True
+        assert translator.should_translate("円") is True
+        assert translator.should_translate("個") is True
+        assert translator.should_translate("件") is True
+        assert translator.should_translate("名") is True
+        # Hiragana/Katakana
+        assert translator.should_translate("あ") is True
+        assert translator.should_translate("ア") is True
 
     # --- Numbers only ---
 
@@ -474,8 +486,8 @@ class TestTranslatorSpecialPatterns:
     def test_oku_notation(self, translator):
         """億 (oku) notation"""
         assert translator.should_translate("4,500億円") is True  # Should translate
-        # Single character "億" is < 2 chars, so skipped
-        assert translator.should_translate("億") is False  # Too short (< 2 chars)
+        # Single Japanese character "億" should be translated (it's a unit)
+        assert translator.should_translate("億") is True  # Japanese unit character
 
     def test_japanese_counter_suffixes(self, translator):
         """Japanese counter suffixes (年月日時分秒)"""

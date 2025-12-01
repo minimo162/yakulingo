@@ -53,6 +53,7 @@ class CellTranslator:
         - Email addresses
         - URLs
         - Product/Document codes
+        - Single non-Japanese characters (e.g., "A", "1")
         """
         if not text:
             return False
@@ -61,9 +62,10 @@ class CellTranslator:
         if not text:
             return False
 
-        # Very short text (likely labels)
+        # For single characters, only translate if it's Japanese
+        # (e.g., "億", "円", "個" should be translated)
         if len(text) < 2:
-            return False
+            return self._contains_japanese(text)
 
         # Check against skip patterns
         for regex in self._skip_regex:
@@ -71,6 +73,16 @@ class CellTranslator:
                 return False
 
         return True
+
+    def _contains_japanese(self, text: str) -> bool:
+        """Check if text contains Japanese characters (hiragana, katakana, kanji)."""
+        for char in text:
+            code = ord(char)
+            if (0x3040 <= code <= 0x309F or  # Hiragana
+                0x30A0 <= code <= 0x30FF or  # Katakana
+                0x4E00 <= code <= 0x9FFF):   # CJK Kanji
+                return True
+        return False
 
 
 class ParagraphTranslator:

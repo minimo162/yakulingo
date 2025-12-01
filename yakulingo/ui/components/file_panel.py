@@ -4,12 +4,12 @@ File translation panel - Nani-inspired clean design.
 Simple, focused, warm.
 """
 
-import tempfile
 from nicegui import ui, events
 from typing import Callable, Optional
 from pathlib import Path
 
 from yakulingo.ui.state import AppState, FileState
+from yakulingo.ui.utils import temp_file_manager
 from yakulingo.models.types import FileInfo, FileType
 
 
@@ -104,12 +104,12 @@ def _language_selector(state: AppState, on_change: Optional[Callable[[str], None
 
 
 def _drop_zone(on_file_select: Callable[[Path], None]):
-    """Simple drop zone"""
+    """Simple drop zone with managed temp files"""
 
     def handle_upload(e: events.UploadEventArguments):
         content = e.content.read()
-        temp_path = Path(tempfile.gettempdir()) / e.name
-        temp_path.write_bytes(content)
+        # Use temp file manager for automatic cleanup
+        temp_path = temp_file_manager.create_temp_file(content, e.name)
         on_file_select(temp_path)
 
     with ui.upload(

@@ -6,12 +6,12 @@ Text translation panel with language-specific UI.
 Designed for Japanese users.
 """
 
-import re
 from typing import Callable, Optional
 
 from nicegui import ui
 
 from yakulingo.ui.state import AppState
+from yakulingo.ui.utils import format_markdown_text
 from yakulingo.models.types import TranslationOption, TextTranslationResult
 
 
@@ -34,30 +34,33 @@ ACTION_ICONS = {
     'reply': 'reply',
 }
 
-# Paperclip/Attachment SVG icon (Nani-inspired)
+# Paperclip/Attachment SVG icon (Nani-inspired) with aria-label for accessibility
 ATTACH_SVG = '''
-<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="用語集を添付">
+    <title>添付</title>
     <path d="M21 12.3955L14.6912 18.7043C12.5027 20.8928 9.00168 20.8928 6.81321 18.7043C4.62474 16.5158 4.62474 13.0148 6.81321 10.8263L13.7574 3.88213C15.1624 2.47712 17.4266 2.47712 18.8316 3.88213C20.2366 5.28714 20.2366 7.55135 18.8316 8.95636L11.7861 15.9019C11.0836 16.6044 9.95152 16.6044 9.24902 15.9019C8.54651 15.1994 8.54651 14.0673 9.24902 13.3648L15.3588 7.25501"/>
 </svg>
 '''
 
-# YakuLingo avatar SVG (Apple icon - Nani-inspired)
+# YakuLingo avatar SVG (Apple icon - Nani-inspired) with aria-label for accessibility
 AVATAR_SVG = '''
-<svg viewBox="0 0 24 24" fill="currentColor" class="avatar-icon">
+<svg viewBox="0 0 24 24" fill="currentColor" class="avatar-icon" role="img" aria-label="YakuLingo">
+    <title>YakuLingo アシスタント</title>
     <path d="M17.318 5.955c-.834-.952-1.964-1.455-3.068-1.455-.789 0-1.475.194-2.072.487-.399.196-.748.436-1.178.436-.462 0-.865-.256-1.29-.468-.564-.281-1.195-.455-1.96-.455-1.14 0-2.322.529-3.168 1.534C3.41 7.425 3 9.26 3 11.314c0 2.554.944 5.298 2.432 7.106.847 1.03 1.63 1.58 2.568 1.58.652 0 1.061-.213 1.605-.473.579-.276 1.298-.619 2.395-.619 1.065 0 1.763.336 2.323.61.53.258.923.482 1.577.482.99 0 1.828-.639 2.632-1.594 1.127-1.337 1.672-2.728 1.962-3.555-1.313-.596-2.494-2.03-2.494-4.143 0-1.813.994-3.166 2.13-3.835-.844-1.143-2.044-1.918-3.332-1.918-.82 0-1.464.284-2.025.556a4.27 4.27 0 0 1-.387.175c.063-.033.128-.068.194-.106.524-.303 1.181-.681 1.736-.681.476 0 .829.139 1.148.28zM12.5 3c.735 0 1.578-.326 2.168-.902.533-.52.892-1.228.892-2.008 0-.053-.003-.107-.01-.158-.793.03-1.703.451-2.293 1.045-.51.507-.933 1.231-.933 2.023 0 .069.007.137.016.191.05.009.11.014.16.014z"/>
 </svg>
 '''
 
-# Language detection animated SVG (Nani-inspired)
+# Language detection animated SVG (Nani-inspired) with aria-label for accessibility
 LANG_DETECT_SVG = '''
-<svg viewBox="0 0 24 24" fill="none" class="lang-detect-icon" stroke-width="2">
+<svg viewBox="0 0 24 24" fill="none" class="lang-detect-icon" stroke-width="2" role="img" aria-label="言語自動検出">
+    <title>言語を自動検出</title>
     <defs>
-        <mask id="flow-top-mask">
+        <mask id="yakulingo-flow-top-mask">
             <rect x="-12" y="0" width="10" height="24" fill="white">
                 <animate attributeName="x" values="-12; 26" dur="1.2s" begin="0s" repeatCount="indefinite"/>
             </rect>
         </mask>
-        <mask id="flow-bottom-mask">
+        <mask id="yakulingo-flow-bottom-mask">
             <rect x="-12" y="0" width="10" height="24" fill="white">
                 <animate attributeName="x" values="-12; 26" dur="1.2s" begin="1.2s" repeatCount="indefinite"/>
             </rect>
@@ -70,11 +73,11 @@ LANG_DETECT_SVG = '''
             <path d="M18.5 8.5L21 6L18.5 3.5"/>
             <path d="M18.5 20.5L21 18L18.5 15.5"/>
         </g>
-        <g stroke="currentColor" mask="url(#flow-top-mask)">
+        <g stroke="currentColor" mask="url(#yakulingo-flow-top-mask)">
             <path d="M21 6H15.605C13.9724 5.99991 12.4425 6.95635 11.507 8.562L10.997 9.438C10.0617 11.0433 8.53229 11.9997 6.9 12H3"/>
             <path d="M18.5 8.5L21 6L18.5 3.5"/>
         </g>
-        <g stroke="currentColor" mask="url(#flow-bottom-mask)">
+        <g stroke="currentColor" mask="url(#yakulingo-flow-bottom-mask)">
             <path d="M21 18H15.603C13.9714 17.9999 12.4425 17.0444 11.507 15.4404L10.993 14.5596C10.0575 12.9556 8.52857 12.0001 6.897 12H3"/>
             <path d="M18.5 20.5L21 18L18.5 15.5"/>
         </g>
@@ -334,11 +337,8 @@ def _render_explanation(explanation: str):
         # Check if it's a bullet point
         if line.startswith('- ') or line.startswith('・'):
             text = line[2:].strip() if line.startswith('- ') else line[1:].strip()
-            # Convert markdown-style formatting to HTML
-            # **text** → <strong>text</strong>
-            text = re.sub(r'\*\*([^*]+)\*\*', r'<strong>\1</strong>', text)
-            # "text" → <strong><i>"</i>text<i>"</i></strong> for quoted terms
-            text = re.sub(r'"([^"]+)"', r'<strong><i>"</i>\1<i>"</i></strong>', text)
+            # Convert markdown-style formatting to HTML using utility function
+            text = format_markdown_text(text)
             bullet_items.append(text)
         else:
             non_bullet_lines.append(line)

@@ -1,0 +1,157 @@
+<html>
+<head>
+<title>YakuLingo</title>
+<HTA:APPLICATION
+    ID="YakuLingoSplash"
+    APPLICATIONNAME="YakuLingo Splash"
+    BORDER="none"
+    BORDERSTYLE="none"
+    CAPTION="no"
+    CONTEXTMENU="no"
+    INNERBORDER="no"
+    MAXIMIZEBUTTON="no"
+    MINIMIZEBUTTON="no"
+    NAVIGABLE="no"
+    SCROLL="no"
+    SCROLLFLAT="yes"
+    SELECTION="no"
+    SHOWINTASKBAR="no"
+    SINGLEINSTANCE="yes"
+    SYSMENU="no"
+    VERSION="1.0"
+    WINDOWSTATE="normal"
+/>
+<style>
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+body {
+    font-family: 'Segoe UI', 'Yu Gothic UI', 'Meiryo UI', sans-serif;
+    background: linear-gradient(135deg, #FFF8F6 0%, #FFDBD0 100%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    overflow: hidden;
+    user-select: none;
+}
+.container {
+    text-align: center;
+    animation: fadeIn 0.3s ease-out;
+}
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+.logo-icon {
+    width: 64px;
+    height: 64px;
+    background: #C04000;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 16px;
+    box-shadow: 0 4px 12px rgba(192, 64, 0, 0.3);
+}
+.logo-icon svg {
+    width: 36px;
+    height: 36px;
+    fill: white;
+}
+.app-name {
+    font-size: 24px;
+    font-weight: 600;
+    color: #1C1B1F;
+    letter-spacing: 1px;
+    margin-bottom: 24px;
+}
+.loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+.spinner {
+    width: 20px;
+    height: 20px;
+    border: 2px solid #FFDBD0;
+    border-top-color: #C04000;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+.loading-text {
+    font-size: 13px;
+    color: #79747E;
+}
+</style>
+<script language="VBScript">
+Dim fso, signalFile, checkInterval
+
+Sub Window_OnLoad()
+    ' Center window on screen
+    Dim screenWidth, screenHeight, winWidth, winHeight
+    winWidth = 320
+    winHeight = 200
+    screenWidth = window.screen.availWidth
+    screenHeight = window.screen.availHeight
+
+    window.resizeTo winWidth, winHeight
+    window.moveTo (screenWidth - winWidth) / 2, (screenHeight - winHeight) / 2
+
+    ' Setup signal file path
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    signalFile = fso.GetParentFolderName(document.location.pathname) & "\.splash_close"
+
+    ' Delete old signal file if exists
+    On Error Resume Next
+    If fso.FileExists(signalFile) Then
+        fso.DeleteFile signalFile, True
+    End If
+    On Error Goto 0
+
+    ' Start checking for close signal
+    checkInterval = window.setInterval(GetRef("CheckCloseSignal"), 200)
+
+    ' Auto-close after 30 seconds (timeout fallback)
+    window.setTimeout GetRef("AutoClose"), 30000
+End Sub
+
+Sub CheckCloseSignal()
+    On Error Resume Next
+    If fso.FileExists(signalFile) Then
+        window.clearInterval checkInterval
+        ' Delete signal file
+        fso.DeleteFile signalFile, True
+        window.close
+    End If
+    On Error Goto 0
+End Sub
+
+Sub AutoClose()
+    window.clearInterval checkInterval
+    window.close
+End Sub
+</script>
+</head>
+<body>
+<div class="container">
+    <div class="logo-icon">
+        <svg viewBox="0 0 24 24">
+            <path d="M12.87 15.07l-2.54-2.51.03-.03c1.74-1.94 2.98-4.17 3.71-6.53H17V4h-7V2H8v2H1v1.99h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11.76-2.04zM18.5 10h-2L12 22h2l1.12-3h4.75L21 22h2l-4.5-12zm-2.62 7l1.62-4.33L19.12 17h-3.24z"/>
+        </svg>
+    </div>
+    <div class="app-name">YakuLingo</div>
+    <div class="loading">
+        <div class="spinner"></div>
+        <span class="loading-text">Starting...</span>
+    </div>
+</div>
+</body>
+</html>

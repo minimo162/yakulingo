@@ -107,7 +107,7 @@ YakuLingo/
 |------|---------|-------|
 | `yakulingo/ui/app.py` | Main application orchestrator, handles UI events and coordinates services | ~664 |
 | `yakulingo/services/translation_service.py` | Coordinates file processors and batch translation | ~610 |
-| `yakulingo/services/copilot_handler.py` | Browser automation for M365 Copilot | ~455 |
+| `yakulingo/services/copilot_handler.py` | Browser automation for M365 Copilot | ~990 |
 | `yakulingo/services/updater.py` | GitHub Releases-based auto-update with Windows proxy support | ~746 |
 | `yakulingo/ui/styles.py` | M3 design tokens, CSS styling definitions | ~720 |
 | `yakulingo/ui/state.py` | Application state management | ~170 |
@@ -291,6 +291,14 @@ The `CopilotHandler` class automates Microsoft Edge browser:
 - Endpoint: `https://m365.cloud.microsoft/chat/?auth=2`
 - Handles Windows proxy detection from registry
 - Methods: `connect()`, `disconnect()`, `translate_sync()`
+
+### Browser Automation Reliability
+The handler uses explicit waits instead of fixed delays:
+- **Send button**: `wait_for_selector` with `:not([disabled])` to ensure button is enabled
+- **Menu display**: `wait_for_selector` for menu elements after clicking plus button
+- **File attachment**: Polls for attachment indicators (file chips, previews)
+- **New chat ready**: Waits for input field to become visible
+- **GPT-5 toggle**: Checked and enabled before each message send (handles delayed rendering)
 
 ## Auto-Update System
 

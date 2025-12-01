@@ -499,19 +499,35 @@ class CopilotHandler:
 
     def translate_sync(texts: list[str], prompt: str, reference_files: list[Path]) -> list[str]:
         """
-        1. プロンプトをCopilotに送信
-        2. 応答を待機（安定するまで）
-        3. 結果をパース
+        1. GPT-5トグルを有効化（送信前に確認）
+        2. プロンプトをCopilotに送信（送信ボタン有効化を待機）
+        3. 応答を待機（安定するまで）
+        4. 結果をパース
         """
 
     def disconnect() -> None:
         """ブラウザ接続を終了"""
+
+    def _ensure_gpt5_enabled(max_wait: float = 1.0) -> bool:
+        """
+        GPT-5トグルボタンを確認・有効化
+        - 送信直前に呼び出し（遅延描画対応）
+        - 複数の検出方法（CSS selector + JS parent traversal）
+        - ボタンが見つからない場合は静かにスキップ（将来の変更対応）
+        """
 ```
 
 **Edge起動設定:**
 - Profile: `%LOCALAPPDATA%/YakuLingo/EdgeProfile`
 - CDP Port: 9333
 - オプション: `--no-first-run --no-default-browser-check`
+
+**ブラウザ操作の信頼性:**
+- 固定sleep()の代わりにPlaywrightの`wait_for_selector`を使用
+- 送信ボタン: `:not([disabled])`条件で有効化を待機
+- メニュー表示: `div[role="menu"]`の表示を確認
+- ファイル添付: 添付インジケータをポーリングで確認
+- GPT-5トグル: 送信直前に状態確認・必要に応じて有効化
 
 ### 6.2 TranslationService
 

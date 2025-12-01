@@ -98,7 +98,7 @@ class UpdateNotification:
         if requires_reinstall:
             banner_classes += 'warning-banner'  # M3 warning colors
         else:
-            banner_classes += 'bg-primary text-white'
+            banner_classes += 'primary-banner'  # M3 primary colors
 
         with ui.element('div').classes(banner_classes) as banner:
             self._notification_banner = banner
@@ -213,7 +213,7 @@ class UpdateNotification:
                         ui.button(
                             '閉じる',
                             on_click=dialog.close,
-                        ).props('color=primary')
+                        ).classes('btn-primary')
             else:
                 # 通常のアップデート
                 with ui.row().classes('w-full justify-end gap-2'):
@@ -225,7 +225,7 @@ class UpdateNotification:
                     ui.button(
                         'ダウンロード',
                         on_click=lambda: self._start_download(info, dialog),
-                    ).props('color=primary')
+                    ).classes('btn-primary')
 
         dialog.open()
 
@@ -250,7 +250,9 @@ class UpdateNotification:
                     ui.spinner('dots', size='md').classes('text-primary')
                     ui.label('ダウンロード中...').classes('text-base font-semibold')
 
-                progress_bar = ui.linear_progress(value=0).classes('w-full')
+                # Custom progress bar matching file_panel style
+                with ui.element('div').classes('progress-track w-full'):
+                    progress_bar_inner = ui.element('div').classes('progress-bar').style('width: 0%')
                 progress_label = ui.label('0%').classes('text-xs text-muted text-center w-full')
 
         progress_dialog.open()
@@ -258,7 +260,7 @@ class UpdateNotification:
         def on_progress(downloaded: int, total: int):
             if total > 0:
                 pct = downloaded / total
-                progress_bar.set_value(pct)
+                progress_bar_inner.style(f'width: {int(pct * 100)}%')
                 progress_label.set_text(f'{int(pct * 100)}% ({downloaded // 1024} KB / {total // 1024} KB)')
 
         try:
@@ -287,11 +289,11 @@ class UpdateNotification:
                 ).classes('text-sm text-center text-muted')
 
                 with ui.row().classes('w-full justify-end gap-2 mt-2'):
-                    ui.button('後で', on_click=dialog.close).props('flat')
+                    ui.button('後で', on_click=dialog.close).props('flat').classes('text-muted')
                     ui.button(
                         'インストール',
                         on_click=lambda: self._do_install(zip_path, dialog),
-                    ).props('color=primary')
+                    ).classes('btn-primary')
 
         dialog.open()
 

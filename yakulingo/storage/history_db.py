@@ -16,6 +16,10 @@ from yakulingo.models.types import (
     TranslationOption,
 )
 
+# Module logger
+import logging
+logger = logging.getLogger(__name__)
+
 
 def get_default_db_path() -> Path:
     """Get default database path in user's home directory"""
@@ -104,110 +108,142 @@ class HistoryDB:
     def add(self, entry: HistoryEntry) -> int:
         """
         Add entry to history.
-        Returns the ID of the inserted entry.
+        Returns the ID of the inserted entry, or -1 on error.
         """
-        result_json = self._serialize_result(entry.result)
-        conn = self._get_connection()
+        try:
+            result_json = self._serialize_result(entry.result)
+            conn = self._get_connection()
 
-        with self._lock:
-            cursor = conn.execute(
-                '''
-                INSERT INTO history (source_text, direction, result_json, timestamp)
-                VALUES (?, ?, ?, ?)
-                ''',
-                (
-                    entry.source_text,
-                    'bidirectional',  # Always bidirectional now
-                    result_json,
-                    entry.timestamp,
+            with self._lock:
+                cursor = conn.execute(
+                    '''
+                    INSERT INTO history (source_text, direction, result_json, timestamp)
+                    VALUES (?, ?, ?, ?)
+                    ''',
+                    (
+                        entry.source_text,
+                        'bidirectional',  # Always bidirectional now
+                        result_json,
+                        entry.timestamp,
+                    )
                 )
-            )
-            conn.commit()
-            return cursor.lastrowid
+                conn.commit()
+                return cursor.lastrowid
+        except sqlite3.Error as e:
+            logger.warning("Failed to add history entry: %s", e)
+            return -1
 
     def get_recent(self, limit: int = 50) -> list[HistoryEntry]:
         """Get most recent history entries"""
-        conn = self._get_connection()
-        conn.row_factory = sqlite3.Row
-        rows = conn.execute(
-            '''
-            SELECT id, source_text, direction, result_json, timestamp
-            FROM history
-            ORDER BY timestamp DESC
-            LIMIT ?
-            ''',
-            (limit,)
-        ).fetchall()
+        try:
+            conn = self._get_connection()
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                '''
+                SELECT id, source_text, direction, result_json, timestamp
+                FROM history
+                ORDER BY timestamp DESC
+                LIMIT ?
+                ''',
+                (limit,)
+            ).fetchall()
 
-        return [self._row_to_entry(row) for row in rows]
+            return [self._row_to_entry(row) for row in rows]
+        except sqlite3.Error as e:
+            logger.warning("Failed to get recent history: %s", e)
+            return []
 
     def get_by_id(self, entry_id: int) -> Optional[HistoryEntry]:
         """Get a specific history entry by ID"""
-        conn = self._get_connection()
-        conn.row_factory = sqlite3.Row
-        row = conn.execute(
-            '''
-            SELECT id, source_text, direction, result_json, timestamp
-            FROM history
-            WHERE id = ?
-            ''',
-            (entry_id,)
-        ).fetchone()
+        try:
+            conn = self._get_connection()
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                '''
+                SELECT id, source_text, direction, result_json, timestamp
+                FROM history
+                WHERE id = ?
+                ''',
+                (entry_id,)
+            ).fetchone()
 
-        return self._row_to_entry(row) if row else None
+            return self._row_to_entry(row) if row else None
+        except sqlite3.Error as e:
+            logger.warning("Failed to get history entry by id %d: %s", entry_id, e)
+            return None
 
     def delete(self, entry_id: int) -> bool:
         """Delete a history entry"""
-        conn = self._get_connection()
-        with self._lock:
-            cursor = conn.execute(
-                'DELETE FROM history WHERE id = ?',
-                (entry_id,)
-            )
-            conn.commit()
-            return cursor.rowcount > 0
+        try:
+            conn = self._get_connection()
+            with self._lock:
+                cursor = conn.execute(
+                    'DELETE FROM history WHERE id = ?',
+                    (entry_id,)
+                )
+                conn.commit()
+                return cursor.rowcount > 0
+        except sqlite3.Error as e:
+            logger.warning("Failed to delete history entry %d: %s", entry_id, e)
+            return False
 
     def delete_by_timestamp(self, timestamp: str) -> bool:
         """Delete a history entry by timestamp"""
-        conn = self._get_connection()
-        with self._lock:
-            cursor = conn.execute(
-                'DELETE FROM history WHERE timestamp = ?',
-                (timestamp,)
-            )
-            conn.commit()
-            return cursor.rowcount > 0
+        try:
+            conn = self._get_connection()
+            with self._lock:
+                cursor = conn.execute(
+                    'DELETE FROM history WHERE timestamp = ?',
+                    (timestamp,)
+                )
+                conn.commit()
+                return cursor.rowcount > 0
+        except sqlite3.Error as e:
+            logger.warning("Failed to delete history entry by timestamp %s: %s", timestamp, e)
+            return False
 
     def clear_all(self) -> int:
         """Clear all history entries. Returns number of deleted entries."""
-        conn = self._get_connection()
-        with self._lock:
-            cursor = conn.execute('DELETE FROM history')
-            conn.commit()
-            return cursor.rowcount
+        try:
+            conn = self._get_connection()
+            with self._lock:
+                cursor = conn.execute('DELETE FROM history')
+                conn.commit()
+                return cursor.rowcount
+        except sqlite3.Error as e:
+            logger.warning("Failed to clear history: %s", e)
+            return 0
 
     def search(self, query: str, limit: int = 20) -> list[HistoryEntry]:
         """Search history by source text"""
-        conn = self._get_connection()
-        conn.row_factory = sqlite3.Row
-        rows = conn.execute(
-            '''
-            SELECT id, source_text, direction, result_json, timestamp
-            FROM history
-            WHERE source_text LIKE ?
-            ORDER BY timestamp DESC
-            LIMIT ?
-            ''',
-            (f'%{query}%', limit)
-        ).fetchall()
+        try:
+            conn = self._get_connection()
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                '''
+                SELECT id, source_text, direction, result_json, timestamp
+                FROM history
+                WHERE source_text LIKE ?
+                ORDER BY timestamp DESC
+                LIMIT ?
+                ''',
+                (f'%{query}%', limit)
+            ).fetchall()
 
-        return [self._row_to_entry(row) for row in rows]
+            return [self._row_to_entry(row) for row in rows]
+        except sqlite3.Error as e:
+            logger.warning("Failed to search history: %s", e)
+            return []
 
     def get_count(self) -> int:
         """Get total number of history entries"""
-        conn = self._get_connection()
-        result = conn.execute('SELECT COUNT(*) FROM history').fetchone()
-        return result[0] if result else 0
+        try:
+            conn = self._get_connection()
+            result = conn.execute('SELECT COUNT(*) FROM history').fetchone()
+            return result[0] if result else 0
+        except sqlite3.Error as e:
+            logger.warning("Failed to get history count: %s", e)
+            return 0
 
     def cleanup_old_entries(self, max_entries: int = 500) -> int:
         """
@@ -216,22 +252,26 @@ class HistoryDB:
 
         Optimized: Uses single query instead of count + delete.
         """
-        conn = self._get_connection()
-        with self._lock:
-            # Single query: delete entries not in the most recent max_entries
-            cursor = conn.execute(
-                '''
-                DELETE FROM history
-                WHERE id NOT IN (
-                    SELECT id FROM history
-                    ORDER BY timestamp DESC
-                    LIMIT ?
+        try:
+            conn = self._get_connection()
+            with self._lock:
+                # Single query: delete entries not in the most recent max_entries
+                cursor = conn.execute(
+                    '''
+                    DELETE FROM history
+                    WHERE id NOT IN (
+                        SELECT id FROM history
+                        ORDER BY timestamp DESC
+                        LIMIT ?
+                    )
+                    ''',
+                    (max_entries,)
                 )
-                ''',
-                (max_entries,)
-            )
-            conn.commit()
-            return cursor.rowcount
+                conn.commit()
+                return cursor.rowcount
+        except sqlite3.Error as e:
+            logger.warning("Failed to cleanup old history entries: %s", e)
+            return 0
 
     def _serialize_result(self, result: TextTranslationResult) -> str:
         """Serialize TextTranslationResult to JSON"""

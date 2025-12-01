@@ -460,9 +460,9 @@ class TranslationService:
                 error_message=str(e),
                 duration_seconds=time.time() - start_time,
             )
-        except Exception as e:
-            # Catch all other exceptions from external API calls
-            logger.exception("Unexpected error during text translation: %s", e)
+        except (RuntimeError, ValueError, ConnectionError, TimeoutError) as e:
+            # Catch specific exceptions from Copilot API calls
+            logger.exception("Error during text translation: %s", e)
             return TranslationResult(
                 status=TranslationStatus.FAILED,
                 error_message=str(e),
@@ -565,9 +565,9 @@ class TranslationService:
                 output_language="en",  # Default
                 error_message=str(e),
             )
-        except Exception as e:
-            # Catch all other exceptions from external API calls
-            logger.exception("Unexpected error during text translation with options: %s", e)
+        except (RuntimeError, ValueError, ConnectionError, TimeoutError) as e:
+            # Catch specific exceptions from Copilot API calls
+            logger.exception("Error during text translation with options: %s", e)
             return TextTranslationResult(
                 source_text=text,
                 source_char_count=len(text),
@@ -624,9 +624,9 @@ class TranslationService:
         except OSError as e:
             logger.warning("File I/O error during translation adjustment: %s", e)
             return None
-        except Exception as e:
-            # Catch all other exceptions from external API calls
-            logger.exception("Unexpected error during translation adjustment: %s", e)
+        except (RuntimeError, ValueError, ConnectionError, TimeoutError) as e:
+            # Catch specific exceptions from Copilot API calls
+            logger.exception("Error during translation adjustment: %s", e)
             return None
 
     def _parse_multi_option_result(self, raw_result: str) -> list[TranslationOption]:
@@ -747,8 +747,8 @@ class TranslationService:
                 start_time,
             )
 
-        except Exception as e:
-            # Catch all exceptions for graceful error handling
+        except (OSError, RuntimeError, ValueError, ConnectionError, TimeoutError) as e:
+            # Catch specific exceptions for graceful error handling
             logger.exception("Translation failed: %s", e)
             return TranslationResult(
                 status=TranslationStatus.FAILED,

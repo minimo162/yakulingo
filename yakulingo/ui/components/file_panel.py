@@ -175,10 +175,13 @@ def _drop_zone(on_file_select: Callable[[Path], None]):
     """Simple drop zone with managed temp files"""
 
     def handle_upload(e: events.UploadEventArguments):
-        content = e.content.read()
-        # Use temp file manager for automatic cleanup
-        temp_path = temp_file_manager.create_temp_file(content, e.name)
-        on_file_select(temp_path)
+        try:
+            content = e.content.read()
+            # Use temp file manager for automatic cleanup
+            temp_path = temp_file_manager.create_temp_file(content, e.name)
+            on_file_select(temp_path)
+        except OSError as err:
+            ui.notify(f'ファイルの読み込みに失敗しました: {err}', type='negative')
 
     with ui.upload(
         on_upload=handle_upload,

@@ -648,10 +648,14 @@ del "%~f0"
             f.write(batch_content)
 
         # バッチファイルを実行（新しいウィンドウで）
-        subprocess.Popen(
-            ["cmd", "/c", "start", "", str(batch_path)],
-            creationflags=subprocess.CREATE_NEW_CONSOLE,
-        )
+        try:
+            subprocess.Popen(
+                ["cmd", "/c", "start", "", str(batch_path)],
+                creationflags=subprocess.CREATE_NEW_CONSOLE,
+            )
+        except OSError as e:
+            logger.error("Failed to launch update batch file: %s", e)
+            return False
 
         return True
 
@@ -727,7 +731,11 @@ rm "$0"
         os.chmod(script_path, 0o755)
 
         # スクリプトを実行
-        subprocess.Popen([str(script_path)])
+        try:
+            subprocess.Popen([str(script_path)])
+        except OSError as e:
+            logger.error("Failed to launch update script: %s", e)
+            return False
 
         return True
 

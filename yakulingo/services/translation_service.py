@@ -121,7 +121,7 @@ class BatchTranslator:
 
     # Default values (used when settings not provided)
     DEFAULT_MAX_BATCH_SIZE = 50      # Blocks per request
-    DEFAULT_MAX_CHARS_PER_BATCH = 10000  # Characters per request
+    DEFAULT_MAX_CHARS_PER_BATCH = 7000   # Characters per batch (fits in 8000 with ~1000 char template)
     DEFAULT_COPILOT_CHAR_LIMIT = 7500  # Copilot input limit (Free: 8000, Paid: 128000)
 
     def __init__(

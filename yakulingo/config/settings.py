@@ -30,7 +30,7 @@ class AppSettings:
 
     # Advanced
     max_batch_size: int = 50            # Max texts per Copilot request
-    max_chars_per_batch: int = 10000    # Max characters per Copilot request
+    max_chars_per_batch: int = 7000     # Max characters per batch (fits in 8000 with template)
     request_timeout: int = 120          # Seconds
     max_retries: int = 3
 

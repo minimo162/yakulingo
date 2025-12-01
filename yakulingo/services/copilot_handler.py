@@ -145,13 +145,13 @@ class CopilotHandler:
 
         # Kill any existing process on our port
         if self._is_port_in_use():
-            print("Closing previous Edge...", end="", flush=True)
+            logger.info("Closing previous Edge...")
             self._kill_existing_translator_edge()
             time.sleep(1)
-            print(" done")
+            logger.info("Previous Edge closed")
 
         # Start new Edge with our dedicated port and profile
-        print("Starting translator Edge...", end="", flush=True)
+        logger.info("Starting translator Edge...")
         try:
             local_cwd = os.environ.get("SYSTEMROOT", r"C:\Windows")
             creation_flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
@@ -171,7 +171,7 @@ class CopilotHandler:
             for i in range(20):
                 time.sleep(0.3)
                 if self._is_port_in_use():
-                    print(" done")
+                    logger.info("Edge started successfully")
                     return True
 
             logger.warning("Edge startup timeout")
@@ -212,7 +212,7 @@ class CopilotHandler:
         def report(msg: str):
             if on_progress:
                 on_progress(msg)
-            print(msg)
+            logger.info(msg)
 
         try:
             # Start Edge if needed

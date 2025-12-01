@@ -71,6 +71,7 @@ from yakulingo.models.types import (
     TranslationOption,
     FileInfo,
     FileType,
+    TextBlock,
     ProgressCallback,
 )
 from yakulingo.config.settings import AppSettings
@@ -81,6 +82,31 @@ from yakulingo.processors.excel_processor import ExcelProcessor
 from yakulingo.processors.word_processor import WordProcessor
 from yakulingo.processors.pptx_processor import PptxProcessor
 from yakulingo.processors.pdf_processor import PdfProcessor
+
+
+def scale_progress(progress: TranslationProgress, start: int, end: int, phase: TranslationPhase, phase_detail: Optional[str] = None) -> TranslationProgress:
+    """
+    Scale batch progress percentage to a target range.
+
+    Args:
+        progress: Original progress (0-100)
+        start: Start of target range (e.g., 10)
+        end: End of target range (e.g., 90)
+        phase: Current translation phase
+        phase_detail: Optional phase detail string
+
+    Returns:
+        New TranslationProgress with scaled percentage
+    """
+    range_size = end - start
+    scaled = start + int(progress.percentage * range_size)
+    return TranslationProgress(
+        current=scaled,
+        total=100,
+        status=progress.status,
+        phase=phase,
+        phase_detail=phase_detail,
+    )
 
 
 class BatchTranslator:
@@ -106,7 +132,7 @@ class BatchTranslator:
 
     def translate_blocks(
         self,
-        blocks: list,
+        blocks: List[TextBlock],
         reference_files: Optional[List[Path]] = None,
         on_progress: Optional[ProgressCallback] = None,
         output_language: str = "en",
@@ -172,7 +198,7 @@ class BatchTranslator:
 
         return results
 
-    def _create_batches(self, blocks: list) -> list[list]:
+    def _create_batches(self, blocks: List[TextBlock]) -> List[List[TextBlock]]:
         """Split blocks into batches"""
         batches = []
         current_batch = []
@@ -585,13 +611,7 @@ class TranslationService:
         def batch_progress(progress: TranslationProgress):
             if on_progress:
                 # Scale batch progress to 10-90 range
-                scaled = 10 + int(progress.percentage * 80)
-                on_progress(TranslationProgress(
-                    current=scaled,
-                    total=100,
-                    status=progress.status,
-                    phase=TranslationPhase.TRANSLATING,
-                ))
+                on_progress(scale_progress(progress, 10, 90, TranslationPhase.TRANSLATING))
 
         translations = self.batch_translator.translate_blocks(
             blocks,
@@ -724,13 +744,9 @@ class TranslationService:
         def batch_progress(progress: TranslationProgress):
             if on_progress:
                 # Scale to 40-90% range
-                scaled = 40 + int(progress.percentage * 50)
-                on_progress(TranslationProgress(
-                    current=scaled,
-                    total=100,
-                    status=progress.status,
-                    phase=TranslationPhase.TRANSLATING,
-                    phase_detail=f"Batch {progress.current}/{progress.total}",
+                on_progress(scale_progress(
+                    progress, 40, 90, TranslationPhase.TRANSLATING,
+                    phase_detail=f"Batch {progress.current}/{progress.total}"
                 ))
 
         translations = self.batch_translator.translate_blocks(

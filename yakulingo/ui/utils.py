@@ -8,8 +8,9 @@ import atexit
 import logging
 import re
 import tempfile
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Optional, Callable, Set
+from typing import Optional, Callable, Set, Iterator
 from weakref import WeakSet
 
 from nicegui import ui
@@ -82,6 +83,34 @@ class TempFileManager:
                 self._temp_dir.rmdir()
             except Exception as e:
                 logger.debug("Failed to remove temp directory '%s': %s", self._temp_dir, e)
+
+    @contextmanager
+    def temp_context(self, prefix: str = 'yakulingo_ctx_') -> Iterator[Path]:
+        """
+        Context manager for temporary directory with automatic cleanup.
+
+        Usage:
+            with temp_file_manager.temp_context() as temp_dir:
+                temp_file = temp_dir / "myfile.txt"
+                temp_file.write_text("content")
+                # ... use temp_file
+            # temp_dir is automatically cleaned up here
+
+        Args:
+            prefix: Prefix for the temporary directory name
+
+        Yields:
+            Path to a temporary directory that will be cleaned up on exit
+        """
+        import shutil
+        temp_dir = Path(tempfile.mkdtemp(prefix=prefix))
+        try:
+            yield temp_dir
+        finally:
+            try:
+                shutil.rmtree(temp_dir)
+            except Exception as e:
+                logger.debug("Failed to cleanup temp context directory '%s': %s", temp_dir, e)
 
 
 # Singleton instance

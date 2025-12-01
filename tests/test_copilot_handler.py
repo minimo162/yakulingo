@@ -460,15 +460,17 @@ class TestStreamingResponse:
         handler = CopilotHandler()
 
         mock_page = MagicMock()
-        # Mock reasoning element
+        # Mock reasoning element - return fixed values instead of side_effect list
         mock_cot = MagicMock()
-        mock_cot.query_selector.side_effect = [
-            MagicMock(inner_text=MagicMock(return_value="推論中...")),  # .fui-Text
-            MagicMock(inner_text=MagicMock(return_value="ステップ1\nステップ2")),  # activities
-        ]
+        mock_fui_text = MagicMock()
+        mock_fui_text.inner_text.return_value = "推論中..."
+        mock_activities = MagicMock()
+        mock_activities.inner_text.return_value = "ステップ1\nステップ2"
+        mock_cot.query_selector.return_value = mock_fui_text  # Return same mock always
+
         # Mock response element
         mock_response = MagicMock()
-        mock_response.inner_text.return_value = "回答テキスト"
+        mock_response.inner_text.return_value = "テスト回答"  # Fixed return value
 
         def query_selector_side_effect(selector):
             if 'ChainOfThought' in selector:
@@ -484,8 +486,6 @@ class TestStreamingResponse:
         content_calls = []
 
         with patch("time.sleep"):
-            # Return stable content after first check
-            mock_response.inner_text.side_effect = ["テスト回答", "テスト回答", "テスト回答", "テスト回答"]
             result = handler.get_response_streaming(
                 on_reasoning=lambda t: reasoning_calls.append(t),
                 on_content=lambda t: content_calls.append(t),
@@ -760,13 +760,14 @@ class TestCopilotHandlerLoginDetection:
     def test_check_copilot_state_login_required_no_chat_ui(self):
         """_check_copilot_state returns LOGIN_REQUIRED when on copilot URL but no chat UI"""
         from yakulingo.services.copilot_handler import ConnectionState
+        from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
         handler = CopilotHandler()
 
         mock_page = MagicMock()
         mock_page.url = "https://m365.cloud.microsoft/chat/?auth=2"
-        # All selectors fail to find elements
-        mock_page.wait_for_selector.side_effect = Exception("Element not found")
+        # All selectors fail to find elements - use PlaywrightTimeoutError
+        mock_page.wait_for_selector.side_effect = PlaywrightTimeoutError("Element not found")
         handler._page = mock_page
 
         result = handler._check_copilot_state(timeout=1)

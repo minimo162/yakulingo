@@ -492,14 +492,12 @@ class CopilotHandler:
         self._connected = False
 
         # Use suppress for cleanup - we want to continue even if errors occur
-        error_types = _get_playwright_errors()
-        PlaywrightError = error_types['Error']
-
-        with suppress(PlaywrightError, OSError):
+        # Catch all exceptions during cleanup to ensure resources are released
+        with suppress(Exception):
             if self._browser:
                 self._browser.close()
 
-        with suppress(PlaywrightError, OSError):
+        with suppress(Exception):
             if self._playwright:
                 self._playwright.stop()
 

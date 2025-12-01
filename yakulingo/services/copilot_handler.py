@@ -20,27 +20,75 @@ from typing import Optional, Callable, List
 # Module logger
 logger = logging.getLogger(__name__)
 
-# Playwright imports (lazy loaded)
-_playwright = None
-_sync_playwright = None
-_playwright_errors = None
+
+class PlaywrightManager:
+    """
+    Thread-safe singleton manager for Playwright imports.
+
+    Provides lazy loading of Playwright modules to avoid import errors
+    when Playwright is not installed or browser is not available.
+    """
+
+    _instance = None
+    _lock = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            import threading
+            cls._lock = threading.Lock()
+            with cls._lock:
+                # Double-check locking pattern
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+                    cls._instance._playwright_types = None
+                    cls._instance._sync_playwright = None
+                    cls._instance._error_types = None
+                    cls._instance._initialized = False
+        return cls._instance
+
+    def _ensure_initialized(self):
+        """Lazy initialization of Playwright imports."""
+        if not self._initialized:
+            with self._lock:
+                if not self._initialized:
+                    from playwright.sync_api import (
+                        sync_playwright,
+                        Page,
+                        BrowserContext,
+                        TimeoutError as PlaywrightTimeoutError,
+                        Error as PlaywrightError,
+                    )
+                    self._playwright_types = {'Page': Page, 'BrowserContext': BrowserContext}
+                    self._sync_playwright = sync_playwright
+                    self._error_types = {
+                        'TimeoutError': PlaywrightTimeoutError,
+                        'Error': PlaywrightError,
+                    }
+                    self._initialized = True
+
+    def get_playwright(self):
+        """Get Playwright types and sync_playwright function."""
+        self._ensure_initialized()
+        return self._playwright_types, self._sync_playwright
+
+    def get_error_types(self):
+        """Get Playwright error types for exception handling."""
+        self._ensure_initialized()
+        return self._error_types
+
+
+# Global singleton instance
+_playwright_manager = PlaywrightManager()
 
 
 def _get_playwright():
-    """Lazy import playwright"""
-    global _playwright, _sync_playwright, _playwright_errors
-    if _playwright is None:
-        from playwright.sync_api import sync_playwright, Page, BrowserContext, TimeoutError as PlaywrightTimeoutError, Error as PlaywrightError
-        _playwright = {'Page': Page, 'BrowserContext': BrowserContext}
-        _sync_playwright = sync_playwright
-        _playwright_errors = {'TimeoutError': PlaywrightTimeoutError, 'Error': PlaywrightError}
-    return _playwright, _sync_playwright
+    """Get Playwright types (backward compatible wrapper)."""
+    return _playwright_manager.get_playwright()
 
 
 def _get_playwright_errors():
-    """Get Playwright error types (lazy loaded)"""
-    _get_playwright()  # Ensure playwright is loaded
-    return _playwright_errors
+    """Get Playwright error types (backward compatible wrapper)."""
+    return _playwright_manager.get_error_types()
 
 
 class ConnectionState:

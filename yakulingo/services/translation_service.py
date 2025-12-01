@@ -114,13 +114,24 @@ class BatchTranslator:
     Handles batch translation of text blocks.
     """
 
-    MAX_BATCH_SIZE = 50      # Blocks per request
-    MAX_CHARS_PER_BATCH = 10000  # Characters per request
+    # Default values (used when settings not provided)
+    DEFAULT_MAX_BATCH_SIZE = 50      # Blocks per request
+    DEFAULT_MAX_CHARS_PER_BATCH = 10000  # Characters per request
 
-    def __init__(self, copilot: CopilotHandler, prompt_builder: PromptBuilder):
+    def __init__(
+        self,
+        copilot: CopilotHandler,
+        prompt_builder: PromptBuilder,
+        max_batch_size: Optional[int] = None,
+        max_chars_per_batch: Optional[int] = None,
+    ):
         self.copilot = copilot
         self.prompt_builder = prompt_builder
         self._cancel_requested = False
+
+        # Use provided values or defaults
+        self.max_batch_size = max_batch_size or self.DEFAULT_MAX_BATCH_SIZE
+        self.max_chars_per_batch = max_chars_per_batch or self.DEFAULT_MAX_CHARS_PER_BATCH
 
     def cancel(self) -> None:
         """Request cancellation of batch translation."""
@@ -199,14 +210,14 @@ class BatchTranslator:
         return results
 
     def _create_batches(self, blocks: List[TextBlock]) -> List[List[TextBlock]]:
-        """Split blocks into batches"""
+        """Split blocks into batches based on configured limits."""
         batches = []
         current_batch = []
         current_chars = 0
 
         for block in blocks:
-            if (len(current_batch) >= self.MAX_BATCH_SIZE or
-                current_chars + len(block.text) > self.MAX_CHARS_PER_BATCH):
+            if (len(current_batch) >= self.max_batch_size or
+                current_chars + len(block.text) > self.max_chars_per_batch):
                 if current_batch:
                     batches.append(current_batch)
                 current_batch = []
@@ -236,7 +247,12 @@ class TranslationService:
         self.copilot = copilot
         self.config = config
         self.prompt_builder = PromptBuilder(prompts_dir)
-        self.batch_translator = BatchTranslator(copilot, self.prompt_builder)
+        self.batch_translator = BatchTranslator(
+            copilot,
+            self.prompt_builder,
+            max_batch_size=config.max_batch_size if config else None,
+            max_chars_per_batch=config.max_chars_per_batch if config else None,
+        )
         self._cancel_requested = False
 
         # Register file processors

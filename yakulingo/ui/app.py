@@ -960,6 +960,15 @@ def create_app() -> YakuLingoApp:
     return YakuLingoApp()
 
 
+def _close_splash_screen():
+    """Close splash screen by creating signal file"""
+    try:
+        signal_file = Path(__file__).parent.parent.parent / '.splash_close'
+        signal_file.touch()
+    except OSError:
+        pass  # Ignore if cannot create signal file
+
+
 def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
     """Run the application"""
     app = create_app()
@@ -967,6 +976,7 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
     @ui.page('/')
     async def main_page():
         app.create_ui()
+        _close_splash_screen()  # Close splash screen when UI is ready
         asyncio.create_task(app.preconnect_copilot())
         asyncio.create_task(app.check_for_updates())
 

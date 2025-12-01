@@ -1,6 +1,7 @@
 ' ============================================================
 ' YakuLingo Silent Launcher
 ' Launches YakuLingo without showing a console window
+' Shows splash screen during startup for better UX
 ' ============================================================
 
 Option Explicit
@@ -9,12 +10,19 @@ Dim objShell, objFSO, scriptDir, pythonExe, appScript
 Dim venvDir, uvPythonDir, pythonDir, folder
 Dim pyvenvCfg, cfgContent, newCfgContent, line, version
 Dim objFile, homeFound
+Dim splashHta
 
 Set objShell = CreateObject("WScript.Shell")
 Set objFSO = CreateObject("Scripting.FileSystemObject")
 
 ' Get script directory
 scriptDir = objFSO.GetParentFolderName(WScript.ScriptFullName)
+
+' Show splash screen immediately for better UX
+splashHta = scriptDir & "\splash.hta"
+If objFSO.FileExists(splashHta) Then
+    objShell.Run "mshta """ & splashHta & """", 1, False
+End If
 
 ' Set paths
 venvDir = scriptDir & "\.venv"

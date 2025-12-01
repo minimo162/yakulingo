@@ -213,3 +213,6 @@ __marimo__/
 .wheels/
 uv.exe
 uvx.exe
+
+# Splash screen signal file
+.splash_close

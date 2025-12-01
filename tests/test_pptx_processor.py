@@ -416,3 +416,119 @@ class TestPptxProcessorEdgeCases:
 
         info = processor.get_file_info(file_path)
         assert info.slide_count == 10
+
+
+# --- Tests: create_bilingual_presentation ---
+
+class TestPptxProcessorCreateBilingualPresentation:
+    """Test PptxProcessor.create_bilingual_presentation()"""
+
+    def test_creates_bilingual_presentation(self, processor, tmp_path):
+        """Creates presentation with interleaved original and translated slides"""
+        # Create original presentation
+        original_path = tmp_path / "original.pptx"
+        prs_orig = Presentation()
+        slide_layout = prs_orig.slide_layouts[5]
+
+        slide1 = prs_orig.slides.add_slide(slide_layout)
+        txBox1 = slide1.shapes.add_textbox(Inches(1), Inches(1), Inches(5), Inches(1))
+        txBox1.text_frame.text = "日本語スライド1"
+
+        slide2 = prs_orig.slides.add_slide(slide_layout)
+        txBox2 = slide2.shapes.add_textbox(Inches(1), Inches(1), Inches(5), Inches(1))
+        txBox2.text_frame.text = "日本語スライド2"
+
+        prs_orig.save(original_path)
+
+        # Create translated presentation
+        translated_path = tmp_path / "translated.pptx"
+        prs_trans = Presentation()
+        slide_layout = prs_trans.slide_layouts[5]
+
+        slide1_t = prs_trans.slides.add_slide(slide_layout)
+        txBox1_t = slide1_t.shapes.add_textbox(Inches(1), Inches(1), Inches(5), Inches(1))
+        txBox1_t.text_frame.text = "Japanese Slide 1"
+
+        slide2_t = prs_trans.slides.add_slide(slide_layout)
+        txBox2_t = slide2_t.shapes.add_textbox(Inches(1), Inches(1), Inches(5), Inches(1))
+        txBox2_t.text_frame.text = "Japanese Slide 2"
+
+        prs_trans.save(translated_path)
+
+        # Create bilingual presentation
+        output_path = tmp_path / "bilingual.pptx"
+        result = processor.create_bilingual_presentation(
+            original_path, translated_path, output_path
+        )
+
+        # Verify result
+        assert result["original_slides"] == 2
+        assert result["translated_slides"] == 2
+        # Total should include merged slides
+        assert result["total_slides"] >= 2
+
+        # Verify output file exists and can be loaded
+        assert output_path.exists()
+        prs_out = Presentation(output_path)
+        assert len(prs_out.slides) >= 2
+
+    def test_handles_single_slide(self, processor, sample_pptx, tmp_path):
+        """Works with single-slide presentations"""
+        # Create translated version
+        translated_path = tmp_path / "translated.pptx"
+        prs_trans = Presentation()
+        slide_layout = prs_trans.slide_layouts[5]
+        slide = prs_trans.slides.add_slide(slide_layout)
+        txBox = slide.shapes.add_textbox(Inches(1), Inches(1), Inches(5), Inches(1))
+        txBox.text_frame.text = "Slide 1 Text Translated"
+        prs_trans.save(translated_path)
+
+        output_path = tmp_path / "bilingual.pptx"
+        result = processor.create_bilingual_presentation(
+            sample_pptx, translated_path, output_path
+        )
+
+        assert result["original_slides"] == 1
+        assert result["translated_slides"] == 1
+        assert output_path.exists()
+
+    def test_handles_empty_presentations(self, processor, empty_pptx, tmp_path):
+        """Handles empty presentations gracefully"""
+        # Create empty translated
+        translated_path = tmp_path / "translated.pptx"
+        prs_trans = Presentation()
+        prs_trans.save(translated_path)
+
+        output_path = tmp_path / "bilingual.pptx"
+        result = processor.create_bilingual_presentation(
+            empty_pptx, translated_path, output_path
+        )
+
+        assert result["original_slides"] == 0
+        assert result["translated_slides"] == 0
+        assert output_path.exists()
+
+    def test_returns_slide_counts(self, processor, pptx_with_multiple_slides, tmp_path):
+        """Returns correct slide counts"""
+        # Create translated with same number of slides
+        translated_path = tmp_path / "translated.pptx"
+        prs_trans = Presentation()
+        slide_layout = prs_trans.slide_layouts[5]
+
+        for i in range(2):
+            slide = prs_trans.slides.add_slide(slide_layout)
+            txBox = slide.shapes.add_textbox(Inches(1), Inches(1), Inches(5), Inches(1))
+            txBox.text_frame.text = f"Translated Slide {i+1}"
+
+        prs_trans.save(translated_path)
+
+        output_path = tmp_path / "bilingual.pptx"
+        result = processor.create_bilingual_presentation(
+            pptx_with_multiple_slides, translated_path, output_path
+        )
+
+        assert "original_slides" in result
+        assert "translated_slides" in result
+        assert "total_slides" in result
+        assert result["original_slides"] == 2
+        assert result["translated_slides"] == 2

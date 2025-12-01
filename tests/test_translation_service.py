@@ -1461,3 +1461,135 @@ class TestExportGlossaryCsv:
 
         assert len(rows) == 1
         assert rows[0] == ['original', 'translated']
+
+
+class TestCreateBilingualOutput:
+    """Tests for TranslationService._create_bilingual_output()"""
+
+    @pytest.fixture
+    def service(self):
+        return TranslationService(Mock(), AppSettings())
+
+    def test_create_bilingual_excel(self, service, tmp_path):
+        """Creates bilingual Excel workbook"""
+        import openpyxl
+
+        # Create original file
+        original_path = tmp_path / "original.xlsx"
+        wb_orig = openpyxl.Workbook()
+        ws = wb_orig.active
+        ws["A1"] = "日本語"
+        wb_orig.save(original_path)
+
+        # Create translated file
+        translated_path = tmp_path / "translated.xlsx"
+        wb_trans = openpyxl.Workbook()
+        ws = wb_trans.active
+        ws["A1"] = "Japanese"
+        wb_trans.save(translated_path)
+
+        # Get Excel processor
+        processor = service.processors['.xlsx']
+
+        # Create bilingual output
+        result = service._create_bilingual_output(
+            original_path, translated_path, processor
+        )
+
+        assert result is not None
+        assert result.exists()
+        assert "_bilingual.xlsx" in result.name
+
+    def test_create_bilingual_word(self, service, tmp_path):
+        """Creates bilingual Word document"""
+        from docx import Document
+
+        # Create original file
+        original_path = tmp_path / "original.docx"
+        doc_orig = Document()
+        doc_orig.add_paragraph("日本語テキスト")
+        doc_orig.save(original_path)
+
+        # Create translated file
+        translated_path = tmp_path / "translated.docx"
+        doc_trans = Document()
+        doc_trans.add_paragraph("Japanese text")
+        doc_trans.save(translated_path)
+
+        # Get Word processor
+        processor = service.processors['.docx']
+
+        # Create bilingual output
+        result = service._create_bilingual_output(
+            original_path, translated_path, processor
+        )
+
+        assert result is not None
+        assert result.exists()
+        assert "_bilingual.docx" in result.name
+
+    def test_create_bilingual_pptx(self, service, tmp_path):
+        """Creates bilingual PowerPoint presentation"""
+        from pptx import Presentation
+        from pptx.util import Inches
+
+        # Create original file
+        original_path = tmp_path / "original.pptx"
+        prs_orig = Presentation()
+        slide = prs_orig.slides.add_slide(prs_orig.slide_layouts[5])
+        txBox = slide.shapes.add_textbox(Inches(1), Inches(1), Inches(5), Inches(1))
+        txBox.text_frame.text = "日本語"
+        prs_orig.save(original_path)
+
+        # Create translated file
+        translated_path = tmp_path / "translated.pptx"
+        prs_trans = Presentation()
+        slide = prs_trans.slides.add_slide(prs_trans.slide_layouts[5])
+        txBox = slide.shapes.add_textbox(Inches(1), Inches(1), Inches(5), Inches(1))
+        txBox.text_frame.text = "Japanese"
+        prs_trans.save(translated_path)
+
+        # Get PowerPoint processor
+        processor = service.processors['.pptx']
+
+        # Create bilingual output
+        result = service._create_bilingual_output(
+            original_path, translated_path, processor
+        )
+
+        assert result is not None
+        assert result.exists()
+        assert "_bilingual.pptx" in result.name
+
+    def test_returns_none_for_unsupported_type(self, service, tmp_path):
+        """Returns None for unsupported file types"""
+        # Create a mock processor without bilingual method
+        mock_processor = Mock()
+        mock_processor.create_bilingual_workbook = None
+        del mock_processor.create_bilingual_workbook
+
+        # Try to create bilingual with unsupported type
+        result = service._create_bilingual_output(
+            tmp_path / "file.xyz",
+            tmp_path / "translated.xyz",
+            mock_processor
+        )
+
+        assert result is None
+
+    def test_returns_none_on_error(self, service, tmp_path):
+        """Returns None when processor raises exception"""
+        # Create a mock processor that raises exception
+        mock_processor = Mock()
+        mock_processor.create_bilingual_workbook = Mock(side_effect=Exception("Test error"))
+
+        original_path = tmp_path / "original.xlsx"
+        original_path.touch()
+        translated_path = tmp_path / "translated.xlsx"
+        translated_path.touch()
+
+        result = service._create_bilingual_output(
+            original_path, translated_path, mock_processor
+        )
+
+        assert result is None

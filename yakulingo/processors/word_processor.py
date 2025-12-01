@@ -492,3 +492,94 @@ class WordProcessor(FileProcessor):
                 run.text = ""
         else:
             para.text = translated_text
+
+    def create_bilingual_document(
+        self,
+        original_path: Path,
+        translated_path: Path,
+        output_path: Path,
+    ) -> dict[str, int]:
+        """
+        Create a bilingual document with original and translated content.
+
+        Output format:
+            Original content
+            --- Page Break ---
+            Translated content
+
+        Args:
+            original_path: Path to the original document
+            translated_path: Path to the translated document
+            output_path: Path to save the bilingual document
+
+        Returns:
+            dict with original_paragraphs, translated_paragraphs counts
+        """
+        from docx.oxml.ns import qn
+        from docx.oxml import OxmlElement
+
+        original_doc = Document(original_path)
+        translated_doc = Document(translated_path)
+
+        # Count paragraphs
+        original_count = len(original_doc.paragraphs)
+        translated_count = len(translated_doc.paragraphs)
+
+        # Add separator heading before translated content
+        separator_para = original_doc.add_paragraph()
+        separator_para.add_run("─" * 40)
+        separator_para.alignment = 1  # Center
+
+        # Add page break
+        page_break_para = original_doc.add_paragraph()
+        run = page_break_para.add_run()
+        run._r.append(OxmlElement('w:br', {qn('w:type'): 'page'}))
+
+        # Add translation header
+        header_para = original_doc.add_paragraph()
+        header_run = header_para.add_run("【翻訳】")
+        header_run.bold = True
+
+        # Copy translated paragraphs
+        for para in translated_doc.paragraphs:
+            new_para = original_doc.add_paragraph()
+            # Copy style
+            new_para.style = para.style
+            new_para.alignment = para.alignment
+            # Copy runs
+            for run in para.runs:
+                new_run = new_para.add_run(run.text)
+                if run.font.bold:
+                    new_run.font.bold = run.font.bold
+                if run.font.italic:
+                    new_run.font.italic = run.font.italic
+                if run.font.name:
+                    new_run.font.name = run.font.name
+                if run.font.size:
+                    new_run.font.size = run.font.size
+
+        # Copy translated tables
+        for table in translated_doc.tables:
+            # Add table to original doc
+            new_table = original_doc.add_table(rows=len(table.rows), cols=len(table.columns))
+            new_table.style = table.style
+
+            for row_idx, row in enumerate(table.rows):
+                for col_idx, cell in enumerate(row.cells):
+                    new_cell = new_table.cell(row_idx, col_idx)
+                    # Copy cell content
+                    for para_idx, para in enumerate(cell.paragraphs):
+                        if para_idx == 0:
+                            target_para = new_cell.paragraphs[0]
+                        else:
+                            target_para = new_cell.add_paragraph()
+                        for run in para.runs:
+                            target_para.add_run(run.text)
+
+        original_doc.save(output_path)
+
+        return {
+            'original_paragraphs': original_count,
+            'translated_paragraphs': translated_count,
+            'total_paragraphs': original_count + translated_count,
+        }

@@ -498,3 +498,109 @@ class ExcelProcessor(FileProcessor):
             wb.save(output_path)
         finally:
             wb.close()
+
+    def create_bilingual_workbook(
+        self,
+        original_path: Path,
+        translated_path: Path,
+        output_path: Path,
+    ) -> dict[str, int]:
+        """
+        Create a bilingual workbook with original and translated sheets interleaved.
+
+        Output format:
+            Sheet1 (original), Sheet1_translated, Sheet2 (original), Sheet2_translated, ...
+
+        Args:
+            original_path: Path to the original workbook
+            translated_path: Path to the translated workbook
+            output_path: Path to save the bilingual workbook
+
+        Returns:
+            dict with original_sheets, translated_sheets, total_sheets counts
+        """
+        from copy import copy
+
+        original_wb = openpyxl.load_workbook(original_path)
+        translated_wb = openpyxl.load_workbook(translated_path)
+
+        try:
+            # Create a new workbook and remove default sheet
+            bilingual_wb = openpyxl.Workbook()
+            default_sheet = bilingual_wb.active
+            bilingual_wb.remove(default_sheet)
+
+            original_sheets = len(original_wb.sheetnames)
+            translated_sheets = len(translated_wb.sheetnames)
+
+            # Interleave sheets
+            for i, sheet_name in enumerate(original_wb.sheetnames):
+                # Copy original sheet
+                original_sheet = original_wb[sheet_name]
+                orig_copy = bilingual_wb.create_sheet(title=sheet_name)
+                self._copy_sheet_content(original_sheet, orig_copy)
+
+                # Copy translated sheet if exists
+                if i < len(translated_wb.sheetnames):
+                    trans_sheet_name = translated_wb.sheetnames[i]
+                    translated_sheet = translated_wb[trans_sheet_name]
+                    # Create translated sheet with suffix
+                    trans_title = f"{sheet_name}_translated"
+                    # Truncate if too long (Excel has 31 char limit)
+                    if len(trans_title) > 31:
+                        trans_title = trans_title[:28] + "..."
+                    trans_copy = bilingual_wb.create_sheet(title=trans_title)
+                    self._copy_sheet_content(translated_sheet, trans_copy)
+
+            # Handle extra translated sheets if any
+            if translated_sheets > original_sheets:
+                for i in range(original_sheets, translated_sheets):
+                    trans_sheet_name = translated_wb.sheetnames[i]
+                    translated_sheet = translated_wb[trans_sheet_name]
+                    trans_title = f"{trans_sheet_name}_translated"
+                    if len(trans_title) > 31:
+                        trans_title = trans_title[:28] + "..."
+                    trans_copy = bilingual_wb.create_sheet(title=trans_title)
+                    self._copy_sheet_content(translated_sheet, trans_copy)
+
+            bilingual_wb.save(output_path)
+
+            return {
+                'original_sheets': original_sheets,
+                'translated_sheets': translated_sheets,
+                'total_sheets': len(bilingual_wb.sheetnames),
+            }
+        finally:
+            original_wb.close()
+            translated_wb.close()
+
+    def _copy_sheet_content(self, source_sheet, target_sheet):
+        """Copy content from source sheet to target sheet."""
+        from copy import copy
+
+        # Copy cell values and styles
+        for row in source_sheet.iter_rows():
+            for cell in row:
+                target_cell = target_sheet.cell(row=cell.row, column=cell.column)
+                target_cell.value = cell.value
+
+                # Copy style
+                if cell.has_style:
+                    target_cell.font = copy(cell.font)
+                    target_cell.fill = copy(cell.fill)
+                    target_cell.border = copy(cell.border)
+                    target_cell.alignment = copy(cell.alignment)
+                    target_cell.number_format = cell.number_format
+                    target_cell.protection = copy(cell.protection)
+
+        # Copy column widths
+        for col_letter, col_dim in source_sheet.column_dimensions.items():
+            target_sheet.column_dimensions[col_letter].width = col_dim.width
+
+        # Copy row heights
+        for row_num, row_dim in source_sheet.row_dimensions.items():
+            target_sheet.row_dimensions[row_num].height = row_dim.height
+
+        # Copy merged cells
+        for merged_range in source_sheet.merged_cells.ranges:
+            target_sheet.merge_cells(str(merged_range))

@@ -311,10 +311,10 @@ class YakuLingoApp:
                         on_reset=self._reset,
                         on_language_change=self._on_language_change,
                         on_pdf_fast_mode_change=self._on_pdf_fast_mode_change,
-                        on_pdf_bilingual_change=self._on_pdf_bilingual_change,
-                        on_pdf_export_glossary_change=self._on_pdf_export_glossary_change,
-                        pdf_bilingual_enabled=self.settings.pdf_bilingual_output,
-                        pdf_export_glossary_enabled=self.settings.pdf_export_glossary,
+                        on_bilingual_change=self._on_bilingual_change,
+                        on_export_glossary_change=self._on_export_glossary_change,
+                        bilingual_enabled=self.settings.bilingual_output,
+                        export_glossary_enabled=self.settings.export_glossary,
                     )
 
         self._main_content = main_content
@@ -733,15 +733,15 @@ class YakuLingoApp:
         self.state.pdf_fast_mode = fast_mode
         # No need to refresh content, checkbox state is handled by NiceGUI
 
-    def _on_pdf_bilingual_change(self, enabled: bool):
-        """Handle PDF bilingual output toggle"""
-        self.settings.pdf_bilingual_output = enabled
+    def _on_bilingual_change(self, enabled: bool):
+        """Handle bilingual output toggle"""
+        self.settings.bilingual_output = enabled
         self.settings.save(self.settings_path)
         # No need to refresh content, checkbox state is handled by NiceGUI
 
-    def _on_pdf_export_glossary_change(self, enabled: bool):
-        """Handle PDF glossary CSV export toggle"""
-        self.settings.pdf_export_glossary = enabled
+    def _on_export_glossary_change(self, enabled: bool):
+        """Handle glossary CSV export toggle"""
+        self.settings.export_glossary = enabled
         self.settings.save(self.settings_path)
         # No need to refresh content, checkbox state is handled by NiceGUI
 

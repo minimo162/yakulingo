@@ -28,7 +28,8 @@ class YakuLingoApp:
 
     def __init__(self):
         self.state = AppState()
-        self.settings = AppSettings.load(get_default_settings_path())
+        self.settings_path = get_default_settings_path()
+        self.settings = AppSettings.load(self.settings_path)
         self.copilot = CopilotHandler()
         self.translation_service: Optional[TranslationService] = None
 
@@ -311,7 +312,9 @@ class YakuLingoApp:
                         on_language_change=self._on_language_change,
                         on_pdf_fast_mode_change=self._on_pdf_fast_mode_change,
                         on_pdf_bilingual_change=self._on_pdf_bilingual_change,
-                        pdf_bilingual_enabled=self.config.pdf_bilingual_output,
+                        on_pdf_export_glossary_change=self._on_pdf_export_glossary_change,
+                        pdf_bilingual_enabled=self.settings.pdf_bilingual_output,
+                        pdf_export_glossary_enabled=self.settings.pdf_export_glossary,
                     )
 
         self._main_content = main_content
@@ -732,8 +735,14 @@ class YakuLingoApp:
 
     def _on_pdf_bilingual_change(self, enabled: bool):
         """Handle PDF bilingual output toggle"""
-        self.config.pdf_bilingual_output = enabled
-        self.config.save(self.config_path)
+        self.settings.pdf_bilingual_output = enabled
+        self.settings.save(self.settings_path)
+        # No need to refresh content, checkbox state is handled by NiceGUI
+
+    def _on_pdf_export_glossary_change(self, enabled: bool):
+        """Handle PDF glossary CSV export toggle"""
+        self.settings.pdf_export_glossary = enabled
+        self.settings.save(self.settings_path)
         # No need to refresh content, checkbox state is handled by NiceGUI
 
     def _select_file(self, file_path: Path):

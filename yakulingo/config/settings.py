@@ -41,6 +41,7 @@ class AppSettings:
 
     # PDF Options
     pdf_bilingual_output: bool = False  # 対訳PDF出力（原文と翻訳を交互に配置）
+    pdf_export_glossary: bool = False   # 対訳CSV出力（glossaryとして再利用可能）
 
     # Auto Update
     auto_update_enabled: bool = True            # 起動時に自動チェック
@@ -84,6 +85,7 @@ class AppSettings:
             "copilot_char_limit": self.copilot_char_limit,
             # PDF Options
             "pdf_bilingual_output": self.pdf_bilingual_output,
+            "pdf_export_glossary": self.pdf_export_glossary,
             # Auto Update
             "auto_update_enabled": self.auto_update_enabled,
             "auto_update_check_interval": self.auto_update_check_interval,

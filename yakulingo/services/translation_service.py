@@ -5,6 +5,7 @@ Coordinates between UI, Copilot, and file processors.
 Bidirectional translation: Japanese → English, Other → Japanese (auto-detected).
 """
 
+import csv
 import logging
 import time
 from pathlib import Path
@@ -933,6 +934,24 @@ class TranslationService:
             )
             processor.create_bilingual_pdf(input_path, output_path, bilingual_path)
 
+        # Export glossary CSV if enabled
+        glossary_path = None
+        if self.config and self.config.pdf_export_glossary:
+            if on_progress:
+                on_progress(TranslationProgress(
+                    current=97,
+                    total=100,
+                    status="Exporting glossary CSV...",
+                    phase=TranslationPhase.APPLYING,
+                    phase_detail="Creating translation pairs",
+                ))
+
+            # Generate glossary output path
+            glossary_path = output_path.parent / (
+                output_path.stem.replace('_translated', '') + '_glossary.csv'
+            )
+            self._export_glossary_csv(all_blocks, translations, glossary_path)
+
         if on_progress:
             on_progress(TranslationProgress(
                 current=100,
@@ -985,6 +1004,39 @@ class TranslationService:
             ))
 
         return callback
+
+    def _export_glossary_csv(
+        self,
+        blocks: list[TextBlock],
+        translations: dict[str, str],
+        output_path: Path,
+    ) -> None:
+        """
+        Export translation pairs as glossary CSV.
+
+        Format:
+            original,translated
+            原文テキスト,Translation text
+            ...
+
+        Args:
+            blocks: Original text blocks
+            translations: Translation results (block_id -> translated_text)
+            output_path: Output CSV file path
+        """
+        with open(output_path, 'w', encoding='utf-8', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(['original', 'translated'])
+
+            for block in blocks:
+                if block.id in translations:
+                    original = block.text.strip()
+                    translated = translations[block.id].strip()
+                    # Skip empty pairs
+                    if original and translated:
+                        writer.writerow([original, translated])
+
+        logger.info("Exported glossary CSV: %s (%d pairs)", output_path, len(translations))
 
     def get_file_info(self, file_path: Path) -> FileInfo:
         """Get file information for UI display"""

@@ -1313,3 +1313,151 @@ class TestBatchTranslatorTranslateBlocks:
         mock_prompt_builder.build_batch.assert_called()
         call_args = mock_prompt_builder.build_batch.call_args
         assert call_args[1].get('output_language') == "jp" or call_args[0][2] == "jp"
+
+
+# --- Tests: _export_glossary_csv() ---
+
+class TestExportGlossaryCsv:
+    """Tests for TranslationService._export_glossary_csv()"""
+
+    @pytest.fixture
+    def service(self):
+        return TranslationService(Mock(), AppSettings())
+
+    def test_export_basic_glossary(self, service, tmp_path):
+        """Basic glossary export creates valid CSV"""
+        import csv
+
+        blocks = [
+            TextBlock(id="1", text="原文テキスト", location="A1"),
+            TextBlock(id="2", text="別のテキスト", location="A2"),
+        ]
+        translations = {
+            "1": "Translated text",
+            "2": "Another translation",
+        }
+
+        output_path = tmp_path / "glossary.csv"
+        service._export_glossary_csv(blocks, translations, output_path)
+
+        assert output_path.exists()
+
+        with open(output_path, 'r', encoding='utf-8') as f:
+            reader = csv.reader(f)
+            rows = list(reader)
+
+        assert rows[0] == ['original', 'translated']
+        assert rows[1] == ['原文テキスト', 'Translated text']
+        assert rows[2] == ['別のテキスト', 'Another translation']
+
+    def test_export_skips_empty_translations(self, service, tmp_path):
+        """Empty translations are skipped"""
+        import csv
+
+        blocks = [
+            TextBlock(id="1", text="有効なテキスト", location="A1"),
+            TextBlock(id="2", text="", location="A2"),  # Empty original
+            TextBlock(id="3", text="別のテキスト", location="A3"),
+        ]
+        translations = {
+            "1": "Valid translation",
+            "2": "",  # Empty translation
+            "3": "Another translation",
+        }
+
+        output_path = tmp_path / "glossary.csv"
+        service._export_glossary_csv(blocks, translations, output_path)
+
+        with open(output_path, 'r', encoding='utf-8') as f:
+            reader = csv.reader(f)
+            rows = list(reader)
+
+        # Header + 2 valid rows (skipping empty ones)
+        assert len(rows) == 3
+        assert rows[1][0] == '有効なテキスト'
+        assert rows[2][0] == '別のテキスト'
+
+    def test_export_skips_untranslated_blocks(self, service, tmp_path):
+        """Blocks without translations are skipped"""
+        import csv
+
+        blocks = [
+            TextBlock(id="1", text="翻訳済み", location="A1"),
+            TextBlock(id="2", text="未翻訳", location="A2"),
+        ]
+        translations = {
+            "1": "Translated",
+            # "2" is missing from translations
+        }
+
+        output_path = tmp_path / "glossary.csv"
+        service._export_glossary_csv(blocks, translations, output_path)
+
+        with open(output_path, 'r', encoding='utf-8') as f:
+            reader = csv.reader(f)
+            rows = list(reader)
+
+        # Header + 1 valid row
+        assert len(rows) == 2
+        assert rows[1][0] == '翻訳済み'
+
+    def test_export_strips_whitespace(self, service, tmp_path):
+        """Leading/trailing whitespace is stripped"""
+        import csv
+
+        blocks = [
+            TextBlock(id="1", text="  原文  ", location="A1"),
+        ]
+        translations = {
+            "1": "  Translated  ",
+        }
+
+        output_path = tmp_path / "glossary.csv"
+        service._export_glossary_csv(blocks, translations, output_path)
+
+        with open(output_path, 'r', encoding='utf-8') as f:
+            reader = csv.reader(f)
+            rows = list(reader)
+
+        assert rows[1] == ['原文', 'Translated']
+
+    def test_export_handles_special_characters(self, service, tmp_path):
+        """CSV properly escapes special characters"""
+        import csv
+
+        blocks = [
+            TextBlock(id="1", text='カンマ,を含む', location="A1"),
+            TextBlock(id="2", text='改行\nを含む', location="A2"),
+            TextBlock(id="3", text='"引用符"を含む', location="A3"),
+        ]
+        translations = {
+            "1": "Contains, comma",
+            "2": "Contains\nnewline",
+            "3": '"Has quotes"',
+        }
+
+        output_path = tmp_path / "glossary.csv"
+        service._export_glossary_csv(blocks, translations, output_path)
+
+        with open(output_path, 'r', encoding='utf-8') as f:
+            reader = csv.reader(f)
+            rows = list(reader)
+
+        assert len(rows) == 4
+        assert rows[1][0] == 'カンマ,を含む'
+        assert rows[2][0] == '改行\nを含む'
+        assert rows[3][0] == '"引用符"を含む'
+
+    def test_export_empty_blocks(self, service, tmp_path):
+        """Empty block list creates CSV with only header"""
+        import csv
+
+        output_path = tmp_path / "glossary.csv"
+        service._export_glossary_csv([], {}, output_path)
+
+        with open(output_path, 'r', encoding='utf-8') as f:
+            reader = csv.reader(f)
+            rows = list(reader)
+
+        assert len(rows) == 1
+        assert rows[0] == ['original', 'translated']

@@ -42,7 +42,9 @@ def create_file_panel(
     on_language_change: Optional[Callable[[str], None]] = None,
     on_pdf_fast_mode_change: Optional[Callable[[bool], None]] = None,
     on_pdf_bilingual_change: Optional[Callable[[bool], None]] = None,
+    on_pdf_export_glossary_change: Optional[Callable[[bool], None]] = None,
     pdf_bilingual_enabled: bool = False,
+    pdf_export_glossary_enabled: bool = False,
 ):
     """File translation panel - Nani-inspired design"""
 
@@ -62,6 +64,7 @@ def create_file_panel(
                     if state.file_info and state.file_info.file_type == FileType.PDF:
                         _pdf_mode_selector(state, on_pdf_fast_mode_change)
                         _pdf_bilingual_selector(pdf_bilingual_enabled, on_pdf_bilingual_change)
+                        _pdf_export_glossary_selector(pdf_export_glossary_enabled, on_pdf_export_glossary_change)
                     with ui.row().classes('justify-center mt-4'):
                         with ui.button(on_click=on_translate).classes('translate-btn').props('no-caps'):
                             ui.label('翻訳する')
@@ -135,6 +138,20 @@ def _pdf_bilingual_selector(enabled: bool, on_change: Optional[Callable[[bool], 
         ui.tooltip(
             '原文と翻訳を交互に配置した対訳PDFを作成します。\n'
             '（例: 1ページ目=原文、2ページ目=翻訳、3ページ目=原文...）'
+        ).classes('text-xs')
+
+
+def _pdf_export_glossary_selector(enabled: bool, on_change: Optional[Callable[[bool], None]]):
+    """PDF glossary CSV export selector - checkbox for exporting translation pairs"""
+    with ui.row().classes('w-full justify-center mt-2 items-center gap-2'):
+        ui.checkbox(
+            '対訳CSV出力',
+            value=enabled,
+            on_change=lambda e: on_change and on_change(e.value),
+        ).classes('pdf-mode-checkbox')
+        ui.tooltip(
+            '原文と翻訳のペアをCSVファイルで出力します。\n'
+            'glossaryとして再利用できます。'
         ).classes('text-xs')
 
 

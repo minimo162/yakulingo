@@ -169,8 +169,8 @@ class TestSupportsExtension:
 
     @pytest.fixture(params=[
         (ExcelProcessor, ['.xlsx', '.xls']),
-        (WordProcessor, ['.docx', '.doc']),
-        (PptxProcessor, ['.pptx', '.ppt']),
+        (WordProcessor, ['.docx']),  # .doc not supported by python-docx
+        (PptxProcessor, ['.pptx']),  # .ppt not supported by python-pptx
         (PdfProcessor, ['.pdf']),
     ])
     def processor_with_extensions(self, request):
@@ -265,10 +265,11 @@ class TestExtensionMapping:
         assert processor.supports_extension('.docx')
         assert processor.file_type == FileType.WORD
 
-    def test_doc_maps_to_word(self):
-        """doc extension maps to WordProcessor"""
+    def test_doc_not_supported(self):
+        """doc extension is not supported by python-docx"""
         processor = WordProcessor()
-        assert processor.supports_extension('.doc')
+        # python-docx only supports .docx (Office Open XML), not legacy .doc format
+        assert processor.supports_extension('.doc') is False
 
     def test_pptx_maps_to_powerpoint(self):
         """pptx extension maps to PptxProcessor"""
@@ -276,10 +277,11 @@ class TestExtensionMapping:
         assert processor.supports_extension('.pptx')
         assert processor.file_type == FileType.POWERPOINT
 
-    def test_ppt_maps_to_powerpoint(self):
-        """ppt extension maps to PptxProcessor"""
+    def test_ppt_not_supported(self):
+        """ppt extension is not supported by python-pptx"""
         processor = PptxProcessor()
-        assert processor.supports_extension('.ppt')
+        # python-pptx only supports .pptx (Office Open XML), not legacy .ppt format
+        assert processor.supports_extension('.ppt') is False
 
     def test_pdf_maps_to_pdf(self):
         """pdf extension maps to PdfProcessor"""

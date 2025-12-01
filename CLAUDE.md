@@ -87,7 +87,7 @@ YakuLingo/
 ├── pyproject.toml                 # Project metadata & dependencies
 ├── uv.lock                        # Lock file for reproducible builds
 ├── requirements.txt               # Core pip dependencies
-└── requirements_pdf.txt           # Optional OCR dependencies
+└── requirements_pdf.txt           # PDF translation dependencies (yomitoku)
 ```
 
 ## Layer Responsibilities
@@ -350,8 +350,15 @@ The `AutoUpdater` class provides GitHub Releases-based updates:
 | `numpy>=1.24.0` | Numerical operations |
 | `pywin32>=306` | Windows NTLM proxy authentication (Windows only) |
 
+### PDF Translation Dependencies
+Install separately for PDF translation support:
+```bash
+pip install -r requirements_pdf.txt
+```
+- `yomitoku>=0.10.0`: Japanese document AI (OCR & layout analysis)
+- Requires Python 3.10-3.12, PyTorch 2.5+, GPU with 8GB+ VRAM recommended
+
 ### Optional Dependencies
-- `[ocr]`: yomitoku (PDF OCR with ML - heavy)
 - `[test]`: pytest, pytest-cov, pytest-asyncio
 
 ## Platform Notes

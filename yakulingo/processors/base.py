@@ -5,7 +5,7 @@ Abstract base class for file processors.
 
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Iterator
+from typing import Any, Iterator, Optional
 
 from yakulingo.models.types import TextBlock, FileInfo, FileType
 
@@ -61,7 +61,7 @@ class FileProcessor(ABC):
         output_path: Path,
         translations: dict[str, str],  # block_id -> translated_text
         direction: str = "jp_to_en",
-    ) -> None:
+    ) -> Optional[dict[str, Any]]:
         """
         Apply translations to file and save.
 
@@ -70,6 +70,14 @@ class FileProcessor(ABC):
             output_path: Path for translated file
             translations: Mapping of block IDs to translated text
             direction: Translation direction for font selection
+
+        Returns:
+            Optional dict with processing statistics (processor-specific).
+            Most processors return None. PdfProcessor returns:
+            - 'total': Total blocks to translate
+            - 'success': Successfully translated blocks
+            - 'failed': List of failed block IDs
+            - 'failed_fonts': List of fonts that failed to embed
         """
         pass
 

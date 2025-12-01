@@ -187,8 +187,9 @@ class TestBatchTranslationErrors:
         # Should handle empty response gracefully
         results = translator.translate_blocks(blocks)
 
-        # Results should be empty or handle mismatch
-        assert len(results) == 0 or "1" not in results
+        # Implementation keeps original text when translation is missing
+        assert len(results) == 1
+        assert results["1"] == "Test"  # Original text preserved
 
     def test_mismatched_response_count(self, settings):
         """Handle when Copilot returns wrong number of translations"""
@@ -209,8 +210,11 @@ class TestBatchTranslationErrors:
 
         results = translator.translate_blocks(blocks)
 
-        # Should only have 2 results (zip truncates)
-        assert len(results) == 2
+        # All blocks are in results: 2 translated + 1 with original text
+        assert len(results) == 3
+        assert results["1"] == "Trans1"
+        assert results["2"] == "Trans2"
+        assert results["3"] == "Text3"  # Original text preserved
 
 
 # --- TranslationService Error Tests ---
@@ -519,8 +523,11 @@ class TestMalformedCopilotResponses:
 
         results = translator.translate_blocks(blocks)
 
-        # Should handle mismatch gracefully
-        assert len(results) == 1
+        # All blocks are in results: 1 translated + 2 with original text
+        assert len(results) == 3
+        assert results["1"] == "Only one translation"
+        assert results["2"] == "Text2"  # Original text preserved
+        assert results["3"] == "Text3"  # Original text preserved
 
     def test_batch_response_extra_items(self, settings):
         """Handle when batch response has too many items"""

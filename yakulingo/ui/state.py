@@ -57,6 +57,9 @@ class AppState:
     output_file: Optional[Path] = None
     error_message: str = ""
 
+    # PDF options
+    pdf_fast_mode: bool = False  # If True, skip yomitoku OCR for faster processing
+
     # Reference files
     reference_files: List[Path] = field(default_factory=list)
 
@@ -98,6 +101,7 @@ class AppState:
         self.translation_status = ""
         self.output_file = None
         self.error_message = ""
+        self.pdf_fast_mode = False
 
     def can_translate(self) -> bool:
         """Check if translation is possible"""

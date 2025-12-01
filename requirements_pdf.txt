@@ -1,18 +1,14 @@
 # PDF Translation Dependencies
 # Install with: pip install -r requirements_pdf.txt
+#
+# Note: yomitoku requires Python 3.10-3.12 and PyTorch 2.5+
+# A GPU with 8GB+ VRAM is recommended for optimal performance.
+# See: https://kotaro-kinoshita.github.io/yomitoku/en/installation/
 
-# yomitoku (Layout analysis & OCR)
-yomitoku>=0.8.0
+# yomitoku (Japanese document AI - Layout analysis & OCR)
+# Automatically installs: torch, torchvision, opencv-python, pypdfium2,
+# pydantic, omegaconf, shapely, huggingface-hub, timm, onnx, onnxruntime, etc.
+yomitoku>=0.10.0
 
-# yomitoku dependencies
-torch>=2.5.0
-torchvision>=0.20.0
-opencv-python>=4.10.0.84
-pypdfium2==4.30.0
-pydantic>=2.9.2
-omegaconf>=2.3.0
-shapely>=2.0.6
-huggingface-hub>=0.26.1
-
-# PDF reconstruction
+# PDF text extraction and reconstruction (required separately)
 PyMuPDF>=1.24.0

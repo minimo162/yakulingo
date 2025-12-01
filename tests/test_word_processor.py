@@ -90,7 +90,8 @@ class TestWordProcessorProperties:
     def test_supported_extensions(self, processor):
         extensions = processor.supported_extensions
         assert ".docx" in extensions
-        assert ".doc" in extensions
+        # .doc (legacy format) is not supported by python-docx
+        assert ".doc" not in extensions
 
 
 # --- Tests: get_file_info ---

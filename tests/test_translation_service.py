@@ -129,13 +129,15 @@ class TestTranslationServiceInit:
         """Word extensions are registered"""
         service = TranslationService(mock_copilot, settings)
         assert '.docx' in service.processors
-        assert '.doc' in service.processors
+        # .doc (legacy format) is not supported by python-docx
+        assert '.doc' not in service.processors
 
     def test_registers_powerpoint_processors(self, mock_copilot, settings):
         """PowerPoint extensions are registered"""
         service = TranslationService(mock_copilot, settings)
         assert '.pptx' in service.processors
-        assert '.ppt' in service.processors
+        # .ppt (legacy format) is not supported by python-pptx
+        assert '.ppt' not in service.processors
 
     def test_registers_pdf_processor(self, mock_copilot, settings):
         """PDF extension is registered"""

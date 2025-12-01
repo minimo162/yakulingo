@@ -6,6 +6,7 @@ Data models for YakuLingo.
 from .types import (
     FileType,
     TranslationStatus,
+    TranslationPhase,
     TextBlock,
     FileInfo,
     TranslationProgress,
@@ -19,6 +20,7 @@ from .types import (
 __all__ = [
     'FileType',
     'TranslationStatus',
+    'TranslationPhase',
     'TextBlock',
     'FileInfo',
     'TranslationProgress',

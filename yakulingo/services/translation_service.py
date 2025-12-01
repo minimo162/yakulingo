@@ -65,10 +65,12 @@ def is_japanese_text(text: str, threshold: float = 0.3) -> bool:
 from yakulingo.models.types import (
     TranslationStatus,
     TranslationProgress,
+    TranslationPhase,
     TranslationResult,
     TextTranslationResult,
     TranslationOption,
     FileInfo,
+    FileType,
     ProgressCallback,
 )
 from yakulingo.config.settings import AppSettings
@@ -478,6 +480,7 @@ class TranslationService:
         reference_files: Optional[List[Path]] = None,
         on_progress: Optional[ProgressCallback] = None,
         output_language: str = "en",
+        use_ocr: bool = True,
     ) -> TranslationResult:
         """
         Translate a file to specified output language.
@@ -487,6 +490,7 @@ class TranslationService:
             reference_files: Reference files to attach
             on_progress: Callback for progress updates
             output_language: "en" for English, "jp" for Japanese
+            use_ocr: For PDF files, use yomitoku OCR if available (default True)
 
         Returns:
             TranslationResult with output_path
@@ -498,106 +502,311 @@ class TranslationService:
             # Get processor
             processor = self._get_processor(input_path)
 
-            # Report progress
-            if on_progress:
-                on_progress(TranslationProgress(
-                    current=0,
-                    total=100,
-                    status="Extracting text...",
-                ))
-
-            # Extract text blocks
-            blocks = list(processor.extract_text_blocks(input_path))
-            total_blocks = len(blocks)
-
-            if total_blocks == 0:
-                return TranslationResult(
-                    status=TranslationStatus.COMPLETED,
-                    output_path=input_path,
-                    blocks_translated=0,
-                    blocks_total=0,
-                    duration_seconds=time.time() - start_time,
-                    warnings=["No translatable text found in file"],
+            # Use streaming processing for PDF files
+            if input_path.suffix.lower() == '.pdf':
+                return self._translate_pdf_streaming(
+                    input_path,
+                    processor,
+                    reference_files,
+                    on_progress,
+                    output_language,
+                    use_ocr,
+                    start_time,
                 )
 
-            # Check for cancellation
-            if self._cancel_requested:
-                return TranslationResult(
-                    status=TranslationStatus.CANCELLED,
-                    duration_seconds=time.time() - start_time,
-                )
-
-            # Report progress
-            if on_progress:
-                on_progress(TranslationProgress(
-                    current=10,
-                    total=100,
-                    status=f"Translating {total_blocks} blocks...",
-                ))
-
-            # Translate blocks
-            def batch_progress(progress: TranslationProgress):
-                if on_progress:
-                    # Scale batch progress to 10-90 range
-                    scaled = 10 + int(progress.percentage * 80)
-                    on_progress(TranslationProgress(
-                        current=scaled,
-                        total=100,
-                        status=progress.status,
-                    ))
-
-            translations = self.batch_translator.translate_blocks(
-                blocks,
+            # Standard processing for other file types
+            return self._translate_file_standard(
+                input_path,
+                processor,
                 reference_files,
-                batch_progress,
-                output_language=output_language,
-            )
-
-            # Check for cancellation
-            if self._cancel_requested:
-                return TranslationResult(
-                    status=TranslationStatus.CANCELLED,
-                    duration_seconds=time.time() - start_time,
-                )
-
-            # Report progress
-            if on_progress:
-                on_progress(TranslationProgress(
-                    current=90,
-                    total=100,
-                    status="Applying translations...",
-                ))
-
-            # Generate output path (with _translated suffix)
-            output_path = self._generate_output_path(input_path)
-
-            # Apply translations
-            # Convert output_language to direction for font mapping
-            direction = "jp_to_en" if output_language == "en" else "en_to_jp"
-            processor.apply_translations(input_path, output_path, translations, direction)
-
-            # Report complete
-            if on_progress:
-                on_progress(TranslationProgress(
-                    current=100,
-                    total=100,
-                    status="Complete",
-                ))
-
-            return TranslationResult(
-                status=TranslationStatus.COMPLETED,
-                output_path=output_path,
-                blocks_translated=len(translations),
-                blocks_total=total_blocks,
-                duration_seconds=time.time() - start_time,
+                on_progress,
+                output_language,
+                start_time,
             )
 
         except Exception as e:
+            logger.exception("Translation failed: %s", e)
             return TranslationResult(
                 status=TranslationStatus.FAILED,
                 error_message=str(e),
                 duration_seconds=time.time() - start_time,
             )
+
+    def _translate_file_standard(
+        self,
+        input_path: Path,
+        processor: FileProcessor,
+        reference_files: Optional[List[Path]],
+        on_progress: Optional[ProgressCallback],
+        output_language: str,
+        start_time: float,
+    ) -> TranslationResult:
+        """Standard translation flow for non-PDF files."""
+        # Report progress
+        if on_progress:
+            on_progress(TranslationProgress(
+                current=0,
+                total=100,
+                status="Extracting text...",
+                phase=TranslationPhase.EXTRACTING,
+            ))
+
+        # Extract text blocks
+        blocks = list(processor.extract_text_blocks(input_path))
+        total_blocks = len(blocks)
+
+        if total_blocks == 0:
+            return TranslationResult(
+                status=TranslationStatus.COMPLETED,
+                output_path=input_path,
+                blocks_translated=0,
+                blocks_total=0,
+                duration_seconds=time.time() - start_time,
+                warnings=["No translatable text found in file"],
+            )
+
+        # Check for cancellation
+        if self._cancel_requested:
+            return TranslationResult(
+                status=TranslationStatus.CANCELLED,
+                duration_seconds=time.time() - start_time,
+            )
+
+        # Report progress
+        if on_progress:
+            on_progress(TranslationProgress(
+                current=10,
+                total=100,
+                status=f"Translating {total_blocks} blocks...",
+                phase=TranslationPhase.TRANSLATING,
+            ))
+
+        # Translate blocks
+        def batch_progress(progress: TranslationProgress):
+            if on_progress:
+                # Scale batch progress to 10-90 range
+                scaled = 10 + int(progress.percentage * 80)
+                on_progress(TranslationProgress(
+                    current=scaled,
+                    total=100,
+                    status=progress.status,
+                    phase=TranslationPhase.TRANSLATING,
+                ))
+
+        translations = self.batch_translator.translate_blocks(
+            blocks,
+            reference_files,
+            batch_progress,
+            output_language=output_language,
+        )
+
+        # Check for cancellation
+        if self._cancel_requested:
+            return TranslationResult(
+                status=TranslationStatus.CANCELLED,
+                duration_seconds=time.time() - start_time,
+            )
+
+        # Report progress
+        if on_progress:
+            on_progress(TranslationProgress(
+                current=90,
+                total=100,
+                status="Applying translations...",
+                phase=TranslationPhase.APPLYING,
+            ))
+
+        # Generate output path (with _translated suffix)
+        output_path = self._generate_output_path(input_path)
+
+        # Apply translations
+        # Convert output_language to direction for font mapping
+        direction = "jp_to_en" if output_language == "en" else "en_to_jp"
+        processor.apply_translations(input_path, output_path, translations, direction)
+
+        # Report complete
+        if on_progress:
+            on_progress(TranslationProgress(
+                current=100,
+                total=100,
+                status="Complete",
+                phase=TranslationPhase.COMPLETE,
+            ))
+
+        return TranslationResult(
+            status=TranslationStatus.COMPLETED,
+            output_path=output_path,
+            blocks_translated=len(translations),
+            blocks_total=total_blocks,
+            duration_seconds=time.time() - start_time,
+        )
+
+    def _translate_pdf_streaming(
+        self,
+        input_path: Path,
+        processor: PdfProcessor,
+        reference_files: Optional[List[Path]],
+        on_progress: Optional[ProgressCallback],
+        output_language: str,
+        use_ocr: bool,
+        start_time: float,
+    ) -> TranslationResult:
+        """
+        Streaming translation for PDF files.
+
+        Processes pages incrementally:
+        1. OCR/extract page
+        2. Translate page blocks
+        3. Repeat for all pages
+        4. Apply all translations
+
+        This provides better progress feedback for large PDFs.
+        """
+        from yakulingo.processors.pdf_processor import is_yomitoku_available
+
+        # Get page count for progress estimation
+        total_pages = processor.get_page_count(input_path)
+
+        if on_progress:
+            on_progress(TranslationProgress(
+                current=0,
+                total=100,
+                status=f"Processing PDF ({total_pages} pages)...",
+                phase=TranslationPhase.OCR if use_ocr else TranslationPhase.EXTRACTING,
+                phase_detail=f"0/{total_pages} pages",
+            ))
+
+        all_blocks = []
+        all_cells = []  # For OCR mode
+        pages_processed = 0
+
+        # Phase 1: Extract text with streaming progress (0-40%)
+        for page_blocks, page_cells in processor.extract_text_blocks_streaming(
+            input_path,
+            on_progress=self._make_extraction_progress_callback(
+                on_progress, total_pages, use_ocr
+            ),
+            use_ocr=use_ocr,
+        ):
+            all_blocks.extend(page_blocks)
+            if page_cells:
+                all_cells.extend(page_cells)
+            pages_processed += 1
+
+            # Check for cancellation between pages
+            if self._cancel_requested:
+                return TranslationResult(
+                    status=TranslationStatus.CANCELLED,
+                    duration_seconds=time.time() - start_time,
+                )
+
+        total_blocks = len(all_blocks)
+
+        if total_blocks == 0:
+            return TranslationResult(
+                status=TranslationStatus.COMPLETED,
+                output_path=input_path,
+                blocks_translated=0,
+                blocks_total=0,
+                duration_seconds=time.time() - start_time,
+                warnings=["No translatable text found in PDF"],
+            )
+
+        # Phase 2: Translate blocks (40-90%)
+        if on_progress:
+            on_progress(TranslationProgress(
+                current=40,
+                total=100,
+                status=f"Translating {total_blocks} blocks...",
+                phase=TranslationPhase.TRANSLATING,
+            ))
+
+        def batch_progress(progress: TranslationProgress):
+            if on_progress:
+                # Scale to 40-90% range
+                scaled = 40 + int(progress.percentage * 50)
+                on_progress(TranslationProgress(
+                    current=scaled,
+                    total=100,
+                    status=progress.status,
+                    phase=TranslationPhase.TRANSLATING,
+                    phase_detail=f"Batch {progress.current}/{progress.total}",
+                ))
+
+        translations = self.batch_translator.translate_blocks(
+            all_blocks,
+            reference_files,
+            batch_progress,
+            output_language=output_language,
+        )
+
+        if self._cancel_requested:
+            return TranslationResult(
+                status=TranslationStatus.CANCELLED,
+                duration_seconds=time.time() - start_time,
+            )
+
+        # Phase 3: Apply translations (90-100%)
+        if on_progress:
+            on_progress(TranslationProgress(
+                current=90,
+                total=100,
+                status="Applying translations to PDF...",
+                phase=TranslationPhase.APPLYING,
+            ))
+
+        output_path = self._generate_output_path(input_path)
+        direction = "jp_to_en" if output_language == "en" else "en_to_jp"
+
+        # Use appropriate apply method based on whether OCR was used
+        if all_cells:
+            # OCR mode: use apply_translations_with_cells for better positioning
+            processor.apply_translations_with_cells(
+                input_path, output_path, translations, all_cells, direction
+            )
+        else:
+            # Standard mode: use regular apply_translations
+            processor.apply_translations(input_path, output_path, translations, direction)
+
+        if on_progress:
+            on_progress(TranslationProgress(
+                current=100,
+                total=100,
+                status="Complete",
+                phase=TranslationPhase.COMPLETE,
+            ))
+
+        return TranslationResult(
+            status=TranslationStatus.COMPLETED,
+            output_path=output_path,
+            blocks_translated=len(translations),
+            blocks_total=total_blocks,
+            duration_seconds=time.time() - start_time,
+        )
+
+    def _make_extraction_progress_callback(
+        self,
+        on_progress: Optional[ProgressCallback],
+        total_pages: int,
+        use_ocr: bool,
+    ) -> Optional[ProgressCallback]:
+        """Create a progress callback for extraction phase (0-40%)."""
+        if not on_progress:
+            return None
+
+        def callback(progress: TranslationProgress):
+            # Scale page progress to 0-40% range
+            page_percentage = progress.current / max(progress.total, 1)
+            scaled = int(page_percentage * 40)
+            on_progress(TranslationProgress(
+                current=scaled,
+                total=100,
+                status=progress.status,
+                phase=TranslationPhase.OCR if use_ocr else TranslationPhase.EXTRACTING,
+                phase_detail=progress.phase_detail,
+            ))
+
+        return callback
 
     def get_file_info(self, file_path: Path) -> FileInfo:
         """Get file information for UI display"""

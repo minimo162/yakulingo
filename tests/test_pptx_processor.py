@@ -115,7 +115,8 @@ class TestPptxProcessorProperties:
     def test_supported_extensions(self, processor):
         extensions = processor.supported_extensions
         assert ".pptx" in extensions
-        assert ".ppt" in extensions
+        # .ppt (legacy format) is not supported by python-pptx
+        assert ".ppt" not in extensions
 
 
 # --- Tests: get_file_info ---

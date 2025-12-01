@@ -1006,6 +1006,9 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
         asyncio.create_task(app.preconnect_copilot())
         asyncio.create_task(app.check_for_updates())
 
+    # Use window size from settings
+    window_size = (app.settings.window_width, app.settings.window_height)
+
     ui.run(
         host=host,
         port=port,
@@ -1014,6 +1017,6 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
         dark=False,
         reload=False,
         native=native,
-        window_size=(1100, 750),
+        window_size=window_size,
         frameless=False,
     )

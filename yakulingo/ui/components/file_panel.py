@@ -125,11 +125,10 @@ def _pdf_mode_selector(state: AppState, on_change: Optional[Callable[[bool], Non
             '高速モード',
             value=state.pdf_fast_mode,
             on_change=lambda e: on_change and on_change(e.value),
-        ).classes('pdf-mode-checkbox')
-        ui.tooltip(
-            'OCRレイアウト解析をスキップして高速処理します。\n'
+        ).classes('pdf-mode-checkbox').tooltip(
+            'OCRレイアウト解析をスキップして高速処理します。'
             'テキストベースのPDFに最適。スキャン文書や複雑なレイアウトでは精度が低下する場合があります。'
-        ).classes('text-xs')
+        )
 
 
 # Bilingual output descriptions by file type
@@ -156,8 +155,7 @@ def _bilingual_selector(
             '対訳出力',
             value=enabled,
             on_change=lambda e: on_change and on_change(e.value),
-        ).classes('pdf-mode-checkbox')
-        ui.tooltip(tooltip_text).classes('text-xs')
+        ).classes('pdf-mode-checkbox').tooltip(tooltip_text)
 
 
 def _export_glossary_selector(enabled: bool, on_change: Optional[Callable[[bool], None]]):
@@ -167,11 +165,10 @@ def _export_glossary_selector(enabled: bool, on_change: Optional[Callable[[bool]
             '対訳CSV出力',
             value=enabled,
             on_change=lambda e: on_change and on_change(e.value),
-        ).classes('pdf-mode-checkbox')
-        ui.tooltip(
-            '原文と翻訳のペアをCSVファイルで出力します。\n'
+        ).classes('pdf-mode-checkbox').tooltip(
+            '原文と翻訳のペアをCSVファイルで出力します。'
             'glossaryとして再利用できます。'
-        ).classes('text-xs')
+        )
 
 
 def _drop_zone(on_file_select: Callable[[Path], None]):

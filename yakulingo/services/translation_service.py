@@ -159,17 +159,51 @@ class BatchTranslator:
 
         Returns:
             Mapping of block_id -> translated_text
-        """
-        results = {}
-        batches = self._create_batches(blocks)
 
+        Note:
+            For detailed results including error information, use
+            translate_blocks_with_result() instead.
+        """
+        result = self.translate_blocks_with_result(
+            blocks, reference_files, on_progress, output_language
+        )
+        return result.translations
+
+    def translate_blocks_with_result(
+        self,
+        blocks: List[TextBlock],
+        reference_files: Optional[List[Path]] = None,
+        on_progress: Optional[ProgressCallback] = None,
+        output_language: str = "en",
+    ) -> 'BatchTranslationResult':
+        """
+        Translate blocks in batches with detailed result information.
+
+        Args:
+            blocks: List of TextBlock to translate
+            reference_files: Optional reference files
+            on_progress: Progress callback
+            output_language: "en" for English, "jp" for Japanese
+
+        Returns:
+            BatchTranslationResult with translations and error details
+        """
+        from yakulingo.models.types import BatchTranslationResult
+
+        translations = {}
+        untranslated_block_ids = []
+        mismatched_batch_count = 0
+
+        batches = self._create_batches(blocks)
         has_refs = bool(reference_files)
         self._cancel_requested = False
+        cancelled = False
 
         for i, batch in enumerate(batches):
             # Check for cancellation between batches
             if self._cancel_requested:
                 logger.info("Batch translation cancelled at batch %d/%d", i + 1, len(batches))
+                cancelled = True
                 break
 
             if on_progress:
@@ -185,29 +219,44 @@ class BatchTranslator:
             prompt = self.prompt_builder.build_batch(texts, has_refs, output_language)
 
             # Translate
-            translations = self.copilot.translate_sync(texts, prompt, reference_files)
+            batch_translations = self.copilot.translate_sync(texts, prompt, reference_files)
 
             # Validate translation count matches batch size
-            if len(translations) != len(batch):
+            if len(batch_translations) != len(batch):
+                mismatched_batch_count += 1
                 logger.warning(
-                    "Translation count mismatch: expected %d, got %d. "
+                    "Translation count mismatch in batch %d: expected %d, got %d. "
                     "Some blocks may not be translated correctly.",
-                    len(batch), len(translations)
+                    i + 1, len(batch), len(batch_translations)
                 )
 
-            # Use zip with strict=False but handle mismatch explicitly
+            # Process results, tracking untranslated blocks
             for idx, block in enumerate(batch):
-                if idx < len(translations):
-                    results[block.id] = translations[idx]
+                if idx < len(batch_translations):
+                    translations[block.id] = batch_translations[idx]
                 else:
                     # Mark untranslated blocks with original text
+                    untranslated_block_ids.append(block.id)
                     logger.warning(
                         "Block '%s' was not translated (index %d >= translation count %d)",
-                        block.id, idx, len(translations)
+                        block.id, idx, len(batch_translations)
                     )
-                    results[block.id] = block.text
+                    translations[block.id] = block.text
 
-        return results
+        result = BatchTranslationResult(
+            translations=translations,
+            untranslated_block_ids=untranslated_block_ids,
+            mismatched_batch_count=mismatched_batch_count,
+            total_blocks=len(blocks),
+            translated_count=len(translations) - len(untranslated_block_ids),
+            cancelled=cancelled,
+        )
+
+        # Log summary if there were issues
+        if result.has_issues:
+            logger.warning("Translation completed with issues: %s", result.get_summary())
+
+        return result
 
     def _create_batches(self, blocks: List[TextBlock]) -> List[List[TextBlock]]:
         """Split blocks into batches based on configured limits."""

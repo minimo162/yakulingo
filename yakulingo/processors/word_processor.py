@@ -37,6 +37,36 @@ WORD_NS = {
 }
 
 
+def _extract_text_from_txbx_content(txbx_content) -> str:
+    """
+    Extract text from a txbxContent XML element.
+
+    This helper function extracts text from both modern (wps:txbx) and
+    legacy (v:textbox) Word textbox elements.
+
+    Args:
+        txbx_content: w:txbxContent XML element
+
+    Returns:
+        Extracted text joined by newlines, or empty string if no text
+    """
+    if txbx_content is None:
+        return ""
+
+    text_parts = []
+    for p in txbx_content.findall('.//w:p', WORD_NS):
+        para_text = []
+        for t in p.findall('.//w:t', WORD_NS):
+            if t.text:
+                para_text.append(t.text)
+        if para_text:
+            text_parts.append(''.join(para_text))
+
+    if text_parts:
+        return '\n'.join(text_parts).strip()
+    return ""
+
+
 def _extract_textboxes_from_docx(file_path: Path) -> list[dict]:
     """
     Extract TextBox content from docx file by parsing XML directly.
@@ -65,47 +95,25 @@ def _extract_textboxes_from_docx(file_path: Path) -> list[dict]:
 
             # Method 1: Modern Word textboxes (wps:txbx)
             for txbx in root.findall('.//wps:txbx', WORD_NS):
-                txbxContent = txbx.find('.//w:txbxContent', WORD_NS)
-                if txbxContent is not None:
-                    text_parts = []
-                    for p in txbxContent.findall('.//w:p', WORD_NS):
-                        para_text = []
-                        for t in p.findall('.//w:t', WORD_NS):
-                            if t.text:
-                                para_text.append(t.text)
-                        if para_text:
-                            text_parts.append(''.join(para_text))
-
-                    if text_parts:
-                        full_text = '\n'.join(text_parts)
-                        if full_text.strip():
-                            textboxes.append({
-                                'textbox_index': textbox_index,
-                                'text': full_text.strip(),
-                            })
-                            textbox_index += 1
+                txbx_content = txbx.find('.//w:txbxContent', WORD_NS)
+                full_text = _extract_text_from_txbx_content(txbx_content)
+                if full_text:
+                    textboxes.append({
+                        'textbox_index': textbox_index,
+                        'text': full_text,
+                    })
+                    textbox_index += 1
 
             # Method 2: Legacy VML textboxes (v:textbox)
             for textbox in root.findall('.//v:textbox', WORD_NS):
-                txbxContent = textbox.find('.//w:txbxContent', WORD_NS)
-                if txbxContent is not None:
-                    text_parts = []
-                    for p in txbxContent.findall('.//w:p', WORD_NS):
-                        para_text = []
-                        for t in p.findall('.//w:t', WORD_NS):
-                            if t.text:
-                                para_text.append(t.text)
-                        if para_text:
-                            text_parts.append(''.join(para_text))
-
-                    if text_parts:
-                        full_text = '\n'.join(text_parts)
-                        if full_text.strip():
-                            textboxes.append({
-                                'textbox_index': textbox_index,
-                                'text': full_text.strip(),
-                            })
-                            textbox_index += 1
+                txbx_content = textbox.find('.//w:txbxContent', WORD_NS)
+                full_text = _extract_text_from_txbx_content(txbx_content)
+                if full_text:
+                    textboxes.append({
+                        'textbox_index': textbox_index,
+                        'text': full_text,
+                    })
+                    textbox_index += 1
 
     except (zipfile.BadZipFile, ET.ParseError):
         pass

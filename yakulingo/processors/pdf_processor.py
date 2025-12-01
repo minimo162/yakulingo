@@ -992,7 +992,7 @@ def get_total_pages(pdf_path: str) -> int:
 @contextmanager
 def _open_pdf_document(pdf_path: str):
     """
-    Context manager for safely opening and closing PDF documents.
+    Context manager for safely opening and closing PDF documents (pypdfium2).
 
     Ensures the PDF is properly closed even if the caller doesn't
     fully consume the generator or an exception occurs.
@@ -1003,6 +1003,28 @@ def _open_pdf_document(pdf_path: str):
         yield pdf
     finally:
         pdf.close()
+
+
+@contextmanager
+def _open_fitz_document(file_path):
+    """
+    Context manager for safely opening and closing PyMuPDF documents.
+
+    Ensures the PDF is properly closed even if an exception occurs
+    or a generator is not fully consumed.
+
+    Args:
+        file_path: Path to PDF file (str or Path)
+
+    Yields:
+        PyMuPDF Document object
+    """
+    fitz = _get_fitz()
+    doc = fitz.open(file_path)
+    try:
+        yield doc
+    finally:
+        doc.close()
 
 
 def iterate_pdf_pages(
@@ -1215,23 +1237,19 @@ class PdfProcessor(FileProcessor):
 
     def get_file_info(self, file_path: Path) -> FileInfo:
         """Get PDF file info."""
-        fitz = _get_fitz()
-        doc = fitz.open(file_path)
+        with _open_fitz_document(file_path) as doc:
+            page_count = len(doc)
+            text_count = 0
 
-        page_count = len(doc)
-        text_count = 0
-
-        for page in doc:
-            blocks = page.get_text("dict")["blocks"]
-            for block in blocks:
-                if block.get("type") == 0:  # Text block
-                    for line in block.get("lines", []):
-                        for span in line.get("spans", []):
-                            text = span.get("text", "").strip()
-                            if text and self.should_translate(text):
-                                text_count += 1
-
-        doc.close()
+            for page in doc:
+                blocks = page.get_text("dict")["blocks"]
+                for block in blocks:
+                    if block.get("type") == 0:  # Text block
+                        for line in block.get("lines", []):
+                            for span in line.get("spans", []):
+                                text = span.get("text", "").strip()
+                                if text and self.should_translate(text):
+                                    text_count += 1
 
         return FileInfo(
             path=file_path,
@@ -1246,49 +1264,47 @@ class PdfProcessor(FileProcessor):
         Extract text blocks from PDF.
 
         Uses PyMuPDF to extract text blocks with their bounding boxes.
+        The context manager ensures proper cleanup even if the generator
+        is not fully consumed.
         """
-        fitz = _get_fitz()
-        doc = fitz.open(file_path)
+        with _open_fitz_document(file_path) as doc:
+            for page_idx, page in enumerate(doc):
+                blocks = page.get_text("dict")["blocks"]
+                for block_idx, block in enumerate(blocks):
+                    if block.get("type") == 0:  # Text block
+                        text_parts = []
+                        for line in block.get("lines", []):
+                            line_text = ""
+                            for span in line.get("spans", []):
+                                line_text += span.get("text", "")
+                            text_parts.append(line_text)
 
-        for page_idx, page in enumerate(doc):
-            blocks = page.get_text("dict")["blocks"]
-            for block_idx, block in enumerate(blocks):
-                if block.get("type") == 0:  # Text block
-                    text_parts = []
-                    for line in block.get("lines", []):
-                        line_text = ""
-                        for span in line.get("spans", []):
-                            line_text += span.get("text", "")
-                        text_parts.append(line_text)
+                        text = "\n".join(text_parts).strip()
 
-                    text = "\n".join(text_parts).strip()
+                        if text and self.should_translate(text):
+                            # Get font info from first span
+                            font_name = None
+                            font_size = 11.0
+                            if block.get("lines"):
+                                first_line = block["lines"][0]
+                                if first_line.get("spans"):
+                                    first_span = first_line["spans"][0]
+                                    font_name = first_span.get("font")
+                                    font_size = first_span.get("size", 11.0)
 
-                    if text and self.should_translate(text):
-                        # Get font info from first span
-                        font_name = None
-                        font_size = 11.0
-                        if block.get("lines"):
-                            first_line = block["lines"][0]
-                            if first_line.get("spans"):
-                                first_span = first_line["spans"][0]
-                                font_name = first_span.get("font")
-                                font_size = first_span.get("size", 11.0)
-
-                        yield TextBlock(
-                            id=f"page_{page_idx}_block_{block_idx}",
-                            text=text,
-                            location=f"Page {page_idx + 1}",
-                            metadata={
-                                'type': 'text_block',
-                                'page': page_idx,
-                                'block': block_idx,
-                                'bbox': block.get("bbox"),
-                                'font_name': font_name,
-                                'font_size': font_size,
-                            }
-                        )
-
-        doc.close()
+                            yield TextBlock(
+                                id=f"page_{page_idx}_block_{block_idx}",
+                                text=text,
+                                location=f"Page {page_idx + 1}",
+                                metadata={
+                                    'type': 'text_block',
+                                    'page': page_idx,
+                                    'block': block_idx,
+                                    'bbox': block.get("bbox"),
+                                    'font_name': font_name,
+                                    'font_size': font_size,
+                                }
+                            )
 
     def apply_translations(
         self,
@@ -1710,10 +1726,8 @@ class PdfProcessor(FileProcessor):
                 # Can also translate page_blocks immediately here
             ```
         """
-        fitz = _get_fitz()
-        doc = fitz.open(file_path)
-        total_pages = len(doc)
-        doc.close()
+        with _open_fitz_document(file_path) as doc:
+            total_pages = len(doc)
 
         if use_ocr and is_yomitoku_available():
             # Use yomitoku OCR with streaming
@@ -1794,11 +1808,10 @@ class PdfProcessor(FileProcessor):
         Extract text blocks using PyMuPDF only (fast, for text-based PDFs).
 
         Yields one page at a time with progress updates.
+        The context manager ensures proper cleanup even if the generator
+        is not fully consumed.
         """
-        fitz = _get_fitz()
-        doc = fitz.open(file_path)
-
-        try:
+        with _open_fitz_document(file_path) as doc:
             for page_idx, page in enumerate(doc):
                 page_num = page_idx + 1
 
@@ -1851,13 +1864,8 @@ class PdfProcessor(FileProcessor):
                             ))
 
                 yield blocks, None
-        finally:
-            doc.close()
 
     def get_page_count(self, file_path: Path) -> int:
         """Get total page count of PDF."""
-        fitz = _get_fitz()
-        doc = fitz.open(file_path)
-        count = len(doc)
-        doc.close()
-        return count
+        with _open_fitz_document(file_path) as doc:
+            return len(doc)

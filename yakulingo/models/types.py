@@ -108,8 +108,21 @@ class TranslationProgress:
     phase_detail: Optional[str] = None  # e.g., "Page 3/10"
 
     def __post_init__(self):
+        # Validate and normalize current value
+        if self.current < 0:
+            self.current = 0
+
+        # Validate total - must be non-negative
+        if self.total < 0:
+            raise ValueError(f"total must be non-negative, got {self.total}")
+
+        # Ensure current doesn't exceed total
         if self.total > 0:
+            if self.current > self.total:
+                self.current = self.total
             self.percentage = self.current / self.total
+        else:
+            self.percentage = 0.0
 
 
 @dataclass
@@ -193,6 +206,47 @@ class HistoryEntry:
         if len(self.source_text) <= max_len:
             return self.source_text
         return self.source_text[:max_len] + "..."
+
+
+@dataclass
+class BatchTranslationResult:
+    """
+    Result of batch translation with detailed success/failure information.
+
+    Provides visibility into which blocks were successfully translated
+    and which had issues (e.g., count mismatch from Copilot response).
+    """
+    translations: dict = field(default_factory=dict)  # block_id -> translated_text
+    untranslated_block_ids: list = field(default_factory=list)  # Block IDs that failed
+    mismatched_batch_count: int = 0  # Number of batches with count mismatch
+    total_blocks: int = 0
+    translated_count: int = 0
+    cancelled: bool = False
+
+    @property
+    def has_issues(self) -> bool:
+        """True if there were any translation issues."""
+        return len(self.untranslated_block_ids) > 0 or self.mismatched_batch_count > 0
+
+    @property
+    def success_rate(self) -> float:
+        """Percentage of blocks successfully translated (0.0 - 1.0)."""
+        if self.total_blocks == 0:
+            return 1.0
+        return self.translated_count / self.total_blocks
+
+    def get_summary(self) -> str:
+        """Get a human-readable summary of translation results."""
+        if self.cancelled:
+            return f"Cancelled: {self.translated_count}/{self.total_blocks} blocks translated"
+        if not self.has_issues:
+            return f"Success: {self.translated_count}/{self.total_blocks} blocks translated"
+        issues = []
+        if self.untranslated_block_ids:
+            issues.append(f"{len(self.untranslated_block_ids)} blocks untranslated")
+        if self.mismatched_batch_count > 0:
+            issues.append(f"{self.mismatched_batch_count} batches had count mismatch")
+        return f"Completed with issues: {', '.join(issues)}"
 
 
 # Callback types

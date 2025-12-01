@@ -137,6 +137,51 @@ def format_markdown_text(text: str) -> str:
     return text
 
 
+def is_japanese_dominant(text: str) -> bool:
+    """
+    Determine if the text is predominantly Japanese.
+
+    Uses the presence of hiragana and katakana characters to detect Japanese,
+    as these are unique to the Japanese writing system (unlike kanji which
+    is shared with Chinese).
+
+    The threshold is set at 30% - if more than 30% of alphanumeric characters
+    are hiragana/katakana, the text is considered Japanese.
+
+    Args:
+        text: Input text to analyze
+
+    Returns:
+        True if text is predominantly Japanese, False otherwise
+
+    Examples:
+        >>> is_japanese_dominant("こんにちは")
+        True
+        >>> is_japanese_dominant("Hello, 田中さん")
+        False  # Only ~15% is hiragana/katakana
+        >>> is_japanese_dominant("プロジェクトのstatusをupdateして")
+        True   # ~60% is hiragana/katakana
+    """
+    if not text or not text.strip():
+        return False
+
+    # Count characters (excluding spaces and punctuation)
+    chars = []
+    for c in text:
+        # Include alphanumeric and Japanese characters
+        if c.isalnum() or '\u3040' <= c <= '\u9fff':
+            chars.append(c)
+
+    if not chars:
+        return False
+
+    # Count hiragana (U+3040-U+309F) and katakana (U+30A0-U+30FF)
+    ja_kana_count = sum(1 for c in chars if '\u3040' <= c <= '\u30ff')
+
+    # 30% threshold for Japanese dominance
+    return (ja_kana_count / len(chars)) >= 0.3
+
+
 def parse_translation_result(result: str) -> tuple[str, str]:
     """
     Parse translation result into text and explanation.

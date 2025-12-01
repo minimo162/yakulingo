@@ -11,7 +11,7 @@ from typing import Callable, Optional
 from nicegui import ui
 
 from yakulingo.ui.state import AppState
-from yakulingo.ui.utils import format_markdown_text
+from yakulingo.ui.utils import format_markdown_text, is_japanese_dominant
 from yakulingo.models.types import TranslationOption, TextTranslationResult
 
 
@@ -239,16 +239,27 @@ def create_text_panel(
                     elapsed_time,
                 )
         elif state.text_translating:
-            _render_loading()
+            _render_loading(state.source_text)
 
 
-def _render_loading():
-    """Render improved loading state with spinner"""
-    with ui.element('div').classes('loading-character'):
+def _render_loading(source_text: str = ""):
+    """Render loading state with language detection indicator"""
+    is_japanese = is_japanese_dominant(source_text)
+
+    with ui.element('div').classes('loading-character animate-in'):
         # Loading spinner
         ui.spinner('dots', size='lg').classes('text-primary')
-        ui.label('翻訳中...').classes('message')
-        ui.label('M365 Copilot に問い合わせています').classes('submessage')
+
+        # Dynamic language detection message
+        with ui.row().classes('items-center gap-2'):
+            if is_japanese:
+                ui.label('🇯🇵 → 🇺🇸').classes('text-base')
+                ui.label('英語に翻訳しています...').classes('message')
+            else:
+                ui.label('🌐 → 🇯🇵').classes('text-base')
+                ui.label('日本語に翻訳しています...').classes('message')
+
+        ui.label('M365 Copilot による翻訳').classes('submessage')
 
 
 def _render_results_to_en(

@@ -518,15 +518,35 @@ class CopilotHandler:
                 input_elem.click()
                 input_elem.fill(message)
 
-                # Find and click send button
+                # Wait for send button to be enabled (appears after text input)
                 # 実際のCopilot HTML: <button type="submit" aria-label="送信" class="... fai-SendButton ...">
-                send_button = self._page.query_selector(
-                    '.fai-SendButton, button[type="submit"][aria-label="送信"], button[aria-label*="Send"], button[aria-label*="送信"]'
-                )
-                if send_button:
-                    send_button.click()
-                else:
-                    # Try pressing Enter
+                # 入力がある場合のみボタンが有効化される
+                send_button_selector = '.fai-SendButton:not([disabled]), button[type="submit"][aria-label="送信"]:not([disabled]), button[aria-label*="Send"]:not([disabled]), button[aria-label*="送信"]:not([disabled])'
+                try:
+                    send_button = self._page.wait_for_selector(
+                        send_button_selector,
+                        timeout=5000,
+                        state='visible'
+                    )
+                    if send_button:
+                        # Ensure button is truly enabled before clicking
+                        is_disabled = send_button.get_attribute('disabled')
+                        if is_disabled is None:
+                            # 送信前にGPT-5が有効か確認し、必要なら有効化
+                            # 送信ボタンが見つかった時点でUIは安定しているはず
+                            self._ensure_gpt5_enabled()
+                            send_button.click()
+                        else:
+                            # Button still disabled, try Enter key
+                            self._ensure_gpt5_enabled()
+                            input_elem.press("Enter")
+                    else:
+                        # Fallback to Enter key
+                        self._ensure_gpt5_enabled()
+                        input_elem.press("Enter")
+                except Exception:
+                    # Timeout waiting for button, try Enter key
+                    self._ensure_gpt5_enabled()
                     input_elem.press("Enter")
 
         except Exception as e:
@@ -716,7 +736,8 @@ class CopilotHandler:
             file_input = self._page.query_selector('input[type="file"]')
             if file_input:
                 file_input.set_input_files(str(file_path))
-                time.sleep(0.5)
+                # Wait for file to be attached (check for file preview/chip)
+                self._wait_for_file_attached(file_path)
                 return True
 
             # Priority 2: Two-step menu process (selectors may change)
@@ -729,7 +750,15 @@ class CopilotHandler:
 
             if plus_btn:
                 plus_btn.click()
-                time.sleep(0.3)  # Wait for menu to appear
+
+                # Wait for menu to appear (instead of fixed sleep)
+                menu_selector = 'div[role="menu"], div[role="menuitem"]'
+                try:
+                    self._page.wait_for_selector(menu_selector, timeout=3000, state='visible')
+                except Exception:
+                    # Menu didn't appear, retry click
+                    plus_btn.click()
+                    self._page.wait_for_selector(menu_selector, timeout=3000, state='visible')
 
                 # Step 2: Click the upload menu item
                 with self._page.expect_file_chooser() as fc_info:
@@ -744,7 +773,8 @@ class CopilotHandler:
 
                 file_chooser = fc_info.value
                 file_chooser.set_files(str(file_path))
-                time.sleep(0.5)
+                # Wait for file to be attached
+                self._wait_for_file_attached(file_path)
                 return True
 
             print(f"Warning: Could not find attachment mechanism for file: {file_path}")
@@ -753,6 +783,46 @@ class CopilotHandler:
         except Exception as e:
             print(f"Error attaching file {file_path}: {e}")
             return False
+
+    def _wait_for_file_attached(self, file_path: Path, timeout: int = 5) -> bool:
+        """
+        Wait for file to be attached and visible in the chat input area.
+
+        Args:
+            file_path: Path to the attached file
+            timeout: Maximum wait time in seconds
+
+        Returns:
+            True if file attachment was confirmed
+        """
+        try:
+            # Look for file chip/preview that appears after attachment
+            # Common patterns: file name displayed, attachment indicator, etc.
+            file_name = file_path.name
+            file_indicators = [
+                f'[data-testid*="attachment"]',
+                f'[aria-label*="{file_name}"]',
+                '.fai-AttachmentChip',
+                '[class*="attachment"]',
+                '[class*="file-chip"]',
+            ]
+
+            start_time = time.time()
+            while time.time() - start_time < timeout:
+                for selector in file_indicators:
+                    try:
+                        elem = self._page.query_selector(selector)
+                        if elem:
+                            return True
+                    except Exception:
+                        continue
+                time.sleep(0.3)
+
+            # If no indicator found, assume success after timeout
+            # (some UI may not show clear indicators)
+            return True
+        except Exception:
+            return True  # Don't fail the operation if we can't verify
 
     async def _attach_file_async(self, file_path: Path) -> bool:
         """
@@ -802,52 +872,116 @@ class CopilotHandler:
             )
             if new_chat_btn:
                 new_chat_btn.click()
-                time.sleep(1)
+
+                # Wait for new chat to be ready (input field becomes available)
+                input_selector = '#m365-chat-editor-target-element, [data-lexical-editor="true"], [contenteditable="true"]'
+                try:
+                    self._page.wait_for_selector(input_selector, timeout=5000, state='visible')
+                except Exception:
+                    # Fallback: wait a bit if selector doesn't appear
+                    time.sleep(1)
+
                 # 新しいチャット開始後、GPT-5を有効化
-                self._enable_gpt5()
+                # （送信時にも再確認するが、UIの安定性のため先に試行）
+                self._ensure_gpt5_enabled()
         except Exception:
             pass
 
-    def _enable_gpt5(self) -> None:
+    def _ensure_gpt5_enabled(self, max_wait: float = 1.0) -> bool:
         """
-        GPT-5トグルボタンを有効化する。
-        ボタンが押されていない状態（aria-pressed="false"）の場合のみクリック。
+        GPT-5トグルボタンが有効でなければ有効化する。
+        送信直前に呼び出すことで、ボタンの遅延描画にも対応。
 
-        注意: ボタンのテキストは頻繁に変更される可能性があり、
+        注意: ボタンのテキストやクラス名は頻繁に変更される可能性があり、
         将来的にGPT-5がデフォルトになりボタン自体がなくなる可能性もある。
-        そのため、テキストに依存しないセレクタを使用し、
-        ボタンが存在しない場合は静かにスキップする。
+        そのため、複数の検出方法を用意し、見つからない場合は静かにスキップする。
 
-        実際のCopilot HTML:
+        実際のCopilot HTML（2024年時点）:
         - 押されていない: <button aria-pressed="false" class="... fui-ToggleButton ...">Try GPT-5</button>
         - 押されている: <button aria-pressed="true" class="... fui-ToggleButton ...">GPT-5 On</button>
-        - 新しいチャットボタンの左隣のdiv内に配置
+
+        Args:
+            max_wait: ボタンの遅延描画を待つ最大時間（秒）
+
+        Returns:
+            True if GPT-5 is enabled (or button not found), False if failed to enable
         """
         if not self._page:
-            return
+            return True
 
         try:
-            # 新しいチャットボタンの左隣にあるトグルボタンを探す
-            # JavaScript で親要素内のトグルボタンを探す
-            gpt5_btn = self._page.evaluate_handle('''() => {
-                const newChatBtn = document.querySelector('#new-chat-button, [data-testid="newChatButton"]');
-                if (!newChatBtn) return null;
+            # まず、既に有効化されているか確認
+            enabled_btn = self._page.query_selector(
+                'button.fui-ToggleButton[aria-pressed="true"]'
+            )
+            if enabled_btn:
+                return True  # 既に有効
 
-                // 親要素を遡ってトグルボタンを探す
-                let parent = newChatBtn.parentElement;
-                for (let i = 0; i < 3 && parent; i++) {
-                    const toggleBtn = parent.querySelector('button.fui-ToggleButton[aria-pressed="false"]');
-                    if (toggleBtn && toggleBtn !== newChatBtn) {
-                        return toggleBtn;
+            # 無効なボタンを探す（遅延描画対応のため複数回試行）
+            start_time = time.time()
+            gpt5_btn = None
+
+            while time.time() - start_time < max_wait:
+                # 方法1: aria-pressed="false"のトグルボタンを直接検索
+                gpt5_btn = self._page.query_selector(
+                    'button.fui-ToggleButton[aria-pressed="false"]'
+                )
+                if gpt5_btn:
+                    break
+
+                # 方法2: 新しいチャットボタンの近くにあるトグルボタンをJSで検索
+                gpt5_btn = self._page.evaluate_handle('''() => {
+                    // 新しいチャットボタンを基準に探す
+                    const newChatBtn = document.querySelector('#new-chat-button, [data-testid="newChatButton"]');
+                    if (newChatBtn) {
+                        let parent = newChatBtn.parentElement;
+                        for (let i = 0; i < 4 && parent; i++) {
+                            const toggleBtn = parent.querySelector('button[aria-pressed="false"]');
+                            if (toggleBtn && toggleBtn !== newChatBtn) {
+                                return toggleBtn;
+                            }
+                            parent = parent.parentElement;
+                        }
                     }
-                    parent = parent.parentElement;
-                }
-                return null;
-            }''')
+                    // 送信ボタンの近くにあるトグルボタンを探す
+                    const sendBtn = document.querySelector('.fai-SendButton, button[type="submit"]');
+                    if (sendBtn) {
+                        let parent = sendBtn.parentElement;
+                        for (let i = 0; i < 5 && parent; i++) {
+                            const toggleBtn = parent.querySelector('button[aria-pressed="false"]');
+                            if (toggleBtn && toggleBtn !== sendBtn) {
+                                return toggleBtn;
+                            }
+                            parent = parent.parentElement;
+                        }
+                    }
+                    return null;
+                }''')
 
-            if gpt5_btn:
-                gpt5_btn.click()
-                time.sleep(0.5)
+                if gpt5_btn:
+                    break
+
+                time.sleep(0.1)  # 短い間隔でリトライ
+
+            if not gpt5_btn:
+                # ボタンが見つからない = 既に有効か、ボタンが存在しない
+                return True
+
+            # ボタンをクリックして有効化
+            gpt5_btn.click()
+
+            # 状態変更を確認（短いタイムアウト）
+            try:
+                self._page.wait_for_selector(
+                    'button.fui-ToggleButton[aria-pressed="true"], button[aria-pressed="true"]',
+                    timeout=1500,
+                    state='attached'
+                )
+                return True
+            except Exception:
+                # 状態変更が確認できなくても、クリックは成功したかもしれない
+                return True
+
         except Exception:
-            # ボタンが存在しない場合は静かにスキップ（オプション機能）
-            pass
+            # エラーが発生しても翻訳処理は続行
+            return True

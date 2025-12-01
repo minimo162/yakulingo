@@ -198,7 +198,7 @@ YakuLingo/
 │   ├── storage/              # データ永続化（履歴）
 │   ├── config/               # 設定管理
 │   └── models/               # データモデル
-├── tests/                    # テストスイート（25ファイル）
+├── tests/                    # テストスイート（26ファイル）
 ├── prompts/                  # 翻訳プロンプト
 ├── config/settings.json      # アプリ設定
 └── glossary.csv              # デフォルト用語集

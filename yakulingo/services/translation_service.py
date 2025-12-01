@@ -915,6 +915,24 @@ class TranslationService:
             # Standard mode: use regular apply_translations
             processor.apply_translations(input_path, output_path, translations, direction)
 
+        # Create bilingual PDF if enabled
+        bilingual_path = None
+        if self.config and self.config.pdf_bilingual_output:
+            if on_progress:
+                on_progress(TranslationProgress(
+                    current=95,
+                    total=100,
+                    status="Creating bilingual PDF...",
+                    phase=TranslationPhase.APPLYING,
+                    phase_detail="Interleaving original and translated pages",
+                ))
+
+            # Generate bilingual output path with _bilingual suffix
+            bilingual_path = output_path.parent / (
+                output_path.stem.replace('_translated', '') + '_bilingual.pdf'
+            )
+            processor.create_bilingual_pdf(input_path, output_path, bilingual_path)
+
         if on_progress:
             on_progress(TranslationProgress(
                 current=100,
@@ -932,9 +950,12 @@ class TranslationService:
             else:
                 warnings.append(f"OCR failed for {len(failed_pages)} pages: {failed_pages}")
 
+        # Include bilingual PDF info in output path (show bilingual if created)
+        final_output_path = bilingual_path if bilingual_path else output_path
+
         return TranslationResult(
             status=TranslationStatus.COMPLETED,
-            output_path=output_path,
+            output_path=final_output_path,
             blocks_translated=len(translations),
             blocks_total=total_blocks,
             duration_seconds=time.time() - start_time,

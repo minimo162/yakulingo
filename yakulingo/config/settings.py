@@ -39,6 +39,9 @@ class AppSettings:
     # Default to free (7500 with margin) for safety
     copilot_char_limit: int = 7500      # Max prompt chars before switching to file attachment
 
+    # PDF Options
+    pdf_bilingual_output: bool = False  # 対訳PDF出力（原文と翻訳を交互に配置）
+
     # Auto Update
     auto_update_enabled: bool = True            # 起動時に自動チェック
     auto_update_check_interval: int = 86400     # チェック間隔（秒）: 24時間
@@ -79,6 +82,8 @@ class AppSettings:
             "request_timeout": self.request_timeout,
             "max_retries": self.max_retries,
             "copilot_char_limit": self.copilot_char_limit,
+            # PDF Options
+            "pdf_bilingual_output": self.pdf_bilingual_output,
             # Auto Update
             "auto_update_enabled": self.auto_update_enabled,
             "auto_update_check_interval": self.auto_update_check_interval,

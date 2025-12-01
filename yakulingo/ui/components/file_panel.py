@@ -41,6 +41,8 @@ def create_file_panel(
     on_reset: Callable[[], None],
     on_language_change: Optional[Callable[[str], None]] = None,
     on_pdf_fast_mode_change: Optional[Callable[[bool], None]] = None,
+    on_pdf_bilingual_change: Optional[Callable[[bool], None]] = None,
+    pdf_bilingual_enabled: bool = False,
 ):
     """File translation panel - Nani-inspired design"""
 
@@ -56,9 +58,10 @@ def create_file_panel(
                     _file_card(state.file_info, on_reset)
                     # Output language selector
                     _language_selector(state, on_language_change)
-                    # PDF fast mode option (only for PDF files)
+                    # PDF options (only for PDF files)
                     if state.file_info and state.file_info.file_type == FileType.PDF:
                         _pdf_mode_selector(state, on_pdf_fast_mode_change)
+                        _pdf_bilingual_selector(pdf_bilingual_enabled, on_pdf_bilingual_change)
                     with ui.row().classes('justify-center mt-4'):
                         with ui.button(on_click=on_translate).classes('translate-btn').props('no-caps'):
                             ui.label('翻訳する')
@@ -118,6 +121,20 @@ def _pdf_mode_selector(state: AppState, on_change: Optional[Callable[[bool], Non
         ui.tooltip(
             'OCRレイアウト解析をスキップして高速処理します。\n'
             'テキストベースのPDFに最適。スキャン文書や複雑なレイアウトでは精度が低下する場合があります。'
+        ).classes('text-xs')
+
+
+def _pdf_bilingual_selector(enabled: bool, on_change: Optional[Callable[[bool], None]]):
+    """PDF bilingual output selector - checkbox for interleaved original/translated pages"""
+    with ui.row().classes('w-full justify-center mt-2 items-center gap-2'):
+        ui.checkbox(
+            '対訳PDF出力',
+            value=enabled,
+            on_change=lambda e: on_change and on_change(e.value),
+        ).classes('pdf-mode-checkbox')
+        ui.tooltip(
+            '原文と翻訳を交互に配置した対訳PDFを作成します。\n'
+            '（例: 1ページ目=原文、2ページ目=翻訳、3ページ目=原文...）'
         ).classes('text-xs')
 
 

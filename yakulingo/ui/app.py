@@ -310,6 +310,8 @@ class YakuLingoApp:
                         on_reset=self._reset,
                         on_language_change=self._on_language_change,
                         on_pdf_fast_mode_change=self._on_pdf_fast_mode_change,
+                        on_pdf_bilingual_change=self._on_pdf_bilingual_change,
+                        pdf_bilingual_enabled=self.config.pdf_bilingual_output,
                     )
 
         self._main_content = main_content
@@ -726,6 +728,12 @@ class YakuLingoApp:
     def _on_pdf_fast_mode_change(self, fast_mode: bool):
         """Handle PDF fast mode toggle"""
         self.state.pdf_fast_mode = fast_mode
+        # No need to refresh content, checkbox state is handled by NiceGUI
+
+    def _on_pdf_bilingual_change(self, enabled: bool):
+        """Handle PDF bilingual output toggle"""
+        self.config.pdf_bilingual_output = enabled
+        self.config.save(self.config_path)
         # No need to refresh content, checkbox state is handled by NiceGUI
 
     def _select_file(self, file_path: Path):

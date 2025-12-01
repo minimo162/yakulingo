@@ -466,16 +466,26 @@ class CopilotHandler:
         """
         Synchronous version of translate for non-async contexts.
 
+        Attaches reference files (glossary, etc.) to Copilot before sending.
+        This allows using glossaries without embedding them in the prompt,
+        which is important for Copilot Free (8000 char limit).
+
         Args:
             texts: List of text strings to translate (used for result parsing)
             prompt: The translation prompt to send to Copilot
-            reference_files: Currently unused (file attachment not implemented)
+            reference_files: Optional list of reference files to attach
 
         Returns:
             List of translated strings parsed from Copilot's response
         """
         if not self._connected or not self._page:
             raise RuntimeError("Not connected to Copilot")
+
+        # Attach reference files first (before sending prompt)
+        if reference_files:
+            for file_path in reference_files:
+                if file_path.exists():
+                    self._attach_file(file_path)
 
         # Send the prompt
         self._send_message(prompt)
@@ -686,19 +696,76 @@ class CopilotHandler:
         except Exception:
             return ""
 
-    async def _attach_file_async(self, file_path: Path) -> None:
+    def _attach_file(self, file_path: Path) -> bool:
         """
-        Attach file to Copilot chat (async).
+        Attach file to Copilot chat input (sync).
 
-        Note: This method is not yet implemented. File attachment functionality
-        requires inspection of the Copilot UI to determine the correct selectors
-        and interaction pattern.
+        Prioritizes direct file input for stability, with menu-based fallback.
 
         Args:
-            file_path: Path to the file to attach (currently unused)
+            file_path: Path to the file to attach
+
+        Returns:
+            True if file was attached successfully
         """
-        # TODO: Implement file attachment when Copilot UI details are available
-        pass
+        if not self._page or not file_path.exists():
+            return False
+
+        try:
+            # Priority 1: Direct file input (most stable)
+            file_input = self._page.query_selector('input[type="file"]')
+            if file_input:
+                file_input.set_input_files(str(file_path))
+                time.sleep(0.5)
+                return True
+
+            # Priority 2: Two-step menu process (selectors may change)
+            # Step 1: Click the "+" button to open the menu
+            plus_btn = self._page.query_selector('[data-testid="PlusMenuButton"]')
+            if not plus_btn:
+                plus_btn = self._page.query_selector(
+                    'button[aria-label*="コンテンツ"], button[aria-label*="追加"]'
+                )
+
+            if plus_btn:
+                plus_btn.click()
+                time.sleep(0.3)  # Wait for menu to appear
+
+                # Step 2: Click the upload menu item
+                with self._page.expect_file_chooser() as fc_info:
+                    upload_item = self._page.query_selector(
+                        'div[role="menuitem"]:has-text("アップロード"), '
+                        'div[role="menuitem"]:has-text("Upload")'
+                    )
+                    if upload_item:
+                        upload_item.click()
+                    else:
+                        self._page.get_by_role("menuitem", name="画像とファイルのアップロード").click()
+
+                file_chooser = fc_info.value
+                file_chooser.set_files(str(file_path))
+                time.sleep(0.5)
+                return True
+
+            print(f"Warning: Could not find attachment mechanism for file: {file_path}")
+            return False
+
+        except Exception as e:
+            print(f"Error attaching file {file_path}: {e}")
+            return False
+
+    async def _attach_file_async(self, file_path: Path) -> bool:
+        """
+        Attach file to Copilot chat (async wrapper).
+
+        Args:
+            file_path: Path to the file to attach
+
+        Returns:
+            True if file was attached successfully
+        """
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self._attach_file, file_path)
 
     def _parse_batch_result(self, result: str, expected_count: int) -> List[str]:
         """Parse batch translation result back to list"""

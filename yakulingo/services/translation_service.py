@@ -69,7 +69,7 @@ from yakulingo.models.types import (
 )
 from yakulingo.config.settings import AppSettings
 from yakulingo.services.copilot_handler import CopilotHandler
-from yakulingo.services.prompt_builder import PromptBuilder
+from yakulingo.services.prompt_builder import PromptBuilder, REFERENCE_INSTRUCTION
 from yakulingo.processors.base import FileProcessor
 from yakulingo.processors.excel_processor import ExcelProcessor
 from yakulingo.processors.word_processor import WordProcessor
@@ -281,10 +281,12 @@ class TranslationService:
                     error_message=result.error_message,
                 )
 
-            # Build prompt
-            prompt = template.replace("{input_text}", text)
+            # Build prompt with reference section if files are attached
+            reference_section = REFERENCE_INSTRUCTION if reference_files else ""
+            prompt = template.replace("{reference_section}", reference_section)
+            prompt = prompt.replace("{input_text}", text)
 
-            # Translate
+            # Translate (files are attached by copilot handler)
             raw_result = self.copilot.translate_single(text, prompt, reference_files)
 
             # Parse the result based on output language

@@ -1169,4 +1169,67 @@ body {
 .result-count-badge .emoji {
     font-size: 0.875rem;
 }
+
+/* === Nani-style Attachment Button === */
+.attach-btn {
+    display: grid;
+    place-items: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    border: 1.5px dashed var(--md-sys-color-outline-variant);
+    border-radius: var(--md-sys-shape-corner-full);
+    background: transparent;
+    color: var(--md-sys-color-on-surface-variant);
+    cursor: pointer;
+    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+    flex-shrink: 0;
+}
+
+.attach-btn:hover {
+    border-color: var(--md-sys-color-primary);
+    color: var(--md-sys-color-primary);
+    background: var(--md-sys-color-primary-container);
+}
+
+.attach-btn.has-file {
+    border-style: solid;
+    border-color: var(--md-sys-color-primary);
+    background: var(--md-sys-color-primary-container);
+    color: var(--md-sys-color-on-primary-container);
+}
+
+.attach-btn svg {
+    width: 1.25rem;
+    height: 1.25rem;
+}
+
+/* Attachment file indicator */
+.attach-file-indicator {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.25rem 0.5rem;
+    background: var(--md-sys-color-primary-container);
+    border-radius: var(--md-sys-shape-corner-full);
+    font-size: 0.75rem;
+    color: var(--md-sys-color-on-primary-container);
+}
+
+.attach-file-indicator .file-name {
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.attach-file-indicator .remove-btn {
+    padding: 0.125rem;
+    border-radius: var(--md-sys-shape-corner-full);
+    cursor: pointer;
+    transition: background var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+}
+
+.attach-file-indicator .remove-btn:hover {
+    background: rgba(0, 0, 0, 0.1);
+}
 """

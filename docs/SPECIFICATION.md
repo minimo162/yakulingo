@@ -1,7 +1,7 @@
 # YakuLingo - 技術仕様書
 
-> **Version**: 2.1
-> **Date**: 2025-11
+> **Version**: 2.2
+> **Date**: 2025-12
 > **App Name**: YakuLingo (訳リンゴ)
 
 ---
@@ -37,7 +37,7 @@ M365 Copilotを翻訳エンジンとして使用し、テキストとドキュ�
 | **Text Translation** | テキストを入力して即座に翻訳（言語自動検出） |
 | **File Translation** | Excel/Word/PowerPoint/PDF の一括翻訳 |
 | **Layout Preservation** | 翻訳後もファイルの体裁を維持 |
-| **Reference Files** | 用語集による一貫した翻訳 |
+| **Reference Files** | 用語集・スタイルガイド・参考資料による一貫した翻訳 |
 | **Translation History** | 過去の翻訳をローカルに保存・検索 |
 | **Auto Update** | GitHub Releases経由で自動更新 |
 
@@ -181,7 +181,7 @@ YakuLingo/
 ├── config/
 │   └── settings.json               # ユーザー設定
 │
-├── glossary.csv                    # 参照用語集
+├── glossary.csv                    # デフォルト参照ファイル（用語集）
 │
 ├── installer/                      # 配布用インストーラ
 │
@@ -860,7 +860,7 @@ class HistoryDB:
 |--------|------|
 | アプリ設定 | `config/settings.json` |
 | 翻訳履歴 | `~/.yakulingo/history.db` |
-| 用語集 | `glossary.csv` |
+| 参照ファイル | `glossary.csv`（デフォルト） |
 
 ---
 
@@ -923,14 +923,28 @@ if HAS_PYWIN32:
 ```python
 @dataclass
 class AppSettings:
+    # Reference Files (用語集、参考資料など)
     reference_files: list[str] = ["glossary.csv"]
     output_directory: Optional[str] = None  # None = 入力と同じ
+
+    # UI
     last_tab: str = "text"
-    window_width: int = 900
-    window_height: int = 700
+    window_width: int = 960
+    window_height: int = 720
+
+    # Advanced
     max_batch_size: int = 50
+    max_chars_per_batch: int = 10000
     request_timeout: int = 120
     max_retries: int = 3
+
+    # Auto Update
+    auto_update_enabled: bool = True
+    auto_update_check_interval: int = 86400  # 24時間
+    github_repo_owner: str = "minimo162"
+    github_repo_name: str = "yakulingo"
+    last_update_check: Optional[str] = None
+    skipped_version: Optional[str] = None
 ```
 
 **設定ファイル:** `config/settings.json`
@@ -1017,6 +1031,7 @@ share_package/
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.2 | 2025-12 | 参照ファイル機能拡張（用語集→汎用参照ファイル対応）、設定項目追加 |
 | 2.1 | 2025-11 | 言語自動検出、翻訳履歴、自動更新、M3デザイン対応 |
 | 2.0 | 2024-11 | 実装コードに基づく完全な仕様書作成 |
 

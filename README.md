@@ -9,7 +9,7 @@
 | **テキスト翻訳** | テキストを入力して即座に翻訳（言語自動検出） |
 | **ファイル翻訳** | Excel/Word/PowerPoint/PDF の一括翻訳 |
 | **レイアウト保持** | 翻訳後もファイルの体裁を維持 |
-| **参考ファイル** | 用語集・参考資料による一貫した翻訳 |
+| **参照ファイル** | 用語集・スタイルガイド・参考資料による一貫した翻訳 |
 | **フォント自動調整** | 翻訳方向に応じた適切なフォント選択 |
 | **翻訳履歴** | 過去の翻訳をローカルに保存・検索 |
 | **自動更新** | GitHub Releases経由で最新版に自動更新 |
@@ -104,14 +104,22 @@ run.vbs
   "reference_files": ["glossary.csv"],
   "output_directory": null,
   "last_tab": "text",
+  "window_width": 960,
+  "window_height": 720,
   "max_batch_size": 50,
   "request_timeout": 120,
-  "max_retries": 3
+  "max_retries": 3,
+  "auto_update_enabled": true
 }
 ```
 
-### 用語集 (glossary.csv)
+### 参照ファイル
 
+翻訳時に参照ファイルを添付することで、一貫性のある翻訳が可能です。
+
+**対応形式**: CSV, TXT, PDF, Word, Excel, PowerPoint, Markdown, JSON
+
+**デフォルト (glossary.csv)**:
 ```csv
 # YakuLingo - Glossary File
 # Format: source_term,translated_term
@@ -119,6 +127,12 @@ run.vbs
 (千円),(k yen)
 営業利益,Operating Profit
 ```
+
+**活用例**:
+- 用語集（専門用語の統一）
+- スタイルガイド（文体・表現の指針）
+- 参考訳文（過去の翻訳例）
+- 仕様書（背景情報の提供）
 
 ## 自動更新
 
@@ -146,8 +160,8 @@ run.vbs
 
 ### 翻訳結果が期待と異なる
 
-- 用語集（glossary.csv）に固有名詞を追加
-- 参考ファイルを添付して文脈を提供
+- 参照ファイル（glossary.csv等）に固有名詞を追加
+- スタイルガイドや参考資料を添付して文脈を提供
 
 ### 自動更新が失敗する
 
@@ -201,7 +215,7 @@ YakuLingo/
 ├── tests/                    # テストスイート（26ファイル）
 ├── prompts/                  # 翻訳プロンプト
 ├── config/settings.json      # アプリ設定
-└── glossary.csv              # デフォルト用語集
+└── glossary.csv              # デフォルト参照ファイル
 ```
 
 ## 技術スタック
@@ -223,7 +237,7 @@ YakuLingo/
 |--------|------|
 | 設定ファイル | `config/settings.json` |
 | 翻訳履歴 | `~/.yakulingo/history.db` |
-| 用語集 | `glossary.csv` |
+| 参照ファイル | `glossary.csv`（デフォルト） |
 
 ## ライセンス
 

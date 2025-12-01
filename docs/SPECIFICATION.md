@@ -1,6 +1,6 @@
 # YakuLingo - 技術仕様書
 
-> **Version**: 2.3
+> **Version**: 2.4
 > **Date**: 2025-12
 > **App Name**: YakuLingo (訳リンゴ)
 
@@ -37,6 +37,8 @@ M365 Copilotを翻訳エンジンとして使用し、テキストとドキュ�
 | **Text Translation** | テキストを入力して即座に翻訳（言語自動検出） |
 | **File Translation** | Excel/Word/PowerPoint/PDF の一括翻訳 |
 | **Layout Preservation** | 翻訳後もファイルの体裁を維持 |
+| **Bilingual Output** | 原文と訳文を並べた対訳ファイルを自動生成 |
+| **Glossary Export** | 翻訳ペアをCSVで出力（用語管理に活用） |
 | **Reference Files** | 用語集・スタイルガイド・参考資料による一貫した翻訳 |
 | **Translation History** | 過去の翻訳をローカルに保存・検索 |
 | **Auto Update** | GitHub Releases経由で自動更新 |
@@ -266,12 +268,18 @@ class TextTranslationResult:
 class TranslationResult:
     """ファイル翻訳結果"""
     status: TranslationStatus
-    output_path: Optional[Path]
+    output_path: Optional[Path]           # 翻訳ファイル
+    bilingual_path: Optional[Path]        # 対訳ファイル (原文+訳文)
+    glossary_path: Optional[Path]         # 用語集CSV
     blocks_translated: int
     blocks_total: int
     duration_seconds: float
     error_message: Optional[str]
     warnings: list[str]
+
+    @property
+    def output_files(self) -> list[tuple[Path, str]]:
+        """全出力ファイルのリスト [(path, description), ...]"""
 
 @dataclass
 class HistoryEntry:
@@ -413,19 +421,40 @@ class AppState:
 **State: Complete**
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│  │  ✓ Translation Complete                                   │  │
-│  │  📊 report_2024_EN.xlsx                                   │  │
-│         [ Download ]              [ Translate Another ]         │
+│  翻訳完了ダイアログ (Completion Dialog)                          │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │  ✓ 翻訳が完了しました                     45.2秒           ││
+│  │                                                             ││
+│  │  出力ファイル:                                              ││
+│  │  ┌─────────────────────────────────────────────────────────┐││
+│  │  │ 📊 report_2024_EN.xlsx                                 │││
+│  │  │    翻訳ファイル          [開く] [フォルダで表示]         │││
+│  │  └─────────────────────────────────────────────────────────┘││
+│  │  ┌─────────────────────────────────────────────────────────┐││
+│  │  │ 📊 report_2024_bilingual.xlsx                          │││
+│  │  │    対訳ファイル          [開く] [フォルダで表示]         │││
+│  │  └─────────────────────────────────────────────────────────┘││
+│  │  ┌─────────────────────────────────────────────────────────┐││
+│  │  │ 📋 report_2024_glossary.csv                            │││
+│  │  │    用語集CSV            [開く] [フォルダで表示]          │││
+│  │  └─────────────────────────────────────────────────────────┘││
+│  │                                                  [ 閉じる ] ││
+│  └─────────────────────────────────────────────────────────────┘│
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 ### 5.5 出力ファイル命名
 
-| Input Language | Input | Output |
-|----------------|-------|--------|
-| Japanese | `report.xlsx` | `report_EN.xlsx` |
-| English | `report.xlsx` | `report_JP.xlsx` |
-| 既存時 | `report.xlsx` | `report_EN_2.xlsx` |
+| Output Type | Input | Output |
+|-------------|-------|--------|
+| 翻訳ファイル (JP→EN) | `report.xlsx` | `report_translated.xlsx` |
+| 対訳ファイル | `report.xlsx` | `report_bilingual.xlsx` |
+| 用語集CSV | `report.xlsx` | `report_glossary.csv` |
+
+**PDF対訳出力:**
+| Output Type | Input | Output |
+|-------------|-------|--------|
+| 対訳PDF | `report.pdf` | `report_bilingual.pdf` |
 
 ### 5.6 カラーシステム (Material Design 3)
 
@@ -682,6 +711,10 @@ class ExcelProcessor(FileProcessor):
     - シート名
     - コメント
     - ヘッダー/フッター
+
+    追加機能:
+    - create_bilingual_workbook(): 原文/訳文シートを並列配置
+    - export_glossary_csv(): 翻訳ペアをCSV出力
     """
 ```
 
@@ -704,6 +737,11 @@ class WordProcessor(FileProcessor):
 
     非対象:
     - ヘッダー/フッター（翻訳しない）
+
+    追加機能:
+    - create_bilingual_document(): 原文→訳文の段落を交互に配置
+      - 【翻訳】ヘッダーで訳文セクションを明示
+      - 罫線で原文/訳文を分離
     """
 ```
 
@@ -722,6 +760,11 @@ class PptxProcessor(FileProcessor):
     - アニメーション
     - トランジション
     - 画像・グラフ
+
+    追加機能:
+    - create_bilingual_presentation(): 原文→訳文のスライドを交互に配置
+      - XML直接操作でスライドをマージ
+      - presentation.xml.relsにリレーションを追加
     """
 ```
 
@@ -739,6 +782,10 @@ class PdfProcessor(FileProcessor):
     - en: Tiro
     - zh-CN: SourceHanSerifSC-Regular.ttf
     - ko: SourceHanSerifKR-Regular.ttf
+
+    追加機能:
+    - create_bilingual_pdf(): 原文→訳文のページを交互に配置
+    - export_glossary_csv(): 翻訳ペアをCSV出力
     """
 ```
 
@@ -1046,6 +1093,7 @@ share_package/
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.4 | 2025-12 | 対訳出力・用語集CSV機能追加（全ファイル形式対応）、翻訳完了ダイアログ改善（出力ファイル一覧・アクションボタン） |
 | 2.3 | 2025-12 | Copilot Free対応（動的プロンプト切り替え）、コード品質向上（例外処理、リソース管理、定数化） |
 | 2.2 | 2025-12 | 参照ファイル機能拡張（用語集→汎用参照ファイル対応）、設定項目追加 |
 | 2.1 | 2025-11 | 言語自動検出、翻訳履歴、自動更新、M3デザイン対応 |

@@ -48,6 +48,11 @@ class AppSettings:
     bilingual_output: bool = False      # 対訳出力（原文と翻訳を交互に配置）
     export_glossary: bool = False       # 対訳CSV出力（glossaryとして再利用可能）
 
+    # PDF OCR Options (yomitoku)
+    ocr_batch_size: int = 5             # ページ/バッチ（メモリ使用量とのトレードオフ）
+    ocr_dpi: int = 200                  # OCR解像度（高いほど精度向上、処理時間増加）
+    ocr_device: str = "auto"            # "auto", "cpu", "cuda"
+
     # Auto Update
     auto_update_enabled: bool = True            # 起動時に自動チェック
     auto_update_check_interval: int = 86400     # チェック間隔（秒）: 24時間
@@ -100,6 +105,10 @@ class AppSettings:
             # File Translation Options
             "bilingual_output": self.bilingual_output,
             "export_glossary": self.export_glossary,
+            # PDF OCR Options
+            "ocr_batch_size": self.ocr_batch_size,
+            "ocr_dpi": self.ocr_dpi,
+            "ocr_device": self.ocr_device,
             # Auto Update
             "auto_update_enabled": self.auto_update_enabled,
             "auto_update_check_interval": self.auto_update_check_interval,

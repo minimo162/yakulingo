@@ -971,9 +971,9 @@ def _is_address_on_page(address: str, page_num: int) -> bool:
 # =============================================================================
 # OCR / Layout Analysis (yomitoku integration)
 # =============================================================================
-# Constants for OCR
-OCR_BATCH_SIZE = 5  # Pages per batch
-OCR_DPI = 200       # Fixed DPI for precision
+# Default constants for OCR (can be overridden via AppSettings)
+DEFAULT_OCR_BATCH_SIZE = 5   # Pages per batch
+DEFAULT_OCR_DPI = 200        # Default DPI for precision
 
 # DocumentAnalyzer cache (for GPU memory efficiency) with thread safety
 _analyzer_cache: dict[tuple[str, str], object] = {}
@@ -1029,8 +1029,8 @@ def _open_fitz_document(file_path):
 
 def iterate_pdf_pages(
     pdf_path: str,
-    batch_size: int = OCR_BATCH_SIZE,
-    dpi: int = OCR_DPI,
+    batch_size: int = DEFAULT_OCR_BATCH_SIZE,
+    dpi: int = DEFAULT_OCR_DPI,
 ):
     """
     Stream PDF pages as images in batches.
@@ -1067,7 +1067,7 @@ def iterate_pdf_pages(
             yield batch_start, batch_images
 
 
-def load_pdf_as_images(pdf_path: str, dpi: int = OCR_DPI) -> list:
+def load_pdf_as_images(pdf_path: str, dpi: int = DEFAULT_OCR_DPI) -> list:
     """
     Load entire PDF as images using yomitoku's load_pdf.
 
@@ -1077,23 +1077,30 @@ def load_pdf_as_images(pdf_path: str, dpi: int = OCR_DPI) -> list:
     return yomitoku['load_pdf'](pdf_path, dpi=dpi)
 
 
-def get_device(config_device: str = "cpu") -> str:
+def get_device(config_device: str = "auto") -> str:
     """
     Determine execution device for yomitoku.
 
     Args:
-        config_device: "cpu" or "cuda"
+        config_device: "auto", "cpu", or "cuda"
+            - "auto": Use CUDA if available, otherwise CPU
+            - "cpu": Force CPU
+            - "cuda": Force CUDA (falls back to CPU if unavailable)
 
     Returns:
-        Actual device to use
+        Actual device to use ("cpu" or "cuda")
     """
+    if config_device == "cpu":
+        return "cpu"
+
+    # "auto" or "cuda": try to use CUDA
+    torch = _get_torch()
+    if torch is not None and torch.cuda.is_available():
+        return "cuda"
+
     if config_device == "cuda":
-        torch = _get_torch()
-        if torch is not None and torch.cuda.is_available():
-            return "cuda"
-        else:
-            logger.warning("CUDA not available, falling back to CPU")
-            return "cpu"
+        logger.warning("CUDA not available, falling back to CPU")
+
     return "cpu"
 
 
@@ -1617,8 +1624,10 @@ class PdfProcessor(FileProcessor):
     def extract_text_blocks_with_ocr(
         self,
         file_path: Path,
-        device: str = "cpu",
+        device: str = "auto",
         reading_order: str = "auto",
+        batch_size: int = DEFAULT_OCR_BATCH_SIZE,
+        dpi: int = DEFAULT_OCR_DPI,
     ) -> Iterator[TextBlock]:
         """
         Extract text blocks from PDF using OCR (yomitoku).
@@ -1628,8 +1637,10 @@ class PdfProcessor(FileProcessor):
 
         Args:
             file_path: Path to PDF file
-            device: "cpu" or "cuda"
+            device: "auto", "cpu", or "cuda"
             reading_order: Reading order for yomitoku
+            batch_size: Pages per batch for OCR processing
+            dpi: OCR resolution (higher = better quality, slower)
 
         Yields:
             TextBlock objects with OCR-extracted text
@@ -1641,7 +1652,7 @@ class PdfProcessor(FileProcessor):
 
         actual_device = get_device(device)
 
-        for batch_start, batch_images in iterate_pdf_pages(str(file_path)):
+        for batch_start, batch_images in iterate_pdf_pages(str(file_path), batch_size, dpi):
             for img_idx, img in enumerate(batch_images):
                 page_num = batch_start + img_idx + 1
 
@@ -1674,8 +1685,10 @@ class PdfProcessor(FileProcessor):
     def get_translation_cells_with_ocr(
         self,
         file_path: Path,
-        device: str = "cpu",
+        device: str = "auto",
         reading_order: str = "auto",
+        batch_size: int = DEFAULT_OCR_BATCH_SIZE,
+        dpi: int = DEFAULT_OCR_DPI,
     ) -> list[TranslationCell]:
         """
         Get translation cells from PDF using OCR (yomitoku).
@@ -1684,8 +1697,10 @@ class PdfProcessor(FileProcessor):
 
         Args:
             file_path: Path to PDF file
-            device: "cpu" or "cuda"
+            device: "auto", "cpu", or "cuda"
             reading_order: Reading order for yomitoku
+            batch_size: Pages per batch for OCR processing
+            dpi: OCR resolution (higher = better quality, slower)
 
         Returns:
             List of TranslationCell objects
@@ -1698,7 +1713,7 @@ class PdfProcessor(FileProcessor):
         actual_device = get_device(device)
         all_cells = []
 
-        for batch_start, batch_images in iterate_pdf_pages(str(file_path)):
+        for batch_start, batch_images in iterate_pdf_pages(str(file_path), batch_size, dpi):
             for img_idx, img in enumerate(batch_images):
                 page_num = batch_start + img_idx + 1
 
@@ -1714,8 +1729,10 @@ class PdfProcessor(FileProcessor):
         file_path: Path,
         on_progress: Optional[ProgressCallback] = None,
         use_ocr: bool = True,
-        device: str = "cpu",
+        device: str = "auto",
         reading_order: str = "auto",
+        batch_size: int = DEFAULT_OCR_BATCH_SIZE,
+        dpi: int = DEFAULT_OCR_DPI,
     ) -> Iterator[tuple[list[TextBlock], Optional[list[TranslationCell]]]]:
         """
         Extract text blocks from PDF with streaming support and progress reporting.
@@ -1728,8 +1745,10 @@ class PdfProcessor(FileProcessor):
             file_path: Path to PDF file
             on_progress: Progress callback for UI updates
             use_ocr: If True and yomitoku is available, use OCR for text extraction
-            device: "cpu" or "cuda" for yomitoku
+            device: "auto", "cpu", or "cuda" for yomitoku
             reading_order: Reading order for yomitoku ("auto", "left2right", etc.)
+            batch_size: Pages per batch for OCR processing
+            dpi: OCR resolution (higher = better quality, slower)
 
         Yields:
             Tuple of (list[TextBlock], Optional[list[TranslationCell]]):
@@ -1755,7 +1774,8 @@ class PdfProcessor(FileProcessor):
         if use_ocr and is_yomitoku_available():
             # Use yomitoku OCR with streaming
             yield from self._extract_with_ocr_streaming(
-                file_path, total_pages, on_progress, device, reading_order
+                file_path, total_pages, on_progress, device, reading_order,
+                batch_size, dpi
             )
         else:
             # Use PyMuPDF only (fast, for text-based PDFs)
@@ -1770,6 +1790,8 @@ class PdfProcessor(FileProcessor):
         on_progress: Optional[ProgressCallback],
         device: str,
         reading_order: str,
+        batch_size: int = DEFAULT_OCR_BATCH_SIZE,
+        dpi: int = DEFAULT_OCR_DPI,
     ) -> Iterator[tuple[list[TextBlock], list[TranslationCell]]]:
         """
         Extract text blocks using yomitoku OCR with streaming.
@@ -1795,7 +1817,7 @@ class PdfProcessor(FileProcessor):
             self.CPU_OCR_TIME_PER_PAGE if is_cpu else self.GPU_OCR_TIME_PER_PAGE
         )
 
-        for batch_start, batch_images in iterate_pdf_pages(str(file_path)):
+        for batch_start, batch_images in iterate_pdf_pages(str(file_path), batch_size, dpi):
             for img_idx, img in enumerate(batch_images):
                 # Check for cancellation
                 if self._cancel_requested:

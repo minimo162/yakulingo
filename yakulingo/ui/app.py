@@ -15,7 +15,7 @@ from yakulingo.ui.styles import COMPLETE_CSS
 from yakulingo.ui.components.text_panel import create_text_panel
 from yakulingo.ui.components.file_panel import create_file_panel
 from yakulingo.ui.components.update_notification import UpdateNotification, check_updates_on_startup
-from yakulingo.ui.utils import temp_file_manager, parse_translation_result
+from yakulingo.ui.utils import temp_file_manager, parse_translation_result, create_completion_dialog
 
 from yakulingo.models.types import TranslationProgress, TranslationStatus, TextTranslationResult, TranslationOption, HistoryEntry
 from yakulingo.config.settings import AppSettings, get_default_settings_path, get_default_prompts_dir
@@ -809,8 +809,14 @@ class YakuLingoApp:
 
             if result.status == TranslationStatus.COMPLETED and result.output_path:
                 self.state.output_file = result.output_path
+                self.state.translation_result = result
                 self.state.file_state = FileState.COMPLETE
-                ui.notify('完了しました', type='positive')
+                # Show completion dialog with all output files
+                create_completion_dialog(
+                    result=result,
+                    duration_seconds=result.duration_seconds,
+                    on_close=self._refresh_content,
+                )
             elif result.status == TranslationStatus.CANCELLED:
                 self.state.reset_file_state()
                 ui.notify('キャンセルしました', type='info')
@@ -818,6 +824,7 @@ class YakuLingoApp:
                 self.state.error_message = result.error_message or 'エラー'
                 self.state.file_state = FileState.ERROR
                 self.state.output_file = None
+                self.state.translation_result = None
                 ui.notify('失敗しました', type='negative')
 
         except Exception as e:

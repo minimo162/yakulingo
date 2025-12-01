@@ -819,12 +819,11 @@ class TranslationService:
                 phase=TranslationPhase.COMPLETE,
             ))
 
-        # Include bilingual file info in output path (show bilingual if created)
-        final_output_path = bilingual_path if bilingual_path else output_path
-
         return TranslationResult(
             status=TranslationStatus.COMPLETED,
-            output_path=final_output_path,
+            output_path=output_path,
+            bilingual_path=bilingual_path,
+            glossary_path=glossary_path,
             blocks_translated=len(translations),
             blocks_total=total_blocks,
             duration_seconds=time.time() - start_time,
@@ -1006,12 +1005,11 @@ class TranslationService:
             else:
                 warnings.append(f"OCR failed for {len(failed_pages)} pages: {failed_pages}")
 
-        # Include bilingual PDF info in output path (show bilingual if created)
-        final_output_path = bilingual_path if bilingual_path else output_path
-
         return TranslationResult(
             status=TranslationStatus.COMPLETED,
-            output_path=final_output_path,
+            output_path=output_path,
+            bilingual_path=bilingual_path,
+            glossary_path=glossary_path,
             blocks_translated=len(translations),
             blocks_total=total_blocks,
             duration_seconds=time.time() - start_time,

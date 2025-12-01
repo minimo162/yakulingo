@@ -222,3 +222,201 @@ def create_standard_dialog(
                         ui.button(icon='close', on_click=dialog.close).props('flat dense round')
 
     return dialog, content
+
+
+def open_file(file_path: Path) -> bool:
+    """
+    Open a file with the default application.
+
+    Args:
+        file_path: Path to the file to open
+
+    Returns:
+        True if successful, False otherwise
+    """
+    import subprocess
+    import platform
+
+    try:
+        if not file_path.exists():
+            logger.warning("File does not exist: %s", file_path)
+            return False
+
+        system = platform.system()
+
+        if system == 'Windows':
+            # Windows: use os.startfile
+            import os
+            os.startfile(str(file_path))
+        elif system == 'Darwin':
+            # macOS: use open command
+            subprocess.run(['open', str(file_path)], check=True)
+        else:
+            # Linux: use xdg-open
+            subprocess.run(['xdg-open', str(file_path)], check=True)
+
+        return True
+
+    except Exception as e:
+        logger.error("Failed to open file %s: %s", file_path, e)
+        return False
+
+
+def show_in_folder(file_path: Path) -> bool:
+    """
+    Open the containing folder and select the file.
+
+    Args:
+        file_path: Path to the file
+
+    Returns:
+        True if successful, False otherwise
+    """
+    import subprocess
+    import platform
+
+    try:
+        if not file_path.exists():
+            # Try to open parent folder if file doesn't exist
+            folder = file_path.parent
+            if not folder.exists():
+                logger.warning("Folder does not exist: %s", folder)
+                return False
+            return open_file(folder)
+
+        system = platform.system()
+
+        if system == 'Windows':
+            # Windows: use explorer with /select flag
+            subprocess.run(['explorer', '/select,', str(file_path)], check=False)
+        elif system == 'Darwin':
+            # macOS: use open -R to reveal in Finder
+            subprocess.run(['open', '-R', str(file_path)], check=True)
+        else:
+            # Linux: just open the parent folder
+            subprocess.run(['xdg-open', str(file_path.parent)], check=True)
+
+        return True
+
+    except Exception as e:
+        logger.error("Failed to show file in folder %s: %s", file_path, e)
+        return False
+
+
+def create_completion_dialog(
+    result: 'TranslationResult',
+    duration_seconds: float,
+    on_close: Optional[Callable[[], None]] = None,
+) -> 'ui.dialog':
+    """
+    Create a translation completion dialog showing all output files.
+
+    Args:
+        result: TranslationResult with output file paths
+        duration_seconds: Translation duration in seconds
+        on_close: Callback when dialog is closed
+
+    Returns:
+        The created dialog (already opened)
+    """
+    from yakulingo.models.types import TranslationResult
+
+    dialog = ui.dialog()
+
+    with dialog:
+        with ui.card().classes('w-[28rem]'):
+            with ui.column().classes('w-full gap-4 p-4'):
+                # Header
+                with ui.row().classes('w-full justify-between items-center'):
+                    with ui.row().classes('items-center gap-2'):
+                        ui.icon('check_circle', color='positive').classes('text-2xl')
+                        ui.label('翻訳が完了しました').classes('text-base font-medium')
+                    ui.button(icon='close', on_click=lambda: _close_dialog(dialog, on_close)).props('flat dense round')
+
+                # Duration badge
+                ui.label(f'{duration_seconds:.1f}秒').classes(
+                    'text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 w-fit'
+                )
+
+                # Output files list
+                ui.label('出力ファイル:').classes('text-sm font-medium text-gray-700')
+
+                output_files = result.output_files
+                if output_files:
+                    with ui.column().classes('w-full gap-2'):
+                        for file_path, description in output_files:
+                            _create_file_row(file_path, description)
+                else:
+                    ui.label('出力ファイルがありません').classes('text-sm text-gray-500')
+
+                # Close button
+                with ui.row().classes('w-full justify-end pt-2'):
+                    ui.button('閉じる', on_click=lambda: _close_dialog(dialog, on_close)).classes(
+                        'px-4 py-1.5 text-sm'
+                    )
+
+    dialog.open()
+    return dialog
+
+
+def _close_dialog(dialog, on_close: Optional[Callable[[], None]]):
+    """Close dialog and call callback."""
+    dialog.close()
+    if on_close:
+        on_close()
+
+
+def _create_file_row(file_path: Path, description: str):
+    """Create a row for a single output file with action buttons."""
+    with ui.card().classes('w-full p-3 bg-gray-50'):
+        with ui.column().classes('w-full gap-1'):
+            # File info
+            with ui.row().classes('w-full items-center gap-2'):
+                # File icon based on extension
+                ext = file_path.suffix.lower()
+                icon_map = {
+                    '.xlsx': 'table_chart',
+                    '.xls': 'table_chart',
+                    '.docx': 'description',
+                    '.doc': 'description',
+                    '.pptx': 'slideshow',
+                    '.ppt': 'slideshow',
+                    '.pdf': 'picture_as_pdf',
+                    '.csv': 'grid_on',
+                }
+                icon = icon_map.get(ext, 'insert_drive_file')
+                ui.icon(icon).classes('text-lg text-gray-600')
+
+                with ui.column().classes('flex-grow gap-0'):
+                    ui.label(file_path.name).classes('text-sm font-medium truncate')
+                    ui.label(description).classes('text-xs text-gray-500')
+
+            # Action buttons
+            with ui.row().classes('w-full justify-end gap-2 pt-1'):
+                ui.button(
+                    '開く',
+                    icon='open_in_new',
+                    on_click=lambda p=file_path: _open_and_notify(p)
+                ).props('flat dense').classes('text-xs')
+
+                ui.button(
+                    'フォルダで表示',
+                    icon='folder_open',
+                    on_click=lambda p=file_path: _show_and_notify(p)
+                ).props('flat dense').classes('text-xs')
+
+
+def _open_and_notify(file_path: Path):
+    """Open file and show notification."""
+    if open_file(file_path):
+        ui.notify(f'{file_path.name} を開きました', type='positive')
+    else:
+        ui.notify('ファイルを開けませんでした', type='negative')
+
+
+def _show_and_notify(file_path: Path):
+    """Show file in folder and show notification."""
+    if show_in_folder(file_path):
+        ui.notify('フォルダを開きました', type='positive')
+    else:
+        ui.notify('フォルダを開けませんでした', type='negative')

@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Optional
 from enum import Enum
 
-from yakulingo.models.types import FileInfo, TextTranslationResult, HistoryEntry
+from yakulingo.models.types import FileInfo, TextTranslationResult, HistoryEntry, TranslationResult
 from yakulingo.storage.history_db import HistoryDB, get_default_db_path
 
 # Module logger
@@ -59,6 +59,7 @@ class AppState:
     translation_progress: float = 0.0
     translation_status: str = ""
     output_file: Optional[Path] = None
+    translation_result: Optional[TranslationResult] = None  # Full result with all output files
     error_message: str = ""
 
     # PDF options
@@ -104,6 +105,7 @@ class AppState:
         self.translation_progress = 0.0
         self.translation_status = ""
         self.output_file = None
+        self.translation_result = None
         self.error_message = ""
         self.pdf_fast_mode = False
 

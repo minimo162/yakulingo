@@ -589,6 +589,11 @@ class TranslationService:
         start_time = time.time()
         self._cancel_requested = False
 
+        # Reset PDF processor cancellation flag if applicable
+        pdf_processor = self.processors.get('.pdf')
+        if pdf_processor and hasattr(pdf_processor, 'reset_cancel'):
+            pdf_processor.reset_cancel()
+
         try:
             # Get processor
             processor = self._get_processor(input_path)
@@ -857,12 +862,22 @@ class TranslationService:
                 phase=TranslationPhase.COMPLETE,
             ))
 
+        # Collect warnings including OCR failures
+        warnings = []
+        if hasattr(processor, 'failed_pages') and processor.failed_pages:
+            failed_pages = processor.failed_pages
+            if len(failed_pages) == 1:
+                warnings.append(f"OCR failed for page {failed_pages[0]}")
+            else:
+                warnings.append(f"OCR failed for {len(failed_pages)} pages: {failed_pages}")
+
         return TranslationResult(
             status=TranslationStatus.COMPLETED,
             output_path=output_path,
             blocks_translated=len(translations),
             blocks_total=total_blocks,
             duration_seconds=time.time() - start_time,
+            warnings=warnings if warnings else [],
         )
 
     def _make_extraction_progress_callback(
@@ -898,6 +913,11 @@ class TranslationService:
         """Request cancellation of current operation"""
         self._cancel_requested = True
         self.batch_translator.cancel()
+
+        # Also cancel PDF processor if it's running OCR
+        pdf_processor = self.processors.get('.pdf')
+        if pdf_processor and hasattr(pdf_processor, 'cancel'):
+            pdf_processor.cancel()
 
     def _get_processor(self, file_path: Path) -> FileProcessor:
         """Get appropriate processor for file type"""

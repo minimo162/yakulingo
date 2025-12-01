@@ -1961,3 +1961,92 @@ class PdfProcessor(FileProcessor):
         """Get total page count of PDF."""
         with _open_fitz_document(file_path) as doc:
             return len(doc)
+
+    def create_bilingual_pdf(
+        self,
+        original_path: Path,
+        translated_path: Path,
+        output_path: Path,
+    ) -> dict[str, Any]:
+        """
+        Create bilingual PDF with original and translated pages interleaved.
+
+        Output format:
+            Page 1: Original page 1
+            Page 2: Translated page 1
+            Page 3: Original page 2
+            Page 4: Translated page 2
+            ...
+
+        Args:
+            original_path: Path to original PDF
+            translated_path: Path to translated PDF
+            output_path: Path for bilingual output PDF
+
+        Returns:
+            Dictionary with processing statistics:
+            - 'total_pages': Total pages in output
+            - 'original_pages': Number of original pages
+            - 'translated_pages': Number of translated pages
+        """
+        fitz = _get_fitz()
+
+        result = {
+            'total_pages': 0,
+            'original_pages': 0,
+            'translated_pages': 0,
+        }
+
+        original_doc = None
+        translated_doc = None
+        output_doc = None
+
+        try:
+            original_doc = fitz.open(original_path)
+            translated_doc = fitz.open(translated_path)
+            output_doc = fitz.open()  # New empty document
+
+            original_pages = len(original_doc)
+            translated_pages = len(translated_doc)
+
+            # Use the minimum to handle any page count mismatch
+            page_count = min(original_pages, translated_pages)
+
+            for i in range(page_count):
+                # Insert original page
+                output_doc.insert_pdf(original_doc, from_page=i, to_page=i)
+                # Insert translated page
+                output_doc.insert_pdf(translated_doc, from_page=i, to_page=i)
+
+            # Handle any remaining pages from longer document
+            if original_pages > translated_pages:
+                for i in range(translated_pages, original_pages):
+                    output_doc.insert_pdf(original_doc, from_page=i, to_page=i)
+                    logger.warning(
+                        "Page %d has no translation, original only included",
+                        i + 1
+                    )
+            elif translated_pages > original_pages:
+                for i in range(original_pages, translated_pages):
+                    output_doc.insert_pdf(translated_doc, from_page=i, to_page=i)
+
+            output_doc.save(str(output_path), garbage=3, deflate=True)
+
+            result['total_pages'] = len(output_doc)
+            result['original_pages'] = original_pages
+            result['translated_pages'] = translated_pages
+
+            logger.info(
+                "Created bilingual PDF: %d pages (%d original + %d translated interleaved)",
+                result['total_pages'], original_pages, translated_pages
+            )
+
+        finally:
+            if output_doc:
+                output_doc.close()
+            if translated_doc:
+                translated_doc.close()
+            if original_doc:
+                original_doc.close()
+
+        return result

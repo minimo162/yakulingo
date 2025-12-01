@@ -41,6 +41,10 @@ def create_file_panel(
     on_reset: Callable[[], None],
     on_language_change: Optional[Callable[[str], None]] = None,
     on_pdf_fast_mode_change: Optional[Callable[[bool], None]] = None,
+    on_bilingual_change: Optional[Callable[[bool], None]] = None,
+    on_export_glossary_change: Optional[Callable[[bool], None]] = None,
+    bilingual_enabled: bool = False,
+    export_glossary_enabled: bool = False,
 ):
     """File translation panel - Nani-inspired design"""
 
@@ -56,9 +60,16 @@ def create_file_panel(
                     _file_card(state.file_info, on_reset)
                     # Output language selector
                     _language_selector(state, on_language_change)
-                    # PDF fast mode option (only for PDF files)
+                    # PDF-specific options
                     if state.file_info and state.file_info.file_type == FileType.PDF:
                         _pdf_mode_selector(state, on_pdf_fast_mode_change)
+                    # Common file translation options (for all file types)
+                    _bilingual_selector(
+                        state.file_info.file_type if state.file_info else None,
+                        bilingual_enabled,
+                        on_bilingual_change,
+                    )
+                    _export_glossary_selector(export_glossary_enabled, on_export_glossary_change)
                     with ui.row().classes('justify-center mt-4'):
                         with ui.button(on_click=on_translate).classes('translate-btn').props('no-caps'):
                             ui.label('翻訳する')
@@ -118,6 +129,48 @@ def _pdf_mode_selector(state: AppState, on_change: Optional[Callable[[bool], Non
         ui.tooltip(
             'OCRレイアウト解析をスキップして高速処理します。\n'
             'テキストベースのPDFに最適。スキャン文書や複雑なレイアウトでは精度が低下する場合があります。'
+        ).classes('text-xs')
+
+
+# Bilingual output descriptions by file type
+BILINGUAL_TOOLTIPS = {
+    FileType.EXCEL: '原文シートと翻訳シートを交互に配置したワークブックを作成します。\n（例: Sheet1=原文、Sheet1_translated=翻訳...）',
+    FileType.WORD: '原文ページと翻訳ページを交互に配置したドキュメントを作成します。',
+    FileType.POWERPOINT: '原文スライドと翻訳スライドを交互に配置したプレゼンテーションを作成します。',
+    FileType.PDF: '原文ページと翻訳ページを交互に配置したPDFを作成します。\n（例: 1ページ目=原文、2ページ目=翻訳...）',
+}
+
+
+def _bilingual_selector(
+    file_type: Optional[FileType],
+    enabled: bool,
+    on_change: Optional[Callable[[bool], None]],
+):
+    """Bilingual output selector - checkbox for interleaved original/translated content"""
+    tooltip_text = BILINGUAL_TOOLTIPS.get(
+        file_type,
+        '原文と翻訳を交互に配置した対訳ファイルを作成します。'
+    )
+    with ui.row().classes('w-full justify-center mt-3 items-center gap-2'):
+        ui.checkbox(
+            '対訳出力',
+            value=enabled,
+            on_change=lambda e: on_change and on_change(e.value),
+        ).classes('pdf-mode-checkbox')
+        ui.tooltip(tooltip_text).classes('text-xs')
+
+
+def _export_glossary_selector(enabled: bool, on_change: Optional[Callable[[bool], None]]):
+    """Glossary CSV export selector - checkbox for exporting translation pairs"""
+    with ui.row().classes('w-full justify-center mt-2 items-center gap-2'):
+        ui.checkbox(
+            '対訳CSV出力',
+            value=enabled,
+            on_change=lambda e: on_change and on_change(e.value),
+        ).classes('pdf-mode-checkbox')
+        ui.tooltip(
+            '原文と翻訳のペアをCSVファイルで出力します。\n'
+            'glossaryとして再利用できます。'
         ).classes('text-xs')
 
 

@@ -135,10 +135,16 @@ TranslationStatus: PENDING, PROCESSING, COMPLETED, FAILED, CANCELLED
 TextBlock(id, text, location, metadata)       # Unit of translatable text
 FileInfo(path, file_type, size_bytes, ...)    # File metadata
 TranslationProgress(current, total, status)   # Progress tracking
-TranslationResult(status, output_path, ...)   # File translation outcome
+TranslationResult(status, output_path, bilingual_path, glossary_path, ...)  # File translation outcome
 TranslationOption(text, explanation)          # Single translation option
 TextTranslationResult(source_text, options)   # Text translation with multiple options
 HistoryEntry(source_text, result, timestamp)  # Translation history entry
+
+# TranslationResult includes multiple output files:
+# - output_path: Main translated file
+# - bilingual_path: Bilingual output (original + translated)
+# - glossary_path: Glossary CSV export
+# - output_files property: List of (path, description) tuples for all outputs
 
 # Auto-update types (yakulingo/services/updater.py)
 UpdateStatus: UP_TO_DATE, UPDATE_AVAILABLE, DOWNLOADING, READY_TO_INSTALL, ERROR
@@ -192,6 +198,21 @@ class FileProcessor(ABC):
 
     @abstractmethod
     def apply_translations(input_path, output_path, translations, direction)
+
+# Additional methods for bilingual output and glossary export:
+class ExcelProcessor:
+    def create_bilingual_workbook(original, translated, output)  # Side-by-side sheets
+    def export_glossary_csv(original, translated, output)        # Source/translation pairs
+
+class WordProcessor:
+    def create_bilingual_document(original, translated, output)  # Interleaved paragraphs
+
+class PptxProcessor:
+    def create_bilingual_presentation(original, translated, output)  # Interleaved slides
+
+class PdfProcessor:
+    def create_bilingual_pdf(original, translated, output)       # Interleaved pages
+    def export_glossary_csv(translations, output)                # Source/translation pairs
 ```
 
 ## UI Design System (Material Design 3)
@@ -260,6 +281,33 @@ html = format_markdown_text("This is **bold**")
 
 # Parse "訳文: ... 解説: ..." format
 text, explanation = parse_translation_result(result)
+```
+
+### File Operations
+Cross-platform utilities for opening files and folders:
+```python
+from yakulingo.ui.utils import open_file, show_in_folder
+
+# Open file with default application
+open_file(Path("output.xlsx"))  # Windows: os.startfile, macOS: open, Linux: xdg-open
+
+# Show file in folder (select file in file manager)
+show_in_folder(Path("output.xlsx"))  # Windows: explorer /select, macOS: open -R
+```
+
+### Completion Dialog
+Shows translation results with action buttons:
+```python
+from yakulingo.ui.utils import create_completion_dialog
+
+# Create and show completion dialog
+dialog = create_completion_dialog(
+    result=translation_result,      # TranslationResult with output_files
+    duration_seconds=45.2,
+    on_close=callback
+)
+# Dialog shows all output files (translated, bilingual, glossary CSV)
+# with "開く" (Open) and "フォルダで表示" (Show in Folder) buttons
 ```
 
 ## Testing Conventions
@@ -498,6 +546,9 @@ The AGENTS.md file specifies that all responses should be in Japanese (すべて
 ## Recent Development Focus
 
 Based on recent commits:
+- **Bilingual Output**: All file processors (Excel, Word, PowerPoint, PDF) can generate bilingual output files with original and translated content side-by-side
+- **Glossary CSV Export**: Automatic extraction of source/translation pairs to CSV for terminology management
+- **Translation Completion Dialog**: Shows all output files (translated, bilingual, glossary) with "Open" and "Show in Folder" action buttons
 - **Reference File Feature**: Renamed glossary to reference_files for broader file support (CSV, TXT, PDF, Word, Excel, etc.)
 - **Nani-Inspired UI**: Inline adjustment buttons, gear icon for settings, elapsed time badge
 - **Back-Translate Feature**: Verify translations by translating back to original language

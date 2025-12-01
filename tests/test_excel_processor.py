@@ -370,3 +370,128 @@ class TestExcelProcessorEdgeCases:
         assert ws_out["A1"].value == "Translated"
         assert ws_out["A1"].font.bold is True
         assert ws_out["A1"].font.italic is True
+
+
+# --- Tests: create_bilingual_workbook ---
+
+class TestExcelProcessorCreateBilingualWorkbook:
+    """Test ExcelProcessor.create_bilingual_workbook()"""
+
+    def test_creates_bilingual_workbook(self, processor, tmp_path):
+        """Creates workbook with interleaved original and translated sheets"""
+        # Create original workbook
+        original_path = tmp_path / "original.xlsx"
+        wb_orig = openpyxl.Workbook()
+        ws1 = wb_orig.active
+        ws1.title = "Sheet1"
+        ws1["A1"] = "日本語テキスト"
+        ws2 = wb_orig.create_sheet("Sheet2")
+        ws2["A1"] = "もう一つのテキスト"
+        wb_orig.save(original_path)
+
+        # Create translated workbook
+        translated_path = tmp_path / "translated.xlsx"
+        wb_trans = openpyxl.Workbook()
+        ws1_t = wb_trans.active
+        ws1_t.title = "Sheet1"
+        ws1_t["A1"] = "Japanese text"
+        ws2_t = wb_trans.create_sheet("Sheet2")
+        ws2_t["A1"] = "Another text"
+        wb_trans.save(translated_path)
+
+        # Create bilingual workbook
+        output_path = tmp_path / "bilingual.xlsx"
+        result = processor.create_bilingual_workbook(
+            original_path, translated_path, output_path
+        )
+
+        # Verify result
+        assert result["original_sheets"] == 2
+        assert result["translated_sheets"] == 2
+        assert result["total_sheets"] == 4
+
+        # Verify output file
+        wb_out = openpyxl.load_workbook(output_path)
+        sheet_names = wb_out.sheetnames
+
+        assert len(sheet_names) == 4
+        assert "Sheet1" in sheet_names
+        assert "Sheet1_translated" in sheet_names
+        assert "Sheet2" in sheet_names
+        assert "Sheet2_translated" in sheet_names
+
+        # Verify content
+        assert wb_out["Sheet1"]["A1"].value == "日本語テキスト"
+        assert wb_out["Sheet1_translated"]["A1"].value == "Japanese text"
+
+    def test_handles_single_sheet(self, processor, sample_xlsx, tmp_path):
+        """Works with single-sheet workbooks"""
+        # Create translated version
+        translated_path = tmp_path / "translated.xlsx"
+        wb_trans = openpyxl.Workbook()
+        ws = wb_trans.active
+        ws.title = "Sheet1"
+        ws["A1"] = "Hello"
+        ws["A2"] = "World"
+        ws["C1"] = "Hello World"
+        wb_trans.save(translated_path)
+
+        output_path = tmp_path / "bilingual.xlsx"
+        result = processor.create_bilingual_workbook(
+            sample_xlsx, translated_path, output_path
+        )
+
+        assert result["original_sheets"] == 1
+        assert result["translated_sheets"] == 1
+        assert result["total_sheets"] == 2
+
+    def test_truncates_long_sheet_names(self, processor, tmp_path):
+        """Truncates sheet names exceeding Excel's 31 character limit"""
+        # Create original with long sheet name
+        original_path = tmp_path / "original.xlsx"
+        wb_orig = openpyxl.Workbook()
+        ws = wb_orig.active
+        ws.title = "VeryLongSheetNameThatExceeds"  # 28 chars
+        ws["A1"] = "テスト"
+        wb_orig.save(original_path)
+
+        # Create translated
+        translated_path = tmp_path / "translated.xlsx"
+        wb_trans = openpyxl.Workbook()
+        ws_t = wb_trans.active
+        ws_t.title = "VeryLongSheetNameThatExceeds"
+        ws_t["A1"] = "Test"
+        wb_trans.save(translated_path)
+
+        output_path = tmp_path / "bilingual.xlsx"
+        result = processor.create_bilingual_workbook(
+            original_path, translated_path, output_path
+        )
+
+        wb_out = openpyxl.load_workbook(output_path)
+        # Should have 2 sheets, translated name should be truncated
+        assert len(wb_out.sheetnames) == 2
+        for name in wb_out.sheetnames:
+            assert len(name) <= 31
+
+    def test_copies_cell_styles(self, processor, xlsx_with_font, tmp_path):
+        """Preserves cell styles in bilingual output"""
+        # Create translated version
+        translated_path = tmp_path / "translated.xlsx"
+        wb_trans = openpyxl.Workbook()
+        ws = wb_trans.active
+        ws.title = "Sheet1"
+        ws["A1"] = "Mincho Font Text"
+        ws["A1"].font = Font(name="Arial", size=10)
+        ws["A2"] = "Gothic Font Text"
+        ws["A2"].font = Font(name="Calibri", size=12)
+        wb_trans.save(translated_path)
+
+        output_path = tmp_path / "bilingual.xlsx"
+        processor.create_bilingual_workbook(
+            xlsx_with_font, translated_path, output_path
+        )
+
+        wb_out = openpyxl.load_workbook(output_path)
+        # Original sheet should preserve original fonts
+        assert wb_out["Sheet1"]["A1"].font.name == "MS Mincho"

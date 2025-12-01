@@ -15,7 +15,7 @@ from yakulingo.ui.styles import COMPLETE_CSS
 from yakulingo.ui.components.text_panel import create_text_panel
 from yakulingo.ui.components.file_panel import create_file_panel
 from yakulingo.ui.components.update_notification import UpdateNotification, check_updates_on_startup
-from yakulingo.ui.utils import temp_file_manager, parse_translation_result
+from yakulingo.ui.utils import temp_file_manager, parse_translation_result, create_completion_dialog
 
 from yakulingo.models.types import TranslationProgress, TranslationStatus, TextTranslationResult, TranslationOption, HistoryEntry
 from yakulingo.config.settings import AppSettings, get_default_settings_path, get_default_prompts_dir
@@ -28,7 +28,8 @@ class YakuLingoApp:
 
     def __init__(self):
         self.state = AppState()
-        self.settings = AppSettings.load(get_default_settings_path())
+        self.settings_path = get_default_settings_path()
+        self.settings = AppSettings.load(self.settings_path)
         self.copilot = CopilotHandler()
         self.translation_service: Optional[TranslationService] = None
 
@@ -310,6 +311,10 @@ class YakuLingoApp:
                         on_reset=self._reset,
                         on_language_change=self._on_language_change,
                         on_pdf_fast_mode_change=self._on_pdf_fast_mode_change,
+                        on_bilingual_change=self._on_bilingual_change,
+                        on_export_glossary_change=self._on_export_glossary_change,
+                        bilingual_enabled=self.settings.bilingual_output,
+                        export_glossary_enabled=self.settings.export_glossary,
                     )
 
         self._main_content = main_content
@@ -728,6 +733,18 @@ class YakuLingoApp:
         self.state.pdf_fast_mode = fast_mode
         # No need to refresh content, checkbox state is handled by NiceGUI
 
+    def _on_bilingual_change(self, enabled: bool):
+        """Handle bilingual output toggle"""
+        self.settings.bilingual_output = enabled
+        self.settings.save(self.settings_path)
+        # No need to refresh content, checkbox state is handled by NiceGUI
+
+    def _on_export_glossary_change(self, enabled: bool):
+        """Handle glossary CSV export toggle"""
+        self.settings.export_glossary = enabled
+        self.settings.save(self.settings_path)
+        # No need to refresh content, checkbox state is handled by NiceGUI
+
     def _select_file(self, file_path: Path):
         """Select file for translation"""
         if not self.translation_service:
@@ -792,8 +809,14 @@ class YakuLingoApp:
 
             if result.status == TranslationStatus.COMPLETED and result.output_path:
                 self.state.output_file = result.output_path
+                self.state.translation_result = result
                 self.state.file_state = FileState.COMPLETE
-                ui.notify('完了しました', type='positive')
+                # Show completion dialog with all output files
+                create_completion_dialog(
+                    result=result,
+                    duration_seconds=result.duration_seconds,
+                    on_close=self._refresh_content,
+                )
             elif result.status == TranslationStatus.CANCELLED:
                 self.state.reset_file_state()
                 ui.notify('キャンセルしました', type='info')
@@ -801,6 +824,7 @@ class YakuLingoApp:
                 self.state.error_message = result.error_message or 'エラー'
                 self.state.file_state = FileState.ERROR
                 self.state.output_file = None
+                self.state.translation_result = None
                 ui.notify('失敗しました', type='negative')
 
         except Exception as e:

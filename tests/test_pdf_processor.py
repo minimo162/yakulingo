@@ -1265,3 +1265,245 @@ class TestExtractTextBlocksStreaming:
 
             assert count == 5
             mock_doc.close.assert_called_once()
+
+
+# =============================================================================
+# Tests: Bilingual PDF Creation
+# =============================================================================
+
+class TestCreateBilingualPdf:
+    """Tests for PdfProcessor.create_bilingual_pdf method"""
+
+    def test_create_bilingual_pdf_equal_pages(self, processor, tmp_path):
+        """Test bilingual PDF creation with equal page counts"""
+        with patch('yakulingo.processors.pdf_processor._get_fitz') as mock_get_fitz:
+            mock_fitz = MagicMock()
+            mock_get_fitz.return_value = mock_fitz
+
+            # Create mock documents
+            mock_original_doc = MagicMock()
+            mock_original_doc.__len__ = Mock(return_value=3)
+
+            mock_translated_doc = MagicMock()
+            mock_translated_doc.__len__ = Mock(return_value=3)
+
+            mock_output_doc = MagicMock()
+            mock_output_doc.__len__ = Mock(return_value=6)  # 3 original + 3 translated
+
+            # Track mock.open() calls
+            call_count = [0]
+
+            def mock_open(path=None):
+                call_count[0] += 1
+                if path is None:
+                    return mock_output_doc
+                elif "original" in str(path):
+                    return mock_original_doc
+                else:
+                    return mock_translated_doc
+
+            mock_fitz.open.side_effect = mock_open
+
+            original_path = tmp_path / "original.pdf"
+            translated_path = tmp_path / "translated.pdf"
+            output_path = tmp_path / "bilingual.pdf"
+
+            # Create dummy files
+            original_path.write_bytes(b"%PDF-1.4 original")
+            translated_path.write_bytes(b"%PDF-1.4 translated")
+
+            result = processor.create_bilingual_pdf(
+                original_path, translated_path, output_path
+            )
+
+            # Check result structure
+            assert isinstance(result, dict)
+            assert result['original_pages'] == 3
+            assert result['translated_pages'] == 3
+            assert result['total_pages'] == 6
+
+            # Check insert_pdf was called correctly (3 pairs of pages)
+            assert mock_output_doc.insert_pdf.call_count == 6
+
+            # Check save was called
+            mock_output_doc.save.assert_called_once()
+
+            # Check all documents were closed
+            mock_original_doc.close.assert_called_once()
+            mock_translated_doc.close.assert_called_once()
+            mock_output_doc.close.assert_called_once()
+
+    def test_create_bilingual_pdf_original_has_more_pages(self, processor, tmp_path):
+        """Test bilingual PDF when original has more pages than translated"""
+        with patch('yakulingo.processors.pdf_processor._get_fitz') as mock_get_fitz:
+            mock_fitz = MagicMock()
+            mock_get_fitz.return_value = mock_fitz
+
+            mock_original_doc = MagicMock()
+            mock_original_doc.__len__ = Mock(return_value=5)
+
+            mock_translated_doc = MagicMock()
+            mock_translated_doc.__len__ = Mock(return_value=3)
+
+            mock_output_doc = MagicMock()
+            # 3 pairs + 2 extra original pages = 8
+            mock_output_doc.__len__ = Mock(return_value=8)
+
+            def mock_open(path=None):
+                if path is None:
+                    return mock_output_doc
+                elif "original" in str(path):
+                    return mock_original_doc
+                else:
+                    return mock_translated_doc
+
+            mock_fitz.open.side_effect = mock_open
+
+            original_path = tmp_path / "original.pdf"
+            translated_path = tmp_path / "translated.pdf"
+            output_path = tmp_path / "bilingual.pdf"
+
+            original_path.write_bytes(b"%PDF-1.4 original")
+            translated_path.write_bytes(b"%PDF-1.4 translated")
+
+            result = processor.create_bilingual_pdf(
+                original_path, translated_path, output_path
+            )
+
+            assert result['original_pages'] == 5
+            assert result['translated_pages'] == 3
+            # 3 pairs (6) + 2 extra original = 8
+            assert mock_output_doc.insert_pdf.call_count == 8
+
+    def test_create_bilingual_pdf_translated_has_more_pages(self, processor, tmp_path):
+        """Test bilingual PDF when translated has more pages than original"""
+        with patch('yakulingo.processors.pdf_processor._get_fitz') as mock_get_fitz:
+            mock_fitz = MagicMock()
+            mock_get_fitz.return_value = mock_fitz
+
+            mock_original_doc = MagicMock()
+            mock_original_doc.__len__ = Mock(return_value=2)
+
+            mock_translated_doc = MagicMock()
+            mock_translated_doc.__len__ = Mock(return_value=4)
+
+            mock_output_doc = MagicMock()
+            # 2 pairs + 2 extra translated pages = 6
+            mock_output_doc.__len__ = Mock(return_value=6)
+
+            def mock_open(path=None):
+                if path is None:
+                    return mock_output_doc
+                elif "original" in str(path):
+                    return mock_original_doc
+                else:
+                    return mock_translated_doc
+
+            mock_fitz.open.side_effect = mock_open
+
+            original_path = tmp_path / "original.pdf"
+            translated_path = tmp_path / "translated.pdf"
+            output_path = tmp_path / "bilingual.pdf"
+
+            original_path.write_bytes(b"%PDF-1.4 original")
+            translated_path.write_bytes(b"%PDF-1.4 translated")
+
+            result = processor.create_bilingual_pdf(
+                original_path, translated_path, output_path
+            )
+
+            assert result['original_pages'] == 2
+            assert result['translated_pages'] == 4
+            # 2 pairs (4) + 2 extra translated = 6
+            assert mock_output_doc.insert_pdf.call_count == 6
+
+    def test_create_bilingual_pdf_interleaved_order(self, processor, tmp_path):
+        """Test that pages are interleaved in correct order"""
+        with patch('yakulingo.processors.pdf_processor._get_fitz') as mock_get_fitz:
+            mock_fitz = MagicMock()
+            mock_get_fitz.return_value = mock_fitz
+
+            mock_original_doc = MagicMock()
+            mock_original_doc.__len__ = Mock(return_value=2)
+
+            mock_translated_doc = MagicMock()
+            mock_translated_doc.__len__ = Mock(return_value=2)
+
+            mock_output_doc = MagicMock()
+            mock_output_doc.__len__ = Mock(return_value=4)
+
+            def mock_open(path=None):
+                if path is None:
+                    return mock_output_doc
+                elif "original" in str(path):
+                    return mock_original_doc
+                else:
+                    return mock_translated_doc
+
+            mock_fitz.open.side_effect = mock_open
+
+            original_path = tmp_path / "original.pdf"
+            translated_path = tmp_path / "translated.pdf"
+            output_path = tmp_path / "bilingual.pdf"
+
+            original_path.write_bytes(b"%PDF-1.4 original")
+            translated_path.write_bytes(b"%PDF-1.4 translated")
+
+            processor.create_bilingual_pdf(
+                original_path, translated_path, output_path
+            )
+
+            # Check insert_pdf calls order
+            calls = mock_output_doc.insert_pdf.call_args_list
+
+            # Page 0: Original page 0, then Translated page 0
+            assert calls[0] == ((mock_original_doc,), {'from_page': 0, 'to_page': 0})
+            assert calls[1] == ((mock_translated_doc,), {'from_page': 0, 'to_page': 0})
+
+            # Page 1: Original page 1, then Translated page 1
+            assert calls[2] == ((mock_original_doc,), {'from_page': 1, 'to_page': 1})
+            assert calls[3] == ((mock_translated_doc,), {'from_page': 1, 'to_page': 1})
+
+    def test_create_bilingual_pdf_cleanup_on_error(self, processor, tmp_path):
+        """Test that documents are closed even if an error occurs"""
+        with patch('yakulingo.processors.pdf_processor._get_fitz') as mock_get_fitz:
+            mock_fitz = MagicMock()
+            mock_get_fitz.return_value = mock_fitz
+
+            mock_original_doc = MagicMock()
+            mock_original_doc.__len__ = Mock(return_value=2)
+
+            mock_translated_doc = MagicMock()
+            mock_translated_doc.__len__ = Mock(return_value=2)
+
+            mock_output_doc = MagicMock()
+            mock_output_doc.__len__ = Mock(return_value=4)
+            # Simulate error during insert_pdf
+            mock_output_doc.insert_pdf.side_effect = Exception("Test error")
+
+            def mock_open(path=None):
+                if path is None:
+                    return mock_output_doc
+                elif "original" in str(path):
+                    return mock_original_doc
+                else:
+                    return mock_translated_doc
+
+            mock_fitz.open.side_effect = mock_open
+
+            original_path = tmp_path / "original.pdf"
+            translated_path = tmp_path / "translated.pdf"
+            output_path = tmp_path / "bilingual.pdf"
+
+            original_path.write_bytes(b"%PDF-1.4 original")
+            translated_path.write_bytes(b"%PDF-1.4 translated")
+
+            with pytest.raises(Exception, match="Test error"):
+                processor.create_bilingual_pdf(
+                    original_path, translated_path, output_path
+                )
+
+            # Check all documents were closed despite the error
+            mock_original_doc.close.assert_called_once()
+            mock_translated_doc.close.assert_called_once()
+            mock_output_doc.close.assert_called_once()

@@ -355,3 +355,132 @@ class TestWordProcessorEdgeCases:
 
         blocks = list(processor.extract_text_blocks(file_path))
         assert len(blocks) == 4
+
+
+# --- Tests: create_bilingual_document ---
+
+class TestWordProcessorCreateBilingualDocument:
+    """Test WordProcessor.create_bilingual_document()"""
+
+    def test_creates_bilingual_document(self, processor, tmp_path):
+        """Creates document with original and translated content"""
+        # Create original document
+        original_path = tmp_path / "original.docx"
+        doc_orig = Document()
+        doc_orig.add_paragraph("これは日本語の段落です。")
+        doc_orig.add_paragraph("これは2番目の段落です。")
+        doc_orig.save(original_path)
+
+        # Create translated document
+        translated_path = tmp_path / "translated.docx"
+        doc_trans = Document()
+        doc_trans.add_paragraph("This is a Japanese paragraph.")
+        doc_trans.add_paragraph("This is the second paragraph.")
+        doc_trans.save(translated_path)
+
+        # Create bilingual document
+        output_path = tmp_path / "bilingual.docx"
+        result = processor.create_bilingual_document(
+            original_path, translated_path, output_path
+        )
+
+        # Verify result
+        assert result["original_paragraphs"] == 2
+        assert result["translated_paragraphs"] == 2
+        assert result["total_paragraphs"] == 4
+
+        # Verify output file
+        doc_out = Document(output_path)
+        para_texts = [p.text for p in doc_out.paragraphs if p.text.strip()]
+
+        # Should contain both original and translated content
+        assert "これは日本語の段落です。" in para_texts
+        assert "This is a Japanese paragraph." in para_texts
+
+    def test_includes_translation_header(self, processor, tmp_path):
+        """Includes 【翻訳】 header before translated content"""
+        # Create original
+        original_path = tmp_path / "original.docx"
+        doc_orig = Document()
+        doc_orig.add_paragraph("Original text")
+        doc_orig.save(original_path)
+
+        # Create translated
+        translated_path = tmp_path / "translated.docx"
+        doc_trans = Document()
+        doc_trans.add_paragraph("翻訳されたテキスト")
+        doc_trans.save(translated_path)
+
+        output_path = tmp_path / "bilingual.docx"
+        processor.create_bilingual_document(
+            original_path, translated_path, output_path
+        )
+
+        doc_out = Document(output_path)
+        all_text = "\n".join(p.text for p in doc_out.paragraphs)
+
+        assert "【翻訳】" in all_text
+
+    def test_includes_separator(self, processor, tmp_path):
+        """Includes separator line between original and translated"""
+        original_path = tmp_path / "original.docx"
+        doc_orig = Document()
+        doc_orig.add_paragraph("Original")
+        doc_orig.save(original_path)
+
+        translated_path = tmp_path / "translated.docx"
+        doc_trans = Document()
+        doc_trans.add_paragraph("Translated")
+        doc_trans.save(translated_path)
+
+        output_path = tmp_path / "bilingual.docx"
+        processor.create_bilingual_document(
+            original_path, translated_path, output_path
+        )
+
+        doc_out = Document(output_path)
+        all_text = "\n".join(p.text for p in doc_out.paragraphs)
+
+        # Should contain separator (series of dashes)
+        assert "─" in all_text
+
+    def test_handles_empty_documents(self, processor, tmp_path):
+        """Handles empty documents gracefully"""
+        original_path = tmp_path / "original.docx"
+        doc_orig = Document()
+        doc_orig.save(original_path)
+
+        translated_path = tmp_path / "translated.docx"
+        doc_trans = Document()
+        doc_trans.save(translated_path)
+
+        output_path = tmp_path / "bilingual.docx"
+        result = processor.create_bilingual_document(
+            original_path, translated_path, output_path
+        )
+
+        assert result["original_paragraphs"] == 0
+        assert result["translated_paragraphs"] == 0
+        assert output_path.exists()
+
+    def test_copies_table_content(self, processor, docx_with_table, tmp_path):
+        """Copies tables from translated document"""
+        # Create translated version with table
+        translated_path = tmp_path / "translated.docx"
+        doc_trans = Document()
+        doc_trans.add_paragraph("Document with table")
+        table = doc_trans.add_table(rows=2, cols=2)
+        table.cell(0, 0).text = "Header 1"
+        table.cell(0, 1).text = "Header 2"
+        table.cell(1, 0).text = "12345"
+        table.cell(1, 1).text = "Data"
+        doc_trans.save(translated_path)
+
+        output_path = tmp_path / "bilingual.docx"
+        processor.create_bilingual_document(
+            docx_with_table, translated_path, output_path
+        )
+
+        doc_out = Document(output_path)
+        # Should have tables from both documents
+        assert len(doc_out.tables) == 2

@@ -39,6 +39,10 @@ class AppSettings:
     # Default to free (7500 with margin) for safety
     copilot_char_limit: int = 7500      # Max prompt chars before switching to file attachment
 
+    # File Translation Options (共通オプション)
+    bilingual_output: bool = False      # 対訳出力（原文と翻訳を交互に配置）
+    export_glossary: bool = False       # 対訳CSV出力（glossaryとして再利用可能）
+
     # Auto Update
     auto_update_enabled: bool = True            # 起動時に自動チェック
     auto_update_check_interval: int = 86400     # チェック間隔（秒）: 24時間
@@ -56,6 +60,15 @@ class AppSettings:
                     data = json.load(f)
                     # Remove deprecated fields
                     data.pop('last_direction', None)
+                    # Migrate old PDF-only options to common options
+                    if 'pdf_bilingual_output' in data and 'bilingual_output' not in data:
+                        data['bilingual_output'] = data.pop('pdf_bilingual_output')
+                    else:
+                        data.pop('pdf_bilingual_output', None)
+                    if 'pdf_export_glossary' in data and 'export_glossary' not in data:
+                        data['export_glossary'] = data.pop('pdf_export_glossary')
+                    else:
+                        data.pop('pdf_export_glossary', None)
                     # Filter to only known fields to handle future version settings
                     known_fields = {f.name for f in cls.__dataclass_fields__.values()}
                     filtered_data = {k: v for k, v in data.items() if k in known_fields}
@@ -79,6 +92,9 @@ class AppSettings:
             "request_timeout": self.request_timeout,
             "max_retries": self.max_retries,
             "copilot_char_limit": self.copilot_char_limit,
+            # File Translation Options
+            "bilingual_output": self.bilingual_output,
+            "export_glossary": self.export_glossary,
             # Auto Update
             "auto_update_enabled": self.auto_update_enabled,
             "auto_update_check_interval": self.auto_update_check_interval,

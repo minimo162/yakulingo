@@ -5,6 +5,7 @@ Coordinates between UI, Copilot, and file processors.
 Bidirectional translation: Japanese → English, Other → Japanese (auto-detected).
 """
 
+import csv
 import logging
 import time
 from pathlib import Path
@@ -269,21 +270,47 @@ class BatchTranslator:
         return result
 
     def _create_batches(self, blocks: list[TextBlock]) -> list[list[TextBlock]]:
-        """Split blocks into batches based on configured limits."""
+        """
+        Split blocks into batches based on configured limits.
+
+        Handles oversized blocks (exceeding max_chars_per_batch) by placing them
+        in their own batch with a warning. These will be processed via file
+        attachment mode by CopilotHandler.
+        """
         batches = []
         current_batch = []
         current_chars = 0
 
         for block in blocks:
+            block_size = len(block.text)
+
+            # Check if this single block exceeds the character limit
+            if block_size > self.max_chars_per_batch:
+                # Finalize current batch first
+                if current_batch:
+                    batches.append(current_batch)
+                    current_batch = []
+                    current_chars = 0
+
+                # Add oversized block as its own batch with warning
+                logger.warning(
+                    "Block '%s' exceeds max_chars_per_batch (%d > %d). "
+                    "Will be processed via file attachment mode.",
+                    block.id, block_size, self.max_chars_per_batch
+                )
+                batches.append([block])
+                continue
+
+            # Normal batching logic
             if (len(current_batch) >= self.max_batch_size or
-                current_chars + len(block.text) > self.max_chars_per_batch):
+                current_chars + block_size > self.max_chars_per_batch):
                 if current_batch:
                     batches.append(current_batch)
                 current_batch = []
                 current_chars = 0
 
             current_batch.append(block)
-            current_chars += len(block.text)
+            current_chars += block_size
 
         if current_batch:
             batches.append(current_batch)
@@ -749,6 +776,40 @@ class TranslationService:
         direction = "jp_to_en" if output_language == "en" else "en_to_jp"
         processor.apply_translations(input_path, output_path, translations, direction)
 
+        # Create bilingual output if enabled
+        bilingual_path = None
+        if self.config and self.config.bilingual_output:
+            if on_progress:
+                on_progress(TranslationProgress(
+                    current=92,
+                    total=100,
+                    status="Creating bilingual file...",
+                    phase=TranslationPhase.APPLYING,
+                    phase_detail="Interleaving original and translated content",
+                ))
+
+            bilingual_path = self._create_bilingual_output(
+                input_path, output_path, processor
+            )
+
+        # Export glossary CSV if enabled
+        glossary_path = None
+        if self.config and self.config.export_glossary:
+            if on_progress:
+                on_progress(TranslationProgress(
+                    current=97,
+                    total=100,
+                    status="Exporting glossary CSV...",
+                    phase=TranslationPhase.APPLYING,
+                    phase_detail="Creating translation pairs",
+                ))
+
+            # Generate glossary output path
+            glossary_path = output_path.parent / (
+                output_path.stem.replace('_translated', '') + '_glossary.csv'
+            )
+            self._export_glossary_csv(blocks, translations, glossary_path)
+
         # Report complete
         if on_progress:
             on_progress(TranslationProgress(
@@ -761,6 +822,8 @@ class TranslationService:
         return TranslationResult(
             status=TranslationStatus.COMPLETED,
             output_path=output_path,
+            bilingual_path=bilingual_path,
+            glossary_path=glossary_path,
             blocks_translated=len(translations),
             blocks_total=total_blocks,
             duration_seconds=time.time() - start_time,
@@ -889,6 +952,42 @@ class TranslationService:
             # Standard mode: use regular apply_translations
             processor.apply_translations(input_path, output_path, translations, direction)
 
+        # Create bilingual PDF if enabled
+        bilingual_path = None
+        if self.config and self.config.bilingual_output:
+            if on_progress:
+                on_progress(TranslationProgress(
+                    current=95,
+                    total=100,
+                    status="Creating bilingual PDF...",
+                    phase=TranslationPhase.APPLYING,
+                    phase_detail="Interleaving original and translated pages",
+                ))
+
+            # Generate bilingual output path with _bilingual suffix
+            bilingual_path = output_path.parent / (
+                output_path.stem.replace('_translated', '') + '_bilingual.pdf'
+            )
+            processor.create_bilingual_pdf(input_path, output_path, bilingual_path)
+
+        # Export glossary CSV if enabled
+        glossary_path = None
+        if self.config and self.config.export_glossary:
+            if on_progress:
+                on_progress(TranslationProgress(
+                    current=97,
+                    total=100,
+                    status="Exporting glossary CSV...",
+                    phase=TranslationPhase.APPLYING,
+                    phase_detail="Creating translation pairs",
+                ))
+
+            # Generate glossary output path
+            glossary_path = output_path.parent / (
+                output_path.stem.replace('_translated', '') + '_glossary.csv'
+            )
+            self._export_glossary_csv(all_blocks, translations, glossary_path)
+
         if on_progress:
             on_progress(TranslationProgress(
                 current=100,
@@ -909,6 +1008,8 @@ class TranslationService:
         return TranslationResult(
             status=TranslationStatus.COMPLETED,
             output_path=output_path,
+            bilingual_path=bilingual_path,
+            glossary_path=glossary_path,
             blocks_translated=len(translations),
             blocks_total=total_blocks,
             duration_seconds=time.time() - start_time,
@@ -938,6 +1039,106 @@ class TranslationService:
             ))
 
         return callback
+
+    def _export_glossary_csv(
+        self,
+        blocks: list[TextBlock],
+        translations: dict[str, str],
+        output_path: Path,
+    ) -> None:
+        """
+        Export translation pairs as glossary CSV.
+
+        Format:
+            original,translated
+            原文テキスト,Translation text
+            ...
+
+        Args:
+            blocks: Original text blocks
+            translations: Translation results (block_id -> translated_text)
+            output_path: Output CSV file path
+        """
+        with open(output_path, 'w', encoding='utf-8', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(['original', 'translated'])
+
+            for block in blocks:
+                if block.id in translations:
+                    original = block.text.strip()
+                    translated = translations[block.id].strip()
+                    # Skip empty pairs
+                    if original and translated:
+                        writer.writerow([original, translated])
+
+        logger.info("Exported glossary CSV: %s (%d pairs)", output_path, len(translations))
+
+    def _create_bilingual_output(
+        self,
+        input_path: Path,
+        translated_path: Path,
+        processor: FileProcessor,
+    ) -> Optional[Path]:
+        """
+        Create bilingual output file based on file type.
+
+        Args:
+            input_path: Original input file path
+            translated_path: Translated output file path
+            processor: File processor instance
+
+        Returns:
+            Path to bilingual output file, or None on failure
+        """
+        ext = input_path.suffix.lower()
+
+        # Generate bilingual output path
+        bilingual_path = translated_path.parent / (
+            translated_path.stem.replace('_translated', '') + '_bilingual' + ext
+        )
+
+        try:
+            if ext in ('.xlsx', '.xls'):
+                # Excel: interleaved sheets
+                if hasattr(processor, 'create_bilingual_workbook'):
+                    processor.create_bilingual_workbook(
+                        input_path, translated_path, bilingual_path
+                    )
+                    logger.info("Created bilingual Excel: %s", bilingual_path)
+                    return bilingual_path
+
+            elif ext == '.docx':
+                # Word: interleaved pages
+                if hasattr(processor, 'create_bilingual_document'):
+                    processor.create_bilingual_document(
+                        input_path, translated_path, bilingual_path
+                    )
+                    logger.info("Created bilingual Word document: %s", bilingual_path)
+                    return bilingual_path
+
+            elif ext == '.pptx':
+                # PowerPoint: interleaved slides
+                if hasattr(processor, 'create_bilingual_presentation'):
+                    processor.create_bilingual_presentation(
+                        input_path, translated_path, bilingual_path
+                    )
+                    logger.info("Created bilingual PowerPoint: %s", bilingual_path)
+                    return bilingual_path
+
+            else:
+                logger.warning(
+                    "Bilingual output not supported for file type: %s", ext
+                )
+                return None
+
+        except Exception as e:
+            logger.error(
+                "Failed to create bilingual output for %s: %s",
+                input_path.name, e
+            )
+            return None
+
+        return None
 
     def get_file_info(self, file_path: Path) -> FileInfo:
         """Get file information for UI display"""

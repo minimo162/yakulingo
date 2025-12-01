@@ -175,13 +175,30 @@ class TranslationResult:
     Result of a translation operation (for file translation).
     """
     status: TranslationStatus
-    output_path: Optional[Path] = None       # For file translation
+    output_path: Optional[Path] = None       # Main translated file
+    bilingual_path: Optional[Path] = None    # Bilingual output file (if enabled)
+    glossary_path: Optional[Path] = None     # Glossary CSV file (if enabled)
     output_text: Optional[str] = None        # For text translation (legacy)
     blocks_translated: int = 0
     blocks_total: int = 0
     duration_seconds: float = 0.0
     error_message: Optional[str] = None
     warnings: list[str] = field(default_factory=list)
+
+    @property
+    def output_files(self) -> list[tuple[Path, str]]:
+        """
+        Get list of all output files with their descriptions.
+        Returns list of (path, description) tuples.
+        """
+        files = []
+        if self.output_path and self.output_path.exists():
+            files.append((self.output_path, "翻訳ファイル"))
+        if self.bilingual_path and self.bilingual_path.exists():
+            files.append((self.bilingual_path, "対訳ファイル"))
+        if self.glossary_path and self.glossary_path.exists():
+            files.append((self.glossary_path, "用語集CSV"))
+        return files
 
 
 @dataclass

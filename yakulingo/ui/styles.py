@@ -286,6 +286,14 @@ body {
     background: var(--md-sys-color-surface);
     border-radius: calc(var(--md-sys-shape-corner-3xl) - 0.375rem);
     border: 1px solid var(--md-sys-color-outline-variant);
+    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+}
+
+/* Focus state for main card (when textarea is focused) */
+.main-card-inner:focus-within {
+    border-color: var(--md-sys-color-primary);
+    box-shadow: 0 0 0 3px rgba(192, 64, 0, 0.08);
+    transform: scale(1.005);
 }
 
 /* === M3 Text Field Container === */
@@ -451,6 +459,29 @@ body {
     background: linear-gradient(90deg, var(--md-sys-color-primary) 0%, #D85000 100%);
     border-radius: var(--md-sys-shape-corner-full);
     transition: width var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-standard);
+    position: relative;
+}
+
+/* Shimmer effect for progress bar */
+.progress-bar::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(
+        90deg,
+        transparent 0%,
+        rgba(255, 255, 255, 0.3) 50%,
+        transparent 100%
+    );
+    animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
 }
 
 /* === Chip === */
@@ -1529,5 +1560,86 @@ body {
 
 .settings-dialog .q-slider__inner {
     background: var(--md-sys-color-primary) !important;
+}
+
+/* === Button Active States (Nani-inspired) === */
+.btn-primary:active:not(:disabled),
+.translate-btn:active:not(:disabled) {
+    transform: translateY(0) scale(0.98) !important;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1) !important;
+}
+
+.btn-outline:active {
+    transform: translateY(0) scale(0.98) !important;
+}
+
+/* Copy success feedback animation */
+.copy-success {
+    animation: copyPulse 400ms var(--md-sys-motion-easing-spring);
+}
+
+@keyframes copyPulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.2); color: var(--md-sys-color-success); }
+    100% { transform: scale(1); }
+}
+
+/* === Skeleton Loading (Nani-inspired) === */
+.skeleton {
+    background: linear-gradient(
+        90deg,
+        var(--md-sys-color-surface-container) 25%,
+        var(--md-sys-color-surface-container-high) 50%,
+        var(--md-sys-color-surface-container) 75%
+    );
+    background-size: 200% 100%;
+    animation: skeletonShimmer 1.5s infinite;
+    border-radius: var(--md-sys-shape-corner-medium);
+}
+
+.skeleton-text {
+    height: 1rem;
+    margin-bottom: 0.5rem;
+}
+
+.skeleton-text-sm {
+    height: 0.75rem;
+    width: 60%;
+}
+
+@keyframes skeletonShimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+/* === Textarea Placeholder Animation === */
+.main-card-inner textarea::placeholder {
+    transition: opacity var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+}
+
+.main-card-inner textarea:focus::placeholder {
+    opacity: 0.5;
+}
+
+/* === Icon Button Hover Glow === */
+.nani-toolbar-btn:hover {
+    opacity: 1;
+    background: var(--md-sys-color-surface-container) !important;
+}
+
+/* === Success Confetti-style Animation === */
+.success-bounce {
+    animation: successBounce 600ms var(--md-sys-motion-easing-spring);
+}
+
+@keyframes successBounce {
+    0% { transform: scale(0.8); opacity: 0; }
+    50% { transform: scale(1.1); }
+    100% { transform: scale(1); opacity: 1; }
+}
+
+/* === Tooltip Fade In === */
+.q-tooltip {
+    animation: fadeIn 150ms var(--md-sys-motion-easing-standard) !important;
 }
 """

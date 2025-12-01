@@ -77,16 +77,35 @@ class FileInfo:
         return icons.get(self.file_type, "description")
 
 
+class TranslationPhase(Enum):
+    """Translation process phases for detailed progress tracking"""
+    EXTRACTING = "extracting"    # Extracting text from file
+    OCR = "ocr"                  # OCR processing (PDF with yomitoku)
+    TRANSLATING = "translating"  # Sending to Copilot for translation
+    APPLYING = "applying"        # Applying translations to output file
+    COMPLETE = "complete"
+
+
 @dataclass
 class TranslationProgress:
     """
     Progress information for long-running translations.
+
+    For PDF translation with yomitoku, the process has multiple phases:
+    1. OCR: yomitoku analyzes each page (can be slow)
+    2. TRANSLATING: Copilot translates text blocks
+    3. APPLYING: Translations are applied to output PDF
+
+    The `phase` and `phase_detail` fields provide granular progress info.
     """
     current: int                     # Current item (block/page/sheet)
     total: int                       # Total items
     status: str                      # Status message
     percentage: float = 0.0          # 0.0 - 1.0
     estimated_remaining: Optional[int] = None  # Seconds
+    # Phase tracking for detailed progress (optional, for backward compatibility)
+    phase: Optional[TranslationPhase] = None
+    phase_detail: Optional[str] = None  # e.g., "Page 3/10"
 
     def __post_init__(self):
         if self.total > 0:

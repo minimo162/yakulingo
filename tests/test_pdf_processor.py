@@ -1146,3 +1146,122 @@ class TestApplyTranslationsResult:
             assert 'failed' in result
             assert 'failed_fonts' in result
             assert result['total'] == 1
+
+
+class TestExtractTextBlocksStreaming:
+    """Tests for extract_text_blocks_streaming method"""
+
+    def test_streaming_without_ocr(self, processor, tmp_path):
+        """Test streaming extraction using PyMuPDF only"""
+        with patch('yakulingo.processors.pdf_processor._get_fitz') as mock_get_fitz:
+            mock_fitz = MagicMock()
+            mock_get_fitz.return_value = mock_fitz
+
+            # Create mock document with 2 pages
+            mock_page1 = MagicMock()
+            mock_page1.get_text.return_value = {
+                "blocks": [
+                    {
+                        "type": 0,
+                        "bbox": [100, 200, 300, 250],
+                        "lines": [{"spans": [{"text": "Page 1 text", "font": "Arial", "size": 12.0}]}]
+                    }
+                ]
+            }
+            mock_page2 = MagicMock()
+            mock_page2.get_text.return_value = {
+                "blocks": [
+                    {
+                        "type": 0,
+                        "bbox": [100, 200, 300, 250],
+                        "lines": [{"spans": [{"text": "Page 2 text", "font": "Arial", "size": 12.0}]}]
+                    }
+                ]
+            }
+
+            mock_doc = MagicMock()
+            mock_doc.__len__ = Mock(return_value=2)
+            mock_doc.__iter__ = Mock(return_value=iter([mock_page1, mock_page2]))
+
+            mock_fitz.open.return_value = mock_doc
+
+            pdf_path = tmp_path / "test.pdf"
+            pdf_path.write_bytes(b"%PDF-1.4 dummy")
+
+            # Collect results from streaming
+            all_blocks = []
+            page_count = 0
+            for blocks, cells in processor.extract_text_blocks_streaming(
+                pdf_path, use_ocr=False
+            ):
+                all_blocks.extend(blocks)
+                page_count += 1
+                # Without OCR, cells should be None
+                assert cells is None
+
+            assert page_count == 2
+            assert len(all_blocks) == 2
+            assert all_blocks[0].text == "Page 1 text"
+            assert all_blocks[1].text == "Page 2 text"
+
+    def test_streaming_progress_callback(self, processor, tmp_path):
+        """Test that progress callback is called during streaming"""
+        with patch('yakulingo.processors.pdf_processor._get_fitz') as mock_get_fitz:
+            mock_fitz = MagicMock()
+            mock_get_fitz.return_value = mock_fitz
+
+            mock_page = MagicMock()
+            mock_page.get_text.return_value = {
+                "blocks": [
+                    {
+                        "type": 0,
+                        "bbox": [100, 200, 300, 250],
+                        "lines": [{"spans": [{"text": "Text", "font": "Arial", "size": 12.0}]}]
+                    }
+                ]
+            }
+
+            mock_doc = MagicMock()
+            mock_doc.__len__ = Mock(return_value=3)
+            mock_doc.__iter__ = Mock(return_value=iter([mock_page, mock_page, mock_page]))
+
+            mock_fitz.open.return_value = mock_doc
+
+            pdf_path = tmp_path / "test.pdf"
+            pdf_path.write_bytes(b"%PDF-1.4 dummy")
+
+            progress_calls = []
+
+            def on_progress(progress):
+                progress_calls.append(progress)
+
+            # Consume the generator
+            list(processor.extract_text_blocks_streaming(
+                pdf_path, on_progress=on_progress, use_ocr=False
+            ))
+
+            # Should have 3 progress calls (one per page)
+            assert len(progress_calls) == 3
+            assert progress_calls[0].current == 1
+            assert progress_calls[1].current == 2
+            assert progress_calls[2].current == 3
+            assert all(p.total == 3 for p in progress_calls)
+
+    def test_get_page_count(self, processor, tmp_path):
+        """Test get_page_count method"""
+        with patch('yakulingo.processors.pdf_processor._get_fitz') as mock_get_fitz:
+            mock_fitz = MagicMock()
+            mock_get_fitz.return_value = mock_fitz
+
+            mock_doc = MagicMock()
+            mock_doc.__len__ = Mock(return_value=5)
+
+            mock_fitz.open.return_value = mock_doc
+
+            pdf_path = tmp_path / "test.pdf"
+            pdf_path.write_bytes(b"%PDF-1.4 dummy")
+
+            count = processor.get_page_count(pdf_path)
+
+            assert count == 5
+            mock_doc.close.assert_called_once()

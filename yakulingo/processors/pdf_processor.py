@@ -29,7 +29,9 @@ from typing import Any, Iterator, Optional
 logger = logging.getLogger(__name__)
 
 from .base import FileProcessor
-from yakulingo.models.types import TextBlock, FileInfo, FileType
+from yakulingo.models.types import (
+    TextBlock, FileInfo, FileType, TranslationProgress, TranslationPhase, ProgressCallback
+)
 
 
 # =============================================================================
@@ -1667,3 +1669,195 @@ class PdfProcessor(FileProcessor):
 
         clear_analyzer_cache()
         return all_cells
+
+    def extract_text_blocks_streaming(
+        self,
+        file_path: Path,
+        on_progress: Optional[ProgressCallback] = None,
+        use_ocr: bool = True,
+        device: str = "cpu",
+        reading_order: str = "auto",
+    ) -> Iterator[tuple[list[TextBlock], Optional[list[TranslationCell]]]]:
+        """
+        Extract text blocks from PDF with streaming support and progress reporting.
+
+        This method yields text blocks page by page, allowing the caller to
+        process and translate blocks incrementally. This is especially useful
+        for large PDFs where yomitoku OCR processing can be slow.
+
+        Args:
+            file_path: Path to PDF file
+            on_progress: Progress callback for UI updates
+            use_ocr: If True and yomitoku is available, use OCR for text extraction
+            device: "cpu" or "cuda" for yomitoku
+            reading_order: Reading order for yomitoku ("auto", "left2right", etc.)
+
+        Yields:
+            Tuple of (list[TextBlock], Optional[list[TranslationCell]]):
+            - TextBlocks for the current page
+            - TranslationCells if OCR was used (needed for apply_translations_with_cells)
+
+        Example:
+            ```python
+            all_blocks = []
+            all_cells = []
+            for page_blocks, page_cells in processor.extract_text_blocks_streaming(
+                path, on_progress=callback, use_ocr=True
+            ):
+                all_blocks.extend(page_blocks)
+                if page_cells:
+                    all_cells.extend(page_cells)
+                # Can also translate page_blocks immediately here
+            ```
+        """
+        fitz = _get_fitz()
+        doc = fitz.open(file_path)
+        total_pages = len(doc)
+        doc.close()
+
+        if use_ocr and is_yomitoku_available():
+            # Use yomitoku OCR with streaming
+            yield from self._extract_with_ocr_streaming(
+                file_path, total_pages, on_progress, device, reading_order
+            )
+        else:
+            # Use PyMuPDF only (fast, for text-based PDFs)
+            yield from self._extract_with_pymupdf_streaming(
+                file_path, total_pages, on_progress
+            )
+
+    def _extract_with_ocr_streaming(
+        self,
+        file_path: Path,
+        total_pages: int,
+        on_progress: Optional[ProgressCallback],
+        device: str,
+        reading_order: str,
+    ) -> Iterator[tuple[list[TextBlock], list[TranslationCell]]]:
+        """
+        Extract text blocks using yomitoku OCR with streaming.
+
+        Yields one page at a time with progress updates.
+        """
+        actual_device = get_device(device)
+        pages_processed = 0
+
+        for batch_start, batch_images in iterate_pdf_pages(str(file_path)):
+            for img_idx, img in enumerate(batch_images):
+                page_num = batch_start + img_idx + 1
+                pages_processed += 1
+
+                # Report progress
+                if on_progress:
+                    on_progress(TranslationProgress(
+                        current=pages_processed,
+                        total=total_pages,
+                        status=f"OCR processing page {page_num}/{total_pages}...",
+                        phase=TranslationPhase.OCR,
+                        phase_detail=f"Page {page_num}/{total_pages}",
+                    ))
+
+                # Analyze with yomitoku
+                results = analyze_document(img, actual_device, reading_order)
+                cells = prepare_translation_cells(results, page_num)
+
+                # Convert cells to TextBlocks
+                blocks = []
+                for cell in cells:
+                    if cell.text and self.should_translate(cell.text):
+                        blocks.append(TextBlock(
+                            id=cell.address,
+                            text=cell.text,
+                            location=f"Page {page_num}",
+                            metadata={
+                                'type': 'ocr_cell',
+                                'page': page_num - 1,
+                                'address': cell.address,
+                                'bbox': cell.box,
+                                'direction': cell.direction,
+                                'role': cell.role,
+                            }
+                        ))
+
+                yield blocks, cells
+
+        # Clean up GPU memory
+        clear_analyzer_cache()
+
+    def _extract_with_pymupdf_streaming(
+        self,
+        file_path: Path,
+        total_pages: int,
+        on_progress: Optional[ProgressCallback],
+    ) -> Iterator[tuple[list[TextBlock], None]]:
+        """
+        Extract text blocks using PyMuPDF only (fast, for text-based PDFs).
+
+        Yields one page at a time with progress updates.
+        """
+        fitz = _get_fitz()
+        doc = fitz.open(file_path)
+
+        try:
+            for page_idx, page in enumerate(doc):
+                page_num = page_idx + 1
+
+                # Report progress
+                if on_progress:
+                    on_progress(TranslationProgress(
+                        current=page_num,
+                        total=total_pages,
+                        status=f"Extracting text from page {page_num}/{total_pages}...",
+                        phase=TranslationPhase.EXTRACTING,
+                        phase_detail=f"Page {page_num}/{total_pages}",
+                    ))
+
+                blocks = []
+                page_blocks = page.get_text("dict")["blocks"]
+
+                for block_idx, block in enumerate(page_blocks):
+                    if block.get("type") == 0:  # Text block
+                        text_parts = []
+                        for line in block.get("lines", []):
+                            line_text = ""
+                            for span in line.get("spans", []):
+                                line_text += span.get("text", "")
+                            text_parts.append(line_text)
+
+                        text = "\n".join(text_parts).strip()
+
+                        if text and self.should_translate(text):
+                            font_name = None
+                            font_size = 11.0
+                            if block.get("lines"):
+                                first_line = block["lines"][0]
+                                if first_line.get("spans"):
+                                    first_span = first_line["spans"][0]
+                                    font_name = first_span.get("font")
+                                    font_size = first_span.get("size", 11.0)
+
+                            blocks.append(TextBlock(
+                                id=f"page_{page_idx}_block_{block_idx}",
+                                text=text,
+                                location=f"Page {page_num}",
+                                metadata={
+                                    'type': 'text_block',
+                                    'page': page_idx,
+                                    'block': block_idx,
+                                    'bbox': block.get("bbox"),
+                                    'font_name': font_name,
+                                    'font_size': font_size,
+                                }
+                            ))
+
+                yield blocks, None
+        finally:
+            doc.close()
+
+    def get_page_count(self, file_path: Path) -> int:
+        """Get total page count of PDF."""
+        fitz = _get_fitz()
+        doc = fitz.open(file_path)
+        count = len(doc)
+        doc.close()
+        return count

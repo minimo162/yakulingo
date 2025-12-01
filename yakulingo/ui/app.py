@@ -7,24 +7,24 @@ Japanese → English, Other → Japanese (auto-detected by AI).
 import asyncio
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 from nicegui import ui
 
 # Module logger
 logger = logging.getLogger(__name__)
 
+# Fast imports - required at startup
 from yakulingo.ui.state import AppState, Tab, FileState
 from yakulingo.ui.styles import COMPLETE_CSS
-from yakulingo.ui.components.text_panel import create_text_panel
-from yakulingo.ui.components.file_panel import create_file_panel
-from yakulingo.ui.components.update_notification import UpdateNotification, check_updates_on_startup
-from yakulingo.ui.utils import temp_file_manager, parse_translation_result, create_completion_dialog
-
 from yakulingo.models.types import TranslationProgress, TranslationStatus, TextTranslationResult, TranslationOption, HistoryEntry
 from yakulingo.config.settings import AppSettings, get_default_settings_path, get_default_prompts_dir
-from yakulingo.services.copilot_handler import CopilotHandler
-from yakulingo.services.translation_service import TranslationService
+
+# Type hints only - not imported at runtime for faster startup
+if TYPE_CHECKING:
+    from yakulingo.services.copilot_handler import CopilotHandler
+    from yakulingo.services.translation_service import TranslationService
+    from yakulingo.ui.components.update_notification import UpdateNotification
 
 
 class YakuLingoApp:
@@ -34,8 +34,10 @@ class YakuLingoApp:
         self.state = AppState()
         self.settings_path = get_default_settings_path()
         self.settings = AppSettings.load(self.settings_path)
-        self.copilot = CopilotHandler()
-        self.translation_service: Optional[TranslationService] = None
+
+        # Lazy-loaded heavy components for faster startup
+        self._copilot: Optional["CopilotHandler"] = None
+        self.translation_service: Optional["TranslationService"] = None
 
         # Load settings
         base_dir = Path(__file__).parent.parent.parent
@@ -48,7 +50,15 @@ class YakuLingoApp:
         self._history_list = None
 
         # Auto-update
-        self._update_notification: Optional[UpdateNotification] = None
+        self._update_notification: Optional["UpdateNotification"] = None
+
+    @property
+    def copilot(self) -> "CopilotHandler":
+        """Lazy-load CopilotHandler for faster startup."""
+        if self._copilot is None:
+            from yakulingo.services.copilot_handler import CopilotHandler
+            self._copilot = CopilotHandler()
+        return self._copilot
 
     async def connect_copilot(self, silent: bool = False):
         """Connect to Copilot."""
@@ -83,6 +93,8 @@ class YakuLingoApp:
             if success:
                 self.state.copilot_connected = True
                 self.state.copilot_login_required = False
+                # Lazy import TranslationService for faster startup
+                from yakulingo.services.translation_service import TranslationService
                 self.translation_service = TranslationService(
                     self.copilot, self.settings, get_default_prompts_dir()
                 )
@@ -113,6 +125,9 @@ class YakuLingoApp:
     async def check_for_updates(self):
         """Check for updates in background."""
         await asyncio.sleep(1.0)  # アプリ起動後に少し待ってからチェック
+
+        # Lazy import for faster startup
+        from yakulingo.ui.components.update_notification import check_updates_on_startup
 
         notification = await check_updates_on_startup(self.settings)
         if notification:
@@ -288,6 +303,10 @@ class YakuLingoApp:
 
     def _create_main_content(self):
         """Create main content area"""
+        # Lazy import UI components for faster startup
+        from yakulingo.ui.components.text_panel import create_text_panel
+        from yakulingo.ui.components.file_panel import create_file_panel
+
         @ui.refreshable
         def main_content():
             with ui.column().classes('w-full max-w-2xl mx-auto px-6 py-8 flex-1'):
@@ -356,6 +375,7 @@ class YakuLingoApp:
                     if e.content:
                         content = e.content.read()
                         # Use temp file manager for automatic cleanup
+                        from yakulingo.ui.utils import temp_file_manager
                         uploaded_path = temp_file_manager.create_temp_file(content, e.name)
                         ui.notify(f'アップロードしました: {e.name}', type='positive')
                         dialog.close()
@@ -716,6 +736,7 @@ class YakuLingoApp:
 
             # Parse result and update UI
             if result:
+                from yakulingo.ui.utils import parse_translation_result
                 text, explanation = parse_translation_result(result)
                 self._add_follow_up_result(source_text, text, explanation)
             else:
@@ -816,6 +837,7 @@ class YakuLingoApp:
                 self.state.translation_result = result
                 self.state.file_state = FileState.COMPLETE
                 # Show completion dialog with all output files
+                from yakulingo.ui.utils import create_completion_dialog
                 create_completion_dialog(
                     result=result,
                     duration_seconds=result.duration_seconds,

@@ -68,6 +68,8 @@ def is_japanese_text(text: str, threshold: float = 0.3) -> bool:
 
     return (japanese_count / total_chars) >= threshold
 
+from typing import TYPE_CHECKING
+
 from yakulingo.models.types import (
     TranslationStatus,
     TranslationProgress,
@@ -84,10 +86,13 @@ from yakulingo.config.settings import AppSettings
 from yakulingo.services.copilot_handler import CopilotHandler
 from yakulingo.services.prompt_builder import PromptBuilder, REFERENCE_INSTRUCTION
 from yakulingo.processors.base import FileProcessor
-from yakulingo.processors.excel_processor import ExcelProcessor
-from yakulingo.processors.word_processor import WordProcessor
-from yakulingo.processors.pptx_processor import PptxProcessor
-from yakulingo.processors.pdf_processor import PdfProcessor
+
+# Lazy-loaded processors for faster startup
+if TYPE_CHECKING:
+    from yakulingo.processors.excel_processor import ExcelProcessor
+    from yakulingo.processors.word_processor import WordProcessor
+    from yakulingo.processors.pptx_processor import PptxProcessor
+    from yakulingo.processors.pdf_processor import PdfProcessor
 
 
 def scale_progress(progress: TranslationProgress, start: int, end: int, phase: TranslationPhase, phase_detail: Optional[str] = None) -> TranslationProgress:
@@ -342,16 +347,32 @@ class TranslationService:
         )
         self._cancel_requested = False
 
-        # Register file processors
-        # Note: Legacy formats (.doc, .ppt) are not supported
-        # Only Office Open XML formats are supported for Word/PowerPoint
-        self.processors: dict[str, FileProcessor] = {
-            '.xlsx': ExcelProcessor(),
-            '.xls': ExcelProcessor(),
-            '.docx': WordProcessor(),
-            '.pptx': PptxProcessor(),
-            '.pdf': PdfProcessor(),
-        }
+        # Lazy-loaded file processors for faster startup
+        self._processors: Optional[dict[str, FileProcessor]] = None
+
+    @property
+    def processors(self) -> dict[str, FileProcessor]:
+        """
+        Lazy-load file processors on first access.
+        This significantly improves startup time by deferring heavy imports
+        (xlwings, openpyxl, python-docx, python-pptx, PyMuPDF) until needed.
+        """
+        if self._processors is None:
+            from yakulingo.processors.excel_processor import ExcelProcessor
+            from yakulingo.processors.word_processor import WordProcessor
+            from yakulingo.processors.pptx_processor import PptxProcessor
+            from yakulingo.processors.pdf_processor import PdfProcessor
+
+            # Note: Legacy formats (.doc, .ppt) are not supported
+            # Only Office Open XML formats are supported for Word/PowerPoint
+            self._processors = {
+                '.xlsx': ExcelProcessor(),
+                '.xls': ExcelProcessor(),
+                '.docx': WordProcessor(),
+                '.pptx': PptxProcessor(),
+                '.pdf': PdfProcessor(),
+            }
+        return self._processors
 
     def translate_text(
         self,
@@ -832,7 +853,7 @@ class TranslationService:
     def _translate_pdf_streaming(
         self,
         input_path: Path,
-        processor: PdfProcessor,
+        processor: "PdfProcessor",
         reference_files: Optional[list[Path]],
         on_progress: Optional[ProgressCallback],
         output_language: str,

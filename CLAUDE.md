@@ -105,14 +105,14 @@ YakuLingo/
 
 | File | Purpose | Lines |
 |------|---------|-------|
-| `yakulingo/ui/app.py` | Main application orchestrator, handles UI events and coordinates services | ~764 |
-| `yakulingo/services/translation_service.py` | Coordinates file processors and batch translation | ~860 |
-| `yakulingo/services/copilot_handler.py` | Browser automation for M365 Copilot | ~990 |
-| `yakulingo/services/updater.py` | GitHub Releases-based auto-update with Windows proxy support | ~746 |
-| `yakulingo/ui/styles.py` | M3 design tokens, CSS styling definitions | ~1222 |
-| `yakulingo/ui/state.py` | Application state management | ~176 |
-| `yakulingo/models/types.py` | Core data types: TextBlock, FileInfo, TranslationResult, HistoryEntry | ~199 |
-| `yakulingo/storage/history_db.py` | SQLite database for translation history | ~236 |
+| `yakulingo/ui/app.py` | Main application orchestrator, handles UI events and coordinates services | ~960 |
+| `yakulingo/services/translation_service.py` | Coordinates file processors and batch translation | ~960 |
+| `yakulingo/services/copilot_handler.py` | Browser automation for M365 Copilot | ~1100 |
+| `yakulingo/services/updater.py` | GitHub Releases-based auto-update with Windows proxy support | ~750 |
+| `yakulingo/ui/styles.py` | M3 design tokens, CSS styling definitions | ~1490 |
+| `yakulingo/ui/state.py` | Application state management | ~180 |
+| `yakulingo/models/types.py` | Core data types: TextBlock, FileInfo, TranslationResult, HistoryEntry | ~253 |
+| `yakulingo/storage/history_db.py` | SQLite database for translation history | ~243 |
 | `yakulingo/processors/base.py` | Abstract base class for all file processors | ~105 |
 
 ## Core Data Types
@@ -391,7 +391,7 @@ The AGENTS.md file specifies that all responses should be in Japanese (すべて
 ## Documentation References
 
 - `README.md` - User guide and quick start (Japanese)
-- `docs/SPECIFICATION.md` - Detailed technical specification (~800 lines)
+- `docs/SPECIFICATION.md` - Detailed technical specification (~1000 lines)
 - `DISTRIBUTION.md` - Deployment and distribution guide
 - `AGENTS.md` - Agent configuration (Japanese language preference)
 

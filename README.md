@@ -104,9 +104,12 @@ run.vbs
   "reference_files": ["glossary.csv"],
   "output_directory": null,
   "last_tab": "text",
+  "window_width": 960,
+  "window_height": 720,
   "max_batch_size": 50,
   "request_timeout": 120,
-  "max_retries": 3
+  "max_retries": 3,
+  "auto_update_enabled": true
 }
 ```
 

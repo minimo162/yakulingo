@@ -64,7 +64,8 @@ class TempFileManager:
             if path.exists():
                 path.unlink()
             return True
-        except Exception:
+        except OSError as e:
+            logger.debug("Failed to remove temp file '%s': %s", path, e)
             return False
 
     def cleanup_all(self) -> None:

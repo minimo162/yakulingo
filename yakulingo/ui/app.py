@@ -813,8 +813,8 @@ class YakuLingoApp:
             # Ensure dialog is always closed
             try:
                 progress_dialog.close()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Failed to close progress dialog: %s", e)
 
         self._refresh_content()
 

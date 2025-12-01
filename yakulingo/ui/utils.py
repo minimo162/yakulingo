@@ -5,6 +5,7 @@ Includes temp file management, text formatting, and dialog helpers.
 """
 
 import atexit
+import logging
 import re
 import tempfile
 from pathlib import Path
@@ -12,6 +13,9 @@ from typing import Optional, Callable, Set
 from weakref import WeakSet
 
 from nicegui import ui
+
+# Module logger
+logger = logging.getLogger(__name__)
 
 
 class TempFileManager:
@@ -68,16 +72,16 @@ class TempFileManager:
             try:
                 if temp_file.exists():
                     temp_file.unlink()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Failed to remove temp file '%s': %s", temp_file, e)
         self._temp_files.clear()
 
         # Clean up temp directory if empty
         if self._temp_dir and self._temp_dir.exists():
             try:
                 self._temp_dir.rmdir()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Failed to remove temp directory '%s': %s", self._temp_dir, e)
 
 
 # Singleton instance
@@ -155,8 +159,8 @@ class DialogManager:
         for dialog in list(cls._active_dialogs):
             try:
                 dialog.close()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Failed to close dialog: %s", e)
         cls._active_dialogs.clear()
 
 

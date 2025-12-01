@@ -261,12 +261,9 @@ class TestCopilotHandlerNewChat:
 
         handler.start_new_chat()
 
-        # query_selectorは1回（新しいチャットボタン）
-        mock_page.query_selector.assert_called_once()
-        mock_new_chat_btn.click.assert_called_once()
-        # evaluate_handleは1回（GPT-5ボタン検索）
-        mock_page.evaluate_handle.assert_called_once()
-        mock_gpt5_btn.click.assert_called_once()
+        # query_selectorは複数回呼ばれる（新しいチャットボタン、GPT-5状態確認）
+        assert mock_page.query_selector.call_count >= 1
+        mock_new_chat_btn.click.assert_called()
 
     def test_start_new_chat_handles_no_button(self):
         """start_new_chat handles missing button gracefully"""
@@ -283,51 +280,55 @@ class TestCopilotHandlerNewChat:
 class TestCopilotHandlerGPT5:
     """Test GPT-5 toggle button functionality"""
 
-    def test_enable_gpt5_clicks_when_button_found(self):
-        """_enable_gpt5 clicks button when found via evaluate_handle"""
+    def test_ensure_gpt5_enabled_clicks_when_button_found(self):
+        """_ensure_gpt5_enabled clicks button when found"""
         handler = CopilotHandler()
 
         mock_page = Mock()
         mock_button = Mock()
-        # evaluate_handle returns the button element
-        mock_page.evaluate_handle.return_value = mock_button
+        # First query returns None (not already enabled), second returns button
+        mock_page.query_selector.side_effect = [None, mock_button]
         handler._page = mock_page
 
-        handler._enable_gpt5()
+        result = handler._ensure_gpt5_enabled()
 
-        mock_page.evaluate_handle.assert_called_once()
+        assert result is True
         mock_button.click.assert_called_once()
 
-    def test_enable_gpt5_skips_when_button_not_found(self):
-        """_enable_gpt5 does nothing when button not found"""
+    def test_ensure_gpt5_enabled_skips_when_already_enabled(self):
+        """_ensure_gpt5_enabled returns True when already enabled"""
         handler = CopilotHandler()
 
         mock_page = Mock()
-        mock_page.evaluate_handle.return_value = None  # ボタンが見つからない
+        mock_enabled_btn = Mock()
+        # First query returns enabled button
+        mock_page.query_selector.return_value = mock_enabled_btn
         handler._page = mock_page
 
-        handler._enable_gpt5()
+        result = handler._ensure_gpt5_enabled()
 
-        mock_page.evaluate_handle.assert_called_once()
+        assert result is True
 
-    def test_enable_gpt5_no_page(self):
-        """_enable_gpt5 does nothing when no page"""
+    def test_ensure_gpt5_enabled_no_page(self):
+        """_ensure_gpt5_enabled returns True when no page"""
         handler = CopilotHandler()
         handler._page = None
 
-        # Should not raise
-        handler._enable_gpt5()
+        # Should not raise and return True
+        result = handler._ensure_gpt5_enabled()
+        assert result is True
 
-    def test_enable_gpt5_handles_exception(self):
-        """_enable_gpt5 handles exceptions gracefully"""
+    def test_ensure_gpt5_enabled_handles_exception(self):
+        """_ensure_gpt5_enabled handles exceptions gracefully"""
         handler = CopilotHandler()
 
         mock_page = Mock()
-        mock_page.evaluate_handle.side_effect = Exception("Test error")
+        mock_page.query_selector.side_effect = Exception("Test error")
         handler._page = mock_page
 
-        # Should not raise
-        handler._enable_gpt5()
+        # Should not raise and return True
+        result = handler._ensure_gpt5_enabled()
+        assert result is True
 
 
 class TestCopilotHandlerMockedConnect:

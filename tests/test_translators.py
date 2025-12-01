@@ -178,9 +178,16 @@ class TestParagraphTranslator:
         """Whitespace-only string should not be translated"""
         assert translator.should_translate("   ") is False
 
-    def test_skip_short_text(self, translator):
-        """Very short text (< 2 chars) should not be translated"""
+    def test_skip_short_text_non_japanese(self, translator):
+        """Single non-Japanese characters should not be translated"""
         assert translator.should_translate("A") is False
+        assert translator.should_translate("1") is False
+
+    def test_translate_single_japanese_char(self, translator):
+        """Single Japanese characters should be translated"""
+        assert translator.should_translate("億") is True
+        assert translator.should_translate("円") is True
+        assert translator.should_translate("あ") is True
 
     # --- Skip patterns ---
 

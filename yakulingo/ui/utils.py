@@ -141,12 +141,11 @@ def is_japanese_dominant(text: str) -> bool:
     """
     Determine if the text is predominantly Japanese.
 
-    Uses the presence of hiragana and katakana characters to detect Japanese,
-    as these are unique to the Japanese writing system (unlike kanji which
-    is shared with Chinese).
-
-    The threshold is set at 30% - if more than 30% of alphanumeric characters
-    are hiragana/katakana, the text is considered Japanese.
+    Detection strategy (optimized for Japanese users):
+    1. If hiragana/katakana >= 30% of text → Japanese
+    2. If kanji-dominant (more kanji than Latin) → Japanese
+       (Japanese users entering kanji-only text like "臥薪嘗胆" want English translation)
+    3. Otherwise → Other language (translate to Japanese)
 
     Args:
         text: Input text to analyze
@@ -158,28 +157,47 @@ def is_japanese_dominant(text: str) -> bool:
         >>> is_japanese_dominant("こんにちは")
         True
         >>> is_japanese_dominant("Hello, 田中さん")
-        False  # Only ~15% is hiragana/katakana
+        False  # Latin-dominant
         >>> is_japanese_dominant("プロジェクトのstatusをupdateして")
-        True   # ~60% is hiragana/katakana
+        True   # Has kana
+        >>> is_japanese_dominant("臥薪嘗胆")
+        True   # Kanji-only, assumed Japanese for Japanese users
+        >>> is_japanese_dominant("Hello world")
+        False  # Latin-only
     """
     if not text or not text.strip():
         return False
 
-    # Count characters (excluding spaces and punctuation)
-    chars = []
-    for c in text:
-        # Include alphanumeric and Japanese characters
-        if c.isalnum() or '\u3040' <= c <= '\u9fff':
-            chars.append(c)
+    # Count character types
+    kana_count = 0    # Hiragana + Katakana (uniquely Japanese)
+    kanji_count = 0   # CJK characters (shared with Chinese)
+    latin_count = 0   # ASCII letters
 
-    if not chars:
+    for c in text:
+        if '\u3040' <= c <= '\u30ff':
+            # Hiragana (U+3040-U+309F) and Katakana (U+30A0-U+30FF)
+            kana_count += 1
+        elif '\u4e00' <= c <= '\u9fff':
+            # CJK Unified Ideographs (Kanji)
+            kanji_count += 1
+        elif c.isalpha() and c.isascii():
+            # Latin letters (A-Z, a-z)
+            latin_count += 1
+
+    total = kana_count + kanji_count + latin_count
+    if total == 0:
         return False
 
-    # Count hiragana (U+3040-U+309F) and katakana (U+30A0-U+30FF)
-    ja_kana_count = sum(1 for c in chars if '\u3040' <= c <= '\u30ff')
+    # Rule 1: If kana is present and significant (>=30%), it's Japanese
+    if kana_count > 0 and (kana_count / total) >= 0.3:
+        return True
 
-    # 30% threshold for Japanese dominance
-    return (ja_kana_count / len(chars)) >= 0.3
+    # Rule 2: If kanji-dominant (more kanji than Latin), treat as Japanese
+    # This handles cases like "臥薪嘗胆" for Japanese users
+    if kanji_count > 0 and kanji_count >= latin_count:
+        return True
+
+    return False
 
 
 def parse_translation_result(result: str) -> tuple[str, str]:

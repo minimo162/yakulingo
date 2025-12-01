@@ -11,12 +11,12 @@ from pathlib import Path
 from typing import Iterator, Optional
 
 from .base import FileProcessor
-
-# Module logger
-logger = logging.getLogger(__name__)
 from .translators import CellTranslator
 from .font_manager import FontManager, FontTypeDetector
 from yakulingo.models.types import TextBlock, FileInfo, FileType
+
+# Module logger
+logger = logging.getLogger(__name__)
 
 
 # =============================================================================

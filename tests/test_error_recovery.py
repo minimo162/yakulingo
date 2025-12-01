@@ -149,12 +149,16 @@ class TestPartialBatchFailures:
             for i in range(5)
         ]
 
-        # This tests how the system handles mismatched results
-        # The current implementation uses zip() which silently truncates
+        # Implementation preserves original text for missing translations
         results = service.batch_translator.translate_blocks(blocks)
 
-        # With zip(), only matching pairs are returned
-        assert len(results) == 2
+        # All 5 blocks are in results: 2 translated + 3 with original text
+        assert len(results) == 5
+        assert results["0"] == "Trans1"
+        assert results["1"] == "Trans2"
+        assert results["2"] == "テスト2"  # Original text preserved
+        assert results["3"] == "テスト3"  # Original text preserved
+        assert results["4"] == "テスト4"  # Original text preserved
 
     def test_first_batch_fails_second_succeeds(self, settings):
         """Test when first batch fails but would need recovery"""
@@ -193,9 +197,11 @@ class TestPartialBatchFailures:
 
         result = service.translate_file(sample_excel)
 
-        # With empty response, zip produces no results
+        # Implementation preserves original text for missing translations
+        # So blocks_translated equals blocks_total (original text is used)
         assert result.status == TranslationStatus.COMPLETED
-        assert result.blocks_translated == 0
+        # blocks_translated = len(translations) which includes all blocks with original text
+        assert result.blocks_translated == result.blocks_total
 
     def test_malformed_api_response(self, settings):
         """Handle malformed response from translation API"""

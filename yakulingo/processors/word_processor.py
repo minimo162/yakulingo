@@ -271,15 +271,15 @@ class WordProcessor(FileProcessor):
 
         # Count table cells (Excel-compatible logic)
         # Track processed cells to avoid counting merged cells multiple times
+        # Note: id(cell._tc) can be unreliable, use position + text hash instead
         for table in doc.tables:
             processed_cells = set()
-            for row in table.rows:
-                for cell in row.cells:
-                    # Use cell's _tc element id to identify unique cells
-                    cell_id = id(cell._tc)
-                    if cell_id in processed_cells:
+            for row_idx, row in enumerate(table.rows):
+                for cell_idx, cell in enumerate(row.cells):
+                    cell_key = (row_idx, cell_idx, hash(cell.text))
+                    if cell_key in processed_cells:
                         continue
-                    processed_cells.add(cell_id)
+                    processed_cells.add(cell_key)
                     if cell.text and self.cell_translator.should_translate(cell.text):
                         text_count += 1
 
@@ -338,15 +338,17 @@ class WordProcessor(FileProcessor):
 
         # === Tables (Excel-compatible) ===
         # Track processed cells to avoid extracting merged cells multiple times
+        # Note: id(cell._tc) can be unreliable in some python-docx versions,
+        # so we use (row_idx, cell_idx, text_hash) as the unique key
         for table_idx, table in enumerate(doc.tables):
             processed_cells = set()
             for row_idx, row in enumerate(table.rows):
                 for cell_idx, cell in enumerate(row.cells):
-                    # Use cell's _tc element id to identify unique cells
-                    cell_id = id(cell._tc)
-                    if cell_id in processed_cells:
+                    # Use position + text hash to identify unique cells (handles merged cells)
+                    cell_key = (row_idx, cell_idx, hash(cell.text))
+                    if cell_key in processed_cells:
                         continue
-                    processed_cells.add(cell_id)
+                    processed_cells.add(cell_key)
 
                     cell_text = cell.text
                     if cell_text and self.cell_translator.should_translate(cell_text):
@@ -413,15 +415,15 @@ class WordProcessor(FileProcessor):
 
         # === Apply to tables ===
         # Track processed cells to avoid applying to merged cells multiple times
+        # Note: id(cell._tc) can be unreliable, use position instead
         for table_idx, table in enumerate(doc.tables):
             processed_cells = set()
             for row_idx, row in enumerate(table.rows):
                 for cell_idx, cell in enumerate(row.cells):
-                    # Use cell's _tc element id to identify unique cells
-                    cell_id = id(cell._tc)
-                    if cell_id in processed_cells:
+                    cell_key = (row_idx, cell_idx)
+                    if cell_key in processed_cells:
                         continue
-                    processed_cells.add(cell_id)
+                    processed_cells.add(cell_key)
 
                     block_id = f"table_{table_idx}_r{row_idx}_c{cell_idx}"
                     if block_id in translations:

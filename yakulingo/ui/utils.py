@@ -340,12 +340,10 @@ def create_completion_dialog(
                     ui.button(icon='close', on_click=lambda: _close_dialog(dialog, on_close)).props('flat dense round')
 
                 # Duration badge
-                ui.label(f'{duration_seconds:.1f}秒').classes(
-                    'text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 w-fit'
-                )
+                ui.label(f'{duration_seconds:.1f}秒').classes('duration-badge')
 
                 # Output files list
-                ui.label('出力ファイル:').classes('text-sm font-medium text-gray-700')
+                ui.label('出力ファイル:').classes('text-sm font-medium text-on-surface')
 
                 output_files = result.output_files
                 if output_files:
@@ -353,7 +351,7 @@ def create_completion_dialog(
                         for file_path, description in output_files:
                             _create_file_row(file_path, description)
                 else:
-                    ui.label('出力ファイルがありません').classes('text-sm text-gray-500')
+                    ui.label('出力ファイルがありません').classes('text-sm text-on-surface-variant')
 
                 # Close button
                 with ui.row().classes('w-full justify-end pt-2'):
@@ -374,7 +372,7 @@ def _close_dialog(dialog: 'ui.dialog', on_close: Optional[Callable[[], None]]) -
 
 def _create_file_row(file_path: Path, description: str) -> None:
     """Create a row for a single output file with action buttons."""
-    with ui.card().classes('w-full p-3 bg-gray-50'):
+    with ui.card().classes('completion-file-row'):
         with ui.column().classes('w-full gap-1'):
             # File info
             with ui.row().classes('w-full items-center gap-2'):
@@ -391,11 +389,11 @@ def _create_file_row(file_path: Path, description: str) -> None:
                     '.csv': 'grid_on',
                 }
                 icon = icon_map.get(ext, 'insert_drive_file')
-                ui.icon(icon).classes('text-lg text-gray-600')
+                ui.icon(icon).classes('completion-file-icon')
 
                 with ui.column().classes('flex-grow gap-0'):
-                    ui.label(file_path.name).classes('text-sm font-medium truncate')
-                    ui.label(description).classes('text-xs text-gray-500')
+                    ui.label(file_path.name).classes('completion-file-name truncate')
+                    ui.label(description).classes('completion-file-desc')
 
             # Action buttons
             with ui.row().classes('w-full justify-end gap-2 pt-1'):

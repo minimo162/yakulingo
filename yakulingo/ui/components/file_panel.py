@@ -23,12 +23,12 @@ FILE_TYPE_ICONS = {
     FileType.PDF: 'picture_as_pdf',
 }
 
-# File type colors
-FILE_TYPE_COLORS = {
-    FileType.EXCEL: '#217346',  # Excel green
-    FileType.WORD: '#2B579A',   # Word blue
-    FileType.POWERPOINT: '#D24726',  # PowerPoint orange
-    FileType.PDF: '#F40F02',    # PDF red
+# File type CSS classes (defined in styles.py)
+FILE_TYPE_CLASSES = {
+    FileType.EXCEL: 'file-icon-excel',
+    FileType.WORD: 'file-icon-word',
+    FileType.POWERPOINT: 'file-icon-powerpoint',
+    FileType.PDF: 'file-icon-pdf',
 }
 
 
@@ -193,12 +193,12 @@ def _file_card(file_info: FileInfo, on_remove: Callable[[], None]):
     """File info card with file type icon"""
     file_type = file_info.file_type
     icon = FILE_TYPE_ICONS.get(file_type, 'insert_drive_file')
-    color = FILE_TYPE_COLORS.get(file_type, '#666666')
+    icon_class = FILE_TYPE_CLASSES.get(file_type, 'file-icon-default')
 
     with ui.card().classes('file-card w-full max-w-md'):
         with ui.row().classes('items-center gap-3 w-full'):
-            # File type icon with color
-            with ui.element('div').classes('file-type-icon').style(f'background: {color}15; color: {color}'):
+            # File type icon with M3-consistent color class
+            with ui.element('div').classes(f'file-type-icon {icon_class}'):
                 ui.icon(icon).classes('text-2xl')
 
             # File info

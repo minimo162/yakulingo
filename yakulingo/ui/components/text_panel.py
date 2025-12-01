@@ -512,7 +512,7 @@ def _show_question_dialog(
                 ui.button(icon='close', on_click=dialog.close).props('flat dense round')
 
             # Context preview
-            with ui.element('div').classes('bg-gray-50 rounded-lg p-3'):
+            with ui.element('div').classes('dialog-section'):
                 ui.label('原文:').classes('text-xs text-muted font-semibold')
                 ui.label(source_text[:100] + ('...' if len(source_text) > 100 else '')).classes('text-sm')
 
@@ -561,7 +561,7 @@ def _show_reply_dialog(
                 ui.button(icon='close', on_click=dialog.close).props('flat dense round')
 
             # Context preview
-            with ui.element('div').classes('bg-gray-50 rounded-lg p-3'):
+            with ui.element('div').classes('dialog-section'):
                 ui.label('原文:').classes('text-xs text-muted font-semibold')
                 ui.label(source_text[:100] + ('...' if len(source_text) > 100 else '')).classes('text-sm')
 

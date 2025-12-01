@@ -1652,4 +1652,108 @@ body {
 .q-tooltip {
     animation: fadeIn 150ms var(--md-sys-motion-easing-standard) !important;
 }
+
+/* === Custom Scrollbar (Nani-inspired) === */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--md-sys-color-outline-variant);
+    border-radius: var(--md-sys-shape-corner-full);
+    border: 2px solid transparent;
+    background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--md-sys-color-outline);
+    background-clip: content-box;
+}
+
+/* Firefox scrollbar */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: var(--md-sys-color-outline-variant) transparent;
+}
+
+/* === Text Selection (Brand Color) === */
+::selection {
+    background: rgba(232, 74, 0, 0.2);
+    color: inherit;
+}
+
+::-moz-selection {
+    background: rgba(232, 74, 0, 0.2);
+    color: inherit;
+}
+
+/* === Input Caret Color === */
+input, textarea {
+    caret-color: var(--md-sys-color-primary);
+}
+
+/* === Custom Checkbox Style === */
+.q-checkbox__inner {
+    color: var(--md-sys-color-outline) !important;
+}
+
+.q-checkbox__inner--truthy {
+    color: var(--md-sys-color-primary) !important;
+}
+
+.q-checkbox__bg {
+    border-radius: 6px !important;
+}
+
+/* === Focus Ring Enhancement === */
+*:focus-visible {
+    outline: 2px solid var(--md-sys-color-primary);
+    outline-offset: 2px;
+}
+
+button:focus-visible,
+.q-btn:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(232, 74, 0, 0.2) !important;
+}
+
+/* === Link Hover Effect === */
+a {
+    color: var(--md-sys-color-primary);
+    text-decoration: none;
+    transition: color var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+}
+
+a:hover {
+    color: #E84A00;
+    text-decoration: underline;
+}
+
+/* === Smooth Page Transitions === */
+.page-transition-enter {
+    opacity: 0;
+    transform: translateX(20px);
+}
+
+.page-transition-enter-active {
+    opacity: 1;
+    transform: translateX(0);
+    transition: all 300ms var(--md-sys-motion-easing-standard);
+}
+
+.page-transition-leave {
+    opacity: 1;
+    transform: translateX(0);
+}
+
+.page-transition-leave-active {
+    opacity: 0;
+    transform: translateX(-20px);
+    transition: all 300ms var(--md-sys-motion-easing-standard);
+}
 """

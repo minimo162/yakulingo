@@ -1366,10 +1366,11 @@ class PdfProcessor(FileProcessor):
                         continue
 
                     try:
-                        # Convert coordinates
+                        # Convert coordinates from image/PyMuPDF to PDF coordinate system
                         box_pdf = convert_to_pdf_coordinates(list(bbox), page_height)
                         x1, y1, x2, y2 = box_pdf
                         box_width = x2 - x1
+                        box_height = y2 - y1
 
                         # 4. Clear existing text (white fill)
                         replacer.add_redaction(x1, y1, x2, y2)
@@ -1378,10 +1379,12 @@ class PdfProcessor(FileProcessor):
                         font_id = font_registry.select_font_for_text(translated, target_lang)
                         is_cjk = font_registry.get_is_cjk(font_id)
 
-                        # 6. Calculate font size and line height
-                        font_size = estimate_font_size(list(bbox), translated)
+                        # 6. Calculate font size and line height using PDF coordinates
+                        # Note: Using converted box_pdf for consistency
+                        box_pdf_list = [x1, y1, x2, y2]
+                        font_size = estimate_font_size(box_pdf_list, translated)
                         line_height_val = calculate_line_height(
-                            translated, list(bbox), font_size, target_lang
+                            translated, box_pdf_list, font_size, target_lang
                         )
 
                         # 7. Split text into lines
@@ -1509,18 +1512,23 @@ class PdfProcessor(FileProcessor):
                         continue
 
                     try:
+                        # Convert coordinates from yomitoku (image) to PDF coordinate system
                         box_pdf = convert_to_pdf_coordinates(cell.box, page_height)
                         x1, y1, x2, y2 = box_pdf
                         box_width = x2 - x1
+                        box_height = y2 - y1
 
                         replacer.add_redaction(x1, y1, x2, y2)
 
                         font_id = font_registry.select_font_for_text(translated, target_lang)
                         is_cjk = font_registry.get_is_cjk(font_id)
 
-                        font_size = estimate_font_size(cell.box, translated)
+                        # Calculate font size and line height using PDF coordinates
+                        # Note: Using converted box_pdf for consistency
+                        box_pdf_list = [x1, y1, x2, y2]
+                        font_size = estimate_font_size(box_pdf_list, translated)
                         line_height_val = calculate_line_height(
-                            translated, cell.box, font_size, target_lang
+                            translated, box_pdf_list, font_size, target_lang
                         )
 
                         lines = split_text_into_lines(translated, box_width, font_size, is_cjk)

@@ -20,6 +20,9 @@ from typing import Optional, Callable
 # Module logger
 logger = logging.getLogger(__name__)
 
+# Pre-compiled regex pattern for batch result parsing
+_RE_NUMBERING_PREFIX = re.compile(r'^\d+\.\s*(.+)$')
+
 
 class PlaywrightManager:
     """
@@ -1053,8 +1056,8 @@ class CopilotHandler:
             if not line:
                 continue
 
-            # Remove numbering prefix
-            match = re.match(r'^\d+\.\s*(.+)$', line)
+            # Remove numbering prefix using pre-compiled pattern
+            match = _RE_NUMBERING_PREFIX.match(line)
             if match:
                 translations.append(match.group(1))
             else:

@@ -17,6 +17,15 @@ import re
 # Module logger
 logger = logging.getLogger(__name__)
 
+# Pre-compiled regex patterns for performance
+_RE_MULTI_OPTION = re.compile(r'\[(\d+)\]\s*訳文:\s*(.+?)\s*解説:\s*(.+?)(?=\[\d+\]|$)', re.DOTALL)
+_RE_TRANSLATION_TEXT = re.compile(r'訳文:\s*(.+?)(?=解説:|$)', re.DOTALL)
+_RE_EXPLANATION = re.compile(r'解説:\s*(.+)', re.DOTALL)
+_RE_MARKDOWN_SEPARATOR = re.compile(r'\n?\s*[\*\-]{3,}\s*$')
+
+# Punctuation categories to skip in language detection (cached set for performance)
+_PUNCTUATION_CATEGORIES = frozenset(['Pc', 'Pd', 'Ps', 'Pe', 'Pi', 'Pf', 'Po'])
+
 
 def _is_japanese_char(code: int) -> bool:
     """Check if a Unicode code point is a Japanese character."""
@@ -25,6 +34,12 @@ def _is_japanese_char(code: int) -> bool:
             0x4E00 <= code <= 0x9FFF or  # CJK Kanji
             0x31F0 <= code <= 0x31FF or  # Katakana extensions
             0xFF65 <= code <= 0xFF9F)    # Halfwidth Katakana
+
+
+def _is_punctuation(char: str) -> bool:
+    """Check if char is punctuation (optimized with category prefix check)."""
+    cat = unicodedata.category(char)
+    return cat[0] == 'P'  # All punctuation categories start with 'P'
 
 
 def is_japanese_text(text: str, threshold: float = 0.3) -> bool:
@@ -54,7 +69,7 @@ def is_japanese_text(text: str, threshold: float = 0.3) -> bool:
 
     # Early exit for very short text (< 20 chars): check all chars directly
     if text_len < 20:
-        meaningful_chars = [c for c in text if not c.isspace() and not unicodedata.category(c).startswith('P')]
+        meaningful_chars = [c for c in text if not c.isspace() and not _is_punctuation(c)]
         if not meaningful_chars:
             return False
         jp_count = sum(1 for c in meaningful_chars if _is_japanese_char(ord(c)))
@@ -70,7 +85,7 @@ def is_japanese_text(text: str, threshold: float = 0.3) -> bool:
 
     for char in sample_text:
         # Skip whitespace and punctuation
-        if char.isspace() or unicodedata.category(char).startswith('P'):
+        if char.isspace() or _is_punctuation(char):
             continue
 
         total_chars += 1
@@ -609,9 +624,8 @@ class TranslationService:
         """Parse multi-option result from Copilot (for →en translation)."""
         options = []
 
-        # Pattern to match [1], [2], [3] sections
-        pattern = r'\[(\d+)\]\s*訳文:\s*(.+?)\s*解説:\s*(.+?)(?=\[\d+\]|$)'
-        matches = re.findall(pattern, raw_result, re.DOTALL)
+        # Use pre-compiled pattern for [1], [2], [3] sections
+        matches = _RE_MULTI_OPTION.findall(raw_result)
 
         for num, text, explanation in matches:
             text = text.strip()
@@ -626,14 +640,14 @@ class TranslationService:
 
     def _parse_single_translation_result(self, raw_result: str) -> list[TranslationOption]:
         """Parse single translation result from Copilot (for →jp translation)."""
-        # Pattern: 訳文: ... 解説: ...
-        text_match = re.search(r'訳文:\s*(.+?)(?=解説:|$)', raw_result, re.DOTALL)
-        explanation_match = re.search(r'解説:\s*(.+)', raw_result, re.DOTALL)
+        # Use pre-compiled patterns for 訳文: ... 解説: ...
+        text_match = _RE_TRANSLATION_TEXT.search(raw_result)
+        explanation_match = _RE_EXPLANATION.search(raw_result)
 
         if text_match:
             text = text_match.group(1).strip()
             # Remove markdown separators (*** or ---) from text
-            text = re.sub(r'\n?\s*[\*\-]{3,}\s*$', '', text).strip()
+            text = _RE_MARKDOWN_SEPARATOR.sub('', text).strip()
             explanation = explanation_match.group(1).strip() if explanation_match else "翻訳結果です"
 
             if text:
@@ -653,9 +667,9 @@ class TranslationService:
 
     def _parse_single_option_result(self, raw_result: str) -> Optional[TranslationOption]:
         """Parse single option result from adjustment."""
-        # Try to extract 訳文 and 解説
-        text_match = re.search(r'訳文:\s*(.+?)(?=解説:|$)', raw_result, re.DOTALL)
-        explanation_match = re.search(r'解説:\s*(.+)', raw_result, re.DOTALL)
+        # Use pre-compiled patterns to extract 訳文 and 解説
+        text_match = _RE_TRANSLATION_TEXT.search(raw_result)
+        explanation_match = _RE_EXPLANATION.search(raw_result)
 
         if text_match:
             text = text_match.group(1).strip()

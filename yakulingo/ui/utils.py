@@ -18,6 +18,12 @@ from nicegui import ui
 # Module logger
 logger = logging.getLogger(__name__)
 
+# Pre-compiled regex patterns for performance
+_RE_BOLD = re.compile(r'\*\*([^*]+)\*\*')
+_RE_QUOTE = re.compile(r'"([^"]+)"')
+_RE_TRANSLATION_TEXT = re.compile(r'訳文:\s*(.+?)(?=解説:|$)', re.DOTALL)
+_RE_EXPLANATION = re.compile(r'解説:\s*(.+)', re.DOTALL)
+
 
 class TempFileManager:
     """
@@ -125,9 +131,9 @@ def format_markdown_text(text: str) -> str:
     - "text" → <strong><i>"</i>text<i>"</i></strong>
     """
     # **text** → <strong>text</strong>
-    text = re.sub(r'\*\*([^*]+)\*\*', r'<strong>\1</strong>', text)
+    text = _RE_BOLD.sub(r'<strong>\1</strong>', text)
     # "text" → <strong><i>"</i>text<i>"</i></strong>
-    text = re.sub(r'"([^"]+)"', r'<strong><i>"</i>\1<i>"</i></strong>', text)
+    text = _RE_QUOTE.sub(r'<strong><i>"</i>\1<i>"</i></strong>', text)
     return text
 
 
@@ -136,8 +142,8 @@ def parse_translation_result(result: str) -> tuple[str, str]:
     Parse translation result into text and explanation.
     Returns (text, explanation) tuple.
     """
-    text_match = re.search(r'訳文:\s*(.+?)(?=解説:|$)', result, re.DOTALL)
-    explanation_match = re.search(r'解説:\s*(.+)', result, re.DOTALL)
+    text_match = _RE_TRANSLATION_TEXT.search(result)
+    explanation_match = _RE_EXPLANATION.search(result)
 
     text = text_match.group(1).strip() if text_match else result.strip()
     explanation = explanation_match.group(1).strip() if explanation_match else ""

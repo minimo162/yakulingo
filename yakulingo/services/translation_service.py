@@ -18,6 +18,15 @@ import re
 logger = logging.getLogger(__name__)
 
 
+def _is_japanese_char(code: int) -> bool:
+    """Check if a Unicode code point is a Japanese character."""
+    return (0x3040 <= code <= 0x309F or  # Hiragana
+            0x30A0 <= code <= 0x30FF or  # Katakana
+            0x4E00 <= code <= 0x9FFF or  # CJK Kanji
+            0x31F0 <= code <= 0x31FF or  # Katakana extensions
+            0xFF65 <= code <= 0xFF9F)    # Halfwidth Katakana
+
+
 def is_japanese_text(text: str, threshold: float = 0.3) -> bool:
     """
     Detect if text is primarily Japanese.
@@ -35,14 +44,26 @@ def is_japanese_text(text: str, threshold: float = 0.3) -> bool:
 
     Returns:
         True if text is primarily Japanese
+
+    Performance: Uses early exit for short text and samples for long text.
     """
     if not text:
         return False
 
-    # Limit analysis to first 10,000 characters for performance
-    # This is sufficient to determine the language of the text
-    MAX_ANALYSIS_LENGTH = 10000
-    sample_text = text[:MAX_ANALYSIS_LENGTH] if len(text) > MAX_ANALYSIS_LENGTH else text
+    text_len = len(text)
+
+    # Early exit for very short text (< 20 chars): check all chars directly
+    if text_len < 20:
+        meaningful_chars = [c for c in text if not c.isspace() and not unicodedata.category(c).startswith('P')]
+        if not meaningful_chars:
+            return False
+        jp_count = sum(1 for c in meaningful_chars if _is_japanese_char(ord(c)))
+        return (jp_count / len(meaningful_chars)) >= threshold
+
+    # For longer text, sample the first portion
+    # 500 chars is enough to reliably detect language
+    MAX_ANALYSIS_LENGTH = 500
+    sample_text = text[:MAX_ANALYSIS_LENGTH] if text_len > MAX_ANALYSIS_LENGTH else text
 
     japanese_count = 0
     total_chars = 0
@@ -53,15 +74,15 @@ def is_japanese_text(text: str, threshold: float = 0.3) -> bool:
             continue
 
         total_chars += 1
-        code = ord(char)
-
-        # Check Japanese character ranges
-        if (0x3040 <= code <= 0x309F or  # Hiragana
-            0x30A0 <= code <= 0x30FF or  # Katakana
-            0x4E00 <= code <= 0x9FFF or  # CJK Kanji
-            0x31F0 <= code <= 0x31FF or  # Katakana extensions
-            0xFF65 <= code <= 0xFF9F):   # Halfwidth Katakana
+        if _is_japanese_char(ord(char)):
             japanese_count += 1
+
+        # Early exit: if we have enough samples and result is clear
+        if total_chars >= 50:
+            ratio = japanese_count / total_chars
+            # If clearly Japanese (>60%) or clearly not (<10%), exit early
+            if ratio > 0.6 or ratio < 0.1:
+                return ratio >= threshold
 
     if total_chars == 0:
         return False

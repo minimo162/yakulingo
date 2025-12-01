@@ -34,6 +34,13 @@ ACTION_ICONS = {
     'reply': 'reply',
 }
 
+# Paperclip/Attachment SVG icon (Nani-inspired)
+ATTACH_SVG = '''
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M21 12.3955L14.6912 18.7043C12.5027 20.8928 9.00168 20.8928 6.81321 18.7043C4.62474 16.5158 4.62474 13.0148 6.81321 10.8263L13.7574 3.88213C15.1624 2.47712 17.4266 2.47712 18.8316 3.88213C20.2366 5.28714 20.2366 7.55135 18.8316 8.95636L11.7861 15.9019C11.0836 16.6044 9.95152 16.6044 9.24902 15.9019C8.54651 15.1994 8.54651 14.0673 9.24902 13.3648L15.3588 7.25501"/>
+</svg>
+'''
+
 # YakuLingo avatar SVG (Apple icon - Nani-inspired)
 AVATAR_SVG = '''
 <svg viewBox="0 0 24 24" fill="currentColor" class="avatar-icon">
@@ -93,11 +100,14 @@ def create_text_panel(
     on_clear: Callable[[], None],
     on_adjust: Optional[Callable[[str, str], None]] = None,
     on_follow_up: Optional[Callable[[str, str], None]] = None,  # (action_type, context)
+    on_attach_glossary: Optional[Callable[[], None]] = None,  # Glossary file picker
+    on_remove_glossary: Optional[Callable[[int], None]] = None,  # Remove glossary by index
 ):
     """
     Text translation panel with language-specific UI.
     - Japanese input → English: Multiple options with length adjustment
     - Other input → Japanese: Single translation + follow-up actions
+    - Nani-style glossary attachment button for reference files
     """
     # Get elapsed time for display
     elapsed_time = state.text_translation_elapsed_time
@@ -124,13 +134,34 @@ def create_text_panel(
 
                 # Bottom controls
                 with ui.row().classes('p-3 justify-between items-center'):
-                    # Character count
-                    if state.source_text:
-                        ui.label(f'{len(state.source_text)} 文字').classes('text-xs text-muted')
-                    else:
-                        ui.space()
+                    # Left side: character count and attached files
+                    with ui.row().classes('items-center gap-2 flex-1'):
+                        # Character count
+                        if state.source_text:
+                            ui.label(f'{len(state.source_text)} 文字').classes('text-xs text-muted')
+
+                        # Attached glossary files indicator
+                        if state.reference_files:
+                            for i, ref_file in enumerate(state.reference_files):
+                                with ui.element('div').classes('attach-file-indicator'):
+                                    ui.label(ref_file.name).classes('file-name')
+                                    if on_remove_glossary:
+                                        ui.button(
+                                            icon='close',
+                                            on_click=lambda idx=i: on_remove_glossary(idx)
+                                        ).props('flat dense round size=xs').classes('remove-btn')
 
                     with ui.row().classes('items-center gap-2'):
+                        # Nani-style glossary attachment button
+                        if on_attach_glossary:
+                            has_files = bool(state.reference_files)
+                            attach_btn = ui.button(
+                                on_click=on_attach_glossary
+                            ).classes(f'attach-btn {"has-file" if has_files else ""}').props('flat')
+                            with attach_btn:
+                                ui.html(ATTACH_SVG)
+                            attach_btn.tooltip('用語集を添付' if not has_files else '用語集を追加')
+
                         # Clear button
                         if state.source_text:
                             ui.button(icon='close', on_click=on_clear).props(

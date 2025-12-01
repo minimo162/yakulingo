@@ -9,79 +9,19 @@ Prompt file structure:
 - text_translate_to_jp.txt: Text translation → Japanese (with explanation)
 - adjust_*.txt: Adjustment prompts (shorter, longer, custom)
 
-Glossary content is embedded directly in prompts for reliable translation.
+Reference files are attached to Copilot, not embedded in prompt.
 """
 
 import re
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional
 
 
-def load_glossary_content(reference_files: Optional[List[Path]]) -> str:
-    """
-    Load glossary content from reference files.
-
-    Args:
-        reference_files: List of reference file paths (CSV format expected)
-
-    Returns:
-        Formatted glossary content string, or empty string if no files
-    """
-    if not reference_files:
-        return ""
-
-    glossary_entries = []
-    for file_path in reference_files:
-        if not file_path.exists():
-            continue
-        try:
-            content = file_path.read_text(encoding='utf-8')
-            for line in content.strip().split('\n'):
-                line = line.strip()
-                # Skip comments and empty lines
-                if not line or line.startswith('#'):
-                    continue
-                # Parse CSV format: source,target
-                if ',' in line:
-                    parts = line.split(',', 1)
-                    if len(parts) == 2:
-                        source = parts[0].strip()
-                        target = parts[1].strip()
-                        if source and target:
-                            glossary_entries.append(f"- {source} → {target}")
-        except Exception:
-            continue
-
-    if not glossary_entries:
-        return ""
-
-    return glossary_entries
-
-
-def build_reference_section(glossary_entries: List[str]) -> str:
-    """
-    Build reference section with glossary content.
-
-    Args:
-        glossary_entries: List of glossary entries
-
-    Returns:
-        Formatted reference section string
-    """
-    if not glossary_entries:
-        return ""
-
-    return f"""Glossary (用語集)
-以下の用語集に記載されている用語は、必ず指定された訳語を使用してください。
-
-{chr(10).join(glossary_entries)}
-"""
-
-
-# Legacy constant for backwards compatibility
+# 参考ファイル参照の指示文（ファイル添付時のみ挿入）
 REFERENCE_INSTRUCTION = """
-Glossary (用語集)
-以下の用語集を参照し、記載されている用語は必ず指定された訳語を使用してください。
+Reference Files
+添付の参考ファイル（用語集、参考資料等）を参照し、翻訳に活用してください。
+用語集がある場合は、記載されている用語は必ずその訳語を使用してください。
 """
 
 # Fallback template for → English (used when translate_to_en.txt doesn't exist)
@@ -158,7 +98,7 @@ Input
 class PromptBuilder:
     """
     Builds translation prompts for file translation.
-    Glossary content is embedded directly in prompts.
+    Reference files are attached to Copilot, not embedded in prompt.
     """
 
     def __init__(self, prompts_dir: Optional[Path] = None):
@@ -197,7 +137,7 @@ class PromptBuilder:
     def build(
         self,
         input_text: str,
-        glossary_content: str = "",
+        has_reference_files: bool = False,
         output_language: str = "en",
     ) -> str:
         """
@@ -205,17 +145,20 @@ class PromptBuilder:
 
         Args:
             input_text: Text or batch to translate
-            glossary_content: Formatted glossary content to embed in prompt
+            has_reference_files: Whether reference files are attached
             output_language: "en" or "jp" (default: "en")
 
         Returns:
             Complete prompt string
         """
+        # Add reference instruction only if files are attached
+        reference_section = REFERENCE_INSTRUCTION if has_reference_files else ""
+
         # Get appropriate template
         template = self._get_template(output_language)
 
         # Replace placeholders
-        prompt = template.replace("{reference_section}", glossary_content)
+        prompt = template.replace("{reference_section}", reference_section)
         prompt = prompt.replace("{input_text}", input_text)
 
         return prompt
@@ -223,7 +166,7 @@ class PromptBuilder:
     def build_batch(
         self,
         texts: list[str],
-        glossary_content: str = "",
+        has_reference_files: bool = False,
         output_language: str = "en",
     ) -> str:
         """
@@ -231,7 +174,7 @@ class PromptBuilder:
 
         Args:
             texts: List of texts to translate
-            glossary_content: Formatted glossary content to embed in prompt
+            has_reference_files: Whether reference files are attached
             output_language: "en" or "jp" (default: "en")
 
         Returns:
@@ -242,7 +185,7 @@ class PromptBuilder:
             f"{i+1}. {text}" for i, text in enumerate(texts)
         )
 
-        return self.build(numbered_input, glossary_content, output_language)
+        return self.build(numbered_input, has_reference_files, output_language)
 
     def parse_batch_result(self, result: str, expected_count: int) -> list[str]:
         """

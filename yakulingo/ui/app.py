@@ -295,6 +295,8 @@ class YakuLingoApp:
                         on_clear=self._clear,
                         on_adjust=self._adjust_text,
                         on_follow_up=self._follow_up_action,
+                        on_attach_glossary=self._attach_glossary,
+                        on_remove_glossary=self._remove_glossary,
                     )
                 else:
                     create_file_panel(
@@ -325,6 +327,76 @@ class YakuLingoApp:
         if text:
             ui.clipboard.write(text)
             ui.notify('コピーしました', type='positive')
+
+    async def _attach_glossary(self):
+        """Open file picker to attach a glossary file"""
+        from pathlib import Path
+
+        result = await ui.run_javascript('''
+            return new Promise((resolve) => {
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.accept = '.csv,.txt';
+                input.onchange = (e) => {
+                    if (e.target.files.length > 0) {
+                        resolve(e.target.files[0].name);
+                    } else {
+                        resolve(null);
+                    }
+                };
+                input.click();
+            });
+        ''', timeout=60.0)
+
+        if result:
+            # For web-based file picker, we need to handle uploaded file
+            # For now, use native NiceGUI file upload dialog
+            pass
+
+        # Use NiceGUI's native file upload approach
+        with ui.dialog() as dialog, ui.card().classes('w-96'):
+            with ui.column().classes('w-full gap-4 p-4'):
+                ui.label('用語集ファイルを選択').classes('text-base font-medium')
+                ui.label('CSV形式: 原文,訳文').classes('text-xs text-muted')
+
+                uploaded_path = None
+
+                async def handle_upload(e):
+                    nonlocal uploaded_path
+                    if e.content:
+                        # Save to temp location
+                        import tempfile
+                        with tempfile.NamedTemporaryFile(
+                            mode='wb',
+                            suffix='.csv',
+                            delete=False
+                        ) as f:
+                            content = e.content.read()
+                            f.write(content)
+                            uploaded_path = Path(f.name)
+                        ui.notify(f'ファイルをアップロードしました: {e.name}', type='positive')
+                        dialog.close()
+                        # Add to reference files
+                        if uploaded_path:
+                            self.state.reference_files.append(uploaded_path)
+                            self._refresh_content()
+
+                ui.upload(
+                    on_upload=handle_upload,
+                    auto_upload=True,
+                    max_files=1,
+                ).classes('w-full').props('accept=".csv,.txt"')
+
+                ui.button('キャンセル', on_click=dialog.close).props('flat')
+
+        dialog.open()
+
+    def _remove_glossary(self, index: int):
+        """Remove a glossary file by index"""
+        if 0 <= index < len(self.state.reference_files):
+            removed = self.state.reference_files.pop(index)
+            ui.notify(f'削除しました: {removed.name}', type='info')
+            self._refresh_content()
 
     async def _translate_text(self):
         """Translate text with multiple options."""

@@ -426,13 +426,15 @@ class CopilotHandler:
         self,
         texts: List[str],
         prompt: str,
+        reference_files: Optional[List[Path]] = None,
     ) -> List[str]:
         """
         Translate a batch of texts.
 
         Args:
             texts: List of texts to translate
-            prompt: Built prompt string (glossary should be embedded in prompt)
+            prompt: Built prompt string
+            reference_files: Optional list of reference files to attach
 
         Returns:
             List of translated texts (same order as input)
@@ -442,6 +444,12 @@ class CopilotHandler:
 
         # Send the prompt
         await self._send_message_async(prompt)
+
+        # Attach reference files if provided
+        if reference_files:
+            for file_path in reference_files:
+                if file_path.exists():
+                    await self._attach_file_async(file_path)
 
         # Get response
         result = await self._get_response_async()
@@ -453,19 +461,31 @@ class CopilotHandler:
         self,
         texts: List[str],
         prompt: str,
+        reference_files: Optional[List[Path]] = None,
     ) -> List[str]:
         """
         Synchronous version of translate for non-async contexts.
 
+        Attaches reference files (glossary, etc.) to Copilot before sending.
+        This allows using glossaries without embedding them in the prompt,
+        which is important for Copilot Free (8000 char limit).
+
         Args:
             texts: List of text strings to translate (used for result parsing)
             prompt: The translation prompt to send to Copilot
+            reference_files: Optional list of reference files to attach
 
         Returns:
             List of translated strings parsed from Copilot's response
         """
         if not self._connected or not self._page:
             raise RuntimeError("Not connected to Copilot")
+
+        # Attach reference files first (before sending prompt)
+        if reference_files:
+            for file_path in reference_files:
+                if file_path.exists():
+                    self._attach_file(file_path)
 
         # Send the prompt
         self._send_message(prompt)
@@ -480,9 +500,10 @@ class CopilotHandler:
         self,
         text: str,
         prompt: str,
+        reference_files: Optional[List[Path]] = None,
     ) -> str:
         """Translate a single text (sync)"""
-        results = self.translate_sync([text], prompt)
+        results = self.translate_sync([text], prompt, reference_files)
         return results[0] if results else ""
 
     def _send_message(self, message: str) -> None:
@@ -674,6 +695,92 @@ class CopilotHandler:
             return ""
         except Exception:
             return ""
+
+    def _attach_file(self, file_path: Path) -> bool:
+        """
+        Attach file to Copilot chat input (sync).
+
+        Uses Playwright's file_chooser handling to attach files.
+        Copilot accepts file attachments via the clip/attachment button.
+
+        Args:
+            file_path: Path to the file to attach
+
+        Returns:
+            True if file was attached successfully
+        """
+        if not self._page or not file_path.exists():
+            return False
+
+        try:
+            # Find the attachment/clip button
+            # M365 Copilot uses various selectors for the attachment button
+            attach_selectors = [
+                'button[aria-label*="添付"]',
+                'button[aria-label*="Attach"]',
+                'button[aria-label*="ファイル"]',
+                'button[aria-label*="File"]',
+                '.fai-AttachButton',
+                '[data-testid="attach-button"]',
+                'button[aria-label*="clip"]',
+            ]
+
+            attach_btn = None
+            for selector in attach_selectors:
+                attach_btn = self._page.query_selector(selector)
+                if attach_btn:
+                    break
+
+            if not attach_btn:
+                # Try to find by icon content (paperclip icon)
+                attach_btn = self._page.evaluate_handle('''() => {
+                    const buttons = document.querySelectorAll('button');
+                    for (const btn of buttons) {
+                        // Check for paperclip SVG or attachment-related classes
+                        if (btn.querySelector('svg path[d*="M21 12.3955"]') ||
+                            btn.className.includes('attach') ||
+                            btn.className.includes('clip')) {
+                            return btn;
+                        }
+                    }
+                    return null;
+                }''')
+
+            if attach_btn:
+                # Use file_chooser to handle the file input
+                with self._page.expect_file_chooser() as fc_info:
+                    attach_btn.click()
+                file_chooser = fc_info.value
+                file_chooser.set_files(str(file_path))
+                time.sleep(0.5)  # Wait for file to be attached
+                return True
+            else:
+                # Fallback: Try to find hidden file input directly
+                file_input = self._page.query_selector('input[type="file"]')
+                if file_input:
+                    file_input.set_input_files(str(file_path))
+                    time.sleep(0.5)
+                    return True
+
+            print(f"Warning: Could not find attachment button for file: {file_path}")
+            return False
+
+        except Exception as e:
+            print(f"Error attaching file {file_path}: {e}")
+            return False
+
+    async def _attach_file_async(self, file_path: Path) -> bool:
+        """
+        Attach file to Copilot chat (async wrapper).
+
+        Args:
+            file_path: Path to the file to attach
+
+        Returns:
+            True if file was attached successfully
+        """
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self._attach_file, file_path)
 
     def _parse_batch_result(self, result: str, expected_count: int) -> List[str]:
         """Parse batch translation result back to list"""

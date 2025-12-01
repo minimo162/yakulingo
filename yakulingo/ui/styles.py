@@ -1,78 +1,80 @@
 # yakulingo/ui/styles.py
 """
-Nani-inspired minimal styles for YakuLingo.
-Simple, clean design with warm yellow accent.
+M3 Component-based styles for YakuLingo.
+Nani-inspired sidebar layout with clean, minimal design.
 """
 
 COMPLETE_CSS = """
-/* === Nani-inspired Design Tokens === */
+/* === M3 Design Tokens === */
 :root {
-    /* Primary - warm yellow/gold (nani.now inspired) */
-    --md-sys-color-primary: #F5B800;
-    --md-sys-color-on-primary: #1A1A1A;
-    --md-sys-color-primary-container: #FFF8E1;
-    --md-sys-color-on-primary-container: #3D3200;
-    --md-sys-color-primary-darker: #E0A800;
+    /* Primary - warm coral */
+    --md-sys-color-primary: #C04000;
+    --md-sys-color-on-primary: #FFFFFF;
+    --md-sys-color-primary-container: #FFEEE8;
+    --md-sys-color-on-primary-container: #390C00;
 
-    /* Surface - clean, bright palette */
+    /* Surface - Nani-inspired warm light palette */
     --md-sys-color-surface: #FFFFFF;
-    --md-sys-color-surface-dim: #FAFAFA;
-    --md-sys-color-surface-container: #F5F5F5;
-    --md-sys-color-surface-container-high: #EEEEEE;
-    --md-sys-color-on-surface: #1A1A1A;
-    --md-sys-color-on-surface-variant: #5F6368;
-    --md-sys-color-outline: #9AA0A6;
-    --md-sys-color-outline-variant: #E0E0E0;
+    --md-sys-color-surface-dim: #FFF9F5;
+    --md-sys-color-surface-container: #FFF5F0;
+    --md-sys-color-surface-container-high: #FFEDE5;
+    --md-sys-color-on-surface: #1A1C1E;
+    --md-sys-color-on-surface-variant: #4A4D50;  /* Darker for better contrast */
+    --md-sys-color-outline: #8A7A72;  /* Darker for better visibility */
+    --md-sys-color-outline-variant: #E8DED8;
 
     /* States */
-    --md-sys-color-error: #D93025;
+    --md-sys-color-error: #BA1A1A;
     --md-sys-color-on-error: #FFFFFF;
-    --md-sys-color-error-container: #FCE8E6;
-    --md-sys-color-on-error-container: #5F2120;
+    --md-sys-color-error-container: #FFDAD6;
+    --md-sys-color-on-error-container: #410002;
 
-    /* Success */
-    --md-sys-color-success: #1E8E3E;
+    /* Success (extended) */
+    --md-sys-color-success: #2E7D32;
     --md-sys-color-on-success: #FFFFFF;
-    --md-sys-color-success-container: #E6F4EA;
-    --md-sys-color-on-success-container: #137333;
+    --md-sys-color-success-container: #C8E6C9;
+    --md-sys-color-on-success-container: #1B5E20;
 
-    /* Shape - rounded corners */
+    /* Shape - Nani-inspired extra rounded corners */
     --md-sys-shape-corner-full: 9999px;
-    --md-sys-shape-corner-3xl: 28px;
-    --md-sys-shape-corner-xl: 20px;
-    --md-sys-shape-corner-large: 16px;
-    --md-sys-shape-corner-medium: 12px;
-    --md-sys-shape-corner-small: 8px;
+    --md-sys-shape-corner-3xl: 32px;   /* Extra large cards */
+    --md-sys-shape-corner-xl: 24px;    /* Main cards */
+    --md-sys-shape-corner-large: 20px; /* Cards, dialogs */
+    --md-sys-shape-corner-medium: 16px; /* Buttons, inputs */
+    --md-sys-shape-corner-small: 12px;  /* Chips, small elements */
 
-    /* Motion */
+    /* Motion - M3 standard easing */
     --md-sys-motion-easing-standard: cubic-bezier(0.2, 0, 0, 1);
     --md-sys-motion-easing-spring: cubic-bezier(0.175, 0.885, 0.32, 1.275);
-    --md-sys-motion-duration-short: 150ms;
-    --md-sys-motion-duration-medium: 250ms;
+    --md-sys-motion-duration-short: 200ms;
+    --md-sys-motion-duration-medium: 300ms;
 
-    /* Elevation */
-    --md-sys-elevation-1: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06);
-    --md-sys-elevation-2: 0 3px 6px rgba(0,0,0,0.10), 0 2px 4px rgba(0,0,0,0.06);
+    /* Elevation - softer, more subtle shadows */
+    --md-sys-elevation-1: 0 2px 8px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.03);
+    --md-sys-elevation-2: 0 4px 12px rgba(0,0,0,0.06), 0 2px 4px rgba(0,0,0,0.04);
 
-    /* Layout */
-    --sidebar-width: 260px;
+    /* Sidebar */
+    --sidebar-width: 280px;
 }
 
 /* === Base === */
 html {
-    font-size: 16px;
+    font-size: 16px;  /* Explicit base for rem calculations */
 }
 
 body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif;
-    background: linear-gradient(135deg, #FAFAFA 0%, #F5F5F5 100%);
-    min-height: 100vh;
+    font-family: system-ui, -apple-system, 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif;
+    background-color: var(--md-sys-color-surface-dim);
+    background-image: radial-gradient(circle, rgba(192,64,0,0.02) 1px, transparent 1px);
+    background-size: 24px 24px;
+    background-attachment: fixed;
     color: var(--md-sys-color-on-surface);
-    font-size: 0.9375rem;
+    font-size: 0.9375rem;  /* 15px - comfortable reading size */
     line-height: 1.6;
     margin: 0;
     padding: 0;
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 }
 
 /* === Sidebar Layout === */
@@ -105,22 +107,22 @@ body {
 
 /* === Logo === */
 .app-logo {
-    font-size: 1.125rem;
+    font-size: 1.25rem;
     font-weight: 600;
-    color: var(--md-sys-color-on-surface);
-    letter-spacing: -0.01em;
+    color: var(--md-sys-color-primary);
+    letter-spacing: -0.02em;
 }
 
 .app-logo-icon {
-    width: 2.25rem;
-    height: 2.25rem;
+    width: 2.5rem;
+    height: 2.5rem;
     border-radius: var(--md-sys-shape-corner-medium);
-    background: linear-gradient(135deg, var(--md-sys-color-primary) 0%, #FFD54F 100%);
+    background: linear-gradient(135deg, var(--md-sys-color-primary) 0%, #D85000 100%);
     display: flex;
     align-items: center;
     justify-content: center;
     color: var(--md-sys-color-on-primary);
-    box-shadow: 0 2px 6px rgba(245, 184, 0, 0.3);
+    box-shadow: 0 2px 8px rgba(192, 64, 0, 0.25);
 }
 
 /* === Navigation === */
@@ -286,15 +288,15 @@ body {
     box-shadow: 0 0 0 2px rgba(192, 64, 0, 0.15);
 }
 
-/* === Translate Button (Nani-style yellow accent) === */
+/* === Translate Button (Nani-style) === */
 .translate-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 0.5rem;
-    background: var(--md-sys-color-primary);
-    color: var(--md-sys-color-on-primary);
-    padding: 0.875rem 1.75rem;
+    background: var(--md-sys-color-on-surface);
+    color: var(--md-sys-color-surface);
+    padding: 0.875rem 1.5rem;
     border-radius: var(--md-sys-shape-corner-full);
     font-size: 0.9375rem;
     font-weight: 600;
@@ -302,18 +304,17 @@ body {
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
     border: none;
     cursor: pointer;
-    box-shadow: 0 2px 8px rgba(245, 184, 0, 0.35);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
 }
 
 .translate-btn:hover:not(:disabled) {
-    background: var(--md-sys-color-primary-darker);
+    background: #374151;
     transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(245, 184, 0, 0.4);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
 .translate-btn:disabled {
-    background: var(--md-sys-color-outline-variant);
-    color: var(--md-sys-color-on-surface-variant);
+    background: var(--md-sys-color-outline);
     cursor: default;
     box-shadow: none;
 }
@@ -329,21 +330,22 @@ body {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 1.5rem;
-    height: 1.375rem;
-    padding: 0 0.375rem;
-    background: rgba(0, 0, 0, 0.1);
-    border: 1px solid rgba(0, 0, 0, 0.15);
-    border-radius: 4px;
+    min-width: 1.625rem;
+    height: 1.5rem;
+    padding: 0 0.5rem;
+    background: rgba(255, 255, 255, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 6px;
     font-family: ui-monospace, monospace;
-    font-size: 0.625rem;
+    font-size: 0.6875rem;  /* 11px - improved readability */
     font-weight: 500;
-    color: rgba(0, 0, 0, 0.7);
+    color: rgba(255, 255, 255, 0.95);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
 .keycap-plus {
-    font-size: 0.625rem;
-    color: rgba(0, 0, 0, 0.5);
+    font-size: 0.6875rem;
+    color: rgba(255, 255, 255, 0.7);
     margin: 0 2px;
 }
 
@@ -370,25 +372,25 @@ body {
     align-items: center;
     justify-content: center;
     gap: 0.5rem;
-    background: var(--md-sys-color-primary);
-    color: var(--md-sys-color-on-primary);
-    padding: 0.75rem 1.25rem;
+    background: var(--md-sys-color-on-surface);
+    color: var(--md-sys-color-surface);
+    padding: 0.875rem 1.5rem;
     border-radius: var(--md-sys-shape-corner-full);
-    font-size: 0.875rem;
+    font-size: 0.9375rem;
     font-weight: 600;
+    letter-spacing: -0.01em;
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
-    box-shadow: 0 2px 6px rgba(245, 184, 0, 0.3);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
 }
 
 .btn-primary:hover:not(:disabled) {
-    background: var(--md-sys-color-primary-darker);
+    background: #374151;
     transform: translateY(-1px);
-    box-shadow: 0 3px 10px rgba(245, 184, 0, 0.4);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
 .btn-primary:disabled {
-    background: var(--md-sys-color-outline-variant);
-    color: var(--md-sys-color-on-surface-variant);
+    background: var(--md-sys-color-outline);
     cursor: default;
     box-shadow: none;
 }
@@ -441,7 +443,7 @@ body {
 
 /* === M3 Progress Indicator === */
 .progress-track {
-    height: 4px;
+    height: 6px;
     background: var(--md-sys-color-surface-container-high);
     border-radius: var(--md-sys-shape-corner-full);
     overflow: hidden;
@@ -449,7 +451,7 @@ body {
 
 .progress-bar {
     height: 100%;
-    background: linear-gradient(90deg, var(--md-sys-color-primary) 0%, #FFD54F 100%);
+    background: linear-gradient(90deg, var(--md-sys-color-primary) 0%, #D85000 100%);
     border-radius: var(--md-sys-shape-corner-full);
     transition: width var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-standard);
 }
@@ -1166,5 +1168,68 @@ body {
 
 .result-count-badge .emoji {
     font-size: 0.875rem;
+}
+
+/* === Nani-style Attachment Button === */
+.attach-btn {
+    display: grid;
+    place-items: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    border: 1.5px dashed var(--md-sys-color-outline-variant);
+    border-radius: var(--md-sys-shape-corner-full);
+    background: transparent;
+    color: var(--md-sys-color-on-surface-variant);
+    cursor: pointer;
+    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+    flex-shrink: 0;
+}
+
+.attach-btn:hover {
+    border-color: var(--md-sys-color-primary);
+    color: var(--md-sys-color-primary);
+    background: var(--md-sys-color-primary-container);
+}
+
+.attach-btn.has-file {
+    border-style: solid;
+    border-color: var(--md-sys-color-primary);
+    background: var(--md-sys-color-primary-container);
+    color: var(--md-sys-color-on-primary-container);
+}
+
+.attach-btn svg {
+    width: 1.25rem;
+    height: 1.25rem;
+}
+
+/* Attachment file indicator */
+.attach-file-indicator {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.25rem 0.5rem;
+    background: var(--md-sys-color-primary-container);
+    border-radius: var(--md-sys-shape-corner-full);
+    font-size: 0.75rem;
+    color: var(--md-sys-color-on-primary-container);
+}
+
+.attach-file-indicator .file-name {
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.attach-file-indicator .remove-btn {
+    padding: 0.125rem;
+    border-radius: var(--md-sys-shape-corner-full);
+    cursor: pointer;
+    transition: background var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+}
+
+.attach-file-indicator .remove-btn:hover {
+    background: rgba(0, 0, 0, 0.1);
 }
 """

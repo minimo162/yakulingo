@@ -46,9 +46,10 @@ YakuLingo/
 │   │   ├── app.py                 # YakuLingoApp main orchestrator
 │   │   ├── state.py               # AppState management
 │   │   ├── styles.py              # M3 design tokens & CSS
+│   │   ├── utils.py               # UI utilities (temp files, dialogs, formatting)
 │   │   └── components/            # Reusable UI components
 │   │       ├── file_panel.py      # File translation panel
-│   │       ├── text_panel.py      # Text translation panel
+│   │       ├── text_panel.py      # Text translation panel (Nani-inspired UI)
 │   │       └── update_notification.py  # Auto-update notifications
 │   ├── services/                  # Business logic layer
 │   │   ├── translation_service.py # Main translation orchestrator
@@ -77,7 +78,12 @@ YakuLingo/
 │   ├── translate_to_jp.txt        # File translation (EN→JP)
 │   ├── text_translate_to_en.txt   # Text translation (JP→EN)
 │   ├── text_translate_to_jp.txt   # Text translation (EN→JP)
-│   └── ...                        # Additional prompts for adjustments
+│   ├── adjust_shorter.txt         # Inline adjustment: shorter
+│   ├── adjust_longer.txt          # Inline adjustment: longer
+│   ├── adjust_custom.txt          # Inline adjustment: custom style
+│   ├── text_question.txt          # Follow-up: ask question
+│   ├── text_reply_email.txt       # Follow-up: email reply
+│   └── text_review_en.txt         # Follow-up: review English
 ├── config/
 │   └── settings.json              # User configuration
 ├── docs/
@@ -105,11 +111,14 @@ YakuLingo/
 
 | File | Purpose | Lines |
 |------|---------|-------|
-| `yakulingo/ui/app.py` | Main application orchestrator, handles UI events and coordinates services | ~960 |
-| `yakulingo/services/translation_service.py` | Coordinates file processors and batch translation | ~960 |
-| `yakulingo/services/copilot_handler.py` | Browser automation for M365 Copilot | ~1100 |
+| `yakulingo/ui/app.py` | Main application orchestrator, handles UI events and coordinates services | ~959 |
+| `yakulingo/services/translation_service.py` | Coordinates file processors and batch translation | ~961 |
+| `yakulingo/services/copilot_handler.py` | Browser automation for M365 Copilot | ~1102 |
 | `yakulingo/services/updater.py` | GitHub Releases-based auto-update with Windows proxy support | ~750 |
-| `yakulingo/ui/styles.py` | M3 design tokens, CSS styling definitions | ~1490 |
+| `yakulingo/ui/styles.py` | M3 design tokens, CSS styling definitions | ~1489 |
+| `yakulingo/ui/components/text_panel.py` | Nani-inspired text translation UI with inline adjustments | ~666 |
+| `yakulingo/ui/components/update_notification.py` | Auto-update UI notifications | ~344 |
+| `yakulingo/ui/utils.py` | UI utilities: temp file management, dialog helpers, text formatting | ~223 |
 | `yakulingo/ui/state.py` | Application state management | ~180 |
 | `yakulingo/models/types.py` | Core data types: TextBlock, FileInfo, TranslationResult, HistoryEntry | ~253 |
 | `yakulingo/storage/history_db.py` | SQLite database for translation history | ~243 |
@@ -139,10 +148,35 @@ VersionInfo(version, release_date, download_url, release_notes)
 ## Auto-Detected Translation Direction
 
 The application now auto-detects language direction:
-- **Japanese input** → English output (multiple translation options)
-- **Non-Japanese input** → Japanese output (single translation + explanation)
+- **Japanese input** → English output (multiple translation options with inline adjustments)
+- **Non-Japanese input** → Japanese output (single translation + explanation + follow-up actions)
 
 No manual direction selection is required.
+
+## Nani-Inspired UI Features
+
+The text translation panel uses a Nani-inspired design with these features:
+
+### Inline Adjustment Options (JP→EN)
+After translation, users can adjust results with paired and single options:
+```python
+# Paired adjustments
+('casual', 'カジュアルに') ↔ ('polite', 'ていねいに')
+('dry', '淡々と') ↔ ('engaging', 'キャッチーに')
+('shorter', 'もう少し短く') ↔ ('detailed', 'より詳しく')
+
+# Single adjustments
+('native', 'ネイティブらしく自然に')
+('less_ai', 'AIっぽさを消して')
+('alternatives', '他の言い方は？')
+```
+
+### Additional Features
+- **Elapsed time badge**: Shows translation duration
+- **Gear icon**: Quick access to translation settings
+- **Back-translate button**: Verify translations by translating back to original language
+- **Reference file attachment**: Attach glossary, style guide, or reference materials
+- **Accessibility**: ARIA labels and SVG titles for screen reader support
 
 ## File Processor Pattern
 
@@ -188,6 +222,45 @@ The application uses M3 (Material Design 3) component-based styling:
 - `.drop-zone` - File drop area with dashed border
 - `.file-card` - M3 card for file items
 - `.tab-btn` - Segmented button for tabs
+- `.main-card` - Nani-style main container
+- `.animate-in` - Entry animation
+
+## UI Utilities (yakulingo/ui/utils.py)
+
+### TempFileManager
+Singleton for managing temporary files with automatic cleanup:
+```python
+from yakulingo.ui.utils import temp_file_manager
+
+# Create temp file
+path = temp_file_manager.create_temp_file(content, "file.txt")
+
+# Context manager for temp directory
+with temp_file_manager.temp_context() as temp_dir:
+    # Files automatically cleaned up after context
+```
+
+### DialogManager
+Manages dialogs with proper cleanup:
+```python
+from yakulingo.ui.utils import create_standard_dialog
+
+dialog, content = create_standard_dialog('My Dialog')
+with content:
+    ui.label('Content here')
+dialog.open()
+```
+
+### Text Formatting
+```python
+from yakulingo.ui.utils import format_markdown_text, parse_translation_result
+
+# **text** → <strong>text</strong>
+html = format_markdown_text("This is **bold**")
+
+# Parse "訳文: ... 解説: ..." format
+text, explanation = parse_translation_result(result)
+```
 
 ## Testing Conventions
 
@@ -228,6 +301,7 @@ pytest --cov=yakulingo --cov-report=term-missing
 - All modules have `__init__.py` with explicit exports
 - Prefer composition over inheritance
 - Use async/await for I/O operations
+- Use `logging` module instead of `print()` statements
 
 ### Translation Logic
 - **CellTranslator**: For Excel cells - skips numbers, dates, URLs, emails, codes
@@ -266,6 +340,7 @@ sans-serif → Meiryo UI
   "window_width": 960,
   "window_height": 720,
   "max_batch_size": 50,
+  "max_chars_per_batch": 10000,
   "request_timeout": 120,
   "max_retries": 3,
   "auto_update_enabled": true,
@@ -276,6 +351,12 @@ sans-serif → Meiryo UI
   "skipped_version": null
 }
 ```
+
+### Reference Files
+Reference files provide context for consistent translations:
+- **Supported formats**: CSV, TXT, PDF, Word, Excel, PowerPoint, Markdown, JSON
+- **Use cases**: Glossaries, style guides, past translations, specifications
+- **Security**: Path traversal protection via `get_reference_file_paths()`
 
 ### Translation History
 History is stored locally in SQLite:
@@ -321,7 +402,7 @@ The `AutoUpdater` class provides GitHub Releases-based updates:
 ### Modifying Translation Logic
 1. Check `yakulingo/services/translation_service.py` for orchestration
 2. Check `yakulingo/processors/translators.py` for skip patterns
-3. Check prompt templates in `prompts/translate_*.txt`
+3. Check prompt templates in `prompts/*.txt`
 4. Update tests in `tests/test_translation_service.py`
 
 ### Adding UI Components
@@ -329,6 +410,7 @@ The `AutoUpdater` class provides GitHub Releases-based updates:
 2. Update state in `yakulingo/ui/state.py` if needed
 3. Integrate in `yakulingo/ui/app.py`
 4. Add styles in `yakulingo/ui/styles.py` using M3 design tokens
+5. Use utilities from `yakulingo/ui/utils.py` for temp files and dialogs
 
 ### Modifying Styles
 1. Use M3 design tokens defined in `styles.py` (`:root` CSS variables)
@@ -340,6 +422,11 @@ The `AutoUpdater` class provides GitHub Releases-based updates:
 1. Use `HistoryDB` class in `yakulingo/storage/history_db.py`
 2. Store `HistoryEntry` objects with `TextTranslationResult`
 3. Query history with `get_recent()`, search with `search()`
+
+### Adding Inline Adjustments
+1. Add adjustment option to `ADJUST_OPTIONS_PAIRS` or `ADJUST_OPTIONS_SINGLE` in `text_panel.py`
+2. Create corresponding prompt file in `prompts/adjust_*.txt`
+3. Handle adjustment callback in `yakulingo/ui/app.py`
 
 ## Dependencies Overview
 
@@ -363,10 +450,11 @@ Install separately for PDF translation support:
 ```bash
 pip install -r requirements_pdf.txt
 ```
-- `yomitoku>=0.10.0`: Japanese document AI (OCR & layout analysis)
+- `yomitoku>=0.8.0`: Japanese document AI (OCR & layout analysis)
 - Requires Python 3.10-3.12, PyTorch 2.5+, GPU with 8GB+ VRAM recommended
 
 ### Optional Dependencies
+- `[ocr]`: yomitoku for OCR support
 - `[test]`: pytest, pytest-cov, pytest-asyncio
 
 ## Platform Notes
@@ -398,11 +486,15 @@ The AGENTS.md file specifies that all responses should be in Japanese (すべて
 ## Recent Development Focus
 
 Based on recent commits:
+- **Reference File Feature**: Renamed glossary to reference_files for broader file support (CSV, TXT, PDF, Word, Excel, etc.)
+- **Nani-Inspired UI**: Inline adjustment buttons, gear icon for settings, elapsed time badge
+- **Back-Translate Feature**: Verify translations by translating back to original language
+- **Accessibility Improvements**: ARIA labels and SVG titles for screen reader support
+- **Code Quality**: Replaced print() with logger, improved exception handling
+- **PDF OCR Improvements**: Better handling for CPU environments
 - **Auto-Update System**: GitHub Releases-based automatic updates with Windows proxy support
 - **Translation History**: SQLite-based local history storage
-- **Test Coverage Expansion**: Increased from 15 to 26 test files (73% → 85% coverage)
-- **Reproducible Builds**: Added `uv.lock` for dependency locking
-- **Distribution Improvements**: Simplified network share deployment
+- **Test Coverage Expansion**: 26 test files with ~85% coverage
 
 ## Git Workflow
 

@@ -87,7 +87,7 @@ class YakuLingoApp:
                 if login_required_notified and not self.state.copilot_connected:
                     # Login was required but timed out
                     if not silent:
-                        ui.notify('Login timed out', type='warning')
+                        ui.notify('ログインがタイムアウトしました', type='warning')
                 elif not silent:
                     ui.notify('Connection failed', type='negative')
 
@@ -171,7 +171,7 @@ class YakuLingoApp:
             elif self.state.copilot_login_required:
                 with ui.element('div').classes('status-indicator login-required').props('role="status" aria-live="polite"'):
                     ui.element('div').classes('status-dot login-required').props('aria-hidden="true"')
-                    ui.label('Login required')
+                    ui.label('ログインしてください')
             elif self.state.copilot_connecting:
                 with ui.element('div').classes('status-indicator connecting').props('role="status" aria-live="polite"'):
                     ui.element('div').classes('status-dot connecting').props('aria-hidden="true"')
@@ -188,8 +188,8 @@ class YakuLingoApp:
         @ui.refreshable
         def tabs_container():
             with ui.element('nav').classes('sidebar-nav').props('role="navigation" aria-label="Main navigation"'):
-                self._create_nav_item('Text', 'translate', Tab.TEXT)
-                self._create_nav_item('File', 'description', Tab.FILE)
+                self._create_nav_item('テキスト翻訳', 'translate', Tab.TEXT)
+                self._create_nav_item('ファイル翻訳', 'description', Tab.FILE)
 
         self._tabs_container = tabs_container
         tabs_container()
@@ -200,7 +200,7 @@ class YakuLingoApp:
         with ui.column().classes('sidebar-history flex-1'):
             with ui.row().classes('items-center justify-between px-2 mb-2'):
                 with ui.row().classes('items-center gap-1'):
-                    ui.label('History').classes('text-xs font-semibold text-muted')
+                    ui.label('履歴').classes('text-xs font-semibold text-muted')
                     # Security badge with tooltip (Nani-inspired)
                     with ui.element('div').classes('security-badge relative'):
                         ui.html('''
@@ -210,19 +210,19 @@ class YakuLingoApp:
                                 <path d="M9.30374 21.9406H14.6957C16.2907 21.9406 17.0887 21.9406 17.7047 21.645C18.3187 21.3498 18.8147 20.854 19.1097 20.2392C19.4057 19.6236 19.4057 18.8259 19.4057 17.2306V15.0987C19.4057 13.5034 19.4057 12.7058 19.1097 12.0901C18.8147 11.4754 18.3187 10.9796 17.7047 10.6844C17.0887 10.3887 16.2907 10.3887 14.6957 10.3887H9.30374C7.70874 10.3887 6.91074 10.3887 6.29474 10.6844C5.68074 10.9796 5.18474 11.4754 4.88974 12.0901C4.59374 12.7058 4.59375 13.5034 4.59375 15.0987V17.2306C4.59375 18.8259 4.59374 19.6236 4.88974 20.2392C5.18474 20.854 5.68074 21.3498 6.29474 21.645C6.91074 21.9406 7.70874 21.9406 9.30374 21.9406Z"/>
                             </svg>
                         ''')
-                        ui.element('div').classes('security-tooltip').text('Data is stored securely on your device')
+                        ui.element('div').classes('security-tooltip').text('データは端末に安全に保存されます')
                 if self.state.history:
                     ui.button(
                         icon='delete_sweep',
                         on_click=self._clear_history
-                    ).props('flat dense round size=xs aria-label="Clear all history"').classes('text-muted').tooltip('Clear all')
+                    ).props('flat dense round size=xs aria-label="履歴をすべて削除"').classes('text-muted').tooltip('すべて削除')
 
             @ui.refreshable
             def history_list():
                 if not self.state.history:
                     with ui.column().classes('items-center justify-center py-8 opacity-50'):
                         ui.icon('history').classes('text-2xl')
-                        ui.label('No history').classes('text-xs mt-1')
+                        ui.label('履歴がありません').classes('text-xs mt-1')
                 else:
                     with ui.scroll_area().classes('history-scroll'):
                         with ui.column().classes('gap-1'):
@@ -338,17 +338,17 @@ class YakuLingoApp:
             with ui.column().classes('w-full gap-4 p-4'):
                 # Header
                 with ui.row().classes('w-full justify-between items-center'):
-                    ui.label('Select glossary file').classes('text-base font-medium')
+                    ui.label('用語集ファイルを選択').classes('text-base font-medium')
                     ui.button(icon='close', on_click=dialog.close).props('flat dense round')
 
-                ui.label('CSV format: source,translation').classes('text-xs text-muted')
+                ui.label('CSV形式: 原文,訳文').classes('text-xs text-muted')
 
                 async def handle_upload(e):
                     if e.content:
                         content = e.content.read()
                         # Use temp file manager for automatic cleanup
                         uploaded_path = temp_file_manager.create_temp_file(content, e.name)
-                        ui.notify(f'Uploaded: {e.name}', type='positive')
+                        ui.notify(f'アップロードしました: {e.name}', type='positive')
                         dialog.close()
                         # Add to reference files
                         self.state.reference_files.append(uploaded_path)
@@ -360,7 +360,7 @@ class YakuLingoApp:
                     max_files=1,
                 ).classes('w-full').props('accept=".csv,.txt"')
 
-                ui.button('Cancel', on_click=dialog.close).props('flat')
+                ui.button('キャンセル', on_click=dialog.close).props('flat')
 
         dialog.open()
 
@@ -368,7 +368,7 @@ class YakuLingoApp:
         """Remove a glossary file by index"""
         if 0 <= index < len(self.state.reference_files):
             removed = self.state.reference_files.pop(index)
-            ui.notify(f'Removed: {removed.name}', type='info')
+            ui.notify(f'削除しました: {removed.name}', type='info')
             self._refresh_content()
 
     async def _translate_text(self):
@@ -448,10 +448,10 @@ class YakuLingoApp:
                         options=[result]
                     )
             else:
-                ui.notify('Adjustment failed', type='negative')
+                ui.notify('調整に失敗しました', type='negative')
 
         except Exception as e:
-            ui.notify(f'Error: {e}', type='negative')
+            ui.notify(f'エラー: {e}', type='negative')
 
         self.state.text_translating = False
         self._refresh_content()
@@ -508,10 +508,10 @@ class YakuLingoApp:
                         options=[new_option],
                     )
             else:
-                ui.notify('Back-translation failed', type='negative')
+                ui.notify('戻し訳に失敗しました', type='negative')
 
         except Exception as e:
-            ui.notify(f'Error: {e}', type='negative')
+            ui.notify(f'エラー: {e}', type='negative')
 
         self.state.text_translating = False
         self._refresh_content()
@@ -757,15 +757,15 @@ class YakuLingoApp:
             with ui.column().classes('w-full gap-4 p-5'):
                 with ui.row().classes('items-center gap-3'):
                     ui.spinner('dots', size='md').classes('text-primary')
-                    ui.label('Translating...').classes('text-base font-semibold')
+                    ui.label('翻訳中...').classes('text-base font-semibold')
 
                 with ui.column().classes('w-full gap-2'):
                     progress_bar = ui.linear_progress(value=0).classes('w-full')
                     with ui.row().classes('w-full justify-between'):
-                        status_label = ui.label('Starting...').classes('text-xs text-muted')
+                        status_label = ui.label('開始中...').classes('text-xs text-muted')
                         progress_label = ui.label('0%').classes('text-xs font-medium text-primary')
 
-                ui.button('Cancel', on_click=lambda: self._cancel_and_close(progress_dialog)).props('flat').classes('self-end text-muted')
+                ui.button('キャンセル', on_click=lambda: self._cancel_and_close(progress_dialog)).props('flat').classes('self-end text-muted')
 
         progress_dialog.open()
 
@@ -793,15 +793,15 @@ class YakuLingoApp:
             if result.status == TranslationStatus.COMPLETED and result.output_path:
                 self.state.output_file = result.output_path
                 self.state.file_state = FileState.COMPLETE
-                ui.notify('Completed', type='positive')
+                ui.notify('完了しました', type='positive')
             elif result.status == TranslationStatus.CANCELLED:
                 self.state.reset_file_state()
-                ui.notify('Cancelled', type='info')
+                ui.notify('キャンセルしました', type='info')
             else:
-                self.state.error_message = result.error_message or 'Error'
+                self.state.error_message = result.error_message or 'エラー'
                 self.state.file_state = FileState.ERROR
                 self.state.output_file = None
-                ui.notify('Failed', type='negative')
+                ui.notify('失敗しました', type='negative')
 
         except Exception as e:
             self.state.error_message = str(e)
@@ -874,49 +874,49 @@ class YakuLingoApp:
                 with ui.row().classes('w-full justify-between items-center'):
                     with ui.row().classes('items-center gap-2'):
                         ui.icon('tune').classes('text-lg text-primary')
-                        ui.label('Settings').classes('text-base font-semibold')
+                        ui.label('翻訳の設定').classes('text-base font-semibold')
                     ui.button(icon='close', on_click=dialog.close).props('flat dense round')
 
                 ui.separator()
 
                 # Batch size setting
                 with ui.column().classes('w-full gap-1'):
-                    ui.label('Batch size').classes('text-sm font-medium')
-                    ui.label('Number of text blocks to translate at once').classes('text-xs text-muted')
-                    batch_label = ui.label(f'{self.settings.max_batch_size} blocks').classes('text-xs text-primary')
+                    ui.label('バッチサイズ').classes('text-sm font-medium')
+                    ui.label('一度に翻訳するテキストブロック数').classes('text-xs text-muted')
+                    batch_label = ui.label(f'{self.settings.max_batch_size} ブロック').classes('text-xs text-primary')
                     batch_slider = ui.slider(
                         min=10, max=100, step=10,
                         value=self.settings.max_batch_size,
-                        on_change=lambda e: batch_label.set_text(f'{int(e.value)} blocks')
+                        on_change=lambda e: batch_label.set_text(f'{int(e.value)} ブロック')
                     ).classes('w-full')
 
                 # Request timeout setting
                 with ui.column().classes('w-full gap-1'):
-                    ui.label('Timeout').classes('text-sm font-medium')
-                    ui.label('Wait time for Copilot response').classes('text-xs text-muted')
-                    timeout_label = ui.label(f'{self.settings.request_timeout}s').classes('text-xs text-primary')
+                    ui.label('タイムアウト').classes('text-sm font-medium')
+                    ui.label('Copilotからの応答待ち時間').classes('text-xs text-muted')
+                    timeout_label = ui.label(f'{self.settings.request_timeout} 秒').classes('text-xs text-primary')
                     timeout_slider = ui.slider(
                         min=30, max=300, step=30,
                         value=self.settings.request_timeout,
-                        on_change=lambda e: timeout_label.set_text(f'{int(e.value)}s')
+                        on_change=lambda e: timeout_label.set_text(f'{int(e.value)} 秒')
                     ).classes('w-full')
 
                 # Max retries setting
                 with ui.column().classes('w-full gap-1'):
-                    ui.label('Retries').classes('text-sm font-medium')
-                    ui.label('Number of retry attempts on failure').classes('text-xs text-muted')
-                    retry_label = ui.label(f'{self.settings.max_retries}x').classes('text-xs text-primary')
+                    ui.label('リトライ回数').classes('text-sm font-medium')
+                    ui.label('翻訳失敗時の再試行回数').classes('text-xs text-muted')
+                    retry_label = ui.label(f'{self.settings.max_retries} 回').classes('text-xs text-primary')
                     retry_slider = ui.slider(
                         min=0, max=5, step=1,
                         value=self.settings.max_retries,
-                        on_change=lambda e: retry_label.set_text(f'{int(e.value)}x')
+                        on_change=lambda e: retry_label.set_text(f'{int(e.value)} 回')
                     ).classes('w-full')
 
                 ui.separator()
 
                 # Action buttons
                 with ui.row().classes('w-full justify-end gap-2'):
-                    ui.button('Cancel', on_click=dialog.close).props('flat').classes('text-muted')
+                    ui.button('キャンセル', on_click=dialog.close).props('flat').classes('text-muted')
 
                     def save_settings():
                         self.settings.max_batch_size = int(batch_slider.value)
@@ -924,9 +924,9 @@ class YakuLingoApp:
                         self.settings.max_retries = int(retry_slider.value)
                         self.settings.save(get_default_settings_path())
                         dialog.close()
-                        ui.notify('Settings saved', type='positive')
+                        ui.notify('設定を保存しました', type='positive')
 
-                    ui.button('Save', on_click=save_settings).classes('btn-primary')
+                    ui.button('保存', on_click=save_settings).classes('btn-primary')
 
         dialog.open()
 

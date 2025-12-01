@@ -96,7 +96,7 @@ class UpdateNotification:
             'px-4 py-2 flex items-center justify-center gap-4 '
         )
         if requires_reinstall:
-            banner_classes += 'bg-amber-500 text-white'
+            banner_classes += 'warning-banner'  # M3 warning colors
         else:
             banner_classes += 'bg-primary text-white'
 
@@ -155,20 +155,18 @@ class UpdateNotification:
 
             # 再セットアップ必要警告
             if info.requires_reinstall:
-                with ui.element('div').classes(
-                    'w-full bg-amber-100 border border-amber-300 rounded-lg p-3 mb-3'
-                ):
+                with ui.element('div').classes('w-full warning-box mb-3'):
                     with ui.row().classes('items-start gap-2'):
-                        ui.icon('warning').classes('text-amber-600 text-lg')
+                        ui.icon('warning').classes('text-warning text-lg')
                         with ui.column().classes('gap-1'):
                             ui.label('再セットアップが必要').classes(
-                                'text-sm font-semibold text-amber-800'
+                                'text-sm font-semibold text-on-warning-container'
                             )
                             ui.label(
                                 'このバージョンは依存関係が変更されています。'
                                 '自動アップデートではなく、新しい配布パッケージを'
                                 'ダウンロードして再セットアップしてください。'
-                            ).classes('text-xs text-amber-700')
+                            ).classes('text-xs text-on-warning-container')
 
             # バージョン情報
             with ui.column().classes('w-full gap-3'):

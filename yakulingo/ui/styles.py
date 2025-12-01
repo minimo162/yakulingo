@@ -394,7 +394,8 @@ body {
 
 .btn-primary:hover:not(:disabled),
 .translate-btn:hover:not(:disabled) {
-    background: #374151;
+    /* Lighter shade derived from on-surface (#1A1C1E → #2D3035) */
+    background: color-mix(in srgb, var(--md-sys-color-on-surface) 85%, white);
     transform: translateY(-2px) scale(1.02);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-spring);
@@ -1476,7 +1477,7 @@ body {
 }
 
 .send-question-btn:hover {
-    background: #374151 !important;
+    background: color-mix(in srgb, var(--md-sys-color-on-surface) 85%, white) !important;
     transform: translateY(-1px) !important;
 }
 
@@ -1755,5 +1756,132 @@ a:hover {
     opacity: 0;
     transform: translateX(-20px);
     transition: all 300ms var(--md-sys-motion-easing-standard);
+}
+
+/* === M3 Warning Color Utilities === */
+.bg-warning {
+    background-color: var(--md-sys-color-warning) !important;
+}
+
+.bg-warning-container {
+    background-color: var(--md-sys-color-warning-container) !important;
+}
+
+.text-warning {
+    color: var(--md-sys-color-warning) !important;
+}
+
+.text-on-warning {
+    color: var(--md-sys-color-on-warning) !important;
+}
+
+.text-on-warning-container {
+    color: var(--md-sys-color-on-warning-container) !important;
+}
+
+.border-warning {
+    border-color: var(--md-sys-color-warning) !important;
+}
+
+/* Warning banner */
+.warning-banner {
+    background-color: var(--md-sys-color-warning);
+    color: var(--md-sys-color-on-warning);
+}
+
+/* Warning container box */
+.warning-box {
+    background-color: var(--md-sys-color-warning-container);
+    border: 1px solid var(--md-sys-color-warning);
+    border-radius: var(--md-sys-shape-corner-large);
+    padding: 0.75rem;
+}
+
+/* === M3 Surface Utilities === */
+.bg-surface {
+    background-color: var(--md-sys-color-surface) !important;
+}
+
+.bg-surface-container {
+    background-color: var(--md-sys-color-surface-container) !important;
+}
+
+.bg-surface-container-high {
+    background-color: var(--md-sys-color-surface-container-high) !important;
+}
+
+.text-on-surface {
+    color: var(--md-sys-color-on-surface) !important;
+}
+
+.text-on-surface-variant {
+    color: var(--md-sys-color-on-surface-variant) !important;
+}
+
+/* Dialog section background */
+.dialog-section {
+    background-color: var(--md-sys-color-surface-container);
+    border-radius: var(--md-sys-shape-corner-large);
+    padding: 0.75rem;
+}
+
+/* === M3 File Type Icon Backgrounds === */
+.file-icon-excel {
+    background-color: rgba(33, 115, 70, 0.08);
+    color: #217346;
+}
+
+.file-icon-word {
+    background-color: rgba(43, 87, 154, 0.08);
+    color: #2B579A;
+}
+
+.file-icon-powerpoint {
+    background-color: rgba(210, 71, 38, 0.08);
+    color: #D24726;
+}
+
+.file-icon-pdf {
+    background-color: rgba(244, 15, 2, 0.08);
+    color: #F40F02;
+}
+
+.file-icon-default {
+    background-color: rgba(102, 102, 102, 0.08);
+    color: #666666;
+}
+
+/* === Duration Badge === */
+.duration-badge {
+    font-size: 0.75rem;
+    padding: 0.125rem 0.5rem;
+    border-radius: var(--md-sys-shape-corner-full);
+    background-color: var(--md-sys-color-surface-container-high);
+    color: var(--md-sys-color-on-surface-variant);
+    width: fit-content;
+}
+
+/* === Completion Dialog Styles === */
+.completion-file-row {
+    width: 100%;
+    padding: 0.75rem;
+    background-color: var(--md-sys-color-surface-container);
+    border-radius: var(--md-sys-shape-corner-medium);
+}
+
+.completion-file-icon {
+    font-size: 1.125rem;
+    color: var(--md-sys-color-on-surface-variant);
+}
+
+.completion-file-name {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--md-sys-color-on-surface);
+}
+
+.completion-file-desc {
+    font-size: 0.75rem;
+    color: var(--md-sys-color-on-surface-variant);
 }
 """

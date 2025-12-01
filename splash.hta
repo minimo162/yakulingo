@@ -128,8 +128,8 @@ Sub Window_OnLoad()
     ' Start checking for close signal
     checkInterval = window.setInterval(GetRef("CheckCloseSignal"), 200)
 
-    ' Auto-close after 30 seconds (timeout fallback)
-    window.setTimeout GetRef("AutoClose"), 30000
+    ' Auto-close after 6 minutes (timeout fallback for login wait)
+    window.setTimeout GetRef("AutoClose"), 360000
 End Sub
 
 Sub CheckCloseSignal()
@@ -159,7 +159,7 @@ End Sub
     <div class="app-name">YakuLingo</div>
     <div class="loading">
         <div class="spinner"></div>
-        <span class="loading-text">Starting...</span>
+        <span class="loading-text">Copilotに接続中...</span>
     </div>
 </div>
 </body>

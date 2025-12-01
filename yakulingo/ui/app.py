@@ -298,6 +298,7 @@ class YakuLingoApp:
                         on_attach_glossary=self._attach_glossary,
                         on_remove_glossary=self._remove_glossary,
                         on_back_translate=self._back_translate,
+                        on_settings=self._show_settings_dialog,
                     )
                 else:
                     create_file_panel(
@@ -864,6 +865,82 @@ class YakuLingoApp:
         )
         self.state.add_to_history(entry)
         self._refresh_history()
+
+    def _show_settings_dialog(self):
+        """Show translation settings dialog (Nani-inspired quick settings)"""
+        with ui.dialog() as dialog, ui.card().classes('w-96 settings-dialog'):
+            with ui.column().classes('w-full gap-4 p-4'):
+                # Header
+                with ui.row().classes('w-full justify-between items-center'):
+                    with ui.row().classes('items-center gap-2'):
+                        ui.icon('tune').classes('text-lg text-primary')
+                        ui.label('翻訳の設定').classes('text-base font-semibold')
+                    ui.button(icon='close', on_click=dialog.close).props('flat dense round')
+
+                ui.separator()
+
+                # Batch size setting
+                with ui.column().classes('w-full gap-1'):
+                    ui.label('バッチサイズ').classes('text-sm font-medium')
+                    ui.label('一度に翻訳するテキストブロック数').classes('text-xs text-muted')
+                    batch_slider = ui.slider(
+                        min=10, max=100, step=10,
+                        value=self.settings.max_batch_size
+                    ).classes('w-full')
+                    batch_label = ui.label(f'{self.settings.max_batch_size} ブロック').classes('text-xs text-primary')
+
+                    def update_batch(e):
+                        batch_label.set_text(f'{int(e.value)} ブロック')
+
+                    batch_slider.on('update:model-value', update_batch)
+
+                # Request timeout setting
+                with ui.column().classes('w-full gap-1'):
+                    ui.label('タイムアウト').classes('text-sm font-medium')
+                    ui.label('Copilotからの応答待ち時間').classes('text-xs text-muted')
+                    timeout_slider = ui.slider(
+                        min=30, max=300, step=30,
+                        value=self.settings.request_timeout
+                    ).classes('w-full')
+                    timeout_label = ui.label(f'{self.settings.request_timeout} 秒').classes('text-xs text-primary')
+
+                    def update_timeout(e):
+                        timeout_label.set_text(f'{int(e.value)} 秒')
+
+                    timeout_slider.on('update:model-value', update_timeout)
+
+                # Max retries setting
+                with ui.column().classes('w-full gap-1'):
+                    ui.label('リトライ回数').classes('text-sm font-medium')
+                    ui.label('翻訳失敗時の再試行回数').classes('text-xs text-muted')
+                    retry_slider = ui.slider(
+                        min=0, max=5, step=1,
+                        value=self.settings.max_retries
+                    ).classes('w-full')
+                    retry_label = ui.label(f'{self.settings.max_retries} 回').classes('text-xs text-primary')
+
+                    def update_retries(e):
+                        retry_label.set_text(f'{int(e.value)} 回')
+
+                    retry_slider.on('update:model-value', update_retries)
+
+                ui.separator()
+
+                # Action buttons
+                with ui.row().classes('w-full justify-end gap-2'):
+                    ui.button('キャンセル', on_click=dialog.close).props('flat').classes('text-muted')
+
+                    def save_settings():
+                        self.settings.max_batch_size = int(batch_slider.value)
+                        self.settings.request_timeout = int(timeout_slider.value)
+                        self.settings.max_retries = int(retry_slider.value)
+                        self.settings.save(get_default_settings_path())
+                        dialog.close()
+                        ui.notify('設定を保存しました', type='positive')
+
+                    ui.button('保存', on_click=save_settings).classes('btn-primary')
+
+        dialog.open()
 
 
 def create_app() -> YakuLingoApp:

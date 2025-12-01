@@ -1420,4 +1420,36 @@ body {
     color: var(--md-sys-color-primary);
     margin-right: 0.25rem;
 }
+
+/* === Settings Button (Nani-inspired) === */
+.settings-btn {
+    color: var(--md-sys-color-on-surface-variant) !important;
+    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard) !important;
+}
+
+.settings-btn:hover {
+    color: var(--md-sys-color-primary) !important;
+    background: var(--md-sys-color-primary-container) !important;
+}
+
+/* === Settings Dialog === */
+.settings-dialog {
+    border-radius: var(--md-sys-shape-corner-large) !important;
+}
+
+.settings-dialog .q-slider {
+    margin-top: 0.25rem;
+}
+
+.settings-dialog .q-slider__track {
+    background: var(--md-sys-color-surface-container-highest) !important;
+}
+
+.settings-dialog .q-slider__thumb {
+    background: var(--md-sys-color-primary) !important;
+}
+
+.settings-dialog .q-slider__inner {
+    background: var(--md-sys-color-primary) !important;
+}
 """

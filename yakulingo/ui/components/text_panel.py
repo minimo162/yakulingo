@@ -120,6 +120,7 @@ def create_text_panel(
     on_attach_glossary: Optional[Callable[[], None]] = None,  # Glossary file picker
     on_remove_glossary: Optional[Callable[[int], None]] = None,  # Remove glossary by index
     on_back_translate: Optional[Callable[[str], None]] = None,  # Back-translate to check
+    on_settings: Optional[Callable[[], None]] = None,  # Translation settings (Nani-style)
 ):
     """
     Text translation panel with language-specific UI.
@@ -171,6 +172,14 @@ def create_text_panel(
                                         ).props('flat dense round size=xs').classes('remove-btn')
 
                     with ui.row().classes('items-center gap-2'):
+                        # Settings button (Nani-style gear icon)
+                        if on_settings:
+                            settings_btn = ui.button(
+                                icon='tune',
+                                on_click=on_settings
+                            ).props('flat dense round size=sm').classes('settings-btn')
+                            settings_btn.tooltip('翻訳の設定')
+
                         # Nani-style glossary attachment button
                         if on_attach_glossary:
                             has_files = bool(state.reference_files)

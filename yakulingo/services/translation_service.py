@@ -269,21 +269,47 @@ class BatchTranslator:
         return result
 
     def _create_batches(self, blocks: list[TextBlock]) -> list[list[TextBlock]]:
-        """Split blocks into batches based on configured limits."""
+        """
+        Split blocks into batches based on configured limits.
+
+        Handles oversized blocks (exceeding max_chars_per_batch) by placing them
+        in their own batch with a warning. These will be processed via file
+        attachment mode by CopilotHandler.
+        """
         batches = []
         current_batch = []
         current_chars = 0
 
         for block in blocks:
+            block_size = len(block.text)
+
+            # Check if this single block exceeds the character limit
+            if block_size > self.max_chars_per_batch:
+                # Finalize current batch first
+                if current_batch:
+                    batches.append(current_batch)
+                    current_batch = []
+                    current_chars = 0
+
+                # Add oversized block as its own batch with warning
+                logger.warning(
+                    "Block '%s' exceeds max_chars_per_batch (%d > %d). "
+                    "Will be processed via file attachment mode.",
+                    block.id, block_size, self.max_chars_per_batch
+                )
+                batches.append([block])
+                continue
+
+            # Normal batching logic
             if (len(current_batch) >= self.max_batch_size or
-                current_chars + len(block.text) > self.max_chars_per_batch):
+                current_chars + block_size > self.max_chars_per_batch):
                 if current_batch:
                     batches.append(current_batch)
                 current_batch = []
                 current_chars = 0
 
             current_batch.append(block)
-            current_chars += len(block.text)
+            current_chars += block_size
 
         if current_batch:
             batches.append(current_batch)

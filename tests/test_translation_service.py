@@ -984,12 +984,17 @@ class TestBatchSizeBoundaries:
 
     @pytest.fixture
     def batch_translator(self):
-        """Create BatchTranslator with mocked dependencies"""
+        """Create BatchTranslator with explicit limits for boundary testing"""
         mock_copilot = Mock()
         mock_copilot.translate_sync.return_value = []
         mock_prompt_builder = Mock()
         mock_prompt_builder.build_batch.return_value = "test prompt"
-        return BatchTranslator(mock_copilot, mock_prompt_builder)
+        # Use explicit values for boundary tests (not defaults)
+        return BatchTranslator(
+            mock_copilot, mock_prompt_builder,
+            max_batch_size=50,
+            max_chars_per_batch=10000,  # Explicit value for boundary tests
+        )
 
     # --- MAX_BATCH_SIZE (50) boundary tests ---
 

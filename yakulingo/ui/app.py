@@ -297,6 +297,7 @@ class YakuLingoApp:
                         on_follow_up=self._follow_up_action,
                         on_attach_glossary=self._attach_glossary,
                         on_remove_glossary=self._remove_glossary,
+                        on_back_translate=self._back_translate,
                     )
                 else:
                     create_file_panel(
@@ -447,6 +448,66 @@ class YakuLingoApp:
                     )
             else:
                 ui.notify('調整に失敗しました', type='negative')
+
+        except Exception as e:
+            ui.notify(f'Error: {e}', type='negative')
+
+        self.state.text_translating = False
+        self._refresh_content()
+
+    async def _back_translate(self, text: str):
+        """Back-translate text to verify translation quality"""
+        if not self.translation_service:
+            ui.notify('Not connected', type='warning')
+            return
+
+        self.state.text_translating = True
+        self._refresh_content()
+
+        try:
+            # Build back-translation prompt
+            prompt = f"""以下の翻訳文を元の言語に戻して翻訳してください。
+これは翻訳の正確性をチェックするための「戻し訳」です。
+
+## 翻訳文
+{text}
+
+## 出力形式（厳守）
+訳文: （元の言語への翻訳）
+解説:
+- 戻し訳の結果から分かる翻訳の正確性
+- 意味のずれがあれば指摘
+- 改善案があれば提案
+
+## 禁止事項
+- 「続けますか？」「他に質問はありますか？」などの対話継続の質問
+- 指定形式以外の追加説明やコメント
+"""
+
+            # Send to Copilot
+            result = await asyncio.to_thread(
+                lambda: self.copilot.translate_single(text, prompt, None)
+            )
+
+            # Parse result and add to options
+            if result:
+                from yakulingo.ui.utils import parse_translation_result
+                text_result, explanation = parse_translation_result(result)
+                new_option = TranslationOption(
+                    text=f"【戻し訳】{text_result}",
+                    explanation=explanation
+                )
+
+                if self.state.text_result:
+                    self.state.text_result.options.append(new_option)
+                else:
+                    self.state.text_result = TextTranslationResult(
+                        source_text=self.state.source_text,
+                        source_char_count=len(self.state.source_text),
+                        options=[new_option],
+                    )
+            else:
+                ui.notify('戻し訳に失敗しました', type='negative')
 
         except Exception as e:
             ui.notify(f'Error: {e}', type='negative')

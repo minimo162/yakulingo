@@ -1,7 +1,7 @@
 # yakulingo/ui/components/text_panel.py
 """
 Text translation panel with language-specific UI.
-- Japanese → English: Multiple options with length adjustment
+- Japanese → English: Multiple options with inline adjustment buttons (Nani-inspired)
 - Other → Japanese: Single translation with detailed explanation + follow-up actions
 Designed for Japanese users.
 """
@@ -33,6 +33,20 @@ ACTION_ICONS = {
     'question': 'help_outline',
     'reply': 'reply',
 }
+
+# Nani-inspired inline adjustment options (pairs)
+ADJUST_OPTIONS_PAIRS = [
+    ('casual', 'カジュアルに', 'polite', 'ていねいに'),
+    ('dry', '淡々と', 'engaging', 'キャッチーに'),
+    ('shorter', 'もう少し短く', 'detailed', 'より詳しく'),
+]
+
+# Nani-inspired single adjustment options
+ADJUST_OPTIONS_SINGLE = [
+    ('native', 'ネイティブらしく自然に'),
+    ('less_ai', 'AIっぽさを消して'),
+    ('alternatives', '他の言い方は？'),
+]
 
 # Paperclip/Attachment SVG icon (Nani-inspired) with aria-label for accessibility
 ATTACH_SVG = '''
@@ -105,12 +119,14 @@ def create_text_panel(
     on_follow_up: Optional[Callable[[str, str], None]] = None,  # (action_type, context)
     on_attach_glossary: Optional[Callable[[], None]] = None,  # Glossary file picker
     on_remove_glossary: Optional[Callable[[int], None]] = None,  # Remove glossary by index
+    on_back_translate: Optional[Callable[[str], None]] = None,  # Back-translate to check
 ):
     """
     Text translation panel with language-specific UI.
-    - Japanese input → English: Multiple options with length adjustment
+    - Japanese input → English: Multiple options with inline adjustment (Nani-inspired)
     - Other input → Japanese: Single translation + follow-up actions
     - Nani-style glossary attachment button for reference files
+    - Back-translate feature to verify translations
     """
     # Get elapsed time for display
     elapsed_time = state.text_translation_elapsed_time
@@ -201,14 +217,16 @@ def create_text_panel(
                     state.source_text,
                     on_copy,
                     on_follow_up,
+                    on_back_translate,
                     elapsed_time,
                 )
             else:
-                # →English: Multiple options with adjustment
+                # →English: Multiple options with inline adjustment (Nani-inspired)
                 _render_results_to_en(
                     state.text_result,
                     on_copy,
                     on_adjust,
+                    on_back_translate,
                     elapsed_time,
                 )
         elif state.text_translating:
@@ -228,9 +246,10 @@ def _render_results_to_en(
     result: TextTranslationResult,
     on_copy: Callable[[str], None],
     on_adjust: Optional[Callable[[str, str], None]],
+    on_back_translate: Optional[Callable[[str], None]] = None,
     elapsed_time: Optional[float] = None,
 ):
-    """Render →English results: multiple options with length adjustment (Nani-style)"""
+    """Render →English results: multiple options with inline adjustment (Nani-style)"""
 
     # Avatar and status row (Nani-style)
     with ui.element('div').classes('avatar-status-row'):
@@ -248,10 +267,14 @@ def _render_results_to_en(
                     _render_option_en(
                         option,
                         on_copy,
-                        on_adjust,
+                        on_back_translate,
                         is_last=(i == len(result.options) - 1),
                         index=i,
                     )
+
+        # Inline adjustment section (Nani-inspired)
+        if on_adjust and result.options:
+            _render_inline_adjust_section(result.options[0].text, on_adjust)
 
 
 def _render_results_to_jp(
@@ -259,6 +282,7 @@ def _render_results_to_jp(
     source_text: str,
     on_copy: Callable[[str], None],
     on_follow_up: Optional[Callable[[str, str], None]],
+    on_back_translate: Optional[Callable[[str], None]] = None,
     elapsed_time: Optional[float] = None,
 ):
     """Render →Japanese results: single translation with detailed explanation + follow-up actions (Nani-style)"""
@@ -283,12 +307,20 @@ def _render_results_to_jp(
                 # Translation text
                 ui.label(option.text).classes('nani-result-text')
 
-                # Action toolbar (copy only)
+                # Action toolbar (copy and back-translate)
                 with ui.element('div').classes('nani-toolbar'):
                     ui.button(
                         icon='content_copy',
                         on_click=lambda: on_copy(option.text)
                     ).props('flat dense round size=sm').classes('nani-toolbar-btn').tooltip('コピー')
+
+                    # Back-translate button
+                    if on_back_translate:
+                        ui.button(
+                            '戻し訳',
+                            icon='g_translate',
+                            on_click=lambda o=option: on_back_translate(o.text)
+                        ).props('flat no-caps size=sm').classes('back-translate-btn').tooltip('別のAIモデルで元の言語に戻してチェック')
 
             # Detailed explanation section (Nani-style background)
             if option.explanation:
@@ -356,7 +388,7 @@ def _render_explanation(explanation: str):
 def _render_option_en(
     option: TranslationOption,
     on_copy: Callable[[str], None],
-    on_adjust: Optional[Callable[[str, str], None]],
+    on_back_translate: Optional[Callable[[str], None]] = None,
     is_last: bool = False,
     index: int = 0,
 ):
@@ -380,19 +412,20 @@ def _render_option_en(
                 ui.label(option.explanation).classes('text-xs text-muted flex-1 italic')
 
                 # Actions
-                with ui.row().classes('items-center gap-0'):
+                with ui.row().classes('items-center gap-1'):
                     # Copy button
                     ui.button(
                         icon='content_copy',
                         on_click=lambda o=option: on_copy(o.text)
                     ).props('flat dense round size=sm').classes('option-action').tooltip('コピー')
 
-                    # Adjust button
-                    if on_adjust:
+                    # Back-translate button
+                    if on_back_translate:
                         ui.button(
-                            icon='tune',
-                            on_click=lambda o=option: _show_adjust_dialog(o.text, on_adjust)
-                        ).props('flat dense round size=sm').classes('option-action').tooltip('調整')
+                            '戻し訳',
+                            icon='g_translate',
+                            on_click=lambda o=option: on_back_translate(o.text)
+                        ).props('flat no-caps size=sm').classes('back-translate-btn').tooltip('別のAIモデルで日本語に戻してチェック')
 
 
 def _show_adjust_dialog(text: str, on_adjust: Callable[[str, str], None]):
@@ -545,3 +578,68 @@ def _do_follow_up(
     if content and content.strip() and on_follow_up:
         dialog.close()
         on_follow_up(action_type, content.strip())
+
+
+def _render_inline_adjust_section(text: str, on_adjust: Callable[[str, str], None]):
+    """Render Nani-inspired inline adjustment options section"""
+
+    with ui.element('div').classes('inline-adjust-section'):
+        # Connector line with refresh icon
+        with ui.element('div').classes('inline-adjust-connector'):
+            with ui.element('div').classes('connector-line'):
+                with ui.element('div').classes('connector-branch'):
+                    pass
+                ui.button(
+                    icon='refresh',
+                    on_click=lambda: None  # Visual only
+                ).props('flat dense round size=xs').classes('connector-icon')
+
+        # Adjustment options panel
+        with ui.element('div').classes('inline-adjust-panel'):
+            with ui.column().classes('gap-2'):
+                # Paired options (side by side)
+                for left_key, left_label, right_key, right_label in ADJUST_OPTIONS_PAIRS:
+                    with ui.element('div').classes('adjust-option-row'):
+                        ui.button(
+                            left_label,
+                            on_click=lambda k=left_key: on_adjust(text, k)
+                        ).props('flat no-caps').classes('adjust-option-btn')
+                        ui.element('div').classes('adjust-option-divider')
+                        ui.button(
+                            right_label,
+                            on_click=lambda k=right_key: on_adjust(text, k)
+                        ).props('flat no-caps').classes('adjust-option-btn')
+
+                # Single options (full width)
+                for key, label in ADJUST_OPTIONS_SINGLE:
+                    ui.button(
+                        label,
+                        on_click=lambda k=key: on_adjust(text, k)
+                    ).props('flat no-caps').classes('adjust-option-btn-full')
+
+        # Inline question input
+        with ui.element('div').classes('inline-question-section'):
+            with ui.row().classes('gap-2 items-end w-full'):
+                with ui.column().classes('flex-1 gap-1'):
+                    # Quick suggestion chip
+                    with ui.row().classes('items-center gap-1'):
+                        ui.button(
+                            'これはどう？',
+                            on_click=lambda: on_adjust(text, 'これはどう？')
+                        ).props('flat no-caps dense').classes('quick-chip')
+
+                    # Text input
+                    question_input = ui.input(
+                        placeholder='追加で質問する'
+                    ).classes('w-full question-input')
+
+                # Send button
+                def send_question():
+                    if question_input.value and question_input.value.strip():
+                        on_adjust(text, question_input.value.strip())
+                        question_input.set_value('')
+
+                ui.button(
+                    icon='arrow_upward',
+                    on_click=send_question
+                ).props('round dense').classes('send-question-btn')

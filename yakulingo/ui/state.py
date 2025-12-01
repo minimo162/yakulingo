@@ -4,6 +4,7 @@ Application state management for YakuLingo.
 """
 
 import logging
+import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -92,7 +93,7 @@ class AppState:
             self._history_db = HistoryDB(get_default_db_path())
             # Load recent history from database
             self.history = self._history_db.get_recent(self.max_history_entries)
-        except Exception as e:
+        except (OSError, sqlite3.Error) as e:
             logger.warning("Failed to initialize history database: %s", e)
             self._history_db = None
             self.history = []
@@ -136,7 +137,7 @@ class AppState:
                 # Cleanup old entries periodically (keep max 500 in DB)
                 if len(self.history) >= self.max_history_entries:
                     self._history_db.cleanup_old_entries(500)
-            except Exception as e:
+            except (OSError, sqlite3.Error) as e:
                 logger.warning("Failed to save history: %s", e)
 
         # Update in-memory cache
@@ -151,7 +152,7 @@ class AppState:
         if self._history_db:
             try:
                 self._history_db.delete_by_timestamp(entry.timestamp)
-            except Exception as e:
+            except (OSError, sqlite3.Error) as e:
                 logger.warning("Failed to delete history entry: %s", e)
 
         # Remove from in-memory cache
@@ -163,7 +164,7 @@ class AppState:
         if self._history_db:
             try:
                 self._history_db.clear_all()
-            except Exception as e:
+            except (OSError, sqlite3.Error) as e:
                 logger.warning("Failed to clear history database: %s", e)
 
         # Clear in-memory cache
@@ -174,7 +175,7 @@ class AppState:
         if self._history_db:
             try:
                 self.history = self._history_db.get_recent(self.max_history_entries)
-            except Exception as e:
+            except (OSError, sqlite3.Error) as e:
                 logger.warning("Failed to reload history: %s", e)
 
     def toggle_history_drawer(self) -> None:

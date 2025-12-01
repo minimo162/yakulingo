@@ -36,6 +36,14 @@ def _is_japanese_char(code: int) -> bool:
             0xFF65 <= code <= 0xFF9F)    # Halfwidth Katakana
 
 
+# Language detection constants
+MIN_TEXT_LENGTH_FOR_SAMPLING = 20  # Below this, check all chars directly
+MAX_ANALYSIS_LENGTH = 500  # Sample size for language detection
+MIN_MEANINGFUL_CHARS_FOR_EARLY_EXIT = 50  # Minimum chars before early exit decision
+CLEAR_JP_RATIO_THRESHOLD = 0.6  # Above this ratio, clearly Japanese
+CLEAR_NON_JP_RATIO_THRESHOLD = 0.1  # Below this ratio, clearly not Japanese
+
+
 def _is_punctuation(char: str) -> bool:
     """Check if char is punctuation (optimized with category prefix check)."""
     cat = unicodedata.category(char)
@@ -67,8 +75,8 @@ def is_japanese_text(text: str, threshold: float = 0.3) -> bool:
 
     text_len = len(text)
 
-    # Early exit for very short text (< 20 chars): check all chars directly
-    if text_len < 20:
+    # Early exit for very short text: check all chars directly
+    if text_len < MIN_TEXT_LENGTH_FOR_SAMPLING:
         meaningful_chars = [c for c in text if not c.isspace() and not _is_punctuation(c)]
         if not meaningful_chars:
             return False
@@ -76,8 +84,6 @@ def is_japanese_text(text: str, threshold: float = 0.3) -> bool:
         return (jp_count / len(meaningful_chars)) >= threshold
 
     # For longer text, sample the first portion
-    # 500 chars is enough to reliably detect language
-    MAX_ANALYSIS_LENGTH = 500
     sample_text = text[:MAX_ANALYSIS_LENGTH] if text_len > MAX_ANALYSIS_LENGTH else text
 
     japanese_count = 0
@@ -93,10 +99,10 @@ def is_japanese_text(text: str, threshold: float = 0.3) -> bool:
             japanese_count += 1
 
         # Early exit: if we have enough samples and result is clear
-        if total_chars >= 50:
+        if total_chars >= MIN_MEANINGFUL_CHARS_FOR_EARLY_EXIT:
             ratio = japanese_count / total_chars
-            # If clearly Japanese (>60%) or clearly not (<10%), exit early
-            if ratio > 0.6 or ratio < 0.1:
+            # If clearly Japanese or clearly not, exit early
+            if ratio > CLEAR_JP_RATIO_THRESHOLD or ratio < CLEAR_NON_JP_RATIO_THRESHOLD:
                 return ratio >= threshold
 
     if total_chars == 0:
@@ -447,7 +453,7 @@ class TranslationService:
                 duration_seconds=time.time() - start_time,
             )
 
-        except (OSError, IOError) as e:
+        except OSError as e:
             logger.warning("File I/O error during translation: %s", e)
             return TranslationResult(
                 status=TranslationStatus.FAILED,
@@ -455,6 +461,7 @@ class TranslationService:
                 duration_seconds=time.time() - start_time,
             )
         except Exception as e:
+            # Catch all other exceptions from external API calls
             logger.exception("Unexpected error during text translation: %s", e)
             return TranslationResult(
                 status=TranslationStatus.FAILED,
@@ -550,7 +557,7 @@ class TranslationService:
                     output_language=output_language,
                 )
 
-        except (OSError, IOError) as e:
+        except OSError as e:
             logger.warning("File I/O error during translation: %s", e)
             return TextTranslationResult(
                 source_text=text,
@@ -559,6 +566,7 @@ class TranslationService:
                 error_message=str(e),
             )
         except Exception as e:
+            # Catch all other exceptions from external API calls
             logger.exception("Unexpected error during text translation with options: %s", e)
             return TextTranslationResult(
                 source_text=text,
@@ -613,10 +621,11 @@ class TranslationService:
 
             return option
 
-        except (OSError, IOError) as e:
+        except OSError as e:
             logger.warning("File I/O error during translation adjustment: %s", e)
             return None
         except Exception as e:
+            # Catch all other exceptions from external API calls
             logger.exception("Unexpected error during translation adjustment: %s", e)
             return None
 
@@ -739,6 +748,7 @@ class TranslationService:
             )
 
         except Exception as e:
+            # Catch all exceptions for graceful error handling
             logger.exception("Translation failed: %s", e)
             return TranslationResult(
                 status=TranslationStatus.FAILED,
@@ -1188,6 +1198,7 @@ class TranslationService:
                 return None
 
         except Exception as e:
+            # Catch all exceptions for graceful error handling
             logger.error(
                 "Failed to create bilingual output for %s: %s",
                 input_path.name, e

@@ -123,7 +123,7 @@ class ExcelProcessor(FileProcessor):
                             if hasattr(shape, 'text') and shape.text:
                                 if self.cell_translator.should_translate(shape.text):
                                     text_count += 1
-                        except Exception as e:
+                        except (AttributeError, TypeError, RuntimeError) as e:
                             logger.debug("Error reading shape text in sheet '%s': %s", sheet.name, e)
 
                     # Count chart titles
@@ -133,7 +133,7 @@ class ExcelProcessor(FileProcessor):
                                 title = chart.chart.chart_title.text_frame.text
                                 if title and self.cell_translator.should_translate(title):
                                     text_count += 1
-                        except Exception as e:
+                        except (AttributeError, TypeError, RuntimeError) as e:
                             logger.debug("Error reading chart title in sheet '%s': %s", sheet.name, e)
 
                 return FileInfo(
@@ -211,7 +211,7 @@ class ExcelProcessor(FileProcessor):
                                         try:
                                             font_name = cell.font.name
                                             font_size = cell.font.size or 11.0
-                                        except Exception as e:
+                                        except (AttributeError, TypeError) as e:
                                             logger.debug("Error reading font info for cell %s%d: %s", col_letter, row_idx, e)
 
                                         yield TextBlock(
@@ -245,7 +245,7 @@ class ExcelProcessor(FileProcessor):
                                             'type': 'shape',
                                         }
                                     )
-                        except Exception as e:
+                        except (AttributeError, TypeError, RuntimeError) as e:
                             logger.debug("Error extracting shape %d in sheet '%s': %s", shape_idx, sheet_name, e)
 
                     # === Chart Titles and Labels ===
@@ -286,10 +286,10 @@ class ExcelProcessor(FileProcessor):
                                                     'type': 'chart_axis_title',
                                                 }
                                             )
-                                except Exception as e:
+                                except (AttributeError, TypeError, RuntimeError, IndexError) as e:
                                     logger.debug("Error reading %s axis title for chart %d: %s", axis_name, chart_idx, e)
 
-                        except Exception as e:
+                        except (AttributeError, TypeError, RuntimeError, IndexError) as e:
                             logger.debug("Error extracting chart %d in sheet '%s': %s", chart_idx, sheet_name, e)
             finally:
                 wb.close()
@@ -386,7 +386,7 @@ class ExcelProcessor(FileProcessor):
                                     try:
                                         original_font_name = cell.font.name
                                         original_font_size = cell.font.size or 11.0
-                                    except Exception as e:
+                                    except (AttributeError, TypeError) as e:
                                         logger.debug("Error reading font for cell %s: %s", block_id, e)
 
                                     # Get new font settings
@@ -402,7 +402,7 @@ class ExcelProcessor(FileProcessor):
                                     try:
                                         cell.font.name = new_font_name
                                         cell.font.size = new_font_size
-                                    except Exception as e:
+                                    except (AttributeError, TypeError, RuntimeError) as e:
                                         logger.debug("Error applying font to cell %s: %s", block_id, e)
 
                     # === Apply to shapes ===
@@ -411,7 +411,7 @@ class ExcelProcessor(FileProcessor):
                         if block_id in translations:
                             try:
                                 shape.text = translations[block_id]
-                            except Exception as e:
+                            except (AttributeError, TypeError, RuntimeError) as e:
                                 logger.debug("Error applying translation to shape %s: %s", block_id, e)
 
                     # === Apply to chart titles and labels ===
@@ -432,10 +432,10 @@ class ExcelProcessor(FileProcessor):
                                         axis = api_chart.Axes(axis_type)
                                         if axis.HasTitle:
                                             axis.AxisTitle.Text = translations[axis_id]
-                                    except Exception as e:
+                                    except (AttributeError, TypeError, RuntimeError, IndexError) as e:
                                         logger.debug("Error applying translation to axis %s: %s", axis_id, e)
 
-                        except Exception as e:
+                        except (AttributeError, TypeError, RuntimeError, IndexError) as e:
                             logger.debug("Error applying translation to chart %d in sheet '%s': %s", chart_idx, sheet_name, e)
 
                 # Save to output path

@@ -74,7 +74,7 @@ class UpdateNotification:
 
             return result
 
-        except Exception as e:
+        except (OSError, ValueError, RuntimeError) as e:
             if not silent:
                 ui.notify(f'アップデートチェックに失敗: {e}', type='warning')
             return None
@@ -274,7 +274,7 @@ class UpdateNotification:
             # インストール確認
             await self._confirm_install(zip_path)
 
-        except Exception as e:
+        except (OSError, ValueError, RuntimeError) as e:
             progress_dialog.close()
             ui.notify(f'ダウンロードに失敗: {e}', type='negative')
 
@@ -317,7 +317,7 @@ class UpdateNotification:
                 sys.exit(0)
             else:
                 ui.notify('インストールに失敗しました', type='negative')
-        except Exception as e:
+        except (OSError, ValueError, RuntimeError) as e:
             ui.notify(f'インストールエラー: {e}', type='negative')
 
 

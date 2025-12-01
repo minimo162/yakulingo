@@ -27,6 +27,11 @@ if TYPE_CHECKING:
     from yakulingo.ui.components.update_notification import UpdateNotification
 
 
+# App constants
+COPILOT_LOGIN_TIMEOUT = 300  # 5 minutes for login
+MAX_HISTORY_DISPLAY = 20  # Maximum history items to display in sidebar
+
+
 class YakuLingoApp:
     """Main application - Nani-inspired sidebar layout"""
 
@@ -86,7 +91,7 @@ class YakuLingoApp:
                     on_progress=lambda m: None,
                     on_login_required=on_login_required,
                     wait_for_login=True,
-                    login_timeout=300,  # 5 minutes
+                    login_timeout=COPILOT_LOGIN_TIMEOUT,
                 )
             )
 
@@ -246,7 +251,7 @@ class YakuLingoApp:
                 else:
                     with ui.scroll_area().classes('history-scroll'):
                         with ui.column().classes('gap-1'):
-                            for entry in self.state.history[:20]:  # Show max 20
+                            for entry in self.state.history[:MAX_HISTORY_DISPLAY]:
                                 self._create_history_item(entry)
 
             self._history_list = history_list

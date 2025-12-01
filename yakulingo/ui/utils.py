@@ -80,7 +80,7 @@ class TempFileManager:
             try:
                 if temp_file.exists():
                     temp_file.unlink()
-            except Exception as e:
+            except OSError as e:
                 logger.debug("Failed to remove temp file '%s': %s", temp_file, e)
         self._temp_files.clear()
 
@@ -88,7 +88,7 @@ class TempFileManager:
         if self._temp_dir and self._temp_dir.exists():
             try:
                 self._temp_dir.rmdir()
-            except Exception as e:
+            except OSError as e:
                 logger.debug("Failed to remove temp directory '%s': %s", self._temp_dir, e)
 
     @contextmanager
@@ -116,7 +116,7 @@ class TempFileManager:
         finally:
             try:
                 shutil.rmtree(temp_dir)
-            except Exception as e:
+            except OSError as e:
                 logger.debug("Failed to cleanup temp context directory '%s': %s", temp_dir, e)
 
 
@@ -263,7 +263,7 @@ def open_file(file_path: Path) -> bool:
 
         return True
 
-    except Exception as e:
+    except (OSError, subprocess.SubprocessError) as e:
         logger.error("Failed to open file %s: %s", file_path, e)
         return False
 
@@ -304,7 +304,7 @@ def show_in_folder(file_path: Path) -> bool:
 
         return True
 
-    except Exception as e:
+    except (OSError, subprocess.SubprocessError) as e:
         logger.error("Failed to show file in folder %s: %s", file_path, e)
         return False
 
@@ -365,14 +365,14 @@ def create_completion_dialog(
     return dialog
 
 
-def _close_dialog(dialog, on_close: Optional[Callable[[], None]]):
+def _close_dialog(dialog: 'ui.dialog', on_close: Optional[Callable[[], None]]) -> None:
     """Close dialog and call callback."""
     dialog.close()
     if on_close:
         on_close()
 
 
-def _create_file_row(file_path: Path, description: str):
+def _create_file_row(file_path: Path, description: str) -> None:
     """Create a row for a single output file with action buttons."""
     with ui.card().classes('w-full p-3 bg-gray-50'):
         with ui.column().classes('w-full gap-1'):
@@ -412,7 +412,7 @@ def _create_file_row(file_path: Path, description: str):
                 ).props('flat dense').classes('text-xs')
 
 
-def _open_and_notify(file_path: Path):
+def _open_and_notify(file_path: Path) -> None:
     """Open file and show notification."""
     if open_file(file_path):
         ui.notify(f'{file_path.name} を開きました', type='positive')
@@ -420,7 +420,7 @@ def _open_and_notify(file_path: Path):
         ui.notify('ファイルを開けませんでした', type='negative')
 
 
-def _show_and_notify(file_path: Path):
+def _show_and_notify(file_path: Path) -> None:
     """Show file in folder and show notification."""
     if show_in_folder(file_path):
         ui.notify('フォルダを開きました', type='positive')

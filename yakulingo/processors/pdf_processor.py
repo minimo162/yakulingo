@@ -552,7 +552,7 @@ class FontRegistry:
                     fontfile=font_path,
                 )
                 self._font_xrefs[font_info.font_id] = xref
-            except Exception as e:
+            except (RuntimeError, ValueError, OSError, IOError) as e:
                 logger.warning(
                     "Failed to embed font '%s' from '%s': %s",
                     font_info.font_id, font_path, e
@@ -1449,7 +1449,7 @@ class PdfProcessor(FileProcessor):
 
                         result['success'] += 1
 
-                    except Exception as e:
+                    except (RuntimeError, ValueError, KeyError, AttributeError) as e:
                         logger.warning(
                             "Failed to process block '%s': %s",
                             block_id, e
@@ -1589,7 +1589,7 @@ class PdfProcessor(FileProcessor):
 
                         result['success'] += 1
 
-                    except Exception as e:
+                    except (RuntimeError, ValueError, KeyError, AttributeError) as e:
                         logger.warning(
                             "Failed to process cell '%s': %s",
                             address, e
@@ -1864,7 +1864,7 @@ class PdfProcessor(FileProcessor):
 
                     yield blocks, cells
 
-                except Exception as e:
+                except (RuntimeError, ValueError, OSError, MemoryError) as e:
                     # Log error but continue processing other pages
                     logger.error("OCR failed for page %d: %s", page_num, e)
                     self._failed_pages.append(page_num)

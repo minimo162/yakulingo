@@ -88,13 +88,19 @@ class ProxyConfig:
         if platform.system() != "Windows":
             return
 
+        # Check if winreg is available (not available on non-Windows)
+        try:
+            winreg_module = winreg
+        except NameError:
+            return
+
         try:
             # インターネット設定からプロキシを取得
             key_path = r"Software\Microsoft\Windows\CurrentVersion\Internet Settings"
-            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path) as key:
+            with winreg_module.OpenKey(winreg_module.HKEY_CURRENT_USER, key_path) as key:
                 # プロキシが有効かチェック
                 try:
-                    proxy_enable, _ = winreg.QueryValueEx(key, "ProxyEnable")
+                    proxy_enable, _ = winreg_module.QueryValueEx(key, "ProxyEnable")
                     self.use_proxy = bool(proxy_enable)
                 except FileNotFoundError:
                     self.use_proxy = False
@@ -102,18 +108,18 @@ class ProxyConfig:
                 if self.use_proxy:
                     # プロキシサーバーを取得
                     try:
-                        proxy_server, _ = winreg.QueryValueEx(key, "ProxyServer")
+                        proxy_server, _ = winreg_module.QueryValueEx(key, "ProxyServer")
                         self.proxy_server = proxy_server
                     except FileNotFoundError:
                         pass
 
                     # バイパスリストを取得
                     try:
-                        bypass, _ = winreg.QueryValueEx(key, "ProxyOverride")
+                        bypass, _ = winreg_module.QueryValueEx(key, "ProxyOverride")
                         self.proxy_bypass = [b.strip() for b in bypass.split(";")]
                     except FileNotFoundError:
                         pass
-        except Exception as e:
+        except (OSError, ValueError, TypeError) as e:
             logger.warning("プロキシ設定の検出に失敗: %s", e)
 
     def get_proxy_dict(self) -> dict[str, str]:
@@ -235,7 +241,7 @@ class NTLMProxyHandler(urllib.request.BaseHandler):
 
                 return response
 
-        except Exception as e:
+        except (ValueError, RuntimeError, OSError) as e:
             logger.error("NTLM認証に失敗: %s", e)
             raise
 
@@ -415,7 +421,7 @@ class AutoUpdater:
                 error=f"ネットワークエラー: {e.reason}",
                 message="アップデートの確認に失敗しました",
             )
-        except Exception as e:
+        except (json.JSONDecodeError, ValueError, KeyError, OSError) as e:
             return UpdateResult(
                 status=UpdateStatus.ERROR,
                 current_version=self.current_version,
@@ -563,7 +569,7 @@ class AutoUpdater:
                 else:
                     return self._install_unix(source_dir, app_dir, backup_dir)
 
-        except Exception as e:
+        except (OSError, zipfile.BadZipFile, shutil.Error, ValueError) as e:
             logger.error("インストールに失敗: %s", e)
             return False
 

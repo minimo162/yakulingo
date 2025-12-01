@@ -318,7 +318,7 @@ class PptxProcessor(FileProcessor):
             self._merge_presentations_xml(
                 output_path, translated_path, output_path
             )
-        except Exception as e:
+        except (OSError, ValueError, KeyError, ET.ParseError) as e:
             logger.warning("XML merge failed, using simple append: %s", e)
             # Fallback: Just return the original file
             pass

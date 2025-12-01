@@ -167,7 +167,7 @@ YakuLingo/
 │   └── config/
 │       └── settings.py             # AppSettings
 │
-├── tests/                          # テストスイート（23ファイル）
+├── tests/                          # テストスイート（26ファイル）
 │   ├── conftest.py
 │   └── test_*.py
 │

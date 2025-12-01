@@ -69,7 +69,7 @@ YakuLingo/
 │   │   └── history_db.py          # SQLite-based translation history
 │   └── config/                    # Configuration
 │       └── settings.py            # AppSettings with JSON persistence
-├── tests/                         # Test suite (23 test files)
+├── tests/                         # Test suite (26 test files)
 │   ├── conftest.py                # Shared fixtures and mocks
 │   └── test_*.py                  # Unit tests for each module
 ├── prompts/                       # Translation prompt templates
@@ -105,15 +105,15 @@ YakuLingo/
 
 | File | Purpose | Lines |
 |------|---------|-------|
-| `yakulingo/ui/app.py` | Main application orchestrator, handles UI events and coordinates services | ~664 |
-| `yakulingo/services/translation_service.py` | Coordinates file processors and batch translation | ~610 |
+| `yakulingo/ui/app.py` | Main application orchestrator, handles UI events and coordinates services | ~764 |
+| `yakulingo/services/translation_service.py` | Coordinates file processors and batch translation | ~860 |
 | `yakulingo/services/copilot_handler.py` | Browser automation for M365 Copilot | ~990 |
 | `yakulingo/services/updater.py` | GitHub Releases-based auto-update with Windows proxy support | ~746 |
-| `yakulingo/ui/styles.py` | M3 design tokens, CSS styling definitions | ~720 |
-| `yakulingo/ui/state.py` | Application state management | ~170 |
-| `yakulingo/models/types.py` | Core data types: TextBlock, FileInfo, TranslationResult, HistoryEntry | ~180 |
-| `yakulingo/storage/history_db.py` | SQLite database for translation history | ~234 |
-| `yakulingo/processors/base.py` | Abstract base class for all file processors | ~97 |
+| `yakulingo/ui/styles.py` | M3 design tokens, CSS styling definitions | ~1222 |
+| `yakulingo/ui/state.py` | Application state management | ~176 |
+| `yakulingo/models/types.py` | Core data types: TextBlock, FileInfo, TranslationResult, HistoryEntry | ~199 |
+| `yakulingo/storage/history_db.py` | SQLite database for translation history | ~236 |
+| `yakulingo/processors/base.py` | Abstract base class for all file processors | ~105 |
 
 ## Core Data Types
 
@@ -193,7 +193,7 @@ The application uses M3 (Material Design 3) component-based styling:
 
 - **Framework**: pytest with pytest-asyncio
 - **Test Path**: `tests/`
-- **Test Files**: 23 test files covering all major modules
+- **Test Files**: 26 test files covering all major modules
 - **Naming**: `test_*.py` files, `Test*` classes, `test_*` functions
 - **Fixtures**: Defined in `tests/conftest.py`
 - **Async Mode**: Auto-configured via pyproject.toml
@@ -400,7 +400,7 @@ The AGENTS.md file specifies that all responses should be in Japanese (すべて
 Based on recent commits:
 - **Auto-Update System**: GitHub Releases-based automatic updates with Windows proxy support
 - **Translation History**: SQLite-based local history storage
-- **Test Coverage Expansion**: Increased from 15 to 23 test files (73% → 82% coverage)
+- **Test Coverage Expansion**: Increased from 15 to 26 test files (73% → 85% coverage)
 - **Reproducible Builds**: Added `uv.lock` for dependency locking
 - **Distribution Improvements**: Simplified network share deployment
 

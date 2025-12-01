@@ -279,6 +279,11 @@ DEFAULT_VFONT_PATTERN = (
 # Unicode categories for formula detection
 FORMULA_UNICODE_CATEGORIES = ["Lm", "Mn", "Sk", "Sm", "Zl", "Zp", "Zs"]
 
+# Font size estimation constants
+FONT_SIZE_HEIGHT_RATIO = 0.8       # Max font size as ratio of box height
+FONT_SIZE_LINE_HEIGHT_ESTIMATE = 14.0  # Estimated line height for chars_per_line calculation
+FONT_SIZE_WIDTH_FACTOR = 1.8      # Width-based font size adjustment factor
+
 # Pre-compiled regex patterns for performance
 _RE_CID_NOTATION = re.compile(r"\(cid:")
 _RE_PARAGRAPH_ADDRESS = re.compile(r"P(\d+)_")
@@ -333,6 +338,10 @@ def vflag(font: str, char: str, vfont: str = None, vchar: str = None) -> bool:
     Returns:
         True if character appears to be a formula element
     """
+    # Early return for empty inputs
+    if not font and not char:
+        return False
+
     # Rule 1: CID notation
     if char and _RE_CID_NOTATION.match(char):
         return True
@@ -343,13 +352,15 @@ def vflag(font: str, char: str, vfont: str = None, vchar: str = None) -> bool:
         if re.match(font_pattern, font):
             return True
 
-    # Rule 3: Character class detection
+    # Rule 3: Character class detection (requires non-empty char)
+    if not char:
+        return False
+
     if vchar:
-        if char and re.match(vchar, char):
+        if re.match(vchar, char):
             return True
-    else:
-        if char and unicodedata.category(char[0]) in FORMULA_UNICODE_CATEGORIES:
-            return True
+    elif unicodedata.category(char[0]) in FORMULA_UNICODE_CATEGORIES:
+        return True
 
     return False
 
@@ -931,6 +942,11 @@ def estimate_font_size(box: list[float], text: str) -> float:
     """
     Estimate appropriate font size for box.
 
+    The estimation uses:
+    - FONT_SIZE_HEIGHT_RATIO: Max font size relative to box height (0.8)
+    - FONT_SIZE_LINE_HEIGHT_ESTIMATE: Estimated pixels per line for calculation (14.0)
+    - FONT_SIZE_WIDTH_FACTOR: Adjustment factor for width-based sizing (1.8)
+
     Returns:
         Estimated font size (min MIN_FONT_SIZE, max MAX_FONT_SIZE)
     """
@@ -945,11 +961,11 @@ def estimate_font_size(box: list[float], text: str) -> float:
         return DEFAULT_FONT_SIZE
 
     if not text:
-        return min(height * 0.8, MAX_FONT_SIZE)
+        return min(height * FONT_SIZE_HEIGHT_RATIO, MAX_FONT_SIZE)
 
-    max_font_size = height * 0.8
-    chars_per_line = max(1, len(text) / max(1, height / 14))
-    width_based_size = width / max(1, chars_per_line) * 1.8
+    max_font_size = height * FONT_SIZE_HEIGHT_RATIO
+    chars_per_line = max(1, len(text) / max(1, height / FONT_SIZE_LINE_HEIGHT_ESTIMATE))
+    width_based_size = width / max(1, chars_per_line) * FONT_SIZE_WIDTH_FACTOR
 
     result = min(max_font_size, width_based_size, MAX_FONT_SIZE)
     return max(result, MIN_FONT_SIZE)
@@ -1803,6 +1819,7 @@ class PdfProcessor(FileProcessor):
         - Cancellation support
         - Estimated time remaining
         - Failed pages are tracked in self._failed_pages
+        - Guaranteed cache cleanup via try-finally
         """
         import time as time_module
 
@@ -1817,100 +1834,102 @@ class PdfProcessor(FileProcessor):
             self.CPU_OCR_TIME_PER_PAGE if is_cpu else self.GPU_OCR_TIME_PER_PAGE
         )
 
-        for batch_start, batch_images in iterate_pdf_pages(str(file_path), batch_size, dpi):
-            for img_idx, img in enumerate(batch_images):
-                # Check for cancellation
-                if self._cancel_requested:
-                    logger.info("OCR processing cancelled at page %d/%d",
-                               pages_processed + 1, total_pages)
-                    clear_analyzer_cache()
-                    return
+        try:
+            for batch_start, batch_images in iterate_pdf_pages(str(file_path), batch_size, dpi):
+                for img_idx, img in enumerate(batch_images):
+                    # Check for cancellation
+                    if self._cancel_requested:
+                        logger.info("OCR processing cancelled at page %d/%d",
+                                   pages_processed + 1, total_pages)
+                        return
 
-                page_num = batch_start + img_idx + 1
-                pages_processed += 1
+                    page_num = batch_start + img_idx + 1
+                    pages_processed += 1
 
-                # Calculate estimated remaining time
-                elapsed = time_module.time() - start_time
-                if pages_processed > 1:
-                    # Use actual time for better estimation
-                    actual_time_per_page = elapsed / (pages_processed - 1)
-                    remaining_pages = total_pages - pages_processed
-                    estimated_remaining = int(actual_time_per_page * remaining_pages)
-                else:
-                    # First page - use device-based estimate
-                    remaining_pages = total_pages - 1
-                    estimated_remaining = int(estimated_time_per_page * remaining_pages)
+                    # Calculate estimated remaining time
+                    # At this point, (pages_processed - 1) pages have been fully processed
+                    # and elapsed time reflects their total processing time
+                    elapsed = time_module.time() - start_time
+                    if pages_processed > 1:
+                        # Use actual measured time from previously completed pages
+                        actual_time_per_page = elapsed / (pages_processed - 1)
+                        remaining_pages = total_pages - pages_processed + 1  # Include current page
+                        estimated_remaining = int(actual_time_per_page * remaining_pages)
+                    else:
+                        # First page - no measured data yet, use device-based estimate
+                        remaining_pages = total_pages
+                        estimated_remaining = int(estimated_time_per_page * remaining_pages)
 
-                # Report progress with estimated time
-                if on_progress:
-                    status_msg = f"OCR processing page {page_num}/{total_pages}..."
-                    if is_cpu and total_pages > 1:
-                        # Add time estimate for CPU users
-                        if estimated_remaining > 60:
-                            time_str = f"(approx. {estimated_remaining // 60}m remaining)"
-                        else:
-                            time_str = f"(approx. {estimated_remaining}s remaining)"
-                        status_msg = f"{status_msg} {time_str}"
-
-                    on_progress(TranslationProgress(
-                        current=pages_processed,
-                        total=total_pages,
-                        status=status_msg,
-                        phase=TranslationPhase.OCR,
-                        phase_detail=f"Page {page_num}/{total_pages}",
-                        estimated_remaining=estimated_remaining if estimated_remaining > 0 else None,
-                    ))
-
-                # Analyze with yomitoku - with error handling
-                try:
-                    results = analyze_document(img, actual_device, reading_order)
-                    cells = prepare_translation_cells(results, page_num)
-
-                    # Convert cells to TextBlocks
-                    blocks = []
-                    for cell in cells:
-                        if cell.text and self.should_translate(cell.text):
-                            blocks.append(TextBlock(
-                                id=cell.address,
-                                text=cell.text,
-                                location=f"Page {page_num}",
-                                metadata={
-                                    'type': 'ocr_cell',
-                                    'page': page_num - 1,
-                                    'address': cell.address,
-                                    'bbox': cell.box,
-                                    'direction': cell.direction,
-                                    'role': cell.role,
-                                }
-                            ))
-
-                    yield blocks, cells
-
-                except (RuntimeError, ValueError, OSError, MemoryError) as e:
-                    # Log error but continue processing other pages
-                    logger.error("OCR failed for page %d: %s", page_num, e)
-                    self._failed_pages.append(page_num)
-
-                    # Yield empty result for this page
-                    yield [], []
-
-                    # Report error in progress
+                    # Report progress with estimated time
                     if on_progress:
+                        status_msg = f"OCR processing page {page_num}/{total_pages}..."
+                        if is_cpu and total_pages > 1:
+                            # Add time estimate for CPU users
+                            if estimated_remaining > 60:
+                                time_str = f"(approx. {estimated_remaining // 60}m remaining)"
+                            else:
+                                time_str = f"(approx. {estimated_remaining}s remaining)"
+                            status_msg = f"{status_msg} {time_str}"
+
                         on_progress(TranslationProgress(
                             current=pages_processed,
                             total=total_pages,
-                            status=f"Page {page_num} failed: {str(e)[:50]}...",
+                            status=status_msg,
                             phase=TranslationPhase.OCR,
-                            phase_detail=f"Error on page {page_num}",
+                            phase_detail=f"Page {page_num}/{total_pages}",
+                            estimated_remaining=estimated_remaining if estimated_remaining > 0 else None,
                         ))
 
-        # Log summary if there were failures
-        if self._failed_pages:
-            logger.warning("OCR completed with %d failed pages: %s",
-                          len(self._failed_pages), self._failed_pages)
+                    # Analyze with yomitoku - with error handling
+                    try:
+                        results = analyze_document(img, actual_device, reading_order)
+                        cells = prepare_translation_cells(results, page_num)
 
-        # Clean up GPU memory
-        clear_analyzer_cache()
+                        # Convert cells to TextBlocks
+                        blocks = []
+                        for cell in cells:
+                            if cell.text and self.should_translate(cell.text):
+                                blocks.append(TextBlock(
+                                    id=cell.address,
+                                    text=cell.text,
+                                    location=f"Page {page_num}",
+                                    metadata={
+                                        'type': 'ocr_cell',
+                                        'page': page_num - 1,
+                                        'address': cell.address,
+                                        'bbox': cell.box,
+                                        'direction': cell.direction,
+                                        'role': cell.role,
+                                    }
+                                ))
+
+                        yield blocks, cells
+
+                    except (RuntimeError, ValueError, OSError, MemoryError) as e:
+                        # Log error but continue processing other pages
+                        logger.error("OCR failed for page %d: %s", page_num, e)
+                        self._failed_pages.append(page_num)
+
+                        # Yield empty result for this page
+                        yield [], []
+
+                        # Report error in progress
+                        if on_progress:
+                            on_progress(TranslationProgress(
+                                current=pages_processed,
+                                total=total_pages,
+                                status=f"Page {page_num} failed: {str(e)[:50]}...",
+                                phase=TranslationPhase.OCR,
+                                phase_detail=f"Error on page {page_num}",
+                            ))
+
+            # Log summary if there were failures
+            if self._failed_pages:
+                logger.warning("OCR completed with %d failed pages: %s",
+                              len(self._failed_pages), self._failed_pages)
+        finally:
+            # Always clean up GPU memory, even on exception or cancellation
+            clear_analyzer_cache()
 
     def _extract_with_pymupdf_streaming(
         self,
@@ -2070,5 +2089,92 @@ class PdfProcessor(FileProcessor):
                 translated_doc.close()
             if original_doc:
                 original_doc.close()
+
+        return result
+
+    def export_glossary_csv(
+        self,
+        translations: dict[str, str],
+        output_path: Path,
+        cells: Optional[list[TranslationCell]] = None,
+    ) -> dict[str, Any]:
+        """
+        Export translation pairs as glossary CSV.
+
+        This method exports source/translation pairs in CSV format,
+        suitable for use as a reference file in future translations.
+
+        Format:
+            original,translated,page,address
+            原文テキスト,Translation text,1,P1_0
+            ...
+
+        Args:
+            translations: Mapping of addresses/IDs to translated text
+            output_path: Output CSV file path
+            cells: Optional TranslationCell list for additional metadata.
+                   If provided, includes page number and address info.
+
+        Returns:
+            Dictionary with export statistics:
+            - 'total': Total translation pairs
+            - 'exported': Successfully exported pairs
+            - 'skipped': Pairs skipped (empty)
+        """
+        import csv
+
+        result = {
+            'total': len(translations),
+            'exported': 0,
+            'skipped': 0,
+        }
+
+        # Build cell lookup for original text
+        cell_map = {}
+        if cells:
+            cell_map = {cell.address: cell for cell in cells}
+
+        try:
+            with open(output_path, 'w', encoding='utf-8', newline='') as f:
+                writer = csv.writer(f)
+
+                # Header with metadata columns if cells available
+                if cells:
+                    writer.writerow(['original', 'translated', 'page', 'address'])
+                else:
+                    writer.writerow(['original', 'translated'])
+
+                for address, translated in translations.items():
+                    translated = translated.strip()
+
+                    # Get original text from cell if available
+                    if address in cell_map:
+                        original = cell_map[address].text.strip()
+                        page_num = cell_map[address].page_num
+                    else:
+                        # Fallback: use address as original (not ideal)
+                        original = ""
+                        page_num = 0
+
+                    # Skip empty pairs
+                    if not original or not translated:
+                        result['skipped'] += 1
+                        continue
+
+                    if cells:
+                        writer.writerow([original, translated, page_num, address])
+                    else:
+                        writer.writerow([original, translated])
+
+                    result['exported'] += 1
+
+            logger.info(
+                "Exported glossary CSV: %d pairs to %s",
+                result['exported'], output_path
+            )
+
+        except (OSError, IOError) as e:
+            logger.error("Failed to export glossary CSV: %s", e)
+            raise
 
         return result

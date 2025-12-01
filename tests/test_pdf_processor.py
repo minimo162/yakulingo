@@ -1507,3 +1507,137 @@ class TestCreateBilingualPdf:
             mock_original_doc.close.assert_called_once()
             mock_translated_doc.close.assert_called_once()
             mock_output_doc.close.assert_called_once()
+
+
+# =============================================================================
+# Tests: Export Glossary CSV
+# =============================================================================
+
+class TestExportGlossaryCsv:
+    """Tests for PdfProcessor.export_glossary_csv method"""
+
+    def test_export_glossary_csv_basic(self, processor, tmp_path):
+        """Test basic glossary export without cells"""
+        output_path = tmp_path / "glossary.csv"
+        translations = {
+            "P1_0": "Translation 1",
+            "P1_1": "Translation 2",
+        }
+
+        # Without cells, original text is empty so pairs are skipped
+        result = processor.export_glossary_csv(translations, output_path)
+
+        assert result['total'] == 2
+        assert result['skipped'] == 2  # No original text available
+        assert output_path.exists()
+
+    def test_export_glossary_csv_with_cells(self, processor, tmp_path):
+        """Test glossary export with translation cells"""
+        output_path = tmp_path / "glossary.csv"
+        translations = {
+            "P1_0": "Translation 1",
+            "P1_1": "Translation 2",
+        }
+        cells = [
+            TranslationCell(
+                address="P1_0",
+                text="原文テキスト1",
+                box=[0, 0, 100, 50],
+                page_num=1,
+            ),
+            TranslationCell(
+                address="P1_1",
+                text="原文テキスト2",
+                box=[0, 50, 100, 100],
+                page_num=1,
+            ),
+        ]
+
+        result = processor.export_glossary_csv(translations, output_path, cells)
+
+        assert result['total'] == 2
+        assert result['exported'] == 2
+        assert result['skipped'] == 0
+        assert output_path.exists()
+
+        # Verify CSV content
+        import csv
+        with open(output_path, 'r', encoding='utf-8') as f:
+            reader = csv.reader(f)
+            rows = list(reader)
+            assert rows[0] == ['original', 'translated', 'page', 'address']
+            assert rows[1] == ['原文テキスト1', 'Translation 1', '1', 'P1_0']
+            assert rows[2] == ['原文テキスト2', 'Translation 2', '1', 'P1_1']
+
+    def test_export_glossary_csv_skips_empty(self, processor, tmp_path):
+        """Test that empty translations are skipped"""
+        output_path = tmp_path / "glossary.csv"
+        translations = {
+            "P1_0": "Translation 1",
+            "P1_1": "",  # Empty translation
+            "P1_2": "   ",  # Whitespace only
+        }
+        cells = [
+            TranslationCell(address="P1_0", text="原文1", box=[0, 0, 100, 50], page_num=1),
+            TranslationCell(address="P1_1", text="原文2", box=[0, 50, 100, 100], page_num=1),
+            TranslationCell(address="P1_2", text="原文3", box=[0, 100, 100, 150], page_num=1),
+        ]
+
+        result = processor.export_glossary_csv(translations, output_path, cells)
+
+        assert result['exported'] == 1
+        assert result['skipped'] == 2
+
+
+# =============================================================================
+# Tests: Font Size Estimation Constants
+# =============================================================================
+
+class TestFontSizeConstants:
+    """Tests for font size estimation constants"""
+
+    def test_font_size_constants_defined(self):
+        """Test that font size constants are properly defined"""
+        from yakulingo.processors.pdf_processor import (
+            FONT_SIZE_HEIGHT_RATIO,
+            FONT_SIZE_LINE_HEIGHT_ESTIMATE,
+            FONT_SIZE_WIDTH_FACTOR,
+        )
+        assert FONT_SIZE_HEIGHT_RATIO == 0.8
+        assert FONT_SIZE_LINE_HEIGHT_ESTIMATE == 14.0
+        assert FONT_SIZE_WIDTH_FACTOR == 1.8
+
+    def test_estimate_font_size_uses_constants(self):
+        """Test that estimate_font_size uses the defined constants"""
+        from yakulingo.processors.pdf_processor import (
+            estimate_font_size,
+            FONT_SIZE_HEIGHT_RATIO,
+            MAX_FONT_SIZE,
+        )
+        # Empty text should use height ratio
+        box = [0, 0, 100, 15]  # 15pt height
+        size = estimate_font_size(box, "")
+        expected = min(15 * FONT_SIZE_HEIGHT_RATIO, MAX_FONT_SIZE)
+        assert size == expected
+
+
+# =============================================================================
+# Tests: vflag Edge Cases
+# =============================================================================
+
+class TestVflagEdgeCases:
+    """Additional edge case tests for vflag function"""
+
+    def test_vflag_empty_font_with_char(self):
+        """Empty font with valid char should check unicode category"""
+        # Math symbol should be detected even with empty font
+        assert vflag("", "∑") is True
+        # Regular letter should not
+        assert vflag("", "a") is False
+
+    def test_vflag_font_only(self):
+        """Font-only detection (empty char)"""
+        # Math font should be detected
+        assert vflag("CMMI10", "") is True
+        # Regular font with empty char
+        assert vflag("Arial", "") is False

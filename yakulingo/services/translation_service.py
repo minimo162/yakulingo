@@ -5,12 +5,16 @@ Coordinates between UI, Copilot, and file processors.
 Bidirectional translation: Japanese → English, Other → Japanese (auto-detected).
 """
 
+import logging
 import time
 from pathlib import Path
 from typing import Optional, List
 import unicodedata
 
 import re
+
+# Module logger
+logger = logging.getLogger(__name__)
 
 
 def is_japanese_text(text: str, threshold: float = 0.3) -> bool:
@@ -88,6 +92,15 @@ class BatchTranslator:
     def __init__(self, copilot: CopilotHandler, prompt_builder: PromptBuilder):
         self.copilot = copilot
         self.prompt_builder = prompt_builder
+        self._cancel_requested = False
+
+    def cancel(self) -> None:
+        """Request cancellation of batch translation."""
+        self._cancel_requested = True
+
+    def reset_cancel(self) -> None:
+        """Reset cancellation flag."""
+        self._cancel_requested = False
 
     def translate_blocks(
         self,
@@ -112,8 +125,14 @@ class BatchTranslator:
         batches = self._create_batches(blocks)
 
         has_refs = bool(reference_files)
+        self._cancel_requested = False
 
         for i, batch in enumerate(batches):
+            # Check for cancellation between batches
+            if self._cancel_requested:
+                logger.info("Batch translation cancelled at batch %d/%d", i + 1, len(batches))
+                break
+
             if on_progress:
                 on_progress(TranslationProgress(
                     current=i,
@@ -129,8 +148,25 @@ class BatchTranslator:
             # Translate
             translations = self.copilot.translate_sync(texts, prompt, reference_files)
 
-            for block, translation in zip(batch, translations):
-                results[block.id] = translation
+            # Validate translation count matches batch size
+            if len(translations) != len(batch):
+                logger.warning(
+                    "Translation count mismatch: expected %d, got %d. "
+                    "Some blocks may not be translated correctly.",
+                    len(batch), len(translations)
+                )
+
+            # Use zip with strict=False but handle mismatch explicitly
+            for idx, block in enumerate(batch):
+                if idx < len(translations):
+                    results[block.id] = translations[idx]
+                else:
+                    # Mark untranslated blocks with original text
+                    logger.warning(
+                        "Block '%s' was not translated (index %d >= translation count %d)",
+                        block.id, idx, len(translations)
+                    )
+                    results[block.id] = block.text
 
         return results
 
@@ -176,13 +212,13 @@ class TranslationService:
         self._cancel_requested = False
 
         # Register file processors
+        # Note: Legacy formats (.doc, .ppt) are not supported
+        # Only Office Open XML formats are supported for Word/PowerPoint
         self.processors: dict[str, FileProcessor] = {
             '.xlsx': ExcelProcessor(),
             '.xls': ExcelProcessor(),
             '.docx': WordProcessor(),
-            '.doc': WordProcessor(),
             '.pptx': PptxProcessor(),
-            '.ppt': PptxProcessor(),
             '.pdf': PdfProcessor(),
         }
 
@@ -571,6 +607,7 @@ class TranslationService:
     def cancel(self) -> None:
         """Request cancellation of current operation"""
         self._cancel_requested = True
+        self.batch_translator.cancel()
 
     def _get_processor(self, file_path: Path) -> FileProcessor:
         """Get appropriate processor for file type"""

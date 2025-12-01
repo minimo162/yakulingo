@@ -6,10 +6,14 @@ Uses xlwings for full Excel functionality (shapes, charts, textboxes).
 Falls back to openpyxl if xlwings is not available (Linux or no Excel installed).
 """
 
+import logging
 from pathlib import Path
 from typing import Iterator, Optional
 
 from .base import FileProcessor
+
+# Module logger
+logger = logging.getLogger(__name__)
 from .translators import CellTranslator
 from .font_manager import FontManager, FontTypeDetector
 from yakulingo.models.types import TextBlock, FileInfo, FileType
@@ -117,8 +121,8 @@ class ExcelProcessor(FileProcessor):
                         if hasattr(shape, 'text') and shape.text:
                             if self.cell_translator.should_translate(shape.text):
                                 text_count += 1
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("Error reading shape text in sheet '%s': %s", sheet_name, e)
 
                 # Count chart titles
                 for chart in sheet.charts:
@@ -127,8 +131,8 @@ class ExcelProcessor(FileProcessor):
                             title = chart.chart.chart_title.text_frame.text
                             if title and self.cell_translator.should_translate(title):
                                 text_count += 1
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("Error reading chart title in sheet '%s': %s", sheet_name, e)
 
             wb.close()
             return FileInfo(
@@ -198,8 +202,8 @@ class ExcelProcessor(FileProcessor):
                                     try:
                                         font_name = cell.font.name
                                         font_size = cell.font.size or 11.0
-                                    except Exception:
-                                        pass
+                                    except Exception as e:
+                                        logger.debug("Error reading font info for cell %s%d: %s", col_letter, row_idx, e)
 
                                     yield TextBlock(
                                         id=f"{sheet_name}_{col_letter}{row_idx}",
@@ -232,8 +236,8 @@ class ExcelProcessor(FileProcessor):
                                         'type': 'shape',
                                     }
                                 )
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("Error extracting shape %d in sheet '%s': %s", shape_idx, sheet_name, e)
 
                 # === Chart Titles and Labels ===
                 for chart_idx, chart in enumerate(sheet.charts):
@@ -273,11 +277,11 @@ class ExcelProcessor(FileProcessor):
                                                 'type': 'chart_axis_title',
                                             }
                                         )
-                            except Exception:
-                                pass
+                            except Exception as e:
+                                logger.debug("Error reading %s axis title for chart %d: %s", axis_name, chart_idx, e)
 
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("Error extracting chart %d in sheet '%s': %s", chart_idx, sheet_name, e)
 
             wb.close()
         finally:
@@ -290,10 +294,13 @@ class ExcelProcessor(FileProcessor):
         for sheet_name in wb.sheetnames:
             sheet = wb[sheet_name]
 
-            for row_idx, row in enumerate(sheet.iter_rows(), start=1):
-                for col_idx, cell in enumerate(row, start=1):
+            for row in sheet.iter_rows():
+                for cell in row:
                     if cell.value and isinstance(cell.value, str):
                         if self.cell_translator.should_translate(str(cell.value)):
+                            # Use cell's actual row and column attributes
+                            row_idx = cell.row
+                            col_idx = cell.column
                             col_letter = get_column_letter(col_idx)
 
                             font_name = None
@@ -369,8 +376,8 @@ class ExcelProcessor(FileProcessor):
                                 try:
                                     original_font_name = cell.font.name
                                     original_font_size = cell.font.size or 11.0
-                                except Exception:
-                                    pass
+                                except Exception as e:
+                                    logger.debug("Error reading font for cell %s: %s", block_id, e)
 
                                 # Get new font settings
                                 new_font_name, new_font_size = font_manager.select_font(
@@ -385,8 +392,8 @@ class ExcelProcessor(FileProcessor):
                                 try:
                                     cell.font.name = new_font_name
                                     cell.font.size = new_font_size
-                                except Exception:
-                                    pass
+                                except Exception as e:
+                                    logger.debug("Error applying font to cell %s: %s", block_id, e)
 
                 # === Apply to shapes ===
                 for shape_idx, shape in enumerate(sheet.shapes):
@@ -394,8 +401,8 @@ class ExcelProcessor(FileProcessor):
                     if block_id in translations:
                         try:
                             shape.text = translations[block_id]
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logger.debug("Error applying translation to shape %s: %s", block_id, e)
 
                 # === Apply to chart titles and labels ===
                 for chart_idx, chart in enumerate(sheet.charts):
@@ -415,11 +422,11 @@ class ExcelProcessor(FileProcessor):
                                     axis = api_chart.Axes(axis_type)
                                     if axis.HasTitle:
                                         axis.AxisTitle.Text = translations[axis_id]
-                                except Exception:
-                                    pass
+                                except Exception as e:
+                                    logger.debug("Error applying translation to axis %s: %s", axis_id, e)
 
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("Error applying translation to chart %d in sheet '%s': %s", chart_idx, sheet_name, e)
 
             # Save to output path
             wb.save(str(output_path))
@@ -442,8 +449,11 @@ class ExcelProcessor(FileProcessor):
         for sheet_name in wb.sheetnames:
             sheet = wb[sheet_name]
 
-            for row_idx, row in enumerate(sheet.iter_rows(), start=1):
-                for col_idx, cell in enumerate(row, start=1):
+            for row in sheet.iter_rows():
+                for cell in row:
+                    # Use cell's actual row and column attributes
+                    row_idx = cell.row
+                    col_idx = cell.column
                     col_letter = get_column_letter(col_idx)
                     block_id = f"{sheet_name}_{col_letter}{row_idx}"
 

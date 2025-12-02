@@ -537,20 +537,28 @@ class YakuLingoApp:
         """Translate text with streaming updates."""
         import time
         import queue
+        import datetime
 
-        logger.info("=== _translate_text called ===")
-        logger.debug("translation_service: %s", self.translation_service)
-        logger.debug("source_text length: %d", len(self.state.source_text) if self.state.source_text else 0)
+        # Direct file logging for debugging
+        def debug_log(msg):
+            log_path = Path.home() / ".yakulingo" / "debug.log"
+            with open(log_path, 'a', encoding='utf-8') as f:
+                f.write(f"{datetime.datetime.now()}: {msg}\n")
+                f.flush()
+
+        debug_log("=== _translate_text called ===")
+        debug_log(f"translation_service: {self.translation_service}")
+        debug_log(f"source_text length: {len(self.state.source_text) if self.state.source_text else 0}")
 
         if not self.translation_service:
-            logger.warning("translation_service is None, returning")
+            debug_log("translation_service is None, returning")
             ui.notify('Not connected', type='warning')
             return
 
         source_text = self.state.source_text
         reference_files = self.state.reference_files or None
 
-        logger.info("Starting translation for text: %s...", source_text[:50] if source_text else "")
+        debug_log(f"Starting translation for text: {source_text[:50] if source_text else ''}")
 
         # Track translation time
         start_time = time.time()
@@ -569,8 +577,9 @@ class YakuLingoApp:
         self.state.streaming_text = ""  # For displaying streaming content
         self._refresh_content()
 
+        debug_log("Creating translation task...")
+
         # Start translation in background with streaming
-        logger.info("Creating translation task...")
         translation_task = asyncio.create_task(
             asyncio.to_thread(
                 lambda: self.translation_service.translate_text_streaming(
@@ -580,7 +589,7 @@ class YakuLingoApp:
                 )
             )
         )
-        logger.info("Translation task created, polling for updates...")
+        debug_log("Translation task created, polling for updates...")
 
         try:
             # Poll for streaming updates while translation is running
@@ -599,9 +608,9 @@ class YakuLingoApp:
                 await asyncio.sleep(0.1)
 
             # Get final result
-            logger.info("Translation task done, getting result...")
+            debug_log("Translation task done, getting result...")
             result = await translation_task
-            logger.info("Got result: %s", type(result).__name__ if result else None)
+            debug_log(f"Got result: {type(result).__name__ if result else None}")
 
             # Process any remaining items in the queue (update label for final content)
             try:
@@ -615,20 +624,22 @@ class YakuLingoApp:
             # Calculate elapsed time
             elapsed_time = time.time() - start_time
             self.state.text_translation_elapsed_time = elapsed_time
-            logger.info("Translation completed in %.2f seconds", elapsed_time)
+            debug_log(f"Translation completed in {elapsed_time:.2f} seconds")
 
             if result and result.options:
-                logger.info("Translation successful, %d options received", len(result.options))
+                debug_log(f"Translation successful, {len(result.options)} options received")
                 self.state.text_result = result
                 self.state.streaming_text = ""  # Clear streaming text
                 self._add_to_history(result)
             else:
                 error_msg = result.error_message if result else 'Unknown error'
-                logger.warning("Translation failed: %s", error_msg)
+                debug_log(f"Translation failed: {error_msg}")
                 ui.notify(f'Error: {error_msg}', type='negative')
 
         except Exception as e:
-            logger.exception("Translation error: %s", e)
+            debug_log(f"Translation exception: {e}")
+            import traceback
+            debug_log(traceback.format_exc())
             ui.notify(f'Error: {e}', type='negative')
 
         self.state.text_translating = False

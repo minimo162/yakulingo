@@ -608,15 +608,24 @@ class TranslationService:
         Returns:
             TextTranslationResult with options and output_language
         """
-        logger.info("=== translate_text_streaming called ===")
-        logger.debug("text length: %d", len(text) if text else 0)
-        logger.debug("reference_files: %s", reference_files)
+        import datetime
+        from pathlib import Path as PathLib
+
+        # Direct file logging for debugging
+        def debug_log(msg):
+            log_path = PathLib.home() / ".yakulingo" / "debug.log"
+            with open(log_path, 'a', encoding='utf-8') as f:
+                f.write(f"{datetime.datetime.now()}: [translation_service] {msg}\n")
+                f.flush()
+
+        debug_log("=== translate_text_streaming called ===")
+        debug_log(f"text length: {len(text) if text else 0}")
 
         try:
             # Detect input language to determine output language
             is_japanese = is_japanese_text(text)
             output_language = "en" if is_japanese else "jp"
-            logger.info("Detected language: %s -> %s", "Japanese" if is_japanese else "Other", output_language)
+            debug_log(f"Detected language: {'Japanese' if is_japanese else 'Other'} -> {output_language}")
 
             # Select appropriate prompt file
             if output_language == "en":
@@ -625,11 +634,11 @@ class TranslationService:
                 prompt_file = "text_translate_to_jp.txt"
 
             prompt_path = self.prompt_builder.prompts_dir / prompt_file if self.prompt_builder.prompts_dir else None
-            logger.debug("Prompt path: %s", prompt_path)
+            debug_log(f"Prompt path: {prompt_path}")
 
             if not (prompt_path and prompt_path.exists()):
                 # Fallback to non-streaming if prompt not found
-                logger.warning("Prompt file not found, falling back to non-streaming")
+                debug_log("Prompt file not found, falling back to non-streaming")
                 return self.translate_text_with_options(text, reference_files)
 
             template = prompt_path.read_text(encoding='utf-8')
@@ -638,11 +647,11 @@ class TranslationService:
             reference_section = REFERENCE_INSTRUCTION if reference_files else ""
             prompt = template.replace("{reference_section}", reference_section)
             prompt = prompt.replace("{input_text}", text)
-            logger.debug("Prompt length: %d", len(prompt))
+            debug_log(f"Prompt length: {len(prompt)}")
 
             # Translate with streaming (with char_limit for auto file attachment mode)
             char_limit = self.config.copilot_char_limit if self.config else None
-            logger.info("Calling copilot.translate_single_streaming (char_limit: %s)...", char_limit)
+            debug_log(f"Calling copilot.translate_single_streaming (char_limit: {char_limit})...")
             raw_result = self.copilot.translate_single_streaming(
                 prompt=prompt,
                 reference_files=reference_files,
@@ -650,7 +659,7 @@ class TranslationService:
                 on_content=on_content,
                 on_reasoning=on_reasoning,
             )
-            logger.info("copilot.translate_single_streaming returned (result length: %d)", len(raw_result) if raw_result else 0)
+            debug_log(f"copilot.translate_single_streaming returned (result length: {len(raw_result) if raw_result else 0})")
 
             # Parse the result based on output language
             if output_language == "en":
@@ -659,6 +668,8 @@ class TranslationService:
             else:
                 # Japanese output: single option with detailed explanation
                 options = self._parse_single_translation_result(raw_result)
+
+            debug_log(f"Parsed options: {len(options) if options else 0}")
 
             if options:
                 return TextTranslationResult(
@@ -680,7 +691,7 @@ class TranslationService:
                 )
             else:
                 # Empty response from Copilot - return error
-                logger.warning("Empty response received from Copilot (streaming)")
+                debug_log("Empty response received from Copilot (streaming)")
                 return TextTranslationResult(
                     source_text=text,
                     source_char_count=len(text),
@@ -689,7 +700,7 @@ class TranslationService:
                 )
 
         except OSError as e:
-            logger.warning("File I/O error during streaming translation: %s", e)
+            debug_log(f"File I/O error: {e}")
             return TextTranslationResult(
                 source_text=text,
                 source_char_count=len(text),
@@ -697,7 +708,9 @@ class TranslationService:
                 error_message=str(e),
             )
         except (RuntimeError, ValueError, ConnectionError, TimeoutError) as e:
-            logger.exception("Error during streaming translation: %s", e)
+            import traceback
+            debug_log(f"Error during streaming translation: {e}")
+            debug_log(traceback.format_exc())
             return TextTranslationResult(
                 source_text=text,
                 source_char_count=len(text),

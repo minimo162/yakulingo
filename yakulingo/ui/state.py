@@ -70,10 +70,8 @@ class AppState:
     # Reference files
     reference_files: list[Path] = field(default_factory=list)
 
-    # Copilot connection
-    copilot_connected: bool = False
-    copilot_connecting: bool = False
-    copilot_login_required: bool = False  # ログインが必要な状態
+    # Copilot connection (lazy detection - checked on first translation)
+    copilot_ready: bool = False  # Set to True after first successful translation
     copilot_error: str = ""
 
     # Translation history (in-memory cache, backed by SQLite)
@@ -112,9 +110,7 @@ class AppState:
         self.pdf_fast_mode = False
 
     def can_translate(self) -> bool:
-        """Check if translation is possible"""
-        if not self.copilot_connected:
-            return False
+        """Check if translation is possible (connection checked on execution)"""
         if self.current_tab == Tab.TEXT:
             return bool(self.source_text.strip()) and not self.text_translating
         elif self.current_tab == Tab.FILE:

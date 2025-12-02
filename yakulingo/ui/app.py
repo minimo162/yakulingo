@@ -118,7 +118,6 @@ class YakuLingoApp:
         self.state.reference_files = self.settings.get_reference_file_paths(base_dir)
 
         # UI references for refresh
-        self._header_status: Optional[ui.element] = None
         self._main_content = None
         self._tabs_container = None
         self._history_list = None
@@ -139,75 +138,19 @@ class YakuLingoApp:
         return self._copilot
 
     async def start_edge_and_connect(self):
-        """Start Edge and connect to Copilot in background (non-blocking)."""
+        """Start Edge in background (non-blocking). Connection is verified on first translation."""
         # Small delay to let UI render first
         await asyncio.sleep(0.1)
 
-        # Start Edge
+        # Start Edge only - connection is verified lazily on first translation
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, self.copilot.start_edge)
 
-        # Connect to Copilot
-        await self.connect_copilot(silent=False)
-
-    async def connect_copilot(self, silent: bool = False):
-        """Connect to Copilot."""
-        if self.state.copilot_connected or self.state.copilot_connecting:
-            return
-
-        self.state.copilot_connecting = True
-        self.state.copilot_login_required = False
-        if not silent:
-            self._refresh_status()
-
-        login_required_notified = False
-
-        def on_login_required():
-            """Callback when login is required"""
-            nonlocal login_required_notified
-            login_required_notified = True
-            self.state.copilot_login_required = True
-            self._refresh_status()
-            # UI notification will be shown after thread completes
-
-        try:
-            success = await asyncio.to_thread(
-                lambda: self.copilot.connect(
-                    on_progress=lambda m: None,
-                    on_login_required=on_login_required,
-                    wait_for_login=True,
-                    login_timeout=COPILOT_LOGIN_TIMEOUT,
-                )
-            )
-
-            if success:
-                self.state.copilot_connected = True
-                self.state.copilot_login_required = False
-                # Refresh UI immediately so button becomes enabled
-                self._refresh_content()
-                # Lazy import TranslationService for faster startup
-                from yakulingo.services.translation_service import TranslationService
-                self.translation_service = TranslationService(
-                    self.copilot, self.settings, get_default_prompts_dir()
-                )
-                if not silent:
-                    ui.notify('Ready', type='positive')
-            else:
-                if login_required_notified and not self.state.copilot_connected:
-                    # Login was required but timed out
-                    if not silent:
-                        ui.notify('ログインがタイムアウトしました', type='warning')
-                elif not silent:
-                    ui.notify('Connection failed', type='negative')
-
-        except Exception as e:
-            if not silent:
-                ui.notify(f'Error: {e}', type='negative')
-
-        self.state.copilot_connecting = False
-        self._refresh_status()
-        if not silent:
-            self._refresh_content()
+        # Initialize TranslationService (uses lazy connection)
+        from yakulingo.services.translation_service import TranslationService
+        self.translation_service = TranslationService(
+            self.copilot, self.settings, get_default_prompts_dir()
+        )
 
     async def check_for_updates(self):
         """Check for updates in background."""
@@ -227,11 +170,6 @@ class YakuLingoApp:
         except (OSError, ValueError, RuntimeError) as e:
             # サイレントに失敗（バックグラウンド処理なのでユーザーには通知しない）
             logger.debug("Failed to check for updates: %s", e)
-
-    def _refresh_status(self):
-        """Refresh status dot only"""
-        if self._header_status:
-            self._header_status.refresh()
 
     def _refresh_content(self):
         """Refresh main content area"""
@@ -288,28 +226,8 @@ class YakuLingoApp:
                 ui.html('<svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><path d="M12.87 15.07l-2.54-2.51.03-.03c1.74-1.94 2.98-4.17 3.71-6.53H17V4h-7V2H8v2H1v1.99h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11.76-2.04zM18.5 10h-2L12 22h2l1.12-3h4.75L21 22h2l-4.5-12zm-2.62 7l1.62-4.33L19.12 17h-3.24z"/></svg>', sanitize=False)
             ui.label('YakuLingo').classes('app-logo')
 
-        # Status indicator
-        @ui.refreshable
-        def header_status():
-            if self.state.copilot_connected:
-                with ui.element('div').classes('status-indicator connected').props('role="status" aria-live="polite"'):
-                    ui.element('div').classes('status-dot connected').props('aria-hidden="true"')
-                    ui.label('Ready')
-            elif self.state.copilot_login_required:
-                with ui.element('div').classes('status-indicator login-required').props('role="status" aria-live="polite"'):
-                    ui.element('div').classes('status-dot login-required').props('aria-hidden="true"')
-                    ui.label('ログインしてください')
-            elif self.state.copilot_connecting:
-                with ui.element('div').classes('status-indicator connecting').props('role="status" aria-live="polite"'):
-                    ui.element('div').classes('status-dot connecting').props('aria-hidden="true"')
-                    ui.label('Connecting...')
-            else:
-                with ui.element('div').classes('status-indicator').props('role="status" aria-live="polite"'):
-                    ui.element('div').classes('status-dot').props('aria-hidden="true"')
-                    ui.label('Offline')
-
-        self._header_status = header_status
-        header_status()
+        # Status indicator removed - using lazy detection approach
+        # Connection status is checked on first translation attempt
 
         # Navigation tabs
         @ui.refreshable

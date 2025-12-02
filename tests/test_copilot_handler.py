@@ -162,24 +162,36 @@ class TestCopilotHandlerTranslateSync:
     """Test CopilotHandler.translate_sync() with mocks"""
 
     def test_translate_sync_not_connected_raises(self):
-        """translate_sync raises when not connected"""
+        """translate_sync tries to auto-connect and raises appropriate error"""
         handler = CopilotHandler()
+
+        # Mock connect to fail
+        handler.connect = Mock(return_value=False)
 
         with pytest.raises(RuntimeError) as exc:
             handler.translate_sync(["test"], "prompt")
 
-        assert "Not connected" in str(exc.value)
+        # Error message is in Japanese
+        assert "ブラウザに接続できませんでした" in str(exc.value)
 
-    def test_translate_sync_no_page_raises(self):
-        """translate_sync raises when no page"""
+    def test_translate_sync_login_required(self):
+        """translate_sync raises when login is required"""
+        from yakulingo.services.copilot_handler import ConnectionState
+
         handler = CopilotHandler()
         handler._connected = True
-        handler._page = None
+        handler._page = MagicMock()
+
+        # Mock _check_copilot_state to return LOGIN_REQUIRED
+        handler._check_copilot_state = Mock(return_value=ConnectionState.LOGIN_REQUIRED)
+        handler.bring_to_foreground = Mock()
 
         with pytest.raises(RuntimeError) as exc:
             handler.translate_sync(["test"], "prompt")
 
-        assert "Not connected" in str(exc.value)
+        # Error message is in Japanese
+        assert "ログインしてください" in str(exc.value)
+        handler.bring_to_foreground.assert_called_once()
 
 
 class TestCopilotHandlerTranslateSingle:
@@ -345,20 +357,6 @@ class TestCopilotHandlerMockedConnect:
 
         assert result is True
         mock_get_pw.assert_not_called()
-
-    def test_connect_progress_callback(self):
-        """connect() calls progress callback"""
-        handler = CopilotHandler()
-
-        progress_messages = []
-        def on_progress(msg):
-            progress_messages.append(msg)
-
-        # This will fail to connect (no Edge) but should call progress
-        result = handler.connect(on_progress=on_progress)
-
-        # Should have called progress at least once
-        assert len(progress_messages) > 0
 
 
 class TestCopilotHandlerIntegration:
@@ -597,19 +595,6 @@ class TestCopilotHandlerConnectFlow:
         result = handler.connect()
         assert result is True
 
-    def test_connect_calls_progress(self):
-        """connect() calls progress callback"""
-        handler = CopilotHandler()
-
-        messages = []
-        def on_progress(msg):
-            messages.append(msg)
-
-        # Will fail to connect without Edge, but should call progress
-        handler.connect(on_progress=on_progress)
-
-        assert len(messages) > 0
-
     def test_connect_returns_boolean(self):
         """connect() returns boolean result"""
         handler = CopilotHandler()
@@ -715,11 +700,6 @@ class TestCopilotHandlerEdgeCases:
 class TestCopilotHandlerLoginDetection:
     """Test login detection functionality"""
 
-    def test_login_required_property_initial(self):
-        """login_required is False initially"""
-        handler = CopilotHandler()
-        assert handler.login_required is False
-
     def test_check_copilot_state_no_page(self):
         """_check_copilot_state returns ERROR when no page"""
         from yakulingo.services.copilot_handler import ConnectionState
@@ -733,25 +713,16 @@ class TestCopilotHandlerLoginDetection:
     def test_check_copilot_state_login_redirect(self):
         """_check_copilot_state returns LOGIN_REQUIRED when chat input not found"""
         from yakulingo.services.copilot_handler import ConnectionState
+        from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
         handler = CopilotHandler()
 
-        # Create custom exception for testing
-        class MockTimeoutError(Exception):
-            pass
-
-        mock_error_types = {
-            'TimeoutError': MockTimeoutError,
-            'Error': Exception,
-        }
-
         mock_page = MagicMock()
         # Simulate login redirect by timing out on selector wait
-        mock_page.wait_for_selector.side_effect = MockTimeoutError("Element not found")
+        mock_page.wait_for_selector.side_effect = PlaywrightTimeoutError("Element not found")
         handler._page = mock_page
 
-        with patch('yakulingo.services.copilot_handler._get_playwright_errors', return_value=mock_error_types):
-            result = handler._check_copilot_state(timeout=1)
+        result = handler._check_copilot_state(timeout=1)
         assert result == ConnectionState.LOGIN_REQUIRED
 
     def test_check_copilot_state_ready_with_chat_ui(self):
@@ -760,58 +731,37 @@ class TestCopilotHandlerLoginDetection:
 
         handler = CopilotHandler()
 
-        mock_error_types = {
-            'TimeoutError': Exception,
-            'Error': Exception,
-        }
-
         mock_page = MagicMock()
         mock_element = MagicMock()
         mock_page.wait_for_selector.return_value = mock_element
         handler._page = mock_page
 
-        with patch('yakulingo.services.copilot_handler._get_playwright_errors', return_value=mock_error_types):
-            result = handler._check_copilot_state(timeout=1)
+        result = handler._check_copilot_state(timeout=1)
         assert result == ConnectionState.READY
 
     def test_check_copilot_state_login_required_no_chat_ui(self):
         """_check_copilot_state returns LOGIN_REQUIRED when chat UI not found"""
         from yakulingo.services.copilot_handler import ConnectionState
+        from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
         handler = CopilotHandler()
 
-        # Create custom exception for testing
-        class MockTimeoutError(Exception):
-            pass
-
-        mock_error_types = {
-            'TimeoutError': MockTimeoutError,
-            'Error': Exception,
-        }
-
         mock_page = MagicMock()
-        # All selectors fail to find elements - use MockTimeoutError
-        mock_page.wait_for_selector.side_effect = MockTimeoutError("Element not found")
+        # All selectors fail to find elements
+        mock_page.wait_for_selector.side_effect = PlaywrightTimeoutError("Element not found")
         handler._page = mock_page
 
-        with patch('yakulingo.services.copilot_handler._get_playwright_errors', return_value=mock_error_types):
-            result = handler._check_copilot_state(timeout=1)
+        result = handler._check_copilot_state(timeout=1)
         assert result == ConnectionState.LOGIN_REQUIRED
 
     def test_bring_to_foreground_with_page(self):
         """bring_to_foreground calls page.bring_to_front"""
         handler = CopilotHandler()
 
-        mock_error_types = {
-            'TimeoutError': Exception,
-            'Error': Exception,
-        }
-
         mock_page = MagicMock()
         handler._page = mock_page
 
-        with patch('yakulingo.services.copilot_handler._get_playwright_errors', return_value=mock_error_types):
-            handler.bring_to_foreground()
+        handler.bring_to_foreground()
 
         mock_page.bring_to_front.assert_called_once()
 
@@ -823,102 +773,21 @@ class TestCopilotHandlerLoginDetection:
         # Should not raise
         handler.bring_to_foreground()
 
-    def test_wait_for_login_returns_true_when_ready(self):
-        """_wait_for_login returns True when chat UI appears"""
-        from yakulingo.services.copilot_handler import ConnectionState
+    def test_connect_simplified(self):
+        """connect() establishes browser connection without state check"""
+        from playwright.sync_api import Error as PlaywrightError
 
         handler = CopilotHandler()
 
-        # Mock _check_copilot_state to return READY
-        handler._check_copilot_state = Mock(return_value=ConnectionState.READY)
-
-        with patch("time.sleep"):
-            result = handler._wait_for_login(timeout=5)
-
-        assert result is True
-        assert handler._login_required is False
-
-    def test_wait_for_login_timeout(self):
-        """_wait_for_login returns False on timeout"""
-        from yakulingo.services.copilot_handler import ConnectionState
-
-        handler = CopilotHandler()
-
-        # Mock _check_copilot_state to always return LOGIN_REQUIRED
-        handler._check_copilot_state = Mock(return_value=ConnectionState.LOGIN_REQUIRED)
-
-        with patch("time.time", side_effect=[0, 1, 2, 10]):  # Simulate timeout
-            with patch("time.sleep"):
-                result = handler._wait_for_login(timeout=5)
-
-        assert result is False
-
-    def test_check_and_wait_for_ready_already_connected(self):
-        """check_and_wait_for_ready returns True if already connected"""
-        handler = CopilotHandler()
-        handler._connected = True
-
-        result = handler.check_and_wait_for_ready()
-        assert result is True
-
-    def test_check_and_wait_for_ready_becomes_ready(self):
-        """check_and_wait_for_ready detects ready state"""
-        from yakulingo.services.copilot_handler import ConnectionState
-
-        handler = CopilotHandler()
-        handler._connected = False
-
-        # Mock _check_copilot_state to return READY
-        handler._check_copilot_state = Mock(return_value=ConnectionState.READY)
-
-        result = handler.check_and_wait_for_ready()
-
-        assert result is True
-        assert handler._connected is True
-        assert handler._login_required is False
-
-    def test_check_and_wait_for_ready_login_required(self):
-        """check_and_wait_for_ready brings to foreground when login required"""
-        from yakulingo.services.copilot_handler import ConnectionState
-
-        handler = CopilotHandler()
-        handler._connected = False
-        handler.bring_to_foreground = Mock()
-
-        # Mock _check_copilot_state to return LOGIN_REQUIRED
-        handler._check_copilot_state = Mock(return_value=ConnectionState.LOGIN_REQUIRED)
-
-        result = handler.check_and_wait_for_ready()
-
-        assert result is False
-        assert handler._login_required is True
-        handler.bring_to_foreground.assert_called_once()
-
-    def test_connect_with_login_callback(self):
-        """connect() calls login callback when login required"""
-        handler = CopilotHandler()
-
-        mock_error_types = {
-            'TimeoutError': Exception,
-            'Error': Exception,
-        }
-
-        login_callback_called = [False]
-
-        def on_login_required():
-            login_callback_called[0] = True
-
-        # Mock to simulate login required scenario
-        with patch('yakulingo.services.copilot_handler._get_playwright_errors', return_value=mock_error_types):
+        # Mock to simulate successful connection
+        with patch('yakulingo.services.copilot_handler._get_playwright_errors') as mock_errors:
+            mock_errors.return_value = {'Error': PlaywrightError, 'TimeoutError': PlaywrightError}
             with patch.object(handler, '_is_port_in_use', return_value=False):
                 with patch.object(handler, '_start_translator_edge', return_value=False):
-                    handler.connect(
-                        on_login_required=on_login_required,
-                        wait_for_login=False,
-                    )
+                    result = handler.connect()
 
-        # Edge start failed, so login callback not called
-        # But we tested the parameter passing
+        # Edge start failed, so connection failed
+        assert result is False
 
 
 class TestConnectionStateConstants:

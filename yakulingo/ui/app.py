@@ -426,6 +426,12 @@ class YakuLingoApp:
         @ui.refreshable
         def main_content():
             with ui.column().classes('w-full max-w-2xl mx-auto px-6 py-8 flex-1'):
+                # Debug test button
+                def test_click():
+                    logger.info("=== TEST BUTTON CLICKED ===")
+                    ui.notify("Test button works!")
+                ui.button("Test Click", on_click=test_click).classes('mb-4')
+
                 if self.state.current_tab == Tab.TEXT:
                     create_text_panel(
                         state=self.state,

@@ -426,8 +426,13 @@ class YakuLingoApp:
         @ui.refreshable
         def main_content():
             with ui.column().classes('w-full max-w-2xl mx-auto px-6 py-8 flex-1'):
-                # Debug test button
+                # Debug test button - write directly to file to bypass logging issues
                 def test_click():
+                    import datetime
+                    log_path = Path.home() / ".yakulingo" / "debug.log"
+                    with open(log_path, 'a', encoding='utf-8') as f:
+                        f.write(f"{datetime.datetime.now()}: TEST BUTTON CLICKED\n")
+                        f.flush()
                     logger.info("=== TEST BUTTON CLICKED ===")
                     ui.notify("Test button works!")
                 ui.button("Test Click", on_click=test_click).classes('mb-4')

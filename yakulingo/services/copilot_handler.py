@@ -324,20 +324,10 @@ class CopilotHandler:
 
             if not copilot_page:
                 copilot_page = self._context.new_page()
-                # Use domcontentloaded for faster initial load (don't wait for all resources)
+                # Use domcontentloaded for faster navigation (don't wait for all resources)
                 copilot_page.goto(self.COPILOT_URL, wait_until='domcontentloaded')
 
             self._page = copilot_page
-
-            # Wait for chat input to appear (indicates Copilot is ready)
-            try:
-                logger.info("Waiting for Copilot to be ready...")
-                input_selector = '#m365-chat-editor-target-element, [data-lexical-editor="true"]'
-                copilot_page.wait_for_selector(input_selector, timeout=30000, state='visible')
-                logger.debug("Copilot chat input found - ready")
-            except PlaywrightTimeoutError:
-                logger.warning("Copilot ready timeout - continuing anyway")
-
             self._connected = True
             logger.info("Browser connected")
             return True

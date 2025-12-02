@@ -239,7 +239,8 @@ class YakuLingoApp:
                                 <path d="M9.30374 21.9406H14.6957C16.2907 21.9406 17.0887 21.9406 17.7047 21.645C18.3187 21.3498 18.8147 20.854 19.1097 20.2392C19.4057 19.6236 19.4057 18.8259 19.4057 17.2306V15.0987C19.4057 13.5034 19.4057 12.7058 19.1097 12.0901C18.8147 11.4754 18.3187 10.9796 17.7047 10.6844C17.0887 10.3887 16.2907 10.3887 14.6957 10.3887H9.30374C7.70874 10.3887 6.91074 10.3887 6.29474 10.6844C5.68074 10.9796 5.18474 11.4754 4.88974 12.0901C4.59374 12.7058 4.59375 13.5034 4.59375 15.0987V17.2306C4.59375 18.8259 4.59374 19.6236 4.88974 20.2392C5.18474 20.854 5.68074 21.3498 6.29474 21.645C6.91074 21.9406 7.70874 21.9406 9.30374 21.9406Z"/>
                             </svg>
                         ''', sanitize=False)
-                        ui.element('div').classes('security-tooltip').text('データは端末に安全に保存されます')
+                        with ui.element('div').classes('security-tooltip'):
+                            ui.label('データは端末に安全に保存されます')
                 if self.state.history:
                     ui.button(
                         icon='delete_sweep',
@@ -1002,15 +1003,6 @@ def create_app() -> YakuLingoApp:
     return YakuLingoApp()
 
 
-def _close_splash_screen():
-    """Close splash screen by creating signal file"""
-    try:
-        signal_file = Path(__file__).parent.parent.parent / '.splash_close'
-        signal_file.touch()
-    except OSError:
-        pass  # Ignore if cannot create signal file
-
-
 def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
     """Run the application"""
     app = create_app()
@@ -1018,10 +1010,7 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
     @ui.page('/')
     async def main_page():
         app.create_ui()
-        # Wait for Copilot connection (success or failure) before showing main UI
-        # This ensures YakuLingo window appears after Edge, naturally in foreground
         await app.preconnect_copilot()
-        _close_splash_screen()  # Close splash screen after connection attempt
         asyncio.create_task(app.check_for_updates())
 
     # Use window size from settings

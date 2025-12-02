@@ -200,9 +200,12 @@ def create_text_panel(
                         with ui.button(on_click=on_translate).classes('translate-btn').props('no-caps') as btn:
                             ui.label('翻訳する')
                             with ui.row().classes('shortcut-keys ml-2'):
-                                ui.element('span').classes('keycap').text('Ctrl')
-                                ui.element('span').classes('keycap-plus').text('+')
-                                ui.element('span').classes('keycap').text('Enter')
+                                with ui.element('span').classes('keycap'):
+                                    ui.label('Ctrl')
+                                with ui.element('span').classes('keycap-plus'):
+                                    ui.label('+')
+                                with ui.element('span').classes('keycap'):
+                                    ui.label('Enter')
                         if state.text_translating:
                             btn.props('loading disable')
                         elif not state.can_translate():

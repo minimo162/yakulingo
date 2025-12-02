@@ -38,17 +38,22 @@
 - To be determined → TBD
 - Not applicable → N/A
 
-### Level 3: 記号での置換
-- increased / up → ↑
-- decreased / down → ↓
-- approximately / about → ~
+### Level 3: 略記の活用
+以下はビジネス文書で一般的に通じます：
 - and → &
+- or, per → /
 - versus / compared to → vs.
-- percentage / percent → %
-- number → #
+- percent → %
+- number → # または No.
+- with → w/、without → w/o
 - at → @
-- plus → +
-- minus → -
+- positive → +
+
+### 使用しない記号
+以下は英語ビジネス文書では非標準のため、使用しないでください：
+- ↑ ↓ → increased, up / decreased, down と書く
+- ~ → approx., about と書く
+- → > < = → 文章で表現する
 
 ### Level 4: 文法的省略（見出し・表向け）
 - 冠詞省略: a/an/the を削除
@@ -58,9 +63,9 @@
 - 例: "There is an increase" → "Increase"
 
 ### Level 5: 構文の圧縮
-- "Sales have increased" → "Sales up" → "Sales↑"
+- "Sales have increased" → "Sales up"
 - "compared to last year" → "vs. LY" / "YoY"
-- "as a result of" → "due to" → "→"
+- "as a result of" → "due to"
 - "in comparison with" → "vs."
 
 ## 出力形式（厳守）
@@ -83,6 +88,13 @@
 
 ### 使用場面の提案
 - この長さが適している場面（メール本文、件名、表のセルなど）
+
+## 数値表記（社内ルール・必須）
+短縮後も以下のルールを維持してください：
+- 億 → oku（例: 4,500億円 → 4,500 oku yen または 4,500 oku）
+- 千単位 → k（例: 12,000 → 12k）
+- 負数・赤字 → ()（例: ▲50 → (50)）
+  ※ マイナス記号 `-` ではなく括弧 `()` を使用すること
 
 ## 禁止事項
 - 「続けますか？」「他に質問はありますか？」などの対話継続の質問

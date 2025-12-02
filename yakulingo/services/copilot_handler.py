@@ -326,9 +326,9 @@ class CopilotHandler:
             # If no Copilot page, create and navigate
             if not copilot_page:
                 copilot_page = self._context.new_page()
-                # Navigate and wait for DOM to be ready (faster than full load)
+                # Navigate and wait for full page load to stop browser spinner
                 logger.info("Navigating to Copilot...")
-                copilot_page.goto(self.COPILOT_URL, wait_until='domcontentloaded')
+                copilot_page.goto(self.COPILOT_URL, wait_until='load')
 
             self._page = copilot_page
             self._connected = True
@@ -336,6 +336,11 @@ class CopilotHandler:
             # Verify chat input is usable (checks for login, popups, etc.)
             if self._verify_chat_input():
                 logger.info("Copilot ready (chat input verified)")
+                # Stop browser loading indicator (spinner) now that Copilot is ready
+                try:
+                    copilot_page.evaluate("window.stop()")
+                except (PlaywrightError, PlaywrightTimeoutError):
+                    pass  # Ignore errors - stopping is optional
             else:
                 logger.warning("Copilot page loaded but chat input not verified - may need login")
 

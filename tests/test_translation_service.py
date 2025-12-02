@@ -15,6 +15,7 @@ from yakulingo.services.translation_service import (
     BatchTranslator,
     TranslationService,
 )
+from yakulingo.services.prompt_builder import PromptBuilder
 
 
 class TestBatchTranslatorCreateBatches:
@@ -22,10 +23,10 @@ class TestBatchTranslatorCreateBatches:
 
     @pytest.fixture
     def batch_translator(self):
-        """Create BatchTranslator with mocked dependencies"""
+        """Create BatchTranslator with real PromptBuilder (copilot still mocked)"""
         mock_copilot = Mock()
-        mock_prompt_builder = Mock()
-        return BatchTranslator(mock_copilot, mock_prompt_builder)
+        prompt_builder = PromptBuilder()  # Use real PromptBuilder
+        return BatchTranslator(mock_copilot, prompt_builder)
 
     def test_empty_blocks(self, batch_translator):
         """Empty block list returns empty batches"""
@@ -297,17 +298,16 @@ class TestTranslationServiceCancel:
 
 
 class TestBatchTranslatorTranslateBlocks:
-    """Tests for BatchTranslator.translate_blocks() with mocked dependencies"""
+    """Tests for BatchTranslator.translate_blocks() with real PromptBuilder"""
 
     def test_translate_single_batch(self):
         """Test translation of blocks that fit in single batch"""
         mock_copilot = Mock()
         mock_copilot.translate_sync.return_value = ["Hello", "World"]
 
-        mock_prompt_builder = Mock()
-        mock_prompt_builder.build_batch.return_value = "Test prompt"
+        prompt_builder = PromptBuilder()  # Use real PromptBuilder
 
-        translator = BatchTranslator(mock_copilot, mock_prompt_builder)
+        translator = BatchTranslator(mock_copilot, prompt_builder)
 
         blocks = [
             TextBlock(id="1", text="こんにちは", location="A1"),
@@ -329,10 +329,9 @@ class TestBatchTranslatorTranslateBlocks:
             [f"Trans{i}" for i in range(50, 60)],
         ]
 
-        mock_prompt_builder = Mock()
-        mock_prompt_builder.build_batch.return_value = "Test prompt"
+        prompt_builder = PromptBuilder()  # Use real PromptBuilder
 
-        translator = BatchTranslator(mock_copilot, mock_prompt_builder)
+        translator = BatchTranslator(mock_copilot, prompt_builder)
 
         # Create 60 blocks
         blocks = [
@@ -352,10 +351,9 @@ class TestBatchTranslatorTranslateBlocks:
         mock_copilot = Mock()
         mock_copilot.translate_sync.return_value = ["Hello"]
 
-        mock_prompt_builder = Mock()
-        mock_prompt_builder.build_batch.return_value = "Test prompt"
+        prompt_builder = PromptBuilder()  # Use real PromptBuilder
 
-        translator = BatchTranslator(mock_copilot, mock_prompt_builder)
+        translator = BatchTranslator(mock_copilot, prompt_builder)
 
         blocks = [TextBlock(id="1", text="Test", location="A1")]
 
@@ -987,11 +985,10 @@ class TestBatchSizeBoundaries:
         """Create BatchTranslator with explicit limits for boundary testing"""
         mock_copilot = Mock()
         mock_copilot.translate_sync.return_value = []
-        mock_prompt_builder = Mock()
-        mock_prompt_builder.build_batch.return_value = "test prompt"
+        prompt_builder = PromptBuilder()  # Use real PromptBuilder
         # Use explicit values for boundary tests (not defaults)
         return BatchTranslator(
-            mock_copilot, mock_prompt_builder,
+            mock_copilot, prompt_builder,
             max_batch_size=50,
             max_chars_per_batch=10000,  # Explicit value for boundary tests
         )
@@ -1223,8 +1220,8 @@ class TestBatchSizeBoundaries:
         assert all_ids == list(range(120))
 
 
-class TestBatchTranslatorTranslateBlocks:
-    """Tests for BatchTranslator.translate_blocks() method"""
+class TestBatchTranslatorTranslateBlocksAdditional:
+    """Additional tests for BatchTranslator.translate_blocks() method"""
 
     @pytest.fixture
     def mock_copilot(self):
@@ -1233,14 +1230,13 @@ class TestBatchTranslatorTranslateBlocks:
         return mock
 
     @pytest.fixture
-    def mock_prompt_builder(self):
-        mock = Mock()
-        mock.build_batch.return_value = "test prompt"
-        return mock
+    def prompt_builder(self):
+        """Use real PromptBuilder"""
+        return PromptBuilder()
 
-    def test_translate_returns_dict(self, mock_copilot, mock_prompt_builder):
+    def test_translate_returns_dict(self, mock_copilot, prompt_builder):
         """translate_blocks returns dict of id -> translation"""
-        translator = BatchTranslator(mock_copilot, mock_prompt_builder)
+        translator = BatchTranslator(mock_copilot, prompt_builder)
 
         blocks = [
             TextBlock(id="a", text="Text1", location="A1"),
@@ -1257,9 +1253,9 @@ class TestBatchTranslatorTranslateBlocks:
         assert results["b"] == "Trans2"
         assert results["c"] == "Trans3"
 
-    def test_translate_calls_copilot_per_batch(self, mock_copilot, mock_prompt_builder):
+    def test_translate_calls_copilot_per_batch(self, mock_copilot, prompt_builder):
         """Copilot is called once per batch"""
-        translator = BatchTranslator(mock_copilot, mock_prompt_builder)
+        translator = BatchTranslator(mock_copilot, prompt_builder)
 
         # 60 blocks = 2 batches
         blocks = [
@@ -1277,9 +1273,9 @@ class TestBatchTranslatorTranslateBlocks:
 
         assert mock_copilot.translate_sync.call_count == 2
 
-    def test_translate_progress_callback(self, mock_copilot, mock_prompt_builder):
+    def test_translate_progress_callback(self, mock_copilot, prompt_builder):
         """Progress callback is called for each batch"""
-        translator = BatchTranslator(mock_copilot, mock_prompt_builder)
+        translator = BatchTranslator(mock_copilot, prompt_builder)
 
         blocks = [
             TextBlock(id=str(i), text=f"Text{i}", location=f"A{i}")
@@ -1300,19 +1296,21 @@ class TestBatchTranslatorTranslateBlocks:
 
         assert len(progress_calls) == 2
 
-    def test_translate_with_output_language(self, mock_copilot, mock_prompt_builder):
-        """Output language is passed to prompt builder"""
-        translator = BatchTranslator(mock_copilot, mock_prompt_builder)
+    def test_translate_with_output_language(self, mock_copilot, prompt_builder):
+        """Output language affects prompt content (verified via copilot call)"""
+        translator = BatchTranslator(mock_copilot, prompt_builder)
 
         blocks = [TextBlock(id="1", text="Test", location="A1")]
         mock_copilot.translate_sync.return_value = ["翻訳"]
 
         translator.translate_blocks(blocks, output_language="jp")
 
-        # Verify prompt builder was called with output_language
-        mock_prompt_builder.build_batch.assert_called()
-        call_args = mock_prompt_builder.build_batch.call_args
-        assert call_args[1].get('output_language') == "jp" or call_args[0][2] == "jp"
+        # Verify copilot was called with prompt containing Japanese translation instructions
+        mock_copilot.translate_sync.assert_called_once()
+        call_args = mock_copilot.translate_sync.call_args
+        prompt_used = call_args[0][1]  # Second positional arg is the prompt
+        # Japanese output prompt should contain Japanese language instruction
+        assert "日本語" in prompt_used
 
 
 # --- Tests: _export_glossary_csv() ---

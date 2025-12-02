@@ -143,8 +143,14 @@ class CopilotHandler:
 
     @property
     def is_connected(self) -> bool:
-        """Check if connected to Copilot"""
-        return self._connected
+        """Check if connected to Copilot with valid page.
+
+        This property verifies the actual connection state, not just the cached flag.
+        Returns False if the page reference is stale or invalid.
+        """
+        if not self._connected:
+            return False
+        return self._is_page_valid()
 
     def _find_edge_exe(self) -> Optional[str]:
         """Find Edge executable"""
@@ -276,6 +282,7 @@ class CopilotHandler:
     def _is_page_valid(self) -> bool:
         """Check if the current page reference is still valid and usable."""
         if not self._page:
+            logger.debug("Page validity check: _page is None")
             return False
 
         error_types = _get_playwright_errors()
@@ -285,8 +292,15 @@ class CopilotHandler:
             # Try to access the page URL - this will fail if page is closed/stale
             url = self._page.url
             # Also verify it's still a Copilot page
-            return "m365.cloud.microsoft" in url
-        except (PlaywrightError, Exception):
+            is_copilot = "m365.cloud.microsoft" in url
+            if not is_copilot:
+                logger.debug("Page validity check: URL is not Copilot (%s)", url[:50] if url else "empty")
+            return is_copilot
+        except PlaywrightError as e:
+            logger.debug("Page validity check failed (Playwright): %s", e)
+            return False
+        except Exception as e:
+            logger.debug("Page validity check failed (other): %s", e)
             return False
 
     def connect(self) -> bool:
@@ -537,10 +551,10 @@ class CopilotHandler:
         Returns:
             List of translated strings parsed from Copilot's response
         """
-        # Auto-connect if needed (lazy connection)
-        if not self._connected or not self._page:
-            if not self.connect():
-                raise RuntimeError("ブラウザに接続できませんでした。Edgeが起動しているか確認してください。")
+        # Always call connect() to ensure connection is valid
+        # connect() checks page validity and reconnects if needed
+        if not self.connect():
+            raise RuntimeError("ブラウザに接続できませんでした。Edgeが起動しているか確認してください。")
 
         # Attach reference files first (before sending prompt)
         if reference_files:
@@ -589,25 +603,35 @@ class CopilotHandler:
         Returns:
             Final translated text
         """
-        # Auto-connect if needed (lazy connection)
-        if not self._connected or not self._page:
-            if not self.connect():
-                raise RuntimeError("ブラウザに接続できませんでした。Edgeが起動しているか確認してください。")
+        logger.info("translate_single_streaming called (prompt length: %d)", len(prompt))
+
+        # Always call connect() to ensure connection is valid
+        # connect() checks page validity and reconnects if needed
+        logger.debug("Checking connection...")
+        if not self.connect():
+            logger.error("Connection failed")
+            raise RuntimeError("ブラウザに接続できませんでした。Edgeが起動しているか確認してください。")
+        logger.debug("Connection OK")
 
         # Attach reference files first (before sending prompt)
         if reference_files:
+            logger.debug("Attaching %d reference files...", len(reference_files))
             for file_path in reference_files:
                 if file_path.exists():
                     self._attach_file(file_path)
 
         # Send the prompt (auto-switches to file attachment if too long)
+        logger.debug("Sending prompt...")
         self._send_prompt_smart(prompt, char_limit)
+        logger.debug("Prompt sent, waiting for response...")
 
         # Get response with streaming callbacks
-        return self.get_response_streaming(
+        result = self.get_response_streaming(
             on_reasoning=on_reasoning,
             on_content=on_content,
         )
+        logger.info("Got response (length: %d)", len(result) if result else 0)
+        return result
 
     def _send_prompt_smart(
         self,
@@ -663,13 +687,17 @@ class CopilotHandler:
         PlaywrightError = error_types['Error']
         PlaywrightTimeoutError = error_types['TimeoutError']
 
+        logger.info("Sending message to Copilot (length: %d chars)", len(message))
+
         try:
             # Find input area
             # 実際のCopilot HTML: <span role="combobox" contenteditable="true" id="m365-chat-editor-target-element" ...>
             input_selector = '#m365-chat-editor-target-element, [data-lexical-editor="true"], [contenteditable="true"]'
+            logger.debug("Waiting for input element...")
             input_elem = self._page.wait_for_selector(input_selector, timeout=10000)
 
             if input_elem:
+                logger.debug("Input element found, clicking and filling...")
                 input_elem.click()
                 input_elem.fill(message)
 
@@ -680,11 +708,13 @@ class CopilotHandler:
                 if not input_text:
                     logger.warning("Input field is empty after fill - Copilot may need attention")
                     raise RuntimeError("Copilotに入力できませんでした。Edgeブラウザを確認してください。")
+                logger.debug("Input verified (has content)")
 
                 # Wait for send button to be enabled (appears after text input)
                 # 実際のCopilot HTML: <button type="submit" aria-label="送信" class="... fai-SendButton ...">
                 # 入力がある場合のみボタンが有効化される
                 send_button_selector = '.fai-SendButton:not([disabled]), button[type="submit"][aria-label="送信"]:not([disabled]), button[aria-label*="Send"]:not([disabled]), button[aria-label*="送信"]:not([disabled])'
+                logger.debug("Waiting for send button...")
                 try:
                     send_button = self._page.wait_for_selector(
                         send_button_selector,
@@ -698,19 +728,30 @@ class CopilotHandler:
                             # 送信前にGPT-5が有効か確認し、必要なら有効化
                             # 送信ボタンが見つかった時点でUIは安定しているはず
                             self._ensure_gpt5_enabled()
+                            logger.info("Clicking send button...")
                             send_button.click()
+                            logger.info("Message sent via button click")
                         else:
                             # Button still disabled, try Enter key
+                            logger.debug("Send button is disabled, using Enter key")
                             self._ensure_gpt5_enabled()
                             input_elem.press("Enter")
+                            logger.info("Message sent via Enter key (button disabled)")
                     else:
                         # Fallback to Enter key
+                        logger.debug("Send button not found, using Enter key")
                         self._ensure_gpt5_enabled()
                         input_elem.press("Enter")
+                        logger.info("Message sent via Enter key (fallback)")
                 except PlaywrightTimeoutError:
                     # Timeout waiting for button, try Enter key
+                    logger.debug("Timeout waiting for send button, using Enter key")
                     self._ensure_gpt5_enabled()
                     input_elem.press("Enter")
+                    logger.info("Message sent via Enter key (timeout)")
+            else:
+                logger.error("Input element not found!")
+                raise RuntimeError("Copilot入力欄が見つかりませんでした")
 
         except PlaywrightTimeoutError as e:
             logger.error("Timeout finding input element: %s", e)

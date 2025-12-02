@@ -355,6 +355,8 @@ class TestCopilotHandlerIntegration:
         # Set up as connected with mocked page
         handler._connected = True
         mock_page = MagicMock()
+        # Set valid Copilot URL so _is_page_valid() returns True
+        mock_page.url = "https://m365.cloud.microsoft/chat"
         handler._page = mock_page
 
         # Mock the internal methods
@@ -709,7 +711,9 @@ class TestCopilotHandlerEdgeCases:
         """translate_sync with empty text list"""
         handler = CopilotHandler()
         handler._connected = True
-        handler._page = MagicMock()
+        mock_page = MagicMock()
+        mock_page.url = "https://m365.cloud.microsoft/chat"
+        handler._page = mock_page
         handler._send_message = Mock()
         handler._get_response = Mock(return_value="")
 

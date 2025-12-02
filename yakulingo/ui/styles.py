@@ -1445,17 +1445,23 @@ body {
     margin-top: 0.25rem;
     color: var(--md-sys-color-on-primary-container);
     border-radius: 1rem;
-    font-size: 1rem;
-    line-height: 1.9;
+    border-left: 4px solid var(--md-sys-color-primary);
+    font-size: 0.9375rem;
+    line-height: 1.8;
 }
 
 .nani-explanation ul {
     margin: 0;
     padding-left: 1.25rem;
+    list-style-type: disc;
 }
 
 .nani-explanation li {
-    margin-bottom: 0.25rem;
+    margin-bottom: 0.5rem;
+}
+
+.nani-explanation li:last-child {
+    margin-bottom: 0;
 }
 
 .nani-explanation strong {

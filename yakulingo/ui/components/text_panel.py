@@ -121,6 +121,7 @@ def create_text_panel(
     on_remove_reference_file: Optional[Callable[[int], None]] = None,  # Remove reference file by index
     on_back_translate: Optional[Callable[[str], None]] = None,  # Back-translate to check
     on_settings: Optional[Callable[[], None]] = None,  # Translation settings (Nani-style)
+    on_streaming_label_created: Optional[Callable[[ui.label, ui.element], None]] = None,  # Callback with (label, container) for direct updates
 ):
     """
     Text translation panel with language-specific UI.
@@ -242,11 +243,22 @@ def create_text_panel(
                     elapsed_time,
                 )
         elif state.text_translating:
-            _render_loading(state.source_text, state.streaming_text)
+            _render_loading(state.source_text, state.streaming_text, on_streaming_label_created)
 
 
-def _render_loading(source_text: str = "", streaming_text: str = ""):
-    """Render loading state with language detection indicator and streaming content"""
+def _render_loading(
+    source_text: str = "",
+    streaming_text: str = "",
+    on_streaming_label_created: Optional[Callable[[ui.label, ui.element], None]] = None,
+):
+    """
+    Render loading state with language detection indicator and streaming content.
+
+    Args:
+        source_text: The source text being translated
+        streaming_text: Current streaming content
+        on_streaming_label_created: Callback receiving (label, container) for direct updates
+    """
     is_japanese = is_japanese_dominant(source_text)
 
     with ui.element('div').classes('loading-character animate-in'):
@@ -266,12 +278,19 @@ def _render_loading(source_text: str = "", streaming_text: str = ""):
 
                 ui.label('M365 Copilot による翻訳').classes('submessage')
 
-        # Show streaming content if available
-        if streaming_text and streaming_text.strip():
-            with ui.element('div').classes('streaming-content mt-4'):
-                ui.label('生成中...').classes('text-xs text-muted mb-2')
-                with ui.element('div').classes('streaming-text-box'):
-                    ui.label(streaming_text).classes('streaming-text')
+        # Streaming content area - always rendered for smooth updates
+        with ui.element('div').classes('streaming-content mt-4') as streaming_container:
+            ui.label('生成中...').classes('text-xs text-muted mb-2 streaming-status-label')
+            with ui.element('div').classes('streaming-text-box'):
+                streaming_label = ui.label(streaming_text or '').classes('streaming-text')
+
+        # Pass both label and container to the callback for direct updates
+        if on_streaming_label_created:
+            on_streaming_label_created(streaming_label, streaming_container)
+
+        # Initially hide if no streaming text
+        if not streaming_text or not streaming_text.strip():
+            streaming_container.style('display: none')
 
 
 def _render_results_to_en(

@@ -57,6 +57,10 @@ class YakuLingoApp:
         # Auto-update
         self._update_notification: Optional["UpdateNotification"] = None
 
+        # Streaming UI elements for smooth updates (avoid full refresh)
+        self._streaming_label: Optional[ui.label] = None
+        self._streaming_container: Optional[ui.element] = None
+
     @property
     def copilot(self) -> "CopilotHandler":
         """Lazy-load CopilotHandler for faster startup."""
@@ -172,6 +176,22 @@ class YakuLingoApp:
         """Refresh history list"""
         if self._history_list:
             self._history_list.refresh()
+
+    def _on_streaming_label_created(self, label: ui.label, container: ui.element):
+        """Store references to streaming UI elements for direct updates"""
+        self._streaming_label = label
+        self._streaming_container = container
+
+    def _update_streaming_text(self, text: str):
+        """Update streaming text directly without full refresh (smooth updates)"""
+        if self._streaming_label is not None and self._streaming_container is not None:
+            # Update the label text directly
+            self._streaming_label.set_text(text)
+            # Show/hide container based on content
+            if text and text.strip():
+                self._streaming_container.style('display: block')
+            else:
+                self._streaming_container.style('display: none')
 
     def create_ui(self):
         """Create the UI - Nani-inspired sidebar layout"""
@@ -340,6 +360,7 @@ class YakuLingoApp:
                         on_remove_reference_file=self._remove_reference_file,
                         on_back_translate=self._back_translate,
                         on_settings=self._show_settings_dialog,
+                        on_streaming_label_created=self._on_streaming_label_created,
                     )
                 else:
                     create_file_panel(
@@ -468,7 +489,8 @@ class YakuLingoApp:
                     while True:
                         content = content_queue.get_nowait()
                         self.state.streaming_text = content
-                        self._refresh_content()
+                        # Update streaming text directly (no full refresh - smooth updates)
+                        self._update_streaming_text(content)
                 except queue.Empty:
                     pass
 
@@ -478,11 +500,12 @@ class YakuLingoApp:
             # Get final result
             result = await translation_task
 
-            # Process any remaining items in the queue
+            # Process any remaining items in the queue (update label for final content)
             try:
                 while True:
                     content = content_queue.get_nowait()
                     self.state.streaming_text = content
+                    self._update_streaming_text(content)
             except queue.Empty:
                 pass
 
@@ -503,6 +526,9 @@ class YakuLingoApp:
 
         self.state.text_translating = False
         self.state.streaming_text = ""
+        # Clear streaming element references before refresh (they will become stale)
+        self._streaming_label = None
+        self._streaming_container = None
         self._refresh_content()
 
     async def _adjust_text(self, text: str, adjust_type: str):

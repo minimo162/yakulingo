@@ -1186,6 +1186,14 @@ body {
 .streaming-content {
     width: 100%;
     max-width: 600px;
+    opacity: 1;
+    transform: translateY(0);
+    transition: opacity 0.2s ease-out, transform 0.2s ease-out;
+}
+
+.streaming-content[style*="display: none"] {
+    opacity: 0;
+    transform: translateY(-8px);
 }
 
 .streaming-text-box {
@@ -1203,6 +1211,10 @@ body {
     color: var(--md-sys-color-on-surface);
     white-space: pre-wrap;
     word-break: break-word;
+}
+
+.streaming-status-label {
+    opacity: 0.7;
 }
 
 /* Success state with character */

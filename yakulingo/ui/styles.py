@@ -962,6 +962,7 @@ body {
     min-width: 100%;
     max-width: none;
     border-right: none;
+    justify-content: center;
 }
 
 /* ========================================

@@ -62,14 +62,22 @@ COMPLETE_CSS = """
     --md-sys-color-warning-container: #FFDEA6;
     --md-sys-color-on-warning-container: #271900;
 
-    /* Shape - Nani-inspired extra rounded corners */
+    /* Shape - M3 corner radius scale */
     --md-sys-shape-corner-full: 9999px;
     --md-sys-shape-corner-3xl: 32px;   /* Extra large cards */
     --md-sys-shape-corner-2xl: 28px;   /* Large rounded cards */
     --md-sys-shape-corner-xl: 24px;    /* Main cards */
-    --md-sys-shape-corner-large: 20px; /* Cards, dialogs */
-    --md-sys-shape-corner-medium: 16px; /* Buttons, inputs */
-    --md-sys-shape-corner-small: 12px;  /* Chips, small elements */
+    --md-sys-shape-corner-large: 20px; /* Cards, dialogs, buttons (M3: 20dp) */
+    --md-sys-shape-corner-medium: 16px; /* Inputs, chips */
+    --md-sys-shape-corner-small: 12px;  /* Small elements */
+
+    /* M3 Button sizing tokens */
+    --md-comp-button-height: 2.5rem;         /* 40dp - M3 standard button height */
+    --md-comp-button-padding-x: 1.5rem;      /* 24dp - horizontal padding with icon */
+    --md-comp-button-padding-x-no-icon: 1rem; /* 16dp - horizontal padding without icon */
+    --md-comp-icon-button-size: 2.5rem;      /* 40dp - icon button container */
+    --md-comp-icon-button-icon-size: 1.5rem; /* 24dp - icon size inside button */
+    --md-comp-touch-target-size: 3rem;       /* 48dp - minimum touch target */
 
     /* Typography - font size hierarchy (larger for better readability) */
     --md-sys-typescale-size-xs: 0.9375rem;    /* 15px - captions, badges */
@@ -387,21 +395,37 @@ body {
 
 /* === M3 Outlined Button === */
 .btn-outline {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    height: var(--md-comp-button-height);
+    min-height: var(--md-comp-button-height);
+    padding: 0 var(--md-comp-button-padding-x);
     background: transparent;
-    border: 1.5px solid var(--md-sys-color-outline-variant);
-    color: var(--md-sys-color-on-surface);
-    padding: 0.625rem 1.25rem;
+    border: 1px solid var(--md-sys-color-outline);
     border-radius: var(--md-sys-shape-corner-full);
+    color: var(--md-sys-color-primary);
     font-size: 0.875rem;
     font-weight: 500;
+    letter-spacing: 0.01em;
+    cursor: pointer;
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
 }
 
 .btn-outline:hover {
-    background: var(--md-sys-color-surface-container);
+    background: rgba(67, 85, 185, 0.08);
     border-color: var(--md-sys-color-outline);
-    transform: translateY(-1px);
-    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-spring);
+}
+
+.btn-outline:active {
+    background: rgba(67, 85, 185, 0.12);
+}
+
+.btn-outline:disabled {
+    border-color: rgba(27, 27, 31, 0.12);
+    color: rgba(27, 27, 31, 0.38);
+    cursor: default;
 }
 
 /* === M3 Filled Button (Primary) === */
@@ -412,34 +436,100 @@ body {
     align-items: center;
     justify-content: center;
     gap: 0.5rem;
+    height: var(--md-comp-button-height);
+    min-height: var(--md-comp-button-height);
+    padding: 0 var(--md-comp-button-padding-x);
     background: var(--md-sys-color-primary);
     color: var(--md-sys-color-on-primary);
-    padding: 1rem 1.75rem;
     border-radius: var(--md-sys-shape-corner-full);
-    font-size: 1rem;
-    font-weight: 600;
-    letter-spacing: -0.01em;
-    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+    font-size: 0.875rem;
+    font-weight: 500;
+    letter-spacing: 0.01em;
     border: none;
     cursor: pointer;
-    box-shadow: 0 2px 8px rgba(67, 85, 185, 0.2);
+    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+    /* M3 elevation level 0 for filled buttons */
+    box-shadow: none;
 }
 
 .btn-primary:hover:not(:disabled),
 .translate-btn:hover:not(:disabled) {
-    /* Slightly lighter on hover */
-    background: #5A6AC9;
-    transform: translateY(-2px) scale(1.02);
-    box-shadow: 0 4px 12px rgba(67, 85, 185, 0.3);
-    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-spring);
+    /* M3: State layer overlay on hover (8% opacity) */
+    background: linear-gradient(rgba(255,255,255,0.08), rgba(255,255,255,0.08)), var(--md-sys-color-primary);
+    /* M3: Elevation level 1 on hover */
+    box-shadow: var(--md-sys-elevation-1);
+}
+
+.btn-primary:active:not(:disabled),
+.translate-btn:active:not(:disabled) {
+    /* M3: State layer overlay on press (12% opacity) */
+    background: linear-gradient(rgba(255,255,255,0.12), rgba(255,255,255,0.12)), var(--md-sys-color-primary);
+    box-shadow: none;
 }
 
 .btn-primary:disabled,
 .translate-btn:disabled {
-    background: var(--md-sys-color-on-surface);
-    opacity: 0.38;
+    background: rgba(27, 27, 31, 0.12);
+    color: rgba(27, 27, 31, 0.38);
     cursor: default;
     box-shadow: none;
+}
+
+/* === M3 Tonal Button (Filled Tonal) === */
+.btn-tonal {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    height: var(--md-comp-button-height);
+    min-height: var(--md-comp-button-height);
+    padding: 0 var(--md-comp-button-padding-x);
+    background: var(--md-sys-color-secondary-container);
+    color: var(--md-sys-color-on-secondary-container);
+    border-radius: var(--md-sys-shape-corner-full);
+    font-size: 0.875rem;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    border: none;
+    cursor: pointer;
+    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+}
+
+.btn-tonal:hover {
+    background: linear-gradient(rgba(0,0,0,0.08), rgba(0,0,0,0.08)), var(--md-sys-color-secondary-container);
+    box-shadow: var(--md-sys-elevation-1);
+}
+
+.btn-tonal:active {
+    background: linear-gradient(rgba(0,0,0,0.12), rgba(0,0,0,0.12)), var(--md-sys-color-secondary-container);
+}
+
+/* === M3 Text Button === */
+.btn-text {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    height: var(--md-comp-button-height);
+    min-height: var(--md-comp-button-height);
+    padding: 0 0.75rem;
+    background: transparent;
+    color: var(--md-sys-color-primary);
+    border-radius: var(--md-sys-shape-corner-full);
+    font-size: 0.875rem;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    border: none;
+    cursor: pointer;
+    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+}
+
+.btn-text:hover {
+    background: rgba(67, 85, 185, 0.08);
+}
+
+.btn-text:active {
+    background: rgba(67, 85, 185, 0.12);
 }
 
 /* === Drop Zone (Gradio-inspired) === */
@@ -863,73 +953,140 @@ body {
     white-space: nowrap;
 }
 
-/* === Language Selector (Segmented Button) === */
+/* === M3 Segmented Button Container === */
+.segmented-btn-container {
+    display: inline-flex;
+    height: var(--md-comp-button-height);
+    border: 1px solid var(--md-sys-color-outline);
+    border-radius: var(--md-sys-shape-corner-full);
+    overflow: hidden;
+}
+
+.segmented-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    height: 100%;
+    min-width: 3rem;
+    padding: 0 1rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    color: var(--md-sys-color-on-surface);
+    background: transparent;
+    border: none;
+    border-right: 1px solid var(--md-sys-color-outline);
+    cursor: pointer;
+    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+}
+
+.segmented-btn:last-child {
+    border-right: none;
+}
+
+.segmented-btn:hover:not(.segmented-btn-selected) {
+    background: rgba(27, 27, 31, 0.08);
+}
+
+.segmented-btn-selected {
+    background: var(--md-sys-color-secondary-container);
+    color: var(--md-sys-color-on-secondary-container);
+}
+
+.segmented-btn-selected:hover {
+    background: linear-gradient(rgba(0,0,0,0.08), rgba(0,0,0,0.08)), var(--md-sys-color-secondary-container);
+}
+
+/* Checkmark icon for selected state */
+.segmented-btn-selected::before {
+    content: '✓';
+    margin-right: 0.25rem;
+    font-size: 0.875rem;
+}
+
+/* === Language Selector (Legacy - Segmented Button style) === */
 .language-selector {
     display: inline-flex;
-    background: var(--md-sys-color-surface-container);
+    height: var(--md-comp-button-height);
+    border: 1px solid var(--md-sys-color-outline);
     border-radius: var(--md-sys-shape-corner-full);
-    padding: 4px;
-    gap: 0;
+    overflow: hidden;
 }
 
 .lang-btn {
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     gap: 0.375rem;
-    padding: 0.625rem 1.25rem;
-    font-size: 1rem;
+    height: 100%;
+    padding: 0 1.25rem;
+    font-size: 0.875rem;
     font-weight: 500;
-    color: var(--md-sys-color-on-surface-variant);
+    letter-spacing: 0.01em;
+    color: var(--md-sys-color-on-surface);
     background: transparent;
     border: none;
+    border-right: 1px solid var(--md-sys-color-outline);
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
     cursor: pointer;
 }
 
+.lang-btn:last-child,
+.lang-btn-right {
+    border-right: none;
+}
+
 .lang-btn-left {
-    border-radius: var(--md-sys-shape-corner-full) 0 0 var(--md-sys-shape-corner-full);
+    border-radius: 0;
 }
 
 .lang-btn-right {
-    border-radius: 0 var(--md-sys-shape-corner-full) var(--md-sys-shape-corner-full) 0;
+    border-radius: 0;
 }
 
 .lang-btn:hover:not(.lang-btn-active) {
-    background: var(--md-sys-color-surface-container-high);
+    background: rgba(27, 27, 31, 0.08);
 }
 
 .lang-btn-active {
-    background: var(--md-sys-color-surface);
-    color: var(--md-sys-color-on-surface);
-    box-shadow: var(--md-sys-elevation-1);
+    background: var(--md-sys-color-secondary-container);
+    color: var(--md-sys-color-on-secondary-container);
 }
 
-/* === Translation Style Selector (Segmented Button) === */
+/* === Translation Style Selector (Legacy - Segmented Button style) === */
 .style-selector {
     display: inline-flex;
-    background: var(--md-sys-color-surface-container);
+    height: var(--md-comp-button-height);
+    border: 1px solid var(--md-sys-color-outline);
     border-radius: var(--md-sys-shape-corner-full);
-    padding: 3px;
-    gap: 0;
+    overflow: hidden;
 }
 
 .style-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    padding: 0.5rem 1rem;
-    font-size: 0.9375rem;
+    height: 100%;
+    min-width: 4rem;
+    padding: 0 1rem;
+    font-size: 0.875rem;
     font-weight: 500;
-    color: var(--md-sys-color-on-surface-variant);
+    letter-spacing: 0.01em;
+    color: var(--md-sys-color-on-surface);
     background: transparent;
     border: none;
+    border-right: 1px solid var(--md-sys-color-outline);
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
     cursor: pointer;
-    min-width: 4.5rem;
+}
+
+.style-btn:last-child {
+    border-right: none;
 }
 
 .style-btn-left {
-    border-radius: var(--md-sys-shape-corner-full) 0 0 var(--md-sys-shape-corner-full);
+    border-radius: 0;
 }
 
 .style-btn-middle {
@@ -937,17 +1094,16 @@ body {
 }
 
 .style-btn-right {
-    border-radius: 0 var(--md-sys-shape-corner-full) var(--md-sys-shape-corner-full) 0;
+    border-radius: 0;
 }
 
 .style-btn:hover:not(.style-btn-active) {
-    background: var(--md-sys-color-surface-container-high);
+    background: rgba(27, 27, 31, 0.08);
 }
 
 .style-btn-active {
-    background: var(--md-sys-color-surface);
-    color: var(--md-sys-color-on-surface);
-    box-shadow: var(--md-sys-elevation-1);
+    background: var(--md-sys-color-secondary-container);
+    color: var(--md-sys-color-on-secondary-container);
 }
 
 /* === →Japanese Translation Result Card === */
@@ -1095,19 +1251,23 @@ body {
 }
 
 .follow-up-btn {
-    font-size: 0.9375rem !important;
-    padding: 0.75rem 1.125rem !important;
-    border-color: var(--md-sys-color-outline-variant) !important;
-    color: var(--md-sys-color-on-surface-variant) !important;
+    height: var(--md-comp-button-height) !important;
+    font-size: 0.875rem !important;
+    font-weight: 500 !important;
+    letter-spacing: 0.01em !important;
+    padding: 0 var(--md-comp-button-padding-x) !important;
+    border: 1px solid var(--md-sys-color-outline) !important;
+    color: var(--md-sys-color-primary) !important;
     border-radius: var(--md-sys-shape-corner-full) !important;
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard) !important;
 }
 
 .follow-up-btn:hover {
-    background: var(--md-sys-color-surface-container-high) !important;
-    border-color: var(--md-sys-color-outline) !important;
-    color: var(--md-sys-color-on-surface) !important;
-    transform: translateY(-1px) !important;
+    background: rgba(67, 85, 185, 0.08) !important;
+}
+
+.follow-up-btn:active {
+    background: rgba(67, 85, 185, 0.12) !important;
 }
 
 /* === Additional Result Cards (for follow-up responses) === */
@@ -1423,13 +1583,75 @@ body {
     font-size: 0.875rem;
 }
 
-/* === Nani-style Attachment Button === */
-/* Attach button - matches settings button style */
+/* === M3 Icon Button (Standard) === */
+/* Container: 40dp, Icon: 24dp, Touch target: 48dp */
+.icon-btn {
+    display: grid;
+    place-items: center;
+    width: var(--md-comp-icon-button-size);
+    height: var(--md-comp-icon-button-size);
+    min-width: var(--md-comp-touch-target-size);
+    min-height: var(--md-comp-touch-target-size);
+    border: none;
+    border-radius: var(--md-sys-shape-corner-full);
+    background: transparent;
+    color: var(--md-sys-color-on-surface-variant);
+    cursor: pointer;
+    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+    flex-shrink: 0;
+}
+
+.icon-btn:hover {
+    background: rgba(70, 70, 79, 0.08);
+}
+
+.icon-btn:active {
+    background: rgba(70, 70, 79, 0.12);
+}
+
+.icon-btn .q-icon,
+.icon-btn svg {
+    width: var(--md-comp-icon-button-icon-size);
+    height: var(--md-comp-icon-button-icon-size);
+    font-size: var(--md-comp-icon-button-icon-size);
+}
+
+/* M3 Icon Button - Filled */
+.icon-btn-filled {
+    background: var(--md-sys-color-primary);
+    color: var(--md-sys-color-on-primary);
+}
+
+.icon-btn-filled:hover {
+    background: linear-gradient(rgba(255,255,255,0.08), rgba(255,255,255,0.08)), var(--md-sys-color-primary);
+}
+
+/* M3 Icon Button - Tonal */
+.icon-btn-tonal {
+    background: var(--md-sys-color-secondary-container);
+    color: var(--md-sys-color-on-secondary-container);
+}
+
+.icon-btn-tonal:hover {
+    background: linear-gradient(rgba(0,0,0,0.08), rgba(0,0,0,0.08)), var(--md-sys-color-secondary-container);
+}
+
+/* M3 Icon Button - Outlined */
+.icon-btn-outlined {
+    border: 1px solid var(--md-sys-color-outline);
+    color: var(--md-sys-color-on-surface-variant);
+}
+
+.icon-btn-outlined:hover {
+    background: rgba(70, 70, 79, 0.08);
+}
+
+/* === Attach Button (extends icon-btn) === */
 .attach-btn {
     display: grid;
     place-items: center;
-    width: 2.25rem;
-    height: 2.25rem;
+    width: var(--md-comp-icon-button-size);
+    height: var(--md-comp-icon-button-size);
     border: none;
     border-radius: var(--md-sys-shape-corner-full);
     background: transparent;
@@ -1440,8 +1662,12 @@ body {
 }
 
 .attach-btn:hover {
+    background: rgba(67, 85, 185, 0.08);
     color: var(--md-sys-color-primary);
-    background: var(--md-sys-color-primary-container);
+}
+
+.attach-btn:active {
+    background: rgba(67, 85, 185, 0.12);
 }
 
 .attach-btn.has-file {
@@ -1450,8 +1676,8 @@ body {
 }
 
 .attach-btn svg {
-    width: 1.25rem;
-    height: 1.25rem;
+    width: var(--md-comp-icon-button-icon-size);
+    height: var(--md-comp-icon-button-icon-size);
 }
 
 /* Attachment file indicator */
@@ -1626,33 +1852,44 @@ body {
 }
 
 .send-question-btn {
-    background: var(--md-sys-color-on-surface) !important;
-    color: var(--md-sys-color-surface) !important;
-    width: 2.375rem !important;
-    height: 2.375rem !important;
+    background: var(--md-sys-color-primary) !important;
+    color: var(--md-sys-color-on-primary) !important;
+    width: var(--md-comp-icon-button-size) !important;
+    height: var(--md-comp-icon-button-size) !important;
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard) !important;
 }
 
 .send-question-btn:hover {
-    background: color-mix(in srgb, var(--md-sys-color-on-surface) 85%, white) !important;
-    transform: translateY(-1px) !important;
+    background: linear-gradient(rgba(255,255,255,0.08), rgba(255,255,255,0.08)), var(--md-sys-color-primary) !important;
+    box-shadow: var(--md-sys-elevation-1) !important;
+}
+
+.send-question-btn:active {
+    background: linear-gradient(rgba(255,255,255,0.12), rgba(255,255,255,0.12)), var(--md-sys-color-primary) !important;
 }
 
 .send-question-btn:disabled {
-    background: var(--md-sys-color-outline) !important;
+    background: rgba(27, 27, 31, 0.12) !important;
+    color: rgba(27, 27, 31, 0.38) !important;
 }
 
-/* === Back-translate Button === */
+/* === Back-translate Button (M3 Text Button) === */
 .back-translate-btn {
-    font-size: 0.9375rem !important;
-    padding: 0.4375rem 0.875rem !important;
-    color: var(--md-sys-color-on-surface-variant) !important;
+    height: var(--md-comp-button-height) !important;
+    font-size: 0.875rem !important;
+    font-weight: 500 !important;
+    letter-spacing: 0.01em !important;
+    padding: 0 0.75rem !important;
+    color: var(--md-sys-color-primary) !important;
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard) !important;
 }
 
 .back-translate-btn:hover {
-    color: var(--md-sys-color-primary) !important;
-    background: var(--md-sys-color-primary-container) !important;
+    background: rgba(67, 85, 185, 0.08) !important;
+}
+
+.back-translate-btn:active {
+    background: rgba(67, 85, 185, 0.12) !important;
 }
 
 .back-translate-btn .q-icon {
@@ -1679,18 +1916,24 @@ body {
 }
 
 .explain-more-btn {
-    font-size: 0.9375rem !important;
+    height: var(--md-comp-button-height) !important;
+    font-size: 0.875rem !important;
+    font-weight: 500 !important;
+    letter-spacing: 0.01em !important;
     color: var(--md-sys-color-primary) !important;
-    padding: 0.625rem 1.125rem !important;
+    padding: 0 var(--md-comp-button-padding-x) !important;
     border-radius: var(--md-sys-shape-corner-full) !important;
     background: transparent !important;
-    border: 1px solid var(--md-sys-color-outline-variant) !important;
+    border: 1px solid var(--md-sys-color-outline) !important;
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard) !important;
 }
 
 .explain-more-btn:hover {
-    background: var(--md-sys-color-primary-container) !important;
-    border-color: var(--md-sys-color-primary) !important;
+    background: rgba(67, 85, 185, 0.08) !important;
+}
+
+.explain-more-btn:active {
+    background: rgba(67, 85, 185, 0.12) !important;
 }
 
 .explain-more-btn .q-icon {
@@ -1698,15 +1941,21 @@ body {
     margin-right: 0.25rem;
 }
 
-/* === Settings Button (Nani-inspired) === */
+/* === Settings Button (M3 Icon Button) === */
 .settings-btn {
+    width: var(--md-comp-icon-button-size) !important;
+    height: var(--md-comp-icon-button-size) !important;
     color: var(--md-sys-color-on-surface-variant) !important;
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard) !important;
 }
 
 .settings-btn:hover {
+    background: rgba(67, 85, 185, 0.08) !important;
     color: var(--md-sys-color-primary) !important;
-    background: var(--md-sys-color-primary-container) !important;
+}
+
+.settings-btn:active {
+    background: rgba(67, 85, 185, 0.12) !important;
 }
 
 /* === Settings Dialog === */
@@ -1728,17 +1977,6 @@ body {
 
 .settings-dialog .q-slider__inner {
     background: var(--md-sys-color-primary) !important;
-}
-
-/* === Button Active States (Nani-inspired) === */
-.btn-primary:active:not(:disabled),
-.translate-btn:active:not(:disabled) {
-    transform: translateY(0) scale(0.98) !important;
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1) !important;
-}
-
-.btn-outline:active {
-    transform: translateY(0) scale(0.98) !important;
 }
 
 /* Copy success feedback animation */

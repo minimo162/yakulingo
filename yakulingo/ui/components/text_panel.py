@@ -6,6 +6,7 @@ Text translation panel with language-specific UI.
 Designed for Japanese users.
 """
 
+import logging
 from typing import Callable, Optional
 
 from nicegui import ui
@@ -13,6 +14,8 @@ from nicegui import ui
 from yakulingo.ui.state import AppState
 from yakulingo.ui.utils import format_markdown_text, is_japanese_dominant
 from yakulingo.models.types import TranslationOption, TextTranslationResult
+
+logger = logging.getLogger(__name__)
 
 
 # Tone icons for translation explanations (for →en)
@@ -196,7 +199,16 @@ def create_text_panel(
                             ).classes('text-muted')
 
                         # Translate button with keycap-style shortcut
-                        with ui.button(on_click=on_translate).classes('translate-btn').props('no-caps') as btn:
+                        async def handle_translate_click():
+                            logger.info("=== Translate button clicked ===")
+                            logger.debug("can_translate: %s, text_translating: %s", state.can_translate(), state.text_translating)
+                            try:
+                                await on_translate()
+                                logger.info("on_translate completed")
+                            except Exception as e:
+                                logger.exception("Error in on_translate: %s", e)
+
+                        with ui.button(on_click=handle_translate_click).classes('translate-btn').props('no-caps') as btn:
                             ui.label('翻訳する')
                             with ui.row().classes('shortcut-keys ml-2'):
                                 with ui.element('span').classes('keycap'):

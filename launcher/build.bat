@@ -1,57 +1,38 @@
 @echo off
 REM ============================================================
-REM YakuLingo Launcher Build Script
+REM YakuLingo Launcher Build Script (Rust)
 REM
 REM Requirements:
-REM   - MinGW-w64 (gcc) in PATH
-REM   OR
-REM   - Visual Studio with cl.exe in PATH
+REM   - Rust toolchain (rustup): https://rustup.rs/
 REM ============================================================
 
 setlocal
 
 cd /d "%~dp0"
 
-REM Try MinGW first
-where gcc >nul 2>&1
-if %errorlevel%==0 (
-    echo Building with MinGW-w64...
-    gcc -mwindows -O2 -s launcher.c -o YakuLingo.exe -lwinhttp -lshlwapi
-    if %errorlevel%==0 (
-        echo.
-        echo Build successful: YakuLingo.exe
-        echo Size:
-        for %%A in (YakuLingo.exe) do echo   %%~zA bytes
-    ) else (
-        echo Build failed!
-        exit /b 1
-    )
-    goto :done
+REM Check if cargo is available
+where cargo >nul 2>&1
+if %errorlevel% neq 0 (
+    echo Error: Rust not found!
+    echo.
+    echo Please install Rust from: https://rustup.rs/
+    echo Or download YakuLingo.exe from GitHub Actions artifacts.
+    exit /b 1
 )
 
-REM Try MSVC
-where cl >nul 2>&1
+echo Building with Rust...
+cargo build --release
+
 if %errorlevel%==0 (
-    echo Building with MSVC...
-    cl /O2 /MT /W3 launcher.c /Fe:YakuLingo.exe /link winhttp.lib shlwapi.lib user32.lib /SUBSYSTEM:WINDOWS
-    if %errorlevel%==0 (
-        echo.
-        echo Build successful: YakuLingo.exe
-        del *.obj 2>nul
-    ) else (
-        echo Build failed!
-        exit /b 1
-    )
-    goto :done
+    copy /y target\release\yakulingo-launcher.exe YakuLingo.exe >nul
+    echo.
+    echo Build successful: YakuLingo.exe
+    echo Size:
+    for %%A in (YakuLingo.exe) do echo   %%~zA bytes
+) else (
+    echo Build failed!
+    exit /b 1
 )
 
-echo Error: No compiler found!
-echo.
-echo Please install one of the following:
-echo   - MinGW-w64: https://www.mingw-w64.org/
-echo   - Visual Studio Build Tools: https://visualstudio.microsoft.com/downloads/
-exit /b 1
-
-:done
 echo.
 echo To use: Copy YakuLingo.exe to the application root directory

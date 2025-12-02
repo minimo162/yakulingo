@@ -4,6 +4,8 @@ on:
   push:
     paths:
       - 'launcher/**'
+  release:
+    types: [created]
   workflow_dispatch:  # Manual trigger
 
 jobs:
@@ -13,19 +15,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup MinGW
-        uses: egor-tensin/setup-mingw@v2
+      - name: Setup Rust
+        uses: dtolnay/rust-action@stable
         with:
-          platform: x64
+          targets: x86_64-pc-windows-msvc
 
       - name: Build launcher
         run: |
           cd launcher
-          gcc -mwindows -O2 -s launcher.c -o YakuLingo.exe -lwinhttp -lshlwapi
-          dir YakuLingo.exe
+          cargo build --release
+          dir target\release\yakulingo-launcher.exe
+
+      - name: Rename executable
+        run: |
+          copy launcher\target\release\yakulingo-launcher.exe launcher\YakuLingo.exe
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: YakuLingo-Launcher
           path: launcher/YakuLingo.exe
+
+      # Upload to release (only when triggered by release)
+      - name: Upload to Release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: launcher/YakuLingo.exe

@@ -136,7 +136,10 @@ class CopilotHandler:
     CHAT_UI_SELECTORS = (
         '#m365-chat-editor-target-element',      # Primary: Copilot chat input ID
         '[data-lexical-editor="true"]',          # Lexical editor attribute
-        'div[role="textbox"][contenteditable]',  # Role-based textbox
+        '[role="textbox"][contenteditable="true"]',  # Role-based textbox (any element type)
+        '#m365-chat-input-shared-wrapper',       # Chat input wrapper container
+        '.fai-ChatInput__inputWrapper',          # Chat input wrapper class
+        '.fai-EditorInput',                      # Editor input class
         'textarea[placeholder*="message"]',      # Message input textarea
         '[contenteditable="true"][role="combobox"]',  # Combobox contenteditable
         'div.cib-serp-main',                     # Bing Copilot main container
@@ -442,7 +445,8 @@ class CopilotHandler:
         check_interval = 2  # Check every 2 seconds
 
         while time.time() - start_time < timeout:
-            state = self._check_copilot_state(timeout=3)
+            # Use longer timeout for state check to allow page to fully render
+            state = self._check_copilot_state(timeout=8)
             if state == ConnectionState.READY:
                 self._login_required = False
                 return True
@@ -509,6 +513,12 @@ class CopilotHandler:
         PlaywrightTimeoutError = error_types['TimeoutError']
 
         try:
+            # Wait for page to be in a stable state before checking
+            try:
+                self._page.wait_for_load_state('domcontentloaded', timeout=5000)
+            except PlaywrightTimeoutError:
+                logger.debug("Page load timeout, continuing with check")
+
             current_url = self._page.url
             logger.debug("Checking Copilot state - current URL: %s", current_url)
 

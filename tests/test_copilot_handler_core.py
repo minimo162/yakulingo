@@ -86,9 +86,14 @@ class TestCopilotHandlerConnectFlow:
     """Tests for connect() method flow"""
 
     def test_connect_returns_true_if_already_connected(self):
-        """connect() returns True immediately if already connected"""
+        """connect() returns True immediately if already connected with valid page"""
+        from unittest.mock import MagicMock
         handler = CopilotHandler()
         handler._connected = True
+        # Mock page with valid Copilot URL to pass page validity check
+        mock_page = MagicMock()
+        mock_page.url = "https://m365.cloud.microsoft/chat"
+        handler._page = mock_page
 
         result = handler.connect()
 

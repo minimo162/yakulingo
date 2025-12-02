@@ -331,9 +331,13 @@ class TestCopilotHandlerMockedConnect:
 
     @patch('yakulingo.services.copilot_handler._get_playwright')
     def test_connect_already_connected_returns_true(self, mock_get_pw):
-        """connect() returns True if already connected"""
+        """connect() returns True if already connected with valid page"""
         handler = CopilotHandler()
         handler._connected = True
+        # Mock page with valid Copilot URL to pass page validity check
+        mock_page = MagicMock()
+        mock_page.url = "https://m365.cloud.microsoft/chat"
+        handler._page = mock_page
 
         result = handler.connect()
 
@@ -586,9 +590,13 @@ class TestCopilotHandlerConnectFlow:
     """Test connect() flow with mocks"""
 
     def test_connect_already_connected(self):
-        """connect() returns True if already connected"""
+        """connect() returns True if already connected with valid page"""
         handler = CopilotHandler()
         handler._connected = True
+        # Mock page with valid Copilot URL to pass page validity check
+        mock_page = MagicMock()
+        mock_page.url = "https://m365.cloud.microsoft/chat"
+        handler._page = mock_page
 
         result = handler.connect()
         assert result is True
@@ -601,6 +609,33 @@ class TestCopilotHandlerConnectFlow:
         result = handler.connect()
 
         assert isinstance(result, bool)
+
+    def test_connect_stale_page_reconnects(self):
+        """connect() reconnects if existing page is stale (non-Copilot URL)"""
+        handler = CopilotHandler()
+        handler._connected = True
+        # Mock page with non-Copilot URL (simulates navigated away)
+        mock_page = MagicMock()
+        mock_page.url = "https://www.google.com"
+        handler._page = mock_page
+
+        # This should try to reconnect (and fail since Edge isn't running)
+        result = handler.connect()
+
+        # Should have reset connection state
+        assert handler._connected is False
+
+    def test_connect_page_none_reconnects(self):
+        """connect() reconnects if page is None"""
+        handler = CopilotHandler()
+        handler._connected = True
+        handler._page = None
+
+        # This should try to reconnect (and fail since Edge isn't running)
+        result = handler.connect()
+
+        # Should have reset connection state
+        assert handler._connected is False
 
 
 class TestCopilotHandlerAsync:

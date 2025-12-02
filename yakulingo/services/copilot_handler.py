@@ -273,6 +273,22 @@ class CopilotHandler:
             logger.error("Edge startup failed: %s", e)
             return False
 
+    def _is_page_valid(self) -> bool:
+        """Check if the current page reference is still valid and usable."""
+        if not self._page:
+            return False
+
+        error_types = _get_playwright_errors()
+        PlaywrightError = error_types['Error']
+
+        try:
+            # Try to access the page URL - this will fail if page is closed/stale
+            url = self._page.url
+            # Also verify it's still a Copilot page
+            return "m365.cloud.microsoft" in url
+        except (PlaywrightError, Exception):
+            return False
+
     def connect(self) -> bool:
         """
         Connect to Copilot browser via Playwright.
@@ -281,8 +297,14 @@ class CopilotHandler:
         Returns:
             True if browser connection established
         """
+        # Check if existing connection is still valid
         if self._connected:
-            return True
+            if self._is_page_valid():
+                return True
+            else:
+                # Connection is stale, need to reconnect
+                logger.info("Existing connection is stale, reconnecting...")
+                self._cleanup_on_error()
 
         # Get Playwright error types for specific exception handling
         error_types = _get_playwright_errors()

@@ -302,7 +302,12 @@ class YakuLingoApp:
         # Status indicator (browser connection only, not login state)
         @ui.refreshable
         def header_status():
-            if self.state.copilot_ready:
+            # Check actual connection state, not just cached flag
+            is_connected = self.copilot.is_connected if self._copilot else False
+            # Update cached state to match actual state
+            self.state.copilot_ready = is_connected
+
+            if is_connected:
                 with ui.element('div').classes('status-indicator connected').props('role="status" aria-live="polite"'):
                     ui.element('div').classes('status-dot connected').props('aria-hidden="true"')
                     ui.label('接続済み')
@@ -617,6 +622,8 @@ class YakuLingoApp:
         self._streaming_label = None
         self._streaming_container = None
         self._refresh_content()
+        # Update connection status (may have changed during translation)
+        self._refresh_status()
 
     async def _adjust_text(self, text: str, adjust_type: str):
         """Adjust translation based on user request"""
@@ -652,6 +659,7 @@ class YakuLingoApp:
 
         self.state.text_translating = False
         self._refresh_content()
+        self._refresh_status()
 
     async def _back_translate(self, text: str):
         """Back-translate text to verify translation quality"""
@@ -712,6 +720,7 @@ class YakuLingoApp:
 
         self.state.text_translating = False
         self._refresh_content()
+        self._refresh_status()
 
     def _build_follow_up_prompt(self, action_type: str, source_text: str, translation: str, content: str = "") -> Optional[str]:
         """

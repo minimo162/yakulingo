@@ -143,8 +143,14 @@ class CopilotHandler:
 
     @property
     def is_connected(self) -> bool:
-        """Check if connected to Copilot"""
-        return self._connected
+        """Check if connected to Copilot with valid page.
+
+        This property verifies the actual connection state, not just the cached flag.
+        Returns False if the page reference is stale or invalid.
+        """
+        if not self._connected:
+            return False
+        return self._is_page_valid()
 
     def _find_edge_exe(self) -> Optional[str]:
         """Find Edge executable"""

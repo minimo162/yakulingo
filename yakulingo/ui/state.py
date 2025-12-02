@@ -51,7 +51,6 @@ class AppState:
     text_translating: bool = False
     text_result: Optional[TextTranslationResult] = None
     text_translation_elapsed_time: Optional[float] = None  # Translation time in seconds
-    streaming_text: str = ""  # Real-time streaming content during translation
 
     # File tab state
     file_state: FileState = FileState.EMPTY

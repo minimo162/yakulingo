@@ -6,6 +6,7 @@ Text translation panel with language-specific UI.
 Designed for Japanese users.
 """
 
+import asyncio
 import logging
 from typing import Callable, Optional
 
@@ -108,6 +109,168 @@ def _get_tone_icon(explanation: str) -> str:
     return 'translate'
 
 
+def create_text_input_panel(
+    state: AppState,
+    on_translate: Callable[[], None],
+    on_source_change: Callable[[str], None],
+    on_clear: Callable[[], None],
+    on_attach_reference_file: Optional[Callable[[], None]] = None,
+    on_remove_reference_file: Optional[Callable[[int], None]] = None,
+    on_settings: Optional[Callable[[], None]] = None,
+    on_translate_button_created: Optional[Callable[[ui.button], None]] = None,
+):
+    """
+    Text input panel for 3-column layout.
+    Contains textarea, character count, reference files, and translate button.
+    """
+    with ui.column().classes('flex-1 w-full gap-4'):
+        # Main card container
+        with ui.element('div').classes('main-card w-full'):
+            # Input container
+            with ui.element('div').classes('main-card-inner'):
+                # Textarea with improved placeholder and accessibility
+                textarea = ui.textarea(
+                    placeholder='好きな言語で入力…',
+                    value=state.source_text,
+                    on_change=lambda e: on_source_change(e.value)
+                ).classes('w-full p-4').props('borderless autogrow aria-label="翻訳するテキスト"').style('min-height: 200px')
+
+                # Handle Ctrl+Enter in textarea
+                async def handle_keydown(e):
+                    if e.args.get('ctrlKey') and e.args.get('key') == 'Enter':
+                        if state.can_translate() and not state.text_translating:
+                            await on_translate()
+
+                textarea.on('keydown', handle_keydown)
+
+                # Bottom controls
+                with ui.row().classes('p-3 justify-between items-center'):
+                    # Left side: character count and attached files
+                    with ui.row().classes('items-center gap-2 flex-1'):
+                        # Character count
+                        if state.source_text:
+                            ui.label(f'{len(state.source_text)} 文字').classes('text-xs text-muted')
+
+                        # Attached reference files indicator
+                        if state.reference_files:
+                            for i, ref_file in enumerate(state.reference_files):
+                                with ui.element('div').classes('attach-file-indicator'):
+                                    ui.label(ref_file.name).classes('file-name')
+                                    if on_remove_reference_file:
+                                        ui.button(
+                                            icon='close',
+                                            on_click=lambda idx=i: on_remove_reference_file(idx)
+                                        ).props('flat dense round size=xs').classes('remove-btn')
+
+                    with ui.row().classes('items-center gap-2'):
+                        # Settings button
+                        if on_settings:
+                            settings_btn = ui.button(
+                                icon='tune',
+                                on_click=on_settings
+                            ).props('flat dense round size=sm').classes('settings-btn')
+                            settings_btn.tooltip('翻訳の設定')
+
+                        # Reference file attachment button
+                        if on_attach_reference_file:
+                            has_files = bool(state.reference_files)
+                            attach_btn = ui.button(
+                                on_click=on_attach_reference_file
+                            ).classes(f'attach-btn {"has-file" if has_files else ""}').props('flat')
+                            with attach_btn:
+                                ui.html(ATTACH_SVG, sanitize=False)
+                            attach_btn.tooltip('参照ファイルを添付' if not has_files else '参照ファイルを追加')
+
+                        # Clear button
+                        if state.source_text:
+                            ui.button(icon='close', on_click=on_clear).props(
+                                'flat dense round size=sm aria-label="クリア"'
+                            ).classes('text-muted')
+
+                        # Translate button with keycap-style shortcut
+                        def handle_translate_click():
+                            logger.info("Translate button clicked")
+                            asyncio.create_task(on_translate())
+
+                        with ui.button(on_click=handle_translate_click).classes('translate-btn').props('no-caps') as btn:
+                            ui.label('翻訳する')
+                            with ui.row().classes('shortcut-keys ml-2'):
+                                with ui.element('span').classes('keycap'):
+                                    ui.label('Ctrl')
+                                with ui.element('span').classes('keycap-plus'):
+                                    ui.label('+')
+                                with ui.element('span').classes('keycap'):
+                                    ui.label('Enter')
+                        if state.text_translating:
+                            btn.props('loading disable')
+                        elif not state.can_translate():
+                            btn.props('disable')
+
+                        # Provide button reference for dynamic state updates
+                        if on_translate_button_created:
+                            on_translate_button_created(btn)
+
+        # Hint text
+        with ui.element('div').classes('hint-section'):
+            with ui.element('div').classes('hint-primary'):
+                ui.html(LANG_DETECT_SVG, sanitize=False)
+                ui.label('入力言語を自動判定して翻訳します（日本語⇔英語）').classes('text-xs')
+            with ui.element('div').classes('hint-secondary'):
+                ui.icon('auto_awesome').classes('text-sm')
+                ui.label('M365 Copilot による翻訳').classes('text-2xs')
+
+
+def create_text_result_panel(
+    state: AppState,
+    on_copy: Callable[[str], None],
+    on_adjust: Optional[Callable[[str, str], None]] = None,
+    on_follow_up: Optional[Callable[[str, str], None]] = None,
+    on_back_translate: Optional[Callable[[str], None]] = None,
+    on_retry: Optional[Callable[[], None]] = None,
+):
+    """
+    Text result panel for 3-column layout.
+    Contains translation results with language-specific UI.
+    """
+    elapsed_time = state.text_translation_elapsed_time
+
+    with ui.column().classes('flex-1 w-full gap-4'):
+        # Results section - language-specific UI
+        if state.text_result and state.text_result.options:
+            if state.text_result.is_to_japanese:
+                # →Japanese: Single result with detailed explanation + follow-up actions
+                _render_results_to_jp(
+                    state.text_result,
+                    state.source_text,
+                    on_copy,
+                    on_follow_up,
+                    on_back_translate,
+                    elapsed_time,
+                )
+            else:
+                # →English: Multiple options with inline adjustment
+                _render_results_to_en(
+                    state.text_result,
+                    on_copy,
+                    on_adjust,
+                    on_back_translate,
+                    elapsed_time,
+                    on_retry,
+                )
+        elif state.text_translating:
+            _render_loading(state.source_text)
+        else:
+            # Empty state - show placeholder
+            _render_empty_result_state()
+
+
+def _render_empty_result_state():
+    """Render empty state placeholder for result panel"""
+    with ui.element('div').classes('empty-result-state'):
+        ui.icon('translate').classes('text-4xl text-muted opacity-30')
+        ui.label('翻訳結果がここに表示されます').classes('text-sm text-muted opacity-50')
+
+
 def create_text_panel(
     state: AppState,
     on_translate: Callable[[], None],
@@ -115,23 +278,23 @@ def create_text_panel(
     on_copy: Callable[[str], None],
     on_clear: Callable[[], None],
     on_adjust: Optional[Callable[[str, str], None]] = None,
-    on_follow_up: Optional[Callable[[str, str], None]] = None,  # (action_type, context)
-    on_attach_reference_file: Optional[Callable[[], None]] = None,  # Reference file picker
-    on_remove_reference_file: Optional[Callable[[int], None]] = None,  # Remove reference file by index
-    on_back_translate: Optional[Callable[[str], None]] = None,  # Back-translate to check
-    on_settings: Optional[Callable[[], None]] = None,  # Translation settings
-    on_streaming_label_created: Optional[Callable[[ui.label, ui.element], None]] = None,  # Callback with (label, container) for direct updates
-    on_retry: Optional[Callable[[], None]] = None,  # Retry translation
-    on_translate_button_created: Optional[Callable[[ui.button], None]] = None,  # Callback with button reference for dynamic state updates
+    on_follow_up: Optional[Callable[[str, str], None]] = None,
+    on_attach_reference_file: Optional[Callable[[], None]] = None,
+    on_remove_reference_file: Optional[Callable[[int], None]] = None,
+    on_back_translate: Optional[Callable[[str], None]] = None,
+    on_settings: Optional[Callable[[], None]] = None,
+    on_retry: Optional[Callable[[], None]] = None,
+    on_translate_button_created: Optional[Callable[[ui.button], None]] = None,
 ):
     """
-    Text translation panel with language-specific UI.
+    Text translation panel with language-specific UI (legacy single-column layout).
     - Japanese input → English: Multiple options with inline adjustment
     - Other input → Japanese: Single translation + follow-up actions
     - Reference file attachment button (glossary, style guide, etc.)
     - Back-translate feature to verify translations
+
+    Note: For 3-column layout, use create_text_input_panel and create_text_result_panel separately.
     """
-    # Get elapsed time for display
     elapsed_time = state.text_translation_elapsed_time
 
     with ui.column().classes('flex-1 w-full gap-5 animate-in'):
@@ -199,9 +362,6 @@ def create_text_panel(
                             ).classes('text-muted')
 
                         # Translate button with keycap-style shortcut
-                        # Use create_task instead of await to avoid "parent element deleted" error
-                        # when _refresh_content() is called during translation
-                        import asyncio
                         def handle_translate_click():
                             logger.info("Translate button clicked")
                             asyncio.create_task(on_translate())
@@ -256,21 +416,15 @@ def create_text_panel(
                     on_retry,
                 )
         elif state.text_translating:
-            _render_loading(state.source_text, state.streaming_text, on_streaming_label_created)
+            _render_loading(state.source_text)
 
 
-def _render_loading(
-    source_text: str = "",
-    streaming_text: str = "",
-    on_streaming_label_created: Optional[Callable[[ui.label, ui.element], None]] = None,
-):
+def _render_loading(source_text: str = ""):
     """
-    Render loading state with language detection indicator and streaming content.
+    Render loading state with language detection indicator.
 
     Args:
         source_text: The source text being translated
-        streaming_text: Current streaming content
-        on_streaming_label_created: Callback receiving (label, container) for direct updates
     """
     is_japanese = is_japanese_dominant(source_text)
 
@@ -280,30 +434,13 @@ def _render_loading(
             ui.spinner('dots', size='lg').classes('text-primary')
 
             # Dynamic language detection message
-            with ui.column().classes('gap-1'):
-                with ui.row().classes('items-center gap-2'):
-                    if is_japanese:
-                        ui.label('🇯🇵 → 🇺🇸').classes('text-base')
-                        ui.label('英語に翻訳しています...').classes('message')
-                    else:
-                        ui.label('🌐 → 🇯🇵').classes('text-base')
-                        ui.label('日本語に翻訳しています...').classes('message')
-
-                ui.label('M365 Copilot による翻訳').classes('submessage')
-
-        # Streaming content area - always rendered for smooth updates
-        with ui.element('div').classes('streaming-content mt-4') as streaming_container:
-            ui.label('生成中...').classes('text-xs text-muted mb-2 streaming-status-label')
-            with ui.element('div').classes('streaming-text-box'):
-                streaming_label = ui.label(streaming_text or '').classes('streaming-text')
-
-        # Pass both label and container to the callback for direct updates
-        if on_streaming_label_created:
-            on_streaming_label_created(streaming_label, streaming_container)
-
-        # Initially hide if no streaming text
-        if not streaming_text or not streaming_text.strip():
-            streaming_container.style('display: none')
+            with ui.row().classes('items-center gap-2'):
+                if is_japanese:
+                    ui.label('🇯🇵 → 🇺🇸').classes('text-base')
+                    ui.label('英語に翻訳しています...').classes('message')
+                else:
+                    ui.label('🌐 → 🇯🇵').classes('text-base')
+                    ui.label('日本語に翻訳しています...').classes('message')
 
 
 def _render_results_to_en(

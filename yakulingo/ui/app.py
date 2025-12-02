@@ -126,10 +126,6 @@ class YakuLingoApp:
         # Auto-update
         self._update_notification: Optional["UpdateNotification"] = None
 
-        # Streaming UI elements for smooth updates (avoid full refresh)
-        self._streaming_label: Optional[ui.label] = None
-        self._streaming_container: Optional[ui.element] = None
-
         # Translate button reference for dynamic state updates
         self._translate_button: Optional[ui.button] = None
 
@@ -237,11 +233,6 @@ class YakuLingoApp:
         if self._history_list:
             self._history_list.refresh()
 
-    def _on_streaming_label_created(self, label: ui.label, container: ui.element):
-        """Store references to streaming UI elements for direct updates"""
-        self._streaming_label = label
-        self._streaming_container = container
-
     def _on_translate_button_created(self, button: ui.button):
         """Store reference to translate button for dynamic state updates"""
         self._translate_button = button
@@ -264,32 +255,50 @@ class YakuLingoApp:
             self._translate_button.props(remove='loading')
             self._translate_button.props(':disable=false')
 
-    def _update_streaming_text(self, text: str):
-        """Update streaming text directly without full refresh (smooth updates)"""
-        if self._streaming_label is not None and self._streaming_container is not None:
-            # Update the label text directly
-            self._streaming_label.set_text(text)
-            # Show/hide container based on content
-            if text and text.strip():
-                self._streaming_container.style('display: block')
-            else:
-                self._streaming_container.style('display: none')
-
     def create_ui(self):
-        """Create the UI - Nani-inspired sidebar layout"""
+        """Create the UI - Nani-inspired 3-column layout"""
         # Viewport for proper scaling on all displays
         ui.add_head_html('<meta name="viewport" content="width=device-width, initial-scale=1.0">')
         ui.add_head_html(f'<style>{COMPLETE_CSS}</style>')
 
-        # Main container with sidebar
-        with ui.row().classes('w-full min-h-screen'):
-            # Left Sidebar
+        # 3-column layout container
+        with ui.element('div').classes('app-container'):
+            # Left Sidebar (tabs + history)
             with ui.column().classes('sidebar'):
                 self._create_sidebar()
 
-            # Main content area
-            with ui.column().classes('main-area'):
+            # Mobile header (hidden on large screens)
+            self._create_mobile_header()
+
+            # Main area (input panel + result panel)
+            with ui.element('div').classes('main-area'):
                 self._create_main_content()
+
+    def _create_mobile_header(self):
+        """Create mobile header with hamburger menu (hidden on large screens)"""
+        with ui.element('div').classes('mobile-header'):
+            # Hamburger menu button
+            ui.button(
+                icon='menu',
+                on_click=self._toggle_mobile_sidebar
+            ).props('flat dense round').classes('mobile-header-btn')
+
+            # Logo
+            ui.label('YakuLingo').classes('app-logo flex-1')
+
+    def _toggle_mobile_sidebar(self):
+        """Toggle mobile sidebar visibility"""
+        # This will be handled by JavaScript/CSS
+        ui.run_javascript('''
+            const sidebar = document.querySelector('.sidebar');
+            const overlay = document.querySelector('.sidebar-overlay');
+            if (sidebar) {
+                sidebar.classList.toggle('mobile-visible');
+            }
+            if (overlay) {
+                overlay.classList.toggle('visible');
+            }
+        ''')
 
     def _create_sidebar(self):
         """Create left sidebar with logo, nav, and history"""
@@ -319,10 +328,10 @@ class YakuLingoApp:
         self._header_status = header_status
         header_status()
 
-        # Navigation tabs
+        # Navigation tabs (M3 vertical tabs)
         @ui.refreshable
         def tabs_container():
-            with ui.element('nav').classes('sidebar-nav').props('role="navigation" aria-label="Main navigation"'):
+            with ui.element('nav').classes('sidebar-nav').props('role="tablist" aria-label="翻訳モード" aria-orientation="vertical"'):
                 self._create_nav_item('テキスト翻訳', 'translate', Tab.TEXT)
                 self._create_nav_item('ファイル翻訳', 'description', Tab.FILE)
 
@@ -369,7 +378,7 @@ class YakuLingoApp:
             history_list()
 
     def _create_nav_item(self, label: str, icon: str, tab: Tab):
-        """Create a navigation item"""
+        """Create a navigation tab item (M3 vertical tabs)"""
         is_active = self.state.current_tab == tab
         disabled = self.state.is_translating()
         classes = 'nav-item'
@@ -385,7 +394,12 @@ class YakuLingoApp:
                 self._refresh_tabs()
                 self._refresh_content()
 
-        with ui.button(on_click=on_click).props('flat no-caps align=left').classes(classes):
+        # M3 tabs accessibility: role="tab", aria-selected
+        aria_props = f'role="tab" aria-selected="{str(is_active).lower()}"'
+        if disabled:
+            aria_props += ' aria-disabled="true"'
+
+        with ui.button(on_click=on_click).props(f'flat no-caps align=left {aria_props}').classes(classes):
             ui.icon(icon).classes('text-lg')
             ui.label(label).classes('flex-1')
 
@@ -418,32 +432,41 @@ class YakuLingoApp:
                 ).props('flat dense round size=xs').classes('history-delete-btn')
 
     def _create_main_content(self):
-        """Create main content area"""
+        """Create main content area with 3-column layout for text, single column for file"""
         # Lazy import UI components for faster startup
-        from yakulingo.ui.components.text_panel import create_text_panel
+        from yakulingo.ui.components.text_panel import create_text_input_panel, create_text_result_panel
         from yakulingo.ui.components.file_panel import create_file_panel
 
         @ui.refreshable
         def main_content():
-            with ui.column().classes('w-full max-w-2xl mx-auto px-6 py-8 flex-1'):
-                if self.state.current_tab == Tab.TEXT:
-                    create_text_panel(
+            if self.state.current_tab == Tab.TEXT:
+                # 3-column layout: Input panel (left) + Result panel (right)
+                # Input panel (middle column - sticky)
+                with ui.column().classes('input-panel'):
+                    create_text_input_panel(
                         state=self.state,
                         on_translate=self._translate_text,
                         on_source_change=self._on_source_change,
-                        on_copy=self._copy_text,
                         on_clear=self._clear,
-                        on_adjust=self._adjust_text,
-                        on_follow_up=self._follow_up_action,
                         on_attach_reference_file=self._attach_reference_file,
                         on_remove_reference_file=self._remove_reference_file,
-                        on_back_translate=self._back_translate,
                         on_settings=self._show_settings_dialog,
-                        on_streaming_label_created=self._on_streaming_label_created,
-                        on_retry=self._retry_translation,
                         on_translate_button_created=self._on_translate_button_created,
                     )
-                else:
+
+                # Result panel (right column - scrollable)
+                with ui.column().classes('result-panel'):
+                    create_text_result_panel(
+                        state=self.state,
+                        on_copy=self._copy_text,
+                        on_adjust=self._adjust_text,
+                        on_follow_up=self._follow_up_action,
+                        on_back_translate=self._back_translate,
+                        on_retry=self._retry_translation,
+                    )
+            else:
+                # File panel: single column layout (centered)
+                with ui.column().classes('w-full max-w-2xl mx-auto px-6 py-8 flex-1'):
                     create_file_panel(
                         state=self.state,
                         on_file_select=self._select_file,
@@ -534,96 +557,49 @@ class YakuLingoApp:
         await self._translate_text()
 
     async def _translate_text(self):
-        """Translate text with streaming updates."""
+        """Translate text."""
         import time
-        import queue
-        import datetime
-
-        # Direct file logging for debugging
-        def debug_log(msg):
-            log_path = Path.home() / ".yakulingo" / "debug.log"
-            with open(log_path, 'a', encoding='utf-8') as f:
-                f.write(f"{datetime.datetime.now()}: {msg}\n")
-                f.flush()
-
-        debug_log("=== _translate_text called ===")
-        debug_log(f"translation_service: {self.translation_service}")
-        debug_log(f"source_text length: {len(self.state.source_text) if self.state.source_text else 0}")
 
         if not self.translation_service:
-            debug_log("translation_service is None, returning")
             ui.notify('Not connected', type='warning')
             return
 
         source_text = self.state.source_text
         reference_files = self.state.reference_files or None
 
-        debug_log(f"Starting translation for text: {source_text[:50] if source_text else ''}")
-
         # Track translation time
         start_time = time.time()
 
-        # Queue for streaming updates from background thread
-        content_queue: queue.Queue[str] = queue.Queue()
-
-        def on_streaming_content(content: str):
-            """Callback from background thread - put content in queue"""
-            content_queue.put(content)
-
-        # Update UI
+        # Update UI to show loading state
         self.state.text_translating = True
         self.state.text_result = None
         self.state.text_translation_elapsed_time = None
-        self.state.streaming_text = ""  # For displaying streaming content
         self._refresh_content()
-
-        debug_log("Starting translation (sync on main thread)...")
 
         try:
             # Run translation synchronously on main thread (required for Playwright)
             # Playwright's sync API uses greenlets which must run on the same thread
-            result = self.translation_service.translate_text_streaming(
+            result = self.translation_service.translate_text_with_options(
                 source_text,
                 reference_files,
-                on_content=on_streaming_content,
             )
-            debug_log(f"Got result: {type(result).__name__ if result else None}")
-
-            # Process any remaining items in the queue (update label for final content)
-            try:
-                while True:
-                    content = content_queue.get_nowait()
-                    self.state.streaming_text = content
-                    self._update_streaming_text(content)
-            except queue.Empty:
-                pass
 
             # Calculate elapsed time
             elapsed_time = time.time() - start_time
             self.state.text_translation_elapsed_time = elapsed_time
-            debug_log(f"Translation completed in {elapsed_time:.2f} seconds")
 
             if result and result.options:
-                debug_log(f"Translation successful, {len(result.options)} options received")
                 self.state.text_result = result
-                self.state.streaming_text = ""  # Clear streaming text
                 self._add_to_history(result)
             else:
                 error_msg = result.error_message if result else 'Unknown error'
-                debug_log(f"Translation failed: {error_msg}")
                 ui.notify(f'Error: {error_msg}', type='negative')
 
         except Exception as e:
-            debug_log(f"Translation exception: {e}")
-            import traceback
-            debug_log(traceback.format_exc())
+            logger.exception("Translation error: %s", e)
             ui.notify(f'Error: {e}', type='negative')
 
         self.state.text_translating = False
-        self.state.streaming_text = ""
-        # Clear streaming element references before refresh (they will become stale)
-        self._streaming_label = None
-        self._streaming_container = None
         self._refresh_content()
         # Update connection status (may have changed during translation)
         self._refresh_status()

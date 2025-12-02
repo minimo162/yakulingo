@@ -200,12 +200,27 @@ def create_text_panel(
 
                         # Translate button with keycap-style shortcut
                         async def handle_translate_click():
+                            # Direct file logging to bypass logging module issues
+                            import datetime
+                            from pathlib import Path
+                            log_path = Path.home() / ".yakulingo" / "debug.log"
+                            with open(log_path, 'a', encoding='utf-8') as f:
+                                f.write(f"{datetime.datetime.now()}: TRANSLATE BUTTON CLICKED\n")
+                                f.write(f"  can_translate: {state.can_translate()}, text_translating: {state.text_translating}\n")
+                                f.flush()
+
                             logger.info("=== Translate button clicked ===")
                             logger.debug("can_translate: %s, text_translating: %s", state.can_translate(), state.text_translating)
                             try:
                                 await on_translate()
+                                with open(log_path, 'a', encoding='utf-8') as f:
+                                    f.write(f"{datetime.datetime.now()}: on_translate completed\n")
+                                    f.flush()
                                 logger.info("on_translate completed")
                             except Exception as e:
+                                with open(log_path, 'a', encoding='utf-8') as f:
+                                    f.write(f"{datetime.datetime.now()}: ERROR: {e}\n")
+                                    f.flush()
                                 logger.exception("Error in on_translate: %s", e)
 
                         with ui.button(on_click=handle_translate_click).classes('translate-btn').props('no-caps') as btn:

@@ -854,9 +854,9 @@ def _render_inline_adjust_section(
                             on_click=lambda: on_adjust(text, 'これはどう？')
                         ).props('flat no-caps dense').classes('quick-chip')
 
-                    # Text input
+                    # Text input for adjustment requests
                     question_input = ui.input(
-                        placeholder='追加で質問する'
+                        placeholder='例: もっとカジュアルに'
                     ).classes('w-full question-input')
 
                 # Send button

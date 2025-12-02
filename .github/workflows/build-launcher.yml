@@ -2,9 +2,8 @@ name: Build Launcher
 
 on:
   push:
-    branches:
-      - main
-      - master
+    paths:
+      - 'launcher/**'
   release:
     types: [created]
   workflow_dispatch:  # Manual trigger

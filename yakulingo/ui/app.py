@@ -518,6 +518,7 @@ class YakuLingoApp:
                         on_bilingual_change=self._on_bilingual_change,
                         on_export_glossary_change=self._on_export_glossary_change,
                         on_style_change=self._on_style_change,
+                        on_section_toggle=self._on_section_toggle,
                         bilingual_enabled=self.settings.bilingual_output,
                         export_glossary_enabled=self.settings.export_glossary,
                         translation_style=self.settings.translation_style,
@@ -1006,6 +1007,11 @@ class YakuLingoApp:
         self.settings.save(self.settings_path)
         self._refresh_content()  # Refresh to update button states
 
+    def _on_section_toggle(self, section_index: int, selected: bool):
+        """Handle section selection toggle for partial translation"""
+        self.state.toggle_section_selection(section_index, selected)
+        self._refresh_content()  # Refresh to update block count display
+
     def _select_file(self, file_path: Path):
         """Select file for translation"""
         if not self.translation_service:
@@ -1060,6 +1066,14 @@ class YakuLingoApp:
             # For PDFs, use_ocr is the inverse of fast_mode
             use_ocr = not self.state.pdf_fast_mode
 
+            # Get selected sections for partial translation
+            selected_sections = None
+            if self.state.file_info and self.state.file_info.section_details:
+                selected_sections = self.state.file_info.selected_section_indices
+                # If all sections selected, pass None (translate all)
+                if len(selected_sections) == len(self.state.file_info.section_details):
+                    selected_sections = None
+
             result = await asyncio.to_thread(
                 lambda: self.translation_service.translate_file(
                     self.state.selected_file,
@@ -1068,6 +1082,7 @@ class YakuLingoApp:
                     output_language=self.state.file_output_language,
                     use_ocr=use_ocr,
                     translation_style=self.settings.translation_style,
+                    selected_sections=selected_sections,
                 )
             )
 

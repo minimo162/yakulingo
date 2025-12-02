@@ -787,6 +787,48 @@ class TranslationService:
 
         return None
 
+    def _filter_blocks_by_section(
+        self,
+        blocks: list[TextBlock],
+        selected_sections: list[int],
+    ) -> list[TextBlock]:
+        """
+        Filter text blocks to include only those from selected sections.
+
+        Args:
+            blocks: List of text blocks to filter
+            selected_sections: List of section indices to include
+
+        Returns:
+            Filtered list of text blocks
+        """
+        if not selected_sections:
+            return blocks
+
+        filtered = []
+        for block in blocks:
+            # Get section index from block metadata
+            # Different file types use different keys:
+            # - Excel: 'sheet_idx'
+            # - PowerPoint: 'slide_idx'
+            # - PDF: 'page_idx'
+            # - Word: no section (always include)
+            section_idx = None
+            metadata = block.metadata
+
+            if 'sheet_idx' in metadata:
+                section_idx = metadata['sheet_idx']
+            elif 'slide_idx' in metadata:
+                section_idx = metadata['slide_idx']
+            elif 'page_idx' in metadata:
+                section_idx = metadata['page_idx']
+
+            # Include block if section not tracked or section is selected
+            if section_idx is None or section_idx in selected_sections:
+                filtered.append(block)
+
+        return filtered
+
     def translate_file(
         self,
         input_path: Path,
@@ -795,6 +837,7 @@ class TranslationService:
         output_language: str = "en",
         use_ocr: bool = True,
         translation_style: str = "concise",
+        selected_sections: Optional[list[int]] = None,
     ) -> TranslationResult:
         """
         Translate a file to specified output language.
@@ -807,6 +850,7 @@ class TranslationService:
             use_ocr: For PDF files, use yomitoku OCR if available (default True)
             translation_style: "standard", "concise", or "minimal" (default: "concise")
                               Only affects English output
+            selected_sections: List of section indices to translate (None = all sections)
 
         Returns:
             TranslationResult with output_path
@@ -834,6 +878,7 @@ class TranslationService:
                     use_ocr,
                     start_time,
                     translation_style,
+                    selected_sections,
                 )
 
             # Standard processing for other file types
@@ -845,6 +890,7 @@ class TranslationService:
                 output_language,
                 start_time,
                 translation_style,
+                selected_sections,
             )
 
         except (OSError, RuntimeError, ValueError, ConnectionError, TimeoutError, BadZipFile) as e:
@@ -865,6 +911,7 @@ class TranslationService:
         output_language: str,
         start_time: float,
         translation_style: str = "concise",
+        selected_sections: Optional[list[int]] = None,
     ) -> TranslationResult:
         """Standard translation flow for non-PDF files."""
         # Report progress
@@ -878,6 +925,11 @@ class TranslationService:
 
         # Extract text blocks
         blocks = list(processor.extract_text_blocks(input_path))
+
+        # Filter blocks by selected sections if specified
+        if selected_sections is not None:
+            blocks = self._filter_blocks_by_section(blocks, selected_sections)
+
         total_blocks = len(blocks)
 
         if total_blocks == 0:
@@ -1007,6 +1059,7 @@ class TranslationService:
         use_ocr: bool,
         start_time: float,
         translation_style: str = "concise",
+        selected_sections: Optional[list[int]] = None,
     ) -> TranslationResult:
         """
         Streaming translation for PDF files.
@@ -1064,6 +1117,10 @@ class TranslationService:
                     status=TranslationStatus.CANCELLED,
                     duration_seconds=time.time() - start_time,
                 )
+
+        # Filter blocks by selected sections if specified
+        if selected_sections is not None:
+            all_blocks = self._filter_blocks_by_section(all_blocks, selected_sections)
 
         total_blocks = len(all_blocks)
 

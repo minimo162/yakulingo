@@ -14,7 +14,7 @@ from typing import Iterator, Optional
 from .base import FileProcessor
 from .translators import CellTranslator
 from .font_manager import FontManager, FontTypeDetector
-from yakulingo.models.types import TextBlock, FileInfo, FileType
+from yakulingo.models.types import TextBlock, FileInfo, FileType, SectionDetail
 
 # Module logger
 logger = logging.getLogger(__name__)
@@ -106,8 +106,11 @@ class ExcelProcessor(FileProcessor):
             try:
                 sheet_count = len(wb.sheets)
                 text_count = 0
+                section_details = []
 
-                for sheet in wb.sheets:
+                for idx, sheet in enumerate(wb.sheets):
+                    sheet_block_count = 0
+
                     # Count cells with text
                     used_range = sheet.used_range
                     if used_range is not None:
@@ -115,14 +118,14 @@ class ExcelProcessor(FileProcessor):
                             for cell in row:
                                 if cell.value and isinstance(cell.value, str):
                                     if self.cell_translator.should_translate(str(cell.value)):
-                                        text_count += 1
+                                        sheet_block_count += 1
 
                     # Count shapes with text (TextBox, etc.)
                     for shape in sheet.shapes:
                         try:
                             if hasattr(shape, 'text') and shape.text:
                                 if self.cell_translator.should_translate(shape.text):
-                                    text_count += 1
+                                    sheet_block_count += 1
                         except (AttributeError, TypeError, RuntimeError) as e:
                             logger.debug("Error reading shape text in sheet '%s': %s", sheet.name, e)
 
@@ -132,9 +135,16 @@ class ExcelProcessor(FileProcessor):
                             if hasattr(chart, 'chart') and chart.chart.has_title:
                                 title = chart.chart.chart_title.text_frame.text
                                 if title and self.cell_translator.should_translate(title):
-                                    text_count += 1
+                                    sheet_block_count += 1
                         except (AttributeError, TypeError, RuntimeError) as e:
                             logger.debug("Error reading chart title in sheet '%s': %s", sheet.name, e)
+
+                    text_count += sheet_block_count
+                    section_details.append(SectionDetail(
+                        index=idx,
+                        name=sheet.name,
+                        block_count=sheet_block_count,
+                    ))
 
                 return FileInfo(
                     path=file_path,
@@ -142,6 +152,7 @@ class ExcelProcessor(FileProcessor):
                     size_bytes=file_path.stat().st_size,
                     sheet_count=sheet_count,
                     text_block_count=text_count,
+                    section_details=section_details,
                 )
             finally:
                 wb.close()
@@ -152,18 +163,27 @@ class ExcelProcessor(FileProcessor):
         """Get file info using openpyxl (fallback)"""
         sheet_count = 0
         text_count = 0
+        section_details = []
 
         try:
             wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
             try:
                 sheet_count = len(wb.sheetnames)
 
-                for sheet in wb:
+                for idx, sheet in enumerate(wb):
+                    sheet_block_count = 0
                     for row in sheet.iter_rows():
                         for cell in row:
                             if cell.value and isinstance(cell.value, str):
                                 if self.cell_translator.should_translate(str(cell.value)):
-                                    text_count += 1
+                                    sheet_block_count += 1
+
+                    text_count += sheet_block_count
+                    section_details.append(SectionDetail(
+                        index=idx,
+                        name=sheet.title,
+                        block_count=sheet_block_count,
+                    ))
             finally:
                 wb.close()
         except (OSError, zipfile.BadZipFile, KeyError) as e:
@@ -176,6 +196,7 @@ class ExcelProcessor(FileProcessor):
             size_bytes=file_path.stat().st_size,
             sheet_count=sheet_count,
             text_block_count=text_count,
+            section_details=section_details,
         )
 
     def extract_text_blocks(self, file_path: Path) -> Iterator[TextBlock]:

@@ -80,12 +80,12 @@ COMPLETE_CSS = """
     --md-comp-touch-target-size: 3rem;       /* 48dp - minimum touch target */
 
     /* Typography - font size hierarchy (larger for better readability) */
-    --md-sys-typescale-size-xs: 0.9375rem;    /* 15px - captions, badges */
-    --md-sys-typescale-size-sm: 1rem;         /* 16px - labels, buttons */
-    --md-sys-typescale-size-md: 1.0625rem;    /* 17px - body text */
-    --md-sys-typescale-size-lg: 1.125rem;     /* 18px - subheadings */
-    --md-sys-typescale-size-xl: 1.5rem;       /* 24px - headings */
-    --md-sys-typescale-size-2xl: 1.75rem;     /* 28px - large headings */
+    --md-sys-typescale-size-xs: 1rem;         /* 16px - captions, badges */
+    --md-sys-typescale-size-sm: 1.125rem;     /* 18px - labels, buttons */
+    --md-sys-typescale-size-md: 1.1875rem;    /* 19px - body text */
+    --md-sys-typescale-size-lg: 1.25rem;      /* 20px - subheadings */
+    --md-sys-typescale-size-xl: 1.625rem;     /* 26px - headings */
+    --md-sys-typescale-size-2xl: 1.875rem;    /* 30px - large headings */
 
     /* Typography - font weight hierarchy */
     --md-sys-typescale-weight-regular: 400;   /* Body text, descriptions */
@@ -107,8 +107,8 @@ COMPLETE_CSS = """
     --sidebar-width: 220px;
 
     /* 3-Column Layout (Nani-inspired) */
-    --input-panel-width: 320px;
-    --input-panel-width-wide: 480px;  /* Wider input for 2-column mode */
+    --input-panel-width: 360px;
+    --input-panel-width-wide: 520px;  /* Wider input for 2-column mode */
     --bp-desktop: 1200px;        /* Full 3-column with sidebar */
     --bp-tablet-portrait: 800px; /* 2-column with fixed input */
     --bp-mobile: 800px;          /* Single column layout */
@@ -218,7 +218,7 @@ body {
 
 /* === Logo === */
 .app-logo {
-    font-size: 1.25rem;
+    font-size: var(--md-sys-typescale-size-lg);
     font-weight: 700;  /* Bold for brand name */
     color: var(--md-sys-color-primary);
     letter-spacing: -0.02em;
@@ -257,7 +257,7 @@ body {
     /* M3 tabs have no rounded corners */
     border-radius: 0;
     /* M3 title-small typography */
-    font-size: 0.875rem;
+    font-size: var(--md-sys-typescale-size-xs);
     font-weight: 500;
     letter-spacing: 0.1px;
     line-height: 1.25rem;
@@ -306,7 +306,7 @@ body {
 
 /* M3 icon styling in tabs */
 .nav-item .q-icon {
-    font-size: 1.25rem;
+    font-size: var(--md-sys-typescale-size-lg);
     color: inherit;
 }
 
@@ -360,7 +360,7 @@ body {
     gap: 0.375rem;
     padding: 0.375rem 0.875rem;
     border-radius: var(--md-sys-shape-corner-full);
-    font-size: 0.9375rem;  /* 15px - better readability */
+    font-size: var(--md-sys-typescale-size-xs);  /* 16px */
     font-weight: 500;
     background: var(--md-sys-color-surface-container);
     color: var(--md-sys-color-on-surface-variant);
@@ -467,14 +467,14 @@ body {
     border: 1px solid rgba(255, 255, 255, 0.3);
     border-radius: 6px;
     font-family: ui-monospace, monospace;
-    font-size: 0.8125rem;  /* 13px - minimum readable size */
+    font-size: var(--md-sys-typescale-size-xs);  /* 16px */
     font-weight: 500;
     color: rgba(255, 255, 255, 0.95);
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
 .keycap-plus {
-    font-size: 0.8125rem;
+    font-size: var(--md-sys-typescale-size-xs);
     color: rgba(255, 255, 255, 0.7);
     margin: 0 2px;
 }
@@ -492,7 +492,7 @@ body {
     border: 1px solid var(--md-sys-color-outline);
     border-radius: var(--md-sys-shape-corner-full);
     color: var(--md-sys-color-primary);
-    font-size: 0.875rem;
+    font-size: var(--md-sys-typescale-size-xs);
     font-weight: 500;
     letter-spacing: 0.01em;
     cursor: pointer;
@@ -528,7 +528,7 @@ body {
     background: var(--md-sys-color-primary);
     color: var(--md-sys-color-on-primary);
     border-radius: var(--md-sys-shape-corner-full);
-    font-size: 0.875rem;
+    font-size: var(--md-sys-typescale-size-xs);
     font-weight: 500;
     letter-spacing: 0.01em;
     border: none;
@@ -573,7 +573,7 @@ body {
     background: var(--md-sys-color-secondary-container);
     color: var(--md-sys-color-on-secondary-container);
     border-radius: var(--md-sys-shape-corner-full);
-    font-size: 0.875rem;
+    font-size: var(--md-sys-typescale-size-xs);
     font-weight: 500;
     letter-spacing: 0.01em;
     border: none;
@@ -602,7 +602,7 @@ body {
     background: transparent;
     color: var(--md-sys-color-primary);
     border-radius: var(--md-sys-shape-corner-full);
-    font-size: 0.875rem;
+    font-size: var(--md-sys-typescale-size-xs);
     font-weight: 500;
     letter-spacing: 0.01em;
     border: none;
@@ -622,7 +622,7 @@ body {
 .drop-zone {
     border: 2px dashed var(--md-sys-color-outline-variant);
     border-radius: var(--md-sys-shape-corner-xl);
-    padding: 3rem 2rem;
+    padding: 3.5rem 2.5rem;
     text-align: center;
     cursor: pointer;
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
@@ -700,7 +700,7 @@ body {
 }
 
 .drop-zone-text {
-    font-size: 1.125rem;
+    font-size: var(--md-sys-typescale-size-lg);
     font-weight: 500;
     color: var(--md-sys-color-on-surface);
     margin-bottom: 0.375rem;
@@ -713,7 +713,7 @@ body {
 }
 
 .drop-zone-hint {
-    font-size: 0.9375rem;
+    font-size: var(--md-sys-typescale-size-xs);
     color: var(--md-sys-color-on-surface-variant);
     background: var(--md-sys-color-surface-container);
     padding: 0.375rem 0.75rem;
@@ -777,7 +777,7 @@ body {
     padding: 0.4375rem 0.875rem;
     background: var(--md-sys-color-surface-container-high);
     border-radius: var(--md-sys-shape-corner-full);
-    font-size: 0.9375rem;  /* 15px - better readability */
+    font-size: var(--md-sys-typescale-size-xs);  /* 16px */
     color: var(--md-sys-color-on-surface-variant);
 }
 
@@ -805,7 +805,7 @@ body {
 .option-text {
     line-height: 1.7;
     word-break: break-word;
-    font-size: 1.0625rem;
+    font-size: var(--md-sys-typescale-size-md);
 }
 
 .option-action {
@@ -829,7 +829,7 @@ body {
 .result-header {
     padding: 1rem 1.25rem;
     border-bottom: 1px solid var(--md-sys-color-outline-variant);
-    font-size: 0.9375rem;  /* 15px - improved readability */
+    font-size: var(--md-sys-typescale-size-xs);  /* 16px */
     font-weight: 600;  /* Semibold for section headers */
     color: var(--md-sys-color-on-surface-variant);
 }
@@ -895,7 +895,7 @@ body {
 .text-muted { color: var(--md-sys-color-on-surface-variant); }
 .text-primary { color: var(--md-sys-color-primary); }
 .text-error { color: var(--md-sys-color-error); }
-.text-2xs { font-size: 0.9375rem; }  /* 15px - better readability */
+.text-2xs { font-size: var(--md-sys-typescale-size-xs); }  /* 16px */
 
 .animate-in {
     animation: fadeIn var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-standard);
@@ -962,6 +962,7 @@ body {
     min-width: 100%;
     max-width: none;
     border-right: none;
+    justify-content: center;
 }
 
 /* ========================================
@@ -1192,7 +1193,7 @@ body {
     height: 100%;
     min-width: 3rem;
     padding: 0 1rem;
-    font-size: 0.875rem;
+    font-size: var(--md-sys-typescale-size-xs);
     font-weight: 500;
     letter-spacing: 0.01em;
     color: var(--md-sys-color-on-surface);
@@ -1224,7 +1225,7 @@ body {
 .segmented-btn-selected::before {
     content: '✓';
     margin-right: 0.25rem;
-    font-size: 0.875rem;
+    font-size: var(--md-sys-typescale-size-xs);
 }
 
 /* === Language Selector (Legacy - Segmented Button style) === */
@@ -1243,7 +1244,7 @@ body {
     gap: 0.375rem;
     height: 100%;
     padding: 0 1.25rem;
-    font-size: 0.875rem;
+    font-size: var(--md-sys-typescale-size-xs);
     font-weight: 500;
     letter-spacing: 0.01em;
     color: var(--md-sys-color-on-surface);
@@ -1292,7 +1293,7 @@ body {
     height: 100%;
     min-width: 4rem;
     padding: 0 1rem;
-    font-size: 0.875rem;
+    font-size: var(--md-sys-typescale-size-xs);
     font-weight: 500;
     letter-spacing: 0.01em;
     color: var(--md-sys-color-on-surface);
@@ -1415,7 +1416,7 @@ body {
 .nani-result-text {
     white-space: pre-wrap;
     flex: 1;
-    font-size: 1.0625rem;
+    font-size: var(--md-sys-typescale-size-md);
     line-height: 1.6;
     color: var(--md-sys-color-on-surface);
     word-break: break-word;
@@ -1446,7 +1447,7 @@ body {
     color: var(--md-sys-color-on-primary-container);
     border-radius: 1rem;
     border-left: 4px solid var(--md-sys-color-primary);
-    font-size: 0.9375rem;
+    font-size: var(--md-sys-typescale-size-xs);
     line-height: 1.8;
 }
 
@@ -1480,7 +1481,7 @@ body {
 
 .follow-up-btn {
     height: var(--md-comp-button-height) !important;
-    font-size: 0.875rem !important;
+    font-size: var(--md-sys-typescale-size-xs) !important;
     font-weight: 500 !important;
     letter-spacing: 0.01em !important;
     padding: 0 var(--md-comp-button-padding-x) !important;
@@ -1549,7 +1550,7 @@ body {
     gap: 0.25rem;
     padding: 0.125rem 0.5rem;
     border-radius: var(--md-sys-shape-corner-full);
-    font-size: 0.8125rem;
+    font-size: var(--md-sys-typescale-size-xs);
     color: var(--md-sys-color-on-surface-variant);
     cursor: pointer;
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
@@ -1572,7 +1573,7 @@ body {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 1.5rem;
+    font-size: var(--md-sys-typescale-size-xl);
     animation: bounce 1s ease-in-out infinite;
 }
 
@@ -1712,7 +1713,7 @@ body {
 }
 
 .loading-character .submessage {
-    font-size: 0.9375rem;
+    font-size: var(--md-sys-typescale-size-xs);
     color: var(--md-sys-color-on-surface-variant);
 }
 
@@ -1725,12 +1726,12 @@ body {
 }
 
 .success-character .emoji {
-    font-size: 1.5rem;
+    font-size: var(--md-sys-typescale-size-xl);
     animation: celebrate 0.6s ease-out;
 }
 
 .success-character .message {
-    font-size: 0.9375rem;
+    font-size: var(--md-sys-typescale-size-xs);
     color: var(--md-sys-color-on-surface-variant);
 }
 
@@ -1748,7 +1749,7 @@ body {
     align-items: center;
     gap: 0.5rem;
     color: var(--md-sys-color-on-surface-variant);
-    font-size: 0.9375rem;
+    font-size: var(--md-sys-typescale-size-xs);
 }
 
 .hint-secondary {
@@ -1757,7 +1758,7 @@ body {
     gap: 0.375rem;
     color: var(--md-sys-color-on-surface-variant);
     opacity: 0.6;
-    font-size: 0.9375rem;
+    font-size: var(--md-sys-typescale-size-xs);
 }
 
 /* Security tooltip */
@@ -1770,7 +1771,7 @@ body {
     color: var(--md-sys-color-surface);
     padding: 0.5rem 0.75rem;
     border-radius: var(--md-sys-shape-corner-small);
-    font-size: 0.8125rem;
+    font-size: var(--md-sys-typescale-size-xs);
     white-space: nowrap;
     opacity: 0;
     visibility: hidden;
@@ -1803,12 +1804,12 @@ body {
     background: var(--md-sys-color-primary-container);
     color: var(--md-sys-color-on-primary-container);
     border-radius: var(--md-sys-shape-corner-full);
-    font-size: 0.8125rem;
+    font-size: var(--md-sys-typescale-size-xs);
     font-weight: 500;
 }
 
 .result-count-badge .emoji {
-    font-size: 0.875rem;
+    font-size: var(--md-sys-typescale-size-xs);
 }
 
 /* === M3 Icon Button (Standard) === */
@@ -1916,7 +1917,7 @@ body {
     padding: 0.25rem 0.5rem;
     background: var(--md-sys-color-primary-container);
     border-radius: var(--md-sys-shape-corner-full);
-    font-size: 0.8125rem;
+    font-size: var(--md-sys-typescale-size-xs);
     color: var(--md-sys-color-on-primary-container);
 }
 
@@ -2007,7 +2008,7 @@ body {
 
 .suggestion-hint-icon {
     color: var(--md-sys-color-primary);
-    font-size: 1.25rem !important;
+    font-size: var(--md-sys-typescale-size-lg) !important;
 }
 
 .retry-btn {
@@ -2015,7 +2016,7 @@ body {
     background: var(--md-sys-color-surface) !important;
     border-radius: var(--md-sys-shape-corner-full) !important;
     padding: 0.375rem 0.75rem !important;
-    font-size: 0.875rem !important;
+    font-size: var(--md-sys-typescale-size-xs) !important;
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard) !important;
 }
 
@@ -2044,7 +2045,7 @@ body {
 .adjust-option-btn {
     flex: 1;
     padding: 0.75rem 0.875rem !important;
-    font-size: 0.9375rem !important;
+    font-size: var(--md-sys-typescale-size-xs) !important;
     color: var(--md-sys-color-on-surface) !important;
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard) !important;
     border-radius: var(--md-sys-shape-corner-medium) !important;
@@ -2064,7 +2065,7 @@ body {
 .adjust-option-btn-full {
     width: 100%;
     padding: 0.625rem 0.875rem !important;
-    font-size: 0.9375rem !important;
+    font-size: var(--md-sys-typescale-size-xs) !important;
     color: var(--md-sys-color-on-surface) !important;
     background: var(--md-sys-color-surface-container) !important;
     border-radius: var(--md-sys-shape-corner-medium) !important;
@@ -2089,7 +2090,7 @@ body {
 }
 
 .quick-chip {
-    font-size: 0.9375rem !important;
+    font-size: var(--md-sys-typescale-size-xs) !important;
     padding: 0.375rem 0.75rem !important;
     border: 1px solid var(--md-sys-color-outline-variant) !important;
     border-radius: var(--md-sys-shape-corner-small) !important;
@@ -2135,7 +2136,7 @@ body {
 /* === Back-translate Button (M3 Text Button) === */
 .back-translate-btn {
     height: var(--md-comp-button-height) !important;
-    font-size: 0.875rem !important;
+    font-size: var(--md-sys-typescale-size-xs) !important;
     font-weight: 500 !important;
     letter-spacing: 0.01em !important;
     padding: 0 0.75rem !important;
@@ -2157,7 +2158,7 @@ body {
 
 /* === Elapsed Time Badge === */
 .elapsed-time-badge {
-    font-size: 0.9375rem;
+    font-size: var(--md-sys-typescale-size-xs);
     color: var(--md-sys-color-on-surface-variant);
     background: var(--md-sys-color-surface-container);
     padding: 0.25rem 0.625rem;
@@ -2176,7 +2177,7 @@ body {
 
 .explain-more-btn {
     height: var(--md-comp-button-height) !important;
-    font-size: 0.875rem !important;
+    font-size: var(--md-sys-typescale-size-xs) !important;
     font-weight: 500 !important;
     letter-spacing: 0.01em !important;
     color: var(--md-sys-color-primary) !important;
@@ -2522,7 +2523,7 @@ a:hover {
 
 /* === Duration Badge === */
 .duration-badge {
-    font-size: 0.8125rem;
+    font-size: var(--md-sys-typescale-size-xs);
     padding: 0.125rem 0.5rem;
     border-radius: var(--md-sys-shape-corner-full);
     background-color: var(--md-sys-color-surface-container-high);
@@ -2539,7 +2540,7 @@ a:hover {
 }
 
 .completion-file-icon {
-    font-size: 1.125rem;
+    font-size: var(--md-sys-typescale-size-lg);
     color: var(--md-sys-color-on-surface-variant);
 }
 
@@ -2550,7 +2551,7 @@ a:hover {
 }
 
 .completion-file-desc {
-    font-size: 0.9375rem;
+    font-size: var(--md-sys-typescale-size-xs);
     color: var(--md-sys-color-on-surface-variant);
 }
 
@@ -2571,7 +2572,7 @@ a:hover {
 
 .loading-title {
     margin-top: 1rem;
-    font-size: 1.5rem;
+    font-size: var(--md-sys-typescale-size-xl);
     font-weight: 500;
     color: var(--md-sys-color-on-surface);
     letter-spacing: 0.02em;

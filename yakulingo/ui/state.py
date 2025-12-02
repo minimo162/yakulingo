@@ -177,3 +177,11 @@ class AppState:
     def toggle_history_drawer(self) -> None:
         """Toggle history drawer visibility"""
         self.history_drawer_open = not self.history_drawer_open
+
+    def toggle_section_selection(self, section_index: int, selected: bool) -> None:
+        """Toggle selection state of a section for partial translation"""
+        if self.file_info and self.file_info.section_details:
+            for section in self.file_info.section_details:
+                if section.index == section_index:
+                    section.selected = selected
+                    break

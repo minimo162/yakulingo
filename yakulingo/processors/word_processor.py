@@ -491,7 +491,8 @@ class WordProcessor(FileProcessor):
             for run in para.runs[1:]:
                 run.text = ""
         else:
-            para.text = translated_text
+            # No runs - add text via a new run (para.text is read-only)
+            para.add_run().text = translated_text
 
     def create_bilingual_document(
         self,

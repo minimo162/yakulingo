@@ -58,7 +58,7 @@ YakuLingo/
 │   │   ├── styles.py              # M3 design tokens & CSS
 │   │   ├── utils.py               # UI utilities (temp files, dialogs, formatting)
 │   │   └── components/            # Reusable UI components
-│   │       ├── file_panel.py      # File translation panel
+│   │       ├── file_panel.py      # File translation panel (drag-drop, progress)
 │   │       ├── text_panel.py      # Text translation panel (Nani-inspired UI)
 │   │       └── update_notification.py  # Auto-update notifications
 │   ├── services/                  # Business logic layer
@@ -122,17 +122,18 @@ YakuLingo/
 
 | File | Purpose | Lines |
 |------|---------|-------|
-| `yakulingo/ui/app.py` | Main application orchestrator, handles UI events and coordinates services | ~959 |
-| `yakulingo/services/translation_service.py` | Coordinates file processors and batch translation | ~961 |
-| `yakulingo/services/copilot_handler.py` | Browser automation for M365 Copilot | ~1102 |
-| `yakulingo/services/updater.py` | GitHub Releases-based auto-update with Windows proxy support | ~750 |
-| `yakulingo/ui/styles.py` | M3 design tokens, CSS styling definitions | ~1489 |
-| `yakulingo/ui/components/text_panel.py` | Nani-inspired text translation UI with inline adjustments | ~666 |
+| `yakulingo/ui/app.py` | Main application orchestrator, handles UI events and coordinates services | ~1286 |
+| `yakulingo/services/translation_service.py` | Coordinates file processors and batch translation | ~1433 |
+| `yakulingo/services/copilot_handler.py` | Browser automation for M365 Copilot | ~1256 |
+| `yakulingo/services/updater.py` | GitHub Releases-based auto-update with Windows proxy support | ~764 |
+| `yakulingo/ui/styles.py` | M3 design tokens, CSS styling definitions | ~2580 |
+| `yakulingo/ui/components/text_panel.py` | Nani-inspired text translation UI with inline adjustments | ~754 |
+| `yakulingo/ui/components/file_panel.py` | File translation panel with drag-drop and progress | ~353 |
 | `yakulingo/ui/components/update_notification.py` | Auto-update UI notifications | ~344 |
-| `yakulingo/ui/utils.py` | UI utilities: temp file management, dialog helpers, text formatting | ~223 |
-| `yakulingo/ui/state.py` | Application state management | ~180 |
-| `yakulingo/models/types.py` | Core data types: TextBlock, FileInfo, TranslationResult, HistoryEntry | ~253 |
-| `yakulingo/storage/history_db.py` | SQLite database for translation history | ~243 |
+| `yakulingo/ui/utils.py` | UI utilities: temp file management, dialog helpers, text formatting | ~489 |
+| `yakulingo/ui/state.py` | Application state management | ~187 |
+| `yakulingo/models/types.py` | Core data types: TextBlock, FileInfo, TranslationResult, HistoryEntry | ~304 |
+| `yakulingo/storage/history_db.py` | SQLite database for translation history | ~320 |
 | `yakulingo/processors/base.py` | Abstract base class for all file processors | ~105 |
 
 ## Core Data Types
@@ -141,11 +142,13 @@ YakuLingo/
 # Key enums (yakulingo/models/types.py)
 FileType: EXCEL, WORD, POWERPOINT, PDF
 TranslationStatus: PENDING, PROCESSING, COMPLETED, FAILED, CANCELLED
+TranslationPhase: EXTRACTING, TRANSLATING, APPLYING, FINALIZING  # Progress phases
 
 # Key dataclasses
 TextBlock(id, text, location, metadata)       # Unit of translatable text
 FileInfo(path, file_type, size_bytes, ...)    # File metadata
-TranslationProgress(current, total, status)   # Progress tracking
+SectionDetail(name, count, ...)               # Section details (sheets, pages, slides)
+TranslationProgress(current, total, status, phase)  # Progress tracking with phase
 TranslationResult(status, output_path, bilingual_path, glossary_path, ...)  # File translation outcome
 TranslationOption(text, explanation)          # Single translation option
 TextTranslationResult(source_text, options)   # Text translation with multiple options
@@ -400,14 +403,20 @@ sans-serif → Meiryo UI
   "reference_files": ["glossary.csv"],
   "output_directory": null,
   "last_tab": "text",
-  "window_width": 1100,
-  "window_height": 750,
-  "text_translation_style": "concise",
+  "window_width": 1400,
+  "window_height": 850,
   "max_batch_size": 50,
   "max_chars_per_batch": 7000,
   "request_timeout": 120,
   "max_retries": 3,
   "copilot_char_limit": 7500,
+  "bilingual_output": false,
+  "export_glossary": false,
+  "translation_style": "concise",
+  "text_translation_style": "concise",
+  "ocr_batch_size": 5,
+  "ocr_dpi": 200,
+  "ocr_device": "auto",
   "auto_update_enabled": true,
   "auto_update_check_interval": 86400,
   "github_repo_owner": "minimo162",
@@ -417,7 +426,7 @@ sans-serif → Meiryo UI
 }
 ```
 
-**text_translation_style values**: `"standard"`, `"concise"` (default), `"minimal"`
+**translation_style / text_translation_style values**: `"standard"`, `"concise"` (default), `"minimal"`
 
 ### Reference Files
 Reference files provide context for consistent translations:
@@ -603,7 +612,7 @@ Based on recent commits:
 - **Back-Translate Feature**: Verify translations by translating back to original language
 - **Auto-Update System**: GitHub Releases-based updates with Windows proxy support
 - **Native Launcher**: Rust-based `YakuLingo.exe` for Windows distribution
-- **Test Coverage**: 26 test files with 1114+ tests
+- **Test Coverage**: 26 test files with 1117 tests
 
 ## Git Workflow
 

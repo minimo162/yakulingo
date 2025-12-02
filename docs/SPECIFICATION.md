@@ -141,6 +141,7 @@ YakuLingo/
 │   │   ├── app.py                  # YakuLingoApp クラス
 │   │   ├── state.py                # AppState
 │   │   ├── styles.py               # M3 デザイントークン & CSS
+│   │   ├── utils.py                # UI utilities (temp files, dialogs, text formatting)
 │   │   └── components/
 │   │       ├── text_panel.py       # テキスト翻訳パネル
 │   │       ├── file_panel.py       # ファイル翻訳パネル
@@ -216,6 +217,12 @@ class TranslationStatus(Enum):
     FAILED = "failed"
     CANCELLED = "cancelled"
 
+class TranslationPhase(Enum):
+    EXTRACTING = "extracting"      # テキスト抽出中
+    TRANSLATING = "translating"    # 翻訳中
+    APPLYING = "applying"          # 翻訳適用中
+    FINALIZING = "finalizing"      # 出力ファイル作成中
+
 # 自動更新用
 class UpdateStatus(Enum):
     UP_TO_DATE = "up_to_date"
@@ -228,6 +235,14 @@ class UpdateStatus(Enum):
 ### 4.2 データクラス
 
 ```python
+@dataclass
+class SectionDetail:
+    """セクション詳細（シート、ページ、スライド）"""
+    name: str         # セクション名
+    count: int        # アイテム数
+    char_count: int   # 文字数
+    block_count: int  # テキストブロック数
+
 @dataclass
 class TextBlock:
     id: str           # 一意識別子（例: "Sheet1_A1"）
@@ -250,6 +265,7 @@ class TranslationProgress:
     current: int
     total: int
     status: str
+    phase: TranslationPhase = TranslationPhase.TRANSLATING
     percentage: float = 0.0
     estimated_remaining: Optional[int] = None
 
@@ -1030,9 +1046,8 @@ class AppSettings:
 
     # UI
     last_tab: str = "text"
-    window_width: int = 1100
-    window_height: int = 750
-    text_translation_style: str = "concise"  # "standard", "concise", "minimal"
+    window_width: int = 1400              # 3カラムレイアウト対応
+    window_height: int = 850
 
     # Advanced
     max_batch_size: int = 50
@@ -1042,6 +1057,19 @@ class AppSettings:
 
     # Copilot License
     copilot_char_limit: int = 7500       # ファイル添付切り替え閾値
+
+    # File Translation Options
+    bilingual_output: bool = False       # 対訳出力（原文と翻訳を交互に配置）
+    export_glossary: bool = False        # 対訳CSV出力（glossaryとして再利用可能）
+    translation_style: str = "concise"   # ファイル翻訳の英訳スタイル
+
+    # Text Translation Options
+    text_translation_style: str = "concise"  # "standard", "concise", "minimal"
+
+    # PDF OCR Options (yomitoku)
+    ocr_batch_size: int = 5              # ページ/バッチ
+    ocr_dpi: int = 200                   # OCR解像度
+    ocr_device: str = "auto"             # "auto", "cpu", "cuda"
 
     # Auto Update
     auto_update_enabled: bool = True

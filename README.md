@@ -114,14 +114,24 @@ python app.py
   "reference_files": ["glossary.csv"],
   "output_directory": null,
   "last_tab": "text",
-  "window_width": 1100,
-  "window_height": 750,
+  "window_width": 1400,
+  "window_height": 850,
+  "bilingual_output": false,
+  "export_glossary": false,
+  "translation_style": "concise",
   "text_translation_style": "concise",
   "auto_update_enabled": true
 }
 ```
 
-**翻訳スタイル** (`text_translation_style`): `"standard"`（標準）, `"concise"`（簡潔）, `"minimal"`（最簡潔）
+| 設定 | 説明 | デフォルト |
+|------|------|----------|
+| `bilingual_output` | 対訳ファイルを生成 | false |
+| `export_glossary` | 用語集CSVを生成 | false |
+| `translation_style` | ファイル翻訳のスタイル | "concise" |
+| `text_translation_style` | テキスト翻訳のスタイル | "concise" |
+
+**翻訳スタイル**: `"standard"`（標準）, `"concise"`（簡潔）, `"minimal"`（最簡潔）
 
 ### 参照ファイル
 

@@ -209,13 +209,13 @@ def create_text_panel(
                         elif not state.can_translate():
                             btn.props('disable')
 
-        # Hint text with animated language detection icon
+        # Hint text
         with ui.element('div').classes('hint-section'):
             with ui.element('div').classes('hint-primary'):
                 ui.html(LANG_DETECT_SVG, sanitize=False)
-                ui.label('AIが言語を検出し、日本語なら英語へ、それ以外なら日本語へ翻訳します').classes('text-xs')
+                ui.label('入力言語を自動判定して翻訳します（日本語⇔英語）').classes('text-xs')
             with ui.element('div').classes('hint-secondary'):
-                ui.icon('smart_toy').classes('text-sm')
+                ui.icon('auto_awesome').classes('text-sm')
                 ui.label('M365 Copilot による翻訳').classes('text-2xs')
 
         # Results section - language-specific UI

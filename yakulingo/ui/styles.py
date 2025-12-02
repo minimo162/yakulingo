@@ -52,12 +52,12 @@ COMPLETE_CSS = """
     --md-sys-shape-corner-small: 12px;  /* Chips, small elements */
 
     /* Typography - font size hierarchy */
-    --md-sys-typescale-size-xs: 0.8125rem;    /* 13px - minimum, captions, badges */
-    --md-sys-typescale-size-sm: 0.875rem;     /* 14px - labels, buttons */
-    --md-sys-typescale-size-md: 0.9375rem;    /* 15px - body text */
-    --md-sys-typescale-size-lg: 1rem;         /* 16px - subheadings */
-    --md-sys-typescale-size-xl: 1.25rem;      /* 20px - headings */
-    --md-sys-typescale-size-2xl: 1.5rem;      /* 24px - large headings */
+    --md-sys-typescale-size-xs: 0.875rem;     /* 14px - captions, badges */
+    --md-sys-typescale-size-sm: 0.9375rem;    /* 15px - labels, buttons */
+    --md-sys-typescale-size-md: 1rem;         /* 16px - body text */
+    --md-sys-typescale-size-lg: 1.0625rem;    /* 17px - subheadings */
+    --md-sys-typescale-size-xl: 1.375rem;     /* 22px - headings */
+    --md-sys-typescale-size-2xl: 1.625rem;    /* 26px - large headings */
 
     /* Typography - font weight hierarchy */
     --md-sys-typescale-weight-regular: 400;   /* Body text, descriptions */
@@ -482,28 +482,11 @@ body {
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-spring);
 }
 
-/* Visual click hint - Gradio style */
-.drop-zone::after {
-    content: 'クリック または ドラッグ＆ドロップ';
-    position: absolute;
-    bottom: 0.75rem;
-    left: 50%;
-    transform: translateX(-50%);
-    font-size: 0.6875rem;
-    color: var(--md-sys-color-outline);
-    opacity: 0;
-    transition: opacity var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
-}
-
-.drop-zone:hover::after {
-    opacity: 1;
-}
-
 .drop-zone-icon {
-    font-size: 2.5rem;
+    font-size: 3rem;
     color: var(--md-sys-color-on-surface-variant);
     margin-bottom: 0.75rem;
-    transition: transform var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-spring);
+    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-spring);
 }
 
 .drop-zone:hover .drop-zone-icon {
@@ -512,15 +495,24 @@ body {
 }
 
 .drop-zone-text {
-    font-size: 0.9375rem;
+    font-size: 1.0625rem;
     font-weight: 500;
     color: var(--md-sys-color-on-surface);
+    margin-bottom: 0.25rem;
+}
+
+.drop-zone-subtext {
+    font-size: 0.9375rem;
+    color: var(--md-sys-color-outline);
+    margin-bottom: 0.75rem;
 }
 
 .drop-zone-hint {
-    font-size: 0.8125rem;  /* 13px - improved readability */
+    font-size: 0.875rem;
     color: var(--md-sys-color-on-surface-variant);
-    margin-top: 0.25rem;
+    background: var(--md-sys-color-surface-container);
+    padding: 0.375rem 0.75rem;
+    border-radius: var(--md-sys-shape-corner-small);
 }
 
 /* === M3 Card === */
@@ -1392,12 +1384,13 @@ body {
 }
 
 /* === Nani-style Attachment Button === */
+/* Attach button - matches settings button style */
 .attach-btn {
     display: grid;
     place-items: center;
-    width: 2.5rem;
-    height: 2.5rem;
-    border: 1.5px dashed var(--md-sys-color-outline-variant);
+    width: 2.25rem;
+    height: 2.25rem;
+    border: none;
     border-radius: var(--md-sys-shape-corner-full);
     background: transparent;
     color: var(--md-sys-color-on-surface-variant);
@@ -1407,16 +1400,13 @@ body {
 }
 
 .attach-btn:hover {
-    border-color: var(--md-sys-color-primary);
     color: var(--md-sys-color-primary);
     background: var(--md-sys-color-primary-container);
 }
 
 .attach-btn.has-file {
-    border-style: solid;
-    border-color: var(--md-sys-color-primary);
+    color: var(--md-sys-color-primary);
     background: var(--md-sys-color-primary-container);
-    color: var(--md-sys-color-on-primary-container);
 }
 
 .attach-btn svg {

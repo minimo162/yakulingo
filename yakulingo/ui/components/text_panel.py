@@ -273,16 +273,13 @@ def _render_loading(source_text: str = ""):
             ui.spinner('dots', size='lg').classes('text-primary')
 
             # Dynamic language detection message
-            with ui.column().classes('gap-1'):
-                with ui.row().classes('items-center gap-2'):
-                    if is_japanese:
-                        ui.label('🇯🇵 → 🇺🇸').classes('text-base')
-                        ui.label('英語に翻訳しています...').classes('message')
-                    else:
-                        ui.label('🌐 → 🇯🇵').classes('text-base')
-                        ui.label('日本語に翻訳しています...').classes('message')
-
-                ui.label('M365 Copilot による翻訳').classes('submessage')
+            with ui.row().classes('items-center gap-2'):
+                if is_japanese:
+                    ui.label('🇯🇵 → 🇺🇸').classes('text-base')
+                    ui.label('英語に翻訳しています...').classes('message')
+                else:
+                    ui.label('🌐 → 🇯🇵').classes('text-base')
+                    ui.label('日本語に翻訳しています...').classes('message')
 
 
 def _render_results_to_en(

@@ -446,8 +446,10 @@ class YakuLingoApp:
                         on_pdf_fast_mode_change=self._on_pdf_fast_mode_change,
                         on_bilingual_change=self._on_bilingual_change,
                         on_export_glossary_change=self._on_export_glossary_change,
+                        on_style_change=self._on_style_change,
                         bilingual_enabled=self.settings.bilingual_output,
                         export_glossary_enabled=self.settings.export_glossary,
+                        translation_style=self.settings.translation_style,
                     )
 
         self._main_content = main_content
@@ -932,6 +934,12 @@ class YakuLingoApp:
         self.settings.save(self.settings_path)
         # No need to refresh content, checkbox state is handled by NiceGUI
 
+    def _on_style_change(self, style: str):
+        """Handle translation style change (standard/concise/minimal)"""
+        self.settings.translation_style = style
+        self.settings.save(self.settings_path)
+        self._refresh_content()  # Refresh to update button states
+
     def _select_file(self, file_path: Path):
         """Select file for translation"""
         if not self.translation_service:
@@ -993,6 +1001,7 @@ class YakuLingoApp:
                     on_progress,
                     output_language=self.state.file_output_language,
                     use_ocr=use_ocr,
+                    translation_style=self.settings.translation_style,
                 )
             )
 

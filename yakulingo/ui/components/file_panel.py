@@ -43,8 +43,10 @@ def create_file_panel(
     on_pdf_fast_mode_change: Optional[Callable[[bool], None]] = None,
     on_bilingual_change: Optional[Callable[[bool], None]] = None,
     on_export_glossary_change: Optional[Callable[[bool], None]] = None,
+    on_style_change: Optional[Callable[[str], None]] = None,
     bilingual_enabled: bool = False,
     export_glossary_enabled: bool = False,
+    translation_style: str = "concise",
 ):
     """File translation panel - Nani-inspired design"""
 
@@ -60,6 +62,9 @@ def create_file_panel(
                     _file_card(state.file_info, on_reset)
                     # Output language selector
                     _language_selector(state, on_language_change)
+                    # Translation style selector (only for English output)
+                    if state.file_output_language == 'en':
+                        _style_selector(translation_style, on_style_change)
                     # PDF-specific options
                     if state.file_info and state.file_info.file_type == FileType.PDF:
                         _pdf_mode_selector(state, on_pdf_fast_mode_change)
@@ -116,6 +121,38 @@ def _language_selector(state: AppState, on_change: Optional[Callable[[str], None
             with ui.button(on_click=lambda: on_change and on_change('jp')).classes(jp_classes).props('flat no-caps'):
                 ui.label('🇯🇵').classes('flag-icon')
                 ui.label('日本語')
+
+
+# Translation style options with labels and tooltips
+STYLE_OPTIONS = {
+    'standard': ('標準', '自然で読みやすい翻訳。本文・説明文向け'),
+    'concise': ('簡潔', '冗長表現を避けた簡潔な翻訳。箇条書き・表向け'),
+    'minimal': ('最簡潔', '最小限の文字数。見出し・件名向け'),
+}
+
+
+def _style_selector(current_style: str, on_change: Optional[Callable[[str], None]]):
+    """Translation style selector - segmented button style for English output"""
+    with ui.row().classes('w-full justify-center mt-3'):
+        with ui.element('div').classes('style-selector'):
+            for i, (style_key, (label, tooltip)) in enumerate(STYLE_OPTIONS.items()):
+                # Determine button position class
+                if i == 0:
+                    pos_class = 'style-btn-left'
+                elif i == len(STYLE_OPTIONS) - 1:
+                    pos_class = 'style-btn-right'
+                else:
+                    pos_class = 'style-btn-middle'
+
+                style_classes = f'style-btn {pos_class}'
+                if current_style == style_key:
+                    style_classes += ' style-btn-active'
+
+                btn = ui.button(
+                    label,
+                    on_click=lambda k=style_key: on_change and on_change(k)
+                ).classes(style_classes).props('flat no-caps dense')
+                btn.tooltip(tooltip)
 
 
 def _pdf_mode_selector(state: AppState, on_change: Optional[Callable[[bool], None]]):

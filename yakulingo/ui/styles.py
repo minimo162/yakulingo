@@ -875,6 +875,52 @@ body {
     box-shadow: var(--md-sys-elevation-1);
 }
 
+/* === Translation Style Selector (Segmented Button) === */
+.style-selector {
+    display: inline-flex;
+    background: var(--md-sys-color-surface-container);
+    border-radius: var(--md-sys-shape-corner-full);
+    padding: 3px;
+    gap: 0;
+}
+
+.style-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.375rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--md-sys-color-on-surface-variant);
+    background: transparent;
+    border: none;
+    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+    cursor: pointer;
+    min-width: 4rem;
+}
+
+.style-btn-left {
+    border-radius: var(--md-sys-shape-corner-full) 0 0 var(--md-sys-shape-corner-full);
+}
+
+.style-btn-middle {
+    border-radius: 0;
+}
+
+.style-btn-right {
+    border-radius: 0 var(--md-sys-shape-corner-full) var(--md-sys-shape-corner-full) 0;
+}
+
+.style-btn:hover:not(.style-btn-active) {
+    background: var(--md-sys-color-surface-container-high);
+}
+
+.style-btn-active {
+    background: var(--md-sys-color-surface);
+    color: var(--md-sys-color-on-surface);
+    box-shadow: var(--md-sys-elevation-1);
+}
+
 /* === →Japanese Translation Result Card === */
 .jp-result-card {
     background: var(--md-sys-color-surface);

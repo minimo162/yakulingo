@@ -47,6 +47,7 @@ class AppSettings:
     # File Translation Options (共通オプション)
     bilingual_output: bool = False      # 対訳出力（原文と翻訳を交互に配置）
     export_glossary: bool = False       # 対訳CSV出力（glossaryとして再利用可能）
+    translation_style: str = "concise"  # 英訳スタイル: "standard", "concise", "minimal"
 
     # PDF OCR Options (yomitoku)
     ocr_batch_size: int = 5             # ページ/バッチ（メモリ使用量とのトレードオフ）
@@ -105,6 +106,7 @@ class AppSettings:
             # File Translation Options
             "bilingual_output": self.bilingual_output,
             "export_glossary": self.export_glossary,
+            "translation_style": self.translation_style,
             # PDF OCR Options
             "ocr_batch_size": self.ocr_batch_size,
             "ocr_dpi": self.ocr_dpi,

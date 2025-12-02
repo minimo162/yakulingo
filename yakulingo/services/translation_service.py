@@ -204,6 +204,7 @@ class BatchTranslator:
         reference_files: Optional[list[Path]] = None,
         on_progress: Optional[ProgressCallback] = None,
         output_language: str = "en",
+        translation_style: str = "concise",
     ) -> dict[str, str]:
         """
         Translate blocks in batches.
@@ -213,6 +214,7 @@ class BatchTranslator:
             reference_files: Optional reference files
             on_progress: Progress callback
             output_language: "en" for English, "jp" for Japanese
+            translation_style: "standard", "concise", or "minimal" (default: "concise")
 
         Returns:
             Mapping of block_id -> translated_text
@@ -222,7 +224,7 @@ class BatchTranslator:
             translate_blocks_with_result() instead.
         """
         result = self.translate_blocks_with_result(
-            blocks, reference_files, on_progress, output_language
+            blocks, reference_files, on_progress, output_language, translation_style
         )
         return result.translations
 
@@ -232,6 +234,7 @@ class BatchTranslator:
         reference_files: Optional[list[Path]] = None,
         on_progress: Optional[ProgressCallback] = None,
         output_language: str = "en",
+        translation_style: str = "concise",
     ) -> 'BatchTranslationResult':
         """
         Translate blocks in batches with detailed result information.
@@ -241,6 +244,7 @@ class BatchTranslator:
             reference_files: Optional reference files
             on_progress: Progress callback
             output_language: "en" for English, "jp" for Japanese
+            translation_style: "standard", "concise", or "minimal" (default: "concise")
 
         Returns:
             BatchTranslationResult with translations and error details
@@ -272,8 +276,8 @@ class BatchTranslator:
 
             texts = [b.text for b in batch]
 
-            # Build prompt with explicit output language
-            prompt = self.prompt_builder.build_batch(texts, has_refs, output_language)
+            # Build prompt with explicit output language and style
+            prompt = self.prompt_builder.build_batch(texts, has_refs, output_language, translation_style)
 
             # Translate (with char_limit for auto file attachment mode)
             batch_translations = self.copilot.translate_sync(
@@ -797,6 +801,7 @@ class TranslationService:
         on_progress: Optional[ProgressCallback] = None,
         output_language: str = "en",
         use_ocr: bool = True,
+        translation_style: str = "concise",
     ) -> TranslationResult:
         """
         Translate a file to specified output language.
@@ -807,6 +812,8 @@ class TranslationService:
             on_progress: Callback for progress updates
             output_language: "en" for English, "jp" for Japanese
             use_ocr: For PDF files, use yomitoku OCR if available (default True)
+            translation_style: "standard", "concise", or "minimal" (default: "concise")
+                              Only affects English output
 
         Returns:
             TranslationResult with output_path
@@ -833,6 +840,7 @@ class TranslationService:
                     output_language,
                     use_ocr,
                     start_time,
+                    translation_style,
                 )
 
             # Standard processing for other file types
@@ -843,6 +851,7 @@ class TranslationService:
                 on_progress,
                 output_language,
                 start_time,
+                translation_style,
             )
 
         except (OSError, RuntimeError, ValueError, ConnectionError, TimeoutError, BadZipFile) as e:
@@ -862,6 +871,7 @@ class TranslationService:
         on_progress: Optional[ProgressCallback],
         output_language: str,
         start_time: float,
+        translation_style: str = "concise",
     ) -> TranslationResult:
         """Standard translation flow for non-PDF files."""
         # Report progress
@@ -914,6 +924,7 @@ class TranslationService:
             reference_files,
             batch_progress,
             output_language=output_language,
+            translation_style=translation_style,
         )
 
         # Check for cancellation
@@ -1002,6 +1013,7 @@ class TranslationService:
         output_language: str,
         use_ocr: bool,
         start_time: float,
+        translation_style: str = "concise",
     ) -> TranslationResult:
         """
         Streaming translation for PDF files.
@@ -1094,6 +1106,7 @@ class TranslationService:
             reference_files,
             batch_progress,
             output_language=output_language,
+            translation_style=translation_style,
         )
 
         if self._cancel_requested:

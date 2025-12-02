@@ -1,0 +1,6 @@
+# Build artifacts
+/target/
+*.exe
+
+# Cargo lock (optional, can be included for reproducible builds)
+# Cargo.lock

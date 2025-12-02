@@ -586,6 +586,8 @@ Based on recent commits:
   - **Loading screen**: Shows spinner immediately via `await client.connected()` for faster perceived startup
   - **Import optimization**: NiceGUI import moved inside `main()` to prevent double initialization in native mode (cuts startup time in half)
   - **Lazy imports**: Heavy modules (openpyxl, python-docx, Playwright) deferred until first use via `__getattr__`
+  - **WebSocket optimization**: `reconnect_timeout=10.0` in `ui.run()` (up from default 3s) for stable connections
+  - **Non-blocking translation**: All translation methods use `asyncio.to_thread()` to avoid blocking NiceGUI event loop
 - **Text Translation UI Unification**:
   - **Single output**: Changed from 3 translation options to 1 option with style setting
   - **Style settings**: 標準/簡潔/最簡潔 configurable via settings dialog

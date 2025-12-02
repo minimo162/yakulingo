@@ -1,7 +1,7 @@
 # yakulingo/ui/components/text_panel.py
 """
 Text translation panel with language-specific UI.
-- Japanese → English: Multiple options with inline adjustment buttons (Nani-inspired)
+- Japanese → English: Multiple options with inline adjustment buttons
 - Other → Japanese: Single translation with detailed explanation + follow-up actions
 Designed for Japanese users.
 """
@@ -34,21 +34,17 @@ ACTION_ICONS: dict[str, str] = {
     'reply': 'reply',
 }
 
-# Nani-inspired inline adjustment options (pairs)
+# Inline adjustment options (pairs)
 ADJUST_OPTIONS_PAIRS: list[tuple[str, str, str, str]] = [
-    ('casual', 'カジュアルに', 'polite', 'ていねいに'),
-    ('dry', '淡々と', 'engaging', 'キャッチーに'),
     ('shorter', 'もう少し短く', 'detailed', 'より詳しく'),
 ]
 
-# Nani-inspired single adjustment options
+# Single adjustment options
 ADJUST_OPTIONS_SINGLE: list[tuple[str, str]] = [
-    ('native', 'ネイティブらしく自然に'),
-    ('less_ai', 'AIっぽさを消して'),
     ('alternatives', '他の言い方は？'),
 ]
 
-# Paperclip/Attachment SVG icon (Nani-inspired) with aria-label for accessibility
+# Paperclip/Attachment SVG icon with aria-label for accessibility
 ATTACH_SVG: str = '''
 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="用語集を添付">
     <title>添付</title>
@@ -56,7 +52,7 @@ ATTACH_SVG: str = '''
 </svg>
 '''
 
-# YakuLingo avatar SVG (Apple icon - Nani-inspired) with aria-label for accessibility
+# YakuLingo avatar SVG (Apple icon) with aria-label for accessibility
 AVATAR_SVG: str = '''
 <svg viewBox="0 0 24 24" fill="currentColor" class="avatar-icon" role="img" aria-label="YakuLingo">
     <title>YakuLingo アシスタント</title>
@@ -64,7 +60,7 @@ AVATAR_SVG: str = '''
 </svg>
 '''
 
-# Language detection animated SVG (Nani-inspired) with aria-label for accessibility
+# Language detection animated SVG with aria-label for accessibility
 LANG_DETECT_SVG: str = '''
 <svg viewBox="0 0 24 24" fill="none" class="lang-detect-icon" stroke-width="2" role="img" aria-label="言語自動検出">
     <title>言語を自動検出</title>
@@ -120,13 +116,13 @@ def create_text_panel(
     on_attach_reference_file: Optional[Callable[[], None]] = None,  # Reference file picker
     on_remove_reference_file: Optional[Callable[[int], None]] = None,  # Remove reference file by index
     on_back_translate: Optional[Callable[[str], None]] = None,  # Back-translate to check
-    on_settings: Optional[Callable[[], None]] = None,  # Translation settings (Nani-style)
+    on_settings: Optional[Callable[[], None]] = None,  # Translation settings
     on_streaming_label_created: Optional[Callable[[ui.label, ui.element], None]] = None,  # Callback with (label, container) for direct updates
     on_retry: Optional[Callable[[], None]] = None,  # Retry translation
 ):
     """
     Text translation panel with language-specific UI.
-    - Japanese input → English: Multiple options with inline adjustment (Nani-inspired)
+    - Japanese input → English: Multiple options with inline adjustment
     - Other input → Japanese: Single translation + follow-up actions
     - Reference file attachment button (glossary, style guide, etc.)
     - Back-translate feature to verify translations
@@ -135,7 +131,7 @@ def create_text_panel(
     elapsed_time = state.text_translation_elapsed_time
 
     with ui.column().classes('flex-1 w-full gap-5 animate-in'):
-        # Main card container (Nani-style)
+        # Main card container
         with ui.element('div').classes('main-card w-full'):
             # Input container
             with ui.element('div').classes('main-card-inner'):
@@ -174,7 +170,7 @@ def create_text_panel(
                                         ).props('flat dense round size=xs').classes('remove-btn')
 
                     with ui.row().classes('items-center gap-2'):
-                        # Settings button (Nani-style gear icon)
+                        # Settings button
                         if on_settings:
                             settings_btn = ui.button(
                                 icon='tune',
@@ -213,7 +209,7 @@ def create_text_panel(
                         elif not state.can_translate():
                             btn.props('disable')
 
-        # Hint text with animated language detection icon (Nani-inspired)
+        # Hint text with animated language detection icon
         with ui.element('div').classes('hint-section'):
             with ui.element('div').classes('hint-primary'):
                 ui.html(LANG_DETECT_SVG, sanitize=False)
@@ -235,7 +231,7 @@ def create_text_panel(
                     elapsed_time,
                 )
             else:
-                # →English: Multiple options with inline adjustment (Nani-inspired)
+                # →English: Multiple options with inline adjustment
                 _render_results_to_en(
                     state.text_result,
                     on_copy,
@@ -303,9 +299,9 @@ def _render_results_to_en(
     elapsed_time: Optional[float] = None,
     on_retry: Optional[Callable[[], None]] = None,
 ):
-    """Render →English results: multiple options with inline adjustment (Nani-style)"""
+    """Render →English results: multiple options with inline adjustment"""
 
-    # Avatar and status row (Nani-style) with elapsed time
+    # Avatar and status row with elapsed time
     with ui.element('div').classes('avatar-status-row'):
         with ui.element('span').classes('avatar-container'):
             ui.html(AVATAR_SVG, sanitize=False)
@@ -329,7 +325,7 @@ def _render_results_to_en(
                         index=i,
                     )
 
-        # Inline adjustment section (Nani-inspired)
+        # Inline adjustment section
         if on_adjust and result.options:
             _render_inline_adjust_section(result.options[0].text, on_adjust, on_retry)
 
@@ -342,14 +338,14 @@ def _render_results_to_jp(
     on_back_translate: Optional[Callable[[str], None]] = None,
     elapsed_time: Optional[float] = None,
 ):
-    """Render →Japanese results: single translation with detailed explanation + follow-up actions (Nani-style)"""
+    """Render →Japanese results: single translation with detailed explanation + follow-up actions"""
 
     if not result.options:
         return
 
     option = result.options[0]  # Single option for →jp
 
-    # Avatar and status row (Nani-style) with elapsed time
+    # Avatar and status row with elapsed time
     with ui.element('div').classes('avatar-status-row'):
         with ui.element('span').classes('avatar-container'):
             ui.html(AVATAR_SVG, sanitize=False)
@@ -382,12 +378,12 @@ def _render_results_to_jp(
                             on_click=lambda o=option: on_back_translate(o.text)
                         ).props('flat no-caps size=sm').classes('back-translate-btn').tooltip('別のAIモデルで元の言語に戻してチェック')
 
-            # Detailed explanation section (Nani-style background)
+            # Detailed explanation section
             if option.explanation:
                 with ui.element('div').classes('nani-explanation'):
                     _render_explanation(option.explanation)
 
-                    # "もっと詳しく解説して" button (Nani-inspired)
+                    # "もっと詳しく解説して" button
                     if on_follow_up:
                         with ui.element('div').classes('explain-more-section'):
                             ui.button(
@@ -425,7 +421,7 @@ def _render_results_to_jp(
 
 
 def _render_explanation(explanation: str):
-    """Render explanation text as HTML with bullet points (Nani-style)"""
+    """Render explanation text as HTML with bullet points"""
     lines = explanation.strip().split('\n')
     bullet_items = []
     non_bullet_lines = []
@@ -654,7 +650,7 @@ def _render_inline_adjust_section(
     on_adjust: Callable[[str, str], None],
     on_retry: Optional[Callable[[], None]] = None,
 ):
-    """Render Nani-inspired inline adjustment options section"""
+    """Render inline adjustment options section"""
 
     with ui.element('div').classes('inline-adjust-section'):
         # Connector line with retry button

@@ -93,7 +93,7 @@ def create_file_panel(
 
         # Hint text
         with ui.row().classes('items-center gap-1 text-muted justify-center'):
-            ui.icon('smart_toy').classes('text-sm')
+            ui.icon('auto_awesome').classes('text-sm')
             ui.label('M365 Copilot による翻訳').classes('text-2xs')
 
 
@@ -186,10 +186,11 @@ def _drop_zone(on_file_select: Callable[[Path], None]):
     with ui.upload(
         on_upload=handle_upload,
         auto_upload=True,
-    ).classes('drop-zone w-full max-w-md').props(f'accept="{SUPPORTED_FORMATS}"'):
+    ).classes('drop-zone w-full').props(f'accept="{SUPPORTED_FORMATS}"'):
         ui.icon('upload_file').classes('drop-zone-icon')
-        ui.label('ファイルをドロップ').classes('drop-zone-text')
-        ui.label('Excel, Word, PowerPoint, PDF').classes('drop-zone-hint')
+        ui.label('翻訳するファイルをドロップ').classes('drop-zone-text')
+        ui.label('または クリックして選択').classes('drop-zone-subtext')
+        ui.label('Excel / Word / PowerPoint / PDF').classes('drop-zone-hint')
 
 
 def _file_card(file_info: FileInfo, on_remove: Callable[[], None]):

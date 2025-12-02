@@ -537,10 +537,10 @@ class CopilotHandler:
         Returns:
             List of translated strings parsed from Copilot's response
         """
-        # Auto-connect if needed (lazy connection)
-        if not self._connected or not self._page:
-            if not self.connect():
-                raise RuntimeError("ブラウザに接続できませんでした。Edgeが起動しているか確認してください。")
+        # Always call connect() to ensure connection is valid
+        # connect() checks page validity and reconnects if needed
+        if not self.connect():
+            raise RuntimeError("ブラウザに接続できませんでした。Edgeが起動しているか確認してください。")
 
         # Attach reference files first (before sending prompt)
         if reference_files:
@@ -589,10 +589,10 @@ class CopilotHandler:
         Returns:
             Final translated text
         """
-        # Auto-connect if needed (lazy connection)
-        if not self._connected or not self._page:
-            if not self.connect():
-                raise RuntimeError("ブラウザに接続できませんでした。Edgeが起動しているか確認してください。")
+        # Always call connect() to ensure connection is valid
+        # connect() checks page validity and reconnects if needed
+        if not self.connect():
+            raise RuntimeError("ブラウザに接続できませんでした。Edgeが起動しているか確認してください。")
 
         # Attach reference files first (before sending prompt)
         if reference_files:

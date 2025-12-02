@@ -295,6 +295,8 @@ class TestCopilotHandlerTranslateSync:
         handler._connected = True
 
         mock_page = Mock()
+        # Set valid Copilot URL so _is_page_valid() returns True
+        mock_page.url = "https://m365.cloud.microsoft/chat"
         handler._page = mock_page
         handler._send_message = Mock()
         handler._get_response = Mock(return_value="1. Hello\n2. World")
@@ -340,7 +342,9 @@ class TestCopilotHandlerTranslateSync:
         """translate_sync handles empty input list"""
         handler = CopilotHandler()
         handler._connected = True
-        handler._page = Mock()
+        mock_page = Mock()
+        mock_page.url = "https://m365.cloud.microsoft/chat"
+        handler._page = mock_page
         handler._send_message = Mock()
         handler._get_response = Mock(return_value="")
 

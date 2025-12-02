@@ -330,24 +330,15 @@ class CopilotHandler:
                 logger.info("Navigating to Copilot...")
                 copilot_page.goto(self.COPILOT_URL, wait_until='domcontentloaded')
 
-                # Brief wait for page to stabilize (prevents spinner issues)
-                # This gives the page time to finish initial rendering
-                try:
-                    input_selector = '#m365-chat-editor-target-element, [data-lexical-editor="true"]'
-                    copilot_page.wait_for_selector(
-                        input_selector,
-                        timeout=5000,  # 5 second timeout
-                        state='visible'
-                    )
-                    logger.info("Copilot page ready (chat input visible)")
-                except PlaywrightTimeoutError:
-                    # Page not fully ready yet, but continue anyway
-                    # Translation code will wait for input when needed
-                    logger.info("Copilot page loaded (chat input not yet visible)")
-
             self._page = copilot_page
             self._connected = True
-            logger.info("Browser connected")
+
+            # Verify chat input is usable (checks for login, popups, etc.)
+            if self._verify_chat_input():
+                logger.info("Copilot ready (chat input verified)")
+            else:
+                logger.warning("Copilot page loaded but chat input not verified - may need login")
+
             return True
 
         except (PlaywrightError, PlaywrightTimeoutError) as e:
@@ -377,6 +368,65 @@ class CopilotHandler:
         self._context = None
         self._page = None
         self._playwright = None
+
+    def _verify_chat_input(self, timeout: int = 5) -> bool:
+        """
+        チャット入力欄が実際に入力可能かどうかを検証。
+
+        ログインポップアップやオーバーレイで入力がブロックされている場合を検出。
+        テスト文字を入力し、入力が反映されるかを確認してからクリアする。
+
+        Args:
+            timeout: セレクタ待機のタイムアウト（秒）
+
+        Returns:
+            True - 入力可能（Copilot使用可能）
+            False - 入力不可（ログイン等が必要）
+        """
+        if not self._page:
+            return False
+
+        error_types = _get_playwright_errors()
+        PlaywrightError = error_types['Error']
+        PlaywrightTimeoutError = error_types['TimeoutError']
+
+        try:
+            # Wait for chat input element
+            input_selector = '#m365-chat-editor-target-element, [data-lexical-editor="true"]'
+            input_elem = self._page.wait_for_selector(
+                input_selector,
+                timeout=timeout * 1000,
+                state='visible'
+            )
+
+            if not input_elem:
+                return False
+
+            # Try to type a test character
+            input_elem.click()
+            input_elem.fill("test")
+
+            # Brief wait for UI to update
+            time.sleep(0.1)
+
+            # Verify input was received
+            input_text = input_elem.inner_text().strip()
+            if not input_text:
+                # Input field is empty - something is blocking (login, popup, etc.)
+                logger.debug("Chat input verification failed - field is empty after fill")
+                return False
+
+            # Clear the test input
+            input_elem.fill("")
+
+            return True
+
+        except PlaywrightTimeoutError:
+            logger.debug("Chat input not found within timeout")
+            return False
+        except PlaywrightError as e:
+            logger.debug("Error verifying chat input: %s", e)
+            return False
 
     def _check_copilot_state(self, timeout: int = 5) -> str:
         """
@@ -647,7 +697,6 @@ class CopilotHandler:
 
                 # Verify input was successful by checking if field has content
                 # If empty after fill, something is blocking input (login, popup, etc.)
-                import time
                 time.sleep(0.1)  # Brief wait for UI to update
                 input_text = input_elem.inner_text().strip()
                 if not input_text:

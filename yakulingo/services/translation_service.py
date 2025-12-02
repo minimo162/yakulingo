@@ -10,6 +10,7 @@ import logging
 import time
 from pathlib import Path
 from typing import Optional, Callable
+from zipfile import BadZipFile
 import unicodedata
 
 import re
@@ -844,7 +845,7 @@ class TranslationService:
                 start_time,
             )
 
-        except (OSError, RuntimeError, ValueError, ConnectionError, TimeoutError) as e:
+        except (OSError, RuntimeError, ValueError, ConnectionError, TimeoutError, BadZipFile) as e:
             # Catch specific exceptions for graceful error handling
             logger.exception("Translation failed: %s", e)
             return TranslationResult(

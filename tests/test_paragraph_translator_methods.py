@@ -120,24 +120,29 @@ class TestApplyTranslationToParagraph:
         assert mock_run3.text == ""
 
     def test_apply_translation_empty_runs_list(self, translator):
-        """Apply translation when runs list is empty"""
+        """Apply translation when runs list is empty - uses add_run()"""
         mock_paragraph = Mock()
         mock_paragraph.runs = []
+        mock_new_run = Mock()
+        mock_paragraph.add_run.return_value = mock_new_run
 
         translator.apply_translation_to_paragraph(mock_paragraph, "Translated text")
 
-        # Should set paragraph.text directly
-        assert mock_paragraph.text == "Translated text"
+        # Should call add_run() and set text on the new run
+        mock_paragraph.add_run.assert_called_once()
+        assert mock_new_run.text == "Translated text"
 
     def test_apply_translation_no_runs_attribute(self, translator):
-        """Apply translation when paragraph has no runs attribute"""
-        mock_paragraph = Mock(spec=['text'])
-        mock_paragraph.text = "Original"
+        """Apply translation when paragraph has no runs attribute - uses add_run()"""
+        mock_paragraph = Mock(spec=['add_run'])
+        mock_new_run = Mock()
+        mock_paragraph.add_run.return_value = mock_new_run
 
         translator.apply_translation_to_paragraph(mock_paragraph, "Translated text")
 
-        # Should set paragraph.text directly
-        assert mock_paragraph.text == "Translated text"
+        # Should call add_run() and set text on the new run
+        mock_paragraph.add_run.assert_called_once()
+        assert mock_new_run.text == "Translated text"
 
     def test_apply_translation_preserves_first_run_object(self, translator):
         """Verify first run object is preserved (formatting should be maintained)"""
@@ -232,23 +237,29 @@ class TestApplyTranslationEdgeCases:
         return ParagraphTranslator()
 
     def test_apply_to_paragraph_with_none_runs(self, translator):
-        """Handle paragraph where runs is None"""
+        """Handle paragraph where runs is None - uses add_run()"""
         mock_paragraph = Mock()
         mock_paragraph.runs = None
+        mock_new_run = Mock()
+        mock_paragraph.add_run.return_value = mock_new_run
 
         translator.apply_translation_to_paragraph(mock_paragraph, "Translated")
 
-        assert mock_paragraph.text == "Translated"
+        mock_paragraph.add_run.assert_called_once()
+        assert mock_new_run.text == "Translated"
 
     def test_apply_to_paragraph_runs_is_truthy_but_empty(self, translator):
-        """Handle paragraph where runs is truthy but behaves as empty"""
+        """Handle paragraph where runs is empty list - uses add_run()"""
         mock_paragraph = Mock()
         mock_paragraph.runs = []  # Empty list is falsy
+        mock_new_run = Mock()
+        mock_paragraph.add_run.return_value = mock_new_run
 
         translator.apply_translation_to_paragraph(mock_paragraph, "Translated")
 
-        # Falls back to setting text directly
-        assert mock_paragraph.text == "Translated"
+        # Falls back to using add_run()
+        mock_paragraph.add_run.assert_called_once()
+        assert mock_new_run.text == "Translated"
 
     def test_many_runs_all_cleared_except_first(self, translator):
         """Verify all runs after first are cleared"""

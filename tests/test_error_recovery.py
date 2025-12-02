@@ -120,7 +120,7 @@ class TestNetworkErrors:
     def test_ssl_certificate_error(self, settings):
         """Handle SSL certificate verification failure"""
         mock_copilot = MagicMock()
-        mock_copilot.translate_single.side_effect = Exception("SSL: CERTIFICATE_VERIFY_FAILED")
+        mock_copilot.translate_single.side_effect = ConnectionError("SSL: CERTIFICATE_VERIFY_FAILED")
 
         service = TranslationService(mock_copilot, settings)
 
@@ -354,7 +354,7 @@ class TestAPIErrors:
     def test_rate_limit_error(self, settings):
         """Handle rate limiting from API"""
         mock_copilot = MagicMock()
-        mock_copilot.translate_single.side_effect = Exception("Rate limit exceeded. Please wait.")
+        mock_copilot.translate_single.side_effect = RuntimeError("Rate limit exceeded. Please wait.")
 
         service = TranslationService(mock_copilot, settings)
 
@@ -366,7 +366,7 @@ class TestAPIErrors:
     def test_authentication_error(self, settings):
         """Handle authentication failure"""
         mock_copilot = MagicMock()
-        mock_copilot.translate_single.side_effect = Exception("Authentication failed: Invalid token")
+        mock_copilot.translate_single.side_effect = RuntimeError("Authentication failed: Invalid token")
 
         service = TranslationService(mock_copilot, settings)
 
@@ -378,7 +378,7 @@ class TestAPIErrors:
     def test_server_error_500(self, settings):
         """Handle server 500 error"""
         mock_copilot = MagicMock()
-        mock_copilot.translate_single.side_effect = Exception("HTTP 500: Internal Server Error")
+        mock_copilot.translate_single.side_effect = RuntimeError("HTTP 500: Internal Server Error")
 
         service = TranslationService(mock_copilot, settings)
 
@@ -390,7 +390,7 @@ class TestAPIErrors:
     def test_service_unavailable_503(self, settings):
         """Handle service unavailable error"""
         mock_copilot = MagicMock()
-        mock_copilot.translate_single.side_effect = Exception("HTTP 503: Service Unavailable")
+        mock_copilot.translate_single.side_effect = RuntimeError("HTTP 503: Service Unavailable")
 
         service = TranslationService(mock_copilot, settings)
 
@@ -630,7 +630,7 @@ class TestAdjustTranslationErrors:
     def test_adjust_with_api_error(self):
         """Handle API error during adjustment"""
         mock_copilot = MagicMock()
-        mock_copilot.translate_single.side_effect = Exception("API Error")
+        mock_copilot.translate_single.side_effect = RuntimeError("API Error")
 
         settings = AppSettings()
         service = TranslationService(mock_copilot, settings)

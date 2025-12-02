@@ -84,10 +84,10 @@ YakuLingo/
 │   ├── conftest.py                # Shared fixtures and mocks
 │   └── test_*.py                  # Unit tests for each module
 ├── prompts/                       # Translation prompt templates
-│   ├── translate_to_en.txt        # File translation (JP→EN)
-│   ├── translate_to_jp.txt        # File translation (EN→JP)
-│   ├── text_translate_to_en.txt   # Text translation (JP→EN)
-│   ├── text_translate_to_jp.txt   # Text translation (EN→JP)
+│   ├── file_translate_to_en.txt   # File translation (JP→EN)
+│   ├── file_translate_to_jp.txt   # File translation (EN→JP)
+│   ├── text_translate_to_en.txt   # Text translation (JP→EN, with style)
+│   ├── text_translate_to_jp.txt   # Text translation (EN→JP, with explanation)
 │   ├── adjust_shorter.txt         # Inline adjustment: shorter
 │   ├── adjust_longer.txt          # Inline adjustment: longer
 │   ├── adjust_custom.txt          # Inline adjustment: custom style

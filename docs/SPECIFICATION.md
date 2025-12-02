@@ -175,11 +175,11 @@ YakuLingo/
 │   └── test_*.py
 │
 ├── prompts/                        # 翻訳プロンプト
-│   ├── translate_to_en.txt         # ファイル翻訳用（日→英）
-│   ├── translate_to_jp.txt         # ファイル翻訳用（英→日）
-│   ├── text_translate_to_en.txt    # テキスト翻訳用（日→英）
-│   ├── text_translate_to_jp.txt    # テキスト翻訳用（英→日）
-│   └── ... (調整用・特殊用途プロンプト)
+│   ├── file_translate_to_en.txt    # ファイル翻訳用（日→英）
+│   ├── file_translate_to_jp.txt    # ファイル翻訳用（英→日）
+│   ├── text_translate_to_en.txt    # テキスト翻訳用（日→英、スタイル設定付き）
+│   ├── text_translate_to_jp.txt    # テキスト翻訳用（英→日、解説付き）
+│   └── adjust_*.txt, text_*.txt    # 調整・フォローアップ用
 │
 ├── config/
 │   └── settings.json               # ユーザー設定
@@ -874,7 +874,7 @@ class PromptBuilder:
     def build(input_text, has_reference_files) -> str:
         """
         1. 言語を自動検出
-        2. 適切なテンプレート選択（prompts/translate_*.txt）
+        2. 適切なテンプレート選択（prompts/file_translate_*.txt）
         3. 参照ファイル指示を挿入（添付時のみ）
         4. 入力テキストを埋め込み
         """

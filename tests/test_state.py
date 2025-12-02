@@ -58,8 +58,7 @@ class TestAppStateDefaults:
 
     def test_default_copilot_state(self):
         state = AppState()
-        assert state.copilot_connected is False
-        assert state.copilot_connecting is False
+        assert state.copilot_ready is False
         assert state.copilot_error == ""
 
     def test_default_reference_files(self):
@@ -99,7 +98,7 @@ class TestAppStateResetFileState:
         state = AppState(
             current_tab=Tab.FILE,
             source_text="Some text",
-            copilot_connected=True,
+            copilot_ready=True,
             file_state=FileState.COMPLETE
         )
 
@@ -108,23 +107,24 @@ class TestAppStateResetFileState:
         # These should be preserved
         assert state.current_tab == Tab.FILE
         assert state.source_text == "Some text"
-        assert state.copilot_connected is True
+        assert state.copilot_ready is True
 
 
 class TestAppStateCanTranslate:
     """Tests for AppState.can_translate()"""
 
-    def test_cannot_translate_without_copilot(self):
+    def test_can_translate_text_not_connection_state(self):
+        """can_translate() checks text/state, not connection (checked at execution)"""
         state = AppState(
-            copilot_connected=False,
+            copilot_ready=False,  # Not connected
             current_tab=Tab.TEXT,
             source_text="Some text"
         )
-        assert state.can_translate() is False
+        # can_translate() returns True - connection is checked at execution time
+        assert state.can_translate() is True
 
     def test_can_translate_text_tab_with_text(self):
         state = AppState(
-            copilot_connected=True,
             current_tab=Tab.TEXT,
             source_text="Some text",
             text_translating=False
@@ -133,7 +133,7 @@ class TestAppStateCanTranslate:
 
     def test_cannot_translate_text_tab_empty(self):
         state = AppState(
-            copilot_connected=True,
+            copilot_ready=True,
             current_tab=Tab.TEXT,
             source_text="",
             text_translating=False
@@ -142,7 +142,7 @@ class TestAppStateCanTranslate:
 
     def test_cannot_translate_text_tab_whitespace_only(self):
         state = AppState(
-            copilot_connected=True,
+            copilot_ready=True,
             current_tab=Tab.TEXT,
             source_text="   \n\t  ",
             text_translating=False
@@ -151,7 +151,7 @@ class TestAppStateCanTranslate:
 
     def test_cannot_translate_text_tab_already_translating(self):
         state = AppState(
-            copilot_connected=True,
+            copilot_ready=True,
             current_tab=Tab.TEXT,
             source_text="Some text",
             text_translating=True
@@ -160,7 +160,7 @@ class TestAppStateCanTranslate:
 
     def test_can_translate_file_tab_with_selection(self):
         state = AppState(
-            copilot_connected=True,
+            copilot_ready=True,
             current_tab=Tab.FILE,
             file_state=FileState.SELECTED
         )
@@ -168,7 +168,7 @@ class TestAppStateCanTranslate:
 
     def test_cannot_translate_file_tab_empty(self):
         state = AppState(
-            copilot_connected=True,
+            copilot_ready=True,
             current_tab=Tab.FILE,
             file_state=FileState.EMPTY
         )
@@ -176,7 +176,7 @@ class TestAppStateCanTranslate:
 
     def test_cannot_translate_file_tab_already_translating(self):
         state = AppState(
-            copilot_connected=True,
+            copilot_ready=True,
             current_tab=Tab.FILE,
             file_state=FileState.TRANSLATING
         )
@@ -184,7 +184,7 @@ class TestAppStateCanTranslate:
 
     def test_cannot_translate_file_tab_complete(self):
         state = AppState(
-            copilot_connected=True,
+            copilot_ready=True,
             current_tab=Tab.FILE,
             file_state=FileState.COMPLETE
         )

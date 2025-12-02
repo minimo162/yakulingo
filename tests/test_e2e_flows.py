@@ -93,8 +93,7 @@ def app_state_with_mock_db():
     state.output_file = None
     state.error_message = ""
     state.reference_files = []
-    state.copilot_connected = False
-    state.copilot_connecting = False
+    state.copilot_ready = False
     state.copilot_error = ""
     state.history = []
     state.history_drawer_open = False
@@ -114,12 +113,9 @@ class TestE2ETextTranslation:
         service = TranslationService(mock_copilot, settings)
 
         # Step 1: User connects to Copilot
-        state.copilot_connecting = True
-        # Simulate connection
-        state.copilot_connecting = False
-        state.copilot_connected = True
+        state.copilot_ready = True
 
-        assert state.copilot_connected is True
+        assert state.copilot_ready is True
 
         # Step 2: User enters Japanese text
         state.source_text = "今日は天気がいいですね。散歩に行きましょう。"
@@ -165,7 +161,7 @@ class TestE2ETextTranslation:
         service = TranslationService(mock_copilot, settings)
 
         # Connect
-        state.copilot_connected = True
+        state.copilot_ready = True
 
         # Enter English text
         state.source_text = "The weather is nice today. Let's go for a walk."
@@ -198,7 +194,7 @@ class TestE2ETextTranslation:
         )
 
         # Setup
-        state.copilot_connected = True
+        state.copilot_ready = True
         state.source_text = "人工知能と機械学習は関連しています。"
         state.reference_files = [glossary_path]
 
@@ -218,7 +214,7 @@ class TestE2ETextTranslation:
         state = app_state_with_mock_db
         service = TranslationService(mock_copilot, settings)
 
-        state.copilot_connected = True
+        state.copilot_ready = True
 
         # First translation
         state.source_text = "最初のテキスト"
@@ -269,7 +265,7 @@ class TestE2EFileTranslation:
         wb.save(input_file)
 
         # Step 2: Connect and switch to file tab
-        state.copilot_connected = True
+        state.copilot_ready = True
         state.current_tab = Tab.FILE
 
         # Step 3: User selects file
@@ -336,7 +332,7 @@ class TestE2EFileTranslation:
         state = app_state_with_mock_db
         service = TranslationService(mock_copilot, settings)
 
-        state.copilot_connected = True
+        state.copilot_ready = True
         state.current_tab = Tab.FILE
 
         output_files = []
@@ -399,7 +395,7 @@ class TestE2EFileTranslation:
         ws["A1"] = "テスト"
         wb.save(input_file)
 
-        state.copilot_connected = True
+        state.copilot_ready = True
         state.current_tab = Tab.FILE
         state.file_state = FileState.SELECTED
         state.selected_file = input_file
@@ -439,7 +435,7 @@ class TestE2EHistoryFlow:
         state = app_state_with_mock_db
         service = TranslationService(mock_copilot, settings)
 
-        state.copilot_connected = True
+        state.copilot_ready = True
 
         texts = [
             "最初の翻訳テスト",
@@ -466,7 +462,7 @@ class TestE2EHistoryFlow:
         state = app_state_with_mock_db
         service = TranslationService(mock_copilot, settings)
 
-        state.copilot_connected = True
+        state.copilot_ready = True
 
         # Create some history
         state.source_text = "履歴からの復元テスト"
@@ -494,7 +490,7 @@ class TestE2EHistoryFlow:
         state.max_history_entries = 5
         service = TranslationService(mock_copilot, settings)
 
-        state.copilot_connected = True
+        state.copilot_ready = True
 
         # Add more than max entries
         for i in range(10):
@@ -522,7 +518,7 @@ class TestE2ETabSwitchingFlow:
         state = app_state_with_mock_db
         service = TranslationService(mock_copilot, settings)
 
-        state.copilot_connected = True
+        state.copilot_ready = True
 
         # Enter text in text tab
         state.current_tab = Tab.TEXT
@@ -600,7 +596,7 @@ class TestE2ESettingsIntegration:
         settings = AppSettings(output_directory=str(output_dir))
         service = TranslationService(mock_copilot, settings)
 
-        state.copilot_connected = True
+        state.copilot_ready = True
         state.current_tab = Tab.FILE
         state.file_state = FileState.SELECTED
         state.selected_file = input_file
@@ -640,7 +636,7 @@ class TestE2ELanguageDetection:
         state = app_state_with_mock_db
         service = TranslationService(mock_copilot, settings)
 
-        state.copilot_connected = True
+        state.copilot_ready = True
 
         # Pure Japanese
         state.source_text = "日本語のテキストです。"
@@ -658,7 +654,7 @@ class TestE2ELanguageDetection:
         state = app_state_with_mock_db
         service = TranslationService(mock_copilot, settings)
 
-        state.copilot_connected = True
+        state.copilot_ready = True
 
         # Pure English
         state.source_text = "This is English text."
@@ -676,7 +672,7 @@ class TestE2ELanguageDetection:
         state = app_state_with_mock_db
         service = TranslationService(mock_copilot, settings)
 
-        state.copilot_connected = True
+        state.copilot_ready = True
 
         # Mixed with majority Japanese
         state.source_text = "これはテストです。This is a test."
@@ -835,9 +831,7 @@ class TestE2ECompleteWorkflow:
         # === Session Start ===
 
         # 1. Connect to Copilot
-        state.copilot_connecting = True
-        state.copilot_connecting = False
-        state.copilot_connected = True
+        state.copilot_ready = True
 
         # === Text Translation ===
 
@@ -892,7 +886,7 @@ class TestE2ECompleteWorkflow:
         # === Session End ===
 
         # Verify final state
-        assert state.copilot_connected is True
+        assert state.copilot_ready is True
         assert len(state.history) >= 2
         assert state.output_file.exists()
         assert state.source_text == "会議の議事録を作成してください。"

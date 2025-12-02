@@ -323,12 +323,27 @@ class CopilotHandler:
                     logger.info("Found existing Copilot page")
                     break
 
-            # If no Copilot page, create and navigate (don't wait for load)
+            # If no Copilot page, create and navigate
             if not copilot_page:
                 copilot_page = self._context.new_page()
-                # Start navigation but don't wait - user will see page loading
-                logger.info("Navigating to Copilot (not waiting for load)...")
-                copilot_page.goto(self.COPILOT_URL, wait_until='commit')
+                # Navigate and wait for DOM to be ready (faster than full load)
+                logger.info("Navigating to Copilot...")
+                copilot_page.goto(self.COPILOT_URL, wait_until='domcontentloaded')
+
+                # Brief wait for page to stabilize (prevents spinner issues)
+                # This gives the page time to finish initial rendering
+                try:
+                    input_selector = '#m365-chat-editor-target-element, [data-lexical-editor="true"]'
+                    copilot_page.wait_for_selector(
+                        input_selector,
+                        timeout=5000,  # 5 second timeout
+                        state='visible'
+                    )
+                    logger.info("Copilot page ready (chat input visible)")
+                except PlaywrightTimeoutError:
+                    # Page not fully ready yet, but continue anyway
+                    # Translation code will wait for input when needed
+                    logger.info("Copilot page loaded (chat input not yet visible)")
 
             self._page = copilot_page
             self._connected = True

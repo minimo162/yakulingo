@@ -109,18 +109,18 @@ class TestAppState:
 
     def test_can_translate_when_connected(self, app_state):
         """Test can_translate with copilot connected and text present"""
-        app_state.copilot_connected = True
+        app_state.copilot_ready = True
         app_state.source_text = "Some text to translate"  # Required for TEXT tab
         assert app_state.can_translate() is True
 
     def test_cannot_translate_when_disconnected(self, app_state):
         """Test can_translate with copilot disconnected"""
-        app_state.copilot_connected = False
+        app_state.copilot_ready = False
         assert app_state.can_translate() is False
 
     def test_cannot_translate_while_translating(self, app_state):
         """Test can_translate while already translating"""
-        app_state.copilot_connected = True
+        app_state.copilot_ready = True
         app_state.source_text = "Some text"  # Would normally allow translation
         app_state.text_translating = True  # But already translating
         assert app_state.can_translate() is False
@@ -633,14 +633,14 @@ class TestAppStateEdgeCases:
 
     def test_empty_source_text_cannot_translate(self, app_state):
         """Test cannot translate with empty source text"""
-        app_state.copilot_connected = True
+        app_state.copilot_ready = True
         app_state.source_text = ""
 
         assert app_state.can_translate() is False
 
     def test_whitespace_only_source_text(self, app_state):
         """Test whitespace-only source text handling"""
-        app_state.copilot_connected = True
+        app_state.copilot_ready = True
         app_state.source_text = "   \n\t  "
 
         # Whitespace-only should not allow translation
@@ -650,7 +650,7 @@ class TestAppStateEdgeCases:
 
     def test_very_long_source_text(self, app_state):
         """Test handling of very long source text"""
-        app_state.copilot_connected = True
+        app_state.copilot_ready = True
         app_state.source_text = "あ" * 100000
 
         assert app_state.can_translate() is True
@@ -658,7 +658,7 @@ class TestAppStateEdgeCases:
 
     def test_unicode_source_text(self, app_state):
         """Test handling of various Unicode characters"""
-        app_state.copilot_connected = True
+        app_state.copilot_ready = True
         app_state.source_text = "日本語 🎌 中文 한국어 العربية"
 
         assert app_state.can_translate() is True

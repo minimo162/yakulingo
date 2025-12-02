@@ -23,16 +23,17 @@ class TestTextPanelLogic:
     def test_translate_button_disabled_when_not_connected(self):
         """Translate button should be disabled when not connected"""
         state = AppState(
-            copilot_connected=False,
+            copilot_ready=False,
             source_text="Some text"
         )
 
-        assert state.can_translate() is False
+        # can_translate() checks text/state, not connection (checked at execution)
+        assert state.can_translate() is True
 
     def test_translate_button_disabled_when_no_text(self):
         """Translate button should be disabled when no source text"""
         state = AppState(
-            copilot_connected=True,
+            copilot_ready=True,
             source_text=""
         )
 
@@ -41,7 +42,7 @@ class TestTextPanelLogic:
     def test_translate_button_enabled_when_ready(self):
         """Translate button should be enabled when connected and has text"""
         state = AppState(
-            copilot_connected=True,
+            copilot_ready=True,
             source_text="テスト文章"
         )
 
@@ -50,7 +51,7 @@ class TestTextPanelLogic:
     def test_translate_button_disabled_while_translating(self):
         """Translate button should be disabled while translating"""
         state = AppState(
-            copilot_connected=True,
+            copilot_ready=True,
             source_text="テスト文章",
             text_translating=True
         )
@@ -114,7 +115,7 @@ class TestFilePanelLogic:
         """Translate button should be enabled when file is selected"""
         state = AppState(
             current_tab=Tab.FILE,
-            copilot_connected=True,
+            copilot_ready=True,
             file_state=FileState.SELECTED
         )
 
@@ -124,7 +125,7 @@ class TestFilePanelLogic:
         """Translate button should be disabled when no file selected"""
         state = AppState(
             current_tab=Tab.FILE,
-            copilot_connected=True,
+            copilot_ready=True,
             file_state=FileState.EMPTY
         )
 
@@ -134,7 +135,7 @@ class TestFilePanelLogic:
         """Translate button should be disabled while translating"""
         state = AppState(
             current_tab=Tab.FILE,
-            copilot_connected=True,
+            copilot_ready=True,
             file_state=FileState.TRANSLATING
         )
 
@@ -144,7 +145,7 @@ class TestFilePanelLogic:
         """Translate button should be disabled when translation complete"""
         state = AppState(
             current_tab=Tab.FILE,
-            copilot_connected=True,
+            copilot_ready=True,
             file_state=FileState.COMPLETE
         )
 
@@ -336,43 +337,26 @@ class TestErrorHandling:
 class TestCopilotStatus:
     """Tests for Copilot connection status display"""
 
-    def test_status_dot_disconnected(self):
-        """Status dot should show disconnected state"""
-        state = AppState(copilot_connected=False, copilot_connecting=False)
-
-        # Logic from app.py
-        if state.copilot_connected:
-            dot_class = 'connected'
-        elif state.copilot_connecting:
-            dot_class = 'connecting'
-        else:
-            dot_class = 'disconnected'
-
-        assert dot_class == 'disconnected'
-
     def test_status_dot_connecting(self):
-        """Status dot should show connecting state"""
-        state = AppState(copilot_connected=False, copilot_connecting=True)
+        """Status dot should show connecting state when not ready"""
+        state = AppState(copilot_ready=False)
 
-        if state.copilot_connected:
+        # Logic from app.py - only two states: ready or connecting
+        if state.copilot_ready:
             dot_class = 'connected'
-        elif state.copilot_connecting:
-            dot_class = 'connecting'
         else:
-            dot_class = 'disconnected'
+            dot_class = 'connecting'
 
         assert dot_class == 'connecting'
 
     def test_status_dot_connected(self):
-        """Status dot should show connected state"""
-        state = AppState(copilot_connected=True, copilot_connecting=False)
+        """Status dot should show connected state when ready"""
+        state = AppState(copilot_ready=True)
 
-        if state.copilot_connected:
+        if state.copilot_ready:
             dot_class = 'connected'
-        elif state.copilot_connecting:
-            dot_class = 'connecting'
         else:
-            dot_class = 'disconnected'
+            dot_class = 'connecting'
 
         assert dot_class == 'connected'
 

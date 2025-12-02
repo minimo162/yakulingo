@@ -467,7 +467,7 @@ class TestStateRecovery:
         state.source_text = "テスト"
         state.text_translating = True
         state.text_result = None
-        state.copilot_connected = True
+        state.copilot_ready = True
         state._history_db = None
         state.history = []
 
@@ -490,7 +490,7 @@ class TestStateRecovery:
         state.current_tab = Tab.FILE
         state.file_state = FileState.TRANSLATING
         state.translation_progress = 0.5
-        state.copilot_connected = True
+        state.copilot_ready = True
         state.selected_file = None
         state.file_info = None
         state.output_file = None

@@ -495,19 +495,6 @@ class CopilotHandler:
             if not self.connect():
                 raise RuntimeError("ブラウザに接続できませんでした。Edgeが起動しているか確認してください。")
 
-        # Check login state before translating (non-blocking on errors)
-        try:
-            state = self._check_copilot_state(timeout=3)
-            if state == ConnectionState.LOGIN_REQUIRED:
-                self.bring_to_foreground()
-                raise RuntimeError("Copilotにログインしてください。Edgeブラウザでログインした後、再度翻訳してください。")
-            # If state is ERROR, proceed anyway - the actual translation will fail with clearer error
-        except RuntimeError:
-            raise  # Re-raise login required error
-        except Exception as e:
-            # Log but continue - let the translation attempt reveal actual issues
-            logger.debug("Login state check failed, proceeding anyway: %s", e)
-
         # Attach reference files first (before sending prompt)
         if reference_files:
             for file_path in reference_files:
@@ -559,19 +546,6 @@ class CopilotHandler:
         if not self._connected or not self._page:
             if not self.connect():
                 raise RuntimeError("ブラウザに接続できませんでした。Edgeが起動しているか確認してください。")
-
-        # Check login state before translating (non-blocking on errors)
-        try:
-            state = self._check_copilot_state(timeout=3)
-            if state == ConnectionState.LOGIN_REQUIRED:
-                self.bring_to_foreground()
-                raise RuntimeError("Copilotにログインしてください。Edgeブラウザでログインした後、再度翻訳してください。")
-            # If state is ERROR, proceed anyway - the actual translation will fail with clearer error
-        except RuntimeError:
-            raise  # Re-raise login required error
-        except Exception as e:
-            # Log but continue - let the translation attempt reveal actual issues
-            logger.debug("Login state check failed, proceeding anyway: %s", e)
 
         # Attach reference files first (before sending prompt)
         if reference_files:
@@ -651,6 +625,15 @@ class CopilotHandler:
             if input_elem:
                 input_elem.click()
                 input_elem.fill(message)
+
+                # Verify input was successful by checking if field has content
+                # If empty after fill, something is blocking input (login, popup, etc.)
+                import time
+                time.sleep(0.1)  # Brief wait for UI to update
+                input_text = input_elem.inner_text().strip()
+                if not input_text:
+                    logger.warning("Input field is empty after fill - Copilot may need attention")
+                    raise RuntimeError("Copilotに入力できませんでした。Edgeブラウザを確認してください。")
 
                 # Wait for send button to be enabled (appears after text input)
                 # 実際のCopilot HTML: <button type="submit" aria-label="送信" class="... fai-SendButton ...">

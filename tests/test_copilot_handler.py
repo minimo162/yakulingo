@@ -174,24 +174,6 @@ class TestCopilotHandlerTranslateSync:
         # Error message is in Japanese
         assert "ブラウザに接続できませんでした" in str(exc.value)
 
-    def test_translate_sync_login_required(self):
-        """translate_sync raises when login is required"""
-        from yakulingo.services.copilot_handler import ConnectionState
-
-        handler = CopilotHandler()
-        handler._connected = True
-        handler._page = MagicMock()
-
-        # Mock _check_copilot_state to return LOGIN_REQUIRED
-        handler._check_copilot_state = Mock(return_value=ConnectionState.LOGIN_REQUIRED)
-        handler.bring_to_foreground = Mock()
-
-        with pytest.raises(RuntimeError) as exc:
-            handler.translate_sync(["test"], "prompt")
-
-        # Error message is in Japanese
-        assert "ログインしてください" in str(exc.value)
-        handler.bring_to_foreground.assert_called_once()
 
 
 class TestCopilotHandlerTranslateSingle:
@@ -410,6 +392,7 @@ class TestSendMessage:
 
         mock_page = MagicMock()
         mock_input = MagicMock()
+        mock_input.inner_text.return_value = "Test prompt"  # Input validation passes
         mock_page.query_selector.return_value = mock_input
         mock_page.wait_for_selector.return_value = mock_input
         handler._page = mock_page
@@ -418,6 +401,21 @@ class TestSendMessage:
 
         # Should try to find input element
         mock_page.wait_for_selector.assert_called()
+
+    def test_send_message_empty_input_raises(self):
+        """_send_message raises when input field is empty after fill"""
+        handler = CopilotHandler()
+
+        mock_page = MagicMock()
+        mock_input = MagicMock()
+        mock_input.inner_text.return_value = ""  # Input is empty - something blocked it
+        mock_page.wait_for_selector.return_value = mock_input
+        handler._page = mock_page
+
+        with pytest.raises(RuntimeError) as exc:
+            handler._send_message("Test prompt")
+
+        assert "Copilotに入力できませんでした" in str(exc.value)
 
 
 class TestGetResponse:

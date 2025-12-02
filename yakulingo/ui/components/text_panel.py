@@ -119,6 +119,7 @@ def create_text_panel(
     on_settings: Optional[Callable[[], None]] = None,  # Translation settings
     on_streaming_label_created: Optional[Callable[[ui.label, ui.element], None]] = None,  # Callback with (label, container) for direct updates
     on_retry: Optional[Callable[[], None]] = None,  # Retry translation
+    on_translate_button_created: Optional[Callable[[ui.button], None]] = None,  # Callback with button reference for dynamic state updates
 ):
     """
     Text translation panel with language-specific UI.
@@ -208,6 +209,10 @@ def create_text_panel(
                             btn.props('loading disable')
                         elif not state.can_translate():
                             btn.props('disable')
+
+                        # Provide button reference for dynamic state updates
+                        if on_translate_button_created:
+                            on_translate_button_created(btn)
 
         # Hint text
         with ui.element('div').classes('hint-section'):

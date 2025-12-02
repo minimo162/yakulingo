@@ -579,14 +579,14 @@ The application includes a Rust-based native launcher (`YakuLingo.exe`):
 
 ## Language Note
 
-The AGENTS.md file specifies that all responses should be in Japanese (すべての回答とコメントは日本語で行ってください). When interacting with users in this repository, prefer Japanese for comments and explanations unless otherwise specified.
+すべての回答とコメントは日本語で行ってください。
+When interacting with users in this repository, prefer Japanese for comments and explanations unless otherwise specified.
 
 ## Documentation References
 
 - `README.md` - User guide and quick start (Japanese)
-- `docs/SPECIFICATION.md` - Detailed technical specification (~1000 lines)
+- `docs/SPECIFICATION.md` - Detailed technical specification (~1300 lines)
 - `DISTRIBUTION.md` - Deployment and distribution guide
-- `AGENTS.md` - Agent configuration (Japanese language preference)
 
 ## Recent Development Focus
 

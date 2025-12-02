@@ -750,10 +750,10 @@ class CopilotHandler:
         on_reasoning: Optional[Callable[[str], None]],
     ) -> str:
         """Implementation of translate_single_streaming that runs in Playwright thread."""
-        # Always call connect() to ensure connection is valid
-        # connect() checks page validity and reconnects if needed
+        # Always call _connect_impl directly (not connect()) to avoid deadlock
+        # since we're already in the Playwright thread
         logger.debug("Checking connection...")
-        if not self.connect():
+        if not self._connect_impl():
             logger.error("Connection failed")
             raise RuntimeError("ブラウザに接続できませんでした。Edgeが起動しているか確認してください。")
         logger.debug("Connection OK")

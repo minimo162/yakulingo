@@ -297,19 +297,6 @@ if (-not $GuiMode) {
     Write-Host "      Desktop: $ShortcutPath" -ForegroundColor Gray
 }
 
-# Start Menu shortcut - use YakuLingo.exe for silent launch
-$StartMenuPath = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs"
-$StartShortcutPath = Join-Path $StartMenuPath "$AppName.lnk"
-$StartShortcut = $WshShell.CreateShortcut($StartShortcutPath)
-$StartShortcut.TargetPath = Join-Path $InstallPath "YakuLingo.exe"
-$StartShortcut.WorkingDirectory = $InstallPath
-$StartShortcut.IconLocation = "shell32.dll,21"
-$StartShortcut.Description = "YakuLingo Translation Tool"
-$StartShortcut.Save()
-if (-not $GuiMode) {
-    Write-Host "      Start Menu: $StartShortcutPath" -ForegroundColor Gray
-}
-
 if (-not $GuiMode) {
     Write-Host "[OK] Shortcuts created" -ForegroundColor Green
 }
@@ -323,7 +310,7 @@ Remove-Item -Path $TempDir -Recurse -Force -ErrorAction SilentlyContinue
 # Done
 # ============================================================
 if ($GuiMode) {
-    Show-Success "Setup completed!`n`nYakuLingo has been installed.`n`nTo launch:`n  - Double-click the 'YakuLingo' shortcut on your desktop`n  - Or search 'YakuLingo' in the Start Menu"
+    Show-Success "Setup completed!`n`nYakuLingo has been installed.`n`nTo launch:`n  - Double-click the 'YakuLingo' shortcut on your desktop"
 } else {
     Write-Host ""
     Write-Host "============================================================" -ForegroundColor Green
@@ -334,7 +321,6 @@ if ($GuiMode) {
     Write-Host ""
     Write-Host " To launch:" -ForegroundColor White
     Write-Host "   - Double-click the '$AppName' shortcut on your desktop" -ForegroundColor Gray
-    Write-Host "   - Or search '$AppName' in the Start Menu" -ForegroundColor Gray
     Write-Host ""
 }
 

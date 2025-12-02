@@ -15,7 +15,7 @@ from .base import FileProcessor
 logger = logging.getLogger(__name__)
 from .translators import CellTranslator, ParagraphTranslator
 from .font_manager import FontManager, FontTypeDetector
-from yakulingo.models.types import TextBlock, FileInfo, FileType
+from yakulingo.models.types import TextBlock, FileInfo, FileType, SectionDetail
 
 
 class PptxProcessor(FileProcessor):
@@ -56,14 +56,17 @@ class PptxProcessor(FileProcessor):
 
         slide_count = len(prs.slides)
         text_count = 0
+        section_details = []
 
-        for slide in prs.slides:
+        for slide_idx, slide in enumerate(prs.slides):
+            slide_block_count = 0
+
             for shape in slide.shapes:
                 # Text shapes
                 if shape.has_text_frame:
                     for para in shape.text_frame.paragraphs:
                         if para.text and self.para_translator.should_translate(para.text):
-                            text_count += 1
+                            slide_block_count += 1
 
                 # Tables (Excel-compatible)
                 if shape.has_table:
@@ -71,13 +74,20 @@ class PptxProcessor(FileProcessor):
                         for cell in row.cells:
                             cell_text = cell.text_frame.text if cell.text_frame else ""
                             if cell_text and self.cell_translator.should_translate(cell_text):
-                                text_count += 1
+                                slide_block_count += 1
 
             # Speaker notes
             if slide.has_notes_slide and slide.notes_slide.notes_text_frame:
                 for para in slide.notes_slide.notes_text_frame.paragraphs:
                     if para.text and self.para_translator.should_translate(para.text):
-                        text_count += 1
+                        slide_block_count += 1
+
+            text_count += slide_block_count
+            section_details.append(SectionDetail(
+                index=slide_idx,
+                name=f"スライド {slide_idx + 1}",
+                block_count=slide_block_count,
+            ))
 
         return FileInfo(
             path=file_path,
@@ -85,6 +95,7 @@ class PptxProcessor(FileProcessor):
             size_bytes=file_path.stat().st_size,
             slide_count=slide_count,
             text_block_count=text_count,
+            section_details=section_details,
         )
 
     def extract_text_blocks(self, file_path: Path) -> Iterator[TextBlock]:

@@ -20,7 +20,7 @@ from .base import FileProcessor
 logger = logging.getLogger(__name__)
 from .translators import CellTranslator, ParagraphTranslator
 from .font_manager import FontManager, FontTypeDetector
-from yakulingo.models.types import TextBlock, FileInfo, FileType
+from yakulingo.models.types import TextBlock, FileInfo, FileType, SectionDetail
 
 
 # =============================================================================
@@ -301,12 +301,20 @@ class WordProcessor(FileProcessor):
                 if self.para_translator.should_translate(tb['text']):
                     text_count += 1
 
+        # Word documents are treated as a single section (no page-level breakdown)
+        section_details = [SectionDetail(
+            index=0,
+            name="全体",
+            block_count=text_count,
+        )]
+
         return FileInfo(
             path=file_path,
             file_type=FileType.WORD,
             size_bytes=file_path.stat().st_size,
             page_count=None,  # Requires full rendering
             text_block_count=text_count,
+            section_details=section_details,
         )
 
     def extract_text_blocks(self, file_path: Path) -> Iterator[TextBlock]:

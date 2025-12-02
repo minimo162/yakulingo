@@ -27,6 +27,18 @@ class TranslationStatus(Enum):
 
 
 @dataclass
+class SectionDetail:
+    """
+    Details about a section (sheet/page/slide) for partial translation.
+    Used to display selection UI and filter translation scope.
+    """
+    index: int                       # 0-based index
+    name: str                        # Display name (e.g., "Sheet1", "Page 1", "Slide 1")
+    block_count: int                 # Number of translatable blocks
+    selected: bool = True            # Whether to include in translation
+
+
+@dataclass
 class TextBlock:
     """
     A translatable text unit extracted from a file.
@@ -55,6 +67,9 @@ class FileInfo:
     slide_count: Optional[int] = None      # PowerPoint
     text_block_count: int = 0              # Total translatable blocks
 
+    # Section details for partial translation
+    section_details: list[SectionDetail] = field(default_factory=list)
+
     @property
     def size_display(self) -> str:
         """Human-readable file size"""
@@ -75,6 +90,25 @@ class FileInfo:
             FileType.PDF: "picture_as_pdf",
         }
         return icons.get(self.file_type, "description")
+
+    @property
+    def selected_block_count(self) -> int:
+        """Get total block count for selected sections only"""
+        if not self.section_details:
+            return self.text_block_count
+        return sum(s.block_count for s in self.section_details if s.selected)
+
+    @property
+    def selected_section_count(self) -> int:
+        """Get count of selected sections"""
+        if not self.section_details:
+            return self.sheet_count or self.page_count or self.slide_count or 0
+        return sum(1 for s in self.section_details if s.selected)
+
+    @property
+    def selected_section_indices(self) -> list[int]:
+        """Get indices of selected sections"""
+        return [s.index for s in self.section_details if s.selected]
 
 
 class TranslationPhase(Enum):

@@ -10,7 +10,7 @@ from pathlib import Path
 
 from yakulingo.ui.state import AppState, FileState
 from yakulingo.ui.utils import temp_file_manager
-from yakulingo.models.types import FileInfo, FileType
+from yakulingo.models.types import FileInfo, FileType, SectionDetail
 
 
 SUPPORTED_FORMATS = ".xlsx,.xls,.docx,.doc,.pptx,.ppt,.pdf"
@@ -44,6 +44,7 @@ def create_file_panel(
     on_bilingual_change: Optional[Callable[[bool], None]] = None,
     on_export_glossary_change: Optional[Callable[[bool], None]] = None,
     on_style_change: Optional[Callable[[str], None]] = None,
+    on_section_toggle: Optional[Callable[[int, bool], None]] = None,
     bilingual_enabled: bool = False,
     export_glossary_enabled: bool = False,
     translation_style: str = "concise",
@@ -75,6 +76,9 @@ def create_file_panel(
                         on_bilingual_change,
                     )
                     _export_glossary_selector(export_glossary_enabled, on_export_glossary_change)
+                    # Section selector for partial translation
+                    if state.file_info and len(state.file_info.section_details) > 1:
+                        _section_selector(state.file_info, on_section_toggle)
                     with ui.row().classes('justify-center mt-4'):
                         with ui.button(on_click=on_translate).classes('translate-btn').props('no-caps'):
                             ui.label('翻訳する')
@@ -303,3 +307,47 @@ def _error_card(error_message: str):
             ui.icon('error_outline').classes('text-3xl text-error')
             ui.label('エラー').classes('font-medium text-error')
             ui.label(error_message).classes('text-xs text-muted text-center')
+
+
+def _section_selector(
+    file_info: FileInfo,
+    on_toggle: Optional[Callable[[int, bool], None]],
+):
+    """Section selector for partial translation - expandable checkbox list"""
+    if not file_info.section_details:
+        return
+
+    # Get section type label based on file type
+    section_type_labels = {
+        FileType.EXCEL: 'シート',
+        FileType.POWERPOINT: 'スライド',
+        FileType.PDF: 'ページ',
+        FileType.WORD: 'セクション',
+    }
+    section_label = section_type_labels.get(file_info.file_type, 'セクション')
+
+    with ui.expansion(
+        f'翻訳範囲を指定',
+        icon='tune',
+    ).classes('section-selector w-full mt-3'):
+        # Selection summary
+        selected_count = file_info.selected_section_count
+        total_count = len(file_info.section_details)
+        selected_blocks = file_info.selected_block_count
+
+        with ui.row().classes('items-center gap-2 mb-2'):
+            ui.label(f'{selected_count}/{total_count} {section_label}').classes('text-xs text-muted')
+            ui.label('•').classes('text-xs text-muted')
+            ui.label(f'{selected_blocks} ブロック').classes('text-xs font-medium text-primary')
+
+        # Section checkboxes (scrollable if many)
+        max_height = '200px' if len(file_info.section_details) > 5 else 'auto'
+        with ui.column().classes('gap-1 w-full').style(f'max-height: {max_height}; overflow-y: auto;'):
+            for section in file_info.section_details:
+                with ui.row().classes('items-center gap-2 w-full section-item'):
+                    ui.checkbox(
+                        value=section.selected,
+                        on_change=lambda e, idx=section.index: on_toggle and on_toggle(idx, e.value),
+                    ).props('dense')
+                    ui.label(section.name).classes('flex-1 text-sm')
+                    ui.label(f'{section.block_count}').classes('text-xs text-muted')

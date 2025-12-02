@@ -817,13 +817,19 @@ class CopilotHandler:
                 if response_elem:
                     current_text = response_elem.inner_text()
 
-                    if current_text == last_text:
-                        stable_count += 1
-                        if stable_count >= self.RESPONSE_STABLE_COUNT:
-                            return current_text
+                    # Only count stability if there's actual content
+                    # Don't consider empty or whitespace-only text as stable
+                    if current_text and current_text.strip():
+                        if current_text == last_text:
+                            stable_count += 1
+                            if stable_count >= self.RESPONSE_STABLE_COUNT:
+                                return current_text
+                        else:
+                            stable_count = 0
+                            last_text = current_text
                     else:
+                        # Reset stability counter if text is empty
                         stable_count = 0
-                        last_text = current_text
 
                 time.sleep(1)
                 max_wait -= 1
@@ -886,7 +892,8 @@ class CopilotHandler:
                 # 2. 回答テキストをチェック
                 current_content = self._get_latest_response_text()
 
-                if current_content:
+                # Only count stability if there's actual content (not empty/whitespace)
+                if current_content and current_content.strip():
                     if current_content != last_content:
                         if on_content:
                             on_content(current_content)
@@ -897,6 +904,9 @@ class CopilotHandler:
                         # テキストが安定したら完了
                         if stable_count >= self.RESPONSE_STABLE_COUNT:
                             return current_content
+                else:
+                    # Reset stability counter if text is empty
+                    stable_count = 0
 
                 time.sleep(0.5)  # より頻繁にポーリング
                 max_wait -= 0.5

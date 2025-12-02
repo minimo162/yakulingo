@@ -14,6 +14,7 @@ from yakulingo.models.types import (
     FileInfo,
     TextBlock,
 )
+from yakulingo.services.prompt_builder import PromptBuilder
 
 
 # --- Settings fixtures ---
@@ -87,12 +88,21 @@ def mock_copilot():
 
 @pytest.fixture
 def mock_prompt_builder():
-    """Mock PromptBuilder"""
+    """
+    Mock PromptBuilder - DEPRECATED: Use prompt_builder fixture instead.
+    Kept for backward compatibility with tests that still need mocking behavior.
+    """
     mock = MagicMock()
     mock.build.return_value = "Test prompt"
     mock.build_batch.return_value = "Test batch prompt"
     mock.parse_batch_result.return_value = ["Result 1", "Result 2"]
     return mock
+
+
+@pytest.fixture
+def prompt_builder():
+    """Real PromptBuilder instance for testing with actual implementation"""
+    return PromptBuilder()
 
 
 @pytest.fixture

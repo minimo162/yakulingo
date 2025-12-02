@@ -156,10 +156,9 @@ class TestBatchTranslationErrors:
             Exception("Batch 2 failed"),
         ]
 
-        mock_prompt_builder = Mock()
-        mock_prompt_builder.build_batch.return_value = "Test prompt"
+        prompt_builder = PromptBuilder()  # Use real PromptBuilder
 
-        translator = BatchTranslator(mock_copilot, mock_prompt_builder)
+        translator = BatchTranslator(mock_copilot, prompt_builder)
 
         # Create blocks spanning two batches
         blocks = [
@@ -177,10 +176,9 @@ class TestBatchTranslationErrors:
         mock_copilot = Mock()
         mock_copilot.translate_sync.return_value = []  # Empty response
 
-        mock_prompt_builder = Mock()
-        mock_prompt_builder.build_batch.return_value = "Test prompt"
+        prompt_builder = PromptBuilder()  # Use real PromptBuilder
 
-        translator = BatchTranslator(mock_copilot, mock_prompt_builder)
+        translator = BatchTranslator(mock_copilot, prompt_builder)
 
         blocks = [TextBlock(id="1", text="Test", location="A1")]
 
@@ -197,10 +195,9 @@ class TestBatchTranslationErrors:
         # Send 3 blocks, get 2 translations back
         mock_copilot.translate_sync.return_value = ["Trans1", "Trans2"]
 
-        mock_prompt_builder = Mock()
-        mock_prompt_builder.build_batch.return_value = "Test prompt"
+        prompt_builder = PromptBuilder()  # Use real PromptBuilder
 
-        translator = BatchTranslator(mock_copilot, mock_prompt_builder)
+        translator = BatchTranslator(mock_copilot, prompt_builder)
 
         blocks = [
             TextBlock(id="1", text="Text1", location="A1"),

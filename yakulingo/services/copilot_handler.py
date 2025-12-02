@@ -427,9 +427,17 @@ class CopilotHandler:
         Connect to Copilot browser via Playwright.
         Does NOT check login state - that is done lazily on first translation.
 
+        This method runs in a dedicated Playwright thread to ensure consistent
+        greenlet context with other Playwright operations.
+
         Returns:
             True if browser connection established
         """
+        logger.info("connect() called - delegating to Playwright thread")
+        return _playwright_executor.execute(self._connect_impl)
+
+    def _connect_impl(self) -> bool:
+        """Implementation of connect() that runs in Playwright thread."""
         # Check if existing connection is still valid
         if self._connected:
             if self._is_page_valid():

@@ -187,9 +187,9 @@ class YakuLingoApp:
         await asyncio.sleep(0.05)
 
         # Connect to browser (starts Edge if needed, doesn't check login state)
+        # connect() now runs in dedicated Playwright thread via PlaywrightThreadExecutor
         try:
-            loop = asyncio.get_running_loop()
-            success = await loop.run_in_executor(None, self.copilot.connect)
+            success = self.copilot.connect()
 
             if success:
                 self.state.copilot_ready = True

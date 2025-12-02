@@ -324,20 +324,10 @@ class CopilotHandler:
 
             if not copilot_page:
                 copilot_page = self._context.new_page()
-                copilot_page.goto(self.COPILOT_URL)
+                # Use domcontentloaded for faster navigation (don't wait for all resources)
+                copilot_page.goto(self.COPILOT_URL, wait_until='domcontentloaded')
 
             self._page = copilot_page
-
-            # Wait for page to load
-            # Note: Use 'load' instead of 'networkidle' because SPAs like Copilot
-            # have constant background connections that prevent networkidle
-            try:
-                logger.info("Waiting for page to load...")
-                copilot_page.wait_for_load_state('load', timeout=30000)
-                logger.debug("Page load completed")
-            except PlaywrightTimeoutError:
-                logger.warning("Page load timeout - continuing anyway")
-
             self._connected = True
             logger.info("Browser connected")
             return True

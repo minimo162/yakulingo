@@ -174,6 +174,23 @@ class CopilotHandler:
                 return path
         return None
 
+    def start_edge(self) -> bool:
+        """
+        Start Edge browser early (without Playwright connection).
+
+        Call this method early in the app startup to reduce perceived latency.
+        The connect() method will then skip Edge startup if it's already running.
+
+        Returns:
+            True if Edge is now running on our CDP port
+        """
+        if self._is_port_in_use():
+            logger.debug("Edge already running on port %d", self.cdp_port)
+            return True
+
+        logger.info("Starting Edge early...")
+        return self._start_translator_edge()
+
     def _is_port_in_use(self) -> bool:
         """Check if our CDP port is in use"""
         try:

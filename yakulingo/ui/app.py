@@ -65,6 +65,11 @@ class YakuLingoApp:
             self._copilot = CopilotHandler()
         return self._copilot
 
+    async def start_edge_early(self):
+        """Start Edge browser early in background while UI is loading."""
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, self.copilot.start_edge)
+
     async def connect_copilot(self, silent: bool = False):
         """Connect to Copilot."""
         if self.state.copilot_connected or self.state.copilot_connecting:
@@ -1009,7 +1014,11 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
 
     @ui.page('/')
     async def main_page():
+        # Start Edge early in background (while UI is being built)
+        edge_task = asyncio.create_task(app.start_edge_early())
         app.create_ui()
+        # Wait for Edge startup to complete before connecting
+        await edge_task
         await app.preconnect_copilot()
         asyncio.create_task(app.check_for_updates())
 

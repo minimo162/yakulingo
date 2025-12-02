@@ -1171,6 +1171,44 @@ def __getattr__(name: str):
 **`_SUBMODULES`パターン:**
 `unittest.mock.patch`でサブモジュールをパッチする場合に必要。これにより`patch('yakulingo.processors.excel_processor')`が正常に動作する。
 
+#### WebSocket接続最適化
+
+NiceGUIのWebSocket接続を安定化するため、`reconnect_timeout`を調整。
+
+```python
+# yakulingo/ui/app.py
+ui.run(
+    ...
+    reconnect_timeout=10.0,  # デフォルト3秒から10秒に増加
+)
+```
+
+**効果:**
+- デフォルトの3秒ではping_interval=4秒、ping_timeout=2秒
+- 10秒に設定するとping_interval=8秒、ping_timeout=4秒
+- 接続の安定性が向上し、一時的な遅延でも切断されにくくなる
+
+#### 非同期処理の最適化
+
+すべての翻訳操作は`asyncio.to_thread()`でバックグラウンドスレッドにオフロードし、NiceGUIのイベントループをブロックしない。
+
+```python
+# yakulingo/ui/app.py
+async def _translate_text(self):
+    result = await asyncio.to_thread(
+        self.translation_service.translate_text_with_options,
+        source_text,
+        reference_files,
+    )
+```
+
+**対象メソッド:**
+- `_translate_text()` - テキスト翻訳
+- `_adjust_text()` - 翻訳調整
+- `_back_translate()` - 戻し訳
+- `_follow_up_action()` - フォローアップアクション
+- `_translate_file()` - ファイル翻訳
+
 ### 13.2 ランタイム最適化
 
 #### 正規表現の事前コンパイル

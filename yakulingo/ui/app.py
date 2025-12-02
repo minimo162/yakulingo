@@ -138,9 +138,42 @@ class YakuLingoApp:
             self._copilot = CopilotHandler()
         return self._copilot
 
+    async def wait_for_edge_connection(self, edge_future):
+        """Wait for Edge connection result from parallel startup.
+
+        Args:
+            edge_future: concurrent.futures.Future from Edge startup thread
+        """
+        import concurrent.futures
+
+        # Initialize TranslationService immediately (doesn't need connection)
+        from yakulingo.services.translation_service import TranslationService
+        self.translation_service = TranslationService(
+            self.copilot, self.settings, get_default_prompts_dir()
+        )
+
+        # Small delay to let UI render first
+        await asyncio.sleep(0.05)
+
+        # Wait for Edge connection result from parallel startup
+        try:
+            loop = asyncio.get_running_loop()
+            success = await loop.run_in_executor(None, edge_future.result, 60)  # 60s timeout
+
+            if success:
+                self.state.copilot_ready = True
+                self._refresh_status()
+                logger.info("Edge connection ready (parallel startup)")
+        except concurrent.futures.TimeoutError:
+            logger.warning("Edge connection timeout during parallel startup")
+        except Exception as e:
+            # Connection failed silently - will retry on first translation
+            logger.debug("Background connection failed: %s", e)
+
     async def start_edge_and_connect(self):
         """Start Edge and connect to browser in background (non-blocking).
-        Login state is NOT checked here - only browser connection."""
+        Login state is NOT checked here - only browser connection.
+        Note: This is kept for compatibility but wait_for_edge_connection is preferred."""
         # Initialize TranslationService immediately (doesn't need connection)
         from yakulingo.services.translation_service import TranslationService
         self.translation_service = TranslationService(
@@ -1097,13 +1130,21 @@ def create_app() -> YakuLingoApp:
 
 def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
     """Run the application"""
+    import concurrent.futures
     from nicegui import app as nicegui_app
 
     yakulingo_app = create_app()
 
+    # Start Edge browser in parallel with UI initialization
+    # This runs in a background thread while NiceGUI window is being created
+    edge_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    edge_future = edge_executor.submit(yakulingo_app.copilot.connect)
+
     def cleanup():
         """Clean up resources on shutdown."""
         logger.info("Shutting down YakuLingo...")
+        # Shutdown executor
+        edge_executor.shutdown(wait=False)
         # Disconnect from Copilot (close Edge browser)
         if yakulingo_app._copilot is not None:
             try:
@@ -1119,8 +1160,8 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
     async def main_page():
         # Create UI first (show window immediately)
         yakulingo_app.create_ui()
-        # Start background tasks (don't block window display)
-        asyncio.create_task(yakulingo_app.start_edge_and_connect())
+        # Wait for Edge connection result and start other background tasks
+        asyncio.create_task(yakulingo_app.wait_for_edge_connection(edge_future))
         asyncio.create_task(yakulingo_app.check_for_updates())
 
     # Scale window size based on screen resolution

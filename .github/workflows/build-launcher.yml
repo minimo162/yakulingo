@@ -1,0 +1,31 @@
+name: Build Launcher
+
+on:
+  push:
+    paths:
+      - 'launcher/**'
+  workflow_dispatch:  # Manual trigger
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup MinGW
+        uses: egor-tensin/setup-mingw@v2
+        with:
+          platform: x64
+
+      - name: Build launcher
+        run: |
+          cd launcher
+          gcc -mwindows -O2 -s launcher.c -o YakuLingo.exe -lwinhttp -lshlwapi
+          dir YakuLingo.exe
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: YakuLingo-Launcher
+          path: launcher/YakuLingo.exe

@@ -387,7 +387,10 @@ class YakuLingoApp:
             history_list()
 
     def _create_nav_item(self, label: str, icon: str, tab: Tab):
-        """Create a navigation tab item (M3 vertical tabs)"""
+        """Create a navigation tab item (M3 vertical tabs)
+
+        Clicking the same tab resets its state (acts as a reset button).
+        """
         is_active = self.state.current_tab == tab
         disabled = self.state.is_translating()
         classes = 'nav-item'
@@ -397,7 +400,22 @@ class YakuLingoApp:
             classes += ' disabled'
 
         def on_click():
-            if not disabled and self.state.current_tab != tab:
+            if disabled:
+                return
+
+            if self.state.current_tab == tab:
+                # Same tab clicked - reset to initial state
+                if tab == Tab.TEXT:
+                    # Reset text translation state
+                    self.state.source_text = ""
+                    self.state.text_result = None
+                    self.state.text_translation_elapsed_time = None
+                else:
+                    # Reset file translation state
+                    self.state.reset_file_state()
+                self._refresh_content()
+            else:
+                # Different tab - switch to it
                 self.state.current_tab = tab
                 self.settings.last_tab = tab.value
                 self._refresh_tabs()

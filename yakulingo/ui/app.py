@@ -644,7 +644,12 @@ class YakuLingoApp:
         self._refresh_status()
 
     async def _adjust_text(self, text: str, adjust_type: str):
-        """Adjust translation based on user request"""
+        """Adjust translation based on user request
+
+        Args:
+            text: The translation text to adjust
+            adjust_type: 'shorter', 'detailed', 'alternatives', or custom instruction
+        """
         if not self.translation_service:
             ui.notify('Not connected', type='warning')
             return
@@ -653,10 +658,13 @@ class YakuLingoApp:
         self._refresh_content()
 
         try:
+            # Pass source_text for style-based adjustments
+            source_text = self.state.source_text
             result = await asyncio.to_thread(
                 lambda: self.translation_service.adjust_translation(
                     text,
                     adjust_type,
+                    source_text=source_text,
                 )
             )
 
@@ -1135,6 +1143,25 @@ class YakuLingoApp:
 
                 ui.separator()
 
+                # Translation style setting
+                with ui.column().classes('w-full gap-1'):
+                    ui.label('翻訳スタイル').classes('text-sm font-medium')
+                    ui.label('英訳の詳細さを選択').classes('text-xs text-muted')
+
+                    style_options = {
+                        'standard': '標準',
+                        'concise': '簡潔',
+                        'minimal': '最簡潔',
+                    }
+                    current_style = self.settings.text_translation_style
+
+                    style_toggle = ui.toggle(
+                        list(style_options.values()),
+                        value=style_options.get(current_style, '簡潔'),
+                    ).classes('w-full')
+
+                ui.separator()
+
                 # Batch size setting
                 with ui.column().classes('w-full gap-1'):
                     ui.label('バッチサイズ').classes('text-sm font-medium')
@@ -1175,6 +1202,10 @@ class YakuLingoApp:
                     ui.button('キャンセル', on_click=dialog.close).props('flat').classes('text-muted')
 
                     def save_settings():
+                        # Save translation style
+                        style_reverse = {v: k for k, v in style_options.items()}
+                        self.settings.text_translation_style = style_reverse.get(style_toggle.value, 'concise')
+
                         self.settings.max_batch_size = int(batch_slider.value)
                         self.settings.request_timeout = int(timeout_slider.value)
                         self.settings.max_retries = int(retry_slider.value)

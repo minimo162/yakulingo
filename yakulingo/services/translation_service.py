@@ -478,15 +478,18 @@ class TranslationService:
         self,
         text: str,
         reference_files: Optional[list[Path]] = None,
+        style: Optional[str] = None,
     ) -> TextTranslationResult:
         """
         Translate text with language-specific handling:
-        - Japanese input → English output (3 options with different lengths)
+        - Japanese input → English output (single translation based on style)
         - Other input → Japanese output (single translation + detailed explanation)
 
         Args:
             text: Source text to translate
             reference_files: Optional list of reference files to attach
+            style: Translation style for English output ("standard", "concise", "minimal")
+                   If None, uses settings.text_translation_style (default: "concise")
 
         Returns:
             TextTranslationResult with options and output_language
@@ -496,9 +499,14 @@ class TranslationService:
             is_japanese = is_japanese_text(text)
             output_language = "en" if is_japanese else "jp"
 
+            # Determine style (default from settings or "concise")
+            if style is None:
+                style = self.config.text_translation_style if self.config else "concise"
+
             # Select appropriate prompt file
             if output_language == "en":
-                prompt_file = "text_translate_to_en.txt"
+                # Use single output prompt for English
+                prompt_file = "text_translate_to_en_single.txt"
             else:
                 prompt_file = "text_translate_to_jp.txt"
 
@@ -530,18 +538,16 @@ class TranslationService:
             reference_section = REFERENCE_INSTRUCTION if reference_files else ""
             prompt = template.replace("{reference_section}", reference_section)
             prompt = prompt.replace("{input_text}", text)
+            # Replace style placeholder for English translation
+            if output_language == "en":
+                prompt = prompt.replace("{style}", style)
 
             # Translate (with char_limit for auto file attachment mode)
             char_limit = self.config.copilot_char_limit if self.config else None
             raw_result = self.copilot.translate_single(text, prompt, reference_files, char_limit)
 
-            # Parse the result based on output language
-            if output_language == "en":
-                # English output: multiple options
-                options = self._parse_multi_option_result(raw_result)
-            else:
-                # Japanese output: single option with detailed explanation
-                options = self._parse_single_translation_result(raw_result)
+            # Parse the result - always single option now
+            options = self._parse_single_translation_result(raw_result)
 
             if options:
                 return TextTranslationResult(
@@ -593,26 +599,44 @@ class TranslationService:
         self,
         text: str,
         adjust_type: str,
+        source_text: Optional[str] = None,
     ) -> Optional[TranslationOption]:
         """
         Adjust a translation based on user request.
 
         Args:
             text: The translation text to adjust
-            adjust_type: 'shorter', 'longer', or custom instruction
+            adjust_type: 'shorter', 'detailed', 'alternatives', or custom instruction
+                - 'shorter': Re-translate with 'minimal' style
+                - 'detailed': Re-translate with 'standard' style
+                - 'alternatives': Get alternative in same style
+            source_text: Original source text (required for style changes and alternatives)
 
         Returns:
             TranslationOption with adjusted text, or None on failure
         """
         try:
-            # Determine which prompt to use
-            if adjust_type == 'shorter':
-                prompt_file = "adjust_shorter.txt"
-            elif adjust_type == 'longer':
-                prompt_file = "adjust_longer.txt"
-            else:
-                prompt_file = "adjust_custom.txt"
+            # Handle style-based adjustments (re-translate with different style)
+            if adjust_type == 'shorter' and source_text:
+                # Re-translate with minimal style
+                result = self.translate_text_with_options(source_text, None, style='minimal')
+                if result.options:
+                    return result.options[0]
+                return None
 
+            if adjust_type == 'detailed' and source_text:
+                # Re-translate with standard style
+                result = self.translate_text_with_options(source_text, None, style='standard')
+                if result.options:
+                    return result.options[0]
+                return None
+
+            if adjust_type == 'alternatives' and source_text:
+                # Get alternative in same style
+                return self._get_alternative_translation(text, source_text)
+
+            # Legacy behavior for custom instructions
+            prompt_file = "adjust_custom.txt"
             prompt_path = self.prompt_builder.prompts_dir / prompt_file if self.prompt_builder.prompts_dir else None
 
             if prompt_path and prompt_path.exists():
@@ -623,8 +647,7 @@ class TranslationService:
 
             # Build prompt
             prompt = template.replace("{input_text}", text)
-            if adjust_type not in ('shorter', 'longer'):
-                prompt = prompt.replace("{user_instruction}", adjust_type)
+            prompt = prompt.replace("{user_instruction}", adjust_type)
 
             # Get adjusted translation (with char_limit for auto file attachment mode)
             char_limit = self.config.copilot_char_limit if self.config else None
@@ -641,6 +664,64 @@ class TranslationService:
         except (RuntimeError, ValueError, ConnectionError, TimeoutError) as e:
             # Catch specific exceptions from Copilot API calls
             logger.exception("Error during translation adjustment: %s", e)
+            return None
+
+    def _get_alternative_translation(
+        self,
+        current_translation: str,
+        source_text: str,
+    ) -> Optional[TranslationOption]:
+        """
+        Get an alternative translation in the same style.
+
+        Args:
+            current_translation: The current translation to get alternative for
+            source_text: Original source text
+
+        Returns:
+            TranslationOption with alternative translation, or None on failure
+        """
+        try:
+            # Get current style from settings
+            style = self.config.text_translation_style if self.config else "concise"
+
+            # Load alternatives prompt
+            prompt_file = "text_alternatives.txt"
+            prompt_path = self.prompt_builder.prompts_dir / prompt_file if self.prompt_builder.prompts_dir else None
+
+            if prompt_path and prompt_path.exists():
+                template = prompt_path.read_text(encoding='utf-8')
+            else:
+                # Fallback template
+                template = """以下の翻訳に対して、同じスタイルで別の言い方を提案してください。
+
+現在の翻訳: {current_translation}
+元の日本語: {source_text}
+スタイル: {style}
+
+出力形式:
+訳文: （別の言い方）
+解説: （違いの説明）
+{reference_section}"""
+
+            # Build prompt
+            prompt = template.replace("{current_translation}", current_translation)
+            prompt = prompt.replace("{source_text}", source_text)
+            prompt = prompt.replace("{style}", style)
+            prompt = prompt.replace("{reference_section}", "")
+
+            # Get alternative translation
+            char_limit = self.config.copilot_char_limit if self.config else None
+            raw_result = self.copilot.translate_single(source_text, prompt, None, char_limit)
+
+            # Parse the result
+            return self._parse_single_option_result(raw_result)
+
+        except OSError as e:
+            logger.warning("File I/O error during alternative translation: %s", e)
+            return None
+        except (RuntimeError, ValueError, ConnectionError, TimeoutError) as e:
+            logger.exception("Error during alternative translation: %s", e)
             return None
 
     def _parse_multi_option_result(self, raw_result: str) -> list[TranslationOption]:

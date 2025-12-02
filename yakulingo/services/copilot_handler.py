@@ -326,21 +326,33 @@ class CopilotHandler:
             # If no Copilot page, create and navigate
             if not copilot_page:
                 copilot_page = self._context.new_page()
-                # Navigate and wait for full page load to stop browser spinner
+                # Navigate with 'commit' (fastest - just wait for first response)
+                # Don't use 'load' as Copilot has persistent connections that prevent load event
                 logger.info("Navigating to Copilot...")
-                copilot_page.goto(self.COPILOT_URL, wait_until='load')
+                copilot_page.goto(self.COPILOT_URL, wait_until='commit', timeout=30000)
 
             self._page = copilot_page
             self._connected = True
 
+            # Wait for chat input element to appear (indicates page is usable)
+            logger.info("Waiting for Copilot chat UI...")
+            input_selector = '#m365-chat-editor-target-element, [data-lexical-editor="true"]'
+            try:
+                copilot_page.wait_for_selector(input_selector, timeout=15000, state='visible')
+                logger.info("Copilot chat UI ready")
+            except PlaywrightTimeoutError:
+                logger.warning("Chat input not found - page may need login")
+
+            # Stop browser loading indicator (spinner)
+            logger.info("Stopping browser loading indicator...")
+            try:
+                copilot_page.evaluate("window.stop()")
+            except (PlaywrightError, PlaywrightTimeoutError):
+                pass  # Ignore errors - stopping is optional
+
             # Verify chat input is usable (checks for login, popups, etc.)
             if self._verify_chat_input():
                 logger.info("Copilot ready (chat input verified)")
-                # Stop browser loading indicator (spinner) now that Copilot is ready
-                try:
-                    copilot_page.evaluate("window.stop()")
-                except (PlaywrightError, PlaywrightTimeoutError):
-                    pass  # Ignore errors - stopping is optional
             else:
                 logger.warning("Copilot page loaded but chat input not verified - may need login")
 

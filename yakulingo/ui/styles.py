@@ -422,7 +422,7 @@ body {
     box-shadow: none;
 }
 
-/* === Drop Zone === */
+/* === Drop Zone (Gradio-inspired) === */
 .drop-zone {
     border: 2px dashed var(--md-sys-color-outline-variant);
     border-radius: var(--md-sys-shape-corner-xl);
@@ -431,6 +431,48 @@ body {
     cursor: pointer;
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
     background: var(--md-sys-color-surface);
+    position: relative;
+}
+
+/* Make entire drop zone clickable - expand the hidden input to cover full area */
+.drop-zone .q-uploader__input {
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    opacity: 0 !important;
+    cursor: pointer !important;
+    z-index: 10 !important;
+}
+
+/* Hide ALL Quasar uploader internal elements */
+.drop-zone .q-uploader__header,
+.drop-zone .q-uploader__list,
+.drop-zone .q-uploader__file,
+.drop-zone .q-uploader__dnd,
+.drop-zone .q-uploader__subtitle,
+.drop-zone .q-uploader__overlay,
+.drop-zone .q-uploader__spinner,
+.drop-zone .q-uploader__expand-btn {
+    display: none !important;
+}
+
+/* Make q-uploader completely invisible except for the input */
+.drop-zone .q-uploader {
+    width: 100% !important;
+    min-height: auto !important;
+    max-height: none !important;
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    overflow: visible !important;
+}
+
+/* Hide Quasar uploader slot content wrapper if any */
+.drop-zone .q-uploader__slot {
+    display: none !important;
 }
 
 .drop-zone:hover {
@@ -440,14 +482,37 @@ body {
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-spring);
 }
 
+/* Visual click hint - Gradio style */
+.drop-zone::after {
+    content: 'クリック または ドラッグ＆ドロップ';
+    position: absolute;
+    bottom: 0.75rem;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 0.6875rem;
+    color: var(--md-sys-color-outline);
+    opacity: 0;
+    transition: opacity var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+}
+
+.drop-zone:hover::after {
+    opacity: 1;
+}
+
 .drop-zone-icon {
-    font-size: 2rem;
+    font-size: 2.5rem;
     color: var(--md-sys-color-on-surface-variant);
-    margin-bottom: 0.5rem;
+    margin-bottom: 0.75rem;
+    transition: transform var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-spring);
+}
+
+.drop-zone:hover .drop-zone-icon {
+    transform: translateY(-4px);
+    color: var(--md-sys-color-primary);
 }
 
 .drop-zone-text {
-    font-size: 0.875rem;
+    font-size: 0.9375rem;
     font-weight: 500;
     color: var(--md-sys-color-on-surface);
 }

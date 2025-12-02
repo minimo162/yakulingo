@@ -126,10 +126,6 @@ class YakuLingoApp:
         # Auto-update
         self._update_notification: Optional["UpdateNotification"] = None
 
-        # Streaming UI elements for smooth updates (avoid full refresh)
-        self._streaming_label: Optional[ui.label] = None
-        self._streaming_container: Optional[ui.element] = None
-
         # Translate button reference for dynamic state updates
         self._translate_button: Optional[ui.button] = None
 
@@ -237,11 +233,6 @@ class YakuLingoApp:
         if self._history_list:
             self._history_list.refresh()
 
-    def _on_streaming_label_created(self, label: ui.label, container: ui.element):
-        """Store references to streaming UI elements for direct updates"""
-        self._streaming_label = label
-        self._streaming_container = container
-
     def _on_translate_button_created(self, button: ui.button):
         """Store reference to translate button for dynamic state updates"""
         self._translate_button = button
@@ -263,17 +254,6 @@ class YakuLingoApp:
             # Enable the button
             self._translate_button.props(remove='loading')
             self._translate_button.props(':disable=false')
-
-    def _update_streaming_text(self, text: str):
-        """Update streaming text directly without full refresh (smooth updates)"""
-        if self._streaming_label is not None and self._streaming_container is not None:
-            # Update the label text directly
-            self._streaming_label.set_text(text)
-            # Show/hide container based on content
-            if text and text.strip():
-                self._streaming_container.style('display: block')
-            else:
-                self._streaming_container.style('display: none')
 
     def create_ui(self):
         """Create the UI - Nani-inspired sidebar layout"""
@@ -439,7 +419,6 @@ class YakuLingoApp:
                         on_remove_reference_file=self._remove_reference_file,
                         on_back_translate=self._back_translate,
                         on_settings=self._show_settings_dialog,
-                        on_streaming_label_created=self._on_streaming_label_created,
                         on_retry=self._retry_translation,
                         on_translate_button_created=self._on_translate_button_created,
                     )
@@ -534,96 +513,49 @@ class YakuLingoApp:
         await self._translate_text()
 
     async def _translate_text(self):
-        """Translate text with streaming updates."""
+        """Translate text."""
         import time
-        import queue
-        import datetime
-
-        # Direct file logging for debugging
-        def debug_log(msg):
-            log_path = Path.home() / ".yakulingo" / "debug.log"
-            with open(log_path, 'a', encoding='utf-8') as f:
-                f.write(f"{datetime.datetime.now()}: {msg}\n")
-                f.flush()
-
-        debug_log("=== _translate_text called ===")
-        debug_log(f"translation_service: {self.translation_service}")
-        debug_log(f"source_text length: {len(self.state.source_text) if self.state.source_text else 0}")
 
         if not self.translation_service:
-            debug_log("translation_service is None, returning")
             ui.notify('Not connected', type='warning')
             return
 
         source_text = self.state.source_text
         reference_files = self.state.reference_files or None
 
-        debug_log(f"Starting translation for text: {source_text[:50] if source_text else ''}")
-
         # Track translation time
         start_time = time.time()
 
-        # Queue for streaming updates from background thread
-        content_queue: queue.Queue[str] = queue.Queue()
-
-        def on_streaming_content(content: str):
-            """Callback from background thread - put content in queue"""
-            content_queue.put(content)
-
-        # Update UI
+        # Update UI to show loading state
         self.state.text_translating = True
         self.state.text_result = None
         self.state.text_translation_elapsed_time = None
-        self.state.streaming_text = ""  # For displaying streaming content
         self._refresh_content()
-
-        debug_log("Starting translation (sync on main thread)...")
 
         try:
             # Run translation synchronously on main thread (required for Playwright)
             # Playwright's sync API uses greenlets which must run on the same thread
-            result = self.translation_service.translate_text_streaming(
+            result = self.translation_service.translate_text_with_options(
                 source_text,
                 reference_files,
-                on_content=on_streaming_content,
             )
-            debug_log(f"Got result: {type(result).__name__ if result else None}")
-
-            # Process any remaining items in the queue (update label for final content)
-            try:
-                while True:
-                    content = content_queue.get_nowait()
-                    self.state.streaming_text = content
-                    self._update_streaming_text(content)
-            except queue.Empty:
-                pass
 
             # Calculate elapsed time
             elapsed_time = time.time() - start_time
             self.state.text_translation_elapsed_time = elapsed_time
-            debug_log(f"Translation completed in {elapsed_time:.2f} seconds")
 
             if result and result.options:
-                debug_log(f"Translation successful, {len(result.options)} options received")
                 self.state.text_result = result
-                self.state.streaming_text = ""  # Clear streaming text
                 self._add_to_history(result)
             else:
                 error_msg = result.error_message if result else 'Unknown error'
-                debug_log(f"Translation failed: {error_msg}")
                 ui.notify(f'Error: {error_msg}', type='negative')
 
         except Exception as e:
-            debug_log(f"Translation exception: {e}")
-            import traceback
-            debug_log(traceback.format_exc())
+            logger.exception("Translation error: %s", e)
             ui.notify(f'Error: {e}', type='negative')
 
         self.state.text_translating = False
-        self.state.streaming_text = ""
-        # Clear streaming element references before refresh (they will become stale)
-        self._streaming_label = None
-        self._streaming_container = None
         self._refresh_content()
         # Update connection status (may have changed during translation)
         self._refresh_status()

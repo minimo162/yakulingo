@@ -244,7 +244,13 @@ class CopilotHandler:
         logger.info("Starting translator Edge...")
         try:
             local_cwd = os.environ.get("SYSTEMROOT", r"C:\Windows")
-            creation_flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+
+            # On Windows, use STARTUPINFO to hide any console window flicker
+            startupinfo = None
+            if sys.platform == "win32":
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                startupinfo.wShowWindow = 0  # SW_HIDE
 
             self.edge_process = subprocess.Popen([
                 edge_exe,
@@ -255,7 +261,7 @@ class CopilotHandler:
                 "--no-default-browser-check",
             ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                cwd=local_cwd if sys.platform == "win32" else None,
-               creationflags=creation_flags)
+               startupinfo=startupinfo)
 
             # Wait for Edge to start
             for i in range(self.EDGE_STARTUP_MAX_ATTEMPTS):
@@ -476,59 +482,28 @@ class CopilotHandler:
 
     def _check_copilot_state(self, timeout: int = 5) -> str:
         """
-        Copilotの状態を確認（簡略化版）
+        Copilotの状態を確認（超簡略化版）
 
-        ログイン検出は行わず、CopilotのURLにいれば READY を返す。
-        CSSセレクタベースのチャットUI検出はM365 Copilotの頻繁なUI変更により
-        不安定なため削除。実際のログイン状態は翻訳実行時に確認される。
+        ページが存在すれば READY を返す。
+        起動時はEdgeやログインのタイミングでずれるため、
+        URLやDOM状態の複雑な検出は行わない。
+        実際のログイン状態は翻訳実行時に確認される。
 
         Args:
             timeout: 未使用（互換性のため残存）
 
         Returns:
-            ConnectionState.READY - CopilotのURLにいる、使用可能として扱う
-            ConnectionState.LOGIN_REQUIRED - Copilot以外のURLにリダイレクトされた
+            ConnectionState.READY - ページが存在する、使用可能として扱う
             ConnectionState.ERROR - ページが存在しない
         """
         if not self._page:
             return ConnectionState.ERROR
 
-        # Get Playwright error types
-        error_types = _get_playwright_errors()
-        PlaywrightError = error_types['Error']
-        PlaywrightTimeoutError = error_types['TimeoutError']
-
-        try:
-            # Wait for page to be in a stable state before checking
-            try:
-                self._page.wait_for_load_state('domcontentloaded', timeout=5000)
-            except PlaywrightTimeoutError:
-                logger.debug("Page load timeout, continuing with check")
-
-            current_url = self._page.url
-            logger.debug("Checking Copilot state - current URL: %s", current_url)
-
-            # CopilotのURLにいるかだけ確認
-            is_copilot_url = any(
-                pattern in current_url for pattern in self.COPILOT_URL_PATTERNS
-            )
-
-            if is_copilot_url:
-                # CopilotのURLにいれば準備完了として扱う
-                # 実際のログイン状態は翻訳実行時に確認される
-                logger.debug("On Copilot URL - treating as ready")
-                return ConnectionState.READY
-
-            # Copilot以外のURLにリダイレクトされた場合のみログイン必要
-            logger.debug("URL does not match any Copilot patterns, login required")
-            return ConnectionState.LOGIN_REQUIRED
-
-        except (PlaywrightError, PlaywrightTimeoutError) as e:
-            logger.warning("Playwright error checking Copilot state: %s", e)
-            return ConnectionState.ERROR
-        except (AttributeError, TypeError) as e:
-            logger.warning("Page state error: %s", e)
-            return ConnectionState.ERROR
+        # ページが存在すれば準備完了として扱う
+        # URLやDOM状態のチェックは行わない（起動タイミングの問題を回避）
+        # 実際のログイン状態は翻訳実行時に確認される
+        logger.debug("Page exists - treating as ready")
+        return ConnectionState.READY
 
     def bring_to_foreground(self) -> None:
         """Edgeウィンドウを前面に表示"""

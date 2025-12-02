@@ -244,6 +244,7 @@ def create_text_result_panel(
                     state.source_text,
                     on_copy,
                     on_follow_up,
+                    on_adjust,
                     on_back_translate,
                     elapsed_time,
                 )
@@ -402,6 +403,7 @@ def create_text_panel(
                     state.source_text,
                     on_copy,
                     on_follow_up,
+                    on_adjust,
                     on_back_translate,
                     elapsed_time,
                 )
@@ -487,6 +489,7 @@ def _render_results_to_jp(
     source_text: str,
     on_copy: Callable[[str], None],
     on_follow_up: Optional[Callable[[str, str], None]],
+    on_adjust: Optional[Callable[[str, str], None]] = None,
     on_back_translate: Optional[Callable[[str], None]] = None,
     elapsed_time: Optional[float] = None,
 ):
@@ -535,20 +538,9 @@ def _render_results_to_jp(
                 with ui.element('div').classes('nani-explanation'):
                     _render_explanation(option.explanation)
 
-                    # "もっと詳しく解説して" button
-                    if on_follow_up:
-                        with ui.element('div').classes('explain-more-section'):
-                            ui.button(
-                                'もっと詳しく解説して',
-                                icon='lightbulb',
-                                on_click=lambda: on_follow_up('explain_more', source_text)
-                            ).props('flat no-caps').classes('explain-more-btn')
-
         # Follow-up actions section
         with ui.element('div').classes('follow-up-section w-full mt-4'):
             with ui.column().classes('w-full gap-2'):
-                ui.label('次のアクション').classes('text-xs text-muted font-semibold mb-1')
-
                 with ui.row().classes('w-full gap-2 flex-wrap'):
                     # Check original English text
                     ui.button(
@@ -557,19 +549,16 @@ def _render_results_to_jp(
                         on_click=lambda: on_follow_up and on_follow_up('review', source_text)
                     ).props('outline no-caps').classes('follow-up-btn')
 
-                    # Ask for more details
+                    # Extract key points
                     ui.button(
-                        '詳しく聞く',
-                        icon='help_outline',
-                        on_click=lambda: _show_question_dialog(source_text, option.text, on_follow_up)
+                        '要点を教えて',
+                        icon='summarize',
+                        on_click=lambda: on_follow_up and on_follow_up('summarize', source_text)
                     ).props('outline no-caps').classes('follow-up-btn')
 
-                    # Draft a reply
-                    ui.button(
-                        '返信の下書き',
-                        icon='reply',
-                        on_click=lambda: _show_reply_dialog(source_text, option.text, on_follow_up)
-                    ).props('outline no-caps').classes('follow-up-btn')
+        # Inline input section for additional requests
+        if on_adjust:
+            _render_inline_input_section_jp(option.text, on_adjust)
 
 
 def _render_explanation(explanation: str):
@@ -690,113 +679,6 @@ def _do_adjust(dialog, text: str, adjust_type: str, on_adjust: Callable[[str, st
         on_adjust(text, adjust_type.strip())
 
 
-def _show_question_dialog(
-    source_text: str,
-    translation: str,
-    on_follow_up: Optional[Callable[[str, str], None]],
-):
-    """Show dialog for asking questions about the translation"""
-
-    with ui.dialog() as dialog, ui.card().classes('w-[28rem]'):
-        with ui.column().classes('w-full gap-4 p-4'):
-            # Header
-            with ui.row().classes('w-full justify-between items-center'):
-                ui.label('質問する').classes('text-base font-medium')
-                ui.button(icon='close', on_click=dialog.close).props('flat dense round')
-
-            # Context preview
-            with ui.element('div').classes('dialog-section'):
-                ui.label('原文:').classes('text-xs text-muted font-semibold')
-                ui.label(source_text[:100] + ('...' if len(source_text) > 100 else '')).classes('text-sm')
-
-            # Quick questions
-            ui.label('よくある質問').classes('text-xs text-muted font-semibold')
-            with ui.column().classes('w-full gap-2'):
-                quick_questions = [
-                    'この表現は自然ですか？',
-                    '他の言い方はありますか？',
-                    'この単語の使い方を詳しく教えてください',
-                    'フォーマル/カジュアルな言い方は？',
-                ]
-                for q in quick_questions:
-                    ui.button(
-                        q,
-                        on_click=lambda question=q: _do_follow_up(dialog, 'question', question, on_follow_up)
-                    ).props('flat no-caps').classes('w-full justify-start text-left')
-
-            # Custom question
-            ui.separator()
-            custom_input = ui.textarea(
-                placeholder='自由に質問を入力...'
-            ).classes('w-full').props('rows=2')
-
-            ui.button(
-                '質問する',
-                icon='send',
-                on_click=lambda: _do_follow_up(dialog, 'question', custom_input.value, on_follow_up)
-            ).classes('btn-primary self-end')
-
-    dialog.open()
-
-
-def _show_reply_dialog(
-    source_text: str,
-    translation: str,
-    on_follow_up: Optional[Callable[[str, str], None]],
-):
-    """Show dialog for creating a reply to the original text"""
-
-    with ui.dialog() as dialog, ui.card().classes('w-[28rem]'):
-        with ui.column().classes('w-full gap-4 p-4'):
-            # Header
-            with ui.row().classes('w-full justify-between items-center'):
-                ui.label('返信を作成').classes('text-base font-medium')
-                ui.button(icon='close', on_click=dialog.close).props('flat dense round')
-
-            # Context preview
-            with ui.element('div').classes('dialog-section'):
-                ui.label('原文:').classes('text-xs text-muted font-semibold')
-                ui.label(source_text[:100] + ('...' if len(source_text) > 100 else '')).classes('text-sm')
-
-            # Reply content
-            ui.label('返信内容（日本語で入力）').classes('text-xs text-muted font-semibold')
-            reply_input = ui.textarea(
-                placeholder='返信したい内容を日本語で入力...\n例: 了解しました。来週までに対応します。'
-            ).classes('w-full').props('rows=3')
-
-            # Tone selection
-            ui.label('トーン').classes('text-xs text-muted font-semibold')
-            tone = ui.toggle(
-                ['フォーマル', 'ニュートラル', 'カジュアル'],
-                value='ニュートラル'
-            ).classes('w-full')
-
-            ui.button(
-                '返信を作成',
-                icon='reply',
-                on_click=lambda: _do_follow_up(
-                    dialog,
-                    'reply',
-                    f"トーン: {tone.value}\n内容: {reply_input.value}",
-                    on_follow_up
-                )
-            ).classes('btn-primary self-end')
-
-    dialog.open()
-
-
-def _do_follow_up(
-    dialog,
-    action_type: str,
-    content: str,
-    on_follow_up: Optional[Callable[[str, str], None]],
-):
-    """Execute follow-up action and close dialog"""
-    if content and content.strip() and on_follow_up:
-        dialog.close()
-        on_follow_up(action_type, content.strip())
-
-
 def _render_inline_adjust_section(
     text: str,
     on_adjust: Callable[[str, str], None],
@@ -869,3 +751,29 @@ def _render_inline_adjust_section(
                     icon='arrow_upward',
                     on_click=send_question
                 ).props('round dense').classes('send-question-btn')
+
+
+def _render_inline_input_section_jp(
+    text: str,
+    on_adjust: Callable[[str, str], None],
+):
+    """Render inline input section for Japanese translation results"""
+
+    with ui.element('div').classes('inline-question-section mt-4'):
+        with ui.row().classes('gap-2 items-end w-full'):
+            with ui.column().classes('flex-1 gap-1'):
+                # Text input for additional requests
+                request_input = ui.input(
+                    placeholder='例: 返信の下書きを書いて'
+                ).classes('w-full question-input')
+
+            # Send button
+            def send_request():
+                if request_input.value and request_input.value.strip():
+                    on_adjust(text, request_input.value.strip())
+                    request_input.set_value('')
+
+            ui.button(
+                icon='arrow_upward',
+                on_click=send_request
+            ).props('round dense').classes('send-question-btn')

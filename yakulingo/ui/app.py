@@ -39,6 +39,17 @@ MIN_WINDOW_HEIGHT = 600
 MAX_WINDOW_RATIO = 0.9  # Max 90% of screen size
 
 
+def _get_screen_size_windows() -> tuple[int, int] | None:
+    """Get screen size using Windows API (faster than tkinter)."""
+    try:
+        import ctypes
+        user32 = ctypes.windll.user32
+        # SM_CXSCREEN = 0, SM_CYSCREEN = 1
+        return (user32.GetSystemMetrics(0), user32.GetSystemMetrics(1))
+    except (AttributeError, OSError):
+        return None
+
+
 def get_scaled_window_size(base_width: int, base_height: int) -> tuple[int, int]:
     """
     Scale window size based on screen resolution.
@@ -53,18 +64,14 @@ def get_scaled_window_size(base_width: int, base_height: int) -> tuple[int, int]
     Returns:
         Tuple of (scaled_width, scaled_height)
     """
-    try:
-        # Use tkinter to get screen dimensions (standard library, no extra deps)
-        import tkinter as tk
-        root = tk.Tk()
-        root.withdraw()  # Hide the window
-        screen_width = root.winfo_screenwidth()
-        screen_height = root.winfo_screenheight()
-        root.destroy()
-    except Exception:
+    # Try Windows API first (fast), then fallback to default
+    screen_size = _get_screen_size_windows()
+    if not screen_size:
         # Fallback to base size if screen detection fails
-        logger.warning("Could not detect screen resolution, using default window size")
+        logger.debug("Could not detect screen resolution, using default window size")
         return (base_width, base_height)
+
+    screen_width, screen_height = screen_size
 
     # Calculate scaling factor based on screen resolution
     # Use the minimum of width/height ratios to maintain aspect ratio
@@ -86,7 +93,7 @@ def get_scaled_window_size(base_width: int, base_height: int) -> tuple[int, int]
     scaled_width = min(scaled_width, max_width)
     scaled_height = min(scaled_height, max_height)
 
-    logger.info(
+    logger.debug(
         "Window scaling: screen=%dx%d, scale=%.2f, window=%dx%d",
         screen_width, screen_height, scale_factor, scaled_width, scaled_height
     )
@@ -131,10 +138,17 @@ class YakuLingoApp:
             self._copilot = CopilotHandler()
         return self._copilot
 
-    async def start_edge_early(self):
-        """Start Edge browser early in background while UI is loading."""
+    async def start_edge_and_connect(self):
+        """Start Edge and connect to Copilot in background (non-blocking)."""
+        # Small delay to let UI render first
+        await asyncio.sleep(0.1)
+
+        # Start Edge
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, self.copilot.start_edge)
+
+        # Connect to Copilot
+        await self.connect_copilot(silent=False)
 
     async def connect_copilot(self, silent: bool = False):
         """Connect to Copilot."""
@@ -194,11 +208,6 @@ class YakuLingoApp:
         self._refresh_status()
         if not silent:
             self._refresh_content()
-
-    async def preconnect_copilot(self):
-        """Pre-establish Copilot connection in background."""
-        await asyncio.sleep(0.5)
-        await self.connect_copilot(silent=False)  # Show login notification if needed
 
     async def check_for_updates(self):
         """Check for updates in background."""
@@ -1147,12 +1156,10 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
 
     @ui.page('/')
     async def main_page():
-        # Start Edge early in background (while UI is being built)
-        edge_task = asyncio.create_task(app.start_edge_early())
+        # Create UI first (show window immediately)
         app.create_ui()
-        # Wait for Edge startup to complete before connecting
-        await edge_task
-        await app.preconnect_copilot()
+        # Start background tasks (don't block window display)
+        asyncio.create_task(app.start_edge_and_connect())
         asyncio.create_task(app.check_for_updates())
 
     # Scale window size based on screen resolution

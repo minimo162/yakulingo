@@ -1,7 +1,6 @@
 ' ============================================================
 ' YakuLingo Silent Launcher
 ' Launches YakuLingo without showing a console window
-' - Shows startup notification for user feedback
 ' - Prevents multiple instances
 ' ============================================================
 
@@ -88,9 +87,6 @@ env("VIRTUAL_ENV") = venvDir
 env("PLAYWRIGHT_BROWSERS_PATH") = scriptDir & "\.playwright-browsers"
 env("PATH") = venvDir & "\Scripts;" & pythonDir & ";" & pythonDir & "\Scripts;" & env("PATH")
 
-' Show startup notification (non-blocking balloon tip)
-ShowStartupNotification
-
 ' Launch app silently using pythonw.exe (no console)
 objShell.CurrentDirectory = scriptDir
 objShell.Run """" & pythonExe & """ """ & appScript & """", 0, False
@@ -102,15 +98,16 @@ WScript.Quit 0
 ' ============================================================
 
 Function IsPortInUse(port)
-    ' Check if a port is in use by trying netstat
-    Dim result, output
+    ' Check if a port is in use using netstat (no PowerShell overhead)
+    Dim result, exec, output
     On Error Resume Next
 
-    ' Use PowerShell to check port (faster than netstat parsing)
-    result = objShell.Run("powershell -WindowStyle Hidden -Command ""exit ([bool](Get-NetTCPConnection -LocalPort " & port & " -ErrorAction SilentlyContinue))""", 0, True)
+    ' Use netstat directly (faster than PowerShell)
+    Set exec = objShell.Exec("netstat -ano")
+    output = exec.StdOut.ReadAll()
 
-    ' Exit code 1 = port in use, 0 = port free
-    If result = 1 Then
+    ' Check if port is listening
+    If InStr(output, ":" & port & " ") > 0 And InStr(output, "LISTENING") > 0 Then
         IsPortInUse = True
     Else
         IsPortInUse = False
@@ -118,27 +115,3 @@ Function IsPortInUse(port)
 
     On Error GoTo 0
 End Function
-
-Sub ShowStartupNotification()
-    ' Show a Windows balloon notification that the app is starting
-    ' This provides immediate visual feedback to the user
-    On Error Resume Next
-
-    Dim scriptPath, ps_command
-
-    ' Use PowerShell to show a toast notification (Windows 10+)
-    ps_command = "powershell -WindowStyle Hidden -Command """ & _
-        "[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null; " & _
-        "$template = [Windows.UI.Notifications.ToastTemplateType]::ToastText01; " & _
-        "$xml = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent($template); " & _
-        "$xml.GetElementsByTagName('text')[0].AppendChild($xml.CreateTextNode('Starting YakuLingo...')) | Out-Null; " & _
-        "$toast = [Windows.UI.Notifications.ToastNotification]::new($xml); " & _
-        "$toast.ExpirationTime = [DateTimeOffset]::Now.AddSeconds(3); " & _
-        "[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('YakuLingo').Show($toast)" & _
-        """"
-
-    ' Run notification asynchronously (don't wait)
-    objShell.Run ps_command, 0, False
-
-    On Error GoTo 0
-End Sub

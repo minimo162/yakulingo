@@ -122,6 +122,7 @@ class YakuLingoApp:
         self._main_content = None
         self._tabs_container = None
         self._history_list = None
+        self._main_area_element = None
 
         # Auto-update
         self._update_notification: Optional["UpdateNotification"] = None
@@ -219,7 +220,10 @@ class YakuLingoApp:
             self._header_status.refresh()
 
     def _refresh_content(self):
-        """Refresh main content area"""
+        """Refresh main content area and update layout classes"""
+        # Update main area classes based on current state
+        if self._main_area_element:
+            self._main_area_element.classes(self._get_main_area_classes(), replace=True)
         if self._main_content:
             self._main_content.refresh()
 
@@ -270,8 +274,13 @@ class YakuLingoApp:
             # Mobile header (hidden on large screens)
             self._create_mobile_header()
 
-            # Main area (input panel + result panel)
-            with ui.element('div').classes('main-area'):
+            # Sidebar overlay for mobile (click to close)
+            with ui.element('div').classes('sidebar-overlay').on('click', self._toggle_mobile_sidebar):
+                pass
+
+            # Main area (input panel + result panel) with dynamic classes
+            self._main_area_element = ui.element('div').classes(self._get_main_area_classes())
+            with self._main_area_element:
                 self._create_main_content()
 
     def _create_mobile_header(self):
@@ -431,8 +440,20 @@ class YakuLingoApp:
                     on_click=delete_entry
                 ).props('flat dense round size=xs').classes('history-delete-btn')
 
+    def _get_main_area_classes(self) -> str:
+        """Get dynamic CSS classes for main-area based on current state."""
+        classes = ['main-area']
+
+        if self.state.current_tab == Tab.FILE:
+            classes.append('file-mode')
+        elif self.state.text_result or self.state.text_translating:
+            # Show results panel when translating or has results
+            classes.append('has-results')
+
+        return ' '.join(classes)
+
     def _create_main_content(self):
-        """Create main content area with 3-column layout for text, single column for file"""
+        """Create main content area with dynamic column layout."""
         # Lazy import UI components for faster startup
         from yakulingo.ui.components.text_panel import create_text_input_panel, create_text_result_panel
         from yakulingo.ui.components.file_panel import create_file_panel
@@ -440,8 +461,8 @@ class YakuLingoApp:
         @ui.refreshable
         def main_content():
             if self.state.current_tab == Tab.TEXT:
-                # 3-column layout: Input panel (left) + Result panel (right)
-                # Input panel (middle column - sticky)
+                # Dynamic 2/3-column layout for text translation
+                # Input panel (left column - width varies based on results)
                 with ui.column().classes('input-panel'):
                     create_text_input_panel(
                         state=self.state,
@@ -454,7 +475,7 @@ class YakuLingoApp:
                         on_translate_button_created=self._on_translate_button_created,
                     )
 
-                # Result panel (right column - scrollable)
+                # Result panel (right column - shown when has results)
                 with ui.column().classes('result-panel'):
                     create_text_result_panel(
                         state=self.state,
@@ -465,7 +486,7 @@ class YakuLingoApp:
                         on_retry=self._retry_translation,
                     )
             else:
-                # File panel: single column layout (centered)
+                # File panel: 2-column layout (sidebar + centered file panel)
                 with ui.column().classes('w-full max-w-2xl mx-auto px-6 py-8 flex-1'):
                     create_file_panel(
                         state=self.state,

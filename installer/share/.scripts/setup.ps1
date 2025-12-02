@@ -284,11 +284,11 @@ if (-not $GuiMode) {
 
 $WshShell = New-Object -ComObject WScript.Shell
 
-# Desktop shortcut - use run.vbs for silent launch
+# Desktop shortcut - use YakuLingo.exe for silent launch
 $DesktopPath = [Environment]::GetFolderPath("Desktop")
 $ShortcutPath = Join-Path $DesktopPath "$AppName.lnk"
 $Shortcut = $WshShell.CreateShortcut($ShortcutPath)
-$Shortcut.TargetPath = Join-Path $InstallPath "run.vbs"
+$Shortcut.TargetPath = Join-Path $InstallPath "YakuLingo.exe"
 $Shortcut.WorkingDirectory = $InstallPath
 $Shortcut.IconLocation = "shell32.dll,21"
 $Shortcut.Description = "YakuLingo Translation Tool"
@@ -297,11 +297,11 @@ if (-not $GuiMode) {
     Write-Host "      Desktop: $ShortcutPath" -ForegroundColor Gray
 }
 
-# Start Menu shortcut - use run.vbs for silent launch
+# Start Menu shortcut - use YakuLingo.exe for silent launch
 $StartMenuPath = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs"
 $StartShortcutPath = Join-Path $StartMenuPath "$AppName.lnk"
 $StartShortcut = $WshShell.CreateShortcut($StartShortcutPath)
-$StartShortcut.TargetPath = Join-Path $InstallPath "run.vbs"
+$StartShortcut.TargetPath = Join-Path $InstallPath "YakuLingo.exe"
 $StartShortcut.WorkingDirectory = $InstallPath
 $StartShortcut.IconLocation = "shell32.dll,21"
 $StartShortcut.Description = "YakuLingo Translation Tool"

@@ -9,7 +9,7 @@ import csv
 import logging
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Callable
 import unicodedata
 
 import re
@@ -572,6 +572,103 @@ class TranslationService:
                 source_text=text,
                 source_char_count=len(text),
                 output_language="en",  # Default
+                error_message=str(e),
+            )
+
+    def translate_text_streaming(
+        self,
+        text: str,
+        reference_files: Optional[list[Path]] = None,
+        on_content: Optional[Callable[[str], None]] = None,
+        on_reasoning: Optional[Callable[[str], None]] = None,
+    ) -> TextTranslationResult:
+        """
+        Translate text with streaming updates.
+
+        Args:
+            text: Source text to translate
+            reference_files: Optional list of reference files to attach
+            on_content: Callback for content updates (called multiple times as response streams)
+            on_reasoning: Callback for reasoning updates (Chain of Thought)
+
+        Returns:
+            TextTranslationResult with options and output_language
+        """
+        try:
+            # Detect input language to determine output language
+            is_japanese = is_japanese_text(text)
+            output_language = "en" if is_japanese else "jp"
+
+            # Select appropriate prompt file
+            if output_language == "en":
+                prompt_file = "text_translate_to_en.txt"
+            else:
+                prompt_file = "text_translate_to_jp.txt"
+
+            prompt_path = self.prompt_builder.prompts_dir / prompt_file if self.prompt_builder.prompts_dir else None
+
+            if not (prompt_path and prompt_path.exists()):
+                # Fallback to non-streaming if prompt not found
+                return self.translate_text_with_options(text, reference_files)
+
+            template = prompt_path.read_text(encoding='utf-8')
+
+            # Build prompt with reference section if files are attached
+            reference_section = REFERENCE_INSTRUCTION if reference_files else ""
+            prompt = template.replace("{reference_section}", reference_section)
+            prompt = prompt.replace("{input_text}", text)
+
+            # Translate with streaming (with char_limit for auto file attachment mode)
+            char_limit = self.config.copilot_char_limit if self.config else None
+            raw_result = self.copilot.translate_single_streaming(
+                prompt=prompt,
+                reference_files=reference_files,
+                char_limit=char_limit,
+                on_content=on_content,
+                on_reasoning=on_reasoning,
+            )
+
+            # Parse the result based on output language
+            if output_language == "en":
+                # English output: multiple options
+                options = self._parse_multi_option_result(raw_result)
+            else:
+                # Japanese output: single option with detailed explanation
+                options = self._parse_single_translation_result(raw_result)
+
+            if options:
+                return TextTranslationResult(
+                    source_text=text,
+                    source_char_count=len(text),
+                    options=options,
+                    output_language=output_language,
+                )
+            else:
+                # Fallback: treat the whole result as a single option
+                return TextTranslationResult(
+                    source_text=text,
+                    source_char_count=len(text),
+                    options=[TranslationOption(
+                        text=raw_result.strip(),
+                        explanation="翻訳結果です",
+                    )],
+                    output_language=output_language,
+                )
+
+        except OSError as e:
+            logger.warning("File I/O error during streaming translation: %s", e)
+            return TextTranslationResult(
+                source_text=text,
+                source_char_count=len(text),
+                output_language="en",
+                error_message=str(e),
+            )
+        except (RuntimeError, ValueError, ConnectionError, TimeoutError) as e:
+            logger.exception("Error during streaming translation: %s", e)
+            return TextTranslationResult(
+                source_text=text,
+                source_char_count=len(text),
+                output_language="en",
                 error_message=str(e),
             )
 

@@ -121,6 +121,7 @@ def create_text_panel(
     on_remove_reference_file: Optional[Callable[[int], None]] = None,  # Remove reference file by index
     on_back_translate: Optional[Callable[[str], None]] = None,  # Back-translate to check
     on_settings: Optional[Callable[[], None]] = None,  # Translation settings (Nani-style)
+    on_streaming_label_created: Optional[Callable[[ui.label, ui.element], None]] = None,  # Callback with (label, container) for direct updates
 ):
     """
     Text translation panel with language-specific UI.
@@ -242,27 +243,54 @@ def create_text_panel(
                     elapsed_time,
                 )
         elif state.text_translating:
-            _render_loading(state.source_text)
+            _render_loading(state.source_text, state.streaming_text, on_streaming_label_created)
 
 
-def _render_loading(source_text: str = ""):
-    """Render loading state with language detection indicator"""
+def _render_loading(
+    source_text: str = "",
+    streaming_text: str = "",
+    on_streaming_label_created: Optional[Callable[[ui.label, ui.element], None]] = None,
+):
+    """
+    Render loading state with language detection indicator and streaming content.
+
+    Args:
+        source_text: The source text being translated
+        streaming_text: Current streaming content
+        on_streaming_label_created: Callback receiving (label, container) for direct updates
+    """
     is_japanese = is_japanese_dominant(source_text)
 
     with ui.element('div').classes('loading-character animate-in'):
-        # Loading spinner
-        ui.spinner('dots', size='lg').classes('text-primary')
+        # Loading spinner and status
+        with ui.row().classes('items-center gap-3'):
+            ui.spinner('dots', size='lg').classes('text-primary')
 
-        # Dynamic language detection message
-        with ui.row().classes('items-center gap-2'):
-            if is_japanese:
-                ui.label('🇯🇵 → 🇺🇸').classes('text-base')
-                ui.label('英語に翻訳しています...').classes('message')
-            else:
-                ui.label('🌐 → 🇯🇵').classes('text-base')
-                ui.label('日本語に翻訳しています...').classes('message')
+            # Dynamic language detection message
+            with ui.column().classes('gap-1'):
+                with ui.row().classes('items-center gap-2'):
+                    if is_japanese:
+                        ui.label('🇯🇵 → 🇺🇸').classes('text-base')
+                        ui.label('英語に翻訳しています...').classes('message')
+                    else:
+                        ui.label('🌐 → 🇯🇵').classes('text-base')
+                        ui.label('日本語に翻訳しています...').classes('message')
 
-        ui.label('M365 Copilot による翻訳').classes('submessage')
+                ui.label('M365 Copilot による翻訳').classes('submessage')
+
+        # Streaming content area - always rendered for smooth updates
+        with ui.element('div').classes('streaming-content mt-4') as streaming_container:
+            ui.label('生成中...').classes('text-xs text-muted mb-2 streaming-status-label')
+            with ui.element('div').classes('streaming-text-box'):
+                streaming_label = ui.label(streaming_text or '').classes('streaming-text')
+
+        # Pass both label and container to the callback for direct updates
+        if on_streaming_label_created:
+            on_streaming_label_created(streaming_label, streaming_container)
+
+        # Initially hide if no streaming text
+        if not streaming_text or not streaming_text.strip():
+            streaming_container.style('display: none')
 
 
 def _render_results_to_en(

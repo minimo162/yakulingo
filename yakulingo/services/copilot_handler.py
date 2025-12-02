@@ -680,6 +680,45 @@ class CopilotHandler:
         results = self.translate_sync([text], prompt, reference_files, char_limit)
         return results[0] if results else ""
 
+    def translate_single_streaming(
+        self,
+        prompt: str,
+        reference_files: Optional[list[Path]] = None,
+        char_limit: Optional[int] = None,
+        on_content: Optional[Callable[[str], None]] = None,
+        on_reasoning: Optional[Callable[[str], None]] = None,
+    ) -> str:
+        """
+        Translate with streaming response updates.
+
+        Args:
+            prompt: The translation prompt to send to Copilot
+            reference_files: Optional list of reference files to attach
+            char_limit: Max characters for direct input
+            on_content: Callback called when content updates (streaming)
+            on_reasoning: Callback called when reasoning updates (Chain of Thought)
+
+        Returns:
+            Final translated text
+        """
+        if not self._connected or not self._page:
+            raise RuntimeError("Not connected to Copilot")
+
+        # Attach reference files first (before sending prompt)
+        if reference_files:
+            for file_path in reference_files:
+                if file_path.exists():
+                    self._attach_file(file_path)
+
+        # Send the prompt (auto-switches to file attachment if too long)
+        self._send_prompt_smart(prompt, char_limit)
+
+        # Get response with streaming callbacks
+        return self.get_response_streaming(
+            on_reasoning=on_reasoning,
+            on_content=on_content,
+        )
+
     def _send_prompt_smart(
         self,
         prompt: str,
@@ -817,13 +856,19 @@ class CopilotHandler:
                 if response_elem:
                     current_text = response_elem.inner_text()
 
-                    if current_text == last_text:
-                        stable_count += 1
-                        if stable_count >= self.RESPONSE_STABLE_COUNT:
-                            return current_text
+                    # Only count stability if there's actual content
+                    # Don't consider empty or whitespace-only text as stable
+                    if current_text and current_text.strip():
+                        if current_text == last_text:
+                            stable_count += 1
+                            if stable_count >= self.RESPONSE_STABLE_COUNT:
+                                return current_text
+                        else:
+                            stable_count = 0
+                            last_text = current_text
                     else:
+                        # Reset stability counter if text is empty
                         stable_count = 0
-                        last_text = current_text
 
                 time.sleep(1)
                 max_wait -= 1
@@ -886,7 +931,8 @@ class CopilotHandler:
                 # 2. 回答テキストをチェック
                 current_content = self._get_latest_response_text()
 
-                if current_content:
+                # Only count stability if there's actual content (not empty/whitespace)
+                if current_content and current_content.strip():
                     if current_content != last_content:
                         if on_content:
                             on_content(current_content)
@@ -897,6 +943,9 @@ class CopilotHandler:
                         # テキストが安定したら完了
                         if stable_count >= self.RESPONSE_STABLE_COUNT:
                             return current_content
+                else:
+                    # Reset stability counter if text is empty
+                    stable_count = 0
 
                 time.sleep(0.5)  # より頻繁にポーリング
                 max_wait -= 0.5

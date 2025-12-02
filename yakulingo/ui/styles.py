@@ -1182,6 +1182,41 @@ body {
     color: var(--md-sys-color-on-surface-variant);
 }
 
+/* Streaming content display */
+.streaming-content {
+    width: 100%;
+    max-width: 600px;
+    opacity: 1;
+    transform: translateY(0);
+    transition: opacity 0.2s ease-out, transform 0.2s ease-out;
+}
+
+.streaming-content[style*="display: none"] {
+    opacity: 0;
+    transform: translateY(-8px);
+}
+
+.streaming-text-box {
+    background: var(--md-sys-color-surface-container-low);
+    border-radius: var(--md-sys-shape-corner-medium);
+    padding: 1rem;
+    max-height: 300px;
+    overflow-y: auto;
+    border: 1px solid var(--md-sys-color-outline-variant);
+}
+
+.streaming-text {
+    font-size: 0.875rem;
+    line-height: 1.6;
+    color: var(--md-sys-color-on-surface);
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.streaming-status-label {
+    opacity: 0.7;
+}
+
 /* Success state with character */
 .success-character {
     display: flex;

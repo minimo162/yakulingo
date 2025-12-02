@@ -131,7 +131,7 @@ Sub ShowStartupNotification()
         "[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null; " & _
         "$template = [Windows.UI.Notifications.ToastTemplateType]::ToastText01; " & _
         "$xml = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent($template); " & _
-        "$xml.GetElementsByTagName('text')[0].AppendChild($xml.CreateTextNode('YakuLingo を起動しています...')) | Out-Null; " & _
+        "$xml.GetElementsByTagName('text')[0].AppendChild($xml.CreateTextNode('Starting YakuLingo...')) | Out-Null; " & _
         "$toast = [Windows.UI.Notifications.ToastNotification]::new($xml); " & _
         "$toast.ExpirationTime = [DateTimeOffset]::Now.AddSeconds(3); " & _
         "[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('YakuLingo').Show($toast)" & _

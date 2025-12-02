@@ -495,11 +495,18 @@ class CopilotHandler:
             if not self.connect():
                 raise RuntimeError("ブラウザに接続できませんでした。Edgeが起動しているか確認してください。")
 
-        # Check login state before translating
-        state = self._check_copilot_state(timeout=3)
-        if state == ConnectionState.LOGIN_REQUIRED:
-            self.bring_to_foreground()
-            raise RuntimeError("Copilotにログインしてください。Edgeブラウザでログインした後、再度翻訳してください。")
+        # Check login state before translating (non-blocking on errors)
+        try:
+            state = self._check_copilot_state(timeout=3)
+            if state == ConnectionState.LOGIN_REQUIRED:
+                self.bring_to_foreground()
+                raise RuntimeError("Copilotにログインしてください。Edgeブラウザでログインした後、再度翻訳してください。")
+            # If state is ERROR, proceed anyway - the actual translation will fail with clearer error
+        except RuntimeError:
+            raise  # Re-raise login required error
+        except Exception as e:
+            # Log but continue - let the translation attempt reveal actual issues
+            logger.debug("Login state check failed, proceeding anyway: %s", e)
 
         # Attach reference files first (before sending prompt)
         if reference_files:
@@ -553,11 +560,18 @@ class CopilotHandler:
             if not self.connect():
                 raise RuntimeError("ブラウザに接続できませんでした。Edgeが起動しているか確認してください。")
 
-        # Check login state before translating
-        state = self._check_copilot_state(timeout=3)
-        if state == ConnectionState.LOGIN_REQUIRED:
-            self.bring_to_foreground()
-            raise RuntimeError("Copilotにログインしてください。Edgeブラウザでログインした後、再度翻訳してください。")
+        # Check login state before translating (non-blocking on errors)
+        try:
+            state = self._check_copilot_state(timeout=3)
+            if state == ConnectionState.LOGIN_REQUIRED:
+                self.bring_to_foreground()
+                raise RuntimeError("Copilotにログインしてください。Edgeブラウザでログインした後、再度翻訳してください。")
+            # If state is ERROR, proceed anyway - the actual translation will fail with clearer error
+        except RuntimeError:
+            raise  # Re-raise login required error
+        except Exception as e:
+            # Log but continue - let the translation attempt reveal actual issues
+            logger.debug("Login state check failed, proceeding anyway: %s", e)
 
         # Attach reference files first (before sending prompt)
         if reference_files:

@@ -141,25 +141,26 @@ class YakuLingoApp:
     async def start_edge_and_connect(self):
         """Start Edge and connect to browser in background (non-blocking).
         Login state is NOT checked here - only browser connection."""
-        # Small delay to let UI render first
-        await asyncio.sleep(0.1)
-
-        # Start Edge
-        loop = asyncio.get_running_loop()
-        await loop.run_in_executor(None, self.copilot.start_edge)
-
-        # Connect to browser (but don't check login state)
-        success = await loop.run_in_executor(None, self.copilot.connect)
-
-        if success:
-            self.state.copilot_ready = True
-            self._refresh_status()
-
-        # Initialize TranslationService
+        # Initialize TranslationService immediately (doesn't need connection)
         from yakulingo.services.translation_service import TranslationService
         self.translation_service = TranslationService(
             self.copilot, self.settings, get_default_prompts_dir()
         )
+
+        # Small delay to let UI render first
+        await asyncio.sleep(0.05)
+
+        # Connect to browser (starts Edge if needed, doesn't check login state)
+        try:
+            loop = asyncio.get_running_loop()
+            success = await loop.run_in_executor(None, self.copilot.connect)
+
+            if success:
+                self.state.copilot_ready = True
+                self._refresh_status()
+        except Exception as e:
+            # Connection failed silently - will retry on first translation
+            logger.debug("Background connection failed: %s", e)
 
     async def check_for_updates(self):
         """Check for updates in background."""

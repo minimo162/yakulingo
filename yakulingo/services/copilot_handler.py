@@ -327,6 +327,15 @@ class CopilotHandler:
                 copilot_page.goto(self.COPILOT_URL)
 
             self._page = copilot_page
+
+            # Wait for page to fully load (Edge spinner to stop)
+            try:
+                logger.info("Waiting for page to load...")
+                copilot_page.wait_for_load_state('networkidle', timeout=30000)
+                logger.debug("Page load completed")
+            except PlaywrightTimeoutError:
+                logger.warning("Page load timeout - continuing anyway")
+
             self._connected = True
             logger.info("Browser connected")
             return True

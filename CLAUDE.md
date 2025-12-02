@@ -174,13 +174,17 @@ No manual direction selection is required.
 
 ## Text Translation UI Features
 
+### Unified UI Structure (英訳・和訳共通)
+- **Suggestion hint row** (吹き出し風): 💡アイコン + [再翻訳] ボタン
+- **Action/adjustment options**: 単独オプションスタイルのボタン
+- **Inline input**: 追加リクエスト入力欄
+
 ### Japanese → English (英訳)
 - **Single translation output** with configurable style (標準/簡潔/最簡潔)
 - **Inline adjustment options**:
-  - Paired: カジュアルに↔ていねいに, 淡々と↔キャッチーに, もう少し短く↔より詳しく
-  - Single: ネイティブらしく自然に, AIっぽさを消して, 他の言い方は？
+  - Paired: もう少し短く↔より詳しく
+  - Single: 他の言い方は？
 - **Inline input**: Placeholder "例: もっとカジュアルに"
-- **Quick chip**: 「これはどう？」
 
 ### English → Japanese (和訳)
 - **Single translation output** with detailed explanation
@@ -582,12 +586,13 @@ Based on recent commits:
   - **Loading screen**: Shows spinner immediately via `await client.connected()` for faster perceived startup
   - **Import optimization**: NiceGUI import moved inside `main()` to prevent double initialization in native mode (cuts startup time in half)
   - **Lazy imports**: Heavy modules (openpyxl, python-docx, Playwright) deferred until first use via `__getattr__`
-- **Text Translation UI Simplification**:
+- **Text Translation UI Unification**:
   - **Single output**: Changed from 3 translation options to 1 option with style setting
   - **Style settings**: 標準/簡潔/最簡潔 configurable via settings dialog
-  - **Unified UI**: Both 英訳 and 和訳 now use inline input instead of dialogs
-  - **和訳 buttons**: Changed from [原文をレビュー][質問する][返信を作成] to [英文をチェック][要点を教えて]
-  - **Removed dialogs**: `_show_question_dialog` and `_show_reply_dialog` removed
+  - **Unified structure**: 英訳 and 和訳 now share same UI pattern (吹き出し風 hint + single option buttons + inline input)
+  - **Suggestion hint row**: 💡アイコン + [再翻訳] ボタン for both directions
+  - **和訳 buttons**: [英文をチェック] [要点を教えて] as single option style
+  - **Removed**: [これはどう？] quick chip, connector line design
 - **Settings Dialog**: Simplified to translation style only (removed batch size, timeout, retry settings from UI)
 - **Installation**: Desktop shortcut only (removed Start Menu entry)
 - **Bilingual Output**: All file processors generate bilingual output with original + translated content

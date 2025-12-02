@@ -3,9 +3,9 @@
 Builds translation prompts for YakuLingo.
 
 Prompt file structure:
-- translate_to_en.txt: File translation → English
-- translate_to_jp.txt: File translation → Japanese
-- text_translate_to_en.txt: Text translation → English (with 3 options)
+- file_translate_to_en.txt: File translation → English
+- file_translate_to_jp.txt: File translation → Japanese
+- text_translate_to_en.txt: Text translation → English (single option with style)
 - text_translate_to_jp.txt: Text translation → Japanese (with explanation)
 - adjust_*.txt: Adjustment prompts (shorter, longer, custom)
 
@@ -112,15 +112,15 @@ class PromptBuilder:
     def _load_templates(self) -> None:
         """Load prompt templates from files or use defaults"""
         if self.prompts_dir:
-            # To English template (translate_to_en.txt)
-            to_en_prompt = self.prompts_dir / "translate_to_en.txt"
+            # To English template (file_translate_to_en.txt)
+            to_en_prompt = self.prompts_dir / "file_translate_to_en.txt"
             if to_en_prompt.exists():
                 self._to_en_template = to_en_prompt.read_text(encoding='utf-8')
             else:
                 self._to_en_template = DEFAULT_TO_EN_TEMPLATE
 
-            # To Japanese template (translate_to_jp.txt)
-            to_jp_prompt = self.prompts_dir / "translate_to_jp.txt"
+            # To Japanese template (file_translate_to_jp.txt)
+            to_jp_prompt = self.prompts_dir / "file_translate_to_jp.txt"
             if to_jp_prompt.exists():
                 self._to_jp_template = to_jp_prompt.read_text(encoding='utf-8')
             else:

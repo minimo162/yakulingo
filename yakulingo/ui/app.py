@@ -103,6 +103,8 @@ class YakuLingoApp:
             if success:
                 self.state.copilot_connected = True
                 self.state.copilot_login_required = False
+                # Refresh UI immediately so button becomes enabled
+                self._refresh_content()
                 # Lazy import TranslationService for faster startup
                 from yakulingo.services.translation_service import TranslationService
                 self.translation_service = TranslationService(

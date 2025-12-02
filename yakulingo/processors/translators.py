@@ -172,5 +172,6 @@ class ParagraphTranslator:
             paragraph.runs[0].text = translated_text
             for run in paragraph.runs[1:]:
                 run.text = ""
-        else:
-            paragraph.text = translated_text
+        elif hasattr(paragraph, 'add_run'):
+            # No runs - add text via a new run (paragraph.text is read-only in docx/pptx)
+            paragraph.add_run().text = translated_text

@@ -2516,4 +2516,27 @@ a:hover {
     font-size: 0.9375rem;
     color: var(--md-sys-color-on-surface-variant);
 }
+
+/* === Loading Screen === */
+.loading-screen {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: var(--md-sys-color-surface);
+    z-index: 9999;
+}
+
+.loading-title {
+    margin-top: 1rem;
+    font-size: 1.5rem;
+    font-weight: 500;
+    color: var(--md-sys-color-on-surface);
+    letter-spacing: 0.02em;
+}
 """

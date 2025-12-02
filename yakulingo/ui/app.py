@@ -1225,7 +1225,7 @@ def create_app() -> YakuLingoApp:
 
 def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
     """Run the application"""
-    from nicegui import app as nicegui_app
+    from nicegui import app as nicegui_app, Client
 
     yakulingo_app = create_app()
 
@@ -1244,9 +1244,20 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
     nicegui_app.on_shutdown(cleanup)
 
     @ui.page('/')
-    async def main_page():
-        # Create UI first (show window immediately)
+    async def main_page(client: Client):
+        # Show loading screen immediately (before client connects)
+        loading_container = ui.column().classes('loading-screen')
+        with loading_container:
+            ui.spinner('dots', size='3em', color='primary')
+            ui.label('YakuLingo').classes('loading-title')
+
+        # Wait for client connection
+        await client.connected()
+
+        # Remove loading screen and show main UI
+        loading_container.delete()
         yakulingo_app.create_ui()
+
         # Start Edge connection AFTER UI is displayed
         asyncio.create_task(yakulingo_app.start_edge_and_connect())
         asyncio.create_task(yakulingo_app.check_for_updates())

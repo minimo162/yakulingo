@@ -131,20 +131,6 @@ class CopilotHandler:
         'bing.com/chat',
     )
 
-    # CSS selectors for chat UI detection (in priority order)
-    # If any of these exist, the user is logged in and ready
-    CHAT_UI_SELECTORS = (
-        '#m365-chat-editor-target-element',      # Primary: Copilot chat input ID
-        '[data-lexical-editor="true"]',          # Lexical editor attribute
-        '[role="textbox"][contenteditable="true"]',  # Role-based textbox (any element type)
-        '#m365-chat-input-shared-wrapper',       # Chat input wrapper container
-        '.fai-ChatInput__inputWrapper',          # Chat input wrapper class
-        '.fai-EditorInput',                      # Editor input class
-        'textarea[placeholder*="message"]',      # Message input textarea
-        '[contenteditable="true"][role="combobox"]',  # Combobox contenteditable
-        'div.cib-serp-main',                     # Bing Copilot main container
-    )
-
     def __init__(self):
         self._playwright = None
         self._browser = None
@@ -490,19 +476,19 @@ class CopilotHandler:
 
     def _check_copilot_state(self, timeout: int = 5) -> str:
         """
-        Copilotの状態を検出（逆検出方式）
+        Copilotの状態を確認（簡略化版）
 
-        チャットUIが表示されているかどうかで判断する。
-        ログインページのURL検出に依存しないため、URLが変更されても動作する。
+        ログイン検出は行わず、CopilotのURLにいれば READY を返す。
+        CSSセレクタベースのチャットUI検出はM365 Copilotの頻繁なUI変更により
+        不安定なため削除。実際のログイン状態は翻訳実行時に確認される。
 
         Args:
-            timeout: チャットUI検出のタイムアウト（秒）
+            timeout: 未使用（互換性のため残存）
 
         Returns:
-            ConnectionState.READY - チャットUI表示済み、使用可能
-            ConnectionState.LOGIN_REQUIRED - ログインが必要（リダイレクトされた or チャットUIなし）
-            ConnectionState.LOADING - まだ読み込み中
-            ConnectionState.ERROR - その他のエラー
+            ConnectionState.READY - CopilotのURLにいる、使用可能として扱う
+            ConnectionState.LOGIN_REQUIRED - Copilot以外のURLにリダイレクトされた
+            ConnectionState.ERROR - ページが存在しない
         """
         if not self._page:
             return ConnectionState.ERROR
@@ -522,37 +508,19 @@ class CopilotHandler:
             current_url = self._page.url
             logger.debug("Checking Copilot state - current URL: %s", current_url)
 
-            # 1. Copilot URLにいるか確認（複数のドメインパターンをサポート）
+            # CopilotのURLにいるかだけ確認
             is_copilot_url = any(
                 pattern in current_url for pattern in self.COPILOT_URL_PATTERNS
             )
-            if not is_copilot_url:
-                # リダイレクトされた = ログインが必要
-                logger.debug("URL does not match any Copilot patterns, login required")
-                return ConnectionState.LOGIN_REQUIRED
 
-            logger.debug("URL matches Copilot pattern, checking for chat UI...")
+            if is_copilot_url:
+                # CopilotのURLにいれば準備完了として扱う
+                # 実際のログイン状態は翻訳実行時に確認される
+                logger.debug("On Copilot URL - treating as ready")
+                return ConnectionState.READY
 
-            # 2. チャットUIが存在するか確認（複数のセレクタを試行）
-            # Performance: Use combined CSS selector to check all at once
-            combined_selector = ', '.join(self.CHAT_UI_SELECTORS)
-            logger.debug("Using combined selector: %s", combined_selector)
-
-            try:
-                element = self._page.wait_for_selector(combined_selector, timeout=timeout * 1000)
-                if element:
-                    logger.debug("Chat UI found - login complete")
-                    return ConnectionState.READY
-            except PlaywrightTimeoutError:
-                # None of the selectors found within timeout
-                logger.debug("Chat UI not found within timeout (%ds)", timeout)
-            except PlaywrightError as e:
-                # Other Playwright errors
-                logger.debug("Playwright error while checking chat UI: %s", e)
-
-            # 3. Copilot URLにいるがチャットUIがない
-            # = 埋め込みログイン画面、または読み込み中
-            logger.debug("On Copilot URL but chat UI not found - login required")
+            # Copilot以外のURLにリダイレクトされた場合のみログイン必要
+            logger.debug("URL does not match any Copilot patterns, login required")
             return ConnectionState.LOGIN_REQUIRED
 
         except (PlaywrightError, PlaywrightTimeoutError) as e:

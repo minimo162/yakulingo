@@ -1132,7 +1132,7 @@ class YakuLingoApp:
 
     def _show_settings_dialog(self):
         """Show translation settings dialog (Nani-inspired quick settings)"""
-        with ui.dialog() as dialog, ui.card().classes('w-96 settings-dialog'):
+        with ui.dialog() as dialog, ui.card().classes('w-80 settings-dialog'):
             with ui.column().classes('w-full gap-4 p-4'):
                 # Header
                 with ui.row().classes('w-full justify-between items-center'):
@@ -1162,41 +1162,6 @@ class YakuLingoApp:
 
                 ui.separator()
 
-                # Batch size setting
-                with ui.column().classes('w-full gap-1'):
-                    ui.label('バッチサイズ').classes('text-sm font-medium')
-                    ui.label('一度に翻訳するテキストブロック数').classes('text-xs text-muted')
-                    batch_label = ui.label(f'{self.settings.max_batch_size} ブロック').classes('text-xs text-primary')
-                    batch_slider = ui.slider(
-                        min=10, max=100, step=10,
-                        value=self.settings.max_batch_size,
-                        on_change=lambda e: batch_label.set_text(f'{int(e.value)} ブロック')
-                    ).classes('w-full')
-
-                # Request timeout setting
-                with ui.column().classes('w-full gap-1'):
-                    ui.label('タイムアウト').classes('text-sm font-medium')
-                    ui.label('Copilotからの応答待ち時間').classes('text-xs text-muted')
-                    timeout_label = ui.label(f'{self.settings.request_timeout} 秒').classes('text-xs text-primary')
-                    timeout_slider = ui.slider(
-                        min=30, max=300, step=30,
-                        value=self.settings.request_timeout,
-                        on_change=lambda e: timeout_label.set_text(f'{int(e.value)} 秒')
-                    ).classes('w-full')
-
-                # Max retries setting
-                with ui.column().classes('w-full gap-1'):
-                    ui.label('リトライ回数').classes('text-sm font-medium')
-                    ui.label('翻訳失敗時の再試行回数').classes('text-xs text-muted')
-                    retry_label = ui.label(f'{self.settings.max_retries} 回').classes('text-xs text-primary')
-                    retry_slider = ui.slider(
-                        min=0, max=5, step=1,
-                        value=self.settings.max_retries,
-                        on_change=lambda e: retry_label.set_text(f'{int(e.value)} 回')
-                    ).classes('w-full')
-
-                ui.separator()
-
                 # Action buttons
                 with ui.row().classes('w-full justify-end gap-2'):
                     ui.button('キャンセル', on_click=dialog.close).props('flat').classes('text-muted')
@@ -1205,10 +1170,6 @@ class YakuLingoApp:
                         # Save translation style
                         style_reverse = {v: k for k, v in style_options.items()}
                         self.settings.text_translation_style = style_reverse.get(style_toggle.value, 'concise')
-
-                        self.settings.max_batch_size = int(batch_slider.value)
-                        self.settings.request_timeout = int(timeout_slider.value)
-                        self.settings.max_retries = int(retry_slider.value)
                         self.settings.save(get_default_settings_path())
                         dialog.close()
                         ui.notify('設定を保存しました', type='positive')

@@ -622,7 +622,7 @@ body {
 .drop-zone {
     border: 2px dashed var(--md-sys-color-outline-variant);
     border-radius: var(--md-sys-shape-corner-xl);
-    padding: 3rem 2rem;
+    padding: 3.5rem 2.5rem;
     text-align: center;
     cursor: pointer;
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);

@@ -1152,20 +1152,36 @@ def create_app() -> YakuLingoApp:
 
 def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
     """Run the application"""
-    app = create_app()
+    from nicegui import app as nicegui_app
+
+    yakulingo_app = create_app()
+
+    def cleanup():
+        """Clean up resources on shutdown."""
+        logger.info("Shutting down YakuLingo...")
+        # Disconnect from Copilot (close Edge browser)
+        if yakulingo_app._copilot is not None:
+            try:
+                yakulingo_app._copilot.disconnect()
+                logger.info("Copilot disconnected")
+            except Exception as e:
+                logger.debug("Error disconnecting Copilot: %s", e)
+
+    # Register shutdown handler
+    nicegui_app.on_shutdown(cleanup)
 
     @ui.page('/')
     async def main_page():
         # Create UI first (show window immediately)
-        app.create_ui()
+        yakulingo_app.create_ui()
         # Start background tasks (don't block window display)
-        asyncio.create_task(app.start_edge_and_connect())
-        asyncio.create_task(app.check_for_updates())
+        asyncio.create_task(yakulingo_app.start_edge_and_connect())
+        asyncio.create_task(yakulingo_app.check_for_updates())
 
     # Scale window size based on screen resolution
     window_size = get_scaled_window_size(
-        app.settings.window_width,
-        app.settings.window_height
+        yakulingo_app.settings.window_width,
+        yakulingo_app.settings.window_height
     )
 
     ui.run(

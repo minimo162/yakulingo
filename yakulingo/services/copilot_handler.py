@@ -245,12 +245,14 @@ class CopilotHandler:
         try:
             local_cwd = os.environ.get("SYSTEMROOT", r"C:\Windows")
 
-            # On Windows, use STARTUPINFO to hide any console window flicker
+            # On Windows, use STARTUPINFO and creationflags to prevent any window flicker
             startupinfo = None
+            creationflags = 0
             if sys.platform == "win32":
                 startupinfo = subprocess.STARTUPINFO()
                 startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
                 startupinfo.wShowWindow = 0  # SW_HIDE
+                creationflags = subprocess.CREATE_NO_WINDOW
 
             self.edge_process = subprocess.Popen([
                 edge_exe,
@@ -261,7 +263,8 @@ class CopilotHandler:
                 "--no-default-browser-check",
             ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                cwd=local_cwd if sys.platform == "win32" else None,
-               startupinfo=startupinfo)
+               startupinfo=startupinfo,
+               creationflags=creationflags)
 
             # Wait for Edge to start
             for i in range(self.EDGE_STARTUP_MAX_ATTEMPTS):
@@ -482,28 +485,45 @@ class CopilotHandler:
 
     def _check_copilot_state(self, timeout: int = 5) -> str:
         """
-        Copilotの状態を確認（超簡略化版）
+        Copilotの状態を確認
 
-        ページが存在すれば READY を返す。
-        起動時はEdgeやログインのタイミングでずれるため、
-        URLやDOM状態の複雑な検出は行わない。
-        実際のログイン状態は翻訳実行時に確認される。
+        チャット入力欄が存在するかどうかでログイン状態を判定。
+        ログインページや読み込み中の場合はログインが必要と判断。
 
         Args:
-            timeout: 未使用（互換性のため残存）
+            timeout: セレクタ待機のタイムアウト（秒）
 
         Returns:
-            ConnectionState.READY - ページが存在する、使用可能として扱う
+            ConnectionState.READY - チャットUIが表示されている
+            ConnectionState.LOGIN_REQUIRED - ログインが必要
             ConnectionState.ERROR - ページが存在しない
         """
         if not self._page:
             return ConnectionState.ERROR
 
-        # ページが存在すれば準備完了として扱う
-        # URLやDOM状態のチェックは行わない（起動タイミングの問題を回避）
-        # 実際のログイン状態は翻訳実行時に確認される
-        logger.debug("Page exists - treating as ready")
-        return ConnectionState.READY
+        error_types = _get_playwright_errors()
+        PlaywrightError = error_types['Error']
+        PlaywrightTimeoutError = error_types['TimeoutError']
+
+        try:
+            # チャット入力欄の存在を確認（ログイン済みの証拠）
+            input_selector = '#m365-chat-editor-target-element, [data-lexical-editor="true"]'
+            try:
+                self._page.wait_for_selector(
+                    input_selector,
+                    timeout=timeout * 1000,
+                    state='visible'
+                )
+                logger.debug("Chat input found - Copilot is ready")
+                return ConnectionState.READY
+            except PlaywrightTimeoutError:
+                # 入力欄が見つからない = ログインが必要
+                logger.debug("Chat input not found - login may be required")
+                return ConnectionState.LOGIN_REQUIRED
+
+        except PlaywrightError as e:
+            logger.debug("Error checking Copilot state: %s", e)
+            return ConnectionState.ERROR
 
     def bring_to_foreground(self) -> None:
         """Edgeウィンドウを前面に表示"""

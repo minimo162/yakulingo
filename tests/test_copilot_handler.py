@@ -731,16 +731,27 @@ class TestCopilotHandlerLoginDetection:
         assert result == ConnectionState.ERROR
 
     def test_check_copilot_state_login_redirect(self):
-        """_check_copilot_state detects login redirect"""
+        """_check_copilot_state returns LOGIN_REQUIRED when chat input not found"""
         from yakulingo.services.copilot_handler import ConnectionState
 
         handler = CopilotHandler()
 
+        # Create custom exception for testing
+        class MockTimeoutError(Exception):
+            pass
+
+        mock_error_types = {
+            'TimeoutError': MockTimeoutError,
+            'Error': Exception,
+        }
+
         mock_page = MagicMock()
-        mock_page.url = "https://login.microsoftonline.com/oauth2/..."
+        # Simulate login redirect by timing out on selector wait
+        mock_page.wait_for_selector.side_effect = MockTimeoutError("Element not found")
         handler._page = mock_page
 
-        result = handler._check_copilot_state()
+        with patch('yakulingo.services.copilot_handler._get_playwright_errors', return_value=mock_error_types):
+            result = handler._check_copilot_state(timeout=1)
         assert result == ConnectionState.LOGIN_REQUIRED
 
     def test_check_copilot_state_ready_with_chat_ui(self):
@@ -749,39 +760,58 @@ class TestCopilotHandlerLoginDetection:
 
         handler = CopilotHandler()
 
+        mock_error_types = {
+            'TimeoutError': Exception,
+            'Error': Exception,
+        }
+
         mock_page = MagicMock()
-        mock_page.url = "https://m365.cloud.microsoft/chat/?auth=2"
         mock_element = MagicMock()
         mock_page.wait_for_selector.return_value = mock_element
         handler._page = mock_page
 
-        result = handler._check_copilot_state(timeout=1)
+        with patch('yakulingo.services.copilot_handler._get_playwright_errors', return_value=mock_error_types):
+            result = handler._check_copilot_state(timeout=1)
         assert result == ConnectionState.READY
 
     def test_check_copilot_state_login_required_no_chat_ui(self):
-        """_check_copilot_state returns LOGIN_REQUIRED when on copilot URL but no chat UI"""
+        """_check_copilot_state returns LOGIN_REQUIRED when chat UI not found"""
         from yakulingo.services.copilot_handler import ConnectionState
-        from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
         handler = CopilotHandler()
 
+        # Create custom exception for testing
+        class MockTimeoutError(Exception):
+            pass
+
+        mock_error_types = {
+            'TimeoutError': MockTimeoutError,
+            'Error': Exception,
+        }
+
         mock_page = MagicMock()
-        mock_page.url = "https://m365.cloud.microsoft/chat/?auth=2"
-        # All selectors fail to find elements - use PlaywrightTimeoutError
-        mock_page.wait_for_selector.side_effect = PlaywrightTimeoutError("Element not found")
+        # All selectors fail to find elements - use MockTimeoutError
+        mock_page.wait_for_selector.side_effect = MockTimeoutError("Element not found")
         handler._page = mock_page
 
-        result = handler._check_copilot_state(timeout=1)
+        with patch('yakulingo.services.copilot_handler._get_playwright_errors', return_value=mock_error_types):
+            result = handler._check_copilot_state(timeout=1)
         assert result == ConnectionState.LOGIN_REQUIRED
 
     def test_bring_to_foreground_with_page(self):
         """bring_to_foreground calls page.bring_to_front"""
         handler = CopilotHandler()
 
+        mock_error_types = {
+            'TimeoutError': Exception,
+            'Error': Exception,
+        }
+
         mock_page = MagicMock()
         handler._page = mock_page
 
-        handler.bring_to_foreground()
+        with patch('yakulingo.services.copilot_handler._get_playwright_errors', return_value=mock_error_types):
+            handler.bring_to_foreground()
 
         mock_page.bring_to_front.assert_called_once()
 
@@ -868,18 +898,24 @@ class TestCopilotHandlerLoginDetection:
         """connect() calls login callback when login required"""
         handler = CopilotHandler()
 
+        mock_error_types = {
+            'TimeoutError': Exception,
+            'Error': Exception,
+        }
+
         login_callback_called = [False]
 
         def on_login_required():
             login_callback_called[0] = True
 
         # Mock to simulate login required scenario
-        with patch.object(handler, '_is_port_in_use', return_value=False):
-            with patch.object(handler, '_start_translator_edge', return_value=False):
-                handler.connect(
-                    on_login_required=on_login_required,
-                    wait_for_login=False,
-                )
+        with patch('yakulingo.services.copilot_handler._get_playwright_errors', return_value=mock_error_types):
+            with patch.object(handler, '_is_port_in_use', return_value=False):
+                with patch.object(handler, '_start_translator_edge', return_value=False):
+                    handler.connect(
+                        on_login_required=on_login_required,
+                        wait_for_login=False,
+                    )
 
         # Edge start failed, so login callback not called
         # But we tested the parameter passing

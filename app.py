@@ -18,9 +18,6 @@ from yakulingo.ui.app import run_app
 
 def main():
     """Main entry point"""
-    print("Starting YakuLingo...")
-    print()
-
     run_app(
         host='127.0.0.1',
         port=8765,

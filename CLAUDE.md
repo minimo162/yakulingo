@@ -17,14 +17,14 @@ This document provides essential context for AI assistants working with the Yaku
 # Run the application
 python app.py
 
-# Run all tests
-pytest
+# Run all tests (IMPORTANT: use --extra test to include all dependencies)
+uv run --extra test pytest
 
 # Run tests with coverage
-pytest --cov=yakulingo --cov-report=term-missing
+uv run --extra test pytest --cov=yakulingo --cov-report=term-missing
 
 # Run specific test file
-pytest tests/test_translation_service.py -v
+uv run --extra test pytest tests/test_translation_service.py -v
 
 # Install dependencies (uv - recommended)
 uv sync
@@ -35,6 +35,16 @@ pip install -r requirements.txt
 # Install Playwright browser
 playwright install chromium
 ```
+
+### Important: Running Tests
+
+**Always use `uv run --extra test pytest` instead of just `pytest`.**
+
+The project has heavy dependencies (playwright, nicegui, openpyxl, etc.) that are required for tests to pass. Using `--extra test` ensures:
+1. All main project dependencies are installed (playwright, nicegui, etc.)
+2. Test dependencies are installed (pytest, pytest-cov, pytest-asyncio)
+
+If you run `pytest` directly or `uv run pytest`, tests will fail with `ModuleNotFoundError` for playwright and other packages.
 
 ## Architecture Overview
 

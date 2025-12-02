@@ -137,7 +137,6 @@ class CopilotHandler:
         self._context = None
         self._page = None
         self._connected = False
-        self._login_required = False  # ログインが必要な状態かどうか
         self.cdp_port = self.DEFAULT_CDP_PORT
         self.profile_dir = None
         self.edge_process = None
@@ -146,11 +145,6 @@ class CopilotHandler:
     def is_connected(self) -> bool:
         """Check if connected to Copilot"""
         return self._connected
-
-    @property
-    def login_required(self) -> bool:
-        """Check if login is required"""
-        return self._login_required
 
     def _find_edge_exe(self) -> Optional[str]:
         """Find Edge executable"""
@@ -245,12 +239,14 @@ class CopilotHandler:
         try:
             local_cwd = os.environ.get("SYSTEMROOT", r"C:\Windows")
 
-            # On Windows, use STARTUPINFO to hide any console window flicker
+            # On Windows, use STARTUPINFO and creationflags to prevent any window flicker
             startupinfo = None
+            creationflags = 0
             if sys.platform == "win32":
                 startupinfo = subprocess.STARTUPINFO()
                 startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
                 startupinfo.wShowWindow = 0  # SW_HIDE
+                creationflags = subprocess.CREATE_NO_WINDOW
 
             self.edge_process = subprocess.Popen([
                 edge_exe,
@@ -261,7 +257,8 @@ class CopilotHandler:
                 "--no-default-browser-check",
             ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                cwd=local_cwd if sys.platform == "win32" else None,
-               startupinfo=startupinfo)
+               startupinfo=startupinfo,
+               creationflags=creationflags)
 
             # Wait for Edge to start
             for i in range(self.EDGE_STARTUP_MAX_ATTEMPTS):
@@ -276,39 +273,16 @@ class CopilotHandler:
             logger.error("Edge startup failed: %s", e)
             return False
 
-    def connect(
-        self,
-        on_progress: Optional[Callable[[str], None]] = None,
-        on_login_required: Optional[Callable[[], None]] = None,
-        wait_for_login: bool = True,
-        login_timeout: int = 300,
-    ) -> bool:
+    def connect(self) -> bool:
         """
-        Connect to Copilot.
-        Launches browser and waits for ready state.
-        If login is required, brings Edge to foreground and optionally waits.
-
-        NOTE: Called automatically on app startup (background task).
-        UI shows "Connecting to Copilot..." until connected.
-
-        Args:
-            on_progress: Callback for connection status updates
-            on_login_required: Callback when login is required (Edge brought to foreground)
-            wait_for_login: If True, wait for user to complete login
-            login_timeout: Timeout for waiting for login (seconds)
+        Connect to Copilot browser via Playwright.
+        Does NOT check login state - that is done lazily on first translation.
 
         Returns:
-            True if connected successfully
+            True if browser connection established
         """
         if self._connected:
             return True
-
-        self._login_required = False
-
-        def report(msg: str):
-            if on_progress:
-                on_progress(msg)
-            logger.info(msg)
 
         # Get Playwright error types for specific exception handling
         error_types = _get_playwright_errors()
@@ -318,12 +292,12 @@ class CopilotHandler:
         try:
             # Start Edge if needed
             if not self._is_port_in_use():
-                report("Starting Edge browser...")
+                logger.info("Starting Edge browser...")
                 if not self._start_translator_edge():
                     return False
 
             # Connect via Playwright
-            report("Connecting to browser...")
+            logger.info("Connecting to browser...")
             _, sync_playwright = _get_playwright()
 
             self._playwright = sync_playwright().start()
@@ -339,7 +313,7 @@ class CopilotHandler:
                 self._context = self._browser.new_context()
 
             # Navigate to Copilot
-            report("Opening Copilot...")
+            logger.info("Opening Copilot...")
             pages = self._context.pages
             copilot_page = None
 
@@ -353,53 +327,16 @@ class CopilotHandler:
                 copilot_page.goto(self.COPILOT_URL)
 
             self._page = copilot_page
-
-            # Check Copilot state (login required?)
-            report("Checking Copilot state...")
-            state = self._check_copilot_state(timeout=5)
-
-            if state == ConnectionState.READY:
-                # Already logged in, ready to use
-                self._connected = True
-                self._login_required = False
-                report("Connected to Copilot")
-                return True
-
-            elif state == ConnectionState.LOGIN_REQUIRED:
-                # Login required - bring Edge to foreground
-                self._login_required = True
-                report("Login required - please sign in to Copilot")
-                self._page.bring_to_front()
-
-                # Notify caller that login is required
-                if on_login_required:
-                    on_login_required()
-
-                if wait_for_login:
-                    # Wait for user to complete login
-                    report("Waiting for login...")
-                    if self._wait_for_login(timeout=login_timeout):
-                        self._connected = True
-                        self._login_required = False
-                        report("Connected to Copilot")
-                        return True
-                    else:
-                        report("Login timeout")
-                        return False
-                else:
-                    # Don't wait, return False but keep browser open
-                    return False
-            else:
-                # Error state
-                report("Failed to determine Copilot state")
-                return False
+            self._connected = True
+            logger.info("Browser connected")
+            return True
 
         except (PlaywrightError, PlaywrightTimeoutError) as e:
-            report(f"Browser connection failed: {e}")
+            logger.error("Browser connection failed: %s", e)
             self._cleanup_on_error()
             return False
         except (ConnectionError, OSError) as e:
-            report(f"Network connection failed: {e}")
+            logger.error("Network connection failed: %s", e)
             self._cleanup_on_error()
             return False
 
@@ -422,88 +359,47 @@ class CopilotHandler:
         self._page = None
         self._playwright = None
 
-    def _wait_for_login(self, timeout: int = 300) -> bool:
-        """
-        Wait for user to complete login.
-        Polls for chat UI to appear.
-
-        Args:
-            timeout: Maximum wait time in seconds
-
-        Returns:
-            True if login completed successfully
-        """
-        start_time = time.time()
-        check_interval = 2  # Check every 2 seconds
-
-        while time.time() - start_time < timeout:
-            # Use longer timeout for state check to allow page to fully render
-            state = self._check_copilot_state(timeout=8)
-            if state == ConnectionState.READY:
-                self._login_required = False
-                return True
-
-            time.sleep(check_interval)
-
-        return False
-
-    def check_and_wait_for_ready(self, timeout: int = 5) -> bool:
-        """
-        Check if Copilot is ready with a configurable timeout.
-
-        Performs a single state check and returns immediately.
-        Use connect() with wait_for_login=True for actual waiting behavior.
-
-        Args:
-            timeout: Timeout in seconds for checking Copilot state (default: 5)
-
-        Returns:
-            True if ready, False if login required or error
-        """
-        if self._connected:
-            return True
-
-        # Use the provided timeout for state check
-        check_timeout = max(1, min(timeout, 30))  # Clamp between 1-30 seconds
-        state = self._check_copilot_state(timeout=check_timeout)
-
-        if state == ConnectionState.READY:
-            self._connected = True
-            self._login_required = False
-            return True
-
-        if state == ConnectionState.LOGIN_REQUIRED:
-            # Still need login, bring to foreground again
-            self._login_required = True
-            self.bring_to_foreground()
-            return False
-
-        return False
-
     def _check_copilot_state(self, timeout: int = 5) -> str:
         """
-        Copilotの状態を確認（超簡略化版）
+        Copilotの状態を確認
 
-        ページが存在すれば READY を返す。
-        起動時はEdgeやログインのタイミングでずれるため、
-        URLやDOM状態の複雑な検出は行わない。
-        実際のログイン状態は翻訳実行時に確認される。
+        チャット入力欄が存在するかどうかでログイン状態を判定。
+        ログインページや読み込み中の場合はログインが必要と判断。
 
         Args:
-            timeout: 未使用（互換性のため残存）
+            timeout: セレクタ待機のタイムアウト（秒）
 
         Returns:
-            ConnectionState.READY - ページが存在する、使用可能として扱う
+            ConnectionState.READY - チャットUIが表示されている
+            ConnectionState.LOGIN_REQUIRED - ログインが必要
             ConnectionState.ERROR - ページが存在しない
         """
         if not self._page:
             return ConnectionState.ERROR
 
-        # ページが存在すれば準備完了として扱う
-        # URLやDOM状態のチェックは行わない（起動タイミングの問題を回避）
-        # 実際のログイン状態は翻訳実行時に確認される
-        logger.debug("Page exists - treating as ready")
-        return ConnectionState.READY
+        error_types = _get_playwright_errors()
+        PlaywrightError = error_types['Error']
+        PlaywrightTimeoutError = error_types['TimeoutError']
+
+        try:
+            # チャット入力欄の存在を確認（ログイン済みの証拠）
+            input_selector = '#m365-chat-editor-target-element, [data-lexical-editor="true"]'
+            try:
+                self._page.wait_for_selector(
+                    input_selector,
+                    timeout=timeout * 1000,
+                    state='visible'
+                )
+                logger.debug("Chat input found - Copilot is ready")
+                return ConnectionState.READY
+            except PlaywrightTimeoutError:
+                # 入力欄が見つからない = ログインが必要
+                logger.debug("Chat input not found - login may be required")
+                return ConnectionState.LOGIN_REQUIRED
+
+        except PlaywrightError as e:
+            logger.debug("Error checking Copilot state: %s", e)
+            return ConnectionState.ERROR
 
     def bring_to_foreground(self) -> None:
         """Edgeウィンドウを前面に表示"""
@@ -594,8 +490,10 @@ class CopilotHandler:
         Returns:
             List of translated strings parsed from Copilot's response
         """
+        # Auto-connect if needed (lazy connection)
         if not self._connected or not self._page:
-            raise RuntimeError("Not connected to Copilot")
+            if not self.connect():
+                raise RuntimeError("ブラウザに接続できませんでした。Edgeが起動しているか確認してください。")
 
         # Attach reference files first (before sending prompt)
         if reference_files:
@@ -644,8 +542,10 @@ class CopilotHandler:
         Returns:
             Final translated text
         """
+        # Auto-connect if needed (lazy connection)
         if not self._connected or not self._page:
-            raise RuntimeError("Not connected to Copilot")
+            if not self.connect():
+                raise RuntimeError("ブラウザに接続できませんでした。Edgeが起動しているか確認してください。")
 
         # Attach reference files first (before sending prompt)
         if reference_files:
@@ -725,6 +625,15 @@ class CopilotHandler:
             if input_elem:
                 input_elem.click()
                 input_elem.fill(message)
+
+                # Verify input was successful by checking if field has content
+                # If empty after fill, something is blocking input (login, popup, etc.)
+                import time
+                time.sleep(0.1)  # Brief wait for UI to update
+                input_text = input_elem.inner_text().strip()
+                if not input_text:
+                    logger.warning("Input field is empty after fill - Copilot may need attention")
+                    raise RuntimeError("Copilotに入力できませんでした。Edgeブラウザを確認してください。")
 
                 # Wait for send button to be enabled (appears after text input)
                 # 実際のCopilot HTML: <button type="submit" aria-label="送信" class="... fai-SendButton ...">

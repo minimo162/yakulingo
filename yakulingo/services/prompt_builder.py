@@ -33,6 +33,11 @@ Translation Rule
 - すべてのテキストを英語に翻訳
 - 既に英語のテキスト → そのまま出力
 
+Translation Style: {translation_style}
+- standard: 自然で読みやすい翻訳
+- concise: 冗長表現を避けた簡潔な翻訳
+- minimal: 最小限の文字数（見出し・件名向け）
+
 Critical Rules (優先順位順)
 
 1. 出力形式厳守
@@ -40,18 +45,15 @@ Critical Rules (優先順位順)
 
 2. 自然な翻訳
    - 読みやすく自然な英語に翻訳
-   - 過度な省略は避ける
+   - スタイルに応じた簡潔さを維持
 
 3. 数値表記（必須ルール）
    - 億 → oku (例: 4,500億円 → 4,500 oku yen)
    - 千単位 → k (例: 12,000 → 12k)
    - 負数 → () (例: ▲50 → (50))
 
-4. 体裁の維持とコンパクトな翻訳
+4. 体裁の維持
    - 原文の改行・段落構造をそのまま維持する
-   - 冗長な表現を避け、簡潔な翻訳を心がける
-   - 意味を損なわない範囲で、より短い表現を選択する
-   - 同じ意味なら文字数の少ない単語・表現を優先する
 
 {reference_section}
 
@@ -139,6 +141,7 @@ class PromptBuilder:
         input_text: str,
         has_reference_files: bool = False,
         output_language: str = "en",
+        translation_style: str = "concise",
     ) -> str:
         """
         Build complete prompt with input text.
@@ -147,6 +150,8 @@ class PromptBuilder:
             input_text: Text or batch to translate
             has_reference_files: Whether reference files are attached
             output_language: "en" or "jp" (default: "en")
+            translation_style: "standard", "concise", or "minimal" (default: "concise")
+                              Only affects English output
 
         Returns:
             Complete prompt string
@@ -160,6 +165,7 @@ class PromptBuilder:
         # Replace placeholders
         prompt = template.replace("{reference_section}", reference_section)
         prompt = prompt.replace("{input_text}", input_text)
+        prompt = prompt.replace("{translation_style}", translation_style)
 
         return prompt
 
@@ -168,6 +174,7 @@ class PromptBuilder:
         texts: list[str],
         has_reference_files: bool = False,
         output_language: str = "en",
+        translation_style: str = "concise",
     ) -> str:
         """
         Build prompt for batch translation.
@@ -176,6 +183,8 @@ class PromptBuilder:
             texts: List of texts to translate
             has_reference_files: Whether reference files are attached
             output_language: "en" or "jp" (default: "en")
+            translation_style: "standard", "concise", or "minimal" (default: "concise")
+                              Only affects English output
 
         Returns:
             Complete prompt with numbered input
@@ -185,7 +194,7 @@ class PromptBuilder:
             f"{i+1}. {text}" for i, text in enumerate(texts)
         )
 
-        return self.build(numbered_input, has_reference_files, output_language)
+        return self.build(numbered_input, has_reference_files, output_language, translation_style)
 
     def parse_batch_result(self, result: str, expected_count: int) -> list[str]:
         """

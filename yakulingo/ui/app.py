@@ -130,6 +130,9 @@ class YakuLingoApp:
         self._streaming_label: Optional[ui.label] = None
         self._streaming_container: Optional[ui.element] = None
 
+        # Translate button reference for dynamic state updates
+        self._translate_button: Optional[ui.button] = None
+
     @property
     def copilot(self) -> "CopilotHandler":
         """Lazy-load CopilotHandler for faster startup."""
@@ -238,6 +241,24 @@ class YakuLingoApp:
         """Store references to streaming UI elements for direct updates"""
         self._streaming_label = label
         self._streaming_container = container
+
+    def _on_translate_button_created(self, button: ui.button):
+        """Store reference to translate button for dynamic state updates"""
+        self._translate_button = button
+
+    def _update_translate_button_state(self):
+        """Update translate button enabled/disabled state based on current state"""
+        if self._translate_button is None:
+            return
+
+        if self.state.text_translating:
+            self._translate_button.props('loading disable')
+        elif not self.state.can_translate():
+            self._translate_button.props(remove='loading')
+            self._translate_button.props('disable')
+        else:
+            # Enable the button: remove both loading and disable props
+            self._translate_button.props(remove='loading disable')
 
     def _update_streaming_text(self, text: str):
         """Update streaming text directly without full refresh (smooth updates)"""
@@ -411,6 +432,7 @@ class YakuLingoApp:
                         on_settings=self._show_settings_dialog,
                         on_streaming_label_created=self._on_streaming_label_created,
                         on_retry=self._retry_translation,
+                        on_translate_button_created=self._on_translate_button_created,
                     )
                 else:
                     create_file_panel(
@@ -424,8 +446,10 @@ class YakuLingoApp:
                         on_pdf_fast_mode_change=self._on_pdf_fast_mode_change,
                         on_bilingual_change=self._on_bilingual_change,
                         on_export_glossary_change=self._on_export_glossary_change,
+                        on_style_change=self._on_style_change,
                         bilingual_enabled=self.settings.bilingual_output,
                         export_glossary_enabled=self.settings.export_glossary,
+                        translation_style=self.settings.translation_style,
                     )
 
         self._main_content = main_content
@@ -434,6 +458,8 @@ class YakuLingoApp:
     def _on_source_change(self, text: str):
         """Handle source text change"""
         self.state.source_text = text
+        # Update button state dynamically without full refresh
+        self._update_translate_button_state()
 
     def _clear(self):
         """Clear text fields"""
@@ -908,6 +934,12 @@ class YakuLingoApp:
         self.settings.save(self.settings_path)
         # No need to refresh content, checkbox state is handled by NiceGUI
 
+    def _on_style_change(self, style: str):
+        """Handle translation style change (standard/concise/minimal)"""
+        self.settings.translation_style = style
+        self.settings.save(self.settings_path)
+        self._refresh_content()  # Refresh to update button states
+
     def _select_file(self, file_path: Path):
         """Select file for translation"""
         if not self.translation_service:
@@ -969,6 +1001,7 @@ class YakuLingoApp:
                     on_progress,
                     output_language=self.state.file_output_language,
                     use_ocr=use_ocr,
+                    translation_style=self.settings.translation_style,
                 )
             )
 

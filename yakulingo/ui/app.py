@@ -31,6 +31,68 @@ if TYPE_CHECKING:
 COPILOT_LOGIN_TIMEOUT = 300  # 5 minutes for login
 MAX_HISTORY_DISPLAY = 20  # Maximum history items to display in sidebar
 
+# Window scaling constants
+BASE_SCREEN_WIDTH = 1920  # Reference screen width (Full HD)
+BASE_SCREEN_HEIGHT = 1080  # Reference screen height (Full HD)
+MIN_WINDOW_WIDTH = 800
+MIN_WINDOW_HEIGHT = 600
+MAX_WINDOW_RATIO = 0.9  # Max 90% of screen size
+
+
+def get_scaled_window_size(base_width: int, base_height: int) -> tuple[int, int]:
+    """
+    Scale window size based on screen resolution.
+
+    Uses Full HD (1920x1080) as the reference resolution.
+    For higher resolution screens, the window is scaled up proportionally.
+
+    Args:
+        base_width: Desired window width at 1920x1080 resolution
+        base_height: Desired window height at 1920x1080 resolution
+
+    Returns:
+        Tuple of (scaled_width, scaled_height)
+    """
+    try:
+        # Use tkinter to get screen dimensions (standard library, no extra deps)
+        import tkinter as tk
+        root = tk.Tk()
+        root.withdraw()  # Hide the window
+        screen_width = root.winfo_screenwidth()
+        screen_height = root.winfo_screenheight()
+        root.destroy()
+    except Exception:
+        # Fallback to base size if screen detection fails
+        logger.warning("Could not detect screen resolution, using default window size")
+        return (base_width, base_height)
+
+    # Calculate scaling factor based on screen resolution
+    # Use the minimum of width/height ratios to maintain aspect ratio
+    width_scale = screen_width / BASE_SCREEN_WIDTH
+    height_scale = screen_height / BASE_SCREEN_HEIGHT
+    scale_factor = min(width_scale, height_scale)
+
+    # Apply scaling
+    scaled_width = int(base_width * scale_factor)
+    scaled_height = int(base_height * scale_factor)
+
+    # Apply minimum size constraints
+    scaled_width = max(scaled_width, MIN_WINDOW_WIDTH)
+    scaled_height = max(scaled_height, MIN_WINDOW_HEIGHT)
+
+    # Apply maximum size constraints (90% of screen)
+    max_width = int(screen_width * MAX_WINDOW_RATIO)
+    max_height = int(screen_height * MAX_WINDOW_RATIO)
+    scaled_width = min(scaled_width, max_width)
+    scaled_height = min(scaled_height, max_height)
+
+    logger.info(
+        "Window scaling: screen=%dx%d, scale=%.2f, window=%dx%d",
+        screen_width, screen_height, scale_factor, scaled_width, scaled_height
+    )
+
+    return (scaled_width, scaled_height)
+
 
 class YakuLingoApp:
     """Main application - Nani-inspired sidebar layout"""
@@ -361,6 +423,7 @@ class YakuLingoApp:
                         on_back_translate=self._back_translate,
                         on_settings=self._show_settings_dialog,
                         on_streaming_label_created=self._on_streaming_label_created,
+                        on_retry=self._retry_translation,
                     )
                 else:
                     create_file_panel(
@@ -440,6 +503,13 @@ class YakuLingoApp:
             removed = self.state.reference_files.pop(index)
             ui.notify(f'削除しました: {removed.name}', type='info')
             self._refresh_content()
+
+    async def _retry_translation(self):
+        """Retry the current translation (re-translate with same source text)"""
+        # Clear previous result and re-translate
+        self.state.text_result = None
+        self.state.text_translation_elapsed_time = None
+        await self._translate_text()
 
     async def _translate_text(self):
         """Translate text with streaming updates."""
@@ -1085,8 +1155,11 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
         await app.preconnect_copilot()
         asyncio.create_task(app.check_for_updates())
 
-    # Use window size from settings
-    window_size = (app.settings.window_width, app.settings.window_height)
+    # Scale window size based on screen resolution
+    window_size = get_scaled_window_size(
+        app.settings.window_width,
+        app.settings.window_height
+    )
 
     ui.run(
         host=host,

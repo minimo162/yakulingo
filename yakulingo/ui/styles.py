@@ -1417,6 +1417,19 @@ body {
     margin-left: 1.25rem;
 }
 
+.connector-btn {
+    margin-top: 0.25rem;
+    margin-left: 1rem;
+    color: var(--md-sys-color-on-surface-variant) !important;
+    background: var(--md-sys-color-surface-container) !important;
+    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+}
+
+.connector-btn:hover {
+    color: var(--md-sys-color-primary) !important;
+    background: var(--md-sys-color-primary-container) !important;
+}
+
 .inline-adjust-panel {
     max-width: 24rem;
     width: 100%;

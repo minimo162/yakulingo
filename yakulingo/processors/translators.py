@@ -154,8 +154,24 @@ class ParagraphTranslator:
         return False
 
     def extract_paragraph_text(self, paragraph) -> str:
-        """Extract full text from paragraph"""
-        return paragraph.text
+        """
+        Extract full text from paragraph.
+
+        Safely handles different paragraph types:
+        - python-docx Paragraph objects
+        - python-pptx paragraph objects
+        - XML Element objects (falls back to itertext)
+        """
+        # First try the standard .text attribute
+        if hasattr(paragraph, 'text'):
+            return paragraph.text
+
+        # For XML Elements, use itertext() to get all text content
+        if hasattr(paragraph, 'itertext'):
+            return ''.join(paragraph.itertext())
+
+        # Last resort: try string conversion
+        return str(paragraph) if paragraph else ""
 
     def apply_translation_to_paragraph(self, paragraph, translated_text: str) -> None:
         """

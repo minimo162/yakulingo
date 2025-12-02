@@ -446,19 +446,33 @@ body {
     z-index: 10 !important;
 }
 
-/* Hide default Quasar uploader header/controls */
+/* Hide ALL Quasar uploader internal elements */
 .drop-zone .q-uploader__header,
-.drop-zone .q-uploader__list {
+.drop-zone .q-uploader__list,
+.drop-zone .q-uploader__file,
+.drop-zone .q-uploader__dnd,
+.drop-zone .q-uploader__subtitle,
+.drop-zone .q-uploader__overlay,
+.drop-zone .q-uploader__spinner,
+.drop-zone .q-uploader__expand-btn {
     display: none !important;
 }
 
-/* Make q-uploader fill the drop-zone */
+/* Make q-uploader completely invisible except for the input */
 .drop-zone .q-uploader {
     width: 100% !important;
     min-height: auto !important;
+    max-height: none !important;
     background: transparent !important;
     border: none !important;
     box-shadow: none !important;
+    border-radius: 0 !important;
+    overflow: visible !important;
+}
+
+/* Hide Quasar uploader slot content wrapper if any */
+.drop-zone .q-uploader__slot {
+    display: none !important;
 }
 
 .drop-zone:hover {

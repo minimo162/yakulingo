@@ -340,6 +340,8 @@ class CopilotHandler:
             try:
                 copilot_page.wait_for_selector(input_selector, timeout=15000, state='visible')
                 logger.info("Copilot chat UI ready")
+                # Wait a bit for authentication/session to fully initialize
+                time.sleep(1.0)
             except PlaywrightTimeoutError:
                 logger.warning("Chat input not found - page may need login")
 
@@ -350,11 +352,9 @@ class CopilotHandler:
             except (PlaywrightError, PlaywrightTimeoutError):
                 pass  # Ignore errors - stopping is optional
 
-            # Verify chat input is usable (checks for login, popups, etc.)
-            if self._verify_chat_input():
-                logger.info("Copilot ready (chat input verified)")
-            else:
-                logger.warning("Copilot page loaded but chat input not verified - may need login")
+            # Skip verification during connect - will be checked on first translation
+            # _verify_chat_input interacts with the page which can trigger auth prompts
+            logger.info("Copilot connection established")
 
             return True
 

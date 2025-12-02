@@ -61,8 +61,10 @@ class PlaywrightManager:
                         TimeoutError as PlaywrightTimeoutError,
                         Error as PlaywrightError,
                     )
+                    from playwright.async_api import async_playwright
                     self._playwright_types = {'Page': Page, 'BrowserContext': BrowserContext}
                     self._sync_playwright = sync_playwright
+                    self._async_playwright = async_playwright
                     self._error_types = {
                         'TimeoutError': PlaywrightTimeoutError,
                         'Error': PlaywrightError,
@@ -73,6 +75,11 @@ class PlaywrightManager:
         """Get Playwright types and sync_playwright function."""
         self._ensure_initialized()
         return self._playwright_types, self._sync_playwright
+
+    def get_async_playwright(self):
+        """Get async_playwright function."""
+        self._ensure_initialized()
+        return self._async_playwright
 
     def get_error_types(self):
         """Get Playwright error types for exception handling."""
@@ -94,12 +101,124 @@ def _get_playwright_errors():
     return _playwright_manager.get_error_types()
 
 
+def _get_async_playwright():
+    """Get async_playwright function."""
+    return _playwright_manager.get_async_playwright()
+
+
 class ConnectionState:
     """Connection state constants"""
     READY = 'ready'              # チャットUI表示済み、使用可能
     LOGIN_REQUIRED = 'login_required'  # ログインが必要
     LOADING = 'loading'          # 読み込み中
     ERROR = 'error'              # エラー
+
+
+import threading
+import queue as thread_queue
+
+
+class PlaywrightThreadExecutor:
+    """
+    Executes Playwright operations in a dedicated thread to avoid greenlet context issues.
+
+    Playwright's sync API uses greenlets which must run in the same thread/context
+    where they were initialized. This class ensures all Playwright operations run
+    in a consistent context.
+    """
+
+    _instance = None
+    _lock = threading.Lock()
+
+    def __new__(cls):
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+                    cls._instance._initialized = False
+        return cls._instance
+
+    def __init__(self):
+        if self._initialized:
+            return
+        self._request_queue = thread_queue.Queue()
+        self._thread = None
+        self._running = False
+        self._initialized = True
+
+    def start(self):
+        """Start the Playwright thread."""
+        if self._thread is not None and self._thread.is_alive():
+            return
+        self._running = True
+        self._thread = threading.Thread(target=self._worker, daemon=True)
+        self._thread.start()
+
+    def stop(self):
+        """Stop the Playwright thread."""
+        self._running = False
+        if self._thread is not None:
+            # Send stop signal
+            self._request_queue.put((None, None, None))
+            self._thread.join(timeout=5)
+
+    def _worker(self):
+        """Worker thread that processes Playwright operations."""
+        while self._running:
+            try:
+                item = self._request_queue.get(timeout=1)
+                if item[0] is None:  # Stop signal
+                    break
+                func, args, result_event = item
+                try:
+                    result = func(*args)
+                    result_event['result'] = result
+                    result_event['error'] = None
+                except Exception as e:
+                    result_event['result'] = None
+                    result_event['error'] = e
+                finally:
+                    result_event['done'].set()
+            except thread_queue.Empty:
+                continue
+
+    def execute(self, func, *args, timeout=120):
+        """
+        Execute a function in the Playwright thread and wait for result.
+
+        Args:
+            func: The function to execute
+            *args: Arguments to pass to the function
+            timeout: Maximum time to wait for result
+
+        Returns:
+            The result of the function call
+
+        Raises:
+            Exception from the function if it raised
+            TimeoutError if the operation times out
+        """
+        self.start()  # Ensure thread is running
+
+        result_event = {
+            'done': threading.Event(),
+            'result': None,
+            'error': None,
+        }
+
+        self._request_queue.put((func, args, result_event))
+
+        if not result_event['done'].wait(timeout=timeout):
+            raise TimeoutError(f"Playwright operation timed out after {timeout} seconds")
+
+        if result_event['error'] is not None:
+            raise result_event['error']
+
+        return result_event['result']
+
+
+# Global singleton instance for Playwright thread execution
+_playwright_executor = PlaywrightThreadExecutor()
 
 
 class CopilotHandler:
@@ -593,6 +712,9 @@ class CopilotHandler:
         """
         Translate with streaming response updates.
 
+        This method runs in a dedicated Playwright thread to avoid greenlet
+        context issues with NiceGUI's async event handling.
+
         Args:
             prompt: The translation prompt to send to Copilot
             reference_files: Optional list of reference files to attach
@@ -605,6 +727,21 @@ class CopilotHandler:
         """
         logger.info("translate_single_streaming called (prompt length: %d)", len(prompt))
 
+        # Execute in dedicated Playwright thread to avoid greenlet issues
+        return _playwright_executor.execute(
+            self._translate_single_streaming_impl,
+            prompt, reference_files, char_limit, on_content, on_reasoning
+        )
+
+    def _translate_single_streaming_impl(
+        self,
+        prompt: str,
+        reference_files: Optional[list[Path]],
+        char_limit: Optional[int],
+        on_content: Optional[Callable[[str], None]],
+        on_reasoning: Optional[Callable[[str], None]],
+    ) -> str:
+        """Implementation of translate_single_streaming that runs in Playwright thread."""
         # Always call connect() to ensure connection is valid
         # connect() checks page validity and reconnects if needed
         logger.debug("Checking connection...")

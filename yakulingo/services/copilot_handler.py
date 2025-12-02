@@ -328,10 +328,12 @@ class CopilotHandler:
 
             self._page = copilot_page
 
-            # Wait for page to fully load (Edge spinner to stop)
+            # Wait for page to load
+            # Note: Use 'load' instead of 'networkidle' because SPAs like Copilot
+            # have constant background connections that prevent networkidle
             try:
                 logger.info("Waiting for page to load...")
-                copilot_page.wait_for_load_state('networkidle', timeout=30000)
+                copilot_page.wait_for_load_state('load', timeout=30000)
                 logger.debug("Page load completed")
             except PlaywrightTimeoutError:
                 logger.warning("Page load timeout - continuing anyway")

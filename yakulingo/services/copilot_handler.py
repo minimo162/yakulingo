@@ -312,20 +312,22 @@ class CopilotHandler:
             else:
                 self._context = self._browser.new_context()
 
-            # Navigate to Copilot
-            logger.info("Opening Copilot...")
+            # Check if Copilot page already exists (don't navigate yet)
+            logger.info("Checking for existing Copilot page...")
             pages = self._context.pages
             copilot_page = None
 
             for page in pages:
                 if "m365.cloud.microsoft" in page.url:
                     copilot_page = page
+                    logger.info("Found existing Copilot page")
                     break
 
+            # If no Copilot page exists, create one but don't navigate yet
+            # Navigation will happen on first translation attempt
             if not copilot_page:
                 copilot_page = self._context.new_page()
-                # Use domcontentloaded for faster navigation (don't wait for all resources)
-                copilot_page.goto(self.COPILOT_URL, wait_until='domcontentloaded')
+                logger.info("Created new page (will navigate on first use)")
 
             self._page = copilot_page
             self._connected = True
@@ -618,6 +620,11 @@ class CopilotHandler:
         PlaywrightTimeoutError = error_types['TimeoutError']
 
         try:
+            # Navigate to Copilot if not already there
+            if "m365.cloud.microsoft" not in self._page.url:
+                logger.info("Navigating to Copilot...")
+                self._page.goto(self.COPILOT_URL, wait_until='domcontentloaded')
+
             # Find input area
             # 実際のCopilot HTML: <span role="combobox" contenteditable="true" id="m365-chat-editor-target-element" ...>
             input_selector = '#m365-chat-editor-target-element, [data-lexical-editor="true"], [contenteditable="true"]'

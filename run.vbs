@@ -98,20 +98,21 @@ WScript.Quit 0
 ' ============================================================
 
 Function IsPortInUse(port)
-    ' Check if a port is in use using netstat (no PowerShell overhead)
-    Dim result, exec, output
+    ' Check if port is in use by attempting HTTP connection (no console window)
+    Dim xmlhttp
     On Error Resume Next
 
-    ' Use netstat directly (faster than PowerShell)
-    Set exec = objShell.Exec("netstat -ano")
-    output = exec.StdOut.ReadAll()
+    Set xmlhttp = CreateObject("MSXML2.ServerXMLHTTP.6.0")
+    xmlhttp.setTimeouts 500, 500, 500, 500  ' Short timeouts (ms)
+    xmlhttp.Open "GET", "http://127.0.0.1:" & port & "/", False
+    xmlhttp.Send
 
-    ' Check if port is listening
-    If InStr(output, ":" & port & " ") > 0 And InStr(output, "LISTENING") > 0 Then
+    If Err.Number = 0 Then
         IsPortInUse = True
     Else
         IsPortInUse = False
     End If
 
+    Set xmlhttp = Nothing
     On Error GoTo 0
 End Function

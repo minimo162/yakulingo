@@ -423,6 +423,7 @@ class YakuLingoApp:
                         on_back_translate=self._back_translate,
                         on_settings=self._show_settings_dialog,
                         on_streaming_label_created=self._on_streaming_label_created,
+                        on_retry=self._retry_translation,
                     )
                 else:
                     create_file_panel(
@@ -502,6 +503,13 @@ class YakuLingoApp:
             removed = self.state.reference_files.pop(index)
             ui.notify(f'削除しました: {removed.name}', type='info')
             self._refresh_content()
+
+    async def _retry_translation(self):
+        """Retry the current translation (re-translate with same source text)"""
+        # Clear previous result and re-translate
+        self.state.text_result = None
+        self.state.text_translation_elapsed_time = None
+        await self._translate_text()
 
     async def _translate_text(self):
         """Translate text with streaming updates."""

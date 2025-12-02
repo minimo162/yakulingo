@@ -122,6 +122,7 @@ def create_text_panel(
     on_back_translate: Optional[Callable[[str], None]] = None,  # Back-translate to check
     on_settings: Optional[Callable[[], None]] = None,  # Translation settings (Nani-style)
     on_streaming_label_created: Optional[Callable[[ui.label, ui.element], None]] = None,  # Callback with (label, container) for direct updates
+    on_retry: Optional[Callable[[], None]] = None,  # Retry translation
 ):
     """
     Text translation panel with language-specific UI.
@@ -241,6 +242,7 @@ def create_text_panel(
                     on_adjust,
                     on_back_translate,
                     elapsed_time,
+                    on_retry,
                 )
         elif state.text_translating:
             _render_loading(state.source_text, state.streaming_text, on_streaming_label_created)
@@ -299,6 +301,7 @@ def _render_results_to_en(
     on_adjust: Optional[Callable[[str, str], None]],
     on_back_translate: Optional[Callable[[str], None]] = None,
     elapsed_time: Optional[float] = None,
+    on_retry: Optional[Callable[[], None]] = None,
 ):
     """Render →English results: multiple options with inline adjustment (Nani-style)"""
 
@@ -328,7 +331,7 @@ def _render_results_to_en(
 
         # Inline adjustment section (Nani-inspired)
         if on_adjust and result.options:
-            _render_inline_adjust_section(result.options[0].text, on_adjust)
+            _render_inline_adjust_section(result.options[0].text, on_adjust, on_retry)
 
 
 def _render_results_to_jp(
@@ -646,16 +649,28 @@ def _do_follow_up(
         on_follow_up(action_type, content.strip())
 
 
-def _render_inline_adjust_section(text: str, on_adjust: Callable[[str, str], None]):
+def _render_inline_adjust_section(
+    text: str,
+    on_adjust: Callable[[str, str], None],
+    on_retry: Optional[Callable[[], None]] = None,
+):
     """Render Nani-inspired inline adjustment options section"""
 
     with ui.element('div').classes('inline-adjust-section'):
-        # Connector line with refresh icon (visual decoration)
+        # Connector line with retry button
         with ui.element('div').classes('inline-adjust-connector'):
             with ui.element('div').classes('connector-line'):
                 with ui.element('div').classes('connector-branch'):
                     pass
-                ui.icon('tune').classes('connector-icon text-sm')
+                # Retry button (clickable)
+                if on_retry:
+                    retry_btn = ui.button(
+                        icon='refresh',
+                        on_click=on_retry
+                    ).props('flat dense round size=sm').classes('connector-btn')
+                    retry_btn.tooltip('再翻訳')
+                else:
+                    ui.icon('tune').classes('connector-icon text-sm')
 
         # Adjustment options panel
         with ui.element('div').classes('inline-adjust-panel'):

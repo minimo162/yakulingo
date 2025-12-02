@@ -7,22 +7,42 @@ Nani-inspired sidebar layout with clean, minimal design.
 COMPLETE_CSS = """
 /* === M3 Design Tokens === */
 :root {
-    /* Primary - warm coral */
-    --md-sys-color-primary: #C04000;
+    /* Primary - Professional teal (M3 compliant) */
+    --md-sys-color-primary: #006B5E;
     --md-sys-color-on-primary: #FFFFFF;
-    --md-sys-color-primary-container: #FFEEE8;
-    --md-sys-color-on-primary-container: #390C00;
+    --md-sys-color-primary-container: #9CF2E0;
+    --md-sys-color-on-primary-container: #00201B;
 
-    /* Surface - Nani-inspired warm light palette */
-    --md-sys-color-surface: #FFFFFF;
-    --md-sys-color-surface-dim: #FFF9F5;
-    --md-sys-color-surface-container: #FFF5F0;
-    --md-sys-color-surface-container-high: #FFEDE5;
-    --md-sys-color-surface-container-highest: #FFE5DA;
-    --md-sys-color-on-surface: #1A1C1E;
-    --md-sys-color-on-surface-variant: #4A4D50;  /* Darker for better contrast */
-    --md-sys-color-outline: #8A7A72;  /* Darker for better visibility */
-    --md-sys-color-outline-variant: #E8DED8;
+    /* Secondary - Warm accent for balance */
+    --md-sys-color-secondary: #4A635D;
+    --md-sys-color-on-secondary: #FFFFFF;
+    --md-sys-color-secondary-container: #CCE8E0;
+    --md-sys-color-on-secondary-container: #06201B;
+
+    /* Tertiary - Accent for highlights */
+    --md-sys-color-tertiary: #446179;
+    --md-sys-color-on-tertiary: #FFFFFF;
+    --md-sys-color-tertiary-container: #CAE6FF;
+    --md-sys-color-on-tertiary-container: #001E30;
+
+    /* Surface - Neutral with subtle warmth (M3 neutral palette) */
+    --md-sys-color-surface: #FBFDF9;
+    --md-sys-color-surface-dim: #DBDDD9;
+    --md-sys-color-surface-bright: #FBFDF9;
+    --md-sys-color-surface-container-lowest: #FFFFFF;
+    --md-sys-color-surface-container-low: #F5F7F3;
+    --md-sys-color-surface-container: #EFF1ED;
+    --md-sys-color-surface-container-high: #E9EBE7;
+    --md-sys-color-surface-container-highest: #E4E6E2;
+    --md-sys-color-on-surface: #191C1A;
+    --md-sys-color-on-surface-variant: #404943;
+    --md-sys-color-outline: #707972;
+    --md-sys-color-outline-variant: #BFC9C2;
+
+    /* Inverse (for snackbars, tooltips) */
+    --md-sys-color-inverse-surface: #2E312E;
+    --md-sys-color-inverse-on-surface: #F0F1ED;
+    --md-sys-color-inverse-primary: #80D5C5;
 
     /* States */
     --md-sys-color-error: #BA1A1A;
@@ -31,16 +51,16 @@ COMPLETE_CSS = """
     --md-sys-color-on-error-container: #410002;
 
     /* Success (extended) */
-    --md-sys-color-success: #2E7D32;
+    --md-sys-color-success: #1B6B3D;
     --md-sys-color-on-success: #FFFFFF;
-    --md-sys-color-success-container: #C8E6C9;
-    --md-sys-color-on-success-container: #1B5E20;
+    --md-sys-color-success-container: #A3F5B8;
+    --md-sys-color-on-success-container: #00210D;
 
     /* Warning (extended) */
-    --md-sys-color-warning: #FF9800;
+    --md-sys-color-warning: #7D5700;
     --md-sys-color-on-warning: #FFFFFF;
-    --md-sys-color-warning-container: #FFF3E0;
-    --md-sys-color-on-warning-container: #E65100;
+    --md-sys-color-warning-container: #FFDEA6;
+    --md-sys-color-on-warning-container: #271900;
 
     /* Shape - Nani-inspired extra rounded corners */
     --md-sys-shape-corner-full: 9999px;
@@ -90,13 +110,12 @@ body {
     /* Yu Gothic UI: Windows 8.1+用、UI最適化版 */
     /* Hiragino Sans: macOS用 */
     font-family: 'BIZ UDPGothic', 'Yu Gothic UI', 'Hiragino Sans', 'Segoe UI', -apple-system, sans-serif;
-    /* Nani-inspired gradient background with subtle pattern */
+    /* Clean M3-inspired gradient background */
     background:
-        radial-gradient(circle at 20% 20%, rgba(192, 64, 0, 0.03) 0%, transparent 50%),
-        radial-gradient(circle at 80% 80%, rgba(255, 150, 100, 0.03) 0%, transparent 50%),
-        radial-gradient(circle, rgba(192,64,0,0.015) 1px, transparent 1px),
-        linear-gradient(180deg, #FFFBF8 0%, #FFF5EE 100%);
-    background-size: 100% 100%, 100% 100%, 20px 20px, 100% 100%;
+        radial-gradient(circle at 20% 20%, rgba(0, 107, 94, 0.02) 0%, transparent 50%),
+        radial-gradient(circle at 80% 80%, rgba(68, 97, 121, 0.02) 0%, transparent 50%),
+        linear-gradient(180deg, var(--md-sys-color-surface) 0%, var(--md-sys-color-surface-container-low) 100%);
+    background-size: 100% 100%, 100% 100%, 100% 100%;
     background-attachment: fixed;
     color: var(--md-sys-color-on-surface);
     font-size: 0.9375rem;  /* 15px - comfortable reading size */
@@ -115,8 +134,8 @@ body {
     position: fixed;
     left: 0;
     top: 0;
-    /* Nani-inspired subtle gradient sidebar */
-    background: linear-gradient(180deg, #FFFFFF 0%, #FFFAF7 100%);
+    /* M3 surface gradient sidebar */
+    background: linear-gradient(180deg, var(--md-sys-color-surface-container-lowest) 0%, var(--md-sys-color-surface-container-low) 100%);
     border-right: 1px solid var(--md-sys-color-outline-variant);
     display: flex;
     flex-direction: column;
@@ -149,15 +168,15 @@ body {
     width: 2.5rem;
     height: 2.5rem;
     border-radius: var(--md-sys-shape-corner-medium);
-    /* Nani-inspired vibrant gradient */
-    background: linear-gradient(135deg, #E84A00 0%, #FF6B35 50%, #C04000 100%);
+    /* M3 primary gradient */
+    background: linear-gradient(135deg, #008573 0%, #006B5E 50%, #004D44 100%);
     display: flex;
     align-items: center;
     justify-content: center;
     color: var(--md-sys-color-on-primary);
     box-shadow:
-        0 4px 12px rgba(232, 74, 0, 0.3),
-        0 2px 4px rgba(0, 0, 0, 0.1);
+        0 4px 12px rgba(0, 107, 94, 0.25),
+        0 2px 4px rgba(0, 0, 0, 0.08);
 }
 
 /* === Navigation === */
@@ -315,7 +334,7 @@ body {
 /* Focus state for main card (when textarea is focused) */
 .main-card-inner:focus-within {
     border-color: var(--md-sys-color-primary);
-    box-shadow: 0 0 0 3px rgba(192, 64, 0, 0.08);
+    box-shadow: 0 0 0 3px rgba(0, 107, 94, 0.12);
     transform: scale(1.005);
 }
 
@@ -330,7 +349,7 @@ body {
 
 .text-box:focus-within {
     border-color: var(--md-sys-color-primary);
-    box-shadow: 0 0 0 2px rgba(192, 64, 0, 0.15);
+    box-shadow: 0 0 0 2px rgba(0, 107, 94, 0.15);
 }
 
 /* === Translate Button (alias for btn-primary) === */
@@ -393,8 +412,8 @@ body {
     align-items: center;
     justify-content: center;
     gap: 0.5rem;
-    background: var(--md-sys-color-on-surface);
-    color: var(--md-sys-color-surface);
+    background: var(--md-sys-color-primary);
+    color: var(--md-sys-color-on-primary);
     padding: 0.875rem 1.5rem;
     border-radius: var(--md-sys-shape-corner-full);
     font-size: 0.9375rem;
@@ -403,21 +422,22 @@ body {
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
     border: none;
     cursor: pointer;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+    box-shadow: 0 2px 8px rgba(0, 107, 94, 0.2);
 }
 
 .btn-primary:hover:not(:disabled),
 .translate-btn:hover:not(:disabled) {
-    /* Lighter shade derived from on-surface (#1A1C1E → #2D3035) */
-    background: color-mix(in srgb, var(--md-sys-color-on-surface) 85%, white);
+    /* Slightly lighter on hover */
+    background: #008573;
     transform: translateY(-2px) scale(1.02);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    box-shadow: 0 4px 12px rgba(0, 107, 94, 0.3);
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-spring);
 }
 
 .btn-primary:disabled,
 .translate-btn:disabled {
-    background: var(--md-sys-color-outline);
+    background: var(--md-sys-color-on-surface);
+    opacity: 0.38;
     cursor: default;
     box-shadow: none;
 }
@@ -537,8 +557,8 @@ body {
 
 .progress-bar {
     height: 100%;
-    /* Nani-inspired vibrant progress gradient */
-    background: linear-gradient(90deg, #E84A00 0%, #FF6B35 50%, #FF8C42 100%);
+    /* M3 primary gradient */
+    background: linear-gradient(90deg, #004D44 0%, #006B5E 50%, #008573 100%);
     border-radius: var(--md-sys-shape-corner-full);
     transition: width var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-standard);
     position: relative;
@@ -1847,12 +1867,12 @@ body {
 
 /* === Text Selection (Brand Color) === */
 ::selection {
-    background: rgba(232, 74, 0, 0.2);
+    background: rgba(0, 107, 94, 0.2);
     color: inherit;
 }
 
 ::-moz-selection {
-    background: rgba(232, 74, 0, 0.2);
+    background: rgba(0, 107, 94, 0.2);
     color: inherit;
 }
 
@@ -1883,7 +1903,7 @@ input, textarea {
 button:focus-visible,
 .q-btn:focus-visible {
     outline: none;
-    box-shadow: 0 0 0 3px rgba(232, 74, 0, 0.2) !important;
+    box-shadow: 0 0 0 3px rgba(0, 107, 94, 0.2) !important;
 }
 
 /* === Link Hover Effect === */
@@ -1894,7 +1914,7 @@ a {
 }
 
 a:hover {
-    color: #E84A00;
+    color: #008573;
     text-decoration: underline;
 }
 

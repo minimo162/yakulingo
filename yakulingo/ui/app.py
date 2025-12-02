@@ -577,39 +577,16 @@ class YakuLingoApp:
         self.state.streaming_text = ""  # For displaying streaming content
         self._refresh_content()
 
-        debug_log("Creating translation task...")
-
-        # Start translation in background with streaming
-        translation_task = asyncio.create_task(
-            asyncio.to_thread(
-                lambda: self.translation_service.translate_text_streaming(
-                    source_text,
-                    reference_files,
-                    on_content=on_streaming_content,
-                )
-            )
-        )
-        debug_log("Translation task created, polling for updates...")
+        debug_log("Starting translation (sync on main thread)...")
 
         try:
-            # Poll for streaming updates while translation is running
-            while not translation_task.done():
-                # Check for new content from the queue
-                try:
-                    while True:
-                        content = content_queue.get_nowait()
-                        self.state.streaming_text = content
-                        # Update streaming text directly (no full refresh - smooth updates)
-                        self._update_streaming_text(content)
-                except queue.Empty:
-                    pass
-
-                # Small delay to avoid busy-waiting
-                await asyncio.sleep(0.1)
-
-            # Get final result
-            debug_log("Translation task done, getting result...")
-            result = await translation_task
+            # Run translation synchronously on main thread (required for Playwright)
+            # Playwright's sync API uses greenlets which must run on the same thread
+            result = self.translation_service.translate_text_streaming(
+                source_text,
+                reference_files,
+                on_content=on_streaming_content,
+            )
             debug_log(f"Got result: {type(result).__name__ if result else None}")
 
             # Process any remaining items in the queue (update label for final content)

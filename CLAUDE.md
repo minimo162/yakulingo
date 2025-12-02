@@ -88,12 +88,10 @@ YakuLingo/
 │   ├── file_translate_to_jp.txt   # File translation (EN→JP)
 │   ├── text_translate_to_en.txt   # Text translation (JP→EN, with style)
 │   ├── text_translate_to_jp.txt   # Text translation (EN→JP, with explanation)
-│   ├── adjust_shorter.txt         # Inline adjustment: shorter
-│   ├── adjust_longer.txt          # Inline adjustment: longer
-│   ├── adjust_custom.txt          # Inline adjustment: custom style
-│   ├── text_question.txt          # Follow-up: ask question
-│   ├── text_reply_email.txt       # Follow-up: email reply
-│   └── text_review_en.txt         # Follow-up: review English
+│   ├── adjust_custom.txt          # Inline adjustment: custom request
+│   ├── text_alternatives.txt      # Follow-up: alternative expressions
+│   ├── text_review_en.txt         # Follow-up: review English (英文をチェック)
+│   └── text_summarize.txt         # Follow-up: extract key points (要点を教えて)
 ├── config/
 │   └── settings.json              # User configuration
 ├── docs/
@@ -235,19 +233,20 @@ The application uses M3 (Material Design 3) component-based styling:
 
 ### Design Tokens (in `styles.py`)
 ```css
-/* Primary - warm coral palette */
---md-sys-color-primary: #C04000;
---md-sys-color-primary-container: #FFDBD0;
+/* Primary - Professional indigo palette */
+--md-sys-color-primary: #4355B9;
+--md-sys-color-primary-container: #DEE0FF;
+--md-sys-color-on-primary-container: #00105C;
 
 /* Surface colors */
---md-sys-color-surface: #FFFBFF;
---md-sys-color-surface-container: #F3EDE9;
+--md-sys-color-surface: #FEFBFF;
+--md-sys-color-surface-container: #F2EFF4;
 
 /* Shape system */
 --md-sys-shape-corner-full: 9999px;   /* Pills/FABs */
---md-sys-shape-corner-large: 16px;    /* Cards/Dialogs */
---md-sys-shape-corner-medium: 12px;   /* Text fields */
---md-sys-shape-corner-small: 8px;     /* Chips */
+--md-sys-shape-corner-large: 20px;    /* Cards/Dialogs */
+--md-sys-shape-corner-medium: 16px;   /* Inputs/Chips */
+--md-sys-shape-corner-small: 12px;    /* Small elements */
 ```
 
 ### Key CSS Classes
@@ -514,8 +513,9 @@ The `AutoUpdater` class provides GitHub Releases-based updates:
 
 ### Adding Inline Adjustments
 1. Add adjustment option to `ADJUST_OPTIONS_PAIRS` or `ADJUST_OPTIONS_SINGLE` in `text_panel.py`
-2. Create corresponding prompt file in `prompts/adjust_*.txt`
-3. Handle adjustment callback in `yakulingo/ui/app.py`
+2. Handle adjustment via `adjust_translation()` in `yakulingo/ui/app.py`
+   - Style-based adjustments (shorter/detailed) use translation style change
+   - Custom requests use `adjust_custom.txt` prompt template
 
 ## Dependencies Overview
 

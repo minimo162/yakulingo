@@ -108,8 +108,10 @@ COMPLETE_CSS = """
 
     /* 3-Column Layout (Nani-inspired) */
     --input-panel-width: 320px;
-    --bp-with-sidebar: 1200px;  /* Breakpoint for sidebar visibility */
-    --bp-single-column: 800px;  /* Breakpoint for single column */
+    --input-panel-width-wide: 480px;  /* Wider input for 2-column mode */
+    --bp-desktop: 1200px;        /* Full 3-column with sidebar */
+    --bp-tablet-portrait: 800px; /* 2-column with fixed input */
+    --bp-mobile: 800px;          /* Single column layout */
 }
 
 /* === Base === */
@@ -922,43 +924,152 @@ body {
 
 /* === Responsive Design (Nani-inspired breakpoints) === */
 
-/* Large screens: 3-column layout (default) */
-/* sidebar (220px) + input (320px) + results (remaining) */
+/* ========================================
+   Desktop (1200px+): Dynamic 2/3 column
+   - Default: 2-column (sidebar + wide input)
+   - With results: 3-column (sidebar + input + results)
+   ======================================== */
 
-/* Medium screens: 2-column layout (hide sidebar) */
-@media (max-width: 1200px) {
+/* Default 2-column mode (no results) */
+.main-area:not(.has-results) .input-panel {
+    width: var(--input-panel-width-wide);
+    min-width: var(--input-panel-width-wide);
+    border-right: none;
+}
+
+.main-area:not(.has-results) .result-panel {
+    display: none;
+}
+
+/* 3-column mode when has results */
+.main-area.has-results .input-panel {
+    width: var(--input-panel-width);
+    min-width: var(--input-panel-width);
+    border-right: 1px solid var(--md-sys-color-outline-variant);
+}
+
+.main-area.has-results .result-panel {
+    display: flex;
+}
+
+/* File panel always 2-column (centered) */
+.main-area.file-mode .result-panel {
+    display: none;
+}
+
+.main-area.file-mode .input-panel {
+    width: 100%;
+    min-width: 100%;
+    max-width: none;
+    border-right: none;
+}
+
+/* ========================================
+   Tablet Portrait (800px - 1200px):
+   Always 2-column with fixed input at top
+   Nani-style layout
+   ======================================== */
+@media (min-width: 800px) and (max-width: 1200px) {
+    /* Keep sidebar visible */
+    .sidebar {
+        display: flex;
+    }
+
+    /* Hide mobile header */
+    .mobile-header {
+        display: none !important;
+    }
+
+    .main-area {
+        margin-left: var(--sidebar-width);
+        padding-top: 0;
+        flex-direction: column;
+        min-height: 100vh;
+    }
+
+    /* Input panel fixed at top */
+    .input-panel {
+        width: 100% !important;
+        min-width: 100% !important;
+        height: auto !important;
+        min-height: auto !important;
+        position: sticky;
+        top: 0;
+        z-index: 50;
+        border-right: none !important;
+        border-bottom: 1px solid var(--md-sys-color-outline-variant);
+        background: var(--md-sys-color-surface);
+        padding: 1rem 1.5rem;
+        box-shadow: var(--md-sys-elevation-1);
+    }
+
+    /* Result panel scrollable below */
+    .result-panel {
+        display: flex !important;
+        flex: 1;
+        min-height: 0;
+        padding: 1.5rem;
+        overflow-y: auto;
+    }
+
+    /* Override has-results/no-results for tablet portrait */
+    .main-area.has-results .input-panel,
+    .main-area:not(.has-results) .input-panel {
+        width: 100% !important;
+        min-width: 100% !important;
+        border-right: none !important;
+    }
+
+    .main-area.has-results .result-panel,
+    .main-area:not(.has-results) .result-panel {
+        display: flex !important;
+    }
+}
+
+/* ========================================
+   Mobile (<800px): Single column, sidebar hidden
+   ======================================== */
+@media (max-width: 800px) {
     .sidebar {
         display: none;
     }
 
     .main-area {
         margin-left: 0;
+        flex-direction: column;
+        padding-top: 3.5rem; /* Space for mobile header */
     }
 
     /* Show mobile header with hamburger menu */
     .mobile-header {
         display: flex;
     }
-}
-
-/* Small screens: 1-column layout (stacked) */
-@media (max-width: 800px) {
-    .main-area {
-        flex-direction: column;
-    }
 
     .input-panel {
-        width: 100%;
-        min-width: 100%;
+        width: 100% !important;
+        min-width: 100% !important;
         height: auto;
         position: relative;
-        border-right: none;
+        border-right: none !important;
         border-bottom: 1px solid var(--md-sys-color-outline-variant);
         padding: 1rem;
     }
 
     .result-panel {
+        display: flex !important;
         padding: 1rem;
+    }
+
+    /* Override dynamic column classes */
+    .main-area.has-results .input-panel,
+    .main-area:not(.has-results) .input-panel {
+        width: 100% !important;
+        min-width: 100% !important;
+    }
+
+    .main-area.has-results .result-panel,
+    .main-area:not(.has-results) .result-panel {
+        display: flex !important;
     }
 
     /* Improve touch targets on mobile */
@@ -1034,13 +1145,6 @@ body {
     }
     to {
         transform: translateX(0);
-    }
-}
-
-/* Adjust main area when mobile header is visible */
-@media (max-width: 1200px) {
-    .main-area {
-        padding-top: 3.5rem;
     }
 }
 
@@ -2411,5 +2515,28 @@ a:hover {
 .completion-file-desc {
     font-size: 0.9375rem;
     color: var(--md-sys-color-on-surface-variant);
+}
+
+/* === Loading Screen === */
+.loading-screen {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: var(--md-sys-color-surface);
+    z-index: 9999;
+}
+
+.loading-title {
+    margin-top: 1rem;
+    font-size: 1.5rem;
+    font-weight: 500;
+    color: var(--md-sys-color-on-surface);
+    letter-spacing: 0.02em;
 }
 """

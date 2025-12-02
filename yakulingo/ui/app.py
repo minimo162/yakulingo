@@ -122,6 +122,7 @@ class YakuLingoApp:
         self._main_content = None
         self._tabs_container = None
         self._history_list = None
+        self._main_area_element = None
 
         # Auto-update
         self._update_notification: Optional["UpdateNotification"] = None
@@ -219,7 +220,10 @@ class YakuLingoApp:
             self._header_status.refresh()
 
     def _refresh_content(self):
-        """Refresh main content area"""
+        """Refresh main content area and update layout classes"""
+        # Update main area classes based on current state
+        if self._main_area_element:
+            self._main_area_element.classes(self._get_main_area_classes(), replace=True)
         if self._main_content:
             self._main_content.refresh()
 
@@ -270,8 +274,13 @@ class YakuLingoApp:
             # Mobile header (hidden on large screens)
             self._create_mobile_header()
 
-            # Main area (input panel + result panel)
-            with ui.element('div').classes('main-area'):
+            # Sidebar overlay for mobile (click to close)
+            with ui.element('div').classes('sidebar-overlay').on('click', self._toggle_mobile_sidebar):
+                pass
+
+            # Main area (input panel + result panel) with dynamic classes
+            self._main_area_element = ui.element('div').classes(self._get_main_area_classes())
+            with self._main_area_element:
                 self._create_main_content()
 
     def _create_mobile_header(self):
@@ -378,7 +387,10 @@ class YakuLingoApp:
             history_list()
 
     def _create_nav_item(self, label: str, icon: str, tab: Tab):
-        """Create a navigation tab item (M3 vertical tabs)"""
+        """Create a navigation tab item (M3 vertical tabs)
+
+        Clicking the same tab resets its state (acts as a reset button).
+        """
         is_active = self.state.current_tab == tab
         disabled = self.state.is_translating()
         classes = 'nav-item'
@@ -388,7 +400,22 @@ class YakuLingoApp:
             classes += ' disabled'
 
         def on_click():
-            if not disabled and self.state.current_tab != tab:
+            if disabled:
+                return
+
+            if self.state.current_tab == tab:
+                # Same tab clicked - reset to initial state
+                if tab == Tab.TEXT:
+                    # Reset text translation state
+                    self.state.source_text = ""
+                    self.state.text_result = None
+                    self.state.text_translation_elapsed_time = None
+                else:
+                    # Reset file translation state
+                    self.state.reset_file_state()
+                self._refresh_content()
+            else:
+                # Different tab - switch to it
                 self.state.current_tab = tab
                 self.settings.last_tab = tab.value
                 self._refresh_tabs()
@@ -431,8 +458,20 @@ class YakuLingoApp:
                     on_click=delete_entry
                 ).props('flat dense round size=xs').classes('history-delete-btn')
 
+    def _get_main_area_classes(self) -> str:
+        """Get dynamic CSS classes for main-area based on current state."""
+        classes = ['main-area']
+
+        if self.state.current_tab == Tab.FILE:
+            classes.append('file-mode')
+        elif self.state.text_result or self.state.text_translating:
+            # Show results panel when translating or has results
+            classes.append('has-results')
+
+        return ' '.join(classes)
+
     def _create_main_content(self):
-        """Create main content area with 3-column layout for text, single column for file"""
+        """Create main content area with dynamic column layout."""
         # Lazy import UI components for faster startup
         from yakulingo.ui.components.text_panel import create_text_input_panel, create_text_result_panel
         from yakulingo.ui.components.file_panel import create_file_panel
@@ -440,8 +479,8 @@ class YakuLingoApp:
         @ui.refreshable
         def main_content():
             if self.state.current_tab == Tab.TEXT:
-                # 3-column layout: Input panel (left) + Result panel (right)
-                # Input panel (middle column - sticky)
+                # Dynamic 2/3-column layout for text translation
+                # Input panel (left column - width varies based on results)
                 with ui.column().classes('input-panel'):
                     create_text_input_panel(
                         state=self.state,
@@ -454,7 +493,7 @@ class YakuLingoApp:
                         on_translate_button_created=self._on_translate_button_created,
                     )
 
-                # Result panel (right column - scrollable)
+                # Result panel (right column - shown when has results)
                 with ui.column().classes('result-panel'):
                     create_text_result_panel(
                         state=self.state,
@@ -465,7 +504,7 @@ class YakuLingoApp:
                         on_retry=self._retry_translation,
                     )
             else:
-                # File panel: single column layout (centered)
+                # File panel: 2-column layout (sidebar + centered file panel)
                 with ui.column().classes('w-full max-w-2xl mx-auto px-6 py-8 flex-1'):
                     create_file_panel(
                         state=self.state,
@@ -605,7 +644,12 @@ class YakuLingoApp:
         self._refresh_status()
 
     async def _adjust_text(self, text: str, adjust_type: str):
-        """Adjust translation based on user request"""
+        """Adjust translation based on user request
+
+        Args:
+            text: The translation text to adjust
+            adjust_type: 'shorter', 'detailed', 'alternatives', or custom instruction
+        """
         if not self.translation_service:
             ui.notify('Not connected', type='warning')
             return
@@ -614,10 +658,13 @@ class YakuLingoApp:
         self._refresh_content()
 
         try:
+            # Pass source_text for style-based adjustments
+            source_text = self.state.source_text
             result = await asyncio.to_thread(
                 lambda: self.translation_service.adjust_translation(
                     text,
                     adjust_type,
+                    source_text=source_text,
                 )
             )
 
@@ -1085,7 +1132,7 @@ class YakuLingoApp:
 
     def _show_settings_dialog(self):
         """Show translation settings dialog (Nani-inspired quick settings)"""
-        with ui.dialog() as dialog, ui.card().classes('w-96 settings-dialog'):
+        with ui.dialog() as dialog, ui.card().classes('w-80 settings-dialog'):
             with ui.column().classes('w-full gap-4 p-4'):
                 # Header
                 with ui.row().classes('w-full justify-between items-center'):
@@ -1096,37 +1143,21 @@ class YakuLingoApp:
 
                 ui.separator()
 
-                # Batch size setting
+                # Translation style setting
                 with ui.column().classes('w-full gap-1'):
-                    ui.label('バッチサイズ').classes('text-sm font-medium')
-                    ui.label('一度に翻訳するテキストブロック数').classes('text-xs text-muted')
-                    batch_label = ui.label(f'{self.settings.max_batch_size} ブロック').classes('text-xs text-primary')
-                    batch_slider = ui.slider(
-                        min=10, max=100, step=10,
-                        value=self.settings.max_batch_size,
-                        on_change=lambda e: batch_label.set_text(f'{int(e.value)} ブロック')
-                    ).classes('w-full')
+                    ui.label('翻訳スタイル').classes('text-sm font-medium')
+                    ui.label('英訳の詳細さを選択').classes('text-xs text-muted')
 
-                # Request timeout setting
-                with ui.column().classes('w-full gap-1'):
-                    ui.label('タイムアウト').classes('text-sm font-medium')
-                    ui.label('Copilotからの応答待ち時間').classes('text-xs text-muted')
-                    timeout_label = ui.label(f'{self.settings.request_timeout} 秒').classes('text-xs text-primary')
-                    timeout_slider = ui.slider(
-                        min=30, max=300, step=30,
-                        value=self.settings.request_timeout,
-                        on_change=lambda e: timeout_label.set_text(f'{int(e.value)} 秒')
-                    ).classes('w-full')
+                    style_options = {
+                        'standard': '標準',
+                        'concise': '簡潔',
+                        'minimal': '最簡潔',
+                    }
+                    current_style = self.settings.text_translation_style
 
-                # Max retries setting
-                with ui.column().classes('w-full gap-1'):
-                    ui.label('リトライ回数').classes('text-sm font-medium')
-                    ui.label('翻訳失敗時の再試行回数').classes('text-xs text-muted')
-                    retry_label = ui.label(f'{self.settings.max_retries} 回').classes('text-xs text-primary')
-                    retry_slider = ui.slider(
-                        min=0, max=5, step=1,
-                        value=self.settings.max_retries,
-                        on_change=lambda e: retry_label.set_text(f'{int(e.value)} 回')
+                    style_toggle = ui.toggle(
+                        list(style_options.values()),
+                        value=style_options.get(current_style, '簡潔'),
                     ).classes('w-full')
 
                 ui.separator()
@@ -1136,9 +1167,9 @@ class YakuLingoApp:
                     ui.button('キャンセル', on_click=dialog.close).props('flat').classes('text-muted')
 
                     def save_settings():
-                        self.settings.max_batch_size = int(batch_slider.value)
-                        self.settings.request_timeout = int(timeout_slider.value)
-                        self.settings.max_retries = int(retry_slider.value)
+                        # Save translation style
+                        style_reverse = {v: k for k, v in style_options.items()}
+                        self.settings.text_translation_style = style_reverse.get(style_toggle.value, 'concise')
                         self.settings.save(get_default_settings_path())
                         dialog.close()
                         ui.notify('設定を保存しました', type='positive')
@@ -1155,7 +1186,7 @@ def create_app() -> YakuLingoApp:
 
 def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
     """Run the application"""
-    from nicegui import app as nicegui_app
+    from nicegui import app as nicegui_app, Client
 
     yakulingo_app = create_app()
 
@@ -1174,9 +1205,20 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
     nicegui_app.on_shutdown(cleanup)
 
     @ui.page('/')
-    async def main_page():
-        # Create UI first (show window immediately)
+    async def main_page(client: Client):
+        # Show loading screen immediately (before client connects)
+        loading_container = ui.column().classes('loading-screen')
+        with loading_container:
+            ui.spinner('dots', size='3em', color='primary')
+            ui.label('YakuLingo').classes('loading-title')
+
+        # Wait for client connection
+        await client.connected()
+
+        # Remove loading screen and show main UI
+        loading_container.delete()
         yakulingo_app.create_ui()
+
         # Start Edge connection AFTER UI is displayed
         asyncio.create_task(yakulingo_app.start_edge_and_connect())
         asyncio.create_task(yakulingo_app.check_for_updates())

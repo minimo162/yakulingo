@@ -57,19 +57,25 @@ def setup_logging():
     return log_file, file_handler  # Return handler to keep reference
 
 
-from yakulingo.ui.app import run_app
-
-
 # Global reference to keep log handler alive
 _global_log_handler = None
 
 
 def main():
-    """Main entry point"""
+    """Main entry point
+
+    Note: Import is inside main() to prevent double initialization
+    in native mode (pywebview uses multiprocessing).
+    This can cut startup time in half.
+    See: https://github.com/zauberzeug/nicegui/issues/3356
+    """
     global _global_log_handler
     log_file, file_handler = setup_logging()
     _global_log_handler = file_handler  # Keep reference to prevent garbage collection
     print(f"ログファイル: {log_file}")  # Show log location even without console
+
+    # Import here to avoid double initialization in native mode
+    from yakulingo.ui.app import run_app
 
     run_app(
         host='127.0.0.1',

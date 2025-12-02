@@ -538,12 +538,19 @@ class YakuLingoApp:
         import time
         import queue
 
+        logger.info("=== _translate_text called ===")
+        logger.debug("translation_service: %s", self.translation_service)
+        logger.debug("source_text length: %d", len(self.state.source_text) if self.state.source_text else 0)
+
         if not self.translation_service:
+            logger.warning("translation_service is None, returning")
             ui.notify('Not connected', type='warning')
             return
 
         source_text = self.state.source_text
         reference_files = self.state.reference_files or None
+
+        logger.info("Starting translation for text: %s...", source_text[:50] if source_text else "")
 
         # Track translation time
         start_time = time.time()
@@ -563,6 +570,7 @@ class YakuLingoApp:
         self._refresh_content()
 
         # Start translation in background with streaming
+        logger.info("Creating translation task...")
         translation_task = asyncio.create_task(
             asyncio.to_thread(
                 lambda: self.translation_service.translate_text_streaming(
@@ -572,6 +580,7 @@ class YakuLingoApp:
                 )
             )
         )
+        logger.info("Translation task created, polling for updates...")
 
         try:
             # Poll for streaming updates while translation is running
@@ -590,7 +599,9 @@ class YakuLingoApp:
                 await asyncio.sleep(0.1)
 
             # Get final result
+            logger.info("Translation task done, getting result...")
             result = await translation_task
+            logger.info("Got result: %s", type(result).__name__ if result else None)
 
             # Process any remaining items in the queue (update label for final content)
             try:
@@ -604,16 +615,20 @@ class YakuLingoApp:
             # Calculate elapsed time
             elapsed_time = time.time() - start_time
             self.state.text_translation_elapsed_time = elapsed_time
+            logger.info("Translation completed in %.2f seconds", elapsed_time)
 
             if result and result.options:
+                logger.info("Translation successful, %d options received", len(result.options))
                 self.state.text_result = result
                 self.state.streaming_text = ""  # Clear streaming text
                 self._add_to_history(result)
             else:
                 error_msg = result.error_message if result else 'Unknown error'
+                logger.warning("Translation failed: %s", error_msg)
                 ui.notify(f'Error: {error_msg}', type='negative')
 
         except Exception as e:
+            logger.exception("Translation error: %s", e)
             ui.notify(f'Error: {e}', type='negative')
 
         self.state.text_translating = False

@@ -73,22 +73,22 @@ class TestStateWorkflowIntegration:
         assert state.text_translating is False
         assert state.source_text == ""
 
-        # User enters text
-        state.source_text = "テスト文章"
-        assert state.can_translate() is False  # Not connected
+        # Without text, cannot translate
+        assert state.can_translate() is False
 
-        # Connect to Copilot
-        state.copilot_connected = True
-        assert state.can_translate() is True
+        # User enters text - can_translate() checks text, not connection
+        state.source_text = "テスト文章"
+        assert state.can_translate() is True  # Connection is checked at execution
 
         # Start translation
         state.text_translating = True
         assert state.is_translating() is True
-        assert state.can_translate() is False
+        assert state.can_translate() is False  # Cannot translate while translating
 
         # Translation complete
         state.text_translating = False
         assert state.is_translating() is False
+        assert state.can_translate() is True  # Can translate again
 
     def test_file_translation_state_flow(self):
         """Test state transitions during file translation"""
@@ -99,7 +99,7 @@ class TestStateWorkflowIntegration:
         assert state.can_translate() is False
 
         # Connect
-        state.copilot_connected = True
+        state.copilot_ready = True
         assert state.can_translate() is False  # No file selected
 
         # Select file
@@ -161,7 +161,7 @@ class TestStateWorkflowIntegration:
         state = AppState(
             current_tab=Tab.FILE,
             file_state=FileState.TRANSLATING,
-            copilot_connected=True
+            copilot_ready=True
         )
 
         # Error occurs

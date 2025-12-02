@@ -420,7 +420,7 @@ class TestNetworkErrors:
     def test_copilot_ssl_error(self, settings, sample_excel):
         """Handle SSL/TLS error"""
         mock_copilot = Mock()
-        mock_copilot.translate_sync.side_effect = Exception("SSL certificate verify failed")
+        mock_copilot.translate_sync.side_effect = ConnectionError("SSL certificate verify failed")
 
         service = TranslationService(mock_copilot, settings)
 

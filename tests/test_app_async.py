@@ -89,8 +89,7 @@ def app_state():
     state.output_file = None
     state.error_message = ""
     state.reference_files = []
-    state.copilot_connected = False
-    state.copilot_connecting = False
+    state.copilot_ready = False
     state.copilot_error = ""
     state.history = []
     state.history_drawer_open = False
@@ -110,19 +109,13 @@ class TestConnectCopilotAsync:
         mock_copilot_handler.connect = AsyncMock(return_value=True)
         mock_copilot_handler.is_connected = True
 
-        # Simulate connect flow
-        app_state.copilot_connecting = True
-        assert app_state.copilot_connecting is True
-
         # Call connect
         result = await mock_copilot_handler.connect()
 
         # Update state after connect
-        app_state.copilot_connecting = False
-        app_state.copilot_connected = result
+        app_state.copilot_ready = result
 
-        assert app_state.copilot_connected is True
-        assert app_state.copilot_connecting is False
+        assert app_state.copilot_ready is True
         mock_copilot_handler.connect.assert_called_once()
 
     @pytest.mark.asyncio
@@ -130,45 +123,39 @@ class TestConnectCopilotAsync:
         """State updates correctly when connection fails"""
         mock_copilot_handler.connect = AsyncMock(side_effect=Exception("Connection refused"))
 
-        # Simulate connect flow
-        app_state.copilot_connecting = True
-
         try:
             await mock_copilot_handler.connect()
-            app_state.copilot_connected = True
+            app_state.copilot_ready = True
         except Exception as e:
-            app_state.copilot_connecting = False
-            app_state.copilot_connected = False
+            app_state.copilot_ready = False
             app_state.copilot_error = str(e)
 
-        assert app_state.copilot_connected is False
-        assert app_state.copilot_connecting is False
+        assert app_state.copilot_ready is False
         assert "Connection refused" in app_state.copilot_error
 
     @pytest.mark.asyncio
-    async def test_connect_prevents_duplicate_calls(self, app_state, mock_copilot_handler):
-        """Cannot start connection while already connecting"""
+    async def test_connect_skipped_when_already_connected(self, app_state, mock_copilot_handler):
+        """Connection can be skipped when already connected"""
         mock_copilot_handler.connect = AsyncMock(return_value=True)
+        mock_copilot_handler.is_connected = True
+        app_state.copilot_ready = True
 
-        # First connection attempt
-        app_state.copilot_connecting = True
-
-        # Check guard condition
-        can_connect = not app_state.copilot_connecting and not app_state.copilot_connected
+        # When already connected, no need to connect again
+        can_connect = not app_state.copilot_ready
         assert can_connect is False
 
     @pytest.mark.asyncio
     async def test_disconnect_updates_state(self, app_state, mock_copilot_handler):
         """State updates correctly on disconnect"""
-        app_state.copilot_connected = True
+        app_state.copilot_ready = True
         mock_copilot_handler.is_connected = True
 
         await mock_copilot_handler.disconnect()
 
         # Update state
-        app_state.copilot_connected = False
+        app_state.copilot_ready = False
 
-        assert app_state.copilot_connected is False
+        assert app_state.copilot_ready is False
         mock_copilot_handler.disconnect.assert_called_once()
 
 
@@ -180,7 +167,7 @@ class TestTextTranslationAsync:
     @pytest.mark.asyncio
     async def test_translate_text_updates_state(self, app_state, mock_translation_service):
         """State updates correctly during text translation"""
-        app_state.copilot_connected = True
+        app_state.copilot_ready = True
         app_state.source_text = "テストテキスト"
 
         # Start translation
@@ -205,7 +192,7 @@ class TestTextTranslationAsync:
     @pytest.mark.asyncio
     async def test_translate_text_handles_error(self, app_state, mock_translation_service):
         """Error during text translation updates state correctly"""
-        app_state.copilot_connected = True
+        app_state.copilot_ready = True
         app_state.source_text = "テスト"
 
         # Mock error
@@ -235,7 +222,7 @@ class TestTextTranslationAsync:
     @pytest.mark.asyncio
     async def test_translate_text_clears_previous_result(self, app_state, mock_translation_service):
         """Previous result is cleared when starting new translation"""
-        app_state.copilot_connected = True
+        app_state.copilot_ready = True
         app_state.source_text = "新しいテキスト"
         app_state.text_result = TextTranslationResult(
             source_text="古いテキスト",
@@ -261,7 +248,7 @@ class TestTextTranslationAsync:
         """Successful translation adds entry to history"""
         from yakulingo.models.types import HistoryEntry
 
-        app_state.copilot_connected = True
+        app_state.copilot_ready = True
         app_state.source_text = "履歴テスト"
 
         # Translate
@@ -291,7 +278,7 @@ class TestFileTranslationAsync:
         test_file = tmp_path / "test.xlsx"
         test_file.touch()
 
-        app_state.copilot_connected = True
+        app_state.copilot_ready = True
         app_state.current_tab = Tab.FILE
         app_state.selected_file = test_file
         app_state.file_state = FileState.SELECTED
@@ -331,7 +318,7 @@ class TestFileTranslationAsync:
         test_file = tmp_path / "test.xlsx"
         test_file.touch()
 
-        app_state.copilot_connected = True
+        app_state.copilot_ready = True
         app_state.current_tab = Tab.FILE
         app_state.file_state = FileState.SELECTED
         app_state.selected_file = test_file
@@ -388,23 +375,24 @@ class TestFileTranslationAsync:
 class TestStateGuardConditions:
     """Test guard conditions for operations"""
 
-    def test_cannot_translate_when_disconnected(self, app_state):
-        """Cannot translate when Copilot is disconnected"""
-        app_state.copilot_connected = False
+    def test_can_translate_checks_text_not_connection(self, app_state):
+        """can_translate() checks text/state, not connection (connection checked at execution)"""
+        app_state.copilot_ready = False  # Not connected
         app_state.source_text = "テスト"
 
-        assert app_state.can_translate() is False
+        # can_translate() returns True - connection is checked at execution time
+        assert app_state.can_translate() is True
 
     def test_cannot_translate_without_text(self, app_state):
         """Cannot translate without source text"""
-        app_state.copilot_connected = True
+        app_state.copilot_ready = True
         app_state.source_text = ""
 
         assert app_state.can_translate() is False
 
     def test_cannot_translate_while_translating(self, app_state):
         """Cannot start new translation while one is in progress"""
-        app_state.copilot_connected = True
+        app_state.copilot_ready = True
         app_state.source_text = "テスト"
         app_state.text_translating = True
 
@@ -412,7 +400,7 @@ class TestStateGuardConditions:
 
     def test_cannot_translate_file_without_selection(self, app_state):
         """Cannot translate file without selection"""
-        app_state.copilot_connected = True
+        app_state.copilot_ready = True
         app_state.current_tab = Tab.FILE
         app_state.file_state = FileState.EMPTY
 
@@ -420,7 +408,7 @@ class TestStateGuardConditions:
 
     def test_cannot_translate_file_when_already_complete(self, app_state):
         """Cannot re-translate completed file without reset"""
-        app_state.copilot_connected = True
+        app_state.copilot_ready = True
         app_state.current_tab = Tab.FILE
         app_state.file_state = FileState.COMPLETE
 
@@ -454,7 +442,7 @@ class TestConcurrentOperations:
     @pytest.mark.asyncio
     async def test_multiple_text_translations_sequential(self, app_state, mock_translation_service):
         """Multiple translations run sequentially"""
-        app_state.copilot_connected = True
+        app_state.copilot_ready = True
 
         texts = ["テスト1", "テスト2", "テスト3"]
         results = []
@@ -488,17 +476,15 @@ class TestTimeoutHandling:
 
         mock_copilot_handler.connect = slow_connect
 
-        app_state.copilot_connecting = True
-
         try:
             # Use timeout
             await asyncio.wait_for(mock_copilot_handler.connect(), timeout=0.1)
-            app_state.copilot_connected = True
+            app_state.copilot_ready = True
         except asyncio.TimeoutError:
-            app_state.copilot_connecting = False
+            app_state.copilot_ready = False
             app_state.copilot_error = "Connection timeout"
 
-        assert app_state.copilot_connected is False
+        assert app_state.copilot_ready is False
         assert "timeout" in app_state.copilot_error.lower()
 
     @pytest.mark.asyncio
@@ -512,7 +498,7 @@ class TestTimeoutHandling:
                 options=[],
             )
 
-        app_state.copilot_connected = True
+        app_state.copilot_ready = True
         app_state.source_text = "テスト"
         app_state.text_translating = True
 
@@ -590,7 +576,7 @@ class TestTranslationWithOptions:
     @pytest.mark.asyncio
     async def test_japanese_to_english_multiple_options(self, app_state, mock_translation_service):
         """Japanese to English returns multiple options"""
-        app_state.copilot_connected = True
+        app_state.copilot_ready = True
         app_state.source_text = "こんにちは世界"
 
         # Mock returns multiple options for JP->EN
@@ -613,7 +599,7 @@ class TestTranslationWithOptions:
     @pytest.mark.asyncio
     async def test_english_to_japanese_single_option(self, app_state, mock_translation_service):
         """English to Japanese returns single option with explanation"""
-        app_state.copilot_connected = True
+        app_state.copilot_ready = True
         app_state.source_text = "Hello, world"
 
         # Mock returns single option for EN->JP

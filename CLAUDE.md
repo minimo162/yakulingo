@@ -98,7 +98,10 @@ YakuLingo/
 │   └── settings.json              # User configuration
 ├── docs/
 │   └── SPECIFICATION.md           # Detailed technical specification
-├── installer/                     # Distribution installer files
+├── installer/                     # Distribution installer files (network share setup)
+├── launcher/                      # Native Windows launcher (Rust-based YakuLingo.exe)
+│   ├── Cargo.toml                 # Rust project configuration
+│   └── src/main.rs                # Launcher source code
 ├── glossary.csv                   # Default reference file (glossary, style guide, etc.)
 ├── pyproject.toml                 # Project metadata & dependencies
 ├── uv.lock                        # Lock file for reproducible builds
@@ -432,7 +435,22 @@ The `CopilotHandler` class automates Microsoft Edge browser:
 - Connects to Edge on CDP port 9333
 - Endpoint: `https://m365.cloud.microsoft/chat/?auth=2`
 - Handles Windows proxy detection from registry
-- Methods: `connect()`, `disconnect()`, `translate_sync()`
+- Methods: `connect()`, `disconnect()`, `translate_sync()`, `_verify_chat_input()`
+
+### Connection Flow
+The `connect()` method performs these steps:
+1. Checks if already connected (returns immediately if true)
+2. Connects to running Edge browser via CDP
+3. Looks for existing Copilot page or creates new one
+4. Navigates to Copilot URL with `wait_until='domcontentloaded'`
+5. Verifies chat input is usable via `_verify_chat_input()`
+6. Sets `_connected = True` if successful
+
+The `_verify_chat_input()` method validates the chat is ready:
+1. Waits for chat input element to be visible
+2. Types test text and verifies it's received
+3. Clears the test text
+4. Returns `True` if input is usable, `False` if blocked (login required, etc.)
 
 ### Copilot Character Limits
 M365 Copilot has different input limits based on license:
@@ -544,6 +562,13 @@ YakuLingo supports network share deployment:
 - Users run `setup.vbs` for one-click installation
 - See `DISTRIBUTION.md` for detailed instructions
 
+### Native Launcher
+The application includes a Rust-based native launcher (`YakuLingo.exe`):
+- Located in `launcher/` directory
+- Built automatically via GitHub Actions on release or launcher file changes
+- Handles Python venv setup and application startup
+- Replaces previous VBS scripts for cleaner, faster startup
+
 ## Language Note
 
 The AGENTS.md file specifies that all responses should be in Japanese (すべての回答とコメントは日本語で行ってください). When interacting with users in this repository, prefer Japanese for comments and explanations unless otherwise specified.
@@ -583,7 +608,13 @@ Based on recent commits:
 - **PDF OCR Improvements**: Better handling for CPU environments
 - **Auto-Update System**: GitHub Releases-based automatic updates with Windows proxy support
 - **Translation History**: SQLite-based local history storage
-- **Test Coverage Expansion**: 26 test files with ~85% coverage
+- **Test Coverage Expansion**: 26 test files with 1100+ tests
+- **Native Launcher**: Rust-based `YakuLingo.exe` for Windows distribution (replaces VBS scripts)
+- **Browser Connection Improvements**:
+  - `_verify_chat_input()` method validates Copilot is usable at startup
+  - Changed `wait_until='domcontentloaded'` for faster, more reliable page load
+  - Input validation moved from translation time to connection time
+- **Error Handling**: Added `BadZipFile` handling for corrupted Office documents
 
 ## Git Workflow
 

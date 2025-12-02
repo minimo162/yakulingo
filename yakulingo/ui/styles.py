@@ -515,20 +515,20 @@ body {
 }
 
 .drop-zone-text {
-    font-size: 1.0625rem;
+    font-size: 1.125rem;
     font-weight: 500;
     color: var(--md-sys-color-on-surface);
-    margin-bottom: 0.25rem;
+    margin-bottom: 0.375rem;
 }
 
 .drop-zone-subtext {
-    font-size: 0.9375rem;
+    font-size: 1rem;
     color: var(--md-sys-color-outline);
     margin-bottom: 0.75rem;
 }
 
 .drop-zone-hint {
-    font-size: 0.875rem;
+    font-size: 0.9375rem;
     color: var(--md-sys-color-on-surface-variant);
     background: var(--md-sys-color-surface-container);
     padding: 0.375rem 0.75rem;
@@ -866,9 +866,9 @@ body {
 .lang-btn {
     display: inline-flex;
     align-items: center;
-    gap: 0.25rem;
-    padding: 0.5rem 1rem;
-    font-size: 0.875rem;
+    gap: 0.375rem;
+    padding: 0.625rem 1.25rem;
+    font-size: 1rem;
     font-weight: 500;
     color: var(--md-sys-color-on-surface-variant);
     background: transparent;
@@ -908,15 +908,15 @@ body {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    padding: 0.375rem 0.75rem;
-    font-size: 0.75rem;
+    padding: 0.5rem 1rem;
+    font-size: 0.9375rem;
     font-weight: 500;
     color: var(--md-sys-color-on-surface-variant);
     background: transparent;
     border: none;
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
     cursor: pointer;
-    min-width: 4rem;
+    min-width: 4.5rem;
 }
 
 .style-btn-left {
@@ -2016,7 +2016,7 @@ a:hover {
 
 /* === File Panel Checkbox === */
 .pdf-mode-checkbox {
-    font-size: 0.875rem;
+    font-size: 1rem;
 }
 
 .pdf-mode-checkbox .q-checkbox__label {

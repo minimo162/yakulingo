@@ -167,35 +167,32 @@ VersionInfo(version, release_date, download_url, release_notes)
 ## Auto-Detected Translation Direction
 
 The application now auto-detects language direction:
-- **Japanese input** → English output (multiple translation options with inline adjustments)
-- **Non-Japanese input** → Japanese output (single translation + explanation + follow-up actions)
+- **Japanese input** → English output (single translation with inline adjustments)
+- **Non-Japanese input** → Japanese output (single translation + explanation + action buttons + inline input)
 
 No manual direction selection is required.
 
-## Nani-Inspired UI Features
+## Text Translation UI Features
 
-The text translation panel uses a Nani-inspired design with these features:
+### Japanese → English (英訳)
+- **Single translation output** with configurable style (標準/簡潔/最簡潔)
+- **Inline adjustment options**:
+  - Paired: カジュアルに↔ていねいに, 淡々と↔キャッチーに, もう少し短く↔より詳しく
+  - Single: ネイティブらしく自然に, AIっぽさを消して, 他の言い方は？
+- **Inline input**: Placeholder "例: もっとカジュアルに"
+- **Quick chip**: 「これはどう？」
 
-### Inline Adjustment Options (JP→EN)
-After translation, users can adjust results with paired and single options:
-```python
-# Paired adjustments
-('casual', 'カジュアルに') ↔ ('polite', 'ていねいに')
-('dry', '淡々と') ↔ ('engaging', 'キャッチーに')
-('shorter', 'もう少し短く') ↔ ('detailed', 'より詳しく')
+### English → Japanese (和訳)
+- **Single translation output** with detailed explanation
+- **Action buttons**: [英文をチェック] [要点を教えて]
+- **Inline input**: Placeholder "例: 返信の下書きを書いて"
 
-# Single adjustments
-('native', 'ネイティブらしく自然に')
-('less_ai', 'AIっぽさを消して')
-('alternatives', '他の言い方は？')
-```
-
-### Additional Features
+### Common Features
 - **Elapsed time badge**: Shows translation duration
-- **Gear icon**: Quick access to translation settings
+- **Settings dialog**: Translation style selector (標準/簡潔/最簡潔)
 - **Back-translate button**: Verify translations by translating back to original language
 - **Reference file attachment**: Attach glossary, style guide, or reference materials
-- **Accessibility**: ARIA labels and SVG titles for screen reader support
+- **Loading screen**: Shows spinner immediately on startup for faster perceived load time
 
 ## File Processor Pattern
 
@@ -402,6 +399,7 @@ sans-serif → Meiryo UI
   "last_tab": "text",
   "window_width": 1100,
   "window_height": 750,
+  "text_translation_style": "concise",
   "max_batch_size": 50,
   "max_chars_per_batch": 7000,
   "request_timeout": 120,
@@ -415,6 +413,8 @@ sans-serif → Meiryo UI
   "skipped_version": null
 }
 ```
+
+**text_translation_style values**: `"standard"`, `"concise"` (default), `"minimal"`
 
 ### Reference Files
 Reference files provide context for consistent translations:
@@ -578,38 +578,25 @@ The AGENTS.md file specifies that all responses should be in Japanese (すべて
 ## Recent Development Focus
 
 Based on recent commits:
-- **Performance Optimizations**:
-  - **Startup**: Lazy imports via `__getattr__` in `__init__.py` files defer heavy module loading (openpyxl, python-docx, python-pptx, PyMuPDF, Playwright) until first use
-  - **Database**: Thread-local SQLite connection pooling with WAL mode for better concurrent reads
-  - **Caching**: Reference file path resolution cached to avoid repeated I/O
-  - **Regex**: Pre-compiled patterns at module level in utils.py, translation_service.py, copilot_handler.py, font_manager.py
-  - **Language Detection**: Optimized `unicodedata.category()` calls with dedicated `_is_punctuation()` helper
-- **Bilingual Output**: All file processors (Excel, Word, PowerPoint, PDF) can generate bilingual output files with original and translated content side-by-side
-- **Glossary CSV Export**: Automatic extraction of source/translation pairs to CSV for terminology management
-- **Translation Completion Dialog**: Shows all output files (translated, bilingual, glossary) with "Open" and "Show in Folder" action buttons
-- **Reference File Feature**: Renamed glossary to reference_files for broader file support (CSV, TXT, PDF, Word, Excel, etc.)
-- **Nani-Inspired UI**: Inline adjustment buttons, gear icon for settings, elapsed time badge
+- **Startup Performance**:
+  - **Loading screen**: Shows spinner immediately via `await client.connected()` for faster perceived startup
+  - **Import optimization**: NiceGUI import moved inside `main()` to prevent double initialization in native mode (cuts startup time in half)
+  - **Lazy imports**: Heavy modules (openpyxl, python-docx, Playwright) deferred until first use via `__getattr__`
+- **Text Translation UI Simplification**:
+  - **Single output**: Changed from 3 translation options to 1 option with style setting
+  - **Style settings**: 標準/簡潔/最簡潔 configurable via settings dialog
+  - **Unified UI**: Both 英訳 and 和訳 now use inline input instead of dialogs
+  - **和訳 buttons**: Changed from [原文をレビュー][質問する][返信を作成] to [英文をチェック][要点を教えて]
+  - **Removed dialogs**: `_show_question_dialog` and `_show_reply_dialog` removed
+- **Settings Dialog**: Simplified to translation style only (removed batch size, timeout, retry settings from UI)
+- **Installation**: Desktop shortcut only (removed Start Menu entry)
+- **Bilingual Output**: All file processors generate bilingual output with original + translated content
+- **Glossary CSV Export**: Automatic extraction of source/translation pairs
+- **Reference File Feature**: Support for CSV, TXT, PDF, Word, Excel, PowerPoint, Markdown, JSON
 - **Back-Translate Feature**: Verify translations by translating back to original language
-- **Accessibility Improvements**: ARIA labels and SVG titles for screen reader support
-- **Code Quality Improvements**:
-  - Replaced broad `except Exception:` with specific exception types (PlaywrightError, OSError, etc.)
-  - Added try-finally blocks for proper file resource cleanup in Excel processor
-  - Added `_cleanup_on_error()` method for browser connection cleanup
-  - Updated deprecated `asyncio.get_event_loop()` to `asyncio.get_running_loop()`
-  - Moved regex compilation to class level for memory efficiency
-  - Replaced magic numbers with named constants in CopilotHandler
-  - Added DB_TIMEOUT constant for SQLite connections
-- **Copilot Free Compatibility**: Dynamic prompt switching with file attachment fallback for long prompts
-- **PDF OCR Improvements**: Better handling for CPU environments
-- **Auto-Update System**: GitHub Releases-based automatic updates with Windows proxy support
-- **Translation History**: SQLite-based local history storage
-- **Test Coverage Expansion**: 26 test files with 1100+ tests
-- **Native Launcher**: Rust-based `YakuLingo.exe` for Windows distribution (replaces VBS scripts)
-- **Browser Connection Improvements**:
-  - Fast navigation with `wait_until='commit'` to avoid blocking on persistent connections
-  - Wait for chat input element before stopping browser spinner
-  - `window.stop()` called to ensure browser loading indicator stops
-- **Error Handling**: Added `BadZipFile` handling for corrupted Office documents
+- **Auto-Update System**: GitHub Releases-based updates with Windows proxy support
+- **Native Launcher**: Rust-based `YakuLingo.exe` for Windows distribution
+- **Test Coverage**: 26 test files with 1114+ tests
 
 ## Git Workflow
 

@@ -72,7 +72,6 @@ share_package/            # 共有フォルダ用パッケージ
 ### 作成されるショートカット
 
 - デスクトップ: `YakuLingo.lnk`
-- スタートメニュー: `YakuLingo.lnk`
 
 ## セットアップの動作
 
@@ -164,11 +163,10 @@ powershell -ExecutionPolicy Bypass -File ".scripts\setup.ps1"
 
 1. `%LOCALAPPDATA%\YakuLingo`
 2. デスクトップの `YakuLingo.lnk`
-3. スタートメニューの `YakuLingo.lnk`
 
 ### 翻訳履歴も削除する場合
 
-4. `%USERPROFILE%\.yakulingo`
+3. `%USERPROFILE%\.yakulingo`
 
 ## システム要件
 

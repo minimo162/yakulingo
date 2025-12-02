@@ -22,8 +22,8 @@
 
 | 入力言語 | 出力 |
 |---------|------|
-| 日本語 | 英語（複数の訳文オプション付き） |
-| その他 | 日本語（解説・使用例付き） |
+| 日本語 | 英語（スタイル設定可、インライン調整可） |
+| その他 | 日本語（解説付き、アクションボタン付き） |
 
 手動での言語切り替えは不要です。
 
@@ -76,8 +76,9 @@ python app.py
 2. テキストエリアに翻訳したいテキストを入力
 3. **翻訳する** ボタンをクリック（または `Ctrl + Enter`）
 4. 翻訳結果が表示される
-   - 日本語入力時：複数の英語訳オプション
-   - その他入力時：日本語訳 + 解説
+   - **日本語入力時（英訳）**：英語訳 + インライン調整オプション
+   - **その他入力時（和訳）**：日本語訳 + 解説 + [英文をチェック][要点を教えて]ボタン
+5. インライン入力欄で追加のリクエストが可能（例: 「もっとカジュアルに」「返信の下書きを書いて」）
 
 ### ファイル翻訳
 
@@ -115,12 +116,12 @@ python app.py
   "last_tab": "text",
   "window_width": 1100,
   "window_height": 750,
-  "max_batch_size": 50,
-  "request_timeout": 120,
-  "max_retries": 3,
+  "text_translation_style": "concise",
   "auto_update_enabled": true
 }
 ```
+
+**翻訳スタイル** (`text_translation_style`): `"standard"`（標準）, `"concise"`（簡潔）, `"minimal"`（最簡潔）
 
 ### 参照ファイル
 
@@ -182,11 +183,11 @@ python app.py
 ### テストの実行
 
 ```bash
-# 全テスト実行
-pytest
+# 全テスト実行（uv推奨）
+uv run --extra test pytest
 
 # カバレッジ付き
-pytest --cov=yakulingo --cov-report=term-missing
+uv run --extra test pytest --cov=yakulingo --cov-report=term-missing
 ```
 
 ### 配布パッケージの作成
@@ -199,7 +200,6 @@ make_distribution.bat
 
 ```
 YakuLingo/
-├── run.vbs                   # 起動スクリプト
 ├── app.py                    # エントリーポイント
 ├── yakulingo/                # メインパッケージ
 │   ├── ui/                   # UIコンポーネント
@@ -208,6 +208,7 @@ YakuLingo/
 │   ├── storage/              # データ永続化（履歴）
 │   ├── config/               # 設定管理
 │   └── models/               # データモデル
+├── launcher/                 # ネイティブランチャー（Rust製）
 ├── tests/                    # テストスイート（26ファイル）
 ├── prompts/                  # 翻訳プロンプト
 ├── config/settings.json      # アプリ設定

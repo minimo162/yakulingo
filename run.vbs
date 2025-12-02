@@ -88,8 +88,8 @@ env("VIRTUAL_ENV") = venvDir
 env("PLAYWRIGHT_BROWSERS_PATH") = scriptDir & "\.playwright-browsers"
 env("PATH") = venvDir & "\Scripts;" & pythonDir & ";" & pythonDir & "\Scripts;" & env("PATH")
 
-' Show startup notification (non-blocking balloon tip)
-ShowStartupNotification
+' Show startup notification (instant popup - no PowerShell overhead)
+ShowStartupPopup
 
 ' Launch app silently using pythonw.exe (no console)
 objShell.CurrentDirectory = scriptDir
@@ -119,26 +119,23 @@ Function IsPortInUse(port)
     On Error GoTo 0
 End Function
 
-Sub ShowStartupNotification()
-    ' Show a Windows balloon notification that the app is starting
-    ' This provides immediate visual feedback to the user
+Sub ShowStartupPopup()
+    ' Show a quick popup notification that the app is starting
+    ' Uses VBS Popup which is instant (no PowerShell overhead)
+    ' Popup auto-closes after 2 seconds
     On Error Resume Next
 
-    Dim scriptPath, ps_command
+    ' Create a separate VBS to show popup asynchronously (non-blocking)
+    Dim tempVbs, tempPath
+    tempPath = objFSO.GetSpecialFolder(2) & "\yakulingo_startup.vbs"
 
-    ' Use PowerShell to show a toast notification (Windows 10+)
-    ps_command = "powershell -WindowStyle Hidden -Command """ & _
-        "[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null; " & _
-        "$template = [Windows.UI.Notifications.ToastTemplateType]::ToastText01; " & _
-        "$xml = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent($template); " & _
-        "$xml.GetElementsByTagName('text')[0].AppendChild($xml.CreateTextNode('Starting YakuLingo...')) | Out-Null; " & _
-        "$toast = [Windows.UI.Notifications.ToastNotification]::new($xml); " & _
-        "$toast.ExpirationTime = [DateTimeOffset]::Now.AddSeconds(3); " & _
-        "[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('YakuLingo').Show($toast)" & _
-        """"
+    Set tempVbs = objFSO.CreateTextFile(tempPath, True)
+    tempVbs.WriteLine "CreateObject(""WScript.Shell"").Popup ""Starting YakuLingo..."", 2, ""YakuLingo"", 64"
+    tempVbs.WriteLine "CreateObject(""Scripting.FileSystemObject"").DeleteFile WScript.ScriptFullName"
+    tempVbs.Close
 
-    ' Run notification asynchronously (don't wait)
-    objShell.Run ps_command, 0, False
+    ' Run popup asynchronously (don't block app startup)
+    objShell.Run "wscript """ & tempPath & """", 0, False
 
     On Error GoTo 0
 End Sub

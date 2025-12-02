@@ -247,6 +247,7 @@ def create_text_result_panel(
                     on_adjust,
                     on_back_translate,
                     elapsed_time,
+                    on_retry,
                 )
             else:
                 # →English: Multiple options with inline adjustment
@@ -406,6 +407,7 @@ def create_text_panel(
                     on_adjust,
                     on_back_translate,
                     elapsed_time,
+                    on_retry,
                 )
             else:
                 # →English: Multiple options with inline adjustment
@@ -492,6 +494,7 @@ def _render_results_to_jp(
     on_adjust: Optional[Callable[[str, str], None]] = None,
     on_back_translate: Optional[Callable[[str], None]] = None,
     elapsed_time: Optional[float] = None,
+    on_retry: Optional[Callable[[], None]] = None,
 ):
     """Render →Japanese results: single translation with detailed explanation + follow-up actions"""
 
@@ -538,23 +541,33 @@ def _render_results_to_jp(
                 with ui.element('div').classes('nani-explanation'):
                     _render_explanation(option.explanation)
 
-        # Follow-up actions section
-        with ui.element('div').classes('follow-up-section w-full mt-4'):
-            with ui.column().classes('w-full gap-2'):
-                with ui.row().classes('w-full gap-2 flex-wrap'):
-                    # Check original English text
-                    ui.button(
-                        '英文をチェック',
-                        icon='rate_review',
-                        on_click=lambda: on_follow_up and on_follow_up('review', source_text)
-                    ).props('outline no-caps').classes('follow-up-btn')
+        # Suggestion hint with retry button (吹き出し風)
+        with ui.element('div').classes('suggestion-hint-row'):
+            ui.icon('lightbulb').classes('suggestion-hint-icon')
+            if on_retry:
+                retry_btn = ui.button(
+                    '再翻訳',
+                    icon='refresh',
+                    on_click=on_retry
+                ).props('flat no-caps size=sm').classes('retry-btn')
+                retry_btn.tooltip('もう一度翻訳する')
 
-                    # Extract key points
-                    ui.button(
-                        '要点を教えて',
-                        icon='summarize',
-                        on_click=lambda: on_follow_up and on_follow_up('summarize', source_text)
-                    ).props('outline no-caps').classes('follow-up-btn')
+        # Follow-up actions section (single options style)
+        with ui.element('div').classes('inline-adjust-panel'):
+            with ui.column().classes('gap-2'):
+                # Check original English text
+                ui.button(
+                    '英文をチェック',
+                    icon='rate_review',
+                    on_click=lambda: on_follow_up and on_follow_up('review', source_text)
+                ).props('flat no-caps').classes('adjust-option-btn-full')
+
+                # Extract key points
+                ui.button(
+                    '要点を教えて',
+                    icon='summarize',
+                    on_click=lambda: on_follow_up and on_follow_up('summarize', source_text)
+                ).props('flat no-caps').classes('adjust-option-btn-full')
 
         # Inline input section for additional requests
         if on_adjust:
@@ -687,20 +700,16 @@ def _render_inline_adjust_section(
     """Render inline adjustment options section"""
 
     with ui.element('div').classes('inline-adjust-section'):
-        # Connector line with retry button
-        with ui.element('div').classes('inline-adjust-connector'):
-            with ui.element('div').classes('connector-line'):
-                with ui.element('div').classes('connector-branch'):
-                    pass
-                # Retry button (clickable)
-                if on_retry:
-                    retry_btn = ui.button(
-                        icon='refresh',
-                        on_click=on_retry
-                    ).props('flat dense round size=sm').classes('connector-btn')
-                    retry_btn.tooltip('再翻訳')
-                else:
-                    ui.icon('tune').classes('connector-icon text-sm')
+        # Suggestion hint with retry button (吹き出し風)
+        with ui.element('div').classes('suggestion-hint-row'):
+            ui.icon('lightbulb').classes('suggestion-hint-icon')
+            if on_retry:
+                retry_btn = ui.button(
+                    '再翻訳',
+                    icon='refresh',
+                    on_click=on_retry
+                ).props('flat no-caps size=sm').classes('retry-btn')
+                retry_btn.tooltip('もう一度翻訳する')
 
         # Adjustment options panel
         with ui.element('div').classes('inline-adjust-panel'):
@@ -725,21 +734,13 @@ def _render_inline_adjust_section(
                         on_click=lambda k=key: on_adjust(text, k)
                     ).props('flat no-caps').classes('adjust-option-btn-full')
 
-        # Inline question input
+        # Inline question input (without quick chip)
         with ui.element('div').classes('inline-question-section'):
             with ui.row().classes('gap-2 items-end w-full'):
-                with ui.column().classes('flex-1 gap-1'):
-                    # Quick suggestion chip
-                    with ui.row().classes('items-center gap-1'):
-                        ui.button(
-                            'これはどう？',
-                            on_click=lambda: on_adjust(text, 'これはどう？')
-                        ).props('flat no-caps dense').classes('quick-chip')
-
-                    # Text input for adjustment requests
-                    question_input = ui.input(
-                        placeholder='例: もっとカジュアルに'
-                    ).classes('w-full question-input')
+                # Text input for adjustment requests
+                question_input = ui.input(
+                    placeholder='例: もっとカジュアルに'
+                ).classes('w-full question-input flex-1')
 
                 # Send button
                 def send_question():

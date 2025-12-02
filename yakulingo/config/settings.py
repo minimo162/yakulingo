@@ -30,7 +30,7 @@ class AppSettings:
 
     # UI
     last_tab: str = "text"
-    window_width: int = 1200
+    window_width: int = 1400  # 3カラムレイアウト対応
     window_height: int = 850
 
     # Advanced

@@ -256,20 +256,49 @@ class YakuLingoApp:
             self._translate_button.props(':disable=false')
 
     def create_ui(self):
-        """Create the UI - Nani-inspired sidebar layout"""
+        """Create the UI - Nani-inspired 3-column layout"""
         # Viewport for proper scaling on all displays
         ui.add_head_html('<meta name="viewport" content="width=device-width, initial-scale=1.0">')
         ui.add_head_html(f'<style>{COMPLETE_CSS}</style>')
 
-        # Main container with sidebar
-        with ui.row().classes('w-full min-h-screen'):
-            # Left Sidebar
+        # 3-column layout container
+        with ui.element('div').classes('app-container'):
+            # Left Sidebar (tabs + history)
             with ui.column().classes('sidebar'):
                 self._create_sidebar()
 
-            # Main content area
-            with ui.column().classes('main-area'):
+            # Mobile header (hidden on large screens)
+            self._create_mobile_header()
+
+            # Main area (input panel + result panel)
+            with ui.element('div').classes('main-area'):
                 self._create_main_content()
+
+    def _create_mobile_header(self):
+        """Create mobile header with hamburger menu (hidden on large screens)"""
+        with ui.element('div').classes('mobile-header'):
+            # Hamburger menu button
+            ui.button(
+                icon='menu',
+                on_click=self._toggle_mobile_sidebar
+            ).props('flat dense round').classes('mobile-header-btn')
+
+            # Logo
+            ui.label('YakuLingo').classes('app-logo flex-1')
+
+    def _toggle_mobile_sidebar(self):
+        """Toggle mobile sidebar visibility"""
+        # This will be handled by JavaScript/CSS
+        ui.run_javascript('''
+            const sidebar = document.querySelector('.sidebar');
+            const overlay = document.querySelector('.sidebar-overlay');
+            if (sidebar) {
+                sidebar.classList.toggle('mobile-visible');
+            }
+            if (overlay) {
+                overlay.classList.toggle('visible');
+            }
+        ''')
 
     def _create_sidebar(self):
         """Create left sidebar with logo, nav, and history"""
@@ -398,31 +427,41 @@ class YakuLingoApp:
                 ).props('flat dense round size=xs').classes('history-delete-btn')
 
     def _create_main_content(self):
-        """Create main content area"""
+        """Create main content area with 3-column layout for text, single column for file"""
         # Lazy import UI components for faster startup
-        from yakulingo.ui.components.text_panel import create_text_panel
+        from yakulingo.ui.components.text_panel import create_text_input_panel, create_text_result_panel
         from yakulingo.ui.components.file_panel import create_file_panel
 
         @ui.refreshable
         def main_content():
-            with ui.column().classes('w-full max-w-2xl mx-auto px-6 py-8 flex-1'):
-                if self.state.current_tab == Tab.TEXT:
-                    create_text_panel(
+            if self.state.current_tab == Tab.TEXT:
+                # 3-column layout: Input panel (left) + Result panel (right)
+                # Input panel (middle column - sticky)
+                with ui.column().classes('input-panel'):
+                    create_text_input_panel(
                         state=self.state,
                         on_translate=self._translate_text,
                         on_source_change=self._on_source_change,
-                        on_copy=self._copy_text,
                         on_clear=self._clear,
-                        on_adjust=self._adjust_text,
-                        on_follow_up=self._follow_up_action,
                         on_attach_reference_file=self._attach_reference_file,
                         on_remove_reference_file=self._remove_reference_file,
-                        on_back_translate=self._back_translate,
                         on_settings=self._show_settings_dialog,
-                        on_retry=self._retry_translation,
                         on_translate_button_created=self._on_translate_button_created,
                     )
-                else:
+
+                # Result panel (right column - scrollable)
+                with ui.column().classes('result-panel'):
+                    create_text_result_panel(
+                        state=self.state,
+                        on_copy=self._copy_text,
+                        on_adjust=self._adjust_text,
+                        on_follow_up=self._follow_up_action,
+                        on_back_translate=self._back_translate,
+                        on_retry=self._retry_translation,
+                    )
+            else:
+                # File panel: single column layout (centered)
+                with ui.column().classes('w-full max-w-2xl mx-auto px-6 py-8 flex-1'):
                     create_file_panel(
                         state=self.state,
                         on_file_select=self._select_file,

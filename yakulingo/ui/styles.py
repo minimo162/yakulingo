@@ -104,7 +104,12 @@ COMPLETE_CSS = """
     --md-sys-elevation-2: 0 4px 12px rgba(0,0,0,0.06), 0 2px 4px rgba(0,0,0,0.04);
 
     /* Sidebar */
-    --sidebar-width: 280px;
+    --sidebar-width: 220px;
+
+    /* 3-Column Layout (Nani-inspired) */
+    --input-panel-width: 320px;
+    --bp-with-sidebar: 1200px;  /* Breakpoint for sidebar visibility */
+    --bp-single-column: 800px;  /* Breakpoint for single column */
 }
 
 /* === Base === */
@@ -135,6 +140,13 @@ body {
     -moz-osx-font-smoothing: grayscale;
 }
 
+/* === 3-Column Layout Container === */
+.app-container {
+    display: flex;
+    min-height: 100vh;
+    width: 100%;
+}
+
 /* === Sidebar Layout === */
 .sidebar {
     width: var(--sidebar-width);
@@ -156,12 +168,50 @@ body {
     padding: 0.5rem 0.5rem 0.75rem;
 }
 
+/* === 3-Column Main Layout === */
 .main-area {
     margin-left: var(--sidebar-width);
     flex: 1;
     min-height: 100vh;
     display: flex;
+    flex-direction: row;
+}
+
+/* Input Panel (Middle Column - Sticky) */
+.input-panel {
+    width: var(--input-panel-width);
+    min-width: var(--input-panel-width);
+    height: 100vh;
+    position: sticky;
+    top: 0;
+    padding: 1.5rem;
+    display: flex;
     flex-direction: column;
+    background: var(--md-sys-color-surface);
+    border-right: 1px solid var(--md-sys-color-outline-variant);
+    overflow-y: auto;
+}
+
+/* Result Panel (Right Column - Scrollable) */
+.result-panel {
+    flex: 1;
+    min-height: 100vh;
+    padding: 1.5rem 2rem;
+    overflow-y: auto;
+}
+
+/* Empty Result State Placeholder */
+.empty-result-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    min-height: 200px;
+    padding: 2rem;
+    border: 2px dashed var(--md-sys-color-outline-variant);
+    border-radius: var(--md-sys-shape-corner-large);
+    background-color: var(--md-sys-color-surface-container-low);
 }
 
 /* === Logo === */
@@ -836,85 +886,45 @@ body {
     to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
-/* === Responsive Design === */
-@media (max-width: 1024px) {
-    :root {
-        --sidebar-width: 240px;
-    }
-}
+/* === Responsive Design (Nani-inspired breakpoints) === */
 
-@media (max-width: 768px) {
-    :root {
-        --sidebar-width: 100%;
+/* Large screens: 3-column layout (default) */
+/* sidebar (220px) + input (320px) + results (remaining) */
+
+/* Medium screens: 2-column layout (hide sidebar) */
+@media (max-width: 1200px) {
+    .sidebar {
+        display: none;
     }
 
     .main-area {
         margin-left: 0;
     }
 
-    .sidebar {
+    /* Show mobile header with hamburger menu */
+    .mobile-header {
+        display: flex;
+    }
+}
+
+/* Small screens: 1-column layout (stacked) */
+@media (max-width: 800px) {
+    .main-area {
+        flex-direction: column;
+    }
+
+    .input-panel {
         width: 100%;
+        min-width: 100%;
         height: auto;
         position: relative;
         border-right: none;
         border-bottom: 1px solid var(--md-sys-color-outline-variant);
-        padding: 0.75rem;
+        padding: 1rem;
     }
 
-    .sidebar-header {
-        padding: 0.25rem 0.5rem 0.5rem;
-    }
-
-    .sidebar-nav {
-        flex-direction: row;
-        gap: 0.5rem;
-        margin-top: 0.25rem;
-    }
-
-    .nav-item {
-        flex: 1;
-        justify-content: center;
-        padding: 0.5rem 0.75rem;
-    }
-
-    .sidebar-history {
-        display: flex;
-        flex-direction: row;
-        min-height: auto;
-        overflow: hidden;
-        padding: 0.5rem 0;
-    }
-
-    .sidebar-history > .items-center {
-        display: none;  /* Hide header on mobile */
-    }
-
-    .history-scroll {
-        max-height: 80px;
-        overflow-x: auto;
-        overflow-y: hidden;
-    }
-
-    .history-scroll > .column {
-        flex-direction: row;
-        gap: 0.5rem;
-        padding: 0 0.5rem;
-    }
-
-    .history-item {
-        flex-shrink: 0;
-        max-width: 150px;
-        padding: 0.5rem;
-        background: var(--md-sys-color-surface-container);
-        border-radius: var(--md-sys-shape-corner-small);
-    }
-
-    .history-item .column {
-        max-width: 120px;
-    }
-
-    .history-delete-btn {
-        display: none;  /* Hide delete on mobile for space */
+    .result-panel {
+        padding: 1rem;
     }
 
     /* Improve touch targets on mobile */
@@ -923,6 +933,80 @@ body {
     .btn-outline {
         min-height: 44px;
         padding: 0.75rem 1.25rem;
+    }
+}
+
+/* Mobile header (hidden on large screens) */
+.mobile-header {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3.5rem;
+    background: var(--md-sys-color-surface);
+    border-bottom: 1px solid var(--md-sys-color-outline-variant);
+    padding: 0 1rem;
+    align-items: center;
+    gap: 0.75rem;
+    z-index: 200;
+}
+
+.mobile-header-btn {
+    width: 2.5rem;
+    height: 2.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--md-sys-shape-corner-full);
+    background: transparent;
+    color: var(--md-sys-color-on-surface);
+    border: none;
+    cursor: pointer;
+    transition: background var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+}
+
+.mobile-header-btn:hover {
+    background: var(--md-sys-color-surface-container);
+}
+
+/* Mobile sidebar overlay */
+.sidebar-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.25);
+    backdrop-filter: blur(4px);
+    z-index: 150;
+    animation: fadeIn var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+}
+
+.sidebar-overlay.visible {
+    display: block;
+}
+
+/* Mobile sidebar (slide-in) */
+.sidebar.mobile-visible {
+    display: flex;
+    animation: slideInLeft var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-standard);
+}
+
+@keyframes slideInLeft {
+    from {
+        transform: translateX(-100%);
+    }
+    to {
+        transform: translateX(0);
+    }
+}
+
+/* Adjust main area when mobile header is visible */
+@media (max-width: 1200px) {
+    .main-area {
+        padding-top: 3.5rem;
     }
 }
 

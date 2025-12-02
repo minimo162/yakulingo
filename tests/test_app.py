@@ -593,29 +593,18 @@ class TestCopilotConnectionFlow:
                     yield app, mock_copilot
 
     def test_initial_connection_state(self, app_with_copilot):
-        """Test initial state is disconnected"""
+        """Test initial state is not ready"""
         app, mock_copilot = app_with_copilot
-        assert app.state.copilot_connected is False
-        assert app.state.copilot_connecting is False
+        assert app.state.copilot_ready is False
 
-    def test_connecting_state_during_connection(self, app_with_copilot):
-        """Test connecting state is set during connection attempt"""
-        app, mock_copilot = app_with_copilot
-
-        # Simulate setting connecting state
-        app.state.copilot_connecting = True
-        assert app.state.copilot_connecting is True
-
-    def test_connected_state_after_success(self, app_with_copilot):
-        """Test connected state after successful connection"""
+    def test_ready_state_after_success(self, app_with_copilot):
+        """Test ready state after successful connection"""
         app, mock_copilot = app_with_copilot
 
         # Simulate successful connection
-        app.state.copilot_connected = True
-        app.state.copilot_connecting = False
+        app.state.copilot_ready = True
 
-        assert app.state.copilot_connected is True
-        assert app.state.copilot_connecting is False
+        assert app.state.copilot_ready is True
 
 
 class TestLanguageSelection:

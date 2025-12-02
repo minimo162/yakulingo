@@ -122,6 +122,26 @@ class CopilotHandler:
     # Trigger text for file attachment mode
     FILE_ATTACHMENT_TRIGGER = "Please follow the instructions in the attached file and translate accordingly."
 
+    # URL patterns for Copilot detection (login complete check)
+    # These domains indicate we are on a Copilot page
+    COPILOT_URL_PATTERNS = (
+        'm365.cloud.microsoft',
+        'copilot.microsoft.com',
+        'microsoft365.com/chat',
+        'bing.com/chat',
+    )
+
+    # CSS selectors for chat UI detection (in priority order)
+    # If any of these exist, the user is logged in and ready
+    CHAT_UI_SELECTORS = (
+        '#m365-chat-editor-target-element',      # Primary: Copilot chat input ID
+        '[data-lexical-editor="true"]',          # Lexical editor attribute
+        'div[role="textbox"][contenteditable]',  # Role-based textbox
+        'textarea[placeholder*="message"]',      # Message input textarea
+        '[contenteditable="true"][role="combobox"]',  # Combobox contenteditable
+        'div.cib-serp-main',                     # Bing Copilot main container
+    )
+
     def __init__(self):
         self._playwright = None
         self._browser = None
@@ -153,6 +173,23 @@ class CopilotHandler:
             if Path(path).exists():
                 return path
         return None
+
+    def start_edge(self) -> bool:
+        """
+        Start Edge browser early (without Playwright connection).
+
+        Call this method early in the app startup to reduce perceived latency.
+        The connect() method will then skip Edge startup if it's already running.
+
+        Returns:
+            True if Edge is now running on our CDP port
+        """
+        if self._is_port_in_use():
+            logger.debug("Edge already running on port %d", self.cdp_port)
+            return True
+
+        logger.info("Starting Edge early...")
+        return self._start_translator_edge()
 
     def _is_port_in_use(self) -> bool:
         """Check if our CDP port is in use"""
@@ -473,34 +510,39 @@ class CopilotHandler:
 
         try:
             current_url = self._page.url
+            logger.debug("Checking Copilot state - current URL: %s", current_url)
 
-            # 1. Copilot URLにいるか確認
-            if 'm365.cloud.microsoft' not in current_url:
+            # 1. Copilot URLにいるか確認（複数のドメインパターンをサポート）
+            is_copilot_url = any(
+                pattern in current_url for pattern in self.COPILOT_URL_PATTERNS
+            )
+            if not is_copilot_url:
                 # リダイレクトされた = ログインが必要
+                logger.debug("URL does not match any Copilot patterns, login required")
                 return ConnectionState.LOGIN_REQUIRED
 
-            # 2. チャットUIが存在するか確認（短いタイムアウト）
-            # 実際のCopilot HTML: <span role="combobox" contenteditable="true" id="m365-chat-editor-target-element" ...>
-            # Performance: Use combined CSS selector to check all at once instead of sequential timeouts
-            combined_selector = (
-                '#m365-chat-editor-target-element, '  # 最も確実 - Copilotのチャット入力ID
-                '[data-lexical-editor="true"], '      # Lexicalエディタの属性
-                '[contenteditable="true"]'            # 一般的なcontenteditable（要素タイプ非依存）
-            )
+            logger.debug("URL matches Copilot pattern, checking for chat UI...")
+
+            # 2. チャットUIが存在するか確認（複数のセレクタを試行）
+            # Performance: Use combined CSS selector to check all at once
+            combined_selector = ', '.join(self.CHAT_UI_SELECTORS)
+            logger.debug("Using combined selector: %s", combined_selector)
 
             try:
                 element = self._page.wait_for_selector(combined_selector, timeout=timeout * 1000)
                 if element:
+                    logger.debug("Chat UI found - login complete")
                     return ConnectionState.READY
             except PlaywrightTimeoutError:
                 # None of the selectors found within timeout
-                pass
-            except PlaywrightError:
+                logger.debug("Chat UI not found within timeout (%ds)", timeout)
+            except PlaywrightError as e:
                 # Other Playwright errors
-                pass
+                logger.debug("Playwright error while checking chat UI: %s", e)
 
             # 3. Copilot URLにいるがチャットUIがない
             # = 埋め込みログイン画面、または読み込み中
+            logger.debug("On Copilot URL but chat UI not found - login required")
             return ConnectionState.LOGIN_REQUIRED
 
         except (PlaywrightError, PlaywrightTimeoutError) as e:

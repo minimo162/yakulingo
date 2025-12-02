@@ -490,9 +490,18 @@ body {
     overflow: visible !important;
 }
 
-/* Hide Quasar uploader slot content wrapper if any */
-.drop-zone .q-uploader__slot {
-    display: none !important;
+/* Ensure custom content inside drop zone doesn't block clicks */
+.drop-zone > *:not(.q-uploader) {
+    pointer-events: none;
+}
+
+.drop-zone-icon,
+.drop-zone-text,
+.drop-zone-subtext,
+.drop-zone-hint {
+    pointer-events: none;
+    position: relative;
+    z-index: 1;
 }
 
 .drop-zone:hover {

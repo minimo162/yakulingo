@@ -96,10 +96,12 @@ def create_file_panel(
                     with ui.row().classes('gap-3 mt-4 justify-center'):
                         ui.button('別のファイルを選択', on_click=on_reset).classes('btn-outline')
 
-        # Hint text
-        with ui.row().classes('items-center gap-1 text-muted justify-center'):
-            ui.icon('auto_awesome').classes('text-sm')
-            ui.label('M365 Copilot による翻訳').classes('text-2xs')
+        # Hint text (outside main-card for visibility)
+        if state.file_state == FileState.EMPTY:
+            with ui.element('div').classes('hint-section'):
+                with ui.element('div').classes('hint-secondary'):
+                    ui.icon('auto_awesome').classes('text-sm')
+                    ui.label('M365 Copilot による翻訳')
 
 
 def _language_selector(state: AppState, on_change: Optional[Callable[[str], None]]):

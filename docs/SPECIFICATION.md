@@ -175,11 +175,11 @@ YakuLingo/
 │   └── test_*.py
 │
 ├── prompts/                        # 翻訳プロンプト
-│   ├── translate_to_en.txt         # ファイル翻訳用（日→英）
-│   ├── translate_to_jp.txt         # ファイル翻訳用（英→日）
-│   ├── text_translate_to_en.txt    # テキスト翻訳用（日→英）
-│   ├── text_translate_to_jp.txt    # テキスト翻訳用（英→日）
-│   └── ... (調整用・特殊用途プロンプト)
+│   ├── file_translate_to_en.txt    # ファイル翻訳用（日→英）
+│   ├── file_translate_to_jp.txt    # ファイル翻訳用（英→日）
+│   ├── text_translate_to_en.txt    # テキスト翻訳用（日→英、スタイル設定付き）
+│   ├── text_translate_to_jp.txt    # テキスト翻訳用（英→日、解説付き）
+│   └── adjust_*.txt, text_*.txt    # 調整・フォローアップ用
 │
 ├── config/
 │   └── settings.json               # ユーザー設定
@@ -502,30 +502,30 @@ NiceGUIの`await client.connected()`パターンを使用して、クライア�
 
 ```css
 :root {
-  /* Primary - warm coral palette */
-  --md-sys-color-primary: #C04000;
-  --md-sys-color-primary-container: #FFDBD0;
+  /* Primary - Professional indigo palette */
+  --md-sys-color-primary: #4355B9;
+  --md-sys-color-primary-container: #DEE0FF;
   --md-sys-color-on-primary: #FFFFFF;
-  --md-sys-color-on-primary-container: #3A0A00;
+  --md-sys-color-on-primary-container: #00105C;
 
-  /* Secondary */
-  --md-sys-color-secondary: #77574D;
-  --md-sys-color-secondary-container: #FFDBD0;
+  /* Secondary - Neutral blue-gray */
+  --md-sys-color-secondary: #595D72;
+  --md-sys-color-secondary-container: #DDE1F9;
 
   /* Surface */
-  --md-sys-color-surface: #FFFBFF;
-  --md-sys-color-surface-container: #F3EDE9;
-  --md-sys-color-surface-container-high: #EDE7E3;
-  --md-sys-color-on-surface: #231917;
-  --md-sys-color-on-surface-variant: #534340;
+  --md-sys-color-surface: #FEFBFF;
+  --md-sys-color-surface-container: #F2EFF4;
+  --md-sys-color-surface-container-high: #ECE9EE;
+  --md-sys-color-on-surface: #1B1B1F;
+  --md-sys-color-on-surface-variant: #46464F;
 
   /* Outline */
-  --md-sys-color-outline: #85736E;
-  --md-sys-color-outline-variant: #D8C2BC;
+  --md-sys-color-outline: #777680;
+  --md-sys-color-outline-variant: #C7C5D0;
 
   /* Status */
   --md-sys-color-error: #BA1A1A;
-  --md-sys-color-success: #2E7D32;
+  --md-sys-color-success: #1B6B3D;
 }
 ```
 
@@ -534,9 +534,9 @@ NiceGUIの`await client.connected()`パターンを使用して、クライア�
 ```css
 :root {
   --md-sys-shape-corner-full: 9999px;   /* Pills, FABs */
-  --md-sys-shape-corner-large: 16px;    /* Cards, Dialogs */
-  --md-sys-shape-corner-medium: 12px;   /* Text fields */
-  --md-sys-shape-corner-small: 8px;     /* Chips */
+  --md-sys-shape-corner-large: 20px;    /* Cards, Dialogs */
+  --md-sys-shape-corner-medium: 16px;   /* Inputs, Chips */
+  --md-sys-shape-corner-small: 12px;    /* Small elements */
 }
 ```
 
@@ -874,7 +874,7 @@ class PromptBuilder:
     def build(input_text, has_reference_files) -> str:
         """
         1. 言語を自動検出
-        2. 適切なテンプレート選択（prompts/translate_*.txt）
+        2. 適切なテンプレート選択（prompts/file_translate_*.txt）
         3. 参照ファイル指示を挿入（添付時のみ）
         4. 入力テキストを埋め込み
         """

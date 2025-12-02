@@ -19,18 +19,6 @@ from yakulingo.models.types import TranslationOption, TextTranslationResult
 logger = logging.getLogger(__name__)
 
 
-# Tone icons for translation explanations (for →en)
-TONE_ICONS: dict[str, str] = {
-    'formal': 'business_center',
-    'business': 'business_center',
-    'casual': 'chat_bubble',
-    'conversational': 'chat_bubble',
-    'literary': 'menu_book',
-    'polite': 'sentiment_satisfied',
-    'direct': 'arrow_forward',
-    'neutral': 'remove',
-}
-
 # Action icons for →jp follow-up features
 ACTION_ICONS: dict[str, str] = {
     'review': 'rate_review',
@@ -98,15 +86,6 @@ LANG_DETECT_SVG: str = '''
     </g>
 </svg>
 '''
-
-
-def _get_tone_icon(explanation: str) -> str:
-    """Get icon based on explanation keywords"""
-    explanation_lower = explanation.lower()
-    for keyword, icon in TONE_ICONS.items():
-        if keyword in explanation_lower:
-            return icon
-    return 'translate'
 
 
 def create_text_input_panel(
@@ -613,38 +592,33 @@ def _render_option_en(
 ):
     """Render a single English translation option as a card"""
 
-    tone_icon = _get_tone_icon(option.explanation)
-
     with ui.card().classes('option-card w-full'):
         with ui.column().classes('w-full gap-2'):
-            # Header with tone indicator
-            with ui.row().classes('w-full items-center gap-2'):
-                ui.icon(tone_icon).classes('text-primary text-base')
-                ui.label(f'{option.char_count} 文字').classes('text-xs text-muted')
+            # Translation text with character count
+            with ui.row().classes('w-full items-start gap-2'):
+                ui.label(option.text).classes('option-text py-1 flex-1')
+                ui.label(f'{option.char_count} 文字').classes('text-xs text-muted whitespace-nowrap')
 
-            # Translation text
-            ui.label(option.text).classes('option-text py-1')
+            # Actions row
+            with ui.row().classes('w-full justify-end items-center gap-1'):
+                # Copy button
+                ui.button(
+                    icon='content_copy',
+                    on_click=lambda o=option: on_copy(o.text)
+                ).props('flat dense round size=sm aria-label="コピー"').classes('option-action').tooltip('コピー')
 
-            # Explanation and actions row
-            with ui.row().classes('w-full justify-between items-center mt-1'):
-                # Explanation
-                ui.label(option.explanation).classes('text-xs text-muted flex-1 italic')
-
-                # Actions
-                with ui.row().classes('items-center gap-1'):
-                    # Copy button
+                # Back-translate button
+                if on_back_translate:
                     ui.button(
-                        icon='content_copy',
-                        on_click=lambda o=option: on_copy(o.text)
-                    ).props('flat dense round size=sm aria-label="コピー"').classes('option-action').tooltip('コピー')
+                        '戻し訳',
+                        icon='g_translate',
+                        on_click=lambda o=option: on_back_translate(o.text)
+                    ).props('flat no-caps size=sm').classes('back-translate-btn').tooltip('別のAIモデルで日本語に戻してチェック')
 
-                    # Back-translate button
-                    if on_back_translate:
-                        ui.button(
-                            '戻し訳',
-                            icon='g_translate',
-                            on_click=lambda o=option: on_back_translate(o.text)
-                        ).props('flat no-caps size=sm').classes('back-translate-btn').tooltip('別のAIモデルで日本語に戻してチェック')
+            # Detailed explanation section (same style as JP)
+            if option.explanation:
+                with ui.element('div').classes('nani-explanation'):
+                    _render_explanation(option.explanation)
 
 
 def _show_adjust_dialog(text: str, on_adjust: Callable[[str, str], None]):

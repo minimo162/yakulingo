@@ -753,7 +753,7 @@ class YakuLingoApp:
         Build prompt for follow-up actions.
 
         Args:
-            action_type: 'review', 'question', 'reply', or 'explain_more'
+            action_type: 'review', 'summarize', 'question', 'reply', or 'explain_more'
             source_text: Original source text
             translation: Current translation
             content: Additional content (question text, reply intent, etc.)
@@ -878,6 +878,33 @@ class YakuLingoApp:
                     '{input_text}': source_text,
                     '{translation}': translation,
                     '{reply_intent}': content,
+                }
+            },
+            'summarize': {
+                'file': 'text_summarize.txt',
+                'fallback': f"""以下の英文の要点を箇条書きで抽出してください。
+
+原文:
+{source_text}
+
+日本語訳:
+{translation}
+
+タスク:
+- 原文の要点を3〜5個の箇条書きで簡潔にまとめる
+- 各ポイントは1行で簡潔に
+- 重要度の高い順に並べる
+- ビジネスで重要なアクションアイテムがあれば明記
+
+出力形式:
+訳文: （要点のサマリータイトル）
+解説:
+- （要点1）
+- （要点2）
+- （要点3）""",
+                'replacements': {
+                    '{input_text}': source_text,
+                    '{translation}': translation,
                 }
             },
         }

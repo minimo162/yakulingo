@@ -312,20 +312,23 @@ class CopilotHandler:
             else:
                 self._context = self._browser.new_context()
 
-            # Navigate to Copilot
-            logger.info("Opening Copilot...")
+            # Check if Copilot page already exists
+            logger.info("Checking for existing Copilot page...")
             pages = self._context.pages
             copilot_page = None
 
             for page in pages:
                 if "m365.cloud.microsoft" in page.url:
                     copilot_page = page
+                    logger.info("Found existing Copilot page")
                     break
 
+            # If no Copilot page, create and navigate (don't wait for load)
             if not copilot_page:
                 copilot_page = self._context.new_page()
-                # Use domcontentloaded for faster navigation (don't wait for all resources)
-                copilot_page.goto(self.COPILOT_URL, wait_until='domcontentloaded')
+                # Start navigation but don't wait - user will see page loading
+                logger.info("Navigating to Copilot (not waiting for load)...")
+                copilot_page.goto(self.COPILOT_URL, wait_until='commit')
 
             self._page = copilot_page
             self._connected = True

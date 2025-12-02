@@ -1130,21 +1130,13 @@ def create_app() -> YakuLingoApp:
 
 def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
     """Run the application"""
-    import concurrent.futures
     from nicegui import app as nicegui_app
 
     yakulingo_app = create_app()
 
-    # Start Edge browser in parallel with UI initialization
-    # This runs in a background thread while NiceGUI window is being created
-    edge_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-    edge_future = edge_executor.submit(yakulingo_app.copilot.connect)
-
     def cleanup():
         """Clean up resources on shutdown."""
         logger.info("Shutting down YakuLingo...")
-        # Shutdown executor
-        edge_executor.shutdown(wait=False)
         # Disconnect from Copilot (close Edge browser)
         if yakulingo_app._copilot is not None:
             try:
@@ -1160,8 +1152,8 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
     async def main_page():
         # Create UI first (show window immediately)
         yakulingo_app.create_ui()
-        # Wait for Edge connection result and start other background tasks
-        asyncio.create_task(yakulingo_app.wait_for_edge_connection(edge_future))
+        # Start Edge connection AFTER UI is displayed
+        asyncio.create_task(yakulingo_app.start_edge_and_connect())
         asyncio.create_task(yakulingo_app.check_for_updates())
 
     # Scale window size based on screen resolution

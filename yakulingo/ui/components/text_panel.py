@@ -550,23 +550,23 @@ def _render_results_to_jp(
                 ui.label('次のアクション').classes('text-xs text-muted font-semibold mb-1')
 
                 with ui.row().classes('w-full gap-2 flex-wrap'):
-                    # Review original text
+                    # Check original English text
                     ui.button(
-                        '原文をレビュー',
+                        '英文をチェック',
                         icon='rate_review',
                         on_click=lambda: on_follow_up and on_follow_up('review', source_text)
                     ).props('outline no-caps').classes('follow-up-btn')
 
-                    # Ask question about translation
+                    # Ask for more details
                     ui.button(
-                        '質問する',
+                        '詳しく聞く',
                         icon='help_outline',
                         on_click=lambda: _show_question_dialog(source_text, option.text, on_follow_up)
                     ).props('outline no-caps').classes('follow-up-btn')
 
-                    # Create reply
+                    # Draft a reply
                     ui.button(
-                        '返信を作成',
+                        '返信の下書き',
                         icon='reply',
                         on_click=lambda: _show_reply_dialog(source_text, option.text, on_follow_up)
                     ).props('outline no-caps').classes('follow-up-btn')

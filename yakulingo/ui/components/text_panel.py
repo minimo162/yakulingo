@@ -6,6 +6,7 @@ Text translation panel with language-specific UI.
 Designed for Japanese users.
 """
 
+import asyncio
 import logging
 from typing import Callable, Optional
 
@@ -200,7 +201,6 @@ def create_text_panel(
                         # Translate button with keycap-style shortcut
                         # Use create_task instead of await to avoid "parent element deleted" error
                         # when _refresh_content() is called during translation
-                        import asyncio
                         def handle_translate_click():
                             logger.info("Translate button clicked")
                             asyncio.create_task(on_translate())

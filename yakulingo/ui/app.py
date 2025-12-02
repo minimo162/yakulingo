@@ -617,9 +617,10 @@ class YakuLingoApp:
         self._refresh_content()
 
         try:
-            # Run translation synchronously on main thread (required for Playwright)
-            # Playwright's sync API uses greenlets which must run on the same thread
-            result = self.translation_service.translate_text_with_options(
+            # Run translation in background thread to avoid blocking NiceGUI event loop
+            # Playwright operations are handled by PlaywrightThreadExecutor internally
+            result = await asyncio.to_thread(
+                self.translation_service.translate_text_with_options,
                 source_text,
                 reference_files,
             )
@@ -1281,4 +1282,5 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
         native=native,
         window_size=window_size,
         frameless=False,
+        reconnect_timeout=10.0,  # Increase from default 3s for stable WebSocket connection
     )

@@ -51,6 +51,20 @@ COMPLETE_CSS = """
     --md-sys-shape-corner-medium: 16px; /* Buttons, inputs */
     --md-sys-shape-corner-small: 12px;  /* Chips, small elements */
 
+    /* Typography - font size hierarchy */
+    --md-sys-typescale-size-xs: 0.8125rem;    /* 13px - minimum, captions, badges */
+    --md-sys-typescale-size-sm: 0.875rem;     /* 14px - labels, buttons */
+    --md-sys-typescale-size-md: 0.9375rem;    /* 15px - body text */
+    --md-sys-typescale-size-lg: 1rem;         /* 16px - subheadings */
+    --md-sys-typescale-size-xl: 1.25rem;      /* 20px - headings */
+    --md-sys-typescale-size-2xl: 1.5rem;      /* 24px - large headings */
+
+    /* Typography - font weight hierarchy */
+    --md-sys-typescale-weight-regular: 400;   /* Body text, descriptions */
+    --md-sys-typescale-weight-medium: 500;    /* Labels, buttons */
+    --md-sys-typescale-weight-semibold: 600;  /* Section headers */
+    --md-sys-typescale-weight-bold: 700;      /* Headlines, brand */
+
     /* Motion - M3 standard easing */
     --md-sys-motion-easing-standard: cubic-bezier(0.2, 0, 0, 1);
     --md-sys-motion-easing-spring: cubic-bezier(0.175, 0.885, 0.32, 1.275);
@@ -126,7 +140,7 @@ body {
 /* === Logo === */
 .app-logo {
     font-size: 1.25rem;
-    font-weight: 600;
+    font-weight: 700;  /* Bold for brand name */
     color: var(--md-sys-color-primary);
     letter-spacing: -0.02em;
 }
@@ -340,14 +354,14 @@ body {
     border: 1px solid rgba(255, 255, 255, 0.3);
     border-radius: 6px;
     font-family: ui-monospace, monospace;
-    font-size: 0.75rem;  /* 12px - improved readability */
+    font-size: 0.8125rem;  /* 13px - minimum readable size */
     font-weight: 500;
     color: rgba(255, 255, 255, 0.95);
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
 .keycap-plus {
-    font-size: 0.75rem;
+    font-size: 0.8125rem;
     color: rgba(255, 255, 255, 0.7);
     margin: 0 2px;
 }
@@ -501,7 +515,7 @@ body {
     padding: 0.375rem 0.75rem;
     background: var(--md-sys-color-surface-container-high);
     border-radius: var(--md-sys-shape-corner-full);
-    font-size: 0.75rem;  /* 12px - improved readability */
+    font-size: 0.8125rem;  /* 13px - minimum readable size */
     color: var(--md-sys-color-on-surface-variant);
 }
 
@@ -554,7 +568,7 @@ body {
     padding: 1rem 1.25rem;
     border-bottom: 1px solid var(--md-sys-color-outline-variant);
     font-size: 0.8125rem;  /* 13px - improved readability */
-    font-weight: 600;
+    font-weight: 600;  /* Semibold for section headers */
     color: var(--md-sys-color-on-surface-variant);
 }
 
@@ -619,7 +633,7 @@ body {
 .text-muted { color: var(--md-sys-color-on-surface-variant); }
 .text-primary { color: var(--md-sys-color-primary); }
 .text-error { color: var(--md-sys-color-error); }
-.text-2xs { font-size: 0.75rem; }  /* 12px - minimum readable size */
+.text-2xs { font-size: 0.8125rem; }  /* 13px - minimum readable size */
 
 .animate-in {
     animation: fadeIn var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-standard);
@@ -1015,7 +1029,7 @@ body {
     gap: 0.25rem;
     padding: 0.125rem 0.5rem;
     border-radius: var(--md-sys-shape-corner-full);
-    font-size: 0.75rem;
+    font-size: 0.8125rem;
     color: var(--md-sys-color-on-surface-variant);
     cursor: pointer;
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
@@ -1178,7 +1192,7 @@ body {
 }
 
 .loading-character .submessage {
-    font-size: 0.75rem;
+    font-size: 0.8125rem;
     color: var(--md-sys-color-on-surface-variant);
 }
 
@@ -1249,7 +1263,7 @@ body {
     align-items: center;
     gap: 0.5rem;
     color: var(--md-sys-color-on-surface-variant);
-    font-size: 0.75rem;
+    font-size: 0.8125rem;
 }
 
 .hint-secondary {
@@ -1258,7 +1272,7 @@ body {
     gap: 0.375rem;
     color: var(--md-sys-color-on-surface-variant);
     opacity: 0.6;
-    font-size: 0.75rem;
+    font-size: 0.8125rem;
 }
 
 /* Security tooltip */
@@ -1271,7 +1285,7 @@ body {
     color: var(--md-sys-color-surface);
     padding: 0.5rem 0.75rem;
     border-radius: var(--md-sys-shape-corner-small);
-    font-size: 0.75rem;
+    font-size: 0.8125rem;
     white-space: nowrap;
     opacity: 0;
     visibility: hidden;
@@ -1304,7 +1318,7 @@ body {
     background: var(--md-sys-color-primary-container);
     color: var(--md-sys-color-on-primary-container);
     border-radius: var(--md-sys-shape-corner-full);
-    font-size: 0.75rem;
+    font-size: 0.8125rem;
     font-weight: 500;
 }
 
@@ -1353,7 +1367,7 @@ body {
     padding: 0.25rem 0.5rem;
     background: var(--md-sys-color-primary-container);
     border-radius: var(--md-sys-shape-corner-full);
-    font-size: 0.75rem;
+    font-size: 0.8125rem;
     color: var(--md-sys-color-on-primary-container);
 }
 
@@ -1450,7 +1464,7 @@ body {
 .adjust-option-btn {
     flex: 1;
     padding: 0.625rem 0.75rem !important;
-    font-size: 0.75rem !important;
+    font-size: 0.8125rem !important;
     color: var(--md-sys-color-on-surface) !important;
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard) !important;
     border-radius: var(--md-sys-shape-corner-medium) !important;
@@ -1470,7 +1484,7 @@ body {
 .adjust-option-btn-full {
     width: 100%;
     padding: 0.5rem 0.75rem !important;
-    font-size: 0.75rem !important;
+    font-size: 0.8125rem !important;
     color: var(--md-sys-color-on-surface) !important;
     background: var(--md-sys-color-surface-container) !important;
     border-radius: var(--md-sys-shape-corner-medium) !important;
@@ -1495,7 +1509,7 @@ body {
 }
 
 .quick-chip {
-    font-size: 0.75rem !important;
+    font-size: 0.8125rem !important;
     padding: 0.25rem 0.625rem !important;
     border: 1px solid var(--md-sys-color-outline-variant) !important;
     border-radius: var(--md-sys-shape-corner-small) !important;
@@ -1535,7 +1549,7 @@ body {
 
 /* === Back-translate Button === */
 .back-translate-btn {
-    font-size: 0.75rem !important;
+    font-size: 0.8125rem !important;
     padding: 0.375rem 0.75rem !important;
     color: var(--md-sys-color-on-surface-variant) !important;
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard) !important;
@@ -1552,7 +1566,7 @@ body {
 
 /* === Elapsed Time Badge === */
 .elapsed-time-badge {
-    font-size: 0.75rem;
+    font-size: 0.8125rem;
     color: var(--md-sys-color-on-surface-variant);
     background: var(--md-sys-color-surface-container);
     padding: 0.125rem 0.5rem;
@@ -1916,7 +1930,7 @@ a:hover {
 
 /* === Duration Badge === */
 .duration-badge {
-    font-size: 0.75rem;
+    font-size: 0.8125rem;
     padding: 0.125rem 0.5rem;
     border-radius: var(--md-sys-shape-corner-full);
     background-color: var(--md-sys-color-surface-container-high);
@@ -1944,7 +1958,7 @@ a:hover {
 }
 
 .completion-file-desc {
-    font-size: 0.75rem;
+    font-size: 0.8125rem;
     color: var(--md-sys-color-on-surface-variant);
 }
 """

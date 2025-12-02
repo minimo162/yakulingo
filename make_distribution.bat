@@ -135,7 +135,7 @@ mkdir "%DIST_DIR%" 2>nul
 
 :: Copy files to distribution folder
 echo   Copying files...
-for %%f in ("run.vbs" "app.py" "glossary.csv" "pyproject.toml" "uv.lock" "uv.toml" "README.md") do (
+for %%f in ("YakuLingo.exe" "app.py" "glossary.csv" "pyproject.toml" "uv.lock" "uv.toml" "README.md") do (
     if exist "%%~f" copy /y "%%~f" "%DIST_DIR%\" >nul
 )
 
@@ -166,7 +166,7 @@ if exist "%DIST_ZIP%" (
     echo.
     echo Structure:
     echo   YakuLingo/
-    echo     run.vbs            ^<-- Application launcher
+    echo     YakuLingo.exe      ^<-- Application launcher
     echo     app.py, yakulingo/, ...
     echo.
     echo ============================================================

@@ -240,7 +240,7 @@ class TestPromptBuilderTemplateLoading:
             prompts_dir = Path(tmpdir)
 
             # Create custom to_en template
-            to_en_file = prompts_dir / "translate_to_en.txt"
+            to_en_file = prompts_dir / "file_translate_to_en.txt"
             to_en_file.write_text("Custom EN template: {input_text}\n{reference_section}")
 
             builder = PromptBuilder(prompts_dir=prompts_dir)
@@ -254,7 +254,7 @@ class TestPromptBuilderTemplateLoading:
             prompts_dir = Path(tmpdir)
 
             # Create custom to_jp template
-            to_jp_file = prompts_dir / "translate_to_jp.txt"
+            to_jp_file = prompts_dir / "file_translate_to_jp.txt"
             to_jp_file.write_text("Custom JP template: {input_text}\n{reference_section}")
 
             builder = PromptBuilder(prompts_dir=prompts_dir)
@@ -263,10 +263,10 @@ class TestPromptBuilderTemplateLoading:
             assert "Custom JP template: test" in prompt
 
     def test_fallback_to_default_when_to_en_missing(self):
-        """Fallback to default when translate_to_en.txt missing"""
+        """Fallback to default when file_translate_to_en.txt missing"""
         with tempfile.TemporaryDirectory() as tmpdir:
             prompts_dir = Path(tmpdir)
-            # Don't create translate_to_en.txt
+            # Don't create file_translate_to_en.txt
 
             builder = PromptBuilder(prompts_dir=prompts_dir)
             prompt = builder.build("test", output_language="en")
@@ -276,10 +276,10 @@ class TestPromptBuilderTemplateLoading:
             assert "英語" in prompt
 
     def test_fallback_to_default_when_to_jp_missing(self):
-        """Fallback to default when translate_to_jp.txt missing"""
+        """Fallback to default when file_translate_to_jp.txt missing"""
         with tempfile.TemporaryDirectory() as tmpdir:
             prompts_dir = Path(tmpdir)
-            # Don't create translate_to_jp.txt
+            # Don't create file_translate_to_jp.txt
 
             builder = PromptBuilder(prompts_dir=prompts_dir)
             prompt = builder.build("test", output_language="jp")
@@ -294,7 +294,7 @@ class TestPromptBuilderTemplateLoading:
             prompts_dir = Path(tmpdir)
 
             # Only create to_en template
-            to_en_file = prompts_dir / "translate_to_en.txt"
+            to_en_file = prompts_dir / "file_translate_to_en.txt"
             to_en_file.write_text("Custom EN: {input_text}\n{reference_section}")
 
             builder = PromptBuilder(prompts_dir=prompts_dir)

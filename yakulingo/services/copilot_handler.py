@@ -271,6 +271,16 @@ class CopilotHandler:
             return False
         return self._is_page_valid()
 
+    def _get_storage_state_path(self) -> Path:
+        """Get path to storage_state.json for cookie/session persistence."""
+        if self.profile_dir:
+            return self.profile_dir / "storage_state.json"
+        # Fallback if profile_dir not set yet
+        local_app_data = os.environ.get("LOCALAPPDATA", "")
+        if local_app_data:
+            return Path(local_app_data) / "YakuLingo" / "EdgeProfile" / "storage_state.json"
+        return Path.home() / ".yakulingo" / "edge-profile" / "storage_state.json"
+
     def _find_edge_exe(self) -> Optional[str]:
         """Find Edge executable"""
         edge_paths = [
@@ -472,8 +482,31 @@ class CopilotHandler:
             contexts = self._browser.contexts
             if contexts:
                 self._context = contexts[0]
+                logger.debug("Using existing browser context")
             else:
-                self._context = self._browser.new_context()
+                # CDP接続では通常contextが存在するはず、少し待ってリトライ
+                logger.warning("No existing context found, waiting...")
+                time.sleep(0.5)
+                contexts = self._browser.contexts
+                if contexts:
+                    self._context = contexts[0]
+                    logger.debug("Found context after retry")
+                else:
+                    # フォールバック: 新規context作成（storage_stateから復元を試みる）
+                    storage_path = self._get_storage_state_path()
+                    if storage_path.exists():
+                        try:
+                            logger.info("Restoring session from storage_state...")
+                            self._context = self._browser.new_context(
+                                storage_state=str(storage_path)
+                            )
+                            logger.info("Session restored from storage_state")
+                        except (PlaywrightError, PlaywrightTimeoutError, OSError) as e:
+                            logger.warning("Failed to restore storage_state: %s", e)
+                            self._context = self._browser.new_context()
+                    else:
+                        logger.warning("Creating new context - no storage_state found")
+                        self._context = self._browser.new_context()
 
             # Check if Copilot page already exists
             logger.info("Checking for existing Copilot page...")
@@ -620,6 +653,37 @@ class CopilotHandler:
         self._page = None
         self._playwright = None
 
+    def _save_storage_state(self) -> bool:
+        """
+        Save current session cookies/storage to file for persistence.
+
+        Should be called after successful translation to ensure session is saved.
+
+        Returns:
+            True if storage_state was saved successfully
+        """
+        if not self._context:
+            logger.debug("Cannot save storage_state: no context")
+            return False
+
+        error_types = _get_playwright_errors()
+        PlaywrightError = error_types['Error']
+
+        try:
+            storage_path = self._get_storage_state_path()
+            # Ensure parent directory exists
+            storage_path.parent.mkdir(parents=True, exist_ok=True)
+            # Save storage state (cookies, localStorage, sessionStorage)
+            self._context.storage_state(path=str(storage_path))
+            logger.debug("Storage state saved to %s", storage_path)
+            return True
+        except PlaywrightError as e:
+            logger.warning("Failed to save storage_state (Playwright): %s", e)
+            return False
+        except OSError as e:
+            logger.warning("Failed to save storage_state (IO): %s", e)
+            return False
+
     async def translate(
         self,
         texts: list[str],
@@ -694,6 +758,9 @@ class CopilotHandler:
 
         # Get response
         result = self._get_response()
+
+        # Save storage_state after successful translation (session is confirmed valid)
+        self._save_storage_state()
 
         # Parse batch result
         return self._parse_batch_result(result, len(texts))

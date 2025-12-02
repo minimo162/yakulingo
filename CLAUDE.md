@@ -435,22 +435,17 @@ The `CopilotHandler` class automates Microsoft Edge browser:
 - Connects to Edge on CDP port 9333
 - Endpoint: `https://m365.cloud.microsoft/chat/?auth=2`
 - Handles Windows proxy detection from registry
-- Methods: `connect()`, `disconnect()`, `translate_sync()`, `_verify_chat_input()`
+- Methods: `connect()`, `disconnect()`, `translate_sync()`
 
 ### Connection Flow
 The `connect()` method performs these steps:
 1. Checks if already connected (returns immediately if true)
 2. Connects to running Edge browser via CDP
 3. Looks for existing Copilot page or creates new one
-4. Navigates to Copilot URL with `wait_until='domcontentloaded'`
-5. Verifies chat input is usable via `_verify_chat_input()`
-6. Sets `_connected = True` if successful
-
-The `_verify_chat_input()` method validates the chat is ready:
-1. Waits for chat input element to be visible
-2. Types test text and verifies it's received
-3. Clears the test text
-4. Returns `True` if input is usable, `False` if blocked (login required, etc.)
+4. Navigates to Copilot URL with `wait_until='commit'` (fastest)
+5. Waits for chat input element to appear
+6. Calls `window.stop()` to stop browser loading spinner
+7. Sets `_connected = True` if successful
 
 ### Copilot Character Limits
 M365 Copilot has different input limits based on license:
@@ -611,9 +606,9 @@ Based on recent commits:
 - **Test Coverage Expansion**: 26 test files with 1100+ tests
 - **Native Launcher**: Rust-based `YakuLingo.exe` for Windows distribution (replaces VBS scripts)
 - **Browser Connection Improvements**:
-  - `_verify_chat_input()` method validates Copilot is usable at startup
-  - Changed `wait_until='domcontentloaded'` for faster, more reliable page load
-  - Input validation moved from translation time to connection time
+  - Fast navigation with `wait_until='commit'` to avoid blocking on persistent connections
+  - Wait for chat input element before stopping browser spinner
+  - `window.stop()` called to ensure browser loading indicator stops
 - **Error Handling**: Added `BadZipFile` handling for corrupted Office documents
 
 ## Git Workflow

@@ -1987,6 +1987,37 @@ body {
     background: var(--md-sys-color-primary-container) !important;
 }
 
+/* === Suggestion Hint Row (吹き出し風) === */
+.suggestion-hint-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 1rem 0 0.75rem 0;
+    padding: 0.5rem 0.75rem;
+    background: var(--md-sys-color-surface-container);
+    border-radius: var(--md-sys-shape-corner-full);
+    max-width: fit-content;
+}
+
+.suggestion-hint-icon {
+    color: var(--md-sys-color-primary);
+    font-size: 1.25rem !important;
+}
+
+.retry-btn {
+    color: var(--md-sys-color-on-surface-variant) !important;
+    background: var(--md-sys-color-surface) !important;
+    border-radius: var(--md-sys-shape-corner-full) !important;
+    padding: 0.375rem 0.75rem !important;
+    font-size: 0.875rem !important;
+    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard) !important;
+}
+
+.retry-btn:hover {
+    color: var(--md-sys-color-primary) !important;
+    background: var(--md-sys-color-primary-container) !important;
+}
+
 .inline-adjust-panel {
     max-width: 24rem;
     width: 100%;

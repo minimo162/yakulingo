@@ -506,7 +506,7 @@ class TranslationService:
             # Select appropriate prompt file
             if output_language == "en":
                 # Use single output prompt for English
-                prompt_file = "text_translate_to_en_single.txt"
+                prompt_file = "text_translate_to_en.txt"
             else:
                 prompt_file = "text_translate_to_jp.txt"
 

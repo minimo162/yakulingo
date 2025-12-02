@@ -118,6 +118,7 @@ class YakuLingoApp:
         self.state.reference_files = self.settings.get_reference_file_paths(base_dir)
 
         # UI references for refresh
+        self._header_status = None
         self._main_content = None
         self._tabs_container = None
         self._history_list = None
@@ -138,15 +139,23 @@ class YakuLingoApp:
         return self._copilot
 
     async def start_edge_and_connect(self):
-        """Start Edge in background (non-blocking). Connection is verified on first translation."""
+        """Start Edge and connect to browser in background (non-blocking).
+        Login state is NOT checked here - only browser connection."""
         # Small delay to let UI render first
         await asyncio.sleep(0.1)
 
-        # Start Edge only - connection is verified lazily on first translation
+        # Start Edge
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, self.copilot.start_edge)
 
-        # Initialize TranslationService (uses lazy connection)
+        # Connect to browser (but don't check login state)
+        success = await loop.run_in_executor(None, self.copilot.connect)
+
+        if success:
+            self.state.copilot_ready = True
+            self._refresh_status()
+
+        # Initialize TranslationService
         from yakulingo.services.translation_service import TranslationService
         self.translation_service = TranslationService(
             self.copilot, self.settings, get_default_prompts_dir()
@@ -170,6 +179,11 @@ class YakuLingoApp:
         except (OSError, ValueError, RuntimeError) as e:
             # サイレントに失敗（バックグラウンド処理なのでユーザーには通知しない）
             logger.debug("Failed to check for updates: %s", e)
+
+    def _refresh_status(self):
+        """Refresh status indicator"""
+        if self._header_status:
+            self._header_status.refresh()
 
     def _refresh_content(self):
         """Refresh main content area"""
@@ -226,8 +240,20 @@ class YakuLingoApp:
                 ui.html('<svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><path d="M12.87 15.07l-2.54-2.51.03-.03c1.74-1.94 2.98-4.17 3.71-6.53H17V4h-7V2H8v2H1v1.99h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11.76-2.04zM18.5 10h-2L12 22h2l1.12-3h4.75L21 22h2l-4.5-12zm-2.62 7l1.62-4.33L19.12 17h-3.24z"/></svg>', sanitize=False)
             ui.label('YakuLingo').classes('app-logo')
 
-        # Status indicator removed - using lazy detection approach
-        # Connection status is checked on first translation attempt
+        # Status indicator (browser connection only, not login state)
+        @ui.refreshable
+        def header_status():
+            if self.state.copilot_ready:
+                with ui.element('div').classes('status-indicator connected').props('role="status" aria-live="polite"'):
+                    ui.element('div').classes('status-dot connected').props('aria-hidden="true"')
+                    ui.label('接続済み')
+            else:
+                with ui.element('div').classes('status-indicator connecting').props('role="status" aria-live="polite"'):
+                    ui.element('div').classes('status-dot connecting').props('aria-hidden="true"')
+                    ui.label('接続中...')
+
+        self._header_status = header_status
+        header_status()
 
         # Navigation tabs
         @ui.refreshable

@@ -237,26 +237,38 @@ body {
         0 2px 4px rgba(0, 0, 0, 0.08);
 }
 
-/* === Navigation === */
+/* === Navigation Tabs (M3 Vertical Tabs) === */
 .sidebar-nav {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: 0;
     margin-top: 0.5rem;
+    /* M3 tabs container has no shape */
+    background: transparent;
 }
 
 .nav-item {
     display: flex;
     align-items: center;
     gap: 0.75rem;
-    padding: 0.875rem 1.125rem;
-    border-radius: var(--md-sys-shape-corner-large);
-    font-size: 1rem;
+    padding: 0.875rem 1rem;
+    /* M3 tabs have no rounded corners */
+    border-radius: 0;
+    /* M3 title-small typography */
+    font-size: 0.875rem;
     font-weight: 500;
+    letter-spacing: 0.1px;
+    line-height: 1.25rem;
     color: var(--md-sys-color-on-surface-variant);
     width: 100%;
+    /* M3 tab container color */
+    background: transparent;
+    /* Vertical indicator line on left */
+    border-left: 3px solid transparent;
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
     animation: fadeIn var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-standard) backwards;
+    position: relative;
+    cursor: pointer;
 }
 
 /* Staggered nav item animations */
@@ -264,18 +276,40 @@ body {
 .nav-item:nth-child(2) { animation-delay: 100ms; }
 .nav-item:nth-child(3) { animation-delay: 150ms; }
 
+/* M3 hover state layer */
 .nav-item:hover {
-    background: var(--md-sys-color-surface-container);
+    background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
     color: var(--md-sys-color-on-surface);
 }
 
+/* M3 focus state */
+.nav-item:focus-visible {
+    outline: 2px solid var(--md-sys-color-primary);
+    outline-offset: -2px;
+    background: color-mix(in srgb, var(--md-sys-color-on-surface) 12%, transparent);
+}
+
+/* M3 active tab with indicator */
 .nav-item.active {
-    background: var(--md-sys-color-primary-container);
-    color: var(--md-sys-color-on-primary-container);
+    /* M3 primary indicator color */
+    border-left-color: var(--md-sys-color-primary);
+    /* Active text color */
+    color: var(--md-sys-color-primary);
+    background: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent);
+}
+
+.nav-item.active:hover {
+    background: color-mix(in srgb, var(--md-sys-color-primary) 12%, transparent);
+}
+
+/* M3 icon styling in tabs */
+.nav-item .q-icon {
+    font-size: 1.25rem;
+    color: inherit;
 }
 
 .nav-item.disabled {
-    opacity: 0.5;
+    opacity: 0.38;  /* M3 disabled opacity */
     cursor: not-allowed;
     pointer-events: none;
 }

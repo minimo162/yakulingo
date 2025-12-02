@@ -328,10 +328,10 @@ class YakuLingoApp:
         self._header_status = header_status
         header_status()
 
-        # Navigation tabs
+        # Navigation tabs (M3 vertical tabs)
         @ui.refreshable
         def tabs_container():
-            with ui.element('nav').classes('sidebar-nav').props('role="navigation" aria-label="Main navigation"'):
+            with ui.element('nav').classes('sidebar-nav').props('role="tablist" aria-label="翻訳モード" aria-orientation="vertical"'):
                 self._create_nav_item('テキスト翻訳', 'translate', Tab.TEXT)
                 self._create_nav_item('ファイル翻訳', 'description', Tab.FILE)
 
@@ -378,7 +378,7 @@ class YakuLingoApp:
             history_list()
 
     def _create_nav_item(self, label: str, icon: str, tab: Tab):
-        """Create a navigation item"""
+        """Create a navigation tab item (M3 vertical tabs)"""
         is_active = self.state.current_tab == tab
         disabled = self.state.is_translating()
         classes = 'nav-item'
@@ -394,7 +394,12 @@ class YakuLingoApp:
                 self._refresh_tabs()
                 self._refresh_content()
 
-        with ui.button(on_click=on_click).props('flat no-caps align=left').classes(classes):
+        # M3 tabs accessibility: role="tab", aria-selected
+        aria_props = f'role="tab" aria-selected="{str(is_active).lower()}"'
+        if disabled:
+            aria_props += ' aria-disabled="true"'
+
+        with ui.button(on_click=on_click).props(f'flat no-caps align=left {aria_props}').classes(classes):
             ui.icon(icon).classes('text-lg')
             ui.label(label).classes('flex-1')
 

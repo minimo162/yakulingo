@@ -550,7 +550,7 @@ class TranslationService:
                     options=options,
                     output_language=output_language,
                 )
-            else:
+            elif raw_result.strip():
                 # Fallback: treat the whole result as a single option
                 return TextTranslationResult(
                     source_text=text,
@@ -560,6 +560,15 @@ class TranslationService:
                         explanation="翻訳結果です",
                     )],
                     output_language=output_language,
+                )
+            else:
+                # Empty response from Copilot - return error
+                logger.warning("Empty response received from Copilot")
+                return TextTranslationResult(
+                    source_text=text,
+                    source_char_count=len(text),
+                    output_language=output_language,
+                    error_message="Copilotから応答がありませんでした。Edgeブラウザを確認してください。",
                 )
 
         except OSError as e:
@@ -648,7 +657,7 @@ class TranslationService:
                     options=options,
                     output_language=output_language,
                 )
-            else:
+            elif raw_result.strip():
                 # Fallback: treat the whole result as a single option
                 return TextTranslationResult(
                     source_text=text,
@@ -658,6 +667,15 @@ class TranslationService:
                         explanation="翻訳結果です",
                     )],
                     output_language=output_language,
+                )
+            else:
+                # Empty response from Copilot - return error
+                logger.warning("Empty response received from Copilot (streaming)")
+                return TextTranslationResult(
+                    source_text=text,
+                    source_char_count=len(text),
+                    output_language=output_language,
+                    error_message="Copilotから応答がありませんでした。Edgeブラウザを確認してください。",
                 )
 
         except OSError as e:

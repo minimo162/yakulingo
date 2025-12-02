@@ -252,13 +252,17 @@ class YakuLingoApp:
             return
 
         if self.state.text_translating:
-            self._translate_button.props('loading disable')
+            # Show loading spinner and disable
+            self._translate_button.props(remove='disable')
+            self._translate_button.props('loading :disable=true')
         elif not self.state.can_translate():
+            # Disable without loading
             self._translate_button.props(remove='loading')
-            self._translate_button.props('disable')
+            self._translate_button.props(':disable=true')
         else:
-            # Enable the button: remove both loading and disable props
-            self._translate_button.props(remove='loading disable')
+            # Enable the button
+            self._translate_button.props(remove='loading')
+            self._translate_button.props(':disable=false')
 
     def _update_streaming_text(self, text: str):
         """Update streaming text directly without full refresh (smooth updates)"""

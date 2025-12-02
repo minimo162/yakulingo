@@ -242,27 +242,36 @@ def create_text_panel(
                     elapsed_time,
                 )
         elif state.text_translating:
-            _render_loading(state.source_text)
+            _render_loading(state.source_text, state.streaming_text)
 
 
-def _render_loading(source_text: str = ""):
-    """Render loading state with language detection indicator"""
+def _render_loading(source_text: str = "", streaming_text: str = ""):
+    """Render loading state with language detection indicator and streaming content"""
     is_japanese = is_japanese_dominant(source_text)
 
     with ui.element('div').classes('loading-character animate-in'):
-        # Loading spinner
-        ui.spinner('dots', size='lg').classes('text-primary')
+        # Loading spinner and status
+        with ui.row().classes('items-center gap-3'):
+            ui.spinner('dots', size='lg').classes('text-primary')
 
-        # Dynamic language detection message
-        with ui.row().classes('items-center gap-2'):
-            if is_japanese:
-                ui.label('🇯🇵 → 🇺🇸').classes('text-base')
-                ui.label('英語に翻訳しています...').classes('message')
-            else:
-                ui.label('🌐 → 🇯🇵').classes('text-base')
-                ui.label('日本語に翻訳しています...').classes('message')
+            # Dynamic language detection message
+            with ui.column().classes('gap-1'):
+                with ui.row().classes('items-center gap-2'):
+                    if is_japanese:
+                        ui.label('🇯🇵 → 🇺🇸').classes('text-base')
+                        ui.label('英語に翻訳しています...').classes('message')
+                    else:
+                        ui.label('🌐 → 🇯🇵').classes('text-base')
+                        ui.label('日本語に翻訳しています...').classes('message')
 
-        ui.label('M365 Copilot による翻訳').classes('submessage')
+                ui.label('M365 Copilot による翻訳').classes('submessage')
+
+        # Show streaming content if available
+        if streaming_text and streaming_text.strip():
+            with ui.element('div').classes('streaming-content mt-4'):
+                ui.label('生成中...').classes('text-xs text-muted mb-2')
+                with ui.element('div').classes('streaming-text-box'):
+                    ui.label(streaming_text).classes('streaming-text')
 
 
 def _render_results_to_en(

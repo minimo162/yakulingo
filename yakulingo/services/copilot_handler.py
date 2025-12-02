@@ -680,6 +680,45 @@ class CopilotHandler:
         results = self.translate_sync([text], prompt, reference_files, char_limit)
         return results[0] if results else ""
 
+    def translate_single_streaming(
+        self,
+        prompt: str,
+        reference_files: Optional[list[Path]] = None,
+        char_limit: Optional[int] = None,
+        on_content: Optional[Callable[[str], None]] = None,
+        on_reasoning: Optional[Callable[[str], None]] = None,
+    ) -> str:
+        """
+        Translate with streaming response updates.
+
+        Args:
+            prompt: The translation prompt to send to Copilot
+            reference_files: Optional list of reference files to attach
+            char_limit: Max characters for direct input
+            on_content: Callback called when content updates (streaming)
+            on_reasoning: Callback called when reasoning updates (Chain of Thought)
+
+        Returns:
+            Final translated text
+        """
+        if not self._connected or not self._page:
+            raise RuntimeError("Not connected to Copilot")
+
+        # Attach reference files first (before sending prompt)
+        if reference_files:
+            for file_path in reference_files:
+                if file_path.exists():
+                    self._attach_file(file_path)
+
+        # Send the prompt (auto-switches to file attachment if too long)
+        self._send_prompt_smart(prompt, char_limit)
+
+        # Get response with streaming callbacks
+        return self.get_response_streaming(
+            on_reasoning=on_reasoning,
+            on_content=on_content,
+        )
+
     def _send_prompt_smart(
         self,
         prompt: str,

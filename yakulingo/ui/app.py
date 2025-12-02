@@ -421,8 +421,9 @@ class YakuLingoApp:
             self._refresh_content()
 
     async def _translate_text(self):
-        """Translate text with multiple options."""
+        """Translate text with streaming updates."""
         import time
+        import queue
 
         if not self.translation_service:
             ui.notify('Not connected', type='warning')
@@ -434,24 +435,56 @@ class YakuLingoApp:
         # Track translation time
         start_time = time.time()
 
-        # Start translation in background
-        translation_task = asyncio.create_task(
-            asyncio.to_thread(
-                lambda: self.translation_service.translate_text_with_options(
-                    source_text,
-                    reference_files,
-                )
-            )
-        )
+        # Queue for streaming updates from background thread
+        content_queue: queue.Queue[str] = queue.Queue()
+
+        def on_streaming_content(content: str):
+            """Callback from background thread - put content in queue"""
+            content_queue.put(content)
 
         # Update UI
         self.state.text_translating = True
         self.state.text_result = None
         self.state.text_translation_elapsed_time = None
+        self.state.streaming_text = ""  # For displaying streaming content
         self._refresh_content()
 
+        # Start translation in background with streaming
+        translation_task = asyncio.create_task(
+            asyncio.to_thread(
+                lambda: self.translation_service.translate_text_streaming(
+                    source_text,
+                    reference_files,
+                    on_content=on_streaming_content,
+                )
+            )
+        )
+
         try:
+            # Poll for streaming updates while translation is running
+            while not translation_task.done():
+                # Check for new content from the queue
+                try:
+                    while True:
+                        content = content_queue.get_nowait()
+                        self.state.streaming_text = content
+                        self._refresh_content()
+                except queue.Empty:
+                    pass
+
+                # Small delay to avoid busy-waiting
+                await asyncio.sleep(0.1)
+
+            # Get final result
             result = await translation_task
+
+            # Process any remaining items in the queue
+            try:
+                while True:
+                    content = content_queue.get_nowait()
+                    self.state.streaming_text = content
+            except queue.Empty:
+                pass
 
             # Calculate elapsed time
             elapsed_time = time.time() - start_time
@@ -459,6 +492,7 @@ class YakuLingoApp:
 
             if result and result.options:
                 self.state.text_result = result
+                self.state.streaming_text = ""  # Clear streaming text
                 self._add_to_history(result)
             else:
                 error_msg = result.error_message if result else 'Unknown error'
@@ -468,6 +502,7 @@ class YakuLingoApp:
             ui.notify(f'Error: {e}', type='negative')
 
         self.state.text_translating = False
+        self.state.streaming_text = ""
         self._refresh_content()
 
     async def _adjust_text(self, text: str, adjust_type: str):

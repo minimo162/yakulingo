@@ -1182,6 +1182,29 @@ body {
     color: var(--md-sys-color-on-surface-variant);
 }
 
+/* Streaming content display */
+.streaming-content {
+    width: 100%;
+    max-width: 600px;
+}
+
+.streaming-text-box {
+    background: var(--md-sys-color-surface-container-low);
+    border-radius: var(--md-sys-shape-corner-medium);
+    padding: 1rem;
+    max-height: 300px;
+    overflow-y: auto;
+    border: 1px solid var(--md-sys-color-outline-variant);
+}
+
+.streaming-text {
+    font-size: 0.875rem;
+    line-height: 1.6;
+    color: var(--md-sys-color-on-surface);
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
 /* Success state with character */
 .success-character {
     display: flex;

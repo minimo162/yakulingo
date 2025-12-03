@@ -1372,6 +1372,12 @@ body {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    max-width: 100%;  /* Ensure truncation works in flex containers */
+}
+
+/* Fix nicegui-column default align-items: flex-start for truncate children */
+.nicegui-column:has(.truncate) {
+    align-items: stretch;
 }
 
 /* === M3 Segmented Button Container === */

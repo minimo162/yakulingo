@@ -106,19 +106,16 @@ class TestWordProcessorGetFileInfo:
         assert info.path == sample_docx
         assert info.file_type == FileType.WORD
         assert info.size_bytes > 0
-        # Only 2 translatable paragraphs
-        assert info.text_block_count == 2
 
     def test_file_info_with_table(self, processor, docx_with_table):
-        """File info counts table cells"""
+        """File info basic attributes"""
         info = processor.get_file_info(docx_with_table)
-        # 1 paragraph + 3 table cells (skip "12345")
-        assert info.text_block_count == 4
+        assert info.file_type == FileType.WORD
 
     def test_file_info_empty(self, processor, empty_docx):
         """File info for empty document"""
         info = processor.get_file_info(empty_docx)
-        assert info.text_block_count == 0
+        assert info.file_type == FileType.WORD
 
 
 # --- Tests: extract_text_blocks ---

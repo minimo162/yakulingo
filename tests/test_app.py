@@ -54,7 +54,6 @@ def mock_translation_service():
         path=Path("/tmp/test.xlsx"),
         file_type=FileType.EXCEL,
         size_bytes=1024,
-        text_block_count=10,
     )
     return service
 

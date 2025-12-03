@@ -288,7 +288,6 @@ def _file_card(file_info: FileInfo, on_remove: Callable[[], None]):
                 ui.label(f'{file_info.page_count} ページ').classes('chip')
             if file_info.slide_count:
                 ui.label(f'{file_info.slide_count} スライド').classes('chip')
-            ui.label(f'{file_info.text_block_count} ブロック').classes('chip chip-primary')
 
 
 def _progress_card(file_info: FileInfo, progress: float, status: str):
@@ -357,12 +356,9 @@ def _section_selector(
         # Selection summary
         selected_count = file_info.selected_section_count
         total_count = len(file_info.section_details)
-        selected_blocks = file_info.selected_block_count
 
         with ui.row().classes('items-center gap-2 mb-2'):
             ui.label(f'{selected_count}/{total_count} {section_label}').classes('text-xs text-muted')
-            ui.label('•').classes('text-xs text-muted')
-            ui.label(f'{selected_blocks} ブロック').classes('text-xs font-medium text-primary')
 
         # Section checkboxes (scrollable if many)
         max_height = '200px' if len(file_info.section_details) > 5 else 'auto'
@@ -374,4 +370,3 @@ def _section_selector(
                         on_change=lambda e, idx=section.index: on_toggle and on_toggle(idx, e.value),
                     ).props('dense')
                     ui.label(section.name).classes('flex-1 text-sm')
-                    ui.label(f'{section.block_count}').classes('text-xs text-muted')

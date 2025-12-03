@@ -219,16 +219,17 @@ class TestFileInfoDisplay:
 
         assert info.slide_count == 20
 
-    def test_file_info_text_block_count(self):
-        """FileInfo with text block count"""
+    def test_file_info_section_details(self):
+        """FileInfo with section details"""
+        from yakulingo.models.types import SectionDetail
         info = FileInfo(
             path=Path("test.xlsx"),
             file_type=FileType.EXCEL,
             size_bytes=1024,
-            text_block_count=50
+            section_details=[SectionDetail(index=0, name="Sheet1")]
         )
 
-        assert info.text_block_count == 50
+        assert len(info.section_details) == 1
 
 
 class TestTabSwitching:

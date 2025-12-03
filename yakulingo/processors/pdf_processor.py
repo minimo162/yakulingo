@@ -1352,6 +1352,7 @@ class PdfProcessor(FileProcessor):
         output_path: Path,
         translations: dict[str, str],
         direction: str = "jp_to_en",
+        settings=None,  # Not used for PDF (uses embedded fonts)
     ) -> dict[str, Any]:
         """
         Apply translations to PDF using low-level operators.
@@ -1500,6 +1501,7 @@ class PdfProcessor(FileProcessor):
         translations: dict[str, str],
         cells: list[TranslationCell],
         direction: str = "jp_to_en",
+        settings=None,  # Not used for PDF (uses embedded fonts)
     ) -> dict[str, Any]:
         """
         Apply translations using TranslationCell data (yomitoku integration).

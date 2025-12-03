@@ -169,10 +169,11 @@ class PptxProcessor(FileProcessor):
         output_path: Path,
         translations: dict[str, str],
         direction: str = "jp_to_en",
+        settings=None,
     ) -> None:
         """Apply translations to PowerPoint"""
         prs = Presentation(input_path)
-        font_manager = FontManager(direction)
+        font_manager = FontManager(direction, settings)
 
         for slide_idx, slide in enumerate(prs.slides):
             shape_counter = 0

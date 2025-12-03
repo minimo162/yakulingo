@@ -504,14 +504,20 @@ class TranslationService:
             if style is None:
                 style = self.config.text_translation_style if self.config else "concise"
 
-            # Select appropriate prompt file
+            # Select appropriate prompt file (style-specific for English)
             if output_language == "en":
-                # Use single output prompt for English
-                prompt_file = "text_translate_to_en.txt"
+                # Use style-specific prompt for English
+                prompt_file = f"text_translate_to_en_{style}.txt"
             else:
                 prompt_file = "text_translate_to_jp.txt"
 
             prompt_path = self.prompt_builder.prompts_dir / prompt_file if self.prompt_builder.prompts_dir else None
+
+            # Fallback to old single file if style-specific doesn't exist
+            if prompt_path and not prompt_path.exists() and output_language == "en":
+                fallback_path = self.prompt_builder.prompts_dir / "text_translate_to_en.txt"
+                if fallback_path.exists():
+                    prompt_path = fallback_path
 
             if prompt_path and prompt_path.exists():
                 template = prompt_path.read_text(encoding='utf-8')
@@ -1059,7 +1065,7 @@ class TranslationService:
         # Apply translations
         # Convert output_language to direction for font mapping
         direction = "jp_to_en" if output_language == "en" else "en_to_jp"
-        processor.apply_translations(input_path, output_path, translations, direction)
+        processor.apply_translations(input_path, output_path, translations, direction, self.config)
 
         # Create bilingual output if enabled
         bilingual_path = None
@@ -1246,11 +1252,11 @@ class TranslationService:
         if all_cells:
             # OCR mode: use apply_translations_with_cells for better positioning
             processor.apply_translations_with_cells(
-                input_path, output_path, translations, all_cells, direction
+                input_path, output_path, translations, all_cells, direction, self.config
             )
         else:
             # Standard mode: use regular apply_translations
-            processor.apply_translations(input_path, output_path, translations, direction)
+            processor.apply_translations(input_path, output_path, translations, direction, self.config)
 
         # Create bilingual PDF if enabled
         bilingual_path = None

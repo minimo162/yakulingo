@@ -553,10 +553,17 @@ class YakuLingoApp:
                         on_export_glossary_change=self._on_export_glossary_change,
                         on_style_change=self._on_style_change,
                         on_section_toggle=self._on_section_toggle,
+                        on_font_size_change=self._on_font_size_change,
+                        on_font_name_change=self._on_font_name_change,
                         bilingual_enabled=self.settings.bilingual_output,
                         export_glossary_enabled=self.settings.export_glossary,
                         translation_style=self.settings.translation_style,
                         translation_result=self.state.translation_result,
+                        font_size_adjustment=self.settings.font_size_adjustment_jp_to_en,
+                        font_jp_to_en_mincho=self.settings.font_jp_to_en_mincho,
+                        font_jp_to_en_gothic=self.settings.font_jp_to_en_gothic,
+                        font_en_to_jp_serif=self.settings.font_en_to_jp_serif,
+                        font_en_to_jp_sans=self.settings.font_en_to_jp_sans,
                     )
 
         self._main_content = main_content
@@ -1095,6 +1102,23 @@ class YakuLingoApp:
         self.settings.translation_style = style
         self.settings.save(self.settings_path)
         self._refresh_content()  # Refresh to update button states
+
+    def _on_font_size_change(self, size: float):
+        """Handle font size adjustment change"""
+        self.settings.font_size_adjustment_jp_to_en = size
+        self.settings.save(self.settings_path)
+
+    def _on_font_name_change(self, font_type: str, font_name: str):
+        """Handle font name change"""
+        if font_type == 'mincho':
+            self.settings.font_jp_to_en_mincho = font_name
+        elif font_type == 'gothic':
+            self.settings.font_jp_to_en_gothic = font_name
+        elif font_type == 'serif':
+            self.settings.font_en_to_jp_serif = font_name
+        elif font_type == 'sans':
+            self.settings.font_en_to_jp_sans = font_name
+        self.settings.save(self.settings_path)
 
     def _on_section_toggle(self, section_index: int, selected: bool):
         """Handle section selection toggle for partial translation"""

@@ -52,6 +52,19 @@ class AppSettings:
     # Text Translation Options
     text_translation_style: str = "concise"  # テキスト翻訳の英訳スタイル: "standard", "concise", "minimal"
 
+    # Font Settings (ファイル翻訳用)
+    # フォントサイズ調整（JP→EN時）: 0で調整なし、負値で縮小
+    font_size_adjustment_jp_to_en: float = -2.0  # pt
+    font_size_min: float = 6.0  # pt (最小フォントサイズ)
+
+    # 出力フォント名（JP→EN時）
+    font_jp_to_en_mincho: str = "Arial"  # 明朝系→
+    font_jp_to_en_gothic: str = "Calibri"  # ゴシック系→
+
+    # 出力フォント名（EN→JP時）
+    font_en_to_jp_serif: str = "MS P明朝"  # Serif系→
+    font_en_to_jp_sans: str = "Meiryo UI"  # Sans-serif系→
+
     # PDF OCR Options (yomitoku)
     ocr_batch_size: int = 5             # ページ/バッチ（メモリ使用量とのトレードオフ）
     ocr_dpi: int = 200                  # OCR解像度（高いほど精度向上、処理時間増加）
@@ -112,6 +125,13 @@ class AppSettings:
             "translation_style": self.translation_style,
             # Text Translation Options
             "text_translation_style": self.text_translation_style,
+            # Font Settings
+            "font_size_adjustment_jp_to_en": self.font_size_adjustment_jp_to_en,
+            "font_size_min": self.font_size_min,
+            "font_jp_to_en_mincho": self.font_jp_to_en_mincho,
+            "font_jp_to_en_gothic": self.font_jp_to_en_gothic,
+            "font_en_to_jp_serif": self.font_en_to_jp_serif,
+            "font_en_to_jp_sans": self.font_en_to_jp_sans,
             # PDF OCR Options
             "ocr_batch_size": self.ocr_batch_size,
             "ocr_dpi": self.ocr_dpi,

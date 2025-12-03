@@ -1214,6 +1214,9 @@ class CopilotHandler:
             )
             if new_chat_btn:
                 new_chat_btn.click()
+                logger.debug("New chat button clicked")
+            else:
+                logger.warning("New chat button not found - chat context may not be cleared")
 
                 # Wait for new chat to be ready (input field becomes available)
                 input_selector = '#m365-chat-editor-target-element, [data-lexical-editor="true"], [contenteditable="true"]'

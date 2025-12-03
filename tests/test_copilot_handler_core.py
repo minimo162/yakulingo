@@ -325,14 +325,15 @@ class TestCopilotHandlerTranslateSync:
         handler._connected = False
         handler._page = Mock()
 
-        # Mock connect to succeed
-        def mock_connect():
+        # Mock _connect_impl (called directly by _translate_sync_impl to avoid nested executor)
+        def mock_connect_impl():
             handler._connected = True
             return True
 
-        handler.connect = mock_connect
-        handler._send_message = Mock()
+        handler._connect_impl = mock_connect_impl
+        handler._send_prompt_smart = Mock()
         handler._get_response = Mock(return_value="1. Result")
+        handler._save_storage_state = Mock()
 
         result = handler.translate_sync(["test"], "prompt")
 

@@ -51,7 +51,7 @@ def create_file_panel(
 ):
     """File translation panel - Nani-inspired design"""
 
-    with ui.column().classes('flex-1 items-center w-full animate-in gap-5'):
+    with ui.column().classes('flex-1 items-center justify-center w-full animate-in gap-5'):
         # Main card container (Nani-style)
         with ui.element('div').classes('main-card w-full'):
             # Content container
@@ -226,14 +226,20 @@ def _drop_zone(on_file_select: Callable[[Path], None]):
         except OSError as err:
             ui.notify(f'ファイルの読み込みに失敗しました: {err}', type='negative')
 
-    with ui.upload(
-        on_upload=handle_upload,
-        auto_upload=True,
-    ).classes('drop-zone w-full').props(f'accept="{SUPPORTED_FORMATS}"'):
-        ui.icon('upload_file').classes('drop-zone-icon')
-        ui.label('翻訳するファイルをドロップ').classes('drop-zone-text')
-        ui.label('または クリックして選択').classes('drop-zone-subtext')
-        ui.label('Excel / Word / PowerPoint / PDF').classes('drop-zone-hint')
+    # Container with relative positioning for layering
+    with ui.element('div').classes('drop-zone w-full'):
+        # Visual content (pointer-events: none to let clicks pass through)
+        with ui.column().classes('drop-zone-content items-center'):
+            ui.icon('upload_file').classes('drop-zone-icon')
+            ui.label('翻訳するファイルをドロップ').classes('drop-zone-text')
+            ui.label('または クリックして選択').classes('drop-zone-subtext')
+            ui.label('Excel / Word / PowerPoint / PDF').classes('drop-zone-hint')
+
+        # Invisible upload overlay (captures clicks and drag-drop)
+        ui.upload(
+            on_upload=handle_upload,
+            auto_upload=True,
+        ).classes('drop-zone-upload').props(f'accept="{SUPPORTED_FORMATS}"')
 
 
 def _file_card(file_info: FileInfo, on_remove: Callable[[], None]):

@@ -1376,49 +1376,14 @@ class PdfProcessor(FileProcessor):
         """
         Extract text blocks from PDF.
 
-        Uses PyMuPDF to extract text blocks with their bounding boxes.
-        The context manager ensures proper cleanup even if the generator
-        is not fully consumed.
+        Delegates to _extract_with_pymupdf_streaming for consistency.
+        This method exists for FileProcessor interface compliance.
         """
-        with _open_fitz_document(file_path) as doc:
-            for page_idx, page in enumerate(doc):
-                blocks = page.get_text("dict")["blocks"]
-                for block_idx, block in enumerate(blocks):
-                    if block.get("type") == 0:  # Text block
-                        text_parts = []
-                        for line in block.get("lines", []):
-                            line_text = ""
-                            for span in line.get("spans", []):
-                                line_text += span.get("text", "")
-                            text_parts.append(line_text)
-
-                        # Remove line breaks (yomitoku style: join without newlines)
-                        text = "".join(text_parts).strip()
-
-                        if text and self.should_translate(text):
-                            # Get font info from first span
-                            font_name = None
-                            font_size = 11.0
-                            if block.get("lines"):
-                                first_line = block["lines"][0]
-                                if first_line.get("spans"):
-                                    first_span = first_line["spans"][0]
-                                    font_name = first_span.get("font")
-                                    font_size = first_span.get("size", 11.0)
-
-                            yield TextBlock(
-                                id=f"page_{page_idx}_block_{block_idx}",
-                                text=text,
-                                location=f"Page {page_idx + 1}",
-                                metadata={
-                                    'type': 'text_block',
-                                    'page': page_idx,
-                                    'block': block_idx,
-                                    'bbox': block.get("bbox"),
-                                    'font_name': font_name,
-                                    'font_size': font_size,
-                                }
-                            )
+        total_pages = self.get_page_count(file_path)
+        for blocks, _ in self._extract_with_pymupdf_streaming(
+            file_path, total_pages, on_progress=None
+        ):
+            yield from blocks
 
     def apply_translations(
         self,

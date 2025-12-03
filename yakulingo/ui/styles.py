@@ -432,27 +432,29 @@ body {
 /* History item text container - ensure text is visible and fills available space */
 .history-item .history-text-container {
     min-width: 0;
+    width: 0;  /* Start at 0, let flex: 1 expand - critical for text-overflow */
     flex: 1 1 0;
     overflow: hidden;
     max-width: calc(100% - 2rem);
 }
 
 /* History item text labels - proper text truncation */
-.history-item .history-title {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    display: block;
-    width: 100%;
-    color: var(--md-sys-color-on-surface);
-}
-
+.history-item .history-title,
 .history-item .history-preview {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     display: block;
     width: 100%;
+    max-width: 100%;  /* Ensure truncation works with flex parent */
+    flex-shrink: 1;
+}
+
+.history-item .history-title {
+    color: var(--md-sys-color-on-surface);
+}
+
+.history-item .history-preview {
     color: var(--md-sys-color-on-surface-variant);
 }
 

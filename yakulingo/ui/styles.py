@@ -311,21 +311,21 @@ body {
 .nav-item {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    padding: 0.875rem 1rem;
+    gap: 0.875rem;
+    padding: 1rem 1.25rem;
     /* M3 tabs have no rounded corners */
     border-radius: 0;
-    /* M3 title-small typography */
-    font-size: var(--md-sys-typescale-size-xs);
-    font-weight: 500;
+    /* Larger typography for better visibility */
+    font-size: var(--md-sys-typescale-size-sm);
+    font-weight: 600;
     letter-spacing: 0.1px;
-    line-height: 1.25rem;
+    line-height: 1.5rem;
     color: var(--md-sys-color-on-surface-variant);
     width: 100%;
     /* M3 tab container color */
     background: transparent;
-    /* Vertical indicator line on left */
-    border-left: 3px solid transparent;
+    /* Vertical indicator line on left (thicker) */
+    border-left: 4px solid transparent;
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
     animation: fadeIn var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-standard) backwards;
     position: relative;
@@ -364,9 +364,9 @@ body {
     background: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent);
 }
 
-/* M3 icon styling in tabs */
+/* M3 icon styling in tabs (larger for better visibility) */
 .nav-item .q-icon {
-    font-size: var(--md-sys-typescale-size-lg);
+    font-size: var(--md-sys-typescale-size-xl);
     color: inherit;
 }
 

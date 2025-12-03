@@ -555,6 +555,7 @@ class YakuLingoApp:
                         on_section_toggle=self._on_section_toggle,
                         on_font_size_change=self._on_font_size_change,
                         on_font_name_change=self._on_font_name_change,
+                        on_pdf_font_change=self._on_pdf_font_change,
                         bilingual_enabled=self.settings.bilingual_output,
                         export_glossary_enabled=self.settings.export_glossary,
                         translation_style=self.settings.translation_style,
@@ -564,6 +565,8 @@ class YakuLingoApp:
                         font_jp_to_en_gothic=self.settings.font_jp_to_en_gothic,
                         font_en_to_jp_serif=self.settings.font_en_to_jp_serif,
                         font_en_to_jp_sans=self.settings.font_en_to_jp_sans,
+                        pdf_font_ja=self.settings.pdf_font_ja,
+                        pdf_font_en=self.settings.pdf_font_en,
                     )
 
         self._main_content = main_content
@@ -1118,6 +1121,14 @@ class YakuLingoApp:
             self.settings.font_en_to_jp_serif = font_name
         elif font_type == 'sans':
             self.settings.font_en_to_jp_sans = font_name
+        self.settings.save(self.settings_path)
+
+    def _on_pdf_font_change(self, lang: str, font_name: str):
+        """Handle PDF font change"""
+        if lang == 'ja':
+            self.settings.pdf_font_ja = font_name
+        elif lang == 'en':
+            self.settings.pdf_font_en = font_name
         self.settings.save(self.settings_path)
 
     def _on_section_toggle(self, section_index: int, selected: bool):

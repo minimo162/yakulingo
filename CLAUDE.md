@@ -457,6 +457,8 @@ sans-serif → MS Pゴシック
   "font_jp_to_en_gothic": "Arial",
   "font_en_to_jp_serif": "MS Pゴシック",
   "font_en_to_jp_sans": "MS Pゴシック",
+  "pdf_font_ja": "MS P明朝",
+  "pdf_font_en": "Arial",
   "ocr_batch_size": 5,
   "ocr_dpi": 200,
   "ocr_device": "auto",
@@ -470,6 +472,10 @@ sans-serif → MS Pゴシック
 ```
 
 **translation_style / text_translation_style values**: `"standard"`, `"concise"` (default), `"minimal"`
+
+**フォント設定**:
+- `font_*`: Excel/Word/PowerPoint用（元フォント種類に応じて変換）
+- `pdf_font_*`: PDF用（言語別に固定フォントを埋め込み）
 
 ### Reference Files
 Reference files provide context for consistent translations:

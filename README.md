@@ -122,6 +122,8 @@ python app.py
   "font_en_to_jp_serif": "MS Pゴシック",
   "font_en_to_jp_sans": "MS Pゴシック",
   "font_size_adjustment_jp_to_en": 0.0,
+  "pdf_font_ja": "MS P明朝",
+  "pdf_font_en": "Arial",
   "auto_update_enabled": true
 }
 ```
@@ -132,9 +134,11 @@ python app.py
 | `export_glossary` | 用語集CSVを生成 | false |
 | `translation_style` | ファイル翻訳のスタイル | "concise" |
 | `text_translation_style` | テキスト翻訳のスタイル | "concise" |
-| `font_jp_to_en_*` | JP→EN時の出力フォント | Arial |
-| `font_en_to_jp_*` | EN→JP時の出力フォント | MS Pゴシック |
+| `font_jp_to_en_*` | Excel/Word/PPT: JP→EN時の出力フォント | Arial |
+| `font_en_to_jp_*` | Excel/Word/PPT: EN→JP時の出力フォント | MS Pゴシック |
 | `font_size_adjustment_jp_to_en` | JP→EN時のサイズ調整 | 0.0 (pt) |
+| `pdf_font_ja` | PDF: 日本語出力フォント | MS P明朝 |
+| `pdf_font_en` | PDF: 英語出力フォント | Arial |
 
 **翻訳スタイル**: `"standard"`（標準）, `"concise"`（簡潔）, `"minimal"`（最簡潔）
 

@@ -65,6 +65,10 @@ class AppSettings:
     font_en_to_jp_serif: str = "MS Pゴシック"  # Serif系→
     font_en_to_jp_sans: str = "MS Pゴシック"  # Sans-serif系→
 
+    # PDF Font Settings (PDF翻訳用、独自のフォント埋め込み)
+    pdf_font_ja: str = "MS P明朝"  # 日本語出力フォント
+    pdf_font_en: str = "Arial"    # 英語出力フォント
+
     # PDF OCR Options (yomitoku)
     ocr_batch_size: int = 5             # ページ/バッチ（メモリ使用量とのトレードオフ）
     ocr_dpi: int = 200                  # OCR解像度（高いほど精度向上、処理時間増加）
@@ -132,6 +136,9 @@ class AppSettings:
             "font_jp_to_en_gothic": self.font_jp_to_en_gothic,
             "font_en_to_jp_serif": self.font_en_to_jp_serif,
             "font_en_to_jp_sans": self.font_en_to_jp_sans,
+            # PDF Font Settings
+            "pdf_font_ja": self.pdf_font_ja,
+            "pdf_font_en": self.pdf_font_en,
             # PDF OCR Options
             "ocr_batch_size": self.ocr_batch_size,
             "ocr_dpi": self.ocr_dpi,

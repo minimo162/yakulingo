@@ -181,6 +181,48 @@ def _find_font_file(font_names: list[str]) -> Optional[str]:
     return None
 
 
+# Display name to font file mapping (for UI font selection)
+FONT_NAME_TO_FILES = {
+    # Japanese fonts
+    "MS P明朝": ["mspmincho.ttc", "MS PMincho.ttf"],
+    "MS 明朝": ["msmincho.ttc", "MS Mincho.ttf"],
+    "MS Pゴシック": ["mspgothic.ttc", "MS PGothic.ttf"],
+    "MS ゴシック": ["msgothic.ttc", "MS Gothic.ttf"],
+    "Meiryo UI": ["meiryoui.ttf", "Meiryo UI.ttf"],
+    "メイリオ": ["meiryo.ttc", "Meiryo.ttf"],
+    "Yu Gothic UI": ["YuGothUI.ttc", "Yu Gothic UI.ttf"],
+    "游ゴシック": ["YuGothic.ttc", "Yu Gothic.ttf"],
+    "游明朝": ["YuMincho.ttc", "Yu Mincho.ttf"],
+    "IPA明朝": ["ipam.ttf", "IPAMincho.ttf"],
+    "IPAゴシック": ["ipag.ttf", "IPAGothic.ttf"],
+    # English fonts
+    "Arial": ["arial.ttf", "Arial.ttf"],
+    "Calibri": ["calibri.ttf", "Calibri.ttf"],
+    "Times New Roman": ["times.ttf", "Times.ttf", "timesbd.ttf"],
+    "Segoe UI": ["segoeui.ttf", "Segoe UI.ttf"],
+    "Verdana": ["verdana.ttf", "Verdana.ttf"],
+    "Tahoma": ["tahoma.ttf", "Tahoma.ttf"],
+}
+
+
+def get_font_path_by_name(font_name: str) -> Optional[str]:
+    """
+    Get font path by display name.
+
+    Args:
+        font_name: Font display name (e.g., "MS P明朝", "Arial")
+
+    Returns:
+        Font file path if found, None otherwise
+    """
+    font_files = FONT_NAME_TO_FILES.get(font_name)
+    if font_files:
+        path = _find_font_file(font_files)
+        if path:
+            return path
+    return None
+
+
 # Font file names by language (cross-platform)
 # Default: Japanese = MS P明朝, English = Arial
 FONT_FILES = {
@@ -440,12 +482,25 @@ class FontRegistry:
         "ko": {"family": "Korean", "encoding": "cid", "is_cjk": True},
     }
 
-    def __init__(self):
+    def __init__(self, font_ja: Optional[str] = None, font_en: Optional[str] = None):
+        """
+        Initialize font registry.
+
+        Args:
+            font_ja: Preferred Japanese font name (e.g., "MS P明朝")
+            font_en: Preferred English font name (e.g., "Arial")
+        """
         self.fonts: dict[str, FontInfo] = {}
         self._font_xrefs: dict[str, int] = {}
         self._font_by_id: dict[str, FontInfo] = {}
         self._counter = 0
         self._missing_fonts: set[str] = set()
+        # Font preferences by language
+        self._font_preferences: dict[str, str] = {}
+        if font_ja:
+            self._font_preferences["ja"] = font_ja
+        if font_en:
+            self._font_preferences["en"] = font_en
 
     def register_font(self, lang: str) -> str:
         """
@@ -465,7 +520,15 @@ class FontRegistry:
 
         config = self.FONT_CONFIG.get(lang, self.FONT_CONFIG["en"])
 
-        font_path = get_font_path_for_lang(lang)
+        # Try preferred font first, then fall back to language default
+        font_path = None
+        preferred_font = self._font_preferences.get(lang)
+        if preferred_font:
+            font_path = get_font_path_by_name(preferred_font)
+
+        if not font_path:
+            font_path = get_font_path_for_lang(lang)
+
         if not font_path and lang not in self._missing_fonts:
             self._missing_fonts.add(lang)
 
@@ -1354,7 +1417,7 @@ class PdfProcessor(FileProcessor):
         output_path: Path,
         translations: dict[str, str],
         direction: str = "jp_to_en",
-        settings=None,  # Not used for PDF (uses embedded fonts)
+        settings=None,
     ) -> dict[str, Any]:
         """
         Apply translations to PDF using low-level operators.
@@ -1372,6 +1435,7 @@ class PdfProcessor(FileProcessor):
             output_path: Path for translated PDF
             translations: Mapping of block IDs to translated text
             direction: Translation direction
+            settings: AppSettings for font configuration (pdf_font_ja, pdf_font_en)
 
         Returns:
             Dictionary with processing statistics:
@@ -1394,8 +1458,10 @@ class PdfProcessor(FileProcessor):
             # Determine target language
             target_lang = "en" if direction == "jp_to_en" else "ja"
 
-            # 1. Register fonts (CJK support)
-            font_registry = FontRegistry()
+            # 1. Register fonts (CJK support) with settings-based preferences
+            font_ja = getattr(settings, 'pdf_font_ja', None) if settings else None
+            font_en = getattr(settings, 'pdf_font_en', None) if settings else None
+            font_registry = FontRegistry(font_ja=font_ja, font_en=font_en)
             font_registry.register_font("ja")
             font_registry.register_font("en")
             font_registry.register_font("zh-CN")
@@ -1503,7 +1569,7 @@ class PdfProcessor(FileProcessor):
         translations: dict[str, str],
         cells: list[TranslationCell],
         direction: str = "jp_to_en",
-        settings=None,  # Not used for PDF (uses embedded fonts)
+        settings=None,
     ) -> dict[str, Any]:
         """
         Apply translations using TranslationCell data (yomitoku integration).
@@ -1523,6 +1589,7 @@ class PdfProcessor(FileProcessor):
             translations: Mapping of addresses to translated text
             cells: TranslationCell list with position info (image coordinates)
             direction: Translation direction
+            settings: AppSettings for font configuration (pdf_font_ja, pdf_font_en)
 
         Returns:
             Dictionary with processing statistics:
@@ -1544,8 +1611,10 @@ class PdfProcessor(FileProcessor):
         try:
             target_lang = "en" if direction == "jp_to_en" else "ja"
 
-            # 1. Register fonts
-            font_registry = FontRegistry()
+            # 1. Register fonts with settings-based preferences
+            font_ja = getattr(settings, 'pdf_font_ja', None) if settings else None
+            font_en = getattr(settings, 'pdf_font_en', None) if settings else None
+            font_registry = FontRegistry(font_ja=font_ja, font_en=font_en)
             font_registry.register_font("ja")
             font_registry.register_font("en")
             font_registry.register_font("zh-CN")

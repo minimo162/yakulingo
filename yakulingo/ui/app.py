@@ -440,13 +440,16 @@ class YakuLingoApp:
             # Icon
             ui.icon('notes').classes('text-sm text-muted mt-0.5 flex-shrink-0')
 
-            # Text content
-            with ui.column().classes('flex-1 min-w-0 gap-0.5'):
-                ui.label(entry.preview).classes('text-xs truncate w-full')
+            # Text content container with proper CSS classes
+            with ui.column().classes('history-text-container gap-0.5'):
+                # Source text title
+                ui.label(entry.preview).classes('text-xs history-title')
                 # Show first translation preview
                 if entry.result.options:
-                    first_trans = entry.result.options[0].text[:30]
-                    ui.label(first_trans + '...').classes('text-2xs text-muted truncate w-full')
+                    first_trans = entry.result.options[0].text[:40]
+                    if len(entry.result.options[0].text) > 40:
+                        first_trans += '...'
+                    ui.label(first_trans).classes('text-2xs text-muted history-preview')
 
             # Three-dot menu button (visible on hover via CSS)
             with ui.button(icon='more_vert').props('flat dense round size=xs').classes('history-menu-btn') as menu_btn:

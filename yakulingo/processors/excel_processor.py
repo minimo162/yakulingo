@@ -99,7 +99,7 @@ class ExcelProcessor(FileProcessor):
             return self._get_file_info_openpyxl(file_path)
 
     def _get_file_info_xlwings(self, file_path: Path, xw) -> FileInfo:
-        """Get file info using xlwings"""
+        """Get file info using xlwings (optimized for performance)"""
         app = xw.App(visible=False, add_book=False)
         try:
             wb = app.books.open(str(file_path))
@@ -111,14 +111,28 @@ class ExcelProcessor(FileProcessor):
                 for idx, sheet in enumerate(wb.sheets):
                     sheet_block_count = 0
 
-                    # Count cells with text
+                    # Count cells with text - OPTIMIZED: get all values at once
+                    # This is much faster than iterating cell by cell (avoids COM overhead)
                     used_range = sheet.used_range
                     if used_range is not None:
-                        for row in used_range.rows:
-                            for cell in row:
-                                if cell.value and isinstance(cell.value, str):
-                                    if self.cell_translator.should_translate(str(cell.value)):
-                                        sheet_block_count += 1
+                        # Get all values as a 2D array in a single COM call
+                        all_values = used_range.value
+                        if all_values is not None:
+                            # Handle single cell case (returns scalar, not list)
+                            if not isinstance(all_values, list):
+                                all_values = [[all_values]]
+                            # Handle single row case (returns 1D list)
+                            elif all_values and not isinstance(all_values[0], list):
+                                all_values = [all_values]
+
+                            # Count translatable text cells
+                            for row in all_values:
+                                if row is None:
+                                    continue
+                                for cell_value in row:
+                                    if cell_value and isinstance(cell_value, str):
+                                        if self.cell_translator.should_translate(str(cell_value)):
+                                            sheet_block_count += 1
 
                     # Count shapes with text (TextBox, etc.)
                     for shape in sheet.shapes:

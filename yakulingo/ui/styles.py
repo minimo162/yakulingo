@@ -109,7 +109,7 @@ COMPLETE_CSS = """
     /* 3-Column Layout (Nani-inspired) */
     --input-panel-width: 420px;
     --input-panel-width-wide: 600px;  /* Wider input for 2-column mode */
-    --result-element-max-width: 36rem;  /* Max width for result panel elements (576px) */
+    --result-element-max-width: 100%;  /* Fill available width in result panel */
     --bp-desktop: 1200px;        /* Full 3-column with sidebar */
     --bp-tablet-portrait: 800px; /* 2-column with fixed input */
     --bp-mobile: 800px;          /* Single column layout */
@@ -201,16 +201,11 @@ body {
     min-height: 100vh;
     padding: 1.5rem 2rem;
     overflow-y: auto;
-    /* Center content within result panel */
-    display: flex;
-    flex-direction: column;
-    align-items: center;
 }
 
-/* Result panel inner content - wider and centered */
+/* Result panel inner content - full width */
 .result-panel > * {
     width: 100%;
-    max-width: var(--result-element-max-width);
 }
 
 /* Empty Result State Placeholder */
@@ -1997,7 +1992,7 @@ body {
 .inline-adjust-section {
     display: flex;
     flex-direction: column;
-    align-items: center;
+    width: 100%;
     margin-top: 0.5rem;
     animation: fadeIn var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-standard);
 }
@@ -2080,7 +2075,6 @@ body {
 }
 
 .inline-adjust-panel {
-    max-width: var(--result-element-max-width);
     width: 100%;
     background: var(--md-sys-color-surface);
     border-radius: var(--md-sys-shape-corner-xl);
@@ -2134,7 +2128,6 @@ body {
 
 /* === Inline Question Section === */
 .inline-question-section {
-    max-width: var(--result-element-max-width);
     width: 100%;
     margin-top: 1rem;
     background: var(--md-sys-color-surface);

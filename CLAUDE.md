@@ -633,6 +633,26 @@ pip install -r requirements_pdf.txt
 - `yomitoku>=0.8.0`: Japanese document AI (OCR & layout analysis)
 - Requires Python 3.10-3.12, PyTorch 2.5+, GPU with 8GB+ VRAM recommended
 
+### PDF Processing Details
+
+**yomitoku DocumentAnalyzer Settings:**
+```python
+DocumentAnalyzer(
+    configs={},
+    device=device,              # "cuda" or "cpu"
+    visualize=False,
+    ignore_meta=False,          # Include headers/footers
+    reading_order="auto",       # Auto-detect reading direction
+    split_text_across_cells=True,  # Split text at table cell boundaries
+)
+```
+
+**Line Break Handling (yomitoku style):**
+- PDF text extraction removes line breaks: `text.replace("\n", "")`
+- Applied in both yomitoku mode and fast mode (PyMuPDF)
+- Follows yomitoku's `--ignore_line_break` CLI behavior
+- Optimized for Japanese documents where line breaks within paragraphs are visual-only
+
 ### Optional Dependencies
 - `[ocr]`: yomitoku for OCR support
 - `[test]`: pytest, pytest-cov, pytest-asyncio

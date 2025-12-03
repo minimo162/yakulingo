@@ -641,6 +641,14 @@ class CopilotHandler:
 
     def disconnect(self) -> None:
         """Close browser and cleanup"""
+        # Execute cleanup in Playwright thread to avoid greenlet errors
+        try:
+            _playwright_executor.execute(self._disconnect_impl)
+        except Exception as e:
+            logger.debug("Error during disconnect: %s", e)
+
+    def _disconnect_impl(self) -> None:
+        """Implementation of disconnect that runs in the Playwright thread."""
         from contextlib import suppress
 
         self._connected = False
@@ -749,9 +757,28 @@ class CopilotHandler:
         Returns:
             List of translated strings parsed from Copilot's response
         """
-        # Always call connect() to ensure connection is valid
-        # connect() checks page validity and reconnects if needed
-        if not self.connect():
+        # Execute all Playwright operations in the dedicated thread
+        # This avoids greenlet thread-switching errors when called from asyncio.to_thread
+        return _playwright_executor.execute(
+            self._translate_sync_impl, texts, prompt, reference_files, char_limit
+        )
+
+    def _translate_sync_impl(
+        self,
+        texts: list[str],
+        prompt: str,
+        reference_files: Optional[list[Path]] = None,
+        char_limit: Optional[int] = None,
+    ) -> list[str]:
+        """
+        Implementation of translate_sync that runs in the Playwright thread.
+
+        This method is called via PlaywrightThreadExecutor.execute() to ensure
+        all Playwright operations run in the correct thread context.
+        """
+        # Call _connect_impl directly since we're already in the Playwright thread
+        # (calling connect() would cause nested executor calls)
+        if not self._connect_impl():
             raise RuntimeError("ブラウザに接続できませんでした。Edgeが起動しているか確認してください。")
 
         # Attach reference files first (before sending prompt)

@@ -16,20 +16,7 @@ sys.path.insert(0, str(project_root))
 
 
 def setup_logging():
-    """Configure logging to file for debugging"""
-    # Log file location: ~/.yakulingo/yakulingo.log
-    log_dir = Path.home() / ".yakulingo"
-    log_dir.mkdir(parents=True, exist_ok=True)
-    log_file = log_dir / "yakulingo.log"
-
-    # Create file handler
-    file_handler = logging.FileHandler(log_file, encoding='utf-8', mode='w')
-    file_handler.setLevel(logging.DEBUG)
-    file_handler.setFormatter(logging.Formatter(
-        '%(asctime)s [%(levelname)s] %(name)s: %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
-    ))
-
+    """Configure logging to console for debugging"""
     # Create console handler for terminal output
     console_handler = logging.StreamHandler(sys.stderr)
     console_handler.setLevel(logging.DEBUG)
@@ -38,13 +25,12 @@ def setup_logging():
         datefmt='%H:%M:%S'
     ))
 
-    # Configure root logger with force=True to override any existing config
+    # Configure root logger
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.DEBUG)
     # Remove existing handlers that might interfere
     for handler in root_logger.handlers[:]:
         root_logger.removeHandler(handler)
-    root_logger.addHandler(file_handler)
     root_logger.addHandler(console_handler)
 
     # Also explicitly configure yakulingo loggers
@@ -60,10 +46,9 @@ def setup_logging():
     logger = logging.getLogger(__name__)
     logger.info("=" * 60)
     logger.info("YakuLingo starting...")
-    logger.info("Log file: %s", log_file)
     logger.info("=" * 60)
 
-    return log_file, file_handler  # Return handler to keep reference
+    return console_handler  # Return handler to keep reference
 
 
 # Global reference to keep log handler alive
@@ -90,9 +75,7 @@ def main():
     os.environ.setdefault('PYWEBVIEW_GUI', 'edgechromium')
 
     global _global_log_handler
-    log_file, file_handler = setup_logging()
-    _global_log_handler = file_handler  # Keep reference to prevent garbage collection
-    print(f"ログファイル: {log_file}")  # Show log location even without console
+    _global_log_handler = setup_logging()  # Keep reference to prevent garbage collection
 
     # Import here to avoid double initialization in native mode
     from yakulingo.ui.app import run_app

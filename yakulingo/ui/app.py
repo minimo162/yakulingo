@@ -1440,7 +1440,7 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
         yakulingo_app._client = client
 
         # Show loading screen immediately (before client connects)
-        loading_container = ui.column().classes('loading-screen')
+        loading_container = ui.element('div').classes('loading-screen')
         with loading_container:
             ui.spinner('dots', size='3em', color='primary')
             ui.label('YakuLingo').classes('loading-title')

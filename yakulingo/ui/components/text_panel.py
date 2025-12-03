@@ -248,17 +248,17 @@ def _create_compact_input_panel(
     on_settings: Optional[Callable[[], None]] = None,
     on_translate_button_created: Optional[Callable[[ui.button], None]] = None,
 ):
-    """Compact input panel for RESULT state - middle column only (same size as large panel)"""
+    """Compact input panel for RESULT state - fills available vertical space"""
     with ui.column().classes('flex-1 w-full gap-4'):
-        # Card container - same style as large input panel
+        # Card container - fills available space via CSS flex
         with ui.element('div').classes('main-card w-full'):
             with ui.element('div').classes('main-card-inner'):
-                # Textarea - same min-height as large panel for consistency
+                # Textarea - fills available space (controlled by CSS flex: 1)
                 textarea = ui.textarea(
                     placeholder='新しいテキストを入力…',
                     value=state.source_text,
                     on_change=lambda e: on_source_change(e.value)
-                ).classes('w-full p-4').props('borderless autogrow aria-label="翻訳するテキスト"').style('min-height: 280px')
+                ).classes('w-full p-4 compact-textarea').props('borderless autogrow aria-label="翻訳するテキスト"')
 
                 # Handle Ctrl+Enter in textarea with NiceGUI 3.0+ js_handler
                 # Prevent default browser behavior (newline insertion) when Ctrl+Enter is pressed

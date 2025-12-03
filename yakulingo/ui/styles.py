@@ -1113,9 +1113,33 @@ body {
     border-right: 1px solid var(--md-sys-color-outline-variant);
 }
 
-/* Ensure main-card fills the input panel properly */
+/* Ensure main-card fills the input panel properly (full height) */
 .main-area.has-results .input-panel .main-card {
     width: 100%;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.main-area.has-results .input-panel .main-card-inner {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Make textarea fill available space */
+.main-area.has-results .input-panel .main-card-inner textarea,
+.main-area.has-results .input-panel .compact-textarea {
+    flex: 1 !important;
+    min-height: 150px;
+    height: 100%;
+}
+
+/* Ensure the nicegui-column also fills space */
+.main-area.has-results .input-panel > .nicegui-column {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
 }
 
 .main-area.has-results .result-panel {

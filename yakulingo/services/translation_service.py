@@ -19,9 +19,10 @@ import re
 logger = logging.getLogger(__name__)
 
 # Pre-compiled regex patterns for performance
-_RE_MULTI_OPTION = re.compile(r'\[(\d+)\]\s*訳文:\s*(.+?)\s*解説:\s*(.+?)(?=\[\d+\]|$)', re.DOTALL)
-_RE_TRANSLATION_TEXT = re.compile(r'訳文:\s*(.+?)(?=解説:|$)', re.DOTALL)
-_RE_EXPLANATION = re.compile(r'解説:\s*(.+)', re.DOTALL)
+# Support both half-width (:) and full-width (：) colons, and markdown bold (**訳文:**)
+_RE_MULTI_OPTION = re.compile(r'\[(\d+)\]\s*\**訳文\**[:：]\s*(.+?)\s*\**解説\**[:：]\s*(.+?)(?=\[\d+\]|$)', re.DOTALL)
+_RE_TRANSLATION_TEXT = re.compile(r'\**訳文\**[:：]\s*(.+?)(?=\**解説\**[:：]|$)', re.DOTALL)
+_RE_EXPLANATION = re.compile(r'\**解説\**[:：]\s*(.+)', re.DOTALL)
 _RE_MARKDOWN_SEPARATOR = re.compile(r'\n?\s*[\*\-]{3,}\s*$')
 
 # Punctuation categories to skip in language detection (cached set for performance)
@@ -744,9 +745,13 @@ class TranslationService:
 
     def _parse_single_translation_result(self, raw_result: str) -> list[TranslationOption]:
         """Parse single translation result from Copilot (for →jp translation)."""
+        logger.debug("Parsing translation result (first 500 chars): %s", raw_result[:500] if raw_result else "(empty)")
+
         # Use pre-compiled patterns for 訳文: ... 解説: ...
         text_match = _RE_TRANSLATION_TEXT.search(raw_result)
         explanation_match = _RE_EXPLANATION.search(raw_result)
+
+        logger.debug("text_match: %s, explanation_match: %s", bool(text_match), bool(explanation_match))
 
         if text_match:
             text = text_match.group(1).strip()
@@ -754,11 +759,15 @@ class TranslationService:
             text = _RE_MARKDOWN_SEPARATOR.sub('', text).strip()
             explanation = explanation_match.group(1).strip() if explanation_match else "翻訳結果です"
 
+            logger.debug("Parsed text (first 100): %s", text[:100] if text else "(empty)")
+            logger.debug("Parsed explanation (first 100): %s", explanation[:100] if explanation else "(empty)")
+
             if text:
                 return [TranslationOption(text=text, explanation=explanation)]
 
         # Fallback: try to extract any meaningful content
         # Sometimes the AI might not follow the exact format
+        logger.debug("Using fallback parsing (pattern not matched)")
         lines = raw_result.strip().split('\n')
         if lines:
             # Use first non-empty line as text

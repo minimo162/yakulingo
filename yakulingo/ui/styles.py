@@ -561,6 +561,31 @@ body {
     box-shadow: none;
 }
 
+/* Compact translate button for RESULT state */
+.translate-btn.compact {
+    height: 2rem;
+    min-height: 2rem;
+    padding: 0 0.75rem;
+    font-size: 0.8125rem;
+    gap: 0.25rem;
+}
+
+/* Compact attach button */
+.attach-btn.compact {
+    padding: 0.25rem;
+}
+
+.attach-btn.compact svg {
+    width: 16px;
+    height: 16px;
+}
+
+/* Compact attach file indicator */
+.attach-file-indicator.compact {
+    padding: 0.125rem 0.375rem;
+    font-size: 0.6875rem;
+}
+
 /* === M3 Tonal Button (Filled Tonal) === */
 .btn-tonal {
     display: inline-flex;

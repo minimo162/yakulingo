@@ -32,6 +32,12 @@ class FileState(Enum):
     ERROR = "error"
 
 
+class TextViewState(Enum):
+    """Text tab view states"""
+    INPUT = "input"      # Initial state - large input area
+    RESULT = "result"    # After translation - compact input + result panel
+
+
 @dataclass
 class AppState:
     """
@@ -47,6 +53,7 @@ class AppState:
     current_tab: Tab = Tab.TEXT
 
     # Text tab state
+    text_view_state: TextViewState = TextViewState.INPUT  # Current view state
     source_text: str = ""
     text_translating: bool = False
     text_result: Optional[TextTranslationResult] = None
@@ -95,6 +102,14 @@ class AppState:
             logger.warning("Failed to initialize history database: %s", e)
             self._history_db = None
             self.history = []
+
+    def reset_text_state(self) -> None:
+        """Reset text tab state to initial INPUT view"""
+        self.text_view_state = TextViewState.INPUT
+        self.source_text = ""
+        self.text_translating = False
+        self.text_result = None
+        self.text_translation_elapsed_time = None
 
     def reset_file_state(self) -> None:
         """Reset file tab state"""

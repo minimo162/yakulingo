@@ -423,10 +423,8 @@ class YakuLingoApp:
             if self.state.current_tab == tab:
                 # Same tab clicked - reset to initial state
                 if tab == Tab.TEXT:
-                    # Reset text translation state
-                    self.state.source_text = ""
-                    self.state.text_result = None
-                    self.state.text_translation_elapsed_time = None
+                    # Reset text translation state to INPUT view
+                    self.state.reset_text_state()
                 else:
                     # Reset file translation state
                     self.state.reset_file_state()
@@ -477,12 +475,13 @@ class YakuLingoApp:
 
     def _get_main_area_classes(self) -> str:
         """Get dynamic CSS classes for main-area based on current state."""
+        from yakulingo.ui.state import TextViewState
         classes = ['main-area']
 
         if self.state.current_tab == Tab.FILE:
             classes.append('file-mode')
-        elif self.state.text_result or self.state.text_translating:
-            # Show results panel when translating or has results
+        elif self.state.text_view_state == TextViewState.RESULT or self.state.text_translating:
+            # Show results panel in RESULT view state or when translating
             classes.append('has-results')
 
         return ' '.join(classes)
@@ -655,8 +654,11 @@ class YakuLingoApp:
             self.state.text_translation_elapsed_time = elapsed_time
 
             if result and result.options:
+                from yakulingo.ui.state import TextViewState
                 self.state.text_result = result
-                self._add_to_history(result)
+                self.state.text_view_state = TextViewState.RESULT
+                self._add_to_history(result, source_text)  # Save original source before clearing
+                self.state.source_text = ""  # Clear input for new translations
             else:
                 error_message = result.error_message if result else 'Unknown error'
 
@@ -1231,8 +1233,11 @@ class YakuLingoApp:
 
     def _load_from_history(self, entry: HistoryEntry):
         """Load translation from history"""
-        self.state.source_text = entry.source_text
+        from yakulingo.ui.state import TextViewState
+        # Show result but keep input empty for new translations
+        self.state.source_text = ""
         self.state.text_result = entry.result
+        self.state.text_view_state = TextViewState.RESULT
         self.state.current_tab = Tab.TEXT
 
         self._refresh_tabs()
@@ -1243,10 +1248,10 @@ class YakuLingoApp:
         self.state.clear_history()
         self._refresh_history()
 
-    def _add_to_history(self, result: TextTranslationResult):
+    def _add_to_history(self, result: TextTranslationResult, source_text: str):
         """Add translation result to history"""
         entry = HistoryEntry(
-            source_text=self.state.source_text,
+            source_text=source_text,
             result=result,
         )
         self.state.add_to_history(entry)

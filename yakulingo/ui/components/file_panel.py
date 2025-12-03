@@ -219,18 +219,26 @@ def _drop_zone(on_file_select: Callable[[Path], None]):
 
     def handle_upload(e: events.UploadEventArguments):
         try:
-            # NiceGUI 3.0+ uses e.file.content and e.file.name
+            # NiceGUI 3.0+ uses e.file with data attribute
             # Older versions use e.content and e.name directly
             if hasattr(e, 'file'):
-                content = e.file.content.read()
-                name = e.file.name
+                # NiceGUI 3.x: SmallFileUpload has data (bytes) and name
+                file_obj = e.file
+                if hasattr(file_obj, 'data'):
+                    content = file_obj.data
+                elif hasattr(file_obj, '_data'):
+                    content = file_obj._data
+                else:
+                    content = file_obj.content.read()
+                name = file_obj.name
             else:
+                # Older NiceGUI: direct content and name attributes
                 content = e.content.read()
                 name = e.name
             # Use temp file manager for automatic cleanup
             temp_path = temp_file_manager.create_temp_file(content, name)
             on_file_select(temp_path)
-        except OSError as err:
+        except (OSError, AttributeError) as err:
             ui.notify(f'ファイルの読み込みに失敗しました: {err}', type='negative')
 
     # Container with relative positioning for layering

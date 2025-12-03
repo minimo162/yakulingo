@@ -335,6 +335,21 @@ body {
     flex: 1;
     min-height: 0;
     max-height: calc(100vh - 280px);
+    width: 100%;
+}
+
+/* Override NiceGUI scroll_area default behavior */
+.history-scroll .q-scrollarea {
+    width: 100% !important;
+}
+
+.history-scroll .q-scrollarea__container {
+    width: 100% !important;
+}
+
+.history-scroll .q-scrollarea__content {
+    width: 100% !important;
+    min-width: 0 !important;
 }
 
 .history-item {
@@ -1539,7 +1554,7 @@ body {
 
 .nani-explanation ul {
     margin: 0 !important;
-    padding-left: 1.25rem !important;
+    padding-left: 1.5rem !important;
     list-style-type: disc !important;
     list-style-position: outside !important;
 }
@@ -1547,6 +1562,11 @@ body {
 .nani-explanation li {
     margin-bottom: 0.5rem;
     display: list-item !important;
+    padding-left: 0.25rem;
+}
+
+.nani-explanation li::marker {
+    color: var(--md-sys-color-primary);
 }
 
 .nani-explanation li:last-child {

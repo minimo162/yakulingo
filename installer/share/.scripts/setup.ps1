@@ -307,10 +307,17 @@ if (-not $GuiMode) {
 Remove-Item -Path $TempDir -Recurse -Force -ErrorAction SilentlyContinue
 
 # ============================================================
+# Launch application
+# ============================================================
+Write-Status -Message "Launching YakuLingo..." -Progress
+$ExePath = Join-Path $InstallPath "YakuLingo.exe"
+Start-Process -FilePath $ExePath -WorkingDirectory $InstallPath
+
+# ============================================================
 # Done
 # ============================================================
 if ($GuiMode) {
-    Show-Success "Setup completed!`n`nYakuLingo has been installed.`n`nTo launch:`n  - Double-click the 'YakuLingo' shortcut on your desktop"
+    Show-Success "Setup completed!`n`nYakuLingo has been installed and launched."
 } else {
     Write-Host ""
     Write-Host "============================================================" -ForegroundColor Green
@@ -318,9 +325,7 @@ if ($GuiMode) {
     Write-Host "============================================================" -ForegroundColor Green
     Write-Host ""
     Write-Host " Location: $InstallPath" -ForegroundColor White
-    Write-Host ""
-    Write-Host " To launch:" -ForegroundColor White
-    Write-Host "   - Double-click the '$AppName' shortcut on your desktop" -ForegroundColor Gray
+    Write-Host " YakuLingo is now starting..." -ForegroundColor Cyan
     Write-Host ""
 }
 

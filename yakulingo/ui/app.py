@@ -617,6 +617,10 @@ class YakuLingoApp:
         self._refresh_content()
 
         try:
+            # Yield control to event loop before starting blocking operation
+            # This helps prevent WebSocket disconnection issues
+            await asyncio.sleep(0)
+
             # Run translation in background thread to avoid blocking NiceGUI event loop
             # Playwright operations are handled by PlaywrightThreadExecutor internally
             result = await asyncio.to_thread(
@@ -660,6 +664,9 @@ class YakuLingoApp:
         self._refresh_content()
 
         try:
+            # Yield control to event loop before starting blocking operation
+            await asyncio.sleep(0)
+
             # Pass source_text for style-based adjustments
             source_text = self.state.source_text
             result = await asyncio.to_thread(
@@ -699,6 +706,9 @@ class YakuLingoApp:
         self._refresh_content()
 
         try:
+            # Yield control to event loop before starting blocking operation
+            await asyncio.sleep(0)
+
             # Build back-translation prompt
             prompt = f"""以下の翻訳文を元の言語に戻して翻訳してください。
 これは翻訳の正確性をチェックするための「戻し訳」です。
@@ -949,6 +959,9 @@ class YakuLingoApp:
         self._refresh_content()
 
         try:
+            # Yield control to event loop before starting blocking operation
+            await asyncio.sleep(0)
+
             # Build context from current translation
             source_text = self.state.source_text
             translation = self.state.text_result.options[0].text if self.state.text_result and self.state.text_result.options else ""
@@ -1064,6 +1077,9 @@ class YakuLingoApp:
             status_label.set_text(p.status or 'Translating...')
 
         try:
+            # Yield control to event loop before starting blocking operation
+            await asyncio.sleep(0)
+
             # For PDFs, use_ocr is the inverse of fast_mode
             use_ocr = not self.state.pdf_fast_mode
 
@@ -1282,5 +1298,6 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
         native=native,
         window_size=window_size,
         frameless=False,
-        reconnect_timeout=10.0,  # Increase from default 3s for stable WebSocket connection
+        show=False,  # Don't open browser (native mode uses pywebview window)
+        reconnect_timeout=30.0,  # Increase from default 3s for stable WebSocket connection
     )

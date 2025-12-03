@@ -1117,11 +1117,16 @@ class YakuLingoApp:
 
     async def _translate_file(self):
         """Translate file with progress dialog"""
+        import time
+
         if not self.translation_service or not self.state.selected_file:
             return
 
         # Use saved client reference (context.client not available in async tasks)
         client = self._client
+
+        # Track translation time from user's perspective
+        start_time = time.time()
 
         self.state.file_state = FileState.TRANSLATING
         self.state.translation_progress = 0.0
@@ -1197,6 +1202,9 @@ class YakuLingoApp:
             except Exception as e:
                 logger.debug("Failed to close progress dialog: %s", e)
 
+            # Calculate elapsed time from user's perspective
+            elapsed_time = time.time() - start_time
+
             if error_message:
                 ui.notify(f'エラー: {error_message}', type='negative')
             elif result:
@@ -1208,7 +1216,7 @@ class YakuLingoApp:
                     from yakulingo.ui.utils import create_completion_dialog
                     create_completion_dialog(
                         result=result,
-                        duration_seconds=result.duration_seconds,
+                        duration_seconds=elapsed_time,
                         on_close=self._refresh_content,
                     )
                 elif result.status == TranslationStatus.CANCELLED:

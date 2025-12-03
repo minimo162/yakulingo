@@ -1587,15 +1587,6 @@ body {
     min-width: 0;
 }
 
-.status-label {
-    font-size: 1rem;
-    line-height: 1.5;
-    color: var(--md-sys-color-on-surface-variant);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
 .result-container {
     display: flex;
     flex-direction: column;

@@ -104,11 +104,11 @@ COMPLETE_CSS = """
     --md-sys-elevation-2: 0 4px 12px rgba(0,0,0,0.06), 0 2px 4px rgba(0,0,0,0.04);
 
     /* Sidebar */
-    --sidebar-width: 220px;
+    --sidebar-width: 260px;
 
     /* 3-Column Layout (Nani-inspired) */
-    --input-panel-width: 360px;
-    --input-panel-width-wide: 520px;  /* Wider input for 2-column mode */
+    --input-panel-width: 420px;
+    --input-panel-width-wide: 600px;  /* Wider input for 2-column mode */
     --bp-desktop: 1200px;        /* Full 3-column with sidebar */
     --bp-tablet-portrait: 800px; /* 2-column with fixed input */
     --bp-mobile: 800px;          /* Single column layout */

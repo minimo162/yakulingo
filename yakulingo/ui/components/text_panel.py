@@ -360,13 +360,33 @@ def create_text_result_panel(
     elapsed_time = state.text_translation_elapsed_time
 
     with ui.column().classes('flex-1 w-full gap-4'):
+        # Source text section at the top (when translating or has result)
+        source_text_to_display = None
+        if state.text_translating and state.source_text:
+            source_text_to_display = state.source_text
+        elif state.text_result and state.text_result.source_text:
+            source_text_to_display = state.text_result.source_text
+
+        if source_text_to_display:
+            _render_source_text_section(source_text_to_display, on_copy)
+
+        # Translation status section
+        if state.text_translating:
+            _render_translation_status(state.text_detected_language, translating=True)
+        elif state.text_result and state.text_result.options:
+            _render_translation_status(
+                state.text_result.detected_language,
+                translating=False,
+                elapsed_time=elapsed_time,
+            )
+
         # Results section - language-specific UI
         if state.text_result and state.text_result.options:
             if state.text_result.is_to_japanese:
                 # →Japanese: Single result with detailed explanation + follow-up actions
                 _render_results_to_jp(
                     state.text_result,
-                    state.source_text,
+                    state.text_result.source_text,  # Use stored source text
                     on_copy,
                     on_follow_up,
                     on_adjust,
@@ -385,10 +405,82 @@ def create_text_result_panel(
                     on_retry,
                 )
         elif state.text_translating:
-            _render_loading(state.source_text)
+            _render_loading_spinner()
         else:
             # Empty state - show placeholder
             _render_empty_result_state()
+
+
+def _render_source_text_section(source_text: str, on_copy: Callable[[str], None]):
+    """Render source text section at the top of result panel with copy button"""
+    with ui.element('div').classes('source-text-section'):
+        with ui.row().classes('items-start justify-between gap-2'):
+            with ui.column().classes('flex-1 gap-1'):
+                ui.label('原文').classes('text-xs text-muted font-medium')
+                ui.label(source_text).classes('source-text-content')
+            # Copy button
+            ui.button(
+                icon='content_copy',
+                on_click=lambda: on_copy(source_text)
+            ).props('flat dense round size=sm aria-label="原文をコピー"').classes('source-copy-btn').tooltip('原文をコピー')
+
+
+def _render_translation_status(
+    detected_language: Optional[str],
+    translating: bool = False,
+    elapsed_time: Optional[float] = None,
+):
+    """
+    Render translation status section.
+
+    Shows:
+    - During translation: "〜語から〜語へ翻訳中..."
+    - After translation: "〜語から〜語へ翻訳しました" with elapsed time
+    """
+    # Determine source and target languages
+    if detected_language == "日本語":
+        source_lang = "日本語"
+        target_lang = "英語"
+        source_flag = "🇯🇵"
+        target_flag = "🇺🇸"
+    elif detected_language:
+        source_lang = detected_language
+        target_lang = "日本語"
+        source_flag = "🌐"
+        target_flag = "🇯🇵"
+    else:
+        # Still detecting or unknown
+        source_lang = None
+        target_lang = None
+        source_flag = "🔍"
+        target_flag = ""
+
+    with ui.element('div').classes('translation-status-section'):
+        with ui.row().classes('items-center gap-2'):
+            if translating:
+                # Translating state
+                ui.spinner('dots', size='sm').classes('text-primary')
+                if source_lang and target_lang:
+                    ui.label(f'{source_flag} {source_lang}から{target_flag} {target_lang}へ翻訳中...').classes('status-text')
+                else:
+                    ui.label(f'{source_flag} 言語を判定しています...').classes('status-text')
+            else:
+                # Completed state
+                ui.icon('check_circle').classes('text-lg text-success')
+                if source_lang and target_lang:
+                    ui.label(f'{source_flag} {source_lang}から{target_flag} {target_lang}へ翻訳しました').classes('status-text')
+                else:
+                    ui.label('翻訳しました').classes('status-text')
+
+                # Elapsed time badge
+                if elapsed_time:
+                    ui.label(f'{elapsed_time:.1f}秒').classes('elapsed-time-badge')
+
+
+def _render_loading_spinner():
+    """Render loading spinner during translation"""
+    with ui.element('div').classes('loading-spinner-section'):
+        ui.spinner('dots', size='lg').classes('text-primary')
 
 
 def _render_empty_result_state():
@@ -595,16 +687,6 @@ def _render_results_to_en(
 ):
     """Render →English results: multiple options with inline adjustment"""
 
-    # Avatar and status row with elapsed time
-    with ui.element('div').classes('avatar-status-row'):
-        with ui.element('span').classes('avatar-container'):
-            ui.html(AVATAR_SVG, sanitize=False)
-        with ui.element('div').classes('status-text'):
-            with ui.row().classes('items-center gap-2'):
-                ui.label('翻訳しました').classes('status-label')
-                if elapsed_time:
-                    ui.label(f'{elapsed_time:.1f}秒').classes('elapsed-time-badge')
-
     # Translation results container
     with ui.element('div').classes('result-container'):
         with ui.element('div').classes('result-section w-full'):
@@ -640,16 +722,6 @@ def _render_results_to_jp(
         return
 
     option = result.options[0]  # Single option for →jp
-
-    # Avatar and status row with elapsed time
-    with ui.element('div').classes('avatar-status-row'):
-        with ui.element('span').classes('avatar-container'):
-            ui.html(AVATAR_SVG, sanitize=False)
-        with ui.element('div').classes('status-text'):
-            with ui.row().classes('items-center gap-2'):
-                ui.label('翻訳しました').classes('status-label')
-                if elapsed_time:
-                    ui.label(f'{elapsed_time:.1f}秒').classes('elapsed-time-badge')
 
     # Translation results container
     with ui.element('div').classes('result-container'):

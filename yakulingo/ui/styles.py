@@ -222,6 +222,59 @@ body {
     background-color: var(--md-sys-color-surface-container-low);
 }
 
+/* === Source Text Section (Result Panel Top) === */
+.source-text-section {
+    background-color: var(--md-sys-color-surface-container);
+    border-radius: var(--md-sys-shape-corner-medium);
+    padding: 1rem;
+    border: 1px solid var(--md-sys-color-outline-variant);
+}
+
+.source-text-content {
+    font-size: var(--md-sys-typescale-size-sm);
+    line-height: 1.6;
+    color: var(--md-sys-color-on-surface);
+    word-break: break-word;
+    white-space: pre-wrap;
+}
+
+.source-copy-btn {
+    color: var(--md-sys-color-on-surface-variant);
+    opacity: 0.7;
+    flex-shrink: 0;
+}
+
+.source-copy-btn:hover {
+    opacity: 1;
+    color: var(--md-sys-color-primary);
+}
+
+/* === Translation Status Section === */
+.translation-status-section {
+    padding: 0.75rem 1rem;
+    background-color: var(--md-sys-color-surface-container-low);
+    border-radius: var(--md-sys-shape-corner-small);
+    border-left: 3px solid var(--md-sys-color-primary);
+}
+
+.translation-status-section .status-text {
+    font-size: var(--md-sys-typescale-size-sm);
+    color: var(--md-sys-color-on-surface);
+    font-weight: 500;
+}
+
+.translation-status-section .text-success {
+    color: var(--md-sys-color-success, #2e7d32);
+}
+
+/* === Loading Spinner Section === */
+.loading-spinner-section {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 3rem;
+}
+
 /* === Logo === */
 .app-logo {
     font-size: var(--md-sys-typescale-size-lg);

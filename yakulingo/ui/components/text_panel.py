@@ -132,7 +132,7 @@ def _create_large_input_panel(
     on_translate_button_created: Optional[Callable[[ui.button], None]] = None,
 ):
     """Large input panel for INPUT state - spans 2 columns"""
-    with ui.column().classes('flex-1 w-full gap-4 items-center justify-center'):
+    with ui.column().classes('flex-1 w-full gap-4'):
         # Main card container - centered and larger
         with ui.element('div').classes('main-card w-full'):
             # Input container

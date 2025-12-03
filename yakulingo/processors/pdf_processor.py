@@ -1217,6 +1217,7 @@ def get_document_analyzer(device: str = "cpu", reading_order: str = "auto"):
                     visualize=False,
                     ignore_meta=False,
                     reading_order=reading_order,
+                    split_text_across_cells=True,
                 )
     return _analyzer_cache[cache_key]
 
@@ -1272,9 +1273,11 @@ def prepare_translation_cells(
             continue
 
         if para.contents.strip():
+            # Remove line breaks (yomitoku style: replace "\n" with "")
+            text = para.contents.replace("\n", "")
             cells.append(TranslationCell(
                 address=f"P{page_num}_{para.order}",
-                text=para.contents,
+                text=text,
                 box=para.box,
                 direction=para.direction,
                 role=para.role,
@@ -1285,9 +1288,11 @@ def prepare_translation_cells(
     for table in results.tables:
         for cell in table.cells:
             if cell.contents.strip():
+                # Remove line breaks (yomitoku style: replace "\n" with "")
+                text = cell.contents.replace("\n", "")
                 cells.append(TranslationCell(
                     address=f"T{page_num}_{table.order}_{cell.row}_{cell.col}",
-                    text=cell.contents,
+                    text=text,
                     box=cell.box,
                     direction="horizontal",
                     role="table_cell",
@@ -1387,7 +1392,8 @@ class PdfProcessor(FileProcessor):
                                 line_text += span.get("text", "")
                             text_parts.append(line_text)
 
-                        text = "\n".join(text_parts).strip()
+                        # Remove line breaks (yomitoku style: join without newlines)
+                        text = "".join(text_parts).strip()
 
                         if text and self.should_translate(text):
                             # Get font info from first span
@@ -2040,7 +2046,8 @@ class PdfProcessor(FileProcessor):
                                 line_text += span.get("text", "")
                             text_parts.append(line_text)
 
-                        text = "\n".join(text_parts).strip()
+                        # Remove line breaks (yomitoku style: join without newlines)
+                        text = "".join(text_parts).strip()
 
                         if text and self.should_translate(text):
                             font_name = None

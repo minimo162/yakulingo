@@ -73,9 +73,10 @@ fn run() -> Result<(), String> {
 /// Check if the application is already running by attempting TCP connection
 fn is_app_running(port: u16) -> bool {
     let addr = format!("127.0.0.1:{}", port);
+    // Reduced timeout from 500ms to 100ms for faster startup when app isn't running
     TcpStream::connect_timeout(
         &addr.parse().unwrap(),
-        Duration::from_millis(500),
+        Duration::from_millis(100),
     )
     .is_ok()
 }

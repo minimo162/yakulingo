@@ -104,6 +104,8 @@ class PromptBuilder:
         self.prompts_dir = prompts_dir
         # Templates cache: {(lang, style): template_str}
         self._templates: dict[tuple[str, str], str] = {}
+        # Text translation templates cache: {(lang, style): template_str}
+        self._text_templates: dict[tuple[str, str], str] = {}
         self._load_templates()
 
     def _load_templates(self) -> None:
@@ -135,6 +137,25 @@ class PromptBuilder:
             # Use same JP template for all styles
             for style in styles:
                 self._templates[("jp", style)] = jp_template
+
+            # Load text translation templates (text_translate_to_*)
+            for style in styles:
+                # Text translation to English
+                text_to_en = self.prompts_dir / f"text_translate_to_en_{style}.txt"
+                if text_to_en.exists():
+                    self._text_templates[("en", style)] = text_to_en.read_text(encoding='utf-8')
+                else:
+                    # Fallback to old single file
+                    old_text_en = self.prompts_dir / "text_translate_to_en.txt"
+                    if old_text_en.exists():
+                        self._text_templates[("en", style)] = old_text_en.read_text(encoding='utf-8')
+
+            # Text translation to Japanese (no style variations)
+            text_to_jp = self.prompts_dir / "text_translate_to_jp.txt"
+            if text_to_jp.exists():
+                jp_text_template = text_to_jp.read_text(encoding='utf-8')
+                for style in styles:
+                    self._text_templates[("jp", style)] = jp_text_template
         else:
             # Use defaults
             for style in styles:
@@ -154,6 +175,27 @@ class PromptBuilder:
 
         # Ultimate fallback
         return DEFAULT_TO_EN_TEMPLATE if output_language == "en" else DEFAULT_TO_JP_TEMPLATE
+
+    def get_text_template(self, output_language: str = "en", translation_style: str = "concise") -> Optional[str]:
+        """Get cached text translation template.
+
+        Args:
+            output_language: "en" or "jp"
+            translation_style: "standard", "concise", or "minimal"
+
+        Returns:
+            Cached template string, or None if not found
+        """
+        key = (output_language, translation_style)
+        if key in self._text_templates:
+            return self._text_templates[key]
+
+        # Fallback to concise if style not found
+        fallback_key = (output_language, "concise")
+        if fallback_key in self._text_templates:
+            return self._text_templates[fallback_key]
+
+        return None
 
     def build(
         self,

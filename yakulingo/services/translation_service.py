@@ -572,24 +572,10 @@ class TranslationService:
             if style is None:
                 style = self.config.text_translation_style if self.config else "concise"
 
-            # Select appropriate prompt file (style-specific for English)
-            if output_language == "en":
-                # Use style-specific prompt for English
-                prompt_file = f"text_translate_to_en_{style}.txt"
-            else:
-                prompt_file = "text_translate_to_jp.txt"
+            # Get cached text translation template (fast path)
+            template = self.prompt_builder.get_text_template(output_language, style)
 
-            prompt_path = self.prompt_builder.prompts_dir / prompt_file if self.prompt_builder.prompts_dir else None
-
-            # Fallback to old single file if style-specific doesn't exist
-            if prompt_path and not prompt_path.exists() and output_language == "en":
-                fallback_path = self.prompt_builder.prompts_dir / "text_translate_to_en.txt"
-                if fallback_path.exists():
-                    prompt_path = fallback_path
-
-            if prompt_path and prompt_path.exists():
-                template = prompt_path.read_text(encoding='utf-8')
-            else:
+            if template is None:
                 # Fallback to basic translation
                 result = self.translate_text(text, reference_files)
                 if result.output_text:

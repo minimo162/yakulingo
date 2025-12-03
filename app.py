@@ -30,6 +30,14 @@ def setup_logging():
         datefmt='%Y-%m-%d %H:%M:%S'
     ))
 
+    # Create console handler for terminal output
+    console_handler = logging.StreamHandler(sys.stderr)
+    console_handler.setLevel(logging.DEBUG)
+    console_handler.setFormatter(logging.Formatter(
+        '%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+        datefmt='%H:%M:%S'
+    ))
+
     # Configure root logger with force=True to override any existing config
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.DEBUG)
@@ -37,6 +45,7 @@ def setup_logging():
     for handler in root_logger.handlers[:]:
         root_logger.removeHandler(handler)
     root_logger.addHandler(file_handler)
+    root_logger.addHandler(console_handler)
 
     # Also explicitly configure yakulingo loggers
     for name in ['yakulingo', 'yakulingo.ui', 'yakulingo.ui.app',

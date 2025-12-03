@@ -6,7 +6,10 @@ Includes temp file management, text formatting, and dialog helpers.
 
 import atexit
 import logging
+import os
+import platform
 import re
+import shutil
 import tempfile
 from contextlib import contextmanager
 from pathlib import Path
@@ -372,6 +375,70 @@ def show_in_folder(file_path: Path) -> bool:
         return False
 
 
+def get_downloads_folder() -> Path:
+    """
+    Get the user's Downloads folder.
+
+    Returns:
+        Path to the Downloads folder
+    """
+    system = platform.system()
+
+    if system == 'Windows':
+        # Windows: use USERPROFILE\Downloads
+        return Path.home() / 'Downloads'
+    elif system == 'Darwin':
+        # macOS: use ~/Downloads
+        return Path.home() / 'Downloads'
+    else:
+        # Linux: use XDG_DOWNLOAD_DIR or ~/Downloads
+        xdg_dir = os.environ.get('XDG_DOWNLOAD_DIR')
+        if xdg_dir:
+            return Path(xdg_dir)
+        return Path.home() / 'Downloads'
+
+
+def download_to_folder_and_open(file_path: Path) -> tuple[bool, Optional[Path]]:
+    """
+    Copy file to Downloads folder and open it.
+
+    Args:
+        file_path: Path to the source file
+
+    Returns:
+        Tuple of (success, destination_path)
+    """
+    try:
+        if not file_path.exists():
+            logger.warning("File does not exist: %s", file_path)
+            return False, None
+
+        downloads = get_downloads_folder()
+        downloads.mkdir(parents=True, exist_ok=True)
+
+        # Handle duplicate filenames
+        dest = downloads / file_path.name
+        counter = 1
+        while dest.exists():
+            stem = file_path.stem
+            suffix = file_path.suffix
+            dest = downloads / f"{stem} ({counter}){suffix}"
+            counter += 1
+
+        # Copy file to Downloads folder
+        shutil.copy2(file_path, dest)
+        logger.info("Copied %s to %s", file_path.name, dest)
+
+        # Open the file from Downloads folder
+        open_file(dest)
+
+        return True, dest
+
+    except (OSError, shutil.Error) as e:
+        logger.error("Failed to download file %s: %s", file_path, e)
+        return False, None
+
+
 def create_completion_dialog(
     result: 'TranslationResult',
     duration_seconds: float,
@@ -416,8 +483,19 @@ def create_completion_dialog(
                 else:
                     ui.label('出力ファイルがありません').classes('text-sm text-on-surface-variant')
 
-                # Close button
-                with ui.row().classes('w-full justify-end pt-2'):
+                # Footer buttons
+                with ui.row().classes('w-full justify-between items-center pt-2'):
+                    # Download all button (only if multiple files)
+                    if output_files and len(output_files) > 1:
+                        ui.button(
+                            'すべてダウンロード',
+                            icon='download',
+                            on_click=lambda files=output_files: _download_all(files),
+                        ).props('flat').classes('text-sm')
+                    else:
+                        # Spacer for alignment
+                        ui.element('div')
+
                     ui.button('閉じる', on_click=lambda: _close_dialog(dialog, on_close)).classes(
                         'btn-primary'
                     )
@@ -434,43 +512,33 @@ def _close_dialog(dialog: 'ui.dialog', on_close: Optional[Callable[[], None]]) -
 
 
 def _create_file_row(file_path: Path, description: str) -> None:
-    """Create a row for a single output file with action buttons."""
+    """Create a row for a single output file with download button."""
     with ui.card().classes('completion-file-row'):
-        with ui.column().classes('w-full gap-1'):
-            # File info
-            with ui.row().classes('w-full items-center gap-2'):
-                # File icon based on extension
-                ext = file_path.suffix.lower()
-                icon_map = {
-                    '.xlsx': 'table_chart',
-                    '.xls': 'table_chart',
-                    '.docx': 'description',
-                    '.doc': 'description',
-                    '.pptx': 'slideshow',
-                    '.ppt': 'slideshow',
-                    '.pdf': 'picture_as_pdf',
-                    '.csv': 'grid_on',
-                }
-                icon = icon_map.get(ext, 'insert_drive_file')
-                ui.icon(icon).classes('completion-file-icon')
+        with ui.row().classes('w-full items-center gap-2'):
+            # File icon based on extension
+            ext = file_path.suffix.lower()
+            icon_map = {
+                '.xlsx': 'table_chart',
+                '.xls': 'table_chart',
+                '.docx': 'description',
+                '.doc': 'description',
+                '.pptx': 'slideshow',
+                '.ppt': 'slideshow',
+                '.pdf': 'picture_as_pdf',
+                '.csv': 'grid_on',
+            }
+            icon = icon_map.get(ext, 'insert_drive_file')
+            ui.icon(icon).classes('completion-file-icon')
 
-                with ui.column().classes('flex-grow gap-0'):
-                    ui.label(file_path.name).classes('completion-file-name truncate')
-                    ui.label(description).classes('completion-file-desc')
+            with ui.column().classes('flex-grow gap-0'):
+                ui.label(file_path.name).classes('completion-file-name truncate')
+                ui.label(description).classes('completion-file-desc')
 
-            # Action buttons
-            with ui.row().classes('w-full justify-end gap-2 pt-1'):
-                ui.button(
-                    '開く',
-                    icon='open_in_new',
-                    on_click=lambda p=file_path: _open_and_notify(p)
-                ).props('flat dense').classes('text-xs')
-
-                ui.button(
-                    'フォルダで表示',
-                    icon='folder_open',
-                    on_click=lambda p=file_path: _show_and_notify(p)
-                ).props('flat dense').classes('text-xs')
+            # Download button (copies to Downloads folder and opens)
+            ui.button(
+                icon='download',
+                on_click=lambda p=file_path: _download_and_notify(p)
+            ).props('flat dense round').classes('text-primary')
 
 
 def _open_and_notify(file_path: Path) -> None:
@@ -481,9 +549,53 @@ def _open_and_notify(file_path: Path) -> None:
         ui.notify('ファイルを開けませんでした', type='negative')
 
 
-def _show_and_notify(file_path: Path) -> None:
-    """Show file in folder and show notification."""
-    if show_in_folder(file_path):
-        ui.notify('フォルダを開きました', type='positive')
+def _download_and_notify(file_path: Path) -> None:
+    """Copy file to Downloads folder and open it."""
+    success, dest = download_to_folder_and_open(file_path)
+    if success and dest:
+        ui.notify(f'{dest.name} を開きました', type='positive')
     else:
-        ui.notify('フォルダを開けませんでした', type='negative')
+        ui.notify('ファイルのダウンロードに失敗しました', type='negative')
+
+
+def _download_all(output_files: list[tuple[Path, str]]) -> None:
+    """Copy all output files to Downloads folder and open the first one."""
+    success_count = 0
+    first_dest = None
+
+    for file_path, _ in output_files:
+        success, dest = download_to_folder_and_open(file_path) if first_dest is None else _download_only(file_path)
+        if success:
+            success_count += 1
+            if first_dest is None:
+                first_dest = dest
+
+    if success_count > 0:
+        ui.notify(f'{success_count} ファイルをダウンロードしました', type='positive')
+    else:
+        ui.notify('ファイルのダウンロードに失敗しました', type='negative')
+
+
+def _download_only(file_path: Path) -> tuple[bool, Optional[Path]]:
+    """Copy file to Downloads folder without opening."""
+    try:
+        if not file_path.exists():
+            return False, None
+
+        downloads = get_downloads_folder()
+        downloads.mkdir(parents=True, exist_ok=True)
+
+        dest = downloads / file_path.name
+        counter = 1
+        while dest.exists():
+            stem = file_path.stem
+            suffix = file_path.suffix
+            dest = downloads / f"{stem} ({counter}){suffix}"
+            counter += 1
+
+        shutil.copy2(file_path, dest)
+        return True, dest
+
+    except (OSError, shutil.Error) as e:
+        logger.error("Failed to download file %s: %s", file_path, e)
+        return False, None

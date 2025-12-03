@@ -2007,6 +2007,7 @@ body {
 .inline-adjust-section {
     display: flex;
     flex-direction: column;
+    align-items: center;
     width: 100%;
     margin-top: 0.5rem;
     animation: fadeIn var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-standard);
@@ -2090,7 +2091,8 @@ body {
 }
 
 .inline-adjust-panel {
-    max-width: 320px;
+    width: min(100%, 380px);
+    min-width: 280px;
     background: var(--md-sys-color-surface);
     border-radius: var(--md-sys-shape-corner-xl);
     padding: 0.75rem;
@@ -2145,7 +2147,8 @@ body {
 
 /* === Inline Question Section === */
 .inline-question-section {
-    max-width: 320px;
+    width: min(100%, 380px);
+    min-width: 280px;
     margin-top: 1rem;
     background: var(--md-sys-color-surface);
     border-radius: var(--md-sys-shape-corner-xl);

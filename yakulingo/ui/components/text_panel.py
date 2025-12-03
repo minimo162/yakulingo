@@ -239,17 +239,17 @@ def _create_compact_input_panel(
     on_settings: Optional[Callable[[], None]] = None,
     on_translate_button_created: Optional[Callable[[ui.button], None]] = None,
 ):
-    """Compact input panel for RESULT state - middle column only"""
-    with ui.column().classes('flex-1 w-full gap-3'):
-        # Compact card container
+    """Compact input panel for RESULT state - middle column only (same size as large panel)"""
+    with ui.column().classes('flex-1 w-full gap-4'):
+        # Card container - same style as large input panel
         with ui.element('div').classes('main-card w-full'):
             with ui.element('div').classes('main-card-inner'):
-                # Compact textarea
+                # Textarea - same min-height as large panel for consistency
                 textarea = ui.textarea(
                     placeholder='新しいテキストを入力…',
                     value=state.source_text,
                     on_change=lambda e: on_source_change(e.value)
-                ).classes('w-full p-3').props('borderless autogrow aria-label="翻訳するテキスト"').style('min-height: 100px')
+                ).classes('w-full p-4').props('borderless autogrow aria-label="翻訳するテキスト"').style('min-height: 160px')
 
                 # Handle Ctrl+Enter in textarea
                 async def handle_keydown(e):
@@ -259,63 +259,70 @@ def _create_compact_input_panel(
 
                 textarea.on('keydown', handle_keydown)
 
-                # Compact bottom controls
-                with ui.row().classes('p-2 justify-between items-center'):
-                    # Left side: character count and attached files (compact)
+                # Bottom controls - same layout as large panel
+                with ui.row().classes('p-3 justify-between items-center'):
+                    # Left side: character count and attached files
                     with ui.row().classes('items-center gap-2 flex-1'):
+                        # Character count
                         if state.source_text:
                             ui.label(f'{len(state.source_text)} 文字').classes('text-xs text-muted')
 
-                        # Attached files (show just count if multiple)
+                        # Attached reference files indicator
                         if state.reference_files:
-                            if len(state.reference_files) == 1:
-                                with ui.element('div').classes('attach-file-indicator compact'):
-                                    ui.label(state.reference_files[0].name).classes('file-name')
+                            for i, ref_file in enumerate(state.reference_files):
+                                with ui.element('div').classes('attach-file-indicator'):
+                                    ui.label(ref_file.name).classes('file-name')
                                     if on_remove_reference_file:
                                         ui.button(
                                             icon='close',
-                                            on_click=lambda: on_remove_reference_file(0)
+                                            on_click=lambda idx=i: on_remove_reference_file(idx)
                                         ).props('flat dense round size=xs').classes('remove-btn')
-                            else:
-                                ui.label(f'📎 {len(state.reference_files)}件').classes('text-xs text-muted')
 
-                    with ui.row().classes('items-center gap-1'):
-                        # Settings button (smaller)
+                    with ui.row().classes('items-center gap-2'):
+                        # Settings button
                         if on_settings:
-                            ui.button(
+                            settings_btn = ui.button(
                                 icon='tune',
                                 on_click=on_settings
-                            ).props('flat dense round size=xs').classes('settings-btn').tooltip('設定')
+                            ).props('flat dense round size=sm').classes('settings-btn')
+                            settings_btn.tooltip('翻訳の設定')
 
-                        # Reference file attachment button (smaller)
+                        # Reference file attachment button
                         if on_attach_reference_file:
                             has_files = bool(state.reference_files)
                             attach_btn = ui.button(
                                 on_click=on_attach_reference_file
-                            ).classes(f'attach-btn compact {"has-file" if has_files else ""}').props('flat dense')
+                            ).classes(f'attach-btn {"has-file" if has_files else ""}').props('flat')
                             with attach_btn:
                                 ui.html(ATTACH_SVG, sanitize=False)
-                            attach_btn.tooltip('参照ファイル')
+                            attach_btn.tooltip('参照ファイルを添付' if not has_files else '参照ファイルを追加')
 
                         # Clear button
                         if state.source_text:
                             ui.button(icon='close', on_click=on_clear).props(
-                                'flat dense round size=xs aria-label="クリア"'
+                                'flat dense round size=sm aria-label="クリア"'
                             ).classes('text-muted')
 
-                        # Compact translate button (no shortcut keys shown)
+                        # Translate button with keycap-style shortcut
                         def handle_translate_click():
-                            logger.info("Translate button clicked (compact)")
+                            logger.info("Translate button clicked")
                             asyncio.create_task(on_translate())
 
-                        with ui.button(on_click=handle_translate_click).classes('translate-btn compact').props('no-caps') as btn:
-                            ui.label('翻訳')
-                            ui.icon('south').classes('text-sm')
+                        with ui.button(on_click=handle_translate_click).classes('translate-btn').props('no-caps') as btn:
+                            ui.label('翻訳する')
+                            with ui.row().classes('shortcut-keys ml-2'):
+                                with ui.element('span').classes('keycap'):
+                                    ui.label('Ctrl')
+                                with ui.element('span').classes('keycap-plus'):
+                                    ui.label('+')
+                                with ui.element('span').classes('keycap'):
+                                    ui.label('Enter')
                         if state.text_translating:
                             btn.props('loading disable')
                         elif not state.can_translate():
                             btn.props('disable')
 
+                        # Provide button reference for dynamic state updates
                         if on_translate_button_created:
                             on_translate_button_created(btn)
 

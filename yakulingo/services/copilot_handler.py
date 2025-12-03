@@ -828,6 +828,9 @@ class CopilotHandler:
         if not self._connect_impl():
             raise RuntimeError("ブラウザに接続できませんでした。Edgeが起動しているか確認してください。")
 
+        # Start a new chat to clear previous context
+        self.start_new_chat()
+
         # Attach reference files first (before sending prompt)
         if reference_files:
             for file_path in reference_files:

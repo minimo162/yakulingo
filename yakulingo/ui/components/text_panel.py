@@ -840,7 +840,7 @@ def _render_inline_adjust_section(
 
         # Adjustment options panel
         with ui.element('div').classes('inline-adjust-panel'):
-            with ui.column().classes('gap-2'):
+            with ui.column().classes('gap-2 w-full'):
                 # Paired options (side by side)
                 for left_key, left_label, right_key, right_label in ADJUST_OPTIONS_PAIRS:
                     with ui.element('div').classes('adjust-option-row'):
@@ -861,24 +861,67 @@ def _render_inline_adjust_section(
                         on_click=lambda k=key: on_adjust(text, k)
                     ).props('flat no-caps').classes('adjust-option-btn-full')
 
-        # Inline question input (without quick chip)
-        with ui.element('div').classes('inline-question-section'):
-            with ui.row().classes('gap-2 items-end w-full'):
-                # Text input for adjustment requests
-                question_input = ui.input(
-                    placeholder='例: もっとカジュアルに'
-                ).classes('w-full question-input flex-1')
+                # Custom request button (expands to show input area)
+                _render_custom_request_button(text, on_adjust)
 
-                # Send button
-                def send_question():
-                    if question_input.value and question_input.value.strip():
-                        on_adjust(text, question_input.value.strip())
-                        question_input.set_value('')
 
-                ui.button(
-                    icon='arrow_upward',
-                    on_click=send_question
-                ).props('round dense').classes('send-question-btn')
+def _render_custom_request_button(
+    text: str,
+    on_adjust: Callable[[str, str], None],
+):
+    """Render custom request button that expands to show input area"""
+    # Container for toggle behavior
+    with ui.element('div').classes('custom-request-container w-full'):
+        # Collapsed state: Button
+        collapsed_container = ui.element('div').classes('w-full')
+        # Expanded state: Input area
+        expanded_container = ui.element('div').classes('w-full custom-request-expanded').style('display: none')
+
+        with collapsed_container:
+            def show_input():
+                collapsed_container.style('display: none')
+                expanded_container.style('display: block')
+                # Focus the textarea after showing
+                request_input.run_method('focus')
+
+            ui.button(
+                'その他のリクエスト...',
+                icon='edit',
+                on_click=show_input
+            ).props('flat no-caps').classes('adjust-option-btn-full custom-request-trigger')
+
+        with expanded_container:
+            with ui.column().classes('gap-2 w-full'):
+                # Textarea for custom request
+                request_input = ui.textarea(
+                    placeholder='例: もっとカジュアルに、ビジネス向けに調整して...'
+                ).classes('w-full custom-request-input').props('autogrow rows=2')
+
+                with ui.row().classes('justify-end gap-2'):
+                    # Cancel button
+                    def cancel_input():
+                        request_input.set_value('')
+                        expanded_container.style('display: none')
+                        collapsed_container.style('display: block')
+
+                    ui.button(
+                        'キャンセル',
+                        on_click=cancel_input
+                    ).props('flat no-caps size=sm').classes('cancel-btn')
+
+                    # Send button
+                    def send_request():
+                        if request_input.value and request_input.value.strip():
+                            on_adjust(text, request_input.value.strip())
+                            request_input.set_value('')
+                            expanded_container.style('display: none')
+                            collapsed_container.style('display: block')
+
+                    ui.button(
+                        '送信',
+                        icon='send',
+                        on_click=send_request
+                    ).props('no-caps size=sm').classes('send-request-btn')
 
 
 def _render_inline_input_section_jp(
@@ -887,21 +930,54 @@ def _render_inline_input_section_jp(
 ):
     """Render inline input section for Japanese translation results"""
 
-    with ui.element('div').classes('inline-question-section mt-4'):
-        with ui.row().classes('gap-2 items-end w-full'):
-            with ui.column().classes('flex-1 gap-1'):
-                # Text input for additional requests
-                request_input = ui.input(
-                    placeholder='例: 返信の下書きを書いて'
-                ).classes('w-full question-input')
+    # Reuse the same expandable button pattern
+    with ui.element('div').classes('custom-request-container w-full mt-2'):
+        # Collapsed state: Button
+        collapsed_container = ui.element('div').classes('w-full')
+        # Expanded state: Input area
+        expanded_container = ui.element('div').classes('w-full custom-request-expanded').style('display: none')
 
-            # Send button
-            def send_request():
-                if request_input.value and request_input.value.strip():
-                    on_adjust(text, request_input.value.strip())
-                    request_input.set_value('')
+        with collapsed_container:
+            def show_input():
+                collapsed_container.style('display: none')
+                expanded_container.style('display: block')
+                request_input.run_method('focus')
 
             ui.button(
-                icon='arrow_upward',
-                on_click=send_request
-            ).props('round dense').classes('send-question-btn')
+                'その他のリクエスト...',
+                icon='edit',
+                on_click=show_input
+            ).props('flat no-caps').classes('adjust-option-btn-full custom-request-trigger')
+
+        with expanded_container:
+            with ui.column().classes('gap-2 w-full'):
+                # Textarea for custom request
+                request_input = ui.textarea(
+                    placeholder='例: 返信の下書きを書いて、もっと詳しく説明して...'
+                ).classes('w-full custom-request-input').props('autogrow rows=2')
+
+                with ui.row().classes('justify-end gap-2'):
+                    # Cancel button
+                    def cancel_input():
+                        request_input.set_value('')
+                        expanded_container.style('display: none')
+                        collapsed_container.style('display: block')
+
+                    ui.button(
+                        'キャンセル',
+                        on_click=cancel_input
+                    ).props('flat no-caps size=sm').classes('cancel-btn')
+
+                    # Send button
+                    def send_request():
+                        if request_input.value and request_input.value.strip():
+                            on_adjust(text, request_input.value.strip())
+                            request_input.set_value('')
+                            expanded_container.style('display: none')
+                            collapsed_container.style('display: block')
+
+                    ui.button(
+                        '送信',
+                        icon='send',
+                        on_click=send_request
+                    ).props('no-caps size=sm').classes('send-request-btn')

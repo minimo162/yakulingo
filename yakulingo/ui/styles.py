@@ -2638,6 +2638,15 @@ a:hover {
     color: var(--md-sys-color-on-surface-variant);
 }
 
+/* === Output File Row (Main UI) === */
+.output-file-row {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    background-color: var(--md-sys-color-surface-container);
+    border-radius: var(--md-sys-shape-corner-medium);
+    box-shadow: none;
+}
+
 /* === Loading Screen === */
 .loading-screen {
     position: fixed;

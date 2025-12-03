@@ -445,7 +445,10 @@ def create_completion_dialog(
     on_close: Optional[Callable[[], None]] = None,
 ) -> 'ui.dialog':
     """
-    Create a translation completion dialog showing all output files.
+    Create a simple translation completion dialog.
+
+    Shows only the completion status and file name.
+    Download functionality is provided in the main UI.
 
     Args:
         result: TranslationResult with output file paths
@@ -455,50 +458,32 @@ def create_completion_dialog(
     Returns:
         The created dialog (already opened)
     """
-    from yakulingo.models.types import TranslationResult
-
     dialog = ui.dialog()
 
     with dialog:
-        with ui.card().classes('w-[28rem]'):
-            with ui.column().classes('w-full gap-4 p-4'):
-                # Header
-                with ui.row().classes('w-full justify-between items-center'):
-                    with ui.row().classes('items-center gap-2'):
-                        ui.icon('check_circle', color='positive').classes('text-2xl')
-                        ui.label('翻訳が完了しました').classes('text-base font-medium')
-                    ui.button(icon='close', on_click=lambda: _close_dialog(dialog, on_close)).props('flat dense round')
+        with ui.card().classes('w-80'):
+            with ui.column().classes('w-full gap-4 p-5 items-center'):
+                # Success icon with animation
+                with ui.element('div').classes('success-circle'):
+                    ui.icon('check').classes('success-check')
+
+                # Completion message
+                ui.label('翻訳が完了しました').classes('text-base font-medium')
+
+                # File name
+                if result.output_path:
+                    ui.label(result.output_path.name).classes(
+                        'text-sm text-on-surface-variant truncate max-w-full'
+                    )
 
                 # Duration badge
                 ui.label(f'{duration_seconds:.1f}秒').classes('duration-badge')
 
-                # Output files list
-                ui.label('出力ファイル:').classes('text-sm font-medium text-on-surface')
-
-                output_files = result.output_files
-                if output_files:
-                    with ui.column().classes('w-full gap-2'):
-                        for file_path, description in output_files:
-                            _create_file_row(file_path, description)
-                else:
-                    ui.label('出力ファイルがありません').classes('text-sm text-on-surface-variant')
-
-                # Footer buttons
-                with ui.row().classes('w-full justify-between items-center pt-2'):
-                    # Download all button (only if multiple files)
-                    if output_files and len(output_files) > 1:
-                        ui.button(
-                            'すべてダウンロード',
-                            icon='download',
-                            on_click=lambda files=output_files: _download_all(files),
-                        ).props('flat').classes('text-sm')
-                    else:
-                        # Spacer for alignment
-                        ui.element('div')
-
-                    ui.button('閉じる', on_click=lambda: _close_dialog(dialog, on_close)).classes(
-                        'btn-primary'
-                    )
+                # OK button
+                ui.button(
+                    'OK',
+                    on_click=lambda: _close_dialog(dialog, on_close)
+                ).classes('btn-primary w-full mt-2')
 
     dialog.open()
     return dialog
@@ -509,93 +494,3 @@ def _close_dialog(dialog: 'ui.dialog', on_close: Optional[Callable[[], None]]) -
     dialog.close()
     if on_close:
         on_close()
-
-
-def _create_file_row(file_path: Path, description: str) -> None:
-    """Create a row for a single output file with download button."""
-    with ui.card().classes('completion-file-row'):
-        with ui.row().classes('w-full items-center gap-2'):
-            # File icon based on extension
-            ext = file_path.suffix.lower()
-            icon_map = {
-                '.xlsx': 'table_chart',
-                '.xls': 'table_chart',
-                '.docx': 'description',
-                '.doc': 'description',
-                '.pptx': 'slideshow',
-                '.ppt': 'slideshow',
-                '.pdf': 'picture_as_pdf',
-                '.csv': 'grid_on',
-            }
-            icon = icon_map.get(ext, 'insert_drive_file')
-            ui.icon(icon).classes('completion-file-icon')
-
-            with ui.column().classes('flex-grow gap-0'):
-                ui.label(file_path.name).classes('completion-file-name truncate')
-                ui.label(description).classes('completion-file-desc')
-
-            # Download button (copies to Downloads folder and opens)
-            ui.button(
-                icon='download',
-                on_click=lambda p=file_path: _download_and_notify(p)
-            ).props('flat dense round').classes('text-primary')
-
-
-def _open_and_notify(file_path: Path) -> None:
-    """Open file and show notification."""
-    if open_file(file_path):
-        ui.notify(f'{file_path.name} を開きました', type='positive')
-    else:
-        ui.notify('ファイルを開けませんでした', type='negative')
-
-
-def _download_and_notify(file_path: Path) -> None:
-    """Copy file to Downloads folder and open it."""
-    success, dest = download_to_folder_and_open(file_path)
-    if success and dest:
-        ui.notify(f'{dest.name} を開きました', type='positive')
-    else:
-        ui.notify('ファイルのダウンロードに失敗しました', type='negative')
-
-
-def _download_all(output_files: list[tuple[Path, str]]) -> None:
-    """Copy all output files to Downloads folder and open the first one."""
-    success_count = 0
-    first_dest = None
-
-    for file_path, _ in output_files:
-        success, dest = download_to_folder_and_open(file_path) if first_dest is None else _download_only(file_path)
-        if success:
-            success_count += 1
-            if first_dest is None:
-                first_dest = dest
-
-    if success_count > 0:
-        ui.notify(f'{success_count} ファイルをダウンロードしました', type='positive')
-    else:
-        ui.notify('ファイルのダウンロードに失敗しました', type='negative')
-
-
-def _download_only(file_path: Path) -> tuple[bool, Optional[Path]]:
-    """Copy file to Downloads folder without opening."""
-    try:
-        if not file_path.exists():
-            return False, None
-
-        downloads = get_downloads_folder()
-        downloads.mkdir(parents=True, exist_ok=True)
-
-        dest = downloads / file_path.name
-        counter = 1
-        while dest.exists():
-            stem = file_path.stem
-            suffix = file_path.suffix
-            dest = downloads / f"{stem} ({counter}){suffix}"
-            counter += 1
-
-        shutil.copy2(file_path, dest)
-        return True, dest
-
-    except (OSError, shutil.Error) as e:
-        logger.error("Failed to download file %s: %s", file_path, e)
-        return False, None

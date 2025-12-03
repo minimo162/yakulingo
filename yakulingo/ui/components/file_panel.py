@@ -9,8 +9,8 @@ from typing import Callable, Optional
 from pathlib import Path
 
 from yakulingo.ui.state import AppState, FileState
-from yakulingo.ui.utils import temp_file_manager
-from yakulingo.models.types import FileInfo, FileType, SectionDetail
+from yakulingo.ui.utils import temp_file_manager, download_to_folder_and_open
+from yakulingo.models.types import FileInfo, FileType, SectionDetail, TranslationResult
 
 
 SUPPORTED_FORMATS = ".xlsx,.xls,.docx,.doc,.pptx,.ppt,.pdf"
@@ -48,6 +48,7 @@ def create_file_panel(
     bilingual_enabled: bool = False,
     export_glossary_enabled: bool = False,
     translation_style: str = "concise",
+    translation_result: Optional[TranslationResult] = None,
 ):
     """File translation panel - Nani-inspired design"""
 
@@ -88,12 +89,9 @@ def create_file_panel(
                     _progress_card(state.file_info, state.translation_progress, state.translation_status)
 
                 elif state.file_state == FileState.COMPLETE:
-                    _complete_card(state.output_file)
+                    _complete_card(translation_result)
                     with ui.row().classes('gap-3 mt-4 justify-center'):
-                        with ui.button(on_click=on_download).classes('translate-btn').props('no-caps'):
-                            ui.label('ダウンロード')
-                            ui.icon('download').classes('text-base')
-                        ui.button('新規', on_click=on_reset).classes('btn-outline')
+                        ui.button('新しいファイルを翻訳', on_click=on_reset).classes('btn-outline')
 
                 elif state.file_state == FileState.ERROR:
                     _error_card(state.error_message)
@@ -306,21 +304,62 @@ def _progress_card(file_info: FileInfo, progress: float, status: str):
             ui.label(f'{int(progress * 100)}%').classes('text-xs font-medium')
 
 
-def _complete_card(output_file: Path):
-    """Success card with animation"""
+def _complete_card(result: Optional[TranslationResult]):
+    """Success card with output file list and download buttons"""
     with ui.card().classes('file-card success w-full max-w-md'):
-        with ui.column().classes('items-center gap-3 py-2'):
+        with ui.column().classes('items-center gap-4 py-2 w-full'):
             # Animated checkmark
             with ui.element('div').classes('success-circle'):
                 ui.icon('check').classes('success-check')
 
             ui.label('翻訳完了').classes('success-text')
 
-            # Output file name
-            if output_file:
-                with ui.row().classes('items-center gap-2'):
-                    ui.icon('description').classes('text-sm text-muted')
-                    ui.label(output_file.name).classes('text-sm text-muted')
+            # Output files list with download buttons
+            if result and result.output_files:
+                with ui.column().classes('w-full gap-2 mt-2'):
+                    for file_path, description in result.output_files:
+                        _output_file_row(file_path, description)
+
+
+def _output_file_row(file_path: Path, description: str):
+    """Create a row for output file with download button"""
+    # File icon based on extension
+    ext = file_path.suffix.lower()
+    icon_map = {
+        '.xlsx': 'table_chart',
+        '.xls': 'table_chart',
+        '.docx': 'description',
+        '.doc': 'description',
+        '.pptx': 'slideshow',
+        '.ppt': 'slideshow',
+        '.pdf': 'picture_as_pdf',
+        '.csv': 'grid_on',
+    }
+    icon = icon_map.get(ext, 'insert_drive_file')
+
+    with ui.card().classes('output-file-row w-full'):
+        with ui.row().classes('w-full items-center gap-2'):
+            ui.icon(icon).classes('text-lg text-on-surface-variant')
+
+            with ui.column().classes('flex-grow gap-0 min-w-0'):
+                ui.label(file_path.name).classes('text-sm font-medium truncate')
+                ui.label(description).classes('text-xs text-on-surface-variant')
+
+            # Download button
+            ui.button(
+                'ダウンロード',
+                icon='download',
+                on_click=lambda p=file_path: _download_file(p)
+            ).props('flat dense no-caps').classes('text-primary')
+
+
+def _download_file(file_path: Path):
+    """Download file to Downloads folder and open it"""
+    success, dest = download_to_folder_and_open(file_path)
+    if success and dest:
+        ui.notify(f'{dest.name} をダウンロードしました', type='positive')
+    else:
+        ui.notify('ダウンロードに失敗しました', type='negative')
 
 
 def _error_card(error_message: str):

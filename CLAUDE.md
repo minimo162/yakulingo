@@ -122,19 +122,20 @@ YakuLingo/
 
 | File | Purpose | Lines |
 |------|---------|-------|
-| `yakulingo/ui/app.py` | Main application orchestrator, handles UI events and coordinates services | ~1286 |
-| `yakulingo/services/translation_service.py` | Coordinates file processors and batch translation | ~1433 |
-| `yakulingo/services/copilot_handler.py` | Browser automation for M365 Copilot | ~1256 |
+| `yakulingo/ui/app.py` | Main application orchestrator, handles UI events and coordinates services | ~1364 |
+| `yakulingo/services/translation_service.py` | Coordinates file processors and batch translation | ~1498 |
+| `yakulingo/services/copilot_handler.py` | Browser automation for M365 Copilot | ~1326 |
 | `yakulingo/services/updater.py` | GitHub Releases-based auto-update with Windows proxy support | ~764 |
-| `yakulingo/ui/styles.py` | M3 design tokens, CSS styling definitions | ~2580 |
-| `yakulingo/ui/components/text_panel.py` | Nani-inspired text translation UI with inline adjustments | ~754 |
-| `yakulingo/ui/components/file_panel.py` | File translation panel with drag-drop and progress | ~353 |
+| `yakulingo/ui/styles.py` | M3 design tokens, CSS styling definitions | ~2644 |
+| `yakulingo/ui/components/text_panel.py` | Nani-inspired text translation UI with inline adjustments | ~873 |
+| `yakulingo/ui/components/file_panel.py` | File translation panel with drag-drop and progress | ~377 |
 | `yakulingo/ui/components/update_notification.py` | Auto-update UI notifications | ~344 |
 | `yakulingo/ui/utils.py` | UI utilities: temp file management, dialog helpers, text formatting | ~489 |
-| `yakulingo/ui/state.py` | Application state management | ~187 |
+| `yakulingo/ui/state.py` | Application state management (TextViewState, FileState enums) | ~202 |
 | `yakulingo/models/types.py` | Core data types: TextBlock, FileInfo, TranslationResult, HistoryEntry | ~304 |
 | `yakulingo/storage/history_db.py` | SQLite database for translation history | ~320 |
 | `yakulingo/processors/base.py` | Abstract base class for all file processors | ~105 |
+| `yakulingo/processors/pdf_processor.py` | PDF processing with PyMuPDF and yomitoku OCR | ~2191 |
 
 ## Core Data Types
 
@@ -142,17 +143,23 @@ YakuLingo/
 # Key enums (yakulingo/models/types.py)
 FileType: EXCEL, WORD, POWERPOINT, PDF
 TranslationStatus: PENDING, PROCESSING, COMPLETED, FAILED, CANCELLED
-TranslationPhase: EXTRACTING, TRANSLATING, APPLYING, FINALIZING  # Progress phases
+TranslationPhase: EXTRACTING, OCR, TRANSLATING, APPLYING, COMPLETE  # Progress phases (OCR for PDF)
+
+# UI state enums (yakulingo/ui/state.py)
+Tab: TEXT, FILE                                # Main navigation tabs
+FileState: EMPTY, SELECTED, TRANSLATING, COMPLETE, ERROR  # File panel states
+TextViewState: INPUT, RESULT                   # Text panel layout (INPUT=large textarea, RESULT=compact+results)
 
 # Key dataclasses
 TextBlock(id, text, location, metadata)       # Unit of translatable text
-FileInfo(path, file_type, size_bytes, ...)    # File metadata
-SectionDetail(name, count, ...)               # Section details (sheets, pages, slides)
-TranslationProgress(current, total, status, phase)  # Progress tracking with phase
+FileInfo(path, file_type, size_bytes, section_details, ...)  # File metadata with sections
+SectionDetail(index, name, block_count, selected)  # Section details with selection for partial translation
+TranslationProgress(current, total, status, phase, phase_detail)  # Progress tracking with phase
 TranslationResult(status, output_path, bilingual_path, glossary_path, ...)  # File translation outcome
 TranslationOption(text, explanation)          # Single translation option
-TextTranslationResult(source_text, options)   # Text translation with multiple options
+TextTranslationResult(source_text, options, output_language)  # Text translation with auto-detected direction
 HistoryEntry(source_text, result, timestamp)  # Translation history entry
+BatchTranslationResult(translations, untranslated_block_ids, has_issues, success_rate)  # Batch result details
 
 # TranslationResult includes multiple output files:
 # - output_path: Main translated file
@@ -162,7 +169,7 @@ HistoryEntry(source_text, result, timestamp)  # Translation history entry
 
 # Auto-update types (yakulingo/services/updater.py)
 UpdateStatus: UP_TO_DATE, UPDATE_AVAILABLE, DOWNLOADING, READY_TO_INSTALL, ERROR
-VersionInfo(version, release_date, download_url, release_notes)
+VersionInfo(version, release_date, download_url, release_notes, requires_reinstall)
 ```
 
 ## Auto-Detected Translation Direction
@@ -477,7 +484,18 @@ The `CopilotHandler` class automates Microsoft Edge browser:
 - Connects to Edge on CDP port 9333
 - Endpoint: `https://m365.cloud.microsoft/chat/?auth=2`
 - Handles Windows proxy detection from registry
-- Methods: `connect()`, `disconnect()`, `translate_sync()`
+- Methods: `connect()`, `disconnect()`, `translate_sync()`, `translate_single()`
+
+### PlaywrightManager (Lazy Loading)
+
+Thread-safe singleton for lazy Playwright imports to avoid import errors when Playwright is not installed:
+```python
+# yakulingo/services/copilot_handler.py
+playwright_manager = PlaywrightManager()
+playwright_manager.get_playwright()       # Returns playwright types and sync_playwright
+playwright_manager.get_async_playwright() # Returns async_playwright function
+playwright_manager.get_error_types()      # Returns Playwright exception types
+```
 
 ### PlaywrightThreadExecutor (Threading Model)
 
@@ -637,7 +655,7 @@ When interacting with users in this repository, prefer Japanese for comments and
 ## Documentation References
 
 - `README.md` - User guide and quick start (Japanese)
-- `docs/SPECIFICATION.md` - Detailed technical specification (~1300 lines)
+- `docs/SPECIFICATION.md` - Detailed technical specification (~1386 lines)
 - `DISTRIBUTION.md` - Deployment and distribution guide
 
 ## Recent Development Focus

@@ -231,10 +231,10 @@ YakuLingo/
 |---------|------|
 | UI | NiceGUI + pywebview (Material Design 3) |
 | 翻訳エンジン | M365 Copilot (Playwright) |
-| Excel処理 | openpyxl |
+| Excel処理 | xlwings (Windows/macOS) / openpyxl (フォールバック) |
 | Word処理 | python-docx |
 | PowerPoint処理 | python-pptx |
-| PDF処理 | PyMuPDF |
+| PDF処理 | PyMuPDF + yomitoku (OCR) |
 | データ保存 | SQLite (翻訳履歴) |
 | 自動更新 | GitHub Releases API |
 

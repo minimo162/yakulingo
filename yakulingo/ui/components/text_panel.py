@@ -12,7 +12,7 @@ from typing import Callable, Optional
 
 from nicegui import ui
 
-from yakulingo.ui.state import AppState
+from yakulingo.ui.state import AppState, TextViewState
 from yakulingo.ui.utils import format_markdown_text, is_japanese_dominant
 from yakulingo.models.types import TranslationOption, TextTranslationResult
 
@@ -100,19 +100,49 @@ def create_text_input_panel(
 ):
     """
     Text input panel for 3-column layout.
-    Contains textarea, character count, reference files, and translate button.
+    - INPUT state: Large textarea for initial input (spans 2 columns)
+    - RESULT state: Compact textarea for new translations (middle column only)
     """
-    with ui.column().classes('flex-1 w-full gap-4'):
-        # Main card container
+    is_input_mode = state.text_view_state == TextViewState.INPUT
+
+    if is_input_mode:
+        # INPUT state: Large input area spanning full width
+        _create_large_input_panel(
+            state, on_translate, on_source_change, on_clear,
+            on_attach_reference_file, on_remove_reference_file,
+            on_settings, on_translate_button_created
+        )
+    else:
+        # RESULT state: Compact input for new translations
+        _create_compact_input_panel(
+            state, on_translate, on_source_change, on_clear,
+            on_attach_reference_file, on_remove_reference_file,
+            on_settings, on_translate_button_created
+        )
+
+
+def _create_large_input_panel(
+    state: AppState,
+    on_translate: Callable[[], None],
+    on_source_change: Callable[[str], None],
+    on_clear: Callable[[], None],
+    on_attach_reference_file: Optional[Callable[[], None]] = None,
+    on_remove_reference_file: Optional[Callable[[int], None]] = None,
+    on_settings: Optional[Callable[[], None]] = None,
+    on_translate_button_created: Optional[Callable[[ui.button], None]] = None,
+):
+    """Large input panel for INPUT state - spans 2 columns"""
+    with ui.column().classes('flex-1 w-full gap-4 items-center justify-center'):
+        # Main card container - centered and larger
         with ui.element('div').classes('main-card w-full'):
             # Input container
             with ui.element('div').classes('main-card-inner'):
-                # Textarea with improved placeholder and accessibility
+                # Large textarea
                 textarea = ui.textarea(
                     placeholder='好きな言語で入力…',
                     value=state.source_text,
                     on_change=lambda e: on_source_change(e.value)
-                ).classes('w-full p-4').props('borderless autogrow aria-label="翻訳するテキスト"').style('min-height: 200px')
+                ).classes('w-full p-4').props('borderless autogrow aria-label="翻訳するテキスト"').style('min-height: 280px')
 
                 # Handle Ctrl+Enter in textarea
                 async def handle_keydown(e):
@@ -189,7 +219,7 @@ def create_text_input_panel(
                         if on_translate_button_created:
                             on_translate_button_created(btn)
 
-        # Hint text
+        # Hint text - only shown in INPUT state
         with ui.element('div').classes('hint-section'):
             with ui.element('div').classes('hint-primary'):
                 ui.html(LANG_DETECT_SVG, sanitize=False)
@@ -197,6 +227,97 @@ def create_text_input_panel(
             with ui.element('div').classes('hint-secondary'):
                 ui.icon('auto_awesome').classes('text-sm')
                 ui.label('M365 Copilot による翻訳').classes('text-2xs')
+
+
+def _create_compact_input_panel(
+    state: AppState,
+    on_translate: Callable[[], None],
+    on_source_change: Callable[[str], None],
+    on_clear: Callable[[], None],
+    on_attach_reference_file: Optional[Callable[[], None]] = None,
+    on_remove_reference_file: Optional[Callable[[int], None]] = None,
+    on_settings: Optional[Callable[[], None]] = None,
+    on_translate_button_created: Optional[Callable[[ui.button], None]] = None,
+):
+    """Compact input panel for RESULT state - middle column only"""
+    with ui.column().classes('flex-1 w-full gap-3'):
+        # Compact card container
+        with ui.element('div').classes('main-card w-full'):
+            with ui.element('div').classes('main-card-inner'):
+                # Compact textarea
+                textarea = ui.textarea(
+                    placeholder='新しいテキストを入力…',
+                    value=state.source_text,
+                    on_change=lambda e: on_source_change(e.value)
+                ).classes('w-full p-3').props('borderless autogrow aria-label="翻訳するテキスト"').style('min-height: 100px')
+
+                # Handle Ctrl+Enter in textarea
+                async def handle_keydown(e):
+                    if e.args.get('ctrlKey') and e.args.get('key') == 'Enter':
+                        if state.can_translate() and not state.text_translating:
+                            await on_translate()
+
+                textarea.on('keydown', handle_keydown)
+
+                # Compact bottom controls
+                with ui.row().classes('p-2 justify-between items-center'):
+                    # Left side: character count and attached files (compact)
+                    with ui.row().classes('items-center gap-2 flex-1'):
+                        if state.source_text:
+                            ui.label(f'{len(state.source_text)} 文字').classes('text-xs text-muted')
+
+                        # Attached files (show just count if multiple)
+                        if state.reference_files:
+                            if len(state.reference_files) == 1:
+                                with ui.element('div').classes('attach-file-indicator compact'):
+                                    ui.label(state.reference_files[0].name).classes('file-name')
+                                    if on_remove_reference_file:
+                                        ui.button(
+                                            icon='close',
+                                            on_click=lambda: on_remove_reference_file(0)
+                                        ).props('flat dense round size=xs').classes('remove-btn')
+                            else:
+                                ui.label(f'📎 {len(state.reference_files)}件').classes('text-xs text-muted')
+
+                    with ui.row().classes('items-center gap-1'):
+                        # Settings button (smaller)
+                        if on_settings:
+                            ui.button(
+                                icon='tune',
+                                on_click=on_settings
+                            ).props('flat dense round size=xs').classes('settings-btn').tooltip('設定')
+
+                        # Reference file attachment button (smaller)
+                        if on_attach_reference_file:
+                            has_files = bool(state.reference_files)
+                            attach_btn = ui.button(
+                                on_click=on_attach_reference_file
+                            ).classes(f'attach-btn compact {"has-file" if has_files else ""}').props('flat dense')
+                            with attach_btn:
+                                ui.html(ATTACH_SVG, sanitize=False)
+                            attach_btn.tooltip('参照ファイル')
+
+                        # Clear button
+                        if state.source_text:
+                            ui.button(icon='close', on_click=on_clear).props(
+                                'flat dense round size=xs aria-label="クリア"'
+                            ).classes('text-muted')
+
+                        # Compact translate button (no shortcut keys shown)
+                        def handle_translate_click():
+                            logger.info("Translate button clicked (compact)")
+                            asyncio.create_task(on_translate())
+
+                        with ui.button(on_click=handle_translate_click).classes('translate-btn compact').props('no-caps') as btn:
+                            ui.label('翻訳')
+                            ui.icon('south').classes('text-sm')
+                        if state.text_translating:
+                            btn.props('loading disable')
+                        elif not state.can_translate():
+                            btn.props('disable')
+
+                        if on_translate_button_created:
+                            on_translate_button_created(btn)
 
 
 def create_text_result_panel(

@@ -104,11 +104,11 @@ COMPLETE_CSS = """
     --md-sys-elevation-2: 0 4px 12px rgba(0,0,0,0.06), 0 2px 4px rgba(0,0,0,0.04);
 
     /* Sidebar */
-    --sidebar-width: 220px;
+    --sidebar-width: 260px;
 
     /* 3-Column Layout (Nani-inspired) */
-    --input-panel-width: 360px;
-    --input-panel-width-wide: 520px;  /* Wider input for 2-column mode */
+    --input-panel-width: 420px;
+    --input-panel-width-wide: 600px;  /* Wider input for 2-column mode */
     --bp-desktop: 1200px;        /* Full 3-column with sidebar */
     --bp-tablet-portrait: 800px; /* 2-column with fixed input */
     --bp-mobile: 800px;          /* Single column layout */
@@ -561,6 +561,31 @@ body {
     box-shadow: none;
 }
 
+/* Compact translate button for RESULT state */
+.translate-btn.compact {
+    height: 2rem;
+    min-height: 2rem;
+    padding: 0 0.75rem;
+    font-size: 0.8125rem;
+    gap: 0.25rem;
+}
+
+/* Compact attach button */
+.attach-btn.compact {
+    padding: 0.25rem;
+}
+
+.attach-btn.compact svg {
+    width: 16px;
+    height: 16px;
+}
+
+/* Compact attach file indicator */
+.attach-file-indicator.compact {
+    padding: 0.125rem 0.375rem;
+    font-size: 0.6875rem;
+}
+
 /* === M3 Tonal Button (Filled Tonal) === */
 .btn-tonal {
     display: inline-flex;
@@ -630,8 +655,35 @@ body {
     position: relative;
 }
 
-/* Make entire drop zone clickable - expand the hidden input to cover full area */
-.drop-zone .q-uploader__input {
+/* Visual content layer - positioned for display, clicks pass through */
+.drop-zone-content {
+    pointer-events: none;
+    position: relative;
+    z-index: 1;
+}
+
+/* Upload overlay - invisible but captures all interactions */
+.drop-zone-upload {
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    z-index: 10 !important;
+}
+
+/* Make q-uploader completely invisible */
+.drop-zone-upload.q-uploader {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    min-height: 0 !important;
+    max-height: none !important;
+}
+
+/* Expand the file input to cover full upload area */
+.drop-zone-upload .q-uploader__input {
     position: absolute !important;
     top: 0 !important;
     left: 0 !important;
@@ -639,36 +691,18 @@ body {
     height: 100% !important;
     opacity: 0 !important;
     cursor: pointer !important;
-    z-index: 10 !important;
 }
 
 /* Hide ALL Quasar uploader internal elements */
-.drop-zone .q-uploader__header,
-.drop-zone .q-uploader__list,
-.drop-zone .q-uploader__file,
-.drop-zone .q-uploader__dnd,
-.drop-zone .q-uploader__subtitle,
-.drop-zone .q-uploader__overlay,
-.drop-zone .q-uploader__spinner,
-.drop-zone .q-uploader__expand-btn {
+.drop-zone-upload .q-uploader__header,
+.drop-zone-upload .q-uploader__list,
+.drop-zone-upload .q-uploader__file,
+.drop-zone-upload .q-uploader__dnd,
+.drop-zone-upload .q-uploader__subtitle,
+.drop-zone-upload .q-uploader__overlay,
+.drop-zone-upload .q-uploader__spinner,
+.drop-zone-upload .q-uploader__expand-btn {
     display: none !important;
-}
-
-/* Make q-uploader completely invisible except for the input */
-.drop-zone .q-uploader {
-    width: 100% !important;
-    min-height: auto !important;
-    max-height: none !important;
-    background: transparent !important;
-    border: none !important;
-    box-shadow: none !important;
-    border-radius: 0 !important;
-    overflow: visible !important;
-}
-
-/* Ensure custom content inside drop zone doesn't block clicks */
-.drop-zone > *:not(.q-uploader) {
-    pointer-events: none;
 }
 
 .drop-zone-icon,
@@ -676,8 +710,6 @@ body {
 .drop-zone-subtext,
 .drop-zone-hint {
     pointer-events: none;
-    position: relative;
-    z-index: 1;
 }
 
 .drop-zone:hover {

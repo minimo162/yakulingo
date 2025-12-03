@@ -22,8 +22,6 @@ use std::os::windows::process::CommandExt;
 const APP_PORT: u16 = 8765;
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
-#[cfg(windows)]
-const DETACHED_PROCESS: u32 = 0x00000008;
 
 fn main() {
     if let Err(e) = run() {
@@ -51,7 +49,9 @@ fn run() -> Result<(), String> {
 
     // Check venv exists
     let venv_dir = base_dir.join(".venv");
-    let python_exe = venv_dir.join("Scripts").join("pythonw.exe");
+    // Use python.exe (not pythonw.exe) for better subprocess compatibility
+    // Console is hidden via CREATE_NO_WINDOW flag
+    let python_exe = venv_dir.join("Scripts").join("python.exe");
 
     if !python_exe.exists() {
         return Err(".venv not found.\n\nPlease reinstall the application.".to_string());
@@ -102,7 +102,7 @@ fn find_python_dir(base_dir: &PathBuf) -> Result<PathBuf, String> {
     Err("Python not found in .uv-python directory.\n\nPlease reinstall the application.".to_string())
 }
 
-/// Fix pyvenv.cfg home path for portability
+/// Fix pyvenv.cfg home path for portability (only if needed)
 fn fix_pyvenv_cfg(venv_dir: &PathBuf, python_dir: &PathBuf) -> Result<(), String> {
     let cfg_path = venv_dir.join("pyvenv.cfg");
 
@@ -110,24 +110,37 @@ fn fix_pyvenv_cfg(venv_dir: &PathBuf, python_dir: &PathBuf) -> Result<(), String
         return Ok(()); // Skip if not exists
     }
 
-    // Read existing config to get version
+    // Read existing config
+    let mut current_content = String::new();
     let mut version_line = String::new();
+    let mut current_home = String::new();
+
     if let Ok(mut file) = fs::File::open(&cfg_path) {
-        let mut content = String::new();
-        if file.read_to_string(&mut content).is_ok() {
-            for line in content.lines() {
-                if line.to_lowercase().starts_with("version") {
+        if file.read_to_string(&mut current_content).is_ok() {
+            for line in current_content.lines() {
+                let lower = line.to_lowercase();
+                if lower.starts_with("version") {
                     version_line = line.to_string();
-                    break;
+                } else if lower.starts_with("home") {
+                    // Extract current home path
+                    if let Some(pos) = line.find('=') {
+                        current_home = line[pos + 1..].trim().to_string();
+                    }
                 }
             }
         }
     }
 
+    // Check if home path is already correct
+    let expected_home = python_dir.display().to_string();
+    if current_home == expected_home {
+        return Ok(()); // Already correct, skip rewrite
+    }
+
     // Write new config with correct home path
     let mut new_content = format!(
         "home = {}\ninclude-system-site-packages = false\n",
-        python_dir.display()
+        expected_home
     );
     if !version_line.is_empty() {
         new_content.push_str(&version_line);
@@ -148,6 +161,12 @@ fn setup_environment(base_dir: &PathBuf, venv_dir: &PathBuf, python_dir: &PathBu
     // PLAYWRIGHT_BROWSERS_PATH
     let playwright_path = base_dir.join(".playwright-browsers");
     env::set_var("PLAYWRIGHT_BROWSERS_PATH", &playwright_path);
+
+    // pywebview web engine (avoid runtime installation dialog)
+    env::set_var("PYWEBVIEW_GUI", "edgechromium");
+
+    // Proxy bypass for localhost (avoids corporate proxy delays)
+    env::set_var("NO_PROXY", "localhost,127.0.0.1");
 
     // PATH - prepend venv and python directories
     let venv_scripts = venv_dir.join("Scripts");
@@ -170,7 +189,7 @@ fn launch_app(python_exe: &PathBuf, app_script: &PathBuf, working_dir: &PathBuf)
     Command::new(python_exe)
         .arg(app_script)
         .current_dir(working_dir)
-        .creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS)
+        .creation_flags(CREATE_NO_WINDOW)
         .spawn()
         .map_err(|e| format!("Failed to start application: {}", e))?;
 

@@ -19,9 +19,10 @@ import re
 logger = logging.getLogger(__name__)
 
 # Pre-compiled regex patterns for performance
-_RE_MULTI_OPTION = re.compile(r'\[(\d+)\]\s*訳文:\s*(.+?)\s*解説:\s*(.+?)(?=\[\d+\]|$)', re.DOTALL)
-_RE_TRANSLATION_TEXT = re.compile(r'訳文:\s*(.+?)(?=解説:|$)', re.DOTALL)
-_RE_EXPLANATION = re.compile(r'解説:\s*(.+)', re.DOTALL)
+# Support both half-width (:) and full-width (：) colons, and markdown bold (**訳文:**)
+_RE_MULTI_OPTION = re.compile(r'\[(\d+)\]\s*\**訳文\**[:：]\s*(.+?)\s*\**解説\**[:：]\s*(.+?)(?=\[\d+\]|$)', re.DOTALL)
+_RE_TRANSLATION_TEXT = re.compile(r'\**訳文\**[:：]\s*(.+?)(?=\**解説\**[:：]|$)', re.DOTALL)
+_RE_EXPLANATION = re.compile(r'\**解説\**[:：]\s*(.+)', re.DOTALL)
 _RE_MARKDOWN_SEPARATOR = re.compile(r'\n?\s*[\*\-]{3,}\s*$')
 
 # Punctuation categories to skip in language detection (cached set for performance)
@@ -744,46 +745,106 @@ class TranslationService:
 
     def _parse_single_translation_result(self, raw_result: str) -> list[TranslationOption]:
         """Parse single translation result from Copilot (for →jp translation)."""
-        # Use pre-compiled patterns for 訳文: ... 解説: ...
+        logger.debug("Parsing translation result (first 500 chars): %s", raw_result[:500] if raw_result else "(empty)")
+
+        text = ""
+        explanation = ""
+
+        # Try regex first
         text_match = _RE_TRANSLATION_TEXT.search(raw_result)
         explanation_match = _RE_EXPLANATION.search(raw_result)
+
+        logger.debug("text_match: %s, explanation_match: %s", bool(text_match), bool(explanation_match))
 
         if text_match:
             text = text_match.group(1).strip()
             # Remove markdown separators (*** or ---) from text
             text = _RE_MARKDOWN_SEPARATOR.sub('', text).strip()
-            explanation = explanation_match.group(1).strip() if explanation_match else "翻訳結果です"
 
-            if text:
-                return [TranslationOption(text=text, explanation=explanation)]
+        if explanation_match:
+            explanation = explanation_match.group(1).strip()
 
-        # Fallback: try to extract any meaningful content
-        # Sometimes the AI might not follow the exact format
-        lines = raw_result.strip().split('\n')
-        if lines:
-            # Use first non-empty line as text
-            text = lines[0].strip()
-            explanation = '\n'.join(lines[1:]).strip() if len(lines) > 1 else "翻訳結果です"
-            if text:
-                return [TranslationOption(text=text, explanation=explanation)]
+        # Fallback: split by "解説" if regex didn't capture explanation
+        if text and not explanation:
+            # Try splitting by various forms of "解説"
+            for delimiter in ['解説:', '解説：', '**解説:**', '**解説**:', '**解説**：']:
+                if delimiter in raw_result:
+                    parts = raw_result.split(delimiter, 1)
+                    if len(parts) > 1:
+                        explanation = parts[1].strip()
+                        logger.debug("Fallback split by '%s' found explanation", delimiter)
+                        break
+
+        # Another fallback: if no "訳文:" found, try simple split
+        if not text:
+            for delimiter in ['解説:', '解説：', '**解説:**', '**解説**:']:
+                if delimiter in raw_result:
+                    parts = raw_result.split(delimiter, 1)
+                    text_part = parts[0].strip()
+                    # Remove "訳文:" prefix if present
+                    for prefix in ['訳文:', '訳文：', '**訳文:**', '**訳文**:']:
+                        if text_part.startswith(prefix):
+                            text_part = text_part[len(prefix):].strip()
+                            break
+                    text = text_part
+                    if len(parts) > 1:
+                        explanation = parts[1].strip()
+                    logger.debug("Fallback split found text and explanation")
+                    break
+
+        # Final fallback: use first line as text, rest as explanation
+        if not text:
+            logger.debug("Using final fallback parsing")
+            lines = raw_result.strip().split('\n')
+            if lines:
+                text = lines[0].strip()
+                explanation = '\n'.join(lines[1:]).strip() if len(lines) > 1 else ""
+
+        # Set default explanation if still empty
+        if not explanation:
+            explanation = "翻訳結果です"
+
+        logger.debug("Final parsed text (first 100): %s", text[:100] if text else "(empty)")
+        logger.debug("Final parsed explanation (first 100): %s", explanation[:100] if explanation else "(empty)")
+
+        if text:
+            return [TranslationOption(text=text, explanation=explanation)]
 
         return []
 
     def _parse_single_option_result(self, raw_result: str) -> Optional[TranslationOption]:
         """Parse single option result from adjustment."""
+        text = ""
+        explanation = ""
+
         # Use pre-compiled patterns to extract 訳文 and 解説
         text_match = _RE_TRANSLATION_TEXT.search(raw_result)
         explanation_match = _RE_EXPLANATION.search(raw_result)
 
         if text_match:
             text = text_match.group(1).strip()
-            explanation = explanation_match.group(1).strip() if explanation_match else "調整後の翻訳です"
-            return TranslationOption(text=text, explanation=explanation)
 
-        # Fallback: use the whole result as text
-        text = raw_result.strip()
+        if explanation_match:
+            explanation = explanation_match.group(1).strip()
+
+        # Fallback: split by "解説" if regex didn't capture explanation
+        if text and not explanation:
+            for delimiter in ['解説:', '解説：', '**解説:**', '**解説**:', '**解説**：']:
+                if delimiter in raw_result:
+                    parts = raw_result.split(delimiter, 1)
+                    if len(parts) > 1:
+                        explanation = parts[1].strip()
+                        break
+
+        # Fallback: use the whole result as text if no pattern matched
+        if not text:
+            text = raw_result.strip()
+
+        if not explanation:
+            explanation = "調整後の翻訳です"
+
         if text:
-            return TranslationOption(text=text, explanation="調整後の翻訳です")
+            return TranslationOption(text=text, explanation=explanation)
 
         return None
 

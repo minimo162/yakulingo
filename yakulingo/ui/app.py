@@ -1436,6 +1436,47 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
         # Save client reference for async handlers (context.client not available in async tasks)
         yakulingo_app._client = client
 
+        # Add early CSS for loading screen and font loading handling
+        # This runs before create_ui() which loads COMPLETE_CSS
+        ui.add_head_html('''<style>
+/* Loading screen styles (needed before main CSS loads) */
+.loading-screen {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: #FEFBFF;
+    z-index: 9999;
+}
+.loading-title {
+    margin-top: 1.5rem;
+    font-size: 1.75rem;
+    font-weight: 500;
+    color: #1B1B1F;
+    letter-spacing: 0.02em;
+}
+/* Hide Material Icons until font is loaded to prevent showing text */
+.material-icons, .q-icon {
+    opacity: 0;
+    transition: opacity 0.15s ease;
+}
+.fonts-ready .material-icons, .fonts-ready .q-icon {
+    opacity: 1;
+}
+</style>''')
+
+        # JavaScript to detect font loading and show icons
+        ui.add_head_html('''<script>
+document.fonts.ready.then(function() {
+    document.documentElement.classList.add('fonts-ready');
+});
+</script>''')
+
         # Show loading screen immediately (before client connects)
         loading_container = ui.element('div').classes('loading-screen')
         with loading_container:

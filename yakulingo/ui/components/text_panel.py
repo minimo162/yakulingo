@@ -643,7 +643,6 @@ def _render_results_to_jp(
 
         # Suggestion hint with retry button (吹き出し風)
         with ui.element('div').classes('suggestion-hint-row'):
-            ui.icon('lightbulb').classes('suggestion-hint-icon')
             if on_retry:
                 retry_btn = ui.button(
                     '再翻訳',
@@ -797,7 +796,6 @@ def _render_inline_adjust_section(
     with ui.element('div').classes('inline-adjust-section'):
         # Suggestion hint with retry button (吹き出し風)
         with ui.element('div').classes('suggestion-hint-row'):
-            ui.icon('lightbulb').classes('suggestion-hint-icon')
             if on_retry:
                 retry_btn = ui.button(
                     '再翻訳',

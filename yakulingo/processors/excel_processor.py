@@ -310,14 +310,15 @@ class ExcelProcessor(FileProcessor):
         output_path: Path,
         translations: dict[str, str],
         direction: str = "jp_to_en",
+        settings=None,
     ) -> None:
         """Apply translations to Excel file"""
         xw = _get_xlwings()
 
         if HAS_XLWINGS:
-            self._apply_translations_xlwings(input_path, output_path, translations, direction, xw)
+            self._apply_translations_xlwings(input_path, output_path, translations, direction, xw, settings)
         else:
-            self._apply_translations_openpyxl(input_path, output_path, translations, direction)
+            self._apply_translations_openpyxl(input_path, output_path, translations, direction, settings)
 
     def _apply_translations_xlwings(
         self,
@@ -326,9 +327,10 @@ class ExcelProcessor(FileProcessor):
         translations: dict[str, str],
         direction: str,
         xw,
+        settings=None,
     ) -> None:
         """Apply translations using xlwings"""
-        font_manager = FontManager(direction)
+        font_manager = FontManager(direction, settings)
         app = xw.App(visible=False, add_book=False)
 
         try:
@@ -420,10 +422,11 @@ class ExcelProcessor(FileProcessor):
         output_path: Path,
         translations: dict[str, str],
         direction: str,
+        settings=None,
     ) -> None:
         """Apply translations using openpyxl (fallback - cells only)"""
         wb = openpyxl.load_workbook(input_path)
-        font_manager = FontManager(direction)
+        font_manager = FontManager(direction, settings)
 
         try:
             for sheet_name in wb.sheetnames:

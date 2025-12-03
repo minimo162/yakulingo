@@ -6,12 +6,15 @@ For Excel/Word/PowerPoint files.
 """
 
 import re
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 from collections import Counter
 
+if TYPE_CHECKING:
+    from yakulingo.config.settings import AppSettings
 
-# Font mapping table
-FONT_MAPPING = {
+
+# Default font mapping table (can be overridden by settings)
+DEFAULT_FONT_MAPPING = {
     "jp_to_en": {
         "mincho": {
             "name": "Arial",
@@ -39,6 +42,9 @@ FONT_MAPPING = {
         "default": "serif",  # 判定不能時はセリフ系扱い
     },
 }
+
+# For backwards compatibility
+FONT_MAPPING = DEFAULT_FONT_MAPPING
 
 
 class FontTypeDetector:
@@ -132,9 +138,25 @@ class FontSizeAdjuster:
     Excel/Word/PowerPoint 用
     """
 
-    # JP → EN: 縮小設定
-    JP_TO_EN_ADJUSTMENT = -2.0  # pt
-    JP_TO_EN_MIN_SIZE = 6.0     # pt
+    # デフォルト値（後方互換性のため）
+    DEFAULT_JP_TO_EN_ADJUSTMENT = -2.0  # pt
+    DEFAULT_MIN_SIZE = 6.0  # pt
+
+    def __init__(
+        self,
+        adjustment_jp_to_en: Optional[float] = None,
+        min_size: Optional[float] = None,
+    ):
+        """
+        Args:
+            adjustment_jp_to_en: JP→EN時のフォントサイズ調整値 (pt)
+            min_size: 最小フォントサイズ (pt)
+        """
+        self.adjustment_jp_to_en = (
+            adjustment_jp_to_en if adjustment_jp_to_en is not None
+            else self.DEFAULT_JP_TO_EN_ADJUSTMENT
+        )
+        self.min_size = min_size if min_size is not None else self.DEFAULT_MIN_SIZE
 
     def adjust_font_size(
         self,
@@ -153,9 +175,9 @@ class FontSizeAdjuster:
             - 元のサイズより大きくなることはない
         """
         if direction == "jp_to_en":
-            adjusted = original_size + self.JP_TO_EN_ADJUSTMENT
-            # 最小6pt、ただし元のサイズを超えない
-            return min(original_size, max(adjusted, self.JP_TO_EN_MIN_SIZE))
+            adjusted = original_size + self.adjustment_jp_to_en
+            # 最小値制限、ただし元のサイズを超えない
+            return min(original_size, max(adjusted, self.min_size))
         else:
             # EN → JP は調整なし
             return original_size
@@ -167,14 +189,56 @@ class FontManager:
     Excel/Word/PowerPoint で使用
     """
 
-    def __init__(self, direction: str):
+    def __init__(
+        self,
+        direction: str,
+        settings: Optional["AppSettings"] = None,
+    ):
         """
         Args:
             direction: "jp_to_en" or "en_to_jp"
+            settings: Optional AppSettings for custom font configuration
         """
         self.direction = direction
+        self.settings = settings
         self.font_type_detector = FontTypeDetector()
-        self.font_size_adjuster = FontSizeAdjuster()
+
+        # Initialize font size adjuster with settings
+        if settings:
+            self.font_size_adjuster = FontSizeAdjuster(
+                adjustment_jp_to_en=settings.font_size_adjustment_jp_to_en,
+                min_size=settings.font_size_min,
+            )
+        else:
+            self.font_size_adjuster = FontSizeAdjuster()
+
+        # Build font mapping from settings or defaults
+        self._font_mapping = self._build_font_mapping()
+
+    def _build_font_mapping(self) -> dict:
+        """Build font mapping from settings or use defaults."""
+        # Deep copy defaults
+        mapping = {
+            "jp_to_en": {
+                "mincho": dict(DEFAULT_FONT_MAPPING["jp_to_en"]["mincho"]),
+                "gothic": dict(DEFAULT_FONT_MAPPING["jp_to_en"]["gothic"]),
+                "default": DEFAULT_FONT_MAPPING["jp_to_en"]["default"],
+            },
+            "en_to_jp": {
+                "serif": dict(DEFAULT_FONT_MAPPING["en_to_jp"]["serif"]),
+                "sans-serif": dict(DEFAULT_FONT_MAPPING["en_to_jp"]["sans-serif"]),
+                "default": DEFAULT_FONT_MAPPING["en_to_jp"]["default"],
+            },
+        }
+
+        if self.settings:
+            # Override with settings values
+            mapping["jp_to_en"]["mincho"]["name"] = self.settings.font_jp_to_en_mincho
+            mapping["jp_to_en"]["gothic"]["name"] = self.settings.font_jp_to_en_gothic
+            mapping["en_to_jp"]["serif"]["name"] = self.settings.font_en_to_jp_serif
+            mapping["en_to_jp"]["sans-serif"]["name"] = self.settings.font_en_to_jp_sans
+
+        return mapping
 
     def select_font(
         self,
@@ -195,7 +259,7 @@ class FontManager:
         font_type = self.font_type_detector.detect_font_type(original_font_name)
 
         # 2. マッピングテーブルからフォントを選択
-        mapping = FONT_MAPPING[self.direction]
+        mapping = self._font_mapping[self.direction]
         if font_type == "mincho":
             font_key = "mincho" if self.direction == "jp_to_en" else "serif"
         elif font_type == "gothic":
@@ -224,7 +288,7 @@ class FontManager:
         Returns:
             出力フォント名
         """
-        mapping = FONT_MAPPING[self.direction]
+        mapping = self._font_mapping[self.direction]
         if font_type == "mincho":
             font_key = "mincho" if self.direction == "jp_to_en" else "serif"
         elif font_type == "gothic":

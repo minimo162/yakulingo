@@ -2,10 +2,10 @@
 """
 Builds translation prompts for YakuLingo.
 
-Prompt file structure:
-- file_translate_to_en.txt: File translation → English
+Prompt file structure (style-specific for English output):
+- file_translate_to_en_{style}.txt: File translation → English (standard/concise/minimal)
 - file_translate_to_jp.txt: File translation → Japanese
-- text_translate_to_en.txt: Text translation → English (single option with style)
+- text_translate_to_en_{style}.txt: Text translation → English (standard/concise/minimal)
 - text_translate_to_jp.txt: Text translation → Japanese (with explanation)
 - adjust_*.txt: Adjustment prompts (shorter, longer, custom)
 
@@ -33,11 +33,6 @@ Translation Rule
 - すべてのテキストを英語に翻訳
 - 既に英語のテキスト → そのまま出力
 
-Translation Style: {translation_style}
-- standard: 自然で読みやすい翻訳
-- concise: 冗長表現を避けた簡潔な翻訳
-- minimal: 最小限の文字数（見出し・件名向け）
-
 Critical Rules (優先順位順)
 
 1. 出力形式厳守
@@ -45,7 +40,7 @@ Critical Rules (優先順位順)
 
 2. 自然な翻訳
    - 読みやすく自然な英語に翻訳
-   - スタイルに応じた簡潔さを維持
+   - 簡潔さを維持
 
 3. 数値表記（必須ルール）
    - 億 → oku (例: 4,500億円 → 4,500 oku yen)
@@ -101,40 +96,64 @@ class PromptBuilder:
     """
     Builds translation prompts for file translation.
     Reference files are attached to Copilot, not embedded in prompt.
+
+    Supports style-specific prompts for English output (standard/concise/minimal).
     """
 
     def __init__(self, prompts_dir: Optional[Path] = None):
         self.prompts_dir = prompts_dir
-        self._to_en_template: str = ""
-        self._to_jp_template: str = ""
+        # Templates cache: {(lang, style): template_str}
+        self._templates: dict[tuple[str, str], str] = {}
         self._load_templates()
 
     def _load_templates(self) -> None:
         """Load prompt templates from files or use defaults"""
-        if self.prompts_dir:
-            # To English template (file_translate_to_en.txt)
-            to_en_prompt = self.prompts_dir / "file_translate_to_en.txt"
-            if to_en_prompt.exists():
-                self._to_en_template = to_en_prompt.read_text(encoding='utf-8')
-            else:
-                self._to_en_template = DEFAULT_TO_EN_TEMPLATE
+        styles = ["standard", "concise", "minimal"]
 
-            # To Japanese template (file_translate_to_jp.txt)
+        if self.prompts_dir:
+            # Load style-specific English templates
+            for style in styles:
+                # File translation to English
+                to_en_prompt = self.prompts_dir / f"file_translate_to_en_{style}.txt"
+                if to_en_prompt.exists():
+                    self._templates[("en", style)] = to_en_prompt.read_text(encoding='utf-8')
+                else:
+                    # Fallback to old single file if exists
+                    old_prompt = self.prompts_dir / "file_translate_to_en.txt"
+                    if old_prompt.exists():
+                        self._templates[("en", style)] = old_prompt.read_text(encoding='utf-8')
+                    else:
+                        self._templates[("en", style)] = DEFAULT_TO_EN_TEMPLATE
+
+            # Japanese template (no style variations)
             to_jp_prompt = self.prompts_dir / "file_translate_to_jp.txt"
             if to_jp_prompt.exists():
-                self._to_jp_template = to_jp_prompt.read_text(encoding='utf-8')
+                jp_template = to_jp_prompt.read_text(encoding='utf-8')
             else:
-                self._to_jp_template = DEFAULT_TO_JP_TEMPLATE
-        else:
-            self._to_en_template = DEFAULT_TO_EN_TEMPLATE
-            self._to_jp_template = DEFAULT_TO_JP_TEMPLATE
+                jp_template = DEFAULT_TO_JP_TEMPLATE
 
-    def _get_template(self, output_language: str = "en") -> str:
-        """Get appropriate template based on output language."""
-        if output_language == "jp":
-            return self._to_jp_template
+            # Use same JP template for all styles
+            for style in styles:
+                self._templates[("jp", style)] = jp_template
         else:
-            return self._to_en_template
+            # Use defaults
+            for style in styles:
+                self._templates[("en", style)] = DEFAULT_TO_EN_TEMPLATE
+                self._templates[("jp", style)] = DEFAULT_TO_JP_TEMPLATE
+
+    def _get_template(self, output_language: str = "en", translation_style: str = "concise") -> str:
+        """Get appropriate template based on output language and style."""
+        key = (output_language, translation_style)
+        if key in self._templates:
+            return self._templates[key]
+
+        # Fallback to concise if style not found
+        fallback_key = (output_language, "concise")
+        if fallback_key in self._templates:
+            return self._templates[fallback_key]
+
+        # Ultimate fallback
+        return DEFAULT_TO_EN_TEMPLATE if output_language == "en" else DEFAULT_TO_JP_TEMPLATE
 
     def build(
         self,
@@ -159,12 +178,13 @@ class PromptBuilder:
         # Add reference instruction only if files are attached
         reference_section = REFERENCE_INSTRUCTION if has_reference_files else ""
 
-        # Get appropriate template
-        template = self._get_template(output_language)
+        # Get appropriate template based on language and style
+        template = self._get_template(output_language, translation_style)
 
         # Replace placeholders
         prompt = template.replace("{reference_section}", reference_section)
         prompt = prompt.replace("{input_text}", input_text)
+        # Remove old style placeholder if present (for backwards compatibility)
         prompt = prompt.replace("{translation_style}", translation_style)
 
         return prompt

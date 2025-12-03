@@ -383,10 +383,11 @@ class WordProcessor(FileProcessor):
         output_path: Path,
         translations: dict[str, str],
         direction: str = "jp_to_en",
+        settings=None,
     ) -> None:
         """Apply translations while preserving formatting"""
         doc = Document(input_path)
-        font_manager = FontManager(direction)
+        font_manager = FontManager(direction, settings)
 
         # === Apply to paragraphs ===
         for idx, para in enumerate(doc.paragraphs):

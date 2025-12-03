@@ -19,9 +19,12 @@ class TestPromptBuilder:
         """Default templates used when prompts_dir is None"""
         builder = PromptBuilder(prompts_dir=None)
 
-        # Check internal templates are loaded
-        assert builder._to_en_template == DEFAULT_TO_EN_TEMPLATE
-        assert builder._to_jp_template == DEFAULT_TO_JP_TEMPLATE
+        # Check internal templates are loaded (style-specific templates)
+        # Each style should have templates for en and jp
+        assert ("en", "concise") in builder._templates
+        assert ("jp", "concise") in builder._templates
+        assert builder._templates[("en", "concise")] == DEFAULT_TO_EN_TEMPLATE
+        assert builder._templates[("jp", "concise")] == DEFAULT_TO_JP_TEMPLATE
 
     def test_build_includes_input_text(self):
         """Build includes input text in prompt"""
@@ -397,25 +400,27 @@ class TestPromptBuilderEdgeCases:
         """_get_template defaults to English output"""
         builder = PromptBuilder()
 
-        # Default behavior
+        # Default behavior (defaults to en, concise)
         template = builder._get_template()
-        assert template == builder._to_en_template
+        assert template == builder._templates[("en", "concise")]
 
         # Explicit en
         template_en = builder._get_template("en")
-        assert template_en == builder._to_en_template
+        assert template_en == builder._templates[("en", "concise")]
 
     def test_get_template_for_jp(self):
         """_get_template returns JP template for jp language"""
         builder = PromptBuilder()
         template = builder._get_template("jp")
-        assert template == builder._to_jp_template
+        assert template == builder._templates[("jp", "concise")]
 
-    def test_get_template_unknown_language_defaults_to_en(self):
-        """_get_template defaults to EN for unknown language"""
+    def test_get_template_unknown_language_falls_back(self):
+        """_get_template returns fallback for unknown language"""
         builder = PromptBuilder()
+        # Unknown language falls back to JP template (since output_language != "en")
         template = builder._get_template("unknown")
-        assert template == builder._to_en_template
+        # Should return JP template as fallback (unknown != "en")
+        assert template == DEFAULT_TO_JP_TEMPLATE
 
 
 # =============================================================================

@@ -45,10 +45,17 @@ def create_file_panel(
     on_export_glossary_change: Optional[Callable[[bool], None]] = None,
     on_style_change: Optional[Callable[[str], None]] = None,
     on_section_toggle: Optional[Callable[[int, bool], None]] = None,
+    on_font_size_change: Optional[Callable[[float], None]] = None,
+    on_font_name_change: Optional[Callable[[str, str], None]] = None,
     bilingual_enabled: bool = False,
     export_glossary_enabled: bool = False,
     translation_style: str = "concise",
     translation_result: Optional[TranslationResult] = None,
+    font_size_adjustment: float = -2.0,
+    font_jp_to_en_mincho: str = "Arial",
+    font_jp_to_en_gothic: str = "Calibri",
+    font_en_to_jp_serif: str = "MS P明朝",
+    font_en_to_jp_sans: str = "Meiryo UI",
 ):
     """File translation panel - Nani-inspired design"""
 
@@ -77,6 +84,18 @@ def create_file_panel(
                         on_bilingual_change,
                     )
                     _export_glossary_selector(export_glossary_enabled, on_export_glossary_change)
+                    # Font settings (for non-PDF files only, PDF uses embedded fonts)
+                    if state.file_info and state.file_info.file_type != FileType.PDF:
+                        _font_settings_selector(
+                            state.file_output_language,
+                            font_size_adjustment,
+                            font_jp_to_en_mincho,
+                            font_jp_to_en_gothic,
+                            font_en_to_jp_serif,
+                            font_en_to_jp_sans,
+                            on_font_size_change,
+                            on_font_name_change,
+                        )
                     # Section selector for partial translation
                     if state.file_info and len(state.file_info.section_details) > 1:
                         _section_selector(state.file_info, on_section_toggle)
@@ -409,3 +428,76 @@ def _section_selector(
                         on_change=lambda e, idx=section.index: on_toggle and on_toggle(idx, e.value),
                     ).props('dense')
                     ui.label(section.name).classes('flex-1 text-sm')
+
+
+# Common font options for dropdowns
+FONT_OPTIONS_EN = ['Arial', 'Calibri', 'Times New Roman', 'Segoe UI', 'Verdana', 'Tahoma']
+FONT_OPTIONS_JP = ['MS P明朝', 'Meiryo UI', 'MS Pゴシック', 'Yu Gothic UI', '游明朝', '游ゴシック']
+
+
+def _font_settings_selector(
+    output_language: str,
+    font_size_adjustment: float,
+    font_jp_to_en_mincho: str,
+    font_jp_to_en_gothic: str,
+    font_en_to_jp_serif: str,
+    font_en_to_jp_sans: str,
+    on_font_size_change: Optional[Callable[[float], None]],
+    on_font_name_change: Optional[Callable[[str, str], None]],
+):
+    """Font settings selector - expandable panel for font customization"""
+    with ui.expansion(
+        'フォント設定',
+        icon='text_fields',
+    ).classes('section-selector w-full mt-3'):
+        with ui.column().classes('gap-3 w-full'):
+            # Font size adjustment (only for JP→EN)
+            if output_language == 'en':
+                with ui.column().classes('gap-1 w-full'):
+                    ui.label('フォントサイズ調整（pt）').classes('text-xs text-muted')
+                    with ui.row().classes('items-center gap-2'):
+                        size_input = ui.number(
+                            value=font_size_adjustment,
+                            min=-4.0,
+                            max=0.0,
+                            step=0.5,
+                            format='%.1f',
+                            on_change=lambda e: on_font_size_change and on_font_size_change(e.value),
+                        ).classes('w-20').props('dense')
+                        ui.label('（負値で縮小、0で変更なし）').classes('text-xs text-muted')
+
+            # Font name selection based on output language
+            if output_language == 'en':
+                # JP→EN: Select output English fonts
+                with ui.column().classes('gap-1 w-full'):
+                    ui.label('明朝系 → 英語フォント').classes('text-xs text-muted')
+                    ui.select(
+                        options=FONT_OPTIONS_EN,
+                        value=font_jp_to_en_mincho,
+                        on_change=lambda e: on_font_name_change and on_font_name_change('mincho', e.value),
+                    ).classes('w-full').props('dense')
+
+                with ui.column().classes('gap-1 w-full'):
+                    ui.label('ゴシック系 → 英語フォント').classes('text-xs text-muted')
+                    ui.select(
+                        options=FONT_OPTIONS_EN,
+                        value=font_jp_to_en_gothic,
+                        on_change=lambda e: on_font_name_change and on_font_name_change('gothic', e.value),
+                    ).classes('w-full').props('dense')
+            else:
+                # EN→JP: Select output Japanese fonts
+                with ui.column().classes('gap-1 w-full'):
+                    ui.label('Serif系 → 日本語フォント').classes('text-xs text-muted')
+                    ui.select(
+                        options=FONT_OPTIONS_JP,
+                        value=font_en_to_jp_serif,
+                        on_change=lambda e: on_font_name_change and on_font_name_change('serif', e.value),
+                    ).classes('w-full').props('dense')
+
+                with ui.column().classes('gap-1 w-full'):
+                    ui.label('Sans-serif系 → 日本語フォント').classes('text-xs text-muted')
+                    ui.select(
+                        options=FONT_OPTIONS_JP,
+                        value=font_en_to_jp_sans,
+                        on_change=lambda e: on_font_name_change and on_font_name_change('sans', e.value),
+                    ).classes('w-full').props('dense')

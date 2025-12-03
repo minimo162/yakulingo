@@ -221,9 +221,10 @@ class YakuLingoApp:
             logger.debug("Failed to bring window to front: %s", e)
 
         # Show ready notification (need client context for UI operations in async task)
+        # Use English to avoid encoding issues on Windows
         if self._client:
             with self._client:
-                ui.notify('準備完了', type='positive', position='bottom-right', timeout=2000)
+                ui.notify('Ready', type='positive', position='bottom-right', timeout=2000)
 
     async def check_for_updates(self):
         """Check for updates in background."""

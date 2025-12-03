@@ -477,12 +477,9 @@ class YakuLingoApp:
             with ui.column().classes('history-text-container gap-0.5'):
                 # Source text title
                 ui.label(entry.preview).classes('text-xs history-title')
-                # Show first translation preview
+                # Show first translation preview (CSS handles truncation with ellipsis)
                 if entry.result.options:
-                    first_trans = entry.result.options[0].text[:40]
-                    if len(entry.result.options[0].text) > 40:
-                        first_trans += '...'
-                    ui.label(first_trans).classes('text-2xs text-muted history-preview')
+                    ui.label(entry.result.options[0].text).classes('text-2xs text-muted history-preview')
 
             # Three-dot menu button (visible on hover via CSS)
             with ui.button(icon='more_vert').props('flat dense round size=xs').classes('history-menu-btn') as menu_btn:

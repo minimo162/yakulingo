@@ -978,6 +978,7 @@ class CopilotHandler:
                         if current_text == last_text:
                             stable_count += 1
                             if stable_count >= self.RESPONSE_STABLE_COUNT:
+                                logger.debug("Response stabilized (length: %d chars): %s", len(current_text), current_text[:500])
                                 return current_text
                         else:
                             stable_count = 0

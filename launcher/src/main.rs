@@ -73,9 +73,10 @@ fn run() -> Result<(), String> {
 /// Check if the application is already running by attempting TCP connection
 fn is_app_running(port: u16) -> bool {
     let addr = format!("127.0.0.1:{}", port);
+    // Reduced timeout from 500ms to 100ms for faster startup when app isn't running
     TcpStream::connect_timeout(
         &addr.parse().unwrap(),
-        Duration::from_millis(500),
+        Duration::from_millis(100),
     )
     .is_ok()
 }
@@ -167,6 +168,9 @@ fn setup_environment(base_dir: &PathBuf, venv_dir: &PathBuf, python_dir: &PathBu
 
     // Proxy bypass for localhost (avoids corporate proxy delays)
     env::set_var("NO_PROXY", "localhost,127.0.0.1");
+
+    // Disable Python output buffering (slightly faster startup)
+    env::set_var("PYTHONUNBUFFERED", "1");
 
     // PATH - prepend venv and python directories
     let venv_scripts = venv_dir.join("Scripts");

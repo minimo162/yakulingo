@@ -90,13 +90,17 @@ class ExcelProcessor(FileProcessor):
         return ['.xlsx', '.xls']
 
     def get_file_info(self, file_path: Path) -> FileInfo:
-        """Get Excel file info"""
-        xw = _get_xlwings()
+        """Get Excel file info (always uses openpyxl for speed)
 
-        if HAS_XLWINGS:
-            return self._get_file_info_xlwings(file_path, xw)
-        else:
-            return self._get_file_info_openpyxl(file_path)
+        Note: We always use openpyxl here because it's much faster than xlwings
+        for simple metadata extraction (sheet names only). xlwings requires
+        starting an Excel COM server which takes 3-15 seconds, while openpyxl
+        can read the ZIP structure directly in 200-400ms.
+
+        xlwings is still used for extract_text_blocks() and apply_translations()
+        when full Excel functionality (shapes, charts) is needed.
+        """
+        return self._get_file_info_openpyxl(file_path)
 
     def _get_file_info_xlwings(self, file_path: Path, xw) -> FileInfo:
         """Get file info using xlwings (fast: sheet names only, no cell scanning)"""

@@ -20,7 +20,9 @@ def temp_db():
     """Create a temporary database for testing"""
     with tempfile.TemporaryDirectory() as tmpdir:
         db_path = Path(tmpdir) / 'test_history.db'
-        yield HistoryDB(db_path)
+        db = HistoryDB(db_path)
+        yield db
+        db.close()  # Properly close database connection
 
 
 @pytest.fixture

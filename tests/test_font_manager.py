@@ -124,27 +124,44 @@ class TestFontSizeAdjuster:
     def adjuster(self):
         return FontSizeAdjuster()
 
-    # --- JP to EN adjustment ---
+    @pytest.fixture
+    def adjuster_with_adjustment(self):
+        """Adjuster with -2pt adjustment for testing custom settings"""
+        return FontSizeAdjuster(adjustment_jp_to_en=-2.0)
 
-    def test_jp_to_en_reduces_size(self, adjuster):
-        """JP to EN reduces font size by 2pt"""
+    # --- JP to EN with default (no adjustment) ---
+
+    def test_jp_to_en_no_adjustment_by_default(self, adjuster):
+        """JP to EN doesn't change font size by default (DEFAULT_JP_TO_EN_ADJUSTMENT = 0.0)"""
         result = adjuster.adjust_font_size(12.0, "jp_to_en")
-        assert result == 10.0
+        assert result == 12.0
 
     def test_jp_to_en_respects_minimum(self, adjuster):
-        """JP to EN doesn't go below 6pt"""
+        """Small sizes are preserved"""
         result = adjuster.adjust_font_size(6.0, "jp_to_en")
-        assert result == 6.0  # 6 - 2 = 4, but min is 6
+        assert result == 6.0
 
     def test_jp_to_en_small_size(self, adjuster):
         """Small sizes are handled correctly"""
         result = adjuster.adjust_font_size(7.0, "jp_to_en")
-        assert result == 6.0  # 7 - 2 = 5, clamped to 6
+        assert result == 7.0  # No adjustment
 
     def test_jp_to_en_large_size(self, adjuster):
-        """Large sizes are reduced normally"""
+        """Large sizes are preserved"""
         result = adjuster.adjust_font_size(24.0, "jp_to_en")
-        assert result == 22.0
+        assert result == 24.0
+
+    # --- JP to EN with custom adjustment ---
+
+    def test_jp_to_en_custom_adjustment(self, adjuster_with_adjustment):
+        """JP to EN reduces font size when adjustment is set"""
+        result = adjuster_with_adjustment.adjust_font_size(12.0, "jp_to_en")
+        assert result == 10.0  # 12 - 2 = 10
+
+    def test_jp_to_en_custom_adjustment_respects_minimum(self, adjuster_with_adjustment):
+        """JP to EN with adjustment doesn't go below 6pt"""
+        result = adjuster_with_adjustment.adjust_font_size(6.0, "jp_to_en")
+        assert result == 6.0  # 6 - 2 = 4, but min is 6, and capped at original
 
     # --- EN to JP no adjustment ---
 
@@ -165,14 +182,14 @@ class TestFontManager:
         manager = FontManager("jp_to_en")
         name, size = manager.select_font("MS Mincho", 12.0)
         assert name == "Arial"
-        assert size == 10.0  # 12 - 2
+        assert size == 12.0  # no adjustment (DEFAULT_JP_TO_EN_ADJUSTMENT = 0.0)
 
-    def test_jp_to_en_gothic_to_calibri(self):
-        """JP Gothic maps to Calibri in EN"""
+    def test_jp_to_en_gothic_to_arial(self):
+        """JP Gothic maps to Arial in EN"""
         manager = FontManager("jp_to_en")
         name, size = manager.select_font("MS Gothic", 12.0)
-        assert name == "Calibri"
-        assert size == 10.0
+        assert name == "Arial"
+        assert size == 12.0
 
     def test_jp_to_en_unknown_defaults_to_mincho(self):
         """Unknown JP font defaults to mincho (Arial)"""
@@ -220,7 +237,7 @@ class TestFontManagerGetFontForType:
 
     def test_jp_to_en_gothic(self):
         manager = FontManager("jp_to_en")
-        assert manager.get_font_for_type("gothic") == "Calibri"
+        assert manager.get_font_for_type("gothic") == "Arial"
 
     def test_jp_to_en_unknown(self):
         manager = FontManager("jp_to_en")

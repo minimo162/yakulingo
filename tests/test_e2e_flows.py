@@ -732,10 +732,10 @@ class TestE2EFontConversion:
 
         # Mincho → Arial
         assert ws_out["A1"].font.name == "Arial"
-        # Gothic → Calibri
-        assert ws_out["A2"].font.name == "Calibri"
-        # Font size reduced by 2
-        assert ws_out["A2"].font.size == 12  # 14 - 2
+        # Gothic → Arial (AppSettings default)
+        assert ws_out["A2"].font.name == "Arial"
+        # Font size unchanged (font_size_adjustment_jp_to_en = 0.0)
+        assert ws_out["A2"].font.size == 14
 
     def test_en_to_jp_font_conversion(self, mock_copilot, settings, tmp_path):
         """English fonts converted to Japanese equivalents"""

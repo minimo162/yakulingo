@@ -338,7 +338,7 @@ body {
 
 .history-item {
     display: flex;
-    padding: 0.625rem 0.75rem;
+    padding: 0.5rem 0.5rem;
     border-radius: var(--md-sys-shape-corner-medium);
     cursor: pointer;
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);

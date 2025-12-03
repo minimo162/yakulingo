@@ -454,24 +454,22 @@ class YakuLingoApp:
 
             item.on('click', load_entry)
 
-            with ui.row().classes('w-full items-start gap-2'):
-                ui.icon('notes').classes('text-sm text-muted mt-0.5')
-                with ui.column().classes('flex-1 min-w-0 gap-0.5'):
-                    ui.label(entry.preview).classes('text-xs truncate')
-                    # Show first translation preview
-                    if entry.result.options:
-                        first_trans = entry.result.options[0].text[:30]
-                        ui.label(first_trans + '...').classes('text-2xs text-muted truncate')
+            with ui.column().classes('flex-1 min-w-0 gap-0.5'):
+                ui.label(entry.preview).classes('text-xs truncate w-full')
+                # Show first translation preview
+                if entry.result.options:
+                    first_trans = entry.result.options[0].text[:40]
+                    ui.label(first_trans + '...').classes('text-2xs text-muted truncate w-full')
 
-                # Delete button (visible on hover via CSS)
-                def delete_entry(e):
-                    self.state.delete_history_entry(entry)
-                    self._refresh_history()
+            # Delete button (visible on hover via CSS, positioned absolutely)
+            def delete_entry(e):
+                self.state.delete_history_entry(entry)
+                self._refresh_history()
 
-                ui.button(
-                    icon='close',
-                    on_click=delete_entry
-                ).props('flat dense round size=xs').classes('history-delete-btn')
+            ui.button(
+                icon='close',
+                on_click=delete_entry
+            ).props('flat dense round size=xs').classes('history-delete-btn')
 
     def _get_main_area_classes(self) -> str:
         """Get dynamic CSS classes for main-area based on current state."""

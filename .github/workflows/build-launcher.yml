@@ -2,11 +2,13 @@ name: Build Launcher
 
 on:
   push:
+    branches:
+      - main  # Only trigger on main branch
     paths:
       - 'launcher/**'
   release:
     types: [created]
-  workflow_dispatch:  # Manual trigger
+  workflow_dispatch:  # Manual trigger for testing
 
 jobs:
   build:

@@ -338,7 +338,10 @@ body {
 
 .history-item {
     display: flex;
-    padding: 0.5rem 0.5rem;
+    align-items: flex-start;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    padding-right: 1.75rem;  /* Space for menu button */
     border-radius: var(--md-sys-shape-corner-medium);
     cursor: pointer;
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
@@ -357,7 +360,7 @@ body {
     background: var(--md-sys-color-surface-container);
 }
 
-/* Note: .history-delete-btn is defined below in the Nani-inspired enhancements section */
+/* Note: .history-menu-btn is defined below in the Nani-inspired enhancements section */
 
 /* === Status Indicator === */
 .status-indicator {
@@ -1686,23 +1689,20 @@ body {
     }
 }
 
-/* Gradient delete button for history */
-.history-delete-btn {
+/* Three-dot menu button for history items */
+.history-menu-btn {
     opacity: 0;
     transition: opacity var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
     position: absolute;
-    right: 0;
+    right: 0.25rem;
     top: 50%;
     transform: translateY(-50%);
-    background: linear-gradient(to left,
-        var(--md-sys-color-surface-container) 70%,
-        transparent
-    ) !important;
-    padding-left: 1.5rem !important;
-    padding-right: 0.5rem !important;
+    background: var(--md-sys-color-surface-container) !important;
+    min-width: 24px !important;
+    min-height: 24px !important;
 }
 
-.history-item:hover .history-delete-btn {
+.history-item:hover .history-menu-btn {
     opacity: 1;
 }
 

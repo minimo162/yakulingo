@@ -233,7 +233,7 @@ class CopilotHandler:
     EDGE_STARTUP_MAX_ATTEMPTS = 20  # Maximum iterations to wait for Edge startup
     EDGE_STARTUP_CHECK_INTERVAL = 0.3  # Seconds between startup checks
     RESPONSE_STABLE_COUNT = 2  # Number of stable checks before considering response complete
-    RESPONSE_POLL_INTERVAL = 0.5  # Seconds between response checks (reduced from 1.0 for faster detection)
+    RESPONSE_POLL_INTERVAL = 0.3  # Seconds between response checks (reduced from 0.5 for faster detection)
     DEFAULT_RESPONSE_TIMEOUT = 120  # Default timeout for response in seconds
 
     # Copilot character limits (Free: 8000, Paid: 128000)
@@ -1223,8 +1223,8 @@ class CopilotHandler:
                     # Fallback: wait a bit if selector doesn't appear
                     time.sleep(1)
 
-                # Verify that previous responses are cleared
-                self._wait_for_responses_cleared(timeout=5.0)
+                # Verify that previous responses are cleared (reduced from 5.0s for faster detection)
+                self._wait_for_responses_cleared(timeout=3.0)
 
                 # 新しいチャット開始後、GPT-5を有効化
                 # （送信時にも再確認するが、UIの安定性のため先に試行）

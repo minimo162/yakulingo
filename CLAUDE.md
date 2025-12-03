@@ -123,16 +123,16 @@ YakuLingo/
 
 | File | Purpose | Lines |
 |------|---------|-------|
-| `yakulingo/ui/app.py` | Main application orchestrator, handles UI events and coordinates services | ~1364 |
-| `yakulingo/services/translation_service.py` | Coordinates file processors and batch translation | ~1498 |
-| `yakulingo/services/copilot_handler.py` | Browser automation for M365 Copilot | ~1326 |
+| `yakulingo/ui/app.py` | Main application orchestrator, handles UI events and coordinates services | ~1453 |
+| `yakulingo/services/translation_service.py` | Coordinates file processors and batch translation | ~1560 |
+| `yakulingo/services/copilot_handler.py` | Browser automation for M365 Copilot | ~1375 |
 | `yakulingo/services/updater.py` | GitHub Releases-based auto-update with Windows proxy support | ~764 |
-| `yakulingo/ui/styles.py` | M3 design tokens, CSS styling definitions | ~2644 |
-| `yakulingo/ui/components/text_panel.py` | Nani-inspired text translation UI with inline adjustments | ~873 |
-| `yakulingo/ui/components/file_panel.py` | File translation panel with drag-drop and progress | ~377 |
+| `yakulingo/ui/styles.py` | M3 design tokens, CSS styling definitions | ~2837 |
+| `yakulingo/ui/components/text_panel.py` | Text translation UI with source display and translation status | ~1059 |
+| `yakulingo/ui/components/file_panel.py` | File translation panel with drag-drop and progress | ~554 |
 | `yakulingo/ui/components/update_notification.py` | Auto-update UI notifications | ~344 |
-| `yakulingo/ui/utils.py` | UI utilities: temp file management, dialog helpers, text formatting | ~489 |
-| `yakulingo/ui/state.py` | Application state management (TextViewState, FileState enums) | ~202 |
+| `yakulingo/ui/utils.py` | UI utilities: temp file management, dialog helpers, text formatting | ~433 |
+| `yakulingo/ui/state.py` | Application state management (TextViewState, FileState enums) | ~204 |
 | `yakulingo/models/types.py` | Core data types: TextBlock, FileInfo, TranslationResult, HistoryEntry | ~304 |
 | `yakulingo/storage/history_db.py` | SQLite database for translation history | ~320 |
 | `yakulingo/processors/base.py` | Abstract base class for all file processors | ~105 |
@@ -189,9 +189,11 @@ No manual direction selection is required.
 ## Text Translation UI Features
 
 ### Unified UI Structure (英訳・和訳共通)
+- **Source text section** (原文セクション): 翻訳結果パネル上部に原文を表示 + コピーボタン
+- **Translation status** (翻訳状態表示): 「🇯🇵 日本語から🇺🇸 英語へ翻訳中...」「✓ 翻訳しました」+ 経過時間バッジ
 - **Suggestion hint row** (吹き出し風): 💡アイコン + [再翻訳] ボタン
 - **Action/adjustment options**: 単独オプションスタイルのボタン
-- **Inline input**: 追加リクエスト入力欄
+- **Inline input**: 追加リクエスト入力欄（縦幅いっぱいに拡張）
 
 ### Japanese → English (英訳)
 - **Single translation output** with configurable style (標準/簡潔/最簡潔)
@@ -728,6 +730,10 @@ Based on recent commits:
 - **Native Launcher**: Rust-based `YakuLingo.exe` for Windows distribution
 - **Test Coverage**: 28 test files
 - **Language Detection**: Copilot-based language detection via `detect_language()` method, unified with `is_japanese_text()` for fallback
+- **Translation Result UI Enhancements**:
+  - **Source text section**: 翻訳結果パネル上部に原文を表示（コピーボタン付き）
+  - **Translation status display**: 翻訳中「〜語から〜語へ翻訳中...」、完了後「✓ 翻訳しました」+ 経過時間
+  - **Full-height input area**: 翻訳中・翻訳後の入力欄を縦幅いっぱいに拡張
 
 ## Git Workflow
 

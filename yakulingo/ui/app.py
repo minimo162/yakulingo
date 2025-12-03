@@ -223,7 +223,21 @@ class YakuLingoApp:
         """Refresh main content area and update layout classes"""
         # Update main area classes based on current state
         if self._main_area_element:
-            self._main_area_element.classes(self._get_main_area_classes(), replace=True)
+            # Remove dynamic classes first, then add current ones
+            is_file_mode = self.state.current_tab == Tab.FILE
+            has_results = self.state.text_result or self.state.text_translating
+
+            # Toggle file-mode class
+            if is_file_mode:
+                self._main_area_element.classes(add='file-mode', remove='has-results')
+            else:
+                self._main_area_element.classes(remove='file-mode')
+                # Toggle has-results class (only in text mode)
+                if has_results:
+                    self._main_area_element.classes(add='has-results')
+                else:
+                    self._main_area_element.classes(remove='has-results')
+
         if self._main_content:
             self._main_content.refresh()
 

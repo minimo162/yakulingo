@@ -303,11 +303,12 @@ body {
     border-left-color: var(--md-sys-color-primary);
     /* Active text color */
     color: var(--md-sys-color-primary);
-    background: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent);
+    /* No background color to avoid double-color effect */
+    background: transparent;
 }
 
 .nav-item.active:hover {
-    background: color-mix(in srgb, var(--md-sys-color-primary) 12%, transparent);
+    background: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent);
 }
 
 /* M3 icon styling in tabs */
@@ -347,6 +348,15 @@ body {
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
     position: relative;
     animation: fadeIn var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-standard) backwards;
+    width: 100%;
+    overflow: hidden;
+}
+
+/* History item text container - prevent overflow */
+.history-item > .nicegui-column {
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
 }
 
 /* Staggered history item animations */
@@ -998,6 +1008,11 @@ body {
     border-right: 1px solid var(--md-sys-color-outline-variant);
 }
 
+/* Ensure main-card fills the input panel properly */
+.main-area.has-results .input-panel .main-card {
+    width: 100%;
+}
+
 .main-area.has-results .result-panel {
     display: flex;
 }
@@ -1502,13 +1517,15 @@ body {
 }
 
 .nani-explanation ul {
-    margin: 0;
-    padding-left: 1.25rem;
-    list-style-type: disc;
+    margin: 0 !important;
+    padding-left: 1.25rem !important;
+    list-style-type: disc !important;
+    list-style-position: outside !important;
 }
 
 .nani-explanation li {
     margin-bottom: 0.5rem;
+    display: list-item !important;
 }
 
 .nani-explanation li:last-child {
@@ -2073,7 +2090,7 @@ body {
 }
 
 .inline-adjust-panel {
-    width: 100%;
+    max-width: 320px;
     background: var(--md-sys-color-surface);
     border-radius: var(--md-sys-shape-corner-xl);
     padding: 0.75rem;
@@ -2090,7 +2107,8 @@ body {
 
 .adjust-option-btn {
     flex: 1;
-    padding: 0.75rem 0.875rem !important;
+    min-width: 120px;
+    padding: 0.75rem 1rem !important;
     font-size: var(--md-sys-typescale-size-xs) !important;
     color: var(--md-sys-color-on-surface) !important;
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard) !important;
@@ -2106,6 +2124,7 @@ body {
     height: 1.375rem;
     background: var(--md-sys-color-outline-variant);
     border-radius: 1px;
+    flex-shrink: 0;
 }
 
 .adjust-option-btn-full {
@@ -2126,11 +2145,11 @@ body {
 
 /* === Inline Question Section === */
 .inline-question-section {
-    width: 100%;
+    max-width: 320px;
     margin-top: 1rem;
     background: var(--md-sys-color-surface);
     border-radius: var(--md-sys-shape-corner-xl);
-    padding: 0.625rem;
+    padding: 0.625rem 0.75rem;
     box-shadow: var(--md-sys-elevation-1);
 }
 

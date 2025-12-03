@@ -311,21 +311,21 @@ body {
 .nav-item {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    padding: 0.875rem 1rem;
+    gap: 0.875rem;
+    padding: 1rem 1.25rem;
     /* M3 tabs have no rounded corners */
     border-radius: 0;
-    /* M3 title-small typography */
-    font-size: var(--md-sys-typescale-size-xs);
-    font-weight: 500;
+    /* Larger typography for better visibility */
+    font-size: var(--md-sys-typescale-size-sm);
+    font-weight: 600;
     letter-spacing: 0.1px;
-    line-height: 1.25rem;
+    line-height: 1.5rem;
     color: var(--md-sys-color-on-surface-variant);
     width: 100%;
     /* M3 tab container color */
     background: transparent;
-    /* Vertical indicator line on left */
-    border-left: 3px solid transparent;
+    /* Vertical indicator line on left (thicker) */
+    border-left: 4px solid transparent;
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
     animation: fadeIn var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-standard) backwards;
     position: relative;
@@ -364,9 +364,9 @@ body {
     background: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent);
 }
 
-/* M3 icon styling in tabs */
+/* M3 icon styling in tabs (larger for better visibility) */
 .nav-item .q-icon {
-    font-size: var(--md-sys-typescale-size-lg);
+    font-size: var(--md-sys-typescale-size-xl);
     color: inherit;
 }
 
@@ -432,27 +432,31 @@ body {
 /* History item text container - ensure text is visible and fills available space */
 .history-item .history-text-container {
     min-width: 0;
+    width: 0;  /* Start at 0, let flex: 1 expand - critical for text-overflow */
     flex: 1 1 0;
     overflow: hidden;
     max-width: calc(100% - 2rem);
+    /* Override nicegui-column default: align-items: flex-start shrinks children */
+    align-items: stretch;
 }
 
 /* History item text labels - proper text truncation */
-.history-item .history-title {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    display: block;
-    width: 100%;
-    color: var(--md-sys-color-on-surface);
-}
-
+.history-item .history-title,
 .history-item .history-preview {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     display: block;
     width: 100%;
+    max-width: 100%;  /* Ensure truncation works with flex parent */
+    flex-shrink: 1;
+}
+
+.history-item .history-title {
+    color: var(--md-sys-color-on-surface);
+}
+
+.history-item .history-preview {
     color: var(--md-sys-color-on-surface-variant);
 }
 
@@ -1368,6 +1372,12 @@ body {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    max-width: 100%;  /* Ensure truncation works in flex containers */
+}
+
+/* Fix nicegui-column default align-items: flex-start for truncate children */
+.nicegui-column:has(.truncate) {
+    align-items: stretch;
 }
 
 /* === M3 Segmented Button Container === */
@@ -1575,15 +1585,6 @@ body {
 
 .status-text {
     min-width: 0;
-}
-
-.status-label {
-    font-size: 1rem;
-    line-height: 1.5;
-    color: var(--md-sys-color-on-surface-variant);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
 }
 
 .result-container {

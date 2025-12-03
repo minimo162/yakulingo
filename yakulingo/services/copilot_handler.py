@@ -390,6 +390,8 @@ class CopilotHandler:
                 "--remote-allow-origins=*",
                 "--no-first-run",
                 "--no-default-browser-check",
+                # Bypass proxy for localhost connections (fixes 401 errors in corporate environments)
+                "--proxy-bypass-list=localhost;127.0.0.1",
             ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                cwd=local_cwd if sys.platform == "win32" else None,
                startupinfo=startupinfo,
@@ -456,6 +458,11 @@ class CopilotHandler:
                 # Connection is stale, need to reconnect
                 logger.info("Existing connection is stale, reconnecting...")
                 self._cleanup_on_error()
+
+        # Set proxy bypass for localhost connections
+        # This helps in corporate environments with security proxies (Zscaler, Netskope, etc.)
+        os.environ.setdefault('NO_PROXY', 'localhost,127.0.0.1')
+        os.environ.setdefault('no_proxy', 'localhost,127.0.0.1')
 
         # Get Playwright error types for specific exception handling
         error_types = _get_playwright_errors()

@@ -9,6 +9,7 @@ from unittest.mock import Mock, MagicMock, patch
 from yakulingo.models.types import (
     TranslationStatus,
     TextBlock,
+    FileType,
 )
 from yakulingo.config.settings import AppSettings
 from yakulingo.services.translation_service import (
@@ -619,8 +620,8 @@ class TestTranslationServiceGetFileInfo:
         """get_file_info uses correct processor"""
         info = service.get_file_info(sample_xlsx)
 
-        # Excel processor should count translatable blocks
-        assert info.text_block_count == 2
+        # Excel processor returns correct file type
+        assert info.file_type == FileType.EXCEL
 
     def test_get_file_info_unsupported_raises(self, service, tmp_path):
         """get_file_info raises for unsupported file type"""

@@ -268,52 +268,16 @@ class WordProcessor(FileProcessor):
         return ['.docx']
 
     def get_file_info(self, file_path: Path) -> FileInfo:
-        """Get Word file info"""
-        doc = Document(file_path)
-
-        text_count = 0
-
-        # Count paragraphs
-        for para in doc.paragraphs:
-            if para.text and self.para_translator.should_translate(para.text):
-                text_count += 1
-
-        # Count table cells (Excel-compatible logic)
-        # Track processed cells to avoid counting merged cells multiple times
-        # Note: id(cell._tc) can be unreliable, use position + text hash instead
-        for table in doc.tables:
-            processed_cells = set()
-            for row_idx, row in enumerate(table.rows):
-                for cell_idx, cell in enumerate(row.cells):
-                    cell_key = (row_idx, cell_idx, hash(cell.text))
-                    if cell_key in processed_cells:
-                        continue
-                    processed_cells.add(cell_key)
-                    if cell.text and self.cell_translator.should_translate(cell.text):
-                        text_count += 1
-
-        # Note: Headers/Footers are excluded from translation
-
-        # Count TextBoxes (docx only)
-        if str(file_path).lower().endswith('.docx'):
-            textboxes = _extract_textboxes_from_docx(file_path)
-            for tb in textboxes:
-                if self.para_translator.should_translate(tb['text']):
-                    text_count += 1
-
+        """Get Word file info (fast: no text scanning)"""
         # Word documents are treated as a single section (no page-level breakdown)
-        section_details = [SectionDetail(
-            index=0,
-            name="全体",
-            block_count=text_count,
-        )]
+        # Page count would require full rendering, so we skip it
+        section_details = [SectionDetail(index=0, name="全体")]
 
         return FileInfo(
             path=file_path,
             file_type=FileType.WORD,
             size_bytes=file_path.stat().st_size,
-            page_count=None,  # Requires full rendering
-            text_block_count=text_count,
+            page_count=None,
             section_details=section_details,
         )
 

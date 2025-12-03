@@ -112,20 +112,16 @@ class TestExcelProcessorGetFileInfo:
         assert info.file_type == FileType.EXCEL
         assert info.size_bytes > 0
         assert info.sheet_count == 1
-        # Only 3 translatable texts: "こんにちは", "世界", "Hello World"
-        assert info.text_block_count == 3
 
     def test_file_info_multiple_sheets(self, processor, xlsx_with_multiple_sheets):
         """File info with multiple sheets"""
         info = processor.get_file_info(xlsx_with_multiple_sheets)
         assert info.sheet_count == 2
-        assert info.text_block_count == 2
 
     def test_file_info_empty(self, processor, empty_xlsx):
         """File info for empty file"""
         info = processor.get_file_info(empty_xlsx)
         assert info.sheet_count == 1  # Default sheet exists
-        assert info.text_block_count == 0
 
 
 # --- Tests: extract_text_blocks ---

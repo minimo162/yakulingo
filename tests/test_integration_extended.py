@@ -109,7 +109,6 @@ class TestStateWorkflowIntegration:
             path=Path("/tmp/test.xlsx"),
             file_type=FileType.EXCEL,
             size_bytes=1024,
-            text_block_count=10
         )
         assert state.can_translate() is True
 
@@ -377,7 +376,6 @@ class TestFileInfoExtraction:
         assert info.path == sample_excel
         assert info.file_type == FileType.EXCEL
         assert info.size_bytes > 0
-        assert info.text_block_count == 3  # 3 cells with text
         assert info.sheet_count == 1
 
     def test_multi_sheet_excel_info(self, mock_copilot, settings, tmp_path):

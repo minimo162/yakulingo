@@ -1283,36 +1283,19 @@ class PdfProcessor(FileProcessor):
         return ['.pdf']
 
     def get_file_info(self, file_path: Path) -> FileInfo:
-        """Get PDF file info."""
+        """Get PDF file info (fast: page count only, no text scanning)."""
         with _open_fitz_document(file_path) as doc:
             page_count = len(doc)
-            text_count = 0
-            section_details = []
-
-            for page_idx, page in enumerate(doc):
-                page_block_count = 0
-                blocks = page.get_text("dict")["blocks"]
-                for block in blocks:
-                    if block.get("type") == 0:  # Text block
-                        for line in block.get("lines", []):
-                            for span in line.get("spans", []):
-                                text = span.get("text", "").strip()
-                                if text and self.should_translate(text):
-                                    page_block_count += 1
-
-                text_count += page_block_count
-                section_details.append(SectionDetail(
-                    index=page_idx,
-                    name=f"ページ {page_idx + 1}",
-                    block_count=page_block_count,
-                ))
+            section_details = [
+                SectionDetail(index=idx, name=f"ページ {idx + 1}")
+                for idx in range(page_count)
+            ]
 
         return FileInfo(
             path=file_path,
             file_type=FileType.PDF,
             size_bytes=file_path.stat().st_size,
             page_count=page_count,
-            text_block_count=text_count,
             section_details=section_details,
         )
 

@@ -132,26 +132,21 @@ class TestPptxProcessorGetFileInfo:
         assert info.file_type == FileType.POWERPOINT
         assert info.size_bytes > 0
         assert info.slide_count == 1
-        # Only 1 translatable text (number is skipped)
-        assert info.text_block_count == 1
 
     def test_file_info_multiple_slides(self, processor, pptx_with_multiple_slides):
         """File info counts slides"""
         info = processor.get_file_info(pptx_with_multiple_slides)
         assert info.slide_count == 2
-        assert info.text_block_count == 2
 
     def test_file_info_with_table(self, processor, pptx_with_table):
-        """File info counts table cells"""
+        """File info includes slide count"""
         info = processor.get_file_info(pptx_with_table)
-        # 1 title text + 3 table cells (skip "12345")
-        assert info.text_block_count == 4
+        assert info.slide_count == 1
 
     def test_file_info_empty(self, processor, empty_pptx):
         """File info for empty presentation"""
         info = processor.get_file_info(empty_pptx)
         assert info.slide_count == 0
-        assert info.text_block_count == 0
 
 
 # --- Tests: extract_text_blocks ---

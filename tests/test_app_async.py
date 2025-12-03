@@ -286,7 +286,6 @@ class TestFileTranslationAsync:
             path=test_file,
             file_type=FileType.EXCEL,
             size_bytes=1024,
-            text_block_count=10,
         )
 
         assert app_state.can_translate() is True

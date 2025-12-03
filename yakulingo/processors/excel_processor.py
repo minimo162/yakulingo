@@ -99,73 +99,22 @@ class ExcelProcessor(FileProcessor):
             return self._get_file_info_openpyxl(file_path)
 
     def _get_file_info_xlwings(self, file_path: Path, xw) -> FileInfo:
-        """Get file info using xlwings (optimized for performance)"""
+        """Get file info using xlwings (fast: sheet names only, no cell scanning)"""
         app = xw.App(visible=False, add_book=False)
         try:
             wb = app.books.open(str(file_path))
             try:
                 sheet_count = len(wb.sheets)
-                text_count = 0
-                section_details = []
-
-                for idx, sheet in enumerate(wb.sheets):
-                    sheet_block_count = 0
-
-                    # Count cells with text - OPTIMIZED: get all values at once
-                    # This is much faster than iterating cell by cell (avoids COM overhead)
-                    used_range = sheet.used_range
-                    if used_range is not None:
-                        # Get all values as a 2D array in a single COM call
-                        all_values = used_range.value
-                        if all_values is not None:
-                            # Handle single cell case (returns scalar, not list)
-                            if not isinstance(all_values, list):
-                                all_values = [[all_values]]
-                            # Handle single row case (returns 1D list)
-                            elif all_values and not isinstance(all_values[0], list):
-                                all_values = [all_values]
-
-                            # Count translatable text cells
-                            for row in all_values:
-                                if row is None:
-                                    continue
-                                for cell_value in row:
-                                    if cell_value and isinstance(cell_value, str):
-                                        if self.cell_translator.should_translate(str(cell_value)):
-                                            sheet_block_count += 1
-
-                    # Count shapes with text (TextBox, etc.)
-                    for shape in sheet.shapes:
-                        try:
-                            if hasattr(shape, 'text') and shape.text:
-                                if self.cell_translator.should_translate(shape.text):
-                                    sheet_block_count += 1
-                        except (AttributeError, TypeError, RuntimeError) as e:
-                            logger.debug("Error reading shape text in sheet '%s': %s", sheet.name, e)
-
-                    # Count chart titles
-                    for chart in sheet.charts:
-                        try:
-                            if hasattr(chart, 'chart') and chart.chart.has_title:
-                                title = chart.chart.chart_title.text_frame.text
-                                if title and self.cell_translator.should_translate(title):
-                                    sheet_block_count += 1
-                        except (AttributeError, TypeError, RuntimeError) as e:
-                            logger.debug("Error reading chart title in sheet '%s': %s", sheet.name, e)
-
-                    text_count += sheet_block_count
-                    section_details.append(SectionDetail(
-                        index=idx,
-                        name=sheet.name,
-                        block_count=sheet_block_count,
-                    ))
+                section_details = [
+                    SectionDetail(index=idx, name=sheet.name)
+                    for idx, sheet in enumerate(wb.sheets)
+                ]
 
                 return FileInfo(
                     path=file_path,
                     file_type=FileType.EXCEL,
                     size_bytes=file_path.stat().st_size,
                     sheet_count=sheet_count,
-                    text_block_count=text_count,
                     section_details=section_details,
                 )
             finally:
@@ -174,30 +123,15 @@ class ExcelProcessor(FileProcessor):
             app.quit()
 
     def _get_file_info_openpyxl(self, file_path: Path) -> FileInfo:
-        """Get file info using openpyxl (fallback)"""
-        sheet_count = 0
-        text_count = 0
-        section_details = []
-
+        """Get file info using openpyxl (fast: sheet names only, no cell scanning)"""
         try:
             wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
             try:
                 sheet_count = len(wb.sheetnames)
-
-                for idx, sheet in enumerate(wb):
-                    sheet_block_count = 0
-                    for row in sheet.iter_rows():
-                        for cell in row:
-                            if cell.value and isinstance(cell.value, str):
-                                if self.cell_translator.should_translate(str(cell.value)):
-                                    sheet_block_count += 1
-
-                    text_count += sheet_block_count
-                    section_details.append(SectionDetail(
-                        index=idx,
-                        name=sheet.title,
-                        block_count=sheet_block_count,
-                    ))
+                section_details = [
+                    SectionDetail(index=idx, name=name)
+                    for idx, name in enumerate(wb.sheetnames)
+                ]
             finally:
                 wb.close()
         except (OSError, zipfile.BadZipFile, KeyError) as e:
@@ -209,7 +143,6 @@ class ExcelProcessor(FileProcessor):
             file_type=FileType.EXCEL,
             size_bytes=file_path.stat().st_size,
             sheet_count=sheet_count,
-            text_block_count=text_count,
             section_details=section_details,
         )
 

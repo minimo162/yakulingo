@@ -51,50 +51,20 @@ class PptxProcessor(FileProcessor):
         return ['.pptx']
 
     def get_file_info(self, file_path: Path) -> FileInfo:
-        """Get PowerPoint file info"""
+        """Get PowerPoint file info (fast: slide count only, no text scanning)"""
         prs = Presentation(file_path)
 
         slide_count = len(prs.slides)
-        text_count = 0
-        section_details = []
-
-        for slide_idx, slide in enumerate(prs.slides):
-            slide_block_count = 0
-
-            for shape in slide.shapes:
-                # Text shapes
-                if shape.has_text_frame:
-                    for para in shape.text_frame.paragraphs:
-                        if para.text and self.para_translator.should_translate(para.text):
-                            slide_block_count += 1
-
-                # Tables (Excel-compatible)
-                if shape.has_table:
-                    for row in shape.table.rows:
-                        for cell in row.cells:
-                            cell_text = cell.text_frame.text if cell.text_frame else ""
-                            if cell_text and self.cell_translator.should_translate(cell_text):
-                                slide_block_count += 1
-
-            # Speaker notes
-            if slide.has_notes_slide and slide.notes_slide.notes_text_frame:
-                for para in slide.notes_slide.notes_text_frame.paragraphs:
-                    if para.text and self.para_translator.should_translate(para.text):
-                        slide_block_count += 1
-
-            text_count += slide_block_count
-            section_details.append(SectionDetail(
-                index=slide_idx,
-                name=f"スライド {slide_idx + 1}",
-                block_count=slide_block_count,
-            ))
+        section_details = [
+            SectionDetail(index=idx, name=f"スライド {idx + 1}")
+            for idx in range(slide_count)
+        ]
 
         return FileInfo(
             path=file_path,
             file_type=FileType.POWERPOINT,
             size_bytes=file_path.stat().st_size,
             slide_count=slide_count,
-            text_block_count=text_count,
             section_details=section_details,
         )
 

@@ -130,6 +130,9 @@ class YakuLingoApp:
         # Translate button reference for dynamic state updates
         self._translate_button: Optional[ui.button] = None
 
+        # Client reference for async handlers (saved from @ui.page handler)
+        self._client = None
+
     @property
     def copilot(self) -> "CopilotHandler":
         """Lazy-load CopilotHandler for faster startup."""
@@ -613,7 +616,6 @@ class YakuLingoApp:
     async def _translate_text(self):
         """Translate text."""
         import time
-        from nicegui import context
 
         if not self.translation_service:
             ui.notify('Not connected', type='warning')
@@ -622,8 +624,8 @@ class YakuLingoApp:
         source_text = self.state.source_text
         reference_files = self.state.reference_files or None
 
-        # Save client context before async operation (required after asyncio.to_thread)
-        client = context.client
+        # Use saved client reference (context.client not available in async tasks)
+        client = self._client
 
         # Track translation time
         start_time = time.time()
@@ -679,14 +681,12 @@ class YakuLingoApp:
             text: The translation text to adjust
             adjust_type: 'shorter', 'detailed', 'alternatives', or custom instruction
         """
-        from nicegui import context
-
         if not self.translation_service:
             ui.notify('Not connected', type='warning')
             return
 
-        # Save client context before async operation
-        client = context.client
+        # Use saved client reference (context.client not available in async tasks)
+        client = self._client
 
         self.state.text_translating = True
         self._refresh_content()
@@ -732,14 +732,12 @@ class YakuLingoApp:
 
     async def _back_translate(self, text: str):
         """Back-translate text to verify translation quality"""
-        from nicegui import context
-
         if not self.translation_service:
             ui.notify('Not connected', type='warning')
             return
 
-        # Save client context before async operation
-        client = context.client
+        # Use saved client reference (context.client not available in async tasks)
+        client = self._client
 
         self.state.text_translating = True
         self._refresh_content()
@@ -996,14 +994,12 @@ class YakuLingoApp:
 
     async def _follow_up_action(self, action_type: str, content: str):
         """Handle follow-up actions for →Japanese translations"""
-        from nicegui import context
-
         if not self.translation_service:
             ui.notify('Not connected', type='warning')
             return
 
-        # Save client context before async operation
-        client = context.client
+        # Use saved client reference (context.client not available in async tasks)
+        client = self._client
 
         self.state.text_translating = True
         self._refresh_content()
@@ -1100,13 +1096,11 @@ class YakuLingoApp:
 
     async def _translate_file(self):
         """Translate file with progress dialog"""
-        from nicegui import context
-
         if not self.translation_service or not self.state.selected_file:
             return
 
-        # Save client context before async operation
-        client = context.client
+        # Use saved client reference (context.client not available in async tasks)
+        client = self._client
 
         self.state.file_state = FileState.TRANSLATING
         self.state.translation_progress = 0.0
@@ -1334,6 +1328,9 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
 
     @ui.page('/')
     async def main_page(client: Client):
+        # Save client reference for async handlers (context.client not available in async tasks)
+        yakulingo_app._client = client
+
         # Show loading screen immediately (before client connects)
         loading_container = ui.column().classes('loading-screen')
         with loading_container:

@@ -1198,7 +1198,7 @@ class CopilotHandler:
         return translations[:expected_count]
 
     def start_new_chat(self) -> None:
-        """Start a new chat session"""
+        """Start a new chat session and verify previous responses are cleared."""
         if not self._page:
             return
 
@@ -1222,11 +1222,54 @@ class CopilotHandler:
                     # Fallback: wait a bit if selector doesn't appear
                     time.sleep(1)
 
+                # Verify that previous responses are cleared
+                self._wait_for_responses_cleared(timeout=5.0)
+
                 # 新しいチャット開始後、GPT-5を有効化
                 # （送信時にも再確認するが、UIの安定性のため先に試行）
                 self._ensure_gpt5_enabled()
         except (PlaywrightError, AttributeError):
             pass
+
+    def _wait_for_responses_cleared(self, timeout: float = 5.0) -> bool:
+        """
+        Wait until all response elements are cleared from the chat.
+
+        This prevents reading stale responses from a previous chat session
+        if the new chat button click didn't properly reset the conversation.
+
+        Args:
+            timeout: Maximum time to wait in seconds
+
+        Returns:
+            True if responses are cleared, False if timeout reached
+        """
+        if not self._page:
+            return True
+
+        response_selector = '[data-testid="markdown-reply"], div[data-message-type="Chat"]'
+        poll_interval = 0.2
+        elapsed = 0.0
+
+        while elapsed < timeout:
+            response_elements = self._page.query_selector_all(response_selector)
+            if len(response_elements) == 0:
+                logger.debug("New chat confirmed: no response elements found")
+                return True
+
+            time.sleep(poll_interval)
+            elapsed += poll_interval
+
+        # Log warning if responses weren't cleared
+        response_elements = self._page.query_selector_all(response_selector)
+        if len(response_elements) > 0:
+            logger.warning(
+                "New chat may not have cleared properly: %d response elements still present",
+                len(response_elements)
+            )
+            return False
+
+        return True
 
     def _ensure_gpt5_enabled(self, max_wait: float = 1.0) -> bool:
         """

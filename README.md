@@ -228,7 +228,7 @@ YakuLingo/
 │   ├── config/               # 設定管理
 │   └── models/               # データモデル
 ├── launcher/                 # ネイティブランチャー（Rust製）
-├── tests/                    # テストスイート（28ファイル）
+├── tests/                    # テストスイート（26ファイル）
 ├── prompts/                  # 翻訳プロンプト
 ├── config/settings.json      # アプリ設定
 └── glossary.csv              # デフォルト参照ファイル

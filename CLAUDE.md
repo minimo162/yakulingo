@@ -80,14 +80,16 @@ YakuLingo/
 │   │   └── history_db.py          # SQLite-based translation history
 │   └── config/                    # Configuration
 │       └── settings.py            # AppSettings with JSON persistence
-├── tests/                         # Test suite (28 test files)
+├── tests/                         # Test suite (26 test files)
 │   ├── conftest.py                # Shared fixtures and mocks
 │   └── test_*.py                  # Unit tests for each module
-├── prompts/                       # Translation prompt templates
+├── prompts/                       # Translation prompt templates (15 files)
 │   ├── detect_language.txt        # Language detection via Copilot
-│   ├── file_translate_to_en.txt   # File translation (JP→EN)
+│   ├── file_translate_to_en.txt   # File translation base (JP→EN)
+│   ├── file_translate_to_en_{standard|concise|minimal}.txt  # Style variants
 │   ├── file_translate_to_jp.txt   # File translation (EN→JP)
-│   ├── text_translate_to_en.txt   # Text translation (JP→EN, with style)
+│   ├── text_translate_to_en.txt   # Text translation base (JP→EN)
+│   ├── text_translate_to_en_{standard|concise|minimal}.txt  # Style variants
 │   ├── text_translate_to_jp.txt   # Text translation (EN→JP, with explanation)
 │   ├── adjust_custom.txt          # Inline adjustment: custom request
 │   ├── text_alternatives.txt      # Follow-up: alternative expressions
@@ -123,20 +125,20 @@ YakuLingo/
 
 | File | Purpose | Lines |
 |------|---------|-------|
-| `yakulingo/ui/app.py` | Main application orchestrator, handles UI events and coordinates services | ~1453 |
-| `yakulingo/services/translation_service.py` | Coordinates file processors and batch translation | ~1560 |
-| `yakulingo/services/copilot_handler.py` | Browser automation for M365 Copilot | ~1375 |
+| `yakulingo/ui/app.py` | Main application orchestrator, handles UI events and coordinates services | ~1477 |
+| `yakulingo/services/translation_service.py` | Coordinates file processors and batch translation | ~1565 |
+| `yakulingo/services/copilot_handler.py` | Browser automation for M365 Copilot | ~1376 |
 | `yakulingo/services/updater.py` | GitHub Releases-based auto-update with Windows proxy support | ~764 |
 | `yakulingo/ui/styles.py` | M3 design tokens, CSS styling definitions | ~2837 |
 | `yakulingo/ui/components/text_panel.py` | Text translation UI with source display and translation status | ~1059 |
 | `yakulingo/ui/components/file_panel.py` | File translation panel with drag-drop and progress | ~554 |
 | `yakulingo/ui/components/update_notification.py` | Auto-update UI notifications | ~344 |
 | `yakulingo/ui/utils.py` | UI utilities: temp file management, dialog helpers, text formatting | ~433 |
-| `yakulingo/ui/state.py` | Application state management (TextViewState, FileState enums) | ~204 |
-| `yakulingo/models/types.py` | Core data types: TextBlock, FileInfo, TranslationResult, HistoryEntry | ~304 |
+| `yakulingo/ui/state.py` | Application state management (TextViewState, FileState enums) | ~224 |
+| `yakulingo/models/types.py` | Core data types: TextBlock, FileInfo, TranslationResult, HistoryEntry | ~296 |
 | `yakulingo/storage/history_db.py` | SQLite database for translation history | ~320 |
 | `yakulingo/processors/base.py` | Abstract base class for all file processors | ~105 |
-| `yakulingo/processors/pdf_processor.py` | PDF processing with PyMuPDF and yomitoku OCR | ~2191 |
+| `yakulingo/processors/pdf_processor.py` | PDF processing with PyMuPDF and yomitoku OCR | ~2222 |
 
 ## Core Data Types
 
@@ -345,7 +347,7 @@ dialog = create_completion_dialog(
 
 - **Framework**: pytest with pytest-asyncio
 - **Test Path**: `tests/`
-- **Test Files**: 28 test files covering all major modules
+- **Test Files**: 26 test files covering all major modules
 - **Naming**: `test_*.py` files, `Test*` classes, `test_*` functions
 - **Fixtures**: Defined in `tests/conftest.py`
 - **Async Mode**: Auto-configured via pyproject.toml
@@ -695,12 +697,17 @@ When interacting with users in this repository, prefer Japanese for comments and
 ## Documentation References
 
 - `README.md` - User guide and quick start (Japanese)
-- `docs/SPECIFICATION.md` - Detailed technical specification (~1386 lines)
+- `docs/SPECIFICATION.md` - Detailed technical specification (~1525 lines)
 - `DISTRIBUTION.md` - Deployment and distribution guide
 
 ## Recent Development Focus
 
 Based on recent commits:
+- **Translation Speed Optimization**:
+  - **Text translation**: Reduced polling interval (0.5s → 0.3s), reduced chat response clear wait (5s → 3s)
+  - **File translation**: Reduced polling interval (1s → 0.5s), reduced stability confirmation (3 → 2 checks)
+  - **Prompt caching**: `PromptBuilder.get_text_template()` caches loaded templates to avoid per-request file I/O
+  - **Parallel prompt building**: ThreadPoolExecutor for 3+ batches for concurrent prompt construction
 - **Startup Performance**:
   - **Loading screen**: Shows spinner immediately via `await client.connected()` for faster perceived startup
   - **Import optimization**: NiceGUI import moved inside `main()` to prevent double initialization in native mode (cuts startup time in half)
@@ -728,7 +735,7 @@ Based on recent commits:
 - **Back-Translate Feature**: Verify translations by translating back to original language
 - **Auto-Update System**: GitHub Releases-based updates with Windows proxy support
 - **Native Launcher**: Rust-based `YakuLingo.exe` for Windows distribution
-- **Test Coverage**: 28 test files
+- **Test Coverage**: 26 test files
 - **Language Detection**: Copilot-based language detection via `detect_language()` method, unified with `is_japanese_text()` for fallback
 - **Translation Result UI Enhancements**:
   - **Source text section**: 翻訳結果パネル上部に原文を表示（コピーボタン付き）

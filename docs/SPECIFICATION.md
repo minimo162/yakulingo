@@ -1,6 +1,6 @@
 # YakuLingo - 技術仕様書
 
-> **Version**: 2.8
+> **Version**: 2.9
 > **Date**: 2025-12
 > **App Name**: YakuLingo (訳リンゴ)
 
@@ -175,15 +175,17 @@ YakuLingo/
 │   └── config/
 │       └── settings.py             # AppSettings
 │
-├── tests/                          # テストスイート（28ファイル）
+├── tests/                          # テストスイート（26ファイル）
 │   ├── conftest.py
 │   └── test_*.py
 │
-├── prompts/                        # 翻訳プロンプト
+├── prompts/                        # 翻訳プロンプト（15ファイル）
 │   ├── detect_language.txt         # 言語検出用（Copilot）
-│   ├── file_translate_to_en.txt    # ファイル翻訳用（日→英）
+│   ├── file_translate_to_en.txt    # ファイル翻訳ベース（日→英）
+│   ├── file_translate_to_en_{standard|concise|minimal}.txt  # スタイル別
 │   ├── file_translate_to_jp.txt    # ファイル翻訳用（英→日）
-│   ├── text_translate_to_en.txt    # テキスト翻訳用（日→英、スタイル設定付き）
+│   ├── text_translate_to_en.txt    # テキスト翻訳ベース（日→英）
+│   ├── text_translate_to_en_{standard|concise|minimal}.txt  # スタイル別
 │   ├── text_translate_to_jp.txt    # テキスト翻訳用（英→日、解説付き）
 │   └── adjust_*.txt, text_*.txt    # 調整・フォローアップ用
 │
@@ -990,6 +992,8 @@ class PdfProcessor(FileProcessor):
 
 ```python
 class PromptBuilder:
+    _template_cache: dict[str, str] = {}  # テンプレートキャッシュ
+
     def build(input_text, has_reference_files) -> str:
         """
         1. 言語を自動検出
@@ -1000,6 +1004,20 @@ class PromptBuilder:
 
     def build_batch(texts, has_reference_files) -> str:
         """番号付きリストとして入力"""
+
+    def get_text_template(style: str) -> str:
+        """
+        テンプレートをキャッシュから取得（初回はファイルから読み込み）
+        - prompts/text_translate_to_en_{style}.txt
+        - キャッシュにより毎回のファイルI/Oを回避
+        """
+```
+
+**並列プロンプト構築（3バッチ以上）:**
+```python
+if len(batches) >= 3:
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        prompts = list(executor.map(build_prompt, batches))
 ```
 
 ### 9.2 プロンプトテンプレート例（JP→EN）
@@ -1483,6 +1501,11 @@ python -c "import time; t=time.time(); from yakulingo.ui import run_app; print(f
 ---
 
 ## 変更履歴
+
+### 2.9 (2025-12)
+- 翻訳速度の最適化（テキスト・ファイル翻訳のポーリング間隔短縮）
+- プロンプトテンプレートのキャッシュ機能追加（PromptBuilder）
+- 3バッチ以上の並列プロンプト構築（ThreadPoolExecutor）
 
 ### 2.8 (2025-12)
 - 翻訳結果パネルに原文セクションと翻訳状態表示を追加

@@ -169,14 +169,15 @@ class TranslationOption:
 class TextTranslationResult:
     """
     Result of text translation with multiple options.
-    Output language is auto-detected:
-    - Japanese input → English output (multiple options)
-    - Other input → Japanese output (single translation + explanation)
+    Output language is auto-detected by Copilot:
+    - Japanese input → English output
+    - Other input → Japanese output
     """
     source_text: str                         # Original text
     source_char_count: int                   # Original character count
     options: list[TranslationOption] = field(default_factory=list)
-    output_language: str = "en"              # "en" or "jp" - detected output language
+    output_language: str = "en"              # "en" or "jp" - target language
+    detected_language: Optional[str] = None  # Copilot-detected source language (e.g., "日本語", "英語", "中国語")
     error_message: Optional[str] = None
 
     def __post_init__(self):

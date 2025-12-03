@@ -56,6 +56,7 @@ class AppState:
     text_view_state: TextViewState = TextViewState.INPUT  # Current view state
     source_text: str = ""
     text_translating: bool = False
+    text_detected_language: Optional[str] = None  # Copilot-detected source language
     text_result: Optional[TextTranslationResult] = None
     text_translation_elapsed_time: Optional[float] = None  # Translation time in seconds
 
@@ -108,6 +109,7 @@ class AppState:
         self.text_view_state = TextViewState.INPUT
         self.source_text = ""
         self.text_translating = False
+        self.text_detected_language = None
         self.text_result = None
         self.text_translation_elapsed_time = None
 

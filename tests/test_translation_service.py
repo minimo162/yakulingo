@@ -757,24 +757,36 @@ class TestTranslateTextWithOptions:
 
     def test_japanese_input_returns_english_options(self, mock_copilot):
         """Japanese input returns English translation options"""
+        # First call: language detection, second call: translation
+        mock_copilot.translate_single.side_effect = [
+            "日本語",  # detect_language result
+            """訳文: Hello
+解説: Greeting translation""",  # translation result
+        ]
         service = TranslationService(mock_copilot, AppSettings())
 
         result = service.translate_text_with_options("こんにちは")
 
         assert result.output_language == "en"
+        assert result.detected_language == "日本語"
         assert result.source_text == "こんにちは"
         assert result.source_char_count == 5
 
     def test_english_input_returns_japanese_option(self, mock_copilot):
         """English input returns Japanese translation"""
-        mock_copilot.translate_single.return_value = """訳文: こんにちは
-解説: 挨拶の翻訳です"""
+        # First call: language detection, second call: translation
+        mock_copilot.translate_single.side_effect = [
+            "英語",  # detect_language result
+            """訳文: こんにちは
+解説: 挨拶の翻訳です""",  # translation result
+        ]
 
         service = TranslationService(mock_copilot, AppSettings())
 
         result = service.translate_text_with_options("Hello")
 
         assert result.output_language == "jp"
+        assert result.detected_language == "英語"
         assert result.source_text == "Hello"
 
     def test_error_returns_error_message(self):

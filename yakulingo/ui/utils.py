@@ -416,8 +416,19 @@ def create_completion_dialog(
                 else:
                     ui.label('出力ファイルがありません').classes('text-sm text-on-surface-variant')
 
-                # Close button
-                with ui.row().classes('w-full justify-end pt-2'):
+                # Footer buttons
+                with ui.row().classes('w-full justify-between items-center pt-2'):
+                    # Download all button (only if multiple files)
+                    if output_files and len(output_files) > 1:
+                        ui.button(
+                            'すべてダウンロード',
+                            icon='download',
+                            on_click=lambda files=output_files: _download_all(files),
+                        ).props('flat').classes('text-sm')
+                    else:
+                        # Spacer for alignment
+                        ui.element('div')
+
                     ui.button('閉じる', on_click=lambda: _close_dialog(dialog, on_close)).classes(
                         'btn-primary'
                     )
@@ -467,9 +478,9 @@ def _create_file_row(file_path: Path, description: str) -> None:
                 ).props('flat dense').classes('text-xs')
 
                 ui.button(
-                    'フォルダで表示',
-                    icon='folder_open',
-                    on_click=lambda p=file_path: _show_and_notify(p)
+                    'ダウンロード',
+                    icon='download',
+                    on_click=lambda p=file_path: _download_and_notify(p)
                 ).props('flat dense').classes('text-xs')
 
 
@@ -481,9 +492,18 @@ def _open_and_notify(file_path: Path) -> None:
         ui.notify('ファイルを開けませんでした', type='negative')
 
 
-def _show_and_notify(file_path: Path) -> None:
-    """Show file in folder and show notification."""
-    if show_in_folder(file_path):
-        ui.notify('フォルダを開きました', type='positive')
+def _download_and_notify(file_path: Path) -> None:
+    """Download file to user's Downloads folder."""
+    if file_path.exists():
+        ui.download(file_path)
+        ui.notify(f'{file_path.name} をダウンロード中...', type='info')
     else:
-        ui.notify('フォルダを開けませんでした', type='negative')
+        ui.notify('ファイルが見つかりません', type='negative')
+
+
+def _download_all(output_files: list[tuple[Path, str]]) -> None:
+    """Download all output files."""
+    for file_path, _ in output_files:
+        if file_path.exists():
+            ui.download(file_path)
+    ui.notify(f'{len(output_files)} ファイルをダウンロード中...', type='info')

@@ -697,7 +697,7 @@ When interacting with users in this repository, prefer Japanese for comments and
 ## Documentation References
 
 - `README.md` - User guide and quick start (Japanese)
-- `docs/SPECIFICATION.md` - Detailed technical specification (~1525 lines)
+- `docs/SPECIFICATION.md` - Detailed technical specification (~1547 lines)
 - `DISTRIBUTION.md` - Deployment and distribution guide
 
 ## Recent Development Focus

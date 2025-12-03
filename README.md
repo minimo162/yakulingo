@@ -113,13 +113,15 @@ python app.py
 {
   "reference_files": ["glossary.csv"],
   "output_directory": null,
-  "last_tab": "text",
-  "window_width": 1400,
-  "window_height": 850,
   "bilingual_output": false,
   "export_glossary": false,
   "translation_style": "concise",
   "text_translation_style": "concise",
+  "font_jp_to_en_mincho": "Arial",
+  "font_jp_to_en_gothic": "Arial",
+  "font_en_to_jp_serif": "MS Pゴシック",
+  "font_en_to_jp_sans": "MS Pゴシック",
+  "font_size_adjustment_jp_to_en": 0.0,
   "auto_update_enabled": true
 }
 ```
@@ -130,6 +132,9 @@ python app.py
 | `export_glossary` | 用語集CSVを生成 | false |
 | `translation_style` | ファイル翻訳のスタイル | "concise" |
 | `text_translation_style` | テキスト翻訳のスタイル | "concise" |
+| `font_jp_to_en_*` | JP→EN時の出力フォント | Arial |
+| `font_en_to_jp_*` | EN→JP時の出力フォント | MS Pゴシック |
+| `font_size_adjustment_jp_to_en` | JP→EN時のサイズ調整 | 0.0 (pt) |
 
 **翻訳スタイル**: `"standard"`（標準）, `"concise"`（簡潔）, `"minimal"`（最簡潔）
 

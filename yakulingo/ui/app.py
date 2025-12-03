@@ -1442,7 +1442,7 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
         # Show loading screen immediately (before client connects)
         loading_container = ui.element('div').classes('loading-screen')
         with loading_container:
-            ui.spinner('dots', size='3em', color='primary')
+            ui.spinner('dots', size='5em', color='primary')
             ui.label('YakuLingo').classes('loading-title')
 
         # Wait for client connection

@@ -416,13 +416,13 @@ async def _translate_text(self):
 ```python
 # JP to EN translation
 mincho/明朝 → Arial
-gothic/ゴシック → Calibri
+gothic/ゴシック → Arial
 
 # EN to JP translation
-serif → MS P明朝
-sans-serif → Meiryo UI
+serif → MS Pゴシック
+sans-serif → MS Pゴシック
 
-# Font size: Reduce by 2pt when translating JP→EN
+# Font size: No adjustment (0pt) when translating JP→EN
 ```
 
 ### Number Notation Conversion

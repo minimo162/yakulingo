@@ -54,16 +54,16 @@ class AppSettings:
 
     # Font Settings (ファイル翻訳用)
     # フォントサイズ調整（JP→EN時）: 0で調整なし、負値で縮小
-    font_size_adjustment_jp_to_en: float = -2.0  # pt
+    font_size_adjustment_jp_to_en: float = 0.0  # pt
     font_size_min: float = 6.0  # pt (最小フォントサイズ)
 
     # 出力フォント名（JP→EN時）
     font_jp_to_en_mincho: str = "Arial"  # 明朝系→
-    font_jp_to_en_gothic: str = "Calibri"  # ゴシック系→
+    font_jp_to_en_gothic: str = "Arial"  # ゴシック系→
 
     # 出力フォント名（EN→JP時）
-    font_en_to_jp_serif: str = "MS P明朝"  # Serif系→
-    font_en_to_jp_sans: str = "Meiryo UI"  # Sans-serif系→
+    font_en_to_jp_serif: str = "MS Pゴシック"  # Serif系→
+    font_en_to_jp_sans: str = "MS Pゴシック"  # Sans-serif系→
 
     # PDF OCR Options (yomitoku)
     ocr_batch_size: int = 5             # ページ/バッチ（メモリ使用量とのトレードオフ）

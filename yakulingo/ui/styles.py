@@ -427,13 +427,11 @@ body {
 .main-card-inner {
     background: var(--md-sys-color-surface);
     border-radius: calc(var(--md-sys-shape-corner-3xl) - 0.375rem);
-    border: 1px solid var(--md-sys-color-outline-variant);
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
 }
 
 /* Focus state for main card (when textarea is focused) */
 .main-card-inner:focus-within {
-    border-color: var(--md-sys-color-primary);
     box-shadow: 0 0 0 3px rgba(67, 85, 185, 0.12);
     transform: scale(1.005);
 }

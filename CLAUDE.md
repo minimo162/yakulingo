@@ -182,6 +182,10 @@ The application uses **Copilot-based language detection** via `detect_language()
 - Returns language name (e.g., "日本語", "英語", "中国語")
 - Fallback: Local `is_japanese_text()` function (Unicode character range analysis)
 
+**Why Copilot for language detection (not local detection)?**
+1. **中国語と日本語の区別**: ローカルの`is_japanese_text()`は漢字をカウントするため、中国語テキストを日本語と誤判定する。ひらがな/カタカナがない漢字のみのテキストでは区別不可能
+2. **UIへの言語名表示**: 「🇯🇵 日本語から🇺🇸 英語へ翻訳中...」のように具体的な言語名を表示するため、Copilotから「日本語」「英語」「中国語」「韓国語」等の言語名を取得する必要がある
+
 Translation direction based on detection:
 - **Japanese input ("日本語")** → English output (single translation with inline adjustments)
 - **Non-Japanese input** → Japanese output (single translation + explanation + action buttons + inline input)

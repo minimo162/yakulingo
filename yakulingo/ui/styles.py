@@ -2828,8 +2828,8 @@ a:hover {
 }
 
 .loading-title {
-    margin-top: 1rem;
-    font-size: var(--md-sys-typescale-size-xl);
+    margin-top: 1.5rem;
+    font-size: 1.75rem;
     font-weight: 500;
     color: var(--md-sys-color-on-surface);
     letter-spacing: 0.02em;

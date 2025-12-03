@@ -7,11 +7,14 @@ import logging
 import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 from enum import Enum
 
 from yakulingo.models.types import FileInfo, TextTranslationResult, HistoryEntry, TranslationResult
-from yakulingo.storage.history_db import HistoryDB, get_default_db_path
+
+# Deferred imports for faster startup
+if TYPE_CHECKING:
+    from yakulingo.storage.history_db import HistoryDB
 
 # Module logger
 logger = logging.getLogger(__name__)
@@ -86,16 +89,18 @@ class AppState:
     history_drawer_open: bool = False
     max_history_entries: int = 50
 
-    # History database (initialized after dataclass creation)
-    _history_db: Optional[HistoryDB] = field(default=None, repr=False)
+    # History database (lazy initialized on first access for faster startup)
+    _history_db: Optional["HistoryDB"] = field(default=None, repr=False)
+    _history_initialized: bool = field(default=False, repr=False)
 
-    def __post_init__(self):
-        """Initialize history database and load recent entries"""
-        self._init_history_db()
+    def _ensure_history_db(self) -> None:
+        """Lazy initialize history database on first access"""
+        if self._history_initialized:
+            return
 
-    def _init_history_db(self):
-        """Initialize history database"""
+        self._history_initialized = True
         try:
+            from yakulingo.storage.history_db import HistoryDB, get_default_db_path
             self._history_db = HistoryDB(get_default_db_path())
             # Load recent history from database
             self.history = self._history_db.get_recent(self.max_history_entries)
@@ -143,6 +148,9 @@ class AppState:
 
     def add_to_history(self, entry: HistoryEntry) -> None:
         """Add entry to history (most recent first), persisted to SQLite"""
+        # Ensure database is initialized
+        self._ensure_history_db()
+
         # Add to database first
         if self._history_db:
             try:
@@ -161,6 +169,9 @@ class AppState:
 
     def delete_history_entry(self, entry: HistoryEntry) -> None:
         """Delete a specific history entry"""
+        # Ensure database is initialized
+        self._ensure_history_db()
+
         # Delete from database
         if self._history_db:
             try:
@@ -173,6 +184,9 @@ class AppState:
 
     def clear_history(self) -> None:
         """Clear all history from memory and database"""
+        # Ensure database is initialized
+        self._ensure_history_db()
+
         # Clear database
         if self._history_db:
             try:
@@ -185,6 +199,9 @@ class AppState:
 
     def reload_history(self) -> None:
         """Reload history from database"""
+        # Ensure database is initialized
+        self._ensure_history_db()
+
         if self._history_db:
             try:
                 self.history = self._history_db.get_recent(self.max_history_entries)
@@ -193,6 +210,9 @@ class AppState:
 
     def toggle_history_drawer(self) -> None:
         """Toggle history drawer visibility"""
+        # Ensure database is initialized when opening history drawer
+        if not self.history_drawer_open:
+            self._ensure_history_db()
         self.history_drawer_open = not self.history_drawer_open
 
     def toggle_section_selection(self, section_index: int, selected: bool) -> None:

@@ -14,11 +14,13 @@ from nicegui import ui
 # Module logger
 logger = logging.getLogger(__name__)
 
-# Fast imports - required at startup
+# Fast imports - required at startup (lightweight modules only)
 from yakulingo.ui.state import AppState, Tab, FileState
-from yakulingo.ui.styles import COMPLETE_CSS
 from yakulingo.models.types import TranslationProgress, TranslationStatus, TextTranslationResult, TranslationOption, HistoryEntry
 from yakulingo.config.settings import AppSettings, get_default_settings_path, get_default_prompts_dir
+
+# Deferred imports - loaded when needed (heavy modules)
+# from yakulingo.ui.styles import COMPLETE_CSS  # 2837 lines - loaded in create_ui()
 
 # Type hints only - not imported at runtime for faster startup
 if TYPE_CHECKING:
@@ -306,6 +308,9 @@ class YakuLingoApp:
 
     def create_ui(self):
         """Create the UI - Nani-inspired 3-column layout"""
+        # Lazy load CSS (2837 lines) - deferred until UI creation
+        from yakulingo.ui.styles import COMPLETE_CSS
+
         # Viewport for proper scaling on all displays
         ui.add_head_html('<meta name="viewport" content="width=device-width, initial-scale=1.0">')
         ui.add_head_html(f'<style>{COMPLETE_CSS}</style>')
@@ -1435,9 +1440,9 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
         yakulingo_app._client = client
 
         # Show loading screen immediately (before client connects)
-        loading_container = ui.column().classes('loading-screen')
+        loading_container = ui.element('div').classes('loading-screen')
         with loading_container:
-            ui.spinner('dots', size='3em', color='primary')
+            ui.spinner('dots', size='5em', color='primary')
             ui.label('YakuLingo').classes('loading-title')
 
         # Wait for client connection

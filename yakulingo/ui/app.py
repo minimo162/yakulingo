@@ -605,19 +605,35 @@ class YakuLingoApp:
                 ui.label('用語集、スタイルガイド、参考資料など').classes('text-xs text-muted')
 
                 async def handle_upload(e):
-                    if e.content:
-                        try:
+                    try:
+                        # NiceGUI 3.0+ uses e.file with data attribute
+                        # Older versions use e.content and e.name directly
+                        if hasattr(e, 'file'):
+                            # NiceGUI 3.x: SmallFileUpload has data (bytes) and name
+                            file_obj = e.file
+                            if hasattr(file_obj, 'data'):
+                                content = file_obj.data
+                            elif hasattr(file_obj, '_data'):
+                                content = file_obj._data
+                            else:
+                                content = file_obj.content.read()
+                            name = file_obj.name
+                        else:
+                            # Older NiceGUI: direct content and name attributes
+                            if not e.content:
+                                return
                             content = e.content.read()
-                            # Use temp file manager for automatic cleanup
-                            from yakulingo.ui.utils import temp_file_manager
-                            uploaded_path = temp_file_manager.create_temp_file(content, e.name)
-                            ui.notify(f'アップロードしました: {e.name}', type='positive')
-                            dialog.close()
-                            # Add to reference files
-                            self.state.reference_files.append(uploaded_path)
-                            self._refresh_content()
-                        except OSError as err:
-                            ui.notify(f'ファイルの読み込みに失敗しました: {err}', type='negative')
+                            name = e.name
+                        # Use temp file manager for automatic cleanup
+                        from yakulingo.ui.utils import temp_file_manager
+                        uploaded_path = temp_file_manager.create_temp_file(content, name)
+                        ui.notify(f'アップロードしました: {name}', type='positive')
+                        dialog.close()
+                        # Add to reference files
+                        self.state.reference_files.append(uploaded_path)
+                        self._refresh_content()
+                    except (OSError, AttributeError) as err:
+                        ui.notify(f'ファイルの読み込みに失敗しました: {err}', type='negative')
 
                 ui.upload(
                     on_upload=handle_upload,

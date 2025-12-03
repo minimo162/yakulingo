@@ -140,69 +140,6 @@ def format_markdown_text(text: str) -> str:
     return text
 
 
-def is_japanese_dominant(text: str) -> bool:
-    """
-    Determine if the text is predominantly Japanese.
-
-    Detection strategy (optimized for Japanese users):
-    1. If hiragana/katakana >= 30% of text → Japanese
-    2. If kanji-dominant (more kanji than Latin) → Japanese
-       (Japanese users entering kanji-only text like "臥薪嘗胆" want English translation)
-    3. Otherwise → Other language (translate to Japanese)
-
-    Args:
-        text: Input text to analyze
-
-    Returns:
-        True if text is predominantly Japanese, False otherwise
-
-    Examples:
-        >>> is_japanese_dominant("こんにちは")
-        True
-        >>> is_japanese_dominant("Hello, 田中さん")
-        False  # Latin-dominant
-        >>> is_japanese_dominant("プロジェクトのstatusをupdateして")
-        True   # Has kana
-        >>> is_japanese_dominant("臥薪嘗胆")
-        True   # Kanji-only, assumed Japanese for Japanese users
-        >>> is_japanese_dominant("Hello world")
-        False  # Latin-only
-    """
-    if not text or not text.strip():
-        return False
-
-    # Count character types
-    kana_count = 0    # Hiragana + Katakana (uniquely Japanese)
-    kanji_count = 0   # CJK characters (shared with Chinese)
-    latin_count = 0   # ASCII letters
-
-    for c in text:
-        if '\u3040' <= c <= '\u30ff':
-            # Hiragana (U+3040-U+309F) and Katakana (U+30A0-U+30FF)
-            kana_count += 1
-        elif '\u4e00' <= c <= '\u9fff':
-            # CJK Unified Ideographs (Kanji)
-            kanji_count += 1
-        elif c.isalpha() and c.isascii():
-            # Latin letters (A-Z, a-z)
-            latin_count += 1
-
-    total = kana_count + kanji_count + latin_count
-    if total == 0:
-        return False
-
-    # Rule 1: If kana is present and significant (>=30%), it's Japanese
-    if kana_count > 0 and (kana_count / total) >= 0.3:
-        return True
-
-    # Rule 2: If kanji-dominant (more kanji than Latin), treat as Japanese
-    # This handles cases like "臥薪嘗胆" for Japanese users
-    if kanji_count > 0 and kanji_count >= latin_count:
-        return True
-
-    return False
-
-
 def parse_translation_result(result: str) -> tuple[str, str]:
     """
     Parse translation result into text and explanation.

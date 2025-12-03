@@ -13,8 +13,9 @@ from typing import Callable, Optional
 from nicegui import ui
 
 from yakulingo.ui.state import AppState, TextViewState
-from yakulingo.ui.utils import format_markdown_text, is_japanese_dominant
+from yakulingo.ui.utils import format_markdown_text
 from yakulingo.models.types import TranslationOption, TextTranslationResult
+from yakulingo.services.translation_service import is_japanese_text
 
 logger = logging.getLogger(__name__)
 
@@ -564,7 +565,7 @@ def _render_loading(source_text: str = ""):
     Args:
         source_text: The source text being translated
     """
-    is_japanese = is_japanese_dominant(source_text)
+    is_japanese = is_japanese_text(source_text)
 
     with ui.element('div').classes('loading-character animate-in'):
         # Loading spinner and status

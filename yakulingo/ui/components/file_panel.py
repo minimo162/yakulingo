@@ -306,7 +306,7 @@ def _progress_card(file_info: FileInfo, progress: float, status: str):
 
 def _complete_card(result: Optional[TranslationResult]):
     """Success card with output file list and download buttons"""
-    with ui.card().classes('file-card success w-full max-w-md'):
+    with ui.card().classes('file-card success w-full max-w-md mx-auto'):
         with ui.column().classes('items-center gap-4 py-2 w-full'):
             # Animated checkmark
             with ui.element('div').classes('success-circle'):

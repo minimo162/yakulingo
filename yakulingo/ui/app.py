@@ -167,6 +167,8 @@ class YakuLingoApp:
                 self.state.copilot_ready = True
                 self._refresh_status()
                 logger.info("Edge connection ready (parallel startup)")
+                # Bring app window to front and notify user
+                await self._on_browser_ready()
         except concurrent.futures.TimeoutError:
             logger.warning("Edge connection timeout during parallel startup")
         except Exception as e:
@@ -189,14 +191,37 @@ class YakuLingoApp:
         # Connect to browser (starts Edge if needed, doesn't check login state)
         # connect() now runs in dedicated Playwright thread via PlaywrightThreadExecutor
         try:
-            success = self.copilot.connect()
+            success = await asyncio.to_thread(self.copilot.connect)
 
             if success:
                 self.state.copilot_ready = True
                 self._refresh_status()
+                # Bring app window to front and notify user
+                await self._on_browser_ready()
         except Exception as e:
             # Connection failed silently - will retry on first translation
             logger.debug("Background connection failed: %s", e)
+
+    async def _on_browser_ready(self):
+        """Called when browser connection is ready. Brings app to front and notifies user."""
+        # Small delay to ensure Edge window operations are complete
+        await asyncio.sleep(0.3)
+
+        # Bring app window to front using pywebview (native mode)
+        try:
+            from nicegui import app as nicegui_app
+            if hasattr(nicegui_app, 'native') and nicegui_app.native.main_window:
+                # pywebview window methods
+                window = nicegui_app.native.main_window
+                # Activate window (bring to front)
+                window.on_top = True
+                await asyncio.sleep(0.1)
+                window.on_top = False  # Reset so it doesn't stay always on top
+        except (ImportError, AttributeError, RuntimeError) as e:
+            logger.debug("Failed to bring window to front: %s", e)
+
+        # Show ready notification
+        ui.notify('準備完了', type='positive', position='bottom-right', timeout=2000)
 
     async def check_for_updates(self):
         """Check for updates in background."""

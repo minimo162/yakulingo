@@ -36,11 +36,11 @@ ADJUST_OPTIONS_SINGLE: list[tuple[str, str]] = [
     ('alternatives', '他の言い方は？'),
 ]
 
-# Paperclip/Attachment SVG icon with aria-label for accessibility
+# Paperclip/Attachment SVG icon with aria-label for accessibility (Material Design style, centered)
 ATTACH_SVG: str = '''
-<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="用語集を添付">
+<svg viewBox="0 0 24 24" fill="currentColor" role="img" aria-label="用語集を添付">
     <title>添付</title>
-    <path d="M21 12.3955L14.6912 18.7043C12.5027 20.8928 9.00168 20.8928 6.81321 18.7043C4.62474 16.5158 4.62474 13.0148 6.81321 10.8263L13.7574 3.88213C15.1624 2.47712 17.4266 2.47712 18.8316 3.88213C20.2366 5.28714 20.2366 7.55135 18.8316 8.95636L11.7861 15.9019C11.0836 16.6044 9.95152 16.6044 9.24902 15.9019C8.54651 15.1994 8.54651 14.0673 9.24902 13.3648L15.3588 7.25501"/>
+    <path d="M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5c0-1.38 1.12-2.5 2.5-2.5s2.5 1.12 2.5 2.5v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5c0 1.38 1.12 2.5 2.5 2.5s2.5-1.12 2.5-2.5V5c0-2.21-1.79-4-4-4S7 2.79 7 5v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5z"/>
 </svg>
 '''
 

@@ -356,6 +356,7 @@ body {
     min-width: 0;
     flex: 1;
     overflow: hidden;
+    width: 100%;
 }
 
 /* History item text labels */
@@ -365,6 +366,8 @@ body {
     white-space: nowrap;
     display: block;
     max-width: 100%;
+    width: 100%;
+    color: var(--md-sys-color-on-surface);
 }
 
 .history-item .history-preview {
@@ -373,6 +376,8 @@ body {
     white-space: nowrap;
     display: block;
     max-width: 100%;
+    width: 100%;
+    color: var(--md-sys-color-on-surface-variant);
 }
 
 /* Staggered history item animations */
@@ -1693,34 +1698,7 @@ body {
     transform: rotate(5deg) scale(1.05);
 }
 
-.nav-item {
-    position: relative;
-    overflow: hidden;
-}
-
-.nav-item.active::before {
-    content: '';
-    position: absolute;
-    left: 0;
-    top: 50%;
-    transform: translateY(-50%);
-    width: 3px;
-    height: 60%;
-    background: var(--md-sys-color-primary);
-    border-radius: var(--md-sys-shape-corner-full);
-    animation: slideIn var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-standard);
-}
-
-@keyframes slideIn {
-    from {
-        opacity: 0;
-        transform: translateY(-50%) scaleY(0);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(-50%) scaleY(1);
-    }
-}
+/* nav-item position and overflow are set in the main nav-item definition above */
 
 /* Three-dot menu button for history items */
 .history-menu-btn {

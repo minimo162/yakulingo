@@ -227,7 +227,7 @@ def _drop_zone(on_file_select: Callable[[Path], None]):
             ui.notify(f'ファイルの読み込みに失敗しました: {err}', type='negative')
 
     # Container with relative positioning for layering
-    with ui.element('div').classes('drop-zone w-full'):
+    with ui.element('div').classes('drop-zone w-full') as container:
         # Visual content (pointer-events: none to let clicks pass through)
         with ui.column().classes('drop-zone-content items-center'):
             ui.icon('upload_file').classes('drop-zone-icon')
@@ -235,11 +235,14 @@ def _drop_zone(on_file_select: Callable[[Path], None]):
             ui.label('または クリックして選択').classes('drop-zone-subtext')
             ui.label('Excel / Word / PowerPoint / PDF').classes('drop-zone-hint')
 
-        # Invisible upload overlay (captures clicks and drag-drop)
-        ui.upload(
+        # Upload component (hidden, triggered by container click)
+        upload = ui.upload(
             on_upload=handle_upload,
             auto_upload=True,
         ).classes('drop-zone-upload').props(f'accept="{SUPPORTED_FORMATS}"')
+
+        # Make container click trigger the upload file dialog
+        container.on('click', lambda: upload.run_method('pickFiles'))
 
 
 def _file_card(file_info: FileInfo, on_remove: Callable[[], None]):

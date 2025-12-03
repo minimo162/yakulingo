@@ -745,7 +745,9 @@ class TranslationService:
 
     def _parse_single_translation_result(self, raw_result: str) -> list[TranslationOption]:
         """Parse single translation result from Copilot (for →jp translation)."""
-        logger.debug("Parsing translation result (first 500 chars): %s", raw_result[:500] if raw_result else "(empty)")
+        # Show full raw result for debugging (truncate at 1000 chars)
+        logger.debug("Parsing translation result (full, max 1000 chars): %s", raw_result[:1000] if raw_result else "(empty)")
+        logger.debug("Raw result length: %d chars", len(raw_result) if raw_result else 0)
 
         text = ""
         explanation = ""
@@ -766,17 +768,19 @@ class TranslationService:
 
         # Fallback: split by "解説" if regex didn't capture explanation
         if text and not explanation:
+            logger.debug("Trying fallback split for explanation...")
             # Try splitting by various forms of "解説"
             for delimiter in ['解説:', '解説：', '**解説:**', '**解説**:', '**解説**：']:
                 if delimiter in raw_result:
                     parts = raw_result.split(delimiter, 1)
                     if len(parts) > 1:
                         explanation = parts[1].strip()
-                        logger.debug("Fallback split by '%s' found explanation", delimiter)
+                        logger.debug("Fallback split by '%s' found explanation (length: %d)", delimiter, len(explanation))
                         break
 
         # Another fallback: if no "訳文:" found, try simple split
         if not text:
+            logger.debug("Text not found, trying alternative parsing...")
             for delimiter in ['解説:', '解説：', '**解説:**', '**解説**:']:
                 if delimiter in raw_result:
                     parts = raw_result.split(delimiter, 1)
@@ -804,8 +808,8 @@ class TranslationService:
         if not explanation:
             explanation = "翻訳結果です"
 
-        logger.debug("Final parsed text (first 100): %s", text[:100] if text else "(empty)")
-        logger.debug("Final parsed explanation (first 100): %s", explanation[:100] if explanation else "(empty)")
+        logger.debug("Final parsed text (length: %d): %s", len(text), text[:200] if text else "(empty)")
+        logger.debug("Final parsed explanation (length: %d): %s", len(explanation), explanation[:200] if explanation else "(empty)")
 
         if text:
             return [TranslationOption(text=text, explanation=explanation)]

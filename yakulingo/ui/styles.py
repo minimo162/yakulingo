@@ -109,6 +109,7 @@ COMPLETE_CSS = """
     /* 3-Column Layout (Nani-inspired) */
     --input-panel-width: 420px;
     --input-panel-width-wide: 600px;  /* Wider input for 2-column mode */
+    --result-element-max-width: 36rem;  /* Max width for result panel elements (576px) */
     --bp-desktop: 1200px;        /* Full 3-column with sidebar */
     --bp-tablet-portrait: 800px; /* 2-column with fixed input */
     --bp-mobile: 800px;          /* Single column layout */
@@ -200,6 +201,16 @@ body {
     min-height: 100vh;
     padding: 1.5rem 2rem;
     overflow-y: auto;
+    /* Center content within result panel */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+/* Result panel inner content - wider and centered */
+.result-panel > * {
+    width: 100%;
+    max-width: var(--result-element-max-width);
 }
 
 /* Empty Result State Placeholder */
@@ -962,11 +973,22 @@ body {
    - With results: 3-column (sidebar + input + results)
    ======================================== */
 
-/* Default 2-column mode (no results) */
+/* Default 2-column mode (no results) - input centered across full width */
 .main-area:not(.has-results) .input-panel {
-    width: var(--input-panel-width-wide);
-    min-width: var(--input-panel-width-wide);
+    flex: 1;
+    width: auto;
+    min-width: 0;
+    max-width: none;
     border-right: none;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding-top: 2rem;
+}
+
+/* Center the main-card within the input panel */
+.main-area:not(.has-results) .input-panel .main-card {
+    max-width: var(--input-panel-width-wide);
 }
 
 .main-area:not(.has-results) .result-panel {
@@ -2058,7 +2080,7 @@ body {
 }
 
 .inline-adjust-panel {
-    max-width: 24rem;
+    max-width: var(--result-element-max-width);
     width: 100%;
     background: var(--md-sys-color-surface);
     border-radius: var(--md-sys-shape-corner-xl);
@@ -2112,7 +2134,7 @@ body {
 
 /* === Inline Question Section === */
 .inline-question-section {
-    max-width: 24rem;
+    max-width: var(--result-element-max-width);
     width: 100%;
     margin-top: 1rem;
     background: var(--md-sys-color-surface);

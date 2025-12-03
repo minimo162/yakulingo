@@ -613,6 +613,7 @@ class YakuLingoApp:
     async def _translate_text(self):
         """Translate text."""
         import time
+        from nicegui import context
 
         if not self.translation_service:
             ui.notify('Not connected', type='warning')
@@ -620,6 +621,9 @@ class YakuLingoApp:
 
         source_text = self.state.source_text
         reference_files = self.state.reference_files or None
+
+        # Save client context before async operation (required after asyncio.to_thread)
+        client = context.client
 
         # Track translation time
         start_time = time.time()
@@ -630,6 +634,7 @@ class YakuLingoApp:
         self.state.text_translation_elapsed_time = None
         self._refresh_content()
 
+        error_message = None
         try:
             # Yield control to event loop before starting blocking operation
             # This helps prevent WebSocket disconnection issues
@@ -651,17 +656,21 @@ class YakuLingoApp:
                 self.state.text_result = result
                 self._add_to_history(result)
             else:
-                error_msg = result.error_message if result else 'Unknown error'
-                ui.notify(f'Error: {error_msg}', type='negative')
+                error_message = result.error_message if result else 'Unknown error'
 
         except Exception as e:
             logger.exception("Translation error: %s", e)
-            ui.notify(f'Error: {e}', type='negative')
+            error_message = str(e)
 
         self.state.text_translating = False
-        self._refresh_content()
-        # Update connection status (may have changed during translation)
-        self._refresh_status()
+
+        # Restore client context for UI operations after asyncio.to_thread
+        with client:
+            if error_message:
+                ui.notify(f'Error: {error_message}', type='negative')
+            self._refresh_content()
+            # Update connection status (may have changed during translation)
+            self._refresh_status()
 
     async def _adjust_text(self, text: str, adjust_type: str):
         """Adjust translation based on user request
@@ -670,13 +679,19 @@ class YakuLingoApp:
             text: The translation text to adjust
             adjust_type: 'shorter', 'detailed', 'alternatives', or custom instruction
         """
+        from nicegui import context
+
         if not self.translation_service:
             ui.notify('Not connected', type='warning')
             return
 
+        # Save client context before async operation
+        client = context.client
+
         self.state.text_translating = True
         self._refresh_content()
 
+        error_message = None
         try:
             # Yield control to event loop before starting blocking operation
             await asyncio.sleep(0)
@@ -701,24 +716,35 @@ class YakuLingoApp:
                         options=[result]
                     )
             else:
-                ui.notify('調整に失敗しました', type='negative')
+                error_message = '調整に失敗しました'
 
         except Exception as e:
-            ui.notify(f'エラー: {e}', type='negative')
+            error_message = str(e)
 
         self.state.text_translating = False
-        self._refresh_content()
-        self._refresh_status()
+
+        # Restore client context for UI operations
+        with client:
+            if error_message:
+                ui.notify(f'エラー: {error_message}', type='negative')
+            self._refresh_content()
+            self._refresh_status()
 
     async def _back_translate(self, text: str):
         """Back-translate text to verify translation quality"""
+        from nicegui import context
+
         if not self.translation_service:
             ui.notify('Not connected', type='warning')
             return
 
+        # Save client context before async operation
+        client = context.client
+
         self.state.text_translating = True
         self._refresh_content()
 
+        error_message = None
         try:
             # Yield control to event loop before starting blocking operation
             await asyncio.sleep(0)
@@ -765,14 +791,19 @@ class YakuLingoApp:
                         options=[new_option],
                     )
             else:
-                ui.notify('戻し訳に失敗しました', type='negative')
+                error_message = '戻し訳に失敗しました'
 
         except Exception as e:
-            ui.notify(f'エラー: {e}', type='negative')
+            error_message = str(e)
 
         self.state.text_translating = False
-        self._refresh_content()
-        self._refresh_status()
+
+        # Restore client context for UI operations
+        with client:
+            if error_message:
+                ui.notify(f'エラー: {error_message}', type='negative')
+            self._refresh_content()
+            self._refresh_status()
 
     def _build_follow_up_prompt(self, action_type: str, source_text: str, translation: str, content: str = "") -> Optional[str]:
         """
@@ -965,13 +996,19 @@ class YakuLingoApp:
 
     async def _follow_up_action(self, action_type: str, content: str):
         """Handle follow-up actions for →Japanese translations"""
+        from nicegui import context
+
         if not self.translation_service:
             ui.notify('Not connected', type='warning')
             return
 
+        # Save client context before async operation
+        client = context.client
+
         self.state.text_translating = True
         self._refresh_content()
 
+        error_message = None
         try:
             # Yield control to event loop before starting blocking operation
             await asyncio.sleep(0)
@@ -983,9 +1020,11 @@ class YakuLingoApp:
             # Build prompt
             prompt = self._build_follow_up_prompt(action_type, source_text, translation, content)
             if prompt is None:
-                ui.notify('Unknown action type', type='warning')
+                error_message = 'Unknown action type'
                 self.state.text_translating = False
-                self._refresh_content()
+                with client:
+                    ui.notify(error_message, type='warning')
+                    self._refresh_content()
                 return
 
             # Send to Copilot
@@ -999,13 +1038,18 @@ class YakuLingoApp:
                 text, explanation = parse_translation_result(result)
                 self._add_follow_up_result(source_text, text, explanation)
             else:
-                ui.notify('Failed to get response', type='negative')
+                error_message = 'Failed to get response'
 
         except Exception as e:
-            ui.notify(f'Error: {e}', type='negative')
+            error_message = str(e)
 
         self.state.text_translating = False
-        self._refresh_content()
+
+        # Restore client context for UI operations
+        with client:
+            if error_message:
+                ui.notify(f'Error: {error_message}', type='negative')
+            self._refresh_content()
 
     def _on_language_change(self, lang: str):
         """Handle output language change for file translation"""
@@ -1056,8 +1100,13 @@ class YakuLingoApp:
 
     async def _translate_file(self):
         """Translate file with progress dialog"""
+        from nicegui import context
+
         if not self.translation_service or not self.state.selected_file:
             return
+
+        # Save client context before async operation
+        client = context.client
 
         self.state.file_state = FileState.TRANSLATING
         self.state.translation_progress = 0.0
@@ -1090,6 +1139,8 @@ class YakuLingoApp:
             progress_label.set_text(f'{int(p.percentage * 100)}%')
             status_label.set_text(p.status or 'Translating...')
 
+        error_message = None
+        result = None
         try:
             # Yield control to event loop before starting blocking operation
             await asyncio.sleep(0)
@@ -1117,41 +1168,45 @@ class YakuLingoApp:
                 )
             )
 
-            if result.status == TranslationStatus.COMPLETED and result.output_path:
-                self.state.output_file = result.output_path
-                self.state.translation_result = result
-                self.state.file_state = FileState.COMPLETE
-                # Show completion dialog with all output files
-                from yakulingo.ui.utils import create_completion_dialog
-                create_completion_dialog(
-                    result=result,
-                    duration_seconds=result.duration_seconds,
-                    on_close=self._refresh_content,
-                )
-            elif result.status == TranslationStatus.CANCELLED:
-                self.state.reset_file_state()
-                ui.notify('キャンセルしました', type='info')
-            else:
-                self.state.error_message = result.error_message or 'エラー'
-                self.state.file_state = FileState.ERROR
-                self.state.output_file = None
-                self.state.translation_result = None
-                ui.notify('失敗しました', type='negative')
-
         except Exception as e:
             self.state.error_message = str(e)
             self.state.file_state = FileState.ERROR
             self.state.output_file = None
-            ui.notify(f'エラー: {e}', type='negative')
+            error_message = str(e)
 
-        finally:
-            # Ensure dialog is always closed
+        # Restore client context for UI operations
+        with client:
+            # Close progress dialog
             try:
                 progress_dialog.close()
             except Exception as e:
                 logger.debug("Failed to close progress dialog: %s", e)
 
-        self._refresh_content()
+            if error_message:
+                ui.notify(f'エラー: {error_message}', type='negative')
+            elif result:
+                if result.status == TranslationStatus.COMPLETED and result.output_path:
+                    self.state.output_file = result.output_path
+                    self.state.translation_result = result
+                    self.state.file_state = FileState.COMPLETE
+                    # Show completion dialog with all output files
+                    from yakulingo.ui.utils import create_completion_dialog
+                    create_completion_dialog(
+                        result=result,
+                        duration_seconds=result.duration_seconds,
+                        on_close=self._refresh_content,
+                    )
+                elif result.status == TranslationStatus.CANCELLED:
+                    self.state.reset_file_state()
+                    ui.notify('キャンセルしました', type='info')
+                else:
+                    self.state.error_message = result.error_message or 'エラー'
+                    self.state.file_state = FileState.ERROR
+                    self.state.output_file = None
+                    self.state.translation_result = None
+                    ui.notify('失敗しました', type='negative')
+
+            self._refresh_content()
 
     def _cancel_and_close(self, dialog):
         """Cancel translation and close dialog"""

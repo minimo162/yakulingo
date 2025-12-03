@@ -232,7 +232,8 @@ class CopilotHandler:
     DEFAULT_CDP_PORT = 9333  # Dedicated port for translator
     EDGE_STARTUP_MAX_ATTEMPTS = 20  # Maximum iterations to wait for Edge startup
     EDGE_STARTUP_CHECK_INTERVAL = 0.3  # Seconds between startup checks
-    RESPONSE_STABLE_COUNT = 3  # Number of stable checks before considering response complete
+    RESPONSE_STABLE_COUNT = 2  # Number of stable checks before considering response complete
+    RESPONSE_POLL_INTERVAL = 0.5  # Seconds between response checks (reduced from 1.0 for faster detection)
     DEFAULT_RESPONSE_TIMEOUT = 120  # Default timeout for response in seconds
 
     # Copilot character limits (Free: 8000, Paid: 128000)
@@ -1028,8 +1029,8 @@ class CopilotHandler:
                         # Reset stability counter if text is empty
                         stable_count = 0
 
-                time.sleep(1)
-                max_wait -= 1
+                time.sleep(self.RESPONSE_POLL_INTERVAL)
+                max_wait -= self.RESPONSE_POLL_INTERVAL
 
             return last_text
 

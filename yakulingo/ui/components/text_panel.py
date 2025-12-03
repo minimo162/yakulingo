@@ -895,7 +895,7 @@ def _render_custom_request_button(
                 # Textarea for custom request
                 request_input = ui.textarea(
                     placeholder='例: もっとカジュアルに、ビジネス向けに調整して...'
-                ).classes('w-full custom-request-input').props('autogrow rows=2')
+                ).classes('w-full custom-request-input').props('autogrow rows=4')
 
                 with ui.row().classes('justify-end gap-2'):
                     # Cancel button
@@ -954,7 +954,7 @@ def _render_inline_input_section_jp(
                 # Textarea for custom request
                 request_input = ui.textarea(
                     placeholder='例: 返信の下書きを書いて、もっと詳しく説明して...'
-                ).classes('w-full custom-request-input').props('autogrow rows=2')
+                ).classes('w-full custom-request-input').props('autogrow rows=4')
 
                 with ui.row().classes('justify-end gap-2'):
                     # Cancel button

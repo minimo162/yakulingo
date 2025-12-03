@@ -329,6 +329,7 @@ body {
     flex-direction: column;
     min-height: 0;
     overflow: hidden;
+    width: 100%;
 }
 
 .history-scroll {
@@ -345,11 +346,18 @@ body {
 
 .history-scroll .q-scrollarea__container {
     width: 100% !important;
+    overflow-x: hidden !important;
 }
 
 .history-scroll .q-scrollarea__content {
     width: 100% !important;
     min-width: 0 !important;
+    max-width: 100% !important;
+}
+
+/* Ensure column inside scroll area takes full width */
+.history-scroll > .nicegui-column {
+    width: 100% !important;
 }
 
 .history-item {
@@ -364,23 +372,24 @@ body {
     position: relative;
     animation: fadeIn var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-standard) backwards;
     width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
 }
 
-/* History item text container - ensure text is visible */
+/* History item text container - ensure text is visible and fills available space */
 .history-item .history-text-container {
     min-width: 0;
-    flex: 1;
+    flex: 1 1 0;
     overflow: hidden;
-    width: 100%;
+    max-width: calc(100% - 2rem);
 }
 
-/* History item text labels */
+/* History item text labels - proper text truncation */
 .history-item .history-title {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     display: block;
-    max-width: 100%;
     width: 100%;
     color: var(--md-sys-color-on-surface);
 }
@@ -390,7 +399,6 @@ body {
     text-overflow: ellipsis;
     white-space: nowrap;
     display: block;
-    max-width: 100%;
     width: 100%;
     color: var(--md-sys-color-on-surface-variant);
 }
@@ -1023,14 +1031,22 @@ body {
     max-width: none;
     border-right: none;
     display: flex;
-    justify-content: center;
-    align-items: flex-start;
-    padding-top: 2rem;
+    justify-content: flex-start;
+    align-items: center;
+    padding-top: 3rem;
 }
 
 /* Center the main-card within the input panel */
 .main-area:not(.has-results) .input-panel .main-card {
+    width: 100%;
     max-width: var(--input-panel-width-wide);
+}
+
+/* Ensure the column container also centers its content */
+.main-area:not(.has-results) .input-panel > .nicegui-column {
+    width: 100%;
+    max-width: var(--input-panel-width-wide);
+    align-items: center;
 }
 
 .main-area:not(.has-results) .result-panel {
@@ -1959,6 +1975,9 @@ body {
     place-items: center;
     width: var(--md-comp-icon-button-size);
     height: var(--md-comp-icon-button-size);
+    min-width: var(--md-comp-icon-button-size) !important;
+    min-height: var(--md-comp-icon-button-size) !important;
+    padding: 0 !important;
     border: none;
     border-radius: var(--md-sys-shape-corner-full);
     background: transparent;
@@ -1966,6 +1985,15 @@ body {
     cursor: pointer;
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
     flex-shrink: 0;
+}
+
+/* Center the button content container */
+.attach-btn .q-btn__content {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
 }
 
 .attach-btn:hover {
@@ -1985,6 +2013,7 @@ body {
 .attach-btn svg {
     width: var(--md-comp-icon-button-icon-size);
     height: var(--md-comp-icon-button-icon-size);
+    display: block;
 }
 
 /* Attachment file indicator */
@@ -2189,10 +2218,16 @@ body {
     font-size: var(--md-sys-typescale-size-sm) !important;
     background: var(--md-sys-color-surface) !important;
     border-radius: var(--md-sys-shape-corner-medium) !important;
+    min-height: 100px !important;
 }
 
 .custom-request-input .q-field__control {
     border-radius: var(--md-sys-shape-corner-medium) !important;
+    min-height: 100px !important;
+}
+
+.custom-request-input textarea {
+    min-height: 80px !important;
 }
 
 .cancel-btn {

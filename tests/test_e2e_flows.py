@@ -45,6 +45,15 @@ def mock_copilot():
 
     def smart_translate_single(text, prompt, reference_files=None, char_limit=None):
         """Simulate realistic translation response based on input"""
+        # Check if this is a language detection request
+        if "何語で書かれていますか" in prompt or "言語名のみで答えてください" in prompt:
+            # Return detected language
+            if is_japanese_text(text):
+                return "日本語"
+            else:
+                return "英語"
+
+        # Otherwise, it's a translation request
         if is_japanese_text(text):
             # Japanese → English
             return f"""訳文: Translation of "{text[:20]}..."

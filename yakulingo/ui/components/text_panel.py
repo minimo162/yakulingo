@@ -15,7 +15,6 @@ from nicegui import ui
 from yakulingo.ui.state import AppState, TextViewState
 from yakulingo.ui.utils import format_markdown_text
 from yakulingo.models.types import TranslationOption, TextTranslationResult
-from yakulingo.services.translation_service import is_japanese_text
 
 logger = logging.getLogger(__name__)
 
@@ -555,18 +554,16 @@ def create_text_panel(
                     on_retry,
                 )
         elif state.text_translating:
-            _render_loading(state.source_text)
+            _render_loading(state.text_detected_language)
 
 
-def _render_loading(source_text: str = ""):
+def _render_loading(detected_language: Optional[str] = None):
     """
     Render loading state with language detection indicator.
 
     Args:
-        source_text: The source text being translated
+        detected_language: Copilot-detected source language (None = still detecting)
     """
-    is_japanese = is_japanese_text(source_text)
-
     with ui.element('div').classes('loading-character animate-in'):
         # Loading spinner and status
         with ui.row().classes('items-center gap-3'):
@@ -574,12 +571,18 @@ def _render_loading(source_text: str = ""):
 
             # Dynamic language detection message
             with ui.row().classes('items-center gap-2'):
-                if is_japanese:
+                if detected_language is None:
+                    # Still detecting language
+                    ui.label('🔍').classes('text-base')
+                    ui.label('言語を判定しています...').classes('message')
+                elif detected_language == "日本語":
+                    # Japanese → English
                     ui.label('🇯🇵 → 🇺🇸').classes('text-base')
-                    ui.label('英語に翻訳しています...').classes('message')
+                    ui.label('日本語を検出しました。英語に翻訳中...').classes('message')
                 else:
+                    # Other → Japanese
                     ui.label('🌐 → 🇯🇵').classes('text-base')
-                    ui.label('日本語に翻訳しています...').classes('message')
+                    ui.label(f'{detected_language}を検出しました。日本語に翻訳中...').classes('message')
 
 
 def _render_results_to_en(

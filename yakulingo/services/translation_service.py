@@ -475,11 +475,50 @@ class TranslationService:
                 duration_seconds=time.time() - start_time,
             )
 
+    def detect_language(self, text: str) -> str:
+        """
+        Detect the language of the input text using Copilot.
+
+        Args:
+            text: Text to analyze
+
+        Returns:
+            Detected language name (e.g., "日本語", "英語", "中国語")
+        """
+        # Load detection prompt
+        prompt = None
+        if self.prompt_builder.prompts_dir:
+            prompt_path = self.prompt_builder.prompts_dir / "detect_language.txt"
+            if prompt_path.exists():
+                template = prompt_path.read_text(encoding='utf-8')
+                prompt = template.replace("{input_text}", text)
+
+        if prompt is None:
+            # Fallback prompt
+            prompt = f"この文は何語で書かれていますか？言語名のみで答えてください。\n\n入力: {text}"
+
+        # Get language detection from Copilot (no reference files, no char limit)
+        result = self.copilot.translate_single(text, prompt, None, None)
+
+        # Clean up the result (remove extra whitespace, punctuation)
+        detected = result.strip().rstrip('。.、,')
+
+        # Normalize common variations
+        if detected in ("Japanese", "japanese"):
+            detected = "日本語"
+        elif detected in ("English", "english"):
+            detected = "英語"
+        elif detected in ("Chinese", "chinese", "Simplified Chinese", "Traditional Chinese"):
+            detected = "中国語"
+
+        return detected
+
     def translate_text_with_options(
         self,
         text: str,
         reference_files: Optional[list[Path]] = None,
         style: Optional[str] = None,
+        pre_detected_language: Optional[str] = None,
     ) -> TextTranslationResult:
         """
         Translate text with language-specific handling:
@@ -491,13 +530,23 @@ class TranslationService:
             reference_files: Optional list of reference files to attach
             style: Translation style for English output ("standard", "concise", "minimal")
                    If None, uses settings.text_translation_style (default: "concise")
+            pre_detected_language: Pre-detected language from detect_language() to skip detection
 
         Returns:
             TextTranslationResult with options and output_language
         """
+        detected_language: Optional[str] = None
         try:
-            # Detect input language to determine output language
-            is_japanese = is_japanese_text(text)
+            # Use pre-detected language or detect using Copilot
+            if pre_detected_language:
+                detected_language = pre_detected_language
+                logger.info("Using pre-detected language: %s", detected_language)
+            else:
+                detected_language = self.detect_language(text)
+                logger.info("Detected language: %s", detected_language)
+
+            # Determine output language based on detection
+            is_japanese = detected_language == "日本語"
             output_language = "en" if is_japanese else "jp"
 
             # Determine style (default from settings or "concise")
@@ -533,11 +582,13 @@ class TranslationService:
                             explanation="標準的な翻訳です",
                         )],
                         output_language=output_language,
+                        detected_language=detected_language,
                     )
                 return TextTranslationResult(
                     source_text=text,
                     source_char_count=len(text),
                     output_language=output_language,
+                    detected_language=detected_language,
                     error_message=result.error_message,
                 )
 
@@ -562,6 +613,7 @@ class TranslationService:
                     source_char_count=len(text),
                     options=options,
                     output_language=output_language,
+                    detected_language=detected_language,
                 )
             elif raw_result.strip():
                 # Fallback: treat the whole result as a single option
@@ -573,6 +625,7 @@ class TranslationService:
                         explanation="翻訳結果です",
                     )],
                     output_language=output_language,
+                    detected_language=detected_language,
                 )
             else:
                 # Empty response from Copilot - return error
@@ -581,6 +634,7 @@ class TranslationService:
                     source_text=text,
                     source_char_count=len(text),
                     output_language=output_language,
+                    detected_language=detected_language,
                     error_message="Copilotから応答がありませんでした。Edgeブラウザを確認してください。",
                 )
 
@@ -590,6 +644,7 @@ class TranslationService:
                 source_text=text,
                 source_char_count=len(text),
                 output_language="en",  # Default
+                detected_language=detected_language,
                 error_message=str(e),
             )
         except (RuntimeError, ValueError, ConnectionError, TimeoutError) as e:
@@ -599,6 +654,7 @@ class TranslationService:
                 source_text=text,
                 source_char_count=len(text),
                 output_language="en",  # Default
+                detected_language=detected_language,
                 error_message=str(e),
             )
 

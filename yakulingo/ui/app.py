@@ -642,7 +642,7 @@ class YakuLingoApp:
         await self._translate_text()
 
     async def _translate_text(self):
-        """Translate text."""
+        """Translate text with 2-step process: language detection then translation."""
         import time
 
         if not self.translation_service:
@@ -658,24 +658,40 @@ class YakuLingoApp:
         # Track translation time
         start_time = time.time()
 
-        # Update UI to show loading state
+        # Update UI to show loading state (before language detection)
         self.state.text_translating = True
+        self.state.text_detected_language = None
         self.state.text_result = None
         self.state.text_translation_elapsed_time = None
         self._refresh_content()
 
         error_message = None
+        detected_language = None
         try:
             # Yield control to event loop before starting blocking operation
-            # This helps prevent WebSocket disconnection issues
             await asyncio.sleep(0)
 
-            # Run translation in background thread to avoid blocking NiceGUI event loop
-            # Playwright operations are handled by PlaywrightThreadExecutor internally
+            # Step 1: Detect language using Copilot
+            detected_language = await asyncio.to_thread(
+                self.translation_service.detect_language,
+                source_text,
+            )
+
+            # Update UI with detected language
+            self.state.text_detected_language = detected_language
+            with client:
+                self._refresh_content()
+
+            # Yield control again before translation
+            await asyncio.sleep(0)
+
+            # Step 2: Translate with pre-detected language (skip detection in translate_text_with_options)
             result = await asyncio.to_thread(
                 self.translation_service.translate_text_with_options,
                 source_text,
                 reference_files,
+                None,  # style (use default)
+                detected_language,  # pre_detected_language
             )
 
             # Calculate elapsed time
@@ -696,6 +712,7 @@ class YakuLingoApp:
             error_message = str(e)
 
         self.state.text_translating = False
+        self.state.text_detected_language = None
 
         # Restore client context for UI operations after asyncio.to_thread
         with client:

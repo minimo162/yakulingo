@@ -436,6 +436,8 @@ body {
     flex: 1 1 0;
     overflow: hidden;
     max-width: calc(100% - 2rem);
+    /* Override nicegui-column default: align-items: flex-start shrinks children */
+    align-items: stretch;
 }
 
 /* History item text labels - proper text truncation */

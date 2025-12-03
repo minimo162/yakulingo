@@ -270,8 +270,8 @@ class TestExcelProcessorApplyTranslations:
 
         # Mincho -> Arial
         assert ws["A1"].font.name == "Arial"
-        # Gothic -> Calibri
-        assert ws["A2"].font.name == "Calibri"
+        # Gothic -> Arial (default mapping)
+        assert ws["A2"].font.name == "Arial"
 
     def test_adjusts_font_size(self, processor, xlsx_with_font, tmp_path):
         """Font size is adjusted for JP to EN"""
@@ -288,8 +288,8 @@ class TestExcelProcessorApplyTranslations:
         wb = openpyxl.load_workbook(output_path)
         ws = wb.active
 
-        # Original size 12, JP to EN reduces by 2
-        assert ws["A1"].font.size == 10
+        # Font size unchanged (DEFAULT_JP_TO_EN_ADJUSTMENT = 0.0)
+        assert ws["A1"].font.size == 12
 
     def test_creates_output_file(self, processor, sample_xlsx, tmp_path):
         """Output file is created even if no translations"""

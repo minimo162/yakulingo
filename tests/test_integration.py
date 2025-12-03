@@ -473,8 +473,8 @@ class TestFontHandlingWorkflow:
 
         # Mincho -> Arial
         assert ws_out["A1"].font.name == "Arial"
-        # Gothic -> Calibri
-        assert ws_out["A2"].font.name == "Calibri"
+        # Gothic -> Arial (AppSettings default)
+        assert ws_out["A2"].font.name == "Arial"
 
     def test_font_size_adjustment(
         self, mock_copilot_with_translation, settings, tmp_path
@@ -497,8 +497,8 @@ class TestFontHandlingWorkflow:
         wb_out = openpyxl.load_workbook(result.output_path)
         ws_out = wb_out.active
 
-        # Size reduced by 2 for JP to EN
-        assert ws_out["A1"].font.size == 12
+        # Size unchanged (font_size_adjustment_jp_to_en = 0.0)
+        assert ws_out["A1"].font.size == 14
 
 
 # --- Integration Tests: All File Types ---

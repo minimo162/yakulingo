@@ -22,9 +22,9 @@ DEFAULT_FONT_MAPPING = {
             "fallback": ["DejaVuSans.ttf", "LiberationSans-Regular.ttf"],
         },
         "gothic": {
-            "name": "Calibri",
-            "file": "calibri.ttf",
-            "fallback": ["arial.ttf", "DejaVuSans.ttf"],
+            "name": "Arial",
+            "file": "arial.ttf",
+            "fallback": ["calibri.ttf", "DejaVuSans.ttf"],
         },
         "default": "mincho",  # 判定不能時は明朝系扱い
     },
@@ -138,8 +138,8 @@ class FontSizeAdjuster:
     Excel/Word/PowerPoint 用
     """
 
-    # デフォルト値（後方互換性のため）
-    DEFAULT_JP_TO_EN_ADJUSTMENT = -2.0  # pt
+    # デフォルト値（AppSettingsと一致）
+    DEFAULT_JP_TO_EN_ADJUSTMENT = 0.0  # pt (調整なし)
     DEFAULT_MIN_SIZE = 6.0  # pt
 
     def __init__(

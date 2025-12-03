@@ -75,7 +75,8 @@ def app_state():
     """Fresh AppState instance with cleared history for test isolation"""
     state = AppState()
     state.clear_history()  # Ensure clean state for each test
-    return state
+    yield state
+    state.close()  # Properly close database connection
 
 
 # =============================================================================

@@ -222,3 +222,9 @@ class AppState:
                 if section.index == section_index:
                     section.selected = selected
                     break
+
+    def close(self) -> None:
+        """Close database connections and cleanup resources"""
+        if self._history_db is not None:
+            self._history_db.close()
+            self._history_db = None

@@ -1,6 +1,6 @@
 # YakuLingo - 技術仕様書
 
-> **Version**: 2.6
+> **Version**: 2.7
 > **Date**: 2025-12
 > **App Name**: YakuLingo (訳リンゴ)
 
@@ -46,12 +46,16 @@ M365 Copilotを翻訳エンジンとして使用し、テキストとドキュ�
 
 ### 1.3 言語自動検出
 
-入力テキストの言語を自動検出し、適切な方向に翻訳：
+入力テキストの言語をM365 Copilotで自動検出し、適切な方向に翻訳：
 
 | 入力言語 | 出力 |
 |---------|------|
 | 日本語 | 英語（スタイル設定可、インライン調整可） |
 | その他 | 日本語（解説付き、アクションボタン付き） |
+
+**検出メカニズム:**
+- `detect_language()`: Copilotに`detect_language.txt`プロンプトを送信し、言語名を取得
+- フォールバック: ローカルの`is_japanese_text()`関数（Unicode文字範囲分析）
 
 ### 1.4 対応ファイル形式
 
@@ -171,11 +175,12 @@ YakuLingo/
 │   └── config/
 │       └── settings.py             # AppSettings
 │
-├── tests/                          # テストスイート（26ファイル）
+├── tests/                          # テストスイート（28ファイル）
 │   ├── conftest.py
 │   └── test_*.py
 │
 ├── prompts/                        # 翻訳プロンプト
+│   ├── detect_language.txt         # 言語検出用（Copilot）
 │   ├── file_translate_to_en.txt    # ファイル翻訳用（日→英）
 │   ├── file_translate_to_jp.txt    # ファイル翻訳用（英→日）
 │   ├── text_translate_to_en.txt    # テキスト翻訳用（日→英、スタイル設定付き）
@@ -712,6 +717,13 @@ class TranslationService:
         '.ppt': PptxProcessor(),
         '.pdf': PdfProcessor(),
     }
+
+    def detect_language(text: str) -> str:
+        """
+        Copilotを使用して言語を検出
+        - detect_language.txt プロンプトを使用
+        - 結果: "日本語", "英語", "中国語" 等
+        """
 
     def translate_text(text, reference_files) -> TextTranslationResult:
         """
@@ -1459,6 +1471,7 @@ python -c "import time; t=time.time(); from yakulingo.ui import run_app; print(f
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.7 | 2025-12 | Copilotによる言語検出機能追加（`detect_language()`）、言語検出プロンプト追加、テストファイル数28に増加 |
 | 2.6 | 2025-12 | ローディング画面追加、テキスト翻訳UI簡素化（1訳文+インライン調整）、翻訳スタイル設定追加、Rust製ネイティブランチャー対応 |
 | 2.5 | 2025-12 | パフォーマンス最適化（遅延インポート、正規表現事前コンパイル、DB接続プーリング）、ウィンドウサイズ設定対応 |
 | 2.4 | 2025-12 | 対訳出力・用語集CSV機能追加（全ファイル形式対応）、翻訳完了ダイアログ改善（出力ファイル一覧・アクションボタン） |

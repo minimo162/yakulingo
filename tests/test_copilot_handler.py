@@ -179,26 +179,40 @@ class TestCopilotHandlerTranslateSync:
 class TestCopilotHandlerTranslateSingle:
     """Test CopilotHandler.translate_single()"""
 
-    def test_translate_single_calls_translate_sync(self):
-        """translate_single delegates to translate_sync"""
+    def test_translate_single_returns_raw_result(self, monkeypatch):
+        """translate_single returns raw result without parsing"""
+        from yakulingo.services import copilot_handler
+
         handler = CopilotHandler()
-        handler._connected = True
 
-        # Mock translate_sync
-        handler.translate_sync = Mock(return_value=["Translated"])
+        # Track if execute was called
+        execute_calls = []
 
-        result = handler.translate_single("Test", "prompt")
+        def mock_execute(func, *args):
+            execute_calls.append((func, args))
+            return "訳文: Hello\n\n解説: This is explanation"
 
-        handler.translate_sync.assert_called_once_with(["Test"], "prompt", None, None)
-        assert result == "Translated"
+        monkeypatch.setattr(copilot_handler._playwright_executor, 'execute', mock_execute)
 
-    def test_translate_single_empty_result(self):
+        result = handler.translate_single("こんにちは", "prompt")
+
+        # Verify execute was called with _translate_single_impl
+        assert len(execute_calls) == 1
+        assert execute_calls[0][0] == handler._translate_single_impl
+        # Result should be raw (not parsed)
+        assert "訳文: Hello" in result
+        assert "解説:" in result
+
+    def test_translate_single_empty_result(self, monkeypatch):
         """translate_single handles empty result"""
-        handler = CopilotHandler()
-        handler._connected = True
+        from yakulingo.services import copilot_handler
 
-        # Mock translate_sync returning empty
-        handler.translate_sync = Mock(return_value=[])
+        handler = CopilotHandler()
+
+        def mock_execute(func, *args):
+            return ""
+
+        monkeypatch.setattr(copilot_handler._playwright_executor, 'execute', mock_execute)
 
         result = handler.translate_single("Test", "prompt")
 

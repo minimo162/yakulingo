@@ -942,18 +942,18 @@ class PdfProcessor(FileProcessor):
 | 翻訳方向 | 元フォント種類 | 出力フォント |
 |---------|--------------|-------------|
 | JP → EN | 明朝系 (default) | Arial |
-| JP → EN | ゴシック系 | Calibri |
-| EN → JP | セリフ系 (default) | MS P明朝 |
-| EN → JP | サンセリフ系 | Meiryo UI |
+| JP → EN | ゴシック系 | Arial |
+| EN → JP | セリフ系 (default) | MS Pゴシック |
+| EN → JP | サンセリフ系 | MS Pゴシック |
 
 ### 8.3 フォントサイズ調整
 
 | 翻訳方向 | 調整 | 最小サイズ |
 |---------|-----|----------|
-| JP → EN | −2pt | 6pt |
+| JP → EN | なし (0pt) | 6pt |
 | EN → JP | なし | - |
 
-**調整理由:** 英語は日本語より文字数が増える傾向があるため、レイアウト崩れを防ぐ。
+**備考:** フォントサイズ調整は設定で変更可能（`font_size_adjustment_jp_to_en`）。
 
 ---
 
@@ -1141,6 +1141,18 @@ class AppSettings:
 
     # Text Translation Options
     text_translation_style: str = "concise"  # "standard", "concise", "minimal"
+
+    # Font Settings (Excel/Word/PowerPoint用)
+    font_size_adjustment_jp_to_en: float = 0.0  # pt（0で調整なし）
+    font_size_min: float = 6.0                  # pt（最小フォントサイズ）
+    font_jp_to_en_mincho: str = "Arial"         # 明朝系→
+    font_jp_to_en_gothic: str = "Arial"         # ゴシック系→
+    font_en_to_jp_serif: str = "MS Pゴシック"   # Serif系→
+    font_en_to_jp_sans: str = "MS Pゴシック"    # Sans-serif系→
+
+    # PDF Font Settings (PDF翻訳用、フォント埋め込み)
+    pdf_font_ja: str = "MS P明朝"               # 日本語出力フォント
+    pdf_font_en: str = "Arial"                  # 英語出力フォント
 
     # PDF OCR Options (yomitoku)
     ocr_batch_size: int = 5              # ページ/バッチ

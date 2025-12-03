@@ -416,13 +416,13 @@ async def _translate_text(self):
 ```python
 # JP to EN translation
 mincho/明朝 → Arial
-gothic/ゴシック → Calibri
+gothic/ゴシック → Arial
 
 # EN to JP translation
-serif → MS P明朝
-sans-serif → Meiryo UI
+serif → MS Pゴシック
+sans-serif → MS Pゴシック
 
-# Font size: Reduce by 2pt when translating JP→EN
+# Font size: No adjustment (0pt) when translating JP→EN
 ```
 
 ### Number Notation Conversion
@@ -451,6 +451,14 @@ sans-serif → Meiryo UI
   "export_glossary": false,
   "translation_style": "concise",
   "text_translation_style": "concise",
+  "font_size_adjustment_jp_to_en": 0.0,
+  "font_size_min": 6.0,
+  "font_jp_to_en_mincho": "Arial",
+  "font_jp_to_en_gothic": "Arial",
+  "font_en_to_jp_serif": "MS Pゴシック",
+  "font_en_to_jp_sans": "MS Pゴシック",
+  "pdf_font_ja": "MS P明朝",
+  "pdf_font_en": "Arial",
   "ocr_batch_size": 5,
   "ocr_dpi": 200,
   "ocr_device": "auto",
@@ -464,6 +472,10 @@ sans-serif → Meiryo UI
 ```
 
 **translation_style / text_translation_style values**: `"standard"`, `"concise"` (default), `"minimal"`
+
+**フォント設定**:
+- `font_*`: Excel/Word/PowerPoint用（元フォント種類に応じて変換）
+- `pdf_font_*`: PDF用（言語別に固定フォントを埋め込み）
 
 ### Reference Files
 Reference files provide context for consistent translations:

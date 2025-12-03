@@ -335,6 +335,21 @@ body {
     flex: 1;
     min-height: 0;
     max-height: calc(100vh - 280px);
+    width: 100%;
+}
+
+/* Override NiceGUI scroll_area default behavior */
+.history-scroll .q-scrollarea {
+    width: 100% !important;
+}
+
+.history-scroll .q-scrollarea__container {
+    width: 100% !important;
+}
+
+.history-scroll .q-scrollarea__content {
+    width: 100% !important;
+    min-width: 0 !important;
 }
 
 .history-item {
@@ -1539,7 +1554,7 @@ body {
 
 .nani-explanation ul {
     margin: 0 !important;
-    padding-left: 1.25rem !important;
+    padding-left: 1.5rem !important;
     list-style-type: disc !important;
     list-style-position: outside !important;
 }
@@ -1547,6 +1562,11 @@ body {
 .nani-explanation li {
     margin-bottom: 0.5rem;
     display: list-item !important;
+    padding-left: 0.25rem;
+}
+
+.nani-explanation li::marker {
+    color: var(--md-sys-color-primary);
 }
 
 .nani-explanation li:last-child {
@@ -2099,16 +2119,18 @@ body {
     background: var(--md-sys-color-surface-container);
     border-radius: var(--md-sys-shape-corner-medium);
     overflow: hidden;
+    width: 100%;
 }
 
 .adjust-option-btn {
     flex: 1;
-    min-width: 120px;
-    padding: 0.75rem 1rem !important;
+    padding: 0.625rem 0.875rem !important;
     font-size: var(--md-sys-typescale-size-xs) !important;
     color: var(--md-sys-color-on-surface) !important;
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard) !important;
     border-radius: var(--md-sys-shape-corner-medium) !important;
+    text-align: center !important;
+    justify-content: center !important;
 }
 
 .adjust-option-btn:hover {
@@ -2137,6 +2159,59 @@ body {
 
 .adjust-option-btn-full:hover {
     background: var(--md-sys-color-surface-container-high) !important;
+}
+
+/* === Custom Request Button (Expandable) === */
+.custom-request-container {
+    margin-top: 0.25rem;
+}
+
+.custom-request-trigger {
+    border: 1px dashed var(--md-sys-color-outline-variant) !important;
+    background: transparent !important;
+    color: var(--md-sys-color-on-surface-variant) !important;
+}
+
+.custom-request-trigger:hover {
+    border-color: var(--md-sys-color-outline) !important;
+    background: var(--md-sys-color-surface-container) !important;
+    color: var(--md-sys-color-on-surface) !important;
+}
+
+.custom-request-expanded {
+    padding: 0.5rem;
+    background: var(--md-sys-color-surface-container);
+    border-radius: var(--md-sys-shape-corner-medium);
+    animation: fadeIn var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+}
+
+.custom-request-input {
+    font-size: var(--md-sys-typescale-size-sm) !important;
+    background: var(--md-sys-color-surface) !important;
+    border-radius: var(--md-sys-shape-corner-medium) !important;
+}
+
+.custom-request-input .q-field__control {
+    border-radius: var(--md-sys-shape-corner-medium) !important;
+}
+
+.cancel-btn {
+    color: var(--md-sys-color-on-surface-variant) !important;
+}
+
+.cancel-btn:hover {
+    background: var(--md-sys-color-surface-container-high) !important;
+}
+
+.send-request-btn {
+    background: var(--md-sys-color-primary) !important;
+    color: var(--md-sys-color-on-primary) !important;
+    border-radius: var(--md-sys-shape-corner-full) !important;
+}
+
+.send-request-btn:hover {
+    background: linear-gradient(rgba(255,255,255,0.08), rgba(255,255,255,0.08)), var(--md-sys-color-primary) !important;
+    box-shadow: var(--md-sys-elevation-1) !important;
 }
 
 /* === Inline Question Section === */

@@ -182,9 +182,11 @@ def _find_font_file(font_names: list[str]) -> Optional[str]:
 
 
 # Font file names by language (cross-platform)
+# Default: Japanese = MS P明朝, English = Arial
 FONT_FILES = {
     "ja": {
         "primary": [
+            "mspmincho.ttc", "MS PMincho.ttf",  # MS P明朝 (default)
             "msmincho.ttc", "MS Mincho.ttf", "ipam.ttf", "IPAMincho.ttf",
             "NotoSansJP-Regular.ttf", "NotoSerifJP-Regular.ttf"
         ],
@@ -195,8 +197,8 @@ FONT_FILES = {
     },
     "en": {
         "primary": [
-            "arial.ttf", "Arial.ttf", "DejaVuSans.ttf",
-            "LiberationSans-Regular.ttf"
+            "arial.ttf", "Arial.ttf",  # Arial (default)
+            "DejaVuSans.ttf", "LiberationSans-Regular.ttf"
         ],
         "fallback": [
             "times.ttf", "Times.ttf", "DejaVuSerif.ttf",

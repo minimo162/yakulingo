@@ -69,6 +69,17 @@ def main():
     This can cut startup time in half.
     See: https://github.com/zauberzeug/nicegui/issues/3356
     """
+    import multiprocessing
+    import os
+
+    # Windows用: multiprocessing対策（pyinstallerでの実行時に必要）
+    multiprocessing.freeze_support()
+
+    # pywebviewのWebエンジンをEdgeChromiumに明示指定
+    # これにより、ランタイムインストール確認ダイアログを回避
+    # See: https://pywebview.flowrl.com/guide/web_engine.html
+    os.environ.setdefault('PYWEBVIEW_GUI', 'edgechromium')
+
     global _global_log_handler
     log_file, file_handler = setup_logging()
     _global_log_handler = file_handler  # Keep reference to prevent garbage collection

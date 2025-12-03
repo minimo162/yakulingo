@@ -147,25 +147,6 @@ if (Test-Path $InstallPath) {
         Write-Host "      Found existing installation: $InstallPath" -ForegroundColor Gray
     }
 
-    # Backup user files
-    $BackupDir = Join-Path $env:TEMP "YakuLingo_backup_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
-    $UserFiles = @("glossary.csv", "config\settings.json")
-
-    foreach ($file in $UserFiles) {
-        $srcPath = Join-Path $InstallPath $file
-        if (Test-Path $srcPath) {
-            $dstPath = Join-Path $BackupDir $file
-            $dstDir = Split-Path $dstPath -Parent
-            if (-not (Test-Path $dstDir)) {
-                New-Item -ItemType Directory -Path $dstDir -Force | Out-Null
-            }
-            Copy-Item -Path $srcPath -Destination $dstPath -Force
-            if (-not $GuiMode) {
-                Write-Host "      Backed up: $file" -ForegroundColor Gray
-            }
-        }
-    }
-
     # Remove old files (keep environment folders)
     if (-not $GuiMode) {
         Write-Host "      Removing old source files..." -ForegroundColor Gray
@@ -250,23 +231,6 @@ Get-ChildItem -Path $SourceDir | ForEach-Object {
     } else {
         Copy-Item -Path $_.FullName -Destination $dest -Force
     }
-}
-
-# Restore user files from backup
-if ($BackupDir -and (Test-Path $BackupDir)) {
-    if (-not $GuiMode) {
-        Write-Host "      Restoring user settings..." -ForegroundColor Gray
-    }
-    Get-ChildItem -Path $BackupDir -Recurse -File | ForEach-Object {
-        $relativePath = $_.FullName.Substring($BackupDir.Length + 1)
-        $destPath = Join-Path $InstallPath $relativePath
-        $destDir = Split-Path $destPath -Parent
-        if (-not (Test-Path $destDir)) {
-            New-Item -ItemType Directory -Path $destDir -Force | Out-Null
-        }
-        Copy-Item -Path $_.FullName -Destination $destPath -Force
-    }
-    Remove-Item -Path $BackupDir -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 if (-not $GuiMode) {

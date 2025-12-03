@@ -155,7 +155,7 @@ def _language_selector(state: AppState, on_change: Optional[Callable[[str], None
                 jp_classes += ' lang-btn-active'
             with ui.button(on_click=lambda: on_change and on_change('jp')).classes(jp_classes).props('flat no-caps'):
                 ui.icon('arrow_forward').classes('text-sm mr-1')
-                ui.label('🇯🇵').classes('flag-icon')
+                ui.label('JP').classes('flag-icon font-bold')
                 ui.label('日本語に翻訳')
 
 

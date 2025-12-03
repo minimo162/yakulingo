@@ -144,13 +144,22 @@ def _create_large_input_panel(
                     on_change=lambda e: on_source_change(e.value)
                 ).classes('w-full p-4').props('borderless autogrow aria-label="翻訳するテキスト"').style('min-height: 280px')
 
-                # Handle Ctrl+Enter in textarea
+                # Handle Ctrl+Enter in textarea with NiceGUI 3.0+ js_handler
+                # Prevent default browser behavior (newline insertion) when Ctrl+Enter is pressed
                 async def handle_keydown(e):
-                    if e.args.get('ctrlKey') and e.args.get('key') == 'Enter':
-                        if state.can_translate() and not state.text_translating:
-                            await on_translate()
+                    if state.can_translate() and not state.text_translating:
+                        await on_translate()
 
-                textarea.on('keydown', handle_keydown)
+                textarea.on(
+                    'keydown',
+                    handle_keydown,
+                    js_handler='''(e) => {
+                        if (e.ctrlKey && e.key === "Enter") {
+                            e.preventDefault();
+                            emit(e);
+                        }
+                    }'''
+                )
 
                 # Bottom controls
                 with ui.row().classes('p-3 justify-between items-center'):
@@ -251,13 +260,22 @@ def _create_compact_input_panel(
                     on_change=lambda e: on_source_change(e.value)
                 ).classes('w-full p-4').props('borderless autogrow aria-label="翻訳するテキスト"').style('min-height: 160px')
 
-                # Handle Ctrl+Enter in textarea
+                # Handle Ctrl+Enter in textarea with NiceGUI 3.0+ js_handler
+                # Prevent default browser behavior (newline insertion) when Ctrl+Enter is pressed
                 async def handle_keydown(e):
-                    if e.args.get('ctrlKey') and e.args.get('key') == 'Enter':
-                        if state.can_translate() and not state.text_translating:
-                            await on_translate()
+                    if state.can_translate() and not state.text_translating:
+                        await on_translate()
 
-                textarea.on('keydown', handle_keydown)
+                textarea.on(
+                    'keydown',
+                    handle_keydown,
+                    js_handler='''(e) => {
+                        if (e.ctrlKey && e.key === "Enter") {
+                            e.preventDefault();
+                            emit(e);
+                        }
+                    }'''
+                )
 
                 # Bottom controls - same layout as large panel
                 with ui.row().classes('p-3 justify-between items-center'):
@@ -418,13 +436,22 @@ def create_text_panel(
                     on_change=lambda e: on_source_change(e.value)
                 ).classes('w-full p-4').props('borderless autogrow aria-label="翻訳するテキスト"').style('min-height: 160px')
 
-                # Handle Ctrl+Enter in textarea
+                # Handle Ctrl+Enter in textarea with NiceGUI 3.0+ js_handler
+                # Prevent default browser behavior (newline insertion) when Ctrl+Enter is pressed
                 async def handle_keydown(e):
-                    if e.args.get('ctrlKey') and e.args.get('key') == 'Enter':
-                        if state.can_translate() and not state.text_translating:
-                            await on_translate()
+                    if state.can_translate() and not state.text_translating:
+                        await on_translate()
 
-                textarea.on('keydown', handle_keydown)
+                textarea.on(
+                    'keydown',
+                    handle_keydown,
+                    js_handler='''(e) => {
+                        if (e.ctrlKey && e.key === "Enter") {
+                            e.preventDefault();
+                            emit(e);
+                        }
+                    }'''
+                )
 
                 # Bottom controls
                 with ui.row().classes('p-3 justify-between items-center'):

@@ -169,6 +169,9 @@ fn setup_environment(base_dir: &PathBuf, venv_dir: &PathBuf, python_dir: &PathBu
     // Proxy bypass for localhost (avoids corporate proxy delays)
     env::set_var("NO_PROXY", "localhost,127.0.0.1");
 
+    // Disable Python output buffering (slightly faster startup)
+    env::set_var("PYTHONUNBUFFERED", "1");
+
     // PATH - prepend venv and python directories
     let venv_scripts = venv_dir.join("Scripts");
     let python_scripts = python_dir.join("Scripts");

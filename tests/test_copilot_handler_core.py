@@ -297,6 +297,7 @@ class TestCopilotHandlerTranslateSync:
         mock_page = Mock()
         # Set valid Copilot URL so _is_page_valid() returns True
         mock_page.url = "https://m365.cloud.microsoft/chat"
+        mock_page.query_selector_all.return_value = []  # No responses (cleared)
         handler._page = mock_page
         handler._send_message = Mock()
         handler._get_response = Mock(return_value="1. Hello\n2. World")
@@ -323,7 +324,9 @@ class TestCopilotHandlerTranslateSync:
         """translate_sync works when page exists but marked not connected"""
         handler = CopilotHandler()
         handler._connected = False
-        handler._page = Mock()
+        mock_page = Mock()
+        mock_page.query_selector_all.return_value = []  # No responses (cleared)
+        handler._page = mock_page
 
         # Mock _connect_impl (called directly by _translate_sync_impl to avoid nested executor)
         def mock_connect_impl():
@@ -345,6 +348,7 @@ class TestCopilotHandlerTranslateSync:
         handler._connected = True
         mock_page = Mock()
         mock_page.url = "https://m365.cloud.microsoft/chat"
+        mock_page.query_selector_all.return_value = []  # No responses (cleared)
         handler._page = mock_page
         handler._send_message = Mock()
         handler._get_response = Mock(return_value="")
@@ -357,34 +361,73 @@ class TestCopilotHandlerTranslateSync:
 class TestCopilotHandlerTranslateSingle:
     """Tests for translate_single() method"""
 
-    def test_translate_single_returns_first_result(self):
-        """translate_single returns first element from translate_sync"""
+    def test_translate_single_returns_raw_response(self):
+        """translate_single returns raw response without parsing"""
         handler = CopilotHandler()
-        handler.translate_sync = Mock(return_value=["Translated"])
+        handler._connected = False
+        mock_page = Mock()
+        mock_page.query_selector_all.return_value = []  # No responses (cleared)
+        handler._page = mock_page
+
+        # Mock _connect_impl
+        def mock_connect_impl():
+            handler._connected = True
+            return True
+
+        handler._connect_impl = mock_connect_impl
+        handler._send_prompt_smart = Mock()
+        handler._get_response = Mock(return_value="訳文: Translated\n解説: This is explanation")
+        handler._save_storage_state = Mock()
 
         result = handler.translate_single("テスト", "prompt")
 
-        handler.translate_sync.assert_called_once_with(["テスト"], "prompt", None, None)
-        assert result == "Translated"
+        assert result == "訳文: Translated\n解説: This is explanation"
 
     def test_translate_single_handles_empty_result(self):
         """translate_single returns empty string for empty result"""
         handler = CopilotHandler()
-        handler.translate_sync = Mock(return_value=[])
+        handler._connected = False
+        mock_page = Mock()
+        mock_page.query_selector_all.return_value = []
+        handler._page = mock_page
+
+        def mock_connect_impl():
+            handler._connected = True
+            return True
+
+        handler._connect_impl = mock_connect_impl
+        handler._send_prompt_smart = Mock()
+        handler._get_response = Mock(return_value="")
+        handler._save_storage_state = Mock()
 
         result = handler.translate_single("テスト", "prompt")
 
         assert result == ""
 
     def test_translate_single_with_reference_files(self):
-        """translate_single passes reference files"""
+        """translate_single attaches reference files"""
         handler = CopilotHandler()
-        handler.translate_sync = Mock(return_value=["Translated"])
+        handler._connected = False
+        mock_page = Mock()
+        mock_page.query_selector_all.return_value = []
+        handler._page = mock_page
+
+        def mock_connect_impl():
+            handler._connected = True
+            return True
+
+        handler._connect_impl = mock_connect_impl
+        handler._attach_file = Mock(return_value=True)
+        handler._send_prompt_smart = Mock()
+        handler._get_response = Mock(return_value="Translated")
+        handler._save_storage_state = Mock()
+
         ref_files = [Path("/path/to/glossary.csv")]
+        # Need to make the file "exist" for attach logic
+        with patch('pathlib.Path.exists', return_value=True):
+            result = handler.translate_single("テスト", "prompt", ref_files)
 
-        result = handler.translate_single("テスト", "prompt", ref_files)
-
-        handler.translate_sync.assert_called_once_with(["テスト"], "prompt", ref_files, None)
+        handler._attach_file.assert_called_once_with(ref_files[0])
 
 
 class TestCopilotHandlerParseBatchResult:
@@ -477,6 +520,7 @@ class TestCopilotHandlerStartNewChat:
         mock_button = Mock()
         mock_page = Mock()
         mock_page.query_selector.return_value = mock_button
+        mock_page.query_selector_all.return_value = []  # No responses (cleared)
 
         handler._page = mock_page
 
@@ -494,7 +538,7 @@ class TestCopilotHandlerStartNewChat:
 
         handler._page = mock_page
 
-        # Should not raise
+        # Should not raise (no button to click, so _wait_for_responses_cleared not called)
         handler.start_new_chat()
 
     def test_start_new_chat_no_page(self):

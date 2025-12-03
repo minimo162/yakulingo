@@ -264,6 +264,7 @@ class TestCopilotHandlerNewChat:
         mock_new_chat_btn = Mock()
         mock_gpt5_btn = Mock()
         mock_page.query_selector.return_value = mock_new_chat_btn
+        mock_page.query_selector_all.return_value = []  # No responses (cleared)
         mock_page.evaluate_handle.return_value = mock_gpt5_btn
         handler._page = mock_page
 
@@ -283,6 +284,57 @@ class TestCopilotHandlerNewChat:
 
         # Should not raise
         handler.start_new_chat()
+
+    def test_wait_for_responses_cleared_returns_true_when_empty(self):
+        """_wait_for_responses_cleared returns True when no responses exist"""
+        handler = CopilotHandler()
+
+        mock_page = Mock()
+        mock_page.query_selector_all.return_value = []
+        handler._page = mock_page
+
+        result = handler._wait_for_responses_cleared(timeout=1.0)
+
+        assert result is True
+        mock_page.query_selector_all.assert_called()
+
+    def test_wait_for_responses_cleared_waits_for_clear(self):
+        """_wait_for_responses_cleared waits until responses are cleared"""
+        handler = CopilotHandler()
+
+        mock_page = Mock()
+        mock_response = Mock()
+        # First call returns responses, second returns empty
+        mock_page.query_selector_all.side_effect = [[mock_response], []]
+        handler._page = mock_page
+
+        result = handler._wait_for_responses_cleared(timeout=1.0)
+
+        assert result is True
+        assert mock_page.query_selector_all.call_count >= 2
+
+    def test_wait_for_responses_cleared_returns_false_on_timeout(self):
+        """_wait_for_responses_cleared returns False if responses don't clear"""
+        handler = CopilotHandler()
+
+        mock_page = Mock()
+        mock_response = Mock()
+        # Always returns responses (never clears)
+        mock_page.query_selector_all.return_value = [mock_response]
+        handler._page = mock_page
+
+        result = handler._wait_for_responses_cleared(timeout=0.5)
+
+        assert result is False
+
+    def test_wait_for_responses_cleared_no_page(self):
+        """_wait_for_responses_cleared returns True if no page"""
+        handler = CopilotHandler()
+        handler._page = None
+
+        result = handler._wait_for_responses_cleared(timeout=1.0)
+
+        assert result is True
 
 
 class TestCopilotHandlerGPT5:

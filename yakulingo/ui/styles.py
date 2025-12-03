@@ -349,14 +349,30 @@ body {
     position: relative;
     animation: fadeIn var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-standard) backwards;
     width: 100%;
-    overflow: hidden;
 }
 
-/* History item text container - prevent overflow */
-.history-item > .nicegui-column {
+/* History item text container - ensure text is visible */
+.history-item .history-text-container {
     min-width: 0;
     flex: 1;
     overflow: hidden;
+}
+
+/* History item text labels */
+.history-item .history-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: block;
+    max-width: 100%;
+}
+
+.history-item .history-preview {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: block;
+    max-width: 100%;
 }
 
 /* Staggered history item animations */

@@ -806,9 +806,44 @@ class CopilotHandler:
         reference_files: Optional[list[Path]] = None,
         char_limit: Optional[int] = None,
     ) -> str:
-        """Translate a single text (sync)"""
-        results = self.translate_sync([text], prompt, reference_files, char_limit)
-        return results[0] if results else ""
+        """Translate a single text (sync).
+
+        Unlike translate_sync, this returns the raw response without parsing.
+        This is used for text translation which has a "訳文: ... 解説: ..." format
+        that needs to be preserved for later parsing by TranslationService.
+        """
+        return _playwright_executor.execute(
+            self._translate_single_impl, text, prompt, reference_files, char_limit
+        )
+
+    def _translate_single_impl(
+        self,
+        text: str,
+        prompt: str,
+        reference_files: Optional[list[Path]] = None,
+        char_limit: Optional[int] = None,
+    ) -> str:
+        """Implementation of translate_single that runs in the Playwright thread."""
+        # Call _connect_impl directly since we're already in the Playwright thread
+        if not self._connect_impl():
+            raise RuntimeError("ブラウザに接続できませんでした。Edgeが起動しているか確認してください。")
+
+        # Attach reference files first (before sending prompt)
+        if reference_files:
+            for file_path in reference_files:
+                if file_path.exists():
+                    self._attach_file(file_path)
+
+        # Send the prompt (auto-switches to file attachment if too long)
+        self._send_prompt_smart(prompt, char_limit)
+
+        # Get response and return raw (no parsing - preserves 訳文/解説 format)
+        result = self._get_response()
+
+        # Save storage_state after successful translation
+        self._save_storage_state()
+
+        return result.strip() if result else ""
 
     def _send_prompt_smart(
         self,
@@ -1134,7 +1169,7 @@ class CopilotHandler:
         return await loop.run_in_executor(None, self._attach_file, file_path)
 
     def _parse_batch_result(self, result: str, expected_count: int) -> list[str]:
-        """Parse batch translation result back to list"""
+        """Parse batch translation result back to list."""
         lines = result.strip().split('\n')
         translations = []
 

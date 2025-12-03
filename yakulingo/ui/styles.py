@@ -109,7 +109,7 @@ COMPLETE_CSS = """
     /* 3-Column Layout (Nani-inspired) */
     --input-panel-width: 420px;
     --input-panel-width-wide: 600px;  /* Wider input for 2-column mode */
-    --result-element-max-width: 36rem;  /* Max width for result panel elements (576px) */
+    --result-element-max-width: 100%;  /* Fill available width in result panel */
     --bp-desktop: 1200px;        /* Full 3-column with sidebar */
     --bp-tablet-portrait: 800px; /* 2-column with fixed input */
     --bp-mobile: 800px;          /* Single column layout */
@@ -201,16 +201,11 @@ body {
     min-height: 100vh;
     padding: 1.5rem 2rem;
     overflow-y: auto;
-    /* Center content within result panel */
-    display: flex;
-    flex-direction: column;
-    align-items: center;
 }
 
-/* Result panel inner content - wider and centered */
+/* Result panel inner content - full width */
 .result-panel > * {
     width: 100%;
-    max-width: var(--result-element-max-width);
 }
 
 /* Empty Result State Placeholder */
@@ -343,7 +338,10 @@ body {
 
 .history-item {
     display: flex;
-    padding: 0.625rem 0.75rem;
+    align-items: flex-start;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    padding-right: 1.75rem;  /* Space for menu button */
     border-radius: var(--md-sys-shape-corner-medium);
     cursor: pointer;
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
@@ -362,7 +360,7 @@ body {
     background: var(--md-sys-color-surface-container);
 }
 
-/* Note: .history-delete-btn is defined below in the Nani-inspired enhancements section */
+/* Note: .history-menu-btn is defined below in the Nani-inspired enhancements section */
 
 /* === Status Indicator === */
 .status-indicator {
@@ -432,13 +430,11 @@ body {
 .main-card-inner {
     background: var(--md-sys-color-surface);
     border-radius: calc(var(--md-sys-shape-corner-3xl) - 0.375rem);
-    border: 1px solid var(--md-sys-color-outline-variant);
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
 }
 
 /* Focus state for main card (when textarea is focused) */
 .main-card-inner:focus-within {
-    border-color: var(--md-sys-color-primary);
     box-shadow: 0 0 0 3px rgba(67, 85, 185, 0.12);
     transform: scale(1.005);
 }
@@ -1693,23 +1689,20 @@ body {
     }
 }
 
-/* Gradient delete button for history */
-.history-delete-btn {
+/* Three-dot menu button for history items */
+.history-menu-btn {
     opacity: 0;
     transition: opacity var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
     position: absolute;
-    right: 0;
+    right: 0.25rem;
     top: 50%;
     transform: translateY(-50%);
-    background: linear-gradient(to left,
-        var(--md-sys-color-surface-container) 70%,
-        transparent
-    ) !important;
-    padding-left: 1.5rem !important;
-    padding-right: 0.5rem !important;
+    background: var(--md-sys-color-surface-container) !important;
+    min-width: 24px !important;
+    min-height: 24px !important;
 }
 
-.history-item:hover .history-delete-btn {
+.history-item:hover .history-menu-btn {
     opacity: 1;
 }
 
@@ -1997,7 +1990,7 @@ body {
 .inline-adjust-section {
     display: flex;
     flex-direction: column;
-    align-items: center;
+    width: 100%;
     margin-top: 0.5rem;
     animation: fadeIn var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-standard);
 }
@@ -2080,7 +2073,6 @@ body {
 }
 
 .inline-adjust-panel {
-    max-width: var(--result-element-max-width);
     width: 100%;
     background: var(--md-sys-color-surface);
     border-radius: var(--md-sys-shape-corner-xl);
@@ -2134,7 +2126,6 @@ body {
 
 /* === Inline Question Section === */
 .inline-question-section {
-    max-width: var(--result-element-max-width);
     width: 100%;
     margin-top: 1rem;
     background: var(--md-sys-color-surface);

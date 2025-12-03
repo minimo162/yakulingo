@@ -219,9 +219,16 @@ def _drop_zone(on_file_select: Callable[[Path], None]):
 
     def handle_upload(e: events.UploadEventArguments):
         try:
-            content = e.content.read()
+            # NiceGUI 3.0+ uses e.file.content and e.file.name
+            # Older versions use e.content and e.name directly
+            if hasattr(e, 'file'):
+                content = e.file.content.read()
+                name = e.file.name
+            else:
+                content = e.content.read()
+                name = e.name
             # Use temp file manager for automatic cleanup
-            temp_path = temp_file_manager.create_temp_file(content, e.name)
+            temp_path = temp_file_manager.create_temp_file(content, name)
             on_file_select(temp_path)
         except OSError as err:
             ui.notify(f'ファイルの読み込みに失敗しました: {err}', type='negative')

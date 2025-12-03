@@ -80,10 +80,11 @@ YakuLingo/
 │   │   └── history_db.py          # SQLite-based translation history
 │   └── config/                    # Configuration
 │       └── settings.py            # AppSettings with JSON persistence
-├── tests/                         # Test suite (26 test files)
+├── tests/                         # Test suite (28 test files)
 │   ├── conftest.py                # Shared fixtures and mocks
 │   └── test_*.py                  # Unit tests for each module
 ├── prompts/                       # Translation prompt templates
+│   ├── detect_language.txt        # Language detection via Copilot
 │   ├── file_translate_to_en.txt   # File translation (JP→EN)
 │   ├── file_translate_to_jp.txt   # File translation (EN→JP)
 │   ├── text_translate_to_en.txt   # Text translation (JP→EN, with style)
@@ -174,8 +175,13 @@ VersionInfo(version, release_date, download_url, release_notes, requires_reinsta
 
 ## Auto-Detected Translation Direction
 
-The application now auto-detects language direction:
-- **Japanese input** → English output (single translation with inline adjustments)
+The application uses **Copilot-based language detection** via `detect_language()`:
+- Sends text to Copilot with `detect_language.txt` prompt
+- Returns language name (e.g., "日本語", "英語", "中国語")
+- Fallback: Local `is_japanese_text()` function (Unicode character range analysis)
+
+Translation direction based on detection:
+- **Japanese input ("日本語")** → English output (single translation with inline adjustments)
 - **Non-Japanese input** → Japanese output (single translation + explanation + action buttons + inline input)
 
 No manual direction selection is required.
@@ -337,7 +343,7 @@ dialog = create_completion_dialog(
 
 - **Framework**: pytest with pytest-asyncio
 - **Test Path**: `tests/`
-- **Test Files**: 26 test files covering all major modules
+- **Test Files**: 28 test files covering all major modules
 - **Naming**: `test_*.py` files, `Test*` classes, `test_*` functions
 - **Fixtures**: Defined in `tests/conftest.py`
 - **Async Mode**: Auto-configured via pyproject.toml
@@ -720,7 +726,8 @@ Based on recent commits:
 - **Back-Translate Feature**: Verify translations by translating back to original language
 - **Auto-Update System**: GitHub Releases-based updates with Windows proxy support
 - **Native Launcher**: Rust-based `YakuLingo.exe` for Windows distribution
-- **Test Coverage**: 26 test files with 1117 tests
+- **Test Coverage**: 28 test files
+- **Language Detection**: Copilot-based language detection via `detect_language()` method, unified with `is_japanese_text()` for fallback
 
 ## Git Workflow
 

@@ -531,6 +531,7 @@ class YakuLingoApp:
                         bilingual_enabled=self.settings.bilingual_output,
                         export_glossary_enabled=self.settings.export_glossary,
                         translation_style=self.settings.translation_style,
+                        translation_result=self.state.translation_result,
                     )
 
         self._main_content = main_content

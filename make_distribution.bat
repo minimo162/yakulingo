@@ -99,13 +99,6 @@ echo [OK] Paths fixed for portability.
 echo.
 echo [4/5] Removing user-specific files...
 
-:: Remove config file (users should configure their own)
-if exist "yakulingo_settings.json" (
-    echo [INFO] Backing up yakulingo_settings.json to yakulingo_settings.json.bak
-    copy /y "yakulingo_settings.json" "yakulingo_settings.json.bak" >nul
-    del /q "yakulingo_settings.json"
-)
-
 :: Remove any log files
 del /q "*.log" 2>nul
 
@@ -198,11 +191,6 @@ if exist "%DIST_ZIP%" (
     echo [ERROR] Failed to create distribution package.
     pause
     exit /b 1
-)
-
-:: Restore config backup if exists
-if exist "yakulingo_settings.json.bak" (
-    move /y "yakulingo_settings.json.bak" "yakulingo_settings.json" >nul
 )
 
 echo.

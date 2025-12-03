@@ -57,7 +57,7 @@ M365 Copilotを翻訳エンジンとして使用し、テキストとドキュ�
 
 | 形式 | 拡張子 | ライブラリ |
 |------|--------|----------|
-| Excel | `.xlsx` `.xls` | openpyxl |
+| Excel | `.xlsx` `.xls` | xlwings (Win/Mac) / openpyxl (fallback) |
 | Word | `.docx` `.doc` | python-docx |
 | PowerPoint | `.pptx` `.ppt` | python-pptx |
 | PDF | `.pdf` | PyMuPDF, yomitoku |
@@ -219,9 +219,10 @@ class TranslationStatus(Enum):
 
 class TranslationPhase(Enum):
     EXTRACTING = "extracting"      # テキスト抽出中
+    OCR = "ocr"                    # OCR処理中（PDF）
     TRANSLATING = "translating"    # 翻訳中
     APPLYING = "applying"          # 翻訳適用中
-    FINALIZING = "finalizing"      # 出力ファイル作成中
+    COMPLETE = "complete"          # 完了
 
 # 自動更新用
 class UpdateStatus(Enum):
@@ -237,11 +238,11 @@ class UpdateStatus(Enum):
 ```python
 @dataclass
 class SectionDetail:
-    """セクション詳細（シート、ページ、スライド）"""
+    """セクション詳細（シート、ページ、スライド）- 部分翻訳対応"""
+    index: int        # セクションインデックス
     name: str         # セクション名
-    count: int        # アイテム数
-    char_count: int   # 文字数
     block_count: int  # テキストブロック数
+    selected: bool = True  # 翻訳対象として選択されているか
 
 @dataclass
 class TextBlock:
@@ -259,6 +260,11 @@ class FileInfo:
     page_count: Optional[int]       # Word, PDF
     slide_count: Optional[int]      # PowerPoint
     text_block_count: int
+    section_details: list[SectionDetail]  # 部分翻訳用セクション情報
+
+    @property
+    def selected_block_count(self) -> int:
+        """選択されたセクションのテキストブロック数を計算"""
 
 @dataclass
 class TranslationProgress:
@@ -266,6 +272,7 @@ class TranslationProgress:
     total: int
     status: str
     phase: TranslationPhase = TranslationPhase.TRANSLATING
+    phase_detail: str = ""        # 詳細（例: "Page 3/10", "Batch 2/5"）
     percentage: float = 0.0
     estimated_remaining: Optional[int] = None
 
@@ -316,21 +323,59 @@ class VersionInfo:
     release_date: str
     download_url: str
     release_notes: str
+    file_size: int = 0
+    requires_reinstall: bool = False  # [REQUIRES_REINSTALL]マーカー検出時
+
+@dataclass
+class BatchTranslationResult:
+    """バッチ翻訳結果の詳細"""
+    translations: dict[str, str]           # block_id -> translated_text
+    untranslated_block_ids: list[str]      # 翻訳されなかったブロック
+    mismatched_batch_count: int = 0        # バッチ結果数の不一致回数
+
+    @property
+    def has_issues(self) -> bool:
+        """翻訳に問題があったかどうか"""
+
+    @property
+    def success_rate(self) -> float:
+        """成功率を計算"""
 ```
 
 ### 4.3 アプリケーション状態
 
 ```python
+# UI状態列挙型 (yakulingo/ui/state.py)
+class Tab(Enum):
+    TEXT = "text"
+    FILE = "file"
+
+class FileState(Enum):
+    EMPTY = "empty"
+    SELECTED = "selected"
+    TRANSLATING = "translating"
+    COMPLETE = "complete"
+    ERROR = "error"
+
+class TextViewState(Enum):
+    INPUT = "input"    # 大きな入力エリア（2カラム幅）
+    RESULT = "result"  # コンパクト入力 + 結果パネル
+
 @dataclass
 class AppState:
     # テキストタブ
     source_text: str = ""
     text_result: Optional[TextTranslationResult] = None
     text_translating: bool = False
+    text_view_state: TextViewState = TextViewState.INPUT
+    text_translation_elapsed_time: Optional[float] = None
 
     # ファイルタブ
+    file_state: FileState = FileState.EMPTY
     selected_file: Optional[Path] = None
     file_info: Optional[FileInfo] = None
+    file_output_language: str = "en"  # or "jp"
+    pdf_fast_mode: bool = False       # OCRスキップオプション
     translation_progress: float = 0.0
     translation_status: str = ""
     output_file: Optional[Path] = None
@@ -340,13 +385,18 @@ class AppState:
     reference_files: List[Path] = field(default_factory=list)
 
     # Copilot接続
-    copilot_connected: bool = False
-    copilot_connecting: bool = False
-    copilot_error: str = ""
+    copilot_ready: bool = False
 
-    # 自動更新
-    update_available: bool = False
-    update_info: Optional[VersionInfo] = None
+    # 翻訳履歴（SQLiteバック）
+    history: list[HistoryEntry] = field(default_factory=list)
+    history_drawer_open: bool = False
+
+    # メソッド
+    def can_translate(self) -> bool: ...
+    def is_translating(self) -> bool: ...
+    def add_to_history(self, entry: HistoryEntry) -> None: ...
+    def delete_history_entry(self, entry_id: int) -> None: ...
+    def toggle_section_selection(self, index: int) -> None: ...
 ```
 
 ---
@@ -572,16 +622,31 @@ font-family: 'Meiryo UI', 'Meiryo', 'Yu Gothic UI',
 M365 Copilot との通信を担当。
 
 ```python
+# スレッドセーフな遅延インポート管理
+class PlaywrightManager:
+    """Playwrightモジュールの遅延読み込み（インストールされていない場合のエラー回避）"""
+    def get_playwright()       # playwright types と sync_playwright を返す
+    def get_async_playwright() # async_playwright を返す
+    def get_error_types()      # Playwright例外型を返す
+
+# スレッド実行管理（greenletコンテキスト対応）
+class PlaywrightThreadExecutor:
+    """Playwright操作を専用スレッドで実行（asyncio.to_threadからの呼び出し対応）"""
+    def start()               # ワーカースレッド開始
+    def stop()                # スレッド停止
+    def execute(func, *args, timeout=120)  # 関数を専用スレッドで実行
+
 class CopilotHandler:
     COPILOT_URL = "https://m365.cloud.microsoft/chat/?auth=2"
     cdp_port = 9333  # Edge CDP専用ポート
 
-    def connect(on_progress: Callable) -> bool:
+    def connect() -> bool:
         """
         1. Edgeが起動していなければ起動（専用プロファイル使用）
-        2. Playwrightで接続
+        2. Playwrightで接続（PlaywrightThreadExecutor経由）
         3. Copilotページを開く
         4. チャット入力欄の準備完了を待機
+        5. セッション状態を復元（storage_state.json）
         """
 
     def translate_sync(texts: list[str], prompt: str, reference_files: list[Path]) -> list[str]:
@@ -590,7 +655,11 @@ class CopilotHandler:
         2. プロンプトをCopilotに送信（送信ボタン有効化を待機）
         3. 応答を待機（安定するまで）
         4. 結果をパース
+        5. セッション状態を保存
         """
+
+    def translate_single(text: str, prompt: str, reference_files: list[Path]) -> str:
+        """単一テキスト翻訳（生のレスポンスを返す）"""
 
     def disconnect() -> None:
         """ブラウザ接続を終了"""
@@ -753,10 +822,17 @@ class ParagraphTranslator:
 ```python
 class ExcelProcessor(FileProcessor):
     """
+    使用ライブラリ:
+    - Primary: xlwings (Windows/macOS、Excelインストール必要)
+      - 図形、グラフ、テキストボックスのサポート
+    - Fallback: openpyxl (Linux or Excelなし環境)
+      - セルのみ対応
+
     翻訳対象:
     - セル値（テキストのみ）
-    - 図形テキスト
-    - グラフタイトル
+    - 図形テキスト (xlwingsのみ)
+    - グラフタイトル (xlwingsのみ)
+    - グラフ軸タイトル (xlwingsのみ)
 
     保持:
     - 数式（翻訳しない）

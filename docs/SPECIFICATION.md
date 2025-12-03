@@ -1095,12 +1095,22 @@ YakuLingo.exe    # Rust製ネイティブランチャー
 ### 12.3 起動フロー
 
 ```
-1. pywebviewでネイティブウィンドウを起動
-2. NiceGUIサーバー起動（port=8765）
-3. Copilot接続開始（バックグラウンド）
-4. 自動更新チェック（バックグラウンド）
-5. 接続完了後、翻訳機能が有効化
+1. main()でmultiprocessing.freeze_support()を呼び出し（Windows/PyInstaller対応）
+2. PYWEBVIEW_GUI=edgechromium環境変数を設定（ランタイムインストールダイアログ回避）
+3. ロギング設定（コンソール出力）
+4. NiceGUI importを遅延実行（ネイティブモードでの二重初期化を回避）
+5. pywebviewでネイティブウィンドウを起動
+6. ローディングスクリーンを即座に表示（await client.connected()後にUI構築）
+7. NiceGUIサーバー起動（port=8765, reconnect_timeout=30.0）
+8. Copilot接続開始（バックグラウンド、PlaywrightThreadExecutorで専用スレッド実行）
+9. 自動更新チェック（バックグラウンド）
+10. 接続完了後、翻訳機能が有効化
 ```
+
+**起動最適化ポイント:**
+- NiceGUI importを`main()`内に配置し、pywebviewのmultiprocessingによる二重初期化を回避
+- `show=False`でブラウザ自動起動を抑制（ネイティブモードはpywebviewウィンドウを使用）
+- ローディング画面を先行表示し、体感起動速度を向上
 
 ### 12.4 システム要件
 
@@ -1207,14 +1217,14 @@ NiceGUIのWebSocket接続を安定化するため、`reconnect_timeout`を調整
 # yakulingo/ui/app.py
 ui.run(
     ...
-    reconnect_timeout=10.0,  # デフォルト3秒から10秒に増加
+    reconnect_timeout=30.0,  # デフォルト3秒から30秒に増加
 )
 ```
 
 **効果:**
 - デフォルトの3秒ではping_interval=4秒、ping_timeout=2秒
-- 10秒に設定するとping_interval=8秒、ping_timeout=4秒
-- 接続の安定性が向上し、一時的な遅延でも切断されにくくなる
+- 30秒に設定すると接続の安定性が大幅に向上
+- 長時間の翻訳操作中も接続が維持される
 
 #### 非同期処理の最適化
 
@@ -1223,12 +1233,20 @@ ui.run(
 ```python
 # yakulingo/ui/app.py
 async def _translate_text(self):
+    client = self._client  # 保存されたクライアント参照を使用
+
     result = await asyncio.to_thread(
         self.translation_service.translate_text_with_options,
         source_text,
         reference_files,
     )
+
+    with client:  # UIコンテキストを復元
+        self._refresh_content()
 ```
+
+**重要**: NiceGUIの`context.client`は非同期タスク内で利用不可（スロットスタックが空）。
+`@ui.page`ハンドラで`self._client = client`として保存し、非同期ハンドラで使用する。
 
 **対象メソッド:**
 - `_translate_text()` - テキスト翻訳
@@ -1236,6 +1254,23 @@ async def _translate_text(self):
 - `_back_translate()` - 戻し訳
 - `_follow_up_action()` - フォローアップアクション
 - `_translate_file()` - ファイル翻訳
+
+#### Playwrightスレッドモデル
+
+Playwrightのsync APIはgreenletを使用し、初期化されたスレッドでのみ動作する。
+`PlaywrightThreadExecutor`シングルトンが専用スレッドで全Playwright操作を実行。
+
+```python
+# yakulingo/services/copilot_handler.py
+def translate_sync(self, texts, prompt, ...) -> list[str]:
+    # asyncio.to_thread()から呼ばれてもスレッド切り替えエラーを回避
+    return _playwright_executor.execute(
+        self._translate_sync_impl, texts, prompt, ...
+    )
+```
+
+これにより、UIの`asyncio.to_thread()`から呼び出されても、
+Playwright操作は常に正しいスレッドコンテキストで実行される。
 
 ### 13.2 ランタイム最適化
 

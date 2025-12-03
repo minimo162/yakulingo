@@ -369,6 +369,36 @@ pytest --cov=yakulingo --cov-report=term-missing
 - Use `logging` module instead of `print()` statements
 - Pre-compile regex patterns at module level for performance
 
+### NiceGUI Async Handler Pattern
+When using async handlers with NiceGUI's native mode, follow this pattern:
+
+```python
+class YakuLingoApp:
+    def __init__(self):
+        self._client = None  # Saved from @ui.page handler
+
+# In run_app():
+@ui.page('/')
+async def main_page(client: Client):
+    yakulingo_app._client = client  # Save for async handlers
+    yakulingo_app.create_ui()
+
+# In async button handlers:
+async def _translate_text(self):
+    client = self._client  # Use saved reference (context.client fails in async tasks)
+
+    result = await asyncio.to_thread(blocking_operation)
+
+    with client:  # Restore context for UI operations
+        ui.notify('Done')
+        self._refresh_content()
+```
+
+**Key points**:
+- `context.client` is not available in async tasks (slot stack is empty)
+- Save client reference during page initialization
+- Use `with client:` block after `asyncio.to_thread()` to restore context
+
 ### Translation Logic
 - **CellTranslator**: For Excel cells - skips numbers, dates, URLs, emails, codes
 - **ParagraphTranslator**: For Word/PPT paragraphs - less restrictive filtering
@@ -448,6 +478,28 @@ The `CopilotHandler` class automates Microsoft Edge browser:
 - Endpoint: `https://m365.cloud.microsoft/chat/?auth=2`
 - Handles Windows proxy detection from registry
 - Methods: `connect()`, `disconnect()`, `translate_sync()`
+
+### PlaywrightThreadExecutor (Threading Model)
+
+Playwright's sync API uses greenlets which must run in the same thread where initialized.
+The `PlaywrightThreadExecutor` singleton ensures all Playwright operations run in a dedicated thread:
+
+```python
+# All public Playwright methods delegate to the executor
+def translate_sync(self, texts, prompt, ...) -> list[str]:
+    return _playwright_executor.execute(
+        self._translate_sync_impl, texts, prompt, ...
+    )
+
+def connect(self) -> bool:
+    return _playwright_executor.execute(self._connect_impl)
+
+def disconnect(self) -> None:
+    _playwright_executor.execute(self._disconnect_impl)
+```
+
+This is critical when called from `asyncio.to_thread()` in NiceGUI async handlers,
+as the worker thread differs from the Playwright initialization thread.
 
 ### Connection Flow
 The `connect()` method performs these steps:
@@ -595,8 +647,14 @@ Based on recent commits:
   - **Loading screen**: Shows spinner immediately via `await client.connected()` for faster perceived startup
   - **Import optimization**: NiceGUI import moved inside `main()` to prevent double initialization in native mode (cuts startup time in half)
   - **Lazy imports**: Heavy modules (openpyxl, python-docx, Playwright) deferred until first use via `__getattr__`
-  - **WebSocket optimization**: `reconnect_timeout=10.0` in `ui.run()` (up from default 3s) for stable connections
+  - **WebSocket optimization**: `reconnect_timeout=30.0` in `ui.run()` (up from default 3s) for stable connections
   - **Non-blocking translation**: All translation methods use `asyncio.to_thread()` to avoid blocking NiceGUI event loop
+  - **pywebview engine**: `PYWEBVIEW_GUI=edgechromium` environment variable to avoid runtime installation dialogs
+  - **Multiprocessing support**: `multiprocessing.freeze_support()` for Windows/PyInstaller compatibility
+- **Threading & Context Fixes**:
+  - **Client reference**: `self._client` saved from `@ui.page` handler for async button handlers (NiceGUI's `context.client` not available in async tasks)
+  - **PlaywrightThreadExecutor**: All Playwright operations wrapped in dedicated thread executor to avoid greenlet thread-switching errors
+  - **Proxy bypass**: `NO_PROXY=localhost,127.0.0.1` and `--proxy-bypass-list` for corporate environments
 - **Text Translation UI Unification**:
   - **Single output**: Changed from 3 translation options to 1 option with style setting
   - **Style settings**: 標準/簡潔/最簡潔 configurable via settings dialog

@@ -249,7 +249,12 @@ class BatchTranslator:
 
         Returns:
             BatchTranslationResult with translations and error details
+
+        Performance optimizations:
+            - Pre-builds all prompts before translation loop to minimize per-batch overhead
+            - Uses concurrent.futures for parallel prompt construction when >2 batches
         """
+        from concurrent.futures import ThreadPoolExecutor
         from yakulingo.models.types import BatchTranslationResult
 
         translations = {}
@@ -260,6 +265,22 @@ class BatchTranslator:
         has_refs = bool(reference_files)
         self._cancel_requested = False
         cancelled = False
+
+        # Pre-build all prompts before translation loop for efficiency
+        # This eliminates prompt construction time from the translation loop
+        batch_texts = [[b.text for b in batch] for batch in batches]
+
+        def build_prompt(texts: list[str]) -> str:
+            return self.prompt_builder.build_batch(texts, has_refs, output_language, translation_style)
+
+        # Use parallel prompt construction for multiple batches
+        if len(batches) > 2:
+            with ThreadPoolExecutor(max_workers=min(4, len(batches))) as executor:
+                prompts = list(executor.map(build_prompt, batch_texts))
+        else:
+            prompts = [build_prompt(texts) for texts in batch_texts]
+
+        logger.debug("Pre-built %d prompts for batch translation", len(prompts))
 
         for i, batch in enumerate(batches):
             # Check for cancellation between batches
@@ -275,10 +296,8 @@ class BatchTranslator:
                     status=f"Batch {i + 1} of {len(batches)}",
                 ))
 
-            texts = [b.text for b in batch]
-
-            # Build prompt with explicit output language and style
-            prompt = self.prompt_builder.build_batch(texts, has_refs, output_language, translation_style)
+            texts = batch_texts[i]
+            prompt = prompts[i]  # Use pre-built prompt
 
             # Translate (with char_limit for auto file attachment mode)
             batch_translations = self.copilot.translate_sync(

@@ -796,6 +796,9 @@ class ContentStreamReplacer:
 
         # Create new stream object
         new_xref = self.doc.get_new_xref()
+        # Initialize xref as PDF dict before updating stream
+        # (get_new_xref only allocates xref number, doesn't create dict object)
+        self.doc.update_object(new_xref, "<< >>")
         self.doc.update_stream(new_xref, stream_bytes)
 
         # Add to page Contents

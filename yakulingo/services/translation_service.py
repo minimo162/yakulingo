@@ -1056,7 +1056,7 @@ class TranslationService:
             ))
 
         # Extract text blocks
-        blocks = list(processor.extract_text_blocks(input_path))
+        blocks = list(processor.extract_text_blocks(input_path, output_language))
 
         # Filter blocks by selected sections if specified
         if selected_sections is not None:
@@ -1237,6 +1237,7 @@ class TranslationService:
             device=ocr_device,
             batch_size=ocr_batch_size,
             dpi=ocr_dpi,
+            output_language=output_language,
         ):
             all_blocks.extend(page_blocks)
             if page_cells:

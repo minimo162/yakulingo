@@ -68,8 +68,15 @@ class PptxProcessor(FileProcessor):
             section_details=section_details,
         )
 
-    def extract_text_blocks(self, file_path: Path) -> Iterator[TextBlock]:
-        """Extract text from slides, shapes, tables, notes"""
+    def extract_text_blocks(
+        self, file_path: Path, output_language: str = "en"
+    ) -> Iterator[TextBlock]:
+        """Extract text from slides, shapes, tables, notes
+
+        Args:
+            file_path: Path to the PowerPoint file
+            output_language: "en" for JP→EN, "jp" for EN→JP translation
+        """
         prs = Presentation(file_path)
 
         for slide_idx, slide in enumerate(prs.slides):
@@ -80,7 +87,7 @@ class PptxProcessor(FileProcessor):
                 # === Text Shapes ===
                 if shape.has_text_frame:
                     for para_idx, para in enumerate(shape.text_frame.paragraphs):
-                        if para.text and self.para_translator.should_translate(para.text):
+                        if para.text and self.para_translator.should_translate(para.text, output_language):
                             # Get font info from first run
                             font_name = None
                             font_size = 18.0  # default for PPT
@@ -118,7 +125,7 @@ class PptxProcessor(FileProcessor):
                     for row_idx, row in enumerate(table.rows):
                         for cell_idx, cell in enumerate(row.cells):
                             cell_text = cell.text_frame.text if cell.text_frame else ""
-                            if cell_text and self.cell_translator.should_translate(cell_text):
+                            if cell_text and self.cell_translator.should_translate(cell_text, output_language):
                                 # Get font info
                                 font_name = None
                                 font_size = 14.0
@@ -151,7 +158,7 @@ class PptxProcessor(FileProcessor):
             if slide.has_notes_slide and slide.notes_slide.notes_text_frame:
                 notes_frame = slide.notes_slide.notes_text_frame
                 for para_idx, para in enumerate(notes_frame.paragraphs):
-                    if para.text and self.para_translator.should_translate(para.text):
+                    if para.text and self.para_translator.should_translate(para.text, output_language):
                         yield TextBlock(
                             id=f"s{slide_idx}_notes_{para_idx}",
                             text=para.text,

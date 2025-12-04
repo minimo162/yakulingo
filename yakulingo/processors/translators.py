@@ -41,7 +41,7 @@ class CellTranslator:
         # Use class-level compiled patterns
         self._skip_regex = self._get_skip_regex()
 
-    def should_translate(self, text: str) -> bool:
+    def should_translate(self, text: str, output_language: str = "en") -> bool:
         """
         Determine if cell text should be translated.
         Same logic used for Excel cells, Word table cells, and PPT table cells.
@@ -53,8 +53,12 @@ class CellTranslator:
         - Email addresses
         - URLs
         - Product/Document codes
-        - Single non-Japanese characters (e.g., "A", "1")
-        - Text without any Japanese characters (optimization for JP→EN translation)
+        - For JP→EN (output_language="en"): Skip text without Japanese characters
+        - For EN→JP (output_language="jp"): Skip text that is Japanese-only
+
+        Args:
+            text: Text to check
+            output_language: "en" for JP→EN, "jp" for EN→JP
         """
         if not text:
             return False
@@ -68,11 +72,17 @@ class CellTranslator:
             if regex.match(text):
                 return False
 
-        # Only translate text that contains Japanese characters
-        # This optimizes JP→EN translation by skipping pure English text
-        # (e.g., "USA", "Canada", "FY26/3" are skipped)
-        if not self._contains_japanese(text):
-            return False
+        # Language-based filtering depends on translation direction
+        if output_language == "en":
+            # JP→EN: Skip text without Japanese characters
+            # (e.g., "USA", "Canada", "FY26/3" are skipped)
+            if not self._contains_japanese(text):
+                return False
+        else:
+            # EN→JP: Skip text that is Japanese-only
+            # (e.g., "こんにちは" is skipped, but "Hello こんにちは" is translated)
+            if self._is_japanese_only(text):
+                return False
 
         return True
 
@@ -101,6 +111,46 @@ class CellTranslator:
                 code == 0x203B):             # ※ (reference mark)
                 return True
         return False
+
+    def _is_japanese_only(self, text: str) -> bool:
+        """
+        Check if text contains ONLY Japanese characters (no alphabetic characters).
+
+        Used for EN→JP translation to skip already-Japanese text.
+        Returns True if text has Japanese but no alphabetic characters.
+
+        Examples:
+            "こんにちは" → True (Japanese only, skip for EN→JP)
+            "Hello" → False (English only, translate for EN→JP)
+            "Hello こんにちは" → False (mixed, translate for EN→JP)
+            "売上 Sales" → False (mixed, translate for EN→JP)
+            "12345" → False (no Japanese, already filtered by skip patterns)
+        """
+        has_japanese = False
+        has_alphabetic = False
+
+        for char in text:
+            code = ord(char)
+            # Check for Japanese characters
+            if (0x3040 <= code <= 0x309F or  # Hiragana
+                0x30A0 <= code <= 0x30FF or  # Katakana
+                0x4E00 <= code <= 0x9FFF or  # CJK Kanji
+                code == 0x25B2 or            # ▲
+                code == 0x25B3 or            # △
+                code == 0x3007 or            # 〇
+                code == 0x203B):             # ※
+                has_japanese = True
+            # Check for alphabetic characters (A-Z, a-z)
+            elif (0x0041 <= code <= 0x005A or  # A-Z
+                  0x0061 <= code <= 0x007A):   # a-z
+                has_alphabetic = True
+
+            # Early exit if we found both
+            if has_japanese and has_alphabetic:
+                return False
+
+        # Japanese-only if has Japanese but no alphabetic
+        return has_japanese and not has_alphabetic
 
 
 class ParagraphTranslator:
@@ -130,7 +180,7 @@ class ParagraphTranslator:
         # Use class-level compiled patterns
         self._skip_regex = self._get_skip_regex()
 
-    def should_translate(self, text: str) -> bool:
+    def should_translate(self, text: str, output_language: str = "en") -> bool:
         """
         Determine if paragraph should be translated.
         Similar to CellTranslator but may have different rules.
@@ -140,8 +190,12 @@ class ParagraphTranslator:
         - Numbers only (with formatting characters)
         - URLs
         - Email addresses
-        - Single non-Japanese characters (e.g., "A", "1")
-        - Text without any Japanese characters (optimization for JP→EN translation)
+        - For JP→EN (output_language="en"): Skip text without Japanese characters
+        - For EN→JP (output_language="jp"): Skip text that is Japanese-only
+
+        Args:
+            text: Text to check
+            output_language: "en" for JP→EN, "jp" for EN→JP
         """
         if not text:
             return False
@@ -155,10 +209,15 @@ class ParagraphTranslator:
             if regex.match(text):
                 return False
 
-        # Only translate text that contains Japanese characters
-        # This optimizes JP→EN translation by skipping pure English text
-        if not self._contains_japanese(text):
-            return False
+        # Language-based filtering depends on translation direction
+        if output_language == "en":
+            # JP→EN: Skip text without Japanese characters
+            if not self._contains_japanese(text):
+                return False
+        else:
+            # EN→JP: Skip text that is Japanese-only
+            if self._is_japanese_only(text):
+                return False
 
         return True
 
@@ -187,6 +246,39 @@ class ParagraphTranslator:
                 code == 0x203B):             # ※ (reference mark)
                 return True
         return False
+
+    def _is_japanese_only(self, text: str) -> bool:
+        """
+        Check if text contains ONLY Japanese characters (no alphabetic characters).
+
+        Used for EN→JP translation to skip already-Japanese text.
+        Returns True if text has Japanese but no alphabetic characters.
+        """
+        has_japanese = False
+        has_alphabetic = False
+
+        for char in text:
+            code = ord(char)
+            # Check for Japanese characters
+            if (0x3040 <= code <= 0x309F or  # Hiragana
+                0x30A0 <= code <= 0x30FF or  # Katakana
+                0x4E00 <= code <= 0x9FFF or  # CJK Kanji
+                code == 0x25B2 or            # ▲
+                code == 0x25B3 or            # △
+                code == 0x3007 or            # 〇
+                code == 0x203B):             # ※
+                has_japanese = True
+            # Check for alphabetic characters (A-Z, a-z)
+            elif (0x0041 <= code <= 0x005A or  # A-Z
+                  0x0061 <= code <= 0x007A):   # a-z
+                has_alphabetic = True
+
+            # Early exit if we found both
+            if has_japanese and has_alphabetic:
+                return False
+
+        # Japanese-only if has Japanese but no alphabetic
+        return has_japanese and not has_alphabetic
 
     def extract_paragraph_text(self, paragraph) -> str:
         """

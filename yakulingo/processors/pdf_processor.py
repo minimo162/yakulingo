@@ -1329,6 +1329,23 @@ class PdfProcessor(FileProcessor):
         """Initialize PDF processor with cancellation support."""
         self._cancel_requested = False
         self._failed_pages: list[int] = []
+        self._output_language = "en"  # Default to JP→EN translation
+        # Use CellTranslator for consistent language-based filtering
+        from .translators import CellTranslator
+        self._cell_translator = CellTranslator()
+
+    def should_translate(self, text: str) -> bool:
+        """
+        Check if text should be translated.
+        Uses CellTranslator for consistent language-based filtering.
+
+        Args:
+            text: Text to check
+
+        Returns:
+            True if text should be translated
+        """
+        return self._cell_translator.should_translate(text, self._output_language)
 
     def cancel(self) -> None:
         """Request cancellation of OCR processing."""
@@ -1369,13 +1386,20 @@ class PdfProcessor(FileProcessor):
             section_details=section_details,
         )
 
-    def extract_text_blocks(self, file_path: Path) -> Iterator[TextBlock]:
+    def extract_text_blocks(
+        self, file_path: Path, output_language: str = "en"
+    ) -> Iterator[TextBlock]:
         """
         Extract text blocks from PDF.
 
         Delegates to _extract_with_pymupdf_streaming for consistency.
         This method exists for FileProcessor interface compliance.
+
+        Args:
+            file_path: Path to the PDF file
+            output_language: "en" for JP→EN, "jp" for EN→JP translation
         """
+        self._output_language = output_language
         total_pages = self.get_page_count(file_path)
         for blocks, _ in self._extract_with_pymupdf_streaming(
             file_path, total_pages, on_progress=None
@@ -1692,6 +1716,7 @@ class PdfProcessor(FileProcessor):
         reading_order: str = "auto",
         batch_size: int = DEFAULT_OCR_BATCH_SIZE,
         dpi: int = DEFAULT_OCR_DPI,
+        output_language: str = "en",
     ) -> Iterator[TextBlock]:
         """
         Extract text blocks from PDF using OCR (yomitoku).
@@ -1705,10 +1730,12 @@ class PdfProcessor(FileProcessor):
             reading_order: Reading order for yomitoku
             batch_size: Pages per batch for OCR processing
             dpi: OCR resolution (higher = better quality, slower)
+            output_language: "en" for JP→EN, "jp" for EN→JP translation
 
         Yields:
             TextBlock objects with OCR-extracted text
         """
+        self._output_language = output_language
         if not is_yomitoku_available():
             raise ImportError(
                 "yomitoku is required for OCR. Install with: pip install yomitoku"
@@ -1797,6 +1824,7 @@ class PdfProcessor(FileProcessor):
         reading_order: str = "auto",
         batch_size: int = DEFAULT_OCR_BATCH_SIZE,
         dpi: int = DEFAULT_OCR_DPI,
+        output_language: str = "en",
     ) -> Iterator[tuple[list[TextBlock], Optional[list[TranslationCell]]]]:
         """
         Extract text blocks from PDF with streaming support and progress reporting.
@@ -1813,6 +1841,7 @@ class PdfProcessor(FileProcessor):
             reading_order: Reading order for yomitoku ("auto", "left2right", etc.)
             batch_size: Pages per batch for OCR processing
             dpi: OCR resolution (higher = better quality, slower)
+            output_language: "en" for JP→EN, "jp" for EN→JP translation
 
         Yields:
             Tuple of (list[TextBlock], Optional[list[TranslationCell]]):
@@ -1832,6 +1861,7 @@ class PdfProcessor(FileProcessor):
                 # Can also translate page_blocks immediately here
             ```
         """
+        self._output_language = output_language
         with _open_fitz_document(file_path) as doc:
             total_pages = len(doc)
 

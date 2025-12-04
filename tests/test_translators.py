@@ -577,3 +577,109 @@ class TestTranslatorSpecialPatterns:
         assert translator.should_translate("3.14") is False
         assert translator.should_translate("0.001") is False
         assert translator.should_translate(".5") is False
+
+
+class TestEnglishToJapaneseTranslation:
+    """Tests for EN→JP translation (output_language='jp')"""
+
+    @pytest.fixture
+    def cell_translator(self):
+        return CellTranslator()
+
+    @pytest.fixture
+    def para_translator(self):
+        return ParagraphTranslator()
+
+    # --- Basic EN→JP cases ---
+
+    def test_english_text_should_translate_en_to_jp(self, cell_translator):
+        """English text should be translated for EN→JP"""
+        assert cell_translator.should_translate("Hello World", output_language="jp") is True
+        assert cell_translator.should_translate("Sales Report", output_language="jp") is True
+
+    def test_japanese_only_text_skipped_en_to_jp(self, cell_translator):
+        """Japanese-only text should be skipped for EN→JP"""
+        assert cell_translator.should_translate("こんにちは", output_language="jp") is False
+        assert cell_translator.should_translate("売上報告", output_language="jp") is False
+
+    def test_mixed_text_should_translate_en_to_jp(self, cell_translator):
+        """Mixed text (English + Japanese) should be translated for EN→JP"""
+        assert cell_translator.should_translate("Hello こんにちは", output_language="jp") is True
+        assert cell_translator.should_translate("売上 Sales", output_language="jp") is True
+        assert cell_translator.should_translate("FY2024の売上高", output_language="jp") is True
+
+    # --- Comparison JP→EN vs EN→JP ---
+
+    def test_direction_changes_behavior(self, cell_translator):
+        """Translation direction changes which text is filtered"""
+        # JP→EN: Japanese text included, English-only excluded
+        assert cell_translator.should_translate("こんにちは", output_language="en") is True
+        assert cell_translator.should_translate("Hello", output_language="en") is False
+
+        # EN→JP: English text included, Japanese-only excluded
+        assert cell_translator.should_translate("Hello", output_language="jp") is True
+        assert cell_translator.should_translate("こんにちは", output_language="jp") is False
+
+    # --- Skip patterns apply to both directions ---
+
+    def test_skip_patterns_apply_to_en_to_jp(self, cell_translator):
+        """Skip patterns (numbers, URLs, etc.) apply regardless of direction"""
+        # Numbers-only should be skipped in both directions
+        assert cell_translator.should_translate("12345", output_language="jp") is False
+
+        # URLs should be skipped in both directions
+        assert cell_translator.should_translate("https://example.com", output_language="jp") is False
+
+        # Emails should be skipped in both directions
+        assert cell_translator.should_translate("test@example.com", output_language="jp") is False
+
+        # Dates should be skipped in both directions
+        assert cell_translator.should_translate("2024-01-15", output_language="jp") is False
+
+    # --- ParagraphTranslator EN→JP tests ---
+
+    def test_paragraph_english_should_translate_en_to_jp(self, para_translator):
+        """English paragraphs should be translated for EN→JP"""
+        assert para_translator.should_translate("This is a test.", output_language="jp") is True
+
+    def test_paragraph_japanese_only_skipped_en_to_jp(self, para_translator):
+        """Japanese-only paragraphs should be skipped for EN→JP"""
+        assert para_translator.should_translate("これはテストです。", output_language="jp") is False
+
+    def test_paragraph_mixed_should_translate_en_to_jp(self, para_translator):
+        """Mixed paragraphs should be translated for EN→JP"""
+        assert para_translator.should_translate("This is テスト.", output_language="jp") is True
+
+    # --- Edge cases for EN→JP ---
+
+    def test_text_with_only_kanji_skipped_en_to_jp(self, cell_translator):
+        """Text with only kanji should be skipped for EN→JP"""
+        assert cell_translator.should_translate("東京", output_language="jp") is False
+        assert cell_translator.should_translate("株式会社", output_language="jp") is False
+
+    def test_text_with_katakana_only_skipped_en_to_jp(self, cell_translator):
+        """Text with only katakana should be skipped for EN→JP"""
+        assert cell_translator.should_translate("コンピュータ", output_language="jp") is False
+        assert cell_translator.should_translate("プログラム", output_language="jp") is False
+
+    def test_text_with_hiragana_only_skipped_en_to_jp(self, cell_translator):
+        """Text with only hiragana should be skipped for EN→JP"""
+        assert cell_translator.should_translate("ひらがな", output_language="jp") is False
+        assert cell_translator.should_translate("あいうえお", output_language="jp") is False
+
+    def test_japanese_with_numbers_skipped_en_to_jp(self, cell_translator):
+        """Japanese text with numbers (but no alphabet) should be skipped for EN→JP"""
+        # Contains Japanese + numbers but no alphabet
+        assert cell_translator.should_translate("売上: 100万円", output_language="jp") is False
+        assert cell_translator.should_translate("2024年度", output_language="jp") is False
+
+    def test_japanese_symbols_skipped_en_to_jp(self, cell_translator):
+        """Japanese document symbols should be treated as Japanese for EN→JP"""
+        # ▲△〇※ are Japanese document symbols
+        assert cell_translator.should_translate("▲50", output_language="jp") is False
+        assert cell_translator.should_translate("〇〇株式会社", output_language="jp") is False
+
+    def test_english_with_numbers_should_translate_en_to_jp(self, cell_translator):
+        """English text with numbers should be translated for EN→JP"""
+        assert cell_translator.should_translate("FY2024 Report", output_language="jp") is True
+        assert cell_translator.should_translate("Sales increased by 50%", output_language="jp") is True

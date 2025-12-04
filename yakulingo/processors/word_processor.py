@@ -281,13 +281,20 @@ class WordProcessor(FileProcessor):
             section_details=section_details,
         )
 
-    def extract_text_blocks(self, file_path: Path) -> Iterator[TextBlock]:
-        """Extract text from paragraphs, tables, and textboxes (.docx only)"""
+    def extract_text_blocks(
+        self, file_path: Path, output_language: str = "en"
+    ) -> Iterator[TextBlock]:
+        """Extract text from paragraphs, tables, and textboxes (.docx only)
+
+        Args:
+            file_path: Path to the Word file
+            output_language: "en" for JP→EN, "jp" for EN→JP translation
+        """
         doc = Document(file_path)
 
         # === Body Paragraphs ===
         for idx, para in enumerate(doc.paragraphs):
-            if para.text and self.para_translator.should_translate(para.text):
+            if para.text and self.para_translator.should_translate(para.text, output_language):
                 # Get font info from first run
                 font_name = None
                 font_size = 11.0
@@ -332,7 +339,7 @@ class WordProcessor(FileProcessor):
                     processed_cells.add(cell_key)
 
                     cell_text = cell.text
-                    if cell_text and self.cell_translator.should_translate(cell_text):
+                    if cell_text and self.cell_translator.should_translate(cell_text, output_language):
                         # Get font info from first paragraph's first run
                         font_name = None
                         font_size = 11.0
@@ -366,7 +373,7 @@ class WordProcessor(FileProcessor):
                 text = tb['text']
                 tb_idx = tb['textbox_index']
 
-                if self.para_translator.should_translate(text):
+                if self.para_translator.should_translate(text, output_language):
                     yield TextBlock(
                         id=f"textbox_{tb_idx}",
                         text=text,

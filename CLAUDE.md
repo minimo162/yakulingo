@@ -42,9 +42,34 @@ playwright install chromium
 
 The project has heavy dependencies (playwright, nicegui, openpyxl, etc.) that are required for tests to pass. Using `--extra test` ensures:
 1. All main project dependencies are installed (playwright, nicegui, etc.)
-2. Test dependencies are installed (pytest, pytest-cov, pytest-asyncio)
+2. Test dependencies are installed (pytest, pytest-cov, pytest-asyncio, pytest-xdist)
 
 If you run `pytest` directly or `uv run pytest`, tests will fail with `ModuleNotFoundError` for playwright and other packages.
+
+### Test Execution Options
+
+```bash
+# Fast parallel execution (recommended, ~50% faster)
+uv run --extra test pytest -n 4
+
+# Run only fast unit tests (skip integration/slow)
+uv run --extra test pytest -m unit
+
+# Run integration tests only
+uv run --extra test pytest -m integration
+
+# Skip slow tests
+uv run --extra test pytest -m "not slow"
+
+# Run specific test file
+uv run --extra test pytest tests/test_translation_service.py -v
+```
+
+**Test markers:**
+- `unit`: Fast, isolated tests for single components (~1053 tests)
+- `integration`: Tests involving multiple components (~144 tests)
+- `slow`: Tests with longer execution time (~73 tests)
+- `e2e`: End-to-end tests with file I/O
 
 ## Architecture Overview
 

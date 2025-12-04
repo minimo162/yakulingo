@@ -1,6 +1,18 @@
 # tests/conftest.py
 """
 Shared pytest fixtures for yakulingo tests.
+
+Test markers:
+- unit: Unit tests for single components (fast, isolated)
+- integration: Integration tests for multiple components
+- slow: Tests that take longer than 0.5s
+- e2e: End-to-end tests with file I/O
+
+Run specific test categories:
+- pytest -m unit          # Fast unit tests only
+- pytest -m integration   # Integration tests only
+- pytest -m "not slow"    # Skip slow tests
+- pytest -m "not e2e"     # Skip E2E tests
 """
 
 import pytest
@@ -9,6 +21,48 @@ from pathlib import Path
 from unittest.mock import Mock, MagicMock
 
 from yakulingo.config.settings import AppSettings
+
+
+# --- Auto marker assignment based on file name ---
+
+# File patterns for automatic marker assignment
+_INTEGRATION_FILES = {
+    'test_integration.py',
+    'test_integration_extended.py',
+    'test_e2e_flows.py',
+    'test_app.py',
+    'test_app_async.py',
+}
+
+_E2E_FILES = {
+    'test_e2e_flows.py',
+}
+
+_SLOW_FILES = {
+    'test_app.py',  # Has setup overhead
+    'test_e2e_flows.py',
+}
+
+
+def pytest_collection_modifyitems(config, items):
+    """Automatically add markers based on test file names."""
+    for item in items:
+        # Get the test file name
+        file_name = item.fspath.basename if hasattr(item.fspath, 'basename') else Path(str(item.fspath)).name
+
+        # Add markers based on file name
+        if file_name in _E2E_FILES:
+            item.add_marker(pytest.mark.e2e)
+            item.add_marker(pytest.mark.integration)
+        elif file_name in _INTEGRATION_FILES:
+            item.add_marker(pytest.mark.integration)
+        else:
+            item.add_marker(pytest.mark.unit)
+
+        if file_name in _SLOW_FILES:
+            item.add_marker(pytest.mark.slow)
+
+
 from yakulingo.models.types import (
     FileType,
     FileInfo,

@@ -143,7 +143,7 @@ def _create_large_input_panel(
                     placeholder='好きな言語で入力…',
                     value=state.source_text,
                     on_change=lambda e: on_source_change(e.value)
-                ).classes('w-full p-4').props('borderless autogrow aria-label="翻訳するテキスト"').style('min-height: 360px')
+                ).classes('w-full p-4').props('borderless autogrow aria-label="翻訳するテキスト"').style('min-height: var(--input-min-height)')
 
                 # Handle Ctrl+Enter in textarea with NiceGUI 3.0+ js_handler
                 # Prevent default browser behavior (newline insertion) when Ctrl+Enter is pressed

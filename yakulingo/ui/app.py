@@ -1520,8 +1520,20 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
         REFERENCE_INPUT_MIN_HEIGHT = 360
         input_min_height = int(REFERENCE_INPUT_MIN_HEIGHT * window_height / REFERENCE_WINDOW_HEIGHT)
 
+        # Calculate base font size with gentle scaling
+        # Reference: 1900px window → 16px font
+        # Use square root for gentle scaling, with minimum 85% (13.6px)
+        import math
+        REFERENCE_WINDOW_WIDTH = 1900
+        REFERENCE_FONT_SIZE = 16
+        scale_ratio = window_width / REFERENCE_WINDOW_WIDTH
+        # Square root scaling for gentler effect, clamped to 85%-100%
+        gentle_scale = max(0.85, min(1.0, math.sqrt(scale_ratio)))
+        base_font_size = round(REFERENCE_FONT_SIZE * gentle_scale, 1)
+
         ui.add_head_html(f'''<style>
 :root {{
+    --base-font-size: {base_font_size}px;
     --sidebar-width: {sidebar_width}px;
     --input-panel-width: {input_panel_width}px;
     --result-content-width: {result_content_width}px;

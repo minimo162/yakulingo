@@ -86,7 +86,7 @@ for /f "tokens=2 delims==" %%v in ('type ".venv\pyvenv.cfg" ^| findstr /i "^vers
     set PYTHON_VERSION=%%v
 )
 
-:: Rewrite pyvenv.cfg with placeholder (will be fixed by run.vbs on first run)
+:: Rewrite pyvenv.cfg with placeholder (will be fixed by YakuLingo.exe on first run)
 echo home = __PYTHON_HOME__> ".venv\pyvenv.cfg"
 echo include-system-site-packages = false>> ".venv\pyvenv.cfg"
 echo version =%PYTHON_VERSION%>> ".venv\pyvenv.cfg"

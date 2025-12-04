@@ -106,7 +106,7 @@ setup.ps1は以下を実行：
 | 種類 | 対象 |
 |------|------|
 | **ディレクトリ** | `yakulingo/`, `prompts/`, `config/` |
-| **ファイル** | `app.py`, `pyproject.toml`, `uv.lock`, `uv.toml`, `run.vbs`, `README.md` |
+| **ファイル** | `app.py`, `pyproject.toml`, `uv.lock`, `uv.toml`, `YakuLingo.exe`, `README.md` |
 | **保持（上書きしない）** | `glossary.csv`, `config/settings.json` |
 | **保持（更新対象外）** | `.venv/`, `.uv-python/`, `.playwright-browsers/` |
 

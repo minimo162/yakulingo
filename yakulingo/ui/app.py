@@ -1375,13 +1375,23 @@ def _detect_display_settings() -> tuple[tuple[int, int], str, tuple[int, int, in
     INPUT_PANEL_RATIO = 420 / 1900  # 0.221
     RESULT_CONTENT_RATIO = 800 / 1900  # 0.421 (result panel inner content width)
 
+    # Minimum sizes to prevent layout breaking on smaller screens (e.g., 1920x1200)
+    MIN_WINDOW_WIDTH = 1400
+    MIN_WINDOW_HEIGHT = 850
+    MIN_SIDEBAR_WIDTH = 260
+    MIN_INPUT_PANEL_WIDTH = 420
+    MIN_RESULT_CONTENT_WIDTH = 800
+
     def calculate_sizes(screen_width: int, screen_height: int) -> tuple[tuple[int, int], tuple[int, int, int]]:
-        """Calculate window size and panel widths from screen resolution."""
-        window_width = int(screen_width * WIDTH_RATIO)
-        window_height = int(screen_height * HEIGHT_RATIO)
-        sidebar_width = int(window_width * SIDEBAR_RATIO)
-        input_panel_width = int(window_width * INPUT_PANEL_RATIO)
-        result_content_width = int(window_width * RESULT_CONTENT_RATIO)
+        """Calculate window size and panel widths from screen resolution.
+
+        Applies minimum values to prevent UI layout from breaking on smaller screens.
+        """
+        window_width = max(int(screen_width * WIDTH_RATIO), MIN_WINDOW_WIDTH)
+        window_height = max(int(screen_height * HEIGHT_RATIO), MIN_WINDOW_HEIGHT)
+        sidebar_width = max(int(window_width * SIDEBAR_RATIO), MIN_SIDEBAR_WIDTH)
+        input_panel_width = max(int(window_width * INPUT_PANEL_RATIO), MIN_INPUT_PANEL_WIDTH)
+        result_content_width = max(int(window_width * RESULT_CONTENT_RATIO), MIN_RESULT_CONTENT_WIDTH)
         return ((window_width, window_height), (sidebar_width, input_panel_width, result_content_width))
 
     # Default: laptop mode based on 1920x1080 screen

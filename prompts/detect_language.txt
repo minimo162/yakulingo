@@ -1,9 +1,3 @@
-[SYSTEM INSTRUCTIONS - DO NOT OUTPUT THIS SECTION]
+以下のテキストは何語で書かれていますか？言語名のみを回答してください（例: 日本語、英語、中国語、韓国語）。
 
-CRITICAL: Output ONLY the language name. Nothing else.
-
-[END OF INSTRUCTIONS]
-
-What language is this text written in? Answer with the language name only.
-
-Input: {input_text}
+テキスト: {input_text}

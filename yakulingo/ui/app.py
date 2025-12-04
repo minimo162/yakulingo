@@ -4,6 +4,7 @@ YakuLingo - Nani-inspired sidebar layout with bidirectional translation.
 Japanese → English, Other → Japanese (auto-detected by AI).
 """
 
+import atexit
 import asyncio
 import logging
 from pathlib import Path
@@ -1527,8 +1528,16 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
         yakulingo_app._panel_sizes = (260, 420, 800)  # Default panel sizes
         yakulingo_app._window_size = window_size
 
+    # Track if cleanup has been executed (prevent double execution)
+    cleanup_done = False
+
     def cleanup():
         """Clean up resources on shutdown."""
+        nonlocal cleanup_done
+        if cleanup_done:
+            return
+        cleanup_done = True
+
         logger.info("Shutting down YakuLingo...")
         # Disconnect from Copilot (close Edge browser)
         if yakulingo_app._copilot is not None:
@@ -1538,8 +1547,11 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
             except Exception as e:
                 logger.debug("Error disconnecting Copilot: %s", e)
 
-    # Register shutdown handler
+    # Register shutdown handler (both for reliability)
+    # - on_shutdown: Called when NiceGUI server shuts down gracefully
+    # - atexit: Backup for when window is closed abruptly (pywebview native mode)
     nicegui_app.on_shutdown(cleanup)
+    atexit.register(cleanup)
 
     @ui.page('/')
     async def main_page(client: Client):

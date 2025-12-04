@@ -39,14 +39,15 @@ Translate the following Japanese text into English and provide brief explanation
 
 ## Output format (MUST follow exactly):
 Start directly with "訳文:" - NO other text before it.
+IMPORTANT: Write explanations in Japanese (解説は日本語で書くこと).
 Keep explanations to 1 line each. No ### headings.
 
 訳文: (translation result)
 
 解説:
-- (Why this expression was chosen, correspondence to original nuance - 1 line)
-- (Important paraphrase/abbreviation points if any - 1 line)
-- (Usage context or notes if any - 1 line)
+- (この表現を選んだ理由、原文ニュアンスとの対応 - 1行)
+- (言い換え・略語のポイントがあれば - 1行)
+- (使用場面・注意点があれば - 1行)
 
 ## Prohibited:
 - Continuation questions like "Continue?" or "Any other questions?"

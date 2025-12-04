@@ -5,7 +5,7 @@ on:
     branches:
       - main  # Only trigger on main branch
     paths:
-      - 'launcher/**'
+      - 'packaging/launcher/**'
   release:
     types: [created]
   workflow_dispatch:  # Manual trigger for testing
@@ -22,23 +22,23 @@ jobs:
 
       - name: Build launcher
         run: |
-          cd launcher
+          cd packaging/launcher
           cargo build --release
           dir target\release\yakulingo-launcher.exe
 
       - name: Rename executable
         run: |
-          copy launcher\target\release\yakulingo-launcher.exe launcher\YakuLingo.exe
+          copy packaging\launcher\target\release\yakulingo-launcher.exe packaging\launcher\YakuLingo.exe
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: YakuLingo-Launcher
-          path: launcher/YakuLingo.exe
+          path: packaging/launcher/YakuLingo.exe
 
       # Upload to release (only when triggered by release)
       - name: Upload to Release
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2
         with:
-          files: launcher/YakuLingo.exe
+          files: packaging/launcher/YakuLingo.exe

@@ -196,17 +196,20 @@ YakuLingo/
 │   └── text_reply_email.txt        # フォローアップ: 返信メール作成
 │
 ├── config/
-│   └── settings.json               # ユーザー設定
+│   └── settings.template.json      # 設定テンプレート
 │
 ├── glossary.csv                    # デフォルト参照ファイル（用語集）
 │
-├── installer/                      # 配布用インストーラ
-│
-├── launcher/                       # ネイティブランチャー（Rust製）
-│   ├── Cargo.toml                  # Rust プロジェクト設定
-│   └── src/main.rs                 # ランチャーソースコード
+├── packaging/                      # 配布・ビルド関連
+│   ├── installer/                  # ネットワーク共有インストーラ
+│   ├── launcher/                   # ネイティブランチャー（Rust製）
+│   │   ├── Cargo.toml              # Rust プロジェクト設定
+│   │   └── src/main.rs             # ランチャーソースコード
+│   ├── install_deps.bat            # 依存関係インストール
+│   └── make_distribution.bat       # 配布パッケージ作成
 │
 └── docs/
+    ├── DISTRIBUTION.md             # 配布ガイド
     └── SPECIFICATION.md            # この仕様書
 ```
 
@@ -1295,7 +1298,7 @@ pytest-asyncio>=0.23.0
 
 ```bash
 # 配布パッケージ作成
-make_distribution.bat
+packaging\make_distribution.bat
 
 # 出力
 share_package/
@@ -1305,7 +1308,7 @@ share_package/
     └── setup.ps1      # インストールスクリプト
 ```
 
-詳細は `DISTRIBUTION.md` を参照。
+詳細は `docs/DISTRIBUTION.md` を参照。
 
 ---
 

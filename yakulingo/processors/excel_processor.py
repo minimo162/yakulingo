@@ -254,26 +254,64 @@ class ExcelProcessor(FileProcessor):
 
                     # === Shapes (TextBox, etc.) ===
                     # Wrap shape iteration in try-except to handle COM errors
+                    # Note: Some shape types (images, OLE objects, charts) don't have
+                    # a text property and will raise COM errors when accessed
                     try:
                         for shape_idx, shape in enumerate(sheet.shapes):
                             try:
-                                if hasattr(shape, 'text') and shape.text:
-                                    text = shape.text.strip()
-                                    if text and self.cell_translator.should_translate(text, output_language):
-                                        yield TextBlock(
-                                            id=f"{sheet_name}_shape_{shape_idx}",
-                                            text=text,
-                                            location=f"{sheet_name}, Shape '{shape.name}'",
-                                            metadata={
-                                                'sheet': sheet_name,
-                                                'sheet_idx': sheet_idx,
-                                                'shape': shape_idx,
-                                                'shape_name': shape.name,
-                                                'type': 'shape',
-                                            }
-                                        )
+                                # First check shape type - some shapes don't support text
+                                # xlwings shape types: 1=msoAutoShape, 17=msoTextBox, etc.
+                                # Skip shapes that typically don't have text (images, OLE, etc.)
+                                shape_type = None
+                                try:
+                                    shape_type = shape.type
+                                except Exception:
+                                    # If we can't even get the type, skip this shape
+                                    continue
+
+                                # Skip shape types that don't have text:
+                                # 13 = msoPicture (images)
+                                # 3 = msoChart (embedded charts)
+                                # 12 = msoOLEControlObject
+                                # 7 = msoEmbeddedOLEObject
+                                # 10 = msoLinkedOLEObject
+                                # 19 = msoMedia
+                                non_text_types = {3, 7, 10, 12, 13, 19}
+                                if shape_type in non_text_types:
+                                    continue
+
+                                # Try to get text from shape
+                                text = None
+                                try:
+                                    if hasattr(shape, 'text') and shape.text:
+                                        text = shape.text.strip()
+                                except Exception:
+                                    # COM error accessing text - shape doesn't support text
+                                    continue
+
+                                if text and self.cell_translator.should_translate(text, output_language):
+                                    # Get shape name safely
+                                    shape_name = None
+                                    try:
+                                        shape_name = shape.name
+                                    except Exception:
+                                        shape_name = f"Shape_{shape_idx}"
+
+                                    yield TextBlock(
+                                        id=f"{sheet_name}_shape_{shape_idx}",
+                                        text=text,
+                                        location=f"{sheet_name}, Shape '{shape_name}'",
+                                        metadata={
+                                            'sheet': sheet_name,
+                                            'sheet_idx': sheet_idx,
+                                            'shape': shape_idx,
+                                            'shape_name': shape_name,
+                                            'type': 'shape',
+                                        }
+                                    )
                             except Exception as e:
-                                logger.debug("Error extracting shape %d in sheet '%s': %s", shape_idx, sheet_name, e)
+                                # Log at debug level - many shapes legitimately don't have text
+                                logger.debug("Skipping shape %d in sheet '%s': %s", shape_idx, sheet_name, e)
                     except Exception as e:
                         logger.warning("Error iterating shapes in sheet '%s': %s", sheet_name, e)
 

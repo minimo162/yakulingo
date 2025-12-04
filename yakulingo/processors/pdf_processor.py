@@ -167,14 +167,28 @@ def _find_font_file(font_names: list[str]) -> Optional[str]:
             direct_path = os.path.join(font_dir, font_name)
             if os.path.isfile(direct_path):
                 return direct_path
-            # Recursive search (1 level deep for performance)
+            # Recursive search (2 levels deep for Linux font structure)
+            # Linux fonts are often in subdirectories like:
+            # /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
+            # /usr/share/fonts/opentype/ipafont-gothic/ipag.ttf
             try:
                 for subdir in os.listdir(font_dir):
                     subdir_path = os.path.join(font_dir, subdir)
                     if os.path.isdir(subdir_path):
+                        # Level 1 subdirectory
                         font_path = os.path.join(subdir_path, font_name)
                         if os.path.isfile(font_path):
                             return font_path
+                        # Level 2 subdirectory (for Linux font structure)
+                        try:
+                            for subsubdir in os.listdir(subdir_path):
+                                subsubdir_path = os.path.join(subdir_path, subsubdir)
+                                if os.path.isdir(subsubdir_path):
+                                    font_path = os.path.join(subsubdir_path, font_name)
+                                    if os.path.isfile(font_path):
+                                        return font_path
+                        except PermissionError:
+                            continue
             except PermissionError:
                 continue
 
@@ -225,39 +239,65 @@ def get_font_path_by_name(font_name: str) -> Optional[str]:
 
 # Font file names by language (cross-platform)
 # Default: Japanese = MS P明朝, English = Arial
+# Priority order: Windows fonts first, then Linux/cross-platform fonts
 FONT_FILES = {
     "ja": {
         "primary": [
-            "mspmincho.ttc", "MS PMincho.ttf",  # MS P明朝 (default)
-            "msmincho.ttc", "MS Mincho.ttf", "ipam.ttf", "IPAMincho.ttf",
-            "NotoSansJP-Regular.ttf", "NotoSerifJP-Regular.ttf"
+            # Windows fonts
+            "mspmincho.ttc", "MS PMincho.ttf",  # MS P明朝 (default Windows)
+            "msmincho.ttc", "MS Mincho.ttf",
+            "mspgothic.ttc", "MS PGothic.ttf",
+            "msgothic.ttc", "MS Gothic.ttf",
+            # Linux/cross-platform fonts (IPA fonts)
+            "ipag.ttf", "IPAGothic.ttf",  # IPAゴシック (common on Linux)
+            "ipagp.ttf", "IPAPGothic.ttf",  # IPAPゴシック
+            "ipam.ttf", "IPAMincho.ttf",  # IPA明朝
+            "fonts-japanese-gothic.ttf",  # Debian/Ubuntu symlink
+            # Noto fonts (cross-platform)
+            "NotoSansJP-Regular.ttf", "NotoSerifJP-Regular.ttf",
+            "NotoSansCJK-Regular.ttc", "NotoSerifCJK-Regular.ttc",
         ],
         "fallback": [
-            "msgothic.ttc", "MS Gothic.ttf", "ipag.ttf", "IPAGothic.ttf",
-            "NotoSansJP-Regular.otf"
+            # WenQuanYi (can display Japanese kanji)
+            "wqy-zenhei.ttc", "WenQuanYi Zen Hei.ttf",
+            "NotoSansJP-Regular.otf", "NotoSerifJP-Regular.otf",
         ],
     },
     "en": {
         "primary": [
-            "arial.ttf", "Arial.ttf",  # Arial (default)
-            "DejaVuSans.ttf", "LiberationSans-Regular.ttf"
+            # Windows fonts
+            "arial.ttf", "Arial.ttf",  # Arial (default Windows)
+            "calibri.ttf", "Calibri.ttf",
+            "segoeui.ttf", "Segoe UI.ttf",
+            # Linux/cross-platform fonts
+            "DejaVuSans.ttf",  # Common on Linux
+            "LiberationSans-Regular.ttf",  # Free alternative to Arial
+            "FreeSans.ttf",  # GNU FreeFont
+            # Noto fonts
+            "NotoSans-Regular.ttf",
         ],
         "fallback": [
-            "times.ttf", "Times.ttf", "DejaVuSerif.ttf",
-            "LiberationSerif-Regular.ttf"
+            "times.ttf", "Times.ttf", "Times New Roman.ttf",
+            "DejaVuSerif.ttf",
+            "LiberationSerif-Regular.ttf",
+            "FreeSerif.ttf",
+            "NotoSerif-Regular.ttf",
         ],
     },
     "zh-CN": {
         "primary": [
-            "simsun.ttc", "SimSun.ttf", "NotoSansSC-Regular.ttf",
-            "NotoSerifSC-Regular.ttf"
+            "simsun.ttc", "SimSun.ttf",
+            "wqy-zenhei.ttc", "WenQuanYi Zen Hei.ttf",  # Linux
+            "NotoSansSC-Regular.ttf", "NotoSerifSC-Regular.ttf",
+            "NotoSansCJK-Regular.ttc",
         ],
         "fallback": ["msyh.ttc", "Microsoft YaHei.ttf", "NotoSansSC-Regular.otf"],
     },
     "ko": {
         "primary": [
-            "malgun.ttf", "Malgun Gothic.ttf", "NotoSansKR-Regular.ttf",
-            "NotoSerifKR-Regular.ttf"
+            "malgun.ttf", "Malgun Gothic.ttf",
+            "NotoSansKR-Regular.ttf", "NotoSerifKR-Regular.ttf",
+            "NotoSansCJK-Regular.ttc",
         ],
         "fallback": ["batang.ttc", "Batang.ttf", "NotoSansKR-Regular.otf"],
     },
@@ -525,12 +565,23 @@ class FontRegistry:
         preferred_font = self._font_preferences.get(lang)
         if preferred_font:
             font_path = get_font_path_by_name(preferred_font)
+            if font_path:
+                logger.debug("Using preferred font for %s: %s", lang, font_path)
 
         if not font_path:
             font_path = get_font_path_for_lang(lang)
+            if font_path:
+                logger.debug("Using system font for %s: %s", lang, font_path)
 
-        if not font_path and lang not in self._missing_fonts:
-            self._missing_fonts.add(lang)
+        if not font_path:
+            if lang not in self._missing_fonts:
+                self._missing_fonts.add(lang)
+                logger.warning(
+                    "No font found for language '%s'. "
+                    "PDF text may not render correctly. "
+                    "Install a font for this language or check font settings.",
+                    lang
+                )
 
         font_info = FontInfo(
             font_id=font_id,

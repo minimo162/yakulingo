@@ -1387,13 +1387,29 @@ def _detect_display_settings() -> tuple[tuple[int, int], str, tuple[int, int, in
     def calculate_sizes(screen_width: int, screen_height: int) -> tuple[tuple[int, int], tuple[int, int, int]]:
         """Calculate window size and panel widths from screen resolution.
 
-        Applies minimum values to prevent UI layout from breaking on smaller screens.
+        Applies minimum values for larger screens, but respects screen bounds for smaller screens.
+        Window size is capped to 95% of screen dimensions to ensure it fits on screen.
         """
-        window_width = max(int(screen_width * WIDTH_RATIO), MIN_WINDOW_WIDTH)
-        window_height = max(int(screen_height * HEIGHT_RATIO), MIN_WINDOW_HEIGHT)
-        sidebar_width = max(int(window_width * SIDEBAR_RATIO), MIN_SIDEBAR_WIDTH)
-        input_panel_width = max(int(window_width * INPUT_PANEL_RATIO), MIN_INPUT_PANEL_WIDTH)
-        result_content_width = max(int(window_width * RESULT_CONTENT_RATIO), MIN_RESULT_CONTENT_WIDTH)
+        # Calculate window size based on ratio, but never exceed screen bounds
+        max_window_width = int(screen_width * 0.95)  # Leave 5% margin
+        max_window_height = int(screen_height * 0.95)
+
+        # Apply ratio-based calculation with minimum, but cap at screen bounds
+        window_width = min(max(int(screen_width * WIDTH_RATIO), MIN_WINDOW_WIDTH), max_window_width)
+        window_height = min(max(int(screen_height * HEIGHT_RATIO), MIN_WINDOW_HEIGHT), max_window_height)
+
+        # For smaller windows, use ratio-based panel sizes instead of fixed minimums
+        if window_width < MIN_WINDOW_WIDTH:
+            # Small screen: use pure ratio-based sizes
+            sidebar_width = int(window_width * SIDEBAR_RATIO)
+            input_panel_width = int(window_width * INPUT_PANEL_RATIO)
+            result_content_width = int(window_width * RESULT_CONTENT_RATIO)
+        else:
+            # Normal screen: apply minimums
+            sidebar_width = max(int(window_width * SIDEBAR_RATIO), MIN_SIDEBAR_WIDTH)
+            input_panel_width = max(int(window_width * INPUT_PANEL_RATIO), MIN_INPUT_PANEL_WIDTH)
+            result_content_width = max(int(window_width * RESULT_CONTENT_RATIO), MIN_RESULT_CONTENT_WIDTH)
+
         return ((window_width, window_height), (sidebar_width, input_panel_width, result_content_width))
 
     # Default: laptop mode based on 1920x1080 screen

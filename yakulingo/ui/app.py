@@ -1110,7 +1110,7 @@ class YakuLingoApp:
     def _on_section_toggle(self, section_index: int, selected: bool):
         """Handle section selection toggle for partial translation"""
         self.state.toggle_section_selection(section_index, selected)
-        self._refresh_content()  # Refresh to update block count display
+        # Note: Don't call _refresh_content() here as it would close the expansion panel
 
     def _select_file(self, file_path: Path):
         """Select file for translation"""

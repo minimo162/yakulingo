@@ -190,7 +190,7 @@ class TestPptxProcessorExtractTextBlocks:
 
         assert len(blocks) == 2
 
-        slides = {b.metadata["slide"] for b in blocks}
+        slides = {b.metadata["slide_idx"] for b in blocks}
         assert 0 in slides
         assert 1 in slides
 
@@ -200,7 +200,7 @@ class TestPptxProcessorExtractTextBlocks:
 
         shape_block = blocks[0]
         assert shape_block.metadata["type"] == "shape"
-        assert "slide" in shape_block.metadata
+        assert "slide_idx" in shape_block.metadata
         assert "shape" in shape_block.metadata
 
     def test_block_metadata_table(self, processor, pptx_with_table):
@@ -208,7 +208,7 @@ class TestPptxProcessorExtractTextBlocks:
         blocks = list(processor.extract_text_blocks(pptx_with_table))
 
         table_block = next(b for b in blocks if b.metadata.get("type") == "table_cell")
-        assert "slide" in table_block.metadata
+        assert "slide_idx" in table_block.metadata
         assert "table" in table_block.metadata
         assert "row" in table_block.metadata
         assert "col" in table_block.metadata

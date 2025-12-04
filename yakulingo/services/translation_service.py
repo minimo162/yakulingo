@@ -894,6 +894,10 @@ class TranslationService:
             # Parse the result - always single option now
             options = self._parse_single_translation_result(raw_result)
 
+            # Set style on each option (for relative adjustment)
+            for opt in options:
+                opt.style = style
+
             if options:
                 return TextTranslationResult(
                     source_text=text,
@@ -910,6 +914,7 @@ class TranslationService:
                     options=[TranslationOption(
                         text=raw_result.strip(),
                         explanation="翻訳結果です",
+                        style=style,
                     )],
                     output_language=output_language,
                     detected_language=detected_language,
@@ -950,6 +955,7 @@ class TranslationService:
         text: str,
         adjust_type: str,
         source_text: Optional[str] = None,
+        current_style: Optional[str] = None,
     ) -> Optional[TranslationOption]:
         """
         Adjust a translation based on user request.
@@ -957,33 +963,60 @@ class TranslationService:
         Args:
             text: The translation text to adjust
             adjust_type: 'shorter', 'detailed', 'alternatives', or custom instruction
-                - 'shorter': Re-translate with 'minimal' style
-                - 'detailed': Re-translate with 'standard' style
+                - 'shorter': Re-translate one step shorter (standard→concise→minimal)
+                - 'detailed': Re-translate one step more detailed (minimal→concise→standard)
                 - 'alternatives': Get alternative in same style
             source_text: Original source text (required for style changes and alternatives)
+            current_style: Current translation style (for relative adjustment)
+                           If None, uses settings default
 
         Returns:
-            TranslationOption with adjusted text, or None on failure
+            TranslationOption with adjusted text, or None on failure (including at style limit)
         """
+        # Style order: minimal < concise < standard
+        STYLE_ORDER = ['minimal', 'concise', 'standard']
+
         try:
-            # Handle style-based adjustments (re-translate with different style)
+            # Determine current style (fallback to settings default)
+            if current_style is None:
+                current_style = self.config.text_translation_style if self.config else "concise"
+
+            # Handle style-based adjustments (relative change)
             if adjust_type == 'shorter' and source_text:
-                # Re-translate with minimal style
-                result = self.translate_text_with_options(source_text, None, style='minimal')
+                # Get one step shorter style
+                try:
+                    current_idx = STYLE_ORDER.index(current_style)
+                except ValueError:
+                    current_idx = 1  # Default to concise if unknown
+                if current_idx <= 0:
+                    # Already at minimum - return None to indicate no change possible
+                    logger.info("Already at minimal style, cannot go shorter")
+                    return None
+                new_style = STYLE_ORDER[current_idx - 1]
+                result = self.translate_text_with_options(source_text, None, style=new_style)
                 if result.options:
                     return result.options[0]
                 return None
 
             if adjust_type == 'detailed' and source_text:
-                # Re-translate with standard style
-                result = self.translate_text_with_options(source_text, None, style='standard')
+                # Get one step more detailed style
+                try:
+                    current_idx = STYLE_ORDER.index(current_style)
+                except ValueError:
+                    current_idx = 1  # Default to concise if unknown
+                if current_idx >= len(STYLE_ORDER) - 1:
+                    # Already at maximum - return None to indicate no change possible
+                    logger.info("Already at standard style, cannot go more detailed")
+                    return None
+                new_style = STYLE_ORDER[current_idx + 1]
+                result = self.translate_text_with_options(source_text, None, style=new_style)
                 if result.options:
                     return result.options[0]
                 return None
 
             if adjust_type == 'alternatives' and source_text:
                 # Get alternative in same style
-                return self._get_alternative_translation(text, source_text)
+                return self._get_alternative_translation(text, source_text, current_style)
 
             # Legacy behavior for custom instructions
             prompt_file = "adjust_custom.txt"
@@ -1020,6 +1053,7 @@ class TranslationService:
         self,
         current_translation: str,
         source_text: str,
+        current_style: Optional[str] = None,
     ) -> Optional[TranslationOption]:
         """
         Get an alternative translation in the same style.
@@ -1027,13 +1061,16 @@ class TranslationService:
         Args:
             current_translation: The current translation to get alternative for
             source_text: Original source text
+            current_style: Current translation style (if None, uses settings default)
 
         Returns:
             TranslationOption with alternative translation, or None on failure
         """
         try:
-            # Get current style from settings
-            style = self.config.text_translation_style if self.config else "concise"
+            # Use provided style or fallback to settings
+            style = current_style if current_style else (
+                self.config.text_translation_style if self.config else "concise"
+            )
 
             # Load alternatives prompt
             prompt_file = "text_alternatives.txt"
@@ -1064,8 +1101,11 @@ class TranslationService:
             char_limit = self.config.copilot_char_limit if self.config else None
             raw_result = self.copilot.translate_single(source_text, prompt, None, char_limit)
 
-            # Parse the result
-            return self._parse_single_option_result(raw_result)
+            # Parse the result and set style
+            option = self._parse_single_option_result(raw_result)
+            if option:
+                option.style = style
+            return option
 
         except OSError as e:
             logger.warning("File I/O error during alternative translation: %s", e)

@@ -159,6 +159,7 @@ class TranslationOption:
     text: str                        # Translated text
     explanation: str                 # Why this translation, usage context
     char_count: int = 0              # Character count
+    style: Optional[str] = None      # Translation style: "standard", "concise", "minimal"
 
     def __post_init__(self):
         if self.char_count == 0:

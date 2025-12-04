@@ -284,6 +284,7 @@ class HistoryDB:
                     'text': opt.text,
                     'explanation': opt.explanation,
                     'char_count': opt.char_count,
+                    'style': opt.style,
                 }
                 for opt in result.options
             ],
@@ -299,6 +300,7 @@ class HistoryDB:
                 text=opt['text'],
                 explanation=opt['explanation'],
                 char_count=opt.get('char_count', 0),
+                style=opt.get('style'),  # None for legacy data (backward compatible)
             )
             for opt in data.get('options', [])
         ]

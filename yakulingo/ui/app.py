@@ -709,13 +709,20 @@ class YakuLingoApp:
             # Yield control to event loop before starting blocking operation
             await asyncio.sleep(0)
 
-            # Pass source_text for style-based adjustments
+            # Pass source_text and current_style for style-based adjustments
             source_text = self.state.source_text
+
+            # Get current style from the latest translation option
+            current_style = None
+            if self.state.text_result and self.state.text_result.options:
+                current_style = self.state.text_result.options[-1].style
+
             result = await asyncio.to_thread(
                 lambda: self.translation_service.adjust_translation(
                     text,
                     adjust_type,
                     source_text=source_text,
+                    current_style=current_style,
                 )
             )
 
@@ -729,7 +736,13 @@ class YakuLingoApp:
                         options=[result]
                     )
             else:
-                error_message = '調整に失敗しました'
+                # None means at style limit or failed
+                if adjust_type == 'shorter':
+                    error_message = 'これ以上短くできません'
+                elif adjust_type == 'detailed':
+                    error_message = 'これ以上詳しくできません'
+                else:
+                    error_message = '調整に失敗しました'
 
         except Exception as e:
             error_message = str(e)

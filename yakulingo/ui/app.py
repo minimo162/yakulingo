@@ -335,6 +335,9 @@ class YakuLingoApp:
 
             @ui.refreshable
             def history_list():
+                # Ensure history is loaded from database before displaying
+                self.state._ensure_history_db()
+
                 if not self.state.history:
                     with ui.column().classes('items-center justify-center py-8 opacity-50'):
                         ui.icon('history').classes('text-2xl')

@@ -1423,9 +1423,32 @@ document.fonts.ready.then(function() {
         asyncio.create_task(yakulingo_app.start_edge_and_connect())
         asyncio.create_task(yakulingo_app.check_for_updates())
 
-    # Window size is fixed; UI scaling is handled by CSS zoom (RESOLUTION_ZOOM_JS)
-    # which automatically adapts to the monitor where the window is displayed
-    window_size = (yakulingo_app.settings.window_width, yakulingo_app.settings.window_height)
+    # Scale window size based on screen resolution (base: 2560x1440)
+    # This matches the CSS zoom scaling (RESOLUTION_ZOOM_JS) for consistent proportions
+    BASE_WIDTH = 2560
+    base_window_size = (yakulingo_app.settings.window_width, yakulingo_app.settings.window_height)
+
+    try:
+        import tkinter as tk
+        root = tk.Tk()
+        root.withdraw()  # Hide the window
+        screen_width = root.winfo_screenwidth()
+        root.destroy()
+
+        scale_factor = screen_width / BASE_WIDTH
+        window_size = (
+            int(base_window_size[0] * scale_factor),
+            int(base_window_size[1] * scale_factor),
+        )
+        logger.info(
+            "Window size scaled: %dx%d -> %dx%d (screen: %d, scale: %.2f)",
+            base_window_size[0], base_window_size[1],
+            window_size[0], window_size[1],
+            screen_width, scale_factor
+        )
+    except Exception as e:
+        logger.warning("Failed to get screen resolution, using default window size: %s", e)
+        window_size = base_window_size
 
     ui.run(
         host=host,

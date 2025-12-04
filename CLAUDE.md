@@ -132,20 +132,20 @@ YakuLingo/
 
 | File | Purpose | Lines |
 |------|---------|-------|
-| `yakulingo/ui/app.py` | Main application orchestrator, handles UI events and coordinates services | ~1513 |
-| `yakulingo/services/translation_service.py` | Coordinates file processors and batch translation | ~1565 |
-| `yakulingo/services/copilot_handler.py` | Browser automation for M365 Copilot | ~1379 |
+| `yakulingo/ui/app.py` | Main application orchestrator, handles UI events and coordinates services | ~1664 |
+| `yakulingo/services/translation_service.py` | Coordinates file processors and batch translation | ~1849 |
+| `yakulingo/services/copilot_handler.py` | Browser automation for M365 Copilot | ~1466 |
 | `yakulingo/services/updater.py` | GitHub Releases-based auto-update with Windows proxy support | ~764 |
-| `yakulingo/ui/styles.py` | M3 design tokens, CSS styling definitions | ~2845 |
+| `yakulingo/ui/styles.py` | M3 design tokens, CSS styling definitions | ~2889 |
 | `yakulingo/ui/components/text_panel.py` | Text translation UI with source display and translation status | ~1059 |
 | `yakulingo/ui/components/file_panel.py` | File translation panel with drag-drop and progress | ~554 |
 | `yakulingo/ui/components/update_notification.py` | Auto-update UI notifications | ~344 |
 | `yakulingo/ui/utils.py` | UI utilities: temp file management, dialog helpers, text formatting | ~433 |
 | `yakulingo/ui/state.py` | Application state management (TextViewState, FileState enums) | ~224 |
-| `yakulingo/models/types.py` | Core data types: TextBlock, FileInfo, TranslationResult, HistoryEntry | ~296 |
+| `yakulingo/models/types.py` | Core data types: TextBlock, FileInfo, TranslationResult, HistoryEntry | ~297 |
 | `yakulingo/storage/history_db.py` | SQLite database for translation history | ~320 |
 | `yakulingo/processors/base.py` | Abstract base class for all file processors | ~105 |
-| `yakulingo/processors/pdf_processor.py` | PDF processing with PyMuPDF and yomitoku OCR | ~2222 |
+| `yakulingo/processors/pdf_processor.py` | PDF processing with PyMuPDF and yomitoku OCR | ~3303 |
 
 ## Core Data Types
 
@@ -163,7 +163,7 @@ TextViewState: INPUT, RESULT                   # Text panel layout (INPUT=large 
 # Key dataclasses
 TextBlock(id, text, location, metadata)       # Unit of translatable text
 FileInfo(path, file_type, size_bytes, section_details, ...)  # File metadata with sections
-SectionDetail(index, name, block_count, selected)  # Section details with selection for partial translation
+SectionDetail(index, name, selected)  # Section details with selection for partial translation
 TranslationProgress(current, total, status, phase, phase_detail)  # Progress tracking with phase
 TranslationResult(status, output_path, bilingual_path, glossary_path, ...)  # File translation outcome
 TranslationOption(text, explanation)          # Single translation option
@@ -439,7 +439,6 @@ async def _translate_text(self):
 ### Translation Logic
 - **CellTranslator**: For Excel cells - skips numbers, dates, URLs, emails, codes
 - **ParagraphTranslator**: For Word/PPT paragraphs - less restrictive filtering
-- **Batch size**: Max 50 text blocks per Copilot request
 - **Character limit**: Max 7,000 chars per batch (fits within Copilot Free 8,000 limit with template)
 
 ### Font Mapping Rules
@@ -472,7 +471,6 @@ sans-serif → MS Pゴシック
   "last_tab": "text",
   "window_width": 1400,
   "window_height": 850,
-  "max_batch_size": 50,
   "max_chars_per_batch": 7000,
   "request_timeout": 120,
   "max_retries": 3,

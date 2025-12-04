@@ -679,25 +679,22 @@ class PdfOperatorGenerator:
 
     def raw_string(self, font_id: str, text: str) -> str:
         """
-        Encode text based on font type.
+        Encode text for PDF text operators.
 
-        PDFMathTranslate converter.py raw_string() compliant.
+        PyMuPDF's insert_font() embeds TrueType fonts as CID/Unicode fonts,
+        so we always use 4-digit hex encoding (Unicode code points) for
+        proper character rendering regardless of the original font type.
 
         Args:
             font_id: Font ID
             text: Text to encode
 
         Returns:
-            Hex-encoded string
+            Hex-encoded string (4-digit hex per character)
         """
-        encoding_type = self.font_registry.get_encoding_type(font_id)
-
-        if encoding_type == "cid":
-            # CID font: Unicode code point (4-digit hex)
-            return "".join(["%04x" % ord(c) for c in text])
-        else:
-            # Single-byte font (2-digit hex)
-            return "".join(["%02x" % ord(c) for c in text])
+        # Always use Unicode encoding (4-digit hex) for proper character rendering
+        # PyMuPDF embeds TrueType fonts as CID fonts, requiring Unicode code points
+        return "".join(["%04x" % ord(c) for c in text])
 
 
 # =============================================================================

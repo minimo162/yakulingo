@@ -237,8 +237,8 @@ class CopilotHandler:
     DEFAULT_CDP_PORT = 9333  # Dedicated port for translator
     EDGE_STARTUP_MAX_ATTEMPTS = 20  # Maximum iterations to wait for Edge startup
     EDGE_STARTUP_CHECK_INTERVAL = 0.3  # Seconds between startup checks
-    RESPONSE_STABLE_COUNT = 2  # Number of stable checks before considering response complete
-    RESPONSE_POLL_INTERVAL = 0.3  # Seconds between response checks (reduced from 0.5 for faster detection)
+    RESPONSE_STABLE_COUNT = 4  # Number of stable checks before considering response complete
+    RESPONSE_POLL_INTERVAL = 0.3  # Seconds between response checks
     DEFAULT_RESPONSE_TIMEOUT = 120  # Default timeout for response in seconds
 
     # Copilot character limits (Free: 8000, Paid: 128000)
@@ -1010,6 +1010,19 @@ class CopilotHandler:
             stable_count = 0
 
             while max_wait > 0:
+                # Check if Copilot is still generating (stop button visible)
+                # If stop button is present, response is not complete yet
+                stop_button = self._page.query_selector(
+                    'button[aria-label="生成を停止"], button[aria-label="Stop generating"], '
+                    'button[data-testid="stop-generating"], button[data-testid="stopButton"]'
+                )
+                if stop_button and stop_button.is_visible():
+                    # Still generating, reset stability counter and wait
+                    stable_count = 0
+                    time.sleep(self.RESPONSE_POLL_INTERVAL)
+                    max_wait -= self.RESPONSE_POLL_INTERVAL
+                    continue
+
                 # Get the latest message
                 # 実際のCopilot HTML: <div data-testid="markdown-reply" data-message-type="Chat">
                 response_elem = self._page.query_selector(

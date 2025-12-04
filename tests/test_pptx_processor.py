@@ -81,15 +81,15 @@ def pptx_with_multiple_slides(tmp_path):
 
     slide_layout = prs.slide_layouts[5]
 
-    # Slide 1
+    # Slide 1 - Japanese text
     slide1 = prs.slides.add_slide(slide_layout)
     txBox1 = slide1.shapes.add_textbox(Inches(1), Inches(1), Inches(5), Inches(1))
-    txBox1.text_frame.text = "Slide 1 Text"
+    txBox1.text_frame.text = "スライド1のテキスト"
 
-    # Slide 2
+    # Slide 2 - Japanese text
     slide2 = prs.slides.add_slide(slide_layout)
     txBox2 = slide2.shapes.add_textbox(Inches(1), Inches(1), Inches(5), Inches(1))
-    txBox2.text_frame.text = "Slide 2 Text"
+    txBox2.text_frame.text = "スライド2のテキスト"
 
     prs.save(file_path)
     return file_path
@@ -170,16 +170,17 @@ class TestPptxProcessorExtractTextBlocks:
         assert "12345" not in texts
 
     def test_extracts_table_cells(self, processor, pptx_with_table):
-        """Extracts table cells"""
+        """Extracts table cells (Japanese only)"""
         blocks = list(processor.extract_text_blocks(pptx_with_table))
 
-        # Filter table cells
+        # Filter table cells - only Japanese cells are extracted
         table_blocks = [b for b in blocks if b.metadata.get("type") == "table_cell"]
-        assert len(table_blocks) == 3
+        # "ヘッダー1" and "データ" are Japanese, "Header 2" and "12345" are skipped
+        assert len(table_blocks) == 2
 
         table_texts = [b.text for b in table_blocks]
         assert "ヘッダー1" in table_texts
-        assert "Header 2" in table_texts
+        # Note: "Header 2" is skipped as English-only
         assert "データ" in table_texts
         assert "12345" not in table_texts
 
@@ -316,7 +317,7 @@ class TestPptxProcessorApplyTranslations:
                             all_texts.append(para.text)
 
         assert "Translated Slide 1" in all_texts
-        assert "Slide 2 Text" in all_texts  # unchanged
+        assert "スライド2のテキスト" in all_texts  # unchanged (Japanese)
 
     def test_creates_output_file(self, processor, sample_pptx, tmp_path):
         """Output file is created"""
@@ -344,9 +345,9 @@ class TestPptxProcessorEdgeCases:
 
         txBox = slide.shapes.add_textbox(Inches(1), Inches(1), Inches(5), Inches(2))
         tf = txBox.text_frame
-        tf.text = "First paragraph"
+        tf.text = "最初の段落"  # Japanese
         p = tf.add_paragraph()
-        p.text = "Second paragraph"
+        p.text = "二番目の段落"  # Japanese
 
         prs.save(file_path)
 
@@ -382,6 +383,7 @@ class TestPptxProcessorEdgeCases:
         slide_layout = prs.slide_layouts[5]
         slide = prs.slides.add_slide(slide_layout)
 
+        # Only Japanese/CJK texts are extracted
         texts = ["日本語テスト", "中文测试", "한국어 테스트", "Emoji 😀🎉"]
         for i, text in enumerate(texts):
             txBox = slide.shapes.add_textbox(Inches(1), Inches(1 + i), Inches(5), Inches(0.5))
@@ -390,7 +392,8 @@ class TestPptxProcessorEdgeCases:
         prs.save(file_path)
 
         blocks = list(processor.extract_text_blocks(file_path))
-        assert len(blocks) == 4
+        # Japanese and Chinese (CJK) are extracted, Korean and English-only are skipped
+        assert len(blocks) == 2
 
     def test_many_slides(self, processor, tmp_path):
         """Handles presentations with many slides"""
@@ -402,7 +405,7 @@ class TestPptxProcessorEdgeCases:
         for i in range(10):
             slide = prs.slides.add_slide(slide_layout)
             txBox = slide.shapes.add_textbox(Inches(1), Inches(1), Inches(5), Inches(1))
-            txBox.text_frame.text = f"Slide {i+1} content"
+            txBox.text_frame.text = f"スライド{i+1}の内容"  # Japanese text
 
         prs.save(file_path)
 

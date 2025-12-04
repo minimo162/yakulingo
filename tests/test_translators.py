@@ -14,15 +14,20 @@ class TestCellTranslator:
 
     # --- Basic cases ---
 
-    def test_should_translate_normal_text(self, translator):
-        """Normal text should be translated"""
-        assert translator.should_translate("Hello world") is True
+    def test_should_translate_japanese_text(self, translator):
+        """Japanese text should be translated"""
         assert translator.should_translate("これは日本語です") is True
+        assert translator.should_translate("売上報告") is True
+
+    def test_skip_english_only_text(self, translator):
+        """English-only text should be skipped (optimization for JP→EN translation)"""
+        assert translator.should_translate("Hello world") is False
+        assert translator.should_translate("Sales increased by 50%") is False
 
     def test_should_translate_mixed_content(self, translator):
-        """Mixed text with numbers should be translated"""
+        """Mixed text (Japanese + numbers/English) should be translated"""
         assert translator.should_translate("売上: 100万円") is True
-        assert translator.should_translate("Sales increased by 50%") is True
+        assert translator.should_translate("FY2024の売上高") is True
 
     # --- Empty/whitespace cases ---
 
@@ -130,18 +135,24 @@ class TestCellTranslator:
 
     # --- Edge cases ---
 
-    def test_translate_text_with_numbers(self, translator):
-        """Text containing numbers should still be translated"""
-        assert translator.should_translate("Page 1 of 10") is True
+    def test_translate_japanese_text_with_numbers(self, translator):
+        """Japanese text containing numbers should be translated"""
         assert translator.should_translate("第1章") is True
+        assert translator.should_translate("売上 2023") is True
 
-    def test_translate_sentence_with_date(self, translator):
-        """Sentences mentioning dates should be translated"""
-        assert translator.should_translate("Meeting on 2024-01-15 at 10am") is True
+    def test_skip_english_text_with_numbers(self, translator):
+        """English text with numbers should be skipped"""
+        assert translator.should_translate("Page 1 of 10") is False
+        assert translator.should_translate("Meeting on 2024-01-15 at 10am") is False
 
-    def test_translate_long_text(self, translator):
-        """Long text should be translated"""
-        long_text = "This is a very long sentence that should definitely be translated."
+    def test_skip_long_english_text(self, translator):
+        """Long English-only text should be skipped"""
+        long_text = "This is a very long sentence that should not be translated."
+        assert translator.should_translate(long_text) is False
+
+    def test_translate_long_japanese_text(self, translator):
+        """Long Japanese text should be translated"""
+        long_text = "これは非常に長い日本語の文章で、翻訳されるべきです。"
         assert translator.should_translate(long_text) is True
 
 
@@ -154,14 +165,20 @@ class TestParagraphTranslator:
 
     # --- Basic cases ---
 
-    def test_should_translate_normal_text(self, translator):
-        """Normal paragraph text should be translated"""
-        assert translator.should_translate("This is a paragraph.") is True
+    def test_should_translate_japanese_text(self, translator):
+        """Japanese paragraph text should be translated"""
         assert translator.should_translate("これは段落です。") is True
+        assert translator.should_translate("長い日本語の段落テキスト") is True
 
-    def test_should_translate_long_paragraph(self, translator):
-        """Long paragraphs should be translated"""
+    def test_skip_english_only_text(self, translator):
+        """English-only paragraph text should be skipped"""
+        assert translator.should_translate("This is a paragraph.") is False
         text = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. " * 5
+        assert translator.should_translate(text) is False
+
+    def test_should_translate_long_japanese_paragraph(self, translator):
+        """Long Japanese paragraphs should be translated"""
+        text = "これは長い日本語の段落です。翻訳されるべきです。"
         assert translator.should_translate(text) is True
 
     # --- Empty/whitespace cases ---
@@ -205,12 +222,17 @@ class TestParagraphTranslator:
 
     # --- Paragraph-specific behavior ---
 
-    def test_paragraph_translator_less_strict(self, translator):
-        """ParagraphTranslator has fewer skip patterns than CellTranslator"""
-        # These are skipped by CellTranslator but translated by ParagraphTranslator
-        # because paragraphs typically contain more context
-        assert translator.should_translate("ABC-123") is True  # Codes allowed
-        assert translator.should_translate("¥1,000") is True   # Currency allowed
+    def test_paragraph_translator_japanese_with_codes(self, translator):
+        """ParagraphTranslator translates Japanese text with codes"""
+        # Japanese text with codes should be translated
+        assert translator.should_translate("製品コード: ABC-123") is True
+        assert translator.should_translate("価格: ¥1,000") is True
+
+    def test_paragraph_translator_skip_english_codes(self, translator):
+        """ParagraphTranslator skips pure English codes/currency"""
+        # Pure codes/currency without Japanese should be skipped
+        assert translator.should_translate("ABC-123") is False
+        assert translator.should_translate("¥1,000") is False
 
 
 class TestCellTranslatorPatternCompleteness:
@@ -268,10 +290,13 @@ class TestCellTranslatorEdgeCases:
         assert translator.should_translate("03-1234-5678") is False
         assert translator.should_translate("090-1234-5678") is False
 
-    def test_phone_number_with_label(self, translator):
-        """Phone numbers with labels should be translated"""
+    def test_phone_number_with_japanese_label(self, translator):
+        """Phone numbers with Japanese labels should be translated"""
         assert translator.should_translate("電話: 03-1234-5678") is True
-        assert translator.should_translate("TEL: 090-1234-5678") is True
+
+    def test_phone_number_with_english_label(self, translator):
+        """Phone numbers with English labels should be skipped"""
+        assert translator.should_translate("TEL: 090-1234-5678") is False
 
     # --- Japanese Era Dates ---
 
@@ -301,17 +326,23 @@ class TestCellTranslatorEdgeCases:
         assert translator.should_translate("¥1,234,567") is False
         assert translator.should_translate("$1,234.56") is False
 
-    def test_currency_in_sentence(self, translator):
-        """Currency mentioned in sentences should be translated"""
+    def test_currency_in_japanese_sentence(self, translator):
+        """Currency mentioned in Japanese sentences should be translated"""
         assert translator.should_translate("価格は¥1,000です") is True
-        assert translator.should_translate("The price is $100") is True
+
+    def test_currency_in_english_sentence(self, translator):
+        """Currency in English sentences should be skipped"""
+        assert translator.should_translate("The price is $100") is False
 
     # --- Special Characters ---
 
-    def test_emoji_text(self, translator):
-        """Text with emoji should be translated"""
+    def test_japanese_text_with_emoji(self, translator):
+        """Japanese text with emoji should be translated"""
         assert translator.should_translate("こんにちは😊") is True
-        assert translator.should_translate("Hello World 🌍") is True
+
+    def test_english_text_with_emoji(self, translator):
+        """English text with emoji should be skipped"""
+        assert translator.should_translate("Hello World 🌍") is False
 
     def test_special_unicode(self, translator):
         """Special Unicode characters"""
@@ -333,10 +364,13 @@ class TestCellTranslatorEdgeCases:
         assert translator.should_translate("SKU12345") is False
         assert translator.should_translate("PROD-001") is False
 
-    def test_code_with_description(self, translator):
-        """Code with description should be translated"""
+    def test_code_with_japanese_description(self, translator):
+        """Code with Japanese description should be translated"""
         assert translator.should_translate("ABC-123: 製品説明") is True
-        assert translator.should_translate("SKU12345 - Product Name") is True
+
+    def test_code_with_english_description(self, translator):
+        """Code with English description should be skipped"""
+        assert translator.should_translate("SKU12345 - Product Name") is False
 
     # --- Number Patterns ---
 
@@ -352,9 +386,9 @@ class TestCellTranslatorEdgeCases:
         assert translator.should_translate("100/200") is False
 
     def test_range_numbers(self, translator):
-        """Number ranges"""
+        """Number ranges should be skipped"""
         assert translator.should_translate("100-200") is False
-        assert translator.should_translate("100~200") is True  # Tilde not in pattern
+        assert translator.should_translate("100~200") is False  # No Japanese chars
 
     # --- URL/Email Variations ---
 
@@ -366,18 +400,19 @@ class TestCellTranslatorEdgeCases:
         assert translator.should_translate("https://example.com?query=value") is False
 
     def test_email_variations(self, translator):
-        """Various email formats"""
+        """Various email formats should be skipped"""
         assert translator.should_translate("user@example.com") is False
         assert translator.should_translate("user.name@example.co.jp") is False
-        # '+' is not in \w so this doesn't match the email pattern
-        assert translator.should_translate("user+tag@example.com") is True  # Not matched as email
+        # '+' is not in \w so this doesn't match the email pattern,
+        # but it still has no Japanese chars so it's skipped
+        assert translator.should_translate("user+tag@example.com") is False
 
     # --- Boundary Cases ---
 
     def test_exactly_two_chars(self, translator):
         """Exactly 2 character strings"""
-        assert translator.should_translate("AB") is True
-        assert translator.should_translate("あい") is True
+        assert translator.should_translate("AB") is False  # English only
+        assert translator.should_translate("あい") is True  # Japanese
 
     def test_whitespace_variations(self, translator):
         """Various whitespace patterns"""
@@ -388,8 +423,8 @@ class TestCellTranslatorEdgeCases:
 
     def test_mixed_whitespace_text(self, translator):
         """Text with leading/trailing whitespace"""
-        assert translator.should_translate("  Hello World  ") is True
-        assert translator.should_translate("\tテスト\n") is True
+        assert translator.should_translate("  Hello World  ") is False  # English only
+        assert translator.should_translate("\tテスト\n") is True  # Japanese
 
 
 class TestParagraphTranslatorEdgeCases:
@@ -399,25 +434,43 @@ class TestParagraphTranslatorEdgeCases:
     def translator(self):
         return ParagraphTranslator()
 
-    def test_paragraph_with_codes(self, translator):
-        """Paragraphs can contain codes"""
-        assert translator.should_translate("ABC-123") is True
-        assert translator.should_translate("Product code: ABC-123") is True
+    def test_paragraph_with_japanese_codes(self, translator):
+        """Japanese paragraphs with codes should be translated"""
+        assert translator.should_translate("製品コード: ABC-123") is True
 
-    def test_paragraph_with_currency(self, translator):
-        """Paragraphs can contain currency"""
-        assert translator.should_translate("¥1,000") is True
-        assert translator.should_translate("The price is $100") is True
+    def test_paragraph_with_english_codes(self, translator):
+        """English-only paragraphs with codes should be skipped"""
+        assert translator.should_translate("ABC-123") is False
+        assert translator.should_translate("Product code: ABC-123") is False
 
-    def test_paragraph_multiline(self, translator):
-        """Multi-line paragraph text"""
+    def test_paragraph_with_japanese_currency(self, translator):
+        """Japanese paragraphs with currency should be translated"""
+        assert translator.should_translate("価格: ¥1,000") is True
+
+    def test_paragraph_with_english_currency(self, translator):
+        """English-only paragraphs with currency should be skipped"""
+        assert translator.should_translate("¥1,000") is False
+        assert translator.should_translate("The price is $100") is False
+
+    def test_paragraph_japanese_multiline(self, translator):
+        """Multi-line Japanese paragraph text should be translated"""
+        text = "最初の行。\n二番目の行。\n三番目の行。"
+        assert translator.should_translate(text) is True
+
+    def test_paragraph_english_multiline(self, translator):
+        """Multi-line English-only paragraph text should be skipped"""
         text = "First line.\nSecond line.\nThird line."
+        assert translator.should_translate(text) is False
+
+    def test_paragraph_with_japanese_list(self, translator):
+        """Japanese paragraph with list items should be translated"""
+        text = "項目:\n- 項目1\n- 項目2\n- 項目3"
         assert translator.should_translate(text) is True
 
-    def test_paragraph_with_list(self, translator):
-        """Paragraph with list items"""
+    def test_paragraph_with_english_list(self, translator):
+        """English-only paragraph with list items should be skipped"""
         text = "Items:\n- Item 1\n- Item 2\n- Item 3"
-        assert translator.should_translate(text) is True
+        assert translator.should_translate(text) is False
 
 
 class TestTranslatorConsistency:

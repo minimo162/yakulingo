@@ -54,6 +54,7 @@ class CellTranslator:
         - URLs
         - Product/Document codes
         - Single non-Japanese characters (e.g., "A", "1")
+        - Text without any Japanese characters (optimization for JP→EN translation)
         """
         if not text:
             return False
@@ -62,25 +63,42 @@ class CellTranslator:
         if not text:
             return False
 
-        # For single characters, only translate if it's Japanese
-        # (e.g., "億", "円", "個" should be translated)
-        if len(text) < 2:
-            return self._contains_japanese(text)
-
-        # Check against skip patterns
+        # Check against skip patterns first (fast rejection)
         for regex in self._skip_regex:
             if regex.match(text):
                 return False
 
+        # Only translate text that contains Japanese characters
+        # This optimizes JP→EN translation by skipping pure English text
+        # (e.g., "USA", "Canada", "FY26/3" are skipped)
+        if not self._contains_japanese(text):
+            return False
+
         return True
 
     def _contains_japanese(self, text: str) -> bool:
-        """Check if text contains Japanese characters (hiragana, katakana, kanji)."""
+        """
+        Check if text contains Japanese characters or Japanese document symbols.
+
+        Includes:
+        - Hiragana (U+3040-U+309F)
+        - Katakana (U+30A0-U+30FF)
+        - CJK Kanji (U+4E00-U+9FFF)
+        - Japanese document symbols:
+          - ▲ (U+25B2): Black up-pointing triangle (negative number marker)
+          - △ (U+25B3): White up-pointing triangle
+          - 〇 (U+3007): Ideographic number zero
+          - ※ (U+203B): Reference mark
+        """
         for char in text:
             code = ord(char)
             if (0x3040 <= code <= 0x309F or  # Hiragana
                 0x30A0 <= code <= 0x30FF or  # Katakana
-                0x4E00 <= code <= 0x9FFF):   # CJK Kanji
+                0x4E00 <= code <= 0x9FFF or  # CJK Kanji
+                code == 0x25B2 or            # ▲ (negative marker)
+                code == 0x25B3 or            # △
+                code == 0x3007 or            # 〇 (ideographic zero)
+                code == 0x203B):             # ※ (reference mark)
                 return True
         return False
 
@@ -123,6 +141,7 @@ class ParagraphTranslator:
         - URLs
         - Email addresses
         - Single non-Japanese characters (e.g., "A", "1")
+        - Text without any Japanese characters (optimization for JP→EN translation)
         """
         if not text:
             return False
@@ -131,25 +150,41 @@ class ParagraphTranslator:
         if not text:
             return False
 
-        # For single characters, only translate if it's Japanese
-        # (e.g., "億", "円", "個" should be translated)
-        if len(text) < 2:
-            return self._contains_japanese(text)
-
-        # Check against skip patterns
+        # Check against skip patterns first (fast rejection)
         for regex in self._skip_regex:
             if regex.match(text):
                 return False
 
+        # Only translate text that contains Japanese characters
+        # This optimizes JP→EN translation by skipping pure English text
+        if not self._contains_japanese(text):
+            return False
+
         return True
 
     def _contains_japanese(self, text: str) -> bool:
-        """Check if text contains Japanese characters (hiragana, katakana, kanji)."""
+        """
+        Check if text contains Japanese characters or Japanese document symbols.
+
+        Includes:
+        - Hiragana (U+3040-U+309F)
+        - Katakana (U+30A0-U+30FF)
+        - CJK Kanji (U+4E00-U+9FFF)
+        - Japanese document symbols:
+          - ▲ (U+25B2): Black up-pointing triangle (negative number marker)
+          - △ (U+25B3): White up-pointing triangle
+          - 〇 (U+3007): Ideographic number zero
+          - ※ (U+203B): Reference mark
+        """
         for char in text:
             code = ord(char)
             if (0x3040 <= code <= 0x309F or  # Hiragana
                 0x30A0 <= code <= 0x30FF or  # Katakana
-                0x4E00 <= code <= 0x9FFF):   # CJK Kanji
+                0x4E00 <= code <= 0x9FFF or  # CJK Kanji
+                code == 0x25B2 or            # ▲ (negative marker)
+                code == 0x25B3 or            # △
+                code == 0x3007 or            # 〇 (ideographic zero)
+                code == 0x203B):             # ※ (reference mark)
                 return True
         return False
 

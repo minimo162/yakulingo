@@ -257,7 +257,6 @@ class SectionDetail:
     """セクション詳細（シート、ページ、スライド）- 部分翻訳対応"""
     index: int        # セクションインデックス
     name: str         # セクション名
-    block_count: int  # テキストブロック数
     selected: bool = True  # 翻訳対象として選択されているか
 
 @dataclass
@@ -1189,7 +1188,6 @@ class AppSettings:
     window_height: int = 850
 
     # Advanced
-    max_batch_size: int = 50
     max_chars_per_batch: int = 7000      # Copilot Free 8000制限対応
     request_timeout: int = 120
     max_retries: int = 3
@@ -1553,7 +1551,7 @@ python -c "import time; t=time.time(); from yakulingo.ui import run_app; print(f
 
 ### 2.7 (2025-12)
 - Copilotによる言語検出機能追加（`detect_language()`）
-- 言語検出プロンプト追加、テストファイル数28に増加
+- 言語検出プロンプト追加
 
 ### 2.6 (2025-12)
 - ローディング画面追加、テキスト翻訳UI簡素化（1訳文+インライン調整）

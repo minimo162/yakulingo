@@ -283,8 +283,10 @@ class ExcelProcessor(FileProcessor):
                                 # Try to get text from shape
                                 text = None
                                 try:
-                                    if hasattr(shape, 'text') and shape.text:
-                                        text = shape.text.strip()
+                                    if hasattr(shape, 'text'):
+                                        raw_text = shape.text  # Access only once
+                                        if raw_text:
+                                            text = raw_text.strip()
                                 except Exception:
                                     # COM error accessing text - shape doesn't support text
                                     continue

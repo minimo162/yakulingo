@@ -55,19 +55,6 @@ class TestBatchTranslatorCreateBatches:
         assert len(batches) == 1
         assert len(batches[0]) == 3
 
-    def test_respects_max_batch_size(self, batch_translator):
-        """Batches respect MAX_BATCH_SIZE limit"""
-        # Create 60 blocks (exceeds MAX_BATCH_SIZE of 50)
-        blocks = [
-            TextBlock(id=str(i), text=f"Text {i}", location=f"A{i}")
-            for i in range(60)
-        ]
-        batches = batch_translator._create_batches(blocks)
-
-        assert len(batches) == 2
-        assert len(batches[0]) == 50
-        assert len(batches[1]) == 10
-
     def test_respects_max_chars_limit(self, batch_translator):
         """Batches respect MAX_CHARS_PER_BATCH limit"""
         # Create blocks with large text (6000 chars each)
@@ -82,32 +69,25 @@ class TestBatchTranslatorCreateBatches:
         # 6000 + 6000 > 10000, so should split after first block
         assert len(batches) == 3
 
-    def test_batch_boundary_exact(self, batch_translator):
-        """Exactly MAX_BATCH_SIZE blocks creates exactly one batch"""
-        blocks = [
-            TextBlock(id=str(i), text=f"T{i}", location=f"A{i}")
-            for i in range(50)
-        ]
-        batches = batch_translator._create_batches(blocks)
-
-        assert len(batches) == 1
-        assert len(batches[0]) == 50
-
     def test_preserves_block_order(self, batch_translator):
-        """Block order is preserved across batches"""
+        """Block order is preserved across batches when split by character limit"""
+        # Create blocks with large text that will force splits
+        # Each block is 4000 chars, so 2 blocks = 8000 > 7000 limit
+        large_text = "x" * 4000
         blocks = [
-            TextBlock(id=str(i), text=f"Text {i}", location=f"A{i}")
-            for i in range(60)
+            TextBlock(id=str(i), text=large_text, location=f"A{i}")
+            for i in range(4)
         ]
         batches = batch_translator._create_batches(blocks)
 
-        # First batch should have 0-49
-        assert batches[0][0].id == "0"
-        assert batches[0][-1].id == "49"
+        # Should create 4 batches (one per block due to char limit)
+        assert len(batches) == 4
 
-        # Second batch should have 50-59
-        assert batches[1][0].id == "50"
-        assert batches[1][-1].id == "59"
+        # Order should be preserved
+        assert batches[0][0].id == "0"
+        assert batches[1][0].id == "1"
+        assert batches[2][0].id == "2"
+        assert batches[3][0].id == "3"
 
 
 class TestTranslationServiceInit:
@@ -322,29 +302,31 @@ class TestBatchTranslatorTranslateBlocks:
         assert mock_copilot.translate_sync.call_count == 1
 
     def test_translate_multiple_batches(self):
-        """Test translation spanning multiple batches"""
+        """Test translation spanning multiple batches (due to char limit)"""
         mock_copilot = Mock()
-        # Return different results for each batch
+        # Return different results for each batch (2 blocks per batch)
         mock_copilot.translate_sync.side_effect = [
-            [f"Trans{i}" for i in range(50)],
-            [f"Trans{i}" for i in range(50, 60)],
+            ["Trans0", "Trans1"],
+            ["Trans2", "Trans3"],
         ]
 
         prompt_builder = PromptBuilder()  # Use real PromptBuilder
 
-        translator = BatchTranslator(mock_copilot, prompt_builder)
+        # Create translator with small char limit to force multiple batches
+        translator = BatchTranslator(mock_copilot, prompt_builder, max_chars_per_batch=1000)
 
-        # Create 60 blocks
+        # Create 4 blocks with 400 chars each (800 chars per 2 blocks < 1000 limit)
+        text_400 = "x" * 400
         blocks = [
-            TextBlock(id=str(i), text=f"Text{i}", location=f"A{i}")
-            for i in range(60)
+            TextBlock(id=str(i), text=text_400, location=f"A{i}")
+            for i in range(4)
         ]
 
         results = translator.translate_blocks(blocks)
 
-        assert len(results) == 60
+        assert len(results) == 4
         assert results["0"] == "Trans0"
-        assert results["59"] == "Trans59"
+        assert results["3"] == "Trans3"
         assert mock_copilot.translate_sync.call_count == 2
 
     def test_progress_callback_called(self):
@@ -987,11 +969,11 @@ class TestParseSingleOptionResult:
 
 
 # =============================================================================
-# Tests: Batch Size Boundary Conditions
+# Tests: Batch Size Boundary Conditions (Character Limit Only)
 # =============================================================================
 
 class TestBatchSizeBoundaries:
-    """Comprehensive tests for batch size boundaries"""
+    """Comprehensive tests for batch character limit boundaries"""
 
     @pytest.fixture
     def batch_translator(self):
@@ -1002,70 +984,8 @@ class TestBatchSizeBoundaries:
         # Use explicit values for boundary tests (not defaults)
         return BatchTranslator(
             mock_copilot, prompt_builder,
-            max_batch_size=50,
             max_chars_per_batch=10000,  # Explicit value for boundary tests
         )
-
-    # --- MAX_BATCH_SIZE (50) boundary tests ---
-
-    def test_exactly_49_blocks(self, batch_translator):
-        """49 blocks (one below limit) creates one batch"""
-        blocks = [
-            TextBlock(id=str(i), text=f"Text{i}", location=f"A{i}")
-            for i in range(49)
-        ]
-        batches = batch_translator._create_batches(blocks)
-
-        assert len(batches) == 1
-        assert len(batches[0]) == 49
-
-    def test_exactly_50_blocks(self, batch_translator):
-        """50 blocks (at limit) creates one batch"""
-        blocks = [
-            TextBlock(id=str(i), text=f"Text{i}", location=f"A{i}")
-            for i in range(50)
-        ]
-        batches = batch_translator._create_batches(blocks)
-
-        assert len(batches) == 1
-        assert len(batches[0]) == 50
-
-    def test_exactly_51_blocks(self, batch_translator):
-        """51 blocks (one over limit) creates two batches"""
-        blocks = [
-            TextBlock(id=str(i), text=f"Text{i}", location=f"A{i}")
-            for i in range(51)
-        ]
-        batches = batch_translator._create_batches(blocks)
-
-        assert len(batches) == 2
-        assert len(batches[0]) == 50
-        assert len(batches[1]) == 1
-
-    def test_exactly_100_blocks(self, batch_translator):
-        """100 blocks creates exactly two full batches"""
-        blocks = [
-            TextBlock(id=str(i), text=f"Text{i}", location=f"A{i}")
-            for i in range(100)
-        ]
-        batches = batch_translator._create_batches(blocks)
-
-        assert len(batches) == 2
-        assert len(batches[0]) == 50
-        assert len(batches[1]) == 50
-
-    def test_101_blocks(self, batch_translator):
-        """101 blocks creates three batches"""
-        blocks = [
-            TextBlock(id=str(i), text=f"Text{i}", location=f"A{i}")
-            for i in range(101)
-        ]
-        batches = batch_translator._create_batches(blocks)
-
-        assert len(batches) == 3
-        assert len(batches[0]) == 50
-        assert len(batches[1]) == 50
-        assert len(batches[2]) == 1
 
     # --- MAX_CHARS_PER_BATCH (10000) boundary tests ---
 
@@ -1127,10 +1047,8 @@ class TestBatchSizeBoundaries:
         # Each block should be in its own batch due to size
         assert len(batches) >= 2
 
-    # --- Combined limit tests ---
-
-    def test_char_limit_triggers_before_count_limit(self, batch_translator):
-        """Character limit triggers split before reaching block count limit"""
+    def test_char_limit_triggers_split(self, batch_translator):
+        """Character limit triggers batch split"""
         # 20 blocks with 600 chars each = 12000 chars
         text_600 = "x" * 600
         blocks = [
@@ -1140,26 +1058,10 @@ class TestBatchSizeBoundaries:
 
         batches = batch_translator._create_batches(blocks)
 
-        # Should split due to character limit, not block count
+        # Should split due to character limit
         # First batch: blocks 0-15 (16 * 600 = 9600)
         # Actually: 16 blocks fit, 17th would exceed
         assert len(batches) >= 2
-        # First batch should have < 50 blocks
-        assert len(batches[0]) < 50
-
-    def test_count_limit_triggers_before_char_limit(self, batch_translator):
-        """Block count limit triggers split before reaching character limit"""
-        # 60 blocks with 10 chars each = 600 chars (well under 10000)
-        blocks = [
-            TextBlock(id=str(i), text="0123456789", location=f"A{i}")
-            for i in range(60)
-        ]
-
-        batches = batch_translator._create_batches(blocks)
-
-        assert len(batches) == 2
-        assert len(batches[0]) == 50  # Count limit triggered
-        assert len(batches[1]) == 10
 
     # --- Edge cases ---
 
@@ -1184,8 +1086,9 @@ class TestBatchSizeBoundaries:
         assert len(batches) == 1
         assert len(batches[0]) == 1
 
-    def test_many_tiny_blocks(self, batch_translator):
-        """Many tiny blocks respect count limit"""
+    def test_many_tiny_blocks_single_batch(self, batch_translator):
+        """Many tiny blocks fit in single batch when under char limit"""
+        # 200 blocks with 1 char each = 200 chars (well under 10000)
         blocks = [
             TextBlock(id=str(i), text="a", location=f"A{i}")
             for i in range(200)
@@ -1193,11 +1096,9 @@ class TestBatchSizeBoundaries:
 
         batches = batch_translator._create_batches(blocks)
 
-        assert len(batches) == 4
-        assert len(batches[0]) == 50
-        assert len(batches[1]) == 50
-        assert len(batches[2]) == 50
-        assert len(batches[3]) == 50
+        # All blocks should fit in one batch (no block count limit)
+        assert len(batches) == 1
+        assert len(batches[0]) == 200
 
     def test_alternating_large_small_blocks(self, batch_translator):
         """Alternating large and small blocks batch correctly"""
@@ -1216,9 +1117,11 @@ class TestBatchSizeBoundaries:
 
     def test_batch_order_preserved(self, batch_translator):
         """Block order is preserved within and across batches"""
+        # Use blocks with enough text to force multiple batches
+        text_1000 = "x" * 1000
         blocks = [
-            TextBlock(id=str(i), text=f"Block_{i}", location=f"A{i}")
-            for i in range(120)
+            TextBlock(id=str(i), text=text_1000, location=f"A{i}")
+            for i in range(15)
         ]
 
         batches = batch_translator._create_batches(blocks)
@@ -1230,7 +1133,7 @@ class TestBatchSizeBoundaries:
                 all_ids.append(int(block.id))
 
         # IDs should be in order
-        assert all_ids == list(range(120))
+        assert all_ids == list(range(15))
 
 
 class TestBatchTranslatorTranslateBlocksAdditional:
@@ -1267,19 +1170,21 @@ class TestBatchTranslatorTranslateBlocksAdditional:
         assert results["c"] == "Trans3"
 
     def test_translate_calls_copilot_per_batch(self, mock_copilot, prompt_builder):
-        """Copilot is called once per batch"""
-        translator = BatchTranslator(mock_copilot, prompt_builder)
+        """Copilot is called once per batch (split by char limit)"""
+        # Use small char limit to force multiple batches
+        translator = BatchTranslator(mock_copilot, prompt_builder, max_chars_per_batch=1000)
 
-        # 60 blocks = 2 batches
+        # Create 4 blocks with 400 chars each (2 batches of 2 blocks)
+        text_400 = "x" * 400
         blocks = [
-            TextBlock(id=str(i), text=f"Text{i}", location=f"A{i}")
-            for i in range(60)
+            TextBlock(id=str(i), text=text_400, location=f"A{i}")
+            for i in range(4)
         ]
 
         # Return enough translations for each call
         mock_copilot.translate_sync.side_effect = [
-            [f"Trans{i}" for i in range(50)],
-            [f"Trans{i}" for i in range(50, 60)],
+            ["Trans0", "Trans1"],
+            ["Trans2", "Trans3"],
         ]
 
         translator.translate_blocks(blocks)
@@ -1288,11 +1193,14 @@ class TestBatchTranslatorTranslateBlocksAdditional:
 
     def test_translate_progress_callback(self, mock_copilot, prompt_builder):
         """Progress callback is called for each batch"""
-        translator = BatchTranslator(mock_copilot, prompt_builder)
+        # Use small char limit to force multiple batches
+        translator = BatchTranslator(mock_copilot, prompt_builder, max_chars_per_batch=1000)
 
+        # Create 4 blocks with 400 chars each (2 batches of 2 blocks)
+        text_400 = "x" * 400
         blocks = [
-            TextBlock(id=str(i), text=f"Text{i}", location=f"A{i}")
-            for i in range(60)
+            TextBlock(id=str(i), text=text_400, location=f"A{i}")
+            for i in range(4)
         ]
 
         progress_calls = []
@@ -1301,8 +1209,8 @@ class TestBatchTranslatorTranslateBlocksAdditional:
             progress_calls.append(progress)
 
         mock_copilot.translate_sync.side_effect = [
-            [f"Trans{i}" for i in range(50)],
-            [f"Trans{i}" for i in range(50, 60)],
+            ["Trans0", "Trans1"],
+            ["Trans2", "Trans3"],
         ]
 
         translator.translate_blocks(blocks, on_progress=on_progress)

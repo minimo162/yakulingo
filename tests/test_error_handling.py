@@ -156,14 +156,15 @@ class TestBatchTranslationErrors:
             Exception("Batch 2 failed"),
         ]
 
-        prompt_builder = PromptBuilder()  # Use real PromptBuilder
+        prompt_builder = PromptBuilder()
 
-        translator = BatchTranslator(mock_copilot, prompt_builder)
+        # Set small max_chars_per_batch to force multiple batches
+        translator = BatchTranslator(mock_copilot, prompt_builder, max_chars_per_batch=50)
 
-        # Create blocks spanning two batches
+        # Create blocks that will span two batches
         blocks = [
-            TextBlock(id=str(i), text=f"Text{i}", location=f"A{i}")
-            for i in range(60)
+            TextBlock(id=str(i), text=f"LongText{i}x" * 5, location=f"A{i}")
+            for i in range(4)  # 4 blocks with ~55 chars each
         ]
 
         with pytest.raises(Exception) as exc:

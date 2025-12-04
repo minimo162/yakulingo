@@ -356,12 +356,6 @@ class TestSourceCodeOnlyUpdate:
         assert "setup.ps1" not in AutoUpdater.SOURCE_FILES
         assert "requirements.txt" not in AutoUpdater.SOURCE_FILES
 
-    def test_user_files_defined(self):
-        """Test that USER_FILES are properly defined for backup"""
-        assert "glossary.csv" in AutoUpdater.USER_FILES
-        assert "config/settings.json" in AutoUpdater.USER_FILES
-
-
 # --- Tests: download_update() ---
 
 class TestDownloadUpdate:

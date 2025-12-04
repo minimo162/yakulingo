@@ -99,6 +99,8 @@ class TestNetworkErrors:
 
         mock_copilot.translate_sync.side_effect = simulate_disconnect
 
+        # Use small batch size to force multiple batches
+        settings.max_chars_per_batch = 100
         service = TranslationService(mock_copilot, settings)
         result = service.translate_file(large_excel)
 
@@ -331,15 +333,17 @@ class TestCopilotDisconnection:
 
         # First batch succeeds, then connection fails
         mock_copilot.translate_sync.side_effect = [
-            [f"Trans{i}" for i in range(50)],
+            [f"Trans{i}" for i in range(2)],
             ConnectionRefusedError("Connection refused"),
         ]
 
+        # Use small batch size to force multiple batches
+        settings.max_chars_per_batch = 50
         service = TranslationService(mock_copilot, settings)
 
         blocks = [
-            TextBlock(id=str(i), text=f"テスト{i}", location=f"A{i}")
-            for i in range(75)  # 2 batches needed
+            TextBlock(id=str(i), text=f"LongTestText{i}x" * 5, location=f"A{i}")
+            for i in range(4)  # 4 blocks with ~80 chars each -> 2 batches
         ]
 
         with pytest.raises(ConnectionRefusedError):

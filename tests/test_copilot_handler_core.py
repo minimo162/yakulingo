@@ -220,8 +220,18 @@ class TestCopilotHandlerGetResponse:
         mock_response_elem = Mock()
         mock_response_elem.inner_text.return_value = "Translated result"
 
+        # Mock stop button (not visible = generation complete)
+        mock_stop_button = Mock()
+        mock_stop_button.is_visible.return_value = False
+
+        def mock_query_selector(selector):
+            if 'stopBackground' in selector:
+                return mock_stop_button
+            return mock_response_elem
+
         mock_page = Mock()
-        mock_page.query_selector.return_value = mock_response_elem
+        mock_page.query_selector.side_effect = mock_query_selector
+        mock_page.wait_for_selector.return_value = None
 
         handler._page = mock_page
 
@@ -235,7 +245,9 @@ class TestCopilotHandlerGetResponse:
         handler = CopilotHandler()
 
         call_count = [0]
-        responses = ["Partial...", "Partial response", "Full response", "Full response", "Full response"]
+        # Need 4 stable checks (RESPONSE_STABLE_COUNT = 4)
+        responses = ["Partial...", "Partial response", "Full response",
+                     "Full response", "Full response", "Full response", "Full response"]
 
         def mock_inner_text():
             call_count[0] += 1
@@ -245,8 +257,18 @@ class TestCopilotHandlerGetResponse:
         mock_response_elem = Mock()
         mock_response_elem.inner_text = mock_inner_text
 
+        # Mock stop button (not visible)
+        mock_stop_button = Mock()
+        mock_stop_button.is_visible.return_value = False
+
+        def mock_query_selector(selector):
+            if 'stopBackground' in selector:
+                return mock_stop_button
+            return mock_response_elem
+
         mock_page = Mock()
-        mock_page.query_selector.return_value = mock_response_elem
+        mock_page.query_selector.side_effect = mock_query_selector
+        mock_page.wait_for_selector.return_value = None
 
         handler._page = mock_page
 
@@ -259,8 +281,18 @@ class TestCopilotHandlerGetResponse:
         """_get_response handles missing response element"""
         handler = CopilotHandler()
 
+        # Mock stop button (not visible)
+        mock_stop_button = Mock()
+        mock_stop_button.is_visible.return_value = False
+
+        def mock_query_selector(selector):
+            if 'stopBackground' in selector:
+                return mock_stop_button
+            return None  # No response element
+
         mock_page = Mock()
-        mock_page.query_selector.return_value = None
+        mock_page.query_selector.side_effect = mock_query_selector
+        mock_page.wait_for_selector.return_value = None
 
         handler._page = mock_page
 
@@ -534,15 +566,17 @@ class TestCopilotHandlerStartNewChat:
         mock_button.click.assert_called_once()
 
     def test_start_new_chat_no_button_found(self):
-        """start_new_chat handles missing button"""
+        """start_new_chat handles missing button gracefully"""
         handler = CopilotHandler()
 
         mock_page = Mock()
         mock_page.query_selector.return_value = None
+        mock_page.query_selector_all.return_value = []  # No responses to clear
+        mock_page.wait_for_selector.return_value = None
 
         handler._page = mock_page
 
-        # Should not raise (no button to click, so _wait_for_responses_cleared not called)
+        # Should not raise even without button (still clears responses)
         handler.start_new_chat()
 
     def test_start_new_chat_no_page(self):

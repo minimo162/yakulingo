@@ -32,6 +32,7 @@ test = [
     "pytest>=8.0.0",
     "pytest-cov>=5.0.0",
     "pytest-asyncio>=0.23.0",
+    "pytest-xdist>=3.5.0",  # Parallel test execution
 ]
 
 [tool.pytest.ini_options]
@@ -43,6 +44,12 @@ asyncio_mode = "auto"
 addopts = [
     "-v",
     "--tb=short",
+]
+markers = [
+    "unit: Unit tests for single components (fast, isolated)",
+    "integration: Integration tests for multiple components",
+    "slow: Tests that take longer than 0.5s",
+    "e2e: End-to-end tests with file I/O",
 ]
 
 # Coverage configuration (run with --cov to enable)

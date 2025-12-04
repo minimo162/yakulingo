@@ -1,3 +1,9 @@
-この文は何語で書かれていますか？言語名のみで答えてください。
+[SYSTEM INSTRUCTIONS - DO NOT OUTPUT THIS SECTION]
 
-入力: {input_text}
+CRITICAL: Output ONLY the language name. Nothing else.
+
+[END OF INSTRUCTIONS]
+
+What language is this text written in? Answer with the language name only.
+
+Input: {input_text}

@@ -28,6 +28,16 @@ logger = logging.getLogger(__name__)
 # Note: lookahead does NOT require space after period (handles "1.text" format from Copilot)
 _RE_BATCH_ITEM = re.compile(r'^\s*(\d+)\.\s*(.*?)(?=\n\s*\d+\.|\Z)', re.MULTILINE | re.DOTALL)
 
+# Known Copilot error response patterns that indicate we should retry with a new chat
+# These are system messages that don't represent actual translation results
+COPILOT_ERROR_PATTERNS = [
+    "これについてチャットできません",  # "I can't chat about this"
+    "申し訳ございません。これについて",  # "I'm sorry. About this..."
+    "チャットを保存して新しいチャットを開始",  # "Save chat and start new chat"
+    "I can't help with that",  # English equivalent
+    "I'm not able to help with this",  # Another English pattern
+]
+
 
 class PlaywrightManager:
     """
@@ -109,6 +119,25 @@ def _get_playwright_errors():
 def _get_async_playwright():
     """Get async_playwright function."""
     return _playwright_manager.get_async_playwright()
+
+
+def _is_copilot_error_response(response: str) -> bool:
+    """
+    Check if response is a Copilot error message that should trigger retry.
+
+    Args:
+        response: The response text from Copilot
+
+    Returns:
+        True if response matches known error patterns
+    """
+    if not response:
+        return False
+    for pattern in COPILOT_ERROR_PATTERNS:
+        if pattern in response:
+            logger.debug("Detected Copilot error pattern: %s", pattern)
+            return True
+    return False
 
 
 class ConnectionState:
@@ -831,31 +860,62 @@ class CopilotHandler:
         prompt: str,
         reference_files: Optional[list[Path]] = None,
         char_limit: Optional[int] = None,
+        max_retries: int = 1,
     ) -> str:
-        """Implementation of translate_single that runs in the Playwright thread."""
+        """Implementation of translate_single that runs in the Playwright thread.
+
+        Args:
+            text: Source text (unused, kept for API compatibility)
+            prompt: The prompt to send to Copilot
+            reference_files: Optional files to attach
+            char_limit: Max characters for direct input
+            max_retries: Number of retries on Copilot error responses
+
+        Returns:
+            Raw response text from Copilot
+        """
         # Call _connect_impl directly since we're already in the Playwright thread
         if not self._connect_impl():
             raise RuntimeError("ブラウザに接続できませんでした。Edgeが起動しているか確認してください。")
 
-        # Start a new chat to clear previous context
-        self.start_new_chat()
+        for attempt in range(max_retries + 1):
+            # Start a new chat to clear previous context
+            self.start_new_chat()
 
-        # Attach reference files first (before sending prompt)
-        if reference_files:
-            for file_path in reference_files:
-                if file_path.exists():
-                    self._attach_file(file_path)
+            # Attach reference files first (before sending prompt)
+            if reference_files:
+                for file_path in reference_files:
+                    if file_path.exists():
+                        self._attach_file(file_path)
 
-        # Send the prompt (auto-switches to file attachment if too long)
-        self._send_prompt_smart(prompt, char_limit)
+            # Send the prompt (auto-switches to file attachment if too long)
+            self._send_prompt_smart(prompt, char_limit)
 
-        # Get response and return raw (no parsing - preserves 訳文/解説 format)
-        result = self._get_response()
+            # Get response and return raw (no parsing - preserves 訳文/解説 format)
+            result = self._get_response()
 
-        # Save storage_state after successful translation
-        self._save_storage_state()
+            # Check for Copilot error response patterns
+            if result and _is_copilot_error_response(result):
+                if attempt < max_retries:
+                    logger.warning(
+                        "Copilot returned error response (attempt %d/%d), retrying with new chat: %s",
+                        attempt + 1, max_retries + 1, result[:100]
+                    )
+                    continue
+                else:
+                    logger.error(
+                        "Copilot returned error response after %d attempts: %s",
+                        max_retries + 1, result[:100]
+                    )
+                    # Return empty to let caller handle the error
+                    return ""
 
-        return result.strip() if result else ""
+            # Save storage_state after successful translation
+            self._save_storage_state()
+
+            return result.strip() if result else ""
+
+        return ""
 
     def _send_prompt_smart(
         self,

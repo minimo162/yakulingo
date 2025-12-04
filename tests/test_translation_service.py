@@ -796,6 +796,76 @@ class TestTranslateTextWithOptions:
         # May have options or error depending on parsing
 
 
+# --- Tests: detect_language() ---
+
+class TestDetectLanguage:
+    """Tests for TranslationService.detect_language()"""
+
+    @pytest.fixture
+    def mock_copilot(self):
+        return Mock()
+
+    def test_detect_language_japanese(self, mock_copilot):
+        """detect_language returns Japanese for Japanese text"""
+        mock_copilot.translate_single.return_value = "日本語"
+        service = TranslationService(mock_copilot, AppSettings())
+
+        result = service.detect_language("こんにちは")
+
+        assert result == "日本語"
+
+    def test_detect_language_english(self, mock_copilot):
+        """detect_language returns English for English text"""
+        mock_copilot.translate_single.return_value = "英語"
+        service = TranslationService(mock_copilot, AppSettings())
+
+        result = service.detect_language("Hello world")
+
+        assert result == "英語"
+
+    def test_detect_language_normalizes_english_variations(self, mock_copilot):
+        """detect_language normalizes English language names to Japanese"""
+        mock_copilot.translate_single.return_value = "Japanese"
+        service = TranslationService(mock_copilot, AppSettings())
+
+        result = service.detect_language("テスト")
+
+        assert result == "日本語"
+
+    def test_detect_language_fallback_on_empty_response(self, mock_copilot):
+        """detect_language falls back to local detection on empty response"""
+        mock_copilot.translate_single.return_value = ""
+        service = TranslationService(mock_copilot, AppSettings())
+
+        # Japanese text
+        result = service.detect_language("こんにちは世界")
+        assert result == "日本語"
+
+        # English text
+        result = service.detect_language("Hello world")
+        assert result == "英語"
+
+    def test_detect_language_fallback_on_long_response(self, mock_copilot):
+        """detect_language falls back to local detection on invalid long response"""
+        # Simulate Copilot error response
+        mock_copilot.translate_single.return_value = "申し訳ございません。これについてチャットできません。チャットを保存して新しいチャットを開始するには、[新しいチャット] を選択してください。"
+        service = TranslationService(mock_copilot, AppSettings())
+
+        # Japanese text should still be detected correctly via fallback
+        result = service.detect_language("こんにちは")
+        assert result == "日本語"
+
+    def test_detect_language_fallback_on_error_response(self, mock_copilot):
+        """detect_language falls back when Copilot returns error message"""
+        # This error message is longer than 20 chars, triggering fallback
+        mock_copilot.translate_single.return_value = "I can't help with that request. Please try again."
+        service = TranslationService(mock_copilot, AppSettings())
+
+        # English text should be detected via fallback
+        result = service.detect_language("Hello everyone")
+        assert result == "英語"
+
+
 # --- Tests: adjust_translation() ---
 
 class TestAdjustTranslation:

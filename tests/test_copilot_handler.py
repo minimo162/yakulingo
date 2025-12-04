@@ -346,6 +346,8 @@ class TestCopilotHandlerNewChat:
 
         mock_page = Mock()
         mock_page.query_selector.return_value = None
+        # Also mock query_selector_all for _wait_for_responses_cleared
+        mock_page.query_selector_all.return_value = []
         handler._page = mock_page
 
         # Should not raise
@@ -858,3 +860,44 @@ class TestConnectionStateConstants:
         assert ConnectionState.LOGIN_REQUIRED == 'login_required'
         assert ConnectionState.LOADING == 'loading'
         assert ConnectionState.ERROR == 'error'
+
+
+class TestCopilotErrorDetection:
+    """Test Copilot error response detection"""
+
+    def test_is_copilot_error_response_detects_japanese_error(self):
+        """Detects Japanese 'cannot chat' error message"""
+        from yakulingo.services.copilot_handler import _is_copilot_error_response
+
+        error_msg = "申し訳ございません。これについてチャットできません。チャットを保存して新しいチャットを開始するには、[新しいチャット] を選択してください。"
+        assert _is_copilot_error_response(error_msg) is True
+
+    def test_is_copilot_error_response_detects_partial_error(self):
+        """Detects partial error patterns"""
+        from yakulingo.services.copilot_handler import _is_copilot_error_response
+
+        assert _is_copilot_error_response("申し訳ございません。これについてお答えできません") is True
+        assert _is_copilot_error_response("チャットを保存して新しいチャットを開始してください") is True
+
+    def test_is_copilot_error_response_detects_english_error(self):
+        """Detects English error messages"""
+        from yakulingo.services.copilot_handler import _is_copilot_error_response
+
+        assert _is_copilot_error_response("I can't help with that") is True
+        assert _is_copilot_error_response("I'm not able to help with this topic") is True
+
+    def test_is_copilot_error_response_ignores_normal_response(self):
+        """Normal translation responses are not detected as errors"""
+        from yakulingo.services.copilot_handler import _is_copilot_error_response
+
+        assert _is_copilot_error_response("訳文: Hello\n解説: これは挨拶です") is False
+        assert _is_copilot_error_response("日本語") is False
+        assert _is_copilot_error_response("英語") is False
+        assert _is_copilot_error_response("This is a translation.") is False
+
+    def test_is_copilot_error_response_handles_empty(self):
+        """Empty response is not an error (handled separately)"""
+        from yakulingo.services.copilot_handler import _is_copilot_error_response
+
+        assert _is_copilot_error_response("") is False
+        assert _is_copilot_error_response(None) is False

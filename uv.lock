@@ -3152,7 +3152,7 @@ requires-dist = [
     { name = "pywebview", specifier = ">=5.0.0" },
     { name = "pywin32", marker = "sys_platform == 'win32'", specifier = ">=306" },
     { name = "xlwings", marker = "sys_platform == 'darwin' or sys_platform == 'win32'", specifier = ">=0.32.0" },
-    { name = "yomitoku", marker = "extra == 'ocr'", specifier = ">=0.8.0" },
+    { name = "yomitoku", marker = "extra == 'ocr'", specifier = ">=0.10.0" },
 ]
 provides-extras = ["ocr", "test"]
 

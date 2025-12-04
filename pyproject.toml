@@ -25,7 +25,7 @@ dependencies = [
 [project.optional-dependencies]
 # OCR support (heavy dependencies)
 ocr = [
-    "yomitoku>=0.8.0",  # Includes: torch, torchvision, opencv-python, pypdfium2, etc.
+    "yomitoku>=0.10.0",  # Includes: torch, torchvision, opencv-python, pypdfium2, etc.
 ]
 # Test dependencies
 test = [

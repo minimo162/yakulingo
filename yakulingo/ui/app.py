@@ -249,10 +249,11 @@ class YakuLingoApp:
         ui.add_head_html('<meta name="viewport" content="width=device-width, initial-scale=1.0">')
         ui.add_head_html(f'<style>{COMPLETE_CSS}</style>')
 
-        # 3-column layout container with display mode class
-        # laptop-mode: 2-column (sidebar hidden), desktop-mode: 3-column (sidebar visible)
+        # Layout container with display mode class
+        # laptop-mode: 2-column (sidebar + input OR result)
+        # desktop-mode: 3-column (sidebar + input + result)
         with ui.element('div').classes(f'app-container {self._display_mode}-mode'):
-            # Left Sidebar (tabs + history) - hidden in laptop mode via CSS
+            # Left Sidebar (tabs + history) - always visible in both modes
             with ui.column().classes('sidebar'):
                 self._create_sidebar()
 
@@ -1356,12 +1357,15 @@ def _detect_display_settings() -> tuple[tuple[int, int], str, tuple[int, int, in
     This allows setting the correct window size from the start (no resize flicker).
 
     Strategy:
-    - Multiple monitors detected → desktop mode (3-column layout)
-    - Single monitor with high resolution (2560+) → desktop mode
-    - Single monitor with 1920px or less → laptop mode (2-column layout)
+    - Multiple monitors detected → desktop mode (3-column: sidebar + input + result)
+    - Single monitor with 1920+ → desktop mode (sufficient for 3-column)
+    - Single monitor with less than 1920px → laptop mode (2-column: sidebar + input OR result)
+
+    Both modes show sidebar (history). Laptop mode switches between input/result panels.
 
     Window and panel sizes are calculated based on monitor resolution.
     Reference: 2560x1440 monitor → 1900x1100 window, sidebar 260px, input panel 420px.
+    Reference: 1920x1200 monitor → 1424x916 window, sidebar 260px, input panel 380px.
 
     Returns:
         Tuple of ((window_width, window_height), mode, (sidebar_width, input_panel_width, result_content_width))
@@ -1376,22 +1380,39 @@ def _detect_display_settings() -> tuple[tuple[int, int], str, tuple[int, int, in
     RESULT_CONTENT_RATIO = 800 / 1900  # 0.421 (result panel inner content width)
 
     # Minimum sizes to prevent layout breaking on smaller screens (e.g., 1920x1200)
+    # 1920x1200 → 1424px window needs: sidebar(260) + input(380) + result(680) = 1320px
     MIN_WINDOW_WIDTH = 1400
     MIN_WINDOW_HEIGHT = 850
     MIN_SIDEBAR_WIDTH = 260
-    MIN_INPUT_PANEL_WIDTH = 420
-    MIN_RESULT_CONTENT_WIDTH = 800
+    MIN_INPUT_PANEL_WIDTH = 380  # Reduced from 420 for 1920x1200 compatibility
+    MIN_RESULT_CONTENT_WIDTH = 680  # Reduced from 800 for 1920x1200 compatibility
 
     def calculate_sizes(screen_width: int, screen_height: int) -> tuple[tuple[int, int], tuple[int, int, int]]:
         """Calculate window size and panel widths from screen resolution.
 
-        Applies minimum values to prevent UI layout from breaking on smaller screens.
+        Applies minimum values for larger screens, but respects screen bounds for smaller screens.
+        Window size is capped to 95% of screen dimensions to ensure it fits on screen.
         """
-        window_width = max(int(screen_width * WIDTH_RATIO), MIN_WINDOW_WIDTH)
-        window_height = max(int(screen_height * HEIGHT_RATIO), MIN_WINDOW_HEIGHT)
-        sidebar_width = max(int(window_width * SIDEBAR_RATIO), MIN_SIDEBAR_WIDTH)
-        input_panel_width = max(int(window_width * INPUT_PANEL_RATIO), MIN_INPUT_PANEL_WIDTH)
-        result_content_width = max(int(window_width * RESULT_CONTENT_RATIO), MIN_RESULT_CONTENT_WIDTH)
+        # Calculate window size based on ratio, but never exceed screen bounds
+        max_window_width = int(screen_width * 0.95)  # Leave 5% margin
+        max_window_height = int(screen_height * 0.95)
+
+        # Apply ratio-based calculation with minimum, but cap at screen bounds
+        window_width = min(max(int(screen_width * WIDTH_RATIO), MIN_WINDOW_WIDTH), max_window_width)
+        window_height = min(max(int(screen_height * HEIGHT_RATIO), MIN_WINDOW_HEIGHT), max_window_height)
+
+        # For smaller windows, use ratio-based panel sizes instead of fixed minimums
+        if window_width < MIN_WINDOW_WIDTH:
+            # Small screen: use pure ratio-based sizes
+            sidebar_width = int(window_width * SIDEBAR_RATIO)
+            input_panel_width = int(window_width * INPUT_PANEL_RATIO)
+            result_content_width = int(window_width * RESULT_CONTENT_RATIO)
+        else:
+            # Normal screen: apply minimums
+            sidebar_width = max(int(window_width * SIDEBAR_RATIO), MIN_SIDEBAR_WIDTH)
+            input_panel_width = max(int(window_width * INPUT_PANEL_RATIO), MIN_INPUT_PANEL_WIDTH)
+            result_content_width = max(int(window_width * RESULT_CONTENT_RATIO), MIN_RESULT_CONTENT_WIDTH)
+
         return ((window_width, window_height), (sidebar_width, input_panel_width, result_content_width))
 
     # Default: laptop mode based on 1920x1080 screen
@@ -1426,8 +1447,9 @@ def _detect_display_settings() -> tuple[tuple[int, int], str, tuple[int, int, in
 
         # Determine display mode
         # Multi-monitor: assume external monitor is connected → desktop mode
-        # Single monitor with 2560+: definitely external → desktop mode
-        if is_multi_monitor or largest_screen.width >= 2560:
+        # Single monitor with 1920+: sufficient space for 3-column layout → desktop mode
+        # Note: 1920x1200 → 1424px window is enough for sidebar (260) + input (380) + result (680)
+        if is_multi_monitor or largest_screen.width >= 1920:
             mode = "desktop"
         else:
             mode = "laptop"

@@ -1340,11 +1340,89 @@ def create_app() -> YakuLingoApp:
     return YakuLingoApp()
 
 
+def _detect_window_size_for_display(base_width: int, base_height: int) -> tuple[int, int]:
+    """Detect connected monitors and determine optimal window size.
+
+    Uses pywebview's screens API to detect multiple monitors BEFORE ui.run().
+    This allows setting the correct window size from the start (no resize flicker).
+
+    Strategy:
+    - Multiple monitors detected → external monitor mode (larger window)
+    - Single monitor with high resolution (2560+) → external monitor mode
+    - Single monitor with 1920px → laptop mode (default size)
+
+    Returns:
+        Tuple of (width, height) for window size
+    """
+    try:
+        import webview
+        screens = webview.screens
+        if not screens:
+            logger.debug("No screens detected via pywebview, using default size")
+            return (base_width, base_height)
+
+        # Log all detected screens
+        for i, screen in enumerate(screens):
+            logger.info(
+                "Screen %d: %dx%d at (%d, %d)",
+                i, screen.width, screen.height, screen.x, screen.y
+            )
+
+        # Find the largest screen resolution
+        max_width = max(s.width for s in screens)
+        is_multi_monitor = len(screens) > 1
+
+        logger.info(
+            "Display detection: %d monitor(s), max_width=%dpx, multi_monitor=%s",
+            len(screens), max_width, is_multi_monitor
+        )
+
+        # Determine window size based on detection
+        # Multi-monitor: assume external monitor is connected
+        # Single monitor with 2560+: definitely external (no laptop has this native)
+        if is_multi_monitor or max_width >= 2560:
+            if max_width >= 3840:
+                # 4K or higher
+                new_size = (2400, 1400)
+            elif max_width >= 2560:
+                # WQHD
+                new_size = (1900, 1100)
+            else:
+                # 1920px external (detected via multi-monitor)
+                new_size = (1600, 950)
+
+            logger.info(
+                "External monitor detected: window size %dx%d -> %dx%d",
+                base_width, base_height, new_size[0], new_size[1]
+            )
+            return new_size
+        else:
+            # Single monitor, 1920px or less → assume laptop
+            logger.debug("Single monitor (%dpx), using default window size", max_width)
+            return (base_width, base_height)
+
+    except ImportError:
+        logger.debug("pywebview not available, using default window size")
+        return (base_width, base_height)
+    except Exception as e:
+        logger.warning("Failed to detect display: %s, using default window size", e)
+        return (base_width, base_height)
+
+
 def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
     """Run the application"""
     from nicegui import app as nicegui_app, Client
 
     yakulingo_app = create_app()
+
+    # Detect optimal window size BEFORE ui.run() to avoid resize flicker
+    if native:
+        window_size = _detect_window_size_for_display(
+            yakulingo_app.settings.window_width,
+            yakulingo_app.settings.window_height
+        )
+    else:
+        window_size = (yakulingo_app.settings.window_width, yakulingo_app.settings.window_height)
 
     def cleanup():
         """Clean up resources on shutdown."""
@@ -1419,135 +1497,11 @@ document.fonts.ready.then(function() {
         loading_container.delete()
         yakulingo_app.create_ui()
 
-        # Scale window for external monitor (if detected)
-        if native:
-            await _scale_window_for_display(yakulingo_app.settings)
-
         # Start Edge connection AFTER UI is displayed
         asyncio.create_task(yakulingo_app.start_edge_and_connect())
         asyncio.create_task(yakulingo_app.check_for_updates())
 
-    async def _scale_window_for_display(settings: AppSettings):
-        """Detect display type and scale window accordingly.
-
-        Strategy:
-        - Laptop (single monitor or on primary): Keep 1400x850 (optimized for small physical screen)
-        - External monitor 1920px: Expand to 1600x950 (larger physical screen, less scroll)
-        - External monitor 2560px: Expand to 1900x1100 (even more content visible)
-
-        Detection uses Chromium's screen.isExtended API and window position.
-        """
-        try:
-            # Get display information via JavaScript
-            display_info = await ui.run_javascript('''
-                (function() {
-                    const isExtended = window.screen.isExtended || false;
-                    const screenWidth = window.screen.width;
-                    const screenHeight = window.screen.height;
-                    const windowX = window.screenX;
-                    const availWidth = window.screen.availWidth;
-
-                    // Detect if window is on external monitor
-                    // External if: multi-monitor AND (window is outside primary bounds OR on right side)
-                    const isOnExternal = isExtended && (windowX < 0 || windowX >= availWidth);
-
-                    return {
-                        isExtended: isExtended,
-                        isOnExternal: isOnExternal,
-                        screenWidth: screenWidth,
-                        screenHeight: screenHeight,
-                        windowX: windowX,
-                        availWidth: availWidth
-                    };
-                })()
-            ''')
-
-            if not display_info:
-                logger.debug("Could not get display info, using default window size")
-                return
-
-            is_extended = display_info.get('isExtended', False)
-            is_on_external = display_info.get('isOnExternal', False)
-            screen_width = display_info.get('screenWidth', 1920)
-
-            # Log all detection values for debugging
-            logger.info(
-                "Display detection: isExtended=%s, screenWidth=%s, screenHeight=%s, "
-                "windowX=%s, availWidth=%s",
-                display_info.get('isExtended'),
-                display_info.get('screenWidth'),
-                display_info.get('screenHeight'),
-                display_info.get('windowX'),
-                display_info.get('availWidth')
-            )
-
-            # Strategy: Use screen resolution as primary indicator
-            # - 2560px+ is almost certainly an external monitor (WQHD/4K)
-            # - 1920px could be laptop OR external, use isExtended as hint
-            # - Below 1920px, keep default size
-            #
-            # Note: screen.isExtended may not be available in all environments
-
-            if screen_width >= 2560:
-                # High resolution = definitely external monitor, scale regardless of isExtended
-                pass  # Continue to scaling logic
-            elif screen_width >= 1920 and is_extended:
-                # 1920px + multi-monitor detected = likely external
-                pass  # Continue to scaling logic
-            elif screen_width >= 1920 and not is_extended:
-                # 1920px but no multi-monitor signal
-                # Could be laptop or external with isExtended unsupported
-                # Be conservative: don't scale (user might be on laptop)
-                logger.debug(
-                    "Screen is 1920px but isExtended=%s, assuming laptop",
-                    is_extended
-                )
-                return
-            else:
-                # Below 1920px, keep default
-                logger.debug("Screen resolution %spx, using default window size", screen_width)
-                return
-
-            # Determine new window size based on screen resolution
-            # External monitor: larger window, but UI elements stay same size (relatively smaller)
-            # Breakpoints designed for common monitor resolutions
-            base_width = settings.window_width   # 1400
-            base_height = settings.window_height  # 850
-
-            if screen_width >= 3840:
-                # 4K monitor (3840×2160) or higher (5K, etc.)
-                # Cap at reasonable max size - too large becomes unwieldy
-                new_width, new_height = 2400, 1400
-            elif screen_width >= 2560:
-                # WQHD monitor (2560×1440)
-                new_width, new_height = 1900, 1100
-            elif screen_width >= 1920:
-                # Full HD external monitor (1920×1080)
-                # Even same resolution as laptop, external has larger physical size
-                new_width, new_height = 1600, 950
-            else:
-                # Smaller resolution, keep default
-                logger.debug("Screen resolution %spx, using default window size", screen_width)
-                return
-
-            # Skip if already at target size
-            if new_width == base_width and new_height == base_height:
-                return
-
-            # Resize window using pywebview
-            nicegui_app.native.main_window.resize(new_width, new_height)
-
-            logger.info(
-                "Window resized for external monitor: %dx%d -> %dx%d (screen: %dpx)",
-                base_width, base_height, new_width, new_height, screen_width
-            )
-
-        except Exception as e:
-            logger.warning("Failed to detect/scale for display: %s", e)
-
-    # Window size: Base size for laptop (1400x850)
-    # External monitor scaling happens after page load via _scale_window_for_display
-    window_size = (yakulingo_app.settings.window_width, yakulingo_app.settings.window_height)
+    # window_size is already determined at the start of run_app()
 
     ui.run(
         host=host,

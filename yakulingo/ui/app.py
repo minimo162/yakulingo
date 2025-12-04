@@ -1522,13 +1522,13 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
 
         # Calculate base font size with gentle scaling
         # Reference: 1900px window → 16px font
-        # Use square root for gentle scaling, with minimum 85% (13.6px)
+        # Use square root for gentle scaling (no upper limit for large screens)
         import math
         REFERENCE_WINDOW_WIDTH = 1900
         REFERENCE_FONT_SIZE = 16
         scale_ratio = window_width / REFERENCE_WINDOW_WIDTH
-        # Square root scaling for gentler effect, clamped to 85%-100%
-        gentle_scale = max(0.85, min(1.0, math.sqrt(scale_ratio)))
+        # Square root scaling for gentler effect, minimum 85% (13.6px), no upper limit
+        gentle_scale = max(0.85, math.sqrt(scale_ratio))
         base_font_size = round(REFERENCE_FONT_SIZE * gentle_scale, 1)
 
         ui.add_head_html(f'''<style>

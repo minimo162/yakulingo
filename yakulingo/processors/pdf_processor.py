@@ -167,14 +167,28 @@ def _find_font_file(font_names: list[str]) -> Optional[str]:
             direct_path = os.path.join(font_dir, font_name)
             if os.path.isfile(direct_path):
                 return direct_path
-            # Recursive search (1 level deep for performance)
+            # Recursive search (2 levels deep for Linux font structure)
+            # Linux fonts are often in subdirectories like:
+            # /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
+            # /usr/share/fonts/opentype/ipafont-gothic/ipag.ttf
             try:
                 for subdir in os.listdir(font_dir):
                     subdir_path = os.path.join(font_dir, subdir)
                     if os.path.isdir(subdir_path):
+                        # Level 1 subdirectory
                         font_path = os.path.join(subdir_path, font_name)
                         if os.path.isfile(font_path):
                             return font_path
+                        # Level 2 subdirectory (for Linux font structure)
+                        try:
+                            for subsubdir in os.listdir(subdir_path):
+                                subsubdir_path = os.path.join(subdir_path, subsubdir)
+                                if os.path.isdir(subsubdir_path):
+                                    font_path = os.path.join(subsubdir_path, font_name)
+                                    if os.path.isfile(font_path):
+                                        return font_path
+                        except PermissionError:
+                            continue
             except PermissionError:
                 continue
 
@@ -225,39 +239,65 @@ def get_font_path_by_name(font_name: str) -> Optional[str]:
 
 # Font file names by language (cross-platform)
 # Default: Japanese = MS P明朝, English = Arial
+# Priority order: Windows fonts first, then Linux/cross-platform fonts
 FONT_FILES = {
     "ja": {
         "primary": [
-            "mspmincho.ttc", "MS PMincho.ttf",  # MS P明朝 (default)
-            "msmincho.ttc", "MS Mincho.ttf", "ipam.ttf", "IPAMincho.ttf",
-            "NotoSansJP-Regular.ttf", "NotoSerifJP-Regular.ttf"
+            # Windows fonts
+            "mspmincho.ttc", "MS PMincho.ttf",  # MS P明朝 (default Windows)
+            "msmincho.ttc", "MS Mincho.ttf",
+            "mspgothic.ttc", "MS PGothic.ttf",
+            "msgothic.ttc", "MS Gothic.ttf",
+            # Linux/cross-platform fonts (IPA fonts)
+            "ipag.ttf", "IPAGothic.ttf",  # IPAゴシック (common on Linux)
+            "ipagp.ttf", "IPAPGothic.ttf",  # IPAPゴシック
+            "ipam.ttf", "IPAMincho.ttf",  # IPA明朝
+            "fonts-japanese-gothic.ttf",  # Debian/Ubuntu symlink
+            # Noto fonts (cross-platform)
+            "NotoSansJP-Regular.ttf", "NotoSerifJP-Regular.ttf",
+            "NotoSansCJK-Regular.ttc", "NotoSerifCJK-Regular.ttc",
         ],
         "fallback": [
-            "msgothic.ttc", "MS Gothic.ttf", "ipag.ttf", "IPAGothic.ttf",
-            "NotoSansJP-Regular.otf"
+            # WenQuanYi (can display Japanese kanji)
+            "wqy-zenhei.ttc", "WenQuanYi Zen Hei.ttf",
+            "NotoSansJP-Regular.otf", "NotoSerifJP-Regular.otf",
         ],
     },
     "en": {
         "primary": [
-            "arial.ttf", "Arial.ttf",  # Arial (default)
-            "DejaVuSans.ttf", "LiberationSans-Regular.ttf"
+            # Windows fonts
+            "arial.ttf", "Arial.ttf",  # Arial (default Windows)
+            "calibri.ttf", "Calibri.ttf",
+            "segoeui.ttf", "Segoe UI.ttf",
+            # Linux/cross-platform fonts
+            "DejaVuSans.ttf",  # Common on Linux
+            "LiberationSans-Regular.ttf",  # Free alternative to Arial
+            "FreeSans.ttf",  # GNU FreeFont
+            # Noto fonts
+            "NotoSans-Regular.ttf",
         ],
         "fallback": [
-            "times.ttf", "Times.ttf", "DejaVuSerif.ttf",
-            "LiberationSerif-Regular.ttf"
+            "times.ttf", "Times.ttf", "Times New Roman.ttf",
+            "DejaVuSerif.ttf",
+            "LiberationSerif-Regular.ttf",
+            "FreeSerif.ttf",
+            "NotoSerif-Regular.ttf",
         ],
     },
     "zh-CN": {
         "primary": [
-            "simsun.ttc", "SimSun.ttf", "NotoSansSC-Regular.ttf",
-            "NotoSerifSC-Regular.ttf"
+            "simsun.ttc", "SimSun.ttf",
+            "wqy-zenhei.ttc", "WenQuanYi Zen Hei.ttf",  # Linux
+            "NotoSansSC-Regular.ttf", "NotoSerifSC-Regular.ttf",
+            "NotoSansCJK-Regular.ttc",
         ],
         "fallback": ["msyh.ttc", "Microsoft YaHei.ttf", "NotoSansSC-Regular.otf"],
     },
     "ko": {
         "primary": [
-            "malgun.ttf", "Malgun Gothic.ttf", "NotoSansKR-Regular.ttf",
-            "NotoSerifKR-Regular.ttf"
+            "malgun.ttf", "Malgun Gothic.ttf",
+            "NotoSansKR-Regular.ttf", "NotoSerifKR-Regular.ttf",
+            "NotoSansCJK-Regular.ttc",
         ],
         "fallback": ["batang.ttc", "Batang.ttf", "NotoSansKR-Regular.otf"],
     },
@@ -525,12 +565,23 @@ class FontRegistry:
         preferred_font = self._font_preferences.get(lang)
         if preferred_font:
             font_path = get_font_path_by_name(preferred_font)
+            if font_path:
+                logger.debug("Using preferred font for %s: %s", lang, font_path)
 
         if not font_path:
             font_path = get_font_path_for_lang(lang)
+            if font_path:
+                logger.debug("Using system font for %s: %s", lang, font_path)
 
-        if not font_path and lang not in self._missing_fonts:
-            self._missing_fonts.add(lang)
+        if not font_path:
+            if lang not in self._missing_fonts:
+                self._missing_fonts.add(lang)
+                logger.warning(
+                    "No font found for language '%s'. "
+                    "PDF text may not render correctly. "
+                    "Install a font for this language or check font settings.",
+                    lang
+                )
 
         font_info = FontInfo(
             font_id=font_id,
@@ -1415,15 +1466,14 @@ class PdfProcessor(FileProcessor):
         settings=None,
     ) -> dict[str, Any]:
         """
-        Apply translations to PDF using low-level operators.
+        Apply translations to PDF using PyMuPDF high-level API.
 
-        PDFMathTranslate-compliant implementation with CJK support.
+        Uses insert_textbox() for proper font encoding handling on Windows.
 
         Coordinate System Notes:
             - PyMuPDF's get_text("dict") returns bboxes with origin at top-left
-            - These are converted to PDF coordinates (origin bottom-left) using
-              convert_to_pdf_coordinates() before text placement
-            - All text positioning uses the converted PDF coordinates
+            - PyMuPDF's insert_textbox() uses the same coordinate system
+            - No coordinate conversion needed for high-level API
 
         Args:
             input_path: Path to original PDF
@@ -1453,27 +1503,38 @@ class PdfProcessor(FileProcessor):
             # Determine target language
             target_lang = "en" if direction == "jp_to_en" else "ja"
 
-            # 1. Register fonts (CJK support) with settings-based preferences
+            # Get font paths for target language
             font_ja = getattr(settings, 'pdf_font_ja', None) if settings else None
             font_en = getattr(settings, 'pdf_font_en', None) if settings else None
-            font_registry = FontRegistry(font_ja=font_ja, font_en=font_en)
-            font_registry.register_font("ja")
-            font_registry.register_font("en")
-            font_registry.register_font("zh-CN")
-            font_registry.register_font("ko")
 
-            # Operator generator
-            op_generator = PdfOperatorGenerator(font_registry)
+            # Resolve font paths
+            ja_font_path = None
+            en_font_path = None
+            if font_ja:
+                ja_font_path = get_font_path_by_name(font_ja)
+            if not ja_font_path:
+                ja_font_path = get_font_path_for_lang("ja")
 
-            # 2. Embed fonts (before page loop)
-            result['failed_fonts'] = font_registry.embed_fonts(doc)
+            if font_en:
+                en_font_path = get_font_path_by_name(font_en)
+            if not en_font_path:
+                en_font_path = get_font_path_for_lang("en")
 
-            # 3. Process each page
+            # Log font paths for debugging
+            logger.debug("Japanese font path: %s", ja_font_path)
+            logger.debug("English font path: %s", en_font_path)
+
+            if not ja_font_path:
+                logger.warning("No Japanese font found. PDF text may not render correctly.")
+                result['failed_fonts'].append("ja")
+            if not en_font_path:
+                logger.warning("No English font found. PDF text may not render correctly.")
+                result['failed_fonts'].append("en")
+
+            # Process each page
             for page_idx, page in enumerate(doc):
-                page_height = page.rect.height
-                replacer = ContentStreamReplacer(doc, font_registry)
-
                 blocks = page.get_text("dict")["blocks"]
+
                 for block_idx, block in enumerate(blocks):
                     if block.get("type") != 0:
                         continue
@@ -1488,45 +1549,46 @@ class PdfProcessor(FileProcessor):
                         continue
 
                     try:
-                        # Convert coordinates from image/PyMuPDF to PDF coordinate system
-                        box_pdf = convert_to_pdf_coordinates(list(bbox), page_height)
-                        x1, y1, x2, y2 = box_pdf
-                        box_width = x2 - x1
+                        # Create rect from bbox (PyMuPDF coordinate system)
+                        rect = fitz.Rect(bbox)
 
-                        # 4. Clear existing text (white fill)
-                        replacer.add_redaction(x1, y1, x2, y2)
+                        # Clear existing text with white rectangle
+                        page.draw_rect(rect, color=None, fill=(1, 1, 1))
 
-                        # 5. Select font
-                        font_id = font_registry.select_font_for_text(translated, target_lang)
-                        is_cjk = font_registry.get_is_cjk(font_id)
-
-                        # 6. Calculate font size and line height using PDF coordinates
-                        # Note: Using converted box_pdf for consistency
-                        box_pdf_list = [x1, y1, x2, y2]
-                        font_size = estimate_font_size(box_pdf_list, translated)
-                        line_height_val = calculate_line_height(
-                            translated, box_pdf_list, font_size, target_lang
+                        # Select font based on text content
+                        font_path = self._select_font_path_for_text(
+                            translated, target_lang, ja_font_path, en_font_path
                         )
 
-                        # 7. Split text into lines
-                        lines = split_text_into_lines(translated, box_width, font_size, is_cjk)
+                        if not font_path:
+                            logger.warning("No font available for block %s", block_id)
+                            result['failed'].append(block_id)
+                            continue
 
-                        # 8. Generate text operators for each line
-                        for line_idx, line_text in enumerate(lines):
-                            if not line_text.strip():
-                                continue
+                        # Calculate font size
+                        font_size = estimate_font_size(list(bbox), translated)
 
-                            x, y = calculate_text_position(
-                                box_pdf, line_idx, font_size, line_height_val
+                        # Insert text using high-level API
+                        # PyMuPDF handles font encoding automatically
+                        rc = page.insert_textbox(
+                            rect,
+                            translated,
+                            fontfile=font_path,
+                            fontsize=font_size,
+                            align=0,  # Left align
+                        )
+
+                        # Check if text didn't fit (rc < 0 means overflow)
+                        if isinstance(rc, (int, float)) and rc < 0:
+                            # Text didn't fit, try smaller font
+                            smaller_size = max(MIN_FONT_SIZE, font_size * 0.8)
+                            page.insert_textbox(
+                                rect,
+                                translated,
+                                fontfile=font_path,
+                                fontsize=smaller_size,
+                                align=0,
                             )
-
-                            if y < y1:
-                                break  # Exceeded box bottom
-
-                            # PDFMathTranslate: encode first, then gen_op_txt
-                            rtxt = op_generator.raw_string(font_id, line_text)
-                            text_op = op_generator.gen_op_txt(font_id, font_size, x, y, rtxt)
-                            replacer.add_text_operator(text_op, font_id)
 
                         result['success'] += 1
 
@@ -1538,16 +1600,7 @@ class PdfProcessor(FileProcessor):
                         result['failed'].append(block_id)
                         continue
 
-                # 9. Apply stream to page
-                replacer.apply_to_page(page)
-
-            # 10. Save (PDFMathTranslate: garbage=3, deflate=True)
-            # subset_fonts can fail with COM errors on Windows with certain fonts
-            try:
-                doc.subset_fonts(fallback=True)
-            except Exception as e:
-                # Log warning but continue - subsetting is optional optimization
-                logger.warning("Font subsetting failed (continuing without): %s", e)
+            # Save document
             doc.save(str(output_path), garbage=3, deflate=True)
 
             # Log summary if there were failures
@@ -1562,6 +1615,40 @@ class PdfProcessor(FileProcessor):
 
         return result
 
+    def _select_font_path_for_text(
+        self,
+        text: str,
+        target_lang: str,
+        ja_font_path: Optional[str],
+        en_font_path: Optional[str],
+    ) -> Optional[str]:
+        """
+        Select appropriate font path based on text content.
+
+        Args:
+            text: Text to analyze
+            target_lang: Target language for kanji
+            ja_font_path: Path to Japanese font
+            en_font_path: Path to English font
+
+        Returns:
+            Font file path or None
+        """
+        # Check for CJK characters
+        for char in text:
+            if '\u3040' <= char <= '\u309F':  # Hiragana
+                return ja_font_path
+            if '\u30A0' <= char <= '\u30FF':  # Katakana
+                return ja_font_path
+            if '\u4E00' <= char <= '\u9FFF':  # CJK Unified Ideographs
+                return ja_font_path if target_lang == "ja" else ja_font_path  # Use JA font for kanji
+
+        # Default to target language font or English
+        if target_lang == "ja":
+            return ja_font_path or en_font_path
+        else:
+            return en_font_path or ja_font_path
+
     def apply_translations_with_cells(
         self,
         input_path: Path,
@@ -1570,17 +1657,16 @@ class PdfProcessor(FileProcessor):
         cells: list[TranslationCell],
         direction: str = "jp_to_en",
         settings=None,
+        dpi: int = DEFAULT_OCR_DPI,
     ) -> dict[str, Any]:
         """
         Apply translations using TranslationCell data (yomitoku integration).
 
-        This method uses cell coordinates from yomitoku analysis
-        for more accurate text placement.
+        Uses PyMuPDF high-level API for proper font encoding on Windows.
 
         Coordinate System Notes:
-            - yomitoku returns bboxes in image coordinates (origin top-left)
-            - These are converted to PDF coordinates (origin bottom-left) using
-              convert_to_pdf_coordinates() before text placement
+            - yomitoku returns bboxes in image coordinates at specified DPI
+            - These are scaled to PDF coordinates (72 DPI) for text placement
             - The TranslationCell.box field uses image coordinates
 
         Args:
@@ -1590,6 +1676,7 @@ class PdfProcessor(FileProcessor):
             cells: TranslationCell list with position info (image coordinates)
             direction: Translation direction
             settings: AppSettings for font configuration (pdf_font_ja, pdf_font_en)
+            dpi: DPI used for OCR (for coordinate scaling)
 
         Returns:
             Dictionary with processing statistics:
@@ -1611,28 +1698,38 @@ class PdfProcessor(FileProcessor):
         try:
             target_lang = "en" if direction == "jp_to_en" else "ja"
 
-            # 1. Register fonts with settings-based preferences
+            # Get font paths
             font_ja = getattr(settings, 'pdf_font_ja', None) if settings else None
             font_en = getattr(settings, 'pdf_font_en', None) if settings else None
-            font_registry = FontRegistry(font_ja=font_ja, font_en=font_en)
-            font_registry.register_font("ja")
-            font_registry.register_font("en")
-            font_registry.register_font("zh-CN")
-            font_registry.register_font("ko")
 
-            op_generator = PdfOperatorGenerator(font_registry)
+            # Resolve font paths
+            ja_font_path = None
+            en_font_path = None
+            if font_ja:
+                ja_font_path = get_font_path_by_name(font_ja)
+            if not ja_font_path:
+                ja_font_path = get_font_path_for_lang("ja")
+
+            if font_en:
+                en_font_path = get_font_path_by_name(font_en)
+            if not en_font_path:
+                en_font_path = get_font_path_for_lang("en")
+
+            if not ja_font_path:
+                logger.warning("No Japanese font found. PDF text may not render correctly.")
+                result['failed_fonts'].append("ja")
+            if not en_font_path:
+                logger.warning("No English font found. PDF text may not render correctly.")
+                result['failed_fonts'].append("en")
 
             # Cell lookup
             cell_map = {cell.address: cell for cell in cells}
 
-            # 2. Embed fonts
-            result['failed_fonts'] = font_registry.embed_fonts(doc)
+            # DPI scale factor (convert from OCR DPI to PDF points at 72 DPI)
+            scale = 72.0 / dpi
 
-            # 3. Process each page
+            # Process each page
             for page_num, page in enumerate(doc, start=1):
-                page_height = page.rect.height
-                replacer = ContentStreamReplacer(doc, font_registry)
-
                 for address, translated in translations.items():
                     if not _is_address_on_page(address, page_num):
                         continue
@@ -1642,40 +1739,51 @@ class PdfProcessor(FileProcessor):
                         continue
 
                     try:
-                        # Convert coordinates from yomitoku (image) to PDF coordinate system
-                        box_pdf = convert_to_pdf_coordinates(cell.box, page_height)
-                        x1, y1, x2, y2 = box_pdf
-                        box_width = x2 - x1
+                        # Scale coordinates from OCR DPI to PDF coordinates
+                        x1 = cell.box[0] * scale
+                        y1 = cell.box[1] * scale
+                        x2 = cell.box[2] * scale
+                        y2 = cell.box[3] * scale
 
-                        replacer.add_redaction(x1, y1, x2, y2)
+                        # Create rect (PyMuPDF uses top-left origin like yomitoku)
+                        rect = fitz.Rect(x1, y1, x2, y2)
 
-                        font_id = font_registry.select_font_for_text(translated, target_lang)
-                        is_cjk = font_registry.get_is_cjk(font_id)
+                        # Clear existing text with white rectangle
+                        page.draw_rect(rect, color=None, fill=(1, 1, 1))
 
-                        # Calculate font size and line height using PDF coordinates
-                        # Note: Using converted box_pdf for consistency
-                        box_pdf_list = [x1, y1, x2, y2]
-                        font_size = estimate_font_size(box_pdf_list, translated)
-                        line_height_val = calculate_line_height(
-                            translated, box_pdf_list, font_size, target_lang
+                        # Select font based on text content
+                        font_path = self._select_font_path_for_text(
+                            translated, target_lang, ja_font_path, en_font_path
                         )
 
-                        lines = split_text_into_lines(translated, box_width, font_size, is_cjk)
+                        if not font_path:
+                            logger.warning("No font available for cell %s", address)
+                            result['failed'].append(address)
+                            continue
 
-                        for line_idx, line_text in enumerate(lines):
-                            if not line_text.strip():
-                                continue
+                        # Calculate font size
+                        font_size = estimate_font_size([x1, y1, x2, y2], translated)
 
-                            x, y = calculate_text_position(
-                                box_pdf, line_idx, font_size, line_height_val
+                        # Insert text using high-level API
+                        rc = page.insert_textbox(
+                            rect,
+                            translated,
+                            fontfile=font_path,
+                            fontsize=font_size,
+                            align=0,  # Left align
+                        )
+
+                        # Check if text didn't fit (rc < 0 means overflow)
+                        if isinstance(rc, (int, float)) and rc < 0:
+                            # Text didn't fit, try smaller font
+                            smaller_size = max(MIN_FONT_SIZE, font_size * 0.8)
+                            page.insert_textbox(
+                                rect,
+                                translated,
+                                fontfile=font_path,
+                                fontsize=smaller_size,
+                                align=0,
                             )
-
-                            if y < y1:
-                                break
-
-                            rtxt = op_generator.raw_string(font_id, line_text)
-                            text_op = op_generator.gen_op_txt(font_id, font_size, x, y, rtxt)
-                            replacer.add_text_operator(text_op, font_id)
 
                         result['success'] += 1
 
@@ -1687,14 +1795,7 @@ class PdfProcessor(FileProcessor):
                         result['failed'].append(address)
                         continue
 
-                replacer.apply_to_page(page)
-
-            # subset_fonts can fail with COM errors on Windows with certain fonts
-            try:
-                doc.subset_fonts(fallback=True)
-            except Exception as e:
-                # Log warning but continue - subsetting is optional optimization
-                logger.warning("Font subsetting failed (continuing without): %s", e)
+            # Save document
             doc.save(str(output_path), garbage=3, deflate=True)
 
             # Log summary if there were failures

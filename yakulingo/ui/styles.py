@@ -103,11 +103,11 @@ COMPLETE_CSS = """
     --md-sys-elevation-1: 0 2px 8px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.03);
     --md-sys-elevation-2: 0 4px 12px rgba(0,0,0,0.06), 0 2px 4px rgba(0,0,0,0.04);
 
-    /* Sidebar */
-    --sidebar-width: 260px;
+    /* Sidebar - 260px at 1900px width = 13.7% */
+    --sidebar-width: 13.7vw;
 
-    /* 3-Column Layout (Nani-inspired) */
-    --input-panel-width: 420px;
+    /* 3-Column Layout (Nani-inspired) - 420px at 1900px width = 22.1% */
+    --input-panel-width: 22.1vw;
     --input-panel-width-wide: 66.67%;  /* Wider input for 2-column mode (2/3 of parent) */
     --result-element-max-width: 100%;  /* Fill available width in result panel */
     --bp-desktop: 1200px;        /* Full 3-column with sidebar */
@@ -209,7 +209,7 @@ body {
 /* Result panel inner content - 2/3 width, centered */
 .result-panel > * {
     width: min(100%, 66.67%);
-    min-width: 280px;
+    min-width: 14.7vw;  /* 280px at 1900px width */
 }
 
 /* Empty Result State Placeholder */
@@ -219,7 +219,7 @@ body {
     align-items: center;
     justify-content: center;
     gap: 0.75rem;
-    min-height: 200px;
+    min-height: 18.2vh;  /* 200px at 1100px height */
     padding: 2rem;
     border: 2px dashed var(--md-sys-color-outline-variant);
     border-radius: var(--md-sys-shape-corner-large);
@@ -392,7 +392,7 @@ body {
 .history-scroll {
     flex: 1;
     min-height: 0;
-    max-height: calc(100vh - 280px);
+    max-height: calc(100vh - 25.5vh);  /* 280px at 1100px height */
     width: 100%;
 }
 
@@ -1042,7 +1042,7 @@ body {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    max-width: 200px;
+    max-width: 10.5vw;  /* 200px at 1900px width */
 }
 
 /* === Utility === */
@@ -1139,7 +1139,7 @@ body {
 .main-area.has-results .input-panel .main-card-inner textarea,
 .main-area.has-results .input-panel .compact-textarea {
     flex: 1 !important;
-    min-height: 150px;
+    min-height: 13.6vh;  /* 150px at 1100px height */
     height: 100%;
 }
 
@@ -2111,7 +2111,7 @@ body {
 }
 
 .attach-file-indicator .file-name {
-    max-width: 120px;
+    max-width: 6.3vw;  /* 120px at 1900px width */
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -2299,16 +2299,16 @@ body {
     font-size: var(--md-sys-typescale-size-sm) !important;
     background: var(--md-sys-color-surface) !important;
     border-radius: var(--md-sys-shape-corner-medium) !important;
-    min-height: 100px !important;
+    min-height: 9.1vh !important;  /* 100px at 1100px height */
 }
 
 .custom-request-input .q-field__control {
     border-radius: var(--md-sys-shape-corner-medium) !important;
-    min-height: 100px !important;
+    min-height: 9.1vh !important;  /* 100px at 1100px height */
 }
 
 .custom-request-input textarea {
-    min-height: 80px !important;
+    min-height: 7.3vh !important;  /* 80px at 1100px height */
 }
 
 .cancel-btn {

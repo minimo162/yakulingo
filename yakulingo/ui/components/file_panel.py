@@ -147,7 +147,7 @@ def _language_selector(state: AppState, on_change: Optional[Callable[[str], None
             with ui.button(on_click=lambda: on_change and on_change('en')).classes(en_classes).props('flat no-caps'):
                 ui.icon('arrow_forward').classes('text-sm mr-1')
                 ui.label('EN').classes('flag-icon font-bold')
-                ui.label('英語に翻訳')
+                ui.label('英訳')
 
             # Translate to Japanese option
             jp_classes = 'lang-btn lang-btn-right'
@@ -156,7 +156,7 @@ def _language_selector(state: AppState, on_change: Optional[Callable[[str], None
             with ui.button(on_click=lambda: on_change and on_change('jp')).classes(jp_classes).props('flat no-caps'):
                 ui.icon('arrow_forward').classes('text-sm mr-1')
                 ui.label('JP').classes('flag-icon font-bold')
-                ui.label('日本語に翻訳')
+                ui.label('和訳')
 
 
 # Translation style options with labels and tooltips

@@ -598,9 +598,10 @@ class TestEnglishToJapaneseTranslation:
         assert cell_translator.should_translate("Sales Report", output_language="jp") is True
 
     def test_japanese_only_text_skipped_en_to_jp(self, cell_translator):
-        """Japanese-only text should be skipped for EN→JP"""
+        """Japanese-only text (with kana) should be skipped for EN→JP"""
+        # Only text with hiragana/katakana is considered "Japanese-only"
         assert cell_translator.should_translate("こんにちは", output_language="jp") is False
-        assert cell_translator.should_translate("売上報告", output_language="jp") is False
+        assert cell_translator.should_translate("売り上げ報告", output_language="jp") is False  # has hiragana
 
     def test_mixed_text_should_translate_en_to_jp(self, cell_translator):
         """Mixed text (English + Japanese) should be translated for EN→JP"""
@@ -652,10 +653,13 @@ class TestEnglishToJapaneseTranslation:
 
     # --- Edge cases for EN→JP ---
 
-    def test_text_with_only_kanji_skipped_en_to_jp(self, cell_translator):
-        """Text with only kanji should be skipped for EN→JP"""
-        assert cell_translator.should_translate("東京", output_language="jp") is False
-        assert cell_translator.should_translate("株式会社", output_language="jp") is False
+    def test_text_with_only_kanji_translated_en_to_jp(self, cell_translator):
+        """Text with only kanji should be translated for EN→JP (might be Chinese)"""
+        # Kanji-only text is NOT considered "Japanese-only" because
+        # Chinese text also uses the same CJK kanji range.
+        # Only hiragana/katakana are unique to Japanese.
+        assert cell_translator.should_translate("東京", output_language="jp") is True
+        assert cell_translator.should_translate("株式会社", output_language="jp") is True
 
     def test_text_with_katakana_only_skipped_en_to_jp(self, cell_translator):
         """Text with only katakana should be skipped for EN→JP"""
@@ -667,19 +671,94 @@ class TestEnglishToJapaneseTranslation:
         assert cell_translator.should_translate("ひらがな", output_language="jp") is False
         assert cell_translator.should_translate("あいうえお", output_language="jp") is False
 
-    def test_japanese_with_numbers_skipped_en_to_jp(self, cell_translator):
-        """Japanese text with numbers (but no alphabet) should be skipped for EN→JP"""
-        # Contains Japanese + numbers but no alphabet
-        assert cell_translator.should_translate("売上: 100万円", output_language="jp") is False
-        assert cell_translator.should_translate("2024年度", output_language="jp") is False
+    def test_japanese_with_kana_and_numbers_skipped_en_to_jp(self, cell_translator):
+        """Japanese text with kana and numbers should be skipped for EN→JP"""
+        # Contains hiragana/katakana + numbers but no alphabet
+        assert cell_translator.should_translate("売り上げ: 100万円", output_language="jp") is False
+        assert cell_translator.should_translate("データ分析", output_language="jp") is False
 
-    def test_japanese_symbols_skipped_en_to_jp(self, cell_translator):
-        """Japanese document symbols should be treated as Japanese for EN→JP"""
-        # ▲△〇※ are Japanese document symbols
-        assert cell_translator.should_translate("▲50", output_language="jp") is False
-        assert cell_translator.should_translate("〇〇株式会社", output_language="jp") is False
+    def test_kanji_only_with_numbers_translated_en_to_jp(self, cell_translator):
+        """Kanji-only text with numbers should be translated for EN→JP (might be Chinese)"""
+        # Kanji + numbers but no kana - not considered Japanese-only
+        assert cell_translator.should_translate("売上: 100万円", output_language="jp") is True
+        # Note: "2024年度" is skipped by SKIP_PATTERNS (^\d+[年月日時分秒])
+        assert cell_translator.should_translate("年度報告", output_language="jp") is True
+
+    def test_japanese_symbols_translated_en_to_jp(self, cell_translator):
+        """Japanese document symbols without kana should be translated for EN→JP"""
+        # ▲△〇※ without hiragana/katakana are not considered "Japanese-only"
+        # because similar symbols may be used in Chinese documents
+        assert cell_translator.should_translate("▲50", output_language="jp") is True
+        assert cell_translator.should_translate("〇〇株式会社", output_language="jp") is True
+
+    def test_japanese_symbols_with_kana_skipped_en_to_jp(self, cell_translator):
+        """Japanese document symbols with kana should be skipped for EN→JP"""
+        # With hiragana/katakana, clearly Japanese
+        assert cell_translator.should_translate("▲マイナス50", output_language="jp") is False
+        assert cell_translator.should_translate("〇〇かぶしきがいしゃ", output_language="jp") is False
 
     def test_english_with_numbers_should_translate_en_to_jp(self, cell_translator):
         """English text with numbers should be translated for EN→JP"""
         assert cell_translator.should_translate("FY2024 Report", output_language="jp") is True
         assert cell_translator.should_translate("Sales increased by 50%", output_language="jp") is True
+
+
+class TestChineseToJapaneseTranslation:
+    """Tests for Chinese→JP translation (output_language='jp')"""
+
+    @pytest.fixture
+    def cell_translator(self):
+        return CellTranslator()
+
+    @pytest.fixture
+    def para_translator(self):
+        return ParagraphTranslator()
+
+    # --- Chinese text should be translated to Japanese ---
+
+    def test_chinese_text_should_translate_to_jp(self, cell_translator):
+        """Chinese text should be translated for X→JP"""
+        # Chinese text uses same CJK kanji range but has no hiragana/katakana
+        assert cell_translator.should_translate("你好世界", output_language="jp") is True
+        assert cell_translator.should_translate("中国人民", output_language="jp") is True
+        assert cell_translator.should_translate("北京上海", output_language="jp") is True
+
+    def test_chinese_simplified_should_translate_to_jp(self, cell_translator):
+        """Simplified Chinese should be translated for X→JP"""
+        # Simplified Chinese characters
+        assert cell_translator.should_translate("简体中文", output_language="jp") is True
+        assert cell_translator.should_translate("软件开发", output_language="jp") is True
+
+    def test_chinese_traditional_should_translate_to_jp(self, cell_translator):
+        """Traditional Chinese should be translated for X→JP"""
+        # Traditional Chinese characters
+        assert cell_translator.should_translate("繁體中文", output_language="jp") is True
+        assert cell_translator.should_translate("軟體開發", output_language="jp") is True
+
+    def test_chinese_with_numbers_should_translate_to_jp(self, cell_translator):
+        """Chinese text with numbers should be translated for X→JP"""
+        # Note: "2024年报告" is skipped by SKIP_PATTERNS (^\d+[年月日時分秒])
+        assert cell_translator.should_translate("年度报告2024", output_language="jp") is True
+        assert cell_translator.should_translate("销售额: 100万元", output_language="jp") is True
+
+    def test_chinese_paragraph_should_translate_to_jp(self, para_translator):
+        """Chinese paragraphs should be translated for X→JP"""
+        assert para_translator.should_translate("这是一个测试段落。", output_language="jp") is True
+        assert para_translator.should_translate("欢迎使用本产品。", output_language="jp") is True
+
+    # --- Japanese with kana should still be skipped ---
+
+    def test_japanese_with_kana_still_skipped(self, cell_translator):
+        """Japanese text with hiragana/katakana should still be skipped for X→JP"""
+        # These are clearly Japanese (have kana)
+        assert cell_translator.should_translate("こんにちは", output_language="jp") is False
+        assert cell_translator.should_translate("カタカナ", output_language="jp") is False
+        assert cell_translator.should_translate("日本語です", output_language="jp") is False
+
+    # --- Mixed Chinese-Japanese detection ---
+
+    def test_chinese_with_alphabet_should_translate_to_jp(self, cell_translator):
+        """Chinese text mixed with alphabet should be translated for X→JP"""
+        # Has alphabet, so not "Japanese-only" regardless
+        assert cell_translator.should_translate("Hello 世界", output_language="jp") is True
+        assert cell_translator.should_translate("Python编程", output_language="jp") is True

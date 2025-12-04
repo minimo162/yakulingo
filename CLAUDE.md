@@ -753,8 +753,10 @@ Based on recent commits:
   - **Translation status display**: 翻訳中「〜語から〜語へ翻訳中...」、完了後「✓ 翻訳しました」+ 経過時間
   - **Full-height input area**: 翻訳中・翻訳後の入力欄を縦幅いっぱいに拡張
 - **Resolution-Based Zoom**:
-  - **CSS zoom scaling**: Automatically scales UI based on screen resolution (base: 2560×1440)
-  - **Cross-resolution consistency**: Maintains consistent UI proportions across 4K, QHD, FHD, and lower resolutions
+  - **CSS zoom only**: UI scaling handled entirely by CSS zoom (no Python window scaling)
+  - **Auto-adapts to display**: Uses `window.screen.width` to detect the monitor where the window is displayed
+  - **Dual-monitor support**: Works correctly in multi-monitor setups by detecting the actual display resolution
+  - **Base resolution**: 2560×1440 (zoom factor = screenWidth / 2560)
   - **Panel layout**: Translation result panel elements aligned to 2/3 width with center alignment
 
 ## Git Workflow

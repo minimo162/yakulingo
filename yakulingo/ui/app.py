@@ -249,10 +249,11 @@ class YakuLingoApp:
         ui.add_head_html('<meta name="viewport" content="width=device-width, initial-scale=1.0">')
         ui.add_head_html(f'<style>{COMPLETE_CSS}</style>')
 
-        # 3-column layout container with display mode class
-        # laptop-mode: 2-column (sidebar hidden), desktop-mode: 3-column (sidebar visible)
+        # Layout container with display mode class
+        # laptop-mode: 2-column (sidebar + input OR result)
+        # desktop-mode: 3-column (sidebar + input + result)
         with ui.element('div').classes(f'app-container {self._display_mode}-mode'):
-            # Left Sidebar (tabs + history) - hidden in laptop mode via CSS
+            # Left Sidebar (tabs + history) - always visible in both modes
             with ui.column().classes('sidebar'):
                 self._create_sidebar()
 
@@ -1356,9 +1357,11 @@ def _detect_display_settings() -> tuple[tuple[int, int], str, tuple[int, int, in
     This allows setting the correct window size from the start (no resize flicker).
 
     Strategy:
-    - Multiple monitors detected → desktop mode (3-column layout)
+    - Multiple monitors detected → desktop mode (3-column: sidebar + input + result)
     - Single monitor with 1920+ → desktop mode (sufficient for 3-column)
-    - Single monitor with less than 1920px → laptop mode (2-column layout)
+    - Single monitor with less than 1920px → laptop mode (2-column: sidebar + input OR result)
+
+    Both modes show sidebar (history). Laptop mode switches between input/result panels.
 
     Window and panel sizes are calculated based on monitor resolution.
     Reference: 2560x1440 monitor → 1900x1100 window, sidebar 260px, input panel 420px.

@@ -173,16 +173,29 @@ body {
 }
 
 /* === Display Mode: Laptop vs Desktop === */
-/* Laptop mode: 2-column layout (sidebar hidden) */
+/* Both modes show sidebar - difference is in input/result panel behavior */
+
+/* Laptop mode: 2-column layout (sidebar + input OR result, not both) */
 .app-container.laptop-mode .sidebar {
-    display: none;
+    display: flex;
 }
 
 .app-container.laptop-mode .main-area {
-    margin-left: 0;
+    margin-left: var(--sidebar-width);
 }
 
-/* Desktop mode: 3-column layout (sidebar visible) - default behavior */
+/* Laptop mode: hide input panel when results are shown */
+.app-container.laptop-mode .main-area.has-results .input-panel {
+    display: none;
+}
+
+/* Laptop mode: result panel takes full width */
+.app-container.laptop-mode .main-area.has-results .result-panel {
+    flex: 1;
+    display: flex;
+}
+
+/* Desktop mode: 3-column layout (sidebar + input + result) */
 .app-container.desktop-mode .sidebar {
     display: flex;
 }

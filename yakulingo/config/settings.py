@@ -34,7 +34,6 @@ class AppSettings:
     window_height: int = 850
 
     # Advanced
-    max_batch_size: int = 50            # Max texts per Copilot request
     max_chars_per_batch: int = 7000     # Max characters per batch (fits in 8000 with template)
     request_timeout: int = 120          # Seconds
     max_retries: int = 3
@@ -118,7 +117,6 @@ class AppSettings:
             "last_tab": self.last_tab,
             "window_width": self.window_width,
             "window_height": self.window_height,
-            "max_batch_size": self.max_batch_size,
             "max_chars_per_batch": self.max_chars_per_batch,
             "request_timeout": self.request_timeout,
             "max_retries": self.max_retries,

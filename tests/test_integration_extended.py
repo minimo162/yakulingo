@@ -259,22 +259,26 @@ class TestBatchProcessingEdgeCases:
         assert len(results) == 50
         assert mock_copilot.translate_sync.call_count == 1
 
-    def test_batch_size_plus_one_blocks(self, mock_copilot, settings):
-        """Handle MAX_BATCH_SIZE + 1 blocks"""
+    def test_char_limit_triggers_batch_split(self, mock_copilot, settings):
+        """Handle blocks exceeding char limit per batch"""
         mock_copilot.translate_sync.side_effect = [
-            [f"Trans{i}" for i in range(50)],
-            ["Trans50"],
+            ["Trans0", "Trans1"],
+            ["Trans2"],
         ]
+        # Use small char limit to force splits
+        settings.max_chars_per_batch = 1000
         service = TranslationService(mock_copilot, settings)
 
+        # Create 3 blocks with 400 chars each (800 chars per 2 blocks < 1000)
+        text_400 = "あ" * 400
         blocks = [
-            TextBlock(id=str(i), text=f"テスト{i}", location=f"A{i}")
-            for i in range(51)
+            TextBlock(id=str(i), text=text_400, location=f"A{i}")
+            for i in range(3)
         ]
 
         results = service.batch_translator.translate_blocks(blocks)
 
-        assert len(results) == 51
+        assert len(results) == 3
         assert mock_copilot.translate_sync.call_count == 2
 
 
@@ -406,20 +410,19 @@ class TestFileInfoExtraction:
 class TestSettingsIntegration:
     """Test settings integration"""
 
-    def test_batch_size_from_settings(self, mock_copilot):
-        """Batch size should come from settings"""
-        settings = AppSettings(max_batch_size=25)
+    def test_chars_per_batch_from_settings(self, mock_copilot):
+        """Chars per batch should come from settings"""
+        settings = AppSettings(max_chars_per_batch=5000)
         service = TranslationService(mock_copilot, settings)
 
-        # Create blocks that would normally be 2 batches but with reduced batch size
+        # Create blocks that would normally be 1 batch but with reduced char limit
         blocks = [
-            TextBlock(id=str(i), text=f"テスト{i}", location=f"A{i}")
-            for i in range(30)
+            TextBlock(id=str(i), text=f"テスト{i}" * 100, location=f"A{i}")
+            for i in range(10)
         ]
 
         # Verify the service was created with the settings
-        # (the actual batch size is controlled by BatchTranslator constants)
-        assert settings.max_batch_size == 25
+        assert settings.max_chars_per_batch == 5000
 
     def test_output_directory_from_settings(self, mock_copilot, tmp_path, sample_excel):
         """Output directory should come from settings"""

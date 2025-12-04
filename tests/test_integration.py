@@ -291,13 +291,16 @@ class TestBatchProcessingWorkflow:
         assert mock_copilot_with_translation.translate_sync.call_count == 1
 
     def test_multiple_batch_processing(self, mock_copilot_with_translation, settings):
-        """Process blocks spanning multiple batches"""
+        """Process blocks spanning multiple batches (due to char limit)"""
+        # Use small char limit to force multiple batches
+        settings.max_chars_per_batch = 1000
         service = TranslationService(mock_copilot_with_translation, settings)
 
-        # Create 75 blocks (exceeds batch limit of 50)
+        # Create 4 blocks with 400 chars each (2 batches of 2 blocks each)
+        text_400 = "あ" * 400
         blocks = [
-            TextBlock(id=str(i), text=f"テスト{i}", location=f"A{i}")
-            for i in range(75)
+            TextBlock(id=str(i), text=text_400, location=f"A{i}")
+            for i in range(4)
         ]
 
         progress_updates = []
@@ -309,7 +312,7 @@ class TestBatchProcessingWorkflow:
             blocks, on_progress=on_progress
         )
 
-        assert len(results) == 75
+        assert len(results) == 4
         assert mock_copilot_with_translation.translate_sync.call_count == 2
         assert len(progress_updates) == 2
 

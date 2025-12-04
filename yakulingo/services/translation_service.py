@@ -170,7 +170,6 @@ class BatchTranslator:
     """
 
     # Default values (used when settings not provided)
-    DEFAULT_MAX_BATCH_SIZE = 50      # Blocks per request
     DEFAULT_MAX_CHARS_PER_BATCH = 7000   # Characters per batch (fits in 8000 with ~1000 char template)
     DEFAULT_COPILOT_CHAR_LIMIT = 7500  # Copilot input limit (Free: 8000, Paid: 128000)
 
@@ -178,7 +177,6 @@ class BatchTranslator:
         self,
         copilot: CopilotHandler,
         prompt_builder: PromptBuilder,
-        max_batch_size: Optional[int] = None,
         max_chars_per_batch: Optional[int] = None,
         copilot_char_limit: Optional[int] = None,
     ):
@@ -187,7 +185,6 @@ class BatchTranslator:
         self._cancel_requested = False
 
         # Use provided values or defaults
-        self.max_batch_size = max_batch_size or self.DEFAULT_MAX_BATCH_SIZE
         self.max_chars_per_batch = max_chars_per_batch or self.DEFAULT_MAX_CHARS_PER_BATCH
         self.copilot_char_limit = copilot_char_limit or self.DEFAULT_COPILOT_CHAR_LIMIT
 
@@ -373,9 +370,8 @@ class BatchTranslator:
                 batches.append([block])
                 continue
 
-            # Normal batching logic
-            if (len(current_batch) >= self.max_batch_size or
-                current_chars + block_size > self.max_chars_per_batch):
+            # Normal batching logic (character limit only)
+            if current_chars + block_size > self.max_chars_per_batch:
                 if current_batch:
                     batches.append(current_batch)
                 current_batch = []
@@ -408,7 +404,6 @@ class TranslationService:
         self.batch_translator = BatchTranslator(
             copilot,
             self.prompt_builder,
-            max_batch_size=config.max_batch_size if config else None,
             max_chars_per_batch=config.max_chars_per_batch if config else None,
             copilot_char_limit=config.copilot_char_limit if config else None,
         )

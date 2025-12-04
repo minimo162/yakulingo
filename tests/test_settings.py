@@ -15,7 +15,7 @@ class TestAppSettings:
         assert settings.reference_files == ["glossary.csv"]
         assert settings.output_directory is None
         assert settings.last_tab == "text"
-        assert settings.max_batch_size == 50
+        assert settings.max_chars_per_batch == 7000
         assert settings.request_timeout == 120
         assert settings.max_retries == 3
         # Auto-update defaults
@@ -31,7 +31,7 @@ class TestAppSettings:
             settings = AppSettings(
                 reference_files=["custom.csv", "terms.xlsx"],
                 last_tab="file",
-                max_batch_size=100,
+                max_chars_per_batch=5000,
                 auto_update_enabled=False,
             )
 
@@ -43,7 +43,7 @@ class TestAppSettings:
             loaded = AppSettings.load(settings_path)
             assert loaded.reference_files == ["custom.csv", "terms.xlsx"]
             assert loaded.last_tab == "file"
-            assert loaded.max_batch_size == 100
+            assert loaded.max_chars_per_batch == 5000
             assert loaded.auto_update_enabled is False
 
     def test_load_nonexistent_file(self):
@@ -166,7 +166,7 @@ class TestAppSettings:
                 last_tab="file",
                 window_width=1000,
                 window_height=600,
-                max_batch_size=25,
+                max_chars_per_batch=5000,
                 request_timeout=60,
                 max_retries=5,
                 auto_update_enabled=False,
@@ -185,7 +185,7 @@ class TestAppSettings:
             assert loaded.last_tab == original.last_tab
             assert loaded.window_width == original.window_width
             assert loaded.window_height == original.window_height
-            assert loaded.max_batch_size == original.max_batch_size
+            assert loaded.max_chars_per_batch == original.max_chars_per_batch
             assert loaded.request_timeout == original.request_timeout
             assert loaded.max_retries == original.max_retries
             assert loaded.auto_update_enabled == original.auto_update_enabled
@@ -210,19 +210,19 @@ class TestSettingsEdgeCases:
             settings = AppSettings.load(settings_path)
 
             # Should use defaults for missing fields
-            assert settings.max_batch_size == 50
+            assert settings.max_chars_per_batch == 7000
             assert settings.reference_files == ["glossary.csv"]
 
     def test_load_partial_json(self):
         """Load settings with only some fields specified"""
         with tempfile.TemporaryDirectory() as tmpdir:
             settings_path = Path(tmpdir) / "settings.json"
-            settings_path.write_text('{"last_tab": "file", "max_batch_size": 100}')
+            settings_path.write_text('{"last_tab": "file", "max_chars_per_batch": 5000}')
 
             settings = AppSettings.load(settings_path)
 
             assert settings.last_tab == "file"
-            assert settings.max_batch_size == 100
+            assert settings.max_chars_per_batch == 5000
             # Other fields use defaults
             assert settings.request_timeout == 120
 
@@ -243,8 +243,8 @@ class TestSettingsEdgeCases:
         """Load settings with wrong field types"""
         with tempfile.TemporaryDirectory() as tmpdir:
             settings_path = Path(tmpdir) / "settings.json"
-            # max_batch_size should be int, not string
-            settings_path.write_text('{"max_batch_size": "fifty"}')
+            # max_chars_per_batch should be int, not string
+            settings_path.write_text('{"max_chars_per_batch": "seven thousand"}')
 
             settings = AppSettings.load(settings_path)
 
@@ -372,14 +372,14 @@ class TestSettingsEdgeCases:
     def test_boundary_values_for_numeric_settings(self):
         """Test boundary values for numeric settings"""
         settings = AppSettings(
-            max_batch_size=1,  # Minimum reasonable value
+            max_chars_per_batch=100,  # Minimum reasonable value
             request_timeout=1,
             max_retries=0,
             window_width=100,
             window_height=100,
         )
 
-        assert settings.max_batch_size == 1
+        assert settings.max_chars_per_batch == 100
         assert settings.request_timeout == 1
         assert settings.max_retries == 0
         assert settings.window_width == 100
@@ -388,13 +388,13 @@ class TestSettingsEdgeCases:
     def test_very_large_numeric_values(self):
         """Test very large numeric values"""
         settings = AppSettings(
-            max_batch_size=10000,
+            max_chars_per_batch=1000000,
             request_timeout=86400,  # 24 hours
             window_width=10000,
             window_height=10000,
         )
 
-        assert settings.max_batch_size == 10000
+        assert settings.max_chars_per_batch == 1000000
         assert settings.request_timeout == 86400
 
     def test_special_characters_in_output_directory(self):

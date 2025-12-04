@@ -1144,8 +1144,8 @@ class YakuLingoApp:
         self.state.translation_status = 'Starting...'
         self.state.output_file = None  # Clear any previous output
 
-        # Progress dialog
-        with ui.dialog() as progress_dialog, ui.card().classes('w-80'):
+        # Progress dialog (persistent to prevent accidental close by clicking outside)
+        with ui.dialog().props('persistent') as progress_dialog, ui.card().classes('w-80'):
             with ui.column().classes('w-full gap-4 p-5'):
                 with ui.row().classes('items-center gap-3'):
                     ui.spinner('dots', size='md').classes('text-primary')

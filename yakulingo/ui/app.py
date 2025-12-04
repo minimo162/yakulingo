@@ -1470,14 +1470,42 @@ document.fonts.ready.then(function() {
             is_on_external = display_info.get('isOnExternal', False)
             screen_width = display_info.get('screenWidth', 1920)
 
+            # Log all detection values for debugging
             logger.info(
-                "Display detection: isExtended=%s, isOnExternal=%s, screenWidth=%s",
-                is_extended, is_on_external, screen_width
+                "Display detection: isExtended=%s, screenWidth=%s, screenHeight=%s, "
+                "windowX=%s, availWidth=%s",
+                display_info.get('isExtended'),
+                display_info.get('screenWidth'),
+                display_info.get('screenHeight'),
+                display_info.get('windowX'),
+                display_info.get('availWidth')
             )
 
-            # Only scale if on external monitor
-            if not is_extended:
-                logger.debug("Single monitor detected, using default window size")
+            # Strategy: Use screen resolution as primary indicator
+            # - 2560px+ is almost certainly an external monitor (WQHD/4K)
+            # - 1920px could be laptop OR external, use isExtended as hint
+            # - Below 1920px, keep default size
+            #
+            # Note: screen.isExtended may not be available in all environments
+
+            if screen_width >= 2560:
+                # High resolution = definitely external monitor, scale regardless of isExtended
+                pass  # Continue to scaling logic
+            elif screen_width >= 1920 and is_extended:
+                # 1920px + multi-monitor detected = likely external
+                pass  # Continue to scaling logic
+            elif screen_width >= 1920 and not is_extended:
+                # 1920px but no multi-monitor signal
+                # Could be laptop or external with isExtended unsupported
+                # Be conservative: don't scale (user might be on laptop)
+                logger.debug(
+                    "Screen is 1920px but isExtended=%s, assuming laptop",
+                    is_extended
+                )
+                return
+            else:
+                # Below 1920px, keep default
+                logger.debug("Screen resolution %spx, using default window size", screen_width)
                 return
 
             # Determine new window size based on screen resolution

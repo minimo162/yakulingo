@@ -30,8 +30,8 @@ class AppSettings:
 
     # UI
     last_tab: str = "text"
-    window_width: int = 1866  # 2560x1440ベースで画面の72.9%
-    window_height: int = 1133
+    window_width: int = 1400  # 3カラムレイアウト対応
+    window_height: int = 850
 
     # Advanced
     max_batch_size: int = 50            # Max texts per Copilot request

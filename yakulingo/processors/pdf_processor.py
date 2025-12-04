@@ -1853,14 +1853,11 @@ class PdfProcessor(FileProcessor):
         settings=None,
     ) -> dict[str, Any]:
         """
-        Apply translations to PDF using PyMuPDF high-level API.
+        Apply translations to PDF.
 
-        Uses insert_textbox() for proper font encoding handling on Windows.
-
-        Coordinate System Notes:
-            - PyMuPDF's get_text("dict") returns bboxes with origin at top-left
-            - PyMuPDF's insert_textbox() uses the same coordinate system
-            - No coordinate conversion needed for high-level API
+        Uses low-level PDF operators by default for precise text placement
+        and dynamic line height compression. Falls back to high-level API
+        (insert_textbox) if low-level approach fails.
 
         Args:
             input_path: Path to original PDF
@@ -1875,6 +1872,45 @@ class PdfProcessor(FileProcessor):
             - 'success': Successfully translated blocks
             - 'failed': List of failed block IDs
             - 'failed_fonts': List of fonts that failed to embed
+        """
+        # Try low-level API first (better layout control)
+        try:
+            logger.debug("Attempting low-level PDF translation...")
+            result = self.apply_translations_low_level(
+                input_path, output_path, translations,
+                cells=None, direction=direction, settings=settings
+            )
+            # If success rate is acceptable, return result
+            if result['success'] >= result['total'] * 0.5:
+                logger.debug("Low-level translation succeeded: %d/%d",
+                            result['success'], result['total'])
+                return result
+            else:
+                logger.warning(
+                    "Low-level translation had low success rate (%d/%d), "
+                    "falling back to high-level API",
+                    result['success'], result['total']
+                )
+        except Exception as e:
+            logger.warning("Low-level translation failed: %s, falling back to high-level API", e)
+
+        # Fallback to high-level API
+        return self._apply_translations_high_level(
+            input_path, output_path, translations, direction, settings
+        )
+
+    def _apply_translations_high_level(
+        self,
+        input_path: Path,
+        output_path: Path,
+        translations: dict[str, str],
+        direction: str = "jp_to_en",
+        settings=None,
+    ) -> dict[str, Any]:
+        """
+        Apply translations using PyMuPDF high-level API (fallback).
+
+        Uses insert_textbox() for proper font encoding handling on Windows.
         """
         fitz = _get_fitz()
         doc = fitz.open(input_path)
@@ -2060,12 +2096,9 @@ class PdfProcessor(FileProcessor):
         """
         Apply translations using TranslationCell data (yomitoku integration).
 
-        Uses PyMuPDF high-level API for proper font encoding on Windows.
-
-        Coordinate System Notes:
-            - yomitoku returns bboxes in image coordinates at specified DPI
-            - These are scaled to PDF coordinates (72 DPI) for text placement
-            - The TranslationCell.box field uses image coordinates
+        Uses low-level PDF operators by default for precise text placement
+        and dynamic line height compression. Falls back to high-level API
+        (insert_textbox) if low-level approach fails.
 
         Args:
             input_path: Path to original PDF
@@ -2082,6 +2115,47 @@ class PdfProcessor(FileProcessor):
             - 'success': Successfully translated cells
             - 'failed': List of failed cell addresses
             - 'failed_fonts': List of fonts that failed to embed
+        """
+        # Try low-level API first (better layout control)
+        try:
+            logger.debug("Attempting low-level PDF translation with cells...")
+            result = self.apply_translations_low_level(
+                input_path, output_path, translations,
+                cells=cells, direction=direction, settings=settings, dpi=dpi
+            )
+            # If success rate is acceptable, return result
+            if result['success'] >= result['total'] * 0.5:
+                logger.debug("Low-level translation with cells succeeded: %d/%d",
+                            result['success'], result['total'])
+                return result
+            else:
+                logger.warning(
+                    "Low-level translation with cells had low success rate (%d/%d), "
+                    "falling back to high-level API",
+                    result['success'], result['total']
+                )
+        except Exception as e:
+            logger.warning("Low-level translation with cells failed: %s, falling back to high-level API", e)
+
+        # Fallback to high-level API
+        return self._apply_translations_with_cells_high_level(
+            input_path, output_path, translations, cells, direction, settings, dpi
+        )
+
+    def _apply_translations_with_cells_high_level(
+        self,
+        input_path: Path,
+        output_path: Path,
+        translations: dict[str, str],
+        cells: list[TranslationCell],
+        direction: str = "jp_to_en",
+        settings=None,
+        dpi: int = DEFAULT_OCR_DPI,
+    ) -> dict[str, Any]:
+        """
+        Apply translations using PyMuPDF high-level API (fallback).
+
+        Uses insert_textbox() for proper font encoding on Windows.
         """
         fitz = _get_fitz()
         doc = fitz.open(input_path)

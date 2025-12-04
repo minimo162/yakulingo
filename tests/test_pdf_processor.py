@@ -1039,8 +1039,8 @@ class TestPdfProcessorApplyTranslations:
                 input_path, output_path, translations, "jp_to_en"
             )
 
-            mock_doc.save.assert_called_once()
-            mock_doc.close.assert_called_once()
+            mock_doc.save.assert_called()  # May be called multiple times due to fallback
+            mock_doc.close.assert_called()  # May be called multiple times due to fallback
 
 
 # =============================================================================

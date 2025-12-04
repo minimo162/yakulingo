@@ -1149,16 +1149,6 @@ body {
     width: 100%;
     max-width: var(--input-panel-width-wide);
     align-items: center;
-    flex: 0 1 auto;  /* Don't stretch vertically in input mode */
-}
-
-/* Prevent main-card from stretching in input mode */
-.main-area:not(.has-results) .input-panel .main-card {
-    flex: 0 1 auto;
-}
-
-.main-area:not(.has-results) .input-panel .main-card-inner {
-    flex: 0 1 auto;
 }
 
 .main-area:not(.has-results) .result-panel {

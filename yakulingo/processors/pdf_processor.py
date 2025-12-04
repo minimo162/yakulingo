@@ -2560,6 +2560,15 @@ class PdfProcessor(FileProcessor):
             # DPI scale factor
             scale = 72.0 / dpi
 
+            # Extract original font info from PDF for better font size matching
+            # This helps when OCR is used on text-based PDFs
+            try:
+                original_font_info = extract_font_info_from_pdf(input_path, dpi)
+                logger.debug("Low-level API: Extracted font info from %d pages", len(original_font_info))
+            except Exception as e:
+                logger.debug("Low-level API: Could not extract font info: %s", e)
+                original_font_info = {}
+
             # Process each page
             for page_idx, page in enumerate(doc):
                 page_num = page_idx + 1
@@ -2567,6 +2576,9 @@ class PdfProcessor(FileProcessor):
 
                 # Create content stream replacer for this page
                 replacer = ContentStreamReplacer(doc, font_registry)
+
+                # Get font info for this page (for font size matching)
+                page_font_info = original_font_info.get(page_num, [])
 
                 # Get block info for standard mode
                 blocks_dict = {}
@@ -2624,10 +2636,40 @@ class PdfProcessor(FileProcessor):
                         # Select font based on text content
                         font_id = font_registry.select_font_for_text(translated, target_lang)
 
-                        # Estimate initial font size from box dimensions
-                        initial_font_size = estimate_font_size_from_box_height(
-                            [x1, y1, x2, y2], original_text
-                        )
+                        # Get initial font size: try matching with original PDF first,
+                        # then estimate from box height and original text
+                        initial_font_size = None
+
+                        # Method 1: Match with original PDF font info
+                        if page_font_info:
+                            if cells:
+                                # OCR mode: cell.box is in OCR DPI coordinates
+                                matched_size = find_matching_font_size(
+                                    cell.box, page_font_info, default_size=None
+                                )
+                            else:
+                                # Standard mode: convert PDF coordinates to OCR DPI
+                                ocr_scale = dpi / 72.0
+                                ocr_box = [
+                                    x1 * ocr_scale, y1 * ocr_scale,
+                                    x2 * ocr_scale, y2 * ocr_scale
+                                ]
+                                matched_size = find_matching_font_size(
+                                    ocr_box, page_font_info, default_size=None
+                                )
+                            if matched_size is not None:
+                                initial_font_size = matched_size
+                                logger.debug(
+                                    "Low-level API: Matched font size %.1f for block %s",
+                                    initial_font_size, block_id
+                                )
+
+                        # Method 2: Estimate from box height and original text (fallback)
+                        if initial_font_size is None:
+                            initial_font_size = estimate_font_size_from_box_height(
+                                [x1, y1, x2, y2], original_text
+                            )
+
                         initial_font_size = max(MIN_FONT_SIZE, min(initial_font_size, MAX_FONT_SIZE))
 
                         # Calculate line height with dynamic compression using font metrics

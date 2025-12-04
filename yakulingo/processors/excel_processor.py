@@ -184,7 +184,7 @@ class ExcelProcessor(FileProcessor):
         try:
             wb = app.books.open(str(file_path))
             try:
-                for sheet in wb.sheets:
+                for sheet_idx, sheet in enumerate(wb.sheets):
                     sheet_name = sheet.name
 
                     # === Cells (bulk read optimization) ===
@@ -239,6 +239,7 @@ class ExcelProcessor(FileProcessor):
                                             location=f"{sheet_name}, {col_letter}{row_idx}",
                                             metadata={
                                                 'sheet': sheet_name,
+                                                'sheet_idx': sheet_idx,
                                                 'row': row_idx,
                                                 'col': col_idx,
                                                 'type': 'cell',
@@ -265,6 +266,7 @@ class ExcelProcessor(FileProcessor):
                                             location=f"{sheet_name}, Shape '{shape.name}'",
                                             metadata={
                                                 'sheet': sheet_name,
+                                                'sheet_idx': sheet_idx,
                                                 'shape': shape_idx,
                                                 'shape_name': shape.name,
                                                 'type': 'shape',
@@ -292,6 +294,7 @@ class ExcelProcessor(FileProcessor):
                                             location=f"{sheet_name}, Chart {chart_idx + 1} Title",
                                             metadata={
                                                 'sheet': sheet_name,
+                                                'sheet_idx': sheet_idx,
                                                 'chart': chart_idx,
                                                 'type': 'chart_title',
                                             }
@@ -310,6 +313,7 @@ class ExcelProcessor(FileProcessor):
                                                     location=f"{sheet_name}, Chart {chart_idx + 1} {axis_name.title()} Axis",
                                                     metadata={
                                                         'sheet': sheet_name,
+                                                        'sheet_idx': sheet_idx,
                                                         'chart': chart_idx,
                                                         'axis': axis_name,
                                                         'type': 'chart_axis_title',
@@ -343,7 +347,7 @@ class ExcelProcessor(FileProcessor):
         wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
 
         try:
-            for sheet_name in wb.sheetnames:
+            for sheet_idx, sheet_name in enumerate(wb.sheetnames):
                 sheet = wb[sheet_name]
 
                 for row in sheet.iter_rows():
@@ -363,6 +367,7 @@ class ExcelProcessor(FileProcessor):
                                     location=f"{sheet_name}, {col_letter}{row_idx}",
                                     metadata={
                                         'sheet': sheet_name,
+                                        'sheet_idx': sheet_idx,
                                         'row': row_idx,
                                         'col': col_idx,
                                         'type': 'cell',

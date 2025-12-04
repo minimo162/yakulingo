@@ -110,7 +110,7 @@ class PptxProcessor(FileProcessor):
                                 location=f"Slide {slide_idx + 1}, Shape {shape_counter + 1}",
                                 metadata={
                                     'type': 'shape',
-                                    'slide': slide_idx,
+                                    'slide_idx': slide_idx,
                                     'shape': shape_counter,
                                     'para': para_idx,
                                     'font_name': font_name,
@@ -144,7 +144,7 @@ class PptxProcessor(FileProcessor):
                                     location=f"Slide {slide_idx + 1}, Table {table_counter + 1}, Row {row_idx + 1}, Cell {cell_idx + 1}",
                                     metadata={
                                         'type': 'table_cell',
-                                        'slide': slide_idx,
+                                        'slide_idx': slide_idx,
                                         'table': table_counter,
                                         'row': row_idx,
                                         'col': cell_idx,
@@ -165,7 +165,7 @@ class PptxProcessor(FileProcessor):
                             location=f"Slide {slide_idx + 1}, Notes",
                             metadata={
                                 'type': 'notes',
-                                'slide': slide_idx,
+                                'slide_idx': slide_idx,
                                 'para': para_idx,
                             }
                         )

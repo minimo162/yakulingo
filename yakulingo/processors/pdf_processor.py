@@ -1762,7 +1762,7 @@ class PdfProcessor(FileProcessor):
                             location=f"Page {page_num}",
                             metadata={
                                 'type': 'ocr_cell',
-                                'page': page_num - 1,
+                                'page_idx': page_num - 1,
                                 'address': cell.address,
                                 'bbox': cell.box,
                                 'direction': cell.direction,
@@ -1973,7 +1973,7 @@ class PdfProcessor(FileProcessor):
                                     location=f"Page {page_num}",
                                     metadata={
                                         'type': 'ocr_cell',
-                                        'page': page_num - 1,
+                                        'page_idx': page_num - 1,
                                         'address': cell.address,
                                         'bbox': cell.box,
                                         'direction': cell.direction,
@@ -2067,7 +2067,7 @@ class PdfProcessor(FileProcessor):
                                 location=f"Page {page_num}",
                                 metadata={
                                     'type': 'text_block',
-                                    'page': page_idx,
+                                    'page_idx': page_idx,
                                     'block': block_idx,
                                     'bbox': block.get("bbox"),
                                     'font_name': font_name,

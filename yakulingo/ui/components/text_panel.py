@@ -438,43 +438,31 @@ def _render_translation_status(
     Render translation status section.
 
     Shows:
-    - During translation: "〜語から〜語へ翻訳中..."
-    - After translation: "〜語から〜語へ翻訳しました" with elapsed time
+    - During translation: "英訳中..." or "和訳中..."
+    - After translation: "✓ 英訳しました" or "✓ 和訳しました" with elapsed time
     """
-    # Determine source and target languages
-    if detected_language == "日本語":
-        source_lang = "日本語"
-        target_lang = "英語"
-        source_flag = "🇯🇵"
-        target_flag = "🇺🇸"
-    elif detected_language:
-        source_lang = detected_language
-        target_lang = "日本語"
-        source_flag = "🌐"
-        target_flag = "🇯🇵"
-    else:
-        # Still detecting or unknown
-        source_lang = None
-        target_lang = None
-        source_flag = "🔍"
-        target_flag = ""
+    # Determine translation direction
+    is_to_english = detected_language == "日本語"
 
     with ui.element('div').classes('translation-status-section'):
         with ui.row().classes('items-center gap-2'):
             if translating:
                 # Translating state
                 ui.spinner('dots', size='sm').classes('text-primary')
-                if source_lang and target_lang:
-                    ui.label(f'{source_flag} {source_lang}から{target_flag} {target_lang}へ翻訳中...').classes('status-text')
+                if detected_language:
+                    if is_to_english:
+                        ui.label('英訳中...').classes('status-text')
+                    else:
+                        ui.label('和訳中...').classes('status-text')
                 else:
-                    ui.label(f'{source_flag} 言語を判定しています...').classes('status-text')
+                    ui.label('翻訳中...').classes('status-text')
             else:
                 # Completed state
                 ui.icon('check_circle').classes('text-lg text-success')
-                if source_lang and target_lang:
-                    ui.label(f'{source_flag} {source_lang}から{target_flag} {target_lang}へ翻訳しました').classes('status-text')
+                if is_to_english:
+                    ui.label('英訳しました').classes('status-text')
                 else:
-                    ui.label('翻訳しました').classes('status-text')
+                    ui.label('和訳しました').classes('status-text')
 
                 # Elapsed time badge
                 if elapsed_time:
@@ -665,20 +653,17 @@ def _render_loading(detected_language: Optional[str] = None):
         with ui.row().classes('items-center gap-3'):
             ui.spinner('dots', size='lg').classes('text-primary')
 
-            # Dynamic language detection message
+            # Translation direction message
             with ui.row().classes('items-center gap-2'):
                 if detected_language is None:
                     # Still detecting language
-                    ui.label('🔍').classes('text-base')
-                    ui.label('言語を判定しています...').classes('message')
+                    ui.label('翻訳中...').classes('message')
                 elif detected_language == "日本語":
                     # Japanese → English
-                    ui.label('🇯🇵 → 🇺🇸').classes('text-base')
-                    ui.label('日本語を検出しました。英語に翻訳中...').classes('message')
+                    ui.label('英訳中...').classes('message')
                 else:
                     # Other → Japanese
-                    ui.label('🌐 → 🇯🇵').classes('text-base')
-                    ui.label(f'{detected_language}を検出しました。日本語に翻訳中...').classes('message')
+                    ui.label('和訳中...').classes('message')
 
 
 def _render_results_to_en(

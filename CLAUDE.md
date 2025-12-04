@@ -184,14 +184,23 @@ VersionInfo(version, release_date, download_url, release_notes, requires_reinsta
 
 ## Auto-Detected Translation Direction
 
-The application uses **Copilot-based language detection** via `detect_language()`:
-- Sends text to Copilot with `detect_language.txt` prompt
-- Returns language name (e.g., "日本語", "英語", "中国語")
-- Fallback: Local `is_japanese_text()` function (Unicode character range analysis)
+The application uses **hybrid language detection** via `detect_language()`:
 
-**Why Copilot for language detection (not local detection)?**
-1. **中国語と日本語の区別**: ローカルの`is_japanese_text()`は漢字をカウントするため、中国語テキストを日本語と誤判定する。ひらがな/カタカナがない漢字のみのテキストでは区別不可能
-2. **UIへの言語名表示**: 「🇯🇵 日本語から🇺🇸 英語へ翻訳中...」のように具体的な言語名を表示するため、Copilotから「日本語」「英語」「中国語」「韓国語」等の言語名を取得する必要がある
+1. **Local detection (fast)** - `detect_language_local()`:
+   - Hiragana/Katakana present → "日本語" (definite Japanese)
+   - Hangul present → "韓国語" (definite Korean)
+   - Latin alphabet dominant → "英語" (assume English for speed)
+   - CJK only (no kana) → None (need Copilot)
+
+2. **Copilot detection (slow)** - Only for CJK-only text:
+   - Sends text to Copilot with `detect_language.txt` prompt
+   - Returns language name (e.g., "日本語", "中国語")
+   - Fallback: Local `is_japanese_text()` function
+
+**Why hybrid approach?**
+- **Speed**: 90%+ of texts can be detected locally without Copilot roundtrip
+- **中国語問題**: CJK-only text (漢字のみ) needs Copilot to distinguish Chinese/Japanese
+- **Simple UI**: 「英訳中...」「和訳中...」 display without complex language names
 
 Translation direction based on detection:
 - **Japanese input ("日本語")** → English output (single translation with inline adjustments)
@@ -203,7 +212,7 @@ No manual direction selection is required.
 
 ### Unified UI Structure (英訳・和訳共通)
 - **Source text section** (原文セクション): 翻訳結果パネル上部に原文を表示 + コピーボタン
-- **Translation status** (翻訳状態表示): 「🇯🇵 日本語から🇺🇸 英語へ翻訳中...」「✓ 翻訳しました」+ 経過時間バッジ
+- **Translation status** (翻訳状態表示): 「英訳中...」「和訳中...」→「✓ 英訳しました」「✓ 和訳しました」+ 経過時間バッジ
 - **Suggestion hint row** (吹き出し風): 💡アイコン + [再翻訳] ボタン
 - **Action/adjustment options**: 単独オプションスタイルのボタン
 - **Inline input**: 追加リクエスト入力欄（縦幅いっぱいに拡張）
@@ -747,10 +756,10 @@ Based on recent commits:
 - **Auto-Update System**: GitHub Releases-based updates with Windows proxy support
 - **Native Launcher**: Rust-based `YakuLingo.exe` for Windows distribution
 - **Test Coverage**: 26 test files
-- **Language Detection**: Copilot-based language detection via `detect_language()` method, unified with `is_japanese_text()` for fallback
+- **Language Detection**: Hybrid approach - local detection for kana/Latin/Hangul, Copilot only for CJK-only text (Chinese/Japanese ambiguity)
 - **Translation Result UI Enhancements**:
   - **Source text section**: 翻訳結果パネル上部に原文を表示（コピーボタン付き）
-  - **Translation status display**: 翻訳中「〜語から〜語へ翻訳中...」、完了後「✓ 翻訳しました」+ 経過時間
+  - **Translation status display**: 「英訳中...」「和訳中...」→「✓ 英訳しました」「✓ 和訳しました」+ 経過時間
   - **Full-height input area**: 翻訳中・翻訳後の入力欄を縦幅いっぱいに拡張
 - **Window Sizing**:
   - **Fixed window size**: 1400×850 pixels (designed for 1920×1200 laptop resolution)

@@ -114,43 +114,44 @@ class CellTranslator:
 
     def _is_japanese_only(self, text: str) -> bool:
         """
-        Check if text contains ONLY Japanese characters (no alphabetic characters).
+        Check if text contains Japanese-specific characters (hiragana/katakana).
 
-        Used for EN→JP translation to skip already-Japanese text.
-        Returns True if text has Japanese but no alphabetic characters.
+        Used for X→JP translation to skip already-Japanese text.
+        Returns True if text has hiragana/katakana but no alphabetic characters.
+
+        IMPORTANT: CJK Kanji alone does NOT count as "Japanese-only" because
+        Chinese text also uses the same kanji range (U+4E00-U+9FFF).
+        Only hiragana/katakana are unique to Japanese.
 
         Examples:
-            "こんにちは" → True (Japanese only, skip for EN→JP)
-            "Hello" → False (English only, translate for EN→JP)
-            "Hello こんにちは" → False (mixed, translate for EN→JP)
-            "売上 Sales" → False (mixed, translate for EN→JP)
-            "12345" → False (no Japanese, already filtered by skip patterns)
+            "こんにちは" → True (has kana, skip for X→JP)
+            "日本語" → False (kanji only, might be Chinese, translate)
+            "你好世界" → False (Chinese, translate for X→JP)
+            "Hello" → False (English only, translate for X→JP)
+            "Hello こんにちは" → False (mixed with alphabet, translate)
+            "売上げ" → True (has hiragana, skip for X→JP)
         """
-        has_japanese = False
+        has_kana = False
         has_alphabetic = False
 
         for char in text:
             code = ord(char)
-            # Check for Japanese characters
+            # Check for Japanese-specific characters (hiragana/katakana only)
+            # CJK Kanji is excluded because it's shared with Chinese
             if (0x3040 <= code <= 0x309F or  # Hiragana
-                0x30A0 <= code <= 0x30FF or  # Katakana
-                0x4E00 <= code <= 0x9FFF or  # CJK Kanji
-                code == 0x25B2 or            # ▲
-                code == 0x25B3 or            # △
-                code == 0x3007 or            # 〇
-                code == 0x203B):             # ※
-                has_japanese = True
+                0x30A0 <= code <= 0x30FF):   # Katakana
+                has_kana = True
             # Check for alphabetic characters (A-Z, a-z)
             elif (0x0041 <= code <= 0x005A or  # A-Z
                   0x0061 <= code <= 0x007A):   # a-z
                 has_alphabetic = True
 
             # Early exit if we found both
-            if has_japanese and has_alphabetic:
+            if has_kana and has_alphabetic:
                 return False
 
-        # Japanese-only if has Japanese but no alphabetic
-        return has_japanese and not has_alphabetic
+        # Japanese-only if has kana but no alphabetic
+        return has_kana and not has_alphabetic
 
 
 class ParagraphTranslator:
@@ -249,36 +250,36 @@ class ParagraphTranslator:
 
     def _is_japanese_only(self, text: str) -> bool:
         """
-        Check if text contains ONLY Japanese characters (no alphabetic characters).
+        Check if text contains Japanese-specific characters (hiragana/katakana).
 
-        Used for EN→JP translation to skip already-Japanese text.
-        Returns True if text has Japanese but no alphabetic characters.
+        Used for X→JP translation to skip already-Japanese text.
+        Returns True if text has hiragana/katakana but no alphabetic characters.
+
+        IMPORTANT: CJK Kanji alone does NOT count as "Japanese-only" because
+        Chinese text also uses the same kanji range (U+4E00-U+9FFF).
+        Only hiragana/katakana are unique to Japanese.
         """
-        has_japanese = False
+        has_kana = False
         has_alphabetic = False
 
         for char in text:
             code = ord(char)
-            # Check for Japanese characters
+            # Check for Japanese-specific characters (hiragana/katakana only)
+            # CJK Kanji is excluded because it's shared with Chinese
             if (0x3040 <= code <= 0x309F or  # Hiragana
-                0x30A0 <= code <= 0x30FF or  # Katakana
-                0x4E00 <= code <= 0x9FFF or  # CJK Kanji
-                code == 0x25B2 or            # ▲
-                code == 0x25B3 or            # △
-                code == 0x3007 or            # 〇
-                code == 0x203B):             # ※
-                has_japanese = True
+                0x30A0 <= code <= 0x30FF):   # Katakana
+                has_kana = True
             # Check for alphabetic characters (A-Z, a-z)
             elif (0x0041 <= code <= 0x005A or  # A-Z
                   0x0061 <= code <= 0x007A):   # a-z
                 has_alphabetic = True
 
             # Early exit if we found both
-            if has_japanese and has_alphabetic:
+            if has_kana and has_alphabetic:
                 return False
 
-        # Japanese-only if has Japanese but no alphabetic
-        return has_japanese and not has_alphabetic
+        # Japanese-only if has kana but no alphabetic
+        return has_kana and not has_alphabetic
 
     def extract_paragraph_text(self, paragraph) -> str:
         """

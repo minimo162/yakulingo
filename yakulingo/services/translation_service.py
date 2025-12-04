@@ -164,6 +164,88 @@ def scale_progress(progress: TranslationProgress, start: int, end: int, phase: T
     )
 
 
+class TranslationCache:
+    """
+    Translation cache for PDF and file translation.
+
+    Caches translated text by source text hash to avoid re-translating
+    identical content (e.g., repeated headers, footers, or common phrases).
+
+    Thread-safe for concurrent access.
+    """
+
+    def __init__(self, max_size: int = 10000):
+        """
+        Initialize translation cache.
+
+        Args:
+            max_size: Maximum number of cached entries (default: 10000)
+        """
+        self._cache: dict[str, str] = {}
+        self._max_size = max_size
+        self._hits = 0
+        self._misses = 0
+        import threading
+        self._lock = threading.Lock()
+
+    def get(self, text: str) -> Optional[str]:
+        """
+        Get cached translation for text.
+
+        Args:
+            text: Source text
+
+        Returns:
+            Cached translation or None if not found
+        """
+        with self._lock:
+            result = self._cache.get(text)
+            if result is not None:
+                self._hits += 1
+            else:
+                self._misses += 1
+            return result
+
+    def set(self, text: str, translation: str) -> None:
+        """
+        Cache a translation.
+
+        Args:
+            text: Source text
+            translation: Translated text
+        """
+        with self._lock:
+            # Simple LRU-like behavior: clear half when full
+            if len(self._cache) >= self._max_size:
+                # Remove oldest half of entries
+                keys_to_remove = list(self._cache.keys())[:self._max_size // 2]
+                for key in keys_to_remove:
+                    del self._cache[key]
+                logger.debug("Cache pruned: removed %d entries", len(keys_to_remove))
+
+            self._cache[text] = translation
+
+    def clear(self) -> None:
+        """Clear all cached translations."""
+        with self._lock:
+            self._cache.clear()
+            self._hits = 0
+            self._misses = 0
+
+    @property
+    def stats(self) -> dict:
+        """Get cache statistics."""
+        with self._lock:
+            total = self._hits + self._misses
+            hit_rate = (self._hits / total * 100) if total > 0 else 0.0
+            return {
+                "size": len(self._cache),
+                "hits": self._hits,
+                "misses": self._misses,
+                "hit_rate": f"{hit_rate:.1f}%",
+            }
+
+
 class BatchTranslator:
     """
     Handles batch translation of text blocks.
@@ -179,6 +261,7 @@ class BatchTranslator:
         prompt_builder: PromptBuilder,
         max_chars_per_batch: Optional[int] = None,
         copilot_char_limit: Optional[int] = None,
+        enable_cache: bool = True,
     ):
         self.copilot = copilot
         self.prompt_builder = prompt_builder
@@ -188,13 +271,26 @@ class BatchTranslator:
         self.max_chars_per_batch = max_chars_per_batch or self.DEFAULT_MAX_CHARS_PER_BATCH
         self.copilot_char_limit = copilot_char_limit or self.DEFAULT_COPILOT_CHAR_LIMIT
 
+        # Translation cache for avoiding re-translation of identical text
+        self._cache = TranslationCache() if enable_cache else None
+
     def cancel(self) -> None:
         """Request cancellation of batch translation."""
         self._cancel_requested = True
 
     def reset_cancel(self) -> None:
         """Reset cancellation flag."""
-        self._cancel_requested = False
+
+    def clear_cache(self) -> None:
+        """Clear translation cache."""
+        if self._cache:
+            self._cache.clear()
+
+    def get_cache_stats(self) -> Optional[dict]:
+        """Get cache statistics."""
+        if self._cache:
+            return self._cache.stats
+        return None
 
     def translate_blocks(
         self,
@@ -248,6 +344,7 @@ class BatchTranslator:
             BatchTranslationResult with translations and error details
 
         Performance optimizations:
+            - Translation cache: avoids re-translating identical text
             - Pre-builds all prompts before translation loop to minimize per-batch overhead
             - Uses concurrent.futures for parallel prompt construction when >2 batches
         """
@@ -258,10 +355,61 @@ class BatchTranslator:
         untranslated_block_ids = []
         mismatched_batch_count = 0
 
-        batches = self._create_batches(blocks)
-        has_refs = bool(reference_files)
         self._cancel_requested = False
         cancelled = False
+
+        # Phase 0: Skip formula blocks (preserve original text)
+        formula_skipped = 0
+        translatable_blocks = []
+
+        for block in blocks:
+            # Check if block is marked as formula (PDF processor)
+            if block.metadata and block.metadata.get('is_formula'):
+                translations[block.id] = block.text  # Keep original
+                formula_skipped += 1
+            else:
+                translatable_blocks.append(block)
+
+        if formula_skipped > 0:
+            logger.debug(
+                "Skipped %d formula blocks (preserved original text)",
+                formula_skipped
+            )
+
+        # Phase 1: Check cache for already-translated blocks
+        uncached_blocks = []
+        cache_hits = 0
+
+        for block in translatable_blocks:
+            if self._cache:
+                cached = self._cache.get(block.text)
+                if cached is not None:
+                    translations[block.id] = cached
+                    cache_hits += 1
+                    continue
+            uncached_blocks.append(block)
+
+        if cache_hits > 0:
+            logger.debug(
+                "Cache hits: %d/%d blocks (%.1f%%)",
+                cache_hits, len(blocks), cache_hits / len(blocks) * 100
+            )
+
+        # If all blocks were cached, return early
+        if not uncached_blocks:
+            logger.info("All %d blocks served from cache", len(blocks))
+            return BatchTranslationResult(
+                translations=translations,
+                untranslated_block_ids=[],
+                mismatched_batch_count=0,
+                total_blocks=len(blocks),
+                translated_count=len(translations),
+                cancelled=False,
+            )
+
+        # Phase 2: Batch translate uncached blocks
+        batches = self._create_batches(uncached_blocks)
+        has_refs = bool(reference_files)
 
         # Pre-build all prompts before translation loop for efficiency
         # This eliminates prompt construction time from the translation loop
@@ -313,7 +461,12 @@ class BatchTranslator:
             # Process results, tracking untranslated blocks
             for idx, block in enumerate(batch):
                 if idx < len(batch_translations):
-                    translations[block.id] = batch_translations[idx]
+                    translated_text = batch_translations[idx]
+                    translations[block.id] = translated_text
+
+                    # Cache the translation for future use
+                    if self._cache:
+                        self._cache.set(block.text, translated_text)
                 else:
                     # Mark untranslated blocks with original text
                     untranslated_block_ids.append(block.id)
@@ -322,6 +475,11 @@ class BatchTranslator:
                         block.id, idx, len(batch_translations)
                     )
                     translations[block.id] = block.text
+
+        # Log cache stats after translation
+        if self._cache:
+            stats = self._cache.stats
+            logger.debug("Translation cache stats: %s", stats)
 
         result = BatchTranslationResult(
             translations=translations,

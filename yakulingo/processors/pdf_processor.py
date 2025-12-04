@@ -348,7 +348,7 @@ DEFAULT_LINE_HEIGHT = 1.1
 # Font size constants
 DEFAULT_FONT_SIZE = 10.0
 MIN_FONT_SIZE = 1.0
-MAX_FONT_SIZE = 12.0
+MAX_FONT_SIZE = 72.0  # Allow large font sizes (was 12.0, too restrictive)
 
 # Line height compression constants
 MIN_LINE_HEIGHT = 1.0
@@ -1565,8 +1565,19 @@ class PdfProcessor(FileProcessor):
                             result['failed'].append(block_id)
                             continue
 
-                        # Calculate font size
-                        font_size = estimate_font_size(list(bbox), translated)
+                        # Get original font size from block (if available)
+                        original_font_size = None
+                        if block.get("lines"):
+                            first_line = block["lines"][0]
+                            if first_line.get("spans"):
+                                first_span = first_line["spans"][0]
+                                original_font_size = first_span.get("size")
+
+                        # Use original font size if available, otherwise estimate
+                        if original_font_size and original_font_size > 0:
+                            font_size = original_font_size
+                        else:
+                            font_size = estimate_font_size(list(bbox), translated)
 
                         # Insert text using high-level API
                         # PyMuPDF handles font encoding automatically

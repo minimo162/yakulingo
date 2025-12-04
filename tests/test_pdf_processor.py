@@ -790,15 +790,16 @@ class TestEstimateFontSize:
 
     def test_basic_estimation(self):
         size = estimate_font_size([0, 0, 200, 50], "Hello")
-        assert 1.0 <= size <= 12.0
+        assert 1.0 <= size <= 72.0
 
     def test_small_box_small_font(self):
         size = estimate_font_size([0, 0, 20, 10], "A")
-        assert size <= 12.0
+        assert size <= 72.0
 
-    def test_large_box_capped_at_12(self):
+    def test_large_box_capped_at_max(self):
+        # MAX_FONT_SIZE is 72.0 (was 12.0, changed to allow large fonts)
         size = estimate_font_size([0, 0, 1000, 1000], "A")
-        assert size <= 12.0
+        assert size <= 72.0
 
     def test_minimum_font_size(self):
         size = estimate_font_size([0, 0, 1, 1], "A" * 100)
@@ -1061,7 +1062,7 @@ class TestConstants:
         """Test font size constants are properly defined"""
         assert DEFAULT_FONT_SIZE == 10.0
         assert MIN_FONT_SIZE == 1.0
-        assert MAX_FONT_SIZE == 12.0
+        assert MAX_FONT_SIZE == 72.0  # Changed from 12.0 to allow large fonts
         assert MIN_FONT_SIZE < DEFAULT_FONT_SIZE < MAX_FONT_SIZE
 
     def test_line_height_constants(self):

@@ -9,7 +9,7 @@ YakuLingoはネットワーク共有フォルダからのワンクリックセ�
 
 ### 前提条件
 
-開発環境で先に `install_deps.bat` を実行し、以下のフォルダが存在すること：
+開発環境で先に `packaging/install_deps.bat` を実行し、以下のフォルダが存在すること：
 - `.venv` (Python仮想環境)
 - `.uv-python` (Python本体)
 - `.playwright-browsers` (ブラウザ)
@@ -17,7 +17,7 @@ YakuLingoはネットワーク共有フォルダからのワンクリックセ�
 ### 実行
 
 ```batch
-make_distribution.bat
+packaging\make_distribution.bat
 ```
 
 ### 出力物

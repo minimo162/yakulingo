@@ -212,7 +212,7 @@ uv run --extra test pytest --cov=yakulingo --cov-report=term-missing
 ### 配布パッケージの作成
 
 ```bash
-make_distribution.bat
+packaging\make_distribution.bat
 ```
 
 ### ディレクトリ構造
@@ -227,10 +227,12 @@ YakuLingo/
 │   ├── storage/              # データ永続化（履歴）
 │   ├── config/               # 設定管理
 │   └── models/               # データモデル
-├── launcher/                 # ネイティブランチャー（Rust製）
+├── packaging/                # 配布・ビルド関連
+│   ├── launcher/             # ネイティブランチャー（Rust製）
+│   └── installer/            # ネットワーク共有インストーラ
 ├── tests/                    # テストスイート（26ファイル）
 ├── prompts/                  # 翻訳プロンプト
-├── config/settings.json      # アプリ設定
+├── config/settings.template.json  # 設定テンプレート
 └── glossary.csv              # デフォルト参照ファイル
 ```
 

@@ -99,13 +99,17 @@ YakuLingo/
 │   ├── text_question.txt          # Follow-up: answer user questions
 │   └── text_reply_email.txt       # Follow-up: compose reply email
 ├── config/
-│   └── settings.json              # User configuration
+│   └── settings.template.json     # Configuration template
 ├── docs/
+│   ├── DISTRIBUTION.md            # Deployment and distribution guide
 │   └── SPECIFICATION.md           # Detailed technical specification
-├── installer/                     # Distribution installer files (network share setup)
-├── launcher/                      # Native Windows launcher (Rust-based YakuLingo.exe)
-│   ├── Cargo.toml                 # Rust project configuration
-│   └── src/main.rs                # Launcher source code
+├── packaging/                     # Distribution and build files
+│   ├── installer/                 # Network share installer scripts
+│   ├── launcher/                  # Native Windows launcher (Rust-based YakuLingo.exe)
+│   │   ├── Cargo.toml             # Rust project configuration
+│   │   └── src/main.rs            # Launcher source code
+│   ├── install_deps.bat           # Install dependencies for distribution
+│   └── make_distribution.bat      # Create distribution package
 ├── glossary.csv                   # Default reference file (glossary, style guide, etc.)
 ├── pyproject.toml                 # Project metadata & dependencies
 ├── uv.lock                        # Lock file for reproducible builds
@@ -684,14 +688,14 @@ DocumentAnalyzer(
 ## Distribution
 
 YakuLingo supports network share deployment:
-- Run `make_distribution.bat` to create distribution package
+- Run `packaging/make_distribution.bat` to create distribution package
 - Copy `share_package/` to network share
 - Users run `setup.vbs` for one-click installation
-- See `DISTRIBUTION.md` for detailed instructions
+- See `docs/DISTRIBUTION.md` for detailed instructions
 
 ### Native Launcher
 The application includes a Rust-based native launcher (`YakuLingo.exe`):
-- Located in `launcher/` directory
+- Located in `packaging/launcher/` directory
 - Built automatically via GitHub Actions on release or launcher file changes
 - Handles Python venv setup and application startup
 - Replaces previous VBS scripts for cleaner, faster startup
@@ -705,7 +709,7 @@ When interacting with users in this repository, prefer Japanese for comments and
 
 - `README.md` - User guide and quick start (Japanese)
 - `docs/SPECIFICATION.md` - Detailed technical specification (~1547 lines)
-- `DISTRIBUTION.md` - Deployment and distribution guide
+- `docs/DISTRIBUTION.md` - Deployment and distribution guide
 
 ## Recent Development Focus
 

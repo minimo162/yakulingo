@@ -33,75 +33,6 @@ if TYPE_CHECKING:
 COPILOT_LOGIN_TIMEOUT = 300  # 5 minutes for login
 MAX_HISTORY_DISPLAY = 20  # Maximum history items to display in sidebar
 
-# Window scaling constants
-BASE_SCREEN_WIDTH = 2560  # Reference screen width (QHD)
-BASE_SCREEN_HEIGHT = 1440  # Reference screen height (QHD)
-MIN_WINDOW_WIDTH = 800
-MIN_WINDOW_HEIGHT = 600
-MAX_WINDOW_RATIO = 0.9  # Max 90% of screen size
-
-
-def _get_screen_size_windows() -> tuple[int, int] | None:
-    """Get screen size using Windows API (faster than tkinter)."""
-    try:
-        import ctypes
-        user32 = ctypes.windll.user32
-        # SM_CXSCREEN = 0, SM_CYSCREEN = 1
-        return (user32.GetSystemMetrics(0), user32.GetSystemMetrics(1))
-    except (AttributeError, OSError):
-        return None
-
-
-def get_scaled_window_size(base_width: int, base_height: int) -> tuple[int, int]:
-    """
-    Scale window size based on screen resolution.
-
-    Uses QHD (2560x1440) as the reference resolution to match CSS zoom scaling.
-    For lower resolution screens, the window is scaled down proportionally.
-
-    Args:
-        base_width: Desired window width at 2560x1440 resolution
-        base_height: Desired window height at 2560x1440 resolution
-
-    Returns:
-        Tuple of (scaled_width, scaled_height)
-    """
-    # Try Windows API first (fast), then fallback to default
-    screen_size = _get_screen_size_windows()
-    if not screen_size:
-        # Fallback to base size if screen detection fails
-        logger.debug("Could not detect screen resolution, using default window size")
-        return (base_width, base_height)
-
-    screen_width, screen_height = screen_size
-
-    # Calculate scaling factor based on screen resolution
-    # Use the minimum of width/height ratios to maintain aspect ratio
-    width_scale = screen_width / BASE_SCREEN_WIDTH
-    height_scale = screen_height / BASE_SCREEN_HEIGHT
-    scale_factor = min(width_scale, height_scale)
-
-    # Apply scaling
-    scaled_width = int(base_width * scale_factor)
-    scaled_height = int(base_height * scale_factor)
-
-    # Apply minimum size constraints
-    scaled_width = max(scaled_width, MIN_WINDOW_WIDTH)
-    scaled_height = max(scaled_height, MIN_WINDOW_HEIGHT)
-
-    # Apply maximum size constraints (90% of screen)
-    max_width = int(screen_width * MAX_WINDOW_RATIO)
-    max_height = int(screen_height * MAX_WINDOW_RATIO)
-    scaled_width = min(scaled_width, max_width)
-    scaled_height = min(scaled_height, max_height)
-
-    logger.debug(
-        "Window scaling: screen=%dx%d, scale=%.2f, window=%dx%d",
-        screen_width, screen_height, scale_factor, scaled_width, scaled_height
-    )
-
-    return (scaled_width, scaled_height)
-
 
 class YakuLingoApp:
     """Main application - Nani-inspired sidebar layout"""
@@ -1492,11 +1423,9 @@ document.fonts.ready.then(function() {
         asyncio.create_task(yakulingo_app.start_edge_and_connect())
         asyncio.create_task(yakulingo_app.check_for_updates())
 
-    # Scale window size based on screen resolution
-    window_size = get_scaled_window_size(
-        yakulingo_app.settings.window_width,
-        yakulingo_app.settings.window_height
-    )
+    # Window size is fixed; UI scaling is handled by CSS zoom (RESOLUTION_ZOOM_JS)
+    # which automatically adapts to the monitor where the window is displayed
+    window_size = (yakulingo_app.settings.window_width, yakulingo_app.settings.window_height)
 
     ui.run(
         host=host,

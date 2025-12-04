@@ -138,6 +138,8 @@ body {
     margin: 0;
     padding: 0;
     min-height: 100vh;
+    min-width: 1000px;  /* Minimum width to prevent layout breaking */
+    overflow-x: auto;   /* Enable horizontal scroll when window is too narrow */
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
 }

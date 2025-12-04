@@ -25,7 +25,8 @@ logger = logging.getLogger(__name__)
 # Captures: number and content until next number or end of string
 # Uses \Z (end of string) instead of $ (end of line in MULTILINE mode)
 # Allows optional leading whitespace on lines (^\s*)
-_RE_BATCH_ITEM = re.compile(r'^\s*(\d+)\.\s*(.*?)(?=\n\s*\d+\.\s|\Z)', re.MULTILINE | re.DOTALL)
+# Note: lookahead does NOT require space after period (handles "1.text" format from Copilot)
+_RE_BATCH_ITEM = re.compile(r'^\s*(\d+)\.\s*(.*?)(?=\n\s*\d+\.|\Z)', re.MULTILINE | re.DOTALL)
 
 
 class PlaywrightManager:
@@ -236,8 +237,8 @@ class CopilotHandler:
     DEFAULT_CDP_PORT = 9333  # Dedicated port for translator
     EDGE_STARTUP_MAX_ATTEMPTS = 20  # Maximum iterations to wait for Edge startup
     EDGE_STARTUP_CHECK_INTERVAL = 0.3  # Seconds between startup checks
-    RESPONSE_STABLE_COUNT = 2  # Number of stable checks before considering response complete
-    RESPONSE_POLL_INTERVAL = 0.3  # Seconds between response checks (reduced from 0.5 for faster detection)
+    RESPONSE_STABLE_COUNT = 4  # Number of stable checks before considering response complete
+    RESPONSE_POLL_INTERVAL = 0.3  # Seconds between response checks
     DEFAULT_RESPONSE_TIMEOUT = 120  # Default timeout for response in seconds
 
     # Copilot character limits (Free: 8000, Paid: 128000)
@@ -1009,6 +1010,17 @@ class CopilotHandler:
             stable_count = 0
 
             while max_wait > 0:
+                # Check if Copilot is still generating (stop button visible)
+                # If stop button is present, response is not complete yet
+                # 実際のCopilot HTML: <div class="fai-SendButton__stopBackground ..."></div>
+                stop_button = self._page.query_selector('.fai-SendButton__stopBackground')
+                if stop_button and stop_button.is_visible():
+                    # Still generating, reset stability counter and wait
+                    stable_count = 0
+                    time.sleep(self.RESPONSE_POLL_INTERVAL)
+                    max_wait -= self.RESPONSE_POLL_INTERVAL
+                    continue
+
                 # Get the latest message
                 # 実際のCopilot HTML: <div data-testid="markdown-reply" data-message-type="Chat">
                 response_elem = self._page.query_selector(

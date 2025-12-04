@@ -25,7 +25,8 @@ logger = logging.getLogger(__name__)
 # Captures: number and content until next number or end of string
 # Uses \Z (end of string) instead of $ (end of line in MULTILINE mode)
 # Allows optional leading whitespace on lines (^\s*)
-_RE_BATCH_ITEM = re.compile(r'^\s*(\d+)\.\s*(.*?)(?=\n\s*\d+\.\s|\Z)', re.MULTILINE | re.DOTALL)
+# Note: lookahead does NOT require space after period (handles "1.text" format from Copilot)
+_RE_BATCH_ITEM = re.compile(r'^\s*(\d+)\.\s*(.*?)(?=\n\s*\d+\.|\Z)', re.MULTILINE | re.DOTALL)
 
 
 class PlaywrightManager:

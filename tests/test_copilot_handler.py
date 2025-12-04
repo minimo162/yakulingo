@@ -146,6 +146,40 @@ with explanation"""
         assert "補足情報" in parsed[1]
         assert "Third item" in parsed[2]
 
+    def test_parse_no_space_after_period(self, handler):
+        """Handles no space after period (e.g., '1.text' format from Copilot)"""
+        result = """1.翻訳1
+2.翻訳2
+3.翻訳3
+4.翻訳4
+5.翻訳5
+6.翻訳6
+7.翻訳7
+8.翻訳8
+9.翻訳9
+10.翻訳10"""
+        parsed = handler._parse_batch_result(result, 10)
+
+        assert len(parsed) == 10
+        assert parsed[0] == "翻訳1"
+        assert parsed[9] == "翻訳10"
+
+    def test_parse_mixed_spacing(self, handler):
+        """Handles mixed spacing (some with space, some without)"""
+        result = """1.翻訳1
+2. 翻訳2
+3.翻訳3
+4. 翻訳4
+5.翻訳5"""
+        parsed = handler._parse_batch_result(result, 5)
+
+        assert len(parsed) == 5
+        assert parsed[0] == "翻訳1"
+        assert parsed[1] == "翻訳2"
+        assert parsed[2] == "翻訳3"
+        assert parsed[3] == "翻訳4"
+        assert parsed[4] == "翻訳5"
+
 
 class TestCopilotHandlerConnection:
     """Test CopilotHandler connection state management"""

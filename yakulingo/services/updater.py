@@ -510,9 +510,9 @@ class AutoUpdater:
         "uv.toml",          # UV設定
         "YakuLingo.exe",    # 起動ランチャー
         "README.md",        # ドキュメント
+        "glossary.csv",     # デフォルト用語集
     ]
-    # ユーザー設定ファイル（上書きしない、バックアップ対象）
-    USER_FILES = ["glossary.csv", "config/settings.json"]
+    # Note: config/settings.json は config/ フォルダごと上書きされる
 
     def install_update(self, zip_path: Path) -> bool:
         """
@@ -550,30 +550,17 @@ class AutoUpdater:
                 if internal_dir.exists() and internal_dir.is_dir():
                     source_dir = internal_dir
 
-                # バックアップを作成
-                backup_dir = self.cache_dir / "backup"
-                if backup_dir.exists():
-                    shutil.rmtree(backup_dir)
-
-                # ユーザー設定ファイルをバックアップ
-                for file_rel in self.USER_FILES:
-                    src = app_dir / file_rel
-                    if src.exists():
-                        dst = backup_dir / file_rel
-                        dst.parent.mkdir(parents=True, exist_ok=True)
-                        shutil.copy2(src, dst)
-
                 # Windowsの場合、バッチファイルでアップデートを実行
                 if platform.system() == "Windows":
-                    return self._install_windows(source_dir, app_dir, backup_dir)
+                    return self._install_windows(source_dir, app_dir)
                 else:
-                    return self._install_unix(source_dir, app_dir, backup_dir)
+                    return self._install_unix(source_dir, app_dir)
 
         except (OSError, zipfile.BadZipFile, shutil.Error, ValueError) as e:
             logger.error("インストールに失敗: %s", e)
             return False
 
-    def _install_windows(self, source_dir: Path, app_dir: Path, backup_dir: Path) -> bool:
+    def _install_windows(self, source_dir: Path, app_dir: Path) -> bool:
         """Windowsでのインストール処理（ソースコードのみ更新）"""
         # アップデートバッチファイルを作成
         batch_path = self.cache_dir / "update.bat"
@@ -621,16 +608,6 @@ for %%f in ({files_to_update}) do (
     )
 )
 
-REM バックアップからユーザー設定を復元
-echo ユーザー設定を復元しています...
-if exist "{backup_dir}\\config\\settings.json" (
-    if not exist "{app_dir}\\config" mkdir "{app_dir}\\config"
-    copy /y "{backup_dir}\\config\\settings.json" "{app_dir}\\config\\settings.json" >nul
-)
-if exist "{backup_dir}\\glossary.csv" (
-    copy /y "{backup_dir}\\glossary.csv" "{app_dir}\\glossary.csv" >nul
-)
-
 echo.
 echo ============================================================
 echo アップデート完了！
@@ -659,7 +636,7 @@ del "%~f0"
 
         return True
 
-    def _install_unix(self, source_dir: Path, app_dir: Path, backup_dir: Path) -> bool:
+    def _install_unix(self, source_dir: Path, app_dir: Path) -> bool:
         """Unix系OSでのインストール処理（ソースコードのみ更新）"""
         # シェルスクリプトを作成
         script_path = self.cache_dir / "update.sh"
@@ -703,16 +680,6 @@ for file in {files_to_update}; do
         cp "{source_dir}/$file" "{app_dir}/$file"
     fi
 done
-
-# バックアップからユーザー設定を復元
-echo "ユーザー設定を復元しています..."
-if [ -f "{backup_dir}/config/settings.json" ]; then
-    mkdir -p "{app_dir}/config"
-    cp "{backup_dir}/config/settings.json" "{app_dir}/config/settings.json"
-fi
-if [ -f "{backup_dir}/glossary.csv" ]; then
-    cp "{backup_dir}/glossary.csv" "{app_dir}/glossary.csv"
-fi
 
 echo ""
 echo "============================================================"

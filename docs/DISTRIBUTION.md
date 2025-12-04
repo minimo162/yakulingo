@@ -77,7 +77,7 @@ share_package/            # 共有フォルダ用パッケージ
 
 setup.ps1は以下を実行：
 
-1. 既存インストールがあれば古いソースファイルを削除（環境フォルダは保持）
+1. 既存インストールがあれば**全てのファイルを削除**（環境フォルダ含む）
 2. ZIPをローカルにコピー・展開
 3. `%LOCALAPPDATA%\YakuLingo` にファイル配置
 4. ショートカット作成
@@ -85,10 +85,13 @@ setup.ps1は以下を実行：
 
 ### 環境フォルダの扱い
 
-以下のフォルダは初回のみコピーされ、更新時はスキップ：
-- `.venv` (Python仮想環境)
-- `.uv-python` (Python本体)
-- `.playwright-browsers` (ブラウザ)
+setup.vbsは常にクリーンインストールを行い、環境フォルダも含めて上書きします：
+- `.venv` (Python仮想環境) → **上書き**
+- `.uv-python` (Python本体) → **上書き**
+- `.playwright-browsers` (ブラウザ) → **上書き**
+
+> **Note**: GitHub Releases経由の自動アップデートでは環境フォルダは保持されます。
+> setup.vbsは初回インストールまたは依存関係変更時のクリーンインストール用です。
 
 ## 自動更新機能
 
@@ -106,14 +109,24 @@ setup.ps1は以下を実行：
 | 種類 | 対象 |
 |------|------|
 | **ディレクトリ** | `yakulingo/`, `prompts/`, `config/` |
-| **ファイル** | `app.py`, `pyproject.toml`, `uv.lock`, `uv.toml`, `YakuLingo.exe`, `README.md` |
-| **保持（上書きしない）** | `glossary.csv`, `config/settings.json` |
+| **ファイル** | `app.py`, `pyproject.toml`, `uv.lock`, `uv.toml`, `YakuLingo.exe`, `README.md`, `glossary.csv` |
 | **保持（更新対象外）** | `.venv/`, `.uv-python/`, `.playwright-browsers/` |
+
+> **Note**: `config/settings.json` は `config/` フォルダごと上書きされます（ユーザー設定はリセット）
 
 ### プロキシ環境での動作
 
 - Windowsシステムプロキシ設定を自動検出
 - NTLM認証プロキシ対応（pywin32が必要）
+
+### 依存関係変更時（[REQUIRES_REINSTALL]）
+
+リリースノートに `[REQUIRES_REINSTALL]` が含まれている場合：
+- 自動更新ではなく、setup.vbs での再セットアップを案内
+- ユーザーに「共有フォルダの setup.vbs を実行してください」と表示
+- setup.vbs は環境フォルダを含めてクリーンインストールを実行
+
+**リリース作成時**: 依存関係（pyproject.toml）を変更した場合は、リリースノートに `[REQUIRES_REINSTALL]` を含めてください。
 
 ### 管理者向け情報
 

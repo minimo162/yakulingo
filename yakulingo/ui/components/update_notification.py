@@ -164,8 +164,7 @@ class UpdateNotification:
                             )
                             ui.label(
                                 'このバージョンは依存関係が変更されています。'
-                                '自動アップデートではなく、新しい配布パッケージを'
-                                'ダウンロードして再セットアップしてください。'
+                                '共有フォルダの setup.vbs を実行してください。'
                             ).classes('text-xs text-on-warning-container')
 
             # バージョン情報
@@ -200,10 +199,10 @@ class UpdateNotification:
             ui.separator().classes('my-3')
 
             if info.requires_reinstall:
-                # 再セットアップ必要な場合は、ダウンロードページへの誘導のみ
+                # 再セットアップ必要な場合は、setup.vbs実行を案内
                 with ui.column().classes('w-full gap-2'):
                     ui.label(
-                        '管理者から新しい配布パッケージを入手してください。'
+                        '共有フォルダの setup.vbs を実行してください。'
                     ).classes('text-xs text-muted text-center')
                     with ui.row().classes('w-full justify-end gap-2'):
                         ui.button(

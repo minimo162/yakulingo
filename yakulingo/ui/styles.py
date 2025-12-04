@@ -108,7 +108,7 @@ COMPLETE_CSS = """
 
     /* 3-Column Layout (Nani-inspired) */
     --input-panel-width: 420px;
-    --input-panel-width-wide: 600px;  /* Wider input for 2-column mode */
+    --input-panel-width-wide: 66.67%;  /* Wider input for 2-column mode (2/3 of parent) */
     --result-element-max-width: 100%;  /* Fill available width in result panel */
     --bp-desktop: 1200px;        /* Full 3-column with sidebar */
     --bp-tablet-portrait: 800px; /* 2-column with fixed input */

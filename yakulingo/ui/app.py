@@ -1419,44 +1419,12 @@ document.fonts.ready.then(function() {
         loading_container.delete()
         yakulingo_app.create_ui()
 
-        # Scale window size based on actual monitor resolution (native mode only)
-        # This uses JavaScript window.screen.width which detects the monitor where the window is displayed
-        if native:
-            await _scale_window_to_screen(yakulingo_app.settings)
-
         # Start Edge connection AFTER UI is displayed
         asyncio.create_task(yakulingo_app.start_edge_and_connect())
         asyncio.create_task(yakulingo_app.check_for_updates())
 
-    async def _scale_window_to_screen(settings: AppSettings):
-        """Scale window size based on actual monitor resolution."""
-        BASE_WIDTH = 2560
-        base_window_size = (settings.window_width, settings.window_height)
-
-        try:
-            # Get screen resolution from JavaScript (detects actual monitor)
-            screen_width = await ui.run_javascript('window.screen.width')
-            if not screen_width or screen_width <= 0:
-                logger.warning("Invalid screen width from JavaScript: %s", screen_width)
-                return
-
-            scale_factor = screen_width / BASE_WIDTH
-            new_width = int(base_window_size[0] * scale_factor)
-            new_height = int(base_window_size[1] * scale_factor)
-
-            # Resize window using pywebview proxy
-            nicegui_app.native.main_window.resize(new_width, new_height)
-
-            logger.info(
-                "Window resized: %dx%d -> %dx%d (screen: %d, scale: %.2f)",
-                base_window_size[0], base_window_size[1],
-                new_width, new_height,
-                screen_width, scale_factor
-            )
-        except Exception as e:
-            logger.warning("Failed to scale window to screen resolution: %s", e)
-
-    # Window size is base size; actual scaling happens after page load via _scale_window_to_screen
+    # Window size: Fixed at 1400x850 (designed for 1920x1200 laptop)
+    # External monitor scaling is handled by OS DPI settings
     window_size = (yakulingo_app.settings.window_width, yakulingo_app.settings.window_height)
 
     ui.run(

@@ -136,7 +136,7 @@ YakuLingo/
 | `yakulingo/services/translation_service.py` | Coordinates file processors and batch translation | ~1565 |
 | `yakulingo/services/copilot_handler.py` | Browser automation for M365 Copilot | ~1379 |
 | `yakulingo/services/updater.py` | GitHub Releases-based auto-update with Windows proxy support | ~764 |
-| `yakulingo/ui/styles.py` | M3 design tokens, CSS styling definitions, resolution-based zoom | ~2852 |
+| `yakulingo/ui/styles.py` | M3 design tokens, CSS styling definitions | ~2845 |
 | `yakulingo/ui/components/text_panel.py` | Text translation UI with source display and translation status | ~1059 |
 | `yakulingo/ui/components/file_panel.py` | File translation panel with drag-drop and progress | ~554 |
 | `yakulingo/ui/components/update_notification.py` | Auto-update UI notifications | ~344 |
@@ -752,11 +752,9 @@ Based on recent commits:
   - **Source text section**: 翻訳結果パネル上部に原文を表示（コピーボタン付き）
   - **Translation status display**: 翻訳中「〜語から〜語へ翻訳中...」、完了後「✓ 翻訳しました」+ 経過時間
   - **Full-height input area**: 翻訳中・翻訳後の入力欄を縦幅いっぱいに拡張
-- **Resolution-Based Zoom**:
-  - **CSS zoom only**: UI scaling handled entirely by CSS zoom (no Python window scaling)
-  - **Auto-adapts to display**: Uses `window.screen.width` to detect the monitor where the window is displayed
-  - **Dual-monitor support**: Works correctly in multi-monitor setups by detecting the actual display resolution
-  - **Base resolution**: 2560×1440 (zoom factor = screenWidth / 2560)
+- **Window Sizing**:
+  - **Fixed window size**: 1400×850 pixels (designed for 1920×1200 laptop resolution)
+  - **No dynamic scaling**: Window size is fixed; external monitor scaling handled by OS DPI settings
   - **Panel layout**: Translation result panel elements aligned to 2/3 width with center alignment
 
 ## Git Workflow

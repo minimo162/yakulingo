@@ -2839,14 +2839,7 @@ a:hover {
 }
 """
 
-# JavaScript for resolution-based zoom scaling
-# Base resolution: 2560x1440 (primary test environment)
-# This ensures consistent UI proportions across different screen resolutions
-RESOLUTION_ZOOM_JS = """
-(function() {
-    const BASE_WIDTH = 2560;
-    const screenWidth = window.screen.width;
-    const zoomFactor = screenWidth / BASE_WIDTH;
-    document.body.style.zoom = zoomFactor;
-})();
-"""
+# Note: CSS zoom is disabled because window size is already scaled by _scale_window_to_screen()
+# Using both would cause double scaling - elements would be scaled twice.
+# Window sizing approach is preferred as it works more reliably with NiceGUI's layout system.
+RESOLUTION_ZOOM_JS = ""

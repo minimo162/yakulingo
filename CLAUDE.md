@@ -136,7 +136,7 @@ YakuLingo/
 | `yakulingo/services/translation_service.py` | Coordinates file processors and batch translation | ~1565 |
 | `yakulingo/services/copilot_handler.py` | Browser automation for M365 Copilot | ~1379 |
 | `yakulingo/services/updater.py` | GitHub Releases-based auto-update with Windows proxy support | ~764 |
-| `yakulingo/ui/styles.py` | M3 design tokens, CSS styling definitions, resolution-based zoom | ~2852 |
+| `yakulingo/ui/styles.py` | M3 design tokens, CSS styling definitions | ~2845 |
 | `yakulingo/ui/components/text_panel.py` | Text translation UI with source display and translation status | ~1059 |
 | `yakulingo/ui/components/file_panel.py` | File translation panel with drag-drop and progress | ~554 |
 | `yakulingo/ui/components/update_notification.py` | Auto-update UI notifications | ~344 |

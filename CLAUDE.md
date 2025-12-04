@@ -755,9 +755,8 @@ Based on recent commits:
 - **Resolution-Based Window Scaling**:
   - **Window size scaling**: Window dimensions scaled by `_scale_window_to_screen()` based on monitor resolution
   - **CSS zoom disabled**: Previously used CSS zoom caused double-scaling with window size scaling
-  - **Auto-adapts to display**: Uses `window.screen.width` to detect the monitor where the window is displayed
-  - **Dual-monitor support**: Works correctly in multi-monitor setups by detecting the actual display resolution
-  - **Base resolution**: 2560×1440 (scale factor = screenWidth / 2560)
+  - **Base resolution**: 1920×1080 (typical laptop Full HD, scale factor = screenWidth / 1920)
+  - **Laptop + external monitor**: Designed for laptop resolution; external monitor scaling handled by OS DPI
   - **Panel layout**: Translation result panel elements aligned to 2/3 width with center alignment
 
 ## Git Workflow

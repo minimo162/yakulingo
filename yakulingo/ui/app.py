@@ -1428,89 +1428,23 @@ document.fonts.ready.then(function() {
         asyncio.create_task(yakulingo_app.start_edge_and_connect())
         asyncio.create_task(yakulingo_app.check_for_updates())
 
-    def _get_largest_monitor_width() -> int:
-        """Get the width of the largest monitor (typically external monitor).
-
-        In laptop + external monitor setups, the external monitor is usually larger.
-        This function returns the largest monitor's width for proper scaling.
-
-        Returns:
-            Width of the largest monitor, or 0 if detection fails.
-        """
-        import sys
-        if sys.platform != 'win32':
-            return 0
-
-        try:
-            import ctypes
-            from ctypes import wintypes
-
-            # Get all monitors using EnumDisplayMonitors
-            monitors = []
-
-            def enum_callback(hMonitor, hdcMonitor, lprcMonitor, dwData):
-                # Get monitor info
-                class MONITORINFO(ctypes.Structure):
-                    _fields_ = [
-                        ('cbSize', wintypes.DWORD),
-                        ('rcMonitor', wintypes.RECT),
-                        ('rcWork', wintypes.RECT),
-                        ('dwFlags', wintypes.DWORD),
-                    ]
-
-                mi = MONITORINFO()
-                mi.cbSize = ctypes.sizeof(MONITORINFO)
-                ctypes.windll.user32.GetMonitorInfoW(hMonitor, ctypes.byref(mi))
-
-                width = mi.rcMonitor.right - mi.rcMonitor.left
-                height = mi.rcMonitor.bottom - mi.rcMonitor.top
-                monitors.append((width, height))
-                return True
-
-            # Define callback type
-            MONITORENUMPROC = ctypes.WINFUNCTYPE(
-                ctypes.c_bool,
-                ctypes.POINTER(ctypes.c_int),
-                ctypes.POINTER(ctypes.c_int),
-                ctypes.POINTER(wintypes.RECT),
-                ctypes.c_double
-            )
-
-            callback = MONITORENUMPROC(enum_callback)
-            ctypes.windll.user32.EnumDisplayMonitors(None, None, callback, 0)
-
-            if monitors:
-                # Return the width of the largest monitor
-                largest = max(monitors, key=lambda m: m[0] * m[1])
-                logger.info("Detected monitors: %s, largest: %dx%d", monitors, largest[0], largest[1])
-                return largest[0]
-
-        except Exception as e:
-            logger.warning("Failed to enumerate monitors: %s", e)
-
-        return 0
-
     async def _scale_window_to_screen(settings: AppSettings):
         """Scale window size based on monitor resolution.
 
-        For laptop + external monitor setups, uses the largest monitor's resolution
-        (typically the external monitor) for scaling, regardless of which monitor
-        the window is initially displayed on.
+        Uses 1920px (typical laptop resolution) as the base width.
+        When connected to an external monitor, OS DPI scaling handles the adjustment.
         """
-        BASE_WIDTH = 2560
+        # Base: 1920px (typical laptop Full HD resolution)
+        # Window designed for 1400x850 at 1920px width
+        BASE_WIDTH = 1920
         base_window_size = (settings.window_width, settings.window_height)
 
         try:
-            # Try to get the largest monitor width (external monitor in laptop setups)
-            screen_width = _get_largest_monitor_width()
-
-            # Fallback to JavaScript detection if ctypes fails
-            if screen_width <= 0:
-                screen_width = await ui.run_javascript('window.screen.width')
-                if not screen_width or screen_width <= 0:
-                    logger.warning("Invalid screen width: %s", screen_width)
-                    return
-                logger.info("Using JavaScript screen width: %d", screen_width)
+            # Get current screen resolution
+            screen_width = await ui.run_javascript('window.screen.width')
+            if not screen_width or screen_width <= 0:
+                logger.warning("Invalid screen width: %s", screen_width)
+                return
 
             scale_factor = screen_width / BASE_WIDTH
             new_width = int(base_window_size[0] * scale_factor)

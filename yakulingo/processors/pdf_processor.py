@@ -1088,6 +1088,78 @@ def estimate_font_size(box: list[float], text: str) -> float:
     return max(result, MIN_FONT_SIZE)
 
 
+def estimate_font_size_from_box_height(
+    box: list[float],
+    original_text: str,
+    line_height_factor: float = 1.2,
+) -> float:
+    """
+    Estimate font size from box height and original text line count.
+
+    This is more accurate for OCR mode where we know the original text
+    and its bounding box, but not the font size.
+
+    The calculation:
+        font_size = box_height / (line_count * line_height_factor)
+
+    Args:
+        box: [x1, y1, x2, y2] bounding box in PDF coordinates
+        original_text: Original text (used to count lines)
+        line_height_factor: Line height multiplier (default 1.2)
+
+    Returns:
+        Estimated font size (min MIN_FONT_SIZE, max MAX_FONT_SIZE)
+    """
+    if len(box) != 4:
+        return DEFAULT_FONT_SIZE
+
+    x1, y1, x2, y2 = box
+    height = abs(y2 - y1)
+
+    if height <= 0:
+        return DEFAULT_FONT_SIZE
+
+    # Count lines in original text (OCR usually returns text without line breaks,
+    # so we estimate lines based on text length and box width)
+    width = abs(x2 - x1)
+    if width <= 0:
+        width = height  # Fallback for vertical text
+
+    # For CJK text, estimate ~1 character per font_size width
+    # For Latin text, estimate ~0.5 character per font_size width
+    # Use a conservative estimate
+    if original_text:
+        # Check if text has explicit line breaks
+        explicit_lines = original_text.count('\n') + 1
+
+        if explicit_lines > 1:
+            # Use explicit line count
+            line_count = explicit_lines
+        else:
+            # Estimate line count from text length and box dimensions
+            # Assume average character width is about 0.6 of font size
+            # This gives us: chars_per_line ≈ width / (font_size * 0.6)
+            # And: line_count ≈ total_chars / chars_per_line
+            # Solving: font_size ≈ height / (line_count * line_height_factor)
+            # We iterate to find a reasonable estimate
+
+            # Start with assuming single line
+            estimated_font_size = height / line_height_factor
+            chars_per_line = width / (estimated_font_size * 0.6) if estimated_font_size > 0 else 10
+            line_count = max(1, len(original_text) / max(1, chars_per_line))
+
+            # Limit line count to reasonable range
+            line_count = min(line_count, height / MIN_FONT_SIZE)
+    else:
+        line_count = 1
+
+    # Calculate font size
+    font_size = height / (line_count * line_height_factor)
+
+    # Clamp to valid range
+    return max(MIN_FONT_SIZE, min(font_size, MAX_FONT_SIZE))
+
+
 def _is_address_on_page(address: str, page_num: int) -> bool:
     """Check if address belongs to specified page."""
     if address.startswith("P"):
@@ -1099,6 +1171,147 @@ def _is_address_on_page(address: str, page_num: int) -> bool:
         if match:
             return int(match.group(1)) == page_num
     return False
+
+
+def _boxes_overlap(box1: list[float], box2: list[float], threshold: float = 0.3) -> bool:
+    """
+    Check if two boxes overlap significantly.
+
+    Args:
+        box1, box2: [x1, y1, x2, y2] bounding boxes
+        threshold: Minimum overlap ratio (0.0-1.0)
+
+    Returns:
+        True if boxes overlap by at least threshold ratio
+    """
+    x1_1, y1_1, x2_1, y2_1 = box1
+    x1_2, y1_2, x2_2, y2_2 = box2
+
+    # Calculate intersection
+    x_left = max(x1_1, x1_2)
+    y_top = max(y1_1, y1_2)
+    x_right = min(x2_1, x2_2)
+    y_bottom = min(y2_1, y2_2)
+
+    if x_right <= x_left or y_bottom <= y_top:
+        return False
+
+    intersection = (x_right - x_left) * (y_bottom - y_top)
+    area1 = (x2_1 - x1_1) * (y2_1 - y1_1)
+    area2 = (x2_2 - x1_2) * (y2_2 - y1_2)
+
+    if area1 <= 0 or area2 <= 0:
+        return False
+
+    # Use smaller area for overlap ratio
+    smaller_area = min(area1, area2)
+    overlap_ratio = intersection / smaller_area
+
+    return overlap_ratio >= threshold
+
+
+def extract_font_info_from_pdf(
+    pdf_path: Path,
+    dpi: int = 200,  # Default OCR DPI (same as DEFAULT_OCR_DPI)
+) -> dict[int, list[dict]]:
+    """
+    Extract font information from PDF using PyMuPDF.
+
+    This is used to get original font sizes for OCR mode, where we can
+    match OCR cell positions with original PDF text block positions.
+
+    Args:
+        pdf_path: Path to PDF file
+        dpi: DPI used for OCR (for coordinate scaling)
+
+    Returns:
+        Dictionary mapping page number (1-based) to list of font info dicts:
+        [{'bbox': [x1, y1, x2, y2], 'font_size': float, 'font_name': str}, ...]
+        Coordinates are in OCR DPI scale (not PDF 72 DPI).
+    """
+    fitz = _get_fitz()
+    font_info: dict[int, list[dict]] = {}
+
+    # Scale factor from PDF coordinates (72 DPI) to OCR coordinates
+    scale = dpi / 72.0
+
+    with _open_fitz_document(pdf_path) as doc:
+        for page_idx, page in enumerate(doc):
+            page_num = page_idx + 1
+            page_font_info = []
+
+            blocks = page.get_text("dict")["blocks"]
+            for block in blocks:
+                if block.get("type") != 0:  # Text block only
+                    continue
+
+                bbox = block.get("bbox")
+                if not bbox:
+                    continue
+
+                # Get font info from first span
+                font_size = DEFAULT_FONT_SIZE
+                font_name = None
+                if block.get("lines"):
+                    first_line = block["lines"][0]
+                    if first_line.get("spans"):
+                        first_span = first_line["spans"][0]
+                        font_size = first_span.get("size", DEFAULT_FONT_SIZE)
+                        font_name = first_span.get("font")
+
+                # Scale bbox to OCR DPI
+                scaled_bbox = [
+                    bbox[0] * scale,
+                    bbox[1] * scale,
+                    bbox[2] * scale,
+                    bbox[3] * scale,
+                ]
+
+                page_font_info.append({
+                    'bbox': scaled_bbox,
+                    'font_size': font_size,
+                    'font_name': font_name,
+                })
+
+            font_info[page_num] = page_font_info
+
+    return font_info
+
+
+def find_matching_font_size(
+    cell_box: list[float],
+    page_font_info: list[dict],
+    default_size: float = DEFAULT_FONT_SIZE,
+) -> float:
+    """
+    Find matching font size for an OCR cell by comparing positions.
+
+    Args:
+        cell_box: OCR cell bounding box [x1, y1, x2, y2]
+        page_font_info: List of font info dicts from extract_font_info_from_pdf
+        default_size: Default font size if no match found
+
+    Returns:
+        Matched font size or default
+    """
+    best_match = None
+    best_overlap = 0.0
+
+    for info in page_font_info:
+        pdf_box = info['bbox']
+        if _boxes_overlap(cell_box, pdf_box, threshold=0.2):
+            # Calculate overlap area
+            x_left = max(cell_box[0], pdf_box[0])
+            y_top = max(cell_box[1], pdf_box[1])
+            x_right = min(cell_box[2], pdf_box[2])
+            y_bottom = min(cell_box[3], pdf_box[3])
+            overlap = (x_right - x_left) * (y_bottom - y_top)
+
+            if overlap > best_overlap:
+                best_overlap = overlap
+                best_match = info['font_size']
+
+    return best_match if best_match is not None else default_size
 
 
 # =============================================================================
@@ -1739,8 +1952,19 @@ class PdfProcessor(FileProcessor):
             # DPI scale factor (convert from OCR DPI to PDF points at 72 DPI)
             scale = 72.0 / dpi
 
+            # Extract original font info from PDF for better font size matching
+            # This helps when OCR is used on text-based PDFs
+            try:
+                original_font_info = extract_font_info_from_pdf(input_path, dpi)
+                logger.debug("Extracted font info from %d pages", len(original_font_info))
+            except Exception as e:
+                logger.debug("Could not extract font info: %s", e)
+                original_font_info = {}
+
             # Process each page
             for page_num, page in enumerate(doc, start=1):
+                page_font_info = original_font_info.get(page_num, [])
+
                 for address, translated in translations.items():
                     if not _is_address_on_page(address, page_num):
                         continue
@@ -1772,8 +1996,27 @@ class PdfProcessor(FileProcessor):
                             result['failed'].append(address)
                             continue
 
-                        # Calculate font size
-                        font_size = estimate_font_size([x1, y1, x2, y2], translated)
+                        # Get font size: try matching with original PDF first,
+                        # then estimate from box height and original text
+                        font_size = None
+
+                        # Method 1: Match with original PDF font info
+                        if page_font_info:
+                            matched_size = find_matching_font_size(
+                                cell.box, page_font_info, default_size=None
+                            )
+                            if matched_size is not None:
+                                font_size = matched_size
+                                logger.debug(
+                                    "Matched font size %.1f for cell %s",
+                                    font_size, address
+                                )
+
+                        # Method 2: Estimate from box height and original text
+                        if font_size is None:
+                            font_size = estimate_font_size_from_box_height(
+                                [x1, y1, x2, y2], cell.text
+                            )
 
                         # Insert text using high-level API
                         rc = page.insert_textbox(

@@ -18,7 +18,10 @@ from yakulingo.processors.pdf_processor import (
     split_text_into_lines,
     calculate_line_height,
     estimate_font_size,
+    estimate_font_size_from_box_height,
     _is_address_on_page,
+    _boxes_overlap,
+    find_matching_font_size,
     # Constants
     FONT_FILES,
     DEFAULT_VFONT_PATTERN,
@@ -1655,3 +1658,131 @@ class TestVflagEdgeCases:
         assert vflag("CMMI10", "") is True
         # Regular font with empty char
         assert vflag("Arial", "") is False
+
+
+# =============================================================================
+# Tests: OCR Font Size Estimation
+# =============================================================================
+
+class TestEstimateFontSizeFromBoxHeight:
+    """Tests for estimate_font_size_from_box_height function"""
+
+    def test_single_line_text(self):
+        """Single line text should estimate font size from height"""
+        # Box height 20, single line, line height factor 1.2
+        # font_size = 20 / (1 * 1.2) ≈ 16.67
+        box = [0, 0, 200, 20]
+        size = estimate_font_size_from_box_height(box, "Hello")
+        assert 10 <= size <= 20
+
+    def test_multi_line_text(self):
+        """Multi-line text should estimate based on line count"""
+        # Box height 40, 2 lines of explicit text
+        box = [0, 0, 200, 40]
+        text = "Line1\nLine2"
+        size = estimate_font_size_from_box_height(box, text)
+        # 40 / (2 * 1.2) ≈ 16.67
+        assert 10 <= size <= 20
+
+    def test_empty_text(self):
+        """Empty text should use single line estimate"""
+        box = [0, 0, 200, 24]
+        size = estimate_font_size_from_box_height(box, "")
+        # 24 / 1.2 = 20
+        assert size == 20.0
+
+    def test_invalid_box(self):
+        """Invalid box should return default"""
+        size = estimate_font_size_from_box_height([0, 0, 0], "text")
+        assert size == DEFAULT_FONT_SIZE
+
+    def test_zero_height(self):
+        """Zero height box should return default"""
+        size = estimate_font_size_from_box_height([0, 0, 100, 0], "text")
+        assert size == DEFAULT_FONT_SIZE
+
+    def test_clamped_to_max(self):
+        """Very tall box should be clamped to MAX_FONT_SIZE"""
+        box = [0, 0, 100, 1000]
+        size = estimate_font_size_from_box_height(box, "A")
+        assert size <= MAX_FONT_SIZE
+
+    def test_clamped_to_min(self):
+        """Very short box should be clamped to MIN_FONT_SIZE"""
+        box = [0, 0, 100, 0.5]
+        size = estimate_font_size_from_box_height(box, "A" * 100)
+        assert size >= MIN_FONT_SIZE
+
+
+class TestBoxesOverlap:
+    """Tests for _boxes_overlap function"""
+
+    def test_fully_overlapping_boxes(self):
+        """Identical boxes should overlap"""
+        box = [100, 100, 200, 200]
+        assert _boxes_overlap(box, box) is True
+
+    def test_no_overlap_horizontal(self):
+        """Horizontally separated boxes should not overlap"""
+        box1 = [0, 0, 100, 100]
+        box2 = [200, 0, 300, 100]
+        assert _boxes_overlap(box1, box2) is False
+
+    def test_no_overlap_vertical(self):
+        """Vertically separated boxes should not overlap"""
+        box1 = [0, 0, 100, 100]
+        box2 = [0, 200, 100, 300]
+        assert _boxes_overlap(box1, box2) is False
+
+    def test_partial_overlap_meets_threshold(self):
+        """Partial overlap meeting threshold should return True"""
+        box1 = [0, 0, 100, 100]
+        box2 = [50, 50, 150, 150]  # 50% overlap of smaller area
+        assert _boxes_overlap(box1, box2, threshold=0.25) is True
+
+    def test_partial_overlap_below_threshold(self):
+        """Partial overlap below threshold should return False"""
+        box1 = [0, 0, 100, 100]
+        box2 = [80, 80, 180, 180]  # Small overlap
+        assert _boxes_overlap(box1, box2, threshold=0.5) is False
+
+    def test_contained_box(self):
+        """Contained box should overlap"""
+        outer = [0, 0, 200, 200]
+        inner = [50, 50, 150, 150]
+        assert _boxes_overlap(outer, inner) is True
+
+
+class TestFindMatchingFontSize:
+    """Tests for find_matching_font_size function"""
+
+    def test_exact_match(self):
+        """Exact position match should return font size"""
+        cell_box = [100, 100, 200, 120]
+        page_font_info = [
+            {'bbox': [100, 100, 200, 120], 'font_size': 14.0, 'font_name': 'Arial'},
+        ]
+        assert find_matching_font_size(cell_box, page_font_info) == 14.0
+
+    def test_best_overlap_match(self):
+        """Should return font size with best overlap"""
+        cell_box = [100, 100, 200, 120]
+        page_font_info = [
+            {'bbox': [0, 0, 50, 50], 'font_size': 10.0, 'font_name': 'Arial'},
+            {'bbox': [95, 95, 205, 125], 'font_size': 16.0, 'font_name': 'Arial'},
+            {'bbox': [300, 300, 400, 400], 'font_size': 12.0, 'font_name': 'Arial'},
+        ]
+        assert find_matching_font_size(cell_box, page_font_info) == 16.0
+
+    def test_no_match_returns_default(self):
+        """No matching box should return default"""
+        cell_box = [100, 100, 200, 120]
+        page_font_info = [
+            {'bbox': [500, 500, 600, 600], 'font_size': 14.0, 'font_name': 'Arial'},
+        ]
+        assert find_matching_font_size(cell_box, page_font_info, default_size=10.0) == 10.0
+
+    def test_empty_font_info(self):
+        """Empty font info should return default"""
+        cell_box = [100, 100, 200, 120]
+        assert find_matching_font_size(cell_box, [], default_size=12.0) == 12.0

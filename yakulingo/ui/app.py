@@ -1419,12 +1419,106 @@ document.fonts.ready.then(function() {
         loading_container.delete()
         yakulingo_app.create_ui()
 
+        # Scale window for external monitor (if detected)
+        if native:
+            await _scale_window_for_display(yakulingo_app.settings)
+
         # Start Edge connection AFTER UI is displayed
         asyncio.create_task(yakulingo_app.start_edge_and_connect())
         asyncio.create_task(yakulingo_app.check_for_updates())
 
-    # Window size: Fixed at 1400x850 (designed for 1920x1200 laptop)
-    # External monitor scaling is handled by OS DPI settings
+    async def _scale_window_for_display(settings: AppSettings):
+        """Detect display type and scale window accordingly.
+
+        Strategy:
+        - Laptop (single monitor or on primary): Keep 1400x850 (optimized for small physical screen)
+        - External monitor 1920px: Expand to 1600x950 (larger physical screen, less scroll)
+        - External monitor 2560px: Expand to 1900x1100 (even more content visible)
+
+        Detection uses Chromium's screen.isExtended API and window position.
+        """
+        try:
+            # Get display information via JavaScript
+            display_info = await ui.run_javascript('''
+                (function() {
+                    const isExtended = window.screen.isExtended || false;
+                    const screenWidth = window.screen.width;
+                    const screenHeight = window.screen.height;
+                    const windowX = window.screenX;
+                    const availWidth = window.screen.availWidth;
+
+                    // Detect if window is on external monitor
+                    // External if: multi-monitor AND (window is outside primary bounds OR on right side)
+                    const isOnExternal = isExtended && (windowX < 0 || windowX >= availWidth);
+
+                    return {
+                        isExtended: isExtended,
+                        isOnExternal: isOnExternal,
+                        screenWidth: screenWidth,
+                        screenHeight: screenHeight,
+                        windowX: windowX,
+                        availWidth: availWidth
+                    };
+                })()
+            ''')
+
+            if not display_info:
+                logger.debug("Could not get display info, using default window size")
+                return
+
+            is_extended = display_info.get('isExtended', False)
+            is_on_external = display_info.get('isOnExternal', False)
+            screen_width = display_info.get('screenWidth', 1920)
+
+            logger.info(
+                "Display detection: isExtended=%s, isOnExternal=%s, screenWidth=%s",
+                is_extended, is_on_external, screen_width
+            )
+
+            # Only scale if on external monitor
+            if not is_extended:
+                logger.debug("Single monitor detected, using default window size")
+                return
+
+            # Determine new window size based on screen resolution
+            # External monitor: larger window, but UI elements stay same size (relatively smaller)
+            # Breakpoints designed for common monitor resolutions
+            base_width = settings.window_width   # 1400
+            base_height = settings.window_height  # 850
+
+            if screen_width >= 3840:
+                # 4K monitor (3840×2160) or higher (5K, etc.)
+                # Cap at reasonable max size - too large becomes unwieldy
+                new_width, new_height = 2400, 1400
+            elif screen_width >= 2560:
+                # WQHD monitor (2560×1440)
+                new_width, new_height = 1900, 1100
+            elif screen_width >= 1920:
+                # Full HD external monitor (1920×1080)
+                # Even same resolution as laptop, external has larger physical size
+                new_width, new_height = 1600, 950
+            else:
+                # Smaller resolution, keep default
+                logger.debug("Screen resolution %spx, using default window size", screen_width)
+                return
+
+            # Skip if already at target size
+            if new_width == base_width and new_height == base_height:
+                return
+
+            # Resize window using pywebview
+            nicegui_app.native.main_window.resize(new_width, new_height)
+
+            logger.info(
+                "Window resized for external monitor: %dx%d -> %dx%d (screen: %dpx)",
+                base_width, base_height, new_width, new_height, screen_width
+            )
+
+        except Exception as e:
+            logger.warning("Failed to detect/scale for display: %s", e)
+
+    # Window size: Base size for laptop (1400x850)
+    # External monitor scaling happens after page load via _scale_window_for_display
     window_size = (yakulingo_app.settings.window_width, yakulingo_app.settings.window_height)
 
     ui.run(

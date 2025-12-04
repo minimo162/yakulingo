@@ -2838,3 +2838,15 @@ a:hover {
     letter-spacing: 0.02em;
 }
 """
+
+# JavaScript for resolution-based zoom scaling
+# Base resolution: 2560x1440 (primary test environment)
+# This ensures consistent UI proportions across different screen resolutions
+RESOLUTION_ZOOM_JS = """
+(function() {
+    const BASE_WIDTH = 2560;
+    const screenWidth = window.screen.width;
+    const zoomFactor = screenWidth / BASE_WIDTH;
+    document.body.style.zoom = zoomFactor;
+})();
+"""

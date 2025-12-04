@@ -235,7 +235,7 @@ def create_standard_dialog(
 
 def open_file(file_path: Path) -> bool:
     """
-    Open a file with the default application.
+    Open a file with the default application and bring it to foreground.
 
     Args:
         file_path: Path to the file to open
@@ -254,9 +254,21 @@ def open_file(file_path: Path) -> bool:
         system = platform.system()
 
         if system == 'Windows':
-            # Windows: use os.startfile
-            import os
-            os.startfile(str(file_path))
+            # Windows: use ShellExecuteW with SW_SHOW for foreground display
+            import ctypes
+            SW_SHOW = 5  # Show window in foreground
+            result = ctypes.windll.shell32.ShellExecuteW(
+                None,           # hwnd
+                "open",         # operation
+                str(file_path), # file
+                None,           # parameters
+                None,           # directory
+                SW_SHOW         # show command
+            )
+            # ShellExecuteW returns > 32 on success
+            if result <= 32:
+                logger.error("ShellExecuteW failed with code %s", result)
+                return False
         elif system == 'Darwin':
             # macOS: use open command
             subprocess.run(['open', str(file_path)], check=True)

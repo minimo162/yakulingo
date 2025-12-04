@@ -386,3 +386,93 @@ class TestReferenceFiles:
         ]
 
         assert len(state.reference_files) == 2
+
+
+class TestOpenFile:
+    """Tests for open_file utility function"""
+
+    def test_open_file_nonexistent(self, tmp_path):
+        """open_file returns False for non-existent file"""
+        from yakulingo.ui.utils import open_file
+
+        nonexistent = tmp_path / "nonexistent.txt"
+        result = open_file(nonexistent)
+        assert result is False
+
+    @pytest.mark.skipif(sys.platform != 'win32', reason="Windows-only test")
+    def test_open_file_windows_success(self, tmp_path):
+        """open_file uses ShellExecuteW on Windows with SW_SHOW"""
+        from yakulingo.ui.utils import open_file
+        import ctypes
+
+        test_file = tmp_path / "test.txt"
+        test_file.write_text("test")
+
+        # Mock ShellExecuteW to return success (> 32)
+        original_func = ctypes.windll.shell32.ShellExecuteW
+        call_args = []
+
+        def mock_shell_execute(*args):
+            call_args.append(args)
+            return 42  # Success
+
+        ctypes.windll.shell32.ShellExecuteW = mock_shell_execute
+        try:
+            result = open_file(test_file)
+
+            assert result is True
+            assert len(call_args) == 1
+            # Verify SW_SHOW (5) is passed as last argument
+            assert call_args[0][5] == 5  # SW_SHOW
+        finally:
+            ctypes.windll.shell32.ShellExecuteW = original_func
+
+    @pytest.mark.skipif(sys.platform != 'win32', reason="Windows-only test")
+    def test_open_file_windows_failure(self, tmp_path):
+        """open_file returns False when ShellExecuteW fails"""
+        from yakulingo.ui.utils import open_file
+        import ctypes
+
+        test_file = tmp_path / "test.txt"
+        test_file.write_text("test")
+
+        # Mock ShellExecuteW to return failure (<= 32)
+        original_func = ctypes.windll.shell32.ShellExecuteW
+
+        def mock_shell_execute(*args):
+            return 2  # File not found error
+
+        ctypes.windll.shell32.ShellExecuteW = mock_shell_execute
+        try:
+            result = open_file(test_file)
+            assert result is False
+        finally:
+            ctypes.windll.shell32.ShellExecuteW = original_func
+
+    @patch('platform.system', return_value='Darwin')
+    @patch('subprocess.run')
+    def test_open_file_macos(self, mock_run, mock_platform, tmp_path):
+        """open_file uses 'open' command on macOS"""
+        from yakulingo.ui.utils import open_file
+
+        test_file = tmp_path / "test.txt"
+        test_file.write_text("test")
+
+        result = open_file(test_file)
+
+        assert result is True
+        mock_run.assert_called_once_with(['open', str(test_file)], check=True)
+
+    @patch('platform.system', return_value='Linux')
+    @patch('subprocess.run')
+    def test_open_file_linux(self, mock_run, mock_platform, tmp_path):
+        """open_file uses 'xdg-open' command on Linux"""
+        from yakulingo.ui.utils import open_file
+
+        test_file = tmp_path / "test.txt"
+        test_file.write_text("test")
+
+        result = open_file(test_file)
+
+        assert result is True
+        mock_run.assert_called_once_with(['xdg-open', str(test_file)], check=True)

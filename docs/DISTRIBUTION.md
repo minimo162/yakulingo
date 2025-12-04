@@ -109,9 +109,10 @@ setup.vbsは常にクリーンインストールを行い、環境フォルダ�
 | 種類 | 対象 |
 |------|------|
 | **ディレクトリ** | `yakulingo/`, `prompts/`, `config/` |
-| **ファイル** | `app.py`, `pyproject.toml`, `uv.lock`, `uv.toml`, `YakuLingo.exe`, `README.md` |
-| **保持（上書きしない）** | `glossary.csv`, `config/settings.json` |
+| **ファイル** | `app.py`, `pyproject.toml`, `uv.lock`, `uv.toml`, `YakuLingo.exe`, `README.md`, `glossary.csv` |
 | **保持（更新対象外）** | `.venv/`, `.uv-python/`, `.playwright-browsers/` |
+
+> **Note**: `config/settings.json` は `config/` フォルダごと上書きされます（ユーザー設定はリセット）
 
 ### プロキシ環境での動作
 

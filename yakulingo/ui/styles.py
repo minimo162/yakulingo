@@ -413,7 +413,7 @@ body {
 }
 
 /* Ensure column inside scroll area takes full width */
-.history-scroll > .nicegui-column {
+.history-scroll .nicegui-column {
     width: 100% !important;
 }
 

@@ -752,11 +752,9 @@ Based on recent commits:
   - **Source text section**: 翻訳結果パネル上部に原文を表示（コピーボタン付き）
   - **Translation status display**: 翻訳中「〜語から〜語へ翻訳中...」、完了後「✓ 翻訳しました」+ 経過時間
   - **Full-height input area**: 翻訳中・翻訳後の入力欄を縦幅いっぱいに拡張
-- **Resolution-Based Window Scaling**:
-  - **Window size scaling**: Window dimensions scaled by `_scale_window_to_screen()` based on monitor resolution
-  - **CSS zoom disabled**: Previously used CSS zoom caused double-scaling with window size scaling
-  - **Base resolution**: 1920×1080 (typical laptop Full HD, scale factor = screenWidth / 1920)
-  - **Laptop + external monitor**: Designed for laptop resolution; external monitor scaling handled by OS DPI
+- **Window Sizing**:
+  - **Fixed window size**: 1400×850 pixels (designed for 1920×1200 laptop resolution)
+  - **No dynamic scaling**: Window size is fixed; external monitor scaling handled by OS DPI settings
   - **Panel layout**: Translation result panel elements aligned to 2/3 width with center alignment
 
 ## Git Workflow

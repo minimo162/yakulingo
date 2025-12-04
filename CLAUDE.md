@@ -651,7 +651,7 @@ Install separately for PDF translation support:
 ```bash
 pip install -r requirements_pdf.txt
 ```
-- `yomitoku>=0.8.0`: Japanese document AI (OCR & layout analysis)
+- `yomitoku>=0.10.0`: Japanese document AI (OCR & layout analysis)
 - Requires Python 3.10-3.12, PyTorch 2.5+, GPU with 8GB+ VRAM recommended
 
 ### PDF Processing Details

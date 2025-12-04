@@ -1290,7 +1290,7 @@ numpy>=1.24.0
 
 ```
 # OCRサポート
-yomitoku>=0.8.0
+yomitoku>=0.10.0
 
 # Windows NTLMプロキシ
 pywin32>=306

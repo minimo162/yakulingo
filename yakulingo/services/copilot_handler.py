@@ -1012,10 +1012,8 @@ class CopilotHandler:
             while max_wait > 0:
                 # Check if Copilot is still generating (stop button visible)
                 # If stop button is present, response is not complete yet
-                stop_button = self._page.query_selector(
-                    'button[aria-label="生成を停止"], button[aria-label="Stop generating"], '
-                    'button[data-testid="stop-generating"], button[data-testid="stopButton"]'
-                )
+                # 実際のCopilot HTML: <div class="fai-SendButton__stopBackground ..."></div>
+                stop_button = self._page.query_selector('.fai-SendButton__stopBackground')
                 if stop_button and stop_button.is_visible():
                     # Still generating, reset stability counter and wait
                     stable_count = 0

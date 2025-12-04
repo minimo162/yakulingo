@@ -153,7 +153,7 @@ echo [DONE] Playwright browser installed.
 echo.
 echo ============================================================
 echo Setup completed!
-echo Double-click run.vbs to start YakuLingo.
+echo Double-click YakuLingo.exe to start YakuLingo.
 echo ============================================================
 echo.
 pause

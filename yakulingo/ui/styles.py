@@ -2212,8 +2212,10 @@ body {
 }
 
 .inline-adjust-panel {
-    width: min(100%, 380px);
+    width: min(100%, 66.67%);
     min-width: 280px;
+    margin-left: auto;
+    margin-right: auto;
     background: var(--md-sys-color-surface);
     border-radius: var(--md-sys-shape-corner-xl);
     padding: 0.75rem;
@@ -2329,9 +2331,9 @@ body {
 
 /* === Inline Question Section === */
 .inline-question-section {
-    width: min(100%, 380px);
+    width: min(100%, 66.67%);
     min-width: 280px;
-    margin-top: 1rem;
+    margin: 1rem auto 0 auto;
     background: var(--md-sys-color-surface);
     border-radius: var(--md-sys-shape-corner-xl);
     padding: 0.625rem 0.75rem;

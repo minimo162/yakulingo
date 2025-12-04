@@ -11,31 +11,23 @@ cd /d "%~dp0"
 
 :: ============================================================
 :: Proxy Settings
-:: Override with environment variable: set PROXY_SERVER=your.proxy:port
-:: Set empty to disable: set PROXY_SERVER=
 :: ============================================================
-if not defined PROXY_SERVER set PROXY_SERVER=136.131.63.233:8082
+set PROXY_SERVER=136.131.63.233:8082
 
 set UV_CACHE_DIR=.uv-cache
 set UV_PYTHON_INSTALL_DIR=.uv-python
 set PLAYWRIGHT_BROWSERS_PATH=.playwright-browsers
 
-:: Try to auto-detect system proxy from registry (IE/Edge settings)
-if not defined PROXY_SERVER (
-    for /f "tokens=2*" %%a in ('reg query "HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings" /v ProxyEnable 2^>nul ^| find "REG_DWORD"') do (
-        set /a PROXY_ENABLED=%%b
-    )
-    if "!PROXY_ENABLED!"=="1" (
-        for /f "tokens=2*" %%a in ('reg query "HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings" /v ProxyServer 2^>nul ^| find "REG_SZ"') do (
-            set PROXY_SERVER=%%b
-        )
-    )
-)
-
-if defined PROXY_SERVER (
-    echo [INFO] Proxy server: !PROXY_SERVER!
-    set HTTP_PROXY=http://!PROXY_SERVER!
-    set HTTPS_PROXY=http://!PROXY_SERVER!
+:: ============================================================
+:: Proxy Authentication (required)
+:: ============================================================
+echo [INFO] Proxy server: !PROXY_SERVER!
+echo.
+call :prompt_proxy_credentials
+if not defined PROXY_USER (
+    echo [ERROR] Proxy credentials are required.
+    pause
+    exit /b 1
 )
 
 :: ============================================================
@@ -44,47 +36,12 @@ if defined PROXY_SERVER (
 if not exist "uv.exe" (
     echo.
     echo [1/4] Downloading uv...
-    echo [INFO] Proxy server: !PROXY_SERVER!
 
-    :: Step 1a: Try with Windows authentication first
-    echo [INFO] Trying Windows authentication...
     powershell -ExecutionPolicy Bypass -Command ^
         "$ProgressPreference = 'SilentlyContinue'; " ^
-        "$proxy = New-Object System.Net.WebProxy('http://!PROXY_SERVER!'); " ^
-        "$proxy.Credentials = [System.Net.CredentialCache]::DefaultNetworkCredentials; " ^
-        "[System.Net.WebRequest]::DefaultWebProxy = $proxy; " ^
-        "$url = 'https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-pc-windows-msvc.zip'; " ^
-        "try { " ^
-        "    Invoke-WebRequest -Uri $url -OutFile 'uv.zip' -UseBasicParsing -TimeoutSec 30; " ^
-        "    Expand-Archive -Path 'uv.zip' -DestinationPath '.' -Force; " ^
-        "    Remove-Item 'uv.zip'; " ^
-        "} catch { " ^
-        "    exit 1; " ^
-        "}" 2>nul
-
-    if exist "uv.exe" (
-        echo [OK] Windows authentication successful.
-    ) else (
-        echo [WARN] Windows authentication failed.
-
-        :: Step 1b: Prompt for manual credentials as last resort
-        echo [INFO] Requesting manual credentials...
-        call :prompt_proxy_credentials
-        if defined PROXY_USER (
-            echo [INFO] Retrying with manual credentials...
-            powershell -ExecutionPolicy Bypass -Command ^
-                "$ProgressPreference = 'SilentlyContinue'; " ^
-                "Invoke-WebRequest -Uri 'https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-pc-windows-msvc.zip' -OutFile 'uv.zip' -Proxy '!HTTP_PROXY!' -UseBasicParsing -TimeoutSec 60; " ^
-                "Expand-Archive -Path 'uv.zip' -DestinationPath '.' -Force; " ^
-                "Remove-Item 'uv.zip'"
-
-            if exist "uv.exe" (
-                echo [OK] Manual authentication successful.
-            ) else (
-                echo [ERROR] Manual authentication failed.
-            )
-        )
-    )
+        "Invoke-WebRequest -Uri 'https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-pc-windows-msvc.zip' -OutFile 'uv.zip' -Proxy '!HTTP_PROXY!' -UseBasicParsing -TimeoutSec 60; " ^
+        "Expand-Archive -Path 'uv.zip' -DestinationPath '.' -Force; " ^
+        "Remove-Item 'uv.zip'"
 
     if not exist "uv.exe" (
         echo [ERROR] Failed to download uv.
@@ -109,15 +66,15 @@ if not errorlevel 1 (
     goto :python_done
 )
 
-:: Try uv python install first (works without proxy auth)
+:: Try uv python install first
 uv.exe python install 3.11 --native-tls 2>nul
 if not errorlevel 1 (
     echo [DONE] Python installed via uv.
     goto :python_done
 )
 
-:: If uv failed (likely proxy auth issue), download manually using PowerShell
-echo [INFO] uv download failed, trying manual download with Windows auth...
+:: If uv failed, download manually using PowerShell
+echo [INFO] uv download failed, trying manual download...
 set PYTHON_VERSION=3.11.14
 set PYTHON_BUILD=20251120
 set PYTHON_URL=https://github.com/astral-sh/python-build-standalone/releases/download/!PYTHON_BUILD!/cpython-!PYTHON_VERSION!+!PYTHON_BUILD!-x86_64-pc-windows-msvc-install_only_stripped.tar.gz
@@ -127,35 +84,18 @@ set PYTHON_INSTALL_DIR=!UV_PYTHON_INSTALL_DIR!\cpython-!PYTHON_VERSION!-windows-
 :: Create python install directory
 if not exist "!UV_PYTHON_INSTALL_DIR!" mkdir "!UV_PYTHON_INSTALL_DIR!"
 
-:: Download Python using PowerShell with Windows authentication
-if defined PROXY_SERVER (
-    powershell -ExecutionPolicy Bypass -Command ^
-        "$ProgressPreference = 'SilentlyContinue'; " ^
-        "$proxy = New-Object System.Net.WebProxy('http://!PROXY_SERVER!'); " ^
-        "$proxy.Credentials = [System.Net.CredentialCache]::DefaultNetworkCredentials; " ^
-        "[System.Net.WebRequest]::DefaultWebProxy = $proxy; " ^
-        "$url = '!PYTHON_URL!'; " ^
-        "Write-Host '[INFO] Downloading Python from GitHub...'; " ^
-        "try { " ^
-        "    Invoke-WebRequest -Uri $url -OutFile '!PYTHON_ARCHIVE!' -UseBasicParsing -TimeoutSec 120; " ^
-        "    Write-Host '[OK] Download complete.'; " ^
-        "} catch { " ^
-        "    Write-Host \"[ERROR] Download failed: $_\"; " ^
-        "    exit 1; " ^
-        "}"
-) else (
-    powershell -ExecutionPolicy Bypass -Command ^
-        "$ProgressPreference = 'SilentlyContinue'; " ^
-        "$url = '!PYTHON_URL!'; " ^
-        "Write-Host '[INFO] Downloading Python from GitHub...'; " ^
-        "try { " ^
-        "    Invoke-WebRequest -Uri $url -OutFile '!PYTHON_ARCHIVE!' -UseBasicParsing -TimeoutSec 120; " ^
-        "    Write-Host '[OK] Download complete.'; " ^
-        "} catch { " ^
-        "    Write-Host \"[ERROR] Download failed: $_\"; " ^
-        "    exit 1; " ^
-        "}"
-)
+:: Download Python using PowerShell
+powershell -ExecutionPolicy Bypass -Command ^
+    "$ProgressPreference = 'SilentlyContinue'; " ^
+    "$url = '!PYTHON_URL!'; " ^
+    "Write-Host '[INFO] Downloading Python from GitHub...'; " ^
+    "try { " ^
+    "    Invoke-WebRequest -Uri $url -OutFile '!PYTHON_ARCHIVE!' -Proxy '!HTTP_PROXY!' -UseBasicParsing -TimeoutSec 120; " ^
+    "    Write-Host '[OK] Download complete.'; " ^
+    "} catch { " ^
+    "    Write-Host \"[ERROR] Download failed: $_\"; " ^
+    "    exit 1; " ^
+    "}"
 
 if not exist "!PYTHON_ARCHIVE!" (
     echo [ERROR] Failed to download Python.
@@ -188,28 +128,12 @@ echo.
 echo [3/4] Installing dependencies...
 uv.exe venv --native-tls
 
-:: Try uv sync first
-uv.exe sync --native-tls 2>nul
-if not errorlevel 1 goto :deps_done
-
-:: If failed, prompt for manual credentials
-echo [WARN] uv sync failed. Proxy authentication may be required.
-call :prompt_proxy_credentials
-if defined PROXY_USER (
-    echo [INFO] Retrying uv sync with credentials...
-    uv.exe sync --native-tls
-    if errorlevel 1 (
-        echo [ERROR] Failed to install dependencies.
-        pause
-        exit /b 1
-    )
-) else (
-    echo [ERROR] Failed to install dependencies. Proxy credentials required.
+uv.exe sync --native-tls
+if errorlevel 1 (
+    echo [ERROR] Failed to install dependencies.
     pause
     exit /b 1
 )
-
-:deps_done
 echo [DONE] Dependencies installed.
 
 :: ============================================================
@@ -218,31 +142,12 @@ echo [DONE] Dependencies installed.
 echo.
 echo [4/4] Installing Playwright browser...
 
-:: Try playwright install first
-uv.exe run --native-tls playwright install chromium 2>nul
-if not errorlevel 1 goto :playwright_done
-
-:: If failed, try with manual proxy credentials (if not already set)
-echo [WARN] Playwright install failed. Proxy authentication may be required.
-if not defined PROXY_USER (
-    echo [INFO] Requesting proxy credentials for Playwright download...
-    call :prompt_proxy_credentials
-)
-if defined PROXY_USER (
-    echo [INFO] Retrying Playwright install with proxy credentials...
-    uv.exe run --native-tls playwright install chromium
-    if errorlevel 1 (
-        echo [ERROR] Failed to install Playwright browser.
-        pause
-        exit /b 1
-    )
-) else (
-    echo [ERROR] Failed to install Playwright browser. Proxy credentials required.
+uv.exe run --native-tls playwright install chromium
+if errorlevel 1 (
+    echo [ERROR] Failed to install Playwright browser.
     pause
     exit /b 1
 )
-
-:playwright_done
 echo [DONE] Playwright browser installed.
 
 echo.
@@ -256,18 +161,15 @@ endlocal
 exit /b 0
 
 :: ============================================================
-:: Function: Prompt for proxy credentials (username/password only)
+:: Function: Prompt for proxy credentials
 :: ============================================================
 :prompt_proxy_credentials
-echo.
 echo ============================================================
-echo Proxy Authentication Required
+echo Proxy Authentication
 echo Server: %PROXY_SERVER%
 echo ============================================================
-set /p PROXY_USER="Username (or press Enter to skip): "
-if not defined PROXY_USER (
-    exit /b 0
-)
+set /p PROXY_USER="Username: "
+if not defined PROXY_USER exit /b 0
 
 :: Use PowerShell to securely input password (masked)
 echo Password (input will be hidden):
@@ -275,5 +177,6 @@ for /f "delims=" %%p in ('powershell -Command "$p = Read-Host -AsSecureString; [
 
 set HTTP_PROXY=http://!PROXY_USER!:!PROXY_PASS!@!PROXY_SERVER!
 set HTTPS_PROXY=http://!PROXY_USER!:!PROXY_PASS!@!PROXY_SERVER!
-echo [INFO] Credentials configured.
+echo.
+echo [OK] Credentials configured.
 exit /b 0

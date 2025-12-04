@@ -224,10 +224,10 @@ body {
     align-items: center;  /* Center child elements horizontally */
 }
 
-/* Result panel inner content - 2/3 width, centered */
+/* Result panel inner content - fixed width, centered */
 .result-panel > * {
-    width: min(100%, 66.67%);
-    min-width: 280px;
+    width: 800px;
+    max-width: 100%;
 }
 
 /* Empty Result State Placeholder */

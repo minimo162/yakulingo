@@ -493,6 +493,9 @@ class TranslationService:
         """
         Detect the language of the input text using Copilot.
 
+        Falls back to local is_japanese_text() if Copilot returns an error
+        or invalid response.
+
         Args:
             text: Text to analyze
 
@@ -516,6 +519,16 @@ class TranslationService:
 
         # Clean up the result (remove extra whitespace, punctuation)
         detected = result.strip().rstrip('。.、,')
+
+        # Check for empty or invalid response - fallback to local detection
+        # Valid language names are typically short (< 20 chars)
+        if not detected or len(detected) > 20:
+            logger.warning(
+                "Copilot language detection failed or returned invalid response, "
+                "falling back to local detection. Response: %s",
+                detected[:100] if detected else "(empty)"
+            )
+            return "日本語" if is_japanese_text(text) else "英語"
 
         # Normalize common variations
         if detected in ("Japanese", "japanese"):

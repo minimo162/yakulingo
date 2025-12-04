@@ -1357,11 +1357,12 @@ def _detect_display_settings() -> tuple[tuple[int, int], str, tuple[int, int, in
 
     Strategy:
     - Multiple monitors detected → desktop mode (3-column layout)
-    - Single monitor with high resolution (2560+) → desktop mode
-    - Single monitor with 1920px or less → laptop mode (2-column layout)
+    - Single monitor with 1920+ → desktop mode (sufficient for 3-column)
+    - Single monitor with less than 1920px → laptop mode (2-column layout)
 
     Window and panel sizes are calculated based on monitor resolution.
     Reference: 2560x1440 monitor → 1900x1100 window, sidebar 260px, input panel 420px.
+    Reference: 1920x1200 monitor → 1424x916 window, sidebar 260px, input panel 380px.
 
     Returns:
         Tuple of ((window_width, window_height), mode, (sidebar_width, input_panel_width, result_content_width))
@@ -1376,11 +1377,12 @@ def _detect_display_settings() -> tuple[tuple[int, int], str, tuple[int, int, in
     RESULT_CONTENT_RATIO = 800 / 1900  # 0.421 (result panel inner content width)
 
     # Minimum sizes to prevent layout breaking on smaller screens (e.g., 1920x1200)
+    # 1920x1200 → 1424px window needs: sidebar(260) + input(380) + result(680) = 1320px
     MIN_WINDOW_WIDTH = 1400
     MIN_WINDOW_HEIGHT = 850
     MIN_SIDEBAR_WIDTH = 260
-    MIN_INPUT_PANEL_WIDTH = 420
-    MIN_RESULT_CONTENT_WIDTH = 800
+    MIN_INPUT_PANEL_WIDTH = 380  # Reduced from 420 for 1920x1200 compatibility
+    MIN_RESULT_CONTENT_WIDTH = 680  # Reduced from 800 for 1920x1200 compatibility
 
     def calculate_sizes(screen_width: int, screen_height: int) -> tuple[tuple[int, int], tuple[int, int, int]]:
         """Calculate window size and panel widths from screen resolution.
@@ -1426,8 +1428,9 @@ def _detect_display_settings() -> tuple[tuple[int, int], str, tuple[int, int, in
 
         # Determine display mode
         # Multi-monitor: assume external monitor is connected → desktop mode
-        # Single monitor with 2560+: definitely external → desktop mode
-        if is_multi_monitor or largest_screen.width >= 2560:
+        # Single monitor with 1920+: sufficient space for 3-column layout → desktop mode
+        # Note: 1920x1200 → 1424px window is enough for sidebar (260) + input (380) + result (680)
+        if is_multi_monitor or largest_screen.width >= 1920:
             mode = "desktop"
         else:
             mode = "laptop"

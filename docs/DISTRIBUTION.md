@@ -141,11 +141,12 @@ setup.vbsは常にクリーンインストールを行い、環境フォルダ�
 
 | データ | 場所 | 更新時の扱い |
 |--------|------|-------------|
-| アプリ設定 | `%LOCALAPPDATA%\YakuLingo\config\settings.json` | 保持 |
+| アプリ設定 | `%LOCALAPPDATA%\YakuLingo\config\settings.json` | 上書き |
 | 翻訳履歴 | `%USERPROFILE%\.yakulingo\history.db` | 保持 |
-| 用語集 | `%LOCALAPPDATA%\YakuLingo\glossary.csv` | 保持 |
+| 用語集 | `%LOCALAPPDATA%\YakuLingo\glossary.csv` | 上書き |
 
-> **Note**: 翻訳履歴はアプリケーションフォルダ外に保存されるため、アンインストール後も残ります
+> **Note**: 翻訳履歴はアプリケーションフォルダ外に保存されるため、アンインストール後も残ります。
+> アプリ設定と用語集は自動更新時に上書きされます。カスタマイズした設定は更新後に再設定してください。
 
 ## トラブルシューティング
 

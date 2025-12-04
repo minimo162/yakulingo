@@ -507,9 +507,10 @@ class TestPdfOperatorGenerator:
         assert "TJ" in result
 
     def test_raw_string_simple_encoding(self, op_generator):
-        # English font uses simple (2-digit hex) encoding
+        # All fonts now use Unicode (4-digit hex) encoding for proper rendering
+        # PyMuPDF embeds TrueType fonts as CID fonts
         result = op_generator.raw_string("F2", "Hi")
-        assert result == "4869"  # H=0x48, i=0x69
+        assert result == "00480069"  # H=0x0048, i=0x0069
 
     def test_raw_string_cid_encoding(self, op_generator):
         # Japanese font uses CID (4-digit hex) encoding

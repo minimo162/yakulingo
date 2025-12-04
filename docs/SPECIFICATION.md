@@ -1,6 +1,6 @@
 # YakuLingo - 技術仕様書
 
-> **Version**: 2.11
+> **Version**: 2.12
 > **Date**: 2025-12
 > **App Name**: YakuLingo (訳リンゴ)
 
@@ -1519,6 +1519,15 @@ python -c "import time; t=time.time(); from yakulingo.ui import run_app; print(f
 ---
 
 ## 変更履歴
+
+### 2.12 (2025-12)
+- PDF翻訳精度向上（キャッシュ機構、数式検出、フォント調整の改善）
+- 中国語→日本語翻訳時のスキップ判定を修正
+- ファイル翻訳の言語選択UIラベルを明確化
+- WindowsのDPIスケーリング対応を改善
+- アプリ終了時のクリーンアップ処理を確実に実行
+- Excel図形テキスト取得時のCOMオブジェクトアクセスを最適化
+- 自動更新時にglossary.csvとsettings.jsonを上書きするように変更
 
 ### 2.11 (2025-12)
 - ウィンドウサイズを固定（1400×850、ノートPC 1920×1200 向け）

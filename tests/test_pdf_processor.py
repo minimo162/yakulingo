@@ -857,25 +857,37 @@ class TestPdfProcessorProperties:
 
 
 class TestPdfProcessorShouldTranslate:
-    """Tests for PdfProcessor.should_translate inherited method"""
+    """Tests for PdfProcessor.should_translate using CellTranslator logic"""
 
     def test_should_translate_japanese(self, processor):
+        # Default output_language is "en" (JP→EN), so Japanese text should be translated
         assert processor.should_translate("こんにちは") is True
 
-    def test_should_translate_english(self, processor):
+    def test_should_not_translate_english_for_jp_to_en(self, processor):
+        # Default output_language is "en" (JP→EN), so English-only text is skipped
+        assert processor.should_translate("Hello World") is False
+
+    def test_should_translate_english_for_en_to_jp(self, processor):
+        # For EN→JP, English text should be translated
+        processor._output_language = "jp"
         assert processor.should_translate("Hello World") is True
 
     def test_should_not_translate_numbers_only(self, processor):
         assert processor.should_translate("12345") is False
 
-    def test_should_translate_urls(self, processor):
-        # Note: Base implementation does not filter URLs
-        # URLs are translated (this may be desired behavior for some cases)
-        assert processor.should_translate("https://example.com") is True
+    def test_should_not_translate_urls(self, processor):
+        # CellTranslator skips URLs
+        assert processor.should_translate("https://example.com") is False
 
     def test_should_not_translate_empty(self, processor):
         assert processor.should_translate("") is False
         assert processor.should_translate("   ") is False
+
+    def test_should_translate_mixed_text(self, processor):
+        # Mixed Japanese + English text should be translated in both directions
+        assert processor.should_translate("売上 Sales") is True
+        processor._output_language = "jp"
+        assert processor.should_translate("売上 Sales") is True
 
 
 class TestPdfProcessorGetFileInfo:
@@ -1158,14 +1170,14 @@ class TestExtractTextBlocksStreaming:
             mock_fitz = MagicMock()
             mock_get_fitz.return_value = mock_fitz
 
-            # Create mock document with 2 pages
+            # Create mock document with 2 pages (use Japanese text for JP→EN translation)
             mock_page1 = MagicMock()
             mock_page1.get_text.return_value = {
                 "blocks": [
                     {
                         "type": 0,
                         "bbox": [100, 200, 300, 250],
-                        "lines": [{"spans": [{"text": "Page 1 text", "font": "Arial", "size": 12.0}]}]
+                        "lines": [{"spans": [{"text": "ページ1のテキスト", "font": "Arial", "size": 12.0}]}]
                     }
                 ]
             }
@@ -1175,7 +1187,7 @@ class TestExtractTextBlocksStreaming:
                     {
                         "type": 0,
                         "bbox": [100, 200, 300, 250],
-                        "lines": [{"spans": [{"text": "Page 2 text", "font": "Arial", "size": 12.0}]}]
+                        "lines": [{"spans": [{"text": "ページ2のテキスト", "font": "Arial", "size": 12.0}]}]
                     }
                 ]
             }
@@ -1202,8 +1214,8 @@ class TestExtractTextBlocksStreaming:
 
             assert page_count == 2
             assert len(all_blocks) == 2
-            assert all_blocks[0].text == "Page 1 text"
-            assert all_blocks[1].text == "Page 2 text"
+            assert all_blocks[0].text == "ページ1のテキスト"
+            assert all_blocks[1].text == "ページ2のテキスト"
 
     def test_streaming_progress_callback(self, processor, tmp_path):
         """Test that progress callback is called during streaming"""

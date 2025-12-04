@@ -150,21 +150,35 @@ class ExcelProcessor(FileProcessor):
             section_details=section_details,
         )
 
-    def extract_text_blocks(self, file_path: Path) -> Iterator[TextBlock]:
-        """Extract text from cells, shapes, and charts"""
+    def extract_text_blocks(
+        self, file_path: Path, output_language: str = "en"
+    ) -> Iterator[TextBlock]:
+        """Extract text from cells, shapes, and charts
+
+        Args:
+            file_path: Path to the Excel file
+            output_language: "en" for JP→EN, "jp" for EN→JP translation
+        """
         xw = _get_xlwings()
 
         if HAS_XLWINGS:
-            yield from self._extract_text_blocks_xlwings(file_path, xw)
+            yield from self._extract_text_blocks_xlwings(file_path, xw, output_language)
         else:
-            yield from self._extract_text_blocks_openpyxl(file_path)
+            yield from self._extract_text_blocks_openpyxl(file_path, output_language)
 
-    def _extract_text_blocks_xlwings(self, file_path: Path, xw) -> Iterator[TextBlock]:
+    def _extract_text_blocks_xlwings(
+        self, file_path: Path, xw, output_language: str = "en"
+    ) -> Iterator[TextBlock]:
         """Extract text using xlwings
 
         Optimized for performance:
         - Bulk read all cell values at once via used_range.value
         - Only fetch font info for cells that will be translated
+
+        Args:
+            file_path: Path to the Excel file
+            xw: xlwings module
+            output_language: "en" for JP→EN, "jp" for EN→JP translation
         """
         app = xw.App(visible=False, add_book=False)
         try:
@@ -199,7 +213,7 @@ class ExcelProcessor(FileProcessor):
                                         continue
                                     for col_offset, value in enumerate(row_values):
                                         if value and isinstance(value, str):
-                                            if self.cell_translator.should_translate(str(value)):
+                                            if self.cell_translator.should_translate(str(value), output_language):
                                                 row_idx = start_row + row_offset
                                                 col_idx = start_col + col_offset
                                                 translatable_cells.append((row_idx, col_idx, str(value)))
@@ -244,7 +258,7 @@ class ExcelProcessor(FileProcessor):
                             try:
                                 if hasattr(shape, 'text') and shape.text:
                                     text = shape.text.strip()
-                                    if text and self.cell_translator.should_translate(text):
+                                    if text and self.cell_translator.should_translate(text, output_language):
                                         yield TextBlock(
                                             id=f"{sheet_name}_shape_{shape_idx}",
                                             text=text,
@@ -271,7 +285,7 @@ class ExcelProcessor(FileProcessor):
                                 # Chart title
                                 if api_chart.HasTitle:
                                     title = api_chart.ChartTitle.Text
-                                    if title and self.cell_translator.should_translate(title):
+                                    if title and self.cell_translator.should_translate(title, output_language):
                                         yield TextBlock(
                                             id=f"{sheet_name}_chart_{chart_idx}_title",
                                             text=title,
@@ -289,7 +303,7 @@ class ExcelProcessor(FileProcessor):
                                         axis = api_chart.Axes(axis_type)
                                         if axis.HasTitle:
                                             axis_title = axis.AxisTitle.Text
-                                            if axis_title and self.cell_translator.should_translate(axis_title):
+                                            if axis_title and self.cell_translator.should_translate(axis_title, output_language):
                                                 yield TextBlock(
                                                     id=f"{sheet_name}_chart_{chart_idx}_axis_{axis_name}",
                                                     text=axis_title,
@@ -313,12 +327,18 @@ class ExcelProcessor(FileProcessor):
         finally:
             app.quit()
 
-    def _extract_text_blocks_openpyxl(self, file_path: Path) -> Iterator[TextBlock]:
+    def _extract_text_blocks_openpyxl(
+        self, file_path: Path, output_language: str = "en"
+    ) -> Iterator[TextBlock]:
         """Extract text using openpyxl (fallback - cells only)
 
         Optimized with read_only=True for faster parsing.
         Font info is not available in read_only mode but is fetched
         during apply_translations from the original file.
+
+        Args:
+            file_path: Path to the Excel file
+            output_language: "en" for JP→EN, "jp" for EN→JP translation
         """
         wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
 
@@ -329,7 +349,7 @@ class ExcelProcessor(FileProcessor):
                 for row in sheet.iter_rows():
                     for cell in row:
                         if cell.value and isinstance(cell.value, str):
-                            if self.cell_translator.should_translate(str(cell.value)):
+                            if self.cell_translator.should_translate(str(cell.value), output_language):
                                 # Use cell's actual row and column attributes
                                 row_idx = cell.row
                                 col_idx = cell.column

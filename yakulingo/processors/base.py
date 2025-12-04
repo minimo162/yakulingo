@@ -42,12 +42,16 @@ class FileProcessor(ABC):
         pass
 
     @abstractmethod
-    def extract_text_blocks(self, file_path: Path) -> Iterator[TextBlock]:
+    def extract_text_blocks(
+        self, file_path: Path, output_language: str = "en"
+    ) -> Iterator[TextBlock]:
         """
         Extract translatable text blocks from file.
 
         Args:
             file_path: Path to the file
+            output_language: "en" for JP→EN, "jp" for EN→JP translation.
+                           Used to filter text based on translation direction.
 
         Yields:
             TextBlock for each translatable text unit

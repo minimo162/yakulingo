@@ -124,15 +124,15 @@ class TestWordProcessorExtractTextBlocks:
     """Test WordProcessor.extract_text_blocks()"""
 
     def test_extracts_paragraphs(self, processor, sample_docx):
-        """Extracts translatable paragraphs"""
+        """Extracts translatable paragraphs (Japanese only)"""
         blocks = list(processor.extract_text_blocks(sample_docx))
 
-        # Should have 2 blocks
-        assert len(blocks) == 2
+        # Should have 1 block (only Japanese text, English-only is skipped)
+        assert len(blocks) == 1
 
         texts = [b.text for b in blocks]
         assert "これは最初の段落です。" in texts
-        assert "This is the second paragraph." in texts
+        # Note: "This is the second paragraph." is skipped as English-only
 
     def test_skips_numbers_and_emails(self, processor, sample_docx):
         """Skips non-translatable content"""
@@ -143,16 +143,17 @@ class TestWordProcessorExtractTextBlocks:
         assert "test@example.com" not in texts
 
     def test_extracts_table_cells(self, processor, docx_with_table):
-        """Extracts table cells"""
+        """Extracts table cells (Japanese only)"""
         blocks = list(processor.extract_text_blocks(docx_with_table))
 
         # Filter table cells
         table_blocks = [b for b in blocks if b.metadata.get("type") == "table_cell"]
-        assert len(table_blocks) == 3
+        # Only Japanese cells are extracted
+        assert len(table_blocks) == 2
 
         table_texts = [b.text for b in table_blocks]
         assert "ヘッダー1" in table_texts
-        assert "Header 2" in table_texts
+        # Note: "Header 2" is skipped as English-only
         assert "データ" in table_texts
         assert "12345" not in table_texts  # Skipped
 
@@ -203,14 +204,14 @@ class TestWordProcessorApplyTranslations:
         """Applies translations to paragraphs"""
         output_path = tmp_path / "output.docx"
 
-        # Get block IDs first
+        # Get block IDs first (only Japanese text is extracted)
         blocks = list(processor.extract_text_blocks(sample_docx))
+        assert len(blocks) == 1  # Only Japanese paragraph
+
         block_0_id = blocks[0].id
-        block_1_id = blocks[1].id
 
         translations = {
             block_0_id: "This is the first paragraph.",
-            block_1_id: "これは2番目の段落です。",
         }
 
         processor.apply_translations(
@@ -222,7 +223,6 @@ class TestWordProcessorApplyTranslations:
         para_texts = [p.text for p in doc.paragraphs if p.text.strip()]
 
         assert "This is the first paragraph." in para_texts
-        assert "これは2番目の段落です。" in para_texts
 
     def test_applies_translations_to_tables(self, processor, docx_with_table, tmp_path):
         """Applies translations to table cells"""
@@ -307,12 +307,12 @@ class TestWordProcessorEdgeCases:
 
         # Multiple tables
         table1 = doc.add_table(rows=1, cols=1)
-        table1.cell(0, 0).text = "Table 1 Cell"
+        table1.cell(0, 0).text = "テーブル1セル"
 
         doc.add_paragraph()  # Separator
 
         table2 = doc.add_table(rows=1, cols=1)
-        table2.cell(0, 0).text = "Table 2 Cell"
+        table2.cell(0, 0).text = "テーブル2セル"
 
         doc.save(file_path)
 
@@ -344,14 +344,16 @@ class TestWordProcessorEdgeCases:
         doc = Document()
 
         doc.add_paragraph("日本語テスト")
-        doc.add_paragraph("中文测试")
-        doc.add_paragraph("한국어 테스트")
-        doc.add_paragraph("Emoji test 😀🎉")
+        doc.add_paragraph("中文测试")  # Chinese uses CJK characters, detected as Japanese
+        # Note: Korean and English-only are skipped
+        doc.add_paragraph("한국어 테스트")  # Korean (not Japanese)
+        doc.add_paragraph("Emoji test 😀🎉")  # English-only
 
         doc.save(file_path)
 
         blocks = list(processor.extract_text_blocks(file_path))
-        assert len(blocks) == 4
+        # Only Japanese/CJK containing texts are extracted
+        assert len(blocks) == 2
 
 
 # --- Tests: create_bilingual_document ---

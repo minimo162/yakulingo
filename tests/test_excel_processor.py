@@ -130,23 +130,22 @@ class TestExcelProcessorExtractTextBlocks:
     """Test ExcelProcessor.extract_text_blocks()"""
 
     def test_extracts_translatable_text(self, processor, sample_xlsx):
-        """Extracts only translatable text blocks"""
+        """Extracts only translatable text blocks (Japanese text only)"""
         blocks = list(processor.extract_text_blocks(sample_xlsx))
 
-        # Should have 3 blocks
-        assert len(blocks) == 3
+        # Should have 2 blocks (only Japanese text, English-only is skipped)
+        assert len(blocks) == 2
 
         # Check block IDs
         block_ids = [b.id for b in blocks]
         assert "Sheet1_A1" in block_ids
         assert "Sheet1_A2" in block_ids
-        assert "Sheet1_C1" in block_ids
+        # Note: "Hello World" (C1) is skipped as it's English-only
 
         # Check texts
         texts = [b.text for b in blocks]
         assert "こんにちは" in texts
         assert "世界" in texts
-        assert "Hello World" in texts
 
     def test_skips_numbers_and_emails(self, processor, sample_xlsx):
         """Skips non-translatable content"""
@@ -319,8 +318,9 @@ class TestExcelProcessorEdgeCases:
         ws = wb.active
         ws.title = "Sheet1"
 
-        ws["A100"] = "Row 100 text"
-        ws["Z50"] = "Column Z text"
+        # Use Japanese text for translation target
+        ws["A100"] = "100行目のテキスト"
+        ws["Z50"] = "Z列のテキスト"
 
         wb.save(file_path)
 

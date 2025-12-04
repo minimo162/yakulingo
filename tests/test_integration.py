@@ -228,14 +228,16 @@ class TestFileTranslationWorkflow:
     def test_excel_en_workflow(
         self, mock_copilot_with_translation, settings, excel_file_en, tmp_path
     ):
-        """Complete Excel English file translation workflow"""
+        """English-only Excel file has no translatable text"""
         service = TranslationService(mock_copilot_with_translation, settings)
 
         result = service.translate_file(excel_file_en)
 
+        # Completes but with no translations (English-only is skipped)
         assert result.status == TranslationStatus.COMPLETED
-        assert result.output_path is not None
-        assert "_translated" in result.output_path.name
+        assert result.blocks_translated == 0
+        # Warning about no translatable text
+        assert any("No translatable text" in w for w in result.warnings)
 
     def test_multi_sheet_excel_workflow(
         self, mock_copilot_with_translation, settings, excel_file_multi_sheet

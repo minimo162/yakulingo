@@ -91,9 +91,9 @@ class TestLargeFiles:
         wb = openpyxl.Workbook()
         ws = wb.active
 
-        # Add 1000 rows
+        # Add 1000 rows with Japanese text
         for i in range(1, 1001):
-            ws[f'A{i}'] = f'Row {i} text'
+            ws[f'A{i}'] = f'{i}行目のテキスト'
 
         wb.save(file_path)
 
@@ -108,9 +108,9 @@ class TestLargeFiles:
         wb = openpyxl.Workbook()
         ws = wb.active
 
-        # Add 100 columns
+        # Add 100 columns with Japanese text
         for i in range(1, 101):
-            ws.cell(row=1, column=i).value = f'Column {i}'
+            ws.cell(row=1, column=i).value = f'{i}列目'
 
         wb.save(file_path)
 
@@ -124,14 +124,14 @@ class TestLargeFiles:
         file_path = tmp_path / "many_sheets.xlsx"
         wb = openpyxl.Workbook()
 
-        # Add 20 sheets with content
+        # Add 20 sheets with Japanese content
         for i in range(20):
             if i == 0:
                 ws = wb.active
                 ws.title = f"Sheet{i}"
             else:
                 ws = wb.create_sheet(f"Sheet{i}")
-            ws['A1'] = f'Content on Sheet {i}'
+            ws['A1'] = f'シート{i}の内容'
 
         wb.save(file_path)
 
@@ -146,7 +146,7 @@ class TestLargeFiles:
         doc = Document()
 
         for i in range(500):
-            doc.add_paragraph(f'Paragraph {i} with text')
+            doc.add_paragraph(f'{i}番目の段落テキスト')
 
         doc.save(file_path)
 
@@ -184,28 +184,30 @@ class TestUnicodeHandling:
         wb = openpyxl.Workbook()
         ws = wb.active
         ws['A1'] = '日本語テキスト'  # Japanese
-        ws['A2'] = '中文文本'        # Chinese
-        ws['A3'] = '한국어 텍스트'    # Korean
+        ws['A2'] = '中文文本'        # Chinese (CJK characters, treated as Japanese)
+        ws['A3'] = '한국어 텍스트'    # Korean (not Japanese/CJK, skipped)
         wb.save(file_path)
 
         processor = ExcelProcessor()
         blocks = list(processor.extract_text_blocks(file_path))
 
-        assert len(blocks) == 3
+        # Japanese and Chinese are extracted, Korean is skipped
+        assert len(blocks) == 2
 
     def test_excel_with_rtl_text(self, tmp_path):
-        """Process Excel file with right-to-left text"""
+        """Process Excel file with right-to-left text (not extracted)"""
         file_path = tmp_path / "rtl.xlsx"
         wb = openpyxl.Workbook()
         ws = wb.active
-        ws['A1'] = 'مرحبا بالعالم'  # Arabic
-        ws['A2'] = 'שלום עולם'      # Hebrew
+        ws['A1'] = 'مرحبا بالعالم'  # Arabic (not Japanese, skipped)
+        ws['A2'] = 'שלום עולם'      # Hebrew (not Japanese, skipped)
         wb.save(file_path)
 
         processor = ExcelProcessor()
         blocks = list(processor.extract_text_blocks(file_path))
 
-        assert len(blocks) == 2
+        # RTL text without Japanese is skipped
+        assert len(blocks) == 0
 
     def test_excel_with_zero_width_characters(self, tmp_path):
         """Process Excel file with zero-width characters"""
@@ -268,14 +270,14 @@ class TestMixedContent:
         wb = openpyxl.Workbook()
         ws = wb.active
         ws['A1'] = datetime(2024, 1, 15)
-        ws['A2'] = '2024年1月15日'  # Text date
-        ws['B1'] = 'Normal text'
+        ws['A2'] = '2024年1月15日'  # Text date (matches date pattern, skipped)
+        ws['B1'] = '通常テキスト'  # Japanese text
         wb.save(file_path)
 
         processor = ExcelProcessor()
         blocks = list(processor.extract_text_blocks(file_path))
 
-        # Should extract text cells
+        # Should extract Japanese text cells (date pattern is skipped)
         assert len(blocks) >= 1
 
     def test_excel_with_numbers_and_text(self, tmp_path):
@@ -284,16 +286,16 @@ class TestMixedContent:
         wb = openpyxl.Workbook()
         ws = wb.active
         ws['A1'] = 12345  # Number only - should skip
-        ws['A2'] = '12345円'  # Number with unit - should translate
-        ws['A3'] = 'Item 123'  # Text with number - should translate
-        ws['A4'] = 'Pure text'  # Pure text - should translate
+        ws['A2'] = '12345円'  # Number with Japanese unit - should translate
+        ws['A3'] = 'Item 123'  # English with number - should skip
+        ws['A4'] = '項目123'  # Japanese with number - should translate
         wb.save(file_path)
 
         processor = ExcelProcessor()
         blocks = list(processor.extract_text_blocks(file_path))
 
-        # Number-only should be skipped, others included
-        assert len(blocks) >= 2
+        # Number-only and English-only should be skipped
+        assert len(blocks) == 2
 
 
 # =============================================================================
@@ -308,9 +310,9 @@ class TestFontHandling:
         file_path = tmp_path / "fonts.xlsx"
         wb = openpyxl.Workbook()
         ws = wb.active
-        ws['A1'] = 'Mincho text'
+        ws['A1'] = '明朝テキスト'  # Japanese text
         ws['A1'].font = Font(name='MS Mincho', size=12)
-        ws['A2'] = 'Gothic text'
+        ws['A2'] = 'ゴシックテキスト'  # Japanese text
         ws['A2'].font = Font(name='MS Gothic', size=14)
         wb.save(file_path)
 
@@ -326,11 +328,11 @@ class TestFontHandling:
         file_path = tmp_path / "bold_italic.xlsx"
         wb = openpyxl.Workbook()
         ws = wb.active
-        ws['A1'] = 'Bold text'
+        ws['A1'] = '太字テキスト'  # Japanese
         ws['A1'].font = Font(bold=True)
-        ws['A2'] = 'Italic text'
+        ws['A2'] = '斜体テキスト'  # Japanese
         ws['A2'].font = Font(italic=True)
-        ws['A3'] = 'Bold italic'
+        ws['A3'] = '太字斜体'  # Japanese
         ws['A3'].font = Font(bold=True, italic=True)
         wb.save(file_path)
 
@@ -355,15 +357,15 @@ class TestSkipPatterns:
         ws['A1'] = 12345
         ws['A2'] = 123.45
         ws['A3'] = -123
-        ws['A4'] = 'Text content'
+        ws['A4'] = 'テキスト内容'  # Japanese text
         wb.save(file_path)
 
         processor = ExcelProcessor()
         blocks = list(processor.extract_text_blocks(file_path))
 
-        # Only 'Text content' should be extracted
+        # Only Japanese text should be extracted
         texts = [b.text for b in blocks]
-        assert 'Text content' in texts
+        assert 'テキスト内容' in texts
         assert len(blocks) == 1
 
     def test_excel_skips_emails(self, tmp_path):
@@ -373,14 +375,14 @@ class TestSkipPatterns:
         ws = wb.active
         ws['A1'] = 'test@example.com'
         ws['A2'] = 'user.name@domain.co.jp'
-        ws['A3'] = 'Normal text'
+        ws['A3'] = '通常テキスト'  # Japanese text
         wb.save(file_path)
 
         processor = ExcelProcessor()
         blocks = list(processor.extract_text_blocks(file_path))
 
         texts = [b.text for b in blocks]
-        assert 'Normal text' in texts
+        assert '通常テキスト' in texts
 
     def test_excel_skips_urls(self, tmp_path):
         """URLs should be skipped"""
@@ -390,14 +392,14 @@ class TestSkipPatterns:
         ws['A1'] = 'https://example.com'
         ws['A2'] = 'http://test.co.jp/path'
         ws['A3'] = 'www.example.com'
-        ws['A4'] = 'Normal text'
+        ws['A4'] = '通常テキスト'  # Japanese text
         wb.save(file_path)
 
         processor = ExcelProcessor()
         blocks = list(processor.extract_text_blocks(file_path))
 
         texts = [b.text for b in blocks]
-        assert 'Normal text' in texts
+        assert '通常テキスト' in texts
 
 
 # =============================================================================
@@ -454,8 +456,8 @@ class TestApplyTranslations:
 
         wb = openpyxl.Workbook()
         ws = wb.active
-        ws['A1'] = 'Hello'
-        ws['A2'] = 'World'
+        ws['A1'] = 'こんにちは'  # Japanese text
+        ws['A2'] = '世界'  # Japanese text
         wb.save(input_path)
 
         processor = ExcelProcessor()
@@ -463,8 +465,8 @@ class TestApplyTranslations:
 
         # Create translations
         translations = {
-            blocks[0].id: 'こんにちは',
-            blocks[1].id: '世界',
+            blocks[0].id: 'Hello',
+            blocks[1].id: 'World',
         }
 
         processor.apply_translations(input_path, output_path, translations)
@@ -473,8 +475,8 @@ class TestApplyTranslations:
         assert output_path.exists()
         wb_out = openpyxl.load_workbook(output_path)
         ws_out = wb_out.active
-        assert ws_out['A1'].value == 'こんにちは'
-        assert ws_out['A2'].value == '世界'
+        assert ws_out['A1'].value == 'Hello'
+        assert ws_out['A2'].value == 'World'
 
     def test_word_apply_translations(self, tmp_path):
         """Apply translations to Word file"""
@@ -482,8 +484,8 @@ class TestApplyTranslations:
         output_path = tmp_path / "output.docx"
 
         doc = Document()
-        doc.add_paragraph('Hello')
-        doc.add_paragraph('World')
+        doc.add_paragraph('こんにちは')  # Japanese text
+        doc.add_paragraph('世界')  # Japanese text
         doc.save(input_path)
 
         processor = WordProcessor()
@@ -491,8 +493,8 @@ class TestApplyTranslations:
 
         # Create translations
         translations = {
-            blocks[0].id: 'こんにちは',
-            blocks[1].id: '世界',
+            blocks[0].id: 'Hello',
+            blocks[1].id: 'World',
         }
 
         processor.apply_translations(input_path, output_path, translations)
@@ -501,8 +503,8 @@ class TestApplyTranslations:
         assert output_path.exists()
         doc_out = Document(output_path)
         paragraphs = [p.text for p in doc_out.paragraphs if p.text.strip()]
-        assert 'こんにちは' in paragraphs
-        assert '世界' in paragraphs
+        assert 'Hello' in paragraphs
+        assert 'World' in paragraphs
 
     def test_apply_partial_translations(self, tmp_path):
         """Apply translations when some blocks are missing"""
@@ -511,9 +513,9 @@ class TestApplyTranslations:
 
         wb = openpyxl.Workbook()
         ws = wb.active
-        ws['A1'] = 'Hello'
-        ws['A2'] = 'World'
-        ws['A3'] = 'Test'
+        ws['A1'] = 'こんにちは'  # Japanese
+        ws['A2'] = '世界'  # Japanese
+        ws['A3'] = 'テスト'  # Japanese
         wb.save(input_path)
 
         processor = ExcelProcessor()
@@ -521,7 +523,7 @@ class TestApplyTranslations:
 
         # Only translate first block
         translations = {
-            blocks[0].id: 'こんにちは',
+            blocks[0].id: 'Hello',
         }
 
         processor.apply_translations(input_path, output_path, translations)
@@ -529,9 +531,9 @@ class TestApplyTranslations:
         # Verify output - untranslated cells keep original
         wb_out = openpyxl.load_workbook(output_path)
         ws_out = wb_out.active
-        assert ws_out['A1'].value == 'こんにちは'
-        assert ws_out['A2'].value == 'World'  # Not translated
-        assert ws_out['A3'].value == 'Test'   # Not translated
+        assert ws_out['A1'].value == 'Hello'
+        assert ws_out['A2'].value == '世界'  # Not translated
+        assert ws_out['A3'].value == 'テスト'   # Not translated
 
 
 # =============================================================================
@@ -547,7 +549,7 @@ class TestLocationHandling:
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.title = 'Sheet1'
-        ws['C5'] = 'Test'
+        ws['C5'] = 'テスト'  # Japanese text
         wb.save(file_path)
 
         processor = ExcelProcessor()
@@ -563,9 +565,9 @@ class TestLocationHandling:
         wb = openpyxl.Workbook()
         ws1 = wb.active
         ws1.title = 'First'
-        ws1['A1'] = 'Text 1'
+        ws1['A1'] = 'テキスト1'  # Japanese
         ws2 = wb.create_sheet('Second')
-        ws2['A1'] = 'Text 2'
+        ws2['A1'] = 'テキスト2'  # Japanese
         wb.save(file_path)
 
         processor = ExcelProcessor()

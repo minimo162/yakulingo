@@ -147,14 +147,11 @@ if (Test-Path $InstallPath) {
         Write-Host "      Found existing installation: $InstallPath" -ForegroundColor Gray
     }
 
-    # Remove old files (keep environment folders)
+    # Remove all files (including environment folders for clean reinstall)
     if (-not $GuiMode) {
-        Write-Host "      Removing old source files..." -ForegroundColor Gray
+        Write-Host "      Removing old installation..." -ForegroundColor Gray
     }
-    $KeepDirs = @(".venv", ".uv-python", ".playwright-browsers")
-    Get-ChildItem -Path $InstallPath | Where-Object {
-        $_.Name -notin $KeepDirs
-    } | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+    Get-ChildItem -Path $InstallPath | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 if (-not $GuiMode) {
@@ -216,18 +213,11 @@ if (-not (Test-Path $InstallPath)) {
     New-Item -ItemType Directory -Path $InstallPath -Force | Out-Null
 }
 
-# Copy files
+# Copy all files (environment folders are always overwritten for clean reinstall)
 Get-ChildItem -Path $SourceDir | ForEach-Object {
     $dest = Join-Path $InstallPath $_.Name
     if ($_.PSIsContainer) {
-        # Skip environment folders if they already exist
-        if ($_.Name -in @(".venv", ".uv-python", ".playwright-browsers")) {
-            if (-not (Test-Path $dest)) {
-                Copy-Item -Path $_.FullName -Destination $dest -Recurse -Force
-            }
-        } else {
-            Copy-Item -Path $_.FullName -Destination $dest -Recurse -Force
-        }
+        Copy-Item -Path $_.FullName -Destination $dest -Recurse -Force
     } else {
         Copy-Item -Path $_.FullName -Destination $dest -Force
     }

@@ -74,6 +74,10 @@ class YakuLingoApp:
         # Set by run_app() based on monitor detection
         self._panel_sizes: tuple[int, int, int] = (260, 420, 800)
 
+        # Window size (width, height) in pixels
+        # Set by run_app() based on monitor detection
+        self._window_size: tuple[int, int] = (1900, 1100)
+
     @property
     def copilot(self) -> "CopilotHandler":
         """Lazy-load CopilotHandler for faster startup."""
@@ -1480,10 +1484,12 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
         window_size, display_mode, panel_sizes = _detect_display_settings()
         yakulingo_app._display_mode = display_mode
         yakulingo_app._panel_sizes = panel_sizes  # (sidebar_width, input_panel_width, result_content_width)
+        yakulingo_app._window_size = window_size
     else:
         window_size = (1900, 1100)  # Default size for browser mode
         yakulingo_app._display_mode = "laptop"
         yakulingo_app._panel_sizes = (260, 420, 800)  # Default panel sizes
+        yakulingo_app._window_size = window_size
 
     def cleanup():
         """Clean up resources on shutdown."""
@@ -1506,11 +1512,20 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
 
         # Set dynamic panel sizes as CSS variables (calculated from monitor resolution)
         sidebar_width, input_panel_width, result_content_width = yakulingo_app._panel_sizes
+        window_width, window_height = yakulingo_app._window_size
+
+        # Calculate input min-height based on window height ratio
+        # Reference: 1100px window height → 360px input min-height
+        REFERENCE_WINDOW_HEIGHT = 1100
+        REFERENCE_INPUT_MIN_HEIGHT = 360
+        input_min_height = int(REFERENCE_INPUT_MIN_HEIGHT * window_height / REFERENCE_WINDOW_HEIGHT)
+
         ui.add_head_html(f'''<style>
 :root {{
     --sidebar-width: {sidebar_width}px;
     --input-panel-width: {input_panel_width}px;
     --result-content-width: {result_content_width}px;
+    --input-min-height: {input_min_height}px;
 }}
 </style>''')
 

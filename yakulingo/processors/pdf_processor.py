@@ -1521,7 +1521,12 @@ class PdfProcessor(FileProcessor):
                 replacer.apply_to_page(page)
 
             # 10. Save (PDFMathTranslate: garbage=3, deflate=True)
-            doc.subset_fonts(fallback=True)
+            # subset_fonts can fail with COM errors on Windows with certain fonts
+            try:
+                doc.subset_fonts(fallback=True)
+            except Exception as e:
+                # Log warning but continue - subsetting is optional optimization
+                logger.warning("Font subsetting failed (continuing without): %s", e)
             doc.save(str(output_path), garbage=3, deflate=True)
 
             # Log summary if there were failures
@@ -1663,7 +1668,12 @@ class PdfProcessor(FileProcessor):
 
                 replacer.apply_to_page(page)
 
-            doc.subset_fonts(fallback=True)
+            # subset_fonts can fail with COM errors on Windows with certain fonts
+            try:
+                doc.subset_fonts(fallback=True)
+            except Exception as e:
+                # Log warning but continue - subsetting is optional optimization
+                logger.warning("Font subsetting failed (continuing without): %s", e)
             doc.save(str(output_path), garbage=3, deflate=True)
 
             # Log summary if there were failures

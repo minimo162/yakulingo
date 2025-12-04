@@ -66,9 +66,6 @@ class YakuLingoApp:
         # Client reference for async handlers (saved from @ui.page handler)
         self._client = None
 
-        # CSS zoom factor for external monitors (set by run_app before UI creation)
-        self._css_zoom: float = 1.0
-
     @property
     def copilot(self) -> "CopilotHandler":
         """Lazy-load CopilotHandler for faster startup."""
@@ -243,10 +240,6 @@ class YakuLingoApp:
         # Viewport for proper scaling on all displays
         ui.add_head_html('<meta name="viewport" content="width=device-width, initial-scale=1.0">')
         ui.add_head_html(f'<style>{COMPLETE_CSS}</style>')
-
-        # Apply CSS zoom for external monitors (detected by _detect_display_settings)
-        if self._css_zoom != 1.0:
-            ui.add_head_html(f'<style>body {{ zoom: {self._css_zoom}; }}</style>')
 
         # 3-column layout container
         with ui.element('div').classes('app-container'):
@@ -1347,26 +1340,26 @@ def create_app() -> YakuLingoApp:
     return YakuLingoApp()
 
 
-def _detect_display_settings(base_width: int, base_height: int) -> tuple[tuple[int, int], float]:
-    """Detect connected monitors and determine optimal window size and CSS zoom.
+def _detect_window_size_for_display(base_width: int, base_height: int) -> tuple[int, int]:
+    """Detect connected monitors and determine optimal window size.
 
     Uses pywebview's screens API to detect multiple monitors BEFORE ui.run().
     This allows setting the correct window size from the start (no resize flicker).
 
     Strategy:
-    - Multiple monitors detected → external monitor mode (larger window + CSS zoom)
+    - Multiple monitors detected → external monitor mode (larger window)
     - Single monitor with high resolution (2560+) → external monitor mode
-    - Single monitor with 1920px → laptop mode (default size, no zoom)
+    - Single monitor with 1920px → laptop mode (default size)
 
     Returns:
-        Tuple of ((width, height), css_zoom) - window size and CSS zoom factor
+        Tuple of (width, height) for window size
     """
     try:
         import webview
         screens = webview.screens
         if not screens:
             logger.debug("No screens detected via pywebview, using default size")
-            return ((base_width, base_height), 1.0)
+            return (base_width, base_height)
 
         # Log all detected screens
         for i, screen in enumerate(screens):
@@ -1384,39 +1377,36 @@ def _detect_display_settings(base_width: int, base_height: int) -> tuple[tuple[i
             len(screens), max_width, is_multi_monitor
         )
 
-        # Determine window size and CSS zoom based on detection
+        # Determine window size based on detection
         # Multi-monitor: assume external monitor is connected
         # Single monitor with 2560+: definitely external (no laptop has this native)
         if is_multi_monitor or max_width >= 2560:
             if max_width >= 3840:
-                # 4K or higher: larger window + 20% zoom
+                # 4K or higher
                 new_size = (2400, 1400)
-                css_zoom = 1.2
             elif max_width >= 2560:
-                # WQHD: larger window + 15% zoom
+                # WQHD
                 new_size = (1900, 1100)
-                css_zoom = 1.15
             else:
-                # 1920px external (detected via multi-monitor): slightly larger + 10% zoom
+                # 1920px external (detected via multi-monitor)
                 new_size = (1600, 950)
-                css_zoom = 1.1
 
             logger.info(
-                "External monitor detected: window size %dx%d -> %dx%d, zoom=%.2f",
-                base_width, base_height, new_size[0], new_size[1], css_zoom
+                "External monitor detected: window size %dx%d -> %dx%d",
+                base_width, base_height, new_size[0], new_size[1]
             )
-            return (new_size, css_zoom)
+            return new_size
         else:
-            # Single monitor, 1920px or less → assume laptop (no zoom)
+            # Single monitor, 1920px or less → assume laptop
             logger.debug("Single monitor (%dpx), using default window size", max_width)
-            return ((base_width, base_height), 1.0)
+            return (base_width, base_height)
 
     except ImportError:
-        logger.debug("pywebview not available, using default size")
-        return ((base_width, base_height), 1.0)
+        logger.debug("pywebview not available, using default window size")
+        return (base_width, base_height)
     except Exception as e:
         logger.warning("Failed to detect display: %s, using default window size", e)
-        return ((base_width, base_height), 1.0)
+        return (base_width, base_height)
 
 
 def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
@@ -1425,13 +1415,12 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
 
     yakulingo_app = create_app()
 
-    # Detect optimal window size and CSS zoom BEFORE ui.run() to avoid resize flicker
+    # Detect optimal window size BEFORE ui.run() to avoid resize flicker
     if native:
-        window_size, css_zoom = _detect_display_settings(
+        window_size = _detect_window_size_for_display(
             yakulingo_app.settings.window_width,
             yakulingo_app.settings.window_height
         )
-        yakulingo_app._css_zoom = css_zoom
     else:
         window_size = (yakulingo_app.settings.window_width, yakulingo_app.settings.window_height)
 

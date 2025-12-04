@@ -2839,6 +2839,6 @@ a:hover {
 }
 """
 
-# Note: CSS zoom is now applied dynamically via _detect_display_settings() in app.py
-# External monitors get both larger window size AND CSS zoom (1.1-1.2x) for better readability.
-# The zoom value is injected as inline CSS in create_ui() based on detected screen resolution.
+# Note: CSS zoom is disabled because window size is already scaled by _detect_window_size_for_display()
+# Using both would cause double scaling - elements would be scaled twice.
+# Window sizing approach is preferred as it works more reliably with NiceGUI's layout system.

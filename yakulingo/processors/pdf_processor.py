@@ -1194,6 +1194,125 @@ def split_text_into_lines(
     return lines
 
 
+def split_text_into_lines_with_font(
+    text: str,
+    box_width: float,
+    font_size: float,
+    font_id: str,
+    font_registry: 'FontRegistry',
+) -> list[str]:
+    """
+    Split text into lines using actual font metrics.
+
+    Uses FontRegistry.get_char_width() for accurate width calculation
+    instead of the simpler CJK-based estimation.
+
+    Args:
+        text: Text to split
+        box_width: Maximum width per line
+        font_size: Font size in points
+        font_id: Font ID for width lookup
+        font_registry: FontRegistry instance
+
+    Returns:
+        List of lines that fit within box_width
+    """
+    if not text:
+        return []
+
+    if box_width <= 0:
+        return [text]
+    if font_size <= 0:
+        font_size = DEFAULT_FONT_SIZE
+
+    lines = []
+    current_line_chars: list[str] = []
+    current_width = 0.0
+
+    for char in text:
+        if char == '\n':
+            lines.append(''.join(current_line_chars))
+            current_line_chars = []
+            current_width = 0.0
+            continue
+
+        # Use actual font metrics for width calculation
+        char_width = font_registry.get_char_width(font_id, char, font_size)
+
+        if current_width + char_width > box_width and current_line_chars:
+            lines.append(''.join(current_line_chars))
+            current_line_chars = [char]
+            current_width = char_width
+        else:
+            current_line_chars.append(char)
+            current_width += char_width
+
+    if current_line_chars:
+        lines.append(''.join(current_line_chars))
+
+    return lines
+
+
+def calculate_adjusted_font_size(
+    text: str,
+    box_width: float,
+    box_height: float,
+    initial_font_size: float,
+    font_id: str,
+    font_registry: 'FontRegistry',
+    line_height: float = 1.2,
+    min_font_size: float = MIN_FONT_SIZE,
+) -> tuple[float, list[str]]:
+    """
+    Calculate font size that fits text within box dimensions.
+
+    Iteratively reduces font size until text fits within both
+    box width and height constraints.
+
+    Args:
+        text: Text to fit
+        box_width: Maximum box width
+        box_height: Maximum box height
+        initial_font_size: Starting font size
+        font_id: Font ID for width lookup
+        font_registry: FontRegistry instance
+        line_height: Line height multiplier
+        min_font_size: Minimum allowed font size
+
+    Returns:
+        Tuple of (adjusted_font_size, lines)
+    """
+    font_size = initial_font_size
+    lines = split_text_into_lines_with_font(
+        text, box_width, font_size, font_id, font_registry
+    )
+
+    # Check if text fits vertically
+    total_height = len(lines) * font_size * line_height
+
+    # Iteratively reduce font size until text fits
+    max_iterations = 20  # Prevent infinite loop
+    iteration = 0
+
+    while total_height > box_height and font_size > min_font_size and iteration < max_iterations:
+        font_size *= 0.9
+        font_size = max(font_size, min_font_size)
+
+        lines = split_text_into_lines_with_font(
+            text, box_width, font_size, font_id, font_registry
+        )
+        total_height = len(lines) * font_size * line_height
+        iteration += 1
+
+    if iteration > 0:
+        logger.debug(
+            "Font size adjusted from %.1f to %.1f after %d iterations",
+            initial_font_size, font_size, iteration
+        )
+
+    return font_size, lines
+
+
 def calculate_line_height(
     translated_text: str,
     box: list[float],
@@ -1204,6 +1323,7 @@ def calculate_line_height(
     Calculate line height with dynamic compression.
 
     PDFMathTranslate converter.py:512-515 compatible.
+    Uses simple estimation for backward compatibility.
     """
     x1, y1, x2, y2 = box
     height = y2 - y1
@@ -1225,6 +1345,67 @@ def calculate_line_height(
     ):
         line_height -= LINE_HEIGHT_COMPRESSION_STEP
         iteration += 1
+
+    return max(line_height, MIN_LINE_HEIGHT)
+
+
+def calculate_line_height_with_font(
+    translated_text: str,
+    box: list[float],
+    font_size: float,
+    font_id: str,
+    font_registry: 'FontRegistry',
+    lang_out: str,
+) -> float:
+    """
+    Calculate line height with dynamic compression using actual font metrics.
+
+    Uses FontRegistry for accurate line count estimation based on actual
+    character widths instead of simple estimation.
+
+    Args:
+        translated_text: Text to be rendered
+        box: [x1, y1, x2, y2] bounding box in PDF coordinates
+        font_size: Font size in points
+        font_id: Font ID for width lookup
+        font_registry: FontRegistry instance
+        lang_out: Output language for default line height
+
+    Returns:
+        Optimized line height multiplier
+    """
+    x1, y1, x2, y2 = box
+    box_width = x2 - x1
+    box_height = y2 - y1
+
+    if box_height <= 0 or box_width <= 0:
+        return LANG_LINEHEIGHT_MAP.get(lang_out.lower(), DEFAULT_LINE_HEIGHT)
+
+    line_height = LANG_LINEHEIGHT_MAP.get(lang_out.lower(), DEFAULT_LINE_HEIGHT)
+
+    # Use actual font metrics to calculate lines needed
+    lines = split_text_into_lines_with_font(
+        translated_text, box_width, font_size, font_id, font_registry
+    )
+    lines_needed = len(lines)
+
+    # Dynamic compression until text fits
+    max_iterations = int((line_height - MIN_LINE_HEIGHT) / LINE_HEIGHT_COMPRESSION_STEP) + 1
+    iteration = 0
+
+    while (
+        lines_needed * font_size * line_height > box_height
+        and line_height > MIN_LINE_HEIGHT
+        and iteration < max_iterations
+    ):
+        line_height -= LINE_HEIGHT_COMPRESSION_STEP
+        iteration += 1
+
+    if iteration > 0:
+        logger.debug(
+            "Line height compressed to %.2f after %d iterations for %d lines",
+            line_height, iteration, lines_needed
+        )
 
     return max(line_height, MIN_LINE_HEIGHT)
 
@@ -2443,32 +2624,29 @@ class PdfProcessor(FileProcessor):
                         # Select font based on text content
                         font_id = font_registry.select_font_for_text(translated, target_lang)
 
-                        # Estimate font size
-                        font_size = estimate_font_size_from_box_height(
+                        # Estimate initial font size from box dimensions
+                        initial_font_size = estimate_font_size_from_box_height(
                             [x1, y1, x2, y2], original_text
                         )
-                        font_size = max(MIN_FONT_SIZE, min(font_size, MAX_FONT_SIZE))
+                        initial_font_size = max(MIN_FONT_SIZE, min(initial_font_size, MAX_FONT_SIZE))
 
-                        # Calculate line height with dynamic compression
-                        line_height = calculate_line_height(
+                        # Calculate line height with dynamic compression using font metrics
+                        line_height = calculate_line_height_with_font(
                             translated, [pdf_x1, pdf_y1, pdf_x2, pdf_y2],
-                            font_size, target_lang
+                            initial_font_size, font_id, font_registry, target_lang
                         )
 
-                        # Split text into lines that fit box width
-                        is_cjk = font_registry.get_is_cjk(font_id)
-                        lines = split_text_into_lines(
-                            translated, box_width, font_size, is_cjk
+                        # Calculate adjusted font size using actual font metrics
+                        # This ensures text fits within box both horizontally and vertically
+                        font_size, lines = calculate_adjusted_font_size(
+                            translated,
+                            box_width,
+                            box_height,
+                            initial_font_size,
+                            font_id,
+                            font_registry,
+                            line_height,
                         )
-
-                        # Check if text fits - if not, reduce font size
-                        total_height = len(lines) * font_size * line_height
-                        while total_height > box_height and font_size > MIN_FONT_SIZE:
-                            font_size *= 0.9
-                            lines = split_text_into_lines(
-                                translated, box_width, font_size, is_cjk
-                            )
-                            total_height = len(lines) * font_size * line_height
 
                         # Generate text operators for each line
                         for line_idx, line_text in enumerate(lines):
@@ -2847,10 +3025,22 @@ class PdfProcessor(FileProcessor):
                 for block_idx, block in enumerate(page_blocks):
                     if block.get("type") == 0:  # Text block
                         text_parts = []
+                        formula_char_count = 0
+                        total_char_count = 0
+
                         for line in block.get("lines", []):
                             line_text = ""
                             for span in line.get("spans", []):
-                                line_text += span.get("text", "")
+                                span_text = span.get("text", "")
+                                span_font = span.get("font", "")
+                                line_text += span_text
+
+                                # Count formula characters using vflag detection
+                                for char in span_text:
+                                    total_char_count += 1
+                                    if vflag(span_font, char):
+                                        formula_char_count += 1
+
                             text_parts.append(line_text)
 
                         # Remove line breaks (yomitoku style: join without newlines)
@@ -2866,6 +3056,12 @@ class PdfProcessor(FileProcessor):
                                     font_name = first_span.get("font")
                                     font_size = first_span.get("size", 11.0)
 
+                            # Detect if block is primarily formula (>50% formula chars)
+                            is_formula = (
+                                total_char_count > 0 and
+                                formula_char_count / total_char_count > 0.5
+                            )
+
                             blocks.append(TextBlock(
                                 id=f"page_{page_idx}_block_{block_idx}",
                                 text=text,
@@ -2877,6 +3073,7 @@ class PdfProcessor(FileProcessor):
                                     'bbox': block.get("bbox"),
                                     'font_name': font_name,
                                     'font_size': font_size,
+                                    'is_formula': is_formula,
                                 }
                             ))
 

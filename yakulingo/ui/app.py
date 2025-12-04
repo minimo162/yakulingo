@@ -34,8 +34,8 @@ COPILOT_LOGIN_TIMEOUT = 300  # 5 minutes for login
 MAX_HISTORY_DISPLAY = 20  # Maximum history items to display in sidebar
 
 # Window scaling constants
-BASE_SCREEN_WIDTH = 1920  # Reference screen width (Full HD)
-BASE_SCREEN_HEIGHT = 1080  # Reference screen height (Full HD)
+BASE_SCREEN_WIDTH = 2560  # Reference screen width (QHD)
+BASE_SCREEN_HEIGHT = 1440  # Reference screen height (QHD)
 MIN_WINDOW_WIDTH = 800
 MIN_WINDOW_HEIGHT = 600
 MAX_WINDOW_RATIO = 0.9  # Max 90% of screen size
@@ -56,12 +56,12 @@ def get_scaled_window_size(base_width: int, base_height: int) -> tuple[int, int]
     """
     Scale window size based on screen resolution.
 
-    Uses Full HD (1920x1080) as the reference resolution.
-    For higher resolution screens, the window is scaled up proportionally.
+    Uses QHD (2560x1440) as the reference resolution to match CSS zoom scaling.
+    For lower resolution screens, the window is scaled down proportionally.
 
     Args:
-        base_width: Desired window width at 1920x1080 resolution
-        base_height: Desired window height at 1920x1080 resolution
+        base_width: Desired window width at 2560x1440 resolution
+        base_height: Desired window height at 2560x1440 resolution
 
     Returns:
         Tuple of (scaled_width, scaled_height)

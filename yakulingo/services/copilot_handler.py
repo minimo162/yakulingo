@@ -570,9 +570,8 @@ class CopilotHandler:
                 copilot_page.goto(self.COPILOT_URL, wait_until='commit', timeout=30000)
 
             self._page = copilot_page
-            self._connected = True
 
-            # Wait for chat input element to appear (indicates page is usable)
+            # Wait for chat input element to appear (indicates login is complete)
             logger.info("Waiting for Copilot chat UI...")
             input_selector = '#m365-chat-editor-target-element, [data-lexical-editor="true"]'
             try:
@@ -580,8 +579,11 @@ class CopilotHandler:
                 logger.info("Copilot chat UI ready")
                 # Wait a bit for authentication/session to fully initialize
                 time.sleep(1.0)
+                self._connected = True
             except PlaywrightTimeoutError:
-                logger.warning("Chat input not found - page may need login")
+                logger.warning("Chat input not found - login required in Edge browser")
+                self._connected = False
+                return False
 
             # Stop browser loading indicator (spinner)
             logger.info("Stopping browser loading indicator...")
@@ -814,7 +816,7 @@ class CopilotHandler:
         # Call _connect_impl directly since we're already in the Playwright thread
         # (calling connect() would cause nested executor calls)
         if not self._connect_impl():
-            raise RuntimeError("ブラウザに接続できませんでした。Edgeが起動しているか確認してください。")
+            raise RuntimeError("ブラウザに接続できませんでした。Edgeが起動しているか、Copilotにログインしているか確認してください。")
 
         # Start a new chat to clear previous context (prevents using old responses)
         self.start_new_chat()
@@ -876,7 +878,7 @@ class CopilotHandler:
         """
         # Call _connect_impl directly since we're already in the Playwright thread
         if not self._connect_impl():
-            raise RuntimeError("ブラウザに接続できませんでした。Edgeが起動しているか確認してください。")
+            raise RuntimeError("ブラウザに接続できませんでした。Edgeが起動しているか、Copilotにログインしているか確認してください。")
 
         for attempt in range(max_retries + 1):
             # Start a new chat to clear previous context

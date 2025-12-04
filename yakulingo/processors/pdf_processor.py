@@ -533,6 +533,7 @@ class FontRegistry:
         self.fonts: dict[str, FontInfo] = {}
         self._font_xrefs: dict[str, int] = {}
         self._font_by_id: dict[str, FontInfo] = {}
+        self._font_objects: dict[str, Any] = {}  # PyMuPDF Font objects for glyph lookup
         self._counter = 0
         self._missing_fonts: set[str] = set()
         # Font preferences by language
@@ -594,6 +595,16 @@ class FontRegistry:
 
         self.fonts[lang] = font_info
         self._font_by_id[font_id] = font_info
+
+        # Create PyMuPDF Font object for glyph lookup
+        if font_path:
+            try:
+                fitz = _get_fitz()
+                self._font_objects[font_id] = fitz.Font(fontfile=font_path)
+                logger.debug("Created Font object for %s: %s", font_id, font_path)
+            except Exception as e:
+                logger.warning("Failed to create Font object for %s: %s", font_id, e)
+
         return font_id
 
     def get_font_path(self, font_id: str) -> Optional[str]:
@@ -646,6 +657,61 @@ class FontRegistry:
         if lang in self.fonts:
             return self.fonts[lang].font_id
         return "F1"
+
+    def get_glyph_id(self, font_id: str, char: str) -> int:
+        """
+        Get glyph ID for a character in the specified font.
+
+        Uses PyMuPDF Font.has_glyph() to get the actual glyph index.
+        This is critical for proper text rendering in low-level PDF operations.
+
+        Args:
+            font_id: Font ID (F1, F2, ...)
+            char: Single character to look up
+
+        Returns:
+            Glyph ID (glyph index) or Unicode code point as fallback
+        """
+        font_obj = self._font_objects.get(font_id)
+        if font_obj:
+            try:
+                # has_glyph returns glyph index (int > 0) if found, 0 if not
+                glyph = font_obj.has_glyph(ord(char))
+                if glyph:
+                    return glyph
+            except Exception as e:
+                logger.debug("Error getting glyph for '%s': %s", char, e)
+
+        # Fallback to Unicode code point
+        return ord(char)
+
+    def get_char_width(self, font_id: str, char: str, font_size: float) -> float:
+        """
+        Get character width in points for the specified font and size.
+
+        Args:
+            font_id: Font ID
+            char: Single character
+            font_size: Font size in points
+
+        Returns:
+            Character width in points
+        """
+        font_obj = self._font_objects.get(font_id)
+        if font_obj:
+            try:
+                # glyph_advance returns (width, height) tuple normalized to 1.0
+                advance = font_obj.glyph_advance(ord(char))
+                if advance:
+                    return advance * font_size
+            except Exception as e:
+                logger.debug("Error getting char width for '%s': %s", char, e)
+
+        # Fallback: estimate based on CJK status
+        is_cjk = self.get_is_cjk(font_id)
+        if is_cjk or ord(char) > 0x2E7F:  # CJK range
+            return font_size  # Full-width
+        return font_size * 0.5  # Half-width
 
     def embed_fonts(self, doc) -> list[str]:
         """
@@ -732,20 +798,55 @@ class PdfOperatorGenerator:
         """
         Encode text for PDF text operators.
 
-        PyMuPDF's insert_font() embeds TrueType fonts as CID/Unicode fonts,
-        so we always use 4-digit hex encoding (Unicode code points) for
-        proper character rendering regardless of the original font type.
+        PDFMathTranslate converter.py:366-372 compliant.
+        Uses glyph IDs from PyMuPDF Font object for proper character rendering.
+
+        Encoding rules (based on PDFMathTranslate):
+        - CJK fonts: Use glyph ID, 4-digit hex encoding
+        - Non-CJK fonts: Use glyph ID, 2-digit for ASCII, 4-digit for others
 
         Args:
             font_id: Font ID
             text: Text to encode
 
         Returns:
-            Hex-encoded string (4-digit hex per character)
+            Hex-encoded string using glyph IDs
         """
-        # Always use Unicode encoding (4-digit hex) for proper character rendering
-        # PyMuPDF embeds TrueType fonts as CID fonts, requiring Unicode code points
-        return "".join(["%04x" % ord(c) for c in text])
+        result = []
+        is_cjk = self.font_registry.get_is_cjk(font_id)
+
+        for char in text:
+            # Get glyph ID from font (falls back to ord() if not available)
+            glyph_id = self.font_registry.get_glyph_id(font_id, char)
+
+            if is_cjk:
+                # CJK fonts: always 4-digit hex
+                result.append("%04x" % glyph_id)
+            else:
+                # Non-CJK: 2-digit for ASCII range, 4-digit for others
+                if glyph_id < 256:
+                    result.append("%02x" % glyph_id)
+                else:
+                    result.append("%04x" % glyph_id)
+
+        return "".join(result)
+
+    def calculate_text_width(self, font_id: str, text: str, font_size: float) -> float:
+        """
+        Calculate total text width using font metrics.
+
+        Args:
+            font_id: Font ID
+            text: Text to measure
+            font_size: Font size in points
+
+        Returns:
+            Total width in points
+        """
+        total_width = 0.0
+        for char in text:
+            total_width += self.font_registry.get_char_width(font_id, char, font_size)
+        return total_width
 
 
 # =============================================================================
@@ -836,6 +937,7 @@ class ContentStreamReplacer:
         Apply built stream to page.
 
         PDFMathTranslate high_level.py compliant.
+        Updates both content stream and font resources dictionary.
         """
         stream_bytes = self.build()
 
@@ -866,6 +968,78 @@ class ContentStreamReplacer:
             )
         else:
             self.doc.xref_set_key(page_xref, "Contents", f"{new_xref} 0 R")
+
+        # Update font resources dictionary for used fonts
+        # This is critical for PDF viewers to recognize the embedded fonts
+        self._update_font_resources(page)
+
+    def _update_font_resources(self, page) -> None:
+        """
+        Update page's font resources dictionary with used fonts.
+
+        PDFMathTranslate high_level.py compliant.
+        Adds font references to /Resources/Font dictionary.
+        """
+        if not self._used_fonts:
+            return
+
+        page_xref = page.xref
+
+        # Get or create Resources dictionary
+        resources_info = self.doc.xref_get_key(page_xref, "Resources")
+
+        if resources_info[0] == "null" or resources_info[1] == "null":
+            # No resources yet, create new
+            resources_xref = self.doc.get_new_xref()
+            self.doc.update_object(resources_xref, "<< >>")
+            self.doc.xref_set_key(page_xref, "Resources", f"{resources_xref} 0 R")
+            resources_info = ("xref", f"{resources_xref} 0 R")
+
+        # Resolve resources xref
+        if resources_info[0] == "xref":
+            resources_xref = int(resources_info[1].split()[0])
+        else:
+            # Resources is inline dict - need to get its xref differently
+            # For inline dicts, we'll add fonts directly to page resources
+            resources_xref = page_xref
+
+        # Get existing Font dictionary
+        font_dict_info = self.doc.xref_get_key(resources_xref, "Font")
+
+        # Build font entries for used fonts
+        font_entries = []
+        for font_id in self._used_fonts:
+            font_xref = self.font_registry._font_xrefs.get(font_id)
+            if font_xref:
+                font_entries.append(f"/{font_id} {font_xref} 0 R")
+
+        if not font_entries:
+            return
+
+        if font_dict_info[0] == "dict":
+            # Inline font dictionary - append to it
+            existing = font_dict_info[1]
+            # Remove closing ">>" and add new entries
+            if existing.endswith(">>"):
+                new_dict = existing[:-2] + " " + " ".join(font_entries) + " >>"
+            else:
+                new_dict = "<< " + " ".join(font_entries) + " >>"
+            self.doc.xref_set_key(resources_xref, "Font", new_dict)
+
+        elif font_dict_info[0] == "xref":
+            # Font dict is a reference - update that object
+            font_xref = int(font_dict_info[1].split()[0])
+            existing_obj = self.doc.xref_object(font_xref)
+            if existing_obj.endswith(">>"):
+                new_obj = existing_obj[:-2] + " " + " ".join(font_entries) + " >>"
+            else:
+                new_obj = "<< " + " ".join(font_entries) + " >>"
+            self.doc.update_object(font_xref, new_obj)
+
+        else:
+            # No font dict yet - create new one
+            new_dict = "<< " + " ".join(font_entries) + " >>"
+            self.doc.xref_set_key(resources_xref, "Font", new_dict)
 
     def clear(self) -> None:
         """Clear operator list."""
@@ -1679,14 +1853,11 @@ class PdfProcessor(FileProcessor):
         settings=None,
     ) -> dict[str, Any]:
         """
-        Apply translations to PDF using PyMuPDF high-level API.
+        Apply translations to PDF.
 
-        Uses insert_textbox() for proper font encoding handling on Windows.
-
-        Coordinate System Notes:
-            - PyMuPDF's get_text("dict") returns bboxes with origin at top-left
-            - PyMuPDF's insert_textbox() uses the same coordinate system
-            - No coordinate conversion needed for high-level API
+        Uses low-level PDF operators by default for precise text placement
+        and dynamic line height compression. Falls back to high-level API
+        (insert_textbox) if low-level approach fails.
 
         Args:
             input_path: Path to original PDF
@@ -1701,6 +1872,45 @@ class PdfProcessor(FileProcessor):
             - 'success': Successfully translated blocks
             - 'failed': List of failed block IDs
             - 'failed_fonts': List of fonts that failed to embed
+        """
+        # Try low-level API first (better layout control)
+        try:
+            logger.debug("Attempting low-level PDF translation...")
+            result = self.apply_translations_low_level(
+                input_path, output_path, translations,
+                cells=None, direction=direction, settings=settings
+            )
+            # If success rate is acceptable, return result
+            if result['success'] >= result['total'] * 0.5:
+                logger.debug("Low-level translation succeeded: %d/%d",
+                            result['success'], result['total'])
+                return result
+            else:
+                logger.warning(
+                    "Low-level translation had low success rate (%d/%d), "
+                    "falling back to high-level API",
+                    result['success'], result['total']
+                )
+        except Exception as e:
+            logger.warning("Low-level translation failed: %s, falling back to high-level API", e)
+
+        # Fallback to high-level API
+        return self._apply_translations_high_level(
+            input_path, output_path, translations, direction, settings
+        )
+
+    def _apply_translations_high_level(
+        self,
+        input_path: Path,
+        output_path: Path,
+        translations: dict[str, str],
+        direction: str = "jp_to_en",
+        settings=None,
+    ) -> dict[str, Any]:
+        """
+        Apply translations using PyMuPDF high-level API (fallback).
+
+        Uses insert_textbox() for proper font encoding handling on Windows.
         """
         fitz = _get_fitz()
         doc = fitz.open(input_path)
@@ -1886,12 +2096,9 @@ class PdfProcessor(FileProcessor):
         """
         Apply translations using TranslationCell data (yomitoku integration).
 
-        Uses PyMuPDF high-level API for proper font encoding on Windows.
-
-        Coordinate System Notes:
-            - yomitoku returns bboxes in image coordinates at specified DPI
-            - These are scaled to PDF coordinates (72 DPI) for text placement
-            - The TranslationCell.box field uses image coordinates
+        Uses low-level PDF operators by default for precise text placement
+        and dynamic line height compression. Falls back to high-level API
+        (insert_textbox) if low-level approach fails.
 
         Args:
             input_path: Path to original PDF
@@ -1908,6 +2115,47 @@ class PdfProcessor(FileProcessor):
             - 'success': Successfully translated cells
             - 'failed': List of failed cell addresses
             - 'failed_fonts': List of fonts that failed to embed
+        """
+        # Try low-level API first (better layout control)
+        try:
+            logger.debug("Attempting low-level PDF translation with cells...")
+            result = self.apply_translations_low_level(
+                input_path, output_path, translations,
+                cells=cells, direction=direction, settings=settings, dpi=dpi
+            )
+            # If success rate is acceptable, return result
+            if result['success'] >= result['total'] * 0.5:
+                logger.debug("Low-level translation with cells succeeded: %d/%d",
+                            result['success'], result['total'])
+                return result
+            else:
+                logger.warning(
+                    "Low-level translation with cells had low success rate (%d/%d), "
+                    "falling back to high-level API",
+                    result['success'], result['total']
+                )
+        except Exception as e:
+            logger.warning("Low-level translation with cells failed: %s, falling back to high-level API", e)
+
+        # Fallback to high-level API
+        return self._apply_translations_with_cells_high_level(
+            input_path, output_path, translations, cells, direction, settings, dpi
+        )
+
+    def _apply_translations_with_cells_high_level(
+        self,
+        input_path: Path,
+        output_path: Path,
+        translations: dict[str, str],
+        cells: list[TranslationCell],
+        direction: str = "jp_to_en",
+        settings=None,
+        dpi: int = DEFAULT_OCR_DPI,
+    ) -> dict[str, Any]:
+        """
+        Apply translations using PyMuPDF high-level API (fallback).
+
+        Uses insert_textbox() for proper font encoding on Windows.
         """
         fitz = _get_fitz()
         doc = fitz.open(input_path)
@@ -2056,6 +2304,208 @@ class PdfProcessor(FileProcessor):
             if result['failed']:
                 logger.warning(
                     "PDF translation completed with %d/%d cells failed",
+                    len(result['failed']), result['total']
+                )
+
+        finally:
+            doc.close()
+
+        return result
+
+    def apply_translations_low_level(
+        self,
+        input_path: Path,
+        output_path: Path,
+        translations: dict[str, str],
+        cells: Optional[list[TranslationCell]] = None,
+        direction: str = "jp_to_en",
+        settings=None,
+        dpi: int = DEFAULT_OCR_DPI,
+    ) -> dict[str, Any]:
+        """
+        Apply translations using low-level PDF operators.
+
+        This method provides precise control over text placement including:
+        - Dynamic line height compression for long text
+        - Accurate character positioning using font metrics
+        - Proper glyph ID encoding for all font types
+
+        Supports both standard block IDs (page_X_block_Y) and OCR addresses (P1_0, T1_0_0_0).
+
+        Args:
+            input_path: Path to original PDF
+            output_path: Path for translated PDF
+            translations: Mapping of block IDs or addresses to translated text
+            cells: Optional TranslationCell list for OCR mode
+            direction: Translation direction ("jp_to_en" or "en_to_jp")
+            settings: AppSettings for font configuration
+            dpi: DPI used for OCR (for coordinate scaling)
+
+        Returns:
+            Dictionary with processing statistics
+        """
+        fitz = _get_fitz()
+        doc = fitz.open(input_path)
+
+        result = {
+            'total': len(translations),
+            'success': 0,
+            'failed': [],
+            'failed_fonts': [],
+        }
+
+        try:
+            target_lang = "en" if direction == "jp_to_en" else "ja"
+
+            # Initialize font registry with settings
+            font_ja = getattr(settings, 'pdf_font_ja', None) if settings else None
+            font_en = getattr(settings, 'pdf_font_en', None) if settings else None
+            font_registry = FontRegistry(font_ja=font_ja, font_en=font_en)
+
+            # Register required fonts
+            font_registry.register_font("ja")
+            font_registry.register_font("en")
+
+            # Embed fonts into document
+            failed_fonts = font_registry.embed_fonts(doc)
+            result['failed_fonts'] = failed_fonts
+
+            # Create operator generator
+            op_gen = PdfOperatorGenerator(font_registry)
+
+            # Cell lookup for OCR mode
+            cell_map = {cell.address: cell for cell in cells} if cells else {}
+
+            # DPI scale factor
+            scale = 72.0 / dpi
+
+            # Process each page
+            for page_idx, page in enumerate(doc):
+                page_num = page_idx + 1
+                page_height = page.rect.height
+
+                # Create content stream replacer for this page
+                replacer = ContentStreamReplacer(doc, font_registry)
+
+                # Get block info for standard mode
+                blocks_dict = {}
+                if not cells:
+                    blocks = page.get_text("dict")["blocks"]
+                    for block_idx, block in enumerate(blocks):
+                        if block.get("type") == 0:
+                            block_id = f"page_{page_idx}_block_{block_idx}"
+                            blocks_dict[block_id] = block
+
+                # Process translations for this page
+                for block_id, translated in translations.items():
+                    # Determine if this block belongs to this page
+                    if cells:
+                        # OCR mode: check address
+                        if not _is_address_on_page(block_id, page_num):
+                            continue
+                        cell = cell_map.get(block_id)
+                        if not cell:
+                            continue
+                        # Scale coordinates
+                        x1 = cell.box[0] * scale
+                        y1 = cell.box[1] * scale
+                        x2 = cell.box[2] * scale
+                        y2 = cell.box[3] * scale
+                        original_text = cell.text
+                    else:
+                        # Standard mode: check block ID prefix
+                        if not block_id.startswith(f"page_{page_idx}_"):
+                            continue
+                        block = blocks_dict.get(block_id)
+                        if not block:
+                            continue
+                        bbox = block.get("bbox")
+                        if not bbox:
+                            continue
+                        x1, y1, x2, y2 = bbox
+                        original_text = ""
+                        for line in block.get("lines", []):
+                            for span in line.get("spans", []):
+                                original_text += span.get("text", "")
+
+                    try:
+                        # Convert to PDF coordinates (y-axis inversion)
+                        box_pdf = convert_to_pdf_coordinates(
+                            [x1, y1, x2, y2], page_height
+                        )
+                        pdf_x1, pdf_y1, pdf_x2, pdf_y2 = box_pdf
+                        box_width = pdf_x2 - pdf_x1
+                        box_height = pdf_y2 - pdf_y1
+
+                        # Add white rectangle to clear existing text
+                        replacer.add_redaction(pdf_x1, pdf_y1, pdf_x2, pdf_y2)
+
+                        # Select font based on text content
+                        font_id = font_registry.select_font_for_text(translated, target_lang)
+
+                        # Estimate font size
+                        font_size = estimate_font_size_from_box_height(
+                            [x1, y1, x2, y2], original_text
+                        )
+                        font_size = max(MIN_FONT_SIZE, min(font_size, MAX_FONT_SIZE))
+
+                        # Calculate line height with dynamic compression
+                        line_height = calculate_line_height(
+                            translated, [pdf_x1, pdf_y1, pdf_x2, pdf_y2],
+                            font_size, target_lang
+                        )
+
+                        # Split text into lines that fit box width
+                        is_cjk = font_registry.get_is_cjk(font_id)
+                        lines = split_text_into_lines(
+                            translated, box_width, font_size, is_cjk
+                        )
+
+                        # Check if text fits - if not, reduce font size
+                        total_height = len(lines) * font_size * line_height
+                        while total_height > box_height and font_size > MIN_FONT_SIZE:
+                            font_size *= 0.9
+                            lines = split_text_into_lines(
+                                translated, box_width, font_size, is_cjk
+                            )
+                            total_height = len(lines) * font_size * line_height
+
+                        # Generate text operators for each line
+                        for line_idx, line_text in enumerate(lines):
+                            if not line_text.strip():
+                                continue
+
+                            # Calculate line position
+                            x, y = calculate_text_position(
+                                box_pdf, line_idx, font_size, line_height
+                            )
+
+                            # Encode text to hex using glyph IDs
+                            hex_text = op_gen.raw_string(font_id, line_text)
+
+                            # Generate PDF operator
+                            op = op_gen.gen_op_txt(font_id, font_size, x, y, hex_text)
+                            replacer.add_text_operator(op, font_id)
+
+                        result['success'] += 1
+
+                    except (RuntimeError, ValueError, KeyError, AttributeError) as e:
+                        logger.warning(
+                            "Failed to process block '%s' with low-level API: %s",
+                            block_id, e
+                        )
+                        result['failed'].append(block_id)
+                        continue
+
+                # Apply content stream and font resources to page
+                replacer.apply_to_page(page)
+
+            # Save document
+            doc.save(str(output_path), garbage=3, deflate=True)
+
+            if result['failed']:
+                logger.warning(
+                    "Low-level PDF translation completed with %d/%d blocks failed",
                     len(result['failed']), result['total']
                 )
 

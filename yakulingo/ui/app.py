@@ -70,6 +70,10 @@ class YakuLingoApp:
         # Set by run_app() based on monitor detection
         self._display_mode: str = "laptop"
 
+        # Panel sizes (sidebar_width, input_panel_width, result_content_width) in pixels
+        # Set by run_app() based on monitor detection
+        self._panel_sizes: tuple[int, int, int] = (260, 420, 800)
+
     @property
     def copilot(self) -> "CopilotHandler":
         """Lazy-load CopilotHandler for faster startup."""
@@ -1345,8 +1349,8 @@ def create_app() -> YakuLingoApp:
     return YakuLingoApp()
 
 
-def _detect_display_settings() -> tuple[tuple[int, int], str]:
-    """Detect connected monitors and determine window size and display mode.
+def _detect_display_settings() -> tuple[tuple[int, int], str, tuple[int, int, int]]:
+    """Detect connected monitors and determine window size, display mode, and panel widths.
 
     Uses pywebview's screens API to detect multiple monitors BEFORE ui.run().
     This allows setting the correct window size from the start (no resize flicker).
@@ -1356,13 +1360,32 @@ def _detect_display_settings() -> tuple[tuple[int, int], str]:
     - Single monitor with high resolution (2560+) → desktop mode
     - Single monitor with 1920px or less → laptop mode (2-column layout)
 
-    Window sizes are unified based on 1900x1100 reference for consistent vw/vh scaling.
+    Window and panel sizes are calculated based on monitor resolution.
+    Reference: 2560x1440 monitor → 1900x1100 window, sidebar 260px, input panel 420px.
 
     Returns:
-        Tuple of ((width, height), mode) where mode is "laptop" or "desktop"
+        Tuple of ((window_width, window_height), mode, (sidebar_width, input_panel_width, result_content_width))
     """
-    # Default: laptop mode with 1900x1100 window (fits 1920x1200 screen)
-    default_size = (1900, 1100)
+    # Reference ratios based on 2560x1440 → 1900x1100
+    WIDTH_RATIO = 1900 / 2560  # 0.742
+    HEIGHT_RATIO = 1100 / 1440  # 0.764
+
+    # Panel ratios based on 1900px window width
+    SIDEBAR_RATIO = 260 / 1900  # 0.137
+    INPUT_PANEL_RATIO = 420 / 1900  # 0.221
+    RESULT_CONTENT_RATIO = 800 / 1900  # 0.421 (result panel inner content width)
+
+    def calculate_sizes(screen_width: int, screen_height: int) -> tuple[tuple[int, int], tuple[int, int, int]]:
+        """Calculate window size and panel widths from screen resolution."""
+        window_width = int(screen_width * WIDTH_RATIO)
+        window_height = int(screen_height * HEIGHT_RATIO)
+        sidebar_width = int(window_width * SIDEBAR_RATIO)
+        input_panel_width = int(window_width * INPUT_PANEL_RATIO)
+        result_content_width = int(window_width * RESULT_CONTENT_RATIO)
+        return ((window_width, window_height), (sidebar_width, input_panel_width, result_content_width))
+
+    # Default: laptop mode based on 1920x1080 screen
+    default_window, default_panels = calculate_sizes(1920, 1080)
     default_mode = "laptop"
 
     try:
@@ -1370,7 +1393,7 @@ def _detect_display_settings() -> tuple[tuple[int, int], str]:
         screens = webview.screens
         if not screens:
             logger.debug("No screens detected via pywebview, using default")
-            return (default_size, default_mode)
+            return (default_window, default_mode, default_panels)
 
         # Log all detected screens
         for i, screen in enumerate(screens):
@@ -1379,46 +1402,39 @@ def _detect_display_settings() -> tuple[tuple[int, int], str]:
                 i, screen.width, screen.height, screen.x, screen.y
             )
 
-        # Find the largest screen resolution
-        max_width = max(s.width for s in screens)
+        # Find the largest screen by resolution
+        largest_screen = max(screens, key=lambda s: s.width * s.height)
         is_multi_monitor = len(screens) > 1
 
         logger.info(
-            "Display detection: %d monitor(s), max_width=%dpx, multi_monitor=%s",
-            len(screens), max_width, is_multi_monitor
+            "Display detection: %d monitor(s), largest=%dx%d, multi_monitor=%s",
+            len(screens), largest_screen.width, largest_screen.height, is_multi_monitor
         )
 
-        # Determine display mode and window size
+        # Calculate window and panel sizes based on largest screen
+        window_size, panel_sizes = calculate_sizes(largest_screen.width, largest_screen.height)
+
+        # Determine display mode
         # Multi-monitor: assume external monitor is connected → desktop mode
         # Single monitor with 2560+: definitely external → desktop mode
-        if is_multi_monitor or max_width >= 2560:
+        if is_multi_monitor or largest_screen.width >= 2560:
             mode = "desktop"
-            if max_width >= 3840:
-                # 4K or higher: larger window
-                window_size = (2400, 1400)
-            else:
-                # WQHD or multi-monitor with 1920px external
-                window_size = (1900, 1100)
-
-            logger.info(
-                "Desktop mode: window size %dx%d, mode=%s",
-                window_size[0], window_size[1], mode
-            )
-            return (window_size, mode)
         else:
-            # Single monitor, 1920px or less → laptop mode (2-column)
-            logger.info(
-                "Laptop mode: window size %dx%d, mode=%s",
-                default_size[0], default_size[1], default_mode
-            )
-            return (default_size, default_mode)
+            mode = "laptop"
+
+        logger.info(
+            "%s mode: window %dx%d, sidebar %dpx, input panel %dpx, result content %dpx",
+            mode.capitalize(), window_size[0], window_size[1],
+            panel_sizes[0], panel_sizes[1], panel_sizes[2]
+        )
+        return (window_size, mode, panel_sizes)
 
     except ImportError:
         logger.debug("pywebview not available, using default")
-        return (default_size, default_mode)
+        return (default_window, default_mode, default_panels)
     except Exception as e:
         logger.warning("Failed to detect display: %s, using default", e)
-        return (default_size, default_mode)
+        return (default_window, default_mode, default_panels)
 
 
 def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
@@ -1429,11 +1445,13 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
 
     # Detect optimal window size and display mode BEFORE ui.run() to avoid resize flicker
     if native:
-        window_size, display_mode = _detect_display_settings()
+        window_size, display_mode, panel_sizes = _detect_display_settings()
         yakulingo_app._display_mode = display_mode
+        yakulingo_app._panel_sizes = panel_sizes  # (sidebar_width, input_panel_width, result_content_width)
     else:
         window_size = (1900, 1100)  # Default size for browser mode
         yakulingo_app._display_mode = "laptop"
+        yakulingo_app._panel_sizes = (260, 420, 800)  # Default panel sizes
 
     def cleanup():
         """Clean up resources on shutdown."""
@@ -1453,6 +1471,16 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
     async def main_page(client: Client):
         # Save client reference for async handlers (context.client not available in async tasks)
         yakulingo_app._client = client
+
+        # Set dynamic panel sizes as CSS variables (calculated from monitor resolution)
+        sidebar_width, input_panel_width, result_content_width = yakulingo_app._panel_sizes
+        ui.add_head_html(f'''<style>
+:root {{
+    --sidebar-width: {sidebar_width}px;
+    --input-panel-width: {input_panel_width}px;
+    --result-content-width: {result_content_width}px;
+}}
+</style>''')
 
         # Add early CSS for loading screen and font loading handling
         # This runs before create_ui() which loads COMPLETE_CSS

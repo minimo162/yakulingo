@@ -39,7 +39,10 @@ if not exist "uv.exe" (
 
     powershell -ExecutionPolicy Bypass -Command ^
         "$ProgressPreference = 'SilentlyContinue'; " ^
-        "Invoke-WebRequest -Uri 'https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-pc-windows-msvc.zip' -OutFile 'uv.zip' -Proxy '!HTTP_PROXY!' -UseBasicParsing -TimeoutSec 60; " ^
+        "$proxy = 'http://!PROXY_SERVER!'; " ^
+        "$secPwd = ConvertTo-SecureString $env:PROXY_PASS -AsPlainText -Force; " ^
+        "$cred = New-Object System.Management.Automation.PSCredential ($env:PROXY_USER, $secPwd); " ^
+        "Invoke-WebRequest -Uri 'https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-pc-windows-msvc.zip' -OutFile 'uv.zip' -Proxy $proxy -ProxyCredential $cred -UseBasicParsing -TimeoutSec 60; " ^
         "Expand-Archive -Path 'uv.zip' -DestinationPath '.' -Force; " ^
         "Remove-Item 'uv.zip'"
 
@@ -88,9 +91,12 @@ if not exist "!UV_PYTHON_INSTALL_DIR!" mkdir "!UV_PYTHON_INSTALL_DIR!"
 powershell -ExecutionPolicy Bypass -Command ^
     "$ProgressPreference = 'SilentlyContinue'; " ^
     "$url = '!PYTHON_URL!'; " ^
+    "$proxy = 'http://!PROXY_SERVER!'; " ^
+    "$secPwd = ConvertTo-SecureString $env:PROXY_PASS -AsPlainText -Force; " ^
+    "$cred = New-Object System.Management.Automation.PSCredential ($env:PROXY_USER, $secPwd); " ^
     "Write-Host '[INFO] Downloading Python from GitHub...'; " ^
     "try { " ^
-    "    Invoke-WebRequest -Uri $url -OutFile '!PYTHON_ARCHIVE!' -Proxy '!HTTP_PROXY!' -UseBasicParsing -TimeoutSec 120; " ^
+    "    Invoke-WebRequest -Uri $url -OutFile '!PYTHON_ARCHIVE!' -Proxy $proxy -ProxyCredential $cred -UseBasicParsing -TimeoutSec 120; " ^
     "    Write-Host '[OK] Download complete.'; " ^
     "} catch { " ^
     "    Write-Host \"[ERROR] Download failed: $_\"; " ^
@@ -177,6 +183,9 @@ for /f "delims=" %%p in ('powershell -Command "$p = Read-Host -AsSecureString; [
 
 set HTTP_PROXY=http://!PROXY_USER!:!PROXY_PASS!@!PROXY_SERVER!
 set HTTPS_PROXY=http://!PROXY_USER!:!PROXY_PASS!@!PROXY_SERVER!
+:: Also set individual variables for PowerShell -ProxyCredential
+set PROXY_USER=!PROXY_USER!
+set PROXY_PASS=!PROXY_PASS!
 echo.
 echo [OK] Credentials configured.
 exit /b 0

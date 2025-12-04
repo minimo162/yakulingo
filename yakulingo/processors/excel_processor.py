@@ -106,7 +106,7 @@ class ExcelProcessor(FileProcessor):
         """Get file info using xlwings (fast: sheet names only, no cell scanning)"""
         app = xw.App(visible=False, add_book=False)
         try:
-            wb = app.books.open(str(file_path))
+            wb = app.books.open(str(file_path), ignore_read_only_recommended=True)
             try:
                 sheet_count = len(wb.sheets)
                 section_details = [
@@ -182,7 +182,7 @@ class ExcelProcessor(FileProcessor):
         """
         app = xw.App(visible=False, add_book=False)
         try:
-            wb = app.books.open(str(file_path))
+            wb = app.books.open(str(file_path), ignore_read_only_recommended=True)
             try:
                 for sheet_idx, sheet in enumerate(wb.sheets):
                     sheet_name = sheet.name
@@ -446,7 +446,7 @@ class ExcelProcessor(FileProcessor):
         app = xw.App(visible=False, add_book=False)
 
         try:
-            wb = app.books.open(str(input_path))
+            wb = app.books.open(str(input_path), ignore_read_only_recommended=True)
             try:
                 for sheet in wb.sheets:
                     sheet_name = sheet.name

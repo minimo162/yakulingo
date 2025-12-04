@@ -692,7 +692,8 @@ def _render_results_to_en(
 
         # Inline adjustment section
         if on_adjust and result.options:
-            _render_inline_adjust_section(result.options[0].text, on_adjust, on_retry)
+            current_style = result.options[-1].style  # Get style from latest option
+            _render_inline_adjust_section(result.options[0].text, on_adjust, on_retry, current_style)
 
 
 def _render_results_to_jp(
@@ -889,8 +890,20 @@ def _render_inline_adjust_section(
     text: str,
     on_adjust: Callable[[str, str], None],
     on_retry: Optional[Callable[[], None]] = None,
+    current_style: Optional[str] = None,
 ):
-    """Render inline adjustment options section"""
+    """Render inline adjustment options section
+
+    Args:
+        text: The translation text to adjust
+        on_adjust: Callback for adjustment (text, adjust_type)
+        on_retry: Callback for retry translation
+        current_style: Current translation style for disabling limit buttons
+    """
+    # Style order: minimal < concise < standard
+    # Disable "shorter" if at minimal, disable "detailed" if at standard
+    is_at_min = current_style == 'minimal'
+    is_at_max = current_style == 'standard'
 
     with ui.element('div').classes('inline-adjust-section'):
         # Suggestion hint with retry button (吹き出し風)
@@ -906,18 +919,28 @@ def _render_inline_adjust_section(
         # Adjustment options panel
         with ui.element('div').classes('inline-adjust-panel'):
             with ui.column().classes('gap-2 w-full'):
-                # Paired options (side by side)
+                # Paired options (side by side) with style limit check
                 for left_key, left_label, right_key, right_label in ADJUST_OPTIONS_PAIRS:
                     with ui.element('div').classes('adjust-option-row'):
-                        ui.button(
+                        # Left button (shorter) - disable if at minimal
+                        left_disabled = is_at_min if left_key == 'shorter' else False
+                        left_btn = ui.button(
                             left_label,
                             on_click=lambda k=left_key: on_adjust(text, k)
-                        ).props('flat no-caps').classes('adjust-option-btn')
+                        ).props(f'flat no-caps {"disable" if left_disabled else ""}').classes('adjust-option-btn')
+                        if left_disabled:
+                            left_btn.tooltip('これ以上短くできません')
+
                         ui.element('div').classes('adjust-option-divider')
-                        ui.button(
+
+                        # Right button (detailed) - disable if at standard
+                        right_disabled = is_at_max if right_key == 'detailed' else False
+                        right_btn = ui.button(
                             right_label,
                             on_click=lambda k=right_key: on_adjust(text, k)
-                        ).props('flat no-caps').classes('adjust-option-btn')
+                        ).props(f'flat no-caps {"disable" if right_disabled else ""}').classes('adjust-option-btn')
+                        if right_disabled:
+                            right_btn.tooltip('これ以上詳しくできません')
 
                 # Single options (full width)
                 for key, label in ADJUST_OPTIONS_SINGLE:

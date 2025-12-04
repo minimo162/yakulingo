@@ -258,6 +258,7 @@ body {
     border-radius: var(--md-sys-shape-corner-medium);
     padding: 1rem;
     border: 1px solid var(--md-sys-color-outline-variant);
+    width: 100%;
 }
 
 .source-text-content {
@@ -285,6 +286,7 @@ body {
     background-color: var(--md-sys-color-surface-container-low);
     border-radius: var(--md-sys-shape-corner-small);
     border-left: 3px solid var(--md-sys-color-primary);
+    width: 100%;
 }
 
 .translation-status-section .status-text {
@@ -1622,6 +1624,7 @@ body {
     flex-direction: column;
     gap: 0.875rem;
     margin-top: 0.625rem;
+    width: 100%;
 }
 
 /* === Nani-style Result Card === */
@@ -1632,6 +1635,7 @@ body {
     background: var(--md-sys-color-surface);
     box-shadow: var(--md-sys-elevation-1);
     border: 1px solid var(--md-sys-color-outline-variant);
+    width: 100%;
 }
 
 .nani-result-content {

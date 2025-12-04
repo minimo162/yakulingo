@@ -160,7 +160,12 @@ class ExcelProcessor(FileProcessor):
             yield from self._extract_text_blocks_openpyxl(file_path)
 
     def _extract_text_blocks_xlwings(self, file_path: Path, xw) -> Iterator[TextBlock]:
-        """Extract text using xlwings"""
+        """Extract text using xlwings
+
+        Optimized for performance:
+        - Bulk read all cell values at once via used_range.value
+        - Only fetch font info for cells that will be translated
+        """
         app = xw.App(visible=False, add_book=False)
         try:
             wb = app.books.open(str(file_path))
@@ -168,37 +173,62 @@ class ExcelProcessor(FileProcessor):
                 for sheet in wb.sheets:
                     sheet_name = sheet.name
 
-                    # === Cells ===
+                    # === Cells (bulk read optimization) ===
                     used_range = sheet.used_range
                     if used_range is not None:
-                        for row_idx, row in enumerate(used_range.rows, start=1):
-                            for col_idx, cell in enumerate(row, start=1):
-                                if cell.value and isinstance(cell.value, str):
-                                    if self.cell_translator.should_translate(str(cell.value)):
-                                        col_letter = get_column_letter(col_idx)
+                        # Get all values at once (much faster than cell-by-cell)
+                        all_values = used_range.value
+                        if all_values is not None:
+                            # Normalize to 2D list (single cell returns scalar, single row/col returns 1D)
+                            if not isinstance(all_values, list):
+                                all_values = [[all_values]]
+                            elif all_values and not isinstance(all_values[0], list):
+                                # Single row case
+                                all_values = [all_values]
 
-                                        # Get font info
-                                        font_name = None
-                                        font_size = 11.0
-                                        try:
-                                            font_name = cell.font.name
-                                            font_size = cell.font.size or 11.0
-                                        except (AttributeError, TypeError) as e:
-                                            logger.debug("Error reading font info for cell %s%d: %s", col_letter, row_idx, e)
+                            # Get start position of used_range
+                            start_row = used_range.row
+                            start_col = used_range.column
 
-                                        yield TextBlock(
-                                            id=f"{sheet_name}_{col_letter}{row_idx}",
-                                            text=str(cell.value),
-                                            location=f"{sheet_name}, {col_letter}{row_idx}",
-                                            metadata={
-                                                'sheet': sheet_name,
-                                                'row': row_idx,
-                                                'col': col_idx,
-                                                'type': 'cell',
-                                                'font_name': font_name,
-                                                'font_size': font_size,
-                                            }
-                                        )
+                            # First pass: identify translatable cells
+                            translatable_cells = []
+                            for row_offset, row_values in enumerate(all_values):
+                                if row_values is None:
+                                    continue
+                                for col_offset, value in enumerate(row_values):
+                                    if value and isinstance(value, str):
+                                        if self.cell_translator.should_translate(str(value)):
+                                            row_idx = start_row + row_offset
+                                            col_idx = start_col + col_offset
+                                            translatable_cells.append((row_idx, col_idx, str(value)))
+
+                            # Second pass: get font info only for translatable cells
+                            for row_idx, col_idx, text in translatable_cells:
+                                col_letter = get_column_letter(col_idx)
+                                cell = sheet.range(row_idx, col_idx)
+
+                                # Get font info
+                                font_name = None
+                                font_size = 11.0
+                                try:
+                                    font_name = cell.font.name
+                                    font_size = cell.font.size or 11.0
+                                except (AttributeError, TypeError) as e:
+                                    logger.debug("Error reading font info for cell %s%d: %s", col_letter, row_idx, e)
+
+                                yield TextBlock(
+                                    id=f"{sheet_name}_{col_letter}{row_idx}",
+                                    text=text,
+                                    location=f"{sheet_name}, {col_letter}{row_idx}",
+                                    metadata={
+                                        'sheet': sheet_name,
+                                        'row': row_idx,
+                                        'col': col_idx,
+                                        'type': 'cell',
+                                        'font_name': font_name,
+                                        'font_size': font_size,
+                                    }
+                                )
 
                     # === Shapes (TextBox, etc.) ===
                     for shape_idx, shape in enumerate(sheet.shapes):
@@ -269,8 +299,13 @@ class ExcelProcessor(FileProcessor):
             app.quit()
 
     def _extract_text_blocks_openpyxl(self, file_path: Path) -> Iterator[TextBlock]:
-        """Extract text using openpyxl (fallback - cells only)"""
-        wb = openpyxl.load_workbook(file_path, data_only=True)
+        """Extract text using openpyxl (fallback - cells only)
+
+        Optimized with read_only=True for faster parsing.
+        Font info is not available in read_only mode but is fetched
+        during apply_translations from the original file.
+        """
+        wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
 
         try:
             for sheet_name in wb.sheetnames:
@@ -285,13 +320,8 @@ class ExcelProcessor(FileProcessor):
                                 col_idx = cell.column
                                 col_letter = get_column_letter(col_idx)
 
-                                font_name = None
-                                font_size = 11.0
-                                if cell.font:
-                                    font_name = cell.font.name
-                                    if cell.font.size:
-                                        font_size = cell.font.size
-
+                                # Font info not available in read_only mode
+                                # Will be fetched during apply_translations
                                 yield TextBlock(
                                     id=f"{sheet_name}_{col_letter}{row_idx}",
                                     text=str(cell.value),
@@ -301,8 +331,8 @@ class ExcelProcessor(FileProcessor):
                                         'row': row_idx,
                                         'col': col_idx,
                                         'type': 'cell',
-                                        'font_name': font_name,
-                                        'font_size': font_size,
+                                        'font_name': None,
+                                        'font_size': 11.0,
                                     }
                                 )
         finally:

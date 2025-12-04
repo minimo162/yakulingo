@@ -1140,17 +1140,36 @@ body {
     padding-top: 3rem;
 }
 
-/* Center the main-card within the input panel */
+/* Center the main-card within the input panel and fill available height */
 .main-area:not(.has-results) .input-panel .main-card {
     width: 100%;
     max-width: var(--input-panel-width-wide);
+    flex: 1;
+    display: flex;
+    flex-direction: column;
 }
 
-/* Ensure the column container also centers its content */
+.main-area:not(.has-results) .input-panel .main-card-inner {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Make textarea fill available space in 2-column mode */
+.main-area:not(.has-results) .input-panel .main-card-inner textarea {
+    flex: 1 !important;
+    min-height: var(--input-min-height);
+    height: 100%;
+}
+
+/* Ensure the column container also centers its content and fills height */
 .main-area:not(.has-results) .input-panel > .nicegui-column {
     width: 100%;
     max-width: var(--input-panel-width-wide);
     align-items: center;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
 }
 
 .main-area:not(.has-results) .result-panel {

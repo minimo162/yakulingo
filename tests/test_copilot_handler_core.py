@@ -438,16 +438,20 @@ class TestCopilotHandlerParseBatchResult:
         return CopilotHandler()
 
     def test_parse_mixed_numbered_and_unnumbered(self, handler):
-        """Parse result with mixed numbering"""
+        """Parse result with mixed numbering - unnumbered lines belong to previous numbered item"""
         result = """1. First item
 Second item without number
 3. Third item"""
         parsed = handler._parse_batch_result(result, 3)
 
         assert len(parsed) == 3
-        assert parsed[0] == "First item"
-        assert parsed[1] == "Second item without number"
-        assert parsed[2] == "Third item"
+        # Unnumbered line is included in item 1 (multiline support)
+        assert "First item" in parsed[0]
+        assert "Second item without number" in parsed[0]
+        # Item 3 follows item 1 (sorted by number, but sequential in output)
+        assert parsed[1] == "Third item"
+        # Padding for missing items
+        assert parsed[2] == ""
 
     def test_parse_with_multiline_items(self, handler):
         """Handle items that could span multiple lines"""

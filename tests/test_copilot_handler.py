@@ -114,6 +114,38 @@ Test"""
         assert len(parsed) == 3
         assert all(p == "" for p in parsed)
 
+    def test_parse_multiline_content(self, handler):
+        """Handles multiline content within numbered items"""
+        result = """1. This is a translation
+with additional context
+and more details
+2. Second translation
+with explanation"""
+        parsed = handler._parse_batch_result(result, 2)
+
+        assert len(parsed) == 2
+        assert "This is a translation" in parsed[0]
+        assert "additional context" in parsed[0]
+        assert "more details" in parsed[0]
+        assert "Second translation" in parsed[1]
+        assert "explanation" in parsed[1]
+
+    def test_parse_multiline_preserves_order(self, handler):
+        """Preserves order even with multiline content"""
+        result = """1. First item
+詳細な説明
+2. Second item
+補足情報
+3. Third item"""
+        parsed = handler._parse_batch_result(result, 3)
+
+        assert len(parsed) == 3
+        assert "First item" in parsed[0]
+        assert "詳細な説明" in parsed[0]
+        assert "Second item" in parsed[1]
+        assert "補足情報" in parsed[1]
+        assert "Third item" in parsed[2]
+
 
 class TestCopilotHandlerConnection:
     """Test CopilotHandler connection state management"""

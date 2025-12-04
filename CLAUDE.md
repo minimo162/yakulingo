@@ -132,11 +132,11 @@ YakuLingo/
 
 | File | Purpose | Lines |
 |------|---------|-------|
-| `yakulingo/ui/app.py` | Main application orchestrator, handles UI events and coordinates services | ~1477 |
+| `yakulingo/ui/app.py` | Main application orchestrator, handles UI events and coordinates services | ~1513 |
 | `yakulingo/services/translation_service.py` | Coordinates file processors and batch translation | ~1565 |
-| `yakulingo/services/copilot_handler.py` | Browser automation for M365 Copilot | ~1376 |
+| `yakulingo/services/copilot_handler.py` | Browser automation for M365 Copilot | ~1379 |
 | `yakulingo/services/updater.py` | GitHub Releases-based auto-update with Windows proxy support | ~764 |
-| `yakulingo/ui/styles.py` | M3 design tokens, CSS styling definitions | ~2837 |
+| `yakulingo/ui/styles.py` | M3 design tokens, CSS styling definitions, resolution-based zoom | ~2852 |
 | `yakulingo/ui/components/text_panel.py` | Text translation UI with source display and translation status | ~1059 |
 | `yakulingo/ui/components/file_panel.py` | File translation panel with drag-drop and progress | ~554 |
 | `yakulingo/ui/components/update_notification.py` | Auto-update UI notifications | ~344 |
@@ -708,7 +708,7 @@ When interacting with users in this repository, prefer Japanese for comments and
 ## Documentation References
 
 - `README.md` - User guide and quick start (Japanese)
-- `docs/SPECIFICATION.md` - Detailed technical specification (~1547 lines)
+- `docs/SPECIFICATION.md` - Detailed technical specification (~1588 lines)
 - `docs/DISTRIBUTION.md` - Deployment and distribution guide
 
 ## Recent Development Focus
@@ -752,6 +752,10 @@ Based on recent commits:
   - **Source text section**: 翻訳結果パネル上部に原文を表示（コピーボタン付き）
   - **Translation status display**: 翻訳中「〜語から〜語へ翻訳中...」、完了後「✓ 翻訳しました」+ 経過時間
   - **Full-height input area**: 翻訳中・翻訳後の入力欄を縦幅いっぱいに拡張
+- **Resolution-Based Zoom**:
+  - **CSS zoom scaling**: Automatically scales UI based on screen resolution (base: 2560×1440)
+  - **Cross-resolution consistency**: Maintains consistent UI proportions across 4K, QHD, FHD, and lower resolutions
+  - **Panel layout**: Translation result panel elements aligned to 2/3 width with center alignment
 
 ## Git Workflow
 

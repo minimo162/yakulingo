@@ -1,6 +1,6 @@
 # YakuLingo - 技術仕様書
 
-> **Version**: 2.10
+> **Version**: 2.11
 > **Date**: 2025-12
 > **App Name**: YakuLingo (訳リンゴ)
 
@@ -595,7 +595,27 @@ NiceGUIの`await client.connected()`パターンを使用して、クライア�
 |-------------|-------|--------|
 | 対訳PDF | `report.pdf` | `report_bilingual.pdf` |
 
-### 5.7 カラーシステム (Material Design 3)
+### 5.7 解像度対応（CSSズーム）
+
+異なる画面解像度でも一貫したUI比率を維持するため、CSSズームスケーリングを使用。
+
+**基準解像度:** 2560×1440
+
+**スケーリング計算:**
+```javascript
+const zoomFactor = screenWidth / 2560;
+document.body.style.zoom = zoomFactor;
+```
+
+**動作例:**
+| 解像度 | ズーム率 |
+|--------|----------|
+| 3840×2160 (4K) | 150% |
+| 2560×1440 (QHD) | 100% |
+| 1920×1080 (FHD) | 75% |
+| 1366×768 | 53% |
+
+### 5.8 カラーシステム (Material Design 3)
 
 ```css
 :root {
@@ -626,7 +646,7 @@ NiceGUIの`await client.connected()`パターンを使用して、クライア�
 }
 ```
 
-### 5.8 シェイプシステム
+### 5.9 シェイプシステム
 
 ```css
 :root {
@@ -637,7 +657,7 @@ NiceGUIの`await client.connected()`パターンを使用して、クライア�
 }
 ```
 
-### 5.9 フォント
+### 5.10 フォント
 
 ```css
 font-family: 'Meiryo UI', 'Meiryo', 'Yu Gothic UI',
@@ -1510,6 +1530,11 @@ python -c "import time; t=time.time(); from yakulingo.ui import run_app; print(f
 ---
 
 ## 変更履歴
+
+### 2.11 (2025-12)
+- 解像度対応CSSズーム（基準: 2560×1440）で画面比率を統一
+- 翻訳パネルのレイアウトを改善（2/3幅・中央揃え）
+- 翻訳中と翻訳後の入力パネル表示を統一
 
 ### 2.10 (2025-12)
 - セットアップ完了後にYakuLingoを自動起動

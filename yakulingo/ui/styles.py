@@ -232,6 +232,12 @@ body {
     max-width: 100%;
 }
 
+/* Ensure the nicegui-column in result panel stretches children to fill width */
+/* NiceGUI default align-items: flex-start shrinks children to content width */
+.result-panel > .nicegui-column {
+    align-items: stretch;
+}
+
 /* Empty Result State Placeholder */
 .empty-result-state {
     display: flex;

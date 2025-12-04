@@ -101,9 +101,10 @@ def create_text_input_panel(
     """
     Text input panel for 3-column layout.
     - INPUT state: Large textarea for initial input (spans 2 columns)
-    - RESULT state: Compact textarea for new translations (middle column only)
+    - RESULT/TRANSLATING state: Compact textarea for new translations (middle column only)
     """
-    is_input_mode = state.text_view_state == TextViewState.INPUT
+    # Show compact panel during translation or after translation (RESULT state)
+    is_input_mode = state.text_view_state == TextViewState.INPUT and not state.text_translating
 
     if is_input_mode:
         # INPUT state: Large input area spanning full width
@@ -113,7 +114,7 @@ def create_text_input_panel(
             on_settings, on_translate_button_created
         )
     else:
-        # RESULT state: Compact input for new translations
+        # RESULT/TRANSLATING state: Compact input for new translations
         _create_compact_input_panel(
             state, on_translate, on_source_change, on_clear,
             on_attach_reference_file, on_remove_reference_file,
@@ -248,7 +249,10 @@ def _create_compact_input_panel(
     on_settings: Optional[Callable[[], None]] = None,
     on_translate_button_created: Optional[Callable[[ui.button], None]] = None,
 ):
-    """Compact input panel for RESULT state - fills available vertical space"""
+    """Compact input panel for RESULT/TRANSLATING state - fills available vertical space"""
+    # During translation, show empty textarea (same as post-translation state)
+    textarea_value = "" if state.text_translating else state.source_text
+
     with ui.column().classes('flex-1 w-full gap-4'):
         # Card container - fills available space via CSS flex
         with ui.element('div').classes('main-card w-full'):
@@ -256,7 +260,7 @@ def _create_compact_input_panel(
                 # Textarea - fills available space (controlled by CSS flex: 1)
                 textarea = ui.textarea(
                     placeholder='新しいテキストを入力…',
-                    value=state.source_text,
+                    value=textarea_value,
                     on_change=lambda e: on_source_change(e.value)
                 ).classes('w-full p-4 compact-textarea').props('borderless autogrow aria-label="翻訳するテキスト"')
 
@@ -281,12 +285,12 @@ def _create_compact_input_panel(
                 with ui.row().classes('p-3 justify-between items-center'):
                     # Left side: character count and attached files
                     with ui.row().classes('items-center gap-2 flex-1'):
-                        # Character count
-                        if state.source_text:
-                            ui.label(f'{len(state.source_text)} 文字').classes('text-xs text-muted')
+                        # Character count (use textarea_value to match displayed content)
+                        if textarea_value:
+                            ui.label(f'{len(textarea_value)} 文字').classes('text-xs text-muted')
 
-                        # Attached reference files indicator
-                        if state.reference_files:
+                        # Attached reference files indicator (hide during translation)
+                        if state.reference_files and not state.text_translating:
                             for i, ref_file in enumerate(state.reference_files):
                                 with ui.element('div').classes('attach-file-indicator'):
                                     ui.label(ref_file.name).classes('file-name')
@@ -297,16 +301,16 @@ def _create_compact_input_panel(
                                         ).props('flat dense round size=xs').classes('remove-btn')
 
                     with ui.row().classes('items-center gap-2'):
-                        # Settings button
-                        if on_settings:
+                        # Settings button (hide during translation)
+                        if on_settings and not state.text_translating:
                             settings_btn = ui.button(
                                 icon='tune',
                                 on_click=on_settings
                             ).props('flat dense round size=sm').classes('settings-btn')
                             settings_btn.tooltip('翻訳の設定')
 
-                        # Reference file attachment button
-                        if on_attach_reference_file:
+                        # Reference file attachment button (hide during translation)
+                        if on_attach_reference_file and not state.text_translating:
                             has_files = bool(state.reference_files)
                             attach_btn = ui.button(
                                 on_click=on_attach_reference_file
@@ -315,8 +319,8 @@ def _create_compact_input_panel(
                                 ui.html(ATTACH_SVG, sanitize=False)
                             attach_btn.tooltip('参照ファイルを添付' if not has_files else '参照ファイルを追加')
 
-                        # Clear button
-                        if state.source_text:
+                        # Clear button (use textarea_value to match displayed content)
+                        if textarea_value:
                             ui.button(icon='close', on_click=on_clear).props(
                                 'flat dense round size=sm aria-label="クリア"'
                             ).classes('text-muted')
@@ -335,9 +339,9 @@ def _create_compact_input_panel(
                                     ui.label('+')
                                 with ui.element('span').classes('keycap'):
                                     ui.label('Enter')
-                        if state.text_translating:
-                            btn.props('loading disable')
-                        elif not state.can_translate():
+                        # Disable button during translation or when no text
+                        # No spinner here - result panel shows translation status
+                        if state.text_translating or not state.can_translate():
                             btn.props('disable')
 
                         # Provide button reference for dynamic state updates

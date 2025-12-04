@@ -171,6 +171,25 @@ body {
     padding: 0.5rem 0.5rem 0.75rem;
 }
 
+/* === Display Mode: Laptop vs Desktop === */
+/* Laptop mode: 2-column layout (sidebar hidden) */
+.app-container.laptop-mode .sidebar {
+    display: none;
+}
+
+.app-container.laptop-mode .main-area {
+    margin-left: 0;
+}
+
+/* Desktop mode: 3-column layout (sidebar visible) - default behavior */
+.app-container.desktop-mode .sidebar {
+    display: flex;
+}
+
+.app-container.desktop-mode .main-area {
+    margin-left: var(--sidebar-width);
+}
+
 /* === 3-Column Main Layout === */
 .main-area {
     margin-left: var(--sidebar-width);

@@ -1482,14 +1482,19 @@ document.fonts.ready.then(function() {
 
             # Determine new window size based on screen resolution
             # External monitor: larger window, but UI elements stay same size (relatively smaller)
+            # Breakpoints designed for common monitor resolutions
             base_width = settings.window_width   # 1400
             base_height = settings.window_height  # 850
 
-            if screen_width >= 2560:
-                # Large external monitor (2560px+)
+            if screen_width >= 3840:
+                # 4K monitor (3840×2160) or higher (5K, etc.)
+                # Cap at reasonable max size - too large becomes unwieldy
+                new_width, new_height = 2400, 1400
+            elif screen_width >= 2560:
+                # WQHD monitor (2560×1440)
                 new_width, new_height = 1900, 1100
             elif screen_width >= 1920:
-                # Standard external monitor (1920px)
+                # Full HD external monitor (1920×1080)
                 # Even same resolution as laptop, external has larger physical size
                 new_width, new_height = 1600, 950
             else:

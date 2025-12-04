@@ -304,11 +304,14 @@ class YakuLingoApp:
     def create_ui(self):
         """Create the UI - Nani-inspired 3-column layout"""
         # Lazy load CSS (2837 lines) - deferred until UI creation
-        from yakulingo.ui.styles import COMPLETE_CSS
+        from yakulingo.ui.styles import COMPLETE_CSS, RESOLUTION_ZOOM_JS
 
         # Viewport for proper scaling on all displays
         ui.add_head_html('<meta name="viewport" content="width=device-width, initial-scale=1.0">')
         ui.add_head_html(f'<style>{COMPLETE_CSS}</style>')
+
+        # Resolution-based zoom scaling (base: 2560x1440)
+        ui.add_body_html(f'<script>{RESOLUTION_ZOOM_JS}</script>')
 
         # 3-column layout container
         with ui.element('div').classes('app-container'):

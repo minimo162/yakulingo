@@ -201,11 +201,15 @@ body {
     min-height: 100vh;
     padding: 1.5rem 2rem;
     overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;  /* Center child elements horizontally */
 }
 
-/* Result panel inner content - full width */
+/* Result panel inner content - 2/3 width, centered */
 .result-panel > * {
-    width: 100%;
+    width: min(100%, 66.67%);
+    min-width: 280px;
 }
 
 /* Empty Result State Placeholder */
@@ -2212,10 +2216,7 @@ body {
 }
 
 .inline-adjust-panel {
-    width: min(100%, 66.67%);
-    min-width: 280px;
-    margin-left: auto;
-    margin-right: auto;
+    width: 100%;
     background: var(--md-sys-color-surface);
     border-radius: var(--md-sys-shape-corner-xl);
     padding: 0.75rem;
@@ -2331,9 +2332,8 @@ body {
 
 /* === Inline Question Section === */
 .inline-question-section {
-    width: min(100%, 66.67%);
-    min-width: 280px;
-    margin: 1rem auto 0 auto;
+    width: 100%;
+    margin-top: 1rem;
     background: var(--md-sys-color-surface);
     border-radius: var(--md-sys-shape-corner-xl);
     padding: 0.625rem 0.75rem;

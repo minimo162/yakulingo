@@ -38,6 +38,37 @@ def _is_japanese_char(code: int) -> bool:
             0xFF65 <= code <= 0xFF9F)    # Halfwidth Katakana
 
 
+def _is_hiragana(code: int) -> bool:
+    """Check if a Unicode code point is Hiragana."""
+    return 0x3040 <= code <= 0x309F
+
+
+def _is_katakana(code: int) -> bool:
+    """Check if a Unicode code point is Katakana (including extensions and halfwidth)."""
+    return (0x30A0 <= code <= 0x30FF or  # Katakana
+            0x31F0 <= code <= 0x31FF or  # Katakana extensions
+            0xFF65 <= code <= 0xFF9F)    # Halfwidth Katakana
+
+
+def _is_cjk_ideograph(code: int) -> bool:
+    """Check if a Unicode code point is a CJK ideograph (Kanji/Hanzi)."""
+    return 0x4E00 <= code <= 0x9FFF
+
+
+def _is_hangul(code: int) -> bool:
+    """Check if a Unicode code point is Korean Hangul."""
+    return (0xAC00 <= code <= 0xD7AF or  # Hangul Syllables
+            0x1100 <= code <= 0x11FF or  # Hangul Jamo
+            0x3130 <= code <= 0x318F)    # Hangul Compatibility Jamo
+
+
+def _is_latin(code: int) -> bool:
+    """Check if a Unicode code point is Latin alphabet."""
+    return (0x0041 <= code <= 0x005A or  # A-Z
+            0x0061 <= code <= 0x007A or  # a-z
+            0x00C0 <= code <= 0x024F)    # Latin Extended (accented chars)
+
+
 # Language detection constants
 MIN_TEXT_LENGTH_FOR_SAMPLING = 20  # Below this, check all chars directly
 MAX_ANALYSIS_LENGTH = 500  # Sample size for language detection
@@ -111,6 +142,79 @@ def is_japanese_text(text: str, threshold: float = 0.3) -> bool:
         return False
 
     return (japanese_count / total_chars) >= threshold
+
+
+def detect_language_local(text: str) -> Optional[str]:
+    """
+    Detect language locally without Copilot.
+
+    Detection priority:
+    1. Hiragana/Katakana present → "日本語" (definite Japanese)
+    2. Hangul present → "韓国語" (definite Korean)
+    3. Latin alphabet dominant → "英語" (assume English for speed)
+    4. CJK only (no kana) → None (need Copilot to distinguish Chinese/Japanese)
+    5. Other/mixed → None (need Copilot)
+
+    Args:
+        text: Text to analyze
+
+    Returns:
+        Detected language name or None if Copilot needed
+    """
+    if not text:
+        return None
+
+    # Sample text for analysis
+    sample = text[:MAX_ANALYSIS_LENGTH]
+
+    has_hiragana = False
+    has_katakana = False
+    has_hangul = False
+    has_cjk = False
+    latin_count = 0
+    total_meaningful = 0
+
+    for char in sample:
+        if char.isspace() or _is_punctuation(char):
+            continue
+
+        code = ord(char)
+        total_meaningful += 1
+
+        if _is_hiragana(code):
+            has_hiragana = True
+        elif _is_katakana(code):
+            has_katakana = True
+        elif _is_hangul(code):
+            has_hangul = True
+        elif _is_cjk_ideograph(code):
+            has_cjk = True
+        elif _is_latin(code):
+            latin_count += 1
+
+        # Early exit: if we found hiragana/katakana, it's definitely Japanese
+        if has_hiragana or has_katakana:
+            return "日本語"
+
+        # Early exit: if we found hangul, it's Korean
+        if has_hangul:
+            return "韓国語"
+
+    if total_meaningful == 0:
+        return None
+
+    # If mostly Latin characters, assume English
+    latin_ratio = latin_count / total_meaningful
+    if latin_ratio > 0.5:
+        return "英語"
+
+    # CJK only without kana → could be Chinese or Japanese, need Copilot
+    if has_cjk:
+        return None
+
+    # Other cases → need Copilot
+    return None
+
 
 from typing import TYPE_CHECKING
 
@@ -649,10 +753,13 @@ class TranslationService:
 
     def detect_language(self, text: str) -> str:
         """
-        Detect the language of the input text using Copilot.
+        Detect the language of the input text using hybrid approach.
 
-        Falls back to local is_japanese_text() if Copilot returns an error
-        or invalid response.
+        Priority:
+        1. Local detection (fast): Hiragana/Katakana → Japanese, Latin → English, Hangul → Korean
+        2. Copilot detection (slow): Only for CJK-only text (Chinese/Japanese ambiguity)
+
+        Falls back to local is_japanese_text() if Copilot returns an error.
 
         Args:
             text: Text to analyze
@@ -660,6 +767,15 @@ class TranslationService:
         Returns:
             Detected language name (e.g., "日本語", "英語", "中国語")
         """
+        # Try local detection first (fast path)
+        local_result = detect_language_local(text)
+        if local_result:
+            logger.debug("Language detected locally: %s", local_result)
+            return local_result
+
+        # Need Copilot for CJK-only text (Chinese/Japanese ambiguity)
+        logger.debug("Local detection inconclusive, using Copilot")
+
         # Load detection prompt
         prompt = None
         if self.prompt_builder.prompts_dir:

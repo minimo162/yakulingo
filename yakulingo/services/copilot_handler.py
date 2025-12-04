@@ -21,7 +21,11 @@ from typing import Optional, Callable
 logger = logging.getLogger(__name__)
 
 # Pre-compiled regex pattern for batch result parsing
-_RE_NUMBERING_PREFIX = re.compile(r'^\d+\.\s*(.+)$')
+# Pattern to match numbered items with multiline content (e.g., "1. text\nmore text")
+# Captures: number and content until next number or end of string
+# Uses \Z (end of string) instead of $ (end of line in MULTILINE mode)
+# Allows optional leading whitespace on lines (^\s*)
+_RE_BATCH_ITEM = re.compile(r'^\s*(\d+)\.\s*(.*?)(?=\n\s*\d+\.\s|\Z)', re.MULTILINE | re.DOTALL)
 
 
 class PlaywrightManager:
@@ -1176,21 +1180,32 @@ class CopilotHandler:
         return await loop.run_in_executor(None, self._attach_file, file_path)
 
     def _parse_batch_result(self, result: str, expected_count: int) -> list[str]:
-        """Parse batch translation result back to list."""
-        lines = result.strip().split('\n')
+        """Parse batch translation result back to list.
+
+        Handles multiline translations where each numbered item may span multiple lines.
+        Example input:
+            1. First translation
+            with additional context
+            2. Second translation
+        Returns: ["First translation\nwith additional context", "Second translation"]
+        """
+        result_text = result.strip()
         translations = []
 
-        for line in lines:
-            line = line.strip()
-            if not line:
-                continue
+        # Find all numbered items with their content (including multiline)
+        matches = _RE_BATCH_ITEM.findall(result_text)
 
-            # Remove numbering prefix using pre-compiled pattern
-            match = _RE_NUMBERING_PREFIX.match(line)
-            if match:
-                translations.append(match.group(1))
-            else:
-                translations.append(line)
+        if matches:
+            # Sort by number to ensure correct order
+            numbered_items = [(int(num), content.strip()) for num, content in matches]
+            numbered_items.sort(key=lambda x: x[0])
+            translations = [content for _, content in numbered_items]
+        else:
+            # Fallback: if no numbered pattern found, split by newlines
+            for line in result_text.split('\n'):
+                line = line.strip()
+                if line:
+                    translations.append(line)
 
         # Pad with empty strings if needed
         while len(translations) < expected_count:

@@ -116,7 +116,9 @@ COMPLETE_CSS = """
 
 /* === Base === */
 html {
-    font-size: 16px;  /* Explicit base for rem calculations */
+    /* Base font size scaled by window width (set dynamically in app.py) */
+    /* Reference: 1900px window → 16px, scaled with sqrt for gentle effect */
+    font-size: var(--base-font-size, 16px);
 }
 
 body {

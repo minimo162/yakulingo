@@ -1354,11 +1354,39 @@ def create_app() -> YakuLingoApp:
     return YakuLingoApp()
 
 
+def _get_windows_scale_factor() -> float:
+    """Get Windows DPI scale factor (e.g., 1.0, 1.25, 1.5, 2.0).
+
+    pywebview calls SetProcessDPIAware(), so webview.screens returns physical pixels.
+    We need to convert to logical pixels for consistent UI sizing across DPI settings.
+
+    Returns:
+        Scale factor (1.0 if not on Windows or if detection fails)
+    """
+    import sys
+    if sys.platform != 'win32':
+        return 1.0
+
+    try:
+        import ctypes
+        # GetScaleFactorForDevice returns percentage (100, 125, 150, 200, etc.)
+        scale_percent = ctypes.windll.shcore.GetScaleFactorForDevice(0)
+        scale_factor = scale_percent / 100.0
+        logger.info("Windows DPI scale factor: %d%% (%.2f)", scale_percent, scale_factor)
+        return scale_factor
+    except Exception as e:
+        logger.debug("Failed to get Windows scale factor: %s", e)
+        return 1.0
+
+
 def _detect_display_settings() -> tuple[tuple[int, int], str, tuple[int, int, int]]:
     """Detect connected monitors and determine window size, display mode, and panel widths.
 
     Uses pywebview's screens API to detect multiple monitors BEFORE ui.run().
     This allows setting the correct window size from the start (no resize flicker).
+
+    Note: pywebview returns physical pixels (due to SetProcessDPIAware).
+    We convert to logical pixels using Windows scale factor for consistent sizing.
 
     Strategy:
     - Multiple monitors detected → desktop mode (3-column: sidebar + input + result)
@@ -1430,10 +1458,13 @@ def _detect_display_settings() -> tuple[tuple[int, int], str, tuple[int, int, in
             logger.debug("No screens detected via pywebview, using default")
             return (default_window, default_mode, default_panels)
 
-        # Log all detected screens
+        # Get Windows DPI scale factor to convert physical → logical pixels
+        scale_factor = _get_windows_scale_factor()
+
+        # Log all detected screens (physical pixels)
         for i, screen in enumerate(screens):
             logger.info(
-                "Screen %d: %dx%d at (%d, %d)",
+                "Screen %d: %dx%d at (%d, %d) [physical]",
                 i, screen.width, screen.height, screen.x, screen.y
             )
 
@@ -1441,19 +1472,24 @@ def _detect_display_settings() -> tuple[tuple[int, int], str, tuple[int, int, in
         largest_screen = max(screens, key=lambda s: s.width * s.height)
         is_multi_monitor = len(screens) > 1
 
+        # Convert physical pixels to logical pixels
+        logical_width = int(largest_screen.width / scale_factor)
+        logical_height = int(largest_screen.height / scale_factor)
+
         logger.info(
-            "Display detection: %d monitor(s), largest=%dx%d, multi_monitor=%s",
-            len(screens), largest_screen.width, largest_screen.height, is_multi_monitor
+            "Display detection: %d monitor(s), physical=%dx%d, logical=%dx%d (scale=%.0f%%), multi_monitor=%s",
+            len(screens), largest_screen.width, largest_screen.height,
+            logical_width, logical_height, scale_factor * 100, is_multi_monitor
         )
 
-        # Calculate window and panel sizes based on largest screen
-        window_size, panel_sizes = calculate_sizes(largest_screen.width, largest_screen.height)
+        # Calculate window and panel sizes based on logical screen resolution
+        window_size, panel_sizes = calculate_sizes(logical_width, logical_height)
 
-        # Determine display mode
+        # Determine display mode based on logical resolution
         # Multi-monitor: assume external monitor is connected → desktop mode
-        # Single monitor with 1920+: sufficient space for 3-column layout → desktop mode
+        # Single monitor with 1920+ logical: sufficient space for 3-column layout → desktop mode
         # Note: 1920x1200 → 1424px window is enough for sidebar (260) + input (380) + result (680)
-        if is_multi_monitor or largest_screen.width >= 1920:
+        if is_multi_monitor or logical_width >= 1920:
             mode = "desktop"
         else:
             mode = "laptop"
@@ -1520,8 +1556,20 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
         REFERENCE_INPUT_MIN_HEIGHT = 360
         input_min_height = int(REFERENCE_INPUT_MIN_HEIGHT * window_height / REFERENCE_WINDOW_HEIGHT)
 
+        # Calculate base font size with gentle scaling
+        # Reference: 1900px window → 16px font
+        # Use square root for gentle scaling (no upper limit for large screens)
+        import math
+        REFERENCE_WINDOW_WIDTH = 1900
+        REFERENCE_FONT_SIZE = 16
+        scale_ratio = window_width / REFERENCE_WINDOW_WIDTH
+        # Square root scaling for gentler effect, minimum 85% (13.6px), no upper limit
+        gentle_scale = max(0.85, math.sqrt(scale_ratio))
+        base_font_size = round(REFERENCE_FONT_SIZE * gentle_scale, 1)
+
         ui.add_head_html(f'''<style>
 :root {{
+    --base-font-size: {base_font_size}px;
     --sidebar-width: {sidebar_width}px;
     --input-panel-width: {input_panel_width}px;
     --result-content-width: {result_content_width}px;

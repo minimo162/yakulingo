@@ -1654,53 +1654,37 @@ def calculate_adjusted_font_size(
     min_font_size: float = MIN_FONT_SIZE,
 ) -> tuple[float, list[str]]:
     """
-    Calculate font size that fits text within box dimensions.
+    Calculate font size and split text into lines.
 
-    Iteratively reduces font size until text fits within both
-    box width and height constraints.
+    PDFMathTranslate approach: preserve original font size and use line
+    height compression only (done before this function). Font size shrinking
+    is NOT performed to maintain consistent sizes across the document.
+
+    Reference: PDFMathTranslate converter.py
+    - Font size is fixed per paragraph, no shrinking mechanism
+    - Line height compression only (5% steps down to 1.0)
+    - Overflow is allowed if text doesn't fit
 
     Args:
         text: Text to fit
         box_width: Maximum box width
-        box_height: Maximum box height
-        initial_font_size: Starting font size
+        box_height: Maximum box height (unused, kept for API compatibility)
+        initial_font_size: Font size to use (preserved)
         font_id: Font ID for width lookup
         font_registry: FontRegistry instance
-        line_height: Line height multiplier
-        min_font_size: Minimum allowed font size
+        line_height: Line height multiplier (unused, kept for API compatibility)
+        min_font_size: Minimum allowed font size (unused)
 
     Returns:
-        Tuple of (adjusted_font_size, lines)
+        Tuple of (font_size, lines) - font_size is always initial_font_size
     """
-    font_size = initial_font_size
     lines = split_text_into_lines_with_font(
-        text, box_width, font_size, font_id, font_registry
+        text, box_width, initial_font_size, font_id, font_registry
     )
 
-    # Check if text fits vertically
-    total_height = len(lines) * font_size * line_height
-
-    # Iteratively reduce font size until text fits
-    max_iterations = 20  # Prevent infinite loop
-    iteration = 0
-
-    while total_height > box_height and font_size > min_font_size and iteration < max_iterations:
-        font_size *= 0.9
-        font_size = max(font_size, min_font_size)
-
-        lines = split_text_into_lines_with_font(
-            text, box_width, font_size, font_id, font_registry
-        )
-        total_height = len(lines) * font_size * line_height
-        iteration += 1
-
-    if iteration > 0:
-        logger.debug(
-            "Font size adjusted from %.1f to %.1f after %d iterations",
-            initial_font_size, font_size, iteration
-        )
-
-    return font_size, lines
+    # PDFMathTranslate approach: no font size shrinking
+    # This ensures consistent font sizes across all blocks in the document
+    return initial_font_size, lines
 
 
 def calculate_line_height(
@@ -2612,25 +2596,14 @@ class PdfProcessor(FileProcessor):
 
                         # Insert text using high-level API
                         # PyMuPDF handles font encoding automatically
-                        rc = page.insert_textbox(
+                        # PDFMathTranslate approach: preserve font size, allow overflow
+                        page.insert_textbox(
                             rect,
                             translated,
                             fontfile=font_path,
                             fontsize=font_size,
                             align=0,  # Left align
                         )
-
-                        # Check if text didn't fit (rc < 0 means overflow)
-                        if isinstance(rc, (int, float)) and rc < 0:
-                            # Text didn't fit, try smaller font
-                            smaller_size = max(MIN_FONT_SIZE, font_size * 0.8)
-                            page.insert_textbox(
-                                rect,
-                                translated,
-                                fontfile=font_path,
-                                fontsize=smaller_size,
-                                align=0,
-                            )
 
                         result['success'] += 1
 
@@ -2907,25 +2880,14 @@ class PdfProcessor(FileProcessor):
                             )
 
                         # Insert text using high-level API
-                        rc = page.insert_textbox(
+                        # PDFMathTranslate approach: preserve font size, allow overflow
+                        page.insert_textbox(
                             rect,
                             translated,
                             fontfile=font_path,
                             fontsize=font_size,
                             align=0,  # Left align
                         )
-
-                        # Check if text didn't fit (rc < 0 means overflow)
-                        if isinstance(rc, (int, float)) and rc < 0:
-                            # Text didn't fit, try smaller font
-                            smaller_size = max(MIN_FONT_SIZE, font_size * 0.8)
-                            page.insert_textbox(
-                                rect,
-                                translated,
-                                fontfile=font_path,
-                                fontsize=smaller_size,
-                                align=0,
-                            )
 
                         result['success'] += 1
 

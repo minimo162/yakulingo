@@ -101,7 +101,7 @@ if ($GuiMode) {
         ) | Out-Null
     }
 
-    # Extract ZIP with progress updates (non-blocking)
+    # Extract ZIP with progress updates (non-blocking, optimized)
     function Expand-ZipWithProgress {
         param(
             [string]$ZipPath,
@@ -112,24 +112,33 @@ if ($GuiMode) {
         try {
             $totalEntries = $zip.Entries.Count
             $currentEntry = 0
+            $lastPercent = -1
+            $createdDirs = @{}  # Cache created directories
 
             foreach ($entry in $zip.Entries) {
                 $currentEntry++
+
+                # Update UI only when percent changes (reduces DoEvents overhead)
                 $percent = [int](($currentEntry / $totalEntries) * 100)
-                Show-Progress -Title "YakuLingo Setup" -Status "Extracting files... ($currentEntry/$totalEntries)" -Percent $percent
+                if ($percent -ne $lastPercent) {
+                    $lastPercent = $percent
+                    Show-Progress -Title "YakuLingo Setup" -Status "Extracting files... ($percent%)" -Percent $percent
+                }
 
                 $destFile = Join-Path $DestPath $entry.FullName
 
                 if ($entry.FullName.EndsWith('/')) {
                     # Directory entry
-                    if (-not (Test-Path $destFile)) {
-                        New-Item -ItemType Directory -Path $destFile -Force | Out-Null
+                    if (-not $createdDirs.ContainsKey($destFile)) {
+                        [System.IO.Directory]::CreateDirectory($destFile) | Out-Null
+                        $createdDirs[$destFile] = $true
                     }
                 } else {
-                    # File entry
+                    # File entry - ensure parent directory exists
                     $destDir = Split-Path -Parent $destFile
-                    if (-not (Test-Path $destDir)) {
-                        New-Item -ItemType Directory -Path $destDir -Force | Out-Null
+                    if (-not $createdDirs.ContainsKey($destDir)) {
+                        [System.IO.Directory]::CreateDirectory($destDir) | Out-Null
+                        $createdDirs[$destDir] = $true
                     }
                     [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $destFile, $true)
                 }

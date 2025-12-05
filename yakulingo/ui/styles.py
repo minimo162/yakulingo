@@ -427,6 +427,7 @@ body {
 .sidebar-history {
     display: flex;
     flex-direction: column;
+    flex: 1;  /* Fill remaining space in sidebar */
     min-height: 0;
     overflow: hidden;
     width: 100%;
@@ -435,7 +436,7 @@ body {
 .history-scroll {
     flex: 1;
     min-height: 0;
-    max-height: calc(100vh - 280px);
+    /* Height managed by flexbox - no fixed max-height */
     width: 100%;
 }
 
@@ -1140,17 +1141,36 @@ body {
     padding-top: 3rem;
 }
 
-/* Center the main-card within the input panel */
+/* Center the main-card within the input panel and fill available height */
 .main-area:not(.has-results) .input-panel .main-card {
     width: 100%;
     max-width: var(--input-panel-width-wide);
+    flex: 1;
+    display: flex;
+    flex-direction: column;
 }
 
-/* Ensure the column container also centers its content */
+.main-area:not(.has-results) .input-panel .main-card-inner {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Make textarea fill available space in 2-column mode */
+.main-area:not(.has-results) .input-panel .main-card-inner textarea {
+    flex: 1 !important;
+    min-height: var(--input-min-height);
+    height: 100%;
+}
+
+/* Ensure the column container also centers its content and fills height */
 .main-area:not(.has-results) .input-panel > .nicegui-column {
     width: 100%;
     max-width: var(--input-panel-width-wide);
     align-items: center;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
 }
 
 .main-area:not(.has-results) .result-panel {

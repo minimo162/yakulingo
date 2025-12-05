@@ -1577,9 +1577,11 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
 
         # Calculate input min-height based on window height ratio
         # Reference: 1100px window height → 360px input min-height
+        # Minimum: 280px to prevent textarea from becoming too small on low-res screens
         REFERENCE_WINDOW_HEIGHT = 1100
         REFERENCE_INPUT_MIN_HEIGHT = 360
-        input_min_height = int(REFERENCE_INPUT_MIN_HEIGHT * window_height / REFERENCE_WINDOW_HEIGHT)
+        MIN_INPUT_HEIGHT = 280
+        input_min_height = max(MIN_INPUT_HEIGHT, int(REFERENCE_INPUT_MIN_HEIGHT * window_height / REFERENCE_WINDOW_HEIGHT))
 
         # Calculate base font size with gentle scaling
         # Reference: 1900px window → 16px font

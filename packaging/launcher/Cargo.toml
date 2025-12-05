@@ -7,6 +7,9 @@ description = "Lightweight native launcher for YakuLingo"
 [dependencies]
 # Minimal dependencies for small binary size
 
+[target.'cfg(windows)'.build-dependencies]
+winres = "0.1"
+
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3", features = ["winuser", "processthreadsapi", "shellapi", "winbase", "handleapi", "errhandlingapi"] }
 

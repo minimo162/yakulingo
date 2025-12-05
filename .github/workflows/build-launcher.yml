@@ -17,6 +17,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Generate ICO from SVG
+        run: |
+          pip install pillow cairosvg
+          python packaging/launcher/icon/generate_ico.py
+
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 

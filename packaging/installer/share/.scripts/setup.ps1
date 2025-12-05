@@ -322,9 +322,10 @@ function Invoke-Setup {
     $DesktopPath = [Environment]::GetFolderPath("Desktop")
     $ShortcutPath = Join-Path $DesktopPath "$AppName.lnk"
     $Shortcut = $WshShell.CreateShortcut($ShortcutPath)
-    $Shortcut.TargetPath = Join-Path $SetupPath "YakuLingo.exe"
+    $ExePath = Join-Path $SetupPath "YakuLingo.exe"
+    $Shortcut.TargetPath = $ExePath
     $Shortcut.WorkingDirectory = $SetupPath
-    $Shortcut.IconLocation = "shell32.dll,21"
+    $Shortcut.IconLocation = "$ExePath,0"
     $Shortcut.Description = "YakuLingo Translation Tool"
     $Shortcut.Save()
     if (-not $GuiMode) {

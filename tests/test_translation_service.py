@@ -316,10 +316,10 @@ class TestBatchTranslatorTranslateBlocks:
         # Create translator with small char limit to force multiple batches
         translator = BatchTranslator(mock_copilot, prompt_builder, max_chars_per_batch=1000)
 
-        # Create 4 blocks with 400 chars each (800 chars per 2 blocks < 1000 limit)
-        text_400 = "x" * 400
+        # Create 4 blocks with DIFFERENT texts (~400 chars each, 800 chars per 2 blocks < 1000 limit)
+        # Using different texts to avoid deduplication
         blocks = [
-            TextBlock(id=str(i), text=text_400, location=f"A{i}")
+            TextBlock(id=str(i), text=f"text_{i}_" + "x" * 390, location=f"A{i}")
             for i in range(4)
         ]
 
@@ -350,6 +350,71 @@ class TestBatchTranslatorTranslateBlocks:
         assert len(progress_calls) == 1
         assert progress_calls[0].current == 0
         assert progress_calls[0].total == 1
+
+    def test_translate_duplicate_texts_in_batch(self):
+        """Test that duplicate texts within a batch are deduplicated before sending to Copilot"""
+        mock_copilot = Mock()
+        # Only 2 unique texts should be sent, so only 2 translations returned
+        mock_copilot.translate_sync.return_value = ["Hello", "World"]
+
+        prompt_builder = PromptBuilder()
+        translator = BatchTranslator(mock_copilot, prompt_builder)
+
+        # 5 blocks with only 2 unique texts
+        blocks = [
+            TextBlock(id="1", text="こんにちは", location="A1"),
+            TextBlock(id="2", text="世界", location="A2"),
+            TextBlock(id="3", text="こんにちは", location="A3"),  # duplicate
+            TextBlock(id="4", text="こんにちは", location="A4"),  # duplicate
+            TextBlock(id="5", text="世界", location="A5"),  # duplicate
+        ]
+
+        results = translator.translate_blocks(blocks)
+
+        # All 5 blocks should have translations
+        assert len(results) == 5
+        assert results["1"] == "Hello"
+        assert results["2"] == "World"
+        assert results["3"] == "Hello"  # same as block 1
+        assert results["4"] == "Hello"  # same as block 1
+        assert results["5"] == "World"  # same as block 2
+
+        # Copilot should only be called once with 2 unique texts
+        assert mock_copilot.translate_sync.call_count == 1
+        call_args = mock_copilot.translate_sync.call_args
+        texts_sent = call_args[0][0]  # First positional argument
+        assert len(texts_sent) == 2
+        assert texts_sent[0] == "こんにちは"
+        assert texts_sent[1] == "世界"
+
+    def test_translate_all_identical_texts(self):
+        """Test batch where all texts are identical"""
+        mock_copilot = Mock()
+        # Only 1 unique text, so only 1 translation returned
+        mock_copilot.translate_sync.return_value = ["Hello"]
+
+        prompt_builder = PromptBuilder()
+        translator = BatchTranslator(mock_copilot, prompt_builder)
+
+        # 10 identical blocks
+        blocks = [
+            TextBlock(id=str(i), text="こんにちは", location=f"A{i}")
+            for i in range(10)
+        ]
+
+        results = translator.translate_blocks(blocks)
+
+        # All 10 blocks should have the same translation
+        assert len(results) == 10
+        for i in range(10):
+            assert results[str(i)] == "Hello"
+
+        # Copilot should only be called once with 1 unique text
+        assert mock_copilot.translate_sync.call_count == 1
+        call_args = mock_copilot.translate_sync.call_args
+        texts_sent = call_args[0][0]
+        assert len(texts_sent) == 1
+        assert texts_sent[0] == "こんにちは"
 
 
 # --- Tests: translate_text() ---

@@ -24,7 +24,7 @@ jobs:
 
       - name: Generate ICO from SVG
         run: |
-          pip install pillow cairosvg
+          pip install pillow svglib reportlab
           python packaging/launcher/icon/generate_ico.py
 
       - name: Setup Rust

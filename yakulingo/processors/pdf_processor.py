@@ -850,6 +850,361 @@ class PdfOperatorGenerator:
 
 
 # =============================================================================
+# Content Stream Parser (PDFMathTranslate compliant)
+# =============================================================================
+class ContentStreamParser:
+    """
+    Parse PDF content stream and filter text operators.
+
+    Based on PDFMathTranslate pdfinterp.py approach:
+    - Remove text drawing operators (Tj, TJ, ', ") inside BT...ET blocks
+    - Preserve graphics operators (paths, colors, images, transformations)
+
+    This allows replacing text without affecting underlying graphics/images.
+    """
+
+    # Text operators that draw text (to be removed)
+    TEXT_DRAWING_OPS = frozenset({'Tj', 'TJ', "'", '"'})
+
+    # Text state operators (to be removed along with their operands)
+    TEXT_STATE_OPS = frozenset({
+        'Tc', 'Tw', 'Tz', 'TL', 'Tf', 'Tr', 'Ts',  # Text state
+        'Td', 'TD', 'Tm', 'T*',  # Text positioning
+    })
+
+    # All text-related operators
+    ALL_TEXT_OPS = TEXT_DRAWING_OPS | TEXT_STATE_OPS | frozenset({'BT', 'ET'})
+
+    # Operators that take specific number of operands
+    OPERAND_COUNTS = {
+        # Graphics state
+        'w': 1, 'J': 1, 'j': 1, 'M': 1, 'd': 2, 'ri': 1, 'i': 1, 'gs': 1,
+        # Transformation
+        'cm': 6,
+        # Path construction
+        'm': 2, 'l': 2, 'c': 6, 'v': 4, 'y': 4, 'h': 0, 're': 4,
+        # Path painting
+        'S': 0, 's': 0, 'f': 0, 'F': 0, 'f*': 0, 'B': 0, 'B*': 0,
+        'b': 0, 'b*': 0, 'n': 0,
+        # Clipping
+        'W': 0, 'W*': 0,
+        # Text (for reference, will be filtered)
+        'BT': 0, 'ET': 0,
+        'Tc': 1, 'Tw': 1, 'Tz': 1, 'TL': 1, 'Tf': 2, 'Tr': 1, 'Ts': 1,
+        'Td': 2, 'TD': 2, 'Tm': 6, 'T*': 0,
+        'Tj': 1, 'TJ': 1, "'": 1, '"': 3,
+        # XObject
+        'Do': 1,
+        # Color
+        'CS': 1, 'cs': 1, 'SC': -1, 'SCN': -1, 'sc': -1, 'scn': -1,
+        'G': 1, 'g': 1, 'RG': 3, 'rg': 3, 'K': 4, 'k': 4,
+        # Shading
+        'sh': 1,
+        # Inline image
+        'BI': 0, 'ID': 0, 'EI': 0,
+        # Marked content
+        'MP': 1, 'DP': 2, 'BMC': 1, 'BDC': 2, 'EMC': 0,
+        # Compatibility
+        'BX': 0, 'EX': 0,
+        # State
+        'q': 0, 'Q': 0,
+    }
+
+    def __init__(self):
+        self._in_text_block = False
+
+    def parse_and_filter(self, stream: bytes) -> bytes:
+        """
+        Parse content stream and remove text operators.
+
+        Args:
+            stream: Raw PDF content stream bytes
+
+        Returns:
+            Filtered content stream with text operators removed
+        """
+        try:
+            # Decode stream (PDF uses latin-1 for content streams)
+            content = stream.decode('latin-1')
+        except (UnicodeDecodeError, AttributeError):
+            # If decoding fails, return original
+            logger.warning("Failed to decode content stream, returning original")
+            return stream
+
+        tokens = self._tokenize(content)
+        filtered = self._filter_tokens(tokens)
+        result = self._reconstruct(filtered)
+
+        return result.encode('latin-1')
+
+    def _tokenize(self, content: str) -> list[tuple[str, str]]:
+        """
+        Tokenize PDF content stream.
+
+        Returns list of (type, value) tuples where type is one of:
+        - 'operator': PDF operator keyword
+        - 'number': numeric value
+        - 'name': /Name
+        - 'string': (string) or <hexstring>
+        - 'array': [...] array
+        - 'dict': <<...>> dictionary
+        - 'whitespace': spaces/newlines
+        """
+        tokens = []
+        i = 0
+        n = len(content)
+
+        while i < n:
+            c = content[i]
+
+            # Whitespace
+            if c in ' \t\r\n':
+                j = i
+                while j < n and content[j] in ' \t\r\n':
+                    j += 1
+                tokens.append(('whitespace', content[i:j]))
+                i = j
+                continue
+
+            # Comment
+            if c == '%':
+                j = i
+                while j < n and content[j] not in '\r\n':
+                    j += 1
+                # Skip comment (don't include in output)
+                i = j
+                continue
+
+            # Name
+            if c == '/':
+                j = i + 1
+                while j < n and content[j] not in ' \t\r\n/<>[]()%':
+                    j += 1
+                tokens.append(('name', content[i:j]))
+                i = j
+                continue
+
+            # Literal string
+            if c == '(':
+                j = i + 1
+                depth = 1
+                while j < n and depth > 0:
+                    if content[j] == '\\' and j + 1 < n:
+                        j += 2  # Skip escaped char
+                        continue
+                    if content[j] == '(':
+                        depth += 1
+                    elif content[j] == ')':
+                        depth -= 1
+                    j += 1
+                tokens.append(('string', content[i:j]))
+                i = j
+                continue
+
+            # Hex string
+            if c == '<' and (i + 1 >= n or content[i + 1] != '<'):
+                j = i + 1
+                while j < n and content[j] != '>':
+                    j += 1
+                j += 1  # Include closing >
+                tokens.append(('string', content[i:j]))
+                i = j
+                continue
+
+            # Dictionary
+            if c == '<' and i + 1 < n and content[i + 1] == '<':
+                j = i + 2
+                depth = 1
+                while j < n - 1 and depth > 0:
+                    if content[j:j+2] == '<<':
+                        depth += 1
+                        j += 2
+                    elif content[j:j+2] == '>>':
+                        depth -= 1
+                        j += 2
+                    else:
+                        j += 1
+                tokens.append(('dict', content[i:j]))
+                i = j
+                continue
+
+            # Array
+            if c == '[':
+                j = i + 1
+                depth = 1
+                while j < n and depth > 0:
+                    if content[j] == '[':
+                        depth += 1
+                    elif content[j] == ']':
+                        depth -= 1
+                    elif content[j] == '(':
+                        # Skip string content
+                        k = j + 1
+                        str_depth = 1
+                        while k < n and str_depth > 0:
+                            if content[k] == '\\' and k + 1 < n:
+                                k += 2
+                                continue
+                            if content[k] == '(':
+                                str_depth += 1
+                            elif content[k] == ')':
+                                str_depth -= 1
+                            k += 1
+                        j = k
+                        continue
+                    j += 1
+                tokens.append(('array', content[i:j]))
+                i = j
+                continue
+
+            # Number (including negative and decimal)
+            if c.isdigit() or c == '-' or c == '+' or c == '.':
+                j = i
+                if content[j] in '-+':
+                    j += 1
+                while j < n and (content[j].isdigit() or content[j] == '.'):
+                    j += 1
+                if j > i and (j == i + 1 and content[i] in '-+'):
+                    # Just a sign, treat as operator
+                    pass
+                else:
+                    tokens.append(('number', content[i:j]))
+                    i = j
+                    continue
+
+            # Operator (keyword)
+            if c.isalpha() or c in "'\"*":
+                j = i
+                while j < n and (content[j].isalnum() or content[j] in "'\"*"):
+                    j += 1
+                tokens.append(('operator', content[i:j]))
+                i = j
+                continue
+
+            # Unknown - include as-is
+            tokens.append(('unknown', c))
+            i += 1
+
+        return tokens
+
+    def _filter_tokens(self, tokens: list[tuple[str, str]]) -> list[tuple[str, str]]:
+        """
+        Filter out text operators and their operands.
+
+        Removes BT...ET blocks entirely, preserving only graphics operations.
+        """
+        result = []
+        i = 0
+        n = len(tokens)
+        in_text_block = False
+        operand_stack = []
+
+        while i < n:
+            token_type, token_value = tokens[i]
+
+            if token_type == 'whitespace':
+                if not in_text_block:
+                    result.append((token_type, token_value))
+                i += 1
+                continue
+
+            if token_type == 'operator':
+                if token_value == 'BT':
+                    # Enter text block - start filtering
+                    in_text_block = True
+                    operand_stack = []
+                    i += 1
+                    continue
+
+                if token_value == 'ET':
+                    # Exit text block
+                    in_text_block = False
+                    operand_stack = []
+                    i += 1
+                    continue
+
+                if in_text_block:
+                    # Inside text block - skip all operators
+                    operand_stack = []
+                    i += 1
+                    continue
+
+                # Outside text block - keep operator and its operands
+                result.extend(operand_stack)
+                result.append((token_type, token_value))
+                operand_stack = []
+                i += 1
+                continue
+
+            # Operand (number, name, string, array, dict)
+            if in_text_block:
+                # Skip operands inside text block
+                i += 1
+                continue
+
+            # Accumulate operands
+            operand_stack.append((token_type, token_value))
+            i += 1
+
+        # Add any remaining operands (shouldn't happen in valid PDF)
+        result.extend(operand_stack)
+
+        return result
+
+    def _reconstruct(self, tokens: list[tuple[str, str]]) -> str:
+        """Reconstruct content stream from filtered tokens."""
+        parts = []
+        prev_type = None
+
+        for token_type, token_value in tokens:
+            # Add space between tokens if needed
+            if prev_type and prev_type != 'whitespace' and token_type != 'whitespace':
+                parts.append(' ')
+            parts.append(token_value)
+            prev_type = token_type
+
+        return ''.join(parts)
+
+    def filter_page_contents(self, doc, page) -> bytes:
+        """
+        Get and filter all content streams for a page.
+
+        Handles both single content stream and content array.
+
+        Args:
+            doc: PyMuPDF document
+            page: PyMuPDF page
+
+        Returns:
+            Combined filtered content stream
+        """
+        filtered_parts = []
+
+        # Get content stream xrefs
+        contents = page.get_contents()
+        if not contents:
+            return b""
+
+        for xref in contents:
+            try:
+                stream = doc.xref_stream(xref)
+                if stream:
+                    filtered = self.parse_and_filter(stream)
+                    filtered_parts.append(filtered)
+            except Exception as e:
+                logger.warning("Failed to filter content stream xref %d: %s", xref, e)
+                # On error, try to get original stream
+                try:
+                    stream = doc.xref_stream(xref)
+                    if stream:
+                        filtered_parts.append(stream)
+                except Exception:
+                    pass
+
+        return b" ".join(filtered_parts)
+
+
+# =============================================================================
 # Content Stream Replacer (PDFMathTranslate compliant)
 # =============================================================================
 class ContentStreamReplacer:
@@ -857,15 +1212,41 @@ class ContentStreamReplacer:
     PDF content stream replacer.
 
     PDFMathTranslate high_level.py compliant.
-    Preserves existing content while overlaying translated text.
+    Replaces text in content stream while preserving graphics/images.
+
+    Key improvement over previous implementation:
+    - Previous: Added white rectangles to cover text (hid graphics too)
+    - New: Parses content stream, removes text operators, keeps graphics
     """
 
-    def __init__(self, doc, font_registry: FontRegistry):
+    def __init__(self, doc, font_registry: FontRegistry, preserve_graphics: bool = True):
         self.doc = doc
         self.font_registry = font_registry
         self.operators: list[str] = []
         self._in_text_block = False
         self._used_fonts: set[str] = set()
+        self._preserve_graphics = preserve_graphics
+        self._filtered_base_stream: Optional[bytes] = None
+        self._parser = ContentStreamParser() if preserve_graphics else None
+
+    def set_base_stream(self, page) -> 'ContentStreamReplacer':
+        """
+        Capture and filter the original content stream for this page.
+
+        This removes text operators while preserving graphics/images.
+        Must be called before adding new text operators.
+
+        Args:
+            page: PyMuPDF page object
+
+        Returns:
+            self for chaining
+        """
+        if not self._preserve_graphics or not self._parser:
+            return self
+
+        self._filtered_base_stream = self._parser.filter_page_contents(self.doc, page)
+        return self
 
     def begin_text(self) -> 'ContentStreamReplacer':
         """Begin text block."""
@@ -900,48 +1281,49 @@ class ContentStreamReplacer:
 
         return self
 
-    def add_redaction(
-        self,
-        x1: float,
-        y1: float,
-        x2: float,
-        y2: float,
-        color: tuple[float, float, float] = (1, 1, 1),
-    ) -> 'ContentStreamReplacer':
-        """
-        Add rectangle fill (for clearing existing text).
-
-        Args:
-            x1, y1: Bottom-left coordinate (PDF coordinate system)
-            x2, y2: Top-right coordinate (PDF coordinate system)
-            color: RGB (0-1)
-        """
-        if self._in_text_block:
-            self.end_text()
-
-        r, g, b = color
-        width = x2 - x1
-        height = y2 - y1
-        op = f"q {r:f} {g:f} {b:f} rg {x1:f} {y1:f} {width:f} {height:f} re f Q "
-        self.operators.append(op)
-        return self
+    # NOTE: add_redaction() was removed.
+    # Previous implementation drew white rectangles to cover text,
+    # but this also hid graphics/images underneath.
+    # New approach: set_base_stream() filters out text operators from
+    # original content stream, preserving graphics/images intact.
 
     def build(self) -> bytes:
-        """Build content stream as bytes."""
+        """Build content stream as bytes (new text operators only)."""
         if self._in_text_block:
             self.end_text()
 
         stream = "".join(self.operators)
         return stream.encode("latin-1")
 
+    def build_combined(self) -> bytes:
+        """
+        Build combined content stream: filtered base + new text.
+
+        PDFMathTranslate approach:
+        - Base stream has text removed, graphics preserved
+        - New text operators are appended
+        - Result: graphics intact, text replaced
+        """
+        new_text = self.build()
+
+        if self._filtered_base_stream:
+            # Combine: filtered base (graphics) + new text
+            # Wrap in q/Q to isolate graphics state
+            combined = b"q " + self._filtered_base_stream + b" Q " + new_text
+            return combined
+        else:
+            return new_text
+
     def apply_to_page(self, page) -> None:
         """
         Apply built stream to page.
 
         PDFMathTranslate high_level.py compliant.
-        Updates both content stream and font resources dictionary.
+        Replaces page content stream (not append) to remove original text.
+        Updates font resources dictionary.
         """
-        stream_bytes = self.build()
+        # Build combined stream (filtered base + new text)
+        stream_bytes = self.build_combined()
 
         if not stream_bytes.strip():
             return
@@ -953,23 +1335,10 @@ class ContentStreamReplacer:
         self.doc.update_object(new_xref, "<< >>")
         self.doc.update_stream(new_xref, stream_bytes)
 
-        # Add to page Contents
+        # REPLACE page Contents (not append)
+        # This ensures original text is removed
         page_xref = page.xref
-        contents_info = self.doc.xref_get_key(page_xref, "Contents")
-
-        if contents_info[0] == "array":
-            arr_str = contents_info[1]
-            new_arr = arr_str.rstrip("]") + f" {new_xref} 0 R]"
-            self.doc.xref_set_key(page_xref, "Contents", new_arr)
-        elif contents_info[0] == "xref":
-            old_xref = int(contents_info[1].split()[0])
-            self.doc.xref_set_key(
-                page_xref,
-                "Contents",
-                f"[{old_xref} 0 R {new_xref} 0 R]"
-            )
-        else:
-            self.doc.xref_set_key(page_xref, "Contents", f"{new_xref} 0 R")
+        self.doc.xref_set_key(page_xref, "Contents", f"{new_xref} 0 R")
 
         # Update font resources dictionary for used fonts
         # This is critical for PDF viewers to recognize the embedded fonts
@@ -2093,7 +2462,13 @@ class PdfProcessor(FileProcessor):
         """
         Apply translations using PyMuPDF high-level API (fallback).
 
-        Uses insert_textbox() for proper font encoding handling on Windows.
+        Uses redaction API to remove text while preserving graphics/images,
+        then insert_textbox() for proper font encoding handling on Windows.
+
+        Process:
+        1. Add redaction annotations for all text blocks to translate
+        2. Apply redactions (removes text, preserves graphics/images)
+        3. Insert translated text
         """
         fitz = _get_fitz()
         doc = fitz.open(input_path)
@@ -2137,10 +2512,14 @@ class PdfProcessor(FileProcessor):
                 logger.warning("No English font found. PDF text may not render correctly.")
                 result['failed_fonts'].append("en")
 
-            # Process each page
+            # Process each page in two passes:
+            # Pass 1: Add redaction annotations and collect text insertion info
+            # Pass 2: Apply redactions and insert text
             for page_idx, page in enumerate(doc):
                 blocks = page.get_text("dict")["blocks"]
 
+                # Collect blocks to process for this page
+                blocks_to_process = []
                 for block_idx, block in enumerate(blocks):
                     if block.get("type") != 0:
                         continue
@@ -2154,12 +2533,39 @@ class PdfProcessor(FileProcessor):
                     if not bbox:
                         continue
 
-                    try:
-                        # Create rect from bbox (PyMuPDF coordinate system)
-                        rect = fitz.Rect(bbox)
+                    blocks_to_process.append({
+                        'block_id': block_id,
+                        'translated': translated,
+                        'bbox': bbox,
+                        'block': block,
+                    })
 
-                        # Clear existing text with white rectangle
-                        page.draw_rect(rect, color=None, fill=(1, 1, 1))
+                if not blocks_to_process:
+                    continue
+
+                # Pass 1: Add redaction annotations for all blocks
+                for item in blocks_to_process:
+                    rect = fitz.Rect(item['bbox'])
+                    # Add redaction annotation with white fill
+                    page.add_redact_annot(rect, fill=(1, 1, 1))
+
+                # Apply redactions: remove text, preserve graphics and images
+                # PDF_REDACT_IMAGE_NONE = 0: don't touch images
+                # PDF_REDACT_IMAGE_REMOVE = 1: remove images (default for graphics param)
+                page.apply_redactions(
+                    images=fitz.PDF_REDACT_IMAGE_NONE,  # Preserve images
+                    graphics=0,  # 0 = preserve graphics (lines, shapes)
+                )
+
+                # Pass 2: Insert translated text
+                for item in blocks_to_process:
+                    block_id = item['block_id']
+                    translated = item['translated']
+                    bbox = item['bbox']
+                    block = item['block']
+
+                    try:
+                        rect = fitz.Rect(bbox)
 
                         # Select font based on text content
                         font_path = self._select_font_path_for_text(
@@ -2338,7 +2744,13 @@ class PdfProcessor(FileProcessor):
         """
         Apply translations using PyMuPDF high-level API (fallback).
 
-        Uses insert_textbox() for proper font encoding on Windows.
+        Uses redaction API to remove text while preserving graphics/images,
+        then insert_textbox() for proper font encoding on Windows.
+
+        Process:
+        1. Add redaction annotations for all cells to translate
+        2. Apply redactions (removes text, preserves graphics/images)
+        3. Insert translated text
         """
         fitz = _get_fitz()
         doc = fitz.open(input_path)
@@ -2392,10 +2804,12 @@ class PdfProcessor(FileProcessor):
                 logger.debug("Could not extract font info: %s", e)
                 original_font_info = {}
 
-            # Process each page
+            # Process each page in two passes
             for page_num, page in enumerate(doc, start=1):
                 page_font_info = original_font_info.get(page_num, [])
 
+                # Collect cells to process for this page
+                cells_to_process = []
                 for address, translated in translations.items():
                     if not _is_address_on_page(address, page_num):
                         continue
@@ -2404,19 +2818,43 @@ class PdfProcessor(FileProcessor):
                     if not cell:
                         continue
 
+                    # Scale coordinates from OCR DPI to PDF coordinates
+                    x1 = cell.box[0] * scale
+                    y1 = cell.box[1] * scale
+                    x2 = cell.box[2] * scale
+                    y2 = cell.box[3] * scale
+
+                    cells_to_process.append({
+                        'address': address,
+                        'translated': translated,
+                        'cell': cell,
+                        'rect': fitz.Rect(x1, y1, x2, y2),
+                        'scaled_box': [x1, y1, x2, y2],
+                    })
+
+                if not cells_to_process:
+                    continue
+
+                # Pass 1: Add redaction annotations for all cells
+                for item in cells_to_process:
+                    # Add redaction annotation with white fill
+                    page.add_redact_annot(item['rect'], fill=(1, 1, 1))
+
+                # Apply redactions: remove text, preserve graphics and images
+                page.apply_redactions(
+                    images=fitz.PDF_REDACT_IMAGE_NONE,  # Preserve images
+                    graphics=0,  # 0 = preserve graphics (lines, shapes)
+                )
+
+                # Pass 2: Insert translated text
+                for item in cells_to_process:
+                    address = item['address']
+                    translated = item['translated']
+                    cell = item['cell']
+                    rect = item['rect']
+                    scaled_box = item['scaled_box']
+
                     try:
-                        # Scale coordinates from OCR DPI to PDF coordinates
-                        x1 = cell.box[0] * scale
-                        y1 = cell.box[1] * scale
-                        x2 = cell.box[2] * scale
-                        y2 = cell.box[3] * scale
-
-                        # Create rect (PyMuPDF uses top-left origin like yomitoku)
-                        rect = fitz.Rect(x1, y1, x2, y2)
-
-                        # Clear existing text with white rectangle
-                        page.draw_rect(rect, color=None, fill=(1, 1, 1))
-
                         # Select font based on text content
                         font_path = self._select_font_path_for_text(
                             translated, target_lang, ja_font_path, en_font_path
@@ -2446,7 +2884,7 @@ class PdfProcessor(FileProcessor):
                         # Method 2: Estimate from box height and original text
                         if font_size is None:
                             font_size = estimate_font_size_from_box_height(
-                                [x1, y1, x2, y2], cell.text
+                                scaled_box, cell.text
                             )
 
                         # Insert text using high-level API
@@ -2577,7 +3015,10 @@ class PdfProcessor(FileProcessor):
                 page_height = page.rect.height
 
                 # Create content stream replacer for this page
-                replacer = ContentStreamReplacer(doc, font_registry)
+                # preserve_graphics=True: parse and filter original content stream
+                # to remove text while keeping graphics/images
+                replacer = ContentStreamReplacer(doc, font_registry, preserve_graphics=True)
+                replacer.set_base_stream(page)
 
                 # Get font info for this page (for font size matching)
                 page_font_info = original_font_info.get(page_num, [])
@@ -2632,8 +3073,9 @@ class PdfProcessor(FileProcessor):
                         box_width = pdf_x2 - pdf_x1
                         box_height = pdf_y2 - pdf_y1
 
-                        # Add white rectangle to clear existing text
-                        replacer.add_redaction(pdf_x1, pdf_y1, pdf_x2, pdf_y2)
+                        # Note: No white rectangle needed anymore.
+                        # ContentStreamReplacer.set_base_stream() already filtered out
+                        # text operators from original content stream, preserving graphics.
 
                         # Select font based on text content
                         font_id = font_registry.select_font_for_text(translated, target_lang)

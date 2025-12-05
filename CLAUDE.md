@@ -700,11 +700,11 @@ DocumentAnalyzer(
 )
 ```
 
-**Line Break Handling (yomitoku style):**
-- PDF text extraction removes line breaks: `text.replace("\n", "")`
-- Applied in both yomitoku mode and fast mode (PyMuPDF)
-- Follows yomitoku's `--ignore_line_break` CLI behavior
-- Optimized for Japanese documents where line breaks within paragraphs are visual-only
+**Line Break Handling:**
+- PDF text extraction preserves line breaks: `"\n".join(text_parts)` (PyMuPDF mode) / `para.contents` (yomitoku mode)
+- Preserving line breaks maintains original layout structure in narrow columns and tables
+- This prevents excessive text fragmentation when rendered back into narrow bounding boxes
+- Note: Previous yomitoku-style approach (removing line breaks) caused layout issues with multi-line text in narrow boxes
 
 ### Optional Dependencies
 - `[ocr]`: yomitoku for OCR support

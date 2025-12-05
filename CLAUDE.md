@@ -706,6 +706,31 @@ DocumentAnalyzer(
 - Follows yomitoku's `--ignore_line_break` CLI behavior
 - Optimized for Japanese documents where line breaks within paragraphs are visual-only
 
+**PDF Text Rendering (Low-level API):**
+
+PDFMathTranslate準拠の低レベルAPIでテキストを描画する際、**グリフIDを使用する**のが正しいアプローチです。
+
+```python
+# 正しい: グリフIDを使用
+hex_string = ''.join(f'{font.has_glyph(ord(c)):04X}' for c in text)
+# 例: "Hello" → "002B0048004F004F0052" (グリフID)
+
+# 間違い: Unicodeコードポイントを使用
+hex_string = ''.join(f'{ord(c):04X}' for c in text)
+# 例: "Hello" → "00480065006C006C006F" (Unicode) → 文字化けする
+```
+
+**理由:**
+- PyMuPDFの`insert_font`はIdentity-Hエンコーディングを使用
+- CIDToGIDMapは設定されない（Identity = CID値がそのままグリフIDとして解釈）
+- TJオペレータの引数はCID値であり、CID = グリフIDとなる
+- `Font.has_glyph(ord(c))`で文字のグリフIDを取得
+
+**実装上の注意:**
+- `FontRegistry.embed_fonts()`でFont objectを確実に作成すること
+- Font objectがないと`get_glyph_id()`で0（.notdef = 不可視）が返される
+- 低レベルAPIが失敗した場合は高レベルAPI（`insert_textbox`）にフォールバック
+
 ### Optional Dependencies
 - `[ocr]`: yomitoku for OCR support
 - `[test]`: pytest, pytest-cov, pytest-asyncio

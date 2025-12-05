@@ -14,7 +14,6 @@ import tempfile
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional, Callable, Set, Iterator
-from weakref import WeakSet
 
 from nicegui import ui
 
@@ -87,10 +86,10 @@ class TempFileManager:
                 logger.debug("Failed to remove temp file '%s': %s", temp_file, e)
         self._temp_files.clear()
 
-        # Clean up temp directory if empty
+        # Clean up temp directory (use rmtree to remove even if not empty)
         if self._temp_dir and self._temp_dir.exists():
             try:
-                self._temp_dir.rmdir()
+                shutil.rmtree(self._temp_dir)
             except OSError as e:
                 logger.debug("Failed to remove temp directory '%s': %s", self._temp_dir, e)
 
@@ -157,9 +156,25 @@ def parse_translation_result(result: str) -> tuple[str, str]:
 class DialogManager:
     """
     Manages dialogs to ensure proper cleanup on errors.
+
+    Note: Uses a regular set instead of WeakSet to avoid KeyboardInterrupt
+    errors during Python shutdown when WeakRef callbacks are invoked.
     """
 
-    _active_dialogs: WeakSet = WeakSet()
+    _active_dialogs: Set = set()
+    _atexit_registered: bool = False
+
+    @classmethod
+    def _ensure_atexit_registered(cls):
+        """Register atexit handler to clear dialogs on shutdown."""
+        if not cls._atexit_registered:
+            atexit.register(cls._cleanup_on_exit)
+            cls._atexit_registered = True
+
+    @classmethod
+    def _cleanup_on_exit(cls):
+        """Clear dialog references on exit to prevent issues during shutdown."""
+        cls._active_dialogs.clear()
 
     @classmethod
     def create_dialog(
@@ -174,6 +189,7 @@ class DialogManager:
             with DialogManager.create_dialog('Title') as (dialog, card):
                 # Add content to card
         """
+        cls._ensure_atexit_registered()
         dialog = ui.dialog()
         card = ui.card().classes(width)
         cls._active_dialogs.add(dialog)

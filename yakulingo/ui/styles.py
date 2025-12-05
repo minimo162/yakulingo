@@ -1151,7 +1151,9 @@ body {
     width: var(--input-panel-width-wide);
     max-width: var(--input-panel-max-width);
     flex: 1;  /* Fill available vertical space */
+    min-height: 0;  /* Override default min-height: auto to allow shrinking */
     max-height: 100%;  /* Respect parent height constraint to keep hint-section in viewport */
+    overflow: hidden;  /* Prevent children from overflowing */
     display: flex;
     flex-direction: column;
     align-items: stretch;  /* Stretch children to full width */
@@ -1161,35 +1163,44 @@ body {
 .main-area:not(.has-results) .input-panel .main-card {
     width: 100%;
     flex: 1;  /* Fill available vertical space */
+    min-height: 0;  /* Allow shrinking below content size */
     display: flex;
     flex-direction: column;
+    overflow: hidden;  /* Contain overflow */
 }
 
 .main-area:not(.has-results) .input-panel .main-card-inner {
     flex: 1;  /* Fill available vertical space */
+    min-height: 0;  /* Allow shrinking below content size */
     display: flex;
     flex-direction: column;
+    overflow: hidden;  /* Contain overflow */
 }
 
 /* Make textarea and its NiceGUI wrapper fill available space in 2-column mode */
 .main-area:not(.has-results) .input-panel .main-card-inner > .nicegui-input,
 .main-area:not(.has-results) .input-panel .main-card-inner > .nicegui-textarea {
     flex: 1 !important;
+    min-height: 0 !important;  /* Allow shrinking */
     display: flex !important;
     flex-direction: column !important;
+    overflow: hidden !important;  /* Contain overflow */
 }
 
 .main-area:not(.has-results) .input-panel .main-card-inner .q-field__inner,
 .main-area:not(.has-results) .input-panel .main-card-inner .q-field__control {
     flex: 1 !important;
+    min-height: 0 !important;  /* Allow shrinking */
     display: flex !important;
     flex-direction: column !important;
+    overflow: hidden !important;  /* Contain overflow */
 }
 
 .main-area:not(.has-results) .input-panel .main-card-inner textarea {
     flex: 1 !important;
     min-height: var(--input-min-height);
     height: auto !important;  /* Allow flex to control height */
+    overflow-y: auto !important;  /* Scrollable when content exceeds space */
 }
 
 /* Bottom controls row should not grow, stay at bottom */

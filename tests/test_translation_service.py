@@ -14,6 +14,7 @@ from yakulingo.models.types import (
 from yakulingo.config.settings import AppSettings
 from yakulingo.services.translation_service import (
     BatchTranslator,
+    TranslationCache,
     TranslationService,
 )
 from yakulingo.services.prompt_builder import PromptBuilder
@@ -1650,3 +1651,345 @@ class TestCreateBilingualOutput:
         )
 
         assert result is None
+
+
+# =============================================================================
+# Tests: TranslationCache
+# =============================================================================
+
+class TestTranslationCache:
+    """Tests for TranslationCache class"""
+
+    def test_get_returns_none_for_empty_cache(self):
+        """Empty cache returns None for any key"""
+        cache = TranslationCache()
+        assert cache.get("hello") is None
+
+    def test_set_and_get_basic(self):
+        """Basic set and get operation"""
+        cache = TranslationCache()
+        cache.set("hello", "こんにちは")
+        assert cache.get("hello") == "こんにちは"
+
+    def test_get_nonexistent_key(self):
+        """Get nonexistent key returns None"""
+        cache = TranslationCache()
+        cache.set("hello", "こんにちは")
+        assert cache.get("world") is None
+
+    def test_set_overwrites_existing(self):
+        """Set overwrites existing value"""
+        cache = TranslationCache()
+        cache.set("hello", "こんにちは")
+        cache.set("hello", "ハロー")
+        assert cache.get("hello") == "ハロー"
+
+    def test_stats_initial(self):
+        """Initial stats are all zeros"""
+        cache = TranslationCache()
+        stats = cache.stats
+        assert stats["size"] == 0
+        assert stats["hits"] == 0
+        assert stats["misses"] == 0
+        assert stats["hit_rate"] == "0.0%"
+
+    def test_stats_after_hits(self):
+        """Stats correctly count hits"""
+        cache = TranslationCache()
+        cache.set("hello", "こんにちは")
+        cache.get("hello")  # hit
+        cache.get("hello")  # hit
+
+        stats = cache.stats
+        assert stats["hits"] == 2
+        assert stats["misses"] == 0
+        assert stats["hit_rate"] == "100.0%"
+
+    def test_stats_after_misses(self):
+        """Stats correctly count misses"""
+        cache = TranslationCache()
+        cache.get("nonexistent1")  # miss
+        cache.get("nonexistent2")  # miss
+
+        stats = cache.stats
+        assert stats["hits"] == 0
+        assert stats["misses"] == 2
+        assert stats["hit_rate"] == "0.0%"
+
+    def test_stats_hit_rate_calculation(self):
+        """Hit rate is calculated correctly"""
+        cache = TranslationCache()
+        cache.set("hello", "こんにちは")
+        cache.get("hello")  # hit
+        cache.get("world")  # miss
+
+        stats = cache.stats
+        assert stats["hits"] == 1
+        assert stats["misses"] == 1
+        assert stats["hit_rate"] == "50.0%"
+
+    def test_clear_removes_all_entries(self):
+        """Clear removes all cached entries"""
+        cache = TranslationCache()
+        cache.set("hello", "こんにちは")
+        cache.set("world", "世界")
+        cache.clear()
+
+        assert cache.get("hello") is None
+        assert cache.get("world") is None
+
+    def test_clear_resets_stats(self):
+        """Clear resets hit/miss statistics"""
+        cache = TranslationCache()
+        cache.set("hello", "こんにちは")
+        cache.get("hello")  # hit
+        cache.get("world")  # miss
+        cache.clear()
+
+        stats = cache.stats
+        assert stats["hits"] == 0
+        assert stats["misses"] == 0
+        assert stats["size"] == 0
+
+    def test_max_size_prunes_oldest(self):
+        """Cache prunes oldest entries when max_size is reached"""
+        cache = TranslationCache(max_size=4)
+
+        # Add 4 entries (at max)
+        cache.set("a", "1")
+        cache.set("b", "2")
+        cache.set("c", "3")
+        cache.set("d", "4")
+
+        # Adding 5th should prune half (2 oldest)
+        cache.set("e", "5")
+
+        stats = cache.stats
+        # Should have 3 entries: c, d, e (a and b pruned)
+        assert stats["size"] == 3
+        assert cache.get("a") is None
+        assert cache.get("b") is None
+        assert cache.get("c") == "3"
+        assert cache.get("d") == "4"
+        assert cache.get("e") == "5"
+
+    def test_thread_safety(self):
+        """Cache is thread-safe for concurrent access"""
+        import threading
+
+        cache = TranslationCache()
+        errors = []
+
+        def writer():
+            for i in range(100):
+                try:
+                    cache.set(f"key{i}", f"value{i}")
+                except Exception as e:
+                    errors.append(e)
+
+        def reader():
+            for i in range(100):
+                try:
+                    cache.get(f"key{i}")
+                except Exception as e:
+                    errors.append(e)
+
+        threads = [
+            threading.Thread(target=writer),
+            threading.Thread(target=reader),
+            threading.Thread(target=writer),
+            threading.Thread(target=reader),
+        ]
+
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert len(errors) == 0
+
+
+# =============================================================================
+# Tests: BatchTranslator Cache Integration
+# =============================================================================
+
+class TestBatchTranslatorCache:
+    """Tests for BatchTranslator cache integration"""
+
+    @pytest.fixture
+    def mock_copilot(self):
+        mock = Mock()
+        mock.translate_sync.return_value = ["Translation1", "Translation2"]
+        return mock
+
+    @pytest.fixture
+    def prompt_builder(self):
+        return PromptBuilder()
+
+    def test_cache_enabled_by_default(self, mock_copilot, prompt_builder):
+        """Cache is enabled by default"""
+        translator = BatchTranslator(mock_copilot, prompt_builder)
+        assert translator._cache is not None
+
+    def test_cache_can_be_disabled(self, mock_copilot, prompt_builder):
+        """Cache can be disabled via enable_cache=False"""
+        translator = BatchTranslator(mock_copilot, prompt_builder, enable_cache=False)
+        assert translator._cache is None
+
+    def test_cache_hit_skips_copilot(self, mock_copilot, prompt_builder):
+        """Cached translations skip Copilot calls"""
+        translator = BatchTranslator(mock_copilot, prompt_builder)
+
+        blocks = [
+            TextBlock(id="1", text="Hello", location="A1"),
+            TextBlock(id="2", text="World", location="A2"),
+        ]
+
+        # First translation - calls Copilot
+        result1 = translator.translate_blocks_with_result(blocks, output_language="日本語")
+        assert mock_copilot.translate_sync.call_count == 1
+
+        # Second translation - should use cache, no Copilot call
+        mock_copilot.reset_mock()
+        result2 = translator.translate_blocks_with_result(blocks, output_language="日本語")
+        assert mock_copilot.translate_sync.call_count == 0
+
+        # Results should be the same
+        assert result1.translations == result2.translations
+
+    def test_partial_cache_hit(self, mock_copilot, prompt_builder):
+        """Mixed cached and uncached blocks work correctly"""
+        translator = BatchTranslator(mock_copilot, prompt_builder)
+
+        # First translation
+        blocks1 = [
+            TextBlock(id="1", text="Hello", location="A1"),
+            TextBlock(id="2", text="World", location="A2"),
+        ]
+        mock_copilot.translate_sync.return_value = ["Trans1", "Trans2"]
+        translator.translate_blocks_with_result(blocks1, output_language="日本語")
+
+        # Second translation with one cached, one new
+        mock_copilot.reset_mock()
+        mock_copilot.translate_sync.return_value = ["NewTrans"]
+        blocks2 = [
+            TextBlock(id="1", text="Hello", location="A1"),  # cached
+            TextBlock(id="3", text="New text", location="A3"),  # new
+        ]
+        result = translator.translate_blocks_with_result(blocks2, output_language="日本語")
+
+        # Copilot should only be called once for the new block
+        assert mock_copilot.translate_sync.call_count == 1
+
+        # Verify translations
+        assert result.translations["1"] == "Trans1"  # from cache
+        assert result.translations["3"] == "NewTrans"  # from Copilot
+
+    def test_all_cached_returns_early(self, mock_copilot, prompt_builder):
+        """All cached blocks return early without Copilot call"""
+        translator = BatchTranslator(mock_copilot, prompt_builder)
+
+        blocks = [TextBlock(id="1", text="Hello", location="A1")]
+        mock_copilot.translate_sync.return_value = ["Trans1"]
+
+        # First call populates cache
+        translator.translate_blocks_with_result(blocks, output_language="日本語")
+        assert mock_copilot.translate_sync.call_count == 1
+
+        # Second call should not call Copilot at all
+        mock_copilot.reset_mock()
+        result = translator.translate_blocks_with_result(blocks, output_language="日本語")
+
+        assert mock_copilot.translate_sync.call_count == 0
+        assert result.translations["1"] == "Trans1"
+        assert result.translated_count == 1
+
+    def test_cache_stores_translation_after_success(self, mock_copilot, prompt_builder):
+        """Successful translations are stored in cache"""
+        translator = BatchTranslator(mock_copilot, prompt_builder)
+
+        blocks = [TextBlock(id="1", text="Hello", location="A1")]
+        mock_copilot.translate_sync.return_value = ["こんにちは"]
+
+        translator.translate_blocks_with_result(blocks, output_language="日本語")
+
+        # Verify cache contains the translation
+        cached = translator._cache.get("Hello")
+        assert cached == "こんにちは"
+
+    def test_cache_stats_after_translation(self, mock_copilot, prompt_builder):
+        """Cache stats are updated correctly after translation"""
+        translator = BatchTranslator(mock_copilot, prompt_builder)
+
+        blocks = [
+            TextBlock(id="1", text="Hello", location="A1"),
+            TextBlock(id="2", text="World", location="A2"),
+        ]
+        mock_copilot.translate_sync.return_value = ["Trans1", "Trans2"]
+
+        # First translation - 2 misses
+        translator.translate_blocks_with_result(blocks, output_language="日本語")
+        stats1 = translator._cache.stats
+        assert stats1["misses"] == 2
+        assert stats1["hits"] == 0
+
+        # Second translation - 2 hits
+        translator.translate_blocks_with_result(blocks, output_language="日本語")
+        stats2 = translator._cache.stats
+        assert stats2["misses"] == 2
+        assert stats2["hits"] == 2
+        assert stats2["hit_rate"] == "50.0%"
+
+    def test_disabled_cache_always_calls_copilot(self, mock_copilot, prompt_builder):
+        """With cache disabled, Copilot is always called"""
+        translator = BatchTranslator(mock_copilot, prompt_builder, enable_cache=False)
+
+        blocks = [TextBlock(id="1", text="Hello", location="A1")]
+        mock_copilot.translate_sync.return_value = ["Trans1"]
+
+        # First call
+        translator.translate_blocks_with_result(blocks, output_language="日本語")
+        assert mock_copilot.translate_sync.call_count == 1
+
+        # Second call - should still call Copilot (no cache)
+        translator.translate_blocks_with_result(blocks, output_language="日本語")
+        assert mock_copilot.translate_sync.call_count == 2
+
+    def test_clear_cache_method(self, mock_copilot, prompt_builder):
+        """clear_cache() removes all cached entries"""
+        translator = BatchTranslator(mock_copilot, prompt_builder)
+
+        blocks = [TextBlock(id="1", text="Hello", location="A1")]
+        mock_copilot.translate_sync.return_value = ["Trans1"]
+
+        # Populate cache
+        translator.translate_blocks_with_result(blocks, output_language="日本語")
+        assert translator._cache.stats["size"] == 1
+
+        # Clear cache
+        translator.clear_cache()
+        assert translator._cache.stats["size"] == 0
+
+        # Next translation should call Copilot again
+        mock_copilot.reset_mock()
+        translator.translate_blocks_with_result(blocks, output_language="日本語")
+        assert mock_copilot.translate_sync.call_count == 1
+
+    def test_cache_key_exact_match_required(self, mock_copilot, prompt_builder):
+        """Cache requires exact text match (not normalized)"""
+        translator = BatchTranslator(mock_copilot, prompt_builder)
+
+        # Translate "Hello"
+        blocks1 = [TextBlock(id="1", text="Hello", location="A1")]
+        mock_copilot.translate_sync.return_value = ["Trans1"]
+        translator.translate_blocks_with_result(blocks1, output_language="日本語")
+
+        # Try "Hello " (with trailing space) - should be cache miss
+        mock_copilot.reset_mock()
+        mock_copilot.translate_sync.return_value = ["Trans2"]
+        blocks2 = [TextBlock(id="2", text="Hello ", location="A2")]
+        result = translator.translate_blocks_with_result(blocks2, output_language="日本語")
+
+        # Should call Copilot because key doesn't match exactly
+        assert mock_copilot.translate_sync.call_count == 1
+        assert result.translations["2"] == "Trans2"

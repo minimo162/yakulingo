@@ -138,12 +138,12 @@ def _create_large_input_panel(
         with ui.element('div').classes('main-card w-full'):
             # Input container
             with ui.element('div').classes('main-card-inner'):
-                # Large textarea
+                # Large textarea - no autogrow, fills available space via CSS flex
                 textarea = ui.textarea(
                     placeholder='好きな言語で入力…',
                     value=state.source_text,
                     on_change=lambda e: on_source_change(e.value)
-                ).classes('w-full p-4').props('borderless autogrow aria-label="翻訳するテキスト"').style('min-height: var(--input-min-height)')
+                ).classes('w-full p-4').props('borderless aria-label="翻訳するテキスト"')
 
                 # Handle Ctrl+Enter in textarea with NiceGUI 3.0+ js_handler
                 # Prevent default browser behavior (newline insertion) when Ctrl+Enter is pressed

@@ -1191,6 +1191,13 @@ body {
     overflow: hidden !important;  /* Contain overflow */
 }
 
+.main-area:not(.has-results) .input-panel .main-card-inner .q-field {
+    flex: 1 !important;
+    min-height: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+}
+
 .main-area:not(.has-results) .input-panel .main-card-inner .q-field__inner,
 .main-area:not(.has-results) .input-panel .main-card-inner .q-field__control {
     flex: 1 !important;
@@ -1200,11 +1207,20 @@ body {
     overflow: hidden !important;  /* Contain overflow */
 }
 
+/* Target q-field__native which wraps the textarea */
+.main-area:not(.has-results) .input-panel .main-card-inner .q-field__native {
+    flex: 1 !important;
+    min-height: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+}
+
 .main-area:not(.has-results) .input-panel .main-card-inner textarea {
     flex: 1 !important;
     min-height: var(--input-min-height);
-    height: auto !important;  /* Allow flex to control height */
+    height: auto !important;  /* Let flex control height (autogrow removed from large panel) */
     overflow-y: auto !important;  /* Scrollable when content exceeds space */
+    resize: none !important;  /* Disable manual resize since we control height */
 }
 
 /* Bottom controls row should not grow, stay at bottom */

@@ -10,6 +10,10 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# Script directory (must be resolved at top-level, not inside functions)
+$script:ScriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Definition }
+$script:ShareDir = Split-Path -Parent $script:ScriptDir
+
 # ============================================================
 # GUI Helper Functions (for silent setup via VBS)
 # ============================================================
@@ -213,8 +217,9 @@ function Invoke-Setup {
     # Configuration
     # ============================================================
     $AppName = "YakuLingo"
-    $ScriptDir = $PSScriptRoot
-    $ShareDir = Split-Path -Parent $ScriptDir  # Parent of .scripts folder
+    # Use script-scope variables defined at top-level
+    $ScriptDir = $script:ScriptDir
+    $ShareDir = $script:ShareDir
 
     # Auto-detect ZIP file (use newest one)
     $ZipFiles = Get-ChildItem -Path $ShareDir -Filter "YakuLingo*.zip" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending

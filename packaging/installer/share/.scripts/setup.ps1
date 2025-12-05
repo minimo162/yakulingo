@@ -166,198 +166,213 @@ function Write-Status {
 }
 
 # ============================================================
-# Configuration
+# Main Setup Logic (wrapped in function for error handling)
 # ============================================================
-$AppName = "YakuLingo"
-$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$ShareDir = Split-Path -Parent $ScriptDir  # Parent of .scripts folder
+function Invoke-Setup {
+    # ============================================================
+    # Configuration
+    # ============================================================
+    $AppName = "YakuLingo"
+    $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+    $ShareDir = Split-Path -Parent $ScriptDir  # Parent of .scripts folder
 
-# Auto-detect ZIP file (use newest one)
-$ZipFiles = Get-ChildItem -Path $ShareDir -Filter "YakuLingo*.zip" | Sort-Object LastWriteTime -Descending
-if ($ZipFiles.Count -eq 0) {
-    if ($GuiMode) {
-        Show-Error "YakuLingo*.zip not found.`n`nPlease place the ZIP file in the setup folder."
-    } else {
-        Write-Host "[ERROR] YakuLingo*.zip not found." -ForegroundColor Red
-        Write-Host "        Please place the ZIP file in the setup folder." -ForegroundColor Red
+    # Auto-detect ZIP file (use newest one)
+    $ZipFiles = Get-ChildItem -Path $ShareDir -Filter "YakuLingo*.zip" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending
+    if ($ZipFiles.Count -eq 0) {
+        throw "YakuLingo*.zip not found.`n`nPlease place the ZIP file in the setup folder.`n`nFolder: $ShareDir"
     }
-    exit 1
-}
-$ZipFile = $ZipFiles[0].FullName
-$ZipFileName = $ZipFiles[0].Name
-if (-not $GuiMode) {
-    Write-Host "[INFO] Using: $ZipFileName" -ForegroundColor Cyan
-}
-
-# Default path: LocalAppData\YakuLingo
-if ([string]::IsNullOrEmpty($SetupPath)) {
-    $SetupPath = Join-Path $env:LOCALAPPDATA $AppName
-}
-
-# ============================================================
-# Step 1: Check existing setup
-# ============================================================
-Write-Status -Message "Checking setup..." -Progress
-if (-not $GuiMode) {
-    Write-Host ""
-    Write-Host "[1/4] Checking destination..." -ForegroundColor Yellow
-}
-
-if (Test-Path $SetupPath) {
+    $ZipFile = $ZipFiles[0].FullName
+    $ZipFileName = $ZipFiles[0].Name
     if (-not $GuiMode) {
-        Write-Host "      Found existing setup: $SetupPath" -ForegroundColor Gray
+        Write-Host "[INFO] Using: $ZipFileName" -ForegroundColor Cyan
     }
 
-    # Remove all files (including environment folders for clean setup)
+    # Default path: LocalAppData\YakuLingo
+    if ([string]::IsNullOrEmpty($SetupPath)) {
+        $script:SetupPath = Join-Path $env:LOCALAPPDATA $AppName
+    }
+
+    # ============================================================
+    # Step 1: Check existing setup
+    # ============================================================
+    Write-Status -Message "Checking setup..." -Progress
     if (-not $GuiMode) {
-        Write-Host "      Removing old files..." -ForegroundColor Gray
+        Write-Host ""
+        Write-Host "[1/4] Checking destination..." -ForegroundColor Yellow
     }
-    Get-ChildItem -Path $SetupPath | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-}
 
-if (-not $GuiMode) {
-    Write-Host "[OK] Destination: $SetupPath" -ForegroundColor Green
-}
+    if (Test-Path $SetupPath) {
+        if (-not $GuiMode) {
+            Write-Host "      Found existing setup: $SetupPath" -ForegroundColor Gray
+        }
 
-# ============================================================
-# Step 2: Prepare temp directory (skip local ZIP copy for speed)
-# ============================================================
-Write-Status -Message "Preparing..." -Progress
-if (-not $GuiMode) {
-    Write-Host ""
-    Write-Host "[2/4] Preparing extraction..." -ForegroundColor Yellow
-}
+        # Remove all files (including environment folders for clean setup)
+        if (-not $GuiMode) {
+            Write-Host "      Removing old files..." -ForegroundColor Gray
+        }
+        Get-ChildItem -Path $SetupPath | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+    }
 
-$TempDir = Join-Path $env:TEMP "YakuLingo_setup_$(Get-Date -Format 'yyyyMMddHHmmss')"
-New-Item -ItemType Directory -Path $TempDir -Force | Out-Null
+    if (-not $GuiMode) {
+        Write-Host "[OK] Destination: $SetupPath" -ForegroundColor Green
+    }
 
-# Use network ZIP directly (no local copy - faster)
-$LocalZip = $ZipFile
+    # ============================================================
+    # Step 2: Prepare temp directory (skip local ZIP copy for speed)
+    # ============================================================
+    Write-Status -Message "Preparing..." -Progress
+    if (-not $GuiMode) {
+        Write-Host ""
+        Write-Host "[2/4] Preparing extraction..." -ForegroundColor Yellow
+    }
 
-if (-not $GuiMode) {
-    Write-Host "[OK] Ready to extract" -ForegroundColor Green
-}
+    $TempDir = Join-Path $env:TEMP "YakuLingo_setup_$(Get-Date -Format 'yyyyMMddHHmmss')"
+    New-Item -ItemType Directory -Path $TempDir -Force | Out-Null
 
-# ============================================================
-# Step 3: Extract ZIP
-# ============================================================
-Write-Status -Message "Extracting files..." -Progress
-if (-not $GuiMode) {
-    Write-Host ""
-    Write-Host "[3/4] Extracting files..." -ForegroundColor Yellow
-}
+    # Use network ZIP directly (no local copy - faster)
+    $LocalZip = $ZipFile
 
-# Use custom extraction function with progress for GUI mode
-# Both modes use .NET ZipFile for speed (Expand-Archive is slower)
-if ($GuiMode) {
-    Expand-ZipWithProgress -ZipPath $LocalZip -DestPath $TempDir
-} else {
-    # Fast extraction using .NET (no progress display)
-    Add-Type -Assembly 'System.IO.Compression.FileSystem'
-    [System.IO.Compression.ZipFile]::ExtractToDirectory($LocalZip, $TempDir)
-}
+    if (-not $GuiMode) {
+        Write-Host "[OK] Ready to extract" -ForegroundColor Green
+    }
 
-# Find extracted folder (YakuLingo*)
-$ExtractedDir = Get-ChildItem -Path $TempDir -Directory | Where-Object { $_.Name -like "YakuLingo*" } | Select-Object -First 1
+    # ============================================================
+    # Step 3: Extract ZIP
+    # ============================================================
+    Write-Status -Message "Extracting files..." -Progress
+    if (-not $GuiMode) {
+        Write-Host ""
+        Write-Host "[3/4] Extracting files..." -ForegroundColor Yellow
+    }
 
-if (-not $ExtractedDir) {
+    # Use custom extraction function with progress for GUI mode
+    # Both modes use .NET ZipFile for speed (Expand-Archive is slower)
     if ($GuiMode) {
-        Show-Error "Failed to extract ZIP file."
+        Expand-ZipWithProgress -ZipPath $LocalZip -DestPath $TempDir
     } else {
-        Write-Host "[ERROR] Failed to extract ZIP file." -ForegroundColor Red
+        # Fast extraction using .NET (no progress display)
+        Add-Type -Assembly 'System.IO.Compression.FileSystem'
+        [System.IO.Compression.ZipFile]::ExtractToDirectory($LocalZip, $TempDir)
     }
-    exit 1
-}
 
-# Use _internal folder if present
-$InternalDir = Join-Path $ExtractedDir.FullName "_internal"
-if (Test-Path $InternalDir) {
-    $SourceDir = $InternalDir
-} else {
-    $SourceDir = $ExtractedDir.FullName
-}
+    # Find extracted folder (YakuLingo*)
+    $ExtractedDir = Get-ChildItem -Path $TempDir -Directory | Where-Object { $_.Name -like "YakuLingo*" } | Select-Object -First 1
 
-# Create destination directory
-if (-not (Test-Path $SetupPath)) {
-    New-Item -ItemType Directory -Path $SetupPath -Force | Out-Null
-}
+    if (-not $ExtractedDir) {
+        throw "Failed to extract ZIP file.`n`nThe ZIP file may be corrupted or have an unexpected structure.`n`nFile: $ZipFileName"
+    }
 
-# Copy all files using robocopy for parallel file transfer (much faster)
-Write-Status -Message "Copying files to destination..." -Progress
-# robocopy /E = include empty dirs, /MT:8 = 8 threads, /NFL /NDL /NJH /NJS /NP = minimal output
-$robocopyArgs = @($SourceDir, $SetupPath, "/E", "/MT:8", "/NFL", "/NDL", "/NJH", "/NJS", "/NP", "/R:1", "/W:1")
-$robocopyResult = Start-Process -FilePath "robocopy.exe" -ArgumentList $robocopyArgs -NoNewWindow -Wait -PassThru
-# robocopy exit codes: 0-7 = success, 8+ = error
-if ($robocopyResult.ExitCode -ge 8) {
-    # Fallback to Copy-Item if robocopy fails
-    Get-ChildItem -Path $SourceDir | ForEach-Object {
-        $dest = Join-Path $SetupPath $_.Name
-        if ($_.PSIsContainer) {
-            Copy-Item -Path $_.FullName -Destination $dest -Recurse -Force
-        } else {
-            Copy-Item -Path $_.FullName -Destination $dest -Force
+    # Use _internal folder if present
+    $InternalDir = Join-Path $ExtractedDir.FullName "_internal"
+    if (Test-Path $InternalDir) {
+        $SourceDir = $InternalDir
+    } else {
+        $SourceDir = $ExtractedDir.FullName
+    }
+
+    # Create destination directory
+    if (-not (Test-Path $SetupPath)) {
+        New-Item -ItemType Directory -Path $SetupPath -Force | Out-Null
+    }
+
+    # Copy all files using robocopy for parallel file transfer (much faster)
+    Write-Status -Message "Copying files to destination..." -Progress
+    # robocopy /E = include empty dirs, /MT:8 = 8 threads, /NFL /NDL /NJH /NJS /NP = minimal output
+    $robocopyArgs = @($SourceDir, $SetupPath, "/E", "/MT:8", "/NFL", "/NDL", "/NJH", "/NJS", "/NP", "/R:1", "/W:1")
+    $robocopyResult = Start-Process -FilePath "robocopy.exe" -ArgumentList $robocopyArgs -NoNewWindow -Wait -PassThru
+    # robocopy exit codes: 0-7 = success, 8+ = error
+    if ($robocopyResult.ExitCode -ge 8) {
+        # Fallback to Copy-Item if robocopy fails
+        Get-ChildItem -Path $SourceDir | ForEach-Object {
+            $dest = Join-Path $SetupPath $_.Name
+            if ($_.PSIsContainer) {
+                Copy-Item -Path $_.FullName -Destination $dest -Recurse -Force
+            } else {
+                Copy-Item -Path $_.FullName -Destination $dest -Force
+            }
         }
     }
+
+    if (-not $GuiMode) {
+        Write-Host "[OK] Extraction completed" -ForegroundColor Green
+    }
+
+    # ============================================================
+    # Step 4: Create shortcuts
+    # ============================================================
+    Write-Status -Message "Creating shortcuts..." -Progress
+    if (-not $GuiMode) {
+        Write-Host ""
+        Write-Host "[4/4] Creating shortcuts..." -ForegroundColor Yellow
+    }
+
+    $WshShell = New-Object -ComObject WScript.Shell
+
+    # Desktop shortcut - use YakuLingo.exe for silent launch
+    $DesktopPath = [Environment]::GetFolderPath("Desktop")
+    $ShortcutPath = Join-Path $DesktopPath "$AppName.lnk"
+    $Shortcut = $WshShell.CreateShortcut($ShortcutPath)
+    $Shortcut.TargetPath = Join-Path $SetupPath "YakuLingo.exe"
+    $Shortcut.WorkingDirectory = $SetupPath
+    $Shortcut.IconLocation = "shell32.dll,21"
+    $Shortcut.Description = "YakuLingo Translation Tool"
+    $Shortcut.Save()
+    if (-not $GuiMode) {
+        Write-Host "      Desktop: $ShortcutPath" -ForegroundColor Gray
+    }
+
+    if (-not $GuiMode) {
+        Write-Host "[OK] Shortcuts created" -ForegroundColor Green
+    }
+
+    # ============================================================
+    # Cleanup
+    # ============================================================
+    Remove-Item -Path $TempDir -Recurse -Force -ErrorAction SilentlyContinue
+
+    # ============================================================
+    # Launch application
+    # ============================================================
+    Write-Status -Message "Launching YakuLingo..." -Progress
+    $ExePath = Join-Path $SetupPath "YakuLingo.exe"
+    Start-Process -FilePath $ExePath -WorkingDirectory $SetupPath
+
+    # ============================================================
+    # Done
+    # ============================================================
+    if ($GuiMode) {
+        Show-Success "Setup completed!`n`nYakuLingo has been set up and launched."
+    } else {
+        Write-Host ""
+        Write-Host "============================================================" -ForegroundColor Green
+        Write-Host " Setup completed!" -ForegroundColor Green
+        Write-Host "============================================================" -ForegroundColor Green
+        Write-Host ""
+        Write-Host " Location: $SetupPath" -ForegroundColor White
+        Write-Host " YakuLingo is now starting..." -ForegroundColor Cyan
+        Write-Host ""
+    }
 }
 
-if (-not $GuiMode) {
-    Write-Host "[OK] Extraction completed" -ForegroundColor Green
-}
-
 # ============================================================
-# Step 4: Create shortcuts
-# ============================================================
-Write-Status -Message "Creating shortcuts..." -Progress
-if (-not $GuiMode) {
-    Write-Host ""
-    Write-Host "[4/4] Creating shortcuts..." -ForegroundColor Yellow
-}
-
-$WshShell = New-Object -ComObject WScript.Shell
-
-# Desktop shortcut - use YakuLingo.exe for silent launch
-$DesktopPath = [Environment]::GetFolderPath("Desktop")
-$ShortcutPath = Join-Path $DesktopPath "$AppName.lnk"
-$Shortcut = $WshShell.CreateShortcut($ShortcutPath)
-$Shortcut.TargetPath = Join-Path $SetupPath "YakuLingo.exe"
-$Shortcut.WorkingDirectory = $SetupPath
-$Shortcut.IconLocation = "shell32.dll,21"
-$Shortcut.Description = "YakuLingo Translation Tool"
-$Shortcut.Save()
-if (-not $GuiMode) {
-    Write-Host "      Desktop: $ShortcutPath" -ForegroundColor Gray
-}
-
-if (-not $GuiMode) {
-    Write-Host "[OK] Shortcuts created" -ForegroundColor Green
-}
-
-# ============================================================
-# Cleanup
-# ============================================================
-Remove-Item -Path $TempDir -Recurse -Force -ErrorAction SilentlyContinue
-
-# ============================================================
-# Launch application
-# ============================================================
-Write-Status -Message "Launching YakuLingo..." -Progress
-$ExePath = Join-Path $SetupPath "YakuLingo.exe"
-Start-Process -FilePath $ExePath -WorkingDirectory $SetupPath
-
-# ============================================================
-# Done
+# Execute setup with error handling
 # ============================================================
 if ($GuiMode) {
-    Show-Success "Setup completed!`n`nYakuLingo has been set up and launched."
+    try {
+        Invoke-Setup
+        exit 0
+    } catch {
+        Show-Error $_.Exception.Message
+        exit 1
+    }
 } else {
-    Write-Host ""
-    Write-Host "============================================================" -ForegroundColor Green
-    Write-Host " Setup completed!" -ForegroundColor Green
-    Write-Host "============================================================" -ForegroundColor Green
-    Write-Host ""
-    Write-Host " Location: $SetupPath" -ForegroundColor White
-    Write-Host " YakuLingo is now starting..." -ForegroundColor Cyan
-    Write-Host ""
+    try {
+        Invoke-Setup
+        exit 0
+    } catch {
+        Write-Host ""
+        Write-Host "[ERROR] $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host ""
+        exit 1
+    }
 }
-
-exit 0

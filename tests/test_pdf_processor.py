@@ -2059,3 +2059,91 @@ class TestPdfOperatorGeneratorRawString:
         result = op_gen.raw_string("F77", "あ")
         # 'あ' = 0x3042
         assert result == "3042"
+
+
+class TestExistingFontReuse:
+    """Tests for existing font reuse functionality (PDFMathTranslate compliant)."""
+
+    def test_get_existing_cid_font_returns_cid(self):
+        """Should return existing CID font when available"""
+        registry = FontRegistry()
+        # Register an existing CID font
+        font_info = FontInfo(
+            font_id="F10",
+            family="ExistingCID",
+            path=None,
+            fallback=None,
+            encoding="cid",
+            is_cjk=True,
+            font_type=FontType.CID,
+        )
+        registry.fonts["_existing_ExistingCID"] = font_info
+        registry._font_by_id["F10"] = font_info
+
+        result = registry._get_existing_cid_font()
+        assert result == "F10"
+
+    def test_get_existing_cid_font_ignores_simple(self):
+        """Should not return existing Simple fonts"""
+        registry = FontRegistry()
+        # Register an existing Simple font
+        font_info = FontInfo(
+            font_id="F11",
+            family="ExistingSimple",
+            path=None,
+            fallback=None,
+            encoding="simple",
+            is_cjk=False,
+            font_type=FontType.SIMPLE,
+        )
+        registry.fonts["_existing_ExistingSimple"] = font_info
+        registry._font_by_id["F11"] = font_info
+
+        result = registry._get_existing_cid_font()
+        assert result is None
+
+    def test_get_existing_cid_font_returns_none_when_empty(self):
+        """Should return None when no existing fonts"""
+        registry = FontRegistry()
+        result = registry._get_existing_cid_font()
+        assert result is None
+
+    def test_select_font_prefers_existing_cid(self):
+        """select_font_for_text should prefer existing CID font"""
+        registry = FontRegistry()
+        # Register embedded fonts first
+        registry.register_font("ja")
+        registry.register_font("en")
+
+        # Then register an existing CID font
+        font_info = FontInfo(
+            font_id="F20",
+            family="ExistingCID",
+            path=None,
+            fallback=None,
+            encoding="cid",
+            is_cjk=True,
+            font_type=FontType.CID,
+        )
+        registry.fonts["_existing_ExistingCID"] = font_info
+        registry._font_by_id["F20"] = font_info
+
+        # Should return existing CID font for any text
+        result = registry.select_font_for_text("Hello", target_lang="ja")
+        assert result == "F20"
+
+        result = registry.select_font_for_text("日本語", target_lang="ja")
+        assert result == "F20"
+
+    def test_select_font_falls_back_to_embedded(self):
+        """select_font_for_text should fall back to embedded when no CID"""
+        registry = FontRegistry()
+        registry.register_font("ja")
+        registry.register_font("en")
+
+        # No existing CID font, should use embedded fonts
+        result = registry.select_font_for_text("日本語", target_lang="ja")
+        assert result == registry.fonts["ja"].font_id
+
+        result = registry.select_font_for_text("Hello", target_lang="en")
+        assert result == registry.fonts["en"].font_id

@@ -745,6 +745,9 @@ class FontRegistry:
         """
         Select appropriate font ID based on text content.
 
+        PDFMathTranslate compliant: prioritizes existing CID fonts from the PDF
+        before falling back to embedded fonts.
+
         Args:
             text: Target text
             target_lang: Target language for kanji
@@ -752,6 +755,13 @@ class FontRegistry:
         Returns:
             Font ID
         """
+        # First, try to use existing CID font from the PDF
+        # CID fonts typically contain both CJK and Latin characters
+        existing_cid_font = self._get_existing_cid_font()
+        if existing_cid_font:
+            return existing_cid_font
+
+        # Fall back to language-specific embedded fonts
         for char in text:
             if '\u3040' <= char <= '\u309F':  # Hiragana
                 return self._get_font_id_for_lang("ja")
@@ -764,6 +774,22 @@ class FontRegistry:
             if '\u4E00' <= char <= '\u9FFF':  # CJK Unified Ideographs
                 return self._get_font_id_for_lang(target_lang)
         return self._get_font_id_for_lang("en")
+
+    def _get_existing_cid_font(self) -> Optional[str]:
+        """
+        Get the first existing CID font from the PDF.
+
+        CID fonts are preferred because they typically contain
+        both CJK characters and Latin characters.
+
+        Returns:
+            Font ID of existing CID font, or None if not found
+        """
+        for key, font_info in self.fonts.items():
+            if key.startswith("_existing_") and font_info.font_type == FontType.CID:
+                logger.debug("Using existing CID font: %s", font_info.font_id)
+                return font_info.font_id
+        return None
 
     def _get_font_id_for_lang(self, lang: str) -> str:
         """Get font ID for language."""
@@ -3287,11 +3313,25 @@ class PdfProcessor(FileProcessor):
             font_en = getattr(settings, 'pdf_font_en', None) if settings else None
             font_registry = FontRegistry(font_ja=font_ja, font_en=font_en)
 
-            # Register required fonts
+            # PDFMathTranslate compliant: Load existing fonts from PDF
+            # This enables reuse of CID/Simple fonts already in the document
+            font_registry.load_fontmap_from_pdf(input_path)
+
+            # Register existing fonts for reuse
+            for font_name, pdfminer_font in font_registry.fontmap.items():
+                font_registry.register_existing_font(font_name, pdfminer_font)
+
+            logger.debug(
+                "Loaded %d existing fonts from PDF: %s",
+                len(font_registry.fontmap),
+                list(font_registry.fontmap.keys())[:5]  # Show first 5
+            )
+
+            # Register fallback fonts (only used if existing fonts lack glyphs)
             font_registry.register_font("ja")
             font_registry.register_font("en")
 
-            # Embed fonts into document
+            # Embed fallback fonts into document
             failed_fonts = font_registry.embed_fonts(doc)
             result['failed_fonts'] = failed_fonts
 

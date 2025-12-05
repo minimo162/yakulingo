@@ -151,8 +151,10 @@ body {
 /* === 3-Column Layout Container === */
 .app-container {
     display: flex;
-    min-height: 100vh;
+    height: 100vh;  /* Fixed height to prevent overflow */
+    max-height: 100vh;
     width: 100%;
+    overflow: hidden;  /* Prevent children from overflowing */
 }
 
 /* === Sidebar Layout === */
@@ -212,16 +214,18 @@ body {
 .main-area {
     margin-left: var(--sidebar-width);
     flex: 1;
-    min-height: 100vh;
+    height: 100vh;  /* Fixed height to match viewport */
+    max-height: 100vh;
     display: flex;
     flex-direction: row;
+    overflow: hidden;  /* Prevent children from overflowing */
 }
 
 /* Input Panel (Middle Column - Sticky) */
 .input-panel {
     width: var(--input-panel-width);
     min-width: var(--input-panel-width);
-    height: 100vh;
+    height: 100%;  /* Use 100% to respect parent's height constraint */
     position: sticky;
     top: 0;
     padding: 1.5rem;
@@ -235,7 +239,7 @@ body {
 /* Result Panel (Right Column - Scrollable) */
 .result-panel {
     flex: 1;
-    min-height: 100vh;
+    height: 100%;  /* Use 100% to respect parent's height constraint */
     padding: 1.5rem 2rem;
     overflow-y: auto;
     display: flex;
@@ -1136,7 +1140,7 @@ body {
     width: auto;
     min-width: 0;
     max-width: none;
-    height: 100vh;  /* Ensure full viewport height */
+    height: 100%;  /* Use 100% to respect parent's height constraint */
     border-right: none;
     display: flex;
     flex-direction: column;  /* Stack children vertically */

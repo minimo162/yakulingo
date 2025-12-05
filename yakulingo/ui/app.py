@@ -497,7 +497,6 @@ class YakuLingoApp:
                         on_download=self._download,
                         on_reset=self._reset,
                         on_language_change=self._on_language_change,
-                        on_pdf_fast_mode_change=self._on_pdf_fast_mode_change,
                         on_bilingual_change=self._on_bilingual_change,
                         on_export_glossary_change=self._on_export_glossary_change,
                         on_style_change=self._on_style_change,
@@ -1078,11 +1077,6 @@ class YakuLingoApp:
         self.state.file_output_language = lang
         self._refresh_content()
 
-    def _on_pdf_fast_mode_change(self, fast_mode: bool):
-        """Handle PDF fast mode toggle"""
-        self.state.pdf_fast_mode = fast_mode
-        # No need to refresh content, checkbox state is handled by NiceGUI
-
     def _on_bilingual_change(self, enabled: bool):
         """Handle bilingual output toggle"""
         self.settings.bilingual_output = enabled
@@ -1195,9 +1189,6 @@ class YakuLingoApp:
             # Yield control to event loop before starting blocking operation
             await asyncio.sleep(0)
 
-            # For PDFs, use_ocr is the inverse of fast_mode
-            use_ocr = not self.state.pdf_fast_mode
-
             # Get selected sections for partial translation
             selected_sections = None
             if self.state.file_info and self.state.file_info.section_details:
@@ -1212,7 +1203,6 @@ class YakuLingoApp:
                     self.state.reference_files or None,
                     on_progress,
                     output_language=self.state.file_output_language,
-                    use_ocr=use_ocr,
                     translation_style=self.settings.translation_style,
                     selected_sections=selected_sections,
                 )

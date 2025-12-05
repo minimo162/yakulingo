@@ -1,6 +1,6 @@
 ' ============================================================
 ' YakuLingo One-Click Setup (GUI Version)
-' Double-click this file to install YakuLingo
+' Double-click this file to set up YakuLingo
 ' ============================================================
 
 Option Explicit

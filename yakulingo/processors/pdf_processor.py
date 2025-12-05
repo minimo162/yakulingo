@@ -3029,6 +3029,15 @@ class PdfProcessor(FileProcessor):
                         x2 = cell.box[2] * scale
                         y2 = cell.box[3] * scale
                         original_text = cell.text
+                        # Estimate original line count from box height and text length
+                        # This is an approximation since line breaks were removed during OCR processing
+                        box_h = y2 - y1
+                        if box_h > 0 and len(original_text) > 0:
+                            estimated_font = box_h / max(1, original_text.count('\n') + 1) / 1.2
+                            chars_per_line = max(1, (x2 - x1) / max(1, estimated_font * 0.6))
+                            original_line_count = max(1, int(len(original_text) / chars_per_line) + 1)
+                        else:
+                            original_line_count = 1
                     else:
                         # Standard mode: check block ID prefix
                         if not block_id.startswith(f"page_{page_idx}_"):
@@ -3041,9 +3050,14 @@ class PdfProcessor(FileProcessor):
                             continue
                         x1, y1, x2, y2 = bbox
                         original_text = ""
+                        original_line_count = 0
                         for line in block.get("lines", []):
+                            line_text = ""
                             for span in line.get("spans", []):
-                                original_text += span.get("text", "")
+                                line_text += span.get("text", "")
+                            original_text += line_text
+                            if line_text.strip():
+                                original_line_count += 1
 
                     try:
                         # Convert to PDF coordinates (y-axis inversion)
@@ -3053,6 +3067,30 @@ class PdfProcessor(FileProcessor):
                         pdf_x1, pdf_y1, pdf_x2, pdf_y2 = box_pdf
                         box_width = pdf_x2 - pdf_x1
                         box_height = pdf_y2 - pdf_y1
+
+                        # Adjust box_width for multi-line blocks to prevent excessive fragmentation
+                        # When original text was wrapped into N lines in a narrow box, the box_width
+                        # is narrow. If we split translated text with this narrow width, it may
+                        # result in many more lines than the original.
+                        # Solution: Expand box_width to maintain similar line count as original.
+                        if original_line_count > 1:
+                            # Estimate required width based on translated text length and original line count
+                            # Average chars per line in translated text should be similar to original
+                            avg_chars_per_line = len(translated) / original_line_count
+                            # Estimate char width (use 0.5 * font_size for Latin, 1.0 * font_size for CJK)
+                            estimated_font_size = box_height / (original_line_count * 1.2)  # 1.2 = line height
+                            estimated_font_size = max(MIN_FONT_SIZE, min(estimated_font_size, MAX_FONT_SIZE))
+                            # Check if text is mostly CJK
+                            cjk_chars = sum(1 for c in translated if ord(c) > 0x2E7F)
+                            avg_char_width = estimated_font_size if cjk_chars > len(translated) / 2 else estimated_font_size * 0.5
+                            estimated_width = avg_chars_per_line * avg_char_width
+                            # Use the larger of original width and estimated width
+                            if estimated_width > box_width:
+                                logger.debug(
+                                    "Expanding box_width from %.1f to %.1f for block %s (original %d lines)",
+                                    box_width, estimated_width, block_id, original_line_count
+                                )
+                                box_width = estimated_width
 
                         # Note: No white rectangle needed anymore.
                         # ContentStreamReplacer.set_base_stream() already filtered out
@@ -3529,6 +3567,11 @@ class PdfProcessor(FileProcessor):
                                 formula_char_count / total_char_count > 0.5
                             )
 
+                            # Store original line count for layout preservation
+                            # This helps prevent excessive line splitting when rendering
+                            # translated text back into narrow bounding boxes
+                            original_line_count = len([p for p in text_parts if p.strip()])
+
                             blocks.append(TextBlock(
                                 id=f"page_{page_idx}_block_{block_idx}",
                                 text=text,
@@ -3541,6 +3584,7 @@ class PdfProcessor(FileProcessor):
                                     'font_name': font_name,
                                     'font_size': font_size,
                                     'is_formula': is_formula,
+                                    'original_line_count': original_line_count,
                                 }
                             ))
 

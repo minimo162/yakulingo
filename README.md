@@ -245,7 +245,7 @@ YakuLingo/
 | Excel処理 | xlwings (Windows/macOS) / openpyxl (フォールバック) |
 | Word処理 | python-docx |
 | PowerPoint処理 | python-pptx |
-| PDF処理 | PyMuPDF + yomitoku (OCR) |
+| PDF処理 | PyMuPDF + pdfminer.six + yomitoku (OCR) |
 | データ保存 | SQLite (翻訳履歴) |
 | 自動更新 | GitHub Releases API |
 

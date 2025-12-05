@@ -803,12 +803,17 @@ When interacting with users in this repository, prefer Japanese for comments and
 ## Documentation References
 
 - `README.md` - User guide and quick start (Japanese)
-- `docs/SPECIFICATION.md` - Detailed technical specification (~1588 lines)
+- `docs/SPECIFICATION.md` - Detailed technical specification (~1600 lines)
 - `docs/DISTRIBUTION.md` - Deployment and distribution guide
 
 ## Recent Development Focus
 
 Based on recent commits:
+- **PDF Translation Improvements (PDFMathTranslate compliant)**:
+  - **Existing font reuse**: Detect and reuse CID/Simple fonts already embedded in PDF
+  - **pdfminer.six integration**: Font type detection for correct text encoding
+  - **Low-level API only**: Removed high-level API fallback for consistent rendering
+  - **Font type encoding**: EMBEDDED→glyph ID, CID→4-digit hex, SIMPLE→2-digit hex
 - **Translation Speed Optimization**:
   - **Text translation**: Reduced polling interval (0.5s → 0.3s), reduced chat response clear wait (5s → 3s)
   - **File translation**: Reduced polling interval (1s → 0.5s), reduced stability confirmation (3 → 2 checks)

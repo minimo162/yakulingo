@@ -797,35 +797,23 @@ class PdfOperatorGenerator:
         Encode text for PDF text operators.
 
         PyMuPDF's insert_font embeds fonts with Identity-H encoding (CID font).
-        For Identity-H encoding, character codes are Unicode code points (UTF-16BE).
-
-        Encoding rules:
-        - CJK fonts: Always 4-digit hex (UTF-16BE)
-        - Non-CJK fonts: 2-digit for ASCII range, 4-digit for others
+        For Identity-H encoding, character codes are Unicode code points in
+        UTF-16BE format (always 4-digit hex / 2 bytes per character).
 
         Args:
             font_id: Font ID
             text: Text to encode
 
         Returns:
-            Hex-encoded string using Unicode code points
+            Hex-encoded string in UTF-16BE format (4 digits per character)
         """
         result = []
-        is_cjk = self.font_registry.get_is_cjk(font_id)
 
         for char in text:
             # Use Unicode code point for Identity-H encoding
+            # Always use 4-digit hex (UTF-16BE format) for all fonts
             code_point = self.font_registry.get_glyph_id(font_id, char)
-
-            if is_cjk:
-                # CJK fonts: always 4-digit hex
-                result.append("%04x" % code_point)
-            else:
-                # Non-CJK: 2-digit for ASCII range, 4-digit for others
-                if code_point < 256:
-                    result.append("%02x" % code_point)
-                else:
-                    result.append("%04x" % code_point)
+            result.append("%04x" % code_point)
 
         return "".join(result)
 

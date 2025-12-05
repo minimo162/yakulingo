@@ -510,26 +510,30 @@ class TestPdfOperatorGenerator:
         assert "TJ" in result
 
     def test_raw_string_simple_encoding(self, op_generator):
-        # Non-CJK fonts use glyph IDs (2-digit for ASCII range, 4-digit for others)
-        # Actual glyph IDs depend on the font, so we just check format
+        # All fonts use 4-digit hex encoding (UTF-16BE) for Identity-H encoding
         result = op_generator.raw_string("F2", "Hi")
-        # Should be hex string with 2 characters (2-digit each for ASCII)
-        # or 4-digit if glyph ID >= 256
-        assert len(result) >= 4  # At least 2 chars * 2 digits
+        # 2 characters * 4 digits = 8 hex chars
+        assert len(result) == 8
         assert all(c in "0123456789abcdef" for c in result)
+        # "H" = U+0048, "i" = U+0069
+        assert result == "00480069"
 
     def test_raw_string_cid_encoding(self, op_generator):
-        # Japanese font (CJK) uses 4-digit hex encoding for glyph IDs
+        # Japanese font (CJK) uses 4-digit hex encoding (UTF-16BE)
         result = op_generator.raw_string("F1", "あ")
-        # CJK fonts always use 4-digit hex
+        # CJK fonts use 4-digit hex
         assert len(result) == 4
         assert all(c in "0123456789abcdef" for c in result)
+        # "あ" = U+3042
+        assert result == "3042"
 
     def test_raw_string_cid_multiple_chars(self, op_generator):
         result = op_generator.raw_string("F1", "あい")
         # Two CJK characters = 2 * 4 digits = 8 hex chars
         assert len(result) == 8
         assert all(c in "0123456789abcdef" for c in result)
+        # "あ" = U+3042, "い" = U+3044
+        assert result == "30423044"
 
     def test_raw_string_empty(self, op_generator):
         result = op_generator.raw_string("F1", "")

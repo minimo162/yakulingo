@@ -723,9 +723,13 @@ class FontRegistry:
         PDFMathTranslate high_level.py compliant.
         Only embeds on first page (shared across document).
 
+        Also ensures Font objects exist for glyph ID lookup.
+        This is critical for low-level text rendering.
+
         Returns:
             List of font IDs that failed to embed
         """
+        fitz = _get_fitz()
         failed_fonts = []
 
         if len(doc) == 0:
@@ -750,6 +754,22 @@ class FontRegistry:
                     fontfile=font_path,
                 )
                 self._font_xrefs[font_info.font_id] = xref
+
+                # Ensure Font object exists for glyph ID lookup
+                # This is critical - if Font object doesn't exist, all characters
+                # will render as .notdef (invisible)
+                if font_info.font_id not in self._font_objects:
+                    try:
+                        self._font_objects[font_info.font_id] = fitz.Font(fontfile=font_path)
+                        logger.debug("Created Font object in embed_fonts for %s", font_info.font_id)
+                    except Exception as e:
+                        logger.warning(
+                            "Failed to create Font object for '%s': %s. "
+                            "Text rendering may fail.",
+                            font_info.font_id, e
+                        )
+                        failed_fonts.append(font_info.font_id)
+
                 logger.debug(
                     "Embedded font: id=%s, lang=%s, encoding=Identity-H (UTF-16BE), "
                     "family=%s, path=%s, xref=%s",
@@ -2428,7 +2448,7 @@ class PdfProcessor(FileProcessor):
             - 'failed': List of failed block IDs
             - 'failed_fonts': List of fonts that failed to embed
         """
-        # Try low-level API first (better layout control)
+        # Try low-level API first (better layout control, PDFMathTranslate compliant)
         try:
             logger.debug("Attempting low-level PDF translation...")
             result = self.apply_translations_low_level(
@@ -2697,7 +2717,7 @@ class PdfProcessor(FileProcessor):
             - 'failed': List of failed cell addresses
             - 'failed_fonts': List of fonts that failed to embed
         """
-        # Try low-level API first (better layout control)
+        # Try low-level API first (better layout control, PDFMathTranslate compliant)
         try:
             logger.debug("Attempting low-level PDF translation with cells...")
             result = self.apply_translations_low_level(

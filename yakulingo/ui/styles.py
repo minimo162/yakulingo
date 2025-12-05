@@ -1134,47 +1134,80 @@ body {
     width: auto;
     min-width: 0;
     max-width: none;
+    height: 100vh;  /* Ensure full viewport height */
     border-right: none;
     display: flex;
+    flex-direction: column;  /* Stack children vertically */
     justify-content: flex-start;
-    align-items: center;
+    align-items: center;  /* Center children horizontally */
+    padding: 1.5rem;  /* Consistent padding */
     padding-top: 3rem;
+}
+
+/* Ensure the column container fills the input panel vertically */
+.main-area:not(.has-results) .input-panel > .nicegui-column {
+    width: 100%;
+    max-width: var(--input-panel-width-wide);
+    flex: 1;  /* Fill available vertical space */
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;  /* Stretch children to full width */
 }
 
 /* Center the main-card within the input panel and fill available height */
 .main-area:not(.has-results) .input-panel .main-card {
     width: 100%;
-    max-width: var(--input-panel-width-wide);
-    flex: 1;
+    flex: 1;  /* Fill available vertical space */
     display: flex;
     flex-direction: column;
 }
 
 .main-area:not(.has-results) .input-panel .main-card-inner {
-    flex: 1;
+    flex: 1;  /* Fill available vertical space */
     display: flex;
     flex-direction: column;
 }
 
-/* Make textarea fill available space in 2-column mode */
+/* Make textarea and its NiceGUI wrapper fill available space in 2-column mode */
+.main-area:not(.has-results) .input-panel .main-card-inner > .nicegui-input,
+.main-area:not(.has-results) .input-panel .main-card-inner > .nicegui-textarea {
+    flex: 1 !important;
+    display: flex !important;
+    flex-direction: column !important;
+}
+
+.main-area:not(.has-results) .input-panel .main-card-inner .q-field__inner,
+.main-area:not(.has-results) .input-panel .main-card-inner .q-field__control {
+    flex: 1 !important;
+    display: flex !important;
+    flex-direction: column !important;
+}
+
 .main-area:not(.has-results) .input-panel .main-card-inner textarea {
     flex: 1 !important;
     min-height: var(--input-min-height);
-    height: 100%;
+    height: auto !important;  /* Allow flex to control height */
 }
 
-/* Ensure the column container also centers its content and fills height */
-.main-area:not(.has-results) .input-panel > .nicegui-column {
-    width: 100%;
-    max-width: var(--input-panel-width-wide);
-    align-items: center;
-    flex: 1;
-    display: flex;
-    flex-direction: column;
+/* Bottom controls row should not grow, stay at bottom */
+.main-area:not(.has-results) .input-panel .main-card-inner > .nicegui-row {
+    flex-shrink: 0 !important;
+    margin-top: auto;  /* Push to bottom */
 }
 
+/* Hint section should not grow, stay at bottom */
+.main-area:not(.has-results) .input-panel .hint-section {
+    flex-shrink: 0;  /* Don't shrink */
+    margin-top: auto;  /* Push to bottom if space allows */
+}
+
+/* Hide result panel completely in 2-column mode */
 .main-area:not(.has-results) .result-panel {
-    display: none;
+    display: none !important;
+    visibility: hidden;
+    width: 0;
+    height: 0;
+    overflow: hidden;
 }
 
 /* 3-column mode when has results */
@@ -1198,12 +1231,32 @@ body {
     flex-direction: column;
 }
 
-/* Make textarea fill available space */
+/* Make textarea and its NiceGUI wrapper fill available space in 3-column mode */
+.main-area.has-results .input-panel .main-card-inner > .nicegui-input,
+.main-area.has-results .input-panel .main-card-inner > .nicegui-textarea {
+    flex: 1 !important;
+    display: flex !important;
+    flex-direction: column !important;
+}
+
+.main-area.has-results .input-panel .main-card-inner .q-field__inner,
+.main-area.has-results .input-panel .main-card-inner .q-field__control {
+    flex: 1 !important;
+    display: flex !important;
+    flex-direction: column !important;
+}
+
 .main-area.has-results .input-panel .main-card-inner textarea,
 .main-area.has-results .input-panel .compact-textarea {
     flex: 1 !important;
     min-height: 150px;
-    height: 100%;
+    height: auto !important;  /* Allow flex to control height */
+}
+
+/* Bottom controls row should not grow, stay at bottom in 3-column mode */
+.main-area.has-results .input-panel .main-card-inner > .nicegui-row {
+    flex-shrink: 0 !important;
+    margin-top: auto;  /* Push to bottom */
 }
 
 /* Ensure the nicegui-column also fills space */
@@ -1211,6 +1264,7 @@ body {
     flex: 1;
     display: flex;
     flex-direction: column;
+    align-items: stretch;  /* Stretch children to full width */
 }
 
 .main-area.has-results .result-panel {

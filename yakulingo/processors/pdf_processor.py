@@ -596,11 +596,15 @@ class FontRegistry:
         self.fonts[lang] = font_info
         self._font_by_id[font_id] = font_info
 
-        # Create PyMuPDF Font object for glyph lookup
+        # Create PyMuPDF Font object for glyph lookup (character width calculation)
         if font_path:
             try:
                 fitz = _get_fitz()
-                self._font_objects[font_id] = fitz.Font(fontfile=font_path)
+                # TTC files contain multiple fonts - use index 0 for the first font
+                if font_path.lower().endswith('.ttc'):
+                    self._font_objects[font_id] = fitz.Font(fontfile=font_path, fontindex=0)
+                else:
+                    self._font_objects[font_id] = fitz.Font(fontfile=font_path)
                 logger.debug("Created Font object for %s: %s", font_id, font_path)
             except Exception as e:
                 logger.warning("Failed to create Font object for %s: %s", font_id, e)
@@ -660,29 +664,25 @@ class FontRegistry:
 
     def get_glyph_id(self, font_id: str, char: str) -> int:
         """
-        Get glyph ID for a character in the specified font.
+        Get character code for PDF text operators.
 
-        Uses PyMuPDF Font.has_glyph() to get the actual glyph index.
-        This is critical for proper text rendering in low-level PDF operations.
+        PyMuPDF's insert_font embeds fonts with Identity-H encoding (CID font).
+        For Identity-H encoding, the character code is the Unicode code point,
+        NOT the glyph index.
+
+        Note: has_glyph() is used only to verify glyph existence in the font,
+        but the returned value (glyph index) should NOT be used for encoding.
+        PDF viewers use the CMap (Identity-H) to map code points to glyphs.
 
         Args:
             font_id: Font ID (F1, F2, ...)
             char: Single character to look up
 
         Returns:
-            Glyph ID (glyph index) or Unicode code point as fallback
+            Unicode code point for the character (used with Identity-H encoding)
         """
-        font_obj = self._font_objects.get(font_id)
-        if font_obj:
-            try:
-                # has_glyph returns glyph index (int > 0) if found, 0 if not
-                glyph = font_obj.has_glyph(ord(char))
-                if glyph:
-                    return glyph
-            except Exception as e:
-                logger.debug("Error getting glyph for '%s': %s", char, e)
-
-        # Fallback to Unicode code point
+        # For Identity-H encoding, always use Unicode code point
+        # The PDF viewer will use the font's CMap to map to the correct glyph
         return ord(char)
 
     def get_char_width(self, font_id: str, char: str, font_size: float) -> float:
@@ -741,10 +741,18 @@ class FontRegistry:
                 continue
 
             try:
-                xref = first_page.insert_font(
-                    fontname=font_info.font_id,
-                    fontfile=font_path,
-                )
+                # TTC files contain multiple fonts - use index 0 for the first font
+                if font_path.lower().endswith('.ttc'):
+                    xref = first_page.insert_font(
+                        fontname=font_info.font_id,
+                        fontfile=font_path,
+                        fontindex=0,
+                    )
+                else:
+                    xref = first_page.insert_font(
+                        fontname=font_info.font_id,
+                        fontfile=font_path,
+                    )
                 self._font_xrefs[font_info.font_id] = xref
             except (RuntimeError, ValueError, OSError, IOError) as e:
                 logger.warning(
@@ -798,36 +806,36 @@ class PdfOperatorGenerator:
         """
         Encode text for PDF text operators.
 
-        PDFMathTranslate converter.py:366-372 compliant.
-        Uses glyph IDs from PyMuPDF Font object for proper character rendering.
+        PyMuPDF's insert_font embeds fonts with Identity-H encoding (CID font).
+        For Identity-H encoding, character codes are Unicode code points (UTF-16BE).
 
-        Encoding rules (based on PDFMathTranslate):
-        - CJK fonts: Use glyph ID, 4-digit hex encoding
-        - Non-CJK fonts: Use glyph ID, 2-digit for ASCII, 4-digit for others
+        Encoding rules:
+        - CJK fonts: Always 4-digit hex (UTF-16BE)
+        - Non-CJK fonts: 2-digit for ASCII range, 4-digit for others
 
         Args:
             font_id: Font ID
             text: Text to encode
 
         Returns:
-            Hex-encoded string using glyph IDs
+            Hex-encoded string using Unicode code points
         """
         result = []
         is_cjk = self.font_registry.get_is_cjk(font_id)
 
         for char in text:
-            # Get glyph ID from font (falls back to ord() if not available)
-            glyph_id = self.font_registry.get_glyph_id(font_id, char)
+            # Use Unicode code point for Identity-H encoding
+            code_point = self.font_registry.get_glyph_id(font_id, char)
 
             if is_cjk:
                 # CJK fonts: always 4-digit hex
-                result.append("%04x" % glyph_id)
+                result.append("%04x" % code_point)
             else:
                 # Non-CJK: 2-digit for ASCII range, 4-digit for others
-                if glyph_id < 256:
-                    result.append("%02x" % glyph_id)
+                if code_point < 256:
+                    result.append("%02x" % code_point)
                 else:
-                    result.append("%04x" % glyph_id)
+                    result.append("%04x" % code_point)
 
         return "".join(result)
 

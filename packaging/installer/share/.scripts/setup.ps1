@@ -213,7 +213,7 @@ function Invoke-Setup {
     # Configuration
     # ============================================================
     $AppName = "YakuLingo"
-    $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+    $ScriptDir = $PSScriptRoot
     $ShareDir = Split-Path -Parent $ScriptDir  # Parent of .scripts folder
 
     # Auto-detect ZIP file (use newest one)

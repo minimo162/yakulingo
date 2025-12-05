@@ -994,45 +994,48 @@ class TestPdfProcessorExtractTextBlocks:
     """Tests for PdfProcessor.extract_text_blocks"""
 
     def test_extract_text_blocks(self, processor, tmp_path):
-        """Test text block extraction with mocked fitz"""
-        with patch('yakulingo.processors.pdf_processor._get_fitz') as mock_get_fitz:
-            mock_fitz = MagicMock()
-            mock_get_fitz.return_value = mock_fitz
+        """Test text block extraction with mocked pdfminer streaming"""
+        from yakulingo.models.types import TextBlock
 
-            mock_doc = MagicMock()
-            mock_page = MagicMock()
-            mock_page.get_text.return_value = {
-                "blocks": [
-                    {
-                        "type": 0,
-                        "bbox": [100, 200, 300, 250],
-                        "lines": [
-                            {
-                                "spans": [
-                                    {
-                                        "text": "テストテキスト",
-                                        "font": "MS Mincho",
-                                        "size": 12.0
-                                    }
-                                ]
-                            }
-                        ]
-                    }
-                ]
+        # Create expected TextBlock
+        expected_block = TextBlock(
+            id="page_0_block_0",
+            text="テストテキスト",
+            location="Page 1",
+            metadata={
+                'type': 'text_block',
+                'page_idx': 0,
+                'block': 0,
+                'bbox': (100, 200, 300, 250),
+                'font_name': "MS Mincho",
+                'font_size': 12.0,
+                'is_formula': False,
+                'original_line_count': 1,
             }
-            mock_doc.__iter__ = Mock(return_value=iter([mock_page]))
-            mock_fitz.open.return_value = mock_doc
+        )
 
-            pdf_path = tmp_path / "test.pdf"
-            pdf_path.write_bytes(b"%PDF-1.4 dummy")
+        # Mock _extract_with_pdfminer_streaming to return expected blocks
+        with patch.object(
+            processor, '_extract_with_pdfminer_streaming',
+            return_value=iter([([expected_block], None)])
+        ):
+            with patch('yakulingo.processors.pdf_processor._get_fitz') as mock_get_fitz:
+                mock_fitz = MagicMock()
+                mock_get_fitz.return_value = mock_fitz
+                mock_doc = MagicMock()
+                mock_doc.__len__ = Mock(return_value=1)
+                mock_fitz.open.return_value = mock_doc
 
-            blocks = list(processor.extract_text_blocks(pdf_path))
+                pdf_path = tmp_path / "test.pdf"
+                pdf_path.write_bytes(b"%PDF-1.4 dummy")
 
-            assert len(blocks) == 1
-            assert blocks[0].text == "テストテキスト"
-            assert blocks[0].id == "page_0_block_0"
-            assert blocks[0].metadata["font_name"] == "MS Mincho"
-            assert blocks[0].metadata["font_size"] == 12.0
+                blocks = list(processor.extract_text_blocks(pdf_path))
+
+                assert len(blocks) == 1
+                assert blocks[0].text == "テストテキスト"
+                assert blocks[0].id == "page_0_block_0"
+                assert blocks[0].metadata["font_name"] == "MS Mincho"
+                assert blocks[0].metadata["font_size"] == 12.0
 
 
 class TestPdfProcessorApplyTranslations:
@@ -1320,100 +1323,134 @@ class TestExtractTextBlocksStreaming:
     """Tests for extract_text_blocks_streaming method"""
 
     def test_streaming_without_ocr(self, processor, tmp_path):
-        """Test streaming extraction using PyMuPDF only"""
-        with patch('yakulingo.processors.pdf_processor._get_fitz') as mock_get_fitz:
-            mock_fitz = MagicMock()
-            mock_get_fitz.return_value = mock_fitz
+        """Test streaming extraction using pdfminer (PDFMathTranslate compliant)"""
+        from yakulingo.models.types import TextBlock
 
-            # Create mock document with 2 pages (use Japanese text for JP→EN translation)
-            mock_page1 = MagicMock()
-            mock_page1.get_text.return_value = {
-                "blocks": [
-                    {
-                        "type": 0,
-                        "bbox": [100, 200, 300, 250],
-                        "lines": [{"spans": [{"text": "ページ1のテキスト", "font": "Arial", "size": 12.0}]}]
-                    }
-                ]
+        # Create expected TextBlocks for 2 pages
+        block1 = TextBlock(
+            id="page_0_block_0",
+            text="ページ1のテキスト",
+            location="Page 1",
+            metadata={
+                'type': 'text_block',
+                'page_idx': 0,
+                'block': 0,
+                'bbox': (100, 200, 300, 250),
+                'font_name': "Arial",
+                'font_size': 12.0,
+                'is_formula': False,
+                'original_line_count': 1,
             }
-            mock_page2 = MagicMock()
-            mock_page2.get_text.return_value = {
-                "blocks": [
-                    {
-                        "type": 0,
-                        "bbox": [100, 200, 300, 250],
-                        "lines": [{"spans": [{"text": "ページ2のテキスト", "font": "Arial", "size": 12.0}]}]
-                    }
-                ]
+        )
+        block2 = TextBlock(
+            id="page_1_block_0",
+            text="ページ2のテキスト",
+            location="Page 2",
+            metadata={
+                'type': 'text_block',
+                'page_idx': 1,
+                'block': 0,
+                'bbox': (100, 200, 300, 250),
+                'font_name': "Arial",
+                'font_size': 12.0,
+                'is_formula': False,
+                'original_line_count': 1,
             }
+        )
 
-            mock_doc = MagicMock()
-            mock_doc.__len__ = Mock(return_value=2)
-            mock_doc.__iter__ = Mock(return_value=iter([mock_page1, mock_page2]))
+        # Mock _extract_with_pdfminer_streaming to yield blocks page by page
+        def mock_streaming(*args, **kwargs):
+            yield [block1], None
+            yield [block2], None
 
-            mock_fitz.open.return_value = mock_doc
+        with patch.object(processor, '_extract_with_pdfminer_streaming', side_effect=mock_streaming):
+            with patch('yakulingo.processors.pdf_processor._get_fitz') as mock_get_fitz:
+                mock_fitz = MagicMock()
+                mock_get_fitz.return_value = mock_fitz
+                mock_doc = MagicMock()
+                mock_doc.__len__ = Mock(return_value=2)
+                mock_fitz.open.return_value = mock_doc
 
-            pdf_path = tmp_path / "test.pdf"
-            pdf_path.write_bytes(b"%PDF-1.4 dummy")
+                pdf_path = tmp_path / "test.pdf"
+                pdf_path.write_bytes(b"%PDF-1.4 dummy")
 
-            # Collect results from streaming
-            all_blocks = []
-            page_count = 0
-            for blocks, cells in processor.extract_text_blocks_streaming(
-                pdf_path, use_ocr=False
-            ):
-                all_blocks.extend(blocks)
-                page_count += 1
-                # Without OCR, cells should be None
-                assert cells is None
+                # Collect results from streaming
+                all_blocks = []
+                page_count = 0
+                for blocks, cells in processor.extract_text_blocks_streaming(
+                    pdf_path, use_ocr=False
+                ):
+                    all_blocks.extend(blocks)
+                    page_count += 1
+                    # Without OCR, cells should be None
+                    assert cells is None
 
-            assert page_count == 2
-            assert len(all_blocks) == 2
-            assert all_blocks[0].text == "ページ1のテキスト"
-            assert all_blocks[1].text == "ページ2のテキスト"
+                assert page_count == 2
+                assert len(all_blocks) == 2
+                assert all_blocks[0].text == "ページ1のテキスト"
+                assert all_blocks[1].text == "ページ2のテキスト"
 
     def test_streaming_progress_callback(self, processor, tmp_path):
         """Test that progress callback is called during streaming"""
-        with patch('yakulingo.processors.pdf_processor._get_fitz') as mock_get_fitz:
-            mock_fitz = MagicMock()
-            mock_get_fitz.return_value = mock_fitz
+        from yakulingo.models.types import TextBlock, TranslationProgress, TranslationPhase
 
-            mock_page = MagicMock()
-            mock_page.get_text.return_value = {
-                "blocks": [
-                    {
-                        "type": 0,
-                        "bbox": [100, 200, 300, 250],
-                        "lines": [{"spans": [{"text": "Text", "font": "Arial", "size": 12.0}]}]
-                    }
-                ]
+        # Create expected TextBlock
+        block = TextBlock(
+            id="page_0_block_0",
+            text="Text",
+            location="Page 1",
+            metadata={
+                'type': 'text_block',
+                'page_idx': 0,
+                'block': 0,
+                'bbox': (100, 200, 300, 250),
+                'font_name': "Arial",
+                'font_size': 12.0,
+                'is_formula': False,
+                'original_line_count': 1,
             }
+        )
 
-            mock_doc = MagicMock()
-            mock_doc.__len__ = Mock(return_value=3)
-            mock_doc.__iter__ = Mock(return_value=iter([mock_page, mock_page, mock_page]))
+        # Mock _extract_with_pdfminer_streaming to yield blocks and call progress
+        def mock_streaming(file_path, total_pages, on_progress):
+            for page_num in range(1, total_pages + 1):
+                if on_progress:
+                    on_progress(TranslationProgress(
+                        current=page_num,
+                        total=total_pages,
+                        status=f"Extracting text from page {page_num}/{total_pages}...",
+                        phase=TranslationPhase.EXTRACTING,
+                        phase_detail=f"Page {page_num}/{total_pages}",
+                    ))
+                yield [block], None
 
-            mock_fitz.open.return_value = mock_doc
+        with patch.object(processor, '_extract_with_pdfminer_streaming', side_effect=mock_streaming):
+            with patch('yakulingo.processors.pdf_processor._get_fitz') as mock_get_fitz:
+                mock_fitz = MagicMock()
+                mock_get_fitz.return_value = mock_fitz
+                mock_doc = MagicMock()
+                mock_doc.__len__ = Mock(return_value=3)
+                mock_fitz.open.return_value = mock_doc
 
-            pdf_path = tmp_path / "test.pdf"
-            pdf_path.write_bytes(b"%PDF-1.4 dummy")
+                pdf_path = tmp_path / "test.pdf"
+                pdf_path.write_bytes(b"%PDF-1.4 dummy")
 
-            progress_calls = []
+                progress_calls = []
 
-            def on_progress(progress):
-                progress_calls.append(progress)
+                def on_progress(progress):
+                    progress_calls.append(progress)
 
-            # Consume the generator
-            list(processor.extract_text_blocks_streaming(
-                pdf_path, on_progress=on_progress, use_ocr=False
-            ))
+                # Consume the generator
+                list(processor.extract_text_blocks_streaming(
+                    pdf_path, on_progress=on_progress, use_ocr=False
+                ))
 
-            # Should have 3 progress calls (one per page)
-            assert len(progress_calls) == 3
-            assert progress_calls[0].current == 1
-            assert progress_calls[1].current == 2
-            assert progress_calls[2].current == 3
-            assert all(p.total == 3 for p in progress_calls)
+                # Should have 3 progress calls (one per page)
+                assert len(progress_calls) == 3
+                assert progress_calls[0].current == 1
+                assert progress_calls[1].current == 2
+                assert progress_calls[2].current == 3
+                assert all(p.total == 3 for p in progress_calls)
 
     def test_get_page_count(self, processor, tmp_path):
         """Test get_page_count method"""

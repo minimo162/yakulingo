@@ -741,36 +741,38 @@ def _render_results_to_jp(
                 with ui.element('div').classes('nani-explanation'):
                     _render_explanation(option.explanation)
 
-        # Suggestion hint with retry button (吹き出し風)
-        with ui.element('div').classes('suggestion-hint-row'):
-            if on_retry:
-                retry_btn = ui.button(
-                    '再翻訳',
-                    icon='refresh',
-                    on_click=on_retry
-                ).props('flat no-caps size=sm').classes('retry-btn')
-                retry_btn.tooltip('もう一度翻訳する')
+        # Inline adjustment section (same structure as English translation)
+        with ui.element('div').classes('inline-adjust-section'):
+            # Suggestion hint with retry button (吹き出し風)
+            with ui.element('div').classes('suggestion-hint-row'):
+                if on_retry:
+                    retry_btn = ui.button(
+                        '再翻訳',
+                        icon='refresh',
+                        on_click=on_retry
+                    ).props('flat no-caps size=sm').classes('retry-btn')
+                    retry_btn.tooltip('もう一度翻訳する')
 
-        # Follow-up actions section (single options style)
-        with ui.element('div').classes('inline-adjust-panel'):
-            with ui.column().classes('gap-2'):
-                # Check original English text
-                ui.button(
-                    '英文をチェック',
-                    icon='rate_review',
-                    on_click=lambda: on_follow_up and on_follow_up('review', source_text)
-                ).props('flat no-caps').classes('adjust-option-btn-full')
+            # Follow-up actions section (single options style)
+            with ui.element('div').classes('inline-adjust-panel'):
+                with ui.column().classes('gap-2'):
+                    # Check original English text
+                    ui.button(
+                        '英文をチェック',
+                        icon='rate_review',
+                        on_click=lambda: on_follow_up and on_follow_up('review', source_text)
+                    ).props('flat no-caps').classes('adjust-option-btn-full')
 
-                # Extract key points
-                ui.button(
-                    '要点を教えて',
-                    icon='summarize',
-                    on_click=lambda: on_follow_up and on_follow_up('summarize', source_text)
-                ).props('flat no-caps').classes('adjust-option-btn-full')
+                    # Extract key points
+                    ui.button(
+                        '要点を教えて',
+                        icon='summarize',
+                        on_click=lambda: on_follow_up and on_follow_up('summarize', source_text)
+                    ).props('flat no-caps').classes('adjust-option-btn-full')
 
-        # Inline input section for additional requests
-        if on_adjust:
-            _render_inline_input_section_jp(option.text, on_adjust)
+            # Inline input section for additional requests
+            if on_adjust:
+                _render_inline_input_section_jp(option.text, on_adjust)
 
 
 def _render_explanation(explanation: str):

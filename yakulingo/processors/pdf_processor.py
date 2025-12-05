@@ -486,6 +486,65 @@ _RE_PARAGRAPH_ADDRESS = re.compile(r"P(\d+)_")
 _RE_TABLE_ADDRESS = re.compile(r"T(\d+)_")
 _RE_FORMULA_PLACEHOLDER = re.compile(r"\{\s*v([\d\s]+)\}", re.IGNORECASE)
 
+# Paragraph boundary detection thresholds (PDFMathTranslate compliant)
+SAME_LINE_Y_THRESHOLD = 3.0       # Characters within 3pt are on same line
+SAME_PARA_Y_THRESHOLD = 20.0      # Lines within 20pt are in same paragraph
+WORD_SPACE_X_THRESHOLD = 2.0      # Gap > 2pt between chars inserts space
+LINE_BREAK_X_THRESHOLD = 1.0      # child.x1 < xt.x0 indicates line break
+
+
+# =============================================================================
+# Paragraph Data Structure (PDFMathTranslate compliant)
+# =============================================================================
+@dataclass
+class Paragraph:
+    """
+    Paragraph metadata for layout preservation.
+
+    PDFMathTranslate converter.py compatible structure for storing
+    paragraph position, size, and line break information.
+
+    Attributes:
+        y: Initial Y coordinate (PDF coordinate system, origin at bottom-left)
+        x: Initial X coordinate
+        x0: Left boundary
+        x1: Right boundary
+        y0: Bottom boundary
+        y1: Top boundary
+        size: Font size
+        brk: Line break flag (True if paragraph starts on new line)
+    """
+    y: float
+    x: float
+    x0: float
+    x1: float
+    y0: float
+    y1: float
+    size: float
+    brk: bool = False
+
+
+@dataclass
+class FormulaVar:
+    """
+    Formula variable storage for placeholder restoration.
+
+    Stores formula characters and their rendering properties
+    for restoration after translation.
+
+    Attributes:
+        chars: List of LTChar objects comprising the formula
+        text: Original formula text
+        bbox: Bounding box (x0, y0, x1, y1)
+        font_name: Font name used for formula
+        font_size: Font size
+    """
+    chars: list = field(default_factory=list)
+    text: str = ""
+    bbox: Optional[tuple] = None
+    font_name: Optional[str] = None
+    font_size: float = 10.0
+
 
 # =============================================================================
 # Font Type Enumeration (PDFMathTranslate compliant)
@@ -580,6 +639,64 @@ def vflag(font: str, char: str, vfont: str = None, vchar: str = None) -> bool:
         return True
 
     return False
+
+
+def restore_formula_placeholders(
+    translated_text: str,
+    formula_vars: list[FormulaVar],
+) -> str:
+    """
+    Restore formula placeholders in translated text.
+
+    PDFMathTranslate compliant: Replaces {vN} placeholders with original
+    formula text after translation.
+
+    Args:
+        translated_text: Translated text containing {v0}, {v1}, etc. placeholders
+        formula_vars: List of FormulaVar objects with original formula data
+
+    Returns:
+        Text with formula placeholders restored to original formulas
+    """
+    if not formula_vars:
+        return translated_text
+
+    result = translated_text
+
+    # Find all placeholders and restore them
+    def replace_placeholder(match):
+        indices_str = match.group(1)
+        indices = indices_str.split()
+        restored_parts = []
+
+        for idx_str in indices:
+            try:
+                idx = int(idx_str)
+                if 0 <= idx < len(formula_vars):
+                    restored_parts.append(formula_vars[idx].text)
+                else:
+                    # Keep placeholder if index out of range
+                    restored_parts.append(f"{{v{idx_str}}}")
+            except ValueError:
+                restored_parts.append(f"{{v{idx_str}}}")
+
+        return "".join(restored_parts)
+
+    result = _RE_FORMULA_PLACEHOLDER.sub(replace_placeholder, result)
+    return result
+
+
+def extract_formula_vars_from_metadata(metadata: dict) -> list[FormulaVar]:
+    """
+    Extract FormulaVar list from TextBlock metadata.
+
+    Args:
+        metadata: TextBlock metadata dictionary
+
+    Returns:
+        List of FormulaVar objects, or empty list if none
+    """
+    return metadata.get('formula_vars', [])
 
 
 def is_subscript_superscript(
@@ -2813,6 +2930,7 @@ class PdfProcessor(FileProcessor):
         direction: str = "jp_to_en",
         settings=None,
         pages: Optional[list[int]] = None,
+        formula_vars_map: Optional[dict[str, list[FormulaVar]]] = None,
     ) -> dict[str, Any]:
         """
         Apply translations to PDF using low-level PDF operators.
@@ -2828,6 +2946,9 @@ class PdfProcessor(FileProcessor):
             settings: AppSettings for font configuration (pdf_font_ja, pdf_font_en)
             pages: Optional list of page numbers to translate (1-indexed).
                    If None, all pages are translated.
+            formula_vars_map: Optional mapping of block IDs to FormulaVar lists.
+                   If provided, formula placeholders {vN} in translated text
+                   will be restored to original formula text.
 
         Returns:
             Dictionary with processing statistics:
@@ -2838,7 +2959,8 @@ class PdfProcessor(FileProcessor):
         """
         return self.apply_translations_low_level(
             input_path, output_path, translations,
-            cells=None, direction=direction, settings=settings, pages=pages
+            cells=None, direction=direction, settings=settings, pages=pages,
+            formula_vars_map=formula_vars_map,
         )
 
     def apply_translations_with_cells(
@@ -2888,6 +3010,7 @@ class PdfProcessor(FileProcessor):
         settings=None,
         dpi: int = DEFAULT_OCR_DPI,
         pages: Optional[list[int]] = None,
+        formula_vars_map: Optional[dict[str, list[FormulaVar]]] = None,
     ) -> dict[str, Any]:
         """
         Apply translations using low-level PDF operators.
@@ -2896,6 +3019,7 @@ class PdfProcessor(FileProcessor):
         - Dynamic line height compression for long text
         - Accurate character positioning using font metrics
         - Proper glyph ID encoding for all font types
+        - Formula placeholder restoration (PDFMathTranslate compliant)
 
         Supports both standard block IDs (page_X_block_Y) and OCR addresses (P1_0, T1_0_0_0).
 
@@ -2909,6 +3033,9 @@ class PdfProcessor(FileProcessor):
             dpi: DPI used for OCR (for coordinate scaling)
             pages: Optional list of page numbers to translate (1-indexed).
                    If None, all pages are translated. PDFMathTranslate compliant.
+            formula_vars_map: Optional mapping of block IDs to FormulaVar lists.
+                   If provided, formula placeholders {vN} in translated text
+                   will be restored to original formula text.
 
         Returns:
             Dictionary with processing statistics
@@ -3002,6 +3129,14 @@ class PdfProcessor(FileProcessor):
 
                 # Process translations for this page
                 for block_id, translated in translations.items():
+                    # Restore formula placeholders if formula_vars_map provided
+                    # PDFMathTranslate compliant: {vN} placeholders are replaced
+                    # with original formula text after translation
+                    if formula_vars_map and block_id in formula_vars_map:
+                        translated = restore_formula_placeholders(
+                            translated, formula_vars_map[block_id]
+                        )
+
                     # Determine if this block belongs to this page
                     if cells:
                         # OCR mode: check address
@@ -3570,12 +3705,23 @@ class PdfProcessor(FileProcessor):
         LTChar,
     ) -> list[TextBlock]:
         """
-        Group LTChar objects into TextBlock objects.
+        Group LTChar objects into TextBlock objects using PDFMathTranslate-style
+        sstk/vstk stack management.
 
-        Groups characters by y-coordinate proximity (same line),
-        then groups lines by y-coordinate proximity (same paragraph).
+        PDFMathTranslate compliant features:
+        - sstk (string stack): Text paragraphs with formula placeholders
+        - vstk (variable stack): Formula character buffer
+        - var: Formula storage array
+        - pstk: Paragraph metadata (Paragraph objects)
+        - Formula placeholders {v0}, {v1}, etc.
 
-        PDFMathTranslate compliant: Preserves font information and formula detection.
+        Args:
+            chars: List of LTChar objects from pdfminer
+            page_idx: Page index (0-based)
+            LTChar: LTChar class reference
+
+        Returns:
+            List of TextBlock objects with formula placeholders
         """
         if not chars:
             return []
@@ -3583,126 +3729,153 @@ class PdfProcessor(FileProcessor):
         # Sort by y (descending, PDF coordinates), then x (ascending)
         chars = sorted(chars, key=lambda c: (-c.y0, c.x0))
 
-        # Group into lines (characters with similar y0)
-        lines = []
-        current_line = []
-        current_y = None
-        line_threshold = 3.0  # Characters within 3pt are on same line
+        # PDFMathTranslate-style stack management
+        sstk: list[str] = []           # String stack (text paragraphs)
+        vstk: list = []                # Variable stack (current formula chars)
+        var: list[FormulaVar] = []     # Formula storage array
+        pstk: list[Paragraph] = []     # Paragraph metadata stack
+
+        # Previous character state
+        xt = None  # Previous character
+        in_formula = False  # Currently in formula mode
+        vbkt = 0  # Bracket count for formula continuation
 
         for char in chars:
-            if current_y is None:
-                current_y = char.y0
-                current_line = [char]
-            elif abs(char.y0 - current_y) <= line_threshold:
-                current_line.append(char)
+            char_text = char.get_text()
+            fontname = char.fontname if hasattr(char, 'fontname') else ""
+            char_size = char.size if hasattr(char, 'size') else 10.0
+
+            # Check if character is formula
+            is_formula_char = vflag(fontname, char_text)
+
+            # Determine if this is a new paragraph
+            new_paragraph = False
+            line_break = False
+
+            if xt is None:
+                # First character - start new paragraph
+                new_paragraph = True
             else:
-                if current_line:
-                    # Sort line by x coordinate
-                    current_line.sort(key=lambda c: c.x0)
-                    lines.append(current_line)
-                current_line = [char]
-                current_y = char.y0
+                # Check for line break (child.x1 < xt.x0)
+                if char.x1 < xt.x0 - LINE_BREAK_X_THRESHOLD:
+                    line_break = True
 
-        if current_line:
-            current_line.sort(key=lambda c: c.x0)
-            lines.append(current_line)
+                # Check for paragraph change based on Y distance
+                y_diff = abs(char.y0 - xt.y0)
+                if y_diff > SAME_PARA_Y_THRESHOLD:
+                    new_paragraph = True
+                elif y_diff > SAME_LINE_Y_THRESHOLD:
+                    # Different line but same paragraph
+                    line_break = True
 
-        # Group lines into paragraphs (lines with similar x0 and close y)
-        paragraphs = []
-        current_para = []
-        prev_line_y = None
-        para_threshold = 20.0  # Lines within 20pt are in same paragraph
+            # Handle formula/text transitions
+            if is_formula_char:
+                # Formula character
+                if not in_formula:
+                    # Entering formula mode
+                    in_formula = True
+                    vstk = []
+                    vbkt = 0
 
-        for line in lines:
-            if not line:
-                continue
+                vstk.append(char)
 
-            line_y = sum(c.y0 for c in line) / len(line)
+                # Track brackets for formula continuation
+                if char_text == "(":
+                    vbkt += 1
+                elif char_text == ")":
+                    vbkt -= 1
 
-            if prev_line_y is None:
-                current_para = [line]
-                prev_line_y = line_y
-            elif abs(prev_line_y - line_y) <= para_threshold:
-                current_para.append(line)
-                prev_line_y = line_y
             else:
-                if current_para:
-                    paragraphs.append(current_para)
-                current_para = [line]
-                prev_line_y = line_y
+                # Regular text character
+                if in_formula:
+                    # Exiting formula mode - save formula and add placeholder
+                    if vstk:
+                        formula_var = self._create_formula_var(vstk)
+                        placeholder = f"{{v{len(var)}}}"
+                        var.append(formula_var)
 
-        if current_para:
-            paragraphs.append(current_para)
+                        if sstk:
+                            sstk[-1] += placeholder
+                        else:
+                            sstk.append(placeholder)
+                            pstk.append(self._create_paragraph(char, line_break))
 
-        # Convert paragraphs to TextBlocks
+                    in_formula = False
+                    vstk = []
+                    vbkt = 0
+
+                # Handle text
+                if new_paragraph:
+                    # Start new paragraph
+                    sstk.append("")
+                    pstk.append(self._create_paragraph(char, line_break))
+
+                if not sstk:
+                    sstk.append("")
+                    pstk.append(self._create_paragraph(char, line_break))
+
+                # Add space between words if gap is significant
+                if xt is not None and char.x0 > xt.x1 + WORD_SPACE_X_THRESHOLD:
+                    sstk[-1] += " "
+
+                sstk[-1] += char_text
+
+                # Update paragraph bounds
+                if pstk:
+                    pstk[-1].x0 = min(pstk[-1].x0, char.x0)
+                    pstk[-1].x1 = max(pstk[-1].x1, char.x1)
+                    pstk[-1].y0 = min(pstk[-1].y0, char.y0)
+                    pstk[-1].y1 = max(pstk[-1].y1, char.y1)
+
+            xt = char
+
+        # Handle remaining formula at end
+        if in_formula and vstk:
+            formula_var = self._create_formula_var(vstk)
+            placeholder = f"{{v{len(var)}}}"
+            var.append(formula_var)
+
+            if sstk:
+                sstk[-1] += placeholder
+            else:
+                sstk.append(placeholder)
+                if chars:
+                    pstk.append(self._create_paragraph(chars[-1], False))
+
+        # Convert to TextBlocks
         blocks = []
         page_num = page_idx + 1
 
-        for block_idx, para_lines in enumerate(paragraphs):
-            if not para_lines:
+        for block_idx, (text, para) in enumerate(zip(sstk, pstk)):
+            text = text.strip()
+
+            if not text:
                 continue
 
-            # Extract text and metadata
-            text_parts = []
-            formula_char_count = 0
-            total_char_count = 0
-            all_chars = []
+            # Check if block is purely formula placeholders
+            text_without_placeholders = _RE_FORMULA_PLACEHOLDER.sub("", text).strip()
+            is_pure_formula = not text_without_placeholders
 
-            for line in para_lines:
-                line_text = ""
-                prev_x1 = None
-
-                for char in line:
-                    all_chars.append(char)
-                    char_text = char.get_text()
-
-                    # Add space between words if gap is significant
-                    if prev_x1 is not None and char.x0 > prev_x1 + 2:
-                        line_text += " "
-
-                    line_text += char_text
-                    prev_x1 = char.x1
-
-                    # Count formula characters
-                    total_char_count += 1
-                    fontname = char.fontname if hasattr(char, 'fontname') else ""
-                    if vflag(fontname, char_text):
-                        formula_char_count += 1
-
-                text_parts.append(line_text)
-
-            # Join without line breaks (yomitoku style)
-            text = "".join(text_parts).strip()
-
-            if not text or not self.should_translate(text):
+            if is_pure_formula:
+                # Skip pure formula blocks (will be preserved as-is)
                 continue
 
-            # Get bbox from all characters
-            if all_chars:
-                x0 = min(c.x0 for c in all_chars)
-                y0 = min(c.y0 for c in all_chars)
-                x1 = max(c.x1 for c in all_chars)
-                y1 = max(c.y1 for c in all_chars)
-                bbox = (x0, y0, x1, y1)
-            else:
-                bbox = None
+            if not self.should_translate(text_without_placeholders):
+                continue
 
-            # Get font info from first character
-            font_name = None
-            font_size = 11.0
-            if all_chars:
-                first_char = all_chars[0]
-                font_name = first_char.fontname if hasattr(first_char, 'fontname') else None
-                font_size = first_char.size if hasattr(first_char, 'size') else 11.0
+            bbox = (para.x0, para.y0, para.x1, para.y1)
 
-            # Detect formula block
-            is_formula = (
-                total_char_count > 0 and
-                formula_char_count / total_char_count > 0.5
-            )
-
-            # Original line count
-            original_line_count = len([p for p in text_parts if p.strip()])
+            # Extract formula vars for this block
+            block_vars = []
+            for match in _RE_FORMULA_PLACEHOLDER.finditer(text):
+                var_indices = match.group(1).split()
+                for idx_str in var_indices:
+                    try:
+                        idx = int(idx_str)
+                        if 0 <= idx < len(var):
+                            block_vars.append(var[idx])
+                    except ValueError:
+                        pass
 
             blocks.append(TextBlock(
                 id=f"page_{page_idx}_block_{block_idx}",
@@ -3713,14 +3886,71 @@ class PdfProcessor(FileProcessor):
                     'page_idx': page_idx,
                     'block': block_idx,
                     'bbox': bbox,
-                    'font_name': font_name,
-                    'font_size': font_size,
-                    'is_formula': is_formula,
-                    'original_line_count': original_line_count,
+                    'font_name': para.size,  # Will be updated below
+                    'font_size': para.size,
+                    'is_formula': False,
+                    'original_line_count': 1,
+                    'paragraph': para,
+                    'formula_vars': block_vars,
+                    'has_formulas': bool(block_vars),
                 }
             ))
 
         return blocks
+
+    def _create_formula_var(self, chars: list) -> FormulaVar:
+        """
+        Create FormulaVar from list of LTChar objects.
+
+        Args:
+            chars: List of LTChar objects comprising the formula
+
+        Returns:
+            FormulaVar with extracted text and metadata
+        """
+        if not chars:
+            return FormulaVar()
+
+        text = "".join(c.get_text() for c in chars)
+        x0 = min(c.x0 for c in chars)
+        y0 = min(c.y0 for c in chars)
+        x1 = max(c.x1 for c in chars)
+        y1 = max(c.y1 for c in chars)
+
+        first_char = chars[0]
+        font_name = first_char.fontname if hasattr(first_char, 'fontname') else None
+        font_size = first_char.size if hasattr(first_char, 'size') else 10.0
+
+        return FormulaVar(
+            chars=chars,
+            text=text,
+            bbox=(x0, y0, x1, y1),
+            font_name=font_name,
+            font_size=font_size,
+        )
+
+    def _create_paragraph(self, char, brk: bool) -> Paragraph:
+        """
+        Create Paragraph metadata from character.
+
+        Args:
+            char: LTChar object
+            brk: Line break flag
+
+        Returns:
+            Paragraph with initial bounds from character
+        """
+        char_size = char.size if hasattr(char, 'size') else 10.0
+        return Paragraph(
+            y=char.y0,
+            x=char.x0,
+            x0=char.x0,
+            x1=char.x1,
+            y0=char.y0,
+            y1=char.y1,
+            size=char_size,
+            brk=brk,
+        )
 
     def get_page_count(self, file_path: Path) -> int:
         """Get total page count of PDF."""

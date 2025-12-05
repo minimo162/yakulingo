@@ -22,6 +22,8 @@ from yakulingo.processors.pdf_processor import (
     _is_address_on_page,
     _boxes_overlap,
     find_matching_font_size,
+    restore_formula_placeholders,
+    extract_formula_vars_from_metadata,
     # Constants
     FONT_FILES,
     DEFAULT_VFONT_PATTERN,
@@ -33,6 +35,10 @@ from yakulingo.processors.pdf_processor import (
     MAX_FONT_SIZE,
     MIN_LINE_HEIGHT,
     LINE_HEIGHT_COMPRESSION_STEP,
+    SAME_LINE_Y_THRESHOLD,
+    SAME_PARA_Y_THRESHOLD,
+    WORD_SPACE_X_THRESHOLD,
+    LINE_BREAK_X_THRESHOLD,
     # Enums
     FontType,
     # Classes
@@ -43,6 +49,8 @@ from yakulingo.processors.pdf_processor import (
     PdfOperatorGenerator,
     ContentStreamReplacer,
     PdfProcessor,
+    Paragraph,
+    FormulaVar,
 )
 from yakulingo.models.types import FileType, TextBlock
 
@@ -2184,3 +2192,160 @@ class TestExistingFontReuse:
 
         result = registry.select_font_for_text("Hello", target_lang="en")
         assert result == registry.fonts["en"].font_id
+
+
+# =============================================================================
+# Tests for Paragraph class (PDFMathTranslate compliant)
+# =============================================================================
+class TestParagraph:
+    """Tests for Paragraph dataclass"""
+
+    def test_create_paragraph(self):
+        """Should create paragraph with all attributes"""
+        para = Paragraph(
+            y=100.0, x=50.0,
+            x0=50.0, x1=200.0,
+            y0=90.0, y1=110.0,
+            size=12.0, brk=False
+        )
+        assert para.y == 100.0
+        assert para.x == 50.0
+        assert para.x0 == 50.0
+        assert para.x1 == 200.0
+        assert para.y0 == 90.0
+        assert para.y1 == 110.0
+        assert para.size == 12.0
+        assert para.brk is False
+
+    def test_paragraph_default_brk(self):
+        """Should default brk to False"""
+        para = Paragraph(y=0, x=0, x0=0, x1=0, y0=0, y1=0, size=10.0)
+        assert para.brk is False
+
+    def test_paragraph_with_line_break(self):
+        """Should store line break flag"""
+        para = Paragraph(y=0, x=0, x0=0, x1=0, y0=0, y1=0, size=10.0, brk=True)
+        assert para.brk is True
+
+
+# =============================================================================
+# Tests for FormulaVar class (PDFMathTranslate compliant)
+# =============================================================================
+class TestFormulaVar:
+    """Tests for FormulaVar dataclass"""
+
+    def test_create_formula_var(self):
+        """Should create FormulaVar with all attributes"""
+        var = FormulaVar(
+            chars=[],
+            text="α+β",
+            bbox=(10.0, 20.0, 30.0, 40.0),
+            font_name="CMR10",
+            font_size=10.0
+        )
+        assert var.text == "α+β"
+        assert var.bbox == (10.0, 20.0, 30.0, 40.0)
+        assert var.font_name == "CMR10"
+        assert var.font_size == 10.0
+
+    def test_formula_var_defaults(self):
+        """Should have sensible defaults"""
+        var = FormulaVar()
+        assert var.chars == []
+        assert var.text == ""
+        assert var.bbox is None
+        assert var.font_name is None
+        assert var.font_size == 10.0
+
+
+# =============================================================================
+# Tests for restore_formula_placeholders (PDFMathTranslate compliant)
+# =============================================================================
+class TestRestoreFormulaPlaceholders:
+    """Tests for restore_formula_placeholders function"""
+
+    def test_restore_single_placeholder(self):
+        """Should restore single placeholder"""
+        vars = [FormulaVar(text="α+β")]
+        result = restore_formula_placeholders("This is {v0} formula", vars)
+        assert result == "This is α+β formula"
+
+    def test_restore_multiple_placeholders(self):
+        """Should restore multiple placeholders"""
+        vars = [
+            FormulaVar(text="x²"),
+            FormulaVar(text="y³"),
+        ]
+        result = restore_formula_placeholders("{v0} + {v1} = z", vars)
+        assert result == "x² + y³ = z"
+
+    def test_restore_no_placeholders(self):
+        """Should return unchanged text when no placeholders"""
+        vars = [FormulaVar(text="unused")]
+        result = restore_formula_placeholders("No formulas here", vars)
+        assert result == "No formulas here"
+
+    def test_restore_empty_vars(self):
+        """Should return unchanged text when vars is empty"""
+        result = restore_formula_placeholders("Has {v0} placeholder", [])
+        assert result == "Has {v0} placeholder"
+
+    def test_restore_out_of_range_index(self):
+        """Should keep placeholder when index out of range"""
+        vars = [FormulaVar(text="only one")]
+        result = restore_formula_placeholders("Has {v0} and {v5}", vars)
+        assert result == "Has only one and {v5}"
+
+    def test_restore_with_spaces_in_placeholder(self):
+        """Should handle spaces in placeholder notation"""
+        vars = [FormulaVar(text="formula")]
+        result = restore_formula_placeholders("Test {v 0} here", vars)
+        assert result == "Test formula here"
+
+
+# =============================================================================
+# Tests for extract_formula_vars_from_metadata
+# =============================================================================
+class TestExtractFormulaVarsFromMetadata:
+    """Tests for extract_formula_vars_from_metadata function"""
+
+    def test_extract_with_formula_vars(self):
+        """Should extract formula vars from metadata"""
+        vars = [FormulaVar(text="x")]
+        metadata = {'formula_vars': vars}
+        result = extract_formula_vars_from_metadata(metadata)
+        assert result == vars
+
+    def test_extract_without_formula_vars(self):
+        """Should return empty list when no formula_vars"""
+        metadata = {'other_key': 'value'}
+        result = extract_formula_vars_from_metadata(metadata)
+        assert result == []
+
+    def test_extract_empty_metadata(self):
+        """Should return empty list for empty metadata"""
+        result = extract_formula_vars_from_metadata({})
+        assert result == []
+
+
+# =============================================================================
+# Tests for paragraph boundary constants
+# =============================================================================
+class TestParagraphBoundaryConstants:
+    """Tests for paragraph boundary detection constants"""
+
+    def test_same_line_y_threshold(self):
+        """SAME_LINE_Y_THRESHOLD should be 3.0pt"""
+        assert SAME_LINE_Y_THRESHOLD == 3.0
+
+    def test_same_para_y_threshold(self):
+        """SAME_PARA_Y_THRESHOLD should be 20.0pt"""
+        assert SAME_PARA_Y_THRESHOLD == 20.0
+
+    def test_word_space_x_threshold(self):
+        """WORD_SPACE_X_THRESHOLD should be 2.0pt"""
+        assert WORD_SPACE_X_THRESHOLD == 2.0
+
+    def test_line_break_x_threshold(self):
+        """LINE_BREAK_X_THRESHOLD should be 1.0pt"""
+        assert LINE_BREAK_X_THRESHOLD == 1.0

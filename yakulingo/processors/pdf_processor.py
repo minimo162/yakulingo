@@ -111,9 +111,10 @@ def _get_torch():
 
 def _get_pdfminer():
     """
-    Lazy import pdfminer.six for font type detection.
+    Lazy import pdfminer.six for text extraction and font type detection.
 
-    PDFMathTranslate compliant: uses pdfminer to distinguish CID vs simple fonts.
+    PDFMathTranslate compliant: uses pdfminer for character-level text extraction
+    with CID preservation.
     """
     global _pdfminer
     if _pdfminer is None:
@@ -121,7 +122,10 @@ def _get_pdfminer():
         from pdfminer.pdfpage import PDFPage
         from pdfminer.pdfparser import PDFParser
         from pdfminer.pdfdocument import PDFDocument
-        from pdfminer.pdfinterp import PDFResourceManager
+        from pdfminer.pdfinterp import PDFResourceManager, PDFPageInterpreter
+        from pdfminer.converter import PDFConverter
+        from pdfminer.layout import LTChar, LTPage, LTFigure, LAParams
+        from pdfminer.utils import apply_matrix_pt
         _pdfminer = {
             'PDFCIDFont': PDFCIDFont,
             'PDFUnicodeNotDefined': PDFUnicodeNotDefined,
@@ -129,6 +133,13 @@ def _get_pdfminer():
             'PDFParser': PDFParser,
             'PDFDocument': PDFDocument,
             'PDFResourceManager': PDFResourceManager,
+            'PDFPageInterpreter': PDFPageInterpreter,
+            'PDFConverter': PDFConverter,
+            'LTChar': LTChar,
+            'LTPage': LTPage,
+            'LTFigure': LTFigure,
+            'LAParams': LAParams,
+            'apply_matrix_pt': apply_matrix_pt,
         }
     return _pdfminer
 
@@ -140,6 +151,77 @@ def is_yomitoku_available() -> bool:
         return True
     except ImportError:
         return False
+
+
+# =============================================================================
+# PDFMathTranslate-compliant PDF Converter (pdfminer-based)
+# =============================================================================
+_PDFConverterEx = None
+
+
+def _get_pdf_converter_ex_class():
+    """
+    Get PDFConverterEx class (created lazily to avoid import issues).
+
+    PDFMathTranslate compliant: This converter extracts characters with their
+    CID values preserved, enabling accurate text re-rendering.
+    """
+    global _PDFConverterEx
+    if _PDFConverterEx is not None:
+        return _PDFConverterEx
+
+    pdfminer = _get_pdfminer()
+    PDFConverter = pdfminer['PDFConverter']
+    LTChar = pdfminer['LTChar']
+    LTPage = pdfminer['LTPage']
+    PDFUnicodeNotDefined = pdfminer['PDFUnicodeNotDefined']
+    apply_matrix_pt = pdfminer['apply_matrix_pt']
+
+    class PDFConverterEx(PDFConverter):
+        """
+        Extended PDF converter that preserves CID information.
+
+        Based on PDFMathTranslate's converter.py implementation.
+        """
+
+        def __init__(self, rsrcmgr):
+            PDFConverter.__init__(self, rsrcmgr, None, "utf-8", 1, None)
+            self.pages = []  # Collected LTPage objects
+
+        def begin_page(self, page, ctm):
+            (x0, y0, x1, y1) = page.cropbox
+            (x0, y0) = apply_matrix_pt(ctm, (x0, y0))
+            (x1, y1) = apply_matrix_pt(ctm, (x1, y1))
+            mediabox = (0, 0, abs(x0 - x1), abs(y0 - y1))
+            self.cur_item = LTPage(page.pageno, mediabox)
+
+        def end_page(self, page):
+            self.pages.append(self.cur_item)
+
+        def render_char(self, matrix, font, fontsize, scaling, rise, cid, ncs,
+                        graphicstate):
+            """
+            Render a character and preserve CID information.
+
+            PDFMathTranslate hack: Store cid and font directly on LTChar
+            for later use in text re-rendering.
+            """
+            try:
+                text = font.to_unichr(cid)
+            except PDFUnicodeNotDefined:
+                text = ""
+            textwidth = font.char_width(cid)
+            textdisp = font.char_disp(cid)
+            item = LTChar(matrix, font, fontsize, scaling, rise, text,
+                          textwidth, textdisp, ncs, graphicstate)
+            self.cur_item.add(item)
+            # PDFMathTranslate hack: preserve original character encoding
+            item.cid = cid
+            item.font = font
+            return item.adv
+
+    _PDFConverterEx = PDFConverterEx
+    return _PDFConverterEx
 
 
 # =============================================================================
@@ -2709,7 +2791,7 @@ class PdfProcessor(FileProcessor):
         """
         Extract text blocks from PDF.
 
-        Delegates to _extract_with_pymupdf_streaming for consistency.
+        Delegates to _extract_with_pdfminer_streaming for PDFMathTranslate compliance.
         This method exists for FileProcessor interface compliance.
 
         Args:
@@ -2718,7 +2800,7 @@ class PdfProcessor(FileProcessor):
         """
         self._output_language = output_language
         total_pages = self.get_page_count(file_path)
-        for blocks, _ in self._extract_with_pymupdf_streaming(
+        for blocks, _ in self._extract_with_pdfminer_streaming(
             file_path, total_pages, on_progress=None
         ):
             yield from blocks
@@ -3266,8 +3348,8 @@ class PdfProcessor(FileProcessor):
                 batch_size, dpi
             )
         else:
-            # Use PyMuPDF only (fast, for text-based PDFs)
-            yield from self._extract_with_pymupdf_streaming(
+            # Use pdfminer (PDFMathTranslate compliant, for text-based PDFs)
+            yield from self._extract_with_pdfminer_streaming(
                 file_path, total_pages, on_progress
             )
 
@@ -3403,21 +3485,40 @@ class PdfProcessor(FileProcessor):
             # Always clean up GPU memory, even on exception or cancellation
             clear_analyzer_cache()
 
-    def _extract_with_pymupdf_streaming(
+    def _extract_with_pdfminer_streaming(
         self,
         file_path: Path,
         total_pages: int,
         on_progress: Optional[ProgressCallback],
     ) -> Iterator[tuple[list[TextBlock], None]]:
         """
-        Extract text blocks using PyMuPDF only (fast, for text-based PDFs).
+        Extract text blocks using pdfminer (PDFMathTranslate compliant).
+
+        This method uses pdfminer's character-level extraction with CID preservation,
+        which enables more accurate text re-rendering compared to PyMuPDF's
+        block-level extraction.
 
         Yields one page at a time with progress updates.
-        The context manager ensures proper cleanup even if the generator
-        is not fully consumed.
         """
-        with _open_fitz_document(file_path) as doc:
-            for page_idx, page in enumerate(doc):
+        pdfminer = _get_pdfminer()
+        PDFPage = pdfminer['PDFPage']
+        PDFParser = pdfminer['PDFParser']
+        PDFDocument = pdfminer['PDFDocument']
+        PDFResourceManager = pdfminer['PDFResourceManager']
+        PDFPageInterpreter = pdfminer['PDFPageInterpreter']
+        LTChar = pdfminer['LTChar']
+        LTFigure = pdfminer['LTFigure']
+
+        PDFConverterEx = _get_pdf_converter_ex_class()
+
+        with open(file_path, 'rb') as f:
+            parser = PDFParser(f)
+            document = PDFDocument(parser)
+            rsrcmgr = PDFResourceManager()
+            converter = PDFConverterEx(rsrcmgr)
+            interpreter = PDFPageInterpreter(rsrcmgr, converter)
+
+            for page_idx, page in enumerate(PDFPage.create_pages(document)):
                 page_num = page_idx + 1
 
                 # Report progress
@@ -3430,71 +3531,196 @@ class PdfProcessor(FileProcessor):
                         phase_detail=f"Page {page_num}/{total_pages}",
                     ))
 
-                blocks = []
-                page_blocks = page.get_text("dict")["blocks"]
+                # Process page
+                interpreter.process_page(page)
 
-                for block_idx, block in enumerate(page_blocks):
-                    if block.get("type") == 0:  # Text block
-                        text_parts = []
-                        formula_char_count = 0
-                        total_char_count = 0
+                # Get the LTPage for this page
+                if not converter.pages:
+                    yield [], None
+                    continue
 
-                        for line in block.get("lines", []):
-                            line_text = ""
-                            for span in line.get("spans", []):
-                                span_text = span.get("text", "")
-                                span_font = span.get("font", "")
-                                line_text += span_text
+                ltpage = converter.pages[-1]
 
-                                # Count formula characters using vflag detection
-                                for char in span_text:
-                                    total_char_count += 1
-                                    if vflag(span_font, char):
-                                        formula_char_count += 1
+                # Collect characters with their properties
+                chars = []
 
-                            text_parts.append(line_text)
+                def collect_chars(obj):
+                    """Recursively collect LTChar objects."""
+                    if isinstance(obj, LTChar):
+                        chars.append(obj)
+                    elif isinstance(obj, LTFigure):
+                        for child in obj:
+                            collect_chars(child)
+                    elif hasattr(obj, '__iter__'):
+                        for child in obj:
+                            collect_chars(child)
 
-                        # Remove line breaks (yomitoku style: join without newlines)
-                        text = "".join(text_parts).strip()
+                collect_chars(ltpage)
 
-                        if text and self.should_translate(text):
-                            font_name = None
-                            font_size = 11.0
-                            if block.get("lines"):
-                                first_line = block["lines"][0]
-                                if first_line.get("spans"):
-                                    first_span = first_line["spans"][0]
-                                    font_name = first_span.get("font")
-                                    font_size = first_span.get("size", 11.0)
-
-                            # Detect if block is primarily formula (>50% formula chars)
-                            is_formula = (
-                                total_char_count > 0 and
-                                formula_char_count / total_char_count > 0.5
-                            )
-
-                            # Store original line count for layout preservation
-                            # This helps prevent excessive line splitting when rendering
-                            # translated text back into narrow bounding boxes
-                            original_line_count = len([p for p in text_parts if p.strip()])
-
-                            blocks.append(TextBlock(
-                                id=f"page_{page_idx}_block_{block_idx}",
-                                text=text,
-                                location=f"Page {page_num}",
-                                metadata={
-                                    'type': 'text_block',
-                                    'page_idx': page_idx,
-                                    'block': block_idx,
-                                    'bbox': block.get("bbox"),
-                                    'font_name': font_name,
-                                    'font_size': font_size,
-                                    'is_formula': is_formula,
-                                    'original_line_count': original_line_count,
-                                }
-                            ))
+                # Group characters into paragraphs based on y-coordinate
+                # PDFMathTranslate uses layout detection, but we use simple y-grouping
+                blocks = self._group_chars_into_blocks(chars, page_idx, LTChar)
 
                 yield blocks, None
+
+    def _group_chars_into_blocks(
+        self,
+        chars: list,
+        page_idx: int,
+        LTChar,
+    ) -> list[TextBlock]:
+        """
+        Group LTChar objects into TextBlock objects.
+
+        Groups characters by y-coordinate proximity (same line),
+        then groups lines by y-coordinate proximity (same paragraph).
+
+        PDFMathTranslate compliant: Preserves font information and formula detection.
+        """
+        if not chars:
+            return []
+
+        # Sort by y (descending, PDF coordinates), then x (ascending)
+        chars = sorted(chars, key=lambda c: (-c.y0, c.x0))
+
+        # Group into lines (characters with similar y0)
+        lines = []
+        current_line = []
+        current_y = None
+        line_threshold = 3.0  # Characters within 3pt are on same line
+
+        for char in chars:
+            if current_y is None:
+                current_y = char.y0
+                current_line = [char]
+            elif abs(char.y0 - current_y) <= line_threshold:
+                current_line.append(char)
+            else:
+                if current_line:
+                    # Sort line by x coordinate
+                    current_line.sort(key=lambda c: c.x0)
+                    lines.append(current_line)
+                current_line = [char]
+                current_y = char.y0
+
+        if current_line:
+            current_line.sort(key=lambda c: c.x0)
+            lines.append(current_line)
+
+        # Group lines into paragraphs (lines with similar x0 and close y)
+        paragraphs = []
+        current_para = []
+        prev_line_y = None
+        para_threshold = 20.0  # Lines within 20pt are in same paragraph
+
+        for line in lines:
+            if not line:
+                continue
+
+            line_y = sum(c.y0 for c in line) / len(line)
+
+            if prev_line_y is None:
+                current_para = [line]
+                prev_line_y = line_y
+            elif abs(prev_line_y - line_y) <= para_threshold:
+                current_para.append(line)
+                prev_line_y = line_y
+            else:
+                if current_para:
+                    paragraphs.append(current_para)
+                current_para = [line]
+                prev_line_y = line_y
+
+        if current_para:
+            paragraphs.append(current_para)
+
+        # Convert paragraphs to TextBlocks
+        blocks = []
+        page_num = page_idx + 1
+
+        for block_idx, para_lines in enumerate(paragraphs):
+            if not para_lines:
+                continue
+
+            # Extract text and metadata
+            text_parts = []
+            formula_char_count = 0
+            total_char_count = 0
+            all_chars = []
+
+            for line in para_lines:
+                line_text = ""
+                prev_x1 = None
+
+                for char in line:
+                    all_chars.append(char)
+                    char_text = char.get_text()
+
+                    # Add space between words if gap is significant
+                    if prev_x1 is not None and char.x0 > prev_x1 + 2:
+                        line_text += " "
+
+                    line_text += char_text
+                    prev_x1 = char.x1
+
+                    # Count formula characters
+                    total_char_count += 1
+                    fontname = char.fontname if hasattr(char, 'fontname') else ""
+                    if vflag(fontname, char_text):
+                        formula_char_count += 1
+
+                text_parts.append(line_text)
+
+            # Join without line breaks (yomitoku style)
+            text = "".join(text_parts).strip()
+
+            if not text or not self.should_translate(text):
+                continue
+
+            # Get bbox from all characters
+            if all_chars:
+                x0 = min(c.x0 for c in all_chars)
+                y0 = min(c.y0 for c in all_chars)
+                x1 = max(c.x1 for c in all_chars)
+                y1 = max(c.y1 for c in all_chars)
+                bbox = (x0, y0, x1, y1)
+            else:
+                bbox = None
+
+            # Get font info from first character
+            font_name = None
+            font_size = 11.0
+            if all_chars:
+                first_char = all_chars[0]
+                font_name = first_char.fontname if hasattr(first_char, 'fontname') else None
+                font_size = first_char.size if hasattr(first_char, 'size') else 11.0
+
+            # Detect formula block
+            is_formula = (
+                total_char_count > 0 and
+                formula_char_count / total_char_count > 0.5
+            )
+
+            # Original line count
+            original_line_count = len([p for p in text_parts if p.strip()])
+
+            blocks.append(TextBlock(
+                id=f"page_{page_idx}_block_{block_idx}",
+                text=text,
+                location=f"Page {page_num}",
+                metadata={
+                    'type': 'text_block',
+                    'page_idx': page_idx,
+                    'block': block_idx,
+                    'bbox': bbox,
+                    'font_name': font_name,
+                    'font_size': font_size,
+                    'is_formula': is_formula,
+                    'original_line_count': original_line_count,
+                }
+            ))
+
+        return blocks
 
     def get_page_count(self, file_path: Path) -> int:
         """Get total page count of PDF."""

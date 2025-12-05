@@ -870,6 +870,8 @@ class ContentStreamReplacer:
     def begin_text(self) -> 'ContentStreamReplacer':
         """Begin text block."""
         if not self._in_text_block:
+            # Set text fill color to black before starting text block
+            self.operators.append("0 0 0 rg ")
             self.operators.append("BT ")
             self._in_text_block = True
         return self

@@ -709,9 +709,8 @@ DocumentAnalyzer(
 
 **PDF Text Rendering (Low-level API):**
 
-PDF翻訳では**低レベルAPI（PDFMathTranslate準拠）がデフォルト**で使用されます。
+PDF翻訳では**低レベルAPI（PDFMathTranslate準拠）のみ**を使用します。
 低レベルAPIはPDFオペレータを直接生成し、より精密なレイアウト制御が可能です。
-成功率が50%未満の場合は高レベルAPI（`insert_textbox`）にフォールバックします。
 
 **フォント種別に応じたテキストエンコーディング（PDFMathTranslate converter.py準拠）:**
 
@@ -752,7 +751,6 @@ def raw_string(font_id: str, text: str) -> str:
 **実装上の注意:**
 - `FontRegistry.embed_fonts()`でFont objectを確実に作成すること
 - Font objectがないと`get_glyph_id()`で0（.notdef = 不可視）が返される
-- 低レベルAPIが失敗した場合は高レベルAPI（`insert_textbox`）にフォールバック
 
 **PDFMathTranslate準拠の追加機能:**
 

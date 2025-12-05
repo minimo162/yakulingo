@@ -12,10 +12,34 @@ cd /d "%~dp0\.."
 :: Timer start
 set START_TIME=%TIME%
 
+:: Progress bar settings
+set "PROGRESS_CHARS=##################################################"
+set "PROGRESS_EMPTY=.................................................."
+set TOTAL_STEPS=10
+set CURRENT_STEP=0
+
+:: ============================================================
+:: Progress display function
+:: ============================================================
+goto :SkipFunctions
+
+:ShowProgress
+:: %1 = step number, %2 = description
+set /a "CURRENT_STEP=%~1"
+set /a "PERCENT=CURRENT_STEP*100/TOTAL_STEPS"
+set /a "FILLED=PERCENT/2"
+set /a "EMPTY=50-FILLED"
+set "BAR=!PROGRESS_CHARS:~0,%FILLED%!!PROGRESS_EMPTY:~0,%EMPTY%!"
+<nul set /p "=[%BAR%] %PERCENT%%% - %~2                    "
+echo.
+exit /b 0
+
+:SkipFunctions
+
 :: ============================================================
 :: Step 1: Check required files exist
 :: ============================================================
-echo [1/5] Checking required files...
+call :ShowProgress 1 "Checking required files..."
 
 set MISSING_FILES=0
 
@@ -46,40 +70,19 @@ if !MISSING_FILES! equ 1 (
     pause
     exit /b 1
 )
-echo        [OK] All required files found.
 
 :: ============================================================
 :: Step 2: Clean up unnecessary files
 :: ============================================================
-echo.
-echo [2/5] Cleaning up unnecessary files...
+call :ShowProgress 2 "Cleaning up cache files..."
 
-:: Use PowerShell for fast parallel cleanup
-echo        Removing __pycache__ and .pyc files...
-powershell -NoProfile -Command "Get-ChildItem -Path '.venv','yakulingo' -Recurse -Directory -Filter '__pycache__' -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue; Get-ChildItem -Path '.venv' -Recurse -Filter '*.pyc' -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue"
-
-:: Remove uv cache (not needed for distribution)
-echo        Removing cache directories...
-if exist ".uv-cache" rd /s /q ".uv-cache" 2>nul
-if exist ".wheels" rd /s /q ".wheels" 2>nul
-
-:: Remove any temporary files
-del /q "*.tmp" 2>nul
-del /q ".venv\pyvenv.cfg.tmp" 2>nul
-
-echo        [OK] Cleanup completed.
+:: Use PowerShell for fast parallel cleanup (single command to reduce overhead)
+powershell -NoProfile -Command "$ErrorActionPreference='SilentlyContinue'; Get-ChildItem -Path '.venv','yakulingo' -Recurse -Directory -Filter '__pycache__' | Remove-Item -Recurse -Force; Get-ChildItem -Path '.venv' -Recurse -Filter '*.pyc' | Remove-Item -Force; Remove-Item -Path '.uv-cache','.wheels' -Recurse -Force; Remove-Item -Path '*.tmp','.venv\pyvenv.cfg.tmp' -Force"
 
 :: ============================================================
 :: Step 3: Fix paths for portability
 :: ============================================================
-echo.
-echo [3/5] Fixing paths for portability...
-
-:: Find Python directory
-set PYTHON_DIR=
-for /d %%d in (".uv-python\cpython-*") do (
-    set PYTHON_DIR=%%d
-)
+call :ShowProgress 3 "Fixing paths for portability..."
 
 :: Get Python version from pyvenv.cfg
 set PYTHON_VERSION=
@@ -88,28 +91,16 @@ for /f "tokens=2 delims==" %%v in ('type ".venv\pyvenv.cfg" ^| findstr /i "^vers
 )
 
 :: Rewrite pyvenv.cfg with placeholder (will be fixed by YakuLingo.exe on first run)
-echo home = __PYTHON_HOME__> ".venv\pyvenv.cfg"
-echo include-system-site-packages = false>> ".venv\pyvenv.cfg"
-echo version =%PYTHON_VERSION%>> ".venv\pyvenv.cfg"
-
-echo        [OK] Paths fixed for portability.
-
-:: ============================================================
-:: Step 4: Remove user-specific files
-:: ============================================================
-echo.
-echo [4/5] Removing user-specific files...
-
-:: Remove any log files
-del /q "*.log" 2>nul
-
-echo        [OK] User-specific files removed.
+(
+    echo home = __PYTHON_HOME__
+    echo include-system-site-packages = false
+    echo version =%PYTHON_VERSION%
+) > ".venv\pyvenv.cfg"
 
 :: ============================================================
-:: Step 5: Create distribution package with _internal structure
+:: Step 4: Prepare distribution folder
 :: ============================================================
-echo.
-echo [5/5] Creating distribution package...
+call :ShowProgress 4 "Preparing distribution folder..."
 
 :: Get current date for filename
 for /f "tokens=2 delims==" %%I in ('wmic os get localdatetime /format:list') do set datetime=%%I
@@ -124,37 +115,84 @@ if exist "%DIST_ZIP%" del /q "%DIST_ZIP%"
 if exist "dist_temp" rd /s /q "dist_temp"
 
 :: Create distribution folder structure
-echo        Creating folder structure...
 mkdir "%DIST_DIR%" 2>nul
 
-:: Copy files to distribution folder
-echo        [5a/5e] Copying individual files...
+:: Copy individual files (fast)
 for %%f in ("YakuLingo.exe" "app.py" "glossary.csv" "pyproject.toml" "uv.lock" "uv.toml" "README.md") do (
     if exist "%%~f" copy /y "%%~f" "%DIST_DIR%\" >nul
 )
 
-:: Copy folders using robocopy (faster with /MT for multi-threading)
-:: /E = include empty dirs, /MT:8 = 8 threads, /NFL /NDL /NJH /NJS = minimal output
-echo        [5b/5e] Copying .venv (Python environment)...
-robocopy ".venv" "%DIST_DIR%\.venv" /E /MT:8 /NFL /NDL /NJH /NJS /R:1 /W:1 >nul 2>&1
+:: ============================================================
+:: Step 5-8: Copy folders in parallel
+:: ============================================================
+call :ShowProgress 5 "Copying .venv (Python packages)..."
 
-echo        [5c/5e] Copying .uv-python (Python runtime)...
-robocopy ".uv-python" "%DIST_DIR%\.uv-python" /E /MT:8 /NFL /NDL /NJH /NJS /R:1 /W:1 >nul 2>&1
+:: Start all robocopy operations in parallel
+start /B "" robocopy ".venv" "%DIST_DIR%\.venv" /E /MT:16 /NFL /NDL /NJH /NJS /NP /R:1 /W:1 >nul 2>&1
+start /B "" robocopy ".uv-python" "%DIST_DIR%\.uv-python" /E /MT:16 /NFL /NDL /NJH /NJS /NP /R:1 /W:1 >nul 2>&1
+start /B "" robocopy ".playwright-browsers" "%DIST_DIR%\.playwright-browsers" /E /MT:16 /NFL /NDL /NJH /NJS /NP /R:1 /W:1 >nul 2>&1
 
-echo        [5d/5e] Copying .playwright-browsers (Chromium)...
-robocopy ".playwright-browsers" "%DIST_DIR%\.playwright-browsers" /E /MT:8 /NFL /NDL /NJH /NJS /R:1 /W:1 >nul 2>&1
-
-echo        [5e/5e] Copying application files...
+:: Copy smaller folders (fast, don't need parallel)
 for %%d in ("yakulingo" "prompts" "config") do (
-    if exist "%%~d" robocopy "%%~d" "%DIST_DIR%\%%~d" /E /MT:8 /NFL /NDL /NJH /NJS /R:1 /W:1 >nul 2>&1
+    if exist "%%~d" robocopy "%%~d" "%DIST_DIR%\%%~d" /E /MT:8 /NFL /NDL /NJH /NJS /NP /R:1 /W:1 >nul 2>&1
 )
 
-:: Create ZIP archive using .NET ZipFile (faster than Compress-Archive)
-echo        Creating ZIP archive...
-powershell -NoProfile -Command "Add-Type -Assembly 'System.IO.Compression.FileSystem'; [System.IO.Compression.ZipFile]::CreateFromDirectory('dist_temp\YakuLingo', '%DIST_ZIP%', [System.IO.Compression.CompressionLevel]::Fastest, $false)"
+:: Wait for parallel robocopy operations to complete
+call :ShowProgress 6 "Copying .uv-python (Python runtime)..."
+:WaitLoop1
+tasklist /FI "IMAGENAME eq robocopy.exe" 2>nul | find /I "robocopy.exe" >nul
+if !errorlevel! equ 0 (
+    timeout /t 1 /nobreak >nul
+    goto :WaitLoop1
+)
+
+call :ShowProgress 7 "Copying .playwright-browsers..."
+:: Already done (parallel completed)
+
+call :ShowProgress 8 "Copying application files..."
+:: Already done (inline)
+
+:: ============================================================
+:: Step 9: Create ZIP archive
+:: ============================================================
+call :ShowProgress 9 "Creating ZIP archive..."
+
+:: Use PowerShell with progress display
+powershell -NoProfile -Command ^
+    "$ErrorActionPreference = 'Stop'; " ^
+    "Add-Type -Assembly 'System.IO.Compression.FileSystem'; " ^
+    "$srcPath = (Resolve-Path 'dist_temp\YakuLingo').Path; " ^
+    "$zipPath = (Resolve-Path '.').Path + '\%DIST_ZIP%'; " ^
+    "$files = Get-ChildItem -Path $srcPath -Recurse -File; " ^
+    "$total = $files.Count; " ^
+    "$i = 0; " ^
+    "$zip = [System.IO.Compression.ZipFile]::Open($zipPath, 'Create'); " ^
+    "try { " ^
+    "    foreach ($file in $files) { " ^
+    "        $i++; " ^
+    "        $relPath = $file.FullName.Substring($srcPath.Length + 1); " ^
+    "        $entry = $zip.CreateEntry('YakuLingo/' + $relPath.Replace('\', '/'), 'Fastest'); " ^
+    "        $stream = $entry.Open(); " ^
+    "        $fileStream = [System.IO.File]::OpenRead($file.FullName); " ^
+    "        $fileStream.CopyTo($stream); " ^
+    "        $fileStream.Close(); " ^
+    "        $stream.Close(); " ^
+    "        if ($i %% 500 -eq 0) { " ^
+    "            $pct = [int]($i * 100 / $total); " ^
+    "            Write-Host \"`r        Progress: $pct%% ($i / $total files)\" -NoNewline; " ^
+    "        } " ^
+    "    } " ^
+    "    Write-Host \"`r        Progress: 100%% ($total / $total files)    \"; " ^
+    "} finally { " ^
+    "    $zip.Dispose(); " ^
+    "}"
+
+:: ============================================================
+:: Step 10: Cleanup and create share package
+:: ============================================================
+call :ShowProgress 10 "Finalizing..."
 
 :: Cleanup temp folder
-echo        Cleaning up...
 rd /s /q "dist_temp" 2>nul
 
 :: Calculate elapsed time

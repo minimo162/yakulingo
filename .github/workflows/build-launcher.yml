@@ -22,9 +22,9 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Generate ICO from SVG
+      - name: Generate ICO
         run: |
-          pip install pillow svglib reportlab
+          pip install pillow
           python packaging/launcher/icon/generate_ico.py
 
       - name: Setup Rust

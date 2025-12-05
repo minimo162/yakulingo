@@ -755,7 +755,7 @@ def _render_results_to_jp(
 
             # Follow-up actions section (single options style)
             with ui.element('div').classes('inline-adjust-panel'):
-                with ui.column().classes('gap-2'):
+                with ui.column().classes('gap-2 w-full'):
                     # Check original English text
                     ui.button(
                         '英文をチェック',
@@ -770,9 +770,9 @@ def _render_results_to_jp(
                         on_click=lambda: on_follow_up and on_follow_up('summarize', source_text)
                     ).props('flat no-caps').classes('adjust-option-btn-full')
 
-            # Inline input section for additional requests
-            if on_adjust:
-                _render_inline_input_section_jp(option.text, on_adjust)
+                    # Inline input section for additional requests
+                    if on_adjust:
+                        _render_inline_input_section_jp(option.text, on_adjust)
 
 
 def _render_explanation(explanation: str):

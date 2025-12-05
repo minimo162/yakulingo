@@ -33,6 +33,8 @@ from yakulingo.processors.pdf_processor import (
     MAX_FONT_SIZE,
     MIN_LINE_HEIGHT,
     LINE_HEIGHT_COMPRESSION_STEP,
+    # Enums
+    FontType,
     # Classes
     FontInfo,
     TranslationCell,
@@ -1208,6 +1210,112 @@ class TestApplyTranslationsResult:
             assert result['total'] == 1
 
 
+class TestApplyTranslationsPagesParameter:
+    """Tests for pages parameter in apply_translations (PDFMathTranslate compliant)"""
+
+    def test_apply_translations_with_specific_pages(self, processor, tmp_path):
+        """Test that pages parameter filters which pages are translated"""
+        with patch('yakulingo.processors.pdf_processor._get_fitz') as mock_get_fitz:
+            mock_fitz = MagicMock()
+            mock_get_fitz.return_value = mock_fitz
+
+            # Create mock document with 3 pages
+            mock_doc = MagicMock()
+            mock_doc.__len__ = Mock(return_value=3)
+
+            mock_pages = []
+            for i in range(3):
+                mock_page = MagicMock()
+                mock_page.rect.height = 800
+                mock_page.xref = i + 1
+                mock_page.get_text.return_value = {
+                    "blocks": [
+                        {
+                            "type": 0,
+                            "bbox": [100, 200, 300, 250],
+                            "lines": [{"spans": [{"text": f"Page {i} text"}]}]
+                        }
+                    ]
+                }
+                mock_pages.append(mock_page)
+
+            mock_doc.__iter__ = Mock(return_value=iter(mock_pages))
+            mock_doc.__getitem__ = Mock(side_effect=lambda i: mock_pages[i])
+            mock_doc.get_new_xref.return_value = 100
+            mock_doc.xref_get_key.return_value = ("null", "")
+
+            mock_fitz.open.return_value = mock_doc
+
+            input_path = tmp_path / "input.pdf"
+            input_path.write_bytes(b"%PDF-1.4 dummy")
+            output_path = tmp_path / "output.pdf"
+
+            # Translate only pages 1 and 3 (1-indexed)
+            translations = {
+                "page_0_block_0": "Translation 1",
+                "page_1_block_0": "Translation 2",
+                "page_2_block_0": "Translation 3",
+            }
+
+            result = processor.apply_translations(
+                input_path, output_path, translations, "jp_to_en",
+                pages=[1, 3]  # 1-indexed, so page 0 and page 2 (0-indexed)
+            )
+
+            assert isinstance(result, dict)
+            assert 'total' in result
+
+    def test_apply_translations_without_pages_translates_all(self, processor, tmp_path):
+        """Test that omitting pages parameter translates all pages"""
+        with patch('yakulingo.processors.pdf_processor._get_fitz') as mock_get_fitz:
+            mock_fitz = MagicMock()
+            mock_get_fitz.return_value = mock_fitz
+
+            mock_doc = MagicMock()
+            mock_doc.__len__ = Mock(return_value=2)
+
+            mock_pages = []
+            for i in range(2):
+                mock_page = MagicMock()
+                mock_page.rect.height = 800
+                mock_page.xref = i + 1
+                mock_page.get_text.return_value = {
+                    "blocks": [
+                        {
+                            "type": 0,
+                            "bbox": [100, 200, 300, 250],
+                            "lines": [{"spans": [{"text": f"Page {i} text"}]}]
+                        }
+                    ]
+                }
+                mock_pages.append(mock_page)
+
+            mock_doc.__iter__ = Mock(return_value=iter(mock_pages))
+            mock_doc.__getitem__ = Mock(side_effect=lambda i: mock_pages[i])
+            mock_doc.get_new_xref.return_value = 100
+            mock_doc.xref_get_key.return_value = ("null", "")
+
+            mock_fitz.open.return_value = mock_doc
+
+            input_path = tmp_path / "input.pdf"
+            input_path.write_bytes(b"%PDF-1.4 dummy")
+            output_path = tmp_path / "output.pdf"
+
+            translations = {
+                "page_0_block_0": "Translation 1",
+                "page_1_block_0": "Translation 2",
+            }
+
+            # pages=None means translate all
+            result = processor.apply_translations(
+                input_path, output_path, translations, "jp_to_en",
+                pages=None
+            )
+
+            assert isinstance(result, dict)
+            assert result['total'] == 2
+
+
 class TestExtractTextBlocksStreaming:
     """Tests for extract_text_blocks_streaming method"""
 
@@ -1829,3 +1937,125 @@ class TestFindMatchingFontSize:
         """Empty font info should return default"""
         cell_box = [100, 100, 200, 120]
         assert find_matching_font_size(cell_box, [], default_size=12.0) == 12.0
+
+
+# =============================================================================
+# Tests: FontType Enumeration (PDFMathTranslate compliant)
+# =============================================================================
+class TestFontType:
+    """Tests for FontType enumeration"""
+
+    def test_font_type_values(self):
+        """FontType should have EMBEDDED, CID, and SIMPLE values"""
+        assert FontType.EMBEDDED.value == "embedded"
+        assert FontType.CID.value == "cid"
+        assert FontType.SIMPLE.value == "simple"
+
+    def test_font_type_is_enum(self):
+        """FontType should be an enumeration"""
+        assert len(FontType) == 3
+
+
+class TestFontRegistryFontType:
+    """Tests for FontRegistry font type management"""
+
+    def test_registered_font_has_embedded_type(self):
+        """Newly registered fonts should have EMBEDDED type"""
+        registry = FontRegistry()
+        font_id = registry.register_font("ja")
+        assert registry.get_font_type(font_id) == FontType.EMBEDDED
+
+    def test_get_font_type_unknown_returns_embedded(self):
+        """Unknown font ID should return EMBEDDED as default"""
+        registry = FontRegistry()
+        assert registry.get_font_type("UNKNOWN") == FontType.EMBEDDED
+
+    def test_is_embedded_font(self):
+        """is_embedded_font should return True for embedded fonts"""
+        registry = FontRegistry()
+        font_id = registry.register_font("en")
+        assert registry.is_embedded_font(font_id) is True
+        assert registry.is_cid_font(font_id) is False
+
+    def test_fontmap_initialized_empty(self):
+        """fontmap should be initialized as empty dict"""
+        registry = FontRegistry()
+        assert registry.fontmap == {}
+
+
+class TestPdfOperatorGeneratorRawString:
+    """Tests for raw_string with font type encoding (PDFMathTranslate compliant)"""
+
+    @pytest.fixture
+    def registry_with_embedded_font(self):
+        """FontRegistry with embedded font"""
+        registry = FontRegistry()
+        registry.register_font("en")
+        return registry
+
+    def test_raw_string_embedded_font_uses_glyph_ids(self, registry_with_embedded_font):
+        """Embedded font should use glyph IDs (has_glyph)"""
+        op_gen = PdfOperatorGenerator(registry_with_embedded_font)
+        result = op_gen.raw_string("F1", "Hi")
+        # Result should be 4-digit hex per character
+        assert len(result) == 8
+        assert all(c in "0123456789ABCDEF" for c in result)
+
+    def test_raw_string_cid_font_uses_unicode(self):
+        """CID font should use ord(c) as 4-digit hex"""
+        registry = FontRegistry()
+        # Manually add a CID font entry
+        font_info = FontInfo(
+            font_id="F99",
+            family="TestCID",
+            path=None,
+            fallback=None,
+            encoding="cid",
+            is_cjk=True,
+            font_type=FontType.CID,
+        )
+        registry._font_by_id["F99"] = font_info
+
+        op_gen = PdfOperatorGenerator(registry)
+        result = op_gen.raw_string("F99", "AB")
+        # 'A' = 0x0041, 'B' = 0x0042
+        assert result == "00410042"
+
+    def test_raw_string_simple_font_uses_2digit_hex(self):
+        """Simple font should use ord(c) as 2-digit hex"""
+        registry = FontRegistry()
+        # Manually add a simple font entry
+        font_info = FontInfo(
+            font_id="F88",
+            family="TestSimple",
+            path=None,
+            fallback=None,
+            encoding="simple",
+            is_cjk=False,
+            font_type=FontType.SIMPLE,
+        )
+        registry._font_by_id["F88"] = font_info
+
+        op_gen = PdfOperatorGenerator(registry)
+        result = op_gen.raw_string("F88", "AB")
+        # 'A' = 0x41, 'B' = 0x42
+        assert result == "4142"
+
+    def test_raw_string_cjk_cid_font(self):
+        """CID font with CJK characters should encode correctly"""
+        registry = FontRegistry()
+        font_info = FontInfo(
+            font_id="F77",
+            family="TestCJK",
+            path=None,
+            fallback=None,
+            encoding="cid",
+            is_cjk=True,
+            font_type=FontType.CID,
+        )
+        registry._font_by_id["F77"] = font_info
+
+        op_gen = PdfOperatorGenerator(registry)
+        result = op_gen.raw_string("F77", "あ")
+        # 'あ' = 0x3042
+        assert result == "3042"

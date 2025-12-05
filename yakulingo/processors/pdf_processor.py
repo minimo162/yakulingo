@@ -43,6 +43,7 @@ _pypdfium2 = None
 _yomitoku = None
 _torch = None
 _np = None
+_pdfminer = None
 
 # yomitoku availability flag
 HAS_YOMITOKU = False
@@ -106,6 +107,30 @@ def _get_torch():
         except ImportError:
             _torch = None
     return _torch
+
+
+def _get_pdfminer():
+    """
+    Lazy import pdfminer.six for font type detection.
+
+    PDFMathTranslate compliant: uses pdfminer to distinguish CID vs simple fonts.
+    """
+    global _pdfminer
+    if _pdfminer is None:
+        from pdfminer.pdffont import PDFCIDFont, PDFUnicodeNotDefined
+        from pdfminer.pdfpage import PDFPage
+        from pdfminer.pdfparser import PDFParser
+        from pdfminer.pdfdocument import PDFDocument
+        from pdfminer.pdfinterp import PDFResourceManager
+        _pdfminer = {
+            'PDFCIDFont': PDFCIDFont,
+            'PDFUnicodeNotDefined': PDFUnicodeNotDefined,
+            'PDFPage': PDFPage,
+            'PDFParser': PDFParser,
+            'PDFDocument': PDFDocument,
+            'PDFResourceManager': PDFResourceManager,
+        }
+    return _pdfminer
 
 
 def is_yomitoku_available() -> bool:
@@ -350,6 +375,10 @@ DEFAULT_FONT_SIZE = 10.0
 MIN_FONT_SIZE = 1.0
 MAX_FONT_SIZE = 72.0  # Allow large font sizes (was 12.0, too restrictive)
 
+# Subscript/superscript detection (PDFMathTranslate compliant)
+# Characters with font size <= base_size * threshold are considered sub/superscript
+SUBSCRIPT_SUPERSCRIPT_THRESHOLD = 0.79
+
 # Line height compression constants
 MIN_LINE_HEIGHT = 1.0
 LINE_HEIGHT_COMPRESSION_STEP = 0.05
@@ -377,6 +406,26 @@ _RE_FORMULA_PLACEHOLDER = re.compile(r"\{\s*v([\d\s]+)\}", re.IGNORECASE)
 
 
 # =============================================================================
+# Font Type Enumeration (PDFMathTranslate compliant)
+# =============================================================================
+from enum import Enum
+
+
+class FontType(Enum):
+    """
+    Font type classification for PDF text encoding.
+
+    PDFMathTranslate converter.py compliant:
+    - EMBEDDED: Newly embedded fonts (e.g., Noto) → use has_glyph() for glyph ID
+    - CID: Existing PDF CID fonts (composite fonts) → use ord(c) as 4-digit hex
+    - SIMPLE: Existing PDF simple fonts (Type1, TrueType) → use ord(c) as 2-digit hex
+    """
+    EMBEDDED = "embedded"  # Newly embedded font → has_glyph(ord(c))
+    CID = "cid"           # Existing CID font → ord(c) 4-digit hex
+    SIMPLE = "simple"     # Existing simple font → ord(c) 2-digit hex
+
+
+# =============================================================================
 # Data Classes
 # =============================================================================
 @dataclass
@@ -392,6 +441,7 @@ class FontInfo:
     fallback: Optional[str]  # Fallback path
     encoding: str          # "cid" or "simple"
     is_cjk: bool           # Is CJK font
+    font_type: FontType = FontType.EMBEDDED  # Font type for encoding selection
 
 
 @dataclass
@@ -448,6 +498,64 @@ def vflag(font: str, char: str, vfont: str = None, vchar: str = None) -> bool:
         return True
 
     return False
+
+
+def is_subscript_superscript(
+    char_size: float,
+    base_size: float,
+    threshold: float = SUBSCRIPT_SUPERSCRIPT_THRESHOLD
+) -> bool:
+    """
+    Check if a character is subscript or superscript based on font size.
+
+    PDFMathTranslate compliant: uses 0.79× threshold for detection.
+
+    Args:
+        char_size: Font size of the character
+        base_size: Base font size of the surrounding text
+        threshold: Size ratio threshold (default: 0.79)
+
+    Returns:
+        True if character appears to be subscript/superscript
+    """
+    if base_size <= 0:
+        return False
+    return char_size <= base_size * threshold
+
+
+def detect_text_style(
+    char_size: float,
+    base_size: float,
+    y_offset: float = 0.0,
+    line_height: float = 0.0,
+) -> str:
+    """
+    Detect text style (normal, subscript, superscript) based on size and position.
+
+    PDFMathTranslate compliant.
+
+    Args:
+        char_size: Font size of the character
+        base_size: Base font size of the surrounding text
+        y_offset: Vertical offset from baseline (positive = above)
+        line_height: Line height for position-based detection
+
+    Returns:
+        "subscript", "superscript", or "normal"
+    """
+    if not is_subscript_superscript(char_size, base_size):
+        return "normal"
+
+    # If we have position info, use it to distinguish sub/super
+    if line_height > 0 and y_offset != 0:
+        baseline_threshold = line_height * 0.3
+        if y_offset > baseline_threshold:
+            return "superscript"
+        elif y_offset < -baseline_threshold:
+            return "subscript"
+
+    # Default to superscript if size-based only (more common in formulas)
+    return "superscript"
 
 
 class FormulaManager:
@@ -542,6 +650,9 @@ class FontRegistry:
             self._font_preferences["ja"] = font_ja
         if font_en:
             self._font_preferences["en"] = font_en
+        # PDFMathTranslate compliant: fontmap for existing PDF fonts
+        # Maps font name → pdfminer font object (PDFCIDFont or other)
+        self.fontmap: dict[str, Any] = {}
 
     def register_font(self, lang: str) -> str:
         """
@@ -591,6 +702,7 @@ class FontRegistry:
             fallback=None,
             encoding=config["encoding"],
             is_cjk=config["is_cjk"],
+            font_type=FontType.EMBEDDED,  # Newly embedded font
         )
 
         self.fonts[lang] = font_info
@@ -784,6 +896,133 @@ class FontRegistry:
 
         return failed_fonts
 
+    def load_fontmap_from_pdf(self, pdf_path: Path) -> None:
+        """
+        Load font information from PDF using pdfminer.
+
+        PDFMathTranslate compliant: extracts fontmap for CID/simple font detection.
+
+        Args:
+            pdf_path: Path to PDF file
+        """
+        try:
+            pdfminer = _get_pdfminer()
+            PDFParser = pdfminer['PDFParser']
+            PDFDocument = pdfminer['PDFDocument']
+            PDFPage = pdfminer['PDFPage']
+            PDFResourceManager = pdfminer['PDFResourceManager']
+
+            with open(pdf_path, 'rb') as f:
+                parser = PDFParser(f)
+                document = PDFDocument(parser)
+                rsrcmgr = PDFResourceManager()
+
+                for page in PDFPage.create_pages(document):
+                    if page.resources and 'Font' in page.resources:
+                        fonts = page.resources['Font']
+                        if fonts:
+                            for font_name, font_ref in fonts.items():
+                                try:
+                                    font_obj = rsrcmgr.get_font(font_ref, page.resources)
+                                    self.fontmap[font_name] = font_obj
+                                    logger.debug(
+                                        "Loaded font from PDF: %s -> %s",
+                                        font_name, type(font_obj).__name__
+                                    )
+                                except Exception as e:
+                                    logger.debug("Could not load font %s: %s", font_name, e)
+
+            logger.debug("Loaded %d fonts from PDF fontmap", len(self.fontmap))
+
+        except Exception as e:
+            logger.warning("Failed to load fontmap from PDF: %s", e)
+
+    def register_existing_font(self, font_name: str, pdfminer_font: Any) -> str:
+        """
+        Register an existing PDF font (from fontmap).
+
+        PDFMathTranslate compliant: determines CID vs simple font type.
+
+        Args:
+            font_name: Font name from PDF
+            pdfminer_font: pdfminer font object
+
+        Returns:
+            Font ID (F1, F2, ...)
+        """
+        # Check if already registered
+        for lang, font_info in self.fonts.items():
+            if font_info.family == font_name:
+                return font_info.font_id
+
+        self._counter += 1
+        font_id = f"F{self._counter}"
+
+        # Determine font type using pdfminer
+        pdfminer = _get_pdfminer()
+        PDFCIDFont = pdfminer['PDFCIDFont']
+
+        if isinstance(pdfminer_font, PDFCIDFont):
+            font_type = FontType.CID
+            encoding = "cid"
+            is_cjk = True
+        else:
+            font_type = FontType.SIMPLE
+            encoding = "simple"
+            is_cjk = False
+
+        font_info = FontInfo(
+            font_id=font_id,
+            family=font_name,
+            path=None,  # Existing font, no file path
+            fallback=None,
+            encoding=encoding,
+            is_cjk=is_cjk,
+            font_type=font_type,
+        )
+
+        # Store in fontmap for lookup
+        self.fontmap[font_name] = pdfminer_font
+        self._font_by_id[font_id] = font_info
+        # Use font_name as key since it's not a language code
+        self.fonts[f"_existing_{font_name}"] = font_info
+
+        logger.debug(
+            "Registered existing font: id=%s, name=%s, type=%s",
+            font_id, font_name, font_type.value
+        )
+
+        return font_id
+
+    def get_font_type(self, font_id: str) -> FontType:
+        """
+        Get font type for encoding selection.
+
+        PDFMathTranslate converter.py compliant:
+        - EMBEDDED: use has_glyph() for glyph ID
+        - CID: use ord(c) as 4-digit hex
+        - SIMPLE: use ord(c) as 2-digit hex
+
+        Args:
+            font_id: Font ID (F1, F2, ...)
+
+        Returns:
+            FontType enumeration value
+        """
+        font_info = self._font_by_id.get(font_id)
+        if font_info:
+            return font_info.font_type
+        # Default to EMBEDDED for unknown fonts
+        return FontType.EMBEDDED
+
+    def is_cid_font(self, font_id: str) -> bool:
+        """Check if font is a CID (composite) font."""
+        return self.get_font_type(font_id) == FontType.CID
+
+    def is_embedded_font(self, font_id: str) -> bool:
+        """Check if font is a newly embedded font."""
+        return self.get_font_type(font_id) == FontType.EMBEDDED
+
 
 # =============================================================================
 # PDF Operator Generator (PDFMathTranslate compliant)
@@ -825,21 +1064,60 @@ class PdfOperatorGenerator:
 
     def raw_string(self, font_id: str, text: str) -> str:
         """
-        Encode text for PDF text operators using glyph indices.
+        Encode text for PDF text operators.
 
-        PyMuPDF's insert_font embeds fonts with Identity-H encoding but
-        WITHOUT a CIDToGIDMap. This means CID values in the content stream
-        are interpreted directly as glyph indices.
-
-        We must use actual glyph indices from the font, NOT Unicode code points.
-        Each glyph index is encoded as a 4-digit hex (2 bytes).
+        PDFMathTranslate converter.py compliant:
+        - EMBEDDED fonts: use has_glyph() for glyph indices (4-digit hex)
+        - CID fonts: use ord(c) for Unicode code points (4-digit hex)
+        - SIMPLE fonts: use ord(c) for character codes (2-digit hex)
 
         Args:
             font_id: Font ID
             text: Text to encode
 
         Returns:
-            Hex-encoded string of glyph indices
+            Hex-encoded string
+        """
+        font_type = self.font_registry.get_font_type(font_id)
+
+        if font_type == FontType.EMBEDDED:
+            # Newly embedded font: use glyph indices from has_glyph()
+            return self._encode_with_glyph_ids(font_id, text)
+        elif font_type == FontType.CID:
+            # Existing CID font: use Unicode code points (4-digit hex)
+            hex_result = "".join([f'{ord(c):04X}' for c in text])
+            if logger.isEnabledFor(logging.DEBUG):
+                preview = text[:50] + ('...' if len(text) > 50 else '')
+                logger.debug(
+                    "Encoding text (CID): font=%s, chars=%d, text='%s'",
+                    font_id, len(text), preview
+                )
+            return hex_result
+        else:
+            # Existing simple font: use character codes (2-digit hex)
+            hex_result = "".join([f'{ord(c):02X}' for c in text])
+            if logger.isEnabledFor(logging.DEBUG):
+                preview = text[:50] + ('...' if len(text) > 50 else '')
+                logger.debug(
+                    "Encoding text (SIMPLE): font=%s, chars=%d, text='%s'",
+                    font_id, len(text), preview
+                )
+            return hex_result
+
+    def _encode_with_glyph_ids(self, font_id: str, text: str) -> str:
+        """
+        Encode text using glyph indices for embedded fonts.
+
+        PyMuPDF's insert_font embeds fonts with Identity-H encoding but
+        WITHOUT a CIDToGIDMap. This means CID values in the content stream
+        are interpreted directly as glyph indices.
+
+        Args:
+            font_id: Font ID
+            text: Text to encode
+
+        Returns:
+            Hex-encoded string of glyph indices (4-digit hex per character)
         """
         hex_parts = []
         missing_glyphs = []
@@ -857,7 +1135,7 @@ class PdfOperatorGenerator:
             preview = text[:50] + ('...' if len(text) > 50 else '')
             hex_preview = hex_result[:100] + ('...' if len(hex_result) > 100 else '')
             logger.debug(
-                "Encoding text: font=%s, chars=%d, glyphs=%d, "
+                "Encoding text (EMBEDDED): font=%s, chars=%d, glyphs=%d, "
                 "text='%s', hex='%s'",
                 font_id, len(text), len(hex_parts),
                 preview, hex_preview
@@ -2426,6 +2704,7 @@ class PdfProcessor(FileProcessor):
         translations: dict[str, str],
         direction: str = "jp_to_en",
         settings=None,
+        pages: Optional[list[int]] = None,
     ) -> dict[str, Any]:
         """
         Apply translations to PDF.
@@ -2440,6 +2719,8 @@ class PdfProcessor(FileProcessor):
             translations: Mapping of block IDs to translated text
             direction: Translation direction
             settings: AppSettings for font configuration (pdf_font_ja, pdf_font_en)
+            pages: Optional list of page numbers to translate (1-indexed).
+                   If None, all pages are translated. PDFMathTranslate compliant.
 
         Returns:
             Dictionary with processing statistics:
@@ -2453,7 +2734,7 @@ class PdfProcessor(FileProcessor):
             logger.debug("Attempting low-level PDF translation...")
             result = self.apply_translations_low_level(
                 input_path, output_path, translations,
-                cells=None, direction=direction, settings=settings
+                cells=None, direction=direction, settings=settings, pages=pages
             )
             # If success rate is acceptable, return result
             if result['success'] >= result['total'] * 0.5:
@@ -2471,7 +2752,7 @@ class PdfProcessor(FileProcessor):
 
         # Fallback to high-level API
         return self._apply_translations_high_level(
-            input_path, output_path, translations, direction, settings
+            input_path, output_path, translations, direction, settings, pages
         )
 
     def _apply_translations_high_level(
@@ -2481,6 +2762,7 @@ class PdfProcessor(FileProcessor):
         translations: dict[str, str],
         direction: str = "jp_to_en",
         settings=None,
+        pages: Optional[list[int]] = None,
     ) -> dict[str, Any]:
         """
         Apply translations using PyMuPDF high-level API (fallback).
@@ -2492,6 +2774,15 @@ class PdfProcessor(FileProcessor):
         1. Add redaction annotations for all text blocks to translate
         2. Apply redactions (removes text, preserves graphics/images)
         3. Insert translated text
+
+        Args:
+            input_path: Path to original PDF
+            output_path: Path for translated PDF
+            translations: Mapping of block IDs to translated text
+            direction: Translation direction
+            settings: AppSettings for font configuration
+            pages: Optional list of page numbers to translate (1-indexed).
+                   If None, all pages are translated.
         """
         fitz = _get_fitz()
         doc = fitz.open(input_path)
@@ -2539,6 +2830,13 @@ class PdfProcessor(FileProcessor):
             # Pass 1: Add redaction annotations and collect text insertion info
             # Pass 2: Apply redactions and insert text
             for page_idx, page in enumerate(doc):
+                page_num = page_idx + 1
+
+                # Skip pages not in selection (PDFMathTranslate compliant)
+                if pages is not None and page_num not in pages:
+                    logger.debug("High-level API: Skipping page %d (not in selection)", page_num)
+                    continue
+
                 blocks = page.get_text("dict")["blocks"]
 
                 # Collect blocks to process for this page
@@ -2635,8 +2933,9 @@ class PdfProcessor(FileProcessor):
                         result['failed'].append(block_id)
                         continue
 
-            # Save document
-            doc.save(str(output_path), garbage=3, deflate=True)
+            # Font subsetting and save document (PDFMathTranslate compliant)
+            doc.subset_fonts(fallback=True)
+            doc.save(str(output_path), garbage=3, deflate=True, use_objstms=1)
 
             # Log summary if there were failures
             if result['failed']:
@@ -2919,8 +3218,9 @@ class PdfProcessor(FileProcessor):
                         result['failed'].append(address)
                         continue
 
-            # Save document
-            doc.save(str(output_path), garbage=3, deflate=True)
+            # Font subsetting and save document (PDFMathTranslate compliant)
+            doc.subset_fonts(fallback=True)
+            doc.save(str(output_path), garbage=3, deflate=True, use_objstms=1)
 
             # Log summary if there were failures
             if result['failed']:
@@ -2943,6 +3243,7 @@ class PdfProcessor(FileProcessor):
         direction: str = "jp_to_en",
         settings=None,
         dpi: int = DEFAULT_OCR_DPI,
+        pages: Optional[list[int]] = None,
     ) -> dict[str, Any]:
         """
         Apply translations using low-level PDF operators.
@@ -2962,6 +3263,8 @@ class PdfProcessor(FileProcessor):
             direction: Translation direction ("jp_to_en" or "en_to_jp")
             settings: AppSettings for font configuration
             dpi: DPI used for OCR (for coordinate scaling)
+            pages: Optional list of page numbers to translate (1-indexed).
+                   If None, all pages are translated. PDFMathTranslate compliant.
 
         Returns:
             Dictionary with processing statistics
@@ -3013,6 +3316,12 @@ class PdfProcessor(FileProcessor):
             # Process each page
             for page_idx, page in enumerate(doc):
                 page_num = page_idx + 1
+
+                # Skip pages not in selection (PDFMathTranslate compliant)
+                if pages is not None and page_num not in pages:
+                    logger.debug("Skipping page %d (not in selection)", page_num)
+                    continue
+
                 page_height = page.rect.height
 
                 # Create content stream replacer for this page
@@ -3203,8 +3512,9 @@ class PdfProcessor(FileProcessor):
                 # Apply content stream and font resources to page
                 replacer.apply_to_page(page)
 
-            # Save document
-            doc.save(str(output_path), garbage=3, deflate=True)
+            # Font subsetting and save document (PDFMathTranslate compliant)
+            doc.subset_fonts(fallback=True)
+            doc.save(str(output_path), garbage=3, deflate=True, use_objstms=1)
 
             if result['failed']:
                 logger.warning(
@@ -3683,7 +3993,9 @@ class PdfProcessor(FileProcessor):
                 for i in range(original_pages, translated_pages):
                     output_doc.insert_pdf(translated_doc, from_page=i, to_page=i)
 
-            output_doc.save(str(output_path), garbage=3, deflate=True)
+            # Font subsetting and save document (PDFMathTranslate compliant)
+            output_doc.subset_fonts(fallback=True)
+            output_doc.save(str(output_path), garbage=3, deflate=True, use_objstms=1)
 
             result['total_pages'] = len(output_doc)
             result['original_pages'] = original_pages

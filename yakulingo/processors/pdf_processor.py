@@ -3152,7 +3152,7 @@ class PdfProcessor(FileProcessor):
                                 box_pdf, line_idx, font_size, line_height
                             )
 
-                            # Encode text to hex using glyph IDs
+                            # Encode text to hex using Unicode code points (Identity-H encoding)
                             hex_text = op_gen.raw_string(font_id, line_text)
 
                             # Generate PDF operator

@@ -71,9 +71,9 @@ class YakuLingoApp:
         # Set by run_app() based on monitor detection
         self._display_mode: str = "laptop"
 
-        # Panel sizes (sidebar_width, input_panel_width, result_content_width) in pixels
+        # Panel sizes (sidebar_width, input_panel_width, result_content_width, input_panel_max_width) in pixels
         # Set by run_app() based on monitor detection
-        self._panel_sizes: tuple[int, int, int] = (260, 420, 800)
+        self._panel_sizes: tuple[int, int, int, int] = (260, 420, 800, 900)
 
         # Window size (width, height) in pixels
         # Set by run_app() based on monitor detection
@@ -1433,11 +1433,15 @@ def _detect_display_settings() -> tuple[tuple[int, int], str, tuple[int, int, in
     MIN_INPUT_PANEL_WIDTH = 380  # Reduced from 420 for 1920x1200 compatibility
     MIN_RESULT_CONTENT_WIDTH = 680  # Reduced from 800 for 1920x1200 compatibility
 
-    def calculate_sizes(screen_width: int, screen_height: int) -> tuple[tuple[int, int], tuple[int, int, int]]:
+    def calculate_sizes(screen_width: int, screen_height: int) -> tuple[tuple[int, int], tuple[int, int, int, int]]:
         """Calculate window size and panel widths from screen resolution.
 
         Applies minimum values for larger screens, but respects screen bounds for smaller screens.
         Window size is capped to 95% of screen dimensions to ensure it fits on screen.
+
+        Returns:
+            Tuple of ((window_width, window_height),
+                      (sidebar_width, input_panel_width, result_content_width, input_panel_max_width))
         """
         # Calculate window size based on ratio, but never exceed screen bounds
         max_window_width = int(screen_width * 0.95)  # Leave 5% margin
@@ -1459,7 +1463,13 @@ def _detect_display_settings() -> tuple[tuple[int, int], str, tuple[int, int, in
             input_panel_width = max(int(window_width * INPUT_PANEL_RATIO), MIN_INPUT_PANEL_WIDTH)
             result_content_width = max(int(window_width * RESULT_CONTENT_RATIO), MIN_RESULT_CONTENT_WIDTH)
 
-        return ((window_width, window_height), (sidebar_width, input_panel_width, result_content_width))
+        # Calculate max-width for input panel in 2-column mode (centered layout)
+        # Main area = window - sidebar, leave 60px padding (30px each side) for breathing room
+        # Cap at 900px for optimal readability on large screens
+        main_area_width = window_width - sidebar_width
+        input_panel_max_width = min(900, main_area_width - 60)
+
+        return ((window_width, window_height), (sidebar_width, input_panel_width, result_content_width, input_panel_max_width))
 
     # Default: laptop mode based on 1920x1080 screen
     default_window, default_panels = calculate_sizes(1920, 1080)
@@ -1509,9 +1519,9 @@ def _detect_display_settings() -> tuple[tuple[int, int], str, tuple[int, int, in
             mode = "laptop"
 
         logger.info(
-            "%s mode: window %dx%d, sidebar %dpx, input panel %dpx, result content %dpx",
+            "%s mode: window %dx%d, sidebar %dpx, input panel %dpx, result content %dpx, input max %dpx",
             mode.capitalize(), window_size[0], window_size[1],
-            panel_sizes[0], panel_sizes[1], panel_sizes[2]
+            panel_sizes[0], panel_sizes[1], panel_sizes[2], panel_sizes[3]
         )
         return (window_size, mode, panel_sizes)
 
@@ -1533,12 +1543,12 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
     if native:
         window_size, display_mode, panel_sizes = _detect_display_settings()
         yakulingo_app._display_mode = display_mode
-        yakulingo_app._panel_sizes = panel_sizes  # (sidebar_width, input_panel_width, result_content_width)
+        yakulingo_app._panel_sizes = panel_sizes  # (sidebar_width, input_panel_width, result_content_width, input_panel_max_width)
         yakulingo_app._window_size = window_size
     else:
         window_size = (1900, 1100)  # Default size for browser mode
         yakulingo_app._display_mode = "laptop"
-        yakulingo_app._panel_sizes = (260, 420, 800)  # Default panel sizes
+        yakulingo_app._panel_sizes = (260, 420, 800, 900)  # Default panel sizes
         yakulingo_app._window_size = window_size
 
     # Track if cleanup has been executed (prevent double execution)
@@ -1572,7 +1582,7 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
         yakulingo_app._client = client
 
         # Set dynamic panel sizes as CSS variables (calculated from monitor resolution)
-        sidebar_width, input_panel_width, result_content_width = yakulingo_app._panel_sizes
+        sidebar_width, input_panel_width, result_content_width, input_panel_max_width = yakulingo_app._panel_sizes
         window_width, window_height = yakulingo_app._window_size
 
         # Calculate input min-height based on window height ratio
@@ -1600,6 +1610,7 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
     --sidebar-width: {sidebar_width}px;
     --input-panel-width: {input_panel_width}px;
     --result-content-width: {result_content_width}px;
+    --input-panel-max-width: {input_panel_max_width}px;
     --input-min-height: {input_min_height}px;
 }}
 </style>''')

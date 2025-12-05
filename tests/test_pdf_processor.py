@@ -33,6 +33,8 @@ from yakulingo.processors.pdf_processor import (
     MAX_FONT_SIZE,
     MIN_LINE_HEIGHT,
     LINE_HEIGHT_COMPRESSION_STEP,
+    # Enums
+    FontType,
     # Classes
     FontInfo,
     TranslationCell,
@@ -1829,3 +1831,125 @@ class TestFindMatchingFontSize:
         """Empty font info should return default"""
         cell_box = [100, 100, 200, 120]
         assert find_matching_font_size(cell_box, [], default_size=12.0) == 12.0
+
+
+# =============================================================================
+# Tests: FontType Enumeration (PDFMathTranslate compliant)
+# =============================================================================
+class TestFontType:
+    """Tests for FontType enumeration"""
+
+    def test_font_type_values(self):
+        """FontType should have EMBEDDED, CID, and SIMPLE values"""
+        assert FontType.EMBEDDED.value == "embedded"
+        assert FontType.CID.value == "cid"
+        assert FontType.SIMPLE.value == "simple"
+
+    def test_font_type_is_enum(self):
+        """FontType should be an enumeration"""
+        assert len(FontType) == 3
+
+
+class TestFontRegistryFontType:
+    """Tests for FontRegistry font type management"""
+
+    def test_registered_font_has_embedded_type(self):
+        """Newly registered fonts should have EMBEDDED type"""
+        registry = FontRegistry()
+        font_id = registry.register_font("ja")
+        assert registry.get_font_type(font_id) == FontType.EMBEDDED
+
+    def test_get_font_type_unknown_returns_embedded(self):
+        """Unknown font ID should return EMBEDDED as default"""
+        registry = FontRegistry()
+        assert registry.get_font_type("UNKNOWN") == FontType.EMBEDDED
+
+    def test_is_embedded_font(self):
+        """is_embedded_font should return True for embedded fonts"""
+        registry = FontRegistry()
+        font_id = registry.register_font("en")
+        assert registry.is_embedded_font(font_id) is True
+        assert registry.is_cid_font(font_id) is False
+
+    def test_fontmap_initialized_empty(self):
+        """fontmap should be initialized as empty dict"""
+        registry = FontRegistry()
+        assert registry.fontmap == {}
+
+
+class TestPdfOperatorGeneratorRawString:
+    """Tests for raw_string with font type encoding (PDFMathTranslate compliant)"""
+
+    @pytest.fixture
+    def registry_with_embedded_font(self):
+        """FontRegistry with embedded font"""
+        registry = FontRegistry()
+        registry.register_font("en")
+        return registry
+
+    def test_raw_string_embedded_font_uses_glyph_ids(self, registry_with_embedded_font):
+        """Embedded font should use glyph IDs (has_glyph)"""
+        op_gen = PdfOperatorGenerator(registry_with_embedded_font)
+        result = op_gen.raw_string("F1", "Hi")
+        # Result should be 4-digit hex per character
+        assert len(result) == 8
+        assert all(c in "0123456789ABCDEF" for c in result)
+
+    def test_raw_string_cid_font_uses_unicode(self):
+        """CID font should use ord(c) as 4-digit hex"""
+        registry = FontRegistry()
+        # Manually add a CID font entry
+        font_info = FontInfo(
+            font_id="F99",
+            family="TestCID",
+            path=None,
+            fallback=None,
+            encoding="cid",
+            is_cjk=True,
+            font_type=FontType.CID,
+        )
+        registry._font_by_id["F99"] = font_info
+
+        op_gen = PdfOperatorGenerator(registry)
+        result = op_gen.raw_string("F99", "AB")
+        # 'A' = 0x0041, 'B' = 0x0042
+        assert result == "00410042"
+
+    def test_raw_string_simple_font_uses_2digit_hex(self):
+        """Simple font should use ord(c) as 2-digit hex"""
+        registry = FontRegistry()
+        # Manually add a simple font entry
+        font_info = FontInfo(
+            font_id="F88",
+            family="TestSimple",
+            path=None,
+            fallback=None,
+            encoding="simple",
+            is_cjk=False,
+            font_type=FontType.SIMPLE,
+        )
+        registry._font_by_id["F88"] = font_info
+
+        op_gen = PdfOperatorGenerator(registry)
+        result = op_gen.raw_string("F88", "AB")
+        # 'A' = 0x41, 'B' = 0x42
+        assert result == "4142"
+
+    def test_raw_string_cjk_cid_font(self):
+        """CID font with CJK characters should encode correctly"""
+        registry = FontRegistry()
+        font_info = FontInfo(
+            font_id="F77",
+            family="TestCJK",
+            path=None,
+            fallback=None,
+            encoding="cid",
+            is_cjk=True,
+            font_type=FontType.CID,
+        )
+        registry._font_by_id["F77"] = font_info
+
+        op_gen = PdfOperatorGenerator(registry)
+        result = op_gen.raw_string("F77", "あ")
+        # 'あ' = 0x3042
+        assert result == "3042"

@@ -673,7 +673,8 @@ The `AutoUpdater` class provides GitHub Releases-based updates:
 | `openpyxl>=3.1.0` | Excel fallback (Linux or no Excel) |
 | `python-docx>=1.1.0` | Word document processing |
 | `python-pptx>=0.6.23` | PowerPoint processing |
-| `PyMuPDF>=1.24.0` | PDF text extraction |
+| `PyMuPDF>=1.24.0` | PDF text extraction and rendering |
+| `pdfminer.six>=20231228` | PDF font analysis (PDFMathTranslate compliant) |
 | `pillow>=10.0.0` | Image handling |
 | `numpy>=1.24.0` | Numerical operations |
 | `pywin32>=306` | Windows NTLM proxy authentication (Windows only) |
@@ -712,23 +713,41 @@ PDF翻訳では**低レベルAPI（PDFMathTranslate準拠）がデフォルト**
 低レベルAPIはPDFオペレータを直接生成し、より精密なレイアウト制御が可能です。
 成功率が50%未満の場合は高レベルAPI（`insert_textbox`）にフォールバックします。
 
-テキストを描画する際、**グリフIDを使用する**のが正しいアプローチです。
+**フォント種別に応じたテキストエンコーディング（PDFMathTranslate converter.py準拠）:**
 
 ```python
-# 正しい: グリフIDを使用
-hex_string = ''.join(f'{font.has_glyph(ord(c)):04X}' for c in text)
-# 例: "Hello" → "002B0048004F004F0052" (グリフID)
+# FontType列挙型
+class FontType(Enum):
+    EMBEDDED = "embedded"  # 新しく埋め込んだフォント
+    CID = "cid"            # 既存CIDフォント（複合フォント）
+    SIMPLE = "simple"      # 既存Simpleフォント（Type1, TrueType）
 
-# 間違い: Unicodeコードポイントを使用
-hex_string = ''.join(f'{ord(c):04X}' for c in text)
-# 例: "Hello" → "00480065006C006C006F" (Unicode) → 文字化けする
+# raw_string()でのエンコーディング分岐
+def raw_string(font_id: str, text: str) -> str:
+    font_type = font_registry.get_font_type(font_id)
+
+    if font_type == FontType.EMBEDDED:
+        # 埋め込んだフォント → has_glyph()でグリフID取得
+        return "".join([f'{font.has_glyph(ord(c)):04X}' for c in text])
+    elif font_type == FontType.CID:
+        # 既存CIDフォント → ord(c)で4桁hex
+        return "".join([f'{ord(c):04X}' for c in text])
+    else:  # SIMPLE
+        # 既存Simpleフォント → ord(c)で2桁hex
+        return "".join([f'{ord(c):02X}' for c in text])
 ```
 
 **理由:**
 - PyMuPDFの`insert_font`はIdentity-Hエンコーディングを使用
 - CIDToGIDMapは設定されない（Identity = CID値がそのままグリフIDとして解釈）
-- TJオペレータの引数はCID値であり、CID = グリフIDとなる
-- `Font.has_glyph(ord(c))`で文字のグリフIDを取得
+- TJオペレータの引数はCID値であり、埋め込みフォントではCID = グリフIDとなる
+- 既存CIDフォントではUnicodeコードポイントをそのまま使用
+- 既存SimpleフォントではASCII範囲の2桁hexを使用
+
+**pdfminer.sixによるフォント種別判定:**
+- `FontRegistry.load_fontmap_from_pdf()`: PDFからフォント情報を読み込み
+- `isinstance(font, PDFCIDFont)`: CIDフォント判定
+- `FontRegistry.register_existing_font()`: 既存フォントを登録
 
 **実装上の注意:**
 - `FontRegistry.embed_fonts()`でFont objectを確実に作成すること

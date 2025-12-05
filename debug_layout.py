@@ -85,9 +85,7 @@ def main():
                             with ui.element('div').classes('hint-primary'):
                                 ui.label('入力言語を自動判定して翻訳します').classes('text-xs')
 
-        # JavaScriptで詳細な診断情報を取得
-        ui.timer(1.0, collect_diagnostics, once=True)
-
+        # 診断関数を定義
         async def collect_diagnostics():
             js_code = '''
             (function() {
@@ -170,6 +168,9 @@ def main():
 === 診断結果ここまで ===
 """
             print("\n" + output_text)
+
+        # JavaScriptで詳細な診断情報を取得（関数定義後に呼び出し）
+        ui.timer(1.0, collect_diagnostics, once=True)
 
     ui.run(
         host='127.0.0.1',

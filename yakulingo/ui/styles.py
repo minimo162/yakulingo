@@ -108,7 +108,9 @@ COMPLETE_CSS = """
     --sidebar-width: 260px;
     --input-panel-width: 420px;
     --result-content-width: 800px;
-    --input-panel-width-wide: 66.67%;  /* Wider input for 2-column mode (2/3 of parent) */
+    --input-panel-width-wide: 100%;  /* Full width input for 2-column mode */
+    --input-panel-max-width: 900px;  /* Maximum width for readability */
+    --input-min-height: 200px;  /* Minimum textarea height */
     --bp-desktop: 1200px;        /* Full 3-column with sidebar */
     --bp-tablet-portrait: 800px; /* 2-column with fixed input */
     --bp-mobile: 800px;          /* Single column layout */
@@ -1140,14 +1142,14 @@ body {
     flex-direction: column;  /* Stack children vertically */
     justify-content: flex-start;
     align-items: center;  /* Center children horizontally */
-    padding: 1.5rem;  /* Consistent padding */
-    padding-top: 3rem;
+    padding: 1rem 1.5rem;  /* Reduced top/bottom padding */
+    padding-top: 1.5rem;
 }
 
 /* Ensure the column container fills the input panel vertically */
 .main-area:not(.has-results) .input-panel > .nicegui-column {
-    width: 100%;
-    max-width: var(--input-panel-width-wide);
+    width: var(--input-panel-width-wide);
+    max-width: var(--input-panel-max-width);
     flex: 1;  /* Fill available vertical space */
     display: flex;
     flex-direction: column;

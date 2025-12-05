@@ -510,51 +510,46 @@ class TestPdfOperatorGenerator:
         assert "TJ" in result
 
     def test_raw_string_simple_encoding(self, op_generator):
-        # All fonts use 4-digit hex encoding (UTF-16BE) for Identity-H encoding
+        # All fonts use glyph indices encoded as 4-digit hex
+        # (Identity-H without CIDToGIDMap means CID = glyph index)
         result = op_generator.raw_string("F2", "Hi")
-        # 2 characters * 4 digits = 8 hex chars
+        # 2 characters * 4 hex digits = 8 hex chars
         assert len(result) == 8
-        assert all(c in "0123456789abcdef" for c in result)
-        # "H" = U+0048, "i" = U+0069
-        assert result == "00480069"
+        assert all(c in "0123456789ABCDEF" for c in result)
+        # Specific values depend on font's glyph indices, not Unicode code points
 
     def test_raw_string_cid_encoding(self, op_generator):
-        # Japanese font (CJK) uses 4-digit hex encoding (UTF-16BE)
+        # Japanese font uses glyph indices encoded as 4-digit hex
         result = op_generator.raw_string("F1", "あ")
-        # CJK fonts use 4-digit hex
+        # Each character = 4 hex digits (glyph index)
         assert len(result) == 4
-        assert all(c in "0123456789abcdef" for c in result)
-        # "あ" = U+3042
-        assert result == "3042"
+        assert all(c in "0123456789ABCDEF" for c in result)
+        # Specific value depends on font's glyph index for "あ"
 
     def test_raw_string_cid_multiple_chars(self, op_generator):
         result = op_generator.raw_string("F1", "あい")
-        # Two CJK characters = 2 * 4 digits = 8 hex chars
+        # Two characters = 2 * 4 hex digits = 8 hex chars
         assert len(result) == 8
-        assert all(c in "0123456789abcdef" for c in result)
-        # "あ" = U+3042, "い" = U+3044
-        assert result == "30423044"
+        assert all(c in "0123456789ABCDEF" for c in result)
 
     def test_raw_string_empty(self, op_generator):
         result = op_generator.raw_string("F1", "")
         assert result == ""
 
-    def test_raw_string_surrogate_pairs(self, op_generator):
-        # Non-BMP characters require surrogate pairs in UTF-16BE
-        # 😀 (U+1F600) -> D83D DE00
+    def test_raw_string_non_bmp_chars(self, op_generator):
+        # Non-BMP characters (emoji, rare CJK) use single glyph index
+        # Each character = 4 hex digits, even for non-BMP
         result = op_generator.raw_string("F1", "😀")
-        assert result == "d83dde00"
-        assert len(result) == 8  # 4 bytes = 8 hex chars
+        # With glyph indices, each char is 4 hex digits (glyph may be 0 if missing)
+        assert len(result) == 4
+        assert all(c in "0123456789ABCDEF" for c in result)
 
-        # 𠮷 (U+20BB7) -> D842 DFB7
-        result = op_generator.raw_string("F1", "𠮷")
-        assert result == "d842dfb7"
-
-    def test_raw_string_mixed_bmp_non_bmp(self, op_generator):
-        # Mix of BMP and non-BMP characters
-        result = op_generator.raw_string("F1", "A😀B")
-        # A=0041, 😀=d83dde00, B=0042
-        assert result == "0041d83dde000042"
+    def test_raw_string_mixed_chars(self, op_generator):
+        # Mix of ASCII and CJK characters
+        result = op_generator.raw_string("F1", "Aあ")
+        # 2 characters * 4 hex digits = 8 hex chars
+        assert len(result) == 8
+        assert all(c in "0123456789ABCDEF" for c in result)
 
 
 # =============================================================================

@@ -600,11 +600,8 @@ class FontRegistry:
         if font_path:
             try:
                 fitz = _get_fitz()
-                # TTC files contain multiple fonts - use index 0 for the first font
-                if font_path.lower().endswith('.ttc'):
-                    self._font_objects[font_id] = fitz.Font(fontfile=font_path, fontindex=0)
-                else:
-                    self._font_objects[font_id] = fitz.Font(fontfile=font_path)
+                # PyMuPDF 1.26+ automatically handles TTC font collections
+                self._font_objects[font_id] = fitz.Font(fontfile=font_path)
                 logger.debug("Created Font object for %s: %s", font_id, font_path)
             except Exception as e:
                 logger.warning("Failed to create Font object for %s: %s", font_id, e)
@@ -741,18 +738,11 @@ class FontRegistry:
                 continue
 
             try:
-                # TTC files contain multiple fonts - use index 0 for the first font
-                if font_path.lower().endswith('.ttc'):
-                    xref = first_page.insert_font(
-                        fontname=font_info.font_id,
-                        fontfile=font_path,
-                        fontindex=0,
-                    )
-                else:
-                    xref = first_page.insert_font(
-                        fontname=font_info.font_id,
-                        fontfile=font_path,
-                    )
+                # PyMuPDF 1.26+ automatically handles TTC font collections
+                xref = first_page.insert_font(
+                    fontname=font_info.font_id,
+                    fontfile=font_path,
+                )
                 self._font_xrefs[font_info.font_id] = xref
             except (RuntimeError, ValueError, OSError, IOError) as e:
                 logger.warning(

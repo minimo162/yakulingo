@@ -580,24 +580,44 @@ class TestContentStreamReplacer:
         replacer.add_text_operator("/F1 12 Tf", font_id="F1")
         assert "F1" in replacer._used_fonts
 
-    def test_add_redaction(self, replacer):
-        replacer.add_redaction(100, 200, 300, 250)
-        ops = "".join(replacer.operators)
-        assert "q" in ops  # Save state
-        assert "rg" in ops  # Set color
-        assert "re" in ops  # Rectangle
-        assert "f" in ops   # Fill
-        assert "Q" in ops   # Restore state
+    def test_preserve_graphics_default_true(self, replacer):
+        """Test that preserve_graphics is True by default."""
+        assert replacer._preserve_graphics is True
+        assert replacer._parser is not None
 
-    def test_add_redaction_custom_color(self, replacer):
-        replacer.add_redaction(0, 0, 100, 50, color=(0.5, 0.5, 0.5))
-        ops = "".join(replacer.operators)
-        assert "0.5" in ops
+    def test_preserve_graphics_false(self, mock_doc, font_registry):
+        """Test that preserve_graphics=False disables parser."""
+        from yakulingo.processors.pdf_processor import ContentStreamReplacer
+        replacer = ContentStreamReplacer(mock_doc, font_registry, preserve_graphics=False)
+        assert replacer._preserve_graphics is False
+        assert replacer._parser is None
 
-    def test_add_redaction_ends_text_block(self, replacer):
-        replacer.begin_text()
-        replacer.add_redaction(0, 0, 100, 50)
-        assert replacer._in_text_block is False
+    def test_set_base_stream_without_parser(self, mock_doc, font_registry):
+        """Test set_base_stream returns self when parser is disabled."""
+        from yakulingo.processors.pdf_processor import ContentStreamReplacer
+        replacer = ContentStreamReplacer(mock_doc, font_registry, preserve_graphics=False)
+        result = replacer.set_base_stream(MagicMock())
+        assert result is replacer
+        assert replacer._filtered_base_stream is None
+
+    def test_build_combined_without_base_stream(self, replacer):
+        """Test build_combined returns just new text when no base stream."""
+        replacer.add_text_operator("/F1 12 Tf")
+        result = replacer.build_combined()
+        # Should just be the new text operators
+        assert b"BT" in result
+        assert b"/F1 12 Tf" in result
+
+    def test_build_combined_with_base_stream(self, replacer):
+        """Test build_combined combines base stream with new text."""
+        replacer._filtered_base_stream = b"0 0 100 100 re f"  # Graphics operations
+        replacer.add_text_operator("/F1 12 Tf")
+        result = replacer.build_combined()
+        # Should have q/Q wrapper around base, plus new text
+        assert b"q " in result
+        assert b"0 0 100 100 re f" in result
+        assert b" Q " in result
+        assert b"BT" in result
 
     def test_build_returns_bytes(self, replacer):
         replacer.add_text_operator("/F1 12 Tf")

@@ -515,19 +515,48 @@ class BatchTranslator:
         batches = self._create_batches(uncached_blocks)
         has_refs = bool(reference_files)
 
+        # Pre-build unique text data for each batch to avoid re-translating duplicates
+        # within the same batch (e.g., repeated headers, footers, common phrases)
+        batch_unique_data: list[tuple[list[str], list[int]]] = []
+        total_original = 0
+        total_unique = 0
+
+        for batch in batches:
+            texts = [b.text for b in batch]
+            unique_texts: list[str] = []
+            text_to_unique_idx: dict[str, int] = {}
+            original_to_unique_idx: list[int] = []
+
+            for text in texts:
+                if text not in text_to_unique_idx:
+                    text_to_unique_idx[text] = len(unique_texts)
+                    unique_texts.append(text)
+                original_to_unique_idx.append(text_to_unique_idx[text])
+
+            batch_unique_data.append((unique_texts, original_to_unique_idx))
+            total_original += len(texts)
+            total_unique += len(unique_texts)
+
+        # Log deduplication stats if there were duplicates
+        if total_unique < total_original:
+            logger.info(
+                "Batch deduplication: %d unique texts from %d original (%.1f%% reduction)",
+                total_unique, total_original,
+                (1 - total_unique / total_original) * 100
+            )
+
         # Pre-build all prompts before translation loop for efficiency
         # This eliminates prompt construction time from the translation loop
-        batch_texts = [[b.text for b in batch] for batch in batches]
-
-        def build_prompt(texts: list[str]) -> str:
-            return self.prompt_builder.build_batch(texts, has_refs, output_language, translation_style)
+        def build_prompt(unique_texts: list[str]) -> str:
+            return self.prompt_builder.build_batch(unique_texts, has_refs, output_language, translation_style)
 
         # Use parallel prompt construction for multiple batches
+        unique_texts_list = [d[0] for d in batch_unique_data]
         if len(batches) > 2:
             with ThreadPoolExecutor(max_workers=min(4, len(batches))) as executor:
-                prompts = list(executor.map(build_prompt, batch_texts))
+                prompts = list(executor.map(build_prompt, unique_texts_list))
         else:
-            prompts = [build_prompt(texts) for texts in batch_texts]
+            prompts = [build_prompt(texts) for texts in unique_texts_list]
 
         logger.debug("Pre-built %d prompts for batch translation", len(prompts))
 
@@ -545,27 +574,28 @@ class BatchTranslator:
                     status=f"Batch {i + 1} of {len(batches)}",
                 ))
 
-            texts = batch_texts[i]
+            unique_texts, original_to_unique_idx = batch_unique_data[i]
             prompt = prompts[i]  # Use pre-built prompt
 
-            # Translate (with char_limit for auto file attachment mode)
-            batch_translations = self.copilot.translate_sync(
-                texts, prompt, reference_files, self.copilot_char_limit
+            # Translate unique texts only (with char_limit for auto file attachment mode)
+            unique_translations = self.copilot.translate_sync(
+                unique_texts, prompt, reference_files, self.copilot_char_limit
             )
 
-            # Validate translation count matches batch size
-            if len(batch_translations) != len(batch):
+            # Validate translation count matches unique text count
+            if len(unique_translations) != len(unique_texts):
                 mismatched_batch_count += 1
                 logger.warning(
-                    "Translation count mismatch in batch %d: expected %d, got %d. "
+                    "Translation count mismatch in batch %d: expected %d unique, got %d. "
                     "Some blocks may not be translated correctly.",
-                    i + 1, len(batch), len(batch_translations)
+                    i + 1, len(unique_texts), len(unique_translations)
                 )
 
-            # Process results, tracking untranslated blocks
+            # Process results, expanding unique translations to all original blocks
             for idx, block in enumerate(batch):
-                if idx < len(batch_translations):
-                    translated_text = batch_translations[idx]
+                unique_idx = original_to_unique_idx[idx]
+                if unique_idx < len(unique_translations):
+                    translated_text = unique_translations[unique_idx]
                     translations[block.id] = translated_text
 
                     # Cache the translation for future use
@@ -575,8 +605,8 @@ class BatchTranslator:
                     # Mark untranslated blocks with original text
                     untranslated_block_ids.append(block.id)
                     logger.warning(
-                        "Block '%s' was not translated (index %d >= translation count %d)",
-                        block.id, idx, len(batch_translations)
+                        "Block '%s' was not translated (unique_idx %d >= translation count %d)",
+                        block.id, unique_idx, len(unique_translations)
                     )
                     translations[block.id] = block.text
 

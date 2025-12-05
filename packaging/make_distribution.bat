@@ -149,9 +149,9 @@ for %%d in ("yakulingo" "prompts" "config") do (
     if exist "%%~d" robocopy "%%~d" "%DIST_DIR%\%%~d" /E /MT:8 /NFL /NDL /NJH /NJS /R:1 /W:1 >nul 2>&1
 )
 
-:: Create ZIP archive using PowerShell (faster than tar for large files)
+:: Create ZIP archive using .NET ZipFile (faster than Compress-Archive)
 echo        Creating ZIP archive...
-powershell -NoProfile -Command "Compress-Archive -Path 'dist_temp\YakuLingo' -DestinationPath '%DIST_ZIP%' -CompressionLevel Optimal -Force"
+powershell -NoProfile -Command "Add-Type -Assembly 'System.IO.Compression.FileSystem'; [System.IO.Compression.ZipFile]::CreateFromDirectory('dist_temp\YakuLingo', '%DIST_ZIP%', [System.IO.Compression.CompressionLevel]::Fastest, $false)"
 
 :: Cleanup temp folder
 echo        Cleaning up...

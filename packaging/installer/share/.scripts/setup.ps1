@@ -220,22 +220,22 @@ if (-not $GuiMode) {
 }
 
 # ============================================================
-# Step 2: Copy ZIP to local
+# Step 2: Prepare temp directory (skip local ZIP copy for speed)
 # ============================================================
-Write-Status -Message "Copying files..." -Progress
+Write-Status -Message "Preparing..." -Progress
 if (-not $GuiMode) {
     Write-Host ""
-    Write-Host "[2/4] Copying files..." -ForegroundColor Yellow
+    Write-Host "[2/4] Preparing extraction..." -ForegroundColor Yellow
 }
 
 $TempDir = Join-Path $env:TEMP "YakuLingo_setup_$(Get-Date -Format 'yyyyMMddHHmmss')"
 New-Item -ItemType Directory -Path $TempDir -Force | Out-Null
 
-$LocalZip = Join-Path $TempDir $ZipFileName
-Copy-Item -Path $ZipFile -Destination $LocalZip -Force
+# Use network ZIP directly (no local copy - faster)
+$LocalZip = $ZipFile
 
 if (-not $GuiMode) {
-    Write-Host "[OK] Copy completed" -ForegroundColor Green
+    Write-Host "[OK] Ready to extract" -ForegroundColor Green
 }
 
 # ============================================================
@@ -248,10 +248,13 @@ if (-not $GuiMode) {
 }
 
 # Use custom extraction function with progress for GUI mode
+# Both modes use .NET ZipFile for speed (Expand-Archive is slower)
 if ($GuiMode) {
     Expand-ZipWithProgress -ZipPath $LocalZip -DestPath $TempDir
 } else {
-    Expand-Archive -Path $LocalZip -DestinationPath $TempDir -Force
+    # Fast extraction using .NET (no progress display)
+    Add-Type -Assembly 'System.IO.Compression.FileSystem'
+    [System.IO.Compression.ZipFile]::ExtractToDirectory($LocalZip, $TempDir)
 }
 
 # Find extracted folder (YakuLingo*)
@@ -279,14 +282,21 @@ if (-not (Test-Path $SetupPath)) {
     New-Item -ItemType Directory -Path $SetupPath -Force | Out-Null
 }
 
-# Copy all files (environment folders are always overwritten for clean setup)
+# Copy all files using robocopy for parallel file transfer (much faster)
 Write-Status -Message "Copying files to destination..." -Progress
-Get-ChildItem -Path $SourceDir | ForEach-Object {
-    $dest = Join-Path $SetupPath $_.Name
-    if ($_.PSIsContainer) {
-        Copy-Item -Path $_.FullName -Destination $dest -Recurse -Force
-    } else {
-        Copy-Item -Path $_.FullName -Destination $dest -Force
+# robocopy /E = include empty dirs, /MT:8 = 8 threads, /NFL /NDL /NJH /NJS /NP = minimal output
+$robocopyArgs = @($SourceDir, $SetupPath, "/E", "/MT:8", "/NFL", "/NDL", "/NJH", "/NJS", "/NP", "/R:1", "/W:1")
+$robocopyResult = Start-Process -FilePath "robocopy.exe" -ArgumentList $robocopyArgs -NoNewWindow -Wait -PassThru
+# robocopy exit codes: 0-7 = success, 8+ = error
+if ($robocopyResult.ExitCode -ge 8) {
+    # Fallback to Copy-Item if robocopy fails
+    Get-ChildItem -Path $SourceDir | ForEach-Object {
+        $dest = Join-Path $SetupPath $_.Name
+        if ($_.PSIsContainer) {
+            Copy-Item -Path $_.FullName -Destination $dest -Recurse -Force
+        } else {
+            Copy-Item -Path $_.FullName -Destination $dest -Force
+        }
     }
 }
 

@@ -1218,7 +1218,7 @@ body {
 .main-area:not(.has-results) .input-panel .main-card-inner textarea {
     flex: 1 !important;
     min-height: var(--input-min-height);
-    height: 100% !important;  /* Fill parent height - override Quasar autogrow */
+    height: auto !important;  /* Let flex control height (autogrow removed from large panel) */
     overflow-y: auto !important;  /* Scrollable when content exceeds space */
     resize: none !important;  /* Disable manual resize since we control height */
 }

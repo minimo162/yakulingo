@@ -708,7 +708,11 @@ DocumentAnalyzer(
 
 **PDF Text Rendering (Low-level API):**
 
-PDFMathTranslate準拠の低レベルAPIでテキストを描画する際、**グリフIDを使用する**のが正しいアプローチです。
+PDF翻訳では**低レベルAPI（PDFMathTranslate準拠）がデフォルト**で使用されます。
+低レベルAPIはPDFオペレータを直接生成し、より精密なレイアウト制御が可能です。
+成功率が50%未満の場合は高レベルAPI（`insert_textbox`）にフォールバックします。
+
+テキストを描画する際、**グリフIDを使用する**のが正しいアプローチです。
 
 ```python
 # 正しい: グリフIDを使用

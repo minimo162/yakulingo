@@ -1151,6 +1151,7 @@ body {
     width: var(--input-panel-width-wide);
     max-width: var(--input-panel-max-width);
     flex: 1;  /* Fill available vertical space */
+    max-height: 100%;  /* Respect parent height constraint to keep hint-section in viewport */
     display: flex;
     flex-direction: column;
     align-items: stretch;  /* Stretch children to full width */

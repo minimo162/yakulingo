@@ -58,14 +58,8 @@ def main():
             }}
         </style>''')
 
-        # 診断情報を表示するエリア
-        diagnostic_output = ui.textarea(
-            label='診断結果（この内容をコピーして共有してください）',
-            value='読み込み中...'
-        ).classes('w-full').props('readonly autogrow')
-
-        # 2カラムレイアウトを再現
-        with ui.element('div').classes('app-container desktop-mode') as app_container:
+        # 2カラムレイアウトを再現（実際のアプリと同じ構造）
+        with ui.element('div').classes('app-container desktop-mode').style('position: absolute; top: 0; left: 0; right: 0; bottom: 0;') as app_container:
             # サイドバー
             with ui.element('div').classes('sidebar'):
                 with ui.element('div').classes('sidebar-header'):
@@ -92,9 +86,9 @@ def main():
                                 ui.label('入力言語を自動判定して翻訳します').classes('text-xs')
 
         # JavaScriptで詳細な診断情報を取得
-        ui.timer(1.0, lambda: collect_diagnostics(diagnostic_output), once=True)
+        ui.timer(1.0, collect_diagnostics, once=True)
 
-        async def collect_diagnostics(output_elem):
+        async def collect_diagnostics():
             js_code = '''
             (function() {
                 const results = {};
@@ -175,7 +169,6 @@ def main():
 
 === 診断結果ここまで ===
 """
-            output_elem.set_value(output_text)
             print("\n" + output_text)
 
     ui.run(

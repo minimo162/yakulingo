@@ -1319,7 +1319,6 @@ class TranslationService:
         reference_files: Optional[list[Path]] = None,
         on_progress: Optional[ProgressCallback] = None,
         output_language: str = "en",
-        use_ocr: bool = True,
         translation_style: str = "concise",
         selected_sections: Optional[list[int]] = None,
     ) -> TranslationResult:
@@ -1331,7 +1330,6 @@ class TranslationService:
             reference_files: Reference files to attach
             on_progress: Callback for progress updates
             output_language: "en" for English, "jp" for Japanese
-            use_ocr: For PDF files, use yomitoku OCR if available (default True)
             translation_style: "standard", "concise", or "minimal" (default: "concise")
                               Only affects English output
             selected_sections: List of section indices to translate (None = all sections)
@@ -1359,7 +1357,6 @@ class TranslationService:
                     reference_files,
                     on_progress,
                     output_language,
-                    use_ocr,
                     start_time,
                     translation_style,
                     selected_sections,
@@ -1540,7 +1537,6 @@ class TranslationService:
         reference_files: Optional[list[Path]],
         on_progress: Optional[ProgressCallback],
         output_language: str,
-        use_ocr: bool,
         start_time: float,
         translation_style: str = "concise",
         selected_sections: Optional[list[int]] = None,
@@ -1555,8 +1551,12 @@ class TranslationService:
         4. Apply all translations
 
         This provides better progress feedback for large PDFs.
+        Always uses yomitoku OCR if available for best quality.
         """
         from yakulingo.processors.pdf_processor import is_yomitoku_available
+
+        # Always use OCR if available for best quality
+        use_ocr = is_yomitoku_available()
 
         # Get page count for progress estimation
         total_pages = processor.get_page_count(input_path)

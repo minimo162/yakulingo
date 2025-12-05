@@ -40,7 +40,6 @@ def create_file_panel(
     on_download: Callable[[], None],
     on_reset: Callable[[], None],
     on_language_change: Optional[Callable[[str], None]] = None,
-    on_pdf_fast_mode_change: Optional[Callable[[bool], None]] = None,
     on_bilingual_change: Optional[Callable[[bool], None]] = None,
     on_export_glossary_change: Optional[Callable[[bool], None]] = None,
     on_style_change: Optional[Callable[[str], None]] = None,
@@ -77,9 +76,6 @@ def create_file_panel(
                     # Translation style selector (only for English output)
                     if state.file_output_language == 'en':
                         _style_selector(translation_style, on_style_change)
-                    # PDF-specific options
-                    if state.file_info and state.file_info.file_type == FileType.PDF:
-                        _pdf_mode_selector(state, on_pdf_fast_mode_change)
                     # Common file translation options (for all file types)
                     _bilingual_selector(
                         state.file_info.file_type if state.file_info else None,
@@ -189,19 +185,6 @@ def _style_selector(current_style: str, on_change: Optional[Callable[[str], None
                     on_click=lambda k=style_key: on_change and on_change(k)
                 ).classes(style_classes).props('flat no-caps dense')
                 btn.tooltip(tooltip)
-
-
-def _pdf_mode_selector(state: AppState, on_change: Optional[Callable[[bool], None]]):
-    """PDF processing mode selector - checkbox for fast mode"""
-    with ui.row().classes('w-full justify-center mt-3 items-center gap-2'):
-        ui.checkbox(
-            '高速モード',
-            value=state.pdf_fast_mode,
-            on_change=lambda e: on_change and on_change(e.value),
-        ).classes('pdf-mode-checkbox').tooltip(
-            'OCRレイアウト解析をスキップして高速処理します。'
-            'テキストベースのPDFに最適。スキャン文書や複雑なレイアウトでは精度が低下する場合があります。'
-        )
 
 
 # Bilingual output descriptions by file type

@@ -9,6 +9,9 @@ echo.
 
 cd /d "%~dp0\.."
 
+:: Timer start
+set START_TIME=%TIME%
+
 :: ============================================================
 :: Step 1: Check required files exist
 :: ============================================================
@@ -17,23 +20,23 @@ echo [1/5] Checking required files...
 set MISSING_FILES=0
 
 if not exist ".venv" (
-    echo [ERROR] .venv directory not found. Run install_deps.bat first.
+    echo        [ERROR] .venv directory not found. Run install_deps.bat first.
     set MISSING_FILES=1
 )
 if not exist ".uv-python" (
-    echo [ERROR] .uv-python directory not found. Run install_deps.bat first.
+    echo        [ERROR] .uv-python directory not found. Run install_deps.bat first.
     set MISSING_FILES=1
 )
 if not exist ".playwright-browsers" (
-    echo [ERROR] .playwright-browsers directory not found. Run install_deps.bat first.
+    echo        [ERROR] .playwright-browsers directory not found. Run install_deps.bat first.
     set MISSING_FILES=1
 )
 if not exist "app.py" (
-    echo [ERROR] app.py not found.
+    echo        [ERROR] app.py not found.
     set MISSING_FILES=1
 )
 if not exist "yakulingo" (
-    echo [ERROR] yakulingo directory not found.
+    echo        [ERROR] yakulingo directory not found.
     set MISSING_FILES=1
 )
 
@@ -43,7 +46,7 @@ if !MISSING_FILES! equ 1 (
     pause
     exit /b 1
 )
-echo [OK] All required files found.
+echo        [OK] All required files found.
 
 :: ============================================================
 :: Step 2: Clean up unnecessary files
@@ -51,22 +54,20 @@ echo [OK] All required files found.
 echo.
 echo [2/5] Cleaning up unnecessary files...
 
-:: Remove Python cache files
-for /r ".venv" %%f in (*.pyc) do del /q "%%f" 2>nul
-for /r ".venv" %%d in (__pycache__) do rd /s /q "%%d" 2>nul
-for /r "." %%d in (__pycache__) do rd /s /q "%%d" 2>nul
+:: Use PowerShell for fast parallel cleanup
+echo        Removing __pycache__ and .pyc files...
+powershell -NoProfile -Command "Get-ChildItem -Path '.venv','yakulingo' -Recurse -Directory -Filter '__pycache__' -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue; Get-ChildItem -Path '.venv' -Recurse -Filter '*.pyc' -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue"
 
 :: Remove uv cache (not needed for distribution)
+echo        Removing cache directories...
 if exist ".uv-cache" rd /s /q ".uv-cache" 2>nul
-
-:: Remove wheels directory (already installed)
 if exist ".wheels" rd /s /q ".wheels" 2>nul
 
 :: Remove any temporary files
 del /q "*.tmp" 2>nul
 del /q ".venv\pyvenv.cfg.tmp" 2>nul
 
-echo [OK] Cleanup completed.
+echo        [OK] Cleanup completed.
 
 :: ============================================================
 :: Step 3: Fix paths for portability
@@ -91,7 +92,7 @@ echo home = __PYTHON_HOME__> ".venv\pyvenv.cfg"
 echo include-system-site-packages = false>> ".venv\pyvenv.cfg"
 echo version =%PYTHON_VERSION%>> ".venv\pyvenv.cfg"
 
-echo [OK] Paths fixed for portability.
+echo        [OK] Paths fixed for portability.
 
 :: ============================================================
 :: Step 4: Remove user-specific files
@@ -102,7 +103,7 @@ echo [4/5] Removing user-specific files...
 :: Remove any log files
 del /q "*.log" 2>nul
 
-echo [OK] User-specific files removed.
+echo        [OK] User-specific files removed.
 
 :: ============================================================
 :: Step 5: Create distribution package with _internal structure
@@ -123,31 +124,42 @@ if exist "%DIST_ZIP%" del /q "%DIST_ZIP%"
 if exist "dist_temp" rd /s /q "dist_temp"
 
 :: Create distribution folder structure
-echo [INFO] Creating folder structure...
+echo        Creating folder structure...
 mkdir "%DIST_DIR%" 2>nul
 
 :: Copy files to distribution folder
-echo   Copying files...
+echo        [5a/5e] Copying individual files...
 for %%f in ("YakuLingo.exe" "app.py" "glossary.csv" "pyproject.toml" "uv.lock" "uv.toml" "README.md") do (
     if exist "%%~f" copy /y "%%~f" "%DIST_DIR%\" >nul
 )
 
-:: Copy folders to distribution
-for %%d in (".venv" ".uv-python" ".playwright-browsers" "yakulingo" "prompts" "config") do (
-    if exist "%%~d" (
-        echo   Copying: %%~d ...
-        xcopy /s /e /i /q "%%~d" "%DIST_DIR%\%%~d" >nul
-    )
+:: Copy folders using robocopy (faster with /MT for multi-threading)
+:: /E = include empty dirs, /MT:8 = 8 threads, /NFL /NDL /NJH /NJS = minimal output
+echo        [5b/5e] Copying .venv (Python environment)...
+robocopy ".venv" "%DIST_DIR%\.venv" /E /MT:8 /NFL /NDL /NJH /NJS /R:1 /W:1 >nul 2>&1
+
+echo        [5c/5e] Copying .uv-python (Python runtime)...
+robocopy ".uv-python" "%DIST_DIR%\.uv-python" /E /MT:8 /NFL /NDL /NJH /NJS /R:1 /W:1 >nul 2>&1
+
+echo        [5d/5e] Copying .playwright-browsers (Chromium)...
+robocopy ".playwright-browsers" "%DIST_DIR%\.playwright-browsers" /E /MT:8 /NFL /NDL /NJH /NJS /R:1 /W:1 >nul 2>&1
+
+echo        [5e/5e] Copying application files...
+for %%d in ("yakulingo" "prompts" "config") do (
+    if exist "%%~d" robocopy "%%~d" "%DIST_DIR%\%%~d" /E /MT:8 /NFL /NDL /NJH /NJS /R:1 /W:1 >nul 2>&1
 )
 
-:: Create ZIP archive
-echo [INFO] Creating distribution archive...
-cd dist_temp
-tar -a -cf "..\%DIST_ZIP%" YakuLingo 2>nul
-cd ..
+:: Create ZIP archive using PowerShell (faster than tar for large files)
+echo        Creating ZIP archive...
+powershell -NoProfile -Command "Compress-Archive -Path 'dist_temp\YakuLingo' -DestinationPath '%DIST_ZIP%' -CompressionLevel Optimal -Force"
 
 :: Cleanup temp folder
+echo        Cleaning up...
 rd /s /q "dist_temp" 2>nul
+
+:: Calculate elapsed time
+set END_TIME=%TIME%
+call :CalcElapsed "%START_TIME%" "%END_TIME%"
 
 if exist "%DIST_ZIP%" (
     echo.
@@ -156,16 +168,11 @@ if exist "%DIST_ZIP%" (
     echo.
     echo   File: %DIST_ZIP%
     for %%A in ("%DIST_ZIP%") do echo   Size: %%~zA bytes
-    echo.
-    echo Structure:
-    echo   YakuLingo/
-    echo     YakuLingo.exe      ^<-- Application launcher
-    echo     app.py, yakulingo/, ...
+    echo   Time: %ELAPSED_TIME%
     echo.
     echo ============================================================
     echo.
     echo Creating share folder package...
-    echo.
 
     :: Create share folder with network installer
     set SHARE_DIR=share_package
@@ -176,8 +183,9 @@ if exist "%DIST_ZIP%" (
     copy /y "!DIST_ZIP!" "!SHARE_DIR!\" >nul
     copy /y "packaging\installer\share\setup.vbs" "!SHARE_DIR!\" >nul
     copy /y "packaging\installer\share\README.txt" "!SHARE_DIR!\" >nul
-    xcopy /s /e /i /q "packaging\installer\share\.scripts" "!SHARE_DIR!\.scripts" >nul
+    robocopy "packaging\installer\share\.scripts" "!SHARE_DIR!\.scripts" /E /NFL /NDL /NJH /NJS >nul 2>&1
 
+    echo.
     echo [SUCCESS] Share folder package created!
     echo.
     echo   Folder: !SHARE_DIR!\
@@ -196,4 +204,39 @@ if exist "%DIST_ZIP%" (
 echo.
 pause
 endlocal
+exit /b 0
+
+:: ============================================================
+:: Subroutine: Calculate elapsed time
+:: ============================================================
+:CalcElapsed
+set "start=%~1"
+set "end=%~2"
+
+:: Parse start time
+for /f "tokens=1-4 delims=:." %%a in ("%start%") do (
+    set /a "start_h=%%a, start_m=1%%b-100, start_s=1%%c-100, start_ms=1%%d-100"
+)
+
+:: Parse end time
+for /f "tokens=1-4 delims=:." %%a in ("%end%") do (
+    set /a "end_h=%%a, end_m=1%%b-100, end_s=1%%c-100, end_ms=1%%d-100"
+)
+
+:: Calculate total seconds
+set /a "start_total=start_h*3600 + start_m*60 + start_s"
+set /a "end_total=end_h*3600 + end_m*60 + end_s"
+set /a "elapsed=end_total - start_total"
+
+:: Handle negative (crossed midnight)
+if %elapsed% lss 0 set /a "elapsed+=86400"
+
+:: Format output
+set /a "elapsed_m=elapsed/60"
+set /a "elapsed_s=elapsed%%60"
+if %elapsed_m% gtr 0 (
+    set "ELAPSED_TIME=%elapsed_m%m %elapsed_s%s"
+) else (
+    set "ELAPSED_TIME=%elapsed_s%s"
+)
 exit /b 0

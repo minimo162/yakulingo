@@ -427,6 +427,7 @@ body {
 .sidebar-history {
     display: flex;
     flex-direction: column;
+    flex: 1;  /* Fill remaining space in sidebar */
     min-height: 0;
     overflow: hidden;
     width: 100%;
@@ -435,7 +436,7 @@ body {
 .history-scroll {
     flex: 1;
     min-height: 0;
-    max-height: calc(100vh - 280px);
+    /* Height managed by flexbox - no fixed max-height */
     width: 100%;
 }
 

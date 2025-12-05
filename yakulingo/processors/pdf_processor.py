@@ -661,26 +661,32 @@ class FontRegistry:
 
     def get_glyph_id(self, font_id: str, char: str) -> int:
         """
-        Get character code for PDF text operators.
+        Get glyph index for PDF text operators.
 
-        PyMuPDF's insert_font embeds fonts with Identity-H encoding (CID font).
-        For Identity-H encoding, the character code is the Unicode code point,
-        NOT the glyph index.
+        PyMuPDF's insert_font embeds fonts with Identity-H encoding but
+        WITHOUT a CIDToGIDMap. This means CID values are interpreted directly
+        as glyph indices, NOT as Unicode code points.
 
-        Note: has_glyph() is used only to verify glyph existence in the font,
-        but the returned value (glyph index) should NOT be used for encoding.
-        PDF viewers use the CMap (Identity-H) to map code points to glyphs.
+        Therefore, we must use the actual glyph index from has_glyph(),
+        not the Unicode code point.
 
         Args:
             font_id: Font ID (F1, F2, ...)
             char: Single character to look up
 
         Returns:
-            Unicode code point for the character (used with Identity-H encoding)
+            Glyph index for the character (for Identity-H without CIDToGIDMap)
         """
-        # For Identity-H encoding, always use Unicode code point
-        # The PDF viewer will use the font's CMap to map to the correct glyph
-        return ord(char)
+        font_obj = self._font_objects.get(font_id)
+        if font_obj:
+            try:
+                glyph_idx = font_obj.has_glyph(ord(char))
+                if glyph_idx:
+                    return glyph_idx
+            except Exception as e:
+                logger.debug("Error getting glyph index for '%s': %s", char, e)
+        # Fallback: use .notdef glyph (index 0) for missing characters
+        return 0
 
     def get_char_width(self, font_id: str, char: str, font_size: float) -> float:
         """
@@ -799,37 +805,48 @@ class PdfOperatorGenerator:
 
     def raw_string(self, font_id: str, text: str) -> str:
         """
-        Encode text for PDF text operators.
+        Encode text for PDF text operators using glyph indices.
 
-        PyMuPDF's insert_font embeds fonts with Identity-H encoding (CID font).
-        For Identity-H encoding, character codes are Unicode code points in
-        UTF-16BE format:
-        - BMP characters (U+0000-U+FFFF): 4-digit hex (2 bytes)
-        - Non-BMP characters (U+10000+): 8-digit hex as surrogate pair (4 bytes)
+        PyMuPDF's insert_font embeds fonts with Identity-H encoding but
+        WITHOUT a CIDToGIDMap. This means CID values in the content stream
+        are interpreted directly as glyph indices.
+
+        We must use actual glyph indices from the font, NOT Unicode code points.
+        Each glyph index is encoded as a 4-digit hex (2 bytes).
 
         Args:
             font_id: Font ID
             text: Text to encode
 
         Returns:
-            Hex-encoded string in UTF-16BE format
+            Hex-encoded string of glyph indices
         """
-        # Use Python's UTF-16BE encoder which correctly handles surrogate pairs
-        utf16be_bytes = text.encode('utf-16-be')
-        hex_result = utf16be_bytes.hex()
+        hex_parts = []
+        missing_glyphs = []
+
+        for char in text:
+            glyph_idx = self.font_registry.get_glyph_id(font_id, char)
+            if glyph_idx == 0 and char not in ('\0', '\x00'):
+                missing_glyphs.append(char)
+            hex_parts.append(f'{glyph_idx:04X}')
+
+        hex_result = ''.join(hex_parts)
 
         # Log encoding details for debugging (only for first 50 chars to avoid spam)
         if logger.isEnabledFor(logging.DEBUG):
             preview = text[:50] + ('...' if len(text) > 50 else '')
             hex_preview = hex_result[:100] + ('...' if len(hex_result) > 100 else '')
-            # Check for non-BMP characters (surrogate pairs)
-            has_non_bmp = any(ord(c) > 0xFFFF for c in text)
             logger.debug(
-                "Encoding text: font=%s, chars=%d, bytes=%d, has_non_bmp=%s, "
+                "Encoding text: font=%s, chars=%d, glyphs=%d, "
                 "text='%s', hex='%s'",
-                font_id, len(text), len(utf16be_bytes), has_non_bmp,
+                font_id, len(text), len(hex_parts),
                 preview, hex_preview
             )
+            if missing_glyphs:
+                logger.debug(
+                    "Missing glyphs in font %s: %s",
+                    font_id, missing_glyphs[:10]
+                )
 
         return hex_result
 

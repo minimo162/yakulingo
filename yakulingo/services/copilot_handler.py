@@ -1307,20 +1307,20 @@ class CopilotHandler:
             else:
                 logger.warning("New chat button not found - chat context may not be cleared")
 
-                # Wait for new chat to be ready (input field becomes available)
-                input_selector = '#m365-chat-editor-target-element, [data-lexical-editor="true"], [contenteditable="true"]'
-                try:
-                    self._page.wait_for_selector(input_selector, timeout=5000, state='visible')
-                except PlaywrightTimeoutError:
-                    # Fallback: wait a bit if selector doesn't appear
-                    time.sleep(1)
+            # Wait for new chat to be ready (input field becomes available)
+            input_selector = '#m365-chat-editor-target-element, [data-lexical-editor="true"], [contenteditable="true"]'
+            try:
+                self._page.wait_for_selector(input_selector, timeout=5000, state='visible')
+            except PlaywrightTimeoutError:
+                # Fallback: wait a bit if selector doesn't appear
+                time.sleep(1)
 
-                # Verify that previous responses are cleared (reduced from 5.0s for faster detection)
-                self._wait_for_responses_cleared(timeout=3.0)
+            # Verify that previous responses are cleared (reduced from 5.0s for faster detection)
+            self._wait_for_responses_cleared(timeout=3.0)
 
-                # 新しいチャット開始後、GPT-5を有効化
-                # （送信時にも再確認するが、UIの安定性のため先に試行）
-                self._ensure_gpt5_enabled()
+            # 新しいチャット開始後、GPT-5を有効化
+            # （送信時にも再確認するが、UIの安定性のため先に試行）
+            self._ensure_gpt5_enabled()
         except (PlaywrightError, AttributeError):
             pass
 

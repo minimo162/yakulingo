@@ -2263,9 +2263,8 @@ def prepare_translation_cells(
             continue
 
         if para.contents.strip():
-            # Preserve line breaks to maintain original layout structure.
-            # This prevents text fragmentation in narrow bounding boxes.
-            text = para.contents
+            # Remove line breaks (yomitoku style: replace "\n" with "")
+            text = para.contents.replace("\n", "")
             cells.append(TranslationCell(
                 address=f"P{page_num}_{para.order}",
                 text=text,
@@ -2279,9 +2278,8 @@ def prepare_translation_cells(
     for table in results.tables:
         for cell in table.cells:
             if cell.contents.strip():
-                # Preserve line breaks to maintain original layout structure.
-                # This prevents text fragmentation in narrow table cells.
-                text = cell.contents
+                # Remove line breaks (yomitoku style: replace "\n" with "")
+                text = cell.contents.replace("\n", "")
                 cells.append(TranslationCell(
                     address=f"T{page_num}_{table.order}_{cell.row}_{cell.col}",
                     text=text,
@@ -3512,12 +3510,8 @@ class PdfProcessor(FileProcessor):
 
                             text_parts.append(line_text)
 
-                        # Preserve line breaks to maintain original layout structure.
-                        # This is especially important for narrow columns and tables
-                        # where text wrapping must match the original bounding box.
-                        # Note: yomitoku style (joining without newlines) is disabled
-                        # to prevent excessive text fragmentation in narrow boxes.
-                        text = "\n".join(text_parts).strip()
+                        # Remove line breaks (yomitoku style: join without newlines)
+                        text = "".join(text_parts).strip()
 
                         if text and self.should_translate(text):
                             font_name = None

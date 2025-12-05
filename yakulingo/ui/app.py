@@ -1482,13 +1482,12 @@ def _detect_display_settings() -> tuple[tuple[int, int], str, tuple[int, int, in
             logger.debug("No screens detected via pywebview, using default")
             return (default_window, default_mode, default_panels)
 
-        # Get Windows DPI scale factor to convert physical → logical pixels
-        scale_factor = _get_windows_scale_factor()
-
-        # Log all detected screens (physical pixels)
+        # Log all detected screens
+        # Note: pywebview on Windows returns logical pixels (after DPI scaling applied)
+        # e.g., 1920x1200 physical at 125% scaling → 1536x960 logical
         for i, screen in enumerate(screens):
             logger.info(
-                "Screen %d: %dx%d at (%d, %d) [physical]",
+                "Screen %d: %dx%d at (%d, %d)",
                 i, screen.width, screen.height, screen.x, screen.y
             )
 
@@ -1496,14 +1495,13 @@ def _detect_display_settings() -> tuple[tuple[int, int], str, tuple[int, int, in
         largest_screen = max(screens, key=lambda s: s.width * s.height)
         is_multi_monitor = len(screens) > 1
 
-        # Convert physical pixels to logical pixels
-        logical_width = int(largest_screen.width / scale_factor)
-        logical_height = int(largest_screen.height / scale_factor)
+        # Use screen dimensions directly (already in logical pixels on Windows)
+        logical_width = largest_screen.width
+        logical_height = largest_screen.height
 
         logger.info(
-            "Display detection: %d monitor(s), physical=%dx%d, logical=%dx%d (scale=%.0f%%), multi_monitor=%s",
-            len(screens), largest_screen.width, largest_screen.height,
-            logical_width, logical_height, scale_factor * 100, is_multi_monitor
+            "Display detection: %d monitor(s), screen=%dx%d, multi_monitor=%s",
+            len(screens), logical_width, logical_height, is_multi_monitor
         )
 
         # Calculate window and panel sizes based on logical screen resolution

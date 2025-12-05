@@ -744,6 +744,11 @@ class FontRegistry:
                     fontfile=font_path,
                 )
                 self._font_xrefs[font_info.font_id] = xref
+                logger.debug(
+                    "Embedded font: id=%s, lang=%s, encoding=Identity-H (UTF-16BE), "
+                    "family=%s, path=%s, xref=%s",
+                    font_info.font_id, lang, font_info.family, font_path, xref
+                )
             except (RuntimeError, ValueError, OSError, IOError) as e:
                 logger.warning(
                     "Failed to embed font '%s' from '%s': %s",
@@ -798,24 +803,35 @@ class PdfOperatorGenerator:
 
         PyMuPDF's insert_font embeds fonts with Identity-H encoding (CID font).
         For Identity-H encoding, character codes are Unicode code points in
-        UTF-16BE format (always 4-digit hex / 2 bytes per character).
+        UTF-16BE format:
+        - BMP characters (U+0000-U+FFFF): 4-digit hex (2 bytes)
+        - Non-BMP characters (U+10000+): 8-digit hex as surrogate pair (4 bytes)
 
         Args:
             font_id: Font ID
             text: Text to encode
 
         Returns:
-            Hex-encoded string in UTF-16BE format (4 digits per character)
+            Hex-encoded string in UTF-16BE format
         """
-        result = []
+        # Use Python's UTF-16BE encoder which correctly handles surrogate pairs
+        utf16be_bytes = text.encode('utf-16-be')
+        hex_result = utf16be_bytes.hex()
 
-        for char in text:
-            # Use Unicode code point for Identity-H encoding
-            # Always use 4-digit hex (UTF-16BE format) for all fonts
-            code_point = self.font_registry.get_glyph_id(font_id, char)
-            result.append("%04x" % code_point)
+        # Log encoding details for debugging (only for first 50 chars to avoid spam)
+        if logger.isEnabledFor(logging.DEBUG):
+            preview = text[:50] + ('...' if len(text) > 50 else '')
+            hex_preview = hex_result[:100] + ('...' if len(hex_result) > 100 else '')
+            # Check for non-BMP characters (surrogate pairs)
+            has_non_bmp = any(ord(c) > 0xFFFF for c in text)
+            logger.debug(
+                "Encoding text: font=%s, chars=%d, bytes=%d, has_non_bmp=%s, "
+                "text='%s', hex='%s'",
+                font_id, len(text), len(utf16be_bytes), has_non_bmp,
+                preview, hex_preview
+            )
 
-        return "".join(result)
+        return hex_result
 
     def calculate_text_width(self, font_id: str, text: str, font_size: float) -> float:
         """

@@ -539,6 +539,23 @@ class TestPdfOperatorGenerator:
         result = op_generator.raw_string("F1", "")
         assert result == ""
 
+    def test_raw_string_surrogate_pairs(self, op_generator):
+        # Non-BMP characters require surrogate pairs in UTF-16BE
+        # 😀 (U+1F600) -> D83D DE00
+        result = op_generator.raw_string("F1", "😀")
+        assert result == "d83dde00"
+        assert len(result) == 8  # 4 bytes = 8 hex chars
+
+        # 𠮷 (U+20BB7) -> D842 DFB7
+        result = op_generator.raw_string("F1", "𠮷")
+        assert result == "d842dfb7"
+
+    def test_raw_string_mixed_bmp_non_bmp(self, op_generator):
+        # Mix of BMP and non-BMP characters
+        result = op_generator.raw_string("F1", "A😀B")
+        # A=0041, 😀=d83dde00, B=0042
+        assert result == "0041d83dde000042"
+
 
 # =============================================================================
 # Tests: ContentStreamReplacer

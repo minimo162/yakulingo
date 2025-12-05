@@ -1,6 +1,6 @@
 # YakuLingo - 技術仕様書
 
-> **Version**: 2.12
+> **Version**: 2.13
 > **Date**: 2025-12
 > **App Name**: YakuLingo (訳リンゴ)
 
@@ -955,9 +955,21 @@ class PdfProcessor(FileProcessor):
     """
     使用ライブラリ:
     - PyMuPDF (fitz): PDF読み書き
+    - pdfminer.six: フォント種別判定（PDFMathTranslate準拠）
     - yomitoku: OCR/レイアウト解析（オプション）
 
-    フォント設定（PDFMathTranslate準拠）:
+    PDFMathTranslate準拠機能:
+    - 低レベルAPI: PDFオペレータを直接生成（高精度レイアウト制御）
+    - 既存フォント再利用: PDFに埋め込まれたCID/Simpleフォントを検出・再利用
+    - フォント種別判定: pdfminer.sixでCID vs Simpleフォントを判定
+    - フォントサブセッティング: 未使用グリフを削除してファイルサイズを削減
+
+    フォント種別に応じたエンコーディング:
+    - EMBEDDED (新規埋め込み): has_glyph()でグリフID取得 → 4桁hex
+    - CID (既存CIDフォント): ord(c)をそのまま4桁hex
+    - SIMPLE (既存Simpleフォント): ord(c)を2桁hex
+
+    フォールバックフォント:
     - ja: SourceHanSerifJP-Regular.ttf
     - en: Tiro
     - zh-CN: SourceHanSerifSC-Regular.ttf
@@ -1280,6 +1292,7 @@ openpyxl>=3.1.0
 python-docx>=1.1.0
 python-pptx>=0.6.23
 PyMuPDF>=1.24.0
+pdfminer.six>=20231228
 pillow>=10.0.0
 numpy>=1.24.0
 ```
@@ -1517,6 +1530,11 @@ python -c "import time; t=time.time(); from yakulingo.ui import run_app; print(f
 ---
 
 ## 変更履歴
+
+### 2.13 (2025-12)
+- PDF翻訳: 既存フォント再利用機能追加（PDFMathTranslate準拠）
+- PDF翻訳: pdfminer.sixによるCID/Simpleフォント種別判定
+- PDF翻訳: 高レベルAPIフォールバックを削除し低レベルAPIに統一
 
 ### 2.12 (2025-12)
 - PDF翻訳精度向上（キャッシュ機構、数式検出、フォント調整の改善）

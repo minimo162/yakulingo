@@ -375,6 +375,10 @@ DEFAULT_FONT_SIZE = 10.0
 MIN_FONT_SIZE = 1.0
 MAX_FONT_SIZE = 72.0  # Allow large font sizes (was 12.0, too restrictive)
 
+# Subscript/superscript detection (PDFMathTranslate compliant)
+# Characters with font size <= base_size * threshold are considered sub/superscript
+SUBSCRIPT_SUPERSCRIPT_THRESHOLD = 0.79
+
 # Line height compression constants
 MIN_LINE_HEIGHT = 1.0
 LINE_HEIGHT_COMPRESSION_STEP = 0.05
@@ -494,6 +498,64 @@ def vflag(font: str, char: str, vfont: str = None, vchar: str = None) -> bool:
         return True
 
     return False
+
+
+def is_subscript_superscript(
+    char_size: float,
+    base_size: float,
+    threshold: float = SUBSCRIPT_SUPERSCRIPT_THRESHOLD
+) -> bool:
+    """
+    Check if a character is subscript or superscript based on font size.
+
+    PDFMathTranslate compliant: uses 0.79× threshold for detection.
+
+    Args:
+        char_size: Font size of the character
+        base_size: Base font size of the surrounding text
+        threshold: Size ratio threshold (default: 0.79)
+
+    Returns:
+        True if character appears to be subscript/superscript
+    """
+    if base_size <= 0:
+        return False
+    return char_size <= base_size * threshold
+
+
+def detect_text_style(
+    char_size: float,
+    base_size: float,
+    y_offset: float = 0.0,
+    line_height: float = 0.0,
+) -> str:
+    """
+    Detect text style (normal, subscript, superscript) based on size and position.
+
+    PDFMathTranslate compliant.
+
+    Args:
+        char_size: Font size of the character
+        base_size: Base font size of the surrounding text
+        y_offset: Vertical offset from baseline (positive = above)
+        line_height: Line height for position-based detection
+
+    Returns:
+        "subscript", "superscript", or "normal"
+    """
+    if not is_subscript_superscript(char_size, base_size):
+        return "normal"
+
+    # If we have position info, use it to distinguish sub/super
+    if line_height > 0 and y_offset != 0:
+        baseline_threshold = line_height * 0.3
+        if y_offset > baseline_threshold:
+            return "superscript"
+        elif y_offset < -baseline_threshold:
+            return "subscript"
+
+    # Default to superscript if size-based only (more common in formulas)
+    return "superscript"
 
 
 class FormulaManager:
@@ -2642,6 +2704,7 @@ class PdfProcessor(FileProcessor):
         translations: dict[str, str],
         direction: str = "jp_to_en",
         settings=None,
+        pages: Optional[list[int]] = None,
     ) -> dict[str, Any]:
         """
         Apply translations to PDF.
@@ -2656,6 +2719,8 @@ class PdfProcessor(FileProcessor):
             translations: Mapping of block IDs to translated text
             direction: Translation direction
             settings: AppSettings for font configuration (pdf_font_ja, pdf_font_en)
+            pages: Optional list of page numbers to translate (1-indexed).
+                   If None, all pages are translated. PDFMathTranslate compliant.
 
         Returns:
             Dictionary with processing statistics:
@@ -2669,7 +2734,7 @@ class PdfProcessor(FileProcessor):
             logger.debug("Attempting low-level PDF translation...")
             result = self.apply_translations_low_level(
                 input_path, output_path, translations,
-                cells=None, direction=direction, settings=settings
+                cells=None, direction=direction, settings=settings, pages=pages
             )
             # If success rate is acceptable, return result
             if result['success'] >= result['total'] * 0.5:
@@ -2687,7 +2752,7 @@ class PdfProcessor(FileProcessor):
 
         # Fallback to high-level API
         return self._apply_translations_high_level(
-            input_path, output_path, translations, direction, settings
+            input_path, output_path, translations, direction, settings, pages
         )
 
     def _apply_translations_high_level(
@@ -2697,6 +2762,7 @@ class PdfProcessor(FileProcessor):
         translations: dict[str, str],
         direction: str = "jp_to_en",
         settings=None,
+        pages: Optional[list[int]] = None,
     ) -> dict[str, Any]:
         """
         Apply translations using PyMuPDF high-level API (fallback).
@@ -2708,6 +2774,15 @@ class PdfProcessor(FileProcessor):
         1. Add redaction annotations for all text blocks to translate
         2. Apply redactions (removes text, preserves graphics/images)
         3. Insert translated text
+
+        Args:
+            input_path: Path to original PDF
+            output_path: Path for translated PDF
+            translations: Mapping of block IDs to translated text
+            direction: Translation direction
+            settings: AppSettings for font configuration
+            pages: Optional list of page numbers to translate (1-indexed).
+                   If None, all pages are translated.
         """
         fitz = _get_fitz()
         doc = fitz.open(input_path)
@@ -2755,6 +2830,13 @@ class PdfProcessor(FileProcessor):
             # Pass 1: Add redaction annotations and collect text insertion info
             # Pass 2: Apply redactions and insert text
             for page_idx, page in enumerate(doc):
+                page_num = page_idx + 1
+
+                # Skip pages not in selection (PDFMathTranslate compliant)
+                if pages is not None and page_num not in pages:
+                    logger.debug("High-level API: Skipping page %d (not in selection)", page_num)
+                    continue
+
                 blocks = page.get_text("dict")["blocks"]
 
                 # Collect blocks to process for this page
@@ -2851,8 +2933,9 @@ class PdfProcessor(FileProcessor):
                         result['failed'].append(block_id)
                         continue
 
-            # Save document
-            doc.save(str(output_path), garbage=3, deflate=True)
+            # Font subsetting and save document (PDFMathTranslate compliant)
+            doc.subset_fonts(fallback=True)
+            doc.save(str(output_path), garbage=3, deflate=True, use_objstms=1)
 
             # Log summary if there were failures
             if result['failed']:
@@ -3135,8 +3218,9 @@ class PdfProcessor(FileProcessor):
                         result['failed'].append(address)
                         continue
 
-            # Save document
-            doc.save(str(output_path), garbage=3, deflate=True)
+            # Font subsetting and save document (PDFMathTranslate compliant)
+            doc.subset_fonts(fallback=True)
+            doc.save(str(output_path), garbage=3, deflate=True, use_objstms=1)
 
             # Log summary if there were failures
             if result['failed']:
@@ -3159,6 +3243,7 @@ class PdfProcessor(FileProcessor):
         direction: str = "jp_to_en",
         settings=None,
         dpi: int = DEFAULT_OCR_DPI,
+        pages: Optional[list[int]] = None,
     ) -> dict[str, Any]:
         """
         Apply translations using low-level PDF operators.
@@ -3178,6 +3263,8 @@ class PdfProcessor(FileProcessor):
             direction: Translation direction ("jp_to_en" or "en_to_jp")
             settings: AppSettings for font configuration
             dpi: DPI used for OCR (for coordinate scaling)
+            pages: Optional list of page numbers to translate (1-indexed).
+                   If None, all pages are translated. PDFMathTranslate compliant.
 
         Returns:
             Dictionary with processing statistics
@@ -3229,6 +3316,12 @@ class PdfProcessor(FileProcessor):
             # Process each page
             for page_idx, page in enumerate(doc):
                 page_num = page_idx + 1
+
+                # Skip pages not in selection (PDFMathTranslate compliant)
+                if pages is not None and page_num not in pages:
+                    logger.debug("Skipping page %d (not in selection)", page_num)
+                    continue
+
                 page_height = page.rect.height
 
                 # Create content stream replacer for this page
@@ -3419,8 +3512,9 @@ class PdfProcessor(FileProcessor):
                 # Apply content stream and font resources to page
                 replacer.apply_to_page(page)
 
-            # Save document
-            doc.save(str(output_path), garbage=3, deflate=True)
+            # Font subsetting and save document (PDFMathTranslate compliant)
+            doc.subset_fonts(fallback=True)
+            doc.save(str(output_path), garbage=3, deflate=True, use_objstms=1)
 
             if result['failed']:
                 logger.warning(
@@ -3899,7 +3993,9 @@ class PdfProcessor(FileProcessor):
                 for i in range(original_pages, translated_pages):
                     output_doc.insert_pdf(translated_doc, from_page=i, to_page=i)
 
-            output_doc.save(str(output_path), garbage=3, deflate=True)
+            # Font subsetting and save document (PDFMathTranslate compliant)
+            output_doc.subset_fonts(fallback=True)
+            output_doc.save(str(output_path), garbage=3, deflate=True, use_objstms=1)
 
             result['total_pages'] = len(output_doc)
             result['original_pages'] = original_pages

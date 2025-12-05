@@ -1210,6 +1210,112 @@ class TestApplyTranslationsResult:
             assert result['total'] == 1
 
 
+class TestApplyTranslationsPagesParameter:
+    """Tests for pages parameter in apply_translations (PDFMathTranslate compliant)"""
+
+    def test_apply_translations_with_specific_pages(self, processor, tmp_path):
+        """Test that pages parameter filters which pages are translated"""
+        with patch('yakulingo.processors.pdf_processor._get_fitz') as mock_get_fitz:
+            mock_fitz = MagicMock()
+            mock_get_fitz.return_value = mock_fitz
+
+            # Create mock document with 3 pages
+            mock_doc = MagicMock()
+            mock_doc.__len__ = Mock(return_value=3)
+
+            mock_pages = []
+            for i in range(3):
+                mock_page = MagicMock()
+                mock_page.rect.height = 800
+                mock_page.xref = i + 1
+                mock_page.get_text.return_value = {
+                    "blocks": [
+                        {
+                            "type": 0,
+                            "bbox": [100, 200, 300, 250],
+                            "lines": [{"spans": [{"text": f"Page {i} text"}]}]
+                        }
+                    ]
+                }
+                mock_pages.append(mock_page)
+
+            mock_doc.__iter__ = Mock(return_value=iter(mock_pages))
+            mock_doc.__getitem__ = Mock(side_effect=lambda i: mock_pages[i])
+            mock_doc.get_new_xref.return_value = 100
+            mock_doc.xref_get_key.return_value = ("null", "")
+
+            mock_fitz.open.return_value = mock_doc
+
+            input_path = tmp_path / "input.pdf"
+            input_path.write_bytes(b"%PDF-1.4 dummy")
+            output_path = tmp_path / "output.pdf"
+
+            # Translate only pages 1 and 3 (1-indexed)
+            translations = {
+                "page_0_block_0": "Translation 1",
+                "page_1_block_0": "Translation 2",
+                "page_2_block_0": "Translation 3",
+            }
+
+            result = processor.apply_translations(
+                input_path, output_path, translations, "jp_to_en",
+                pages=[1, 3]  # 1-indexed, so page 0 and page 2 (0-indexed)
+            )
+
+            assert isinstance(result, dict)
+            assert 'total' in result
+
+    def test_apply_translations_without_pages_translates_all(self, processor, tmp_path):
+        """Test that omitting pages parameter translates all pages"""
+        with patch('yakulingo.processors.pdf_processor._get_fitz') as mock_get_fitz:
+            mock_fitz = MagicMock()
+            mock_get_fitz.return_value = mock_fitz
+
+            mock_doc = MagicMock()
+            mock_doc.__len__ = Mock(return_value=2)
+
+            mock_pages = []
+            for i in range(2):
+                mock_page = MagicMock()
+                mock_page.rect.height = 800
+                mock_page.xref = i + 1
+                mock_page.get_text.return_value = {
+                    "blocks": [
+                        {
+                            "type": 0,
+                            "bbox": [100, 200, 300, 250],
+                            "lines": [{"spans": [{"text": f"Page {i} text"}]}]
+                        }
+                    ]
+                }
+                mock_pages.append(mock_page)
+
+            mock_doc.__iter__ = Mock(return_value=iter(mock_pages))
+            mock_doc.__getitem__ = Mock(side_effect=lambda i: mock_pages[i])
+            mock_doc.get_new_xref.return_value = 100
+            mock_doc.xref_get_key.return_value = ("null", "")
+
+            mock_fitz.open.return_value = mock_doc
+
+            input_path = tmp_path / "input.pdf"
+            input_path.write_bytes(b"%PDF-1.4 dummy")
+            output_path = tmp_path / "output.pdf"
+
+            translations = {
+                "page_0_block_0": "Translation 1",
+                "page_1_block_0": "Translation 2",
+            }
+
+            # pages=None means translate all
+            result = processor.apply_translations(
+                input_path, output_path, translations, "jp_to_en",
+                pages=None
+            )
+
+            assert isinstance(result, dict)
+            assert result['total'] == 2
+
+
 class TestExtractTextBlocksStreaming:
     """Tests for extract_text_blocks_streaming method"""
 

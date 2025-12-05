@@ -754,6 +754,23 @@ def raw_string(font_id: str, text: str) -> str:
 - Font objectがないと`get_glyph_id()`で0（.notdef = 不可視）が返される
 - 低レベルAPIが失敗した場合は高レベルAPI（`insert_textbox`）にフォールバック
 
+**PDFMathTranslate準拠の追加機能:**
+
+| 機能 | 説明 |
+|------|------|
+| フォントサブセッティング | `doc.subset_fonts(fallback=True)` で未使用グリフを削除しファイルサイズを削減 |
+| PDF圧縮 | `garbage=3, deflate=True, use_objstms=1` で最大限の圧縮 |
+| 上付き/下付き検出 | `SUBSCRIPT_SUPERSCRIPT_THRESHOLD = 0.79` でベースサイズの79%以下を検出 |
+| ページ選択 | `pages` パラメータ（1-indexed）で翻訳対象ページを指定可能 |
+
+```python
+# ページ選択の使用例
+processor.apply_translations(
+    input_path, output_path, translations,
+    pages=[1, 3, 5]  # 1, 3, 5ページのみ翻訳（1-indexed）
+)
+```
+
 ### Optional Dependencies
 - `[ocr]`: yomitoku for OCR support
 - `[test]`: pytest, pytest-cov, pytest-asyncio

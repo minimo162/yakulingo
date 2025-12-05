@@ -704,6 +704,8 @@ class TranslationService:
         # Lazy-loaded file processors for faster startup
         self._processors: Optional[dict[str, FileProcessor]] = None
 
+        # Translation cache is handled by BatchTranslator (PDFMathTranslate compliant)
+
     @property
     def processors(self) -> dict[str, FileProcessor]:
         """
@@ -727,6 +729,24 @@ class TranslationService:
                 '.pdf': PdfProcessor(),
             }
         return self._processors
+
+    def clear_translation_cache(self) -> None:
+        """
+        Clear translation cache (PDFMathTranslate compliant).
+
+        Delegates to BatchTranslator's TranslationCache.
+        """
+        self.batch_translator.clear_cache()
+        logger.debug("Translation cache cleared")
+
+    def get_cache_stats(self) -> Optional[dict]:
+        """
+        Get translation cache statistics.
+
+        Returns:
+            Dictionary with 'size', 'hits', 'misses', 'hit_rate' or None if cache disabled
+        """
+        return self.batch_translator.get_cache_stats()
 
     def translate_text(
         self,

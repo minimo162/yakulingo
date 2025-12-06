@@ -734,7 +734,7 @@ def _render_results_to_jp(
                             '戻し訳',
                             icon='g_translate',
                             on_click=lambda o=option: on_back_translate(o.text)
-                        ).props('flat no-caps size=sm').classes('back-translate-btn').tooltip('翻訳結果を元の言語に戻して精度をチェック')
+                        ).props('flat no-caps size=sm').classes('back-translate-btn').tooltip('精度チェック')
 
             # Detailed explanation section
             if option.explanation:
@@ -836,7 +836,7 @@ def _render_option_en(
                         '戻し訳',
                         icon='g_translate',
                         on_click=lambda o=option: on_back_translate(o.text)
-                    ).props('flat no-caps size=sm').classes('back-translate-btn').tooltip('翻訳結果を日本語に戻して精度をチェック')
+                    ).props('flat no-caps size=sm').classes('back-translate-btn').tooltip('精度チェック')
 
             # Detailed explanation section (same style as JP)
             if option.explanation:
@@ -935,7 +935,7 @@ def _render_inline_adjust_section(
                             on_click=lambda k=left_key: on_adjust(text, k)
                         ).props(f'flat no-caps {"disable" if left_disabled else ""}').classes('adjust-option-btn')
                         if left_disabled:
-                            left_btn.tooltip('これ以上短くできません')
+                            left_btn.tooltip('最短です')
 
                         ui.element('div').classes('adjust-option-divider')
 
@@ -946,7 +946,7 @@ def _render_inline_adjust_section(
                             on_click=lambda k=right_key: on_adjust(text, k)
                         ).props(f'flat no-caps {"disable" if right_disabled else ""}').classes('adjust-option-btn')
                         if right_disabled:
-                            right_btn.tooltip('これ以上詳しくできません')
+                            right_btn.tooltip('最長です')
 
                 # Single options (full width)
                 for key, label in ADJUST_OPTIONS_SINGLE:

@@ -139,7 +139,7 @@ YakuLingo/
 ├── pyproject.toml                 # Project metadata & dependencies
 ├── uv.lock                        # Lock file for reproducible builds
 ├── requirements.txt               # Core pip dependencies
-└── requirements_pdf.txt           # PDF translation dependencies (yomitoku)
+└── requirements_pdf.txt           # PDF translation dependencies (PP-DocLayout-L)
 ```
 
 ## Layer Responsibilities
@@ -170,7 +170,7 @@ YakuLingo/
 | `yakulingo/models/types.py` | Core data types: TextBlock, FileInfo, TranslationResult, HistoryEntry | ~297 |
 | `yakulingo/storage/history_db.py` | SQLite database for translation history | ~320 |
 | `yakulingo/processors/base.py` | Abstract base class for all file processors | ~105 |
-| `yakulingo/processors/pdf_processor.py` | PDF processing with PyMuPDF, pdfminer.six, and yomitoku LayoutAnalyzer | ~3303 |
+| `yakulingo/processors/pdf_processor.py` | PDF processing with PyMuPDF, pdfminer.six, and PP-DocLayout-L | ~3303 |
 
 ## Core Data Types
 
@@ -681,8 +681,9 @@ Install separately for PDF translation support:
 ```bash
 pip install -r requirements_pdf.txt
 ```
-- `yomitoku>=0.10.0`: Japanese document AI (layout analysis only, OCR is not used)
-- Requires Python 3.10-3.12, PyTorch 2.5+, GPU with 8GB+ VRAM recommended
+- `paddleocr>=3.0.0`: PP-DocLayout-L for document layout analysis (Apache-2.0)
+- `paddlepaddle>=3.0.0`: PaddlePaddle framework
+- GPU recommended but CPU is also supported (~760ms/page on CPU)
 
 ### PDF Processing Details
 
@@ -690,44 +691,45 @@ pip install -r requirements_pdf.txt
 
 PDF翻訳ではハイブリッドアプローチを使用します（PDFMathTranslate準拠）：
 - **pdfminer**: テキスト抽出（正確な文字データ、フォント情報、CID値）
-- **yomitoku LayoutAnalyzer**: レイアウト解析のみ（段落検出、読み順、図表/数式の識別）
+- **PP-DocLayout-L**: レイアウト解析のみ（段落検出、読み順、図表/数式の識別）
 - **OCRなし**: スキャンPDFはサポート対象外
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │ Phase 1: ハイブリッド抽出                                     │
 │ ┌─────────────────────────────────────────────────────────┐ │
-│ │ 1. yomitoku LayoutAnalyzer: ページ画像からレイアウト解析   │ │
+│ │ 1. PP-DocLayout-L: ページ画像からレイアウト解析           │ │
 │ │    - 段落境界、読み順、テキスト/図/表の領域分類            │ │
 │ │    - OCRは実行しない（レイアウト解析のみ）                 │ │
 │ │                                                         │ │
 │ │ 2. pdfminer: 埋め込みテキスト抽出                        │ │
 │ │    - 正確なテキスト、フォント情報、CID値                  │ │
 │ │                                                         │ │
-│ │ 3. 統合: yomitokuの段落領域でpdfminerの文字をグループ化   │ │
+│ │ 3. 統合: PP-DocLayout-Lの段落領域でpdfminerの文字をグループ化   │ │
 │ └─────────────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 **利点:**
 - 埋め込みテキストPDF: OCR認識誤りなし（pdfminerの正確なテキスト）
-- 高精度レイアウト検出: yomitoku LayoutAnalyzerによる段落・図表の識別
+- 高精度レイアウト検出: PP-DocLayout-Lによる段落・図表の識別（23カテゴリ、90.4% mAP@0.5）
 - 高速処理: OCRを実行しないため処理時間が短縮
+- 商用利用可: Apache-2.0ライセンス
 
 **制限:**
 - スキャンPDF（画像のみ）は翻訳不可（テキストが埋め込まれていないため）
 
-**yomitoku LayoutAnalyzer Settings:**
+**PP-DocLayout-L Settings:**
 ```python
-LayoutAnalyzer(
-    device=device,              # "cuda" or "cpu"
-    visualize=False,
+from paddleocr import LayoutDetection
+model = LayoutDetection(
+    model_name="PP-DocLayout-L",
+    device=device,              # "cpu" or "gpu"
 )
 ```
 
-**Line Break Handling (yomitoku style):**
+**Line Break Handling:**
 - PDF text extraction removes line breaks: `text.replace("\n", "")`
-- Follows yomitoku's `--ignore_line_break` CLI behavior
 - Optimized for Japanese documents where line breaks within paragraphs are visual-only
 
 **PDF Text Rendering (Low-level API):**
@@ -793,7 +795,7 @@ processor.apply_translations(
 ```
 
 ### Optional Dependencies
-- `[ocr]`: yomitoku for layout analysis support (OCR is not used, only LayoutAnalyzer)
+- `[ocr]`: paddleocr for layout analysis support (PP-DocLayout-L, OCR is not used)
 - `[test]`: pytest, pytest-cov, pytest-asyncio
 
 ## Platform Notes
@@ -833,8 +835,8 @@ When interacting with users in this repository, prefer Japanese for comments and
 
 Based on recent commits:
 - **PDF Translation Improvements (PDFMathTranslate compliant)**:
-  - **OCR廃止**: yomitoku LayoutAnalyzerのみを使用（OCRなし、スキャンPDFはサポート対象外）
-  - **ハイブリッド抽出**: pdfminerでテキスト抽出 + yomitokuでレイアウト解析
+  - **PP-DocLayout-L**: レイアウト解析にPP-DocLayout-Lを使用（Apache-2.0、商用利用可）
+  - **ハイブリッド抽出**: pdfminerでテキスト抽出 + PP-DocLayout-Lでレイアウト解析
   - **Existing font reuse**: Detect and reuse CID/Simple fonts already embedded in PDF
   - **pdfminer.six integration**: Font type detection for correct text encoding
   - **Low-level API only**: Removed high-level API fallback for consistent rendering

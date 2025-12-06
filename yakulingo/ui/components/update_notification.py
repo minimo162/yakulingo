@@ -307,7 +307,7 @@ class UpdateNotification:
             success = self.updater.install_update(zip_path)
             if success:
                 ui.notify(
-                    'アップデートをインストール中です。アプリケーションを終了してください。',
+                    'アップデートの準備ができました。アプリケーションを終了してインストールを開始します。',
                     type='positive',
                     timeout=10000,
                 )

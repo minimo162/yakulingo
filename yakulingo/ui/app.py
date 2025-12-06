@@ -1177,7 +1177,7 @@ class YakuLingoApp:
             self.state.translation_status = p.status
             progress_bar_inner.style(f'width: {int(p.percentage * 100)}%')
             progress_label.set_text(f'{int(p.percentage * 100)}%')
-            status_label.set_text(p.status or 'Translating...')
+            status_label.set_text(p.status or '翻訳中...')
 
         error_message = None
         result = None
@@ -1316,7 +1316,7 @@ class YakuLingoApp:
                 # Translation style setting
                 with ui.column().classes('w-full gap-1'):
                     ui.label('翻訳スタイル').classes('text-sm font-medium')
-                    ui.label('英訳の詳細さを選択').classes('text-xs text-muted')
+                    ui.label('翻訳文の詳細さを選択').classes('text-xs text-muted')
 
                     style_options = {
                         'standard': '標準',

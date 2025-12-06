@@ -266,7 +266,7 @@ class CopilotHandler:
     DEFAULT_CDP_PORT = 9333  # Dedicated port for translator
     EDGE_STARTUP_MAX_ATTEMPTS = 20  # Maximum iterations to wait for Edge startup
     EDGE_STARTUP_CHECK_INTERVAL = 0.3  # Seconds between startup checks
-    RESPONSE_STABLE_COUNT = 4  # Number of stable checks before considering response complete
+    RESPONSE_STABLE_COUNT = 3  # Number of stable checks before considering response complete
     RESPONSE_POLL_INTERVAL = 0.3  # Seconds between response checks
     DEFAULT_RESPONSE_TIMEOUT = 120  # Default timeout for response in seconds
 
@@ -578,7 +578,7 @@ class CopilotHandler:
                 copilot_page.wait_for_selector(input_selector, timeout=15000, state='visible')
                 logger.info("Copilot chat UI ready")
                 # Wait a bit for authentication/session to fully initialize
-                time.sleep(1.0)
+                time.sleep(0.3)
                 self._connected = True
             except PlaywrightTimeoutError:
                 logger.warning("Chat input not found - login required in Edge browser")
@@ -1316,7 +1316,7 @@ class CopilotHandler:
                 time.sleep(1)
 
             # Verify that previous responses are cleared (reduced from 5.0s for faster detection)
-            self._wait_for_responses_cleared(timeout=3.0)
+            self._wait_for_responses_cleared(timeout=1.0)
 
             # 新しいチャット開始後、GPT-5を有効化
             # （送信時にも再確認するが、UIの安定性のため先に試行）
@@ -1364,7 +1364,7 @@ class CopilotHandler:
 
         return True
 
-    def _ensure_gpt5_enabled(self, max_wait: float = 1.0) -> bool:
+    def _ensure_gpt5_enabled(self, max_wait: float = 0.5) -> bool:
         """
         GPT-5トグルボタンが有効でなければ有効化する。
         送信直前に呼び出すことで、ボタンの遅延描画にも対応。

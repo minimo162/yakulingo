@@ -159,9 +159,9 @@ def _language_selector(state: AppState, on_change: Optional[Callable[[str], None
 
 # Translation style options with labels and tooltips
 STYLE_OPTIONS = {
-    'standard': ('標準', '自然で読みやすい翻訳。本文・説明文向け'),
-    'concise': ('簡潔', '冗長表現を避けた簡潔な翻訳。箇条書き・表向け'),
-    'minimal': ('最簡潔', '最小限の文字数。見出し・件名向け'),
+    'standard': ('標準', '本文・説明文向け'),
+    'concise': ('簡潔', '箇条書き・表向け'),
+    'minimal': ('最簡潔', '見出し・件名向け'),
 }
 
 
@@ -191,10 +191,10 @@ def _style_selector(current_style: str, on_change: Optional[Callable[[str], None
 
 # Bilingual output descriptions by file type
 BILINGUAL_TOOLTIPS = {
-    FileType.EXCEL: '原文シートと翻訳シートを交互に配置したワークブックを作成します。\n（例: Sheet1=原文、Sheet1_translated=翻訳...）',
-    FileType.WORD: '原文ページと翻訳ページを交互に配置したドキュメントを作成します。',
-    FileType.POWERPOINT: '原文スライドと翻訳スライドを交互に配置したプレゼンテーションを作成します。',
-    FileType.PDF: '原文ページと翻訳ページを交互に配置したPDFを作成します。\n（例: 1ページ目=原文、2ページ目=翻訳...）',
+    FileType.EXCEL: '原文と翻訳を交互に配置',
+    FileType.WORD: '原文と翻訳を交互に配置',
+    FileType.POWERPOINT: '原文と翻訳を交互に配置',
+    FileType.PDF: '原文と翻訳を交互に配置',
 }
 
 
@@ -206,7 +206,7 @@ def _bilingual_selector(
     """Bilingual output selector - checkbox for interleaved original/translated content"""
     tooltip_text = BILINGUAL_TOOLTIPS.get(
         file_type,
-        '原文と翻訳を交互に配置した対訳ファイルを作成します。'
+        '原文と翻訳を交互に配置'
     )
     with ui.row().classes('w-full justify-center mt-3 items-center gap-2'):
         ui.checkbox(
@@ -223,10 +223,7 @@ def _export_glossary_selector(enabled: bool, on_change: Optional[Callable[[bool]
             '対訳CSV出力',
             value=enabled,
             on_change=lambda e: on_change and on_change(e.value),
-        ).classes('pdf-mode-checkbox').tooltip(
-            '原文と翻訳のペアをCSVファイルで出力します。'
-            'glossaryとして再利用できます。'
-        )
+        ).classes('pdf-mode-checkbox').tooltip('翻訳ペアをCSV出力')
 
 
 def _reference_file_selector(

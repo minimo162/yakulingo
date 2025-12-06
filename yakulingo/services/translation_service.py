@@ -496,7 +496,8 @@ class BatchTranslator:
         if cache_hits > 0:
             logger.debug(
                 "Cache hits: %d/%d blocks (%.1f%%)",
-                cache_hits, len(blocks), cache_hits / len(blocks) * 100
+                cache_hits, len(translatable_blocks),
+                cache_hits / len(translatable_blocks) * 100 if translatable_blocks else 0
             )
 
         # If all blocks were cached, return early
@@ -1679,7 +1680,7 @@ class TranslationService:
             # OCR mode: use apply_translations_with_cells for better positioning
             processor.apply_translations_with_cells(
                 input_path, output_path, translations, all_cells, direction, self.config,
-                dpi=ocr_dpi  # Pass DPI for coordinate scaling
+                dpi=dpi  # Pass DPI for coordinate scaling
             )
         else:
             # Standard mode: use regular apply_translations

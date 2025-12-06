@@ -2821,9 +2821,9 @@ def create_layout_array_from_yomitoku(
         for fig in results.figures:
             if hasattr(fig, 'box') and fig.box:
                 x0, y0, x1, y1 = [int(v) for v in fig.box]
-                x0 = max(0, min(x0, page_width - 1))
+                x0 = max(0, min(x0, page_width))
                 x1 = max(0, min(x1, page_width))
-                y0 = max(0, min(y0, page_height - 1))
+                y0 = max(0, min(y0, page_height))
                 y1 = max(0, min(y1, page_height))
                 layout[y0:y1, x0:x1] = LAYOUT_ABANDON
                 figures_list.append(fig.box)
@@ -2834,9 +2834,9 @@ def create_layout_array_from_yomitoku(
         if para.role in ["page_header", "page_footer"]:
             if hasattr(para, 'box') and para.box:
                 x0, y0, x1, y1 = [int(v) for v in para.box]
-                x0 = max(0, min(x0, page_width - 1))
+                x0 = max(0, min(x0, page_width))
                 x1 = max(0, min(x1, page_width))
-                y0 = max(0, min(y0, page_height - 1))
+                y0 = max(0, min(y0, page_height))
                 y1 = max(0, min(y1, page_height))
                 layout[y0:y1, x0:x1] = LAYOUT_ABANDON
             continue
@@ -2844,9 +2844,9 @@ def create_layout_array_from_yomitoku(
         para_id = LAYOUT_PARAGRAPH_BASE + para.order
         if hasattr(para, 'box') and para.box:
             x0, y0, x1, y1 = [int(v) for v in para.box]
-            x0 = max(0, min(x0, page_width - 1))
+            x0 = max(0, min(x0, page_width))
             x1 = max(0, min(x1, page_width))
-            y0 = max(0, min(y0, page_height - 1))
+            y0 = max(0, min(y0, page_height))
             y1 = max(0, min(y1, page_height))
             layout[y0:y1, x0:x1] = para_id
             paragraphs_info[para_id] = {
@@ -2864,9 +2864,9 @@ def create_layout_array_from_yomitoku(
             cell_id = LAYOUT_TABLE_BASE + table_cell_idx
             if hasattr(cell, 'box') and cell.box:
                 x0, y0, x1, y1 = [int(v) for v in cell.box]
-                x0 = max(0, min(x0, page_width - 1))
+                x0 = max(0, min(x0, page_width))
                 x1 = max(0, min(x1, page_width))
-                y0 = max(0, min(y0, page_height - 1))
+                y0 = max(0, min(y0, page_height))
                 y1 = max(0, min(y1, page_height))
                 layout[y0:y1, x0:x1] = cell_id
                 tables_info[cell_id] = {
@@ -4254,12 +4254,13 @@ class PdfProcessor(FileProcessor):
         def get_char_layout_class(char) -> int:
             if layout is None:
                 return LAYOUT_BACKGROUND
-            # Convert PDF Y to image Y
-            # PDF: y=0 at bottom, layout: y=0 at top
-            scale_x = layout.width / 72.0  # Approximate: assume 72 DPI base
-            scale_y = layout.height / page_height if page_height > 0 else 1.0
-            img_x = char.x0 * scale_x
-            img_y = (page_height - char.y1) * scale_y  # Flip Y axis
+            # Convert PDF coordinates to image coordinates
+            # PDF: y=0 at bottom, 72 DPI base
+            # Image: y=0 at top, rendered at OCR DPI
+            # Scale factor = layout.height / page_height (same for x and y if aspect ratio preserved)
+            scale = layout.height / page_height if page_height > 0 else 1.0
+            img_x = char.x0 * scale
+            img_y = (page_height - char.y1) * scale  # Flip Y axis
             return get_layout_class_at_point(layout, img_x, img_y)
 
         for char in chars:
@@ -4432,7 +4433,7 @@ class PdfProcessor(FileProcessor):
                     'page_idx': page_idx,
                     'block': block_idx,
                     'bbox': bbox,
-                    'font_name': para.size,  # Will be updated below
+                    'font_name': None,  # Font name not available from Paragraph
                     'font_size': para.size,
                     'is_formula': False,
                     'original_line_count': 1,

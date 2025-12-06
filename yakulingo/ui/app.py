@@ -612,7 +612,7 @@ class YakuLingoApp:
         self.state.text_translation_elapsed_time = None
         self.state.streaming_text = None
         self._streaming_label = None  # Reset before refresh creates new label
-        self._refresh_result_panel()  # Only refresh result panel (input panel unchanged)
+        self._refresh_content()  # Full refresh: input panel changes from large to compact
 
         # Track last text to avoid redundant updates
         last_streaming_text: str = ""

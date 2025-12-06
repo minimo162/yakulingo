@@ -29,9 +29,6 @@ foreach ($path in $sevenZipPaths) {
 if (-not $script:SevenZip) {
     $script:SevenZip = (Get-Command "7z.exe" -ErrorAction SilentlyContinue).Source
 }
-if (-not $script:SevenZip) {
-    throw "7-Zip not found. Please install from https://7-zip.org/"
-}
 
 # ============================================================
 # GUI Helper Functions (for silent setup via VBS)
@@ -159,6 +156,13 @@ function Write-Status {
 # Main Setup Logic (wrapped in function for error handling)
 # ============================================================
 function Invoke-Setup {
+    # ============================================================
+    # Check requirements
+    # ============================================================
+    if (-not $script:SevenZip) {
+        throw "7-Zip not found.`n`nPlease install 7-Zip from https://7-zip.org/"
+    }
+
     # ============================================================
     # Configuration
     # ============================================================

@@ -14,13 +14,28 @@ $ErrorActionPreference = "Stop"
 $script:ScriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Definition }
 $script:ShareDir = Split-Path -Parent $script:ScriptDir
 
+# Find 7-Zip (required for fast extraction)
+$script:SevenZip = $null
+$sevenZipPaths = @(
+    "$env:ProgramFiles\7-Zip\7z.exe",
+    "${env:ProgramFiles(x86)}\7-Zip\7z.exe"
+)
+foreach ($path in $sevenZipPaths) {
+    if (Test-Path $path) {
+        $script:SevenZip = $path
+        break
+    }
+}
+if (-not $script:SevenZip) {
+    $script:SevenZip = (Get-Command "7z.exe" -ErrorAction SilentlyContinue).Source
+}
+
 # ============================================================
 # GUI Helper Functions (for silent setup via VBS)
 # ============================================================
 if ($GuiMode) {
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -AssemblyName System.Drawing
-    Add-Type -AssemblyName System.IO.Compression.FileSystem
 
     # Create progress form
     $script:progressForm = $null
@@ -118,78 +133,6 @@ if ($GuiMode) {
             [System.Windows.Forms.MessageBoxIcon]::Information
         ) | Out-Null
     }
-
-    # Extract ZIP directly to destination with progress (skip temp dir + robocopy)
-    function Expand-ZipDirectWithProgress {
-        param(
-            [string]$ZipPath,
-            [string]$DestPath,
-            [string]$StripPrefix  # e.g., "YakuLingo/" to strip from entry paths
-        )
-
-        $zip = [System.IO.Compression.ZipFile]::OpenRead($ZipPath)
-        try {
-            $totalEntries = $zip.Entries.Count
-            $currentEntry = 0
-            $lastPercent = -1
-            $createdDirs = @{}  # Cache created directories
-            $bufferSize = 81920  # 80KB buffer for faster copying
-
-            foreach ($entry in $zip.Entries) {
-                $currentEntry++
-
-                # Update UI only every 2% (reduces DoEvents overhead significantly)
-                $percent = [int](($currentEntry / $totalEntries) * 100)
-                if ($percent -ge $lastPercent + 2 -or $percent -eq 100) {
-                    $lastPercent = $percent
-                    Show-Progress -Title "YakuLingo Setup" -Status "Extracting... ($currentEntry / $totalEntries files)" -Percent $percent -Step "Step 2/3: Extracting files"
-                }
-
-                # Get relative path, stripping prefix if present
-                $entryPath = $entry.FullName
-                if ($StripPrefix -and $entryPath.StartsWith($StripPrefix)) {
-                    $entryPath = $entryPath.Substring($StripPrefix.Length)
-                }
-
-                # Skip empty paths (the prefix directory itself)
-                if ([string]::IsNullOrEmpty($entryPath)) {
-                    continue
-                }
-
-                $destFile = Join-Path $DestPath $entryPath
-
-                if ($entry.FullName.EndsWith('/')) {
-                    # Directory entry
-                    if (-not $createdDirs.ContainsKey($destFile)) {
-                        [System.IO.Directory]::CreateDirectory($destFile) | Out-Null
-                        $createdDirs[$destFile] = $true
-                    }
-                } else {
-                    # File entry - ensure parent directory exists
-                    $destDir = [System.IO.Path]::GetDirectoryName($destFile)
-                    if (-not $createdDirs.ContainsKey($destDir)) {
-                        [System.IO.Directory]::CreateDirectory($destDir) | Out-Null
-                        $createdDirs[$destDir] = $true
-                    }
-
-                    # Use buffered streams for faster extraction
-                    $entryStream = $entry.Open()
-                    try {
-                        $fileStream = [System.IO.File]::Create($destFile)
-                        try {
-                            $entryStream.CopyTo($fileStream, $bufferSize)
-                        } finally {
-                            $fileStream.Close()
-                        }
-                    } finally {
-                        $entryStream.Close()
-                    }
-                }
-            }
-        } finally {
-            $zip.Dispose()
-        }
-    }
 }
 
 # Console output wrapper (respects GuiMode)
@@ -214,6 +157,13 @@ function Write-Status {
 # ============================================================
 function Invoke-Setup {
     # ============================================================
+    # Check requirements
+    # ============================================================
+    if (-not $script:SevenZip) {
+        throw "7-Zip not found.`n`nPlease install 7-Zip from https://7-zip.org/"
+    }
+
+    # ============================================================
     # Configuration
     # ============================================================
     $AppName = "YakuLingo"
@@ -234,7 +184,7 @@ function Invoke-Setup {
 
     # Default path: LocalAppData\YakuLingo
     if ([string]::IsNullOrEmpty($SetupPath)) {
-        $script:SetupPath = Join-Path $env:LOCALAPPDATA $AppName
+        $SetupPath = Join-Path $env:LOCALAPPDATA $AppName
     }
 
     # ============================================================
@@ -267,46 +217,41 @@ function Invoke-Setup {
     }
 
     # ============================================================
-    # Step 2: Extract ZIP directly to destination (skip temp + robocopy)
+    # Step 2: Extract ZIP to destination
     # ============================================================
     Write-Status -Message "Extracting files..." -Progress -Step "Step 2/3: Extracting files"
     if (-not $GuiMode) {
         Write-Host ""
-        Write-Host "[2/3] Extracting files directly to destination..." -ForegroundColor Yellow
+        Write-Host "[2/3] Extracting files to destination..." -ForegroundColor Yellow
     }
 
-    # Determine the prefix to strip (e.g., "YakuLingo/")
-    Add-Type -Assembly 'System.IO.Compression.FileSystem'
-    $zip = [System.IO.Compression.ZipFile]::OpenRead($ZipFile)
-    $firstEntry = $zip.Entries | Select-Object -First 1
-    $stripPrefix = ""
-    if ($firstEntry -and $firstEntry.FullName -match "^([^/]+)/") {
-        $stripPrefix = $Matches[1] + "/"
-    }
-    $zip.Dispose()
-
+    # Extract with 7-Zip (multi-threaded)
     if ($GuiMode) {
-        # Direct extraction with progress (no temp dir, no robocopy)
-        Expand-ZipDirectWithProgress -ZipPath $ZipFile -DestPath $SetupPath -StripPrefix $stripPrefix
+        Show-Progress -Title "YakuLingo Setup" -Status "Extracting files..." -Step "Step 2/3: Extracting files"
     } else {
-        # Console mode: extract to temp then move (allows for progress bar via robocopy)
-        $TempDir = Join-Path $env:TEMP "YakuLingo_setup_$(Get-Date -Format 'yyyyMMddHHmmss')"
-        [System.IO.Compression.ZipFile]::ExtractToDirectory($ZipFile, $TempDir)
-
-        # Find extracted folder
-        $ExtractedDir = Get-ChildItem -Path $TempDir -Directory | Where-Object { $_.Name -like "YakuLingo*" } | Select-Object -First 1
-        if (-not $ExtractedDir) {
-            throw "Failed to extract ZIP file.`n`nFile: $ZipFileName"
-        }
-
-        # Move files using robocopy (fast with progress)
-        Write-Host "      Copying files..." -ForegroundColor Gray
-        $robocopyArgs = @($ExtractedDir.FullName, $SetupPath, "/E", "/MOVE", "/MT:16", "/NFL", "/NDL", "/NJH", "/NJS", "/R:1", "/W:1")
-        Start-Process -FilePath "robocopy.exe" -ArgumentList $robocopyArgs -NoNewWindow -Wait | Out-Null
-
-        # Cleanup temp
-        Remove-Item -Path $TempDir -Recurse -Force -ErrorAction SilentlyContinue
+        Write-Host "      Extracting with 7-Zip..." -ForegroundColor Gray
     }
+    $TempDir = Join-Path $env:TEMP "YakuLingo_setup_$(Get-Date -Format 'yyyyMMddHHmmss')"
+    $sevenZipArgs = @("x", "`"$ZipFile`"", "-o`"$TempDir`"", "-y", "-bso0", "-bsp0")
+    Start-Process -FilePath $script:SevenZip -ArgumentList $sevenZipArgs -NoNewWindow -Wait | Out-Null
+
+    # Find extracted folder and move to destination
+    $ExtractedDir = Get-ChildItem -Path $TempDir -Directory | Where-Object { $_.Name -like "YakuLingo*" } | Select-Object -First 1
+    if (-not $ExtractedDir) {
+        throw "Failed to extract ZIP file.`n`nFile: $ZipFileName"
+    }
+
+    # Move files using robocopy (fast)
+    if ($GuiMode) {
+        Show-Progress -Title "YakuLingo Setup" -Status "Moving files..." -Step "Step 2/3: Extracting files"
+    } else {
+        Write-Host "      Moving files..." -ForegroundColor Gray
+    }
+    $robocopyArgs = @($ExtractedDir.FullName, $SetupPath, "/E", "/MOVE", "/MT:16", "/NFL", "/NDL", "/NJH", "/NJS", "/R:1", "/W:1")
+    Start-Process -FilePath "robocopy.exe" -ArgumentList $robocopyArgs -NoNewWindow -Wait | Out-Null
+
+    # Cleanup temp
+    Remove-Item -Path $TempDir -Recurse -Force -ErrorAction SilentlyContinue
 
     if (-not $GuiMode) {
         Write-Host "[OK] Extraction completed" -ForegroundColor Green
@@ -343,6 +288,9 @@ function Invoke-Setup {
     # ============================================================
     Write-Status -Message "Launching YakuLingo..." -Progress -Step "Complete!"
     $ExePath = Join-Path $SetupPath "YakuLingo.exe"
+    if (-not (Test-Path $ExePath)) {
+        throw "YakuLingo.exe not found after extraction.`n`nThe ZIP file may be corrupted."
+    }
     Start-Process -FilePath $ExePath -WorkingDirectory $SetupPath
 
     # ============================================================

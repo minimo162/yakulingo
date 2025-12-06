@@ -15,7 +15,7 @@ set START_TIME=%TIME%
 :: Progress bar settings
 set "PROGRESS_CHARS=##################################################"
 set "PROGRESS_EMPTY=.................................................."
-set TOTAL_STEPS=10
+set TOTAL_STEPS=4
 set CURRENT_STEP=0
 
 :: ============================================================
@@ -37,14 +37,20 @@ exit /b 0
 :SkipFunctions
 
 :: ============================================================
-:: Step 1: Check required files exist
+:: Step 1: Prepare (check files, cleanup, fix paths)
 :: ============================================================
-call :ShowProgress 1 "Checking required files..."
+call :ShowProgress 1 "Preparing..."
+
+echo        Checking required files...
 
 set MISSING_FILES=0
 
 if not exist ".venv" (
     echo        [ERROR] .venv directory not found. Run install_deps.bat first.
+    set MISSING_FILES=1
+)
+if not exist ".venv\pyvenv.cfg" (
+    echo        [ERROR] .venv\pyvenv.cfg not found. Run install_deps.bat first.
     set MISSING_FILES=1
 )
 if not exist ".uv-python" (
@@ -63,6 +69,38 @@ if not exist "yakulingo" (
     echo        [ERROR] yakulingo directory not found.
     set MISSING_FILES=1
 )
+if not exist "YakuLingo.exe" (
+    echo        [ERROR] YakuLingo.exe not found. Build the launcher first.
+    set MISSING_FILES=1
+)
+if not exist "prompts" (
+    echo        [ERROR] prompts directory not found.
+    set MISSING_FILES=1
+)
+if not exist "packaging\installer\share\setup.vbs" (
+    echo        [ERROR] packaging\installer\share\setup.vbs not found.
+    set MISSING_FILES=1
+)
+if not exist "packaging\installer\share\.scripts\setup.ps1" (
+    echo        [ERROR] packaging\installer\share\.scripts\setup.ps1 not found.
+    set MISSING_FILES=1
+)
+if not exist "packaging\installer\share\README.txt" (
+    echo        [ERROR] packaging\installer\share\README.txt not found.
+    set MISSING_FILES=1
+)
+
+:: Check 7-Zip (required for ZIP creation)
+set "SEVENZIP="
+if exist "%ProgramFiles%\7-Zip\7z.exe" set "SEVENZIP=%ProgramFiles%\7-Zip\7z.exe"
+if exist "%ProgramFiles(x86)%\7-Zip\7z.exe" set "SEVENZIP=%ProgramFiles(x86)%\7-Zip\7z.exe"
+if not defined SEVENZIP (
+    for %%i in (7z.exe) do if not "%%~$PATH:i"=="" set "SEVENZIP=%%~$PATH:i"
+)
+if not defined SEVENZIP (
+    echo        [ERROR] 7-Zip not found. Please install from https://7-zip.org/
+    set MISSING_FILES=1
+)
 
 if !MISSING_FILES! equ 1 (
     echo.
@@ -71,18 +109,12 @@ if !MISSING_FILES! equ 1 (
     exit /b 1
 )
 
-:: ============================================================
-:: Step 2: Clean up unnecessary files
-:: ============================================================
-call :ShowProgress 2 "Cleaning up cache files..."
-
-:: Use PowerShell for fast parallel cleanup (single command to reduce overhead)
+:: Clean up unnecessary files
+echo        Cleaning up cache files...
 powershell -NoProfile -Command "$ErrorActionPreference='SilentlyContinue'; Get-ChildItem -Path '.venv','yakulingo' -Recurse -Directory -Filter '__pycache__' | Remove-Item -Recurse -Force; Get-ChildItem -Path '.venv' -Recurse -Filter '*.pyc' | Remove-Item -Force; Remove-Item -Path '.uv-cache','.wheels' -Recurse -Force; Remove-Item -Path '*.tmp','.venv\pyvenv.cfg.tmp' -Force"
 
-:: ============================================================
-:: Step 3: Fix paths for portability
-:: ============================================================
-call :ShowProgress 3 "Fixing paths for portability..."
+:: Fix paths for portability
+echo        Fixing paths for portability...
 
 :: Get Python version from pyvenv.cfg
 set PYTHON_VERSION=
@@ -97,10 +129,8 @@ for /f "tokens=2 delims==" %%v in ('type ".venv\pyvenv.cfg" ^| findstr /i "^vers
     echo version =%PYTHON_VERSION%
 ) > ".venv\pyvenv.cfg"
 
-:: ============================================================
-:: Step 4: Prepare distribution folder
-:: ============================================================
-call :ShowProgress 4 "Preparing distribution folder..."
+:: Prepare distribution folder
+echo        Preparing distribution folder...
 
 :: Get current date for filename
 for /f "tokens=2 delims==" %%I in ('wmic os get localdatetime /format:list') do set datetime=%%I
@@ -109,13 +139,15 @@ set DIST_DATE=%datetime:~0,8%
 set DIST_NAME=YakuLingo_%DIST_DATE%
 set DIST_ZIP=%DIST_NAME%.zip
 set DIST_DIR=dist_temp\YakuLingo
+set SHARE_DIR=share_package
 
 :: Remove old distribution if exists
-if exist "%DIST_ZIP%" del /q "%DIST_ZIP%"
+if exist "%SHARE_DIR%" rd /s /q "%SHARE_DIR%"
 if exist "dist_temp" rd /s /q "dist_temp"
 
-:: Create distribution folder structure
+:: Create folder structure
 mkdir "%DIST_DIR%" 2>nul
+mkdir "%SHARE_DIR%" 2>nul
 
 :: Copy individual files (fast)
 for %%f in ("YakuLingo.exe" "app.py" "glossary.csv" "pyproject.toml" "uv.lock" "uv.toml" "README.md") do (
@@ -123,22 +155,18 @@ for %%f in ("YakuLingo.exe" "app.py" "glossary.csv" "pyproject.toml" "uv.lock" "
 )
 
 :: ============================================================
-:: Step 5-8: Copy folders in parallel
+:: Step 2: Copy folders
 :: ============================================================
-call :ShowProgress 5 "Copying .venv (Python packages)..."
+call :ShowProgress 2 "Copying folders..."
+
+echo        Copying .venv, .uv-python, .playwright-browsers...
 
 :: Start all robocopy operations in parallel
 start /B "" robocopy ".venv" "%DIST_DIR%\.venv" /E /MT:16 /NFL /NDL /NJH /NJS /NP /R:1 /W:1 >nul 2>&1
 start /B "" robocopy ".uv-python" "%DIST_DIR%\.uv-python" /E /MT:16 /NFL /NDL /NJH /NJS /NP /R:1 /W:1 >nul 2>&1
 start /B "" robocopy ".playwright-browsers" "%DIST_DIR%\.playwright-browsers" /E /MT:16 /NFL /NDL /NJH /NJS /NP /R:1 /W:1 >nul 2>&1
 
-:: Copy smaller folders (fast, don't need parallel)
-for %%d in ("yakulingo" "prompts" "config") do (
-    if exist "%%~d" robocopy "%%~d" "%DIST_DIR%\%%~d" /E /MT:8 /NFL /NDL /NJH /NJS /NP /R:1 /W:1 >nul 2>&1
-)
-
 :: Wait for parallel robocopy operations to complete
-call :ShowProgress 6 "Copying .uv-python (Python runtime)..."
 :WaitLoop1
 tasklist /FI "IMAGENAME eq robocopy.exe" 2>nul | find /I "robocopy.exe" >nul
 if !errorlevel! equ 0 (
@@ -146,51 +174,30 @@ if !errorlevel! equ 0 (
     goto :WaitLoop1
 )
 
-call :ShowProgress 7 "Copying .playwright-browsers..."
-:: Already done (parallel completed)
-
-call :ShowProgress 8 "Copying application files..."
-:: Already done (inline)
-
-:: ============================================================
-:: Step 9: Create ZIP archive
-:: ============================================================
-call :ShowProgress 9 "Creating ZIP archive..."
-
-:: Use PowerShell with progress display
-powershell -NoProfile -Command ^
-    "$ErrorActionPreference = 'Stop'; " ^
-    "Add-Type -Assembly 'System.IO.Compression.FileSystem'; " ^
-    "$srcPath = (Resolve-Path 'dist_temp\YakuLingo').Path; " ^
-    "$zipPath = (Resolve-Path '.').Path + '\%DIST_ZIP%'; " ^
-    "$files = Get-ChildItem -Path $srcPath -Recurse -File; " ^
-    "$total = $files.Count; " ^
-    "$i = 0; " ^
-    "$zip = [System.IO.Compression.ZipFile]::Open($zipPath, 'Create'); " ^
-    "try { " ^
-    "    foreach ($file in $files) { " ^
-    "        $i++; " ^
-    "        $relPath = $file.FullName.Substring($srcPath.Length + 1); " ^
-    "        $entry = $zip.CreateEntry('YakuLingo/' + $relPath.Replace('\', '/'), 'Fastest'); " ^
-    "        $stream = $entry.Open(); " ^
-    "        $fileStream = [System.IO.File]::OpenRead($file.FullName); " ^
-    "        $fileStream.CopyTo($stream); " ^
-    "        $fileStream.Close(); " ^
-    "        $stream.Close(); " ^
-    "        if ($i %% 500 -eq 0) { " ^
-    "            $pct = [int]($i * 100 / $total); " ^
-    "            Write-Host \"`r        Progress: $pct%% ($i / $total files)\" -NoNewline; " ^
-    "        } " ^
-    "    } " ^
-    "    Write-Host \"`r        Progress: 100%% ($total / $total files)    \"; " ^
-    "} finally { " ^
-    "    $zip.Dispose(); " ^
-    "}"
+:: Copy smaller folders (fast, don't need parallel)
+echo        Copying yakulingo, prompts, config...
+for %%d in ("yakulingo" "prompts" "config") do (
+    if exist "%%~d" robocopy "%%~d" "%DIST_DIR%\%%~d" /E /MT:8 /NFL /NDL /NJH /NJS /NP /R:1 /W:1 >nul 2>&1
+)
 
 :: ============================================================
-:: Step 10: Cleanup and create share package
+:: Step 3: Create ZIP archive
 :: ============================================================
-call :ShowProgress 10 "Finalizing..."
+call :ShowProgress 3 "Creating ZIP archive..."
+
+pushd dist_temp
+"%SEVENZIP%" a -tzip -mx=1 -mmt=on -bsp1 "..\%SHARE_DIR%\%DIST_ZIP%" YakuLingo >nul
+popd
+
+:: ============================================================
+:: Step 4: Cleanup and finalize
+:: ============================================================
+call :ShowProgress 4 "Finalizing..."
+
+:: Copy installer files to share folder
+copy /y "packaging\installer\share\setup.vbs" "%SHARE_DIR%\" >nul
+copy /y "packaging\installer\share\README.txt" "%SHARE_DIR%\" >nul
+robocopy "packaging\installer\share\.scripts" "%SHARE_DIR%\.scripts" /E /NFL /NDL /NJH /NJS >nul 2>&1
 
 :: Cleanup temp folder
 rd /s /q "dist_temp" 2>nul
@@ -199,39 +206,20 @@ rd /s /q "dist_temp" 2>nul
 set END_TIME=%TIME%
 call :CalcElapsed "%START_TIME%" "%END_TIME%"
 
-if exist "%DIST_ZIP%" (
+if exist "%SHARE_DIR%\%DIST_ZIP%" (
     echo.
     echo ============================================================
     echo [SUCCESS] Distribution package created!
     echo.
-    echo   File: %DIST_ZIP%
-    for %%A in ("%DIST_ZIP%") do echo   Size: %%~zA bytes
-    echo   Time: %ELAPSED_TIME%
-    echo.
-    echo ============================================================
-    echo.
-    echo Creating share folder package...
-
-    :: Create share folder with network installer
-    set SHARE_DIR=share_package
-    if exist "!SHARE_DIR!" rd /s /q "!SHARE_DIR!"
-    mkdir "!SHARE_DIR!"
-
-    :: Copy ZIP and installer files
-    copy /y "!DIST_ZIP!" "!SHARE_DIR!\" >nul
-    copy /y "packaging\installer\share\setup.vbs" "!SHARE_DIR!\" >nul
-    copy /y "packaging\installer\share\README.txt" "!SHARE_DIR!\" >nul
-    robocopy "packaging\installer\share\.scripts" "!SHARE_DIR!\.scripts" /E /NFL /NDL /NJH /NJS >nul 2>&1
-
-    echo.
-    echo [SUCCESS] Share folder package created!
-    echo.
-    echo   Folder: !SHARE_DIR!\
+    echo   Folder: %SHARE_DIR%\
     echo     - setup.vbs    ^<-- Users run this
-    echo     - !DIST_ZIP!
+    echo     - %DIST_ZIP%
     echo     - README.txt
     echo.
-    echo Deploy the contents of "!SHARE_DIR!" to your network share.
+    for %%A in ("%SHARE_DIR%\%DIST_ZIP%") do echo   Size: %%~zA bytes
+    echo   Time: %ELAPSED_TIME%
+    echo.
+    echo Deploy the contents of "%SHARE_DIR%" to your network share.
     echo ============================================================
 ) else (
     echo [ERROR] Failed to create distribution package.

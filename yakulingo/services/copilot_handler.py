@@ -267,7 +267,11 @@ class CopilotHandler:
     EDGE_STARTUP_MAX_ATTEMPTS = 20  # Maximum iterations to wait for Edge startup
     EDGE_STARTUP_CHECK_INTERVAL = 0.3  # Seconds between startup checks
     RESPONSE_STABLE_COUNT = 3  # Number of stable checks before considering response complete
-    RESPONSE_POLL_INTERVAL = 0.3  # Seconds between response checks
+    RESPONSE_POLL_INTERVAL = 0.3  # Seconds between response checks (legacy, kept for compatibility)
+    # Dynamic polling intervals for faster response detection
+    RESPONSE_POLL_INITIAL = 0.5  # Initial interval while waiting for response to start
+    RESPONSE_POLL_ACTIVE = 0.2  # Interval after text is detected
+    RESPONSE_POLL_STABLE = 0.1  # Interval during stability checking
     DEFAULT_RESPONSE_TIMEOUT = 120  # Default timeout for response in seconds
 
     # Copilot character limits (Free: 8000, Paid: 128000)
@@ -1052,7 +1056,13 @@ class CopilotHandler:
         await loop.run_in_executor(None, self._send_message, message)
 
     def _get_response(self, timeout: int = 120) -> str:
-        """Get response from Copilot (sync)"""
+        """Get response from Copilot (sync)
+
+        Uses dynamic polling intervals for faster response detection:
+        - INITIAL (0.5s): While waiting for response to start
+        - ACTIVE (0.2s): After text is detected, while content is growing
+        - STABLE (0.1s): During stability checking phase
+        """
         error_types = _get_playwright_errors()
         PlaywrightError = error_types['Error']
         PlaywrightTimeoutError = error_types['TimeoutError']
@@ -1066,10 +1076,11 @@ class CopilotHandler:
                 # Response may already be present or selector changed, continue polling
                 pass
 
-            # Wait for response completion
-            max_wait = timeout
+            # Wait for response completion with dynamic polling
+            max_wait = float(timeout)
             last_text = ""
             stable_count = 0
+            has_content = False  # Track if we've seen any content
 
             while max_wait > 0:
                 # Check if Copilot is still generating (stop button visible)
@@ -1079,8 +1090,9 @@ class CopilotHandler:
                 if stop_button and stop_button.is_visible():
                     # Still generating, reset stability counter and wait
                     stable_count = 0
-                    time.sleep(self.RESPONSE_POLL_INTERVAL)
-                    max_wait -= self.RESPONSE_POLL_INTERVAL
+                    poll_interval = self.RESPONSE_POLL_ACTIVE if has_content else self.RESPONSE_POLL_INITIAL
+                    time.sleep(poll_interval)
+                    max_wait -= poll_interval
                     continue
 
                 # Get the latest message
@@ -1095,20 +1107,29 @@ class CopilotHandler:
                     # Only count stability if there's actual content
                     # Don't consider empty or whitespace-only text as stable
                     if current_text and current_text.strip():
+                        has_content = True
                         if current_text == last_text:
                             stable_count += 1
                             if stable_count >= self.RESPONSE_STABLE_COUNT:
                                 logger.debug("Response stabilized (length: %d chars): %s", len(current_text), current_text[:500])
                                 return current_text
+                            # Use fastest interval during stability checking
+                            poll_interval = self.RESPONSE_POLL_STABLE
                         else:
                             stable_count = 0
                             last_text = current_text
+                            # Content is still growing, use active interval
+                            poll_interval = self.RESPONSE_POLL_ACTIVE
                     else:
                         # Reset stability counter if text is empty
                         stable_count = 0
+                        poll_interval = self.RESPONSE_POLL_INITIAL
+                else:
+                    # No response element yet, use initial interval
+                    poll_interval = self.RESPONSE_POLL_INITIAL
 
-                time.sleep(self.RESPONSE_POLL_INTERVAL)
-                max_wait -= self.RESPONSE_POLL_INTERVAL
+                time.sleep(poll_interval)
+                max_wait -= poll_interval
 
             return last_text
 
@@ -1232,7 +1253,7 @@ class CopilotHandler:
                             return True
                     except PlaywrightError:
                         continue
-                time.sleep(0.3)
+                time.sleep(0.1)  # Faster polling for quicker detection
 
             # If no indicator found, assume success after timeout
             # (some UI may not show clear indicators)

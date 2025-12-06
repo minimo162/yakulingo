@@ -293,7 +293,8 @@ body {
     border-radius: var(--md-sys-shape-corner-medium);
     max-height: 300px;
     overflow-y: auto;
-    animation: fadeIn 0.2s ease-out;
+    /* Subtle fade-in, matches result-container animation */
+    animation: streamingFadeIn 0.2s ease-out;
 }
 
 .streaming-preview .streaming-text {
@@ -305,9 +306,15 @@ body {
     word-break: break-word;
 }
 
-@keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
+@keyframes streamingFadeIn {
+    from {
+        opacity: 0.7;
+        transform: translateY(4px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 /* === Loading Spinner Section === */
@@ -1547,6 +1554,19 @@ body {
     gap: 0.875rem;
     margin-top: 0.625rem;
     width: 100%;
+    /* Smooth fade-in from streaming preview */
+    animation: resultFadeIn 0.25s ease-out;
+}
+
+@keyframes resultFadeIn {
+    from {
+        opacity: 0.7;
+        transform: translateY(4px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 /* === Nani-style Result Card === */

@@ -237,7 +237,7 @@ def _create_large_input_panel(
                     ui.label('使い方: テキストを入力して「翻訳する」をクリック').classes('text-xs')
                 with ui.element('div').classes('hint-secondary'):
                     ui.icon('attach_file').classes('text-sm')
-                    ui.label('📎で用語集や参考資料を添付できます').classes('text-2xs')
+                    ui.label('📎で用語集や参考資料を添付できます（同梱の glossary.csv も活用できます）').classes('text-2xs')
             else:
                 # Regular hints for returning users
                 with ui.element('div').classes('hint-primary'):

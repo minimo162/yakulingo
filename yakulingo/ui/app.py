@@ -573,6 +573,44 @@ class YakuLingoApp:
 
                 ui.label('用語集、スタイルガイド、参考資料など').classes('text-xs text-muted')
 
+                # Quick access to bundled glossary
+                base_dir = Path(__file__).parent.parent.parent
+                glossary_path = base_dir / 'glossary.csv'
+                glossary_already_added = any(
+                    ref.name == 'glossary.csv' for ref in self.state.reference_files
+                )
+
+                def add_bundled_glossary():
+                    if glossary_path.exists():
+                        self.state.reference_files.append(glossary_path)
+                        ui.notify('同梱の用語集を追加しました', type='positive')
+                        dialog.close()
+                        self._refresh_content()
+                    else:
+                        ui.notify('glossary.csv が見つかりません', type='warning')
+
+                if glossary_path.exists():
+                    with ui.element('div').classes('w-full'):
+                        btn = ui.button(
+                            '同梱の用語集を使う',
+                            icon='library_books',
+                            on_click=add_bundled_glossary
+                        ).props('outline no-caps').classes('w-full')
+                        if glossary_already_added:
+                            btn.props('disable')
+                            btn.tooltip('既に追加済みです')
+
+                    ui.element('div').classes('divider-with-text').style(
+                        'display: flex; align-items: center; gap: 0.5rem; '
+                        'color: var(--md-sys-color-outline); font-size: 0.75rem;'
+                    )
+                    with ui.element('div').style(
+                        'display: flex; align-items: center; width: 100%; gap: 0.5rem;'
+                    ):
+                        ui.element('div').style('flex: 1; height: 1px; background: var(--md-sys-color-outline-variant);')
+                        ui.label('または').classes('text-xs text-muted')
+                        ui.element('div').style('flex: 1; height: 1px; background: var(--md-sys-color-outline-variant);')
+
                 async def handle_upload(e):
                     try:
                         # NiceGUI 3.0+ uses e.file with data attribute

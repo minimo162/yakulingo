@@ -565,9 +565,15 @@ class CopilotHandler:
                     logger.info("Found existing Copilot page")
                     break
 
-            # If no Copilot page, create and navigate
+            # If no Copilot page, reuse existing tab or create new one
             if not copilot_page:
-                copilot_page = self._context.new_page()
+                # Reuse existing tab if available (avoids creating extra tabs)
+                if pages:
+                    copilot_page = pages[0]
+                    logger.info("Reusing existing tab for Copilot")
+                else:
+                    copilot_page = self._context.new_page()
+                    logger.info("Created new tab for Copilot")
                 # Navigate with 'commit' (fastest - just wait for first response)
                 # Don't use 'load' as Copilot has persistent connections that prevent load event
                 logger.info("Navigating to Copilot...")

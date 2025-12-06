@@ -1379,7 +1379,7 @@ def _get_windows_scale_factor() -> float:
         return 1.0
 
 
-def _detect_display_settings() -> tuple[tuple[int, int], str, tuple[int, int, int]]:
+def _detect_display_settings() -> tuple[tuple[int, int], str, tuple[int, int, int, int]]:
     """Detect connected monitors and determine window size, display mode, and panel widths.
 
     Uses pywebview's screens API to detect multiple monitors BEFORE ui.run().
@@ -1400,7 +1400,7 @@ def _detect_display_settings() -> tuple[tuple[int, int], str, tuple[int, int, in
     Reference: 1920x1200 monitor → 1424x916 window, sidebar 260px, input panel 380px.
 
     Returns:
-        Tuple of ((window_width, window_height), mode, (sidebar_width, input_panel_width, result_content_width))
+        Tuple of ((window_width, window_height), mode, (sidebar_width, input_panel_width, result_content_width, input_panel_max_width))
     """
     # Reference ratios based on 2560x1440 → 1900x1100
     WIDTH_RATIO = 1900 / 2560  # 0.742

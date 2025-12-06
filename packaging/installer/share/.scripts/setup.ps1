@@ -288,6 +288,9 @@ function Invoke-Setup {
     # ============================================================
     Write-Status -Message "Launching YakuLingo..." -Progress -Step "Complete!"
     $ExePath = Join-Path $SetupPath "YakuLingo.exe"
+    if (-not (Test-Path $ExePath)) {
+        throw "YakuLingo.exe not found after extraction.`n`nThe ZIP file may be corrupted."
+    }
     Start-Process -FilePath $ExePath -WorkingDirectory $SetupPath
 
     # ============================================================

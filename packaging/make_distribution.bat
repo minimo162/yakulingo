@@ -81,6 +81,10 @@ if not exist "packaging\installer\share\.scripts\setup.ps1" (
     echo        [ERROR] packaging\installer\share\.scripts\setup.ps1 not found.
     set MISSING_FILES=1
 )
+if not exist "packaging\installer\share\README.txt" (
+    echo        [ERROR] packaging\installer\share\README.txt not found.
+    set MISSING_FILES=1
+)
 
 :: Check 7-Zip (required for ZIP creation)
 set "SEVENZIP="

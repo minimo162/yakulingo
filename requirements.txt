@@ -1,9 +1,21 @@
+# Core dependencies
 playwright>=1.40.0
 pillow>=10.0.0
+numpy>=1.24.0
+
+# File processing
 openpyxl>=3.1.0
 python-docx>=1.1.0
 python-pptx>=0.6.23
-numpy>=1.24.0
+
+# PDF translation
 PyMuPDF>=1.24.0
+pdfminer.six>=20231228
+
+# Web UI
 nicegui>=1.4.0
 pywebview>=5.0.0
+
+# Platform-specific (install manually if needed)
+# xlwings>=0.32.0  # Windows/macOS only, requires Excel
+# pywin32>=306    # Windows only, for NTLM proxy auth

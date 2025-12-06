@@ -3338,7 +3338,7 @@ requires-dist = [
     { name = "pdfminer-six", specifier = ">=20231228" },
     { name = "pillow", specifier = ">=10.0.0" },
     { name = "playwright", specifier = ">=1.40.0" },
-    { name = "pymupdf", specifier = ">=1.24.0,<1.25.3" },
+    { name = "pymupdf", specifier = ">=1.24.0" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=8.0.0" },
     { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=0.23.0" },
     { name = "pytest-cov", marker = "extra == 'test'", specifier = ">=5.0.0" },

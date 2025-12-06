@@ -1679,7 +1679,7 @@ class TranslationService:
             # OCR mode: use apply_translations_with_cells for better positioning
             processor.apply_translations_with_cells(
                 input_path, output_path, translations, all_cells, direction, self.config,
-                dpi=ocr_dpi  # Pass DPI for coordinate scaling
+                dpi=dpi  # Pass DPI for coordinate scaling
             )
         else:
             # Standard mode: use regular apply_translations

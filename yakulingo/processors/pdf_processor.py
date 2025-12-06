@@ -2857,6 +2857,11 @@ def create_layout_array_from_pp_doclayout(
     This function converts PP-DocLayout-L's output into
     a 2D NumPy array where each pixel is labeled with its region class.
 
+    PDFMathTranslate compliant:
+    - Two-pass processing: text boxes first, then skip boxes
+    - ±1 pixel margin for better boundary coverage
+    - Proper coordinate clipping
+
     Args:
         results: LayoutDetection result from PP-DocLayout-L
                  Contains 'boxes' list with {label, coordinate, score}
@@ -2891,38 +2896,48 @@ def create_layout_array_from_pp_doclayout(
             elif isinstance(first_result, dict) and 'boxes' in first_result:
                 boxes = first_result['boxes']
 
-    para_idx = 0
-    table_idx = 0
-
-    for box_idx, box in enumerate(boxes):
-        # Extract box data
+    # Helper function to extract box data
+    def extract_box_data(box):
         if isinstance(box, dict):
             label = box.get('label', '')
             coord = box.get('coordinate', [])
             score = box.get('score', 0)
         else:
-            # Object with attributes
             label = getattr(box, 'label', '')
             coord = getattr(box, 'coordinate', [])
             score = getattr(box, 'score', 0)
+        return label, coord, score
 
+    # Helper function to clip coordinates with ±1 margin (PDFMathTranslate compliant)
+    def clip_coords(coord):
         if not coord or len(coord) < 4:
+            return None
+        x0, y0, x1, y1 = [int(v) for v in coord[:4]]
+        # Add ±1 pixel margin for better boundary coverage
+        x0 = np.clip(x0 - 1, 0, page_width - 1)
+        y0 = np.clip(y0 - 1, 0, page_height - 1)
+        x1 = np.clip(x1 + 1, 0, page_width - 1)
+        y1 = np.clip(y1 + 1, 0, page_height - 1)
+        return x0, y0, x1, y1
+
+    para_idx = 0
+    table_idx = 0
+
+    # PDFMathTranslate compliant: Two-pass processing
+    # Pass 1: Process text boxes (non-skip labels) first
+    for box_idx, box in enumerate(boxes):
+        label, coord, score = extract_box_data(box)
+        coords = clip_coords(coord)
+        if coords is None:
             continue
 
-        x0, y0, x1, y1 = [int(v) for v in coord[:4]]
-        x0 = max(0, min(x0, page_width))
-        x1 = max(0, min(x1, page_width))
-        y0 = max(0, min(y0, page_height))
-        y1 = max(0, min(y1, page_height))
+        x0, y0, x1, y1 = coords
 
-        # Categorize by label
+        # Skip labels are processed in pass 2
         if label in LAYOUT_SKIP_LABELS:
-            # Skip labels (figures, headers, footers, formulas)
-            layout[y0:y1, x0:x1] = LAYOUT_ABANDON
-            if label in {"figure", "chart", "seal"}:
-                figures_list.append(coord[:4])
+            continue
 
-        elif label in {"table", "table_caption"}:
+        if label in {"table", "table_caption"}:
             # Table content
             cell_id = LAYOUT_TABLE_BASE + table_idx
             layout[y0:y1, x0:x1] = cell_id
@@ -2957,6 +2972,25 @@ def create_layout_array_from_pp_doclayout(
                 'score': score,
             }
             para_idx += 1
+
+    # Pass 2: Process skip labels (figures, headers, footers, formulas)
+    # These overwrite any overlapping text regions with ABANDON
+    for box_idx, box in enumerate(boxes):
+        label, coord, score = extract_box_data(box)
+        coords = clip_coords(coord)
+        if coords is None:
+            continue
+
+        if label not in LAYOUT_SKIP_LABELS:
+            continue
+
+        x0, y0, x1, y1 = coords
+
+        # Mark as abandoned (non-translatable)
+        layout[y0:y1, x0:x1] = LAYOUT_ABANDON
+
+        if label in {"figure", "chart", "seal", "figure_title", "chart_title"}:
+            figures_list.append(coord[:4])
 
     return LayoutArray(
         array=layout,

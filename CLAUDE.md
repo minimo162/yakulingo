@@ -170,7 +170,7 @@ YakuLingo/
 | `yakulingo/models/types.py` | Core data types: TextBlock, FileInfo, TranslationResult, HistoryEntry | ~297 |
 | `yakulingo/storage/history_db.py` | SQLite database for translation history | ~320 |
 | `yakulingo/processors/base.py` | Abstract base class for all file processors | ~105 |
-| `yakulingo/processors/pdf_processor.py` | PDF processing with PyMuPDF and yomitoku OCR | ~3303 |
+| `yakulingo/processors/pdf_processor.py` | PDF processing with PyMuPDF, pdfminer.six, and yomitoku LayoutAnalyzer | ~3303 |
 
 ## Core Data Types
 
@@ -178,7 +178,7 @@ YakuLingo/
 # Key enums (yakulingo/models/types.py)
 FileType: EXCEL, WORD, POWERPOINT, PDF
 TranslationStatus: PENDING, PROCESSING, COMPLETED, FAILED, CANCELLED
-TranslationPhase: EXTRACTING, OCR, TRANSLATING, APPLYING, COMPLETE  # Progress phases (OCR for PDF)
+TranslationPhase: EXTRACTING, OCR, TRANSLATING, APPLYING, COMPLETE  # Progress phases (OCR = layout analysis for PDF)
 
 # UI state enums (yakulingo/ui/state.py)
 Tab: TEXT, FILE                                # Main navigation tabs
@@ -681,7 +681,7 @@ Install separately for PDF translation support:
 ```bash
 pip install -r requirements_pdf.txt
 ```
-- `yomitoku>=0.10.0`: Japanese document AI (OCR & layout analysis)
+- `yomitoku>=0.10.0`: Japanese document AI (layout analysis only, OCR is not used)
 - Requires Python 3.10-3.12, PyTorch 2.5+, GPU with 8GB+ VRAM recommended
 
 ### PDF Processing Details
@@ -794,7 +794,7 @@ processor.apply_translations(
 ```
 
 ### Optional Dependencies
-- `[ocr]`: yomitoku for OCR support
+- `[ocr]`: yomitoku for layout analysis support (OCR is not used, only LayoutAnalyzer)
 - `[test]`: pytest, pytest-cov, pytest-asyncio
 
 ## Platform Notes
@@ -834,10 +834,16 @@ When interacting with users in this repository, prefer Japanese for comments and
 
 Based on recent commits:
 - **PDF Translation Improvements (PDFMathTranslate compliant)**:
+  - **OCR廃止**: yomitoku LayoutAnalyzerのみを使用（OCRなし、スキャンPDFはサポート対象外）
+  - **ハイブリッド抽出**: pdfminerでテキスト抽出 + yomitokuでレイアウト解析
   - **Existing font reuse**: Detect and reuse CID/Simple fonts already embedded in PDF
   - **pdfminer.six integration**: Font type detection for correct text encoding
   - **Low-level API only**: Removed high-level API fallback for consistent rendering
   - **Font type encoding**: EMBEDDED→glyph ID, CID→4-digit hex, SIMPLE→2-digit hex
+- **Font Settings Simplification**:
+  - **Unified settings**: 4 font settings → 2 settings (`font_jp_to_en`, `font_en_to_jp`)
+  - **PDF settings removed**: `pdf_font_ja`, `pdf_font_en` removed, now uses common settings
+  - **Translation direction only**: Original font type is ignored, font determined by translation direction
 - **Translation Speed Optimization**:
   - **Text translation**: Reduced polling interval (0.5s → 0.3s), reduced chat response clear wait (5s → 3s)
   - **File translation**: Reduced polling interval (1s → 0.5s), reduced stability confirmation (3 → 2 checks)

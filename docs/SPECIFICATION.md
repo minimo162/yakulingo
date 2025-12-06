@@ -1,6 +1,6 @@
 # YakuLingo - 技術仕様書
 
-> **Version**: 2.13
+> **Version**: 2.14
 > **Date**: 2025-12
 > **App Name**: YakuLingo (訳リンゴ)
 
@@ -64,7 +64,7 @@ M365 Copilotを翻訳エンジンとして使用し、テキストとドキュ�
 | Excel | `.xlsx` `.xls` | xlwings (Win/Mac) / openpyxl (fallback) |
 | Word | `.docx` `.doc` | python-docx |
 | PowerPoint | `.pptx` `.ppt` | python-pptx |
-| PDF | `.pdf` | PyMuPDF, yomitoku |
+| PDF | `.pdf` | PyMuPDF, pdfminer.six, yomitoku (LayoutAnalyzer) |
 
 ### 1.5 技術スタック
 
@@ -955,8 +955,13 @@ class PdfProcessor(FileProcessor):
     """
     使用ライブラリ:
     - PyMuPDF (fitz): PDF読み書き
-    - pdfminer.six: フォント種別判定（PDFMathTranslate準拠）
-    - yomitoku: OCR/レイアウト解析（オプション）
+    - pdfminer.six: テキスト抽出、フォント種別判定（PDFMathTranslate準拠）
+    - yomitoku LayoutAnalyzer: レイアウト解析のみ（OCRは使用しない）
+
+    ハイブリッド抽出モード（PDFMathTranslate準拠）:
+    - pdfminer: テキスト抽出（正確な文字データ、フォント情報、CID値）
+    - yomitoku LayoutAnalyzer: 段落検出、読み順、図表/数式の識別
+    - OCRなし: スキャンPDFはサポート対象外
 
     PDFMathTranslate準拠機能:
     - 低レベルAPI: PDFオペレータを直接生成（高精度レイアウト制御）
@@ -997,12 +1002,14 @@ class PdfProcessor(FileProcessor):
 
 ### 8.2 フォントマッピング
 
-| 翻訳方向 | 元フォント種類 | 出力フォント |
-|---------|--------------|-------------|
-| JP → EN | 明朝系 (default) | Arial |
-| JP → EN | ゴシック系 | Arial |
-| EN → JP | セリフ系 (default) | MS Pゴシック |
-| EN → JP | サンセリフ系 | MS Pゴシック |
+フォント設定が簡略化され、翻訳方向のみで出力フォントを決定（元フォント種別は無視）。
+
+| 翻訳方向 | 出力フォント |
+|---------|-------------|
+| JP → EN | Arial |
+| EN → JP | MS Pゴシック |
+
+> **Note**: 全ファイル形式（Excel, Word, PowerPoint, PDF）で共通の設定を使用。
 
 ### 8.3 フォントサイズ調整
 
@@ -1215,21 +1222,15 @@ class AppSettings:
     # Text Translation Options
     text_translation_style: str = "concise"  # "standard", "concise", "minimal"
 
-    # Font Settings (Excel/Word/PowerPoint用)
+    # Font Settings (全ファイル形式共通)
     font_size_adjustment_jp_to_en: float = 0.0  # pt（0で調整なし）
     font_size_min: float = 6.0                  # pt（最小フォントサイズ）
-    font_jp_to_en_mincho: str = "Arial"         # 明朝系→
-    font_jp_to_en_gothic: str = "Arial"         # ゴシック系→
-    font_en_to_jp_serif: str = "MS Pゴシック"   # Serif系→
-    font_en_to_jp_sans: str = "MS Pゴシック"    # Sans-serif系→
+    font_jp_to_en: str = "Arial"                # 英訳時の出力フォント
+    font_en_to_jp: str = "MS Pゴシック"         # 和訳時の出力フォント
 
-    # PDF Font Settings (PDF翻訳用、フォント埋め込み)
-    pdf_font_ja: str = "MS P明朝"               # 日本語出力フォント
-    pdf_font_en: str = "Arial"                  # 英語出力フォント
-
-    # PDF OCR Options (yomitoku)
+    # PDF Layout Options (yomitoku LayoutAnalyzer)
     ocr_batch_size: int = 5              # ページ/バッチ
-    ocr_dpi: int = 200                   # OCR解像度
+    ocr_dpi: int = 200                   # レイアウト解析解像度
     ocr_device: str = "auto"             # "auto", "cpu", "cuda"
 
     # Auto Update
@@ -1530,6 +1531,12 @@ python -c "import time; t=time.time(); from yakulingo.ui import run_app; print(f
 ---
 
 ## 変更履歴
+
+### 2.14 (2025-12)
+- PDF翻訳: OCRを廃止しLayoutAnalyzerに切り替え（PDFMathTranslate準拠）
+- PDF翻訳: ハイブリッド抽出（pdfminerテキスト + yomitokuレイアウト）
+- フォント設定: 4設定→2設定に簡略化（翻訳方向のみで決定）
+- フォント設定: PDF専用設定を廃止し全形式で共通設定を使用
 
 ### 2.13 (2025-12)
 - PDF翻訳: 既存フォント再利用機能追加（PDFMathTranslate準拠）

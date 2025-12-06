@@ -288,18 +288,19 @@ body {
 /* === Streaming Preview === */
 .streaming-preview {
     margin-top: 0.75rem;
-    padding: 0.75rem;
+    padding: 0.75rem 1rem;
     background-color: var(--md-sys-color-surface-container);
-    border-radius: var(--md-sys-shape-corner-small);
-    max-height: 200px;
+    border-radius: var(--md-sys-shape-corner-medium);
+    max-height: 300px;
     overflow-y: auto;
     animation: fadeIn 0.2s ease-out;
 }
 
 .streaming-preview .streaming-text {
-    font-size: var(--md-sys-typescale-size-sm);
-    color: var(--md-sys-color-on-surface-variant);
-    line-height: 1.5;
+    /* Match .nani-result-text for smooth transition */
+    font-size: var(--md-sys-typescale-size-md);
+    color: var(--md-sys-color-on-surface);
+    line-height: 1.6;
     white-space: pre-wrap;
     word-break: break-word;
 }

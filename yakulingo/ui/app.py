@@ -601,12 +601,42 @@ class YakuLingoApp:
         # Track last text to avoid redundant updates
         last_streaming_text: str = ""
 
+        def extract_translation_preview(text: str) -> str:
+            """Extract translation part from streaming text for preview.
+
+            Extracts text between '訳文:' and '解説:' to match final result layout.
+            """
+            if not text:
+                return ""
+
+            # Find start of translation (訳文: or 訳文：)
+            import re
+            start_match = re.search(r'訳文[:：]\s*', text)
+            if not start_match:
+                # No translation marker yet, show raw text
+                return text[:300] + '...' if len(text) > 300 else text
+
+            # Extract from after '訳文:'
+            translation_start = start_match.end()
+            remaining = text[translation_start:]
+
+            # Find end of translation (解説: or 解説：)
+            end_match = re.search(r'\n\s*解説[:：]', remaining)
+            if end_match:
+                # Have both markers, extract translation part
+                translation = remaining[:end_match.start()].strip()
+            else:
+                # Still receiving, show what we have so far
+                translation = remaining.strip()
+
+            # Truncate if too long
+            return translation[:500] + '...' if len(translation) > 500 else translation
+
         def update_streaming_label():
             """Update only the streaming label text (no full UI refresh)"""
             nonlocal last_streaming_text
             if self._streaming_label and self.state.streaming_text != last_streaming_text:
-                text = self.state.streaming_text or ""
-                preview = (text[:500] + '...') if len(text) > 500 else text
+                preview = extract_translation_preview(self.state.streaming_text or "")
                 self._streaming_label.set_text(preview)
                 last_streaming_text = self.state.streaming_text or ""
 

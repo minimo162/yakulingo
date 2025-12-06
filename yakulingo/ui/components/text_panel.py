@@ -8,6 +8,7 @@ Designed for Japanese users.
 
 import asyncio
 import logging
+import re
 from typing import Callable, Optional
 
 from nicegui import ui
@@ -17,6 +18,38 @@ from yakulingo.ui.utils import format_markdown_text
 from yakulingo.models.types import TranslationOption, TextTranslationResult
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_translation_preview(text: str) -> str:
+    """Extract translation part from streaming text for preview.
+
+    Extracts text between '訳文:' and '解説:' to match final result layout.
+    This provides a smoother transition from streaming to final display.
+    """
+    if not text:
+        return ""
+
+    # Find start of translation (訳文: or 訳文：)
+    start_match = re.search(r'訳文[:：]\s*', text)
+    if not start_match:
+        # No translation marker yet, show raw text (truncated)
+        return text[:300] + '...' if len(text) > 300 else text
+
+    # Extract from after '訳文:'
+    translation_start = start_match.end()
+    remaining = text[translation_start:]
+
+    # Find end of translation (解説: or 解説：)
+    end_match = re.search(r'\n\s*解説[:：]', remaining)
+    if end_match:
+        # Have both markers, extract translation part
+        translation = remaining[:end_match.start()].strip()
+    else:
+        # Still receiving, show what we have so far
+        translation = remaining.strip()
+
+    # Truncate if too long
+    return translation[:500] + '...' if len(translation) > 500 else translation
 
 
 # Action icons for →jp follow-up features
@@ -447,8 +480,8 @@ def _render_translation_status(
         # Streaming preview during translation (always show container for label reference)
         if translating:
             with ui.element('div').classes('streaming-preview'):
-                # Truncate long streaming text for preview
-                preview_text = (streaming_text[:500] + '...') if streaming_text and len(streaming_text) > 500 else (streaming_text or '')
+                # Extract translation part from streaming text to match final layout
+                preview_text = _extract_translation_preview(streaming_text) if streaming_text else ''
                 streaming_label = ui.label(preview_text).classes('streaming-text')
                 # Pass label reference for direct updates (avoids UI flickering)
                 if on_streaming_label_created:

@@ -506,6 +506,44 @@ class TestFontRegistry:
 
 
 # =============================================================================
+# Tests: resolve_ocr_model
+# =============================================================================
+
+class TestResolveOcrModel:
+    """Tests for resolve_ocr_model function"""
+
+    def test_auto_cpu_returns_tiny(self):
+        from yakulingo.processors.pdf_processor import resolve_ocr_model
+        result = resolve_ocr_model("auto", "cpu")
+        assert result == "parseq-tiny"
+
+    def test_auto_cuda_returns_standard(self):
+        from yakulingo.processors.pdf_processor import resolve_ocr_model
+        result = resolve_ocr_model("auto", "cuda")
+        assert result == "parseq"
+
+    def test_standard_returns_parseq(self):
+        from yakulingo.processors.pdf_processor import resolve_ocr_model
+        result = resolve_ocr_model("standard", "cpu")
+        assert result == "parseq"
+
+    def test_small_returns_parseq_small(self):
+        from yakulingo.processors.pdf_processor import resolve_ocr_model
+        result = resolve_ocr_model("small", "cuda")
+        assert result == "parseq-small"
+
+    def test_tiny_returns_parseq_tiny(self):
+        from yakulingo.processors.pdf_processor import resolve_ocr_model
+        result = resolve_ocr_model("tiny", "cpu")
+        assert result == "parseq-tiny"
+
+    def test_unknown_model_returns_default(self):
+        from yakulingo.processors.pdf_processor import resolve_ocr_model
+        result = resolve_ocr_model("unknown", "cpu")
+        assert result == "parseq"  # Falls back to standard
+
+
+# =============================================================================
 # Tests: PdfOperatorGenerator
 # =============================================================================
 
@@ -1426,7 +1464,7 @@ class TestExtractTextBlocksStreaming:
         )
 
         # Mock _extract_hybrid_streaming to yield blocks and call progress
-        def mock_streaming(file_path, total_pages, on_progress, device, reading_order, batch_size, dpi):
+        def mock_streaming(file_path, total_pages, on_progress, device, reading_order, batch_size, dpi, model):
             for page_num in range(1, total_pages + 1):
                 if on_progress:
                     on_progress(TranslationProgress(

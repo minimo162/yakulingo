@@ -175,6 +175,7 @@ class TestAppSettings:
                 github_repo_name="repo",
                 last_update_check="2025-01-01",
                 skipped_version="1.0.0",
+                ocr_model="tiny",
             )
 
             original.save(settings_path)
@@ -194,6 +195,7 @@ class TestAppSettings:
             assert loaded.github_repo_name == original.github_repo_name
             assert loaded.last_update_check == original.last_update_check
             assert loaded.skipped_version == original.skipped_version
+            assert loaded.ocr_model == original.ocr_model
 
 
 # --- Edge Cases in Settings ---

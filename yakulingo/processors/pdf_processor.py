@@ -2697,7 +2697,35 @@ def get_device(config_device: str = "auto") -> str:
     return "cpu"
 
 
-def get_document_analyzer(device: str = "cpu", reading_order: str = "auto"):
+def resolve_ocr_model(model: str, device: str) -> str:
+    """
+    Resolve OCR model name based on setting and device.
+
+    Args:
+        model: "auto", "standard", "small", "tiny"
+        device: "cpu" or "cuda"
+
+    Returns:
+        Actual model name for yomitoku: "parseq", "parseq-small", "parseq-tiny"
+    """
+    model_map = {
+        "standard": "parseq",
+        "small": "parseq-small",
+        "tiny": "parseq-tiny",
+    }
+
+    if model == "auto":
+        # CPU → tiny (GPU Free), CUDA → standard
+        return "parseq-tiny" if device == "cpu" else "parseq"
+
+    return model_map.get(model, "parseq")
+
+
+def get_document_analyzer(
+    device: str = "cpu",
+    reading_order: str = "auto",
+    model: str = "auto",
+):
     """
     Get or create a cached DocumentAnalyzer instance.
 
@@ -2707,11 +2735,14 @@ def get_document_analyzer(device: str = "cpu", reading_order: str = "auto"):
     Args:
         device: "cpu" or "cuda"
         reading_order: Reading order setting ("auto", "left2right", "top2bottom")
+        model: OCR model - "auto", "standard", "small", "tiny"
+               auto: CPU→tiny (GPU Free), CUDA→standard
 
     Returns:
         Cached DocumentAnalyzer instance
     """
-    cache_key = (device, reading_order)
+    model_name = resolve_ocr_model(model, device)
+    cache_key = (device, reading_order, model_name)
 
     # Double-checked locking pattern for thread safety
     if cache_key not in _analyzer_cache:
@@ -2719,8 +2750,15 @@ def get_document_analyzer(device: str = "cpu", reading_order: str = "auto"):
             # Check again after acquiring lock
             if cache_key not in _analyzer_cache:
                 yomitoku = _get_yomitoku()
+                configs = {
+                    "ocr": {
+                        "text_recognizer": {
+                            "model_name": model_name,
+                        }
+                    }
+                }
                 _analyzer_cache[cache_key] = yomitoku['DocumentAnalyzer'](
-                    configs={},
+                    configs=configs,
                     device=device,
                     visualize=False,
                     ignore_meta=False,
@@ -2740,7 +2778,12 @@ def clear_analyzer_cache():
         _analyzer_cache.clear()
 
 
-def analyze_document(img, device: str = "cpu", reading_order: str = "auto"):
+def analyze_document(
+    img,
+    device: str = "cpu",
+    reading_order: str = "auto",
+    model: str = "auto",
+):
     """
     Analyze document layout using yomitoku.
 
@@ -2748,11 +2791,13 @@ def analyze_document(img, device: str = "cpu", reading_order: str = "auto"):
         img: BGR image (numpy array)
         device: "cpu" or "cuda"
         reading_order: "auto", "left2right", "top2bottom", "right2left"
+        model: OCR model - "auto", "standard", "small", "tiny"
+               auto: CPU→tiny (GPU Free), CUDA→standard
 
     Returns:
         DocumentAnalyzerSchema with paragraphs, tables, figures, words
     """
-    analyzer = get_document_analyzer(device, reading_order)
+    analyzer = get_document_analyzer(device, reading_order, model)
     results, _, _ = analyzer(img)
     return results
 
@@ -3604,6 +3649,7 @@ class PdfProcessor(FileProcessor):
         batch_size: int = DEFAULT_OCR_BATCH_SIZE,
         dpi: int = DEFAULT_OCR_DPI,
         output_language: str = "en",
+        model: str = "auto",
     ) -> Iterator[TextBlock]:
         """
         Extract text blocks from PDF using OCR (yomitoku).
@@ -3618,6 +3664,8 @@ class PdfProcessor(FileProcessor):
             batch_size: Pages per batch for OCR processing
             dpi: OCR resolution (higher = better quality, slower)
             output_language: "en" for JP→EN, "jp" for EN→JP translation
+            model: OCR model - "auto", "standard", "small", "tiny"
+                   auto: CPU→tiny (GPU Free), CUDA→standard
 
         Yields:
             TextBlock objects with OCR-extracted text
@@ -3630,7 +3678,7 @@ class PdfProcessor(FileProcessor):
                 page_num = batch_start + img_idx + 1
 
                 # Analyze with yomitoku
-                results = analyze_document(img, actual_device, reading_order)
+                results = analyze_document(img, actual_device, reading_order, model)
 
                 # Convert to translation cells
                 cells = prepare_translation_cells(results, page_num)
@@ -3662,6 +3710,7 @@ class PdfProcessor(FileProcessor):
         reading_order: str = "auto",
         batch_size: int = DEFAULT_OCR_BATCH_SIZE,
         dpi: int = DEFAULT_OCR_DPI,
+        model: str = "auto",
     ) -> list[TranslationCell]:
         """
         Get translation cells from PDF using OCR (yomitoku).
@@ -3674,6 +3723,8 @@ class PdfProcessor(FileProcessor):
             reading_order: Reading order for yomitoku
             batch_size: Pages per batch for OCR processing
             dpi: OCR resolution (higher = better quality, slower)
+            model: OCR model - "auto", "standard", "small", "tiny"
+                   auto: CPU→tiny (GPU Free), CUDA→standard
 
         Returns:
             List of TranslationCell objects
@@ -3685,7 +3736,7 @@ class PdfProcessor(FileProcessor):
             for img_idx, img in enumerate(batch_images):
                 page_num = batch_start + img_idx + 1
 
-                results = analyze_document(img, actual_device, reading_order)
+                results = analyze_document(img, actual_device, reading_order, model)
                 cells = prepare_translation_cells(results, page_num)
                 all_cells.extend(cells)
 
@@ -3701,6 +3752,7 @@ class PdfProcessor(FileProcessor):
         batch_size: int = DEFAULT_OCR_BATCH_SIZE,
         dpi: int = DEFAULT_OCR_DPI,
         output_language: str = "en",
+        model: str = "auto",
     ) -> Iterator[tuple[list[TextBlock], Optional[list[TranslationCell]]]]:
         """
         Extract text blocks from PDF with streaming support and progress reporting.
@@ -3719,6 +3771,8 @@ class PdfProcessor(FileProcessor):
             batch_size: Pages per batch for processing
             dpi: Resolution for layout analysis (higher = better quality, slower)
             output_language: "en" for JP→EN, "jp" for EN→JP translation
+            model: OCR model - "auto", "standard", "small", "tiny"
+                   auto: CPU→tiny (GPU Free), CUDA→standard
 
         Yields:
             Tuple of (list[TextBlock], Optional[list[TranslationCell]]):
@@ -3744,7 +3798,7 @@ class PdfProcessor(FileProcessor):
         # Always use hybrid mode: pdfminer text + yomitoku layout
         yield from self._extract_hybrid_streaming(
             file_path, total_pages, on_progress, device, reading_order,
-            batch_size, dpi
+            batch_size, dpi, model
         )
 
     def _extract_with_ocr_streaming(
@@ -3756,6 +3810,7 @@ class PdfProcessor(FileProcessor):
         reading_order: str,
         batch_size: int = DEFAULT_OCR_BATCH_SIZE,
         dpi: int = DEFAULT_OCR_DPI,
+        model: str = "auto",
     ) -> Iterator[tuple[list[TextBlock], list[TranslationCell]]]:
         """
         Extract text blocks using yomitoku OCR with streaming.
@@ -3830,7 +3885,7 @@ class PdfProcessor(FileProcessor):
 
                     # Analyze with yomitoku - with error handling
                     try:
-                        results = analyze_document(img, actual_device, reading_order)
+                        results = analyze_document(img, actual_device, reading_order, model)
                         cells = prepare_translation_cells(results, page_num)
 
                         # Convert cells to TextBlocks
@@ -3888,6 +3943,7 @@ class PdfProcessor(FileProcessor):
         reading_order: str,
         batch_size: int = DEFAULT_OCR_BATCH_SIZE,
         dpi: int = DEFAULT_OCR_DPI,
+        model: str = "auto",
     ) -> Iterator[tuple[list[TextBlock], list[TranslationCell]]]:
         """
         Extract text blocks using hybrid approach: pdfminer text + yomitoku layout.
@@ -3968,7 +4024,7 @@ class PdfProcessor(FileProcessor):
 
                         try:
                             # Step 1: Analyze layout with yomitoku
-                            results = analyze_document(img, actual_device, reading_order)
+                            results = analyze_document(img, actual_device, reading_order, model)
 
                             # Step 2: Create LayoutArray from yomitoku results
                             img_height, img_width = img.shape[:2]

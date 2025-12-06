@@ -512,6 +512,7 @@ async def _translate_text(self):
   "ocr_batch_size": 5,
   "ocr_dpi": 200,
   "ocr_device": "auto",
+  "ocr_model": "auto",
   "auto_update_enabled": true,
   "auto_update_check_interval": 86400,
   "github_repo_owner": "minimo162",
@@ -526,6 +527,12 @@ async def _translate_text(self):
 **フォント設定**:
 - `font_jp_to_en`: 英訳時の出力フォント（全ファイル形式共通）
 - `font_en_to_jp`: 和訳時の出力フォント（全ファイル形式共通）
+
+**OCRモデル設定** (`ocr_model`):
+- `"auto"` (default): デバイスに応じて自動選択（CPU→tiny, CUDA→standard）
+- `"standard"`: 標準モデル (`parseq`) - 高精度、GPU推奨
+- `"small"`: 小型モデル (`parseq-small`)
+- `"tiny"`: 軽量モデル (`parseq-tiny`) - GPU不要、CPU推論向け
 
 ### Reference Files
 Reference files provide context for consistent translations:

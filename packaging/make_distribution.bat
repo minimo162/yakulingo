@@ -63,6 +63,14 @@ if not exist "yakulingo" (
     echo        [ERROR] yakulingo directory not found.
     set MISSING_FILES=1
 )
+if not exist "YakuLingo.exe" (
+    echo        [ERROR] YakuLingo.exe not found. Build the launcher first.
+    set MISSING_FILES=1
+)
+if not exist "prompts" (
+    echo        [ERROR] prompts directory not found.
+    set MISSING_FILES=1
+)
 
 if !MISSING_FILES! equ 1 (
     echo.

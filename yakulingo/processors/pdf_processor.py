@@ -45,10 +45,6 @@ _torch = None
 _np = None
 _pdfminer = None
 
-# yomitoku availability flag
-HAS_YOMITOKU = False
-
-
 def _get_fitz():
     """Lazy import PyMuPDF"""
     global _fitz
@@ -83,17 +79,11 @@ def _get_pypdfium2():
 
 def _get_yomitoku():
     """Lazy import yomitoku (OCR and layout analysis)"""
-    global _yomitoku, HAS_YOMITOKU
+    global _yomitoku
     if _yomitoku is None:
-        try:
-            from yomitoku import DocumentAnalyzer
-            from yomitoku.data.functions import load_pdf
-            _yomitoku = {'DocumentAnalyzer': DocumentAnalyzer, 'load_pdf': load_pdf}
-            HAS_YOMITOKU = True
-        except ImportError:
-            raise ImportError(
-                "yomitoku is required for OCR. Install with: pip install yomitoku"
-            )
+        from yomitoku import DocumentAnalyzer
+        from yomitoku.data.functions import load_pdf
+        _yomitoku = {'DocumentAnalyzer': DocumentAnalyzer, 'load_pdf': load_pdf}
     return _yomitoku
 
 
@@ -142,15 +132,6 @@ def _get_pdfminer():
             'apply_matrix_pt': apply_matrix_pt,
         }
     return _pdfminer
-
-
-def is_yomitoku_available() -> bool:
-    """Check if yomitoku is available"""
-    try:
-        _get_yomitoku()
-        return True
-    except ImportError:
-        return False
 
 
 # =============================================================================
@@ -3642,11 +3623,6 @@ class PdfProcessor(FileProcessor):
             TextBlock objects with OCR-extracted text
         """
         self._output_language = output_language
-        if not is_yomitoku_available():
-            raise ImportError(
-                "yomitoku is required for OCR. Install with: pip install yomitoku"
-            )
-
         actual_device = get_device(device)
 
         for batch_start, batch_images in iterate_pdf_pages(str(file_path), batch_size, dpi):
@@ -3702,11 +3678,6 @@ class PdfProcessor(FileProcessor):
         Returns:
             List of TranslationCell objects
         """
-        if not is_yomitoku_available():
-            raise ImportError(
-                "yomitoku is required for OCR. Install with: pip install yomitoku"
-            )
-
         actual_device = get_device(device)
         all_cells = []
 
@@ -3725,7 +3696,6 @@ class PdfProcessor(FileProcessor):
         self,
         file_path: Path,
         on_progress: Optional[ProgressCallback] = None,
-        use_ocr: bool = True,
         device: str = "auto",
         reading_order: str = "auto",
         batch_size: int = DEFAULT_OCR_BATCH_SIZE,
@@ -3735,53 +3705,47 @@ class PdfProcessor(FileProcessor):
         """
         Extract text blocks from PDF with streaming support and progress reporting.
 
-        This method yields text blocks page by page, allowing the caller to
-        process and translate blocks incrementally. This is especially useful
-        for large PDFs where yomitoku OCR processing can be slow.
+        Uses hybrid approach: pdfminer for text extraction + yomitoku for layout.
+        This provides accurate text from embedded PDFs while using yomitoku's
+        superior layout detection for paragraph grouping and reading order.
+
+        For scanned PDFs without embedded text, falls back to yomitoku OCR.
 
         Args:
             file_path: Path to PDF file
             on_progress: Progress callback for UI updates
-            use_ocr: If True and yomitoku is available, use OCR for text extraction
             device: "auto", "cpu", or "cuda" for yomitoku
             reading_order: Reading order for yomitoku ("auto", "left2right", etc.)
-            batch_size: Pages per batch for OCR processing
-            dpi: OCR resolution (higher = better quality, slower)
+            batch_size: Pages per batch for processing
+            dpi: Resolution for layout analysis (higher = better quality, slower)
             output_language: "en" for JP→EN, "jp" for EN→JP translation
 
         Yields:
             Tuple of (list[TextBlock], Optional[list[TranslationCell]]):
             - TextBlocks for the current page
-            - TranslationCells if OCR was used (needed for apply_translations_with_cells)
+            - TranslationCells with position info (for apply_translations_with_cells)
 
         Example:
             ```python
             all_blocks = []
             all_cells = []
             for page_blocks, page_cells in processor.extract_text_blocks_streaming(
-                path, on_progress=callback, use_ocr=True
+                path, on_progress=callback
             ):
                 all_blocks.extend(page_blocks)
                 if page_cells:
                     all_cells.extend(page_cells)
-                # Can also translate page_blocks immediately here
             ```
         """
         self._output_language = output_language
         with _open_fitz_document(file_path) as doc:
             total_pages = len(doc)
 
-        if use_ocr and is_yomitoku_available():
-            # Use yomitoku OCR with streaming
-            yield from self._extract_with_ocr_streaming(
-                file_path, total_pages, on_progress, device, reading_order,
-                batch_size, dpi
-            )
-        else:
-            # Use pdfminer (PDFMathTranslate compliant, for text-based PDFs)
-            yield from self._extract_with_pdfminer_streaming(
-                file_path, total_pages, on_progress
-            )
+        # Always use hybrid mode: pdfminer text + yomitoku layout
+        yield from self._extract_hybrid_streaming(
+            file_path, total_pages, on_progress, device, reading_order,
+            batch_size, dpi
+        )
 
     def _extract_with_ocr_streaming(
         self,
@@ -3914,6 +3878,249 @@ class PdfProcessor(FileProcessor):
         finally:
             # Always clean up GPU memory, even on exception or cancellation
             clear_analyzer_cache()
+
+    def _extract_hybrid_streaming(
+        self,
+        file_path: Path,
+        total_pages: int,
+        on_progress: Optional[ProgressCallback],
+        device: str,
+        reading_order: str,
+        batch_size: int = DEFAULT_OCR_BATCH_SIZE,
+        dpi: int = DEFAULT_OCR_DPI,
+    ) -> Iterator[tuple[list[TextBlock], list[TranslationCell]]]:
+        """
+        Extract text blocks using hybrid approach: pdfminer text + yomitoku layout.
+
+        PDFMathTranslate compliant: uses pdfminer for accurate text extraction
+        and yomitoku for layout analysis (paragraph detection, reading order).
+
+        For embedded text PDFs, this provides:
+        - Accurate text from pdfminer (no OCR errors)
+        - Precise layout detection from yomitoku
+        - Best of both worlds
+
+        Yields one page at a time with progress updates.
+        """
+        import time as time_module
+
+        actual_device = get_device(device)
+        pages_processed = 0
+        start_time = time_module.time()
+        self._failed_pages = []
+
+        # Get pdfminer classes
+        pdfminer = _get_pdfminer()
+        PDFPage = pdfminer['PDFPage']
+        PDFParser = pdfminer['PDFParser']
+        PDFDocument = pdfminer['PDFDocument']
+        PDFResourceManager = pdfminer['PDFResourceManager']
+        PDFPageInterpreter = pdfminer['PDFPageInterpreter']
+        LTChar = pdfminer['LTChar']
+        LTFigure = pdfminer['LTFigure']
+        PDFConverterEx = _get_pdf_converter_ex_class()
+
+        try:
+            # Open PDF with pdfminer
+            with open(file_path, 'rb') as f:
+                parser = PDFParser(f)
+                document = PDFDocument(parser)
+                rsrcmgr = PDFResourceManager()
+                converter = PDFConverterEx(rsrcmgr)
+                interpreter = PDFPageInterpreter(rsrcmgr, converter)
+
+                # Iterate through pages with yomitoku layout analysis
+                for (batch_start, batch_images), pdfminer_pages in zip(
+                    iterate_pdf_pages(str(file_path), batch_size, dpi),
+                    self._batch_pdfminer_pages(document, PDFPage, interpreter, converter, batch_size)
+                ):
+                    for img_idx, (img, (page_idx, ltpage, page_height)) in enumerate(
+                        zip(batch_images, pdfminer_pages)
+                    ):
+                        # Check for cancellation
+                        if self._cancel_requested:
+                            logger.info("Hybrid extraction cancelled at page %d/%d",
+                                       pages_processed + 1, total_pages)
+                            return
+
+                        page_num = batch_start + img_idx + 1
+                        pages_processed += 1
+
+                        # Calculate estimated remaining time
+                        elapsed = time_module.time() - start_time
+                        if pages_processed > 1:
+                            actual_time_per_page = elapsed / (pages_processed - 1)
+                            remaining_pages = total_pages - pages_processed + 1
+                            estimated_remaining = int(actual_time_per_page * remaining_pages)
+                        else:
+                            estimated_remaining = int(10 * total_pages)  # Rough estimate
+
+                        # Report progress
+                        if on_progress:
+                            on_progress(TranslationProgress(
+                                current=pages_processed,
+                                total=total_pages,
+                                status=f"Analyzing layout page {page_num}/{total_pages}...",
+                                phase=TranslationPhase.EXTRACTING,
+                                phase_detail=f"Page {page_num}/{total_pages}",
+                                estimated_remaining=estimated_remaining if estimated_remaining > 0 else None,
+                            ))
+
+                        try:
+                            # Step 1: Analyze layout with yomitoku
+                            results = analyze_document(img, actual_device, reading_order)
+
+                            # Step 2: Create LayoutArray from yomitoku results
+                            img_height, img_width = img.shape[:2]
+                            layout_array = create_layout_array_from_yomitoku(
+                                results, img_height, img_width
+                            )
+
+                            # Step 3: Extract characters from pdfminer
+                            chars = []
+                            def collect_chars(obj):
+                                if isinstance(obj, LTChar):
+                                    chars.append(obj)
+                                elif isinstance(obj, LTFigure):
+                                    for child in obj:
+                                        collect_chars(child)
+                                elif hasattr(obj, '__iter__'):
+                                    for child in obj:
+                                        collect_chars(child)
+
+                            if ltpage:
+                                collect_chars(ltpage)
+
+                            # Step 4: Group characters using yomitoku layout
+                            if chars:
+                                blocks = self._group_chars_into_blocks(
+                                    chars, page_idx, LTChar,
+                                    layout=layout_array,
+                                    page_height=page_height
+                                )
+                            else:
+                                # No embedded text - fall back to yomitoku OCR text
+                                blocks = []
+
+                            # Step 5: Create TranslationCells from yomitoku results
+                            cells = prepare_translation_cells(results, page_num)
+
+                            # Step 6: If pdfminer got text, update cells with it
+                            if blocks:
+                                # Map pdfminer blocks to yomitoku cells by position
+                                self._merge_pdfminer_text_to_cells(blocks, cells, layout_array, page_height, dpi)
+
+                            # Convert cells to TextBlocks if no pdfminer blocks
+                            if not blocks:
+                                for cell in cells:
+                                    if cell.text and self.should_translate(cell.text):
+                                        blocks.append(TextBlock(
+                                            id=cell.address,
+                                            text=cell.text,
+                                            location=f"Page {page_num}",
+                                            metadata={
+                                                'type': 'ocr_cell',
+                                                'page_idx': page_num - 1,
+                                                'address': cell.address,
+                                                'bbox': cell.box,
+                                                'direction': cell.direction,
+                                                'role': cell.role,
+                                            }
+                                        ))
+
+                            yield blocks, cells
+
+                        except (RuntimeError, ValueError, OSError, MemoryError) as e:
+                            logger.error("Hybrid extraction failed for page %d: %s", page_num, e)
+                            self._failed_pages.append(page_num)
+                            yield [], []
+
+            if self._failed_pages:
+                logger.warning("Hybrid extraction completed with %d failed pages: %s",
+                              len(self._failed_pages), self._failed_pages)
+        finally:
+            clear_analyzer_cache()
+
+    def _batch_pdfminer_pages(
+        self,
+        document,
+        PDFPage,
+        interpreter,
+        converter,
+        batch_size: int,
+    ) -> Iterator[list[tuple[int, Any, float]]]:
+        """
+        Batch pdfminer page processing to match iterate_pdf_pages batching.
+
+        Yields batches of (page_idx, ltpage, page_height) tuples.
+        """
+        batch = []
+        for page_idx, page in enumerate(PDFPage.create_pages(document)):
+            # Get page dimensions
+            x0, y0, x1, y1 = page.cropbox if hasattr(page, 'cropbox') else page.mediabox
+            page_height = abs(y1 - y0)
+
+            # Process page with pdfminer
+            interpreter.process_page(page)
+
+            # Get LTPage
+            ltpage = converter.pages[-1] if converter.pages else None
+
+            batch.append((page_idx, ltpage, page_height))
+
+            if len(batch) >= batch_size:
+                yield batch
+                batch = []
+
+        if batch:
+            yield batch
+
+    def _merge_pdfminer_text_to_cells(
+        self,
+        blocks: list[TextBlock],
+        cells: list[TranslationCell],
+        layout_array: LayoutArray,
+        page_height: float,
+        dpi: int,
+    ) -> None:
+        """
+        Merge pdfminer-extracted text into yomitoku TranslationCells.
+
+        Updates cells in-place with more accurate text from pdfminer
+        when the positions overlap.
+        """
+        if not blocks or not cells:
+            return
+
+        # For each cell, find overlapping pdfminer blocks and merge text
+        for cell in cells:
+            if not cell.box:
+                continue
+
+            cell_x0, cell_y0, cell_x1, cell_y1 = cell.box
+
+            # Find pdfminer blocks that overlap with this cell
+            overlapping_texts = []
+            for block in blocks:
+                if not block.metadata or 'bbox' not in block.metadata:
+                    continue
+
+                block_bbox = block.metadata['bbox']
+                # Convert PDF coordinates to image coordinates
+                scale = dpi / 72.0
+                block_x0 = block_bbox[0] * scale
+                block_y0 = (page_height - block_bbox[3]) * scale  # Flip Y
+                block_x1 = block_bbox[2] * scale
+                block_y1 = (page_height - block_bbox[1]) * scale  # Flip Y
+
+                # Check overlap
+                if (block_x0 < cell_x1 and block_x1 > cell_x0 and
+                    block_y0 < cell_y1 and block_y1 > cell_y0):
+                    overlapping_texts.append(block.text)
+
+            # If we found overlapping pdfminer text, use it
+            if overlapping_texts:
+                cell.text = " ".join(overlapping_texts)
 
     def _extract_with_pdfminer_streaming(
         self,

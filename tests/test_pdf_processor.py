@@ -1340,8 +1340,8 @@ class TestApplyTranslationsPagesParameter:
 class TestExtractTextBlocksStreaming:
     """Tests for extract_text_blocks_streaming method"""
 
-    def test_streaming_without_ocr(self, processor, tmp_path):
-        """Test streaming extraction using pdfminer (PDFMathTranslate compliant)"""
+    def test_streaming_hybrid_mode(self, processor, tmp_path):
+        """Test streaming extraction using hybrid mode (pdfminer text + yomitoku layout)"""
         from yakulingo.models.types import TextBlock
 
         # Create expected TextBlocks for 2 pages
@@ -1376,12 +1376,12 @@ class TestExtractTextBlocksStreaming:
             }
         )
 
-        # Mock _extract_with_pdfminer_streaming to yield blocks page by page
+        # Mock _extract_hybrid_streaming to yield blocks page by page
         def mock_streaming(*args, **kwargs):
-            yield [block1], None
-            yield [block2], None
+            yield [block1], []  # Hybrid mode returns cells list (possibly empty)
+            yield [block2], []
 
-        with patch.object(processor, '_extract_with_pdfminer_streaming', side_effect=mock_streaming):
+        with patch.object(processor, '_extract_hybrid_streaming', side_effect=mock_streaming):
             with patch('yakulingo.processors.pdf_processor._get_fitz') as mock_get_fitz:
                 mock_fitz = MagicMock()
                 mock_get_fitz.return_value = mock_fitz
@@ -1392,16 +1392,12 @@ class TestExtractTextBlocksStreaming:
                 pdf_path = tmp_path / "test.pdf"
                 pdf_path.write_bytes(b"%PDF-1.4 dummy")
 
-                # Collect results from streaming
+                # Collect results from streaming (hybrid mode)
                 all_blocks = []
                 page_count = 0
-                for blocks, cells in processor.extract_text_blocks_streaming(
-                    pdf_path, use_ocr=False
-                ):
+                for blocks, cells in processor.extract_text_blocks_streaming(pdf_path):
                     all_blocks.extend(blocks)
                     page_count += 1
-                    # Without OCR, cells should be None
-                    assert cells is None
 
                 assert page_count == 2
                 assert len(all_blocks) == 2
@@ -1429,20 +1425,20 @@ class TestExtractTextBlocksStreaming:
             }
         )
 
-        # Mock _extract_with_pdfminer_streaming to yield blocks and call progress
-        def mock_streaming(file_path, total_pages, on_progress):
+        # Mock _extract_hybrid_streaming to yield blocks and call progress
+        def mock_streaming(file_path, total_pages, on_progress, device, reading_order, batch_size, dpi):
             for page_num in range(1, total_pages + 1):
                 if on_progress:
                     on_progress(TranslationProgress(
                         current=page_num,
                         total=total_pages,
-                        status=f"Extracting text from page {page_num}/{total_pages}...",
+                        status=f"Analyzing layout page {page_num}/{total_pages}...",
                         phase=TranslationPhase.EXTRACTING,
                         phase_detail=f"Page {page_num}/{total_pages}",
                     ))
-                yield [block], None
+                yield [block], []
 
-        with patch.object(processor, '_extract_with_pdfminer_streaming', side_effect=mock_streaming):
+        with patch.object(processor, '_extract_hybrid_streaming', side_effect=mock_streaming):
             with patch('yakulingo.processors.pdf_processor._get_fitz') as mock_get_fitz:
                 mock_fitz = MagicMock()
                 mock_get_fitz.return_value = mock_fitz
@@ -1458,9 +1454,9 @@ class TestExtractTextBlocksStreaming:
                 def on_progress(progress):
                     progress_calls.append(progress)
 
-                # Consume the generator
+                # Consume the generator (hybrid mode)
                 list(processor.extract_text_blocks_streaming(
-                    pdf_path, on_progress=on_progress, use_ocr=False
+                    pdf_path, on_progress=on_progress
                 ))
 
                 # Should have 3 progress calls (one per page)

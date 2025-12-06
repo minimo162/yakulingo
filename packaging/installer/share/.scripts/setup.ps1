@@ -14,6 +14,22 @@ $ErrorActionPreference = "Stop"
 $script:ScriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Definition }
 $script:ShareDir = Split-Path -Parent $script:ScriptDir
 
+# Find 7-Zip (much faster extraction with multi-threading)
+$script:SevenZip = $null
+$sevenZipPaths = @(
+    "$env:ProgramFiles\7-Zip\7z.exe",
+    "${env:ProgramFiles(x86)}\7-Zip\7z.exe"
+)
+foreach ($path in $sevenZipPaths) {
+    if (Test-Path $path) {
+        $script:SevenZip = $path
+        break
+    }
+}
+if (-not $script:SevenZip) {
+    $script:SevenZip = (Get-Command "7z.exe" -ErrorAction SilentlyContinue).Source
+}
+
 # ============================================================
 # GUI Helper Functions (for silent setup via VBS)
 # ============================================================
@@ -267,45 +283,80 @@ function Invoke-Setup {
     }
 
     # ============================================================
-    # Step 2: Extract ZIP directly to destination (skip temp + robocopy)
+    # Step 2: Extract ZIP to destination
     # ============================================================
     Write-Status -Message "Extracting files..." -Progress -Step "Step 2/3: Extracting files"
     if (-not $GuiMode) {
         Write-Host ""
-        Write-Host "[2/3] Extracting files directly to destination..." -ForegroundColor Yellow
+        Write-Host "[2/3] Extracting files to destination..." -ForegroundColor Yellow
     }
 
-    # Determine the prefix to strip (e.g., "YakuLingo/")
-    Add-Type -Assembly 'System.IO.Compression.FileSystem'
-    $zip = [System.IO.Compression.ZipFile]::OpenRead($ZipFile)
-    $firstEntry = $zip.Entries | Select-Object -First 1
-    $stripPrefix = ""
-    if ($firstEntry -and $firstEntry.FullName -match "^([^/]+)/") {
-        $stripPrefix = $Matches[1] + "/"
-    }
-    $zip.Dispose()
-
-    if ($GuiMode) {
-        # Direct extraction with progress (no temp dir, no robocopy)
-        Expand-ZipDirectWithProgress -ZipPath $ZipFile -DestPath $SetupPath -StripPrefix $stripPrefix
-    } else {
-        # Console mode: extract to temp then move (allows for progress bar via robocopy)
+    if ($script:SevenZip) {
+        # Use 7-Zip (much faster with multi-threading)
+        if ($GuiMode) {
+            Show-Progress -Title "YakuLingo Setup" -Status "Extracting with 7-Zip..." -Step "Step 2/3: Extracting files"
+        } else {
+            Write-Host "      Using 7-Zip (multi-threaded)..." -ForegroundColor Gray
+        }
         $TempDir = Join-Path $env:TEMP "YakuLingo_setup_$(Get-Date -Format 'yyyyMMddHHmmss')"
-        [System.IO.Compression.ZipFile]::ExtractToDirectory($ZipFile, $TempDir)
+        $sevenZipArgs = @("x", "`"$ZipFile`"", "-o`"$TempDir`"", "-y", "-bso0", "-bsp0")
+        Start-Process -FilePath $script:SevenZip -ArgumentList $sevenZipArgs -NoNewWindow -Wait | Out-Null
 
-        # Find extracted folder
+        # Find extracted folder and move to destination
         $ExtractedDir = Get-ChildItem -Path $TempDir -Directory | Where-Object { $_.Name -like "YakuLingo*" } | Select-Object -First 1
         if (-not $ExtractedDir) {
             throw "Failed to extract ZIP file.`n`nFile: $ZipFileName"
         }
 
-        # Move files using robocopy (fast with progress)
-        Write-Host "      Copying files..." -ForegroundColor Gray
+        # Move files using robocopy (fast)
+        if ($GuiMode) {
+            Show-Progress -Title "YakuLingo Setup" -Status "Moving files..." -Step "Step 2/3: Extracting files"
+        } else {
+            Write-Host "      Moving files..." -ForegroundColor Gray
+        }
         $robocopyArgs = @($ExtractedDir.FullName, $SetupPath, "/E", "/MOVE", "/MT:16", "/NFL", "/NDL", "/NJH", "/NJS", "/R:1", "/W:1")
         Start-Process -FilePath "robocopy.exe" -ArgumentList $robocopyArgs -NoNewWindow -Wait | Out-Null
 
         # Cleanup temp
         Remove-Item -Path $TempDir -Recurse -Force -ErrorAction SilentlyContinue
+    } else {
+        # Fallback: Use .NET ZipFile (slower but no external dependency)
+        if (-not $GuiMode) {
+            Write-Host "      Using .NET ZipFile..." -ForegroundColor Gray
+        }
+
+        # Determine the prefix to strip (e.g., "YakuLingo/")
+        Add-Type -Assembly 'System.IO.Compression.FileSystem'
+        $zip = [System.IO.Compression.ZipFile]::OpenRead($ZipFile)
+        $firstEntry = $zip.Entries | Select-Object -First 1
+        $stripPrefix = ""
+        if ($firstEntry -and $firstEntry.FullName -match "^([^/]+)/") {
+            $stripPrefix = $Matches[1] + "/"
+        }
+        $zip.Dispose()
+
+        if ($GuiMode) {
+            # Direct extraction with progress (no temp dir, no robocopy)
+            Expand-ZipDirectWithProgress -ZipPath $ZipFile -DestPath $SetupPath -StripPrefix $stripPrefix
+        } else {
+            # Console mode: extract to temp then move
+            $TempDir = Join-Path $env:TEMP "YakuLingo_setup_$(Get-Date -Format 'yyyyMMddHHmmss')"
+            [System.IO.Compression.ZipFile]::ExtractToDirectory($ZipFile, $TempDir)
+
+            # Find extracted folder
+            $ExtractedDir = Get-ChildItem -Path $TempDir -Directory | Where-Object { $_.Name -like "YakuLingo*" } | Select-Object -First 1
+            if (-not $ExtractedDir) {
+                throw "Failed to extract ZIP file.`n`nFile: $ZipFileName"
+            }
+
+            # Move files using robocopy
+            Write-Host "      Moving files..." -ForegroundColor Gray
+            $robocopyArgs = @($ExtractedDir.FullName, $SetupPath, "/E", "/MOVE", "/MT:16", "/NFL", "/NDL", "/NJH", "/NJS", "/R:1", "/W:1")
+            Start-Process -FilePath "robocopy.exe" -ArgumentList $robocopyArgs -NoNewWindow -Wait | Out-Null
+
+            # Cleanup temp
+            Remove-Item -Path $TempDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
     }
 
     if (-not $GuiMode) {

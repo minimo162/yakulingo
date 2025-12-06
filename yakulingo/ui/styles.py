@@ -175,38 +175,6 @@ body {
     padding: 0.5rem 0.5rem 0.75rem;
 }
 
-/* === Display Mode: Laptop vs Desktop === */
-/* Both modes show sidebar - difference is in input/result panel behavior */
-
-/* Laptop mode: 2-column layout (sidebar + input OR result, not both) */
-.app-container.laptop-mode .sidebar {
-    display: flex;
-}
-
-.app-container.laptop-mode .main-area {
-    margin-left: var(--sidebar-width);
-}
-
-/* Laptop mode: hide input panel when results are shown */
-.app-container.laptop-mode .main-area.has-results .input-panel {
-    display: none;
-}
-
-/* Laptop mode: result panel takes full width */
-.app-container.laptop-mode .main-area.has-results .result-panel {
-    flex: 1;
-    display: flex;
-}
-
-/* Desktop mode: 3-column layout (sidebar + input + result) */
-.app-container.desktop-mode .sidebar {
-    display: flex;
-}
-
-.app-container.desktop-mode .main-area {
-    margin-left: var(--sidebar-width);
-}
-
 /* === 3-Column Main Layout === */
 .main-area {
     margin-left: var(--sidebar-width);

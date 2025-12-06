@@ -133,6 +133,11 @@ echo [DONE] Python installed.
 echo.
 echo [3/4] Installing dependencies...
 uv.exe venv --native-tls
+if errorlevel 1 (
+    echo [ERROR] Failed to create virtual environment.
+    pause
+    exit /b 1
+)
 
 uv.exe sync --native-tls
 if errorlevel 1 (
@@ -172,7 +177,7 @@ exit /b 0
 :prompt_proxy_credentials
 echo ============================================================
 echo Proxy Authentication
-echo Server: %PROXY_SERVER%
+echo Server: !PROXY_SERVER!
 echo ============================================================
 set /p PROXY_USER="Username: "
 if not defined PROXY_USER exit /b 0
@@ -181,11 +186,13 @@ if not defined PROXY_USER exit /b 0
 echo Password (input will be hidden):
 for /f "delims=" %%p in ('powershell -Command "$p = Read-Host -AsSecureString; [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($p))"') do set PROXY_PASS=%%p
 
+if not defined PROXY_PASS (
+    echo [ERROR] Password is required.
+    exit /b 0
+)
+
 set HTTP_PROXY=http://!PROXY_USER!:!PROXY_PASS!@!PROXY_SERVER!
 set HTTPS_PROXY=http://!PROXY_USER!:!PROXY_PASS!@!PROXY_SERVER!
-:: Also set individual variables for PowerShell -ProxyCredential
-set PROXY_USER=!PROXY_USER!
-set PROXY_PASS=!PROXY_PASS!
 echo.
 echo [OK] Credentials configured.
 exit /b 0

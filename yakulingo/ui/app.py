@@ -67,6 +67,9 @@ class YakuLingoApp:
         # Client reference for async handlers (saved from @ui.page handler)
         self._client = None
 
+        # Streaming label reference for direct updates (avoids UI flickering)
+        self._streaming_label: Optional[ui.label] = None
+
         # Panel sizes (sidebar_width, input_panel_width, result_content_width, input_panel_max_width) in pixels
         # Set by run_app() based on monitor detection
         self._panel_sizes: tuple[int, int, int, int] = (260, 420, 800, 900)
@@ -227,6 +230,10 @@ class YakuLingoApp:
     def _on_translate_button_created(self, button: ui.button):
         """Store reference to translate button for dynamic state updates"""
         self._translate_button = button
+
+    def _on_streaming_label_created(self, label: ui.label):
+        """Store reference to streaming label for direct text updates (avoids flickering)"""
+        self._streaming_label = label
 
     def _update_translate_button_state(self):
         """Update translate button enabled/disabled state based on current state"""
@@ -446,6 +453,7 @@ class YakuLingoApp:
                         on_follow_up=self._follow_up_action,
                         on_back_translate=self._back_translate,
                         on_retry=self._retry_translation,
+                        on_streaming_label_created=self._on_streaming_label_created,
                     )
             else:
                 # File panel: 2-column layout (sidebar + centered file panel)
@@ -587,10 +595,23 @@ class YakuLingoApp:
         self.state.text_result = None
         self.state.text_translation_elapsed_time = None
         self.state.streaming_text = None
+        self._streaming_label = None  # Reset before refresh creates new label
         self._refresh_content()
 
-        # Start streaming UI refresh timer (0.2s interval)
-        streaming_timer = ui.timer(0.2, lambda: self._refresh_content())
+        # Track last text to avoid redundant updates
+        last_streaming_text: str = ""
+
+        def update_streaming_label():
+            """Update only the streaming label text (no full UI refresh)"""
+            nonlocal last_streaming_text
+            if self._streaming_label and self.state.streaming_text != last_streaming_text:
+                text = self.state.streaming_text or ""
+                preview = (text[:500] + '...') if len(text) > 500 else text
+                self._streaming_label.set_text(preview)
+                last_streaming_text = self.state.streaming_text or ""
+
+        # Start streaming UI refresh timer (0.2s interval) - only updates label
+        streaming_timer = ui.timer(0.2, update_streaming_label)
 
         # Streaming callback - updates state from Playwright thread
         def on_chunk(text: str):

@@ -45,19 +45,14 @@ def create_file_panel(
     on_style_change: Optional[Callable[[str], None]] = None,
     on_section_toggle: Optional[Callable[[int, bool], None]] = None,
     on_font_size_change: Optional[Callable[[float], None]] = None,
-    on_font_name_change: Optional[Callable[[str, str], None]] = None,
-    on_pdf_font_change: Optional[Callable[[str, str], None]] = None,
+    on_font_name_change: Optional[Callable[[str], None]] = None,
     bilingual_enabled: bool = False,
     export_glossary_enabled: bool = False,
     translation_style: str = "concise",
     translation_result: Optional[TranslationResult] = None,
     font_size_adjustment: float = 0.0,
-    font_jp_to_en_mincho: str = "Arial",
-    font_jp_to_en_gothic: str = "Arial",
-    font_en_to_jp_serif: str = "MS Pゴシック",
-    font_en_to_jp_sans: str = "MS Pゴシック",
-    pdf_font_ja: str = "MS P明朝",
-    pdf_font_en: str = "Arial",
+    font_jp_to_en: str = "Arial",
+    font_en_to_jp: str = "MS Pゴシック",
 ):
     """File translation panel - Nani-inspired design"""
 
@@ -83,26 +78,16 @@ def create_file_panel(
                         on_bilingual_change,
                     )
                     _export_glossary_selector(export_glossary_enabled, on_export_glossary_change)
-                    # Font settings (different options for PDF vs Office files)
+                    # Font settings (unified for all file types)
                     if state.file_info:
-                        if state.file_info.file_type == FileType.PDF:
-                            _pdf_font_settings_selector(
-                                state.file_output_language,
-                                pdf_font_ja,
-                                pdf_font_en,
-                                on_pdf_font_change,
-                            )
-                        else:
-                            _font_settings_selector(
-                                state.file_output_language,
-                                font_size_adjustment,
-                                font_jp_to_en_mincho,
-                                font_jp_to_en_gothic,
-                                font_en_to_jp_serif,
-                                font_en_to_jp_sans,
-                                on_font_size_change,
-                                on_font_name_change,
-                            )
+                        _font_settings_selector(
+                            state.file_output_language,
+                            font_size_adjustment,
+                            font_jp_to_en,
+                            font_en_to_jp,
+                            on_font_size_change,
+                            on_font_name_change,
+                        )
                     # Section selector for partial translation
                     if state.file_info and len(state.file_info.section_details) > 1:
                         _section_selector(state.file_info, on_section_toggle)
@@ -428,18 +413,16 @@ def _section_selector(
 
 # Common font options for dropdowns
 FONT_OPTIONS_EN = ['Arial', 'Calibri', 'Times New Roman', 'Segoe UI', 'Verdana', 'Tahoma']
-FONT_OPTIONS_JP = ['MS P明朝', 'Meiryo UI', 'MS Pゴシック', 'Yu Gothic UI', '游明朝', '游ゴシック']
+FONT_OPTIONS_JP = ['MS Pゴシック', 'MS P明朝', 'Meiryo UI', 'Yu Gothic UI', '游明朝', '游ゴシック']
 
 
 def _font_settings_selector(
     output_language: str,
     font_size_adjustment: float,
-    font_jp_to_en_mincho: str,
-    font_jp_to_en_gothic: str,
-    font_en_to_jp_serif: str,
-    font_en_to_jp_sans: str,
+    font_jp_to_en: str,
+    font_en_to_jp: str,
     on_font_size_change: Optional[Callable[[float], None]],
-    on_font_name_change: Optional[Callable[[str, str], None]],
+    on_font_name_change: Optional[Callable[[str], None]],
 ):
     """Font settings selector - expandable panel for font customization"""
     with ui.expansion(
@@ -452,7 +435,7 @@ def _font_settings_selector(
                 with ui.column().classes('gap-1 w-full'):
                     ui.label('フォントサイズ調整（pt）').classes('text-xs text-muted')
                     with ui.row().classes('items-center gap-2'):
-                        size_input = ui.number(
+                        ui.number(
                             value=font_size_adjustment,
                             min=-4.0,
                             max=0.0,
@@ -464,74 +447,20 @@ def _font_settings_selector(
 
             # Font name selection based on output language
             if output_language == 'en':
-                # JP→EN: Select output English fonts
-                with ui.column().classes('gap-1 w-full'):
-                    ui.label('明朝系 → 英語フォント').classes('text-xs text-muted')
-                    ui.select(
-                        options=FONT_OPTIONS_EN,
-                        value=font_jp_to_en_mincho,
-                        on_change=lambda e: on_font_name_change and on_font_name_change('mincho', e.value),
-                    ).classes('w-full').props('dense')
-
-                with ui.column().classes('gap-1 w-full'):
-                    ui.label('ゴシック系 → 英語フォント').classes('text-xs text-muted')
-                    ui.select(
-                        options=FONT_OPTIONS_EN,
-                        value=font_jp_to_en_gothic,
-                        on_change=lambda e: on_font_name_change and on_font_name_change('gothic', e.value),
-                    ).classes('w-full').props('dense')
-            else:
-                # EN→JP: Select output Japanese fonts
-                with ui.column().classes('gap-1 w-full'):
-                    ui.label('Serif系 → 日本語フォント').classes('text-xs text-muted')
-                    ui.select(
-                        options=FONT_OPTIONS_JP,
-                        value=font_en_to_jp_serif,
-                        on_change=lambda e: on_font_name_change and on_font_name_change('serif', e.value),
-                    ).classes('w-full').props('dense')
-
-                with ui.column().classes('gap-1 w-full'):
-                    ui.label('Sans-serif系 → 日本語フォント').classes('text-xs text-muted')
-                    ui.select(
-                        options=FONT_OPTIONS_JP,
-                        value=font_en_to_jp_sans,
-                        on_change=lambda e: on_font_name_change and on_font_name_change('sans', e.value),
-                    ).classes('w-full').props('dense')
-
-
-# PDF font options (system fonts that can be embedded)
-PDF_FONT_OPTIONS_JA = ['MS P明朝', 'MS 明朝', 'MS Pゴシック', 'MS ゴシック', 'Meiryo UI', 'メイリオ', 'Yu Gothic UI', '游ゴシック', '游明朝']
-PDF_FONT_OPTIONS_EN = ['Arial', 'Calibri', 'Times New Roman', 'Segoe UI', 'Verdana', 'Tahoma']
-
-
-def _pdf_font_settings_selector(
-    output_language: str,
-    pdf_font_ja: str,
-    pdf_font_en: str,
-    on_pdf_font_change: Optional[Callable[[str, str], None]],
-):
-    """PDF font settings selector - expandable panel for PDF font customization"""
-    with ui.expansion(
-        'PDFフォント設定',
-        icon='text_fields',
-    ).classes('section-selector w-full mt-3'):
-        with ui.column().classes('gap-3 w-full'):
-            # Show the font that will be used for output
-            if output_language == 'en':
-                # JP→EN: Show English font selector
+                # JP→EN: Select output English font
                 with ui.column().classes('gap-1 w-full'):
                     ui.label('出力フォント（英語）').classes('text-xs text-muted')
                     ui.select(
-                        options=PDF_FONT_OPTIONS_EN,
-                        value=pdf_font_en,
-                        on_change=lambda e: on_pdf_font_change and on_pdf_font_change('en', e.value),
+                        options=FONT_OPTIONS_EN,
+                        value=font_jp_to_en,
+                        on_change=lambda e: on_font_name_change and on_font_name_change(e.value),
                     ).classes('w-full').props('dense')
             else:
-                # EN→JP: Show Japanese font selector
+                # EN→JP: Select output Japanese font
                 with ui.column().classes('gap-1 w-full'):
                     ui.label('出力フォント（日本語）').classes('text-xs text-muted')
                     ui.select(
-                        options=PDF_FONT_OPTIONS_JA,
-                        value=pdf_font_ja,
-                        on_change=lambda e: on_pdf_font_change and on_pdf_font_change('ja', e.value),
+                        options=FONT_OPTIONS_JP,
+                        value=font_en_to_jp,
+                        on_change=lambda e: on_font_name_change and on_font_name_change(e.value),
                     ).classes('w-full').props('dense')

@@ -51,22 +51,14 @@ class AppSettings:
     # Text Translation Options
     text_translation_style: str = "concise"  # テキスト翻訳の英訳スタイル: "standard", "concise", "minimal"
 
-    # Font Settings (ファイル翻訳用)
+    # Font Settings (ファイル翻訳用 - 全形式共通)
     # フォントサイズ調整（JP→EN時）: 0で調整なし、負値で縮小
     font_size_adjustment_jp_to_en: float = 0.0  # pt
     font_size_min: float = 6.0  # pt (最小フォントサイズ)
 
-    # 出力フォント名（JP→EN時）
-    font_jp_to_en_mincho: str = "Arial"  # 明朝系→
-    font_jp_to_en_gothic: str = "Arial"  # ゴシック系→
-
-    # 出力フォント名（EN→JP時）
-    font_en_to_jp_serif: str = "MS Pゴシック"  # Serif系→
-    font_en_to_jp_sans: str = "MS Pゴシック"  # Sans-serif系→
-
-    # PDF Font Settings (PDF翻訳用、独自のフォント埋め込み)
-    pdf_font_ja: str = "MS P明朝"  # 日本語出力フォント
-    pdf_font_en: str = "Arial"    # 英語出力フォント
+    # 出力フォント（言語方向のみで決定、元フォント種別は無視）
+    font_jp_to_en: str = "Arial"           # 英訳時の出力フォント
+    font_en_to_jp: str = "MS Pゴシック"    # 和訳時の出力フォント
 
     # PDF OCR Options (yomitoku)
     ocr_batch_size: int = 5             # ページ/バッチ（メモリ使用量とのトレードオフ）
@@ -99,6 +91,20 @@ class AppSettings:
                         data['export_glossary'] = data.pop('pdf_export_glossary')
                     else:
                         data.pop('pdf_export_glossary', None)
+                    # Migrate old font settings (4 settings → 2 settings)
+                    if 'font_jp_to_en_mincho' in data and 'font_jp_to_en' not in data:
+                        data['font_jp_to_en'] = data.pop('font_jp_to_en_mincho')
+                    else:
+                        data.pop('font_jp_to_en_mincho', None)
+                    data.pop('font_jp_to_en_gothic', None)
+                    if 'font_en_to_jp_serif' in data and 'font_en_to_jp' not in data:
+                        data['font_en_to_jp'] = data.pop('font_en_to_jp_serif')
+                    else:
+                        data.pop('font_en_to_jp_serif', None)
+                    data.pop('font_en_to_jp_sans', None)
+                    # Remove old PDF font settings (now unified)
+                    data.pop('pdf_font_ja', None)
+                    data.pop('pdf_font_en', None)
                     # Filter to only known fields to handle future version settings
                     known_fields = {f.name for f in cls.__dataclass_fields__.values()}
                     filtered_data = {k: v for k, v in data.items() if k in known_fields}
@@ -130,13 +136,8 @@ class AppSettings:
             # Font Settings
             "font_size_adjustment_jp_to_en": self.font_size_adjustment_jp_to_en,
             "font_size_min": self.font_size_min,
-            "font_jp_to_en_mincho": self.font_jp_to_en_mincho,
-            "font_jp_to_en_gothic": self.font_jp_to_en_gothic,
-            "font_en_to_jp_serif": self.font_en_to_jp_serif,
-            "font_en_to_jp_sans": self.font_en_to_jp_sans,
-            # PDF Font Settings
-            "pdf_font_ja": self.pdf_font_ja,
-            "pdf_font_en": self.pdf_font_en,
+            "font_jp_to_en": self.font_jp_to_en,
+            "font_en_to_jp": self.font_en_to_jp,
             # PDF OCR Options
             "ocr_batch_size": self.ocr_batch_size,
             "ocr_dpi": self.ocr_dpi,

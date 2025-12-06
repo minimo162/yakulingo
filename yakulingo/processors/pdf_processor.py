@@ -829,7 +829,7 @@ class FontRegistry:
         Initialize font registry.
 
         Args:
-            font_ja: Preferred Japanese font name (e.g., "MS P明朝")
+            font_ja: Preferred Japanese font name (e.g., "MS Pゴシック")
             font_en: Preferred English font name (e.g., "Arial")
         """
         self.fonts: dict[str, FontInfo] = {}
@@ -3219,7 +3219,7 @@ class PdfProcessor(FileProcessor):
             output_path: Path for translated PDF
             translations: Mapping of block IDs to translated text
             direction: Translation direction
-            settings: AppSettings for font configuration (pdf_font_ja, pdf_font_en)
+            settings: AppSettings for font configuration (font_en_to_jp, font_jp_to_en)
             pages: Optional list of page numbers to translate (1-indexed).
                    If None, all pages are translated.
             formula_vars_map: Optional mapping of block IDs to FormulaVar lists.
@@ -3261,7 +3261,7 @@ class PdfProcessor(FileProcessor):
             translations: Mapping of addresses to translated text
             cells: TranslationCell list with position info (image coordinates)
             direction: Translation direction
-            settings: AppSettings for font configuration (pdf_font_ja, pdf_font_en)
+            settings: AppSettings for font configuration (font_en_to_jp, font_jp_to_en)
             dpi: DPI used for OCR (for coordinate scaling)
 
         Returns:
@@ -3329,9 +3329,9 @@ class PdfProcessor(FileProcessor):
         try:
             target_lang = "en" if direction == "jp_to_en" else "ja"
 
-            # Initialize font registry with settings
-            font_ja = getattr(settings, 'pdf_font_ja', None) if settings else None
-            font_en = getattr(settings, 'pdf_font_en', None) if settings else None
+            # Initialize font registry with settings (unified font settings)
+            font_ja = getattr(settings, 'font_en_to_jp', None) if settings else None
+            font_en = getattr(settings, 'font_jp_to_en', None) if settings else None
             font_registry = FontRegistry(font_ja=font_ja, font_en=font_en)
 
             # PDFMathTranslate compliant: Load existing fonts from PDF

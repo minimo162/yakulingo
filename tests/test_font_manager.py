@@ -4,117 +4,11 @@
 import pytest
 
 from yakulingo.processors.font_manager import (
-    FontTypeDetector,
     FontSizeAdjuster,
     FontManager,
-    FONT_MAPPING,
+    DEFAULT_FONT_JP_TO_EN,
+    DEFAULT_FONT_EN_TO_JP,
 )
-
-
-class TestFontTypeDetector:
-    """Tests for FontTypeDetector class"""
-
-    @pytest.fixture
-    def detector(self):
-        return FontTypeDetector()
-
-    # --- Mincho/Serif detection ---
-
-    def test_detect_mincho_japanese(self, detector):
-        """Japanese mincho fonts detected"""
-        assert detector.detect_font_type("MS Mincho") == "mincho"
-        assert detector.detect_font_type("MS P明朝") == "mincho"
-        assert detector.detect_font_type("IPAMincho") == "mincho"
-
-    def test_detect_mincho_serif(self, detector):
-        """Western serif fonts detected as mincho"""
-        assert detector.detect_font_type("Times New Roman") == "mincho"
-        assert detector.detect_font_type("Georgia") == "mincho"
-        assert detector.detect_font_type("Cambria") == "mincho"
-        assert detector.detect_font_type("Palatino") == "mincho"
-        assert detector.detect_font_type("Garamond") == "mincho"
-        assert detector.detect_font_type("Century") == "mincho"
-        assert detector.detect_font_type("Bookman") == "mincho"
-
-    # --- Gothic/Sans-serif detection ---
-
-    def test_detect_gothic_japanese(self, detector):
-        """Japanese gothic fonts detected"""
-        assert detector.detect_font_type("MS Gothic") == "gothic"
-        assert detector.detect_font_type("MS Pゴシック") == "gothic"
-        assert detector.detect_font_type("Meiryo") == "gothic"
-        assert detector.detect_font_type("メイリオ") == "gothic"
-        assert detector.detect_font_type("Yu Gothic") == "gothic"
-        assert detector.detect_font_type("游ゴシック") == "gothic"
-
-    def test_detect_gothic_sans(self, detector):
-        """Western sans-serif fonts detected as gothic"""
-        assert detector.detect_font_type("Arial") == "gothic"
-        assert detector.detect_font_type("Helvetica") == "gothic"
-        assert detector.detect_font_type("Calibri") == "gothic"
-        assert detector.detect_font_type("Verdana") == "gothic"
-        assert detector.detect_font_type("Tahoma") == "gothic"
-        assert detector.detect_font_type("Segoe UI") == "gothic"
-
-    # --- Case insensitivity ---
-
-    def test_detect_case_insensitive(self, detector):
-        """Font detection is case-insensitive"""
-        assert detector.detect_font_type("ARIAL") == "gothic"
-        assert detector.detect_font_type("arial") == "gothic"
-        assert detector.detect_font_type("Arial") == "gothic"
-        assert detector.detect_font_type("TIMES NEW ROMAN") == "mincho"
-
-    # --- Unknown fonts ---
-
-    def test_detect_unknown(self, detector):
-        """Unknown fonts return 'unknown'"""
-        assert detector.detect_font_type("CustomFont") == "unknown"
-        assert detector.detect_font_type("RandomName") == "unknown"
-        assert detector.detect_font_type("MyCompanyFont") == "unknown"
-
-    def test_detect_none(self, detector):
-        """None input returns 'unknown'"""
-        assert detector.detect_font_type(None) == "unknown"
-
-    def test_detect_empty_string(self, detector):
-        """Empty string returns 'unknown'"""
-        assert detector.detect_font_type("") == "unknown"
-
-
-class TestFontTypeDetectorDominantFont:
-    """Tests for FontTypeDetector.get_dominant_font()"""
-
-    @pytest.fixture
-    def detector(self):
-        return FontTypeDetector()
-
-    def test_single_font(self, detector):
-        """Single font list returns that font"""
-        assert detector.get_dominant_font(["Arial"]) == "Arial"
-
-    def test_dominant_by_count(self, detector):
-        """Most frequent font is returned"""
-        fonts = ["Arial", "Calibri", "Arial", "Arial", "Calibri"]
-        assert detector.get_dominant_font(fonts) == "Arial"
-
-    def test_empty_list(self, detector):
-        """Empty list returns None"""
-        assert detector.get_dominant_font([]) is None
-
-    def test_none_values_ignored(self, detector):
-        """None values in list are ignored"""
-        fonts = [None, "Arial", None, "Arial"]
-        assert detector.get_dominant_font(fonts) == "Arial"
-
-    def test_empty_strings_ignored(self, detector):
-        """Empty strings are ignored"""
-        fonts = ["", "Arial", "", "Calibri", "Arial"]
-        assert detector.get_dominant_font(fonts) == "Arial"
-
-    def test_all_none(self, detector):
-        """List of only None returns None"""
-        assert detector.get_dominant_font([None, None, None]) is None
 
 
 class TestFontSizeAdjuster:
@@ -173,114 +67,82 @@ class TestFontSizeAdjuster:
 
 
 class TestFontManager:
-    """Tests for FontManager class"""
+    """Tests for FontManager class - unified font selection"""
 
-    # --- JP to EN ---
+    # --- JP to EN (always Arial) ---
 
-    def test_jp_to_en_mincho_to_arial(self):
-        """JP Mincho maps to Arial in EN"""
+    def test_jp_to_en_returns_arial(self):
+        """JP to EN always returns Arial (ignores original font)"""
         manager = FontManager("jp_to_en")
         name, size = manager.select_font("MS Mincho", 12.0)
         assert name == "Arial"
-        assert size == 12.0  # no adjustment (DEFAULT_JP_TO_EN_ADJUSTMENT = 0.0)
+        assert size == 12.0
 
-    def test_jp_to_en_gothic_to_arial(self):
-        """JP Gothic maps to Arial in EN"""
+    def test_jp_to_en_gothic_returns_arial(self):
+        """JP Gothic also maps to Arial (no font type distinction)"""
         manager = FontManager("jp_to_en")
         name, size = manager.select_font("MS Gothic", 12.0)
         assert name == "Arial"
         assert size == 12.0
 
-    def test_jp_to_en_unknown_defaults_to_mincho(self):
-        """Unknown JP font defaults to mincho (Arial)"""
+    def test_jp_to_en_any_font_returns_arial(self):
+        """Any font maps to Arial in JP to EN"""
         manager = FontManager("jp_to_en")
         name, size = manager.select_font("CustomFont", 12.0)
-        assert name == "Arial"  # default is mincho -> Arial
+        assert name == "Arial"
 
-    # --- EN to JP ---
-
-    def test_en_to_jp_serif_to_mincho(self):
-        """EN Serif maps to MS P明朝 in JP"""
-        manager = FontManager("en_to_jp")
-        name, size = manager.select_font("Times New Roman", 12.0)
-        assert name == "MS P明朝"
-        assert size == 12.0  # no adjustment for en_to_jp
-
-    def test_en_to_jp_sans_to_meiryo(self):
-        """EN Sans maps to Meiryo UI in JP"""
-        manager = FontManager("en_to_jp")
-        name, size = manager.select_font("Arial", 12.0)
-        assert name == "Meiryo UI"
-        assert size == 12.0
-
-    def test_en_to_jp_unknown_defaults_to_serif(self):
-        """Unknown EN font defaults to serif (MS P明朝)"""
-        manager = FontManager("en_to_jp")
-        name, size = manager.select_font("CustomFont", 12.0)
-        assert name == "MS P明朝"  # default is serif
-
-    # --- None font name ---
-
-    def test_none_font_name(self):
-        """None font name uses default"""
+    def test_jp_to_en_none_font_returns_arial(self):
+        """None font also maps to Arial"""
         manager = FontManager("jp_to_en")
         name, size = manager.select_font(None, 12.0)
-        assert name == "Arial"  # default
+        assert name == "Arial"
 
+    # --- EN to JP (always MS Pゴシック) ---
 
-class TestFontManagerGetFontForType:
-    """Tests for FontManager.get_font_for_type()"""
-
-    def test_jp_to_en_mincho(self):
-        manager = FontManager("jp_to_en")
-        assert manager.get_font_for_type("mincho") == "Arial"
-
-    def test_jp_to_en_gothic(self):
-        manager = FontManager("jp_to_en")
-        assert manager.get_font_for_type("gothic") == "Arial"
-
-    def test_jp_to_en_unknown(self):
-        manager = FontManager("jp_to_en")
-        # Unknown uses default which is mincho
-        assert manager.get_font_for_type("unknown") == "Arial"
-
-    def test_en_to_jp_mincho(self):
+    def test_en_to_jp_returns_ms_p_gothic(self):
+        """EN to JP always returns MS Pゴシック (ignores original font)"""
         manager = FontManager("en_to_jp")
-        # In en_to_jp, mincho maps to serif
-        assert manager.get_font_for_type("mincho") == "MS P明朝"
+        name, size = manager.select_font("Times New Roman", 12.0)
+        assert name == "MS Pゴシック"
+        assert size == 12.0
 
-    def test_en_to_jp_gothic(self):
+    def test_en_to_jp_arial_returns_ms_p_gothic(self):
+        """Arial also maps to MS Pゴシック"""
         manager = FontManager("en_to_jp")
-        # In en_to_jp, gothic maps to sans-serif
-        assert manager.get_font_for_type("gothic") == "Meiryo UI"
+        name, size = manager.select_font("Arial", 12.0)
+        assert name == "MS Pゴシック"
+        assert size == 12.0
+
+    def test_en_to_jp_any_font_returns_ms_p_gothic(self):
+        """Any font maps to MS Pゴシック in EN to JP"""
+        manager = FontManager("en_to_jp")
+        name, size = manager.select_font("CustomFont", 12.0)
+        assert name == "MS Pゴシック"
+
+    def test_en_to_jp_none_font_returns_ms_p_gothic(self):
+        """None font also maps to MS Pゴシック"""
+        manager = FontManager("en_to_jp")
+        name, size = manager.select_font(None, 12.0)
+        assert name == "MS Pゴシック"
 
 
-class TestFontMappingConfiguration:
-    """Tests for FONT_MAPPING configuration"""
+class TestFontManagerGetOutputFont:
+    """Tests for FontManager.get_output_font()"""
 
-    def test_jp_to_en_mapping_exists(self):
-        assert "jp_to_en" in FONT_MAPPING
+    def test_jp_to_en_output_font(self):
+        manager = FontManager("jp_to_en")
+        assert manager.get_output_font() == "Arial"
 
-    def test_en_to_jp_mapping_exists(self):
-        assert "en_to_jp" in FONT_MAPPING
+    def test_en_to_jp_output_font(self):
+        manager = FontManager("en_to_jp")
+        assert manager.get_output_font() == "MS Pゴシック"
 
-    def test_jp_to_en_has_required_keys(self):
-        mapping = FONT_MAPPING["jp_to_en"]
-        assert "mincho" in mapping
-        assert "gothic" in mapping
-        assert "default" in mapping
 
-    def test_en_to_jp_has_required_keys(self):
-        mapping = FONT_MAPPING["en_to_jp"]
-        assert "serif" in mapping
-        assert "sans-serif" in mapping
-        assert "default" in mapping
+class TestDefaultFontConstants:
+    """Tests for default font constants"""
 
-    def test_font_configs_have_required_fields(self):
-        """Each font config has name, file, and fallback"""
-        for direction in ["jp_to_en", "en_to_jp"]:
-            for key, value in FONT_MAPPING[direction].items():
-                if key != "default":
-                    assert "name" in value, f"Missing 'name' in {direction}.{key}"
-                    assert "file" in value, f"Missing 'file' in {direction}.{key}"
-                    assert "fallback" in value, f"Missing 'fallback' in {direction}.{key}"
+    def test_default_jp_to_en_font(self):
+        assert DEFAULT_FONT_JP_TO_EN == "Arial"
+
+    def test_default_en_to_jp_font(self):
+        assert DEFAULT_FONT_EN_TO_JP == "MS Pゴシック"

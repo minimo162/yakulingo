@@ -1,135 +1,19 @@
 # yakulingo/processors/font_manager.py
 """
 Font management for file translation.
-Handles font type detection, mapping, and size adjustment.
-For Excel/Word/PowerPoint files.
+Handles font selection and size adjustment.
+For Excel/Word/PowerPoint/PDF files.
 """
 
-import re
 from typing import Optional, TYPE_CHECKING
-from collections import Counter
 
 if TYPE_CHECKING:
     from yakulingo.config.settings import AppSettings
 
 
-# Default font mapping table (can be overridden by settings)
-DEFAULT_FONT_MAPPING = {
-    "jp_to_en": {
-        "mincho": {
-            "name": "Arial",
-            "file": "arial.ttf",
-            "fallback": ["DejaVuSans.ttf", "LiberationSans-Regular.ttf"],
-        },
-        "gothic": {
-            "name": "Arial",
-            "file": "arial.ttf",
-            "fallback": ["calibri.ttf", "DejaVuSans.ttf"],
-        },
-        "default": "mincho",  # 判定不能時は明朝系扱い
-    },
-    "en_to_jp": {
-        "serif": {
-            "name": "MS P明朝",
-            "file": "msmincho.ttc",
-            "fallback": ["ipam.ttf", "NotoSerifJP-Regular.ttf"],
-        },
-        "sans-serif": {
-            "name": "Meiryo UI",
-            "file": "meiryoui.ttc",
-            "fallback": ["msgothic.ttc", "NotoSansJP-Regular.ttf"],
-        },
-        "default": "serif",  # 判定不能時はセリフ系扱い
-    },
-}
-
-# For backwards compatibility
-FONT_MAPPING = DEFAULT_FONT_MAPPING
-
-
-class FontTypeDetector:
-    """
-    元ファイルのフォント種類を自動検出
-    Excel/Word/PowerPoint 用
-    """
-
-    # 明朝系/セリフ系フォントのパターン
-    MINCHO_PATTERNS = [
-        r"Mincho", r"明朝", r"Ming", r"Serif", r"Times", r"Georgia",
-        r"Cambria", r"Palatino", r"Garamond", r"Bookman", r"Century",
-    ]
-
-    # ゴシック系/サンセリフ系フォントのパターン
-    GOTHIC_PATTERNS = [
-        r"Gothic", r"ゴシック", r"Sans", r"Arial", r"Helvetica",
-        r"Calibri", r"Meiryo", r"メイリオ", r"Verdana", r"Tahoma",
-        r"Yu Gothic", r"游ゴシック", r"Hiragino.*Gothic", r"Segoe",
-    ]
-
-    # Pre-compiled patterns (lazy initialization for performance)
-    _compiled_mincho: Optional[list] = None
-    _compiled_gothic: Optional[list] = None
-
-    @classmethod
-    def _get_mincho_patterns(cls) -> list:
-        """Get pre-compiled mincho patterns."""
-        if cls._compiled_mincho is None:
-            cls._compiled_mincho = [re.compile(p, re.IGNORECASE) for p in cls.MINCHO_PATTERNS]
-        return cls._compiled_mincho
-
-    @classmethod
-    def _get_gothic_patterns(cls) -> list:
-        """Get pre-compiled gothic patterns."""
-        if cls._compiled_gothic is None:
-            cls._compiled_gothic = [re.compile(p, re.IGNORECASE) for p in cls.GOTHIC_PATTERNS]
-        return cls._compiled_gothic
-
-    def detect_font_type(self, font_name: Optional[str]) -> str:
-        """
-        フォント名から種類を判定
-
-        Args:
-            font_name: フォント名（None の場合は "unknown"）
-
-        Returns:
-            "mincho": 明朝系/セリフ系
-            "gothic": ゴシック系/サンセリフ系
-            "unknown": 判定不能（デフォルト扱い）
-        """
-        if not font_name:
-            return "unknown"
-
-        for pattern in self._get_mincho_patterns():
-            if pattern.search(font_name):
-                return "mincho"
-
-        for pattern in self._get_gothic_patterns():
-            if pattern.search(font_name):
-                return "gothic"
-
-        return "unknown"
-
-    def get_dominant_font(self, font_names: list[str]) -> Optional[str]:
-        """
-        複数フォントから最頻出フォントを取得
-
-        Args:
-            font_names: フォント名のリスト（段落内の各runから収集）
-
-        Returns:
-            最頻出フォント名、空リストの場合は None
-        """
-        if not font_names:
-            return None
-
-        # None や空文字を除外
-        valid_fonts = [f for f in font_names if f]
-        if not valid_fonts:
-            return None
-
-        # 最頻出フォントを返す
-        counter = Counter(valid_fonts)
-        return counter.most_common(1)[0][0]
+# Default fonts (used when settings not provided)
+DEFAULT_FONT_JP_TO_EN = "Arial"
+DEFAULT_FONT_EN_TO_JP = "MS Pゴシック"
 
 
 class FontSizeAdjuster:
@@ -186,7 +70,11 @@ class FontSizeAdjuster:
 class FontManager:
     """
     ファイル翻訳のフォント管理
-    Excel/Word/PowerPoint で使用
+    Excel/Word/PowerPoint/PDF で使用
+
+    言語方向のみでフォントを決定（元フォント種別は無視）:
+    - JP→EN: Arial
+    - EN→JP: MS Pゴシック
     """
 
     def __init__(
@@ -201,7 +89,6 @@ class FontManager:
         """
         self.direction = direction
         self.settings = settings
-        self.font_type_detector = FontTypeDetector()
 
         # Initialize font size adjuster with settings
         if settings:
@@ -212,33 +99,13 @@ class FontManager:
         else:
             self.font_size_adjuster = FontSizeAdjuster()
 
-        # Build font mapping from settings or defaults
-        self._font_mapping = self._build_font_mapping()
-
-    def _build_font_mapping(self) -> dict:
-        """Build font mapping from settings or use defaults."""
-        # Deep copy defaults
-        mapping = {
-            "jp_to_en": {
-                "mincho": dict(DEFAULT_FONT_MAPPING["jp_to_en"]["mincho"]),
-                "gothic": dict(DEFAULT_FONT_MAPPING["jp_to_en"]["gothic"]),
-                "default": DEFAULT_FONT_MAPPING["jp_to_en"]["default"],
-            },
-            "en_to_jp": {
-                "serif": dict(DEFAULT_FONT_MAPPING["en_to_jp"]["serif"]),
-                "sans-serif": dict(DEFAULT_FONT_MAPPING["en_to_jp"]["sans-serif"]),
-                "default": DEFAULT_FONT_MAPPING["en_to_jp"]["default"],
-            },
-        }
-
-        if self.settings:
-            # Override with settings values
-            mapping["jp_to_en"]["mincho"]["name"] = self.settings.font_jp_to_en_mincho
-            mapping["jp_to_en"]["gothic"]["name"] = self.settings.font_jp_to_en_gothic
-            mapping["en_to_jp"]["serif"]["name"] = self.settings.font_en_to_jp_serif
-            mapping["en_to_jp"]["sans-serif"]["name"] = self.settings.font_en_to_jp_sans
-
-        return mapping
+        # Get output font from settings or use defaults
+        if settings:
+            self._font_jp_to_en = getattr(settings, 'font_jp_to_en', DEFAULT_FONT_JP_TO_EN)
+            self._font_en_to_jp = getattr(settings, 'font_en_to_jp', DEFAULT_FONT_EN_TO_JP)
+        else:
+            self._font_jp_to_en = DEFAULT_FONT_JP_TO_EN
+            self._font_en_to_jp = DEFAULT_FONT_EN_TO_JP
 
     def select_font(
         self,
@@ -246,31 +113,24 @@ class FontManager:
         original_font_size: float,
     ) -> tuple[str, float]:
         """
-        元フォント情報から翻訳後のフォントを選択
+        翻訳後のフォントを選択
+
+        言語方向のみで決定（元フォント種別は無視）
 
         Args:
-            original_font_name: 元ファイルのフォント名
+            original_font_name: 元ファイルのフォント名（未使用、互換性のため残存）
             original_font_size: 元ファイルのフォントサイズ (pt)
 
         Returns:
             (output_font_name, adjusted_size)
         """
-        # 1. 元フォントの種類を判定
-        font_type = self.font_type_detector.detect_font_type(original_font_name)
-
-        # 2. マッピングテーブルからフォントを選択
-        mapping = self._font_mapping[self.direction]
-        if font_type == "mincho":
-            font_key = "mincho" if self.direction == "jp_to_en" else "serif"
-        elif font_type == "gothic":
-            font_key = "gothic" if self.direction == "jp_to_en" else "sans-serif"
+        # 言語方向のみでフォントを決定
+        if self.direction == "jp_to_en":
+            output_font_name = self._font_jp_to_en
         else:
-            font_key = mapping["default"]
+            output_font_name = self._font_en_to_jp
 
-        font_config = mapping[font_key]
-        output_font_name = font_config["name"]
-
-        # 3. フォントサイズを調整
+        # フォントサイズを調整
         adjusted_size = self.font_size_adjuster.adjust_font_size(
             original_font_size,
             self.direction,
@@ -278,22 +138,14 @@ class FontManager:
 
         return (output_font_name, adjusted_size)
 
-    def get_font_for_type(self, font_type: str) -> str:
+    def get_output_font(self) -> str:
         """
-        フォント種類から出力フォント名を取得
-
-        Args:
-            font_type: "mincho", "gothic", or "unknown"
+        出力フォント名を取得
 
         Returns:
             出力フォント名
         """
-        mapping = self._font_mapping[self.direction]
-        if font_type == "mincho":
-            font_key = "mincho" if self.direction == "jp_to_en" else "serif"
-        elif font_type == "gothic":
-            font_key = "gothic" if self.direction == "jp_to_en" else "sans-serif"
+        if self.direction == "jp_to_en":
+            return self._font_jp_to_en
         else:
-            font_key = mapping["default"]
-
-        return mapping[font_key]["name"]
+            return self._font_en_to_jp

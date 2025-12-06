@@ -15,7 +15,7 @@ set START_TIME=%TIME%
 :: Progress bar settings
 set "PROGRESS_CHARS=##################################################"
 set "PROGRESS_EMPTY=.................................................."
-set TOTAL_STEPS=10
+set TOTAL_STEPS=4
 set CURRENT_STEP=0
 
 :: ============================================================
@@ -37,9 +37,11 @@ exit /b 0
 :SkipFunctions
 
 :: ============================================================
-:: Step 1: Check required files exist
+:: Step 1: Prepare (check files, cleanup, fix paths)
 :: ============================================================
-call :ShowProgress 1 "Checking required files..."
+call :ShowProgress 1 "Preparing..."
+
+echo        Checking required files...
 
 set MISSING_FILES=0
 
@@ -79,18 +81,12 @@ if !MISSING_FILES! equ 1 (
     exit /b 1
 )
 
-:: ============================================================
-:: Step 2: Clean up unnecessary files
-:: ============================================================
-call :ShowProgress 2 "Cleaning up cache files..."
-
-:: Use PowerShell for fast parallel cleanup (single command to reduce overhead)
+:: Clean up unnecessary files
+echo        Cleaning up cache files...
 powershell -NoProfile -Command "$ErrorActionPreference='SilentlyContinue'; Get-ChildItem -Path '.venv','yakulingo' -Recurse -Directory -Filter '__pycache__' | Remove-Item -Recurse -Force; Get-ChildItem -Path '.venv' -Recurse -Filter '*.pyc' | Remove-Item -Force; Remove-Item -Path '.uv-cache','.wheels' -Recurse -Force; Remove-Item -Path '*.tmp','.venv\pyvenv.cfg.tmp' -Force"
 
-:: ============================================================
-:: Step 3: Fix paths for portability
-:: ============================================================
-call :ShowProgress 3 "Fixing paths for portability..."
+:: Fix paths for portability
+echo        Fixing paths for portability...
 
 :: Get Python version from pyvenv.cfg
 set PYTHON_VERSION=
@@ -105,10 +101,8 @@ for /f "tokens=2 delims==" %%v in ('type ".venv\pyvenv.cfg" ^| findstr /i "^vers
     echo version =%PYTHON_VERSION%
 ) > ".venv\pyvenv.cfg"
 
-:: ============================================================
-:: Step 4: Prepare distribution folder
-:: ============================================================
-call :ShowProgress 4 "Preparing distribution folder..."
+:: Prepare distribution folder
+echo        Preparing distribution folder...
 
 :: Get current date for filename
 for /f "tokens=2 delims==" %%I in ('wmic os get localdatetime /format:list') do set datetime=%%I
@@ -131,22 +125,18 @@ for %%f in ("YakuLingo.exe" "app.py" "glossary.csv" "pyproject.toml" "uv.lock" "
 )
 
 :: ============================================================
-:: Step 5-8: Copy folders in parallel
+:: Step 2: Copy folders
 :: ============================================================
-call :ShowProgress 5 "Copying .venv (Python packages)..."
+call :ShowProgress 2 "Copying folders..."
+
+echo        Copying .venv, .uv-python, .playwright-browsers...
 
 :: Start all robocopy operations in parallel
 start /B "" robocopy ".venv" "%DIST_DIR%\.venv" /E /MT:16 /NFL /NDL /NJH /NJS /NP /R:1 /W:1 >nul 2>&1
 start /B "" robocopy ".uv-python" "%DIST_DIR%\.uv-python" /E /MT:16 /NFL /NDL /NJH /NJS /NP /R:1 /W:1 >nul 2>&1
 start /B "" robocopy ".playwright-browsers" "%DIST_DIR%\.playwright-browsers" /E /MT:16 /NFL /NDL /NJH /NJS /NP /R:1 /W:1 >nul 2>&1
 
-:: Copy smaller folders (fast, don't need parallel)
-for %%d in ("yakulingo" "prompts" "config") do (
-    if exist "%%~d" robocopy "%%~d" "%DIST_DIR%\%%~d" /E /MT:8 /NFL /NDL /NJH /NJS /NP /R:1 /W:1 >nul 2>&1
-)
-
 :: Wait for parallel robocopy operations to complete
-call :ShowProgress 6 "Copying .uv-python (Python runtime)..."
 :WaitLoop1
 tasklist /FI "IMAGENAME eq robocopy.exe" 2>nul | find /I "robocopy.exe" >nul
 if !errorlevel! equ 0 (
@@ -154,16 +144,20 @@ if !errorlevel! equ 0 (
     goto :WaitLoop1
 )
 
-call :ShowProgress 7 "Copying .playwright-browsers..."
-:: Already done (parallel completed)
-
-call :ShowProgress 8 "Copying application files..."
-:: Already done (inline)
+:: Copy smaller folders (fast, don't need parallel)
+echo        Copying yakulingo, prompts, config...
+for %%d in ("yakulingo" "prompts" "config") do (
+    if exist "%%~d" robocopy "%%~d" "%DIST_DIR%\%%~d" /E /MT:8 /NFL /NDL /NJH /NJS /NP /R:1 /W:1 >nul 2>&1
+)
 
 :: ============================================================
-:: Step 9: Create ZIP archive
+:: Step 3: Create ZIP archive (this takes the longest time)
 :: ============================================================
-call :ShowProgress 9 "Creating ZIP archive..."
+call :ShowProgress 3 "Creating ZIP archive..."
+
+echo.
+echo        This step takes the longest time. Please wait...
+echo.
 
 :: Use PowerShell with progress display
 powershell -NoProfile -Command ^
@@ -185,20 +179,20 @@ powershell -NoProfile -Command ^
     "        $fileStream.CopyTo($stream); " ^
     "        $fileStream.Close(); " ^
     "        $stream.Close(); " ^
-    "        if ($i %% 500 -eq 0) { " ^
+    "        if ($i %% 200 -eq 0) { " ^
     "            $pct = [int]($i * 100 / $total); " ^
-    "            Write-Host \"`r        Progress: $pct%% ($i / $total files)\" -NoNewline; " ^
+    "            Write-Host \"`r        [$pct%%] $i / $total files\" -NoNewline; " ^
     "        } " ^
     "    } " ^
-    "    Write-Host \"`r        Progress: 100%% ($total / $total files)    \"; " ^
+    "    Write-Host \"`r        [100%%] $total / $total files    \"; " ^
     "} finally { " ^
     "    $zip.Dispose(); " ^
     "}"
 
 :: ============================================================
-:: Step 10: Cleanup and create share package
+:: Step 4: Cleanup and create share package
 :: ============================================================
-call :ShowProgress 10 "Finalizing..."
+call :ShowProgress 4 "Finalizing..."
 
 :: Cleanup temp folder
 rd /s /q "dist_temp" 2>nul

@@ -73,6 +73,26 @@ if not exist "prompts" (
     echo        [ERROR] prompts directory not found.
     set MISSING_FILES=1
 )
+if not exist "packaging\installer\share\setup.vbs" (
+    echo        [ERROR] packaging\installer\share\setup.vbs not found.
+    set MISSING_FILES=1
+)
+if not exist "packaging\installer\share\.scripts\setup.ps1" (
+    echo        [ERROR] packaging\installer\share\.scripts\setup.ps1 not found.
+    set MISSING_FILES=1
+)
+
+:: Check 7-Zip (required for ZIP creation)
+set "SEVENZIP="
+if exist "%ProgramFiles%\7-Zip\7z.exe" set "SEVENZIP=%ProgramFiles%\7-Zip\7z.exe"
+if exist "%ProgramFiles(x86)%\7-Zip\7z.exe" set "SEVENZIP=%ProgramFiles(x86)%\7-Zip\7z.exe"
+if not defined SEVENZIP (
+    for %%i in (7z.exe) do if not "%%~$PATH:i"=="" set "SEVENZIP=%%~$PATH:i"
+)
+if not defined SEVENZIP (
+    echo        [ERROR] 7-Zip not found. Please install from https://7-zip.org/
+    set MISSING_FILES=1
+)
 
 if !MISSING_FILES! equ 1 (
     echo.
@@ -156,20 +176,6 @@ for %%d in ("yakulingo" "prompts" "config") do (
 :: Step 3: Create ZIP archive
 :: ============================================================
 call :ShowProgress 3 "Creating ZIP archive..."
-
-:: Find 7-Zip (check standard locations and PATH)
-set "SEVENZIP="
-if exist "%ProgramFiles%\7-Zip\7z.exe" set "SEVENZIP=%ProgramFiles%\7-Zip\7z.exe"
-if exist "%ProgramFiles(x86)%\7-Zip\7z.exe" set "SEVENZIP=%ProgramFiles(x86)%\7-Zip\7z.exe"
-if not defined SEVENZIP (
-    for %%i in (7z.exe) do if not "%%~$PATH:i"=="" set "SEVENZIP=%%~$PATH:i"
-)
-
-if not defined SEVENZIP (
-    echo        [ERROR] 7-Zip not found. Please install from https://7-zip.org/
-    pause
-    exit /b 1
-)
 
 pushd dist_temp
 "%SEVENZIP%" a -tzip -mx=1 -mmt=on -bsp1 "..\%SHARE_DIR%\%DIST_ZIP%" YakuLingo >nul

@@ -184,7 +184,7 @@ function Invoke-Setup {
 
     # Default path: LocalAppData\YakuLingo
     if ([string]::IsNullOrEmpty($SetupPath)) {
-        $script:SetupPath = Join-Path $env:LOCALAPPDATA $AppName
+        $SetupPath = Join-Path $env:LOCALAPPDATA $AppName
     }
 
     # ============================================================

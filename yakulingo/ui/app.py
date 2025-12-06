@@ -54,6 +54,7 @@ class YakuLingoApp:
         # UI references for refresh
         self._header_status = None
         self._main_content = None
+        self._result_panel = None  # Separate refreshable for result panel only
         self._tabs_container = None
         self._history_list = None
         self._main_area_element = None
@@ -197,7 +198,18 @@ class YakuLingoApp:
 
     def _refresh_content(self):
         """Refresh main content area and update layout classes"""
-        # Update main area classes based on current state
+        self._update_layout_classes()
+        if self._main_content:
+            self._main_content.refresh()
+
+    def _refresh_result_panel(self):
+        """Refresh only the result panel (avoids input panel flicker)"""
+        self._update_layout_classes()
+        if self._result_panel:
+            self._result_panel.refresh()
+
+    def _update_layout_classes(self):
+        """Update main area layout classes based on current state"""
         if self._main_area_element:
             # Remove dynamic classes first, then add current ones
             is_file_mode = self.state.current_tab == Tab.FILE
@@ -213,9 +225,6 @@ class YakuLingoApp:
                     self._main_area_element.classes(add='has-results')
                 else:
                     self._main_area_element.classes(remove='has-results')
-
-        if self._main_content:
-            self._main_content.refresh()
 
     def _refresh_tabs(self):
         """Refresh tab buttons"""
@@ -427,6 +436,21 @@ class YakuLingoApp:
         from yakulingo.ui.components.text_panel import create_text_input_panel, create_text_result_panel
         from yakulingo.ui.components.file_panel import create_file_panel
 
+        # Separate refreshable for result panel only (avoids input panel flicker)
+        @ui.refreshable
+        def result_panel_content():
+            create_text_result_panel(
+                state=self.state,
+                on_copy=self._copy_text,
+                on_adjust=self._adjust_text,
+                on_follow_up=self._follow_up_action,
+                on_back_translate=self._back_translate,
+                on_retry=self._retry_translation,
+                on_streaming_label_created=self._on_streaming_label_created,
+            )
+
+        self._result_panel = result_panel_content
+
         @ui.refreshable
         def main_content():
             if self.state.current_tab == Tab.TEXT:
@@ -446,15 +470,7 @@ class YakuLingoApp:
 
                 # Result panel (right column - shown when has results)
                 with ui.column().classes('result-panel'):
-                    create_text_result_panel(
-                        state=self.state,
-                        on_copy=self._copy_text,
-                        on_adjust=self._adjust_text,
-                        on_follow_up=self._follow_up_action,
-                        on_back_translate=self._back_translate,
-                        on_retry=self._retry_translation,
-                        on_streaming_label_created=self._on_streaming_label_created,
-                    )
+                    result_panel_content()
             else:
                 # File panel: 2-column layout (sidebar + centered file panel)
                 with ui.column().classes('w-full max-w-2xl mx-auto px-6 py-8 flex-1'):
@@ -596,7 +612,7 @@ class YakuLingoApp:
         self.state.text_translation_elapsed_time = None
         self.state.streaming_text = None
         self._streaming_label = None  # Reset before refresh creates new label
-        self._refresh_content()
+        self._refresh_result_panel()  # Only refresh result panel (input panel unchanged)
 
         # Track last text to avoid redundant updates
         last_streaming_text: str = ""
@@ -662,7 +678,7 @@ class YakuLingoApp:
             # Update UI with detected language
             self.state.text_detected_language = detected_language
             with client:
-                self._refresh_content()
+                self._refresh_result_panel()  # Only refresh result panel
 
             # Yield control again before translation
             await asyncio.sleep(0)

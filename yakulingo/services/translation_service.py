@@ -9,7 +9,7 @@ import csv
 import logging
 import time
 from pathlib import Path
-from typing import Optional, Callable
+from typing import Optional
 from zipfile import BadZipFile
 import unicodedata
 
@@ -226,7 +226,6 @@ from yakulingo.models.types import (
     TextTranslationResult,
     TranslationOption,
     FileInfo,
-    FileType,
     TextBlock,
     ProgressCallback,
 )
@@ -384,6 +383,7 @@ class BatchTranslator:
 
     def reset_cancel(self) -> None:
         """Reset cancellation flag."""
+        self._cancel_requested = False
 
     def clear_cache(self) -> None:
         """Clear translation cache."""

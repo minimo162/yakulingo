@@ -2595,9 +2595,10 @@ def get_total_pages(pdf_path: str) -> int:
     """Get total page count using pypdfium2."""
     pdfium = _get_pypdfium2()
     pdf = pdfium.PdfDocument(pdf_path)
-    total = len(pdf)
-    pdf.close()
-    return total
+    try:
+        return len(pdf)
+    finally:
+        pdf.close()
 
 
 @contextmanager

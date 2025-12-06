@@ -5,9 +5,8 @@ Simple, focused, warm.
 """
 
 from nicegui import ui, events
-from typing import Callable, Optional
+from typing import Callable, List, Optional
 from pathlib import Path
-from typing import List
 
 from yakulingo.ui.state import AppState, FileState
 from yakulingo.ui.utils import temp_file_manager, download_to_folder_and_open

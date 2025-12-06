@@ -266,8 +266,12 @@ class CopilotHandler:
     DEFAULT_CDP_PORT = 9333  # Dedicated port for translator
     EDGE_STARTUP_MAX_ATTEMPTS = 20  # Maximum iterations to wait for Edge startup
     EDGE_STARTUP_CHECK_INTERVAL = 0.3  # Seconds between startup checks
-    RESPONSE_STABLE_COUNT = 4  # Number of stable checks before considering response complete
-    RESPONSE_POLL_INTERVAL = 0.3  # Seconds between response checks
+    RESPONSE_STABLE_COUNT = 3  # Number of stable checks before considering response complete
+    RESPONSE_POLL_INTERVAL = 0.3  # Seconds between response checks (legacy, kept for compatibility)
+    # Dynamic polling intervals for faster response detection
+    RESPONSE_POLL_INITIAL = 0.5  # Initial interval while waiting for response to start
+    RESPONSE_POLL_ACTIVE = 0.2  # Interval after text is detected
+    RESPONSE_POLL_STABLE = 0.1  # Interval during stability checking
     DEFAULT_RESPONSE_TIMEOUT = 120  # Default timeout for response in seconds
 
     # Copilot character limits (Free: 8000, Paid: 128000)
@@ -578,7 +582,7 @@ class CopilotHandler:
                 copilot_page.wait_for_selector(input_selector, timeout=15000, state='visible')
                 logger.info("Copilot chat UI ready")
                 # Wait a bit for authentication/session to fully initialize
-                time.sleep(1.0)
+                time.sleep(0.3)
                 self._connected = True
             except PlaywrightTimeoutError:
                 logger.warning("Chat input not found - login required in Edge browser")
@@ -777,6 +781,7 @@ class CopilotHandler:
         prompt: str,
         reference_files: Optional[list[Path]] = None,
         char_limit: Optional[int] = None,
+        skip_clear_wait: bool = False,
     ) -> list[str]:
         """
         Synchronous version of translate for non-async contexts.
@@ -790,6 +795,7 @@ class CopilotHandler:
             prompt: The translation prompt to send to Copilot
             reference_files: Optional list of reference files to attach
             char_limit: Max characters for direct input (uses DEFAULT_CHAR_LIMIT if None)
+            skip_clear_wait: Skip response clear verification (for 2nd+ batches)
 
         Returns:
             List of translated strings parsed from Copilot's response
@@ -797,7 +803,7 @@ class CopilotHandler:
         # Execute all Playwright operations in the dedicated thread
         # This avoids greenlet thread-switching errors when called from asyncio.to_thread
         return _playwright_executor.execute(
-            self._translate_sync_impl, texts, prompt, reference_files, char_limit
+            self._translate_sync_impl, texts, prompt, reference_files, char_limit, skip_clear_wait
         )
 
     def _translate_sync_impl(
@@ -806,12 +812,17 @@ class CopilotHandler:
         prompt: str,
         reference_files: Optional[list[Path]] = None,
         char_limit: Optional[int] = None,
+        skip_clear_wait: bool = False,
     ) -> list[str]:
         """
         Implementation of translate_sync that runs in the Playwright thread.
 
         This method is called via PlaywrightThreadExecutor.execute() to ensure
         all Playwright operations run in the correct thread context.
+
+        Args:
+            skip_clear_wait: Skip response clear verification (for 2nd+ batches
+                           where we just finished getting a response)
         """
         # Call _connect_impl directly since we're already in the Playwright thread
         # (calling connect() would cause nested executor calls)
@@ -819,7 +830,7 @@ class CopilotHandler:
             raise RuntimeError("ブラウザに接続できませんでした。Edgeが起動しているか、Copilotにログインしているか確認してください。")
 
         # Start a new chat to clear previous context (prevents using old responses)
-        self.start_new_chat()
+        self.start_new_chat(skip_clear_wait=skip_clear_wait)
 
         # Attach reference files first (before sending prompt)
         if reference_files:
@@ -1004,7 +1015,7 @@ class CopilotHandler:
                 try:
                     send_button = self._page.wait_for_selector(
                         send_button_selector,
-                        timeout=5000,
+                        timeout=2000,  # Reduced from 5000ms (Enter key fallback handles timeouts)
                         state='visible'
                     )
                     if send_button:
@@ -1052,7 +1063,13 @@ class CopilotHandler:
         await loop.run_in_executor(None, self._send_message, message)
 
     def _get_response(self, timeout: int = 120) -> str:
-        """Get response from Copilot (sync)"""
+        """Get response from Copilot (sync)
+
+        Uses dynamic polling intervals for faster response detection:
+        - INITIAL (0.5s): While waiting for response to start
+        - ACTIVE (0.2s): After text is detected, while content is growing
+        - STABLE (0.1s): During stability checking phase
+        """
         error_types = _get_playwright_errors()
         PlaywrightError = error_types['Error']
         PlaywrightTimeoutError = error_types['TimeoutError']
@@ -1066,10 +1083,11 @@ class CopilotHandler:
                 # Response may already be present or selector changed, continue polling
                 pass
 
-            # Wait for response completion
-            max_wait = timeout
+            # Wait for response completion with dynamic polling
+            max_wait = float(timeout)
             last_text = ""
             stable_count = 0
+            has_content = False  # Track if we've seen any content
 
             while max_wait > 0:
                 # Check if Copilot is still generating (stop button visible)
@@ -1079,8 +1097,9 @@ class CopilotHandler:
                 if stop_button and stop_button.is_visible():
                     # Still generating, reset stability counter and wait
                     stable_count = 0
-                    time.sleep(self.RESPONSE_POLL_INTERVAL)
-                    max_wait -= self.RESPONSE_POLL_INTERVAL
+                    poll_interval = self.RESPONSE_POLL_ACTIVE if has_content else self.RESPONSE_POLL_INITIAL
+                    time.sleep(poll_interval)
+                    max_wait -= poll_interval
                     continue
 
                 # Get the latest message
@@ -1095,20 +1114,29 @@ class CopilotHandler:
                     # Only count stability if there's actual content
                     # Don't consider empty or whitespace-only text as stable
                     if current_text and current_text.strip():
+                        has_content = True
                         if current_text == last_text:
                             stable_count += 1
                             if stable_count >= self.RESPONSE_STABLE_COUNT:
                                 logger.debug("Response stabilized (length: %d chars): %s", len(current_text), current_text[:500])
                                 return current_text
+                            # Use fastest interval during stability checking
+                            poll_interval = self.RESPONSE_POLL_STABLE
                         else:
                             stable_count = 0
                             last_text = current_text
+                            # Content is still growing, use active interval
+                            poll_interval = self.RESPONSE_POLL_ACTIVE
                     else:
                         # Reset stability counter if text is empty
                         stable_count = 0
+                        poll_interval = self.RESPONSE_POLL_INITIAL
+                else:
+                    # No response element yet, use initial interval
+                    poll_interval = self.RESPONSE_POLL_INITIAL
 
-                time.sleep(self.RESPONSE_POLL_INTERVAL)
-                max_wait -= self.RESPONSE_POLL_INTERVAL
+                time.sleep(poll_interval)
+                max_wait -= poll_interval
 
             return last_text
 
@@ -1232,7 +1260,7 @@ class CopilotHandler:
                             return True
                     except PlaywrightError:
                         continue
-                time.sleep(0.3)
+                time.sleep(0.1)  # Faster polling for quicker detection
 
             # If no indicator found, assume success after timeout
             # (some UI may not show clear indicators)
@@ -1287,8 +1315,14 @@ class CopilotHandler:
 
         return translations[:expected_count]
 
-    def start_new_chat(self) -> None:
-        """Start a new chat session and verify previous responses are cleared."""
+    def start_new_chat(self, skip_clear_wait: bool = False) -> None:
+        """Start a new chat session and verify previous responses are cleared.
+
+        Args:
+            skip_clear_wait: If True, skip the response clear verification.
+                           Useful for 2nd+ batches where we just finished getting
+                           a response (so chat is already clear).
+        """
         if not self._page:
             return
 
@@ -1315,8 +1349,9 @@ class CopilotHandler:
                 # Fallback: wait a bit if selector doesn't appear
                 time.sleep(1)
 
-            # Verify that previous responses are cleared (reduced from 5.0s for faster detection)
-            self._wait_for_responses_cleared(timeout=3.0)
+            # Verify that previous responses are cleared (can be skipped for 2nd+ batches)
+            if not skip_clear_wait:
+                self._wait_for_responses_cleared(timeout=1.0)
 
             # 新しいチャット開始後、GPT-5を有効化
             # （送信時にも再確認するが、UIの安定性のため先に試行）
@@ -1364,7 +1399,7 @@ class CopilotHandler:
 
         return True
 
-    def _ensure_gpt5_enabled(self, max_wait: float = 1.0) -> bool:
+    def _ensure_gpt5_enabled(self, max_wait: float = 0.5) -> bool:
         """
         GPT-5トグルボタンが有効でなければ有効化する。
         送信直前に呼び出すことで、ボタンの遅延描画にも対応。

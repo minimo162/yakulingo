@@ -52,42 +52,6 @@ AVATAR_SVG: str = '''
 </svg>
 '''
 
-# Language detection animated SVG with aria-label for accessibility
-LANG_DETECT_SVG: str = '''
-<svg viewBox="0 0 24 24" fill="none" class="lang-detect-icon" stroke-width="2" role="img" aria-label="言語自動検出">
-    <title>言語を自動検出</title>
-    <defs>
-        <mask id="yakulingo-flow-top-mask">
-            <rect x="-12" y="0" width="10" height="24" fill="white">
-                <animate attributeName="x" values="-12; 26" dur="1.2s" begin="0s" repeatCount="indefinite"/>
-            </rect>
-        </mask>
-        <mask id="yakulingo-flow-bottom-mask">
-            <rect x="-12" y="0" width="10" height="24" fill="white">
-                <animate attributeName="x" values="-12; 26" dur="1.2s" begin="1.2s" repeatCount="indefinite"/>
-            </rect>
-        </mask>
-    </defs>
-    <g fill="none" stroke-linecap="round" stroke-linejoin="round">
-        <g stroke="currentColor" opacity="0.4">
-            <path d="M21 18H15.603C13.9714 17.9999 12.4425 17.0444 11.507 15.4404L10.993 14.5596C10.0575 12.9556 8.52857 12.0001 6.897 12H3"/>
-            <path d="M21 6H15.605C13.9724 5.99991 12.4425 6.95635 11.507 8.562L10.997 9.438C10.0617 11.0433 8.53229 11.9997 6.9 12H3"/>
-            <path d="M18.5 8.5L21 6L18.5 3.5"/>
-            <path d="M18.5 20.5L21 18L18.5 15.5"/>
-        </g>
-        <g stroke="currentColor" mask="url(#yakulingo-flow-top-mask)">
-            <path d="M21 6H15.605C13.9724 5.99991 12.4425 6.95635 11.507 8.562L10.997 9.438C10.0617 11.0433 8.53229 11.9997 6.9 12H3"/>
-            <path d="M18.5 8.5L21 6L18.5 3.5"/>
-        </g>
-        <g stroke="currentColor" mask="url(#yakulingo-flow-bottom-mask)">
-            <path d="M21 18H15.603C13.9714 17.9999 12.4425 17.0444 11.507 15.4404L10.993 14.5596C10.0575 12.9556 8.52857 12.0001 6.897 12H3"/>
-            <path d="M18.5 20.5L21 18L18.5 15.5"/>
-        </g>
-    </g>
-</svg>
-'''
-
-
 def create_text_input_panel(
     state: AppState,
     on_translate: Callable[[], None],
@@ -232,7 +196,7 @@ def _create_large_input_panel(
         # Hint text - only shown in INPUT state
         with ui.element('div').classes('hint-section'):
             with ui.element('div').classes('hint-primary'):
-                ui.html(LANG_DETECT_SVG, sanitize=False)
+                ui.icon('translate').classes('text-sm text-muted')
                 ui.label('入力言語を自動判定して翻訳します').classes('text-xs')
             with ui.element('div').classes('hint-secondary'):
                 ui.icon('auto_awesome').classes('text-sm')
@@ -599,7 +563,7 @@ def create_text_panel(
         # Hint text
         with ui.element('div').classes('hint-section'):
             with ui.element('div').classes('hint-primary'):
-                ui.html(LANG_DETECT_SVG, sanitize=False)
+                ui.icon('translate').classes('text-sm text-muted')
                 ui.label('入力言語を自動判定して翻訳します').classes('text-xs')
             with ui.element('div').classes('hint-secondary'):
                 ui.icon('auto_awesome').classes('text-sm')

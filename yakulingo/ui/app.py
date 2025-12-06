@@ -707,7 +707,8 @@ class YakuLingoApp:
             await asyncio.sleep(0)
 
             # Pass source_text and current_style for style-based adjustments
-            source_text = self.state.source_text
+            # Use stored source_text from translation result (input field may be cleared or changed)
+            source_text = self.state.text_result.source_text if self.state.text_result else self.state.source_text
 
             # Get current style from the latest translation option
             current_style = None
@@ -728,8 +729,8 @@ class YakuLingoApp:
                     self.state.text_result.options.append(result)
                 else:
                     self.state.text_result = TextTranslationResult(
-                        source_text=self.state.source_text,
-                        source_char_count=len(self.state.source_text),
+                        source_text=source_text,
+                        source_char_count=len(source_text),
                         options=[result]
                     )
             else:
@@ -806,9 +807,11 @@ class YakuLingoApp:
                 if self.state.text_result:
                     self.state.text_result.options.append(new_option)
                 else:
+                    # Use stored source_text (input field may be cleared or changed)
+                    source_text = self.state.text_result.source_text if self.state.text_result else self.state.source_text
                     self.state.text_result = TextTranslationResult(
-                        source_text=self.state.source_text,
-                        source_char_count=len(self.state.source_text),
+                        source_text=source_text,
+                        source_char_count=len(source_text),
                         options=[new_option],
                     )
             else:

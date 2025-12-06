@@ -233,7 +233,7 @@ def _create_large_input_panel(
         with ui.element('div').classes('hint-section'):
             with ui.element('div').classes('hint-primary'):
                 ui.html(LANG_DETECT_SVG, sanitize=False)
-                ui.label('入力言語を自動判定して翻訳します（日本語⇔英語）').classes('text-xs')
+                ui.label('入力言語を自動判定して翻訳します').classes('text-xs')
             with ui.element('div').classes('hint-secondary'):
                 ui.icon('auto_awesome').classes('text-sm')
                 ui.label('M365 Copilot による翻訳').classes('text-2xs')
@@ -600,7 +600,7 @@ def create_text_panel(
         with ui.element('div').classes('hint-section'):
             with ui.element('div').classes('hint-primary'):
                 ui.html(LANG_DETECT_SVG, sanitize=False)
-                ui.label('入力言語を自動判定して翻訳します（日本語⇔英語）').classes('text-xs')
+                ui.label('入力言語を自動判定して翻訳します').classes('text-xs')
             with ui.element('div').classes('hint-secondary'):
                 ui.icon('auto_awesome').classes('text-sm')
                 ui.label('M365 Copilot による翻訳').classes('text-2xs')

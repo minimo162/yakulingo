@@ -899,11 +899,14 @@ def _render_inline_adjust_section(
         on_adjust: Callback for adjustment (text, adjust_type)
         on_retry: Callback for retry translation
         current_style: Current translation style for disabling limit buttons
+                       If None (legacy history), defaults to 'concise'
     """
     # Style order: minimal < concise < standard
     # Disable "shorter" if at minimal, disable "detailed" if at standard
-    is_at_min = current_style == 'minimal'
-    is_at_max = current_style == 'standard'
+    # Default to 'concise' if style is None (legacy history data)
+    effective_style = current_style if current_style else 'concise'
+    is_at_min = effective_style == 'minimal'
+    is_at_max = effective_style == 'standard'
 
     with ui.element('div').classes('inline-adjust-section'):
         # Suggestion hint with retry button (吹き出し風)

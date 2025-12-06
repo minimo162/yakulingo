@@ -64,7 +64,7 @@ M365 Copilotを翻訳エンジンとして使用し、テキストとドキュ�
 | Excel | `.xlsx` `.xls` | xlwings (Win/Mac) / openpyxl (fallback) |
 | Word | `.docx` `.doc` | python-docx |
 | PowerPoint | `.pptx` `.ppt` | python-pptx |
-| PDF | `.pdf` | PyMuPDF, pdfminer.six, yomitoku (LayoutAnalyzer) |
+| PDF | `.pdf` | PyMuPDF, pdfminer.six, PP-DocLayout-L (PaddleOCR) |
 
 ### 1.5 技術スタック
 
@@ -390,7 +390,6 @@ class AppState:
     selected_file: Optional[Path] = None
     file_info: Optional[FileInfo] = None
     file_output_language: str = "en"  # or "jp"
-    pdf_fast_mode: bool = False       # OCRスキップオプション
     translation_progress: float = 0.0
     translation_status: str = ""
     output_file: Optional[Path] = None
@@ -956,11 +955,11 @@ class PdfProcessor(FileProcessor):
     使用ライブラリ:
     - PyMuPDF (fitz): PDF読み書き
     - pdfminer.six: テキスト抽出、フォント種別判定（PDFMathTranslate準拠）
-    - yomitoku LayoutAnalyzer: レイアウト解析のみ（OCRは使用しない）
+    - PP-DocLayout-L (PaddleOCR): レイアウト解析のみ（OCRは使用しない）
 
     ハイブリッド抽出モード（PDFMathTranslate準拠）:
     - pdfminer: テキスト抽出（正確な文字データ、フォント情報、CID値）
-    - yomitoku LayoutAnalyzer: 段落検出、読み順、図表/数式の識別
+    - PP-DocLayout-L: 段落検出、読み順、図表/数式の識別
     - OCRなし: スキャンPDFはサポート対象外
 
     PDFMathTranslate準拠機能:
@@ -1228,7 +1227,7 @@ class AppSettings:
     font_jp_to_en: str = "Arial"                # 英訳時の出力フォント
     font_en_to_jp: str = "MS Pゴシック"         # 和訳時の出力フォント
 
-    # PDF Layout Options (yomitoku LayoutAnalyzer)
+    # PDF Layout Options (PP-DocLayout-L)
     ocr_batch_size: int = 5              # ページ/バッチ
     ocr_dpi: int = 200                   # レイアウト解析解像度
     ocr_device: str = "auto"             # "auto", "cpu", "cuda"
@@ -1301,8 +1300,9 @@ numpy>=1.24.0
 ### 12.6 オプション依存
 
 ```
-# OCRサポート
-yomitoku>=0.10.0
+# レイアウト解析サポート (PP-DocLayout-L)
+paddleocr>=3.0.0
+paddlepaddle>=3.0.0
 
 # Windows NTLMプロキシ
 pywin32>=306
@@ -1532,9 +1532,14 @@ python -c "import time; t=time.time(); from yakulingo.ui import run_app; print(f
 
 ## 変更履歴
 
+### 2.15 (2025-12)
+- PDF翻訳: yomitokuをPP-DocLayout-Lに置き換え（Apache-2.0、商用利用可）
+- PDF翻訳: 23カテゴリのレイアウト検出（90.4% mAP@0.5）
+- PDF翻訳: CPUでも動作可能（~760ms/ページ）
+
 ### 2.14 (2025-12)
 - PDF翻訳: OCRを廃止しLayoutAnalyzerに切り替え（PDFMathTranslate準拠）
-- PDF翻訳: ハイブリッド抽出（pdfminerテキスト + yomitokuレイアウト）
+- PDF翻訳: ハイブリッド抽出（pdfminerテキスト + PP-DocLayout-Lレイアウト）
 - フォント設定: 4設定→2設定に簡略化（翻訳方向のみで決定）
 - フォント設定: PDF専用設定を廃止し全形式で共通設定を使用
 

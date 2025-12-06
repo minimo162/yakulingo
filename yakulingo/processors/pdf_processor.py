@@ -4,7 +4,7 @@ PDF Translation Processor
 
 Based on:
 - PDFMathTranslate: Low-level PDF operators, font management
-- yomitoku: Japanese-specialized OCR and layout analysis
+- PP-DocLayout-L: Document layout analysis (Apache-2.0)
 
 Features:
 - CJK language support (Japanese, English, Chinese, Korean)
@@ -40,7 +40,7 @@ from yakulingo.models.types import (
 # =============================================================================
 _pymupdf = None
 _pypdfium2 = None
-_yomitoku = None
+_paddleocr = None
 _torch = None
 _np = None
 _pdfminer = None
@@ -72,19 +72,18 @@ def _get_pypdfium2():
             _pypdfium2 = pdfium
         except ImportError:
             raise ImportError(
-                "pypdfium2 is required for OCR. Install with: pip install yomitoku"
+                "pypdfium2 is required for PDF processing. Install with: pip install pypdfium2"
             )
     return _pypdfium2
 
 
-def _get_yomitoku():
-    """Lazy import yomitoku (layout analysis only, no OCR)"""
-    global _yomitoku
-    if _yomitoku is None:
-        from yomitoku import LayoutAnalyzer
-        from yomitoku.data.functions import load_pdf
-        _yomitoku = {'LayoutAnalyzer': LayoutAnalyzer, 'load_pdf': load_pdf}
-    return _yomitoku
+def _get_paddleocr():
+    """Lazy import PaddleOCR (PP-DocLayout-L for layout analysis)"""
+    global _paddleocr
+    if _paddleocr is None:
+        from paddleocr import LayoutDetection
+        _paddleocr = {'LayoutDetection': LayoutDetection}
+    return _paddleocr
 
 
 def _get_torch():
@@ -582,8 +581,8 @@ class TranslationCell:
     direction: str = "horizontal"
     role: str = "text"     # text, table_cell, caption, page_header, page_footer
     page_num: int = 1
-    order: int = 0         # Reading order (from yomitoku)
-    # Confidence scores (from yomitoku Word objects)
+    order: int = 0         # Reading order (from PP-DocLayout-L)
+    # Confidence scores (from PP-DocLayout-L detection)
     rec_score: Optional[float] = None  # Recognition confidence (0.0-1.0)
     det_score: Optional[float] = None  # Detection confidence (0.0-1.0)
     # Table cell span info
@@ -1983,10 +1982,10 @@ def convert_to_pdf_coordinates(
     page_width: float = None,
 ) -> tuple[float, float, float, float]:
     """
-    Convert from image/yomitoku coordinates to PDF coordinates.
+    Convert from image/layout model coordinates to PDF coordinates.
 
     Coordinate Systems:
-    - Image/yomitoku: origin at top-left, Y-axis points downward
+    - Image/layout model: origin at top-left, Y-axis points downward
       - box format: [x1, y1, x2, y2] where (x1, y1) is top-left corner
     - PDF: origin at bottom-left, Y-axis points upward
       - box format: (x1, y1, x2, y2) where (x1, y1) is bottom-left corner
@@ -2580,15 +2579,30 @@ def find_matching_font_size(
 
 
 # =============================================================================
-# OCR / Layout Analysis (yomitoku integration)
+# Layout Analysis (PP-DocLayout-L integration)
 # =============================================================================
-# Default constants for OCR (can be overridden via AppSettings)
+# Default constants for layout analysis (can be overridden via AppSettings)
 DEFAULT_OCR_BATCH_SIZE = 5   # Pages per batch
 DEFAULT_OCR_DPI = 200        # Default DPI for precision
 
-# DocumentAnalyzer cache (for GPU memory efficiency) with thread safety
-_analyzer_cache: dict[tuple[str, str], object] = {}
+# LayoutDetection model cache (for GPU memory efficiency) with thread safety
+_analyzer_cache: dict[str, object] = {}
 _analyzer_cache_lock = threading.Lock()
+
+# PP-DocLayout-L category mapping
+# Categories to translate (text content)
+LAYOUT_TRANSLATE_LABELS = {
+    "text", "paragraph_title", "document_title", "abstract", "content",
+    "reference", "footnote", "algorithm", "aside",
+    "table", "table_caption",
+    "section_header",
+}
+# Categories to skip (non-text or layout elements)
+LAYOUT_SKIP_LABELS = {
+    "figure", "figure_title", "chart", "chart_title", "seal",
+    "header", "footer", "page_number", "header_image", "footer_image",
+    "formula", "formula_number",
+}
 
 
 def get_total_pages(pdf_path: str) -> int:
@@ -2681,56 +2695,76 @@ def iterate_pdf_pages(
 
 def load_pdf_as_images(pdf_path: str, dpi: int = DEFAULT_OCR_DPI) -> list:
     """
-    Load entire PDF as images using yomitoku's load_pdf.
+    Load entire PDF as images using pypdfium2.
 
     Note: For large PDFs, use iterate_pdf_pages() instead.
     """
-    yomitoku = _get_yomitoku()
-    return yomitoku['load_pdf'](pdf_path, dpi=dpi)
+    np = _get_numpy()
+    images = []
+
+    with _open_pdf_document(pdf_path) as pdf:
+        for page_idx in range(len(pdf)):
+            page = pdf[page_idx]
+            bitmap = page.render(scale=dpi / 72)
+            img = bitmap.to_numpy()
+            # RGB to BGR (OpenCV compatible)
+            img = img[:, :, ::-1].copy()
+            images.append(img)
+
+    return images
 
 
 def get_device(config_device: str = "auto") -> str:
     """
-    Determine execution device for yomitoku.
+    Determine execution device for PP-DocLayout-L.
 
     Args:
         config_device: "auto", "cpu", or "cuda"
-            - "auto": Use CUDA if available, otherwise CPU
+            - "auto": Use GPU if available, otherwise CPU
             - "cpu": Force CPU
-            - "cuda": Force CUDA (falls back to CPU if unavailable)
+            - "cuda"/"gpu": Force GPU (falls back to CPU if unavailable)
 
     Returns:
-        Actual device to use ("cpu" or "cuda")
+        Actual device to use ("cpu" or "gpu")
     """
     if config_device == "cpu":
         return "cpu"
 
-    # "auto" or "cuda": try to use CUDA
+    # "auto" or "cuda"/"gpu": try to use GPU
+    # PaddlePaddle uses different GPU detection
+    try:
+        import paddle
+        if paddle.device.is_compiled_with_cuda() and paddle.device.cuda.device_count() > 0:
+            return "gpu"
+    except ImportError:
+        pass
+
+    # Fallback: check via torch if available
     torch = _get_torch()
     if torch is not None and torch.cuda.is_available():
-        return "cuda"
+        return "gpu"
 
-    if config_device == "cuda":
-        logger.warning("CUDA not available, falling back to CPU")
+    if config_device in ("cuda", "gpu"):
+        logger.warning("GPU not available, falling back to CPU")
 
     return "cpu"
 
 
-def get_layout_analyzer(device: str = "cpu"):
+def get_layout_model(device: str = "cpu"):
     """
-    Get or create a cached LayoutAnalyzer instance.
+    Get or create a cached PP-DocLayout-L model instance.
 
     Thread-safe: uses a lock to prevent race conditions when
     creating or accessing the cache.
 
-    Note: LayoutAnalyzer performs layout analysis only (no OCR).
+    Note: PP-DocLayout-L performs layout analysis only (no OCR).
     Text extraction is done separately via pdfminer.
 
     Args:
-        device: "cpu" or "cuda"
+        device: "cpu" or "gpu"
 
     Returns:
-        Cached LayoutAnalyzer instance
+        Cached LayoutDetection instance (PP-DocLayout-L)
     """
     cache_key = device
 
@@ -2739,17 +2773,17 @@ def get_layout_analyzer(device: str = "cpu"):
         with _analyzer_cache_lock:
             # Check again after acquiring lock
             if cache_key not in _analyzer_cache:
-                yomitoku = _get_yomitoku()
-                _analyzer_cache[cache_key] = yomitoku['LayoutAnalyzer'](
+                paddleocr = _get_paddleocr()
+                _analyzer_cache[cache_key] = paddleocr['LayoutDetection'](
+                    model_name="PP-DocLayout-L",
                     device=device,
-                    visualize=False,
                 )
     return _analyzer_cache[cache_key]
 
 
 def clear_analyzer_cache():
     """
-    Clear the LayoutAnalyzer cache to free GPU memory.
+    Clear the LayoutDetection cache to free GPU memory.
 
     Thread-safe: uses a lock to prevent race conditions.
     """
@@ -2759,25 +2793,30 @@ def clear_analyzer_cache():
 
 def analyze_layout(img, device: str = "cpu"):
     """
-    Analyze document layout using yomitoku LayoutAnalyzer.
+    Analyze document layout using PP-DocLayout-L.
 
     Note: This performs layout analysis only (no OCR).
     Text extraction should be done separately via pdfminer.
 
     Args:
         img: BGR image (numpy array)
-        device: "cpu" or "cuda"
+        device: "cpu" or "gpu"
 
     Returns:
-        LayoutAnalyzerSchema with paragraphs, tables, figures (no text contents)
+        LayoutDetection result with boxes (label, coordinate, score)
+        Each box contains:
+        - label: Category name (e.g., "text", "table", "figure")
+        - coordinate: [x1, y1, x2, y2] bounding box
+        - score: Detection confidence (0-1)
+        Boxes are sorted in reading order.
     """
-    analyzer = get_layout_analyzer(device)
-    results, _ = analyzer(img)
+    model = get_layout_model(device)
+    results = model.predict(img)
     return results
 
 
 # =============================================================================
-# Layout Array Generation (PDFMathTranslate compliant, yomitoku-based)
+# Layout Array Generation (PDFMathTranslate compliant, PP-DocLayout-L based)
 # =============================================================================
 # Layout class values (PDFMathTranslate compatible)
 LAYOUT_ABANDON = 0      # Figures, headers, footers - skip translation
@@ -2807,19 +2846,25 @@ class LayoutArray:
     figures: list = field(default_factory=list)     # list of figure boxes
 
 
-def create_layout_array_from_yomitoku(
+def create_layout_array_from_pp_doclayout(
     results,
     page_height: int,
     page_width: int,
 ) -> LayoutArray:
     """
-    Create PDFMathTranslate-style layout array from yomitoku results.
+    Create PDFMathTranslate-style layout array from PP-DocLayout-L results.
 
-    This function converts yomitoku's DocumentAnalyzerSchema output into
+    This function converts PP-DocLayout-L's output into
     a 2D NumPy array where each pixel is labeled with its region class.
 
+    PDFMathTranslate compliant:
+    - Two-pass processing: text boxes first, then skip boxes
+    - ±1 pixel margin for better boundary coverage
+    - Proper coordinate clipping
+
     Args:
-        results: DocumentAnalyzerSchema from yomitoku
+        results: LayoutDetection result from PP-DocLayout-L
+                 Contains 'boxes' list with {label, coordinate, score}
         page_height: Page height in pixels (at OCR DPI)
         page_width: Page width in pixels (at OCR DPI)
 
@@ -2835,67 +2880,117 @@ def create_layout_array_from_yomitoku(
     tables_info = {}
     figures_list = []
 
-    # Mark figures as abandon (class 0)
-    if hasattr(results, 'figures'):
-        for fig in results.figures:
-            if hasattr(fig, 'box') and fig.box:
-                x0, y0, x1, y1 = [int(v) for v in fig.box]
-                x0 = max(0, min(x0, page_width))
-                x1 = max(0, min(x1, page_width))
-                y0 = max(0, min(y0, page_height))
-                y1 = max(0, min(y1, page_height))
-                layout[y0:y1, x0:x1] = LAYOUT_ABANDON
-                figures_list.append(fig.box)
+    # Get boxes from results (PP-DocLayout-L format)
+    # Results are already sorted in reading order
+    boxes = []
+    if hasattr(results, 'boxes'):
+        boxes = results.boxes
+    elif isinstance(results, dict) and 'boxes' in results:
+        boxes = results['boxes']
+    elif isinstance(results, list):
+        # Handle list of results (batch processing)
+        if len(results) > 0:
+            first_result = results[0]
+            if hasattr(first_result, 'boxes'):
+                boxes = first_result.boxes
+            elif isinstance(first_result, dict) and 'boxes' in first_result:
+                boxes = first_result['boxes']
 
-    # Mark paragraphs with unique IDs (starting from 2)
-    for para in sorted(results.paragraphs, key=lambda p: p.order):
-        # Mark headers/footers as abandon
-        if para.role in ["page_header", "page_footer"]:
-            if hasattr(para, 'box') and para.box:
-                x0, y0, x1, y1 = [int(v) for v in para.box]
-                x0 = max(0, min(x0, page_width))
-                x1 = max(0, min(x1, page_width))
-                y0 = max(0, min(y0, page_height))
-                y1 = max(0, min(y1, page_height))
-                layout[y0:y1, x0:x1] = LAYOUT_ABANDON
+    # Helper function to extract box data
+    def extract_box_data(box):
+        if isinstance(box, dict):
+            label = box.get('label', '')
+            coord = box.get('coordinate', [])
+            score = box.get('score', 0)
+        else:
+            label = getattr(box, 'label', '')
+            coord = getattr(box, 'coordinate', [])
+            score = getattr(box, 'score', 0)
+        return label, coord, score
+
+    # Helper function to clip coordinates with ±1 margin (PDFMathTranslate compliant)
+    def clip_coords(coord):
+        if not coord or len(coord) < 4:
+            return None
+        x0, y0, x1, y1 = [int(v) for v in coord[:4]]
+        # Add ±1 pixel margin for better boundary coverage
+        x0 = np.clip(x0 - 1, 0, page_width - 1)
+        y0 = np.clip(y0 - 1, 0, page_height - 1)
+        x1 = np.clip(x1 + 1, 0, page_width - 1)
+        y1 = np.clip(y1 + 1, 0, page_height - 1)
+        return x0, y0, x1, y1
+
+    para_idx = 0
+    table_idx = 0
+
+    # PDFMathTranslate compliant: Two-pass processing
+    # Pass 1: Process text boxes (non-skip labels) first
+    for box_idx, box in enumerate(boxes):
+        label, coord, score = extract_box_data(box)
+        coords = clip_coords(coord)
+        if coords is None:
             continue
 
-        para_id = LAYOUT_PARAGRAPH_BASE + para.order
-        if hasattr(para, 'box') and para.box:
-            x0, y0, x1, y1 = [int(v) for v in para.box]
-            x0 = max(0, min(x0, page_width))
-            x1 = max(0, min(x1, page_width))
-            y0 = max(0, min(y0, page_height))
-            y1 = max(0, min(y1, page_height))
+        x0, y0, x1, y1 = coords
+
+        # Skip labels are processed in pass 2
+        if label in LAYOUT_SKIP_LABELS:
+            continue
+
+        if label in {"table", "table_caption"}:
+            # Table content
+            cell_id = LAYOUT_TABLE_BASE + table_idx
+            layout[y0:y1, x0:x1] = cell_id
+            tables_info[cell_id] = {
+                'order': box_idx,
+                'box': coord[:4],
+                'label': label,
+                'score': score,
+            }
+            table_idx += 1
+
+        elif label in LAYOUT_TRANSLATE_LABELS:
+            # Text content (paragraphs, titles, etc.)
+            para_id = LAYOUT_PARAGRAPH_BASE + para_idx
             layout[y0:y1, x0:x1] = para_id
             paragraphs_info[para_id] = {
-                'order': para.order,
-                'box': para.box,
-                'role': para.role,
-                'direction': para.direction,
-                'contents': para.contents,
+                'order': box_idx,
+                'box': coord[:4],
+                'label': label,
+                'score': score,
             }
+            para_idx += 1
 
-    # Mark table cells with unique IDs (starting from 1000)
-    table_cell_idx = 0
-    for table in results.tables:
-        for cell in table.cells:
-            cell_id = LAYOUT_TABLE_BASE + table_cell_idx
-            if hasattr(cell, 'box') and cell.box:
-                x0, y0, x1, y1 = [int(v) for v in cell.box]
-                x0 = max(0, min(x0, page_width))
-                x1 = max(0, min(x1, page_width))
-                y0 = max(0, min(y0, page_height))
-                y1 = max(0, min(y1, page_height))
-                layout[y0:y1, x0:x1] = cell_id
-                tables_info[cell_id] = {
-                    'table_order': table.order,
-                    'row': cell.row,
-                    'col': cell.col,
-                    'box': cell.box,
-                    'contents': cell.contents,
-                }
-            table_cell_idx += 1
+        else:
+            # Unknown label - treat as text by default
+            para_id = LAYOUT_PARAGRAPH_BASE + para_idx
+            layout[y0:y1, x0:x1] = para_id
+            paragraphs_info[para_id] = {
+                'order': box_idx,
+                'box': coord[:4],
+                'label': label,
+                'score': score,
+            }
+            para_idx += 1
+
+    # Pass 2: Process skip labels (figures, headers, footers, formulas)
+    # These overwrite any overlapping text regions with ABANDON
+    for box_idx, box in enumerate(boxes):
+        label, coord, score = extract_box_data(box)
+        coords = clip_coords(coord)
+        if coords is None:
+            continue
+
+        if label not in LAYOUT_SKIP_LABELS:
+            continue
+
+        x0, y0, x1, y1 = coords
+
+        # Mark as abandoned (non-translatable)
+        layout[y0:y1, x0:x1] = LAYOUT_ABANDON
+
+        if label in {"figure", "chart", "seal", "figure_title", "chart_title"}:
+            figures_list.append(coord[:4])
 
     return LayoutArray(
         array=layout,
@@ -2905,6 +3000,10 @@ def create_layout_array_from_yomitoku(
         tables=tables_info,
         figures=figures_list,
     )
+
+
+# Backward compatibility alias
+create_layout_array_from_yomitoku = create_layout_array_from_pp_doclayout
 
 
 def get_layout_class_at_point(
@@ -2918,7 +3017,7 @@ def get_layout_class_at_point(
     PDFMathTranslate compliant: Returns the class ID at the given coordinates.
 
     Args:
-        layout: LayoutArray from create_layout_array_from_yomitoku
+        layout: LayoutArray from create_layout_array_from_pp_doclayout
         x: X coordinate (in layout array coordinates)
         y: Y coordinate (in layout array coordinates)
 
@@ -2964,22 +3063,19 @@ def prepare_translation_cells(
     results,
     page_num: int,
     include_headers: bool = False,
-    include_figure_captions: bool = True,
-    rec_score_threshold: float = 0.0,
     det_score_threshold: float = 0.0,
 ) -> list[TranslationCell]:
     """
-    Convert yomitoku results to translation cells.
+    Convert PP-DocLayout-L results to translation cells.
 
-    PDFMathTranslate compliant: supports complex layouts including
-    figure captions, table spans, and confidence filtering.
+    Creates empty cells from layout boxes. Text will be filled later
+    via _merge_pdfminer_text_to_cells() using pdfminer extraction.
 
     Args:
-        results: DocumentAnalyzerSchema from yomitoku
+        results: LayoutDetection result from PP-DocLayout-L
+                 Contains 'boxes' list with {label, coordinate, score}
         page_num: Page number (1-based)
         include_headers: Include page header/footer
-        include_figure_captions: Include figure captions (Figure.paragraphs)
-        rec_score_threshold: Minimum recognition score (0.0-1.0)
         det_score_threshold: Minimum detection score (0.0-1.0)
 
     Returns:
@@ -2987,127 +3083,90 @@ def prepare_translation_cells(
     """
     cells = []
 
-    # Paragraphs
-    for para in sorted(results.paragraphs, key=lambda p: p.order):
-        if not include_headers and para.role in ["page_header", "page_footer"]:
+    # Get boxes from results (PP-DocLayout-L format)
+    # Results are already sorted in reading order by the model
+    boxes = []
+    if hasattr(results, 'boxes'):
+        boxes = results.boxes
+    elif isinstance(results, dict) and 'boxes' in results:
+        boxes = results['boxes']
+
+    for order, box in enumerate(boxes):
+        # Extract box data
+        if isinstance(box, dict):
+            label = box.get('label', '')
+            coordinate = box.get('coordinate', [0, 0, 0, 0])
+            score = box.get('score', 1.0)
+        else:
+            label = getattr(box, 'label', '')
+            coordinate = getattr(box, 'coordinate', [0, 0, 0, 0])
+            score = getattr(box, 'score', 1.0)
+
+        # Filter by detection score
+        if score < det_score_threshold:
             continue
 
-        if para.contents.strip():
-            # Calculate average confidence from words if available
-            rec_score, det_score = _calculate_paragraph_confidence(para)
+        # Skip non-translatable categories
+        if label in LAYOUT_SKIP_LABELS:
+            continue
 
-            # Filter by confidence thresholds
-            if rec_score is not None and rec_score < rec_score_threshold:
-                continue
-            if det_score is not None and det_score < det_score_threshold:
-                continue
+        # Skip headers/footers if not requested
+        if not include_headers and label in {"header", "footer", "page_number"}:
+            continue
 
-            # Remove line breaks (yomitoku style: replace "\n" with "")
-            text = para.contents.replace("\n", "")
-            cells.append(TranslationCell(
-                address=f"P{page_num}_{para.order}",
-                text=text,
-                box=para.box,
-                direction=para.direction,
-                role=para.role,
-                page_num=page_num,
-                order=para.order,
-                rec_score=rec_score,
-                det_score=det_score,
-            ))
+        # Only include translatable categories
+        if label not in LAYOUT_TRANSLATE_LABELS:
+            continue
 
-    # Tables (with span info)
-    for table in sorted(results.tables, key=lambda t: t.order):
-        for cell in table.cells:
-            if cell.contents.strip():
-                # Remove line breaks (yomitoku style: replace "\n" with "")
-                text = cell.contents.replace("\n", "")
+        # Determine role from PP-DocLayout-L label
+        role = _map_pp_doclayout_label_to_role(label)
 
-                # Extract span info (default to 1 if not present)
-                row_span = getattr(cell, 'row_span', 1) or 1
-                col_span = getattr(cell, 'col_span', 1) or 1
+        # Convert coordinate to box format [x1, y1, x2, y2]
+        if len(coordinate) >= 4:
+            box_coords = [coordinate[0], coordinate[1], coordinate[2], coordinate[3]]
+        else:
+            continue  # Invalid coordinate
 
-                cells.append(TranslationCell(
-                    address=f"T{page_num}_{table.order}_{cell.row}_{cell.col}",
-                    text=text,
-                    box=cell.box,
-                    direction="horizontal",
-                    role="table_cell",
-                    page_num=page_num,
-                    order=table.order * 1000 + cell.row * 100 + cell.col,  # Composite order
-                    row_span=row_span,
-                    col_span=col_span,
-                ))
-
-    # Figures with captions (Figure.paragraphs)
-    if include_figure_captions:
-        for fig_idx, figure in enumerate(sorted(results.figures, key=lambda f: f.order)):
-            # Check if figure has paragraphs (captions)
-            if hasattr(figure, 'paragraphs') and figure.paragraphs:
-                for para_idx, para in enumerate(figure.paragraphs):
-                    # Handle both dict and object format
-                    if isinstance(para, dict):
-                        contents = para.get('contents', '')
-                        box = para.get('box', figure.box)
-                        direction = para.get('direction', 'horizontal')
-                    else:
-                        contents = getattr(para, 'contents', '')
-                        box = getattr(para, 'box', figure.box)
-                        direction = getattr(para, 'direction', 'horizontal')
-
-                    if contents and contents.strip():
-                        text = contents.replace("\n", "")
-                        cells.append(TranslationCell(
-                            address=f"F{page_num}_{figure.order}_{para_idx}",
-                            text=text,
-                            box=box if box else figure.box,
-                            direction=direction,
-                            role="caption",
-                            page_num=page_num,
-                            order=figure.order,
-                        ))
-
-    # Sort by reading order
-    cells.sort(key=lambda c: c.order)
+        # Create cell (text will be filled by pdfminer merge)
+        cells.append(TranslationCell(
+            address=f"P{page_num}_{order}",
+            text="",  # Empty - will be filled by pdfminer
+            box=box_coords,
+            direction="horizontal",  # Default, will be detected from text
+            role=role,
+            page_num=page_num,
+            order=order,
+            det_score=score,
+        ))
 
     return cells
 
 
-def _calculate_paragraph_confidence(para) -> tuple[Optional[float], Optional[float]]:
+def _map_pp_doclayout_label_to_role(label: str) -> str:
     """
-    Calculate average confidence scores for a paragraph from its words.
+    Map PP-DocLayout-L label to TranslationCell role.
 
     Args:
-        para: Paragraph object from yomitoku
+        label: PP-DocLayout-L category label
 
     Returns:
-        Tuple of (avg_rec_score, avg_det_score), None if not available
+        Role string for TranslationCell
     """
-    # Check if paragraph has words attribute
-    if not hasattr(para, 'words') or not para.words:
-        return None, None
-
-    rec_scores = []
-    det_scores = []
-
-    for word in para.words:
-        # Handle both dict and object format
-        if isinstance(word, dict):
-            rec = word.get('rec_score')
-            det = word.get('det_score')
-        else:
-            rec = getattr(word, 'rec_score', None)
-            det = getattr(word, 'det_score', None)
-
-        if rec is not None:
-            rec_scores.append(rec)
-        if det is not None:
-            det_scores.append(det)
-
-    avg_rec = sum(rec_scores) / len(rec_scores) if rec_scores else None
-    avg_det = sum(det_scores) / len(det_scores) if det_scores else None
-
-    return avg_rec, avg_det
+    role_map = {
+        "text": "paragraph",
+        "paragraph_title": "title",
+        "document_title": "title",
+        "abstract": "abstract",
+        "content": "paragraph",
+        "reference": "reference",
+        "footnote": "footnote",
+        "algorithm": "code",
+        "aside": "aside",
+        "table": "table_cell",
+        "table_caption": "caption",
+        "section_header": "section_header",
+    }
+    return role_map.get(label, "paragraph")
 
 
 # =============================================================================
@@ -3129,7 +3188,7 @@ class PdfProcessor(FileProcessor):
 
     Limitations:
     - Complex layouts may not render perfectly
-    - Scanned PDFs require OCR integration (yomitoku)
+    - Scanned PDFs are not supported (requires embedded text)
     """
 
     # Estimated OCR time per page (seconds) - for progress estimation
@@ -3269,7 +3328,7 @@ class PdfProcessor(FileProcessor):
         dpi: int = DEFAULT_OCR_DPI,
     ) -> dict[str, Any]:
         """
-        Apply translations using TranslationCell data (yomitoku integration).
+        Apply translations using TranslationCell data (PP-DocLayout-L integration).
 
         PDFMathTranslate compliant: Uses low-level PDF operators for precise
         text placement and dynamic line height compression.
@@ -3627,8 +3686,8 @@ class PdfProcessor(FileProcessor):
         """
         Extract text blocks from PDF with streaming support and progress reporting.
 
-        Uses hybrid approach: pdfminer for text extraction + yomitoku for layout.
-        This provides accurate text from embedded PDFs while using yomitoku's
+        Uses hybrid approach: pdfminer for text extraction + PP-DocLayout-L for layout.
+        This provides accurate text from embedded PDFs while using PP-DocLayout-L's
         superior layout detection for paragraph grouping and reading order.
 
         Note: Scanned PDFs without embedded text are not supported.
@@ -3637,7 +3696,7 @@ class PdfProcessor(FileProcessor):
         Args:
             file_path: Path to PDF file
             on_progress: Progress callback for UI updates
-            device: "auto", "cpu", or "cuda" for yomitoku layout analysis
+            device: "auto", "cpu", or "cuda" for PP-DocLayout-L layout analysis
             batch_size: Pages per batch for processing
             dpi: Resolution for layout analysis (higher = better quality, slower)
             output_language: "en" for JP→EN, "jp" for EN→JP translation
@@ -3663,7 +3722,7 @@ class PdfProcessor(FileProcessor):
         with _open_pymupdf_document(file_path) as doc:
             total_pages = len(doc)
 
-        # Use hybrid mode: pdfminer text + yomitoku layout (no OCR)
+        # Use hybrid mode: pdfminer text + PP-DocLayout-L layout (no OCR)
         yield from self._extract_hybrid_streaming(
             file_path, total_pages, on_progress, device, batch_size, dpi
         )
@@ -3678,14 +3737,14 @@ class PdfProcessor(FileProcessor):
         dpi: int = DEFAULT_OCR_DPI,
     ) -> Iterator[tuple[list[TextBlock], list[TranslationCell]]]:
         """
-        Extract text blocks using hybrid approach: pdfminer text + yomitoku layout.
+        Extract text blocks using hybrid approach: pdfminer text + PP-DocLayout-L layout.
 
         PDFMathTranslate compliant: uses pdfminer for accurate text extraction
-        and yomitoku for layout analysis (paragraph detection, reading order).
+        and PP-DocLayout-L for layout analysis (paragraph detection, reading order).
 
         For embedded text PDFs, this provides:
         - Accurate text from pdfminer (no OCR errors)
-        - Precise layout detection from yomitoku
+        - Precise layout detection from PP-DocLayout-L
         - Best of both worlds
 
         Yields one page at a time with progress updates.
@@ -3717,7 +3776,7 @@ class PdfProcessor(FileProcessor):
                 converter = PDFConverterEx(rsrcmgr)
                 interpreter = PDFPageInterpreter(rsrcmgr, converter)
 
-                # Iterate through pages with yomitoku layout analysis
+                # Iterate through pages with PP-DocLayout-L layout analysis
                 for (batch_start, batch_images), pdfminer_pages in zip(
                     iterate_pdf_pages(str(file_path), batch_size, dpi),
                     self._batch_pdfminer_pages(document, PDFPage, interpreter, converter, batch_size)
@@ -3755,12 +3814,12 @@ class PdfProcessor(FileProcessor):
                             ))
 
                         try:
-                            # Step 1: Analyze layout with yomitoku (no OCR)
+                            # Step 1: Analyze layout with PP-DocLayout-L (no OCR)
                             results = analyze_layout(img, actual_device)
 
-                            # Step 2: Create LayoutArray from yomitoku results
+                            # Step 2: Create LayoutArray from PP-DocLayout-L results
                             img_height, img_width = img.shape[:2]
-                            layout_array = create_layout_array_from_yomitoku(
+                            layout_array = create_layout_array_from_pp_doclayout(
                                 results, img_height, img_width
                             )
 
@@ -3779,7 +3838,7 @@ class PdfProcessor(FileProcessor):
                             if ltpage:
                                 collect_chars(ltpage)
 
-                            # Step 4: Group characters using yomitoku layout
+                            # Step 4: Group characters using PP-DocLayout-L layout
                             if chars:
                                 blocks = self._group_chars_into_blocks(
                                     chars, page_idx, LTChar,
@@ -3787,15 +3846,15 @@ class PdfProcessor(FileProcessor):
                                     page_height=page_height
                                 )
                             else:
-                                # No embedded text - fall back to yomitoku OCR text
+                                # No embedded text - scanned PDF not supported
                                 blocks = []
 
-                            # Step 5: Create TranslationCells from yomitoku results
+                            # Step 5: Create TranslationCells from PP-DocLayout-L results
                             cells = prepare_translation_cells(results, page_num)
 
                             # Step 6: If pdfminer got text, update cells with it
                             if blocks:
-                                # Map pdfminer blocks to yomitoku cells by position
+                                # Map pdfminer blocks to PP-DocLayout-L cells by position
                                 self._merge_pdfminer_text_to_cells(blocks, cells, layout_array, page_height, dpi)
 
                             # Convert cells to TextBlocks if no pdfminer blocks
@@ -3879,7 +3938,7 @@ class PdfProcessor(FileProcessor):
         dpi: int,
     ) -> None:
         """
-        Merge pdfminer-extracted text into yomitoku TranslationCells.
+        Merge pdfminer-extracted text into PP-DocLayout-L TranslationCells.
 
         Updates cells in-place with more accurate text from pdfminer
         when the positions overlap.
@@ -4019,7 +4078,7 @@ class PdfProcessor(FileProcessor):
             chars: List of LTChar objects from pdfminer
             page_idx: Page index (0-based)
             LTChar: LTChar class reference
-            layout: Optional LayoutArray from yomitoku for region-based grouping
+            layout: Optional LayoutArray from PP-DocLayout-L for region-based grouping
             page_height: Page height for coordinate conversion (required if layout is provided)
 
         Returns:

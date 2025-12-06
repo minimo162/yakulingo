@@ -1,14 +1,14 @@
 # PDF Translation Dependencies
 # Install with: pip install -r requirements_pdf.txt
 #
-# Note: yomitoku requires Python 3.10-3.12 and PyTorch 2.5+
-# A GPU with 8GB+ VRAM is recommended for optimal performance.
-# See: https://kotaro-kinoshita.github.io/yomitoku/en/installation/
+# Note: PP-DocLayout-L requires PaddlePaddle framework.
+# GPU is recommended but CPU is also supported (slower).
+# See: https://www.paddlepaddle.org.cn/install/quick
 
-# yomitoku (Japanese document AI - Layout analysis & OCR)
-# Automatically installs: torch, torchvision, opencv-python, pypdfium2,
-# pydantic, omegaconf, shapely, huggingface-hub, timm, onnx, onnxruntime, etc.
-yomitoku>=0.10.0
+# PaddleOCR (PP-DocLayout-L for document layout analysis)
+# Includes: paddlepaddle, opencv-python, pyclipper, shapely, etc.
+paddleocr>=3.0.0
+paddlepaddle>=3.0.0
 
 # PDF text extraction and reconstruction (required separately)
 PyMuPDF>=1.24.0

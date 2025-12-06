@@ -24,9 +24,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# OCR support (heavy dependencies)
+# Layout analysis support (heavy dependencies)
 ocr = [
-    "yomitoku>=0.10.0",  # Includes: torch, torchvision, opencv-python, pypdfium2, etc.
+    "paddleocr>=3.0.0",  # PP-DocLayout-L for document layout analysis
+    "paddlepaddle>=3.0.0",  # PaddlePaddle framework
 ]
 # Test dependencies
 test = [

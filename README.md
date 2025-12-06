@@ -239,7 +239,7 @@ YakuLingo/
 | Excel処理 | xlwings (Windows/macOS) / openpyxl (フォールバック) |
 | Word処理 | python-docx |
 | PowerPoint処理 | python-pptx |
-| PDF処理 | PyMuPDF + pdfminer.six + yomitoku (レイアウト解析) |
+| PDF処理 | PyMuPDF + pdfminer.six + PP-DocLayout-L (レイアウト解析) |
 | データ保存 | SQLite (翻訳履歴) |
 | 自動更新 | GitHub Releases API |
 

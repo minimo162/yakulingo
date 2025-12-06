@@ -592,7 +592,7 @@ class CopilotHandler:
                 self._connected = True
             except PlaywrightTimeoutError:
                 logger.warning("Chat input not found - login required in Edge browser")
-                self._connected = False
+                self._cleanup_on_error()
                 return False
 
             # Stop browser loading indicator (spinner)

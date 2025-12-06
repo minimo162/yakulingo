@@ -1564,20 +1564,15 @@ class TranslationService:
         """
         Streaming translation for PDF files.
 
+        Uses hybrid approach: pdfminer for text + yomitoku for layout.
         Processes pages incrementally:
-        1. OCR/extract page
+        1. Extract text (pdfminer) + analyze layout (yomitoku)
         2. Translate page blocks
         3. Repeat for all pages
         4. Apply all translations
 
         This provides better progress feedback for large PDFs.
-        Always uses yomitoku OCR if available for best quality.
         """
-        from yakulingo.processors.pdf_processor import is_yomitoku_available
-
-        # Always use OCR if available for best quality
-        use_ocr = is_yomitoku_available()
-
         # Get page count for progress estimation
         total_pages = processor.get_page_count(input_path)
 
@@ -1586,29 +1581,26 @@ class TranslationService:
                 current=0,
                 total=100,
                 status=f"Processing PDF ({total_pages} pages)...",
-                phase=TranslationPhase.OCR if use_ocr else TranslationPhase.EXTRACTING,
+                phase=TranslationPhase.EXTRACTING,
                 phase_detail=f"0/{total_pages} pages",
             ))
 
         all_blocks = []
-        all_cells = []  # For OCR mode
+        all_cells = []
         pages_processed = 0
 
-        # Get OCR settings from config (if available)
-        ocr_batch_size = self.config.ocr_batch_size if self.config else 5
-        ocr_dpi = self.config.ocr_dpi if self.config else 200
-        ocr_device = self.config.ocr_device if self.config else "auto"
+        # Get settings from config (if available)
+        batch_size = self.config.ocr_batch_size if self.config else 5
+        dpi = self.config.ocr_dpi if self.config else 200
+        device = self.config.ocr_device if self.config else "auto"
 
         # Phase 1: Extract text with streaming progress (0-40%)
         for page_blocks, page_cells in processor.extract_text_blocks_streaming(
             input_path,
-            on_progress=self._make_extraction_progress_callback(
-                on_progress, total_pages, use_ocr
-            ),
-            use_ocr=use_ocr,
-            device=ocr_device,
-            batch_size=ocr_batch_size,
-            dpi=ocr_dpi,
+            on_progress=self._make_extraction_progress_callback(on_progress, total_pages),
+            device=device,
+            batch_size=batch_size,
+            dpi=dpi,
             output_language=output_language,
         ):
             all_blocks.extend(page_blocks)
@@ -1761,7 +1753,6 @@ class TranslationService:
         self,
         on_progress: Optional[ProgressCallback],
         total_pages: int,
-        use_ocr: bool,
     ) -> Optional[ProgressCallback]:
         """Create a progress callback for extraction phase (0-40%)."""
         if not on_progress:
@@ -1775,7 +1766,7 @@ class TranslationService:
                 current=scaled,
                 total=100,
                 status=progress.status,
-                phase=TranslationPhase.OCR if use_ocr else TranslationPhase.EXTRACTING,
+                phase=TranslationPhase.EXTRACTING,
                 phase_detail=progress.phase_detail,
             ))
 

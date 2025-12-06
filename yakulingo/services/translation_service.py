@@ -1007,6 +1007,7 @@ class TranslationService:
         adjust_type: str,
         source_text: Optional[str] = None,
         current_style: Optional[str] = None,
+        reference_files: Optional[list[Path]] = None,
     ) -> Optional[TranslationOption]:
         """
         Adjust a translation based on user request.
@@ -1020,6 +1021,7 @@ class TranslationService:
             source_text: Original source text (required for style changes and alternatives)
             current_style: Current translation style (for relative adjustment)
                            If None, uses settings default
+            reference_files: Optional list of reference file paths (glossary, style guide, etc.)
 
         Returns:
             TranslationOption with adjusted text, or None on failure (including at style limit)
@@ -1044,7 +1046,7 @@ class TranslationService:
                     logger.info("Already at minimal style, cannot go shorter")
                     return None
                 new_style = STYLE_ORDER[current_idx - 1]
-                result = self.translate_text_with_options(source_text, None, style=new_style)
+                result = self.translate_text_with_options(source_text, reference_files, style=new_style)
                 if result.options:
                     return result.options[0]
                 return None
@@ -1060,14 +1062,14 @@ class TranslationService:
                     logger.info("Already at standard style, cannot go more detailed")
                     return None
                 new_style = STYLE_ORDER[current_idx + 1]
-                result = self.translate_text_with_options(source_text, None, style=new_style)
+                result = self.translate_text_with_options(source_text, reference_files, style=new_style)
                 if result.options:
                     return result.options[0]
                 return None
 
             if adjust_type == 'alternatives' and source_text:
                 # Get alternative in same style
-                return self._get_alternative_translation(text, source_text, current_style)
+                return self._get_alternative_translation(text, source_text, current_style, reference_files)
 
             # Custom instructions - use adjust_custom.txt with full context
             prompt_file = "adjust_custom.txt"
@@ -1098,7 +1100,7 @@ class TranslationService:
 
             # Get adjusted translation (with char_limit for auto file attachment mode)
             char_limit = self.config.copilot_char_limit if self.config else None
-            raw_result = self.copilot.translate_single(text, prompt, None, char_limit)
+            raw_result = self.copilot.translate_single(text, prompt, reference_files, char_limit)
 
             # Parse the result
             option = self._parse_single_option_result(raw_result)
@@ -1118,6 +1120,7 @@ class TranslationService:
         current_translation: str,
         source_text: str,
         current_style: Optional[str] = None,
+        reference_files: Optional[list[Path]] = None,
     ) -> Optional[TranslationOption]:
         """
         Get an alternative translation in the same style.
@@ -1126,6 +1129,7 @@ class TranslationService:
             current_translation: The current translation to get alternative for
             source_text: Original source text
             current_style: Current translation style (if None, uses settings default)
+            reference_files: Optional list of reference file paths (glossary, style guide, etc.)
 
         Returns:
             TranslationOption with alternative translation, or None on failure
@@ -1159,11 +1163,13 @@ class TranslationService:
             prompt = template.replace("{current_translation}", current_translation)
             prompt = prompt.replace("{source_text}", source_text)
             prompt = prompt.replace("{style}", style)
-            prompt = prompt.replace("{reference_section}", "")
+            # Build reference section if reference files are provided
+            reference_section = self.prompt_builder.build_reference_section(reference_files) if reference_files else ""
+            prompt = prompt.replace("{reference_section}", reference_section)
 
             # Get alternative translation
             char_limit = self.config.copilot_char_limit if self.config else None
-            raw_result = self.copilot.translate_single(source_text, prompt, None, char_limit)
+            raw_result = self.copilot.translate_single(source_text, prompt, reference_files, char_limit)
 
             # Parse the result and set style
             option = self._parse_single_option_result(raw_result)

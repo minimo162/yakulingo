@@ -715,12 +715,16 @@ class YakuLingoApp:
             if self.state.text_result and self.state.text_result.options:
                 current_style = self.state.text_result.options[-1].style
 
+            # Get reference files for consistent translations
+            reference_files = self.state.reference_files or None
+
             result = await asyncio.to_thread(
                 lambda: self.translation_service.adjust_translation(
                     text,
                     adjust_type,
                     source_text=source_text,
                     current_style=current_style,
+                    reference_files=reference_files,
                 )
             )
 
@@ -790,9 +794,10 @@ class YakuLingoApp:
 - 指定形式以外の追加説明やコメント
 """
 
-            # Send to Copilot
+            # Send to Copilot (with reference files for consistent translations)
+            reference_files = self.state.reference_files or None
             result = await asyncio.to_thread(
-                lambda: self.copilot.translate_single(text, prompt, None)
+                lambda: self.copilot.translate_single(text, prompt, reference_files)
             )
 
             # Parse result and add to options
@@ -1049,9 +1054,10 @@ class YakuLingoApp:
                     self._refresh_content()
                 return
 
-            # Send to Copilot
+            # Send to Copilot (with reference files for consistent translations)
+            reference_files = self.state.reference_files or None
             result = await asyncio.to_thread(
-                lambda: self.copilot.translate_single(source_text, prompt, None)
+                lambda: self.copilot.translate_single(source_text, prompt, reference_files)
             )
 
             # Parse result and update UI

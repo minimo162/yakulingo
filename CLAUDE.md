@@ -468,13 +468,14 @@ async def _translate_text(self):
 
 ### Font Mapping Rules
 ```python
-# JP to EN translation
-mincho/明朝 → Arial
-gothic/ゴシック → Arial
+# Unified font selection (all file types: Excel, Word, PowerPoint, PDF)
+# Font is determined by translation direction only (original font type is ignored)
 
-# EN to JP translation
-serif → MS Pゴシック
-sans-serif → MS Pゴシック
+# JP to EN translation (英訳)
+→ Arial
+
+# EN to JP translation (和訳)
+→ MS Pゴシック
 
 # Font size: No adjustment (0pt) when translating JP→EN
 ```
@@ -506,12 +507,8 @@ sans-serif → MS Pゴシック
   "text_translation_style": "concise",
   "font_size_adjustment_jp_to_en": 0.0,
   "font_size_min": 6.0,
-  "font_jp_to_en_mincho": "Arial",
-  "font_jp_to_en_gothic": "Arial",
-  "font_en_to_jp_serif": "MS Pゴシック",
-  "font_en_to_jp_sans": "MS Pゴシック",
-  "pdf_font_ja": "MS P明朝",
-  "pdf_font_en": "Arial",
+  "font_jp_to_en": "Arial",
+  "font_en_to_jp": "MS Pゴシック",
   "ocr_batch_size": 5,
   "ocr_dpi": 200,
   "ocr_device": "auto",
@@ -527,8 +524,8 @@ sans-serif → MS Pゴシック
 **translation_style / text_translation_style values**: `"standard"`, `"concise"` (default), `"minimal"`
 
 **フォント設定**:
-- `font_*`: Excel/Word/PowerPoint用（元フォント種類に応じて変換）
-- `pdf_font_*`: PDF用（言語別に固定フォントを埋め込み）
+- `font_jp_to_en`: 英訳時の出力フォント（全ファイル形式共通）
+- `font_en_to_jp`: 和訳時の出力フォント（全ファイル形式共通）
 
 ### Reference Files
 Reference files provide context for consistent translations:

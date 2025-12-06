@@ -19,7 +19,7 @@ from .base import FileProcessor
 # Module logger
 logger = logging.getLogger(__name__)
 from .translators import CellTranslator, ParagraphTranslator
-from .font_manager import FontManager, FontTypeDetector
+from .font_manager import FontManager
 from yakulingo.models.types import TextBlock, FileInfo, FileType, SectionDetail
 
 
@@ -255,7 +255,6 @@ class WordProcessor(FileProcessor):
     def __init__(self):
         self.cell_translator = CellTranslator()
         self.para_translator = ParagraphTranslator()
-        self.font_type_detector = FontTypeDetector()
 
     @property
     def file_type(self) -> FileType:
@@ -305,11 +304,11 @@ class WordProcessor(FileProcessor):
                     if first_run.font.size:
                         font_size = first_run.font.size.pt
 
-                # Get dominant font if multiple runs
+                # Get font from first valid run if multiple runs
                 if len(para.runs) > 1:
                     font_names = [r.font.name for r in para.runs if r.font.name]
                     if font_names:
-                        font_name = self.font_type_detector.get_dominant_font(font_names)
+                        font_name = font_names[0]
 
                 yield TextBlock(
                     id=f"para_{idx}",

@@ -13,7 +13,7 @@ from typing import Iterator, Optional
 
 from .base import FileProcessor
 from .translators import CellTranslator
-from .font_manager import FontManager, FontTypeDetector
+from .font_manager import FontManager
 from yakulingo.models.types import TextBlock, FileInfo, FileType, SectionDetail
 
 # Module logger
@@ -79,7 +79,6 @@ class ExcelProcessor(FileProcessor):
 
     def __init__(self):
         self.cell_translator = CellTranslator()
-        self.font_type_detector = FontTypeDetector()
 
     @property
     def file_type(self) -> FileType:

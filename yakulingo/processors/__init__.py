@@ -10,7 +10,7 @@ Use explicit imports like:
 # Fast imports - base classes and utilities
 from .base import FileProcessor
 from .translators import CellTranslator, ParagraphTranslator
-from .font_manager import FontManager, FontTypeDetector, FontSizeAdjuster
+from .font_manager import FontManager, FontSizeAdjuster
 
 # Lazy-loaded processors via __getattr__
 _LAZY_IMPORTS = {
@@ -43,7 +43,6 @@ __all__ = [
     'CellTranslator',
     'ParagraphTranslator',
     'FontManager',
-    'FontTypeDetector',
     'FontSizeAdjuster',
     'ExcelProcessor',
     'WordProcessor',

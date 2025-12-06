@@ -757,17 +757,18 @@ def _render_results_to_jp(
             with ui.element('div').classes('inline-adjust-panel'):
                 with ui.column().classes('gap-2 w-full'):
                     # Check original English text
+                    # Note: source_text is obtained from state.text_result.source_text in _follow_up_action
                     ui.button(
                         '英文をチェック',
                         icon='rate_review',
-                        on_click=lambda: on_follow_up and on_follow_up('review', source_text)
+                        on_click=lambda: on_follow_up and on_follow_up('review', '')
                     ).props('flat no-caps').classes('adjust-option-btn-full')
 
                     # Extract key points
                     ui.button(
                         '要点を教えて',
                         icon='summarize',
-                        on_click=lambda: on_follow_up and on_follow_up('summarize', source_text)
+                        on_click=lambda: on_follow_up and on_follow_up('summarize', '')
                     ).props('flat no-caps').classes('adjust-option-btn-full')
 
                     # Inline input section for additional requests

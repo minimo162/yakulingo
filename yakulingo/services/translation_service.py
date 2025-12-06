@@ -1069,19 +1069,32 @@ class TranslationService:
                 # Get alternative in same style
                 return self._get_alternative_translation(text, source_text, current_style)
 
-            # Legacy behavior for custom instructions
+            # Custom instructions - use adjust_custom.txt with full context
             prompt_file = "adjust_custom.txt"
             prompt_path = self.prompt_builder.prompts_dir / prompt_file if self.prompt_builder.prompts_dir else None
 
             if prompt_path and prompt_path.exists():
                 template = prompt_path.read_text(encoding='utf-8')
             else:
-                # Simple fallback
-                template = f"以下の文を調整してください。指示: {adjust_type}\n\n入力: {{input_text}}"
+                # Simple fallback with full context
+                template = """以下のリクエストに対応してください。
 
-            # Build prompt
-            prompt = template.replace("{input_text}", text)
-            prompt = prompt.replace("{user_instruction}", adjust_type)
+リクエスト: {user_instruction}
+
+原文:
+{source_text}
+
+翻訳結果:
+{input_text}
+
+出力形式:
+訳文: （結果）
+解説: （説明）"""
+
+            # Build prompt with full context (original text + translation)
+            prompt = template.replace("{user_instruction}", adjust_type)
+            prompt = prompt.replace("{source_text}", source_text if source_text else "")
+            prompt = prompt.replace("{input_text}", text)
 
             # Get adjusted translation (with char_limit for auto file attachment mode)
             char_limit = self.config.copilot_char_limit if self.config else None

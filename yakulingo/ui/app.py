@@ -262,43 +262,10 @@ class YakuLingoApp:
             with ui.column().classes('sidebar'):
                 self._create_sidebar()
 
-            # Mobile header (hidden on large screens)
-            self._create_mobile_header()
-
-            # Sidebar overlay for mobile (click to close)
-            with ui.element('div').classes('sidebar-overlay').on('click', self._toggle_mobile_sidebar):
-                pass
-
             # Main area (input panel + result panel) with dynamic classes
             self._main_area_element = ui.element('div').classes(self._get_main_area_classes())
             with self._main_area_element:
                 self._create_main_content()
-
-    def _create_mobile_header(self):
-        """Create mobile header with hamburger menu (hidden on large screens)"""
-        with ui.element('div').classes('mobile-header'):
-            # Hamburger menu button
-            ui.button(
-                icon='menu',
-                on_click=self._toggle_mobile_sidebar
-            ).props('flat dense round').classes('mobile-header-btn')
-
-            # Logo
-            ui.label('YakuLingo').classes('app-logo flex-1')
-
-    def _toggle_mobile_sidebar(self):
-        """Toggle mobile sidebar visibility"""
-        # This will be handled by JavaScript/CSS
-        ui.run_javascript('''
-            const sidebar = document.querySelector('.sidebar');
-            const overlay = document.querySelector('.sidebar-overlay');
-            if (sidebar) {
-                sidebar.classList.toggle('mobile-visible');
-            }
-            if (overlay) {
-                overlay.classList.toggle('visible');
-            }
-        ''')
 
     def _create_sidebar(self):
         """Create left sidebar with logo, nav, and history"""
@@ -1354,39 +1321,11 @@ def create_app() -> YakuLingoApp:
     return YakuLingoApp()
 
 
-def _get_windows_scale_factor() -> float:
-    """Get Windows DPI scale factor (e.g., 1.0, 1.25, 1.5, 2.0).
-
-    pywebview calls SetProcessDPIAware(), so webview.screens returns physical pixels.
-    We need to convert to logical pixels for consistent UI sizing across DPI settings.
-
-    Returns:
-        Scale factor (1.0 if not on Windows or if detection fails)
-    """
-    import sys
-    if sys.platform != 'win32':
-        return 1.0
-
-    try:
-        import ctypes
-        # GetScaleFactorForDevice returns percentage (100, 125, 150, 200, etc.)
-        scale_percent = ctypes.windll.shcore.GetScaleFactorForDevice(0)
-        scale_factor = scale_percent / 100.0
-        logger.info("Windows DPI scale factor: %d%% (%.2f)", scale_percent, scale_factor)
-        return scale_factor
-    except Exception as e:
-        logger.debug("Failed to get Windows scale factor: %s", e)
-        return 1.0
-
-
 def _detect_display_settings() -> tuple[tuple[int, int], str, tuple[int, int, int, int]]:
     """Detect connected monitors and determine window size, display mode, and panel widths.
 
     Uses pywebview's screens API to detect multiple monitors BEFORE ui.run().
     This allows setting the correct window size from the start (no resize flicker).
-
-    Note: pywebview returns physical pixels (due to SetProcessDPIAware).
-    We convert to logical pixels using Windows scale factor for consistent sizing.
 
     Strategy:
     - Multiple monitors detected → desktop mode (3-column: sidebar + input + result)

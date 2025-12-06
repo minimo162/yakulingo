@@ -40,7 +40,7 @@ def mock_copilot_with_translation():
         # Bidirectional translation mock
         return f"Translated: {text}"
 
-    def translate_sync(texts, prompt, reference_files=None, char_limit=None):
+    def translate_sync(texts, prompt, reference_files=None, char_limit=None, skip_clear_wait=False):
         # Bidirectional batch translation mock
         return [f"Translated: {t}" for t in texts]
 

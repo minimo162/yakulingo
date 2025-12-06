@@ -190,7 +190,7 @@ class TestCancellationWorkflow:
         # Set up mock to trigger cancel during translation
         batch_count = [0]
 
-        def translate_with_cancel(texts, prompt, ref=None, char_limit=None):
+        def translate_with_cancel(texts, prompt, ref=None, char_limit=None, skip_clear_wait=False):
             batch_count[0] += 1
             if batch_count[0] >= 1:
                 service.cancel()

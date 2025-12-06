@@ -18,7 +18,8 @@ class AppSettings:
     """Application settings"""
 
     # Reference Files (用語集、参考資料など)
-    reference_files: list[str] = field(default_factory=lambda: ["glossary.csv"])
+    # Default is empty - users can add files via UI
+    reference_files: list[str] = field(default_factory=list)
 
     # Cache for resolved reference file paths (not persisted)
     _ref_paths_cache: Optional[tuple[str, list[Path]]] = field(

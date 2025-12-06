@@ -227,13 +227,27 @@ def _create_large_input_panel(
                             on_translate_button_created(btn)
 
         # Hint text - only shown in INPUT state
+        # Check if this is first use (no history)
+        state._ensure_history_db()
+        is_first_use = len(state.history) == 0
+
         with ui.element('div').classes('hint-section'):
-            with ui.element('div').classes('hint-primary'):
-                ui.icon('translate').classes('text-sm text-muted')
-                ui.label('入力言語を自動判定して翻訳します').classes('text-xs')
-            with ui.element('div').classes('hint-secondary'):
-                ui.icon('auto_awesome').classes('text-sm')
-                ui.label('M365 Copilot による翻訳').classes('text-2xs')
+            if is_first_use:
+                # First-time user guidance
+                with ui.element('div').classes('hint-primary'):
+                    ui.icon('lightbulb').classes('text-sm text-muted')
+                    ui.label('使い方: テキストを入力して「翻訳する」をクリック').classes('text-xs')
+                with ui.element('div').classes('hint-secondary'):
+                    ui.icon('translate').classes('text-sm')
+                    ui.label('日本語 → 英語、英語 → 日本語を自動判定').classes('text-2xs')
+            else:
+                # Regular hints for returning users
+                with ui.element('div').classes('hint-primary'):
+                    ui.icon('translate').classes('text-sm text-muted')
+                    ui.label('入力言語を自動判定して翻訳します').classes('text-xs')
+                with ui.element('div').classes('hint-secondary'):
+                    ui.icon('auto_awesome').classes('text-sm')
+                    ui.label('M365 Copilot による翻訳').classes('text-2xs')
 
 
 def _create_compact_input_panel(

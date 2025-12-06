@@ -16,7 +16,7 @@ from nicegui import ui
 logger = logging.getLogger(__name__)
 
 # Fast imports - required at startup (lightweight modules only)
-from yakulingo.ui.state import AppState, Tab, FileState
+from yakulingo.ui.state import AppState, Tab, FileState, ConnectionState
 from yakulingo.models.types import TranslationProgress, TranslationStatus, TextTranslationResult, TranslationOption, HistoryEntry
 from yakulingo.config.settings import AppSettings, get_default_settings_path, get_default_prompts_dir
 
@@ -115,11 +115,17 @@ class YakuLingoApp:
                 logger.info("Edge connection ready (parallel startup)")
                 # Bring app window to front and notify user
                 await self._on_browser_ready()
+            else:
+                # Connection failed - refresh status to show error
+                self._refresh_status()
+                logger.warning("Edge connection failed during parallel startup")
         except concurrent.futures.TimeoutError:
             logger.warning("Edge connection timeout during parallel startup")
+            self._refresh_status()
         except Exception as e:
-            # Connection failed silently - will retry on first translation
+            # Connection failed - refresh status to show error
             logger.debug("Background connection failed: %s", e)
+            self._refresh_status()
 
     async def start_edge_and_connect(self):
         """Start Edge and connect to browser in background (non-blocking).
@@ -144,9 +150,13 @@ class YakuLingoApp:
                 self._refresh_status()
                 # Bring app window to front and notify user
                 await self._on_browser_ready()
+            else:
+                # Connection failed - refresh status to show error
+                self._refresh_status()
         except Exception as e:
-            # Connection failed silently - will retry on first translation
+            # Connection failed - refresh status to show error
             logger.debug("Background connection failed: %s", e)
+            self._refresh_status()
 
     async def _on_browser_ready(self):
         """Called when browser connection is ready. Brings app to front and notifies user."""
@@ -296,13 +306,40 @@ class YakuLingoApp:
             self.state.copilot_ready = is_connected
 
             if is_connected:
+                self.state.connection_state = ConnectionState.CONNECTED
                 with ui.element('div').classes('status-indicator connected').props('role="status" aria-live="polite"'):
                     ui.element('div').classes('status-dot connected').props('aria-hidden="true"')
                     ui.label('接続済み')
             else:
-                with ui.element('div').classes('status-indicator connecting').props('role="status" aria-live="polite"'):
-                    ui.element('div').classes('status-dot connecting').props('aria-hidden="true"')
-                    ui.label('接続中...')
+                # Check for specific error states from CopilotHandler
+                error = self.copilot.last_connection_error if self._copilot else ""
+                from yakulingo.services.copilot_handler import CopilotHandler
+
+                if error == CopilotHandler.ERROR_LOGIN_REQUIRED:
+                    self.state.connection_state = ConnectionState.LOGIN_REQUIRED
+                    with ui.element('div').classes('status-indicator error').props('role="status" aria-live="polite"'):
+                        ui.element('div').classes('status-dot error').props('aria-hidden="true"')
+                        with ui.column().classes('gap-0'):
+                            ui.label('ログインが必要').classes('text-xs')
+                            ui.label('Edgeでログインしてください').classes('text-2xs text-muted')
+                elif error == CopilotHandler.ERROR_EDGE_NOT_FOUND:
+                    self.state.connection_state = ConnectionState.EDGE_NOT_RUNNING
+                    with ui.element('div').classes('status-indicator error').props('role="status" aria-live="polite"'):
+                        ui.element('div').classes('status-dot error').props('aria-hidden="true"')
+                        with ui.column().classes('gap-0'):
+                            ui.label('Edgeが見つかりません').classes('text-xs')
+                elif error in (CopilotHandler.ERROR_CONNECTION_FAILED, CopilotHandler.ERROR_NETWORK):
+                    self.state.connection_state = ConnectionState.CONNECTION_FAILED
+                    with ui.element('div').classes('status-indicator error').props('role="status" aria-live="polite"'):
+                        ui.element('div').classes('status-dot error').props('aria-hidden="true"')
+                        with ui.column().classes('gap-0'):
+                            ui.label('接続に失敗').classes('text-xs')
+                            ui.label('再試行中...').classes('text-2xs text-muted')
+                else:
+                    self.state.connection_state = ConnectionState.CONNECTING
+                    with ui.element('div').classes('status-indicator connecting').props('role="status" aria-live="polite"'):
+                        ui.element('div').classes('status-dot connecting').props('aria-hidden="true"')
+                        ui.label('接続中...')
 
         self._header_status = header_status
         header_status()

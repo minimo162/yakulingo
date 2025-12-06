@@ -10,7 +10,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Import directly to avoid ui/__init__.py which imports nicegui
-from yakulingo.ui.state import AppState, Tab, FileState
+from yakulingo.ui.state import AppState, Tab, FileState, ConnectionState
 from yakulingo.models.types import FileType, FileInfo
 
 
@@ -31,6 +31,17 @@ class TestFileState:
         assert FileState.TRANSLATING.value == "translating"
         assert FileState.COMPLETE.value == "complete"
         assert FileState.ERROR.value == "error"
+
+
+class TestConnectionState:
+    """Tests for ConnectionState enum"""
+
+    def test_connection_state_values(self):
+        assert ConnectionState.CONNECTING.value == "connecting"
+        assert ConnectionState.CONNECTED.value == "connected"
+        assert ConnectionState.LOGIN_REQUIRED.value == "login_required"
+        assert ConnectionState.EDGE_NOT_RUNNING.value == "edge_not_running"
+        assert ConnectionState.CONNECTION_FAILED.value == "connection_failed"
 
 
 class TestAppStateDefaults:
@@ -60,6 +71,7 @@ class TestAppStateDefaults:
         state = AppState()
         assert state.copilot_ready is False
         assert state.copilot_error == ""
+        assert state.connection_state == ConnectionState.CONNECTING
 
     def test_default_reference_files(self):
         state = AppState()

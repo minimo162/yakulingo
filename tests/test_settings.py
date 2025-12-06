@@ -12,7 +12,7 @@ class TestAppSettings:
 
     def test_default_values(self):
         settings = AppSettings()
-        assert settings.reference_files == ["glossary.csv"]
+        assert settings.reference_files == []  # Empty by default for new users
         assert settings.output_directory is None
         assert settings.last_tab == "text"
         assert settings.max_chars_per_batch == 7000
@@ -211,7 +211,7 @@ class TestSettingsEdgeCases:
 
             # Should use defaults for missing fields
             assert settings.max_chars_per_batch == 7000
-            assert settings.reference_files == ["glossary.csv"]
+            assert settings.reference_files == []  # Empty by default
 
     def test_load_partial_json(self):
         """Load settings with only some fields specified"""

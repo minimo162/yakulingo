@@ -245,17 +245,19 @@ class YakuLingoApp:
         self._streaming_label = label
 
     def _update_translate_button_state(self):
-        """Update translate button enabled/disabled state based on current state"""
+        """Update translate button enabled/disabled/loading state based on current state"""
         if self._translate_button is None:
             return
 
-        # Disable button during translation or when no text
-        # No spinner here - result panel shows translation status
-        if self.state.text_translating or not self.state.can_translate():
-            self._translate_button.props(':disable=true')
+        if self.state.text_translating:
+            # Show loading spinner and disable
+            self._translate_button.props('loading disable')
+        elif not self.state.can_translate():
+            # Disable but no loading (no text entered)
+            self._translate_button.props(':loading=false disable')
         else:
             # Enable the button
-            self._translate_button.props(':disable=false')
+            self._translate_button.props(':loading=false :disable=false')
 
     def create_ui(self):
         """Create the UI - Nani-inspired 3-column layout"""
@@ -720,7 +722,10 @@ class YakuLingoApp:
         with client:
             if error_message:
                 ui.notify(f'エラー: {error_message}', type='negative')
-            self._refresh_content()
+            # Only refresh result panel (input panel is already in compact state)
+            self._refresh_result_panel()
+            # Re-enable translate button
+            self._update_translate_button_state()
             # Update connection status (may have changed during translation)
             self._refresh_status()
 
@@ -739,7 +744,9 @@ class YakuLingoApp:
         client = self._client
 
         self.state.text_translating = True
-        self._refresh_content()
+        # Only refresh result panel and button (input panel is already in compact state)
+        self._refresh_result_panel()
+        self._update_translate_button_state()
 
         error_message = None
         try:
@@ -795,7 +802,10 @@ class YakuLingoApp:
         with client:
             if error_message:
                 ui.notify(f'エラー: {error_message}', type='negative')
-            self._refresh_content()
+            # Only refresh result panel (input panel is already in compact state)
+            self._refresh_result_panel()
+            # Re-enable translate button
+            self._update_translate_button_state()
             self._refresh_status()
 
     async def _back_translate(self, text: str):
@@ -808,7 +818,9 @@ class YakuLingoApp:
         client = self._client
 
         self.state.text_translating = True
-        self._refresh_content()
+        # Only refresh result panel and button (input panel is already in compact state)
+        self._refresh_result_panel()
+        self._update_translate_button_state()
 
         error_message = None
         try:
@@ -871,7 +883,10 @@ class YakuLingoApp:
         with client:
             if error_message:
                 ui.notify(f'エラー: {error_message}', type='negative')
-            self._refresh_content()
+            # Only refresh result panel (input panel is already in compact state)
+            self._refresh_result_panel()
+            # Re-enable translate button
+            self._update_translate_button_state()
             self._refresh_status()
 
     def _build_follow_up_prompt(self, action_type: str, source_text: str, translation: str, content: str = "") -> Optional[str]:

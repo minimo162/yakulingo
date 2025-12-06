@@ -78,12 +78,12 @@ def _get_pypdfium2():
 
 
 def _get_yomitoku():
-    """Lazy import yomitoku (OCR and layout analysis)"""
+    """Lazy import yomitoku (layout analysis only, no OCR)"""
     global _yomitoku
     if _yomitoku is None:
-        from yomitoku import DocumentAnalyzer
+        from yomitoku import LayoutAnalyzer
         from yomitoku.data.functions import load_pdf
-        _yomitoku = {'DocumentAnalyzer': DocumentAnalyzer, 'load_pdf': load_pdf}
+        _yomitoku = {'LayoutAnalyzer': LayoutAnalyzer, 'load_pdf': load_pdf}
     return _yomitoku
 
 
@@ -2697,21 +2697,23 @@ def get_device(config_device: str = "auto") -> str:
     return "cpu"
 
 
-def get_document_analyzer(device: str = "cpu", reading_order: str = "auto"):
+def get_layout_analyzer(device: str = "cpu"):
     """
-    Get or create a cached DocumentAnalyzer instance.
+    Get or create a cached LayoutAnalyzer instance.
 
     Thread-safe: uses a lock to prevent race conditions when
     creating or accessing the cache.
 
+    Note: LayoutAnalyzer performs layout analysis only (no OCR).
+    Text extraction is done separately via pdfminer.
+
     Args:
         device: "cpu" or "cuda"
-        reading_order: Reading order setting ("auto", "left2right", "top2bottom")
 
     Returns:
-        Cached DocumentAnalyzer instance
+        Cached LayoutAnalyzer instance
     """
-    cache_key = (device, reading_order)
+    cache_key = device
 
     # Double-checked locking pattern for thread safety
     if cache_key not in _analyzer_cache:
@@ -2719,20 +2721,16 @@ def get_document_analyzer(device: str = "cpu", reading_order: str = "auto"):
             # Check again after acquiring lock
             if cache_key not in _analyzer_cache:
                 yomitoku = _get_yomitoku()
-                _analyzer_cache[cache_key] = yomitoku['DocumentAnalyzer'](
-                    configs={},
+                _analyzer_cache[cache_key] = yomitoku['LayoutAnalyzer'](
                     device=device,
                     visualize=False,
-                    ignore_meta=False,
-                    reading_order=reading_order,
-                    split_text_across_cells=True,
                 )
     return _analyzer_cache[cache_key]
 
 
 def clear_analyzer_cache():
     """
-    Clear the DocumentAnalyzer cache to free GPU memory.
+    Clear the LayoutAnalyzer cache to free GPU memory.
 
     Thread-safe: uses a lock to prevent race conditions.
     """
@@ -2740,20 +2738,22 @@ def clear_analyzer_cache():
         _analyzer_cache.clear()
 
 
-def analyze_document(img, device: str = "cpu", reading_order: str = "auto"):
+def analyze_layout(img, device: str = "cpu"):
     """
-    Analyze document layout using yomitoku.
+    Analyze document layout using yomitoku LayoutAnalyzer.
+
+    Note: This performs layout analysis only (no OCR).
+    Text extraction should be done separately via pdfminer.
 
     Args:
         img: BGR image (numpy array)
         device: "cpu" or "cuda"
-        reading_order: "auto", "left2right", "top2bottom", "right2left"
 
     Returns:
-        DocumentAnalyzerSchema with paragraphs, tables, figures, words
+        LayoutAnalyzerSchema with paragraphs, tables, figures (no text contents)
     """
-    analyzer = get_document_analyzer(device, reading_order)
-    results, _, _ = analyzer(img)
+    analyzer = get_layout_analyzer(device)
+    results, _ = analyzer(img)
     return results
 
 
@@ -3596,108 +3596,11 @@ class PdfProcessor(FileProcessor):
 
         return result
 
-    def extract_text_blocks_with_ocr(
-        self,
-        file_path: Path,
-        device: str = "auto",
-        reading_order: str = "auto",
-        batch_size: int = DEFAULT_OCR_BATCH_SIZE,
-        dpi: int = DEFAULT_OCR_DPI,
-        output_language: str = "en",
-    ) -> Iterator[TextBlock]:
-        """
-        Extract text blocks from PDF using OCR (yomitoku).
-
-        This method is for scanned PDFs or PDFs with embedded images.
-        Requires yomitoku to be installed.
-
-        Args:
-            file_path: Path to PDF file
-            device: "auto", "cpu", or "cuda"
-            reading_order: Reading order for yomitoku
-            batch_size: Pages per batch for OCR processing
-            dpi: OCR resolution (higher = better quality, slower)
-            output_language: "en" for JP→EN, "jp" for EN→JP translation
-
-        Yields:
-            TextBlock objects with OCR-extracted text
-        """
-        self._output_language = output_language
-        actual_device = get_device(device)
-
-        for batch_start, batch_images in iterate_pdf_pages(str(file_path), batch_size, dpi):
-            for img_idx, img in enumerate(batch_images):
-                page_num = batch_start + img_idx + 1
-
-                # Analyze with yomitoku
-                results = analyze_document(img, actual_device, reading_order)
-
-                # Convert to translation cells
-                cells = prepare_translation_cells(results, page_num)
-
-                # Yield as TextBlocks
-                for cell in cells:
-                    if cell.text and self.should_translate(cell.text):
-                        yield TextBlock(
-                            id=cell.address,
-                            text=cell.text,
-                            location=f"Page {page_num}",
-                            metadata={
-                                'type': 'ocr_cell',
-                                'page_idx': page_num - 1,
-                                'address': cell.address,
-                                'bbox': cell.box,
-                                'direction': cell.direction,
-                                'role': cell.role,
-                            }
-                        )
-
-        # Clear analyzer cache to free memory
-        clear_analyzer_cache()
-
-    def get_translation_cells_with_ocr(
-        self,
-        file_path: Path,
-        device: str = "auto",
-        reading_order: str = "auto",
-        batch_size: int = DEFAULT_OCR_BATCH_SIZE,
-        dpi: int = DEFAULT_OCR_DPI,
-    ) -> list[TranslationCell]:
-        """
-        Get translation cells from PDF using OCR (yomitoku).
-
-        Returns TranslationCell objects for use with apply_translations_with_cells.
-
-        Args:
-            file_path: Path to PDF file
-            device: "auto", "cpu", or "cuda"
-            reading_order: Reading order for yomitoku
-            batch_size: Pages per batch for OCR processing
-            dpi: OCR resolution (higher = better quality, slower)
-
-        Returns:
-            List of TranslationCell objects
-        """
-        actual_device = get_device(device)
-        all_cells = []
-
-        for batch_start, batch_images in iterate_pdf_pages(str(file_path), batch_size, dpi):
-            for img_idx, img in enumerate(batch_images):
-                page_num = batch_start + img_idx + 1
-
-                results = analyze_document(img, actual_device, reading_order)
-                cells = prepare_translation_cells(results, page_num)
-                all_cells.extend(cells)
-
-        clear_analyzer_cache()
-        return all_cells
-
     def extract_text_blocks_streaming(
         self,
         file_path: Path,
         on_progress: Optional[ProgressCallback] = None,
         device: str = "auto",
-        reading_order: str = "auto",
         batch_size: int = DEFAULT_OCR_BATCH_SIZE,
         dpi: int = DEFAULT_OCR_DPI,
         output_language: str = "en",
@@ -3709,13 +3612,13 @@ class PdfProcessor(FileProcessor):
         This provides accurate text from embedded PDFs while using yomitoku's
         superior layout detection for paragraph grouping and reading order.
 
-        For scanned PDFs without embedded text, falls back to yomitoku OCR.
+        Note: Scanned PDFs without embedded text are not supported.
+        Only PDFs with embedded text can be translated.
 
         Args:
             file_path: Path to PDF file
             on_progress: Progress callback for UI updates
-            device: "auto", "cpu", or "cuda" for yomitoku
-            reading_order: Reading order for yomitoku ("auto", "left2right", etc.)
+            device: "auto", "cpu", or "cuda" for yomitoku layout analysis
             batch_size: Pages per batch for processing
             dpi: Resolution for layout analysis (higher = better quality, slower)
             output_language: "en" for JP→EN, "jp" for EN→JP translation
@@ -3741,143 +3644,10 @@ class PdfProcessor(FileProcessor):
         with _open_fitz_document(file_path) as doc:
             total_pages = len(doc)
 
-        # Always use hybrid mode: pdfminer text + yomitoku layout
+        # Use hybrid mode: pdfminer text + yomitoku layout (no OCR)
         yield from self._extract_hybrid_streaming(
-            file_path, total_pages, on_progress, device, reading_order,
-            batch_size, dpi
+            file_path, total_pages, on_progress, device, batch_size, dpi
         )
-
-    def _extract_with_ocr_streaming(
-        self,
-        file_path: Path,
-        total_pages: int,
-        on_progress: Optional[ProgressCallback],
-        device: str,
-        reading_order: str,
-        batch_size: int = DEFAULT_OCR_BATCH_SIZE,
-        dpi: int = DEFAULT_OCR_DPI,
-    ) -> Iterator[tuple[list[TextBlock], list[TranslationCell]]]:
-        """
-        Extract text blocks using yomitoku OCR with streaming.
-
-        Yields one page at a time with progress updates.
-
-        Features:
-        - Per-page error handling (continues on failure)
-        - Cancellation support
-        - Estimated time remaining
-        - Failed pages are tracked in self._failed_pages
-        - Guaranteed cache cleanup via try-finally
-        """
-        import time as time_module
-
-        actual_device = get_device(device)
-        is_cpu = actual_device == "cpu"
-        pages_processed = 0
-        start_time = time_module.time()
-        self._failed_pages = []
-
-        # Estimate time per page based on device
-        estimated_time_per_page = (
-            self.CPU_OCR_TIME_PER_PAGE if is_cpu else self.GPU_OCR_TIME_PER_PAGE
-        )
-
-        try:
-            for batch_start, batch_images in iterate_pdf_pages(str(file_path), batch_size, dpi):
-                for img_idx, img in enumerate(batch_images):
-                    # Check for cancellation
-                    if self._cancel_requested:
-                        logger.info("OCR processing cancelled at page %d/%d",
-                                   pages_processed + 1, total_pages)
-                        return
-
-                    page_num = batch_start + img_idx + 1
-                    pages_processed += 1
-
-                    # Calculate estimated remaining time
-                    # At this point, (pages_processed - 1) pages have been fully processed
-                    # and elapsed time reflects their total processing time
-                    elapsed = time_module.time() - start_time
-                    if pages_processed > 1:
-                        # Use actual measured time from previously completed pages
-                        actual_time_per_page = elapsed / (pages_processed - 1)
-                        remaining_pages = total_pages - pages_processed + 1  # Include current page
-                        estimated_remaining = int(actual_time_per_page * remaining_pages)
-                    else:
-                        # First page - no measured data yet, use device-based estimate
-                        remaining_pages = total_pages
-                        estimated_remaining = int(estimated_time_per_page * remaining_pages)
-
-                    # Report progress with estimated time
-                    if on_progress:
-                        status_msg = f"OCR processing page {page_num}/{total_pages}..."
-                        if is_cpu and total_pages > 1:
-                            # Add time estimate for CPU users
-                            if estimated_remaining > 60:
-                                time_str = f"(approx. {estimated_remaining // 60}m remaining)"
-                            else:
-                                time_str = f"(approx. {estimated_remaining}s remaining)"
-                            status_msg = f"{status_msg} {time_str}"
-
-                        on_progress(TranslationProgress(
-                            current=pages_processed,
-                            total=total_pages,
-                            status=status_msg,
-                            phase=TranslationPhase.OCR,
-                            phase_detail=f"Page {page_num}/{total_pages}",
-                            estimated_remaining=estimated_remaining if estimated_remaining > 0 else None,
-                        ))
-
-                    # Analyze with yomitoku - with error handling
-                    try:
-                        results = analyze_document(img, actual_device, reading_order)
-                        cells = prepare_translation_cells(results, page_num)
-
-                        # Convert cells to TextBlocks
-                        blocks = []
-                        for cell in cells:
-                            if cell.text and self.should_translate(cell.text):
-                                blocks.append(TextBlock(
-                                    id=cell.address,
-                                    text=cell.text,
-                                    location=f"Page {page_num}",
-                                    metadata={
-                                        'type': 'ocr_cell',
-                                        'page_idx': page_num - 1,
-                                        'address': cell.address,
-                                        'bbox': cell.box,
-                                        'direction': cell.direction,
-                                        'role': cell.role,
-                                    }
-                                ))
-
-                        yield blocks, cells
-
-                    except (RuntimeError, ValueError, OSError, MemoryError) as e:
-                        # Log error but continue processing other pages
-                        logger.error("OCR failed for page %d: %s", page_num, e)
-                        self._failed_pages.append(page_num)
-
-                        # Yield empty result for this page
-                        yield [], []
-
-                        # Report error in progress
-                        if on_progress:
-                            on_progress(TranslationProgress(
-                                current=pages_processed,
-                                total=total_pages,
-                                status=f"Page {page_num} failed: {str(e)[:50]}...",
-                                phase=TranslationPhase.OCR,
-                                phase_detail=f"Error on page {page_num}",
-                            ))
-
-            # Log summary if there were failures
-            if self._failed_pages:
-                logger.warning("OCR completed with %d failed pages: %s",
-                              len(self._failed_pages), self._failed_pages)
-        finally:
-            # Always clean up GPU memory, even on exception or cancellation
-            clear_analyzer_cache()
 
     def _extract_hybrid_streaming(
         self,
@@ -3885,7 +3655,6 @@ class PdfProcessor(FileProcessor):
         total_pages: int,
         on_progress: Optional[ProgressCallback],
         device: str,
-        reading_order: str,
         batch_size: int = DEFAULT_OCR_BATCH_SIZE,
         dpi: int = DEFAULT_OCR_DPI,
     ) -> Iterator[tuple[list[TextBlock], list[TranslationCell]]]:
@@ -3967,8 +3736,8 @@ class PdfProcessor(FileProcessor):
                             ))
 
                         try:
-                            # Step 1: Analyze layout with yomitoku
-                            results = analyze_document(img, actual_device, reading_order)
+                            # Step 1: Analyze layout with yomitoku (no OCR)
+                            results = analyze_layout(img, actual_device)
 
                             # Step 2: Create LayoutArray from yomitoku results
                             img_height, img_width = img.shape[:2]

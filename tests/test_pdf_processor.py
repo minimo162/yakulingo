@@ -1426,7 +1426,7 @@ class TestExtractTextBlocksStreaming:
         )
 
         # Mock _extract_hybrid_streaming to yield blocks and call progress
-        def mock_streaming(file_path, total_pages, on_progress, device, reading_order, batch_size, dpi):
+        def mock_streaming(file_path, total_pages, on_progress, device, batch_size, dpi):
             for page_num in range(1, total_pages + 1):
                 if on_progress:
                     on_progress(TranslationProgress(

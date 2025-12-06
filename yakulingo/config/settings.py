@@ -60,9 +60,9 @@ class AppSettings:
     font_jp_to_en: str = "Arial"           # 英訳時の出力フォント
     font_en_to_jp: str = "MS Pゴシック"    # 和訳時の出力フォント
 
-    # PDF OCR Options (yomitoku)
+    # PDF Layout Options (yomitoku)
     ocr_batch_size: int = 5             # ページ/バッチ（メモリ使用量とのトレードオフ）
-    ocr_dpi: int = 200                  # OCR解像度（高いほど精度向上、処理時間増加）
+    ocr_dpi: int = 200                  # レイアウト解析解像度（高いほど精度向上、処理時間増加）
     ocr_device: str = "auto"            # "auto", "cpu", "cuda"
 
     # Auto Update
@@ -138,7 +138,7 @@ class AppSettings:
             "font_size_min": self.font_size_min,
             "font_jp_to_en": self.font_jp_to_en,
             "font_en_to_jp": self.font_en_to_jp,
-            # PDF OCR Options
+            # PDF Layout Options
             "ocr_batch_size": self.ocr_batch_size,
             "ocr_dpi": self.ocr_dpi,
             "ocr_device": self.ocr_device,

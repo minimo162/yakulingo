@@ -2762,6 +2762,190 @@ def analyze_document(img, device: str = "cpu", reading_order: str = "auto"):
     return results
 
 
+# =============================================================================
+# Layout Array Generation (PDFMathTranslate compliant, yomitoku-based)
+# =============================================================================
+# Layout class values (PDFMathTranslate compatible)
+LAYOUT_ABANDON = 0      # Figures, headers, footers - skip translation
+LAYOUT_BACKGROUND = 1   # Background (default)
+LAYOUT_PARAGRAPH_BASE = 2  # Paragraphs start from 2
+LAYOUT_TABLE_BASE = 1000   # Tables start from 1000 (to distinguish from paragraphs)
+
+
+@dataclass
+class LayoutArray:
+    """
+    PDFMathTranslate-style layout array for page segmentation.
+
+    Stores a 2D NumPy array where each pixel contains a class ID:
+    - 0: Abandon (figures, headers, footers)
+    - 1: Background
+    - 2+: Paragraph index
+    - 1000+: Table cell index
+
+    Also stores metadata about each region for reference.
+    """
+    array: Any  # NumPy array (height, width)
+    height: int
+    width: int
+    paragraphs: dict = field(default_factory=dict)  # index -> region info
+    tables: dict = field(default_factory=dict)      # index -> region info
+    figures: list = field(default_factory=list)     # list of figure boxes
+
+
+def create_layout_array_from_yomitoku(
+    results,
+    page_height: int,
+    page_width: int,
+) -> LayoutArray:
+    """
+    Create PDFMathTranslate-style layout array from yomitoku results.
+
+    This function converts yomitoku's DocumentAnalyzerSchema output into
+    a 2D NumPy array where each pixel is labeled with its region class.
+
+    Args:
+        results: DocumentAnalyzerSchema from yomitoku
+        page_height: Page height in pixels (at OCR DPI)
+        page_width: Page width in pixels (at OCR DPI)
+
+    Returns:
+        LayoutArray with labeled regions
+    """
+    np = _get_numpy()
+
+    # Initialize with background value
+    layout = np.ones((page_height, page_width), dtype=np.int32)
+
+    paragraphs_info = {}
+    tables_info = {}
+    figures_list = []
+
+    # Mark figures as abandon (class 0)
+    if hasattr(results, 'figures'):
+        for fig in results.figures:
+            if hasattr(fig, 'box') and fig.box:
+                x0, y0, x1, y1 = [int(v) for v in fig.box]
+                x0 = max(0, min(x0, page_width - 1))
+                x1 = max(0, min(x1, page_width))
+                y0 = max(0, min(y0, page_height - 1))
+                y1 = max(0, min(y1, page_height))
+                layout[y0:y1, x0:x1] = LAYOUT_ABANDON
+                figures_list.append(fig.box)
+
+    # Mark paragraphs with unique IDs (starting from 2)
+    for para in sorted(results.paragraphs, key=lambda p: p.order):
+        # Mark headers/footers as abandon
+        if para.role in ["page_header", "page_footer"]:
+            if hasattr(para, 'box') and para.box:
+                x0, y0, x1, y1 = [int(v) for v in para.box]
+                x0 = max(0, min(x0, page_width - 1))
+                x1 = max(0, min(x1, page_width))
+                y0 = max(0, min(y0, page_height - 1))
+                y1 = max(0, min(y1, page_height))
+                layout[y0:y1, x0:x1] = LAYOUT_ABANDON
+            continue
+
+        para_id = LAYOUT_PARAGRAPH_BASE + para.order
+        if hasattr(para, 'box') and para.box:
+            x0, y0, x1, y1 = [int(v) for v in para.box]
+            x0 = max(0, min(x0, page_width - 1))
+            x1 = max(0, min(x1, page_width))
+            y0 = max(0, min(y0, page_height - 1))
+            y1 = max(0, min(y1, page_height))
+            layout[y0:y1, x0:x1] = para_id
+            paragraphs_info[para_id] = {
+                'order': para.order,
+                'box': para.box,
+                'role': para.role,
+                'direction': para.direction,
+                'contents': para.contents,
+            }
+
+    # Mark table cells with unique IDs (starting from 1000)
+    table_cell_idx = 0
+    for table in results.tables:
+        for cell in table.cells:
+            cell_id = LAYOUT_TABLE_BASE + table_cell_idx
+            if hasattr(cell, 'box') and cell.box:
+                x0, y0, x1, y1 = [int(v) for v in cell.box]
+                x0 = max(0, min(x0, page_width - 1))
+                x1 = max(0, min(x1, page_width))
+                y0 = max(0, min(y0, page_height - 1))
+                y1 = max(0, min(y1, page_height))
+                layout[y0:y1, x0:x1] = cell_id
+                tables_info[cell_id] = {
+                    'table_order': table.order,
+                    'row': cell.row,
+                    'col': cell.col,
+                    'box': cell.box,
+                    'contents': cell.contents,
+                }
+            table_cell_idx += 1
+
+    return LayoutArray(
+        array=layout,
+        height=page_height,
+        width=page_width,
+        paragraphs=paragraphs_info,
+        tables=tables_info,
+        figures=figures_list,
+    )
+
+
+def get_layout_class_at_point(
+    layout: LayoutArray,
+    x: float,
+    y: float,
+) -> int:
+    """
+    Get layout class at a specific point.
+
+    PDFMathTranslate compliant: Returns the class ID at the given coordinates.
+
+    Args:
+        layout: LayoutArray from create_layout_array_from_yomitoku
+        x: X coordinate (in layout array coordinates)
+        y: Y coordinate (in layout array coordinates)
+
+    Returns:
+        Class ID at the point (0=abandon, 1=background, 2+=paragraph, 1000+=table)
+    """
+    ix = int(max(0, min(x, layout.width - 1)))
+    iy = int(max(0, min(y, layout.height - 1)))
+    return int(layout.array[iy, ix])
+
+
+def is_same_region(cls1: int, cls2: int) -> bool:
+    """
+    Check if two class IDs belong to the same region.
+
+    PDFMathTranslate compliant: Characters in the same region should be
+    grouped together into the same paragraph.
+
+    Args:
+        cls1: First class ID
+        cls2: Second class ID
+
+    Returns:
+        True if both belong to the same region
+    """
+    return cls1 == cls2 and cls1 != LAYOUT_BACKGROUND
+
+
+def should_abandon_region(cls: int) -> bool:
+    """
+    Check if a region should be abandoned (not translated).
+
+    Args:
+        cls: Class ID
+
+    Returns:
+        True if region should be skipped
+    """
+    return cls == LAYOUT_ABANDON
+
+
 def prepare_translation_cells(
     results,
     page_num: int,
@@ -3703,6 +3887,8 @@ class PdfProcessor(FileProcessor):
         chars: list,
         page_idx: int,
         LTChar,
+        layout: Optional[LayoutArray] = None,
+        page_height: float = 0,
     ) -> list[TextBlock]:
         """
         Group LTChar objects into TextBlock objects using PDFMathTranslate-style
@@ -3714,11 +3900,14 @@ class PdfProcessor(FileProcessor):
         - var: Formula storage array
         - pstk: Paragraph metadata (Paragraph objects)
         - Formula placeholders {v0}, {v1}, etc.
+        - Layout-based paragraph detection (when layout is provided)
 
         Args:
             chars: List of LTChar objects from pdfminer
             page_idx: Page index (0-based)
             LTChar: LTChar class reference
+            layout: Optional LayoutArray from yomitoku for region-based grouping
+            page_height: Page height for coordinate conversion (required if layout is provided)
 
         Returns:
             List of TextBlock objects with formula placeholders
@@ -3737,13 +3926,35 @@ class PdfProcessor(FileProcessor):
 
         # Previous character state
         xt = None  # Previous character
+        xt_cls = None  # Previous character's layout class
         in_formula = False  # Currently in formula mode
         vbkt = 0  # Bracket count for formula continuation
+
+        # Coordinate conversion for layout array
+        # pdfminer uses PDF coordinates (origin at bottom-left)
+        # layout array uses image coordinates (origin at top-left)
+        def get_char_layout_class(char) -> int:
+            if layout is None:
+                return LAYOUT_BACKGROUND
+            # Convert PDF Y to image Y
+            # PDF: y=0 at bottom, layout: y=0 at top
+            scale_x = layout.width / 72.0  # Approximate: assume 72 DPI base
+            scale_y = layout.height / page_height if page_height > 0 else 1.0
+            img_x = char.x0 * scale_x
+            img_y = (page_height - char.y1) * scale_y  # Flip Y axis
+            return get_layout_class_at_point(layout, img_x, img_y)
 
         for char in chars:
             char_text = char.get_text()
             fontname = char.fontname if hasattr(char, 'fontname') else ""
             char_size = char.size if hasattr(char, 'size') else 10.0
+
+            # Get layout class for this character
+            char_cls = get_char_layout_class(char)
+
+            # Skip abandoned regions (figures, headers, footers)
+            if should_abandon_region(char_cls):
+                continue
 
             # Check if character is formula
             is_formula_char = vflag(fontname, char_text)
@@ -3755,18 +3966,35 @@ class PdfProcessor(FileProcessor):
             if xt is None:
                 # First character - start new paragraph
                 new_paragraph = True
+                xt_cls = char_cls
             else:
-                # Check for line break (child.x1 < xt.x0)
-                if char.x1 < xt.x0 - LINE_BREAK_X_THRESHOLD:
-                    line_break = True
+                # PDFMathTranslate compliant: Use layout class for paragraph detection
+                if layout is not None and xt_cls is not None:
+                    # If layout class changes, it's a new paragraph
+                    if not is_same_region(char_cls, xt_cls):
+                        new_paragraph = True
+                    else:
+                        # Same region - check for line break
+                        if char.x1 < xt.x0 - LINE_BREAK_X_THRESHOLD:
+                            line_break = True
+                        y_diff = abs(char.y0 - xt.y0)
+                        if y_diff > SAME_LINE_Y_THRESHOLD:
+                            line_break = True
+                else:
+                    # Fallback: Y-coordinate based detection
+                    # Check for line break (child.x1 < xt.x0)
+                    if char.x1 < xt.x0 - LINE_BREAK_X_THRESHOLD:
+                        line_break = True
 
-                # Check for paragraph change based on Y distance
-                y_diff = abs(char.y0 - xt.y0)
-                if y_diff > SAME_PARA_Y_THRESHOLD:
-                    new_paragraph = True
-                elif y_diff > SAME_LINE_Y_THRESHOLD:
-                    # Different line but same paragraph
-                    line_break = True
+                    # Check for paragraph change based on Y distance
+                    y_diff = abs(char.y0 - xt.y0)
+                    if y_diff > SAME_PARA_Y_THRESHOLD:
+                        new_paragraph = True
+                    elif y_diff > SAME_LINE_Y_THRESHOLD:
+                        # Different line but same paragraph
+                        line_break = True
+
+                xt_cls = char_cls
 
             # Handle formula/text transitions
             if is_formula_char:

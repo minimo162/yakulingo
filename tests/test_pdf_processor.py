@@ -24,6 +24,9 @@ from yakulingo.processors.pdf_processor import (
     find_matching_font_size,
     restore_formula_placeholders,
     extract_formula_vars_from_metadata,
+    get_layout_class_at_point,
+    is_same_region,
+    should_abandon_region,
     # Constants
     FONT_FILES,
     DEFAULT_VFONT_PATTERN,
@@ -39,6 +42,10 @@ from yakulingo.processors.pdf_processor import (
     SAME_PARA_Y_THRESHOLD,
     WORD_SPACE_X_THRESHOLD,
     LINE_BREAK_X_THRESHOLD,
+    LAYOUT_ABANDON,
+    LAYOUT_BACKGROUND,
+    LAYOUT_PARAGRAPH_BASE,
+    LAYOUT_TABLE_BASE,
     # Enums
     FontType,
     # Classes
@@ -51,6 +58,7 @@ from yakulingo.processors.pdf_processor import (
     PdfProcessor,
     Paragraph,
     FormulaVar,
+    LayoutArray,
 )
 from yakulingo.models.types import FileType, TextBlock
 
@@ -2349,3 +2357,110 @@ class TestParagraphBoundaryConstants:
     def test_line_break_x_threshold(self):
         """LINE_BREAK_X_THRESHOLD should be 1.0pt"""
         assert LINE_BREAK_X_THRESHOLD == 1.0
+
+
+# =============================================================================
+# Tests for LayoutArray class (PDFMathTranslate compliant, yomitoku-based)
+# =============================================================================
+class TestLayoutArrayConstants:
+    """Tests for layout array constants"""
+
+    def test_layout_abandon_value(self):
+        """LAYOUT_ABANDON should be 0"""
+        assert LAYOUT_ABANDON == 0
+
+    def test_layout_background_value(self):
+        """LAYOUT_BACKGROUND should be 1"""
+        assert LAYOUT_BACKGROUND == 1
+
+    def test_layout_paragraph_base_value(self):
+        """LAYOUT_PARAGRAPH_BASE should be 2"""
+        assert LAYOUT_PARAGRAPH_BASE == 2
+
+    def test_layout_table_base_value(self):
+        """LAYOUT_TABLE_BASE should be 1000"""
+        assert LAYOUT_TABLE_BASE == 1000
+
+
+class TestLayoutArray:
+    """Tests for LayoutArray dataclass"""
+
+    def test_create_layout_array(self):
+        """Should create LayoutArray with all attributes"""
+        import numpy as np
+        arr = np.ones((100, 200), dtype=np.int32)
+        layout = LayoutArray(
+            array=arr,
+            height=100,
+            width=200,
+            paragraphs={2: {'order': 0}},
+            tables={1000: {'row': 0, 'col': 0}},
+            figures=[[10, 10, 50, 50]],
+        )
+        assert layout.height == 100
+        assert layout.width == 200
+        assert 2 in layout.paragraphs
+        assert 1000 in layout.tables
+        assert len(layout.figures) == 1
+
+    def test_layout_array_defaults(self):
+        """Should have empty defaults for collections"""
+        import numpy as np
+        arr = np.ones((10, 10), dtype=np.int32)
+        layout = LayoutArray(array=arr, height=10, width=10)
+        assert layout.paragraphs == {}
+        assert layout.tables == {}
+        assert layout.figures == []
+
+
+class TestLayoutClassFunctions:
+    """Tests for layout class helper functions"""
+
+    def test_get_layout_class_at_point(self):
+        """Should return class at specified point"""
+        import numpy as np
+        arr = np.ones((100, 100), dtype=np.int32)
+        arr[20:40, 30:60] = 5  # Paragraph region
+        layout = LayoutArray(array=arr, height=100, width=100)
+
+        # Inside paragraph region
+        assert get_layout_class_at_point(layout, 35, 25) == 5
+        # Outside paragraph region (background)
+        assert get_layout_class_at_point(layout, 10, 10) == 1
+
+    def test_get_layout_class_clamps_coordinates(self):
+        """Should clamp coordinates to valid range"""
+        import numpy as np
+        arr = np.ones((100, 100), dtype=np.int32)
+        layout = LayoutArray(array=arr, height=100, width=100)
+
+        # Out of bounds coordinates should be clamped
+        assert get_layout_class_at_point(layout, -10, 50) == 1
+        assert get_layout_class_at_point(layout, 150, 50) == 1
+        assert get_layout_class_at_point(layout, 50, -10) == 1
+        assert get_layout_class_at_point(layout, 50, 150) == 1
+
+    def test_is_same_region_true(self):
+        """Should return True for same non-background class"""
+        assert is_same_region(5, 5) is True
+        assert is_same_region(1000, 1000) is True
+
+    def test_is_same_region_false_different(self):
+        """Should return False for different classes"""
+        assert is_same_region(5, 6) is False
+        assert is_same_region(2, 1000) is False
+
+    def test_is_same_region_false_background(self):
+        """Should return False for background class"""
+        assert is_same_region(1, 1) is False
+
+    def test_should_abandon_region_true(self):
+        """Should return True for abandon class"""
+        assert should_abandon_region(LAYOUT_ABANDON) is True
+        assert should_abandon_region(0) is True
+
+    def test_should_abandon_region_false(self):
+        """Should return False for non-abandon classes"""
+        assert should_abandon_region(LAYOUT_BACKGROUND) is False
+        assert should_abandon_region(LAYOUT_PARAGRAPH_BASE) is False
+        assert should_abandon_region(LAYOUT_TABLE_BASE) is False

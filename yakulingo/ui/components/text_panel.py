@@ -692,8 +692,8 @@ def _render_results_to_en(
 
         # Inline adjustment section
         if on_adjust and result.options:
-            current_style = result.options[-1].style  # Get style from latest option
-            _render_inline_adjust_section(result.options[0].text, on_adjust, on_retry, current_style)
+            latest_option = result.options[-1]  # Use latest option for both text and style
+            _render_inline_adjust_section(latest_option.text, on_adjust, on_retry, latest_option.style)
 
 
 def _render_results_to_jp(
@@ -711,7 +711,7 @@ def _render_results_to_jp(
     if not result.options:
         return
 
-    option = result.options[0]  # Single option for →jp
+    option = result.options[-1]  # Use latest option (may have adjustments)
 
     # Translation results container
     with ui.element('div').classes('result-container'):

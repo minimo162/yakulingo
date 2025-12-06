@@ -285,6 +285,30 @@ body {
     color: var(--md-sys-color-success, #2e7d32);
 }
 
+/* === Streaming Preview === */
+.streaming-preview {
+    margin-top: 0.75rem;
+    padding: 0.75rem;
+    background-color: var(--md-sys-color-surface-container);
+    border-radius: var(--md-sys-shape-corner-small);
+    max-height: 200px;
+    overflow-y: auto;
+    animation: fadeIn 0.2s ease-out;
+}
+
+.streaming-preview .streaming-text {
+    font-size: var(--md-sys-typescale-size-sm);
+    color: var(--md-sys-color-on-surface-variant);
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
 /* === Loading Spinner Section === */
 .loading-spinner-section {
     display: flex;

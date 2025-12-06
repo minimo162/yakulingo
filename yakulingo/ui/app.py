@@ -586,7 +586,15 @@ class YakuLingoApp:
         self.state.text_detected_language = None
         self.state.text_result = None
         self.state.text_translation_elapsed_time = None
+        self.state.streaming_text = None
         self._refresh_content()
+
+        # Start streaming UI refresh timer (0.2s interval)
+        streaming_timer = ui.timer(0.2, lambda: self._refresh_content())
+
+        # Streaming callback - updates state from Playwright thread
+        def on_chunk(text: str):
+            self.state.streaming_text = text
 
         error_message = None
         detected_language = None
@@ -615,6 +623,7 @@ class YakuLingoApp:
                 reference_files,
                 None,  # style (use default)
                 detected_language,  # pre_detected_language
+                on_chunk,  # streaming callback
             )
 
             # Calculate elapsed time
@@ -634,6 +643,9 @@ class YakuLingoApp:
             logger.exception("Translation error: %s", e)
             error_message = str(e)
 
+        # Stop streaming timer and clear streaming state
+        streaming_timer.cancel()
+        self.state.streaming_text = None
         self.state.text_translating = False
         self.state.text_detected_language = None
 

@@ -866,15 +866,23 @@ class CopilotHandler:
         prompt: str,
         reference_files: Optional[list[Path]] = None,
         char_limit: Optional[int] = None,
+        on_chunk: "Callable[[str], None] | None" = None,
     ) -> str:
         """Translate a single text (sync).
 
         Unlike translate_sync, this returns the raw response without parsing.
         This is used for text translation which has a "訳文: ... 解説: ..." format
         that needs to be preserved for later parsing by TranslationService.
+
+        Args:
+            text: Source text (unused, kept for API compatibility)
+            prompt: The prompt to send to Copilot
+            reference_files: Optional files to attach
+            char_limit: Max characters for direct input
+            on_chunk: Optional callback called with partial text during streaming
         """
         return _playwright_executor.execute(
-            self._translate_single_impl, text, prompt, reference_files, char_limit
+            self._translate_single_impl, text, prompt, reference_files, char_limit, on_chunk
         )
 
     def _translate_single_impl(
@@ -883,6 +891,7 @@ class CopilotHandler:
         prompt: str,
         reference_files: Optional[list[Path]] = None,
         char_limit: Optional[int] = None,
+        on_chunk: "Callable[[str], None] | None" = None,
         max_retries: int = 1,
     ) -> str:
         """Implementation of translate_single that runs in the Playwright thread.
@@ -892,6 +901,7 @@ class CopilotHandler:
             prompt: The prompt to send to Copilot
             reference_files: Optional files to attach
             char_limit: Max characters for direct input
+            on_chunk: Optional callback called with partial text during streaming
             max_retries: Number of retries on Copilot error responses
 
         Returns:
@@ -915,7 +925,7 @@ class CopilotHandler:
             self._send_prompt_smart(prompt, char_limit)
 
             # Get response and return raw (no parsing - preserves 訳文/解説 format)
-            result = self._get_response()
+            result = self._get_response(on_chunk=on_chunk)
 
             # Check for Copilot error response patterns
             if result and _is_copilot_error_response(result):
@@ -1075,13 +1085,17 @@ class CopilotHandler:
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, self._send_message, message)
 
-    def _get_response(self, timeout: int = 120) -> str:
+    def _get_response(self, timeout: int = 120, on_chunk: "Callable[[str], None] | None" = None) -> str:
         """Get response from Copilot (sync)
 
         Uses dynamic polling intervals for faster response detection:
         - INITIAL (0.5s): While waiting for response to start
         - ACTIVE (0.2s): After text is detected, while content is growing
         - STABLE (0.1s): During stability checking phase
+
+        Args:
+            timeout: Maximum time to wait for response in seconds
+            on_chunk: Optional callback called with partial text during streaming
         """
         error_types = _get_playwright_errors()
         PlaywrightError = error_types['Error']
@@ -1140,6 +1154,12 @@ class CopilotHandler:
                             last_text = current_text
                             # Content is still growing, use active interval
                             poll_interval = self.RESPONSE_POLL_ACTIVE
+                            # Notify streaming callback with partial text
+                            if on_chunk:
+                                try:
+                                    on_chunk(current_text)
+                                except Exception as e:
+                                    logger.debug("Streaming callback error: %s", e)
                     else:
                         # Reset stability counter if text is empty
                         stable_count = 0

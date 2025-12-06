@@ -340,7 +340,11 @@ def create_text_result_panel(
 
         # Translation status section
         if state.text_translating:
-            _render_translation_status(state.text_detected_language, translating=True)
+            _render_translation_status(
+                state.text_detected_language,
+                translating=True,
+                streaming_text=state.streaming_text,
+            )
         elif state.text_result and state.text_result.options:
             _render_translation_status(
                 state.text_result.detected_language,
@@ -395,12 +399,13 @@ def _render_translation_status(
     detected_language: Optional[str],
     translating: bool = False,
     elapsed_time: Optional[float] = None,
+    streaming_text: Optional[str] = None,
 ):
     """
     Render translation status section.
 
     Shows:
-    - During translation: "英訳中..." or "和訳中..."
+    - During translation: "英訳中..." or "和訳中..." with optional streaming preview
     - After translation: "✓ 英訳しました" or "✓ 和訳しました" with elapsed time
     """
     # Determine translation direction
@@ -429,6 +434,13 @@ def _render_translation_status(
                 # Elapsed time badge
                 if elapsed_time:
                     ui.label(f'{elapsed_time:.1f}秒').classes('elapsed-time-badge')
+
+        # Streaming preview during translation
+        if translating and streaming_text:
+            with ui.element('div').classes('streaming-preview'):
+                # Truncate long streaming text for preview
+                preview_text = streaming_text[:500] + '...' if len(streaming_text) > 500 else streaming_text
+                ui.label(preview_text).classes('streaming-text')
 
 
 def _render_empty_result_state():

@@ -896,6 +896,7 @@ class TranslationService:
         reference_files: Optional[list[Path]] = None,
         style: Optional[str] = None,
         pre_detected_language: Optional[str] = None,
+        on_chunk: "Callable[[str], None] | None" = None,
     ) -> TextTranslationResult:
         """
         Translate text with language-specific handling:
@@ -908,6 +909,7 @@ class TranslationService:
             style: Translation style for English output ("standard", "concise", "minimal")
                    If None, uses settings.text_translation_style (default: "concise")
             pre_detected_language: Pre-detected language from detect_language() to skip detection
+            on_chunk: Optional callback called with partial text during streaming
 
         Returns:
             TextTranslationResult with options and output_language
@@ -965,7 +967,7 @@ class TranslationService:
 
             # Translate (with char_limit for auto file attachment mode)
             char_limit = self.config.copilot_char_limit if self.config else None
-            raw_result = self.copilot.translate_single(text, prompt, reference_files, char_limit)
+            raw_result = self.copilot.translate_single(text, prompt, reference_files, char_limit, on_chunk)
 
             # Parse the result - always single option now
             options = self._parse_single_translation_result(raw_result)

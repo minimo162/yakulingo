@@ -62,6 +62,7 @@ class AppState:
     text_detected_language: Optional[str] = None  # Copilot-detected source language
     text_result: Optional[TextTranslationResult] = None
     text_translation_elapsed_time: Optional[float] = None  # Translation time in seconds
+    streaming_text: Optional[str] = None  # Partial text during streaming response
 
     # File tab state
     file_state: FileState = FileState.EMPTY
@@ -114,6 +115,7 @@ class AppState:
         self.text_detected_language = None
         self.text_result = None
         self.text_translation_elapsed_time = None
+        self.streaming_text = None
 
     def reset_file_state(self) -> None:
         """Reset file tab state"""

@@ -18,7 +18,8 @@ class AppSettings:
     """Application settings"""
 
     # Reference Files (用語集、参考資料など)
-    reference_files: list[str] = field(default_factory=lambda: ["glossary.csv"])
+    # Default is empty - users can add files via UI
+    reference_files: list[str] = field(default_factory=list)
 
     # Cache for resolved reference file paths (not persisted)
     _ref_paths_cache: Optional[tuple[str, list[Path]]] = field(
@@ -32,6 +33,7 @@ class AppSettings:
     last_tab: str = "text"
     window_width: int = 1400  # 3カラムレイアウト対応
     window_height: int = 850
+    onboarding_completed: bool = False  # True after first translation (any type)
 
     # Advanced
     max_chars_per_batch: int = 7000     # Max characters per batch (fits in 8000 with template)
@@ -123,6 +125,7 @@ class AppSettings:
             "last_tab": self.last_tab,
             "window_width": self.window_width,
             "window_height": self.window_height,
+            "onboarding_completed": self.onboarding_completed,
             "max_chars_per_batch": self.max_chars_per_batch,
             "request_timeout": self.request_timeout,
             "max_retries": self.max_retries,

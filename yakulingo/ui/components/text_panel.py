@@ -94,6 +94,7 @@ def create_text_input_panel(
     on_remove_reference_file: Optional[Callable[[int], None]] = None,
     on_settings: Optional[Callable[[], None]] = None,
     on_translate_button_created: Optional[Callable[[ui.button], None]] = None,
+    is_first_use: bool = False,
 ):
     """
     Text input panel for 3-column layout.
@@ -108,7 +109,7 @@ def create_text_input_panel(
         _create_large_input_panel(
             state, on_translate, on_source_change, on_clear,
             on_attach_reference_file, on_remove_reference_file,
-            on_settings, on_translate_button_created
+            on_settings, on_translate_button_created, is_first_use
         )
     else:
         # RESULT/TRANSLATING state: Compact input for new translations
@@ -128,6 +129,7 @@ def _create_large_input_panel(
     on_remove_reference_file: Optional[Callable[[int], None]] = None,
     on_settings: Optional[Callable[[], None]] = None,
     on_translate_button_created: Optional[Callable[[ui.button], None]] = None,
+    is_first_use: bool = False,
 ):
     """Large input panel for INPUT state - spans 2 columns"""
     with ui.column().classes('flex-1 w-full gap-4'):
@@ -228,12 +230,22 @@ def _create_large_input_panel(
 
         # Hint text - only shown in INPUT state
         with ui.element('div').classes('hint-section'):
-            with ui.element('div').classes('hint-primary'):
-                ui.icon('translate').classes('text-sm text-muted')
-                ui.label('入力言語を自動判定して翻訳します').classes('text-xs')
-            with ui.element('div').classes('hint-secondary'):
-                ui.icon('auto_awesome').classes('text-sm')
-                ui.label('M365 Copilot による翻訳').classes('text-2xs')
+            if is_first_use:
+                # First-time user guidance
+                with ui.element('div').classes('hint-primary'):
+                    ui.icon('lightbulb').classes('text-sm text-muted')
+                    ui.label('使い方: テキストを入力して「翻訳する」をクリック').classes('text-xs')
+                with ui.element('div').classes('hint-secondary'):
+                    ui.icon('attach_file').classes('text-sm')
+                    ui.label('📎で用語集や参考資料を添付できます').classes('text-2xs')
+            else:
+                # Regular hints for returning users
+                with ui.element('div').classes('hint-primary'):
+                    ui.icon('translate').classes('text-sm text-muted')
+                    ui.label('入力言語を自動判定して翻訳します').classes('text-xs')
+                with ui.element('div').classes('hint-secondary'):
+                    ui.icon('auto_awesome').classes('text-sm')
+                    ui.label('M365 Copilot による翻訳').classes('text-2xs')
 
 
 def _create_compact_input_panel(

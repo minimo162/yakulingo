@@ -19,6 +19,7 @@ class TestCopilotHandlerInit:
         assert handler._playwright is None
         assert handler._browser is None
         assert handler._page is None
+        assert handler.last_connection_error == CopilotHandler.ERROR_NONE
 
     def test_default_port(self):
         """Default CDP port is set"""

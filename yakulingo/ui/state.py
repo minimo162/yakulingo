@@ -41,6 +41,15 @@ class TextViewState(Enum):
     RESULT = "result"    # After translation - compact input + result panel
 
 
+class ConnectionState(Enum):
+    """Copilot connection states for clear user feedback"""
+    CONNECTING = "connecting"      # Initial state - attempting to connect
+    CONNECTED = "connected"        # Successfully connected and ready
+    LOGIN_REQUIRED = "login_required"  # Edge is running but login needed
+    EDGE_NOT_RUNNING = "edge_not_running"  # Edge browser not found
+    CONNECTION_FAILED = "connection_failed"  # Connection failed for other reasons
+
+
 @dataclass
 class AppState:
     """
@@ -81,6 +90,7 @@ class AppState:
     # Copilot connection (lazy detection - checked on first translation)
     copilot_ready: bool = False  # Set to True after first successful translation
     copilot_error: str = ""
+    connection_state: ConnectionState = ConnectionState.CONNECTING  # Current connection state for UI
 
     # Translation history (in-memory cache, backed by SQLite)
     history: list[HistoryEntry] = field(default_factory=list)

@@ -553,6 +553,11 @@ body {
     color: var(--md-sys-color-on-warning-container);
 }
 
+.status-indicator.error {
+    background: var(--md-sys-color-error-container);
+    color: var(--md-sys-color-on-error-container);
+}
+
 .status-dot {
     width: 8px;
     height: 8px;
@@ -572,6 +577,10 @@ body {
 .status-dot.login-required {
     background: var(--md-sys-color-warning);
     animation: pulse 1.5s ease infinite;
+}
+
+.status-dot.error {
+    background: var(--md-sys-color-error);
 }
 
 @keyframes pulse {

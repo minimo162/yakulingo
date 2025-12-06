@@ -289,6 +289,14 @@ class CopilotHandler:
         'bing.com/chat',
     )
 
+    # Connection error types for detailed user feedback
+    ERROR_NONE = ""
+    ERROR_EDGE_NOT_FOUND = "edge_not_found"
+    ERROR_EDGE_STARTUP_TIMEOUT = "edge_startup_timeout"
+    ERROR_LOGIN_REQUIRED = "login_required"
+    ERROR_CONNECTION_FAILED = "connection_failed"
+    ERROR_NETWORK = "network_error"
+
     def __init__(self):
         self._playwright = None
         self._browser = None
@@ -298,6 +306,8 @@ class CopilotHandler:
         self.cdp_port = self.DEFAULT_CDP_PORT
         self.profile_dir = None
         self.edge_process = None
+        # Connection error for detailed user feedback
+        self.last_connection_error: str = self.ERROR_NONE
 
     @property
     def is_connected(self) -> bool:
@@ -391,6 +401,7 @@ class CopilotHandler:
         edge_exe = self._find_edge_exe()
         if not edge_exe:
             logger.error("Microsoft Edge not found")
+            self.last_connection_error = self.ERROR_EDGE_NOT_FOUND
             return False
 
         # Use user-local profile directory
@@ -444,9 +455,11 @@ class CopilotHandler:
                     return True
 
             logger.warning("Edge startup timeout")
+            self.last_connection_error = self.ERROR_EDGE_STARTUP_TIMEOUT
             return False
         except (OSError, subprocess.SubprocessError) as e:
             logger.error("Edge startup failed: %s", e)
+            self.last_connection_error = self.ERROR_EDGE_NOT_FOUND
             return False
 
     def _is_page_valid(self) -> bool:
@@ -590,8 +603,10 @@ class CopilotHandler:
                 # Wait a bit for authentication/session to fully initialize
                 time.sleep(0.3)
                 self._connected = True
+                self.last_connection_error = self.ERROR_NONE  # Clear error on success
             except PlaywrightTimeoutError:
                 logger.warning("Chat input not found - login required in Edge browser")
+                self.last_connection_error = self.ERROR_LOGIN_REQUIRED
                 self._cleanup_on_error()
                 return False
 
@@ -608,10 +623,12 @@ class CopilotHandler:
 
         except (PlaywrightError, PlaywrightTimeoutError) as e:
             logger.error("Browser connection failed: %s", e)
+            self.last_connection_error = self.ERROR_CONNECTION_FAILED
             self._cleanup_on_error()
             return False
         except (ConnectionError, OSError) as e:
             logger.error("Network connection failed: %s", e)
+            self.last_connection_error = self.ERROR_NETWORK
             self._cleanup_on_error()
             return False
 

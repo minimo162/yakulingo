@@ -608,7 +608,7 @@ class YakuLingoApp:
         import time
 
         if not self.translation_service:
-            ui.notify('Not connected', type='warning')
+            ui.notify('接続されていません', type='warning')
             return
 
         source_text = self.state.source_text
@@ -679,7 +679,7 @@ class YakuLingoApp:
         # Restore client context for UI operations after asyncio.to_thread
         with client:
             if error_message:
-                ui.notify(f'Error: {error_message}', type='negative')
+                ui.notify(f'エラー: {error_message}', type='negative')
             self._refresh_content()
             # Update connection status (may have changed during translation)
             self._refresh_status()
@@ -692,7 +692,7 @@ class YakuLingoApp:
             adjust_type: 'shorter', 'detailed', 'alternatives', or custom instruction
         """
         if not self.translation_service:
-            ui.notify('Not connected', type='warning')
+            ui.notify('接続されていません', type='warning')
             return
 
         # Use saved client reference (context.client not available in async tasks)
@@ -715,12 +715,16 @@ class YakuLingoApp:
             if self.state.text_result and self.state.text_result.options:
                 current_style = self.state.text_result.options[-1].style
 
+            # Get reference files for consistent translations
+            reference_files = self.state.reference_files or None
+
             result = await asyncio.to_thread(
                 lambda: self.translation_service.adjust_translation(
                     text,
                     adjust_type,
                     source_text=source_text,
                     current_style=current_style,
+                    reference_files=reference_files,
                 )
             )
 
@@ -757,7 +761,7 @@ class YakuLingoApp:
     async def _back_translate(self, text: str):
         """Back-translate text to verify translation quality"""
         if not self.translation_service:
-            ui.notify('Not connected', type='warning')
+            ui.notify('接続されていません', type='warning')
             return
 
         # Use saved client reference (context.client not available in async tasks)
@@ -790,9 +794,10 @@ class YakuLingoApp:
 - 指定形式以外の追加説明やコメント
 """
 
-            # Send to Copilot
+            # Send to Copilot (with reference files for consistent translations)
+            reference_files = self.state.reference_files or None
             result = await asyncio.to_thread(
-                lambda: self.copilot.translate_single(text, prompt, None)
+                lambda: self.copilot.translate_single(text, prompt, reference_files)
             )
 
             # Parse result and add to options
@@ -807,11 +812,11 @@ class YakuLingoApp:
                 if self.state.text_result:
                     self.state.text_result.options.append(new_option)
                 else:
-                    # Use stored source_text (input field may be cleared or changed)
-                    source_text = self.state.text_result.source_text if self.state.text_result else self.state.source_text
+                    # text_result is None here, use state.source_text directly
+                    fallback_source = self.state.source_text or ""
                     self.state.text_result = TextTranslationResult(
-                        source_text=source_text,
-                        source_char_count=len(source_text),
+                        source_text=fallback_source,
+                        source_char_count=len(fallback_source),
                         options=[new_option],
                     )
             else:
@@ -1021,7 +1026,7 @@ class YakuLingoApp:
     async def _follow_up_action(self, action_type: str, content: str):
         """Handle follow-up actions for →Japanese translations"""
         if not self.translation_service:
-            ui.notify('Not connected', type='warning')
+            ui.notify('接続されていません', type='warning')
             return
 
         # Use saved client reference (context.client not available in async tasks)
@@ -1042,16 +1047,17 @@ class YakuLingoApp:
             # Build prompt
             prompt = self._build_follow_up_prompt(action_type, source_text, translation, content)
             if prompt is None:
-                error_message = 'Unknown action type'
+                error_message = '不明なアクションタイプです'
                 self.state.text_translating = False
                 with client:
                     ui.notify(error_message, type='warning')
                     self._refresh_content()
                 return
 
-            # Send to Copilot
+            # Send to Copilot (with reference files for consistent translations)
+            reference_files = self.state.reference_files or None
             result = await asyncio.to_thread(
-                lambda: self.copilot.translate_single(source_text, prompt, None)
+                lambda: self.copilot.translate_single(source_text, prompt, reference_files)
             )
 
             # Parse result and update UI
@@ -1060,7 +1066,7 @@ class YakuLingoApp:
                 text, explanation = parse_translation_result(result)
                 self._add_follow_up_result(source_text, text, explanation)
             else:
-                error_message = 'Failed to get response'
+                error_message = '応答の取得に失敗しました'
 
         except Exception as e:
             error_message = str(e)
@@ -1070,7 +1076,7 @@ class YakuLingoApp:
         # Restore client context for UI operations
         with client:
             if error_message:
-                ui.notify(f'Error: {error_message}', type='negative')
+                ui.notify(f'エラー: {error_message}', type='negative')
             self._refresh_content()
 
     def _on_language_change(self, lang: str):
@@ -1118,7 +1124,7 @@ class YakuLingoApp:
     def _select_file(self, file_path: Path):
         """Select file for translation"""
         if not self.translation_service:
-            ui.notify('Not connected', type='warning')
+            ui.notify('接続されていません', type='warning')
             return
 
         try:
@@ -1126,7 +1132,7 @@ class YakuLingoApp:
             self.state.selected_file = file_path
             self.state.file_state = FileState.SELECTED
         except Exception as e:
-            ui.notify(f'Error: {e}', type='negative')
+            ui.notify(f'エラー: {e}', type='negative')
         self._refresh_content()
 
     async def _translate_file(self):

@@ -1546,6 +1546,15 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
         cleanup_done = True
 
         logger.info("Shutting down YakuLingo...")
+
+        # Cancel any ongoing translation (prevents incomplete output files)
+        if yakulingo_app.translation_service is not None:
+            try:
+                yakulingo_app.translation_service.cancel()
+                logger.debug("Translation service cancelled")
+            except Exception as e:
+                logger.debug("Error cancelling translation: %s", e)
+
         # Disconnect from Copilot (close Edge browser)
         if yakulingo_app._copilot is not None:
             try:
@@ -1553,6 +1562,13 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
                 logger.info("Copilot disconnected")
             except Exception as e:
                 logger.debug("Error disconnecting Copilot: %s", e)
+
+        # Close database connections (ensures WAL checkpoint)
+        try:
+            yakulingo_app.state.close()
+            logger.debug("Database connections closed")
+        except Exception as e:
+            logger.debug("Error closing database: %s", e)
 
     # Register shutdown handler (both for reliability)
     # - on_shutdown: Called when NiceGUI server shuts down gracefully

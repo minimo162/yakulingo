@@ -111,13 +111,15 @@ set DIST_DATE=%datetime:~0,8%
 set DIST_NAME=YakuLingo_%DIST_DATE%
 set DIST_ZIP=%DIST_NAME%.zip
 set DIST_DIR=dist_temp\YakuLingo
+set SHARE_DIR=share_package
 
 :: Remove old distribution if exists
-if exist "%DIST_ZIP%" del /q "%DIST_ZIP%"
+if exist "%SHARE_DIR%" rd /s /q "%SHARE_DIR%"
 if exist "dist_temp" rd /s /q "dist_temp"
 
-:: Create distribution folder structure
+:: Create folder structure
 mkdir "%DIST_DIR%" 2>nul
+mkdir "%SHARE_DIR%" 2>nul
 
 :: Copy individual files (fast)
 for %%f in ("YakuLingo.exe" "app.py" "glossary.csv" "pyproject.toml" "uv.lock" "uv.toml" "README.md") do (
@@ -167,13 +169,18 @@ if not defined SEVENZIP (
 )
 
 pushd dist_temp
-"%SEVENZIP%" a -tzip -mx=1 -mmt=on -bsp1 "..\%DIST_ZIP%" YakuLingo >nul
+"%SEVENZIP%" a -tzip -mx=1 -mmt=on -bsp1 "..\%SHARE_DIR%\%DIST_ZIP%" YakuLingo >nul
 popd
 
 :: ============================================================
-:: Step 4: Cleanup and create share package
+:: Step 4: Cleanup and finalize
 :: ============================================================
 call :ShowProgress 4 "Finalizing..."
+
+:: Copy installer files to share folder
+copy /y "packaging\installer\share\setup.vbs" "%SHARE_DIR%\" >nul
+copy /y "packaging\installer\share\README.txt" "%SHARE_DIR%\" >nul
+robocopy "packaging\installer\share\.scripts" "%SHARE_DIR%\.scripts" /E /NFL /NDL /NJH /NJS >nul 2>&1
 
 :: Cleanup temp folder
 rd /s /q "dist_temp" 2>nul
@@ -182,39 +189,20 @@ rd /s /q "dist_temp" 2>nul
 set END_TIME=%TIME%
 call :CalcElapsed "%START_TIME%" "%END_TIME%"
 
-if exist "%DIST_ZIP%" (
+if exist "%SHARE_DIR%\%DIST_ZIP%" (
     echo.
     echo ============================================================
     echo [SUCCESS] Distribution package created!
     echo.
-    echo   File: %DIST_ZIP%
-    for %%A in ("%DIST_ZIP%") do echo   Size: %%~zA bytes
-    echo   Time: %ELAPSED_TIME%
-    echo.
-    echo ============================================================
-    echo.
-    echo Creating share folder package...
-
-    :: Create share folder with network installer
-    set SHARE_DIR=share_package
-    if exist "!SHARE_DIR!" rd /s /q "!SHARE_DIR!"
-    mkdir "!SHARE_DIR!"
-
-    :: Copy ZIP and installer files
-    copy /y "!DIST_ZIP!" "!SHARE_DIR!\" >nul
-    copy /y "packaging\installer\share\setup.vbs" "!SHARE_DIR!\" >nul
-    copy /y "packaging\installer\share\README.txt" "!SHARE_DIR!\" >nul
-    robocopy "packaging\installer\share\.scripts" "!SHARE_DIR!\.scripts" /E /NFL /NDL /NJH /NJS >nul 2>&1
-
-    echo.
-    echo [SUCCESS] Share folder package created!
-    echo.
-    echo   Folder: !SHARE_DIR!\
+    echo   Folder: %SHARE_DIR%\
     echo     - setup.vbs    ^<-- Users run this
-    echo     - !DIST_ZIP!
+    echo     - %DIST_ZIP%
     echo     - README.txt
     echo.
-    echo Deploy the contents of "!SHARE_DIR!" to your network share.
+    for %%A in ("%SHARE_DIR%\%DIST_ZIP%") do echo   Size: %%~zA bytes
+    echo   Time: %ELAPSED_TIME%
+    echo.
+    echo Deploy the contents of "%SHARE_DIR%" to your network share.
     echo ============================================================
 ) else (
     echo [ERROR] Failed to create distribution package.

@@ -2500,7 +2500,7 @@ def extract_font_info_from_pdf(
     # Scale factor from PDF coordinates (72 DPI) to OCR coordinates
     scale = dpi / 72.0
 
-    with _open_fitz_document(pdf_path) as doc:
+    with _open_pymupdf_document(pdf_path) as doc:
         for page_idx, page in enumerate(doc):
             page_num = page_idx + 1
             page_font_info = []
@@ -2617,7 +2617,7 @@ def _open_pdf_document(pdf_path: str):
 
 
 @contextmanager
-def _open_fitz_document(file_path):
+def _open_pymupdf_document(file_path):
     """
     Context manager for safely opening and closing PyMuPDF documents.
 
@@ -3181,7 +3181,7 @@ class PdfProcessor(FileProcessor):
 
     def get_file_info(self, file_path: Path) -> FileInfo:
         """Get PDF file info (fast: page count only, no text scanning)."""
-        with _open_fitz_document(file_path) as doc:
+        with _open_pymupdf_document(file_path) as doc:
             page_count = len(doc)
             section_details = [
                 SectionDetail(index=idx, name=f"ページ {idx + 1}")
@@ -3659,7 +3659,7 @@ class PdfProcessor(FileProcessor):
             ```
         """
         self._output_language = output_language
-        with _open_fitz_document(file_path) as doc:
+        with _open_pymupdf_document(file_path) as doc:
             total_pages = len(doc)
 
         # Use hybrid mode: pdfminer text + yomitoku layout (no OCR)
@@ -4298,7 +4298,7 @@ class PdfProcessor(FileProcessor):
 
     def get_page_count(self, file_path: Path) -> int:
         """Get total page count of PDF."""
-        with _open_fitz_document(file_path) as doc:
+        with _open_pymupdf_document(file_path) as doc:
             return len(doc)
 
     def create_bilingual_pdf(

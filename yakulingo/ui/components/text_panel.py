@@ -692,8 +692,8 @@ def _render_results_to_en(
 
         # Inline adjustment section
         if on_adjust and result.options:
-            current_style = result.options[-1].style  # Get style from latest option
-            _render_inline_adjust_section(result.options[0].text, on_adjust, on_retry, current_style)
+            latest_option = result.options[-1]  # Use latest option for both text and style
+            _render_inline_adjust_section(latest_option.text, on_adjust, on_retry, latest_option.style)
 
 
 def _render_results_to_jp(
@@ -711,7 +711,7 @@ def _render_results_to_jp(
     if not result.options:
         return
 
-    option = result.options[0]  # Single option for →jp
+    option = result.options[-1]  # Use latest option (may have adjustments)
 
     # Translation results container
     with ui.element('div').classes('result-container'):
@@ -865,7 +865,7 @@ def _show_adjust_dialog(text: str, on_adjust: Callable[[str, str], None]):
 
                 ui.button(
                     '詳しく',
-                    on_click=lambda: _do_adjust(dialog, text, 'longer', on_adjust)
+                    on_click=lambda: _do_adjust(dialog, text, 'detailed', on_adjust)
                 ).props('outline').classes('flex-1')
 
             # Custom input
@@ -901,11 +901,14 @@ def _render_inline_adjust_section(
         on_adjust: Callback for adjustment (text, adjust_type)
         on_retry: Callback for retry translation
         current_style: Current translation style for disabling limit buttons
+                       If None (legacy history), defaults to 'concise'
     """
     # Style order: minimal < concise < standard
     # Disable "shorter" if at minimal, disable "detailed" if at standard
-    is_at_min = current_style == 'minimal'
-    is_at_max = current_style == 'standard'
+    # Default to 'concise' if style is None (legacy history data)
+    effective_style = current_style if current_style else 'concise'
+    is_at_min = effective_style == 'minimal'
+    is_at_max = effective_style == 'standard'
 
     with ui.element('div').classes('inline-adjust-section'):
         # Suggestion hint with retry button (吹き出し風)

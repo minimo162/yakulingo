@@ -1032,9 +1032,9 @@ class YakuLingoApp:
             # Yield control to event loop before starting blocking operation
             await asyncio.sleep(0)
 
-            # Build context from current translation
+            # Build context from current translation (use latest option)
             source_text = self.state.source_text
-            translation = self.state.text_result.options[0].text if self.state.text_result and self.state.text_result.options else ""
+            translation = self.state.text_result.options[-1].text if self.state.text_result and self.state.text_result.options else ""
 
             # Build prompt
             prompt = self._build_follow_up_prompt(action_type, source_text, translation, content)

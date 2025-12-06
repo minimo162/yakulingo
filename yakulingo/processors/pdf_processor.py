@@ -38,20 +38,20 @@ from yakulingo.models.types import (
 # =============================================================================
 # Lazy Imports
 # =============================================================================
-_fitz = None
+_pymupdf = None
 _pypdfium2 = None
 _yomitoku = None
 _torch = None
 _np = None
 _pdfminer = None
 
-def _get_fitz():
-    """Lazy import PyMuPDF"""
-    global _fitz
-    if _fitz is None:
-        import fitz
-        _fitz = fitz
-    return _fitz
+def _get_pymupdf():
+    """Lazy import PyMuPDF (PDFMathTranslate compliant)"""
+    global _pymupdf
+    if _pymupdf is None:
+        import pymupdf
+        _pymupdf = pymupdf
+    return _pymupdf
 
 
 def _get_numpy():
@@ -905,9 +905,9 @@ class FontRegistry:
         # Create PyMuPDF Font object for glyph lookup (character width calculation)
         if font_path:
             try:
-                fitz = _get_fitz()
+                pymupdf = _get_pymupdf()
                 # PyMuPDF 1.26+ automatically handles TTC font collections
-                self._font_objects[font_id] = fitz.Font(fontfile=font_path)
+                self._font_objects[font_id] = pymupdf.Font(fontfile=font_path)
                 logger.debug("Created Font object for %s: %s", font_id, font_path)
             except Exception as e:
                 logger.warning("Failed to create Font object for %s: %s", font_id, e)
@@ -1061,7 +1061,7 @@ class FontRegistry:
         Returns:
             List of font IDs that failed to embed
         """
-        fitz = _get_fitz()
+        pymupdf = _get_pymupdf()
         failed_fonts = []
 
         if len(doc) == 0:
@@ -1092,7 +1092,7 @@ class FontRegistry:
                 # will render as .notdef (invisible)
                 if font_info.font_id not in self._font_objects:
                     try:
-                        self._font_objects[font_info.font_id] = fitz.Font(fontfile=font_path)
+                        self._font_objects[font_info.font_id] = pymupdf.Font(fontfile=font_path)
                         logger.debug("Created Font object in embed_fonts for %s", font_info.font_id)
                     except Exception as e:
                         logger.warning(
@@ -2476,7 +2476,7 @@ def extract_font_info_from_pdf(
         [{'bbox': [x1, y1, x2, y2], 'font_size': float, 'font_name': str}, ...]
         Coordinates are in OCR DPI scale (not PDF 72 DPI).
     """
-    fitz = _get_fitz()
+    pymupdf = _get_pymupdf()
     font_info: dict[int, list[dict]] = {}
 
     # Scale factor from PDF coordinates (72 DPI) to OCR coordinates
@@ -2612,8 +2612,8 @@ def _open_fitz_document(file_path):
     Yields:
         PyMuPDF Document object
     """
-    fitz = _get_fitz()
-    doc = fitz.open(file_path)
+    pymupdf = _get_pymupdf()
+    doc = pymupdf.open(file_path)
     try:
         yield doc
     finally:
@@ -3316,8 +3316,8 @@ class PdfProcessor(FileProcessor):
         Returns:
             Dictionary with processing statistics
         """
-        fitz = _get_fitz()
-        doc = fitz.open(input_path)
+        pymupdf = _get_pymupdf()
+        doc = pymupdf.open(input_path)
 
         result = {
             'total': len(translations),
@@ -4310,7 +4310,7 @@ class PdfProcessor(FileProcessor):
             - 'original_pages': Number of original pages
             - 'translated_pages': Number of translated pages
         """
-        fitz = _get_fitz()
+        pymupdf = _get_pymupdf()
 
         result = {
             'total_pages': 0,
@@ -4323,9 +4323,9 @@ class PdfProcessor(FileProcessor):
         output_doc = None
 
         try:
-            original_doc = fitz.open(original_path)
-            translated_doc = fitz.open(translated_path)
-            output_doc = fitz.open()  # New empty document
+            original_doc = pymupdf.open(original_path)
+            translated_doc = pymupdf.open(translated_path)
+            output_doc = pymupdf.open()  # New empty document
 
             original_pages = len(original_doc)
             translated_pages = len(translated_doc)

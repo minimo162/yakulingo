@@ -157,10 +157,13 @@ for %%d in ("yakulingo" "prompts" "config") do (
 :: ============================================================
 call :ShowProgress 3 "Creating ZIP archive..."
 
-:: Find 7-Zip
+:: Find 7-Zip (check standard locations and PATH)
 set "SEVENZIP="
 if exist "%ProgramFiles%\7-Zip\7z.exe" set "SEVENZIP=%ProgramFiles%\7-Zip\7z.exe"
 if exist "%ProgramFiles(x86)%\7-Zip\7z.exe" set "SEVENZIP=%ProgramFiles(x86)%\7-Zip\7z.exe"
+if not defined SEVENZIP (
+    for %%i in (7z.exe) do if not "%%~$PATH:i"=="" set "SEVENZIP=%%~$PATH:i"
+)
 
 if not defined SEVENZIP (
     echo        [ERROR] 7-Zip not found. Please install from https://7-zip.org/

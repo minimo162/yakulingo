@@ -7,10 +7,19 @@ Simple, focused, warm.
 from nicegui import ui, events
 from typing import Callable, Optional
 from pathlib import Path
+from typing import List
 
 from yakulingo.ui.state import AppState, FileState
 from yakulingo.ui.utils import temp_file_manager, download_to_folder_and_open
 from yakulingo.models.types import FileInfo, FileType, SectionDetail, TranslationResult
+
+# Paperclip/Attachment SVG icon (Material Design style)
+ATTACH_SVG: str = '''
+<svg viewBox="0 0 24 24" fill="currentColor" role="img" aria-label="参照ファイルを添付">
+    <title>添付</title>
+    <path d="M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5c0-1.38 1.12-2.5 2.5-2.5s2.5 1.12 2.5 2.5v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5c0 1.38 1.12 2.5 2.5 2.5s2.5-1.12 2.5-2.5V5c0-2.21-1.79-4-4-4S7 2.79 7 5v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5z"/>
+</svg>
+'''
 
 
 SUPPORTED_FORMATS = ".xlsx,.xls,.docx,.doc,.pptx,.ppt,.pdf"
@@ -46,6 +55,9 @@ def create_file_panel(
     on_section_toggle: Optional[Callable[[int, bool], None]] = None,
     on_font_size_change: Optional[Callable[[float], None]] = None,
     on_font_name_change: Optional[Callable[[str], None]] = None,
+    on_attach_reference_file: Optional[Callable[[], None]] = None,
+    on_remove_reference_file: Optional[Callable[[int], None]] = None,
+    reference_files: Optional[List[Path]] = None,
     bilingual_enabled: bool = False,
     export_glossary_enabled: bool = False,
     translation_style: str = "concise",
@@ -78,6 +90,12 @@ def create_file_panel(
                         on_bilingual_change,
                     )
                     _export_glossary_selector(export_glossary_enabled, on_export_glossary_change)
+                    # Reference file selector
+                    _reference_file_selector(
+                        reference_files,
+                        on_attach_reference_file,
+                        on_remove_reference_file,
+                    )
                     # Font settings (unified for all file types)
                     if state.file_info:
                         _font_settings_selector(
@@ -210,6 +228,35 @@ def _export_glossary_selector(enabled: bool, on_change: Optional[Callable[[bool]
             '原文と翻訳のペアをCSVファイルで出力します。'
             'glossaryとして再利用できます。'
         )
+
+
+def _reference_file_selector(
+    reference_files: Optional[List[Path]],
+    on_attach: Optional[Callable[[], None]],
+    on_remove: Optional[Callable[[int], None]],
+):
+    """Reference file selector with attach button and file list"""
+    with ui.row().classes('w-full justify-center mt-3 items-center gap-2 flex-wrap'):
+        # Attach button
+        if on_attach:
+            has_files = bool(reference_files)
+            attach_btn = ui.button(
+                on_click=on_attach
+            ).classes(f'attach-btn {"has-file" if has_files else ""}').props('flat')
+            with attach_btn:
+                ui.html(ATTACH_SVG, sanitize=False)
+            attach_btn.tooltip('参照ファイルを添付' if not has_files else '参照ファイルを追加')
+
+        # Display attached files
+        if reference_files:
+            for i, ref_file in enumerate(reference_files):
+                with ui.element('div').classes('attach-file-indicator'):
+                    ui.label(ref_file.name).classes('file-name')
+                    if on_remove:
+                        ui.button(
+                            icon='close',
+                            on_click=lambda idx=i: on_remove(idx)
+                        ).props('flat dense round size=xs').classes('remove-btn')
 
 
 def _drop_zone(on_file_select: Callable[[Path], None]):

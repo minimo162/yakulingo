@@ -2821,9 +2821,9 @@ def create_layout_array_from_yomitoku(
         for fig in results.figures:
             if hasattr(fig, 'box') and fig.box:
                 x0, y0, x1, y1 = [int(v) for v in fig.box]
-                x0 = max(0, min(x0, page_width - 1))
+                x0 = max(0, min(x0, page_width))
                 x1 = max(0, min(x1, page_width))
-                y0 = max(0, min(y0, page_height - 1))
+                y0 = max(0, min(y0, page_height))
                 y1 = max(0, min(y1, page_height))
                 layout[y0:y1, x0:x1] = LAYOUT_ABANDON
                 figures_list.append(fig.box)
@@ -2834,9 +2834,9 @@ def create_layout_array_from_yomitoku(
         if para.role in ["page_header", "page_footer"]:
             if hasattr(para, 'box') and para.box:
                 x0, y0, x1, y1 = [int(v) for v in para.box]
-                x0 = max(0, min(x0, page_width - 1))
+                x0 = max(0, min(x0, page_width))
                 x1 = max(0, min(x1, page_width))
-                y0 = max(0, min(y0, page_height - 1))
+                y0 = max(0, min(y0, page_height))
                 y1 = max(0, min(y1, page_height))
                 layout[y0:y1, x0:x1] = LAYOUT_ABANDON
             continue
@@ -2844,9 +2844,9 @@ def create_layout_array_from_yomitoku(
         para_id = LAYOUT_PARAGRAPH_BASE + para.order
         if hasattr(para, 'box') and para.box:
             x0, y0, x1, y1 = [int(v) for v in para.box]
-            x0 = max(0, min(x0, page_width - 1))
+            x0 = max(0, min(x0, page_width))
             x1 = max(0, min(x1, page_width))
-            y0 = max(0, min(y0, page_height - 1))
+            y0 = max(0, min(y0, page_height))
             y1 = max(0, min(y1, page_height))
             layout[y0:y1, x0:x1] = para_id
             paragraphs_info[para_id] = {
@@ -2864,9 +2864,9 @@ def create_layout_array_from_yomitoku(
             cell_id = LAYOUT_TABLE_BASE + table_cell_idx
             if hasattr(cell, 'box') and cell.box:
                 x0, y0, x1, y1 = [int(v) for v in cell.box]
-                x0 = max(0, min(x0, page_width - 1))
+                x0 = max(0, min(x0, page_width))
                 x1 = max(0, min(x1, page_width))
-                y0 = max(0, min(y0, page_height - 1))
+                y0 = max(0, min(y0, page_height))
                 y1 = max(0, min(y1, page_height))
                 layout[y0:y1, x0:x1] = cell_id
                 tables_info[cell_id] = {

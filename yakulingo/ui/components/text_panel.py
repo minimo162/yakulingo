@@ -408,10 +408,8 @@ def create_text_result_panel(
                     elapsed_time,
                     on_retry,
                 )
-        elif state.text_translating:
-            _render_loading_spinner()
-        else:
-            # Empty state - show placeholder
+        elif not state.text_translating:
+            # Empty state - show placeholder (spinner already shown in translation status section)
             _render_empty_result_state()
 
 
@@ -467,12 +465,6 @@ def _render_translation_status(
                 # Elapsed time badge
                 if elapsed_time:
                     ui.label(f'{elapsed_time:.1f}秒').classes('elapsed-time-badge')
-
-
-def _render_loading_spinner():
-    """Render loading spinner during translation"""
-    with ui.element('div').classes('loading-spinner-section'):
-        ui.spinner('dots', size='lg').classes('text-primary')
 
 
 def _render_empty_result_state():

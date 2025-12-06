@@ -27,6 +27,8 @@ from yakulingo.processors.pdf_processor import (
     get_layout_class_at_point,
     is_same_region,
     should_abandon_region,
+    prepare_translation_cells,
+    _calculate_paragraph_confidence,
     # Constants
     FONT_FILES,
     DEFAULT_VFONT_PATTERN,
@@ -2464,3 +2466,394 @@ class TestLayoutClassFunctions:
         assert should_abandon_region(LAYOUT_BACKGROUND) is False
         assert should_abandon_region(LAYOUT_PARAGRAPH_BASE) is False
         assert should_abandon_region(LAYOUT_TABLE_BASE) is False
+
+
+# =============================================================================
+# Tests for TranslationCell Extended Fields
+# =============================================================================
+class TestTranslationCellExtendedFields:
+    """Tests for TranslationCell extended fields (PDFMathTranslate compliant)"""
+
+    def test_translation_cell_with_order(self):
+        """TranslationCell should have order field"""
+        cell = TranslationCell(
+            address="P1_5",
+            text="テスト",
+            box=[0, 0, 100, 50],
+            order=5,
+        )
+        assert cell.order == 5
+
+    def test_translation_cell_with_confidence_scores(self):
+        """TranslationCell should have rec_score and det_score"""
+        cell = TranslationCell(
+            address="P1_0",
+            text="テスト",
+            box=[0, 0, 100, 50],
+            rec_score=0.95,
+            det_score=0.88,
+        )
+        assert cell.rec_score == 0.95
+        assert cell.det_score == 0.88
+
+    def test_translation_cell_with_span_info(self):
+        """TranslationCell should have row_span and col_span for tables"""
+        cell = TranslationCell(
+            address="T1_0_0_0",
+            text="Merged cell",
+            box=[0, 0, 200, 100],
+            role="table_cell",
+            row_span=2,
+            col_span=3,
+        )
+        assert cell.row_span == 2
+        assert cell.col_span == 3
+
+    def test_translation_cell_default_span(self):
+        """TranslationCell should default span to 1"""
+        cell = TranslationCell(
+            address="T1_0_0_0",
+            text="Single cell",
+            box=[0, 0, 100, 50],
+        )
+        assert cell.row_span == 1
+        assert cell.col_span == 1
+
+    def test_translation_cell_caption_role(self):
+        """TranslationCell should support caption role"""
+        cell = TranslationCell(
+            address="F1_0_0",
+            text="Figure 1: Caption text",
+            box=[0, 0, 300, 30],
+            role="caption",
+        )
+        assert cell.role == "caption"
+
+    def test_translation_cell_defaults(self):
+        """TranslationCell should have correct defaults for new fields"""
+        cell = TranslationCell(
+            address="P1_0",
+            text="Test",
+            box=[0, 0, 100, 50],
+        )
+        assert cell.order == 0
+        assert cell.rec_score is None
+        assert cell.det_score is None
+        assert cell.row_span == 1
+        assert cell.col_span == 1
+
+
+# =============================================================================
+# Tests for prepare_translation_cells
+# =============================================================================
+class TestPrepareTranslationCells:
+    """Tests for prepare_translation_cells function (PDFMathTranslate compliant)"""
+
+    def _create_mock_paragraph(self, order, contents, box, direction="horizontal", role="text", words=None):
+        """Helper to create mock paragraph"""
+        para = MagicMock()
+        para.order = order
+        para.contents = contents
+        para.box = box
+        para.direction = direction
+        para.role = role
+        para.words = words or []
+        return para
+
+    def _create_mock_table(self, order, cells):
+        """Helper to create mock table"""
+        table = MagicMock()
+        table.order = order
+        table.cells = cells
+        return table
+
+    def _create_mock_cell(self, row, col, contents, box, row_span=1, col_span=1):
+        """Helper to create mock table cell"""
+        cell = MagicMock()
+        cell.row = row
+        cell.col = col
+        cell.contents = contents
+        cell.box = box
+        cell.row_span = row_span
+        cell.col_span = col_span
+        return cell
+
+    def _create_mock_figure(self, order, box, paragraphs=None, direction="horizontal"):
+        """Helper to create mock figure"""
+        fig = MagicMock()
+        fig.order = order
+        fig.box = box
+        fig.direction = direction
+        fig.paragraphs = paragraphs or []
+        return fig
+
+    def _create_mock_results(self, paragraphs=None, tables=None, figures=None):
+        """Helper to create mock yomitoku results"""
+        results = MagicMock()
+        results.paragraphs = paragraphs or []
+        results.tables = tables or []
+        results.figures = figures or []
+        return results
+
+    def test_basic_paragraphs(self):
+        """Should convert paragraphs to translation cells"""
+        results = self._create_mock_results(
+            paragraphs=[
+                self._create_mock_paragraph(0, "First paragraph", [0, 0, 100, 50]),
+                self._create_mock_paragraph(1, "Second paragraph", [0, 60, 100, 110]),
+            ]
+        )
+        cells = prepare_translation_cells(results, page_num=1)
+
+        assert len(cells) == 2
+        assert cells[0].address == "P1_0"
+        assert cells[0].text == "First paragraph"
+        assert cells[0].order == 0
+        assert cells[1].address == "P1_1"
+        assert cells[1].text == "Second paragraph"
+        assert cells[1].order == 1
+
+    def test_sorted_by_order(self):
+        """Should sort cells by reading order"""
+        results = self._create_mock_results(
+            paragraphs=[
+                self._create_mock_paragraph(5, "Fifth", [0, 0, 100, 50]),
+                self._create_mock_paragraph(2, "Second", [0, 60, 100, 110]),
+                self._create_mock_paragraph(8, "Eighth", [0, 120, 100, 170]),
+            ]
+        )
+        cells = prepare_translation_cells(results, page_num=1)
+
+        assert len(cells) == 3
+        assert cells[0].order == 2
+        assert cells[1].order == 5
+        assert cells[2].order == 8
+
+    def test_skip_headers_by_default(self):
+        """Should skip page headers/footers by default"""
+        results = self._create_mock_results(
+            paragraphs=[
+                self._create_mock_paragraph(0, "Header text", [0, 0, 100, 30], role="page_header"),
+                self._create_mock_paragraph(1, "Body text", [0, 50, 100, 100]),
+                self._create_mock_paragraph(2, "Footer text", [0, 800, 100, 830], role="page_footer"),
+            ]
+        )
+        cells = prepare_translation_cells(results, page_num=1)
+
+        assert len(cells) == 1
+        assert cells[0].text == "Body text"
+
+    def test_include_headers_when_specified(self):
+        """Should include headers/footers when include_headers=True"""
+        results = self._create_mock_results(
+            paragraphs=[
+                self._create_mock_paragraph(0, "Header text", [0, 0, 100, 30], role="page_header"),
+                self._create_mock_paragraph(1, "Body text", [0, 50, 100, 100]),
+            ]
+        )
+        cells = prepare_translation_cells(results, page_num=1, include_headers=True)
+
+        assert len(cells) == 2
+
+    def test_table_cells_with_spans(self):
+        """Should extract table cells with span information"""
+        results = self._create_mock_results(
+            tables=[
+                self._create_mock_table(0, [
+                    self._create_mock_cell(0, 0, "Header", [0, 0, 200, 30], row_span=1, col_span=2),
+                    self._create_mock_cell(1, 0, "Data 1", [0, 30, 100, 60]),
+                    self._create_mock_cell(1, 1, "Data 2", [100, 30, 200, 60]),
+                ])
+            ]
+        )
+        cells = prepare_translation_cells(results, page_num=1)
+
+        assert len(cells) == 3
+        header_cell = next(c for c in cells if c.text == "Header")
+        assert header_cell.col_span == 2
+        assert header_cell.role == "table_cell"
+
+    def test_figure_captions(self):
+        """Should extract figure captions"""
+        results = self._create_mock_results(
+            figures=[
+                self._create_mock_figure(
+                    order=3,
+                    box=[0, 200, 400, 500],
+                    paragraphs=[
+                        {"contents": "Figure 1: Test caption", "box": [0, 480, 400, 500], "direction": "horizontal"},
+                    ]
+                ),
+            ]
+        )
+        cells = prepare_translation_cells(results, page_num=1, include_figure_captions=True)
+
+        assert len(cells) == 1
+        assert cells[0].address == "F1_3_0"
+        assert cells[0].text == "Figure 1: Test caption"
+        assert cells[0].role == "caption"
+
+    def test_skip_figure_captions_when_disabled(self):
+        """Should skip figure captions when disabled"""
+        results = self._create_mock_results(
+            figures=[
+                self._create_mock_figure(
+                    order=3,
+                    box=[0, 200, 400, 500],
+                    paragraphs=[
+                        {"contents": "Figure 1: Caption", "box": [0, 480, 400, 500], "direction": "horizontal"},
+                    ]
+                ),
+            ]
+        )
+        cells = prepare_translation_cells(results, page_num=1, include_figure_captions=False)
+
+        assert len(cells) == 0
+
+    def test_confidence_filtering_rec_score(self):
+        """Should filter by recognition score threshold"""
+        word_high = MagicMock()
+        word_high.rec_score = 0.9
+        word_high.det_score = 0.9
+
+        word_low = MagicMock()
+        word_low.rec_score = 0.3
+        word_low.det_score = 0.9
+
+        results = self._create_mock_results(
+            paragraphs=[
+                self._create_mock_paragraph(0, "High confidence", [0, 0, 100, 50], words=[word_high]),
+                self._create_mock_paragraph(1, "Low confidence", [0, 60, 100, 110], words=[word_low]),
+            ]
+        )
+        cells = prepare_translation_cells(results, page_num=1, rec_score_threshold=0.5)
+
+        assert len(cells) == 1
+        assert cells[0].text == "High confidence"
+
+    def test_confidence_filtering_det_score(self):
+        """Should filter by detection score threshold"""
+        word_high = MagicMock()
+        word_high.rec_score = 0.9
+        word_high.det_score = 0.85
+
+        word_low = MagicMock()
+        word_low.rec_score = 0.9
+        word_low.det_score = 0.2
+
+        results = self._create_mock_results(
+            paragraphs=[
+                self._create_mock_paragraph(0, "High detection", [0, 0, 100, 50], words=[word_high]),
+                self._create_mock_paragraph(1, "Low detection", [0, 60, 100, 110], words=[word_low]),
+            ]
+        )
+        cells = prepare_translation_cells(results, page_num=1, det_score_threshold=0.5)
+
+        assert len(cells) == 1
+        assert cells[0].text == "High detection"
+
+    def test_removes_line_breaks(self):
+        """Should remove line breaks from text (yomitoku style)"""
+        results = self._create_mock_results(
+            paragraphs=[
+                self._create_mock_paragraph(0, "Line 1\nLine 2\nLine 3", [0, 0, 100, 80]),
+            ]
+        )
+        cells = prepare_translation_cells(results, page_num=1)
+
+        assert cells[0].text == "Line 1Line 2Line 3"
+
+    def test_skip_empty_content(self):
+        """Should skip paragraphs with empty content"""
+        results = self._create_mock_results(
+            paragraphs=[
+                self._create_mock_paragraph(0, "", [0, 0, 100, 50]),
+                self._create_mock_paragraph(1, "   ", [0, 60, 100, 110]),
+                self._create_mock_paragraph(2, "Has content", [0, 120, 100, 170]),
+            ]
+        )
+        cells = prepare_translation_cells(results, page_num=1)
+
+        assert len(cells) == 1
+        assert cells[0].text == "Has content"
+
+
+# =============================================================================
+# Tests for _calculate_paragraph_confidence
+# =============================================================================
+class TestCalculateParagraphConfidence:
+    """Tests for _calculate_paragraph_confidence function"""
+
+    def test_no_words_returns_none(self):
+        """Should return None for paragraph without words"""
+        para = MagicMock()
+        para.words = []
+        rec, det = _calculate_paragraph_confidence(para)
+        assert rec is None
+        assert det is None
+
+    def test_no_words_attribute_returns_none(self):
+        """Should return None for paragraph without words attribute"""
+        para = MagicMock(spec=[])  # No attributes
+        rec, det = _calculate_paragraph_confidence(para)
+        assert rec is None
+        assert det is None
+
+    def test_single_word_confidence(self):
+        """Should return single word confidence"""
+        word = MagicMock()
+        word.rec_score = 0.95
+        word.det_score = 0.88
+
+        para = MagicMock()
+        para.words = [word]
+
+        rec, det = _calculate_paragraph_confidence(para)
+        assert rec == 0.95
+        assert det == 0.88
+
+    def test_average_multiple_words(self):
+        """Should average confidence across multiple words"""
+        word1 = MagicMock()
+        word1.rec_score = 0.9
+        word1.det_score = 0.8
+
+        word2 = MagicMock()
+        word2.rec_score = 0.8
+        word2.det_score = 0.9
+
+        para = MagicMock()
+        para.words = [word1, word2]
+
+        rec, det = _calculate_paragraph_confidence(para)
+        assert rec == pytest.approx(0.85)  # (0.9 + 0.8) / 2
+        assert det == pytest.approx(0.85)  # (0.8 + 0.9) / 2
+
+    def test_dict_format_words(self):
+        """Should handle dict format words"""
+        para = MagicMock()
+        para.words = [
+            {"rec_score": 0.9, "det_score": 0.8},
+            {"rec_score": 0.7, "det_score": 0.6},
+        ]
+
+        rec, det = _calculate_paragraph_confidence(para)
+        assert rec == 0.8  # (0.9 + 0.7) / 2
+        assert det == 0.7  # (0.8 + 0.6) / 2
+
+    def test_partial_scores(self):
+        """Should handle words with partial scores"""
+        word1 = MagicMock()
+        word1.rec_score = 0.9
+        word1.det_score = None
+
+        word2 = MagicMock()
+        word2.rec_score = None
+        word2.det_score = 0.8
+
+        para = MagicMock()
+        para.words = [word1, word2]
+
+        rec, det = _calculate_paragraph_confidence(para)
+        assert rec == 0.9  # Only word1 has rec_score
+        assert det == 0.8  # Only word2 has det_score

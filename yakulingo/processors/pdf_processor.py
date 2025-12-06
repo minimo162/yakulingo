@@ -587,13 +587,27 @@ class FontInfo:
 
 @dataclass
 class TranslationCell:
-    """Single translation unit with position info."""
-    address: str           # P{page}_{order} or T{page}_{table}_{row}_{col}
+    """
+    Single translation unit with position info.
+
+    Extended for complex layout support (PDFMathTranslate compliant):
+    - Confidence scores for OCR quality filtering
+    - Table span information for merged cells
+    - Order for reading sequence
+    """
+    address: str           # P{page}_{order} or T{page}_{table}_{row}_{col} or F{page}_{figure}_{para}
     text: str              # Original text
     box: list[float]       # [x1, y1, x2, y2]
     direction: str = "horizontal"
-    role: str = "text"
+    role: str = "text"     # text, table_cell, caption, page_header, page_footer
     page_num: int = 1
+    order: int = 0         # Reading order (from yomitoku)
+    # Confidence scores (from yomitoku Word objects)
+    rec_score: Optional[float] = None  # Recognition confidence (0.0-1.0)
+    det_score: Optional[float] = None  # Detection confidence (0.0-1.0)
+    # Table cell span info
+    row_span: int = 1      # Number of rows this cell spans
+    col_span: int = 1      # Number of columns this cell spans
 
 
 # =============================================================================
@@ -2950,17 +2964,26 @@ def prepare_translation_cells(
     results,
     page_num: int,
     include_headers: bool = False,
+    include_figure_captions: bool = True,
+    rec_score_threshold: float = 0.0,
+    det_score_threshold: float = 0.0,
 ) -> list[TranslationCell]:
     """
     Convert yomitoku results to translation cells.
+
+    PDFMathTranslate compliant: supports complex layouts including
+    figure captions, table spans, and confidence filtering.
 
     Args:
         results: DocumentAnalyzerSchema from yomitoku
         page_num: Page number (1-based)
         include_headers: Include page header/footer
+        include_figure_captions: Include figure captions (Figure.paragraphs)
+        rec_score_threshold: Minimum recognition score (0.0-1.0)
+        det_score_threshold: Minimum detection score (0.0-1.0)
 
     Returns:
-        List of TranslationCell
+        List of TranslationCell sorted by reading order
     """
     cells = []
 
@@ -2970,6 +2993,15 @@ def prepare_translation_cells(
             continue
 
         if para.contents.strip():
+            # Calculate average confidence from words if available
+            rec_score, det_score = _calculate_paragraph_confidence(para)
+
+            # Filter by confidence thresholds
+            if rec_score is not None and rec_score < rec_score_threshold:
+                continue
+            if det_score is not None and det_score < det_score_threshold:
+                continue
+
             # Remove line breaks (yomitoku style: replace "\n" with "")
             text = para.contents.replace("\n", "")
             cells.append(TranslationCell(
@@ -2979,14 +3011,22 @@ def prepare_translation_cells(
                 direction=para.direction,
                 role=para.role,
                 page_num=page_num,
+                order=para.order,
+                rec_score=rec_score,
+                det_score=det_score,
             ))
 
-    # Tables
-    for table in results.tables:
+    # Tables (with span info)
+    for table in sorted(results.tables, key=lambda t: t.order):
         for cell in table.cells:
             if cell.contents.strip():
                 # Remove line breaks (yomitoku style: replace "\n" with "")
                 text = cell.contents.replace("\n", "")
+
+                # Extract span info (default to 1 if not present)
+                row_span = getattr(cell, 'row_span', 1) or 1
+                col_span = getattr(cell, 'col_span', 1) or 1
+
                 cells.append(TranslationCell(
                     address=f"T{page_num}_{table.order}_{cell.row}_{cell.col}",
                     text=text,
@@ -2994,9 +3034,80 @@ def prepare_translation_cells(
                     direction="horizontal",
                     role="table_cell",
                     page_num=page_num,
+                    order=table.order * 1000 + cell.row * 100 + cell.col,  # Composite order
+                    row_span=row_span,
+                    col_span=col_span,
                 ))
 
+    # Figures with captions (Figure.paragraphs)
+    if include_figure_captions:
+        for fig_idx, figure in enumerate(sorted(results.figures, key=lambda f: f.order)):
+            # Check if figure has paragraphs (captions)
+            if hasattr(figure, 'paragraphs') and figure.paragraphs:
+                for para_idx, para in enumerate(figure.paragraphs):
+                    # Handle both dict and object format
+                    if isinstance(para, dict):
+                        contents = para.get('contents', '')
+                        box = para.get('box', figure.box)
+                        direction = para.get('direction', 'horizontal')
+                    else:
+                        contents = getattr(para, 'contents', '')
+                        box = getattr(para, 'box', figure.box)
+                        direction = getattr(para, 'direction', 'horizontal')
+
+                    if contents and contents.strip():
+                        text = contents.replace("\n", "")
+                        cells.append(TranslationCell(
+                            address=f"F{page_num}_{figure.order}_{para_idx}",
+                            text=text,
+                            box=box if box else figure.box,
+                            direction=direction,
+                            role="caption",
+                            page_num=page_num,
+                            order=figure.order,
+                        ))
+
+    # Sort by reading order
+    cells.sort(key=lambda c: c.order)
+
     return cells
+
+
+def _calculate_paragraph_confidence(para) -> tuple[Optional[float], Optional[float]]:
+    """
+    Calculate average confidence scores for a paragraph from its words.
+
+    Args:
+        para: Paragraph object from yomitoku
+
+    Returns:
+        Tuple of (avg_rec_score, avg_det_score), None if not available
+    """
+    # Check if paragraph has words attribute
+    if not hasattr(para, 'words') or not para.words:
+        return None, None
+
+    rec_scores = []
+    det_scores = []
+
+    for word in para.words:
+        # Handle both dict and object format
+        if isinstance(word, dict):
+            rec = word.get('rec_score')
+            det = word.get('det_score')
+        else:
+            rec = getattr(word, 'rec_score', None)
+            det = getattr(word, 'det_score', None)
+
+        if rec is not None:
+            rec_scores.append(rec)
+        if det is not None:
+            det_scores.append(det)
+
+    avg_rec = sum(rec_scores) / len(rec_scores) if rec_scores else None
+    avg_det = sum(det_scores) / len(det_scores) if det_scores else None
+
+    return avg_rec, avg_det
 
 
 # =============================================================================

@@ -8,6 +8,7 @@ Designed for Japanese users.
 
 import asyncio
 import logging
+import re
 from typing import Callable, Optional
 
 from nicegui import ui
@@ -17,6 +18,38 @@ from yakulingo.ui.utils import format_markdown_text
 from yakulingo.models.types import TranslationOption, TextTranslationResult
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_translation_preview(text: str) -> str:
+    """Extract translation part from streaming text for preview.
+
+    Extracts text between '訳文:' and '解説:' to match final result layout.
+    This provides a smoother transition from streaming to final display.
+    """
+    if not text:
+        return ""
+
+    # Find start of translation (訳文: or 訳文：)
+    start_match = re.search(r'訳文[:：]\s*', text)
+    if not start_match:
+        # No translation marker yet, show raw text (truncated)
+        return text[:300] + '...' if len(text) > 300 else text
+
+    # Extract from after '訳文:'
+    translation_start = start_match.end()
+    remaining = text[translation_start:]
+
+    # Find end of translation (解説: or 解説：)
+    end_match = re.search(r'\n\s*解説[:：]', remaining)
+    if end_match:
+        # Have both markers, extract translation part
+        translation = remaining[:end_match.start()].strip()
+    else:
+        # Still receiving, show what we have so far
+        translation = remaining.strip()
+
+    # Truncate if too long
+    return translation[:500] + '...' if len(translation) > 500 else translation
 
 
 # Action icons for →jp follow-up features
@@ -320,10 +353,14 @@ def create_text_result_panel(
     on_follow_up: Optional[Callable[[str, str], None]] = None,
     on_back_translate: Optional[Callable[[str], None]] = None,
     on_retry: Optional[Callable[[], None]] = None,
+    on_streaming_label_created: Optional[Callable[[ui.label], None]] = None,
 ):
     """
     Text result panel for 3-column layout.
     Contains translation results with language-specific UI.
+
+    Args:
+        on_streaming_label_created: Callback with streaming label for direct text updates (avoids flickering)
     """
     elapsed_time = state.text_translation_elapsed_time
 
@@ -340,7 +377,12 @@ def create_text_result_panel(
 
         # Translation status section
         if state.text_translating:
-            _render_translation_status(state.text_detected_language, translating=True)
+            _render_translation_status(
+                state.text_detected_language,
+                translating=True,
+                streaming_text=state.streaming_text,
+                on_streaming_label_created=on_streaming_label_created,
+            )
         elif state.text_result and state.text_result.options:
             _render_translation_status(
                 state.text_result.detected_language,
@@ -395,13 +437,18 @@ def _render_translation_status(
     detected_language: Optional[str],
     translating: bool = False,
     elapsed_time: Optional[float] = None,
+    streaming_text: Optional[str] = None,
+    on_streaming_label_created: Optional[Callable[[ui.label], None]] = None,
 ):
     """
     Render translation status section.
 
     Shows:
-    - During translation: "英訳中..." or "和訳中..."
+    - During translation: "英訳中..." or "和訳中..." with optional streaming preview
     - After translation: "✓ 英訳しました" or "✓ 和訳しました" with elapsed time
+
+    Args:
+        on_streaming_label_created: Callback with streaming label for direct text updates
     """
     # Determine translation direction
     is_to_english = detected_language == "日本語"
@@ -429,6 +476,16 @@ def _render_translation_status(
                 # Elapsed time badge
                 if elapsed_time:
                     ui.label(f'{elapsed_time:.1f}秒').classes('elapsed-time-badge')
+
+        # Streaming preview during translation (always show container for label reference)
+        if translating:
+            with ui.element('div').classes('streaming-preview'):
+                # Extract translation part from streaming text to match final layout
+                preview_text = _extract_translation_preview(streaming_text) if streaming_text else ''
+                streaming_label = ui.label(preview_text).classes('streaming-text')
+                # Pass label reference for direct updates (avoids UI flickering)
+                if on_streaming_label_created:
+                    on_streaming_label_created(streaming_label)
 
 
 def _render_empty_result_state():

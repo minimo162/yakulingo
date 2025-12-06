@@ -285,6 +285,38 @@ body {
     color: var(--md-sys-color-success, #2e7d32);
 }
 
+/* === Streaming Preview === */
+.streaming-preview {
+    margin-top: 0.75rem;
+    padding: 0.75rem 1rem;
+    background-color: var(--md-sys-color-surface-container);
+    border-radius: var(--md-sys-shape-corner-medium);
+    max-height: 300px;
+    overflow-y: auto;
+    /* Subtle fade-in, matches result-container animation */
+    animation: streamingFadeIn 0.2s ease-out;
+}
+
+.streaming-preview .streaming-text {
+    /* Match .nani-result-text for smooth transition */
+    font-size: var(--md-sys-typescale-size-md);
+    color: var(--md-sys-color-on-surface);
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+@keyframes streamingFadeIn {
+    from {
+        opacity: 0.7;
+        transform: translateY(4px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
 /* === Loading Spinner Section === */
 .loading-spinner-section {
     display: flex;
@@ -1522,6 +1554,19 @@ body {
     gap: 0.875rem;
     margin-top: 0.625rem;
     width: 100%;
+    /* Smooth fade-in from streaming preview */
+    animation: resultFadeIn 0.25s ease-out;
+}
+
+@keyframes resultFadeIn {
+    from {
+        opacity: 0.7;
+        transform: translateY(4px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 /* === Nani-style Result Card === */

@@ -54,6 +54,7 @@ class YakuLingoApp:
         # UI references for refresh
         self._header_status = None
         self._main_content = None
+        self._result_panel = None  # Separate refreshable for result panel only
         self._tabs_container = None
         self._history_list = None
         self._main_area_element = None
@@ -66,6 +67,9 @@ class YakuLingoApp:
 
         # Client reference for async handlers (saved from @ui.page handler)
         self._client = None
+
+        # Streaming label reference for direct updates (avoids UI flickering)
+        self._streaming_label: Optional[ui.label] = None
 
         # Panel sizes (sidebar_width, input_panel_width, result_content_width, input_panel_max_width) in pixels
         # Set by run_app() based on monitor detection
@@ -194,7 +198,18 @@ class YakuLingoApp:
 
     def _refresh_content(self):
         """Refresh main content area and update layout classes"""
-        # Update main area classes based on current state
+        self._update_layout_classes()
+        if self._main_content:
+            self._main_content.refresh()
+
+    def _refresh_result_panel(self):
+        """Refresh only the result panel (avoids input panel flicker)"""
+        self._update_layout_classes()
+        if self._result_panel:
+            self._result_panel.refresh()
+
+    def _update_layout_classes(self):
+        """Update main area layout classes based on current state"""
         if self._main_area_element:
             # Remove dynamic classes first, then add current ones
             is_file_mode = self.state.current_tab == Tab.FILE
@@ -211,9 +226,6 @@ class YakuLingoApp:
                 else:
                     self._main_area_element.classes(remove='has-results')
 
-        if self._main_content:
-            self._main_content.refresh()
-
     def _refresh_tabs(self):
         """Refresh tab buttons"""
         if self._tabs_container:
@@ -228,18 +240,24 @@ class YakuLingoApp:
         """Store reference to translate button for dynamic state updates"""
         self._translate_button = button
 
+    def _on_streaming_label_created(self, label: ui.label):
+        """Store reference to streaming label for direct text updates (avoids flickering)"""
+        self._streaming_label = label
+
     def _update_translate_button_state(self):
-        """Update translate button enabled/disabled state based on current state"""
+        """Update translate button enabled/disabled/loading state based on current state"""
         if self._translate_button is None:
             return
 
-        # Disable button during translation or when no text
-        # No spinner here - result panel shows translation status
-        if self.state.text_translating or not self.state.can_translate():
-            self._translate_button.props(':disable=true')
+        if self.state.text_translating:
+            # Show loading spinner and disable
+            self._translate_button.props('loading disable')
+        elif not self.state.can_translate():
+            # Disable but no loading (no text entered)
+            self._translate_button.props(':loading=false disable')
         else:
             # Enable the button
-            self._translate_button.props(':disable=false')
+            self._translate_button.props(':loading=false :disable=false')
 
     def create_ui(self):
         """Create the UI - Nani-inspired 3-column layout"""
@@ -420,6 +438,21 @@ class YakuLingoApp:
         from yakulingo.ui.components.text_panel import create_text_input_panel, create_text_result_panel
         from yakulingo.ui.components.file_panel import create_file_panel
 
+        # Separate refreshable for result panel only (avoids input panel flicker)
+        @ui.refreshable
+        def result_panel_content():
+            create_text_result_panel(
+                state=self.state,
+                on_copy=self._copy_text,
+                on_adjust=self._adjust_text,
+                on_follow_up=self._follow_up_action,
+                on_back_translate=self._back_translate,
+                on_retry=self._retry_translation,
+                on_streaming_label_created=self._on_streaming_label_created,
+            )
+
+        self._result_panel = result_panel_content
+
         @ui.refreshable
         def main_content():
             if self.state.current_tab == Tab.TEXT:
@@ -439,14 +472,7 @@ class YakuLingoApp:
 
                 # Result panel (right column - shown when has results)
                 with ui.column().classes('result-panel'):
-                    create_text_result_panel(
-                        state=self.state,
-                        on_copy=self._copy_text,
-                        on_adjust=self._adjust_text,
-                        on_follow_up=self._follow_up_action,
-                        on_back_translate=self._back_translate,
-                        on_retry=self._retry_translation,
-                    )
+                    result_panel_content()
             else:
                 # File panel: 2-column layout (sidebar + centered file panel)
                 with ui.column().classes('w-full max-w-2xl mx-auto px-6 py-8 flex-1'):
@@ -586,7 +612,58 @@ class YakuLingoApp:
         self.state.text_detected_language = None
         self.state.text_result = None
         self.state.text_translation_elapsed_time = None
-        self._refresh_content()
+        self.state.streaming_text = None
+        self._streaming_label = None  # Reset before refresh creates new label
+        self._refresh_content()  # Full refresh: input panel changes from large to compact
+
+        # Track last text to avoid redundant updates
+        last_streaming_text: str = ""
+
+        def extract_translation_preview(text: str) -> str:
+            """Extract translation part from streaming text for preview.
+
+            Extracts text between '訳文:' and '解説:' to match final result layout.
+            """
+            if not text:
+                return ""
+
+            # Find start of translation (訳文: or 訳文：)
+            import re
+            start_match = re.search(r'訳文[:：]\s*', text)
+            if not start_match:
+                # No translation marker yet, show raw text
+                return text[:300] + '...' if len(text) > 300 else text
+
+            # Extract from after '訳文:'
+            translation_start = start_match.end()
+            remaining = text[translation_start:]
+
+            # Find end of translation (解説: or 解説：)
+            end_match = re.search(r'\n\s*解説[:：]', remaining)
+            if end_match:
+                # Have both markers, extract translation part
+                translation = remaining[:end_match.start()].strip()
+            else:
+                # Still receiving, show what we have so far
+                translation = remaining.strip()
+
+            # Truncate if too long
+            return translation[:500] + '...' if len(translation) > 500 else translation
+
+        def update_streaming_label():
+            """Update only the streaming label text (no full UI refresh)"""
+            nonlocal last_streaming_text
+            if self._streaming_label and self.state.streaming_text != last_streaming_text:
+                preview = extract_translation_preview(self.state.streaming_text or "")
+                self._streaming_label.set_text(preview)
+                last_streaming_text = self.state.streaming_text or ""
+
+        # Start streaming UI refresh timer (0.2s interval) - only updates label
+        streaming_timer = ui.timer(0.2, update_streaming_label)
+
+        # Streaming callback - updates state from Playwright thread
+        def on_chunk(text: str):
+            self.state.streaming_text = text
 
         error_message = None
         detected_language = None
@@ -603,7 +680,7 @@ class YakuLingoApp:
             # Update UI with detected language
             self.state.text_detected_language = detected_language
             with client:
-                self._refresh_content()
+                self._refresh_result_panel()  # Only refresh result panel
 
             # Yield control again before translation
             await asyncio.sleep(0)
@@ -615,6 +692,7 @@ class YakuLingoApp:
                 reference_files,
                 None,  # style (use default)
                 detected_language,  # pre_detected_language
+                on_chunk,  # streaming callback
             )
 
             # Calculate elapsed time
@@ -634,6 +712,9 @@ class YakuLingoApp:
             logger.exception("Translation error: %s", e)
             error_message = str(e)
 
+        # Stop streaming timer and clear streaming state
+        streaming_timer.cancel()
+        self.state.streaming_text = None
         self.state.text_translating = False
         self.state.text_detected_language = None
 
@@ -641,7 +722,10 @@ class YakuLingoApp:
         with client:
             if error_message:
                 ui.notify(f'エラー: {error_message}', type='negative')
-            self._refresh_content()
+            # Only refresh result panel (input panel is already in compact state)
+            self._refresh_result_panel()
+            # Re-enable translate button
+            self._update_translate_button_state()
             # Update connection status (may have changed during translation)
             self._refresh_status()
 
@@ -660,7 +744,9 @@ class YakuLingoApp:
         client = self._client
 
         self.state.text_translating = True
-        self._refresh_content()
+        # Only refresh result panel and button (input panel is already in compact state)
+        self._refresh_result_panel()
+        self._update_translate_button_state()
 
         error_message = None
         try:
@@ -716,7 +802,10 @@ class YakuLingoApp:
         with client:
             if error_message:
                 ui.notify(f'エラー: {error_message}', type='negative')
-            self._refresh_content()
+            # Only refresh result panel (input panel is already in compact state)
+            self._refresh_result_panel()
+            # Re-enable translate button
+            self._update_translate_button_state()
             self._refresh_status()
 
     async def _back_translate(self, text: str):
@@ -729,7 +818,9 @@ class YakuLingoApp:
         client = self._client
 
         self.state.text_translating = True
-        self._refresh_content()
+        # Only refresh result panel and button (input panel is already in compact state)
+        self._refresh_result_panel()
+        self._update_translate_button_state()
 
         error_message = None
         try:
@@ -792,7 +883,10 @@ class YakuLingoApp:
         with client:
             if error_message:
                 ui.notify(f'エラー: {error_message}', type='negative')
-            self._refresh_content()
+            # Only refresh result panel (input panel is already in compact state)
+            self._refresh_result_panel()
+            # Re-enable translate button
+            self._update_translate_button_state()
             self._refresh_status()
 
     def _build_follow_up_prompt(self, action_type: str, source_text: str, translation: str, content: str = "") -> Optional[str]:

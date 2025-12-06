@@ -512,7 +512,6 @@ async def _translate_text(self):
   "ocr_batch_size": 5,
   "ocr_dpi": 200,
   "ocr_device": "auto",
-  "ocr_model": "auto",
   "auto_update_enabled": true,
   "auto_update_check_interval": 86400,
   "github_repo_owner": "minimo162",
@@ -527,11 +526,6 @@ async def _translate_text(self):
 **フォント設定**:
 - `font_jp_to_en`: 英訳時の出力フォント（全ファイル形式共通）
 - `font_en_to_jp`: 和訳時の出力フォント（全ファイル形式共通）
-
-**OCRモデル設定** (`ocr_model`):
-- `"auto"` (default): デバイスに応じて自動選択（CPU→tiny, CUDA→standard）
-- `"standard"`: 標準モデル (`parseq`) - 高精度、GPU推奨
-- `"tiny"`: 軽量モデル (`parseq-tiny`) - GPU不要、CPU推論向け
 
 ### Reference Files
 Reference files provide context for consistent translations:
@@ -694,40 +688,40 @@ pip install -r requirements_pdf.txt
 
 **ハイブリッド抽出モード (PDFMathTranslate準拠):**
 
-PDF翻訳ではハイブリッドアプローチを使用します：
+PDF翻訳ではハイブリッドアプローチを使用します（PDFMathTranslate準拠）：
 - **pdfminer**: テキスト抽出（正確な文字データ、フォント情報、CID値）
-- **yomitoku**: レイアウト解析（段落検出、読み順、図表/数式の識別）
+- **yomitoku LayoutAnalyzer**: レイアウト解析のみ（段落検出、読み順、図表/数式の識別）
+- **OCRなし**: スキャンPDFはサポート対象外
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │ Phase 1: ハイブリッド抽出                                     │
 │ ┌─────────────────────────────────────────────────────────┐ │
-│ │ 1. yomitoku: ページ画像からレイアウト解析                 │ │
+│ │ 1. yomitoku LayoutAnalyzer: ページ画像からレイアウト解析   │ │
 │ │    - 段落境界、読み順、テキスト/図/表の領域分類            │ │
+│ │    - OCRは実行しない（レイアウト解析のみ）                 │ │
 │ │                                                         │ │
 │ │ 2. pdfminer: 埋め込みテキスト抽出                        │ │
 │ │    - 正確なテキスト、フォント情報、CID値                  │ │
 │ │                                                         │ │
 │ │ 3. 統合: yomitokuの段落領域でpdfminerの文字をグループ化   │ │
-│ │    - テキストなし → yomitoku OCRテキストにフォールバック   │ │
 │ └─────────────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 **利点:**
 - 埋め込みテキストPDF: OCR認識誤りなし（pdfminerの正確なテキスト）
-- スキャンPDF: yomitoku OCRでテキスト認識
-- 両方: yomitokuの高精度レイアウト検出
+- 高精度レイアウト検出: yomitoku LayoutAnalyzerによる段落・図表の識別
+- 高速処理: OCRを実行しないため処理時間が短縮
 
-**yomitoku DocumentAnalyzer Settings:**
+**制限:**
+- スキャンPDF（画像のみ）は翻訳不可（テキストが埋め込まれていないため）
+
+**yomitoku LayoutAnalyzer Settings:**
 ```python
-DocumentAnalyzer(
-    configs={},
+LayoutAnalyzer(
     device=device,              # "cuda" or "cpu"
     visualize=False,
-    ignore_meta=False,          # Include headers/footers
-    reading_order="auto",       # Auto-detect reading direction
-    split_text_across_cells=True,  # Split text at table cell boundaries
 )
 ```
 

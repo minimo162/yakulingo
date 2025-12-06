@@ -1594,7 +1594,6 @@ class TranslationService:
         batch_size = self.config.ocr_batch_size if self.config else 5
         dpi = self.config.ocr_dpi if self.config else 200
         device = self.config.ocr_device if self.config else "auto"
-        ocr_model = self.config.ocr_model if self.config else "auto"
 
         # Phase 1: Extract text with streaming progress (0-40%)
         for page_blocks, page_cells in processor.extract_text_blocks_streaming(
@@ -1604,7 +1603,6 @@ class TranslationService:
             batch_size=batch_size,
             dpi=dpi,
             output_language=output_language,
-            model=ocr_model,
         ):
             all_blocks.extend(page_blocks)
             if page_cells:

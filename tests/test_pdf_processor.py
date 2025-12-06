@@ -22,6 +22,13 @@ from yakulingo.processors.pdf_processor import (
     _is_address_on_page,
     _boxes_overlap,
     find_matching_font_size,
+    restore_formula_placeholders,
+    extract_formula_vars_from_metadata,
+    get_layout_class_at_point,
+    is_same_region,
+    should_abandon_region,
+    prepare_translation_cells,
+    _calculate_paragraph_confidence,
     # Constants
     FONT_FILES,
     DEFAULT_VFONT_PATTERN,
@@ -33,6 +40,14 @@ from yakulingo.processors.pdf_processor import (
     MAX_FONT_SIZE,
     MIN_LINE_HEIGHT,
     LINE_HEIGHT_COMPRESSION_STEP,
+    SAME_LINE_Y_THRESHOLD,
+    SAME_PARA_Y_THRESHOLD,
+    WORD_SPACE_X_THRESHOLD,
+    LINE_BREAK_X_THRESHOLD,
+    LAYOUT_ABANDON,
+    LAYOUT_BACKGROUND,
+    LAYOUT_PARAGRAPH_BASE,
+    LAYOUT_TABLE_BASE,
     # Enums
     FontType,
     # Classes
@@ -43,6 +58,9 @@ from yakulingo.processors.pdf_processor import (
     PdfOperatorGenerator,
     ContentStreamReplacer,
     PdfProcessor,
+    Paragraph,
+    FormulaVar,
+    LayoutArray,
 )
 from yakulingo.models.types import FileType, TextBlock
 
@@ -2184,3 +2202,658 @@ class TestExistingFontReuse:
 
         result = registry.select_font_for_text("Hello", target_lang="en")
         assert result == registry.fonts["en"].font_id
+
+
+# =============================================================================
+# Tests for Paragraph class (PDFMathTranslate compliant)
+# =============================================================================
+class TestParagraph:
+    """Tests for Paragraph dataclass"""
+
+    def test_create_paragraph(self):
+        """Should create paragraph with all attributes"""
+        para = Paragraph(
+            y=100.0, x=50.0,
+            x0=50.0, x1=200.0,
+            y0=90.0, y1=110.0,
+            size=12.0, brk=False
+        )
+        assert para.y == 100.0
+        assert para.x == 50.0
+        assert para.x0 == 50.0
+        assert para.x1 == 200.0
+        assert para.y0 == 90.0
+        assert para.y1 == 110.0
+        assert para.size == 12.0
+        assert para.brk is False
+
+    def test_paragraph_default_brk(self):
+        """Should default brk to False"""
+        para = Paragraph(y=0, x=0, x0=0, x1=0, y0=0, y1=0, size=10.0)
+        assert para.brk is False
+
+    def test_paragraph_with_line_break(self):
+        """Should store line break flag"""
+        para = Paragraph(y=0, x=0, x0=0, x1=0, y0=0, y1=0, size=10.0, brk=True)
+        assert para.brk is True
+
+
+# =============================================================================
+# Tests for FormulaVar class (PDFMathTranslate compliant)
+# =============================================================================
+class TestFormulaVar:
+    """Tests for FormulaVar dataclass"""
+
+    def test_create_formula_var(self):
+        """Should create FormulaVar with all attributes"""
+        var = FormulaVar(
+            chars=[],
+            text="α+β",
+            bbox=(10.0, 20.0, 30.0, 40.0),
+            font_name="CMR10",
+            font_size=10.0
+        )
+        assert var.text == "α+β"
+        assert var.bbox == (10.0, 20.0, 30.0, 40.0)
+        assert var.font_name == "CMR10"
+        assert var.font_size == 10.0
+
+    def test_formula_var_defaults(self):
+        """Should have sensible defaults"""
+        var = FormulaVar()
+        assert var.chars == []
+        assert var.text == ""
+        assert var.bbox is None
+        assert var.font_name is None
+        assert var.font_size == 10.0
+
+
+# =============================================================================
+# Tests for restore_formula_placeholders (PDFMathTranslate compliant)
+# =============================================================================
+class TestRestoreFormulaPlaceholders:
+    """Tests for restore_formula_placeholders function"""
+
+    def test_restore_single_placeholder(self):
+        """Should restore single placeholder"""
+        vars = [FormulaVar(text="α+β")]
+        result = restore_formula_placeholders("This is {v0} formula", vars)
+        assert result == "This is α+β formula"
+
+    def test_restore_multiple_placeholders(self):
+        """Should restore multiple placeholders"""
+        vars = [
+            FormulaVar(text="x²"),
+            FormulaVar(text="y³"),
+        ]
+        result = restore_formula_placeholders("{v0} + {v1} = z", vars)
+        assert result == "x² + y³ = z"
+
+    def test_restore_no_placeholders(self):
+        """Should return unchanged text when no placeholders"""
+        vars = [FormulaVar(text="unused")]
+        result = restore_formula_placeholders("No formulas here", vars)
+        assert result == "No formulas here"
+
+    def test_restore_empty_vars(self):
+        """Should return unchanged text when vars is empty"""
+        result = restore_formula_placeholders("Has {v0} placeholder", [])
+        assert result == "Has {v0} placeholder"
+
+    def test_restore_out_of_range_index(self):
+        """Should keep placeholder when index out of range"""
+        vars = [FormulaVar(text="only one")]
+        result = restore_formula_placeholders("Has {v0} and {v5}", vars)
+        assert result == "Has only one and {v5}"
+
+    def test_restore_with_spaces_in_placeholder(self):
+        """Should handle spaces in placeholder notation"""
+        vars = [FormulaVar(text="formula")]
+        result = restore_formula_placeholders("Test {v 0} here", vars)
+        assert result == "Test formula here"
+
+
+# =============================================================================
+# Tests for extract_formula_vars_from_metadata
+# =============================================================================
+class TestExtractFormulaVarsFromMetadata:
+    """Tests for extract_formula_vars_from_metadata function"""
+
+    def test_extract_with_formula_vars(self):
+        """Should extract formula vars from metadata"""
+        vars = [FormulaVar(text="x")]
+        metadata = {'formula_vars': vars}
+        result = extract_formula_vars_from_metadata(metadata)
+        assert result == vars
+
+    def test_extract_without_formula_vars(self):
+        """Should return empty list when no formula_vars"""
+        metadata = {'other_key': 'value'}
+        result = extract_formula_vars_from_metadata(metadata)
+        assert result == []
+
+    def test_extract_empty_metadata(self):
+        """Should return empty list for empty metadata"""
+        result = extract_formula_vars_from_metadata({})
+        assert result == []
+
+
+# =============================================================================
+# Tests for paragraph boundary constants
+# =============================================================================
+class TestParagraphBoundaryConstants:
+    """Tests for paragraph boundary detection constants"""
+
+    def test_same_line_y_threshold(self):
+        """SAME_LINE_Y_THRESHOLD should be 3.0pt"""
+        assert SAME_LINE_Y_THRESHOLD == 3.0
+
+    def test_same_para_y_threshold(self):
+        """SAME_PARA_Y_THRESHOLD should be 20.0pt"""
+        assert SAME_PARA_Y_THRESHOLD == 20.0
+
+    def test_word_space_x_threshold(self):
+        """WORD_SPACE_X_THRESHOLD should be 2.0pt"""
+        assert WORD_SPACE_X_THRESHOLD == 2.0
+
+    def test_line_break_x_threshold(self):
+        """LINE_BREAK_X_THRESHOLD should be 1.0pt"""
+        assert LINE_BREAK_X_THRESHOLD == 1.0
+
+
+# =============================================================================
+# Tests for LayoutArray class (PDFMathTranslate compliant, yomitoku-based)
+# =============================================================================
+class TestLayoutArrayConstants:
+    """Tests for layout array constants"""
+
+    def test_layout_abandon_value(self):
+        """LAYOUT_ABANDON should be 0"""
+        assert LAYOUT_ABANDON == 0
+
+    def test_layout_background_value(self):
+        """LAYOUT_BACKGROUND should be 1"""
+        assert LAYOUT_BACKGROUND == 1
+
+    def test_layout_paragraph_base_value(self):
+        """LAYOUT_PARAGRAPH_BASE should be 2"""
+        assert LAYOUT_PARAGRAPH_BASE == 2
+
+    def test_layout_table_base_value(self):
+        """LAYOUT_TABLE_BASE should be 1000"""
+        assert LAYOUT_TABLE_BASE == 1000
+
+
+class TestLayoutArray:
+    """Tests for LayoutArray dataclass"""
+
+    def test_create_layout_array(self):
+        """Should create LayoutArray with all attributes"""
+        import numpy as np
+        arr = np.ones((100, 200), dtype=np.int32)
+        layout = LayoutArray(
+            array=arr,
+            height=100,
+            width=200,
+            paragraphs={2: {'order': 0}},
+            tables={1000: {'row': 0, 'col': 0}},
+            figures=[[10, 10, 50, 50]],
+        )
+        assert layout.height == 100
+        assert layout.width == 200
+        assert 2 in layout.paragraphs
+        assert 1000 in layout.tables
+        assert len(layout.figures) == 1
+
+    def test_layout_array_defaults(self):
+        """Should have empty defaults for collections"""
+        import numpy as np
+        arr = np.ones((10, 10), dtype=np.int32)
+        layout = LayoutArray(array=arr, height=10, width=10)
+        assert layout.paragraphs == {}
+        assert layout.tables == {}
+        assert layout.figures == []
+
+
+class TestLayoutClassFunctions:
+    """Tests for layout class helper functions"""
+
+    def test_get_layout_class_at_point(self):
+        """Should return class at specified point"""
+        import numpy as np
+        arr = np.ones((100, 100), dtype=np.int32)
+        arr[20:40, 30:60] = 5  # Paragraph region
+        layout = LayoutArray(array=arr, height=100, width=100)
+
+        # Inside paragraph region
+        assert get_layout_class_at_point(layout, 35, 25) == 5
+        # Outside paragraph region (background)
+        assert get_layout_class_at_point(layout, 10, 10) == 1
+
+    def test_get_layout_class_clamps_coordinates(self):
+        """Should clamp coordinates to valid range"""
+        import numpy as np
+        arr = np.ones((100, 100), dtype=np.int32)
+        layout = LayoutArray(array=arr, height=100, width=100)
+
+        # Out of bounds coordinates should be clamped
+        assert get_layout_class_at_point(layout, -10, 50) == 1
+        assert get_layout_class_at_point(layout, 150, 50) == 1
+        assert get_layout_class_at_point(layout, 50, -10) == 1
+        assert get_layout_class_at_point(layout, 50, 150) == 1
+
+    def test_is_same_region_true(self):
+        """Should return True for same non-background class"""
+        assert is_same_region(5, 5) is True
+        assert is_same_region(1000, 1000) is True
+
+    def test_is_same_region_false_different(self):
+        """Should return False for different classes"""
+        assert is_same_region(5, 6) is False
+        assert is_same_region(2, 1000) is False
+
+    def test_is_same_region_false_background(self):
+        """Should return False for background class"""
+        assert is_same_region(1, 1) is False
+
+    def test_should_abandon_region_true(self):
+        """Should return True for abandon class"""
+        assert should_abandon_region(LAYOUT_ABANDON) is True
+        assert should_abandon_region(0) is True
+
+    def test_should_abandon_region_false(self):
+        """Should return False for non-abandon classes"""
+        assert should_abandon_region(LAYOUT_BACKGROUND) is False
+        assert should_abandon_region(LAYOUT_PARAGRAPH_BASE) is False
+        assert should_abandon_region(LAYOUT_TABLE_BASE) is False
+
+
+# =============================================================================
+# Tests for TranslationCell Extended Fields
+# =============================================================================
+class TestTranslationCellExtendedFields:
+    """Tests for TranslationCell extended fields (PDFMathTranslate compliant)"""
+
+    def test_translation_cell_with_order(self):
+        """TranslationCell should have order field"""
+        cell = TranslationCell(
+            address="P1_5",
+            text="テスト",
+            box=[0, 0, 100, 50],
+            order=5,
+        )
+        assert cell.order == 5
+
+    def test_translation_cell_with_confidence_scores(self):
+        """TranslationCell should have rec_score and det_score"""
+        cell = TranslationCell(
+            address="P1_0",
+            text="テスト",
+            box=[0, 0, 100, 50],
+            rec_score=0.95,
+            det_score=0.88,
+        )
+        assert cell.rec_score == 0.95
+        assert cell.det_score == 0.88
+
+    def test_translation_cell_with_span_info(self):
+        """TranslationCell should have row_span and col_span for tables"""
+        cell = TranslationCell(
+            address="T1_0_0_0",
+            text="Merged cell",
+            box=[0, 0, 200, 100],
+            role="table_cell",
+            row_span=2,
+            col_span=3,
+        )
+        assert cell.row_span == 2
+        assert cell.col_span == 3
+
+    def test_translation_cell_default_span(self):
+        """TranslationCell should default span to 1"""
+        cell = TranslationCell(
+            address="T1_0_0_0",
+            text="Single cell",
+            box=[0, 0, 100, 50],
+        )
+        assert cell.row_span == 1
+        assert cell.col_span == 1
+
+    def test_translation_cell_caption_role(self):
+        """TranslationCell should support caption role"""
+        cell = TranslationCell(
+            address="F1_0_0",
+            text="Figure 1: Caption text",
+            box=[0, 0, 300, 30],
+            role="caption",
+        )
+        assert cell.role == "caption"
+
+    def test_translation_cell_defaults(self):
+        """TranslationCell should have correct defaults for new fields"""
+        cell = TranslationCell(
+            address="P1_0",
+            text="Test",
+            box=[0, 0, 100, 50],
+        )
+        assert cell.order == 0
+        assert cell.rec_score is None
+        assert cell.det_score is None
+        assert cell.row_span == 1
+        assert cell.col_span == 1
+
+
+# =============================================================================
+# Tests for prepare_translation_cells
+# =============================================================================
+class TestPrepareTranslationCells:
+    """Tests for prepare_translation_cells function (PDFMathTranslate compliant)"""
+
+    def _create_mock_paragraph(self, order, contents, box, direction="horizontal", role="text", words=None):
+        """Helper to create mock paragraph"""
+        para = MagicMock()
+        para.order = order
+        para.contents = contents
+        para.box = box
+        para.direction = direction
+        para.role = role
+        para.words = words or []
+        return para
+
+    def _create_mock_table(self, order, cells):
+        """Helper to create mock table"""
+        table = MagicMock()
+        table.order = order
+        table.cells = cells
+        return table
+
+    def _create_mock_cell(self, row, col, contents, box, row_span=1, col_span=1):
+        """Helper to create mock table cell"""
+        cell = MagicMock()
+        cell.row = row
+        cell.col = col
+        cell.contents = contents
+        cell.box = box
+        cell.row_span = row_span
+        cell.col_span = col_span
+        return cell
+
+    def _create_mock_figure(self, order, box, paragraphs=None, direction="horizontal"):
+        """Helper to create mock figure"""
+        fig = MagicMock()
+        fig.order = order
+        fig.box = box
+        fig.direction = direction
+        fig.paragraphs = paragraphs or []
+        return fig
+
+    def _create_mock_results(self, paragraphs=None, tables=None, figures=None):
+        """Helper to create mock yomitoku results"""
+        results = MagicMock()
+        results.paragraphs = paragraphs or []
+        results.tables = tables or []
+        results.figures = figures or []
+        return results
+
+    def test_basic_paragraphs(self):
+        """Should convert paragraphs to translation cells"""
+        results = self._create_mock_results(
+            paragraphs=[
+                self._create_mock_paragraph(0, "First paragraph", [0, 0, 100, 50]),
+                self._create_mock_paragraph(1, "Second paragraph", [0, 60, 100, 110]),
+            ]
+        )
+        cells = prepare_translation_cells(results, page_num=1)
+
+        assert len(cells) == 2
+        assert cells[0].address == "P1_0"
+        assert cells[0].text == "First paragraph"
+        assert cells[0].order == 0
+        assert cells[1].address == "P1_1"
+        assert cells[1].text == "Second paragraph"
+        assert cells[1].order == 1
+
+    def test_sorted_by_order(self):
+        """Should sort cells by reading order"""
+        results = self._create_mock_results(
+            paragraphs=[
+                self._create_mock_paragraph(5, "Fifth", [0, 0, 100, 50]),
+                self._create_mock_paragraph(2, "Second", [0, 60, 100, 110]),
+                self._create_mock_paragraph(8, "Eighth", [0, 120, 100, 170]),
+            ]
+        )
+        cells = prepare_translation_cells(results, page_num=1)
+
+        assert len(cells) == 3
+        assert cells[0].order == 2
+        assert cells[1].order == 5
+        assert cells[2].order == 8
+
+    def test_skip_headers_by_default(self):
+        """Should skip page headers/footers by default"""
+        results = self._create_mock_results(
+            paragraphs=[
+                self._create_mock_paragraph(0, "Header text", [0, 0, 100, 30], role="page_header"),
+                self._create_mock_paragraph(1, "Body text", [0, 50, 100, 100]),
+                self._create_mock_paragraph(2, "Footer text", [0, 800, 100, 830], role="page_footer"),
+            ]
+        )
+        cells = prepare_translation_cells(results, page_num=1)
+
+        assert len(cells) == 1
+        assert cells[0].text == "Body text"
+
+    def test_include_headers_when_specified(self):
+        """Should include headers/footers when include_headers=True"""
+        results = self._create_mock_results(
+            paragraphs=[
+                self._create_mock_paragraph(0, "Header text", [0, 0, 100, 30], role="page_header"),
+                self._create_mock_paragraph(1, "Body text", [0, 50, 100, 100]),
+            ]
+        )
+        cells = prepare_translation_cells(results, page_num=1, include_headers=True)
+
+        assert len(cells) == 2
+
+    def test_table_cells_with_spans(self):
+        """Should extract table cells with span information"""
+        results = self._create_mock_results(
+            tables=[
+                self._create_mock_table(0, [
+                    self._create_mock_cell(0, 0, "Header", [0, 0, 200, 30], row_span=1, col_span=2),
+                    self._create_mock_cell(1, 0, "Data 1", [0, 30, 100, 60]),
+                    self._create_mock_cell(1, 1, "Data 2", [100, 30, 200, 60]),
+                ])
+            ]
+        )
+        cells = prepare_translation_cells(results, page_num=1)
+
+        assert len(cells) == 3
+        header_cell = next(c for c in cells if c.text == "Header")
+        assert header_cell.col_span == 2
+        assert header_cell.role == "table_cell"
+
+    def test_figure_captions(self):
+        """Should extract figure captions"""
+        results = self._create_mock_results(
+            figures=[
+                self._create_mock_figure(
+                    order=3,
+                    box=[0, 200, 400, 500],
+                    paragraphs=[
+                        {"contents": "Figure 1: Test caption", "box": [0, 480, 400, 500], "direction": "horizontal"},
+                    ]
+                ),
+            ]
+        )
+        cells = prepare_translation_cells(results, page_num=1, include_figure_captions=True)
+
+        assert len(cells) == 1
+        assert cells[0].address == "F1_3_0"
+        assert cells[0].text == "Figure 1: Test caption"
+        assert cells[0].role == "caption"
+
+    def test_skip_figure_captions_when_disabled(self):
+        """Should skip figure captions when disabled"""
+        results = self._create_mock_results(
+            figures=[
+                self._create_mock_figure(
+                    order=3,
+                    box=[0, 200, 400, 500],
+                    paragraphs=[
+                        {"contents": "Figure 1: Caption", "box": [0, 480, 400, 500], "direction": "horizontal"},
+                    ]
+                ),
+            ]
+        )
+        cells = prepare_translation_cells(results, page_num=1, include_figure_captions=False)
+
+        assert len(cells) == 0
+
+    def test_confidence_filtering_rec_score(self):
+        """Should filter by recognition score threshold"""
+        word_high = MagicMock()
+        word_high.rec_score = 0.9
+        word_high.det_score = 0.9
+
+        word_low = MagicMock()
+        word_low.rec_score = 0.3
+        word_low.det_score = 0.9
+
+        results = self._create_mock_results(
+            paragraphs=[
+                self._create_mock_paragraph(0, "High confidence", [0, 0, 100, 50], words=[word_high]),
+                self._create_mock_paragraph(1, "Low confidence", [0, 60, 100, 110], words=[word_low]),
+            ]
+        )
+        cells = prepare_translation_cells(results, page_num=1, rec_score_threshold=0.5)
+
+        assert len(cells) == 1
+        assert cells[0].text == "High confidence"
+
+    def test_confidence_filtering_det_score(self):
+        """Should filter by detection score threshold"""
+        word_high = MagicMock()
+        word_high.rec_score = 0.9
+        word_high.det_score = 0.85
+
+        word_low = MagicMock()
+        word_low.rec_score = 0.9
+        word_low.det_score = 0.2
+
+        results = self._create_mock_results(
+            paragraphs=[
+                self._create_mock_paragraph(0, "High detection", [0, 0, 100, 50], words=[word_high]),
+                self._create_mock_paragraph(1, "Low detection", [0, 60, 100, 110], words=[word_low]),
+            ]
+        )
+        cells = prepare_translation_cells(results, page_num=1, det_score_threshold=0.5)
+
+        assert len(cells) == 1
+        assert cells[0].text == "High detection"
+
+    def test_removes_line_breaks(self):
+        """Should remove line breaks from text (yomitoku style)"""
+        results = self._create_mock_results(
+            paragraphs=[
+                self._create_mock_paragraph(0, "Line 1\nLine 2\nLine 3", [0, 0, 100, 80]),
+            ]
+        )
+        cells = prepare_translation_cells(results, page_num=1)
+
+        assert cells[0].text == "Line 1Line 2Line 3"
+
+    def test_skip_empty_content(self):
+        """Should skip paragraphs with empty content"""
+        results = self._create_mock_results(
+            paragraphs=[
+                self._create_mock_paragraph(0, "", [0, 0, 100, 50]),
+                self._create_mock_paragraph(1, "   ", [0, 60, 100, 110]),
+                self._create_mock_paragraph(2, "Has content", [0, 120, 100, 170]),
+            ]
+        )
+        cells = prepare_translation_cells(results, page_num=1)
+
+        assert len(cells) == 1
+        assert cells[0].text == "Has content"
+
+
+# =============================================================================
+# Tests for _calculate_paragraph_confidence
+# =============================================================================
+class TestCalculateParagraphConfidence:
+    """Tests for _calculate_paragraph_confidence function"""
+
+    def test_no_words_returns_none(self):
+        """Should return None for paragraph without words"""
+        para = MagicMock()
+        para.words = []
+        rec, det = _calculate_paragraph_confidence(para)
+        assert rec is None
+        assert det is None
+
+    def test_no_words_attribute_returns_none(self):
+        """Should return None for paragraph without words attribute"""
+        para = MagicMock(spec=[])  # No attributes
+        rec, det = _calculate_paragraph_confidence(para)
+        assert rec is None
+        assert det is None
+
+    def test_single_word_confidence(self):
+        """Should return single word confidence"""
+        word = MagicMock()
+        word.rec_score = 0.95
+        word.det_score = 0.88
+
+        para = MagicMock()
+        para.words = [word]
+
+        rec, det = _calculate_paragraph_confidence(para)
+        assert rec == 0.95
+        assert det == 0.88
+
+    def test_average_multiple_words(self):
+        """Should average confidence across multiple words"""
+        word1 = MagicMock()
+        word1.rec_score = 0.9
+        word1.det_score = 0.8
+
+        word2 = MagicMock()
+        word2.rec_score = 0.8
+        word2.det_score = 0.9
+
+        para = MagicMock()
+        para.words = [word1, word2]
+
+        rec, det = _calculate_paragraph_confidence(para)
+        assert rec == pytest.approx(0.85)  # (0.9 + 0.8) / 2
+        assert det == pytest.approx(0.85)  # (0.8 + 0.9) / 2
+
+    def test_dict_format_words(self):
+        """Should handle dict format words"""
+        para = MagicMock()
+        para.words = [
+            {"rec_score": 0.9, "det_score": 0.8},
+            {"rec_score": 0.7, "det_score": 0.6},
+        ]
+
+        rec, det = _calculate_paragraph_confidence(para)
+        assert rec == 0.8  # (0.9 + 0.7) / 2
+        assert det == 0.7  # (0.8 + 0.6) / 2
+
+    def test_partial_scores(self):
+        """Should handle words with partial scores"""
+        word1 = MagicMock()
+        word1.rec_score = 0.9
+        word1.det_score = None
+
+        word2 = MagicMock()
+        word2.rec_score = None
+        word2.det_score = 0.8
+
+        para = MagicMock()
+        para.words = [word1, word2]
+
+        rec, det = _calculate_paragraph_confidence(para)
+        assert rec == 0.9  # Only word1 has rec_score
+        assert det == 0.8  # Only word2 has det_score

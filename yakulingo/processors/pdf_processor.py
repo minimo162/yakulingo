@@ -3822,6 +3822,9 @@ class PdfProcessor(FileProcessor):
         Batch pdfminer page processing to match iterate_pdf_pages batching.
 
         Yields batches of (page_idx, ltpage, page_height) tuples.
+
+        Memory optimization: Clears converter.pages after each batch yield
+        to prevent accumulation in large PDFs (1000+ pages).
         """
         batch = []
         for page_idx, page in enumerate(PDFPage.create_pages(document)):
@@ -3840,9 +3843,13 @@ class PdfProcessor(FileProcessor):
             if len(batch) >= batch_size:
                 yield batch
                 batch = []
+                # Clear converter.pages to free memory for large PDFs
+                # Note: yielded ltpage references are preserved in batch tuples
+                converter.pages.clear()
 
         if batch:
             yield batch
+            converter.pages.clear()
 
     def _merge_pdfminer_text_to_cells(
         self,
@@ -4027,7 +4034,10 @@ class PdfProcessor(FileProcessor):
             # PDF: y=0 at bottom, 72 DPI base
             # Image: y=0 at top, rendered at OCR DPI
             # Scale factor = layout.height / page_height (same for x and y if aspect ratio preserved)
-            scale = layout.height / page_height if page_height > 0 else 1.0
+            if page_height > 0 and layout.height > 0:
+                scale = layout.height / page_height
+            else:
+                scale = 1.0
             img_x = char.x0 * scale
             img_y = (page_height - char.y1) * scale  # Flip Y axis
             return get_layout_class_at_point(layout, img_x, img_y)

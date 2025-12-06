@@ -390,7 +390,6 @@ class AppState:
     selected_file: Optional[Path] = None
     file_info: Optional[FileInfo] = None
     file_output_language: str = "en"  # or "jp"
-    pdf_fast_mode: bool = False       # OCRスキップオプション
     translation_progress: float = 0.0
     translation_status: str = ""
     output_file: Optional[Path] = None

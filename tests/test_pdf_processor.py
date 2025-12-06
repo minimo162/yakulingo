@@ -315,6 +315,32 @@ class TestVflag:
         assert vflag("Arial", "α", vchar=r"[α-ω]") is True
         assert vflag("Arial", "a", vchar=r"[α-ω]") is False
 
+    def test_vflag_bytes_font_name(self):
+        """PDFMathTranslate: bytes font names should be handled"""
+        assert vflag(b"CMMI10", "x") is True
+        assert vflag(b"Arial", "Hello") is False
+        # Invalid UTF-8 bytes should not crash
+        assert vflag(b"\xff\xfe", "x") is False
+
+    def test_vflag_font_name_truncation(self):
+        """PDFMathTranslate: Font names with '+' should be truncated"""
+        # "ABCDEF+CMMI10" should match "CMMI10"
+        assert vflag("ABCDEF+CMMI10", "x") is True
+        assert vflag("SUBSET+TeX-Math", "y") is True
+        # Without truncation, this wouldn't match
+        assert vflag("PREFIX+Symbol", "z") is True
+
+    def test_vflag_greek_letters(self):
+        """PDFMathTranslate: Greek letters should be detected"""
+        # Greek letters U+0370 to U+03FF
+        assert vflag("Arial", "α") is True  # U+03B1
+        assert vflag("Arial", "β") is True  # U+03B2
+        assert vflag("Arial", "Ω") is True  # U+03A9
+        assert vflag("Arial", "π") is True  # U+03C0
+        # Non-Greek should not match (unless other rules apply)
+        assert vflag("Arial", "a") is False
+        assert vflag("Arial", "日") is False
+
 
 # =============================================================================
 # Tests: FormulaManager

@@ -598,10 +598,10 @@ def vflag(font: str, char: str, vfont: str = None, vchar: str = None) -> bool:
     """
     Check if character is a formula.
 
-    PDFMathTranslate converter.py:156-177 compatible.
+    PDFMathTranslate converter.py compatible.
 
     Args:
-        font: Font name (can be empty)
+        font: Font name (can be empty, may be bytes)
         char: Character to check (can be empty)
         vfont: Custom font pattern (optional)
         vchar: Custom character pattern (optional)
@@ -609,6 +609,18 @@ def vflag(font: str, char: str, vfont: str = None, vchar: str = None) -> bool:
     Returns:
         True if character appears to be a formula element
     """
+    # PDFMathTranslate: Handle bytes font names
+    if isinstance(font, bytes):
+        try:
+            font = font.decode('utf-8')
+        except UnicodeDecodeError:
+            font = ""
+
+    # PDFMathTranslate: Truncate font name after "+"
+    # e.g., "ABCDEF+Arial" -> "Arial"
+    if font:
+        font = font.split("+")[-1]
+
     # Early return for empty inputs
     if not font and not char:
         return False
@@ -630,8 +642,14 @@ def vflag(font: str, char: str, vfont: str = None, vchar: str = None) -> bool:
     if vchar:
         if re.match(vchar, char):
             return True
-    elif unicodedata.category(char[0]) in FORMULA_UNICODE_CATEGORIES:
-        return True
+    else:
+        # PDFMathTranslate compliant: Check Unicode category and Greek letters
+        if char != " ":  # Non-space
+            if unicodedata.category(char[0]) in FORMULA_UNICODE_CATEGORIES:
+                return True
+            # Greek letters (U+0370 to U+03FF)
+            if 0x370 <= ord(char[0]) < 0x400:
+                return True
 
     return False
 

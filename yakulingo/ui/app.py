@@ -67,10 +67,6 @@ class YakuLingoApp:
         # Client reference for async handlers (saved from @ui.page handler)
         self._client = None
 
-        # Display mode: "laptop" (2-column) or "desktop" (3-column)
-        # Set by run_app() based on monitor detection
-        self._display_mode: str = "laptop"
-
         # Panel sizes (sidebar_width, input_panel_width, result_content_width, input_panel_max_width) in pixels
         # Set by run_app() based on monitor detection
         self._panel_sizes: tuple[int, int, int, int] = (260, 420, 800, 900)
@@ -254,51 +250,16 @@ class YakuLingoApp:
         ui.add_head_html('<meta name="viewport" content="width=device-width, initial-scale=1.0">')
         ui.add_head_html(f'<style>{COMPLETE_CSS}</style>')
 
-        # Layout container with display mode class
-        # laptop-mode: 2-column (sidebar + input OR result)
-        # desktop-mode: 3-column (sidebar + input + result)
-        with ui.element('div').classes(f'app-container {self._display_mode}-mode'):
-            # Left Sidebar (tabs + history) - always visible in both modes
+        # Layout container: 3-column (sidebar + input + result)
+        with ui.element('div').classes('app-container'):
+            # Left Sidebar (tabs + history)
             with ui.column().classes('sidebar'):
                 self._create_sidebar()
-
-            # Mobile header (hidden on large screens)
-            self._create_mobile_header()
-
-            # Sidebar overlay for mobile (click to close)
-            with ui.element('div').classes('sidebar-overlay').on('click', self._toggle_mobile_sidebar):
-                pass
 
             # Main area (input panel + result panel) with dynamic classes
             self._main_area_element = ui.element('div').classes(self._get_main_area_classes())
             with self._main_area_element:
                 self._create_main_content()
-
-    def _create_mobile_header(self):
-        """Create mobile header with hamburger menu (hidden on large screens)"""
-        with ui.element('div').classes('mobile-header'):
-            # Hamburger menu button
-            ui.button(
-                icon='menu',
-                on_click=self._toggle_mobile_sidebar
-            ).props('flat dense round').classes('mobile-header-btn')
-
-            # Logo
-            ui.label('YakuLingo').classes('app-logo flex-1')
-
-    def _toggle_mobile_sidebar(self):
-        """Toggle mobile sidebar visibility"""
-        # This will be handled by JavaScript/CSS
-        ui.run_javascript('''
-            const sidebar = document.querySelector('.sidebar');
-            const overlay = document.querySelector('.sidebar-overlay');
-            if (sidebar) {
-                sidebar.classList.toggle('mobile-visible');
-            }
-            if (overlay) {
-                overlay.classList.toggle('visible');
-            }
-        ''')
 
     def _create_sidebar(self):
         """Create left sidebar with logo, nav, and history"""
@@ -1354,53 +1315,18 @@ def create_app() -> YakuLingoApp:
     return YakuLingoApp()
 
 
-def _get_windows_scale_factor() -> float:
-    """Get Windows DPI scale factor (e.g., 1.0, 1.25, 1.5, 2.0).
-
-    pywebview calls SetProcessDPIAware(), so webview.screens returns physical pixels.
-    We need to convert to logical pixels for consistent UI sizing across DPI settings.
-
-    Returns:
-        Scale factor (1.0 if not on Windows or if detection fails)
-    """
-    import sys
-    if sys.platform != 'win32':
-        return 1.0
-
-    try:
-        import ctypes
-        # GetScaleFactorForDevice returns percentage (100, 125, 150, 200, etc.)
-        scale_percent = ctypes.windll.shcore.GetScaleFactorForDevice(0)
-        scale_factor = scale_percent / 100.0
-        logger.info("Windows DPI scale factor: %d%% (%.2f)", scale_percent, scale_factor)
-        return scale_factor
-    except Exception as e:
-        logger.debug("Failed to get Windows scale factor: %s", e)
-        return 1.0
-
-
-def _detect_display_settings() -> tuple[tuple[int, int], str, tuple[int, int, int, int]]:
-    """Detect connected monitors and determine window size, display mode, and panel widths.
+def _detect_display_settings() -> tuple[tuple[int, int], tuple[int, int, int, int]]:
+    """Detect connected monitors and determine window size and panel widths.
 
     Uses pywebview's screens API to detect multiple monitors BEFORE ui.run().
     This allows setting the correct window size from the start (no resize flicker).
-
-    Note: pywebview returns physical pixels (due to SetProcessDPIAware).
-    We convert to logical pixels using Windows scale factor for consistent sizing.
-
-    Strategy:
-    - Multiple monitors detected → desktop mode (3-column: sidebar + input + result)
-    - Single monitor with 1920+ → desktop mode (sufficient for 3-column)
-    - Single monitor with less than 1920px → laptop mode (2-column: sidebar + input OR result)
-
-    Both modes show sidebar (history). Laptop mode switches between input/result panels.
 
     Window and panel sizes are calculated based on monitor resolution.
     Reference: 2560x1440 monitor → 1900x1100 window, sidebar 260px, input panel 420px.
     Reference: 1920x1200 monitor → 1424x916 window, sidebar 260px, input panel 380px.
 
     Returns:
-        Tuple of ((window_width, window_height), mode, (sidebar_width, input_panel_width, result_content_width, input_panel_max_width))
+        Tuple of ((window_width, window_height), (sidebar_width, input_panel_width, result_content_width, input_panel_max_width))
     """
     # Reference ratios based on 2560x1440 → 1900x1100
     WIDTH_RATIO = 1900 / 2560  # 0.742
@@ -1457,16 +1383,15 @@ def _detect_display_settings() -> tuple[tuple[int, int], str, tuple[int, int, in
 
         return ((window_width, window_height), (sidebar_width, input_panel_width, result_content_width, input_panel_max_width))
 
-    # Default: laptop mode based on 1920x1080 screen
+    # Default based on 1920x1080 screen
     default_window, default_panels = calculate_sizes(1920, 1080)
-    default_mode = "laptop"
 
     try:
         import webview
         screens = webview.screens
         if not screens:
             logger.debug("No screens detected via pywebview, using default")
-            return (default_window, default_mode, default_panels)
+            return (default_window, default_panels)
 
         # Log all detected screens
         # Note: pywebview on Windows returns logical pixels (after DPI scaling applied)
@@ -1479,42 +1404,32 @@ def _detect_display_settings() -> tuple[tuple[int, int], str, tuple[int, int, in
 
         # Find the largest screen by resolution
         largest_screen = max(screens, key=lambda s: s.width * s.height)
-        is_multi_monitor = len(screens) > 1
 
         # Use screen dimensions directly (already in logical pixels on Windows)
         logical_width = largest_screen.width
         logical_height = largest_screen.height
 
         logger.info(
-            "Display detection: %d monitor(s), screen=%dx%d, multi_monitor=%s",
-            len(screens), logical_width, logical_height, is_multi_monitor
+            "Display detection: %d monitor(s), largest screen=%dx%d",
+            len(screens), logical_width, logical_height
         )
 
         # Calculate window and panel sizes based on logical screen resolution
         window_size, panel_sizes = calculate_sizes(logical_width, logical_height)
 
-        # Determine display mode based on logical resolution
-        # Multi-monitor: assume external monitor is connected → desktop mode
-        # Single monitor with 1920+ logical: sufficient space for 3-column layout → desktop mode
-        # Note: 1920x1200 → 1424px window is enough for sidebar (260) + input (380) + result (680)
-        if is_multi_monitor or logical_width >= 1920:
-            mode = "desktop"
-        else:
-            mode = "laptop"
-
         logger.info(
-            "%s mode: window %dx%d, sidebar %dpx, input panel %dpx, result content %dpx, input max %dpx",
-            mode.capitalize(), window_size[0], window_size[1],
+            "Window %dx%d, sidebar %dpx, input panel %dpx, result content %dpx, input max %dpx",
+            window_size[0], window_size[1],
             panel_sizes[0], panel_sizes[1], panel_sizes[2], panel_sizes[3]
         )
-        return (window_size, mode, panel_sizes)
+        return (window_size, panel_sizes)
 
     except ImportError:
         logger.debug("pywebview not available, using default")
-        return (default_window, default_mode, default_panels)
+        return (default_window, default_panels)
     except Exception as e:
         logger.warning("Failed to detect display: %s, using default", e)
-        return (default_window, default_mode, default_panels)
+        return (default_window, default_panels)
 
 
 def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
@@ -1523,15 +1438,13 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
 
     yakulingo_app = create_app()
 
-    # Detect optimal window size and display mode BEFORE ui.run() to avoid resize flicker
+    # Detect optimal window size BEFORE ui.run() to avoid resize flicker
     if native:
-        window_size, display_mode, panel_sizes = _detect_display_settings()
-        yakulingo_app._display_mode = display_mode
+        window_size, panel_sizes = _detect_display_settings()
         yakulingo_app._panel_sizes = panel_sizes  # (sidebar_width, input_panel_width, result_content_width, input_panel_max_width)
         yakulingo_app._window_size = window_size
     else:
         window_size = (1900, 1100)  # Default size for browser mode
-        yakulingo_app._display_mode = "laptop"
         yakulingo_app._panel_sizes = (260, 420, 800, 900)  # Default panel sizes
         yakulingo_app._window_size = window_size
 

@@ -151,54 +151,24 @@ for %%d in ("yakulingo" "prompts" "config") do (
 )
 
 :: ============================================================
-:: Step 3: Create ZIP archive (this takes the longest time)
+:: Step 3: Create ZIP archive
 :: ============================================================
 call :ShowProgress 3 "Creating ZIP archive..."
 
-:: Try 7-Zip first (much faster with multi-threading)
+:: Find 7-Zip
 set "SEVENZIP="
 if exist "%ProgramFiles%\7-Zip\7z.exe" set "SEVENZIP=%ProgramFiles%\7-Zip\7z.exe"
 if exist "%ProgramFiles(x86)%\7-Zip\7z.exe" set "SEVENZIP=%ProgramFiles(x86)%\7-Zip\7z.exe"
 
-if defined SEVENZIP (
-    echo        Using 7-Zip ^(multi-threaded^)...
-    pushd dist_temp
-    "%SEVENZIP%" a -tzip -mx=1 -mmt=on -bsp1 "..\%DIST_ZIP%" YakuLingo >nul
-    popd
-) else (
-    echo.
-    echo        7-Zip not found. Using PowerShell ^(slower^)...
-    echo        Install 7-Zip for faster builds: https://7-zip.org/
-    echo.
-    powershell -NoProfile -Command ^
-        "$ErrorActionPreference = 'Stop'; " ^
-        "Add-Type -Assembly 'System.IO.Compression.FileSystem'; " ^
-        "$srcPath = (Resolve-Path 'dist_temp\YakuLingo').Path; " ^
-        "$zipPath = (Resolve-Path '.').Path + '\%DIST_ZIP%'; " ^
-        "$files = Get-ChildItem -Path $srcPath -Recurse -File; " ^
-        "$total = $files.Count; " ^
-        "$i = 0; " ^
-        "$zip = [System.IO.Compression.ZipFile]::Open($zipPath, 'Create'); " ^
-        "try { " ^
-        "    foreach ($file in $files) { " ^
-        "        $i++; " ^
-        "        $relPath = $file.FullName.Substring($srcPath.Length + 1); " ^
-        "        $entry = $zip.CreateEntry('YakuLingo/' + $relPath.Replace('\', '/'), 'Fastest'); " ^
-        "        $stream = $entry.Open(); " ^
-        "        $fileStream = [System.IO.File]::OpenRead($file.FullName); " ^
-        "        $fileStream.CopyTo($stream); " ^
-        "        $fileStream.Close(); " ^
-        "        $stream.Close(); " ^
-        "        if ($i %% 200 -eq 0) { " ^
-        "            $pct = [int]($i * 100 / $total); " ^
-        "            Write-Host \"`r        [$pct%%] $i / $total files\" -NoNewline; " ^
-        "        } " ^
-        "    } " ^
-        "    Write-Host \"`r        [100%%] $total / $total files    \"; " ^
-        "} finally { " ^
-        "    $zip.Dispose(); " ^
-        "}"
+if not defined SEVENZIP (
+    echo        [ERROR] 7-Zip not found. Please install from https://7-zip.org/
+    pause
+    exit /b 1
 )
+
+pushd dist_temp
+"%SEVENZIP%" a -tzip -mx=1 -mmt=on -bsp1 "..\%DIST_ZIP%" YakuLingo >nul
+popd
 
 :: ============================================================
 :: Step 4: Cleanup and create share package

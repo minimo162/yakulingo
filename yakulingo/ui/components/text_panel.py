@@ -863,7 +863,7 @@ def _show_adjust_dialog(text: str, on_adjust: Callable[[str, str], None]):
 
                 ui.button(
                     '詳しく',
-                    on_click=lambda: _do_adjust(dialog, text, 'longer', on_adjust)
+                    on_click=lambda: _do_adjust(dialog, text, 'detailed', on_adjust)
                 ).props('outline').classes('flex-1')
 
             # Custom input

@@ -1404,15 +1404,14 @@ def _detect_display_settings() -> tuple[tuple[int, int], tuple[int, int, int, in
 
         # Find the largest screen by resolution
         largest_screen = max(screens, key=lambda s: s.width * s.height)
-        is_multi_monitor = len(screens) > 1
 
         # Use screen dimensions directly (already in logical pixels on Windows)
         logical_width = largest_screen.width
         logical_height = largest_screen.height
 
         logger.info(
-            "Display detection: %d monitor(s), screen=%dx%d, multi_monitor=%s",
-            len(screens), logical_width, logical_height, is_multi_monitor
+            "Display detection: %d monitor(s), largest screen=%dx%d",
+            len(screens), logical_width, logical_height
         )
 
         # Calculate window and panel sizes based on logical screen resolution

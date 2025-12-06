@@ -781,6 +781,7 @@ class CopilotHandler:
         prompt: str,
         reference_files: Optional[list[Path]] = None,
         char_limit: Optional[int] = None,
+        skip_clear_wait: bool = False,
     ) -> list[str]:
         """
         Synchronous version of translate for non-async contexts.
@@ -794,6 +795,7 @@ class CopilotHandler:
             prompt: The translation prompt to send to Copilot
             reference_files: Optional list of reference files to attach
             char_limit: Max characters for direct input (uses DEFAULT_CHAR_LIMIT if None)
+            skip_clear_wait: Skip response clear verification (for 2nd+ batches)
 
         Returns:
             List of translated strings parsed from Copilot's response
@@ -801,7 +803,7 @@ class CopilotHandler:
         # Execute all Playwright operations in the dedicated thread
         # This avoids greenlet thread-switching errors when called from asyncio.to_thread
         return _playwright_executor.execute(
-            self._translate_sync_impl, texts, prompt, reference_files, char_limit
+            self._translate_sync_impl, texts, prompt, reference_files, char_limit, skip_clear_wait
         )
 
     def _translate_sync_impl(
@@ -810,12 +812,17 @@ class CopilotHandler:
         prompt: str,
         reference_files: Optional[list[Path]] = None,
         char_limit: Optional[int] = None,
+        skip_clear_wait: bool = False,
     ) -> list[str]:
         """
         Implementation of translate_sync that runs in the Playwright thread.
 
         This method is called via PlaywrightThreadExecutor.execute() to ensure
         all Playwright operations run in the correct thread context.
+
+        Args:
+            skip_clear_wait: Skip response clear verification (for 2nd+ batches
+                           where we just finished getting a response)
         """
         # Call _connect_impl directly since we're already in the Playwright thread
         # (calling connect() would cause nested executor calls)
@@ -823,7 +830,7 @@ class CopilotHandler:
             raise RuntimeError("ブラウザに接続できませんでした。Edgeが起動しているか、Copilotにログインしているか確認してください。")
 
         # Start a new chat to clear previous context (prevents using old responses)
-        self.start_new_chat()
+        self.start_new_chat(skip_clear_wait=skip_clear_wait)
 
         # Attach reference files first (before sending prompt)
         if reference_files:
@@ -1008,7 +1015,7 @@ class CopilotHandler:
                 try:
                     send_button = self._page.wait_for_selector(
                         send_button_selector,
-                        timeout=5000,
+                        timeout=2000,  # Reduced from 5000ms (Enter key fallback handles timeouts)
                         state='visible'
                     )
                     if send_button:
@@ -1308,8 +1315,14 @@ class CopilotHandler:
 
         return translations[:expected_count]
 
-    def start_new_chat(self) -> None:
-        """Start a new chat session and verify previous responses are cleared."""
+    def start_new_chat(self, skip_clear_wait: bool = False) -> None:
+        """Start a new chat session and verify previous responses are cleared.
+
+        Args:
+            skip_clear_wait: If True, skip the response clear verification.
+                           Useful for 2nd+ batches where we just finished getting
+                           a response (so chat is already clear).
+        """
         if not self._page:
             return
 
@@ -1336,8 +1349,9 @@ class CopilotHandler:
                 # Fallback: wait a bit if selector doesn't appear
                 time.sleep(1)
 
-            # Verify that previous responses are cleared (reduced from 5.0s for faster detection)
-            self._wait_for_responses_cleared(timeout=1.0)
+            # Verify that previous responses are cleared (can be skipped for 2nd+ batches)
+            if not skip_clear_wait:
+                self._wait_for_responses_cleared(timeout=1.0)
 
             # 新しいチャット開始後、GPT-5を有効化
             # （送信時にも再確認するが、UIの安定性のため先に試行）

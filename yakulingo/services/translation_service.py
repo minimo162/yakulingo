@@ -76,6 +76,25 @@ MIN_MEANINGFUL_CHARS_FOR_EARLY_EXIT = 50  # Minimum chars before early exit deci
 CLEAR_JP_RATIO_THRESHOLD = 0.6  # Above this ratio, clearly Japanese
 CLEAR_NON_JP_RATIO_THRESHOLD = 0.1  # Below this ratio, clearly not Japanese
 
+# Japanese-specific punctuation (not used in Chinese)
+# 、(U+3001): Japanese comma (Chinese uses ，)
+# ・(U+30FB): Japanese middle dot (Chinese uses ·)
+# 「」(U+300C-300D): Japanese quotation marks
+# 『』(U+300E-300F): Japanese double quotation marks
+_JAPANESE_PUNCTUATION = frozenset('、・「」『』')
+
+
+def _has_japanese_punctuation(text: str) -> bool:
+    """Check if text contains Japanese-specific punctuation.
+
+    These punctuation marks are unique to Japanese and not used in Chinese:
+    - 、(touten): Japanese comma
+    - ・(nakaguro): Japanese middle dot
+    - 「」: Japanese quotation marks
+    - 『』: Japanese double quotation marks
+    """
+    return any(char in _JAPANESE_PUNCTUATION for char in text)
+
 
 def _is_punctuation(char: str) -> bool:
     """Check if char is punctuation (optimized with category prefix check)."""
@@ -208,8 +227,12 @@ def detect_language_local(text: str) -> Optional[str]:
     if latin_ratio > 0.5:
         return "英語"
 
-    # CJK only without kana → could be Chinese or Japanese, need Copilot
+    # CJK only without kana → check for Japanese-specific punctuation
+    # Japanese uses 、・「」『』 which are not used in Chinese
     if has_cjk:
+        if _has_japanese_punctuation(sample):
+            return "日本語"
+        # Could be Chinese or Japanese, need Copilot
         return None
 
     # Other cases → need Copilot
@@ -579,8 +602,10 @@ class BatchTranslator:
             prompt = prompts[i]  # Use pre-built prompt
 
             # Translate unique texts only (with char_limit for auto file attachment mode)
+            # Skip clear wait for 2nd+ batches (we just finished getting a response)
+            skip_clear_wait = (i > 0)
             unique_translations = self.copilot.translate_sync(
-                unique_texts, prompt, reference_files, self.copilot_char_limit
+                unique_texts, prompt, reference_files, self.copilot_char_limit, skip_clear_wait
             )
 
             # Validate translation count matches unique text count

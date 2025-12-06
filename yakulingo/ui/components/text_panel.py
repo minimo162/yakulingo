@@ -734,7 +734,7 @@ def _render_results_to_jp(
                             '戻し訳',
                             icon='g_translate',
                             on_click=lambda o=option: on_back_translate(o.text)
-                        ).props('flat no-caps size=sm').classes('back-translate-btn').tooltip('別のAIモデルで元の言語に戻してチェック')
+                        ).props('flat no-caps size=sm').classes('back-translate-btn').tooltip('翻訳結果を元の言語に戻して精度をチェック')
 
             # Detailed explanation section
             if option.explanation:
@@ -836,7 +836,7 @@ def _render_option_en(
                         '戻し訳',
                         icon='g_translate',
                         on_click=lambda o=option: on_back_translate(o.text)
-                    ).props('flat no-caps size=sm').classes('back-translate-btn').tooltip('別のAIモデルで日本語に戻してチェック')
+                    ).props('flat no-caps size=sm').classes('back-translate-btn').tooltip('翻訳結果を日本語に戻して精度をチェック')
 
             # Detailed explanation section (same style as JP)
             if option.explanation:

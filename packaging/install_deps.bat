@@ -133,6 +133,11 @@ echo [DONE] Python installed.
 echo.
 echo [3/4] Installing dependencies...
 uv.exe venv --native-tls
+if errorlevel 1 (
+    echo [ERROR] Failed to create virtual environment.
+    pause
+    exit /b 1
+)
 
 uv.exe sync --native-tls
 if errorlevel 1 (
@@ -183,9 +188,6 @@ for /f "delims=" %%p in ('powershell -Command "$p = Read-Host -AsSecureString; [
 
 set HTTP_PROXY=http://!PROXY_USER!:!PROXY_PASS!@!PROXY_SERVER!
 set HTTPS_PROXY=http://!PROXY_USER!:!PROXY_PASS!@!PROXY_SERVER!
-:: Also set individual variables for PowerShell -ProxyCredential
-set PROXY_USER=!PROXY_USER!
-set PROXY_PASS=!PROXY_PASS!
 echo.
 echo [OK] Credentials configured.
 exit /b 0

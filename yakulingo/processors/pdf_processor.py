@@ -38,20 +38,20 @@ from yakulingo.models.types import (
 # =============================================================================
 # Lazy Imports
 # =============================================================================
-_fitz = None
+_pymupdf = None
 _pypdfium2 = None
 _yomitoku = None
 _torch = None
 _np = None
 _pdfminer = None
 
-def _get_fitz():
-    """Lazy import PyMuPDF"""
-    global _fitz
-    if _fitz is None:
-        import fitz
-        _fitz = fitz
-    return _fitz
+def _get_pymupdf():
+    """Lazy import PyMuPDF (PDFMathTranslate compliant)"""
+    global _pymupdf
+    if _pymupdf is None:
+        import pymupdf
+        _pymupdf = pymupdf
+    return _pymupdf
 
 
 def _get_numpy():
@@ -598,10 +598,10 @@ def vflag(font: str, char: str, vfont: str = None, vchar: str = None) -> bool:
     """
     Check if character is a formula.
 
-    PDFMathTranslate converter.py:156-177 compatible.
+    PDFMathTranslate converter.py compatible.
 
     Args:
-        font: Font name (can be empty)
+        font: Font name (can be empty, may be bytes)
         char: Character to check (can be empty)
         vfont: Custom font pattern (optional)
         vchar: Custom character pattern (optional)
@@ -609,6 +609,18 @@ def vflag(font: str, char: str, vfont: str = None, vchar: str = None) -> bool:
     Returns:
         True if character appears to be a formula element
     """
+    # PDFMathTranslate: Handle bytes font names
+    if isinstance(font, bytes):
+        try:
+            font = font.decode('utf-8')
+        except UnicodeDecodeError:
+            font = ""
+
+    # PDFMathTranslate: Truncate font name after "+"
+    # e.g., "ABCDEF+Arial" -> "Arial"
+    if font:
+        font = font.split("+")[-1]
+
     # Early return for empty inputs
     if not font and not char:
         return False
@@ -630,8 +642,14 @@ def vflag(font: str, char: str, vfont: str = None, vchar: str = None) -> bool:
     if vchar:
         if re.match(vchar, char):
             return True
-    elif unicodedata.category(char[0]) in FORMULA_UNICODE_CATEGORIES:
-        return True
+    else:
+        # PDFMathTranslate compliant: Check Unicode category and Greek letters
+        if char != " ":  # Non-space
+            if unicodedata.category(char[0]) in FORMULA_UNICODE_CATEGORIES:
+                return True
+            # Greek letters (U+0370 to U+03FF)
+            if 0x370 <= ord(char[0]) < 0x400:
+                return True
 
     return False
 
@@ -905,9 +923,9 @@ class FontRegistry:
         # Create PyMuPDF Font object for glyph lookup (character width calculation)
         if font_path:
             try:
-                fitz = _get_fitz()
+                pymupdf = _get_pymupdf()
                 # PyMuPDF 1.26+ automatically handles TTC font collections
-                self._font_objects[font_id] = fitz.Font(fontfile=font_path)
+                self._font_objects[font_id] = pymupdf.Font(fontfile=font_path)
                 logger.debug("Created Font object for %s: %s", font_id, font_path)
             except Exception as e:
                 logger.warning("Failed to create Font object for %s: %s", font_id, e)
@@ -1061,7 +1079,7 @@ class FontRegistry:
         Returns:
             List of font IDs that failed to embed
         """
-        fitz = _get_fitz()
+        pymupdf = _get_pymupdf()
         failed_fonts = []
 
         if len(doc) == 0:
@@ -1092,7 +1110,7 @@ class FontRegistry:
                 # will render as .notdef (invisible)
                 if font_info.font_id not in self._font_objects:
                     try:
-                        self._font_objects[font_info.font_id] = fitz.Font(fontfile=font_path)
+                        self._font_objects[font_info.font_id] = pymupdf.Font(fontfile=font_path)
                         logger.debug("Created Font object in embed_fonts for %s", font_info.font_id)
                     except Exception as e:
                         logger.warning(
@@ -2476,13 +2494,13 @@ def extract_font_info_from_pdf(
         [{'bbox': [x1, y1, x2, y2], 'font_size': float, 'font_name': str}, ...]
         Coordinates are in OCR DPI scale (not PDF 72 DPI).
     """
-    fitz = _get_fitz()
+    pymupdf = _get_pymupdf()
     font_info: dict[int, list[dict]] = {}
 
     # Scale factor from PDF coordinates (72 DPI) to OCR coordinates
     scale = dpi / 72.0
 
-    with _open_fitz_document(pdf_path) as doc:
+    with _open_pymupdf_document(pdf_path) as doc:
         for page_idx, page in enumerate(doc):
             page_num = page_idx + 1
             page_font_info = []
@@ -2599,7 +2617,7 @@ def _open_pdf_document(pdf_path: str):
 
 
 @contextmanager
-def _open_fitz_document(file_path):
+def _open_pymupdf_document(file_path):
     """
     Context manager for safely opening and closing PyMuPDF documents.
 
@@ -2612,8 +2630,8 @@ def _open_fitz_document(file_path):
     Yields:
         PyMuPDF Document object
     """
-    fitz = _get_fitz()
-    doc = fitz.open(file_path)
+    pymupdf = _get_pymupdf()
+    doc = pymupdf.open(file_path)
     try:
         yield doc
     finally:
@@ -3163,7 +3181,7 @@ class PdfProcessor(FileProcessor):
 
     def get_file_info(self, file_path: Path) -> FileInfo:
         """Get PDF file info (fast: page count only, no text scanning)."""
-        with _open_fitz_document(file_path) as doc:
+        with _open_pymupdf_document(file_path) as doc:
             page_count = len(doc)
             section_details = [
                 SectionDetail(index=idx, name=f"ページ {idx + 1}")
@@ -3316,8 +3334,8 @@ class PdfProcessor(FileProcessor):
         Returns:
             Dictionary with processing statistics
         """
-        fitz = _get_fitz()
-        doc = fitz.open(input_path)
+        pymupdf = _get_pymupdf()
+        doc = pymupdf.open(input_path)
 
         result = {
             'total': len(translations),
@@ -3641,7 +3659,7 @@ class PdfProcessor(FileProcessor):
             ```
         """
         self._output_language = output_language
-        with _open_fitz_document(file_path) as doc:
+        with _open_pymupdf_document(file_path) as doc:
             total_pages = len(doc)
 
         # Use hybrid mode: pdfminer text + yomitoku layout (no OCR)
@@ -3822,6 +3840,9 @@ class PdfProcessor(FileProcessor):
         Batch pdfminer page processing to match iterate_pdf_pages batching.
 
         Yields batches of (page_idx, ltpage, page_height) tuples.
+
+        Memory optimization: Clears converter.pages after each batch yield
+        to prevent accumulation in large PDFs (1000+ pages).
         """
         batch = []
         for page_idx, page in enumerate(PDFPage.create_pages(document)):
@@ -3840,9 +3861,13 @@ class PdfProcessor(FileProcessor):
             if len(batch) >= batch_size:
                 yield batch
                 batch = []
+                # Clear converter.pages to free memory for large PDFs
+                # Note: yielded ltpage references are preserved in batch tuples
+                converter.pages.clear()
 
         if batch:
             yield batch
+            converter.pages.clear()
 
     def _merge_pdfminer_text_to_cells(
         self,
@@ -4027,7 +4052,10 @@ class PdfProcessor(FileProcessor):
             # PDF: y=0 at bottom, 72 DPI base
             # Image: y=0 at top, rendered at OCR DPI
             # Scale factor = layout.height / page_height (same for x and y if aspect ratio preserved)
-            scale = layout.height / page_height if page_height > 0 else 1.0
+            if page_height > 0 and layout.height > 0:
+                scale = layout.height / page_height
+            else:
+                scale = 1.0
             img_x = char.x0 * scale
             img_y = (page_height - char.y1) * scale  # Flip Y axis
             return get_layout_class_at_point(layout, img_x, img_y)
@@ -4270,7 +4298,7 @@ class PdfProcessor(FileProcessor):
 
     def get_page_count(self, file_path: Path) -> int:
         """Get total page count of PDF."""
-        with _open_fitz_document(file_path) as doc:
+        with _open_pymupdf_document(file_path) as doc:
             return len(doc)
 
     def create_bilingual_pdf(
@@ -4300,7 +4328,7 @@ class PdfProcessor(FileProcessor):
             - 'original_pages': Number of original pages
             - 'translated_pages': Number of translated pages
         """
-        fitz = _get_fitz()
+        pymupdf = _get_pymupdf()
 
         result = {
             'total_pages': 0,
@@ -4313,9 +4341,9 @@ class PdfProcessor(FileProcessor):
         output_doc = None
 
         try:
-            original_doc = fitz.open(original_path)
-            translated_doc = fitz.open(translated_path)
-            output_doc = fitz.open()  # New empty document
+            original_doc = pymupdf.open(original_path)
+            translated_doc = pymupdf.open(translated_path)
+            output_doc = pymupdf.open()  # New empty document
 
             original_pages = len(original_doc)
             translated_pages = len(translated_doc)

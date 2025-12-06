@@ -14,7 +14,7 @@ dependencies = [
     "python-pptx>=0.6.23",
     # PDF translation dependencies
     "numpy>=1.24.0",
-    "PyMuPDF>=1.24.0",
+    "pymupdf>=1.24.0,<1.25.3",  # PDFMathTranslate compliant version
     "pdfminer.six>=20231228",  # PDF font analysis (PDFMathTranslate compliant)
     # Web UI
     "nicegui>=1.4.0",

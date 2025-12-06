@@ -315,6 +315,32 @@ class TestVflag:
         assert vflag("Arial", "α", vchar=r"[α-ω]") is True
         assert vflag("Arial", "a", vchar=r"[α-ω]") is False
 
+    def test_vflag_bytes_font_name(self):
+        """PDFMathTranslate: bytes font names should be handled"""
+        assert vflag(b"CMMI10", "x") is True
+        assert vflag(b"Arial", "Hello") is False
+        # Invalid UTF-8 bytes should not crash
+        assert vflag(b"\xff\xfe", "x") is False
+
+    def test_vflag_font_name_truncation(self):
+        """PDFMathTranslate: Font names with '+' should be truncated"""
+        # "ABCDEF+CMMI10" should match "CMMI10"
+        assert vflag("ABCDEF+CMMI10", "x") is True
+        assert vflag("SUBSET+TeX-Math", "y") is True
+        # Without truncation, this wouldn't match
+        assert vflag("PREFIX+Symbol", "z") is True
+
+    def test_vflag_greek_letters(self):
+        """PDFMathTranslate: Greek letters should be detected"""
+        # Greek letters U+0370 to U+03FF
+        assert vflag("Arial", "α") is True  # U+03B1
+        assert vflag("Arial", "β") is True  # U+03B2
+        assert vflag("Arial", "Ω") is True  # U+03A9
+        assert vflag("Arial", "π") is True  # U+03C0
+        # Non-Greek should not match (unless other rules apply)
+        assert vflag("Arial", "a") is False
+        assert vflag("Arial", "日") is False
+
 
 # =============================================================================
 # Tests: FormulaManager
@@ -962,9 +988,9 @@ class TestPdfProcessorGetFileInfo:
 
     def test_get_file_info(self, processor, tmp_path):
         """Test with mocked fitz"""
-        with patch('yakulingo.processors.pdf_processor._get_fitz') as mock_get_fitz:
+        with patch('yakulingo.processors.pdf_processor._get_pymupdf') as mock_get_pymupdf:
             mock_fitz = MagicMock()
-            mock_get_fitz.return_value = mock_fitz
+            mock_get_pymupdf.return_value = mock_fitz
 
             # Create mock document
             mock_doc = MagicMock()
@@ -1037,9 +1063,9 @@ class TestPdfProcessorExtractTextBlocks:
             processor, '_extract_with_pdfminer_streaming',
             return_value=iter([([expected_block], None)])
         ):
-            with patch('yakulingo.processors.pdf_processor._get_fitz') as mock_get_fitz:
+            with patch('yakulingo.processors.pdf_processor._get_pymupdf') as mock_get_pymupdf:
                 mock_fitz = MagicMock()
-                mock_get_fitz.return_value = mock_fitz
+                mock_get_pymupdf.return_value = mock_fitz
                 mock_doc = MagicMock()
                 mock_doc.__len__ = Mock(return_value=1)
                 mock_fitz.open.return_value = mock_doc
@@ -1061,9 +1087,9 @@ class TestPdfProcessorApplyTranslations:
 
     def test_apply_translations_creates_output(self, processor, tmp_path):
         """Test translation application with mocked fitz"""
-        with patch('yakulingo.processors.pdf_processor._get_fitz') as mock_get_fitz:
+        with patch('yakulingo.processors.pdf_processor._get_pymupdf') as mock_get_pymupdf:
             mock_fitz = MagicMock()
-            mock_get_fitz.return_value = mock_fitz
+            mock_get_pymupdf.return_value = mock_fitz
 
             mock_doc = MagicMock()
             mock_doc.__len__ = Mock(return_value=1)
@@ -1185,9 +1211,9 @@ class TestApplyTranslationsResult:
 
     def test_apply_translations_returns_result_dict(self, processor, tmp_path):
         """Test that apply_translations returns a result dictionary"""
-        with patch('yakulingo.processors.pdf_processor._get_fitz') as mock_get_fitz:
+        with patch('yakulingo.processors.pdf_processor._get_pymupdf') as mock_get_pymupdf:
             mock_fitz = MagicMock()
-            mock_get_fitz.return_value = mock_fitz
+            mock_get_pymupdf.return_value = mock_fitz
 
             mock_doc = MagicMock()
             mock_doc.__len__ = Mock(return_value=1)
@@ -1236,9 +1262,9 @@ class TestApplyTranslationsPagesParameter:
 
     def test_apply_translations_with_specific_pages(self, processor, tmp_path):
         """Test that pages parameter filters which pages are translated"""
-        with patch('yakulingo.processors.pdf_processor._get_fitz') as mock_get_fitz:
+        with patch('yakulingo.processors.pdf_processor._get_pymupdf') as mock_get_pymupdf:
             mock_fitz = MagicMock()
-            mock_get_fitz.return_value = mock_fitz
+            mock_get_pymupdf.return_value = mock_fitz
 
             # Create mock document with 3 pages
             mock_doc = MagicMock()
@@ -1288,9 +1314,9 @@ class TestApplyTranslationsPagesParameter:
 
     def test_apply_translations_without_pages_translates_all(self, processor, tmp_path):
         """Test that omitting pages parameter translates all pages"""
-        with patch('yakulingo.processors.pdf_processor._get_fitz') as mock_get_fitz:
+        with patch('yakulingo.processors.pdf_processor._get_pymupdf') as mock_get_pymupdf:
             mock_fitz = MagicMock()
-            mock_get_fitz.return_value = mock_fitz
+            mock_get_pymupdf.return_value = mock_fitz
 
             mock_doc = MagicMock()
             mock_doc.__len__ = Mock(return_value=2)
@@ -1382,9 +1408,9 @@ class TestExtractTextBlocksStreaming:
             yield [block2], []
 
         with patch.object(processor, '_extract_hybrid_streaming', side_effect=mock_streaming):
-            with patch('yakulingo.processors.pdf_processor._get_fitz') as mock_get_fitz:
+            with patch('yakulingo.processors.pdf_processor._get_pymupdf') as mock_get_pymupdf:
                 mock_fitz = MagicMock()
-                mock_get_fitz.return_value = mock_fitz
+                mock_get_pymupdf.return_value = mock_fitz
                 mock_doc = MagicMock()
                 mock_doc.__len__ = Mock(return_value=2)
                 mock_fitz.open.return_value = mock_doc
@@ -1439,9 +1465,9 @@ class TestExtractTextBlocksStreaming:
                 yield [block], []
 
         with patch.object(processor, '_extract_hybrid_streaming', side_effect=mock_streaming):
-            with patch('yakulingo.processors.pdf_processor._get_fitz') as mock_get_fitz:
+            with patch('yakulingo.processors.pdf_processor._get_pymupdf') as mock_get_pymupdf:
                 mock_fitz = MagicMock()
-                mock_get_fitz.return_value = mock_fitz
+                mock_get_pymupdf.return_value = mock_fitz
                 mock_doc = MagicMock()
                 mock_doc.__len__ = Mock(return_value=3)
                 mock_fitz.open.return_value = mock_doc
@@ -1468,9 +1494,9 @@ class TestExtractTextBlocksStreaming:
 
     def test_get_page_count(self, processor, tmp_path):
         """Test get_page_count method"""
-        with patch('yakulingo.processors.pdf_processor._get_fitz') as mock_get_fitz:
+        with patch('yakulingo.processors.pdf_processor._get_pymupdf') as mock_get_pymupdf:
             mock_fitz = MagicMock()
-            mock_get_fitz.return_value = mock_fitz
+            mock_get_pymupdf.return_value = mock_fitz
 
             mock_doc = MagicMock()
             mock_doc.__len__ = Mock(return_value=5)
@@ -1495,9 +1521,9 @@ class TestCreateBilingualPdf:
 
     def test_create_bilingual_pdf_equal_pages(self, processor, tmp_path):
         """Test bilingual PDF creation with equal page counts"""
-        with patch('yakulingo.processors.pdf_processor._get_fitz') as mock_get_fitz:
+        with patch('yakulingo.processors.pdf_processor._get_pymupdf') as mock_get_pymupdf:
             mock_fitz = MagicMock()
-            mock_get_fitz.return_value = mock_fitz
+            mock_get_pymupdf.return_value = mock_fitz
 
             # Create mock documents
             mock_original_doc = MagicMock()
@@ -1554,9 +1580,9 @@ class TestCreateBilingualPdf:
 
     def test_create_bilingual_pdf_original_has_more_pages(self, processor, tmp_path):
         """Test bilingual PDF when original has more pages than translated"""
-        with patch('yakulingo.processors.pdf_processor._get_fitz') as mock_get_fitz:
+        with patch('yakulingo.processors.pdf_processor._get_pymupdf') as mock_get_pymupdf:
             mock_fitz = MagicMock()
-            mock_get_fitz.return_value = mock_fitz
+            mock_get_pymupdf.return_value = mock_fitz
 
             mock_original_doc = MagicMock()
             mock_original_doc.__len__ = Mock(return_value=5)
@@ -1596,9 +1622,9 @@ class TestCreateBilingualPdf:
 
     def test_create_bilingual_pdf_translated_has_more_pages(self, processor, tmp_path):
         """Test bilingual PDF when translated has more pages than original"""
-        with patch('yakulingo.processors.pdf_processor._get_fitz') as mock_get_fitz:
+        with patch('yakulingo.processors.pdf_processor._get_pymupdf') as mock_get_pymupdf:
             mock_fitz = MagicMock()
-            mock_get_fitz.return_value = mock_fitz
+            mock_get_pymupdf.return_value = mock_fitz
 
             mock_original_doc = MagicMock()
             mock_original_doc.__len__ = Mock(return_value=2)
@@ -1638,9 +1664,9 @@ class TestCreateBilingualPdf:
 
     def test_create_bilingual_pdf_interleaved_order(self, processor, tmp_path):
         """Test that pages are interleaved in correct order"""
-        with patch('yakulingo.processors.pdf_processor._get_fitz') as mock_get_fitz:
+        with patch('yakulingo.processors.pdf_processor._get_pymupdf') as mock_get_pymupdf:
             mock_fitz = MagicMock()
-            mock_get_fitz.return_value = mock_fitz
+            mock_get_pymupdf.return_value = mock_fitz
 
             mock_original_doc = MagicMock()
             mock_original_doc.__len__ = Mock(return_value=2)
@@ -1685,9 +1711,9 @@ class TestCreateBilingualPdf:
 
     def test_create_bilingual_pdf_cleanup_on_error(self, processor, tmp_path):
         """Test that documents are closed even if an error occurs"""
-        with patch('yakulingo.processors.pdf_processor._get_fitz') as mock_get_fitz:
+        with patch('yakulingo.processors.pdf_processor._get_pymupdf') as mock_get_pymupdf:
             mock_fitz = MagicMock()
-            mock_get_fitz.return_value = mock_fitz
+            mock_get_pymupdf.return_value = mock_fitz
 
             mock_original_doc = MagicMock()
             mock_original_doc.__len__ = Mock(return_value=2)

@@ -531,7 +531,6 @@ async def _translate_text(self):
 **OCRモデル設定** (`ocr_model`):
 - `"auto"` (default): デバイスに応じて自動選択（CPU→tiny, CUDA→standard）
 - `"standard"`: 標準モデル (`parseq`) - 高精度、GPU推奨
-- `"small"`: 小型モデル (`parseq-small`)
 - `"tiny"`: 軽量モデル (`parseq-tiny`) - GPU不要、CPU推論向け
 
 ### Reference Files

@@ -527,11 +527,6 @@ class TestResolveOcrModel:
         result = resolve_ocr_model("standard", "cpu")
         assert result == "parseq"
 
-    def test_small_returns_parseq_small(self):
-        from yakulingo.processors.pdf_processor import resolve_ocr_model
-        result = resolve_ocr_model("small", "cuda")
-        assert result == "parseq-small"
-
     def test_tiny_returns_parseq_tiny(self):
         from yakulingo.processors.pdf_processor import resolve_ocr_model
         result = resolve_ocr_model("tiny", "cpu")

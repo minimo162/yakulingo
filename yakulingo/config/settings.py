@@ -64,7 +64,7 @@ class AppSettings:
     ocr_batch_size: int = 5             # ページ/バッチ（メモリ使用量とのトレードオフ）
     ocr_dpi: int = 200                  # OCR解像度（高いほど精度向上、処理時間増加）
     ocr_device: str = "auto"            # "auto", "cpu", "cuda"
-    ocr_model: str = "auto"             # "auto", "standard", "small", "tiny"
+    ocr_model: str = "auto"             # "auto", "standard", "tiny"
                                         # auto: CPU→tiny, CUDA→standard
 
     # Auto Update

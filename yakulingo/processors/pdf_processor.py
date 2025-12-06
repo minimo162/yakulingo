@@ -2702,23 +2702,21 @@ def resolve_ocr_model(model: str, device: str) -> str:
     Resolve OCR model name based on setting and device.
 
     Args:
-        model: "auto", "standard", "small", "tiny"
+        model: "auto", "standard", "tiny"
         device: "cpu" or "cuda"
 
     Returns:
-        Actual model name for yomitoku: "parseq", "parseq-small", "parseq-tiny"
+        Actual model name for yomitoku: "parseq", "parseq-tiny"
     """
-    model_map = {
-        "standard": "parseq",
-        "small": "parseq-small",
-        "tiny": "parseq-tiny",
-    }
-
     if model == "auto":
         # CPU → tiny (GPU Free), CUDA → standard
         return "parseq-tiny" if device == "cpu" else "parseq"
 
-    return model_map.get(model, "parseq")
+    if model == "tiny":
+        return "parseq-tiny"
+
+    # default to standard
+    return "parseq"
 
 
 def get_document_analyzer(

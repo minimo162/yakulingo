@@ -236,8 +236,8 @@ def _create_large_input_panel(
                     ui.icon('lightbulb').classes('text-sm text-muted')
                     ui.label('使い方: テキストを入力して「翻訳する」をクリック').classes('text-xs')
                 with ui.element('div').classes('hint-secondary'):
-                    ui.icon('translate').classes('text-sm')
-                    ui.label('日本語 → 英語、英語 → 日本語を自動判定').classes('text-2xs')
+                    ui.icon('attach_file').classes('text-sm')
+                    ui.label('📎で用語集や参考資料を添付できます').classes('text-2xs')
             else:
                 # Regular hints for returning users
                 with ui.element('div').classes('hint-primary'):

@@ -49,6 +49,10 @@ if not exist ".venv" (
     echo        [ERROR] .venv directory not found. Run install_deps.bat first.
     set MISSING_FILES=1
 )
+if not exist ".venv\pyvenv.cfg" (
+    echo        [ERROR] .venv\pyvenv.cfg not found. Run install_deps.bat first.
+    set MISSING_FILES=1
+)
 if not exist ".uv-python" (
     echo        [ERROR] .uv-python directory not found. Run install_deps.bat first.
     set MISSING_FILES=1

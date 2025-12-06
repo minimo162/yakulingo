@@ -505,6 +505,7 @@ class YakuLingoApp:
                         on_remove_reference_file=self._remove_reference_file,
                         on_settings=self._show_settings_dialog,
                         on_translate_button_created=self._on_translate_button_created,
+                        is_first_use=not self.settings.onboarding_completed,
                     )
 
                 # Result panel (right column - shown when has results)
@@ -742,6 +743,10 @@ class YakuLingoApp:
                 self.state.text_view_state = TextViewState.RESULT
                 self._add_to_history(result, source_text)  # Save original source before clearing
                 self.state.source_text = ""  # Clear input for new translations
+                # Mark onboarding as completed on first successful translation
+                if not self.settings.onboarding_completed:
+                    self.settings.onboarding_completed = True
+                    self.settings.save(self.settings_path)
             else:
                 error_message = result.error_message if result else 'Unknown error'
 
@@ -1320,6 +1325,10 @@ class YakuLingoApp:
                     self.state.output_file = result.output_path
                     self.state.translation_result = result
                     self.state.file_state = FileState.COMPLETE
+                    # Mark onboarding as completed on first successful translation
+                    if not self.settings.onboarding_completed:
+                        self.settings.onboarding_completed = True
+                        self.settings.save(self.settings_path)
                     # Show completion dialog with all output files
                     from yakulingo.ui.utils import create_completion_dialog
                     create_completion_dialog(

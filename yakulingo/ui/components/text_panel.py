@@ -100,8 +100,12 @@ def _create_textarea_with_keyhandler(
     # Handle Ctrl+Enter in textarea with NiceGUI 3.0+ js_handler
     # Prevent default browser behavior (newline insertion) when Ctrl+Enter is pressed
     async def handle_keydown(e):
-        if state.can_translate() and not state.text_translating:
-            await on_translate()
+        # can_translate() already checks text_translating internally
+        if state.can_translate():
+            try:
+                await on_translate()
+            except Exception as ex:
+                logger.exception("Ctrl+Enter translation error: %s", ex)
 
     textarea.on(
         'keydown',
@@ -306,8 +310,12 @@ def _create_large_input_panel(
         # Hint text - Nani-style single line, centered
         with ui.element('div').classes('hint-section'):
             with ui.element('div').classes('hint-primary'):
-                ui.icon('translate').classes('text-sm text-muted')
-                ui.label('入力言語を自動判定して翻訳します')
+                with ui.element('span').classes('keycap keycap-hint'):
+                    ui.label('Ctrl')
+                ui.label('+').classes('text-muted text-xs mx-0.5')
+                with ui.element('span').classes('keycap keycap-hint'):
+                    ui.label('J')
+                ui.label(': 他アプリで選択したテキストを翻訳').classes('text-muted ml-1')
 
 
 def _create_compact_input_panel(
@@ -689,8 +697,12 @@ def create_text_panel(
         # Hint text - Nani-style single line, centered
         with ui.element('div').classes('hint-section'):
             with ui.element('div').classes('hint-primary'):
-                ui.icon('translate').classes('text-sm text-muted')
-                ui.label('入力言語を自動判定して翻訳します')
+                with ui.element('span').classes('keycap keycap-hint'):
+                    ui.label('Ctrl')
+                ui.label('+').classes('text-muted text-xs mx-0.5')
+                with ui.element('span').classes('keycap keycap-hint'):
+                    ui.label('J')
+                ui.label(': 他アプリで選択したテキストを翻訳').classes('text-muted ml-1')
 
         # Results section - language-specific UI
         if state.text_result and state.text_result.options:

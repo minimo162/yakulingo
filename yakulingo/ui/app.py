@@ -142,10 +142,11 @@ class YakuLingoApp:
         """Handle hotkey trigger - set text and translate in main app.
 
         Args:
-            text: Text from clipboard (empty string if none)
+            text: Text from clipboard (only called when text is available)
         """
+        # Double-check: text should always be non-empty (HotkeyManager filters empty)
         if not text:
-            logger.debug("Hotkey triggered but no text selected")
+            logger.debug("Hotkey triggered but no text provided")
             return
 
         # Skip if already translating
@@ -1014,7 +1015,8 @@ class YakuLingoApp:
         self.state.text_translation_elapsed_time = None
         self.state.streaming_text = None
         self._streaming_label = None  # Reset before refresh creates new label
-        self._refresh_content()  # Full refresh: input panel changes from large to compact
+        with client:
+            self._refresh_content()  # Full refresh: input panel changes from large to compact
 
         # Track last text to avoid redundant updates
         last_streaming_text: str = ""

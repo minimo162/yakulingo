@@ -32,16 +32,42 @@ CF_UNICODETEXT = 13
 VK_CONTROL = 0x11
 VK_C = 0x43
 
-# Input event flags
+# SendInput constants (replaces legacy keybd_event)
+INPUT_KEYBOARD = 1
 KEYEVENTF_KEYUP = 0x0002
 
 # Timing constants
-CLIPBOARD_WAIT_SEC = 0.15  # Wait for clipboard to update after Ctrl+C
-CLIPBOARD_RETRY_COUNT = 5  # Retry count for clipboard access
-CLIPBOARD_RETRY_DELAY_SEC = 0.05  # Delay between retries
+CLIPBOARD_WAIT_SEC = 0.2  # Wait for clipboard to update after Ctrl+C (increased)
+CLIPBOARD_RETRY_COUNT = 10  # Retry count for clipboard access (increased)
+CLIPBOARD_RETRY_DELAY_SEC = 0.1  # Delay between retries (increased)
 MESSAGE_POLL_INTERVAL_SEC = 0.05  # Interval for PeekMessage loop
-KEY_EVENT_DELAY_SEC = 0.01  # Small delay between key events for reliability
+KEY_EVENT_DELAY_SEC = 0.02  # Delay between key events for reliability (increased)
 MAX_TEXT_LENGTH = 50000  # Maximum text length to process (prevent huge clipboard data)
+CTRL_RELEASE_WAIT_SEC = 0.1  # Wait for user to release Ctrl key
+
+
+# SendInput structures
+class KEYBDINPUT(ctypes.Structure):
+    """Keyboard input structure for SendInput."""
+    _fields_ = [
+        ("wVk", ctypes.wintypes.WORD),
+        ("wScan", ctypes.wintypes.WORD),
+        ("dwFlags", ctypes.wintypes.DWORD),
+        ("time", ctypes.wintypes.DWORD),
+        ("dwExtraInfo", ctypes.POINTER(ctypes.c_ulong)),
+    ]
+
+
+class INPUT(ctypes.Structure):
+    """Input structure for SendInput."""
+    class _INPUT_UNION(ctypes.Union):
+        _fields_ = [("ki", KEYBDINPUT)]
+
+    _anonymous_ = ("_input_union",)
+    _fields_ = [
+        ("type", ctypes.wintypes.DWORD),
+        ("_input_union", _INPUT_UNION),
+    ]
 
 
 class HotkeyManager:
@@ -73,7 +99,8 @@ class HotkeyManager:
         Args:
             callback: Function that receives text from clipboard (empty string if none)
         """
-        self._callback = callback
+        with self._lock:
+            self._callback = callback
 
     def start(self):
         """Start hotkey listener in background thread."""
@@ -149,11 +176,17 @@ class HotkeyManager:
 
     def _handle_hotkey(self):
         """Handle hotkey press: copy selected text and trigger callback."""
-        if not self._callback:
+        with self._lock:
+            callback = self._callback
+
+        if not callback:
             logger.warning("No callback set for hotkey")
             return
 
         try:
+            # Wait for user to release Ctrl key to avoid interference
+            self._wait_for_ctrl_release()
+
             # Get current clipboard content to detect change
             old_text = self._get_clipboard_text()
 
@@ -166,36 +199,74 @@ class HotkeyManager:
             # Get text from clipboard (with retry)
             text = self._get_clipboard_text_with_retry()
 
-            # If clipboard didn't change, selection might have failed
-            if text and text == old_text:
-                logger.debug("Clipboard unchanged - no text may have been selected")
+            # If clipboard didn't change, no text was selected - skip translation
+            if text is not None and text == old_text:
+                logger.info("Clipboard unchanged - no text was selected, skipping")
+                return
+
+            # If clipboard is empty after Ctrl+C, nothing was selected
+            if text is None:
+                logger.info("No text in clipboard after Ctrl+C, skipping")
+                return
 
             # Limit text length to prevent processing huge data
-            if text and len(text) > MAX_TEXT_LENGTH:
+            if len(text) > MAX_TEXT_LENGTH:
                 logger.warning(f"Text truncated from {len(text)} to {MAX_TEXT_LENGTH} chars")
                 text = text[:MAX_TEXT_LENGTH]
 
-            # Trigger callback (empty string if no text)
-            self._callback(text or "")
+            # Trigger callback
+            callback(text)
 
         except Exception as e:
             logger.error(f"Error handling hotkey: {e}", exc_info=True)
 
+    def _wait_for_ctrl_release(self):
+        """Wait for user to release Ctrl key to avoid key state conflicts."""
+        user32 = ctypes.windll.user32
+        max_wait = 1.0  # Maximum wait time in seconds
+        start_time = time.time()
+
+        while time.time() - start_time < max_wait:
+            # GetAsyncKeyState returns negative if key is pressed
+            ctrl_state = user32.GetAsyncKeyState(VK_CONTROL)
+            if not (ctrl_state & 0x8000):  # High bit indicates key is down
+                time.sleep(CTRL_RELEASE_WAIT_SEC)  # Small additional delay
+                return
+            time.sleep(0.01)
+
+        logger.debug("Ctrl key still pressed after timeout, proceeding anyway")
+
     def _send_ctrl_c(self):
-        """Send Ctrl+C keystroke to copy selected text."""
+        """Send Ctrl+C keystroke using SendInput (modern API)."""
         user32 = ctypes.windll.user32
 
-        # Key down: Ctrl
-        user32.keybd_event(VK_CONTROL, 0, 0, 0)
-        time.sleep(KEY_EVENT_DELAY_SEC)
-        # Key down: C
-        user32.keybd_event(VK_C, 0, 0, 0)
-        time.sleep(KEY_EVENT_DELAY_SEC)
-        # Key up: C
-        user32.keybd_event(VK_C, 0, KEYEVENTF_KEYUP, 0)
-        time.sleep(KEY_EVENT_DELAY_SEC)
-        # Key up: Ctrl
-        user32.keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0)
+        # Create input events: Ctrl down, C down, C up, Ctrl up
+        inputs = (INPUT * 4)()
+
+        # Ctrl key down
+        inputs[0].type = INPUT_KEYBOARD
+        inputs[0].ki.wVk = VK_CONTROL
+        inputs[0].ki.dwFlags = 0
+
+        # C key down
+        inputs[1].type = INPUT_KEYBOARD
+        inputs[1].ki.wVk = VK_C
+        inputs[1].ki.dwFlags = 0
+
+        # C key up
+        inputs[2].type = INPUT_KEYBOARD
+        inputs[2].ki.wVk = VK_C
+        inputs[2].ki.dwFlags = KEYEVENTF_KEYUP
+
+        # Ctrl key up
+        inputs[3].type = INPUT_KEYBOARD
+        inputs[3].ki.wVk = VK_CONTROL
+        inputs[3].ki.dwFlags = KEYEVENTF_KEYUP
+
+        # Send all inputs at once for better reliability
+        sent = user32.SendInput(4, ctypes.byref(inputs), ctypes.sizeof(INPUT))
+        if sent != 4:
+            logger.warning(f"SendInput sent {sent}/4 inputs")
 
     def _get_clipboard_text_with_retry(self) -> Optional[str]:
         """Get text from clipboard with retry on failure."""
@@ -205,28 +276,40 @@ class HotkeyManager:
                 return text
             if attempt < CLIPBOARD_RETRY_COUNT - 1:
                 time.sleep(CLIPBOARD_RETRY_DELAY_SEC)
+                logger.debug(f"Clipboard retry {attempt + 1}/{CLIPBOARD_RETRY_COUNT}")
+
+        logger.warning("Failed to get clipboard text after all retries")
         return None
 
     def _get_clipboard_text(self) -> Optional[str]:
-        """Get text from clipboard."""
+        """Get text from clipboard with proper type safety."""
         user32 = ctypes.windll.user32
         kernel32 = ctypes.windll.kernel32
 
+        # Set return types for type safety
+        kernel32.GlobalLock.argtypes = [ctypes.c_void_p]
+        kernel32.GlobalLock.restype = ctypes.c_void_p
+        kernel32.GlobalUnlock.argtypes = [ctypes.c_void_p]
+        kernel32.GlobalUnlock.restype = ctypes.wintypes.BOOL
+
         if not user32.OpenClipboard(None):
-            logger.debug("Failed to open clipboard")
+            logger.warning("Failed to open clipboard (may be in use by another app)")
             return None
 
         try:
             if not user32.IsClipboardFormatAvailable(CF_UNICODETEXT):
+                logger.debug("No unicode text in clipboard")
                 return None
 
             handle = user32.GetClipboardData(CF_UNICODETEXT)
             if not handle:
+                logger.debug("GetClipboardData returned null")
                 return None
 
-            # Lock global memory
+            # Lock global memory with proper type
             ptr = kernel32.GlobalLock(handle)
             if not ptr:
+                logger.warning("GlobalLock failed")
                 return None
 
             try:

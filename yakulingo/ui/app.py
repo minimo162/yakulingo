@@ -102,7 +102,6 @@ class YakuLingoApp:
 
         # Hotkey manager for quick translation (Ctrl+J)
         self._hotkey_manager = None
-        self._quick_translate_controller = None
 
     @property
     def copilot(self) -> "CopilotHandler":
@@ -121,17 +120,8 @@ class YakuLingoApp:
 
         try:
             from yakulingo.services.hotkey_manager import get_hotkey_manager
-            from yakulingo.ui.components.quick_popup import QuickTranslateController
 
             self._hotkey_manager = get_hotkey_manager()
-
-            # Create controller for handling translations
-            self._quick_translate_controller = QuickTranslateController(
-                translation_service=self.translation_service,
-                copilot_handler=self._copilot,
-            )
-
-            # Set callback
             self._hotkey_manager.set_callback(self._on_hotkey_triggered)
             self._hotkey_manager.start()
             logger.info("Hotkey manager started (Ctrl+J)")
@@ -148,14 +138,66 @@ class YakuLingoApp:
                 logger.debug(f"Error stopping hotkey manager: {e}")
             self._hotkey_manager = None
 
-    def _on_hotkey_triggered(self, content):
-        """Handle hotkey trigger - translate content and show popup.
+    def _on_hotkey_triggered(self, text: str):
+        """Handle hotkey trigger - set text and translate in main app.
 
         Args:
-            content: Either text (str) or image data (bytes) from clipboard
+            text: Text from clipboard (empty string if none)
         """
-        if self._quick_translate_controller:
-            self._quick_translate_controller.translate_and_show(content)
+        if not text:
+            logger.debug("Hotkey triggered but no text selected")
+            return
+
+        # Schedule UI update on NiceGUI's event loop
+        # This is called from HotkeyManager's background thread
+        try:
+            import asyncio
+            loop = asyncio.get_event_loop()
+            loop.call_soon_threadsafe(
+                lambda: asyncio.create_task(self._handle_hotkey_text(text))
+            )
+        except Exception as e:
+            logger.error(f"Failed to schedule hotkey handler: {e}")
+
+    async def _handle_hotkey_text(self, text: str):
+        """Handle hotkey text in the main event loop.
+
+        Args:
+            text: Text to translate
+        """
+        # Set source text
+        self.state.source_text = text
+
+        # Switch to text tab if not already
+        from yakulingo.ui.state import Tab, TextViewState
+        self.state.current_tab = Tab.TEXT
+        self.state.text_view_state = TextViewState.INPUT
+
+        # Bring app window to front
+        await self._bring_window_to_front()
+
+        # Refresh UI to show the text
+        if self._client:
+            with self._client:
+                self._refresh_content()
+
+        # Small delay to let UI update
+        await asyncio.sleep(0.1)
+
+        # Trigger translation
+        await self._translate_text()
+
+    async def _bring_window_to_front(self):
+        """Bring the app window to front."""
+        try:
+            from nicegui import app as nicegui_app
+            if hasattr(nicegui_app, 'native') and nicegui_app.native.main_window:
+                window = nicegui_app.native.main_window
+                window.on_top = True
+                await asyncio.sleep(0.1)
+                window.on_top = False
+        except (ImportError, AttributeError, RuntimeError) as e:
+            logger.debug(f"Failed to bring window to front: {e}")
 
     # =========================================================================
     # Section 2: Connection & Startup

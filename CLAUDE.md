@@ -373,7 +373,7 @@ show_in_folder(Path("output.xlsx"))  # Windows: explorer /select, macOS: open -R
 ```
 
 ### Completion Dialog
-Shows translation results with action buttons:
+Shows translation completion status:
 ```python
 from yakulingo.ui.utils import create_completion_dialog
 
@@ -383,8 +383,8 @@ dialog = create_completion_dialog(
     duration_seconds=45.2,
     on_close=callback
 )
-# Dialog shows all output files (translated, bilingual, glossary CSV)
-# with "開く" (Open) and "フォルダで表示" (Show in Folder) buttons
+# Dialog shows: success icon, completion message, file name, duration, OK button
+# Download buttons are in the success card (file_panel.py), not in this dialog
 ```
 
 ## Testing Conventions

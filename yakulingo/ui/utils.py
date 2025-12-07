@@ -270,16 +270,22 @@ def open_file(file_path: Path) -> bool:
         system = platform.system()
 
         if system == 'Windows':
-            # Windows: use ShellExecuteW with SW_SHOW for foreground display
             import ctypes
-            SW_SHOW = 5  # Show window in foreground
+
+            # Allow the opened application to take foreground
+            # ASFW_ANY = -1 allows any process to set foreground window
+            ASFW_ANY = -1
+            ctypes.windll.user32.AllowSetForegroundWindow(ASFW_ANY)
+
+            # Use SW_SHOWNORMAL to activate and display the window
+            SW_SHOWNORMAL = 1
             result = ctypes.windll.shell32.ShellExecuteW(
                 None,           # hwnd
                 "open",         # operation
                 str(file_path), # file
                 None,           # parameters
                 None,           # directory
-                SW_SHOW         # show command
+                SW_SHOWNORMAL   # show command - activates window
             )
             # ShellExecuteW returns > 32 on success
             if result <= 32:

@@ -9,13 +9,13 @@ echo.
 
 cd /d "%~dp0\.."
 
-:: Timer start
-set START_TIME=%TIME%
+:: Timer start (using PowerShell for accuracy)
+for /f %%t in ('powershell -NoProfile -Command "[DateTime]::Now.Ticks"') do set START_TICKS=%%t
 
 :: Progress bar settings
 set "PROGRESS_CHARS=##################################################"
 set "PROGRESS_EMPTY=.................................................."
-set TOTAL_STEPS=4
+set TOTAL_STEPS=3
 set CURRENT_STEP=0
 
 :: ============================================================
@@ -37,174 +37,106 @@ exit /b 0
 :SkipFunctions
 
 :: ============================================================
-:: Step 1: Prepare (check files, cleanup, fix paths)
+:: Step 1: Prepare (check files, cleanup, fix paths, copy files)
 :: ============================================================
 call :ShowProgress 1 "Preparing..."
 
+:: Check required files using PowerShell (faster than multiple if exists)
 echo        Checking required files...
-
-set MISSING_FILES=0
-
-if not exist ".venv" (
-    echo        [ERROR] .venv directory not found. Run install_deps.bat first.
-    set MISSING_FILES=1
+for /f "delims=" %%r in ('powershell -NoProfile -Command ^
+"$missing = @(); ^
+$files = @('.venv','.venv\pyvenv.cfg','.uv-python','.playwright-browsers','app.py','yakulingo','YakuLingo.exe','prompts','packaging\installer\share\setup.vbs','packaging\installer\share\.scripts\setup.ps1','packaging\installer\share\README.txt'); ^
+foreach ($f in $files) { if (-not (Test-Path $f)) { $missing += $f } }; ^
+$7z = @(\"$env:ProgramFiles\7-Zip\7z.exe\",\"${env:ProgramFiles(x86)}\7-Zip\7z.exe\") | Where-Object { Test-Path $_ } | Select-Object -First 1; ^
+if (-not $7z) { $7z = (Get-Command 7z.exe -ErrorAction SilentlyContinue).Source }; ^
+if ($missing.Count -gt 0) { $missing -join '|'; exit 1 } ^
+elseif (-not $7z) { Write-Output '7ZIP_NOT_FOUND'; exit 1 } ^
+else { Write-Output $7z; exit 0 }"') do (
+    set "CHECK_RESULT=%%r"
 )
-if not exist ".venv\pyvenv.cfg" (
-    echo        [ERROR] .venv\pyvenv.cfg not found. Run install_deps.bat first.
-    set MISSING_FILES=1
-)
-if not exist ".uv-python" (
-    echo        [ERROR] .uv-python directory not found. Run install_deps.bat first.
-    set MISSING_FILES=1
-)
-if not exist ".playwright-browsers" (
-    echo        [ERROR] .playwright-browsers directory not found. Run install_deps.bat first.
-    set MISSING_FILES=1
-)
-if not exist "app.py" (
-    echo        [ERROR] app.py not found.
-    set MISSING_FILES=1
-)
-if not exist "yakulingo" (
-    echo        [ERROR] yakulingo directory not found.
-    set MISSING_FILES=1
-)
-if not exist "YakuLingo.exe" (
-    echo        [ERROR] YakuLingo.exe not found. Build the launcher first.
-    set MISSING_FILES=1
-)
-if not exist "prompts" (
-    echo        [ERROR] prompts directory not found.
-    set MISSING_FILES=1
-)
-if not exist "packaging\installer\share\setup.vbs" (
-    echo        [ERROR] packaging\installer\share\setup.vbs not found.
-    set MISSING_FILES=1
-)
-if not exist "packaging\installer\share\.scripts\setup.ps1" (
-    echo        [ERROR] packaging\installer\share\.scripts\setup.ps1 not found.
-    set MISSING_FILES=1
-)
-if not exist "packaging\installer\share\README.txt" (
-    echo        [ERROR] packaging\installer\share\README.txt not found.
-    set MISSING_FILES=1
-)
-
-:: Check 7-Zip (required for ZIP creation)
-set "SEVENZIP="
-if exist "%ProgramFiles%\7-Zip\7z.exe" set "SEVENZIP=%ProgramFiles%\7-Zip\7z.exe"
-if exist "%ProgramFiles(x86)%\7-Zip\7z.exe" set "SEVENZIP=%ProgramFiles(x86)%\7-Zip\7z.exe"
-if not defined SEVENZIP (
-    for %%i in (7z.exe) do if not "%%~$PATH:i"=="" set "SEVENZIP=%%~$PATH:i"
-)
-if not defined SEVENZIP (
-    echo        [ERROR] 7-Zip not found. Please install from https://7-zip.org/
-    set MISSING_FILES=1
-)
-
-if !MISSING_FILES! equ 1 (
+if errorlevel 1 (
+    if "!CHECK_RESULT!"=="7ZIP_NOT_FOUND" (
+        echo        [ERROR] 7-Zip not found. Please install from https://7-zip.org/
+    ) else (
+        for %%m in ("!CHECK_RESULT:|=" "!") do echo        [ERROR] Missing: %%~m
+    )
     echo.
     echo [ERROR] Missing required files. Please run install_deps.bat first.
     pause
     exit /b 1
 )
+set "SEVENZIP=!CHECK_RESULT!"
 
-:: Clean up unnecessary files
-echo        Cleaning up cache files...
-powershell -NoProfile -Command "$ErrorActionPreference='SilentlyContinue'; Get-ChildItem -Path '.venv','yakulingo' -Recurse -Directory -Filter '__pycache__' | Remove-Item -Recurse -Force; Get-ChildItem -Path '.venv' -Recurse -Filter '*.pyc' | Remove-Item -Force; Remove-Item -Path '.uv-cache','.wheels' -Recurse -Force; Remove-Item -Path '*.tmp','.venv\pyvenv.cfg.tmp' -Force"
+:: Prepare: cleanup, fix pyvenv.cfg, get date, create dirs, copy files - all in one PowerShell call
+echo        Cleaning up and preparing...
+for /f "delims=" %%d in ('powershell -NoProfile -Command ^
+"$ErrorActionPreference = 'SilentlyContinue'; ^
+Get-ChildItem -Path '.venv','yakulingo' -Recurse -Directory -Filter '__pycache__' ^| Remove-Item -Recurse -Force; ^
+Get-ChildItem -Path '.venv' -Recurse -Filter '*.pyc' ^| Remove-Item -Force; ^
+Remove-Item -Path '.uv-cache','.wheels' -Recurse -Force; ^
+Remove-Item -Path '*.tmp','.venv\pyvenv.cfg.tmp' -Force; ^
+$ver = (Get-Content '.venv\pyvenv.cfg' ^| Where-Object { $_ -match '^version' }) -replace 'version\s*=\s*',''; ^
+Set-Content '.venv\pyvenv.cfg' -Value \"home = __PYTHON_HOME__`ninclude-system-site-packages = false`nversion = $ver\"; ^
+(Get-Date).ToString('yyyyMMdd')"') do set "DIST_DATE=%%d"
 
-:: Fix paths for portability
-echo        Fixing paths for portability...
-
-:: Get Python version from pyvenv.cfg
-set PYTHON_VERSION=
-for /f "tokens=2 delims==" %%v in ('type ".venv\pyvenv.cfg" ^| findstr /i "^version"') do (
-    set PYTHON_VERSION=%%v
-)
-
-:: Rewrite pyvenv.cfg with placeholder (will be fixed by YakuLingo.exe on first run)
-(
-    echo home = __PYTHON_HOME__
-    echo include-system-site-packages = false
-    echo version =%PYTHON_VERSION%
-) > ".venv\pyvenv.cfg"
-
-:: Prepare distribution folder
-echo        Preparing distribution folder...
-
-:: Get current date for filename
-for /f "tokens=2 delims==" %%I in ('wmic os get localdatetime /format:list') do set datetime=%%I
-set DIST_DATE=%datetime:~0,8%
-
-set DIST_NAME=YakuLingo_%DIST_DATE%
-set DIST_ZIP=%DIST_NAME%.zip
+set DIST_ZIP=YakuLingo_%DIST_DATE%.zip
 set DIST_DIR=dist_temp\YakuLingo
 set SHARE_DIR=share_package
 
-:: Remove old distribution if exists
+:: Remove old distribution and create new structure
 if exist "%SHARE_DIR%" rd /s /q "%SHARE_DIR%"
 if exist "dist_temp" rd /s /q "dist_temp"
+mkdir "%DIST_DIR%"
+mkdir "%SHARE_DIR%"
 
-:: Create folder structure
-mkdir "%DIST_DIR%" 2>nul
-mkdir "%SHARE_DIR%" 2>nul
-
-:: Copy individual files (fast)
+:: Copy individual files
 for %%f in ("YakuLingo.exe" "app.py" "glossary.csv" "pyproject.toml" "uv.lock" "uv.toml" "README.md") do (
     if exist "%%~f" copy /y "%%~f" "%DIST_DIR%\" >nul
 )
 
 :: ============================================================
-:: Step 2: Copy folders
+:: Step 2: Copy folders (parallel robocopy via PowerShell jobs)
 :: ============================================================
 call :ShowProgress 2 "Copying folders..."
 
-echo        Copying .venv, .uv-python, .playwright-browsers...
+echo        Copying .venv, .uv-python, .playwright-browsers, yakulingo, prompts, config...
 
-:: Start all robocopy operations in parallel
-start /B "" robocopy ".venv" "%DIST_DIR%\.venv" /E /MT:16 /NFL /NDL /NJH /NJS /NP /R:1 /W:1 >nul 2>&1
-start /B "" robocopy ".uv-python" "%DIST_DIR%\.uv-python" /E /MT:16 /NFL /NDL /NJH /NJS /NP /R:1 /W:1 >nul 2>&1
-start /B "" robocopy ".playwright-browsers" "%DIST_DIR%\.playwright-browsers" /E /MT:16 /NFL /NDL /NJH /NJS /NP /R:1 /W:1 >nul 2>&1
-
-:: Wait for parallel robocopy operations to complete
-:WaitLoop1
-tasklist /FI "IMAGENAME eq robocopy.exe" 2>nul | find /I "robocopy.exe" >nul
-if !errorlevel! equ 0 (
-    timeout /t 1 /nobreak >nul
-    goto :WaitLoop1
-)
-
-:: Copy smaller folders (fast, don't need parallel)
-echo        Copying yakulingo, prompts, config...
-for %%d in ("yakulingo" "prompts" "config") do (
-    if exist "%%~d" robocopy "%%~d" "%DIST_DIR%\%%~d" /E /MT:8 /NFL /NDL /NJH /NJS /NP /R:1 /W:1 >nul 2>&1
-)
+:: Use PowerShell Start-Process for true parallel execution with proper wait
+powershell -NoProfile -Command ^
+"$distDir = '%DIST_DIR%'; ^
+$jobs = @(); ^
+$folders = @('.venv','.uv-python','.playwright-browsers','yakulingo','prompts','config'); ^
+foreach ($f in $folders) { ^
+    if (Test-Path $f) { ^
+        $mt = if ($f -in '.venv','.uv-python','.playwright-browsers') { 16 } else { 8 }; ^
+        $jobs += Start-Process -FilePath 'robocopy' -ArgumentList \"$f\",\"$distDir\$f\",'/E',\"/MT:$mt\",'/NFL','/NDL','/NJH','/NJS','/NP','/R:1','/W:1' -NoNewWindow -PassThru ^
+    } ^
+}; ^
+$jobs ^| Wait-Process"
 
 :: ============================================================
-:: Step 3: Create ZIP archive
+:: Step 3: Create ZIP and finalize
 :: ============================================================
-call :ShowProgress 3 "Creating ZIP archive..."
+call :ShowProgress 3 "Creating ZIP and finalizing..."
 
+:: Create ZIP archive
+echo        Creating ZIP archive...
 pushd dist_temp
 "%SEVENZIP%" a -tzip -mx=1 -mmt=on -bsp1 "..\%SHARE_DIR%\%DIST_ZIP%" YakuLingo >nul
 popd
 
-:: ============================================================
-:: Step 4: Cleanup and finalize
-:: ============================================================
-call :ShowProgress 4 "Finalizing..."
-
-:: Copy installer files to share folder
+:: Copy installer files and cleanup in parallel
+echo        Copying installer files...
 copy /y "packaging\installer\share\setup.vbs" "%SHARE_DIR%\" >nul
 copy /y "packaging\installer\share\README.txt" "%SHARE_DIR%\" >nul
-robocopy "packaging\installer\share\.scripts" "%SHARE_DIR%\.scripts" /E /NFL /NDL /NJH /NJS >nul 2>&1
-
-:: Cleanup temp folder
+xcopy /E /I /Q /Y "packaging\installer\share\.scripts" "%SHARE_DIR%\.scripts" >nul
 rd /s /q "dist_temp" 2>nul
 
-:: Calculate elapsed time
-set END_TIME=%TIME%
-call :CalcElapsed "%START_TIME%" "%END_TIME%"
+:: Calculate elapsed time using PowerShell ticks
+for /f %%e in ('powershell -NoProfile -Command ^
+"$elapsed = ([DateTime]::Now.Ticks - %START_TICKS%) / 10000000; ^
+$m = [math]::Floor($elapsed / 60); $s = [math]::Floor($elapsed %% 60); ^
+if ($m -gt 0) { \"${m}m ${s}s\" } else { \"${s}s\" }"') do set "ELAPSED_TIME=%%e"
 
 if exist "%SHARE_DIR%\%DIST_ZIP%" (
     echo.
@@ -230,39 +162,4 @@ if exist "%SHARE_DIR%\%DIST_ZIP%" (
 echo.
 pause
 endlocal
-exit /b 0
-
-:: ============================================================
-:: Subroutine: Calculate elapsed time
-:: ============================================================
-:CalcElapsed
-set "start=%~1"
-set "end=%~2"
-
-:: Parse start time
-for /f "tokens=1-4 delims=:." %%a in ("%start%") do (
-    set /a "start_h=%%a, start_m=1%%b-100, start_s=1%%c-100, start_ms=1%%d-100"
-)
-
-:: Parse end time
-for /f "tokens=1-4 delims=:." %%a in ("%end%") do (
-    set /a "end_h=%%a, end_m=1%%b-100, end_s=1%%c-100, end_ms=1%%d-100"
-)
-
-:: Calculate total seconds
-set /a "start_total=start_h*3600 + start_m*60 + start_s"
-set /a "end_total=end_h*3600 + end_m*60 + end_s"
-set /a "elapsed=end_total - start_total"
-
-:: Handle negative (crossed midnight)
-if %elapsed% lss 0 set /a "elapsed+=86400"
-
-:: Format output
-set /a "elapsed_m=elapsed/60"
-set /a "elapsed_s=elapsed%%60"
-if %elapsed_m% gtr 0 (
-    set "ELAPSED_TIME=%elapsed_m%m %elapsed_s%s"
-) else (
-    set "ELAPSED_TIME=%elapsed_s%s"
-)
 exit /b 0

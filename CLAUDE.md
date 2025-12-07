@@ -893,6 +893,12 @@ Based on recent commits:
   - **Fixed window size**: 1400×850 pixels (designed for 1920×1200 laptop resolution)
   - **No dynamic scaling**: Window size is fixed; external monitor scaling handled by OS DPI settings
   - **Panel layout**: Translation result panel elements aligned to 2/3 width with center alignment
+- **Global Hotkey (Ctrl+J)**:
+  - **Quick translation**: Select text in any app, press Ctrl+J to translate
+  - **Character limit**: 5,000 chars max for text translation (longer texts should use file translation)
+  - **User notification**: Shows warning if text exceeds limit, suggests file translation
+  - **SendInput API**: Uses modern Windows API for reliable Ctrl+C simulation
+  - **Clipboard handling**: Retries up to 10 times with 100ms intervals
 
 ## Git Workflow
 

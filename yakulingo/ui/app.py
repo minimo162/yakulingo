@@ -33,6 +33,7 @@ if TYPE_CHECKING:
 # App constants
 COPILOT_LOGIN_TIMEOUT = 300  # 5 minutes for login
 MAX_HISTORY_DISPLAY = 20  # Maximum history items to display in sidebar
+TEXT_TRANSLATION_CHAR_LIMIT = 5000  # Max chars for text translation (Ctrl+J, Ctrl+Enter)
 
 
 class YakuLingoApp:
@@ -177,6 +178,24 @@ class YakuLingoApp:
         # Double-check: Skip if translation started while we were waiting
         if self.state.text_translating:
             logger.debug("Hotkey handler skipped - translation already in progress")
+            return
+
+        # Check text length limit
+        if len(text) > TEXT_TRANSLATION_CHAR_LIMIT:
+            logger.info(
+                "Hotkey text too long (%d chars > %d limit), skipping",
+                len(text), TEXT_TRANSLATION_CHAR_LIMIT
+            )
+            # Bring window to front to show notification
+            await self._bring_window_to_front()
+            if self._client:
+                with self._client:
+                    ui.notify(
+                        f'テキストが長すぎます（{len(text):,}文字）。ファイル翻訳をお使いください',
+                        type='warning',
+                        position='top',
+                        timeout=5000,
+                    )
             return
 
         # Set source text
@@ -1000,6 +1019,17 @@ class YakuLingoApp:
             return
 
         source_text = self.state.source_text
+
+        # Check text length limit
+        if len(source_text) > TEXT_TRANSLATION_CHAR_LIMIT:
+            ui.notify(
+                f'テキストが長すぎます（{len(source_text):,}文字）。ファイル翻訳をお使いください',
+                type='warning',
+                position='top',
+                timeout=5000,
+            )
+            return
+
         reference_files = self._get_effective_reference_files()
 
         # Use saved client reference (context.client not available in async tasks)

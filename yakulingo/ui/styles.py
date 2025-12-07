@@ -1184,15 +1184,14 @@ textarea:focus-visible {
 
 /* Ensure the column container fills the input panel vertically */
 .main-area:not(.has-results) .input-panel > .nicegui-column {
-    width: var(--input-panel-width-wide);
-    max-width: var(--input-panel-max-width);
+    width: 100%;
     flex: 1;  /* Fill available vertical space */
     min-height: 0;  /* Override default min-height: auto to allow shrinking */
     max-height: 100%;  /* Respect parent height constraint to keep hint-section in viewport */
     overflow: hidden;  /* Prevent children from overflowing */
     display: flex;
     flex-direction: column;
-    align-items: stretch;  /* Stretch children to full width */
+    align-items: center;  /* Center children horizontally */
 }
 
 /* Center the main-card within the input panel and fill available height */
@@ -1251,6 +1250,9 @@ textarea:focus-visible {
     flex: 1 !important;
     min-height: var(--input-min-height);
     max-height: var(--input-max-height);  /* Dynamically set based on window height */
+    max-width: var(--input-panel-max-width);  /* Limit textarea width */
+    width: 100%;
+    margin: 0 auto;  /* Center textarea horizontally */
     height: auto !important;  /* Let flex control height (autogrow removed from large panel) */
     overflow-y: auto !important;  /* Scrollable when content exceeds space */
     resize: none !important;  /* Disable manual resize since we control height */

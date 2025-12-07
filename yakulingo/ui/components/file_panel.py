@@ -132,8 +132,12 @@ def create_file_panel(
         if state.file_state == FileState.EMPTY:
             with ui.element('div').classes('hint-section'):
                 with ui.element('div').classes('hint-primary'):
-                    ui.icon('auto_awesome').classes('text-sm text-muted')
-                    ui.label('言語を自動検出して翻訳します').classes('text-muted')
+                    with ui.element('span').classes('keycap keycap-hint'):
+                        ui.label('Ctrl')
+                    ui.label('+').classes('text-muted text-xs mx-0.5')
+                    with ui.element('span').classes('keycap keycap-hint'):
+                        ui.label('J')
+                    ui.label(': 他アプリで選択したテキストを翻訳').classes('text-muted ml-1')
 
 
 def _language_selector(state: AppState, on_change: Optional[Callable[[str], None]]):

@@ -503,124 +503,67 @@ class CopilotHandler:
         return _playwright_executor.execute(self._connect_impl)
 
     def _connect_impl(self) -> bool:
-        """Implementation of connect() that runs in Playwright thread."""
-        # Check if existing connection is still valid
-        if self._connected:
-            if self._is_page_valid():
-                return True
-            else:
-                # Connection is stale, need to reconnect
-                logger.info("Existing connection is stale, reconnecting...")
-                self._cleanup_on_error()
+        """Implementation of connect() that runs in Playwright thread.
 
-        # Set proxy bypass for localhost connections
-        # This helps in corporate environments with security proxies (Zscaler, Netskope, etc.)
+        Connection flow:
+        1. Check if existing connection is valid
+        2. Start Edge browser if needed
+        3. Connect to browser via CDP
+        4. Get or create browser context
+        5. Get or create Copilot page
+        6. Wait for chat UI to be ready
+        """
+        # Check if existing connection is still valid
+        if self._connected and self._is_page_valid():
+            return True
+        if self._connected:
+            logger.info("Existing connection is stale, reconnecting...")
+            self._cleanup_on_error()
+
+        # Set proxy bypass for localhost (helps in corporate environments)
         os.environ.setdefault('NO_PROXY', 'localhost,127.0.0.1')
         os.environ.setdefault('no_proxy', 'localhost,127.0.0.1')
 
-        # Get Playwright error types for specific exception handling
         error_types = _get_playwright_errors()
         PlaywrightError = error_types['Error']
         PlaywrightTimeoutError = error_types['TimeoutError']
 
         try:
-            # Start Edge if needed
+            # Step 1: Start Edge if needed
             if not self._is_port_in_use():
                 logger.info("Starting Edge browser...")
                 if not self._start_translator_edge():
                     return False
 
-            # Connect via Playwright
+            # Step 2: Connect via Playwright CDP
             logger.info("Connecting to browser...")
             _, sync_playwright = _get_playwright()
-
             self._playwright = sync_playwright().start()
             self._browser = self._playwright.chromium.connect_over_cdp(
                 f"http://127.0.0.1:{self.cdp_port}"
             )
 
-            # Get or create context
-            contexts = self._browser.contexts
-            if contexts:
-                self._context = contexts[0]
-                logger.debug("Using existing browser context")
-            else:
-                # CDP接続では通常contextが存在するはず、少し待ってリトライ
-                logger.warning("No existing context found, waiting...")
-                time.sleep(0.2)
-                contexts = self._browser.contexts
-                if contexts:
-                    self._context = contexts[0]
-                    logger.debug("Found context after retry")
-                else:
-                    # フォールバック: 新規context作成（storage_stateから復元を試みる）
-                    storage_path = self._get_storage_state_path()
-                    if storage_path.exists():
-                        try:
-                            logger.info("Restoring session from storage_state...")
-                            self._context = self._browser.new_context(
-                                storage_state=str(storage_path)
-                            )
-                            logger.info("Session restored from storage_state")
-                        except (PlaywrightError, PlaywrightTimeoutError, OSError) as e:
-                            logger.warning("Failed to restore storage_state: %s", e)
-                            self._context = self._browser.new_context()
-                    else:
-                        logger.warning("Creating new context - no storage_state found")
-                        self._context = self._browser.new_context()
+            # Step 3: Get or create context
+            self._context = self._get_or_create_context()
 
-            # Check if Copilot page already exists
-            logger.info("Checking for existing Copilot page...")
-            pages = self._context.pages
-            copilot_page = None
+            # Step 4: Get or create Copilot page
+            self._page = self._get_or_create_copilot_page()
 
-            for page in pages:
-                if "m365.cloud.microsoft" in page.url:
-                    copilot_page = page
-                    logger.info("Found existing Copilot page")
-                    break
-
-            # If no Copilot page, reuse existing tab or create new one
-            if not copilot_page:
-                # Reuse existing tab if available (avoids creating extra tabs)
-                if pages:
-                    copilot_page = pages[0]
-                    logger.info("Reusing existing tab for Copilot")
-                else:
-                    copilot_page = self._context.new_page()
-                    logger.info("Created new tab for Copilot")
-                # Navigate with 'commit' (fastest - just wait for first response)
-                # Don't use 'load' as Copilot has persistent connections that prevent load event
-                logger.info("Navigating to Copilot...")
-                copilot_page.goto(self.COPILOT_URL, wait_until='commit', timeout=30000)
-
-            self._page = copilot_page
-
-            # Wait for chat input element to appear (indicates login is complete)
-            logger.info("Waiting for Copilot chat UI...")
-            input_selector = '#m365-chat-editor-target-element, [data-lexical-editor="true"]'
-            try:
-                copilot_page.wait_for_selector(input_selector, timeout=15000, state='visible')
-                logger.info("Copilot chat UI ready")
-                # Wait a bit for authentication/session to fully initialize
-                time.sleep(0.2)  # Reduced from 0.3s
-                self._connected = True
-                self.last_connection_error = self.ERROR_NONE  # Clear error on success
-            except PlaywrightTimeoutError:
-                logger.warning("Chat input not found - login required in Edge browser")
-                self.last_connection_error = self.ERROR_LOGIN_REQUIRED
+            # Step 5: Wait for chat UI
+            if not self._wait_for_chat_ready(self._page):
                 self._cleanup_on_error()
                 return False
 
-            # Stop browser loading indicator (spinner)
-            logger.info("Stopping browser loading indicator...")
+            self._connected = True
+            self.last_connection_error = self.ERROR_NONE
+
+            # Stop browser loading indicator (optional)
             try:
-                copilot_page.evaluate("window.stop()")
+                self._page.evaluate("window.stop()")
             except (PlaywrightError, PlaywrightTimeoutError):
-                pass  # Ignore errors - stopping is optional
+                pass
 
             logger.info("Copilot connection established")
-
             return True
 
         except (PlaywrightError, PlaywrightTimeoutError) as e:
@@ -652,6 +595,96 @@ class CopilotHandler:
         self._context = None
         self._page = None
         self._playwright = None
+
+    def _get_or_create_context(self):
+        """Get existing browser context or create a new one.
+
+        Returns:
+            Browser context, or None if creation failed
+        """
+        error_types = _get_playwright_errors()
+        PlaywrightError = error_types['Error']
+        PlaywrightTimeoutError = error_types['TimeoutError']
+
+        contexts = self._browser.contexts
+        if contexts:
+            logger.debug("Using existing browser context")
+            return contexts[0]
+
+        # CDP接続では通常contextが存在するはず、少し待ってリトライ
+        logger.warning("No existing context found, waiting...")
+        time.sleep(0.2)
+        contexts = self._browser.contexts
+        if contexts:
+            logger.debug("Found context after retry")
+            return contexts[0]
+
+        # フォールバック: 新規context作成（storage_stateから復元を試みる）
+        storage_path = self._get_storage_state_path()
+        if storage_path.exists():
+            try:
+                logger.info("Restoring session from storage_state...")
+                context = self._browser.new_context(storage_state=str(storage_path))
+                logger.info("Session restored from storage_state")
+                return context
+            except (PlaywrightError, PlaywrightTimeoutError, OSError) as e:
+                logger.warning("Failed to restore storage_state: %s", e)
+
+        logger.warning("Creating new context - no storage_state found")
+        return self._browser.new_context()
+
+    def _get_or_create_copilot_page(self):
+        """Get existing Copilot page or create/navigate to one.
+
+        Returns:
+            Copilot page ready for use
+        """
+        logger.info("Checking for existing Copilot page...")
+        pages = self._context.pages
+
+        # Check if Copilot page already exists
+        for page in pages:
+            if "m365.cloud.microsoft" in page.url:
+                logger.info("Found existing Copilot page")
+                return page
+
+        # Reuse existing tab if available (avoids creating extra tabs)
+        if pages:
+            copilot_page = pages[0]
+            logger.info("Reusing existing tab for Copilot")
+        else:
+            copilot_page = self._context.new_page()
+            logger.info("Created new tab for Copilot")
+
+        # Navigate with 'commit' (fastest - just wait for first response)
+        logger.info("Navigating to Copilot...")
+        copilot_page.goto(self.COPILOT_URL, wait_until='commit', timeout=30000)
+        return copilot_page
+
+    def _wait_for_chat_ready(self, page) -> bool:
+        """Wait for Copilot chat UI to be ready.
+
+        Args:
+            page: Playwright page to wait on
+
+        Returns:
+            True if chat is ready, False if login required
+        """
+        error_types = _get_playwright_errors()
+        PlaywrightTimeoutError = error_types['TimeoutError']
+
+        logger.info("Waiting for Copilot chat UI...")
+        input_selector = '#m365-chat-editor-target-element, [data-lexical-editor="true"]'
+
+        try:
+            page.wait_for_selector(input_selector, timeout=15000, state='visible')
+            logger.info("Copilot chat UI ready")
+            time.sleep(0.2)  # Wait for session to fully initialize
+            return True
+        except PlaywrightTimeoutError:
+            logger.warning("Chat input not found - login required in Edge browser")
+            self.last_connection_error = self.ERROR_LOGIN_REQUIRED
+            return False
 
     def _check_copilot_state(self, timeout: int = 5) -> str:
         """

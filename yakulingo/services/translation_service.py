@@ -25,218 +25,263 @@ _RE_TRANSLATION_TEXT = re.compile(r'\**訳文\**[:：]\s*(.+?)(?=\**解説\**[:�
 _RE_EXPLANATION = re.compile(r'\**解説\**[:：]\s*(.+)', re.DOTALL)
 _RE_MARKDOWN_SEPARATOR = re.compile(r'\n?\s*[\*\-]{3,}\s*$')
 
-# Punctuation categories to skip in language detection (cached set for performance)
-_PUNCTUATION_CATEGORIES = frozenset(['Pc', 'Pd', 'Ps', 'Pe', 'Pi', 'Pf', 'Po'])
+# =============================================================================
+# Language Detection
+# =============================================================================
 
-
-def _is_japanese_char(code: int) -> bool:
-    """Check if a Unicode code point is a Japanese character."""
-    return (0x3040 <= code <= 0x309F or  # Hiragana
-            0x30A0 <= code <= 0x30FF or  # Katakana
-            0x4E00 <= code <= 0x9FFF or  # CJK Kanji
-            0x31F0 <= code <= 0x31FF or  # Katakana extensions
-            0xFF65 <= code <= 0xFF9F)    # Halfwidth Katakana
-
-
-def _is_hiragana(code: int) -> bool:
-    """Check if a Unicode code point is Hiragana."""
-    return 0x3040 <= code <= 0x309F
-
-
-def _is_katakana(code: int) -> bool:
-    """Check if a Unicode code point is Katakana (including extensions and halfwidth)."""
-    return (0x30A0 <= code <= 0x30FF or  # Katakana
-            0x31F0 <= code <= 0x31FF or  # Katakana extensions
-            0xFF65 <= code <= 0xFF9F)    # Halfwidth Katakana
-
-
-def _is_cjk_ideograph(code: int) -> bool:
-    """Check if a Unicode code point is a CJK ideograph (Kanji/Hanzi)."""
-    return 0x4E00 <= code <= 0x9FFF
-
-
-def _is_hangul(code: int) -> bool:
-    """Check if a Unicode code point is Korean Hangul."""
-    return (0xAC00 <= code <= 0xD7AF or  # Hangul Syllables
-            0x1100 <= code <= 0x11FF or  # Hangul Jamo
-            0x3130 <= code <= 0x318F)    # Hangul Compatibility Jamo
-
-
-def _is_latin(code: int) -> bool:
-    """Check if a Unicode code point is Latin alphabet."""
-    return (0x0041 <= code <= 0x005A or  # A-Z
-            0x0061 <= code <= 0x007A or  # a-z
-            0x00C0 <= code <= 0x024F)    # Latin Extended (accented chars)
-
-
-# Language detection constants
-MIN_TEXT_LENGTH_FOR_SAMPLING = 20  # Below this, check all chars directly
-MAX_ANALYSIS_LENGTH = 500  # Sample size for language detection
-MIN_MEANINGFUL_CHARS_FOR_EARLY_EXIT = 50  # Minimum chars before early exit decision
-CLEAR_JP_RATIO_THRESHOLD = 0.6  # Above this ratio, clearly Japanese
-CLEAR_NON_JP_RATIO_THRESHOLD = 0.1  # Below this ratio, clearly not Japanese
-
-# Japanese-specific punctuation (not used in Chinese)
-# 、(U+3001): Japanese comma (Chinese uses ，)
-# ・(U+30FB): Japanese middle dot (Chinese uses ·)
-# 「」(U+300C-300D): Japanese quotation marks
-# 『』(U+300E-300F): Japanese double quotation marks
-_JAPANESE_PUNCTUATION = frozenset('、・「」『』')
-
-
-def _has_japanese_punctuation(text: str) -> bool:
-    """Check if text contains Japanese-specific punctuation.
-
-    These punctuation marks are unique to Japanese and not used in Chinese:
-    - 、(touten): Japanese comma
-    - ・(nakaguro): Japanese middle dot
-    - 「」: Japanese quotation marks
-    - 『』: Japanese double quotation marks
+class LanguageDetector:
     """
-    return any(char in _JAPANESE_PUNCTUATION for char in text)
+    Language detection with hybrid local/Copilot approach.
+
+    Provides character-level detection helpers and text-level language detection.
+    Use the singleton instance `language_detector` or create your own instance.
+
+    Example:
+        # Use singleton
+        from yakulingo.services.translation_service import language_detector
+        if language_detector.is_japanese("こんにちは"):
+            print("Japanese text detected")
+
+        # Or create instance
+        detector = LanguageDetector()
+        lang = detector.detect_local("Hello world")
+    """
+
+    # Detection constants
+    MIN_TEXT_LENGTH_FOR_SAMPLING = 20  # Below this, check all chars directly
+    MAX_ANALYSIS_LENGTH = 500  # Sample size for language detection
+    MIN_MEANINGFUL_CHARS_FOR_EARLY_EXIT = 50  # Minimum chars before early exit
+    CLEAR_JP_RATIO_THRESHOLD = 0.6  # Above this ratio, clearly Japanese
+    CLEAR_NON_JP_RATIO_THRESHOLD = 0.1  # Below this ratio, clearly not Japanese
+
+    # Japanese-specific punctuation (not used in Chinese)
+    _JAPANESE_PUNCTUATION = frozenset('、・「」『』')
+
+    # =========================================================================
+    # Character Detection Helpers (static methods)
+    # =========================================================================
+
+    @staticmethod
+    def is_japanese_char(code: int) -> bool:
+        """Check if a Unicode code point is a Japanese character."""
+        return (0x3040 <= code <= 0x309F or  # Hiragana
+                0x30A0 <= code <= 0x30FF or  # Katakana
+                0x4E00 <= code <= 0x9FFF or  # CJK Kanji
+                0x31F0 <= code <= 0x31FF or  # Katakana extensions
+                0xFF65 <= code <= 0xFF9F)    # Halfwidth Katakana
+
+    @staticmethod
+    def is_hiragana(code: int) -> bool:
+        """Check if a Unicode code point is Hiragana."""
+        return 0x3040 <= code <= 0x309F
+
+    @staticmethod
+    def is_katakana(code: int) -> bool:
+        """Check if a Unicode code point is Katakana (including extensions)."""
+        return (0x30A0 <= code <= 0x30FF or  # Katakana
+                0x31F0 <= code <= 0x31FF or  # Katakana extensions
+                0xFF65 <= code <= 0xFF9F)    # Halfwidth Katakana
+
+    @staticmethod
+    def is_cjk_ideograph(code: int) -> bool:
+        """Check if a Unicode code point is a CJK ideograph (Kanji/Hanzi)."""
+        return 0x4E00 <= code <= 0x9FFF
+
+    @staticmethod
+    def is_hangul(code: int) -> bool:
+        """Check if a Unicode code point is Korean Hangul."""
+        return (0xAC00 <= code <= 0xD7AF or  # Hangul Syllables
+                0x1100 <= code <= 0x11FF or  # Hangul Jamo
+                0x3130 <= code <= 0x318F)    # Hangul Compatibility Jamo
+
+    @staticmethod
+    def is_latin(code: int) -> bool:
+        """Check if a Unicode code point is Latin alphabet."""
+        return (0x0041 <= code <= 0x005A or  # A-Z
+                0x0061 <= code <= 0x007A or  # a-z
+                0x00C0 <= code <= 0x024F)    # Latin Extended (accented chars)
+
+    @staticmethod
+    def is_punctuation(char: str) -> bool:
+        """Check if char is punctuation (optimized with category prefix)."""
+        cat = unicodedata.category(char)
+        return cat[0] == 'P'  # All punctuation categories start with 'P'
+
+    @classmethod
+    def has_japanese_punctuation(cls, text: str) -> bool:
+        """Check if text contains Japanese-specific punctuation.
+
+        These punctuation marks are unique to Japanese and not used in Chinese:
+        - 、(touten): Japanese comma
+        - ・(nakaguro): Japanese middle dot
+        - 「」: Japanese quotation marks
+        - 『』: Japanese double quotation marks
+        """
+        return any(char in cls._JAPANESE_PUNCTUATION for char in text)
+
+    # =========================================================================
+    # Text-Level Language Detection
+    # =========================================================================
+
+    def is_japanese(self, text: str, threshold: float = 0.3) -> bool:
+        """
+        Detect if text is primarily Japanese.
+
+        Uses Unicode character ranges to identify Japanese characters:
+        - Hiragana: U+3040 - U+309F
+        - Katakana: U+30A0 - U+30FF
+        - CJK Unified Ideographs (Kanji): U+4E00 - U+9FFF
+        - Katakana Phonetic Extensions: U+31F0 - U+31FF
+        - Halfwidth Katakana: U+FF65 - U+FF9F
+
+        Args:
+            text: Text to analyze
+            threshold: Minimum ratio of Japanese characters (default 0.3)
+
+        Returns:
+            True if text is primarily Japanese
+
+        Performance: Uses early exit for short text and samples for long text.
+        """
+        if not text:
+            return False
+
+        text_len = len(text)
+
+        # Early exit for very short text: check all chars directly
+        if text_len < self.MIN_TEXT_LENGTH_FOR_SAMPLING:
+            meaningful_chars = [c for c in text if not c.isspace() and not self.is_punctuation(c)]
+            if not meaningful_chars:
+                return False
+            jp_count = sum(1 for c in meaningful_chars if self.is_japanese_char(ord(c)))
+            return (jp_count / len(meaningful_chars)) >= threshold
+
+        # For longer text, sample the first portion
+        sample_text = text[:self.MAX_ANALYSIS_LENGTH] if text_len > self.MAX_ANALYSIS_LENGTH else text
+
+        japanese_count = 0
+        total_chars = 0
+
+        for char in sample_text:
+            # Skip whitespace and punctuation
+            if char.isspace() or self.is_punctuation(char):
+                continue
+
+            total_chars += 1
+            if self.is_japanese_char(ord(char)):
+                japanese_count += 1
+
+            # Early exit: if we have enough samples and result is clear
+            if total_chars >= self.MIN_MEANINGFUL_CHARS_FOR_EARLY_EXIT:
+                ratio = japanese_count / total_chars
+                # If clearly Japanese or clearly not, exit early
+                if ratio > self.CLEAR_JP_RATIO_THRESHOLD or ratio < self.CLEAR_NON_JP_RATIO_THRESHOLD:
+                    return ratio >= threshold
+
+        if total_chars == 0:
+            return False
+
+        return (japanese_count / total_chars) >= threshold
+
+    def detect_local(self, text: str) -> Optional[str]:
+        """
+        Detect language locally without Copilot.
+
+        Detection priority:
+        1. Hiragana/Katakana present → "日本語" (definite Japanese)
+        2. Hangul present → "韓国語" (definite Korean)
+        3. Latin alphabet dominant → "英語" (assume English for speed)
+        4. CJK only (no kana) → None (need Copilot to distinguish Chinese/Japanese)
+        5. Other/mixed → None (need Copilot)
+
+        Args:
+            text: Text to analyze
+
+        Returns:
+            Detected language name or None if Copilot needed
+        """
+        if not text:
+            return None
+
+        # Sample text for analysis
+        sample = text[:self.MAX_ANALYSIS_LENGTH]
+
+        has_hiragana = False
+        has_katakana = False
+        has_hangul = False
+        has_cjk = False
+        latin_count = 0
+        total_meaningful = 0
+
+        for char in sample:
+            if char.isspace() or self.is_punctuation(char):
+                continue
+
+            code = ord(char)
+            total_meaningful += 1
+
+            if self.is_hiragana(code):
+                has_hiragana = True
+            elif self.is_katakana(code):
+                has_katakana = True
+            elif self.is_hangul(code):
+                has_hangul = True
+            elif self.is_cjk_ideograph(code):
+                has_cjk = True
+            elif self.is_latin(code):
+                latin_count += 1
+
+            # Early exit: if we found hiragana/katakana, it's definitely Japanese
+            if has_hiragana or has_katakana:
+                return "日本語"
+
+            # Early exit: if we found hangul, it's Korean
+            if has_hangul:
+                return "韓国語"
+
+        if total_meaningful == 0:
+            return None
+
+        # If mostly Latin characters, assume English
+        latin_ratio = latin_count / total_meaningful
+        if latin_ratio > 0.5:
+            return "英語"
+
+        # CJK only without kana → check for Japanese-specific punctuation
+        if has_cjk:
+            if self.has_japanese_punctuation(sample):
+                return "日本語"
+            # Could be Chinese or Japanese, need Copilot
+            return None
+
+        # Other cases → need Copilot
+        return None
 
 
-def _is_punctuation(char: str) -> bool:
-    """Check if char is punctuation (optimized with category prefix check)."""
-    cat = unicodedata.category(char)
-    return cat[0] == 'P'  # All punctuation categories start with 'P'
+# Singleton instance for convenient access
+language_detector = LanguageDetector()
 
+
+# =============================================================================
+# Backward Compatibility Functions
+# =============================================================================
 
 def is_japanese_text(text: str, threshold: float = 0.3) -> bool:
+    """Detect if text is primarily Japanese.
+
+    This is a convenience function that delegates to the singleton LanguageDetector.
+    For new code, prefer using `language_detector.is_japanese()` directly.
     """
-    Detect if text is primarily Japanese.
-
-    Uses Unicode character ranges to identify Japanese characters:
-    - Hiragana: U+3040 - U+309F
-    - Katakana: U+30A0 - U+30FF
-    - CJK Unified Ideographs (Kanji): U+4E00 - U+9FFF
-    - Katakana Phonetic Extensions: U+31F0 - U+31FF
-    - Halfwidth Katakana: U+FF65 - U+FF9F
-
-    Args:
-        text: Text to analyze
-        threshold: Minimum ratio of Japanese characters (default 0.3)
-
-    Returns:
-        True if text is primarily Japanese
-
-    Performance: Uses early exit for short text and samples for long text.
-    """
-    if not text:
-        return False
-
-    text_len = len(text)
-
-    # Early exit for very short text: check all chars directly
-    if text_len < MIN_TEXT_LENGTH_FOR_SAMPLING:
-        meaningful_chars = [c for c in text if not c.isspace() and not _is_punctuation(c)]
-        if not meaningful_chars:
-            return False
-        jp_count = sum(1 for c in meaningful_chars if _is_japanese_char(ord(c)))
-        return (jp_count / len(meaningful_chars)) >= threshold
-
-    # For longer text, sample the first portion
-    sample_text = text[:MAX_ANALYSIS_LENGTH] if text_len > MAX_ANALYSIS_LENGTH else text
-
-    japanese_count = 0
-    total_chars = 0
-
-    for char in sample_text:
-        # Skip whitespace and punctuation
-        if char.isspace() or _is_punctuation(char):
-            continue
-
-        total_chars += 1
-        if _is_japanese_char(ord(char)):
-            japanese_count += 1
-
-        # Early exit: if we have enough samples and result is clear
-        if total_chars >= MIN_MEANINGFUL_CHARS_FOR_EARLY_EXIT:
-            ratio = japanese_count / total_chars
-            # If clearly Japanese or clearly not, exit early
-            if ratio > CLEAR_JP_RATIO_THRESHOLD or ratio < CLEAR_NON_JP_RATIO_THRESHOLD:
-                return ratio >= threshold
-
-    if total_chars == 0:
-        return False
-
-    return (japanese_count / total_chars) >= threshold
+    return language_detector.is_japanese(text, threshold)
 
 
 def detect_language_local(text: str) -> Optional[str]:
+    """Detect language locally without Copilot.
+
+    This is a convenience function that delegates to the singleton LanguageDetector.
+    For new code, prefer using `language_detector.detect_local()` directly.
     """
-    Detect language locally without Copilot.
-
-    Detection priority:
-    1. Hiragana/Katakana present → "日本語" (definite Japanese)
-    2. Hangul present → "韓国語" (definite Korean)
-    3. Latin alphabet dominant → "英語" (assume English for speed)
-    4. CJK only (no kana) → None (need Copilot to distinguish Chinese/Japanese)
-    5. Other/mixed → None (need Copilot)
-
-    Args:
-        text: Text to analyze
-
-    Returns:
-        Detected language name or None if Copilot needed
-    """
-    if not text:
-        return None
-
-    # Sample text for analysis
-    sample = text[:MAX_ANALYSIS_LENGTH]
-
-    has_hiragana = False
-    has_katakana = False
-    has_hangul = False
-    has_cjk = False
-    latin_count = 0
-    total_meaningful = 0
-
-    for char in sample:
-        if char.isspace() or _is_punctuation(char):
-            continue
-
-        code = ord(char)
-        total_meaningful += 1
-
-        if _is_hiragana(code):
-            has_hiragana = True
-        elif _is_katakana(code):
-            has_katakana = True
-        elif _is_hangul(code):
-            has_hangul = True
-        elif _is_cjk_ideograph(code):
-            has_cjk = True
-        elif _is_latin(code):
-            latin_count += 1
-
-        # Early exit: if we found hiragana/katakana, it's definitely Japanese
-        if has_hiragana or has_katakana:
-            return "日本語"
-
-        # Early exit: if we found hangul, it's Korean
-        if has_hangul:
-            return "韓国語"
-
-    if total_meaningful == 0:
-        return None
-
-    # If mostly Latin characters, assume English
-    latin_ratio = latin_count / total_meaningful
-    if latin_ratio > 0.5:
-        return "英語"
-
-    # CJK only without kana → check for Japanese-specific punctuation
-    # Japanese uses 、・「」『』 which are not used in Chinese
-    if has_cjk:
-        if _has_japanese_punctuation(sample):
-            return "日本語"
-        # Could be Chinese or Japanese, need Copilot
-        return None
-
-    # Other cases → need Copilot
-    return None
+    return language_detector.detect_local(text)
 
 
 from typing import TYPE_CHECKING
@@ -835,7 +880,7 @@ class TranslationService:
         1. Local detection (fast): Hiragana/Katakana → Japanese, Latin → English, Hangul → Korean
         2. Copilot detection (slow): Only for CJK-only text (Chinese/Japanese ambiguity)
 
-        Falls back to local is_japanese_text() if Copilot returns an error.
+        Falls back to local is_japanese() if Copilot returns an error.
 
         Args:
             text: Text to analyze
@@ -844,7 +889,7 @@ class TranslationService:
             Detected language name (e.g., "日本語", "英語", "中国語")
         """
         # Try local detection first (fast path)
-        local_result = detect_language_local(text)
+        local_result = language_detector.detect_local(text)
         if local_result:
             logger.debug("Language detected locally: %s", local_result)
             return local_result
@@ -878,7 +923,7 @@ class TranslationService:
                 "falling back to local detection. Response: %s",
                 detected[:100] if detected else "(empty)"
             )
-            return "日本語" if is_japanese_text(text) else "英語"
+            return "日本語" if language_detector.is_japanese(text) else "英語"
 
         # Normalize common variations
         if detected in ("Japanese", "japanese"):

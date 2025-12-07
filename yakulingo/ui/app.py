@@ -36,7 +36,22 @@ MAX_HISTORY_DISPLAY = 20  # Maximum history items to display in sidebar
 
 
 class YakuLingoApp:
-    """Main application - Nani-inspired sidebar layout"""
+    """Main application - Nani-inspired sidebar layout.
+
+    This class is organized into the following sections:
+    1. Initialization & Properties - __init__, copilot property
+    2. Connection & Startup - Edge/Copilot connection, browser ready handler
+    3. UI Refresh Methods - Methods that update UI state
+    4. UI Creation Methods - Methods that build UI components
+    5. Error Handling Helpers - Unified error handling methods
+    6. Text Translation - Text input, translation, adjustment methods
+    7. File Translation - File selection, translation, progress methods
+    8. Settings & History - Settings dialog, history management
+    """
+
+    # =========================================================================
+    # Section 1: Initialization & Properties
+    # =========================================================================
 
     def __init__(self):
         self.state = AppState()
@@ -86,6 +101,10 @@ class YakuLingoApp:
             from yakulingo.services.copilot_handler import CopilotHandler
             self._copilot = CopilotHandler()
         return self._copilot
+
+    # =========================================================================
+    # Section 2: Connection & Startup
+    # =========================================================================
 
     async def wait_for_edge_connection(self, edge_future):
         """Wait for Edge connection result from parallel startup.
@@ -201,6 +220,10 @@ class YakuLingoApp:
             # サイレントに失敗（バックグラウンド処理なのでユーザーには通知しない）
             logger.debug("Failed to check for updates: %s", e)
 
+    # =========================================================================
+    # Section 3: UI Refresh Methods
+    # =========================================================================
+
     def _refresh_status(self):
         """Refresh status indicator"""
         if self._header_status:
@@ -268,6 +291,10 @@ class YakuLingoApp:
         else:
             # Enable the button
             self._translate_button.props(':loading=false :disable=false')
+
+    # =========================================================================
+    # Section 4: UI Creation Methods
+    # =========================================================================
 
     def create_ui(self):
         """Create the UI - Nani-inspired 3-column layout"""
@@ -582,6 +609,48 @@ class YakuLingoApp:
             ui.clipboard.write(text)
             ui.notify('コピーしました', type='positive')
 
+    # =========================================================================
+    # Section 5: Error Handling Helpers
+    # =========================================================================
+
+    def _require_connection(self) -> bool:
+        """Check if translation service is connected.
+
+        Returns:
+            True if connected, False otherwise (also shows warning notification)
+        """
+        if not self.translation_service:
+            ui.notify('接続されていません', type='warning')
+            return False
+        return True
+
+    def _notify_error(self, message: str):
+        """Show error notification with standard prefix.
+
+        Args:
+            message: Error message to display
+        """
+        ui.notify(f'エラー: {message}', type='negative')
+
+    def _on_text_translation_complete(self, client, error_message: Optional[str] = None):
+        """Handle text translation completion with UI updates.
+
+        Args:
+            client: NiceGUI client for UI context
+            error_message: Error message if translation failed, None otherwise
+        """
+        self.state.text_translating = False
+        with client:
+            if error_message:
+                self._notify_error(error_message)
+            self._refresh_result_panel()
+            self._update_translate_button_state()
+            self._refresh_status()
+
+    # =========================================================================
+    # Section 6: Text Translation
+    # =========================================================================
+
     async def _attach_reference_file(self):
         """Open file picker to attach a reference file (glossary, style guide, etc.)"""
         # Use NiceGUI's native file upload approach
@@ -653,8 +722,7 @@ class YakuLingoApp:
         """Translate text with 2-step process: language detection then translation."""
         import time
 
-        if not self.translation_service:
-            ui.notify('接続されていません', type='warning')
+        if not self._require_connection():
             return
 
         source_text = self.state.source_text
@@ -784,7 +852,7 @@ class YakuLingoApp:
         # Restore client context for UI operations after asyncio.to_thread
         with client:
             if error_message:
-                ui.notify(f'エラー: {error_message}', type='negative')
+                self._notify_error(error_message)
             # Only refresh result panel (input panel is already in compact state)
             self._refresh_result_panel()
             # Re-enable translate button
@@ -799,8 +867,7 @@ class YakuLingoApp:
             text: The translation text to adjust
             adjust_type: 'shorter', 'detailed', 'alternatives', or custom instruction
         """
-        if not self.translation_service:
-            ui.notify('接続されていません', type='warning')
+        if not self._require_connection():
             return
 
         # Use saved client reference (context.client not available in async tasks)
@@ -859,22 +926,11 @@ class YakuLingoApp:
         except Exception as e:
             error_message = str(e)
 
-        self.state.text_translating = False
-
-        # Restore client context for UI operations
-        with client:
-            if error_message:
-                ui.notify(f'エラー: {error_message}', type='negative')
-            # Only refresh result panel (input panel is already in compact state)
-            self._refresh_result_panel()
-            # Re-enable translate button
-            self._update_translate_button_state()
-            self._refresh_status()
+        self._on_text_translation_complete(client, error_message)
 
     async def _back_translate(self, text: str):
         """Back-translate text to verify translation quality"""
-        if not self.translation_service:
-            ui.notify('接続されていません', type='warning')
+        if not self._require_connection():
             return
 
         # Use saved client reference (context.client not available in async tasks)
@@ -940,17 +996,7 @@ class YakuLingoApp:
         except Exception as e:
             error_message = str(e)
 
-        self.state.text_translating = False
-
-        # Restore client context for UI operations
-        with client:
-            if error_message:
-                ui.notify(f'エラー: {error_message}', type='negative')
-            # Only refresh result panel (input panel is already in compact state)
-            self._refresh_result_panel()
-            # Re-enable translate button
-            self._update_translate_button_state()
-            self._refresh_status()
+        self._on_text_translation_complete(client, error_message)
 
     def _build_follow_up_prompt(self, action_type: str, source_text: str, translation: str, content: str = "") -> Optional[str]:
         """
@@ -1166,8 +1212,7 @@ class YakuLingoApp:
 
     async def _follow_up_action(self, action_type: str, content: str):
         """Handle follow-up actions for →Japanese translations"""
-        if not self.translation_service:
-            ui.notify('接続されていません', type='warning')
+        if not self._require_connection():
             return
 
         # Use saved client reference (context.client not available in async tasks)
@@ -1217,8 +1262,12 @@ class YakuLingoApp:
         # Restore client context for UI operations
         with client:
             if error_message:
-                ui.notify(f'エラー: {error_message}', type='negative')
+                self._notify_error(error_message)
             self._refresh_content()
+
+    # =========================================================================
+    # Section 7: File Translation
+    # =========================================================================
 
     def _on_language_change(self, lang: str):
         """Handle output language change for file translation"""
@@ -1264,8 +1313,7 @@ class YakuLingoApp:
 
     def _select_file(self, file_path: Path):
         """Select file for translation"""
-        if not self.translation_service:
-            ui.notify('接続されていません', type='warning')
+        if not self._require_connection():
             return
 
         try:
@@ -1273,7 +1321,7 @@ class YakuLingoApp:
             self.state.selected_file = file_path
             self.state.file_state = FileState.SELECTED
         except Exception as e:
-            ui.notify(f'エラー: {e}', type='negative')
+            self._notify_error(str(e))
         self._refresh_content()
 
     async def _translate_file(self):
@@ -1363,7 +1411,7 @@ class YakuLingoApp:
             elapsed_time = time.time() - start_time
 
             if error_message:
-                ui.notify(f'エラー: {error_message}', type='negative')
+                self._notify_error(error_message)
             elif result:
                 if result.status == TranslationStatus.COMPLETED and result.output_path:
                     self.state.output_file = result.output_path
@@ -1418,6 +1466,10 @@ class YakuLingoApp:
         """Reset file state"""
         self.state.reset_file_state()
         self._refresh_content()
+
+    # =========================================================================
+    # Section 8: Settings & History
+    # =========================================================================
 
     def _load_from_history(self, entry: HistoryEntry):
         """Load translation from history"""

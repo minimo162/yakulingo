@@ -4,7 +4,7 @@ This document provides essential context for AI assistants working with the Yaku
 
 ## Project Overview
 
-**YakuLingo** (訳リンゴ) is a bidirectional Japanese/English translation application that leverages M365 Copilot as its translation engine. It supports both text and file translation (Excel, Word, PowerPoint, PDF) while preserving document formatting and layout.
+**YakuLingo** (訳リンゴ) is a bidirectional Japanese/English translation application that leverages M365 Copilot as its translation engine. It supports both text and file translation (Excel, Word, PowerPoint, PDF, TXT) while preserving document formatting and layout.
 
 - **Package Name**: `yakulingo`
 - **Version**: 20251127 (2.0.0)
@@ -98,6 +98,7 @@ YakuLingo/
 │   │   ├── word_processor.py      # .docx/.doc handling
 │   │   ├── pptx_processor.py      # .pptx/.ppt handling
 │   │   ├── pdf_processor.py       # .pdf handling
+│   │   ├── txt_processor.py       # .txt handling (plain text)
 │   │   ├── pdf_font_manager.py    # PDF font management (PDFMathTranslate compliant)
 │   │   ├── pdf_operators.py       # PDF low-level operator generation
 │   │   ├── font_manager.py        # Font detection & mapping
@@ -180,7 +181,7 @@ YakuLingo/
 
 ```python
 # Key enums (yakulingo/models/types.py)
-FileType: EXCEL, WORD, POWERPOINT, PDF
+FileType: EXCEL, WORD, POWERPOINT, PDF, TEXT
 TranslationStatus: PENDING, PROCESSING, COMPLETED, FAILED, CANCELLED
 TranslationPhase: EXTRACTING, OCR, TRANSLATING, APPLYING, COMPLETE  # Progress phases (OCR = layout analysis for PDF)
 
@@ -188,6 +189,10 @@ TranslationPhase: EXTRACTING, OCR, TRANSLATING, APPLYING, COMPLETE  # Progress p
 Tab: TEXT, FILE                                # Main navigation tabs
 FileState: EMPTY, SELECTED, TRANSLATING, COMPLETE, ERROR  # File panel states
 TextViewState: INPUT, RESULT                   # Text panel layout (INPUT=large textarea, RESULT=compact+results)
+
+# AppState attributes for file translation
+file_detected_language: Optional[str]          # Auto-detected source language (e.g., "日本語", "英語")
+file_output_language: str                      # Output language ("en" or "jp"), auto-set based on detection
 
 # Key dataclasses
 TextBlock(id, text, location, metadata)       # Unit of translatable text
@@ -235,7 +240,7 @@ Translation direction based on detection:
 - **Japanese input ("日本語")** → English output (single translation with inline adjustments)
 - **Non-Japanese input** → Japanese output (single translation + explanation + action buttons + inline input)
 
-No manual direction selection is required.
+No manual direction selection is required for text translation. File translation also uses auto-detection with optional manual override via language toggle buttons.
 
 ## Text Translation UI Features
 
@@ -294,6 +299,10 @@ class PptxProcessor:
 class PdfProcessor:
     def create_bilingual_pdf(original, translated, output)       # Interleaved pages
     def export_glossary_csv(translations, output)                # Source/translation pairs
+
+class TxtProcessor:
+    def create_bilingual_document(original, translated, output)  # Interleaved paragraphs with separators
+    def export_glossary_csv(translations, original_texts, output)  # Source/translation pairs
 ```
 
 ## UI Design System (Material Design 3)
@@ -504,7 +513,6 @@ async def _translate_text(self):
   "max_chars_per_batch": 7000,
   "request_timeout": 120,
   "max_retries": 3,
-  "copilot_char_limit": 7500,
   "bilingual_output": false,
   "export_glossary": false,
   "translation_style": "concise",
@@ -602,11 +610,11 @@ M365 Copilot has different input limits based on license:
 - **Free license**: 8,000 characters max
 - **Paid license**: 128,000 characters max
 
-The application handles this with dynamic prompt switching:
-- If prompt exceeds `copilot_char_limit` (default: 7,500), saves prompt to temp file
-- Attaches file to Copilot instead of direct input
-- Uses trigger message: "Please follow the instructions in the attached file and translate accordingly."
-- This allows compatibility with both Free and Paid Copilot users
+The application handles long text via file translation:
+- Text translation limited to 5,000 characters (TEXT_TRANSLATION_CHAR_LIMIT)
+- Texts exceeding limit automatically switch to file translation mode
+- File translation uses batch processing with max 7,000 chars per batch
+- This ensures compatibility with both Free and Paid Copilot users
 
 ### Browser Automation Reliability
 The handler uses explicit waits instead of fixed delays:
@@ -893,6 +901,25 @@ Based on recent commits:
   - **Fixed window size**: 1400×850 pixels (designed for 1920×1200 laptop resolution)
   - **No dynamic scaling**: Window size is fixed; external monitor scaling handled by OS DPI settings
   - **Panel layout**: Translation result panel elements aligned to 2/3 width with center alignment
+- **Global Hotkey (Ctrl+J)**:
+  - **Quick translation**: Select text in any app, press Ctrl+J to translate
+  - **Character limit**: 5,000 chars max for text translation
+  - **Auto file translation**: Texts exceeding limit automatically switch to file translation mode (saves as .txt, translates via batch processing)
+  - **SendInput API**: Uses modern Windows API for reliable Ctrl+C simulation
+  - **Clipboard handling**: Retries up to 10 times with 100ms intervals
+- **TXT File Support**:
+  - **TxtProcessor**: New processor for plain text (.txt) files
+  - **Paragraph-based splitting**: Splits by blank lines, chunks long paragraphs (3,000 chars max)
+  - **Bilingual output**: Interleaved original/translated with separators
+  - **Glossary CSV export**: Source/translation pairs for reuse
+- **File Translation Language Auto-Detection**:
+  - **Auto-detection on file select**: Extracts sample text from first 5 blocks and detects language
+  - **Race condition handling**: Discards detection result if user selects different file during detection
+  - **Manual override**: Language toggle buttons allow manual selection after auto-detection
+  - **UI feedback**: Shows detected language (e.g., "日本語を検出 → 英訳します")
+- **Unified Ctrl+J Hint**:
+  - **Both panels**: Text and file translation panels show same Ctrl+J hint with keycap styling
+  - **Consistent messaging**: "[Ctrl] + [J] : 他アプリで選択したテキストを翻訳"
 
 ## Git Workflow
 

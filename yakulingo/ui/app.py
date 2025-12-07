@@ -33,6 +33,7 @@ if TYPE_CHECKING:
 # App constants
 COPILOT_LOGIN_TIMEOUT = 300  # 5 minutes for login
 MAX_HISTORY_DISPLAY = 20  # Maximum history items to display in sidebar
+TEXT_TRANSLATION_CHAR_LIMIT = 5000  # Max chars for text translation (Ctrl+J, Ctrl+Enter)
 
 
 class YakuLingoApp:
@@ -177,6 +178,24 @@ class YakuLingoApp:
         # Double-check: Skip if translation started while we were waiting
         if self.state.text_translating:
             logger.debug("Hotkey handler skipped - translation already in progress")
+            return
+
+        # Check text length limit
+        if len(text) > TEXT_TRANSLATION_CHAR_LIMIT:
+            logger.info(
+                "Hotkey text too long (%d chars > %d limit), skipping",
+                len(text), TEXT_TRANSLATION_CHAR_LIMIT
+            )
+            # Bring window to front to show notification
+            await self._bring_window_to_front()
+            if self._client:
+                with self._client:
+                    ui.notify(
+                        f'テキストが長すぎます（{len(text):,}文字）。ファイル翻訳をお使いください',
+                        type='warning',
+                        position='top',
+                        timeout=5000,
+                    )
             return
 
         # Set source text
@@ -992,6 +1011,79 @@ class YakuLingoApp:
         self.state.text_translation_elapsed_time = None
         await self._translate_text()
 
+    async def _translate_long_text_as_file(self, text: str):
+        """Translate long text using file translation mode.
+
+        When text exceeds TEXT_TRANSLATION_CHAR_LIMIT, save it as a temporary
+        .txt file and process using file translation (batch processing).
+
+        Args:
+            text: Long text to translate
+        """
+        import tempfile
+
+        # Use saved client reference
+        client = self._client
+
+        # Notify user (inside client context for proper UI update)
+        with client:
+            ui.notify(
+                f'テキストが長いため（{len(text):,}文字）、ファイル翻訳で処理します',
+                type='info',
+                position='top',
+                timeout=3000,
+            )
+
+        # Detect language to determine output direction
+        detected_language = await asyncio.to_thread(
+            self.translation_service.detect_language,
+            text[:1000],  # Use first 1000 chars for detection
+        )
+        is_japanese = detected_language == "日本語"
+        output_language = "en" if is_japanese else "jp"
+
+        # Create temporary file
+        with tempfile.NamedTemporaryFile(
+            mode='w',
+            suffix='.txt',
+            delete=False,
+            encoding='utf-8',
+            prefix='yakulingo_',
+        ) as f:
+            f.write(text)
+            temp_path = Path(f.name)
+
+        try:
+            # Set up file translation state
+            self.state.selected_file = temp_path
+            self.state.file_detected_language = detected_language
+            self.state.file_output_language = output_language
+            self.state.file_info = self.translation_service.processors['.txt'].get_file_info(temp_path)
+            self.state.source_text = ""  # Clear text input
+
+            # Switch to file tab
+            self.state.current_tab = Tab.FILE
+            self.state.file_state = FileState.SELECTED
+
+            # Refresh UI
+            with client:
+                self._refresh_content()
+
+            # Small delay for UI update
+            await asyncio.sleep(0.1)
+
+            # Start file translation
+            await self._translate_file()
+
+        except Exception as e:
+            logger.exception("Long text translation error: %s", e)
+            with client:
+                ui.notify(f'エラー: {e}', type='negative')
+
+        finally:
+            # Clean up temp file (after translation or on error)
+            temp_path.unlink(missing_ok=True)
+
     async def _translate_text(self):
         """Translate text with 2-step process: language detection then translation."""
         import time
@@ -1000,6 +1092,12 @@ class YakuLingoApp:
             return
 
         source_text = self.state.source_text
+
+        # Check text length limit - switch to file translation for long text
+        if len(source_text) > TEXT_TRANSLATION_CHAR_LIMIT:
+            await self._translate_long_text_as_file(source_text)
+            return
+
         reference_files = self._get_effective_reference_files()
 
         # Use saved client reference (context.client not available in async tasks)
@@ -1542,7 +1640,7 @@ class YakuLingoApp:
         # Note: Don't call _refresh_content() here as it would close the expansion panel
 
     def _select_file(self, file_path: Path):
-        """Select file for translation"""
+        """Select file for translation with auto language detection"""
         if not self._require_connection():
             return
 
@@ -1550,9 +1648,61 @@ class YakuLingoApp:
             self.state.file_info = self.translation_service.get_file_info(file_path)
             self.state.selected_file = file_path
             self.state.file_state = FileState.SELECTED
+            self.state.file_detected_language = None  # Clear previous detection
+            self._refresh_content()
+
+            # Start async language detection
+            asyncio.create_task(self._detect_file_language(file_path))
+
         except Exception as e:
             self._notify_error(str(e))
-        self._refresh_content()
+            self._refresh_content()
+
+    async def _detect_file_language(self, file_path: Path):
+        """Detect source language of file and set output language accordingly"""
+        client = self._client
+
+        try:
+            # Extract sample text from file (in thread to avoid blocking)
+            def extract_sample():
+                processor = self.translation_service._get_processor(file_path)
+                blocks = list(processor.extract_text_blocks(file_path))
+                if not blocks:
+                    return None
+                # Get sample text (first 1000 chars from first 5 blocks)
+                return ' '.join(block.text for block in blocks[:5])[:1000]
+
+            sample_text = await asyncio.to_thread(extract_sample)
+
+            if not sample_text or not sample_text.strip():
+                return
+
+            # Check if file selection changed during extraction
+            if self.state.selected_file != file_path:
+                return  # User selected different file, discard result
+
+            # Detect language
+            detected_language = await asyncio.to_thread(
+                self.translation_service.detect_language,
+                sample_text,
+            )
+
+            # Check again if file selection changed during detection
+            if self.state.selected_file != file_path:
+                return  # User selected different file, discard result
+
+            # Update state based on detection
+            self.state.file_detected_language = detected_language
+            is_japanese = detected_language == "日本語"
+            self.state.file_output_language = "en" if is_japanese else "jp"
+
+            # Refresh UI to show detected language
+            with client:
+                self._refresh_content()
+
+        except Exception as e:
+            logger.debug("Language detection failed: %s", e)
+            # Keep default (no auto-detection, user must choose)
 
     async def _translate_file(self):
         """Translate file with progress dialog"""

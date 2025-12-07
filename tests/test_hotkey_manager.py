@@ -378,26 +378,6 @@ class TestHandleHotkey:
 
         callback.assert_called_once_with("new text")
 
-    def test_handle_hotkey_truncates_long_text(self):
-        """Test that _handle_hotkey truncates text exceeding MAX_TEXT_LENGTH."""
-        from yakulingo.services.hotkey_manager import HotkeyManager, MAX_TEXT_LENGTH
-
-        manager = HotkeyManager()
-        callback = Mock()
-        manager.set_callback(callback)
-
-        long_text = "x" * (MAX_TEXT_LENGTH + 1000)
-
-        with patch.object(manager, '_wait_for_ctrl_release'):
-            with patch.object(manager, '_get_clipboard_text', return_value="old"):
-                with patch.object(manager, '_send_ctrl_c'):
-                    with patch.object(manager, '_get_clipboard_text_with_retry', return_value=long_text):
-                        with patch('time.sleep'):
-                            manager._handle_hotkey()
-
-        called_text = callback.call_args[0][0]
-        assert len(called_text) == MAX_TEXT_LENGTH
-
 
 class TestSingleton:
     """Test singleton pattern."""
@@ -443,14 +423,6 @@ class TestConstants:
         # Total wait time should be reasonable (< 5 seconds)
         total_clipboard_wait = CLIPBOARD_WAIT_SEC + (CLIPBOARD_RETRY_COUNT * CLIPBOARD_RETRY_DELAY_SEC)
         assert total_clipboard_wait < 5.0
-
-    def test_max_text_length_is_reasonable(self):
-        """Test that MAX_TEXT_LENGTH is set to a reasonable value."""
-        from yakulingo.services.hotkey_manager import MAX_TEXT_LENGTH
-
-        # Should be large enough for practical use but not too large
-        assert MAX_TEXT_LENGTH >= 10000
-        assert MAX_TEXT_LENGTH <= 100000
 
     def test_virtual_key_codes_are_correct(self):
         """Test that virtual key codes are correct."""

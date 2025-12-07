@@ -77,7 +77,8 @@ class AppState:
     file_state: FileState = FileState.EMPTY
     selected_file: Optional[Path] = None
     file_info: Optional[FileInfo] = None
-    file_output_language: str = "en"  # "en" or "jp" - explicit output language for file translation
+    file_detected_language: Optional[str] = None  # Auto-detected source language (e.g., "日本語", "英語")
+    file_output_language: str = "en"  # "en" or "jp" - output language for file translation
     translation_progress: float = 0.0
     translation_status: str = ""
     output_file: Optional[Path] = None
@@ -145,6 +146,7 @@ class AppState:
         self.file_state = FileState.EMPTY
         self.selected_file = None
         self.file_info = None
+        self.file_detected_language = None
         self.translation_progress = 0.0
         self.translation_status = ""
         self.output_file = None

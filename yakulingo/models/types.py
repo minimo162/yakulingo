@@ -15,6 +15,7 @@ class FileType(Enum):
     WORD = "word"
     POWERPOINT = "powerpoint"
     PDF = "pdf"
+    TEXT = "text"
 
 
 class TranslationStatus(Enum):
@@ -86,6 +87,7 @@ class FileInfo:
             FileType.WORD: "description",
             FileType.POWERPOINT: "slideshow",
             FileType.PDF: "picture_as_pdf",
+            FileType.TEXT: "article",
         }
         return icons.get(self.file_type, "description")
 

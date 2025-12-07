@@ -42,7 +42,6 @@ CLIPBOARD_RETRY_COUNT = 10  # Retry count for clipboard access (increased)
 CLIPBOARD_RETRY_DELAY_SEC = 0.1  # Delay between retries (increased)
 MESSAGE_POLL_INTERVAL_SEC = 0.05  # Interval for PeekMessage loop
 KEY_EVENT_DELAY_SEC = 0.02  # Delay between key events for reliability (increased)
-MAX_TEXT_LENGTH = 50000  # Maximum text length to process (prevent huge clipboard data)
 CTRL_RELEASE_WAIT_SEC = 0.1  # Wait for user to release Ctrl key
 
 
@@ -208,11 +207,6 @@ class HotkeyManager:
             if text is None:
                 logger.info("No text in clipboard after Ctrl+C, skipping")
                 return
-
-            # Limit text length to prevent processing huge data
-            if len(text) > MAX_TEXT_LENGTH:
-                logger.warning(f"Text truncated from {len(text)} to {MAX_TEXT_LENGTH} chars")
-                text = text[:MAX_TEXT_LENGTH]
 
             # Trigger callback
             callback(text)

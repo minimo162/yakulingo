@@ -21,7 +21,7 @@ ATTACH_SVG: str = '''
 '''
 
 
-SUPPORTED_FORMATS = ".xlsx,.xls,.docx,.doc,.pptx,.ppt,.pdf"
+SUPPORTED_FORMATS = ".xlsx,.xls,.docx,.doc,.pptx,.ppt,.pdf,.txt"
 
 # File type icons (Material Icons)
 FILE_TYPE_ICONS = {
@@ -29,6 +29,7 @@ FILE_TYPE_ICONS = {
     FileType.WORD: 'description',
     FileType.POWERPOINT: 'slideshow',
     FileType.PDF: 'picture_as_pdf',
+    FileType.TEXT: 'article',
 }
 
 # File type CSS classes (defined in styles.py)
@@ -37,6 +38,7 @@ FILE_TYPE_CLASSES = {
     FileType.WORD: 'file-icon-word',
     FileType.POWERPOINT: 'file-icon-powerpoint',
     FileType.PDF: 'file-icon-pdf',
+    FileType.TEXT: 'file-icon-text',
 }
 
 
@@ -130,13 +132,25 @@ def create_file_panel(
         if state.file_state == FileState.EMPTY:
             with ui.element('div').classes('hint-section'):
                 with ui.element('div').classes('hint-primary'):
-                    ui.icon('translate').classes('text-sm text-muted')
-                    ui.label('英訳・和訳を選んで翻訳します')
+                    with ui.element('span').classes('keycap keycap-hint'):
+                        ui.label('Ctrl')
+                    ui.label('+').classes('text-muted text-xs mx-0.5')
+                    with ui.element('span').classes('keycap keycap-hint'):
+                        ui.label('J')
+                    ui.label(': 他アプリで選択したテキストを翻訳').classes('text-muted ml-1')
 
 
 def _language_selector(state: AppState, on_change: Optional[Callable[[str], None]]):
-    """Output language selector - segmented button style with clear translation direction"""
-    with ui.row().classes('w-full justify-center mt-4'):
+    """Output language selector with auto-detection display"""
+    detected = state.file_detected_language
+
+    with ui.column().classes('w-full items-center mt-4 gap-2'):
+        # Show detected language info
+        if detected:
+            output_label = '英訳' if state.file_output_language == 'en' else '和訳'
+            ui.label(f'{detected}を検出 → {output_label}します').classes('text-xs text-muted')
+
+        # Language toggle buttons
         with ui.element('div').classes('language-selector'):
             # Translate to English option
             en_classes = 'lang-btn lang-btn-left'
@@ -289,7 +303,7 @@ def _drop_zone(on_file_select: Callable[[Path], None]):
             ui.icon('upload_file').classes('drop-zone-icon')
             ui.label('翻訳するファイルをドロップ').classes('drop-zone-text')
             ui.label('または クリックして選択').classes('drop-zone-subtext')
-            ui.label('Excel / Word / PowerPoint / PDF').classes('drop-zone-hint')
+            ui.label('Excel / Word / PowerPoint / PDF / TXT').classes('drop-zone-hint')
 
         # Upload component (hidden, triggered by container click)
         upload = ui.upload(

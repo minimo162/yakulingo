@@ -150,10 +150,13 @@ class TestTranslationServiceSupportedFiles:
     def test_is_supported_file_pdf(self, service):
         assert service.is_supported_file(Path("test.pdf")) is True
 
+    def test_is_supported_file_txt(self, service):
+        assert service.is_supported_file(Path("test.txt")) is True
+
     def test_is_supported_file_unsupported(self, service):
-        assert service.is_supported_file(Path("test.txt")) is False
         assert service.is_supported_file(Path("test.csv")) is False
         assert service.is_supported_file(Path("test.jpg")) is False
+        assert service.is_supported_file(Path("test.xyz")) is False
 
     def test_is_supported_file_case_insensitive(self, service):
         assert service.is_supported_file(Path("test.XLSX")) is True
@@ -255,9 +258,14 @@ class TestTranslationServiceGetProcessor:
         processor = service._get_processor(Path("test.xlsx"))
         assert processor is not None
 
+    def test_get_processor_txt(self, service):
+        from yakulingo.processors.txt_processor import TxtProcessor
+        processor = service._get_processor(Path("test.txt"))
+        assert isinstance(processor, TxtProcessor)
+
     def test_get_processor_unsupported_raises(self, service):
         with pytest.raises(ValueError) as exc:
-            service._get_processor(Path("test.txt"))
+            service._get_processor(Path("test.xyz"))
         assert "Unsupported file type" in str(exc.value)
 
     def test_get_processor_case_insensitive(self, service):
@@ -671,13 +679,22 @@ class TestTranslationServiceGetFileInfo:
         # Excel processor returns correct file type
         assert info.file_type == FileType.EXCEL
 
-    def test_get_file_info_unsupported_raises(self, service, tmp_path):
-        """get_file_info raises for unsupported file type"""
+    def test_get_file_info_txt(self, service, tmp_path):
+        """get_file_info works for txt file"""
         txt_file = tmp_path / "test.txt"
         txt_file.write_text("content")
 
+        info = service.get_file_info(txt_file)
+        assert info.file_type == FileType.TEXT
+        assert info.size_bytes > 0
+
+    def test_get_file_info_unsupported_raises(self, service, tmp_path):
+        """get_file_info raises for unsupported file type"""
+        xyz_file = tmp_path / "test.xyz"
+        xyz_file.write_text("content")
+
         with pytest.raises(ValueError):
-            service.get_file_info(txt_file)
+            service.get_file_info(xyz_file)
 
 
 # --- Tests: is_japanese_text() ---

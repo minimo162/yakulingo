@@ -7,8 +7,6 @@ Prompt file structure (style-specific for English output):
 - file_translate_to_jp.txt: File translation → Japanese
 - text_translate_to_en_{style}.txt: Text translation → English (standard/concise/minimal)
 - text_translate_to_jp.txt: Text translation → Japanese (with explanation)
-- text_translate_tabular_to_en.txt: Tabular text translation → English (preserves tabs)
-- text_translate_tabular_to_jp.txt: Tabular text translation → Japanese (preserves tabs)
 - adjust_*.txt: Adjustment prompts (shorter, longer, custom)
 
 Reference files are attached to Copilot, not embedded in prompt.
@@ -94,28 +92,6 @@ Input
 """
 
 
-def is_tabular_text(text: str) -> bool:
-    """
-    Check if text is tabular format (tab-separated, e.g., from Excel).
-
-    Criteria:
-    - Contains at least one tab character
-    - Has meaningful content (not just whitespace)
-
-    Args:
-        text: Text to check
-
-    Returns:
-        True if text appears to be tabular (tab-separated)
-    """
-    if not text or '\t' not in text:
-        return False
-
-    # Must have actual content, not just tabs and whitespace
-    content = text.replace('\t', '').replace('\n', '').replace('\r', '').strip()
-    return len(content) > 0
-
-
 class PromptBuilder:
     """
     Builds translation prompts for file translation.
@@ -130,8 +106,6 @@ class PromptBuilder:
         self._templates: dict[tuple[str, str], str] = {}
         # Text translation templates cache: {(lang, style): template_str}
         self._text_templates: dict[tuple[str, str], str] = {}
-        # Tabular text translation templates cache: {lang: template_str}
-        self._tabular_templates: dict[str, str] = {}
         self._load_templates()
 
     def _load_templates(self) -> None:
@@ -182,15 +156,6 @@ class PromptBuilder:
                 jp_text_template = text_to_jp.read_text(encoding='utf-8')
                 for style in styles:
                     self._text_templates[("jp", style)] = jp_text_template
-
-            # Load tabular text translation templates (for Excel copy-paste workflow)
-            tabular_to_en = self.prompts_dir / "text_translate_tabular_to_en.txt"
-            if tabular_to_en.exists():
-                self._tabular_templates["en"] = tabular_to_en.read_text(encoding='utf-8')
-
-            tabular_to_jp = self.prompts_dir / "text_translate_tabular_to_jp.txt"
-            if tabular_to_jp.exists():
-                self._tabular_templates["jp"] = tabular_to_jp.read_text(encoding='utf-8')
         else:
             # Use defaults
             for style in styles:
@@ -231,48 +196,6 @@ class PromptBuilder:
             return self._text_templates[fallback_key]
 
         return None
-
-    def get_tabular_template(self, output_language: str = "en") -> Optional[str]:
-        """Get cached tabular text translation template.
-
-        Tabular templates are used for tab-separated text (e.g., from Excel).
-        They preserve the tab structure for easy paste-back.
-
-        Args:
-            output_language: "en" or "jp"
-
-        Returns:
-            Cached template string, or None if not found
-        """
-        return self._tabular_templates.get(output_language)
-
-    def build_tabular(
-        self,
-        input_text: str,
-        has_reference_files: bool = False,
-        output_language: str = "en",
-    ) -> Optional[str]:
-        """
-        Build prompt for tabular text translation.
-
-        Args:
-            input_text: Tab-separated text to translate
-            has_reference_files: Whether reference files are attached
-            output_language: "en" or "jp" (default: "en")
-
-        Returns:
-            Complete prompt string, or None if tabular template not available
-        """
-        template = self.get_tabular_template(output_language)
-        if not template:
-            return None
-
-        reference_section = REFERENCE_INSTRUCTION if has_reference_files else ""
-
-        prompt = template.replace("{reference_section}", reference_section)
-        prompt = prompt.replace("{input_text}", input_text)
-
-        return prompt
 
     def build(
         self,

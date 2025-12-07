@@ -100,6 +100,9 @@ class YakuLingoApp:
         # Login polling state (prevents duplicate polling)
         self._login_polling_active = False
 
+        # Hotkey manager for quick translation (Ctrl+J)
+        self._hotkey_manager = None
+
     @property
     def copilot(self) -> "CopilotHandler":
         """Lazy-load CopilotHandler for faster startup."""
@@ -107,6 +110,112 @@ class YakuLingoApp:
             from yakulingo.services.copilot_handler import CopilotHandler
             self._copilot = CopilotHandler()
         return self._copilot
+
+    def start_hotkey_manager(self):
+        """Start the global hotkey manager for quick translation (Ctrl+J)."""
+        import sys
+        if sys.platform != 'win32':
+            logger.info("Hotkey manager only available on Windows")
+            return
+
+        try:
+            from yakulingo.services.hotkey_manager import get_hotkey_manager
+
+            self._hotkey_manager = get_hotkey_manager()
+            self._hotkey_manager.set_callback(self._on_hotkey_triggered)
+            self._hotkey_manager.start()
+            logger.info("Hotkey manager started (Ctrl+J)")
+        except Exception as e:
+            logger.error(f"Failed to start hotkey manager: {e}")
+
+    def stop_hotkey_manager(self):
+        """Stop the global hotkey manager."""
+        if self._hotkey_manager:
+            try:
+                self._hotkey_manager.stop()
+                logger.info("Hotkey manager stopped")
+            except Exception as e:
+                logger.debug(f"Error stopping hotkey manager: {e}")
+            self._hotkey_manager = None
+
+    def _on_hotkey_triggered(self, text: str):
+        """Handle hotkey trigger - set text and translate in main app.
+
+        Args:
+            text: Text from clipboard (empty string if none)
+        """
+        if not text:
+            logger.debug("Hotkey triggered but no text selected")
+            return
+
+        # Skip if already translating
+        if self.state.text_translating:
+            logger.debug("Hotkey ignored - translation in progress")
+            return
+
+        # Skip if client not ready
+        if not self._client:
+            logger.debug("Hotkey ignored - client not ready")
+            return
+
+        # Schedule UI update on NiceGUI's event loop
+        # This is called from HotkeyManager's background thread
+        try:
+            # Use background_tasks to safely schedule async work from another thread
+            from nicegui import background_tasks
+            background_tasks.create(self._handle_hotkey_text(text))
+        except Exception as e:
+            logger.error(f"Failed to schedule hotkey handler: {e}")
+
+    async def _handle_hotkey_text(self, text: str):
+        """Handle hotkey text in the main event loop.
+
+        Args:
+            text: Text to translate
+        """
+        # Double-check: Skip if translation started while we were waiting
+        if self.state.text_translating:
+            logger.debug("Hotkey handler skipped - translation already in progress")
+            return
+
+        # Set source text
+        self.state.source_text = text
+
+        # Switch to text tab if not already
+        from yakulingo.ui.state import Tab, TextViewState
+        self.state.current_tab = Tab.TEXT
+        self.state.text_view_state = TextViewState.INPUT
+
+        # Bring app window to front
+        await self._bring_window_to_front()
+
+        # Refresh UI to show the text
+        if self._client:
+            with self._client:
+                self._refresh_content()
+
+        # Small delay to let UI update
+        await asyncio.sleep(0.1)
+
+        # Final check before triggering translation
+        if self.state.text_translating:
+            logger.debug("Hotkey handler skipped - translation started during UI update")
+            return
+
+        # Trigger translation
+        await self._translate_text()
+
+    async def _bring_window_to_front(self):
+        """Bring the app window to front."""
+        try:
+            from nicegui import app as nicegui_app
+            if hasattr(nicegui_app, 'native') and nicegui_app.native.main_window:
+                window = nicegui_app.native.main_window
+                window.on_top = True
+                await asyncio.sleep(0.1)
+                window.on_top = False
+        except (ImportError, AttributeError, RuntimeError) as e:
+            logger.debug(f"Failed to bring window to front: {e}")
 
     # =========================================================================
     # Section 2: Connection & Startup
@@ -217,6 +326,9 @@ class YakuLingoApp:
         if self._client:
             with self._client:
                 ui.notify('Ready', type='positive', position='bottom-right', timeout=2000)
+
+        # Start hotkey manager for quick translation (Ctrl+J)
+        self.start_hotkey_manager()
 
     async def _wait_for_login_completion(self):
         """ログイン完了をバックグラウンドでポーリング待機。
@@ -1855,6 +1967,9 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
         cleanup_done = True
 
         logger.info("Shutting down YakuLingo...")
+
+        # Stop hotkey manager
+        yakulingo_app.stop_hotkey_manager()
 
         # Cancel any ongoing translation (prevents incomplete output files)
         if yakulingo_app.translation_service is not None:

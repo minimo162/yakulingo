@@ -1537,10 +1537,10 @@ def _detect_display_settings() -> tuple[tuple[int, int], tuple[int, int, int, in
             result_content_width = max(int(window_width * RESULT_CONTENT_RATIO), MIN_RESULT_CONTENT_WIDTH)
 
         # Calculate max-width for input panel in 2-column mode (centered layout)
-        # Main area = window - sidebar, leave 60px padding (30px each side) for breathing room
-        # Cap at 750px for optimal readability on large screens
+        # Main area = window - sidebar, use 50% of available width for balanced layout
+        # Min 600px to prevent too narrow input, max 850px for readability
         main_area_width = window_width - sidebar_width
-        input_panel_max_width = min(750, main_area_width - 60)
+        input_panel_max_width = max(600, min(850, int((main_area_width - 60) * 0.5)))
 
         return ((window_width, window_height), (sidebar_width, input_panel_width, result_content_width, input_panel_max_width))
 

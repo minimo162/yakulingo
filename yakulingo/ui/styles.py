@@ -164,14 +164,14 @@ body {
 }
 
 /* === Sidebar Layout === */
+/* Nani-style: simple surface background, no gradient */
 .sidebar {
     width: var(--sidebar-width);
     height: 100vh;
     position: fixed;
     left: 0;
     top: 0;
-    /* M3 surface gradient sidebar */
-    background: linear-gradient(180deg, var(--md-sys-color-surface-container-lowest) 0%, var(--md-sys-color-surface-container-low) 100%);
+    background: var(--md-sys-color-surface);
     border-right: 1px solid var(--md-sys-color-outline-variant);
     display: flex;
     flex-direction: column;
@@ -196,6 +196,7 @@ body {
 }
 
 /* Input Panel (Middle Column - Sticky) */
+/* Nani-style: clean surface with subtle shadow instead of border */
 .input-panel {
     width: var(--input-panel-width);
     min-width: var(--input-panel-width);
@@ -206,7 +207,7 @@ body {
     display: flex;
     flex-direction: column;
     background: var(--md-sys-color-surface);
-    border-right: 1px solid var(--md-sys-color-outline-variant);
+    box-shadow: 1px 0 3px rgba(0, 0, 0, 0.05);
     overflow-y: auto;
 }
 
@@ -234,6 +235,7 @@ body {
 }
 
 /* Empty Result State Placeholder */
+/* Nani-style: subtle surface with minimal border */
 .empty-result-state {
     display: flex;
     flex-direction: column;
@@ -242,23 +244,30 @@ body {
     gap: 0.75rem;
     min-height: 200px;
     padding: 2rem;
-    border: 2px dashed var(--md-sys-color-outline-variant);
-    border-radius: var(--md-sys-shape-corner-large);
-    background-color: var(--md-sys-color-surface-container-low);
+    border: 1px dashed var(--md-sys-color-outline-variant);
+    border-radius: var(--md-sys-shape-corner-xl);
+    background-color: var(--md-sys-color-surface);
 }
 
 /* === Source Text Section (Result Panel Top) === */
+/* Nani-style: outer bg-main-bg with shadow, inner bg-main-75 */
 .source-text-section {
-    background-color: var(--md-sys-color-surface-container);
-    border-radius: var(--md-sys-shape-corner-medium);
-    padding: 1rem;
-    border: 1px solid var(--md-sys-color-outline-variant);
+    background-color: var(--md-sys-color-surface);
+    border-radius: calc(var(--md-sys-shape-corner-xl) + 0.25rem);
+    padding: 0.25rem;
+    box-shadow: var(--md-sys-elevation-1);
     width: 100%;
+}
+
+.source-text-section > .nicegui-row {
+    background-color: var(--md-sys-color-surface-container);
+    border-radius: var(--md-sys-shape-corner-xl);
+    padding: 1rem;
 }
 
 .source-text-content {
     font-size: var(--md-sys-typescale-size-sm);
-    line-height: 1.6;
+    line-height: 1.5;
     color: var(--md-sys-color-on-surface);
     word-break: break-word;
     white-space: pre-wrap;
@@ -273,16 +282,15 @@ body {
 }
 
 .source-copy-btn:hover {
-    background-color: var(--md-sys-color-surface-container);
+    background-color: var(--md-sys-color-surface-container-high);
     color: var(--md-sys-color-primary);
 }
 
 /* === Translation Status Section === */
+/* Nani-style: simple text with icon, no background */
 .translation-status-section {
-    padding: 0.75rem 1rem;
-    background-color: var(--md-sys-color-surface-container-low);
-    border-radius: var(--md-sys-shape-corner-small);
-    border-left: 3px solid var(--md-sys-color-primary);
+    padding: 0.5rem 0.25rem;
+    background-color: transparent;
     width: 100%;
 }
 
@@ -312,7 +320,7 @@ body {
     /* Match .nani-result-text for smooth transition */
     font-size: var(--md-sys-typescale-size-md);
     color: var(--md-sys-color-on-surface);
-    line-height: 1.6;
+    line-height: 1.4;
     white-space: pre-wrap;
     word-break: break-word;
 }
@@ -855,9 +863,10 @@ textarea:focus-visible {
     background: rgba(67, 85, 185, 0.12);
 }
 
-/* === Drop Zone (Gradio-inspired) === */
+/* === Drop Zone (Nani-inspired) === */
+/* Nani-style: subtle surface with thin dashed border */
 .drop-zone {
-    border: 2px dashed var(--md-sys-color-outline-variant);
+    border: 1.5px dashed var(--md-sys-color-outline-variant);
     border-radius: var(--md-sys-shape-corner-xl);
     padding: 3.5rem 2.5rem;
     text-align: center;
@@ -924,10 +933,11 @@ textarea:focus-visible {
     pointer-events: none;
 }
 
+/* Nani-style: subtle hover with softer background */
 .drop-zone:hover {
     border-color: var(--md-sys-color-primary);
-    background: var(--md-sys-color-primary-container);
-    transform: scale(1.02);
+    background: rgba(222, 224, 255, 0.3);  /* primary-container at 30% */
+    transform: scale(1.01);
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-spring);
 }
 
@@ -1047,7 +1057,7 @@ textarea:focus-visible {
 }
 
 .option-text {
-    line-height: 1.7;
+    line-height: 1.4;
     word-break: break-word;
     font-size: var(--md-sys-typescale-size-md);
 }
@@ -1353,6 +1363,64 @@ textarea:focus-visible {
     justify-content: center;
 }
 
+/* === Media Queries for Resolution Fallback === */
+/* These provide CSS-only fallback when JavaScript hasn't updated CSS variables yet */
+
+/* Small screens (< 1400px) - compact layout */
+@media (max-width: 1399px) {
+    :root {
+        --sidebar-width: 220px;
+        --input-panel-width: 340px;
+        --result-content-width: 580px;
+        --input-panel-max-width: 520px;
+        --base-font-size: 14px;
+    }
+}
+
+/* Medium screens (1400px - 1599px) - standard layout */
+@media (min-width: 1400px) and (max-width: 1599px) {
+    :root {
+        --sidebar-width: 260px;
+        --input-panel-width: 380px;
+        --result-content-width: 680px;
+        --input-panel-max-width: 560px;
+        --base-font-size: 15px;
+    }
+}
+
+/* Large screens (1600px - 1899px) - expanded layout */
+@media (min-width: 1600px) and (max-width: 1899px) {
+    :root {
+        --sidebar-width: 260px;
+        --input-panel-width: 400px;
+        --result-content-width: 720px;
+        --input-panel-max-width: 640px;
+        --base-font-size: 15.5px;
+    }
+}
+
+/* Extra large screens (1900px+) - full layout */
+@media (min-width: 1900px) {
+    :root {
+        --sidebar-width: 260px;
+        --input-panel-width: 420px;
+        --result-content-width: 800px;
+        --input-panel-max-width: 768px;
+        --base-font-size: 16px;
+    }
+}
+
+/* Very large screens (2200px+) - scaled up layout */
+@media (min-width: 2200px) {
+    :root {
+        --sidebar-width: 300px;
+        --input-panel-width: 480px;
+        --result-content-width: 920px;
+        --input-panel-max-width: 880px;
+        --base-font-size: 17px;
+    }
+}
+
 /* === Dialog === */
 .q-card {
     border-radius: var(--md-sys-shape-corner-xl) !important;
@@ -1626,7 +1694,7 @@ textarea:focus-visible {
     white-space: pre-wrap;
     flex: 1;
     font-size: var(--md-sys-typescale-size-md);
-    line-height: 1.6;
+    line-height: 1.4;
     color: var(--md-sys-color-on-surface);
     word-break: break-word;
 }
@@ -1649,15 +1717,15 @@ textarea:focus-visible {
 }
 
 /* === Nani-style Explanation === */
+/* Nani-style: bg-primary-bg-lighter - softer primary background */
 .nani-explanation {
-    background: var(--md-sys-color-primary-container);
-    padding: 1rem 1.125rem;
+    background: rgba(222, 224, 255, 0.5);  /* primary-container at 50% - matches Nani's bg-primary-bg-lighter */
+    padding: 0.875rem;  /* 14px - matches Nani's p-3.5 */
     margin-top: 0.25rem;
-    color: var(--md-sys-color-on-primary-container);
+    color: rgba(27, 27, 31, 0.8);  /* on-surface at 80% opacity - matches Nani's text-main-body/80 */
     border-radius: 1rem;
-    border-left: 4px solid var(--md-sys-color-primary);
-    font-size: var(--md-sys-typescale-size-xs);
-    line-height: 1.8;
+    font-size: var(--md-sys-typescale-size-sm);  /* 14px - matches Nani's text-sm */
+    line-height: 1.85;  /* matches Nani's --html-base-line-height */
 }
 
 .nani-explanation ul {
@@ -2233,6 +2301,7 @@ textarea:focus-visible {
 
 .inline-adjust-panel {
     width: 100%;
+    max-width: 24rem;  /* 384px - matches Nani's max-w-sm */
     background: var(--md-sys-color-surface);
     border-radius: var(--md-sys-shape-corner-xl);
     padding: 0.75rem;

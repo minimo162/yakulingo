@@ -1698,6 +1698,72 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
 }}
 </style>''')
 
+        # Add JavaScript for dynamic resize handling
+        # This updates CSS variables when the window is resized
+        ui.add_head_html('''<script>
+(function() {
+    // Constants matching Python calculation (from _detect_display_settings)
+    const REFERENCE_WINDOW_WIDTH = 1900;
+    const REFERENCE_FONT_SIZE = 16;
+    const SIDEBAR_RATIO = 260 / 1900;
+    const INPUT_PANEL_RATIO = 420 / 1900;
+    const RESULT_CONTENT_RATIO = 800 / 1900;
+    const MIN_SIDEBAR_WIDTH = 260;
+    const MIN_INPUT_PANEL_WIDTH = 380;
+    const MIN_RESULT_CONTENT_WIDTH = 680;
+    const TEXTAREA_LINES = 7;
+    const TEXTAREA_LINE_HEIGHT = 1.5;
+    const TEXTAREA_FONT_RATIO = 1.125;
+    const TEXTAREA_PADDING_RATIO = 1.6;
+
+    function updateCSSVariables() {
+        const windowWidth = window.innerWidth;
+
+        // Calculate base font size with gentle scaling (square root)
+        const scaleRatio = windowWidth / REFERENCE_WINDOW_WIDTH;
+        const gentleScale = Math.max(0.85, Math.sqrt(scaleRatio));
+        const baseFontSize = Math.round(REFERENCE_FONT_SIZE * gentleScale * 10) / 10;
+
+        // Calculate panel widths
+        const sidebarWidth = Math.max(Math.round(windowWidth * SIDEBAR_RATIO), MIN_SIDEBAR_WIDTH);
+        const inputPanelWidth = Math.max(Math.round(windowWidth * INPUT_PANEL_RATIO), MIN_INPUT_PANEL_WIDTH);
+        const resultContentWidth = Math.max(Math.round(windowWidth * RESULT_CONTENT_RATIO), MIN_RESULT_CONTENT_WIDTH);
+
+        // Calculate max-width for input panel in 2-column mode
+        const mainAreaWidth = windowWidth - sidebarWidth;
+        const inputPanelMaxWidth = Math.round((mainAreaWidth - 60) * 0.5);
+
+        // Calculate input min/max height
+        const textareaFontSize = baseFontSize * TEXTAREA_FONT_RATIO;
+        const inputMinHeight = Math.round(
+            TEXTAREA_LINES * TEXTAREA_LINE_HEIGHT * textareaFontSize +
+            TEXTAREA_PADDING_RATIO * textareaFontSize
+        );
+        const inputMaxHeight = Math.round(inputPanelMaxWidth * 0.75);
+
+        // Update CSS variables
+        const root = document.documentElement;
+        root.style.setProperty('--base-font-size', baseFontSize + 'px');
+        root.style.setProperty('--sidebar-width', sidebarWidth + 'px');
+        root.style.setProperty('--input-panel-width', inputPanelWidth + 'px');
+        root.style.setProperty('--result-content-width', resultContentWidth + 'px');
+        root.style.setProperty('--input-panel-max-width', inputPanelMaxWidth + 'px');
+        root.style.setProperty('--input-min-height', inputMinHeight + 'px');
+        root.style.setProperty('--input-max-height', inputMaxHeight + 'px');
+    }
+
+    // Debounce resize handler
+    let resizeTimeout;
+    function handleResize() {
+        clearTimeout(resizeTimeout);
+        resizeTimeout = setTimeout(updateCSSVariables, 100);
+    }
+
+    // Listen for resize events
+    window.addEventListener('resize', handleResize);
+})();
+</script>''')
+
         # Add early CSS for loading screen and font loading handling
         # This runs before create_ui() which loads COMPLETE_CSS
         ui.add_head_html('''<style>

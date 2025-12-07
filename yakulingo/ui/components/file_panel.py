@@ -132,8 +132,8 @@ def create_file_panel(
         if state.file_state == FileState.EMPTY:
             with ui.element('div').classes('hint-section'):
                 with ui.element('div').classes('hint-primary'):
-                    ui.icon('translate').classes('text-sm text-muted')
-                    ui.label('英訳・和訳を選んで翻訳します')
+                    ui.icon('auto_awesome').classes('text-sm text-muted')
+                    ui.label('言語を自動検出して翻訳します').classes('text-muted')
 
 
 def _language_selector(state: AppState, on_change: Optional[Callable[[str], None]]):

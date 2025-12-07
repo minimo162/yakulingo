@@ -100,8 +100,12 @@ def _create_textarea_with_keyhandler(
     # Handle Ctrl+Enter in textarea with NiceGUI 3.0+ js_handler
     # Prevent default browser behavior (newline insertion) when Ctrl+Enter is pressed
     async def handle_keydown(e):
-        if state.can_translate() and not state.text_translating:
-            await on_translate()
+        # can_translate() already checks text_translating internally
+        if state.can_translate():
+            try:
+                await on_translate()
+            except Exception as ex:
+                logger.exception("Ctrl+Enter translation error: %s", ex)
 
     textarea.on(
         'keydown',

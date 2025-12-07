@@ -259,7 +259,7 @@ function Invoke-Setup {
     }
 
     # ============================================================
-    # Restore backed up user data files
+    # Restore/Merge backed up user data files
     # ============================================================
     if ($BackupFiles.Count -gt 0) {
         if (-not $GuiMode) {
@@ -274,9 +274,63 @@ function Invoke-Setup {
                 if (-not (Test-Path $restoreParent)) {
                     New-Item -ItemType Directory -Path $restoreParent -Force | Out-Null
                 }
-                Copy-Item -Path $backupPath -Destination $restorePath -Force
-                if (-not $GuiMode) {
-                    Write-Host "      Restored: $file" -ForegroundColor Gray
+
+                if ($file -eq "glossary.csv") {
+                    # 用語集はマージ（新規用語のみ追加）
+                    $newGlossaryPath = $restorePath
+                    if (Test-Path $newGlossaryPath) {
+                        # 新しい用語集を一時保存
+                        $tempNewGlossary = Join-Path $BackupDir "glossary_new.csv"
+                        Copy-Item -Path $newGlossaryPath -Destination $tempNewGlossary -Force
+
+                        # 既存の用語（ソース側）を収集
+                        $existingTerms = @{}
+                        Get-Content -Path $backupPath -Encoding UTF8 | ForEach-Object {
+                            $line = $_.Trim()
+                            if ($line -and -not $line.StartsWith("#")) {
+                                $parts = $line -split ",", 2
+                                if ($parts.Count -gt 0) {
+                                    $existingTerms[$parts[0].Trim()] = $true
+                                }
+                            }
+                        }
+
+                        # バックアップを復元（ユーザーの用語集を戻す）
+                        Copy-Item -Path $backupPath -Destination $restorePath -Force
+
+                        # 新しい用語集から、既存にない用語を追加
+                        $addedCount = 0
+                        Get-Content -Path $tempNewGlossary -Encoding UTF8 | ForEach-Object {
+                            $line = $_.Trim()
+                            if ($line -and -not $line.StartsWith("#")) {
+                                $parts = $line -split ",", 2
+                                if ($parts.Count -gt 0 -and -not $existingTerms.ContainsKey($parts[0].Trim())) {
+                                    Add-Content -Path $restorePath -Value $_ -Encoding UTF8
+                                    $addedCount++
+                                }
+                            }
+                        }
+
+                        if (-not $GuiMode) {
+                            if ($addedCount -gt 0) {
+                                Write-Host "      Merged: $file (+$addedCount new terms)" -ForegroundColor Gray
+                            } else {
+                                Write-Host "      Restored: $file (no new terms)" -ForegroundColor Gray
+                            }
+                        }
+                    } else {
+                        # 新しい用語集がなければバックアップを復元
+                        Copy-Item -Path $backupPath -Destination $restorePath -Force
+                        if (-not $GuiMode) {
+                            Write-Host "      Restored: $file" -ForegroundColor Gray
+                        }
+                    }
+                } else {
+                    # settings.json などはそのまま復元
+                    Copy-Item -Path $backupPath -Destination $restorePath -Force
+                    if (-not $GuiMode) {
+                        Write-Host "      Restored: $file" -ForegroundColor Gray
+                    }
                 }
             }
         }

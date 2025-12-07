@@ -608,6 +608,17 @@ for %%f in ({files_to_update}) do (
     )
 )
 
+REM 用語集のマージ（新規用語のみ追加）
+echo.
+echo 用語集を更新しています...
+if exist "{source_dir}\\glossary.csv" (
+    if exist "{app_dir}\\.venv\\Scripts\\python.exe" (
+        "{app_dir}\\.venv\\Scripts\\python.exe" -c "from pathlib import Path; import sys; sys.path.insert(0, str(Path(r'{app_dir}'))); from yakulingo.services.updater import merge_glossary; added = merge_glossary(Path(r'{app_dir}'), Path(r'{source_dir}')); print(f'  追加: {{added}} 件の新規用語' if added > 0 else '  新規用語はありません' if added == 0 else '  用語集を新規作成しました')"
+    ) else (
+        echo   [SKIP] Python環境が見つかりません
+    )
+)
+
 echo.
 echo ============================================================
 echo アップデート完了！
@@ -681,6 +692,17 @@ for file in {files_to_update}; do
     fi
 done
 
+# 用語集のマージ（新規用語のみ追加）
+echo ""
+echo "用語集を更新しています..."
+if [ -f "{source_dir}/glossary.csv" ]; then
+    if [ -f "{app_dir}/.venv/bin/python" ]; then
+        "{app_dir}/.venv/bin/python" -c "from pathlib import Path; import sys; sys.path.insert(0, str(Path(r'{app_dir}'))); from yakulingo.services.updater import merge_glossary; added = merge_glossary(Path(r'{app_dir}'), Path(r'{source_dir}')); print(f'  追加: {{added}} 件の新規用語' if added > 0 else '  新規用語はありません' if added == 0 else '  用語集を新規作成しました')"
+    else
+        echo "  [SKIP] Python環境が見つかりません"
+    fi
+fi
+
 echo ""
 echo "============================================================"
 echo "アップデート完了！"
@@ -729,3 +751,84 @@ def check_for_updates(
     """
     updater = AutoUpdater(repo_owner=repo_owner, repo_name=repo_name)
     return updater.check_for_updates()
+
+
+def merge_glossary(app_dir: Path, source_dir: Path) -> int:
+    """
+    用語集をマージ（新規用語のみ追加）
+
+    ユーザーの用語集（glossary.csv）に、バンドル版の新規用語を追加します。
+    既存の用語は上書きしません（ユーザーの編集を尊重）。
+
+    Args:
+        app_dir: アプリケーションディレクトリ（ユーザーのglossary.csvがある場所）
+        source_dir: ソースディレクトリ（新しいglossary.csvがある場所）
+
+    Returns:
+        int: 追加された用語数
+    """
+    user_glossary = app_dir / "glossary.csv"
+    new_glossary = source_dir / "glossary.csv"
+
+    if not new_glossary.exists():
+        logger.info("新しい用語集が見つかりません: %s", new_glossary)
+        return 0
+
+    # ユーザーの用語集が存在しない場合は新しい用語集をコピー
+    if not user_glossary.exists():
+        shutil.copy2(new_glossary, user_glossary)
+        logger.info("用語集をコピーしました: %s", user_glossary)
+        return -1  # 新規作成を示す
+
+    # 既存の用語（ソース側）を収集
+    existing_terms: set[str] = set()
+    existing_lines: list[str] = []
+
+    with open(user_glossary, "r", encoding="utf-8") as f:
+        for line in f:
+            existing_lines.append(line)
+            stripped = line.strip()
+            # コメント行と空行はスキップ
+            if stripped and not stripped.startswith("#"):
+                parts = stripped.split(",", 1)
+                if parts:
+                    existing_terms.add(parts[0].strip())
+
+    # 新しい用語集から、既存にない用語を収集
+    new_terms: list[str] = []
+    with open(new_glossary, "r", encoding="utf-8") as f:
+        for line in f:
+            stripped = line.strip()
+            # コメント行と空行はスキップ
+            if stripped and not stripped.startswith("#"):
+                parts = stripped.split(",", 1)
+                if parts and parts[0].strip() not in existing_terms:
+                    new_terms.append(line if line.endswith("\n") else line + "\n")
+
+    # 新規用語があれば追加
+    if new_terms:
+        with open(user_glossary, "a", encoding="utf-8") as f:
+            f.writelines(new_terms)
+        logger.info("用語集に %d 件の新規用語を追加しました", len(new_terms))
+
+    return len(new_terms)
+
+
+# コマンドライン実行用（アップデートスクリプトから呼び出される）
+if __name__ == "__main__":
+    import sys
+
+    if len(sys.argv) >= 4 and sys.argv[1] == "merge":
+        # python -m yakulingo.services.updater merge <app_dir> <source_dir>
+        app_dir = Path(sys.argv[2])
+        source_dir = Path(sys.argv[3])
+        added = merge_glossary(app_dir, source_dir)
+        if added > 0:
+            print(f"  追加: {added} 件の新規用語")
+        elif added == -1:
+            print("  用語集を新規作成しました")
+        else:
+            print("  新規用語はありません")
+    else:
+        print("Usage: python -m yakulingo.services.updater merge <app_dir> <source_dir>")
+        sys.exit(1)

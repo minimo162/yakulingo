@@ -114,7 +114,9 @@ COMPLETE_CSS = """
     --input-max-height: 450px;  /* Default fallback, dynamically set based on resolution */
 
     /* Textarea-specific sizing (Nani-style) */
-    --textarea-font-size: 1.125rem;  /* 18px - Nani uses text-mdlg */
+    /* Font size scales with --base-font-size (set dynamically in app.py) */
+    /* 1.125 ratio = 18px when base is 16px */
+    --textarea-font-size: calc(var(--base-font-size, 16px) * 1.125);
     --textarea-line-height: 1.5;
     --textarea-padding-block: 0.8em;  /* Nani-style vertical padding */
     --textarea-padding-inline: 0.9em;  /* Nani-style horizontal padding */

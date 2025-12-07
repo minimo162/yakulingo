@@ -1658,19 +1658,7 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
         sidebar_width, input_panel_width, result_content_width, input_panel_max_width = yakulingo_app._panel_sizes
         window_width, window_height = yakulingo_app._window_size
 
-        # Calculate input min-height based on window height ratio
-        # Reference: 1100px window height → 360px input min-height
-        # Minimum: 280px to prevent textarea from becoming too small on low-res screens
-        REFERENCE_WINDOW_HEIGHT = 1100
-        REFERENCE_INPUT_MIN_HEIGHT = 360
-        MIN_INPUT_HEIGHT = 280
-        input_min_height = max(MIN_INPUT_HEIGHT, int(REFERENCE_INPUT_MIN_HEIGHT * window_height / REFERENCE_WINDOW_HEIGHT))
-
-        # Calculate input max-height based on input max-width to maintain consistent aspect ratio
-        # Aspect ratio 4:3 (height = width * 0.75) for balanced appearance across resolutions
-        input_max_height = int(input_panel_max_width * 0.75)
-
-        # Calculate base font size with gentle scaling
+        # Calculate base font size with gentle scaling (needed for other calculations)
         # Reference: 1900px window → 16px font
         # Use square root for gentle scaling (no upper limit for large screens)
         import math
@@ -1680,6 +1668,23 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
         # Square root scaling for gentler effect, minimum 85% (13.6px), no upper limit
         gentle_scale = max(0.85, math.sqrt(scale_ratio))
         base_font_size = round(REFERENCE_FONT_SIZE * gentle_scale, 1)
+
+        # Calculate input min-height based on 7 lines of text (Nani-style)
+        # Formula: 7 lines × line-height × font-size + padding
+        # line-height: 1.5, font-size: base × 1.125, padding: 1.6em equivalent
+        TEXTAREA_LINES = 7
+        TEXTAREA_LINE_HEIGHT = 1.5
+        TEXTAREA_FONT_RATIO = 1.125  # --textarea-font-size ratio
+        TEXTAREA_PADDING_RATIO = 1.6  # Total padding in em
+        textarea_font_size = base_font_size * TEXTAREA_FONT_RATIO
+        input_min_height = int(
+            TEXTAREA_LINES * TEXTAREA_LINE_HEIGHT * textarea_font_size +
+            TEXTAREA_PADDING_RATIO * textarea_font_size
+        )
+
+        # Calculate input max-height based on input max-width to maintain consistent aspect ratio
+        # Aspect ratio 4:3 (height = width * 0.75) for balanced appearance across resolutions
+        input_max_height = int(input_panel_max_width * 0.75)
 
         ui.add_head_html(f'''<style>
 :root {{

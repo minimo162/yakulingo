@@ -1111,6 +1111,31 @@ class YakuLingoApp:
                     '{translation}': translation,
                 }
             },
+            'check_my_english': {
+                'file': 'text_check_my_english.txt',
+                'fallback': f"""以下のユーザーが作成した英文をレビューしてください。
+
+参照訳（AI翻訳）:
+{translation}
+
+ユーザーの英文:
+{content}
+
+レビューの観点:
+- 文法的な正確さ
+- 表現の自然さ
+- ビジネス文書として適切か
+- 参照訳との比較
+- 改善案があれば提案
+
+出力形式:
+訳文: （レビュー結果のサマリー）
+解説: （詳細な分析と改善提案）""",
+                'replacements': {
+                    '{reference_translation}': translation,
+                    '{user_english}': content,
+                }
+            },
         }
 
         if action_type not in prompt_configs:

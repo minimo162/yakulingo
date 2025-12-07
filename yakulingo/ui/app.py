@@ -173,6 +173,11 @@ class YakuLingoApp:
         Args:
             text: Text to translate
         """
+        # Double-check: Skip if translation started while we were waiting
+        if self.state.text_translating:
+            logger.debug("Hotkey handler skipped - translation already in progress")
+            return
+
         # Set source text
         self.state.source_text = text
 
@@ -191,6 +196,11 @@ class YakuLingoApp:
 
         # Small delay to let UI update
         await asyncio.sleep(0.1)
+
+        # Final check before triggering translation
+        if self.state.text_translating:
+            logger.debug("Hotkey handler skipped - translation started during UI update")
+            return
 
         # Trigger translation
         await self._translate_text()

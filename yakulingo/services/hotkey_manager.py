@@ -36,10 +36,12 @@ VK_C = 0x43
 KEYEVENTF_KEYUP = 0x0002
 
 # Timing constants
-CLIPBOARD_WAIT_SEC = 0.1  # Wait for clipboard to update after Ctrl+C
-CLIPBOARD_RETRY_COUNT = 3  # Retry count for clipboard access
+CLIPBOARD_WAIT_SEC = 0.15  # Wait for clipboard to update after Ctrl+C
+CLIPBOARD_RETRY_COUNT = 5  # Retry count for clipboard access
 CLIPBOARD_RETRY_DELAY_SEC = 0.05  # Delay between retries
 MESSAGE_POLL_INTERVAL_SEC = 0.05  # Interval for PeekMessage loop
+KEY_EVENT_DELAY_SEC = 0.01  # Small delay between key events for reliability
+MAX_TEXT_LENGTH = 50000  # Maximum text length to process (prevent huge clipboard data)
 
 
 class HotkeyManager:
@@ -152,6 +154,9 @@ class HotkeyManager:
             return
 
         try:
+            # Get current clipboard content to detect change
+            old_text = self._get_clipboard_text()
+
             # Send Ctrl+C to copy selected text
             self._send_ctrl_c()
 
@@ -160,6 +165,15 @@ class HotkeyManager:
 
             # Get text from clipboard (with retry)
             text = self._get_clipboard_text_with_retry()
+
+            # If clipboard didn't change, selection might have failed
+            if text and text == old_text:
+                logger.debug("Clipboard unchanged - no text may have been selected")
+
+            # Limit text length to prevent processing huge data
+            if text and len(text) > MAX_TEXT_LENGTH:
+                logger.warning(f"Text truncated from {len(text)} to {MAX_TEXT_LENGTH} chars")
+                text = text[:MAX_TEXT_LENGTH]
 
             # Trigger callback (empty string if no text)
             self._callback(text or "")
@@ -173,10 +187,13 @@ class HotkeyManager:
 
         # Key down: Ctrl
         user32.keybd_event(VK_CONTROL, 0, 0, 0)
+        time.sleep(KEY_EVENT_DELAY_SEC)
         # Key down: C
         user32.keybd_event(VK_C, 0, 0, 0)
+        time.sleep(KEY_EVENT_DELAY_SEC)
         # Key up: C
         user32.keybd_event(VK_C, 0, KEYEVENTF_KEYUP, 0)
+        time.sleep(KEY_EVENT_DELAY_SEC)
         # Key up: Ctrl
         user32.keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0)
 

@@ -97,6 +97,9 @@ class YakuLingoApp:
         # Set by run_app() based on monitor detection
         self._window_size: tuple[int, int] = (1900, 1100)
 
+        # Login polling state (prevents duplicate polling)
+        self._login_polling_active = False
+
     @property
     def copilot(self) -> "CopilotHandler":
         """Lazy-load CopilotHandler for faster startup."""
@@ -141,6 +144,8 @@ class YakuLingoApp:
                 # Connection failed - refresh status to show error
                 self._refresh_status()
                 logger.warning("Edge connection failed during parallel startup")
+                # ログイン必要な場合はポーリングを開始
+                await self._start_login_polling_if_needed()
         except concurrent.futures.TimeoutError:
             logger.warning("Edge connection timeout during parallel startup")
             self._refresh_status()
@@ -175,10 +180,19 @@ class YakuLingoApp:
             else:
                 # Connection failed - refresh status to show error
                 self._refresh_status()
+                # ログイン必要な場合はポーリングを開始
+                await self._start_login_polling_if_needed()
         except Exception as e:
             # Connection failed - refresh status to show error
             logger.debug("Background connection failed: %s", e)
             self._refresh_status()
+
+    async def _start_login_polling_if_needed(self):
+        """ログインが必要な場合にポーリングを開始する。"""
+        from yakulingo.services.copilot_handler import CopilotHandler
+        if self.copilot.last_connection_error == CopilotHandler.ERROR_LOGIN_REQUIRED:
+            if not self._login_polling_active:
+                asyncio.create_task(self._wait_for_login_completion())
 
     async def _on_browser_ready(self):
         """Called when browser connection is ready. Brings app to front and notifies user."""
@@ -203,6 +217,86 @@ class YakuLingoApp:
         if self._client:
             with self._client:
                 ui.notify('Ready', type='positive', position='bottom-right', timeout=2000)
+
+    async def _wait_for_login_completion(self):
+        """ログイン完了をバックグラウンドでポーリング待機。
+
+        ログインが必要な状態になった時に呼び出され、ユーザーがEdgeでログインするのを待つ。
+        ログイン完了を検出したら、自動でアプリを前面に戻して通知する。
+        """
+        if self._login_polling_active:
+            logger.debug("Login polling already active, skipping")
+            return
+
+        self._login_polling_active = True
+        polling_interval = 5  # 秒
+        max_wait_time = 300   # 5分
+        elapsed = 0
+
+        logger.info("Starting login completion polling (max %ds)", max_wait_time)
+
+        try:
+            from yakulingo.services.copilot_handler import ConnectionState as CopilotConnectionState
+
+            while elapsed < max_wait_time:
+                await asyncio.sleep(polling_interval)
+                elapsed += polling_interval
+
+                # 短いタイムアウトで状態確認
+                state = await asyncio.to_thread(
+                    self.copilot._check_copilot_state, 3  # 3秒タイムアウト
+                )
+
+                if state == CopilotConnectionState.READY:
+                    # ログイン完了 → 接続状態を更新
+                    logger.info("Login completed, updating connection state")
+                    self.copilot._connected = True
+                    self.copilot.last_connection_error = None
+                    self.state.copilot_ready = True
+
+                    if self._client:
+                        with self._client:
+                            self._refresh_status()
+
+                    await self._on_browser_ready()
+                    return
+
+            # タイムアウト（翻訳ボタン押下時に再試行される）
+            logger.info("Login polling timed out after %ds", max_wait_time)
+        except Exception as e:
+            logger.debug("Login polling error: %s", e)
+        finally:
+            self._login_polling_active = False
+
+    async def _reconnect(self):
+        """再接続を試みる（UIボタン用）。"""
+        if self._client:
+            with self._client:
+                ui.notify('再接続中...', type='info', position='bottom-right', timeout=2000)
+
+        try:
+            connected = await asyncio.to_thread(self.copilot.connect)
+
+            if connected:
+                self.state.copilot_ready = True
+                if self._client:
+                    with self._client:
+                        self._refresh_status()
+                await self._on_browser_ready()
+            else:
+                if self._client:
+                    with self._client:
+                        self._refresh_status()
+                        # ログイン必要な場合はポーリングを開始
+                        from yakulingo.services.copilot_handler import CopilotHandler
+                        if self.copilot.last_connection_error == CopilotHandler.ERROR_LOGIN_REQUIRED:
+                            if not self._login_polling_active:
+                                asyncio.create_task(self._wait_for_login_completion())
+        except Exception as e:
+            logger.debug("Reconnect failed: %s", e)
+            if self._client:
+                with self._client:
+                    ui.notify('再接続に失敗しました', type='negative', position='bottom-right', timeout=3000)
 
     async def check_for_updates(self):
         """Check for updates in background."""
@@ -392,7 +486,8 @@ class YakuLingoApp:
                         ui.element('div').classes('status-dot error').props('aria-hidden="true"')
                         with ui.column().classes('gap-0'):
                             ui.label('ログインが必要').classes('text-xs')
-                            ui.label('Edgeでログインしてください').classes('text-2xs text-muted')
+                            ui.label('ログイン後、自動で接続します').classes('text-2xs text-muted')
+                            ui.link('再接続', on_click=lambda: asyncio.create_task(self._reconnect())).classes('text-2xs cursor-pointer')
                 elif error == CopilotHandler.ERROR_EDGE_NOT_FOUND:
                     self.state.connection_state = ConnectionState.EDGE_NOT_RUNNING
                     with ui.element('div').classes('status-indicator error').props('role="status" aria-live="polite"'):

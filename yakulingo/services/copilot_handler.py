@@ -264,15 +264,17 @@ class CopilotHandler:
 
     # Configuration constants
     DEFAULT_CDP_PORT = 9333  # Dedicated port for translator
-    EDGE_STARTUP_MAX_ATTEMPTS = 30  # Maximum iterations to wait for Edge startup (increased for shorter interval)
-    EDGE_STARTUP_CHECK_INTERVAL = 0.2  # Seconds between startup checks (reduced from 0.3)
+    EDGE_STARTUP_MAX_ATTEMPTS = 30  # Maximum iterations to wait for Edge startup
+    EDGE_STARTUP_CHECK_INTERVAL = 0.2  # Seconds between startup checks
+
+    # Response detection settings
     RESPONSE_STABLE_COUNT = 2  # Number of stable checks before considering response complete
-    RESPONSE_POLL_INTERVAL = 0.3  # Seconds between response checks (legacy, kept for compatibility)
+    DEFAULT_RESPONSE_TIMEOUT = 120  # Default timeout for response in seconds
+
     # Dynamic polling intervals for faster response detection
-    RESPONSE_POLL_INITIAL = 0.2  # Initial interval while waiting for response to start (reduced from 0.3)
+    RESPONSE_POLL_INITIAL = 0.2  # Initial interval while waiting for response to start
     RESPONSE_POLL_ACTIVE = 0.2  # Interval after text is detected
     RESPONSE_POLL_STABLE = 0.1  # Interval during stability checking
-    DEFAULT_RESPONSE_TIMEOUT = 120  # Default timeout for response in seconds
 
     # Copilot character limits (Free: 8000, Paid: 128000)
     DEFAULT_CHAR_LIMIT = 7500  # Default to free with margin

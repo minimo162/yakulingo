@@ -50,9 +50,15 @@ class LanguageDetector:
     # Detection constants
     MIN_TEXT_LENGTH_FOR_SAMPLING = 20  # Below this, check all chars directly
     MAX_ANALYSIS_LENGTH = 500  # Sample size for language detection
-    MIN_MEANINGFUL_CHARS_FOR_EARLY_EXIT = 50  # Minimum chars before early exit
-    CLEAR_JP_RATIO_THRESHOLD = 0.6  # Above this ratio, clearly Japanese
-    CLEAR_NON_JP_RATIO_THRESHOLD = 0.1  # Below this ratio, clearly not Japanese
+
+    # Staged early exit thresholds for faster detection
+    # Each tuple: (min_chars, jp_threshold, non_jp_threshold)
+    # More aggressive at early stages, more accurate with more samples
+    EARLY_EXIT_STAGES = (
+        (20, 0.85, 0.05),   # 20 chars: 85%+ → definitely Japanese, <5% → definitely not
+        (35, 0.70, 0.08),   # 35 chars: 70%+ → likely Japanese, <8% → likely not
+        (50, 0.60, 0.10),   # 50 chars: 60%+ → probably Japanese, <10% → probably not
+    )
 
     # Japanese-specific punctuation (not used in Chinese)
     _JAPANESE_PUNCTUATION = frozenset('、・「」『』')
@@ -161,6 +167,7 @@ class LanguageDetector:
 
         japanese_count = 0
         total_chars = 0
+        stage_idx = 0  # Current stage index for early exit checks
 
         for char in sample_text:
             # Skip whitespace and punctuation
@@ -171,12 +178,19 @@ class LanguageDetector:
             if self.is_japanese_char(ord(char)):
                 japanese_count += 1
 
-            # Early exit: if we have enough samples and result is clear
-            if total_chars >= self.MIN_MEANINGFUL_CHARS_FOR_EARLY_EXIT:
+            # Staged early exit: check progressively as we accumulate samples
+            # This allows faster detection for clear-cut cases
+            while stage_idx < len(self.EARLY_EXIT_STAGES):
+                min_chars, jp_thresh, non_jp_thresh = self.EARLY_EXIT_STAGES[stage_idx]
+                if total_chars < min_chars:
+                    break  # Not enough chars for this stage yet
+
                 ratio = japanese_count / total_chars
-                # If clearly Japanese or clearly not, exit early
-                if ratio > self.CLEAR_JP_RATIO_THRESHOLD or ratio < self.CLEAR_NON_JP_RATIO_THRESHOLD:
+                if ratio >= jp_thresh or ratio < non_jp_thresh:
+                    # Clear result at this stage - exit early
                     return ratio >= threshold
+
+                stage_idx += 1  # Move to next stage
 
         if total_chars == 0:
             return False
@@ -337,10 +351,13 @@ def scale_progress(progress: TranslationProgress, start: int, end: int, phase: T
 
 class TranslationCache:
     """
-    Translation cache for PDF and file translation.
+    Translation cache for PDF and file translation with true LRU eviction.
 
     Caches translated text by source text hash to avoid re-translating
     identical content (e.g., repeated headers, footers, or common phrases).
+
+    Uses OrderedDict for O(1) LRU operations: recently accessed items are
+    moved to the end, and oldest items are evicted from the front.
 
     Thread-safe for concurrent access.
     """
@@ -352,16 +369,19 @@ class TranslationCache:
         Args:
             max_size: Maximum number of cached entries (default: 10000)
         """
-        self._cache: dict[str, str] = {}
+        from collections import OrderedDict
+        import threading
+        self._cache: OrderedDict[str, str] = OrderedDict()
         self._max_size = max_size
         self._hits = 0
         self._misses = 0
-        import threading
         self._lock = threading.Lock()
 
     def get(self, text: str) -> Optional[str]:
         """
         Get cached translation for text.
+
+        LRU: Moves accessed item to end (most recently used).
 
         Args:
             text: Source text
@@ -370,29 +390,33 @@ class TranslationCache:
             Cached translation or None if not found
         """
         with self._lock:
-            result = self._cache.get(text)
-            if result is not None:
+            if text in self._cache:
                 self._hits += 1
+                # Move to end (most recently used)
+                self._cache.move_to_end(text)
+                return self._cache[text]
             else:
                 self._misses += 1
-            return result
+                return None
 
     def set(self, text: str, translation: str) -> None:
         """
         Cache a translation.
+
+        LRU: If key exists, moves to end. If cache is full, evicts oldest entry.
 
         Args:
             text: Source text
             translation: Translated text
         """
         with self._lock:
-            # Simple LRU-like behavior: clear half when full
-            if len(self._cache) >= self._max_size:
-                # Remove oldest half of entries
-                keys_to_remove = list(self._cache.keys())[:self._max_size // 2]
-                for key in keys_to_remove:
-                    del self._cache[key]
-                logger.debug("Cache pruned: removed %d entries", len(keys_to_remove))
+            if text in self._cache:
+                # Update existing entry and move to end
+                self._cache.move_to_end(text)
+            elif len(self._cache) >= self._max_size:
+                # Evict oldest (least recently used) entry
+                oldest_key, _ = self._cache.popitem(last=False)
+                logger.debug("LRU eviction: removed oldest entry")
 
             self._cache[text] = translation
 

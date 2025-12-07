@@ -1816,8 +1816,8 @@ class TestTranslationCache:
         assert stats["misses"] == 0
         assert stats["size"] == 0
 
-    def test_max_size_prunes_oldest(self):
-        """Cache prunes oldest entries when max_size is reached"""
+    def test_max_size_evicts_lru(self):
+        """Cache evicts least recently used entry when max_size is reached"""
         cache = TranslationCache(max_size=4)
 
         # Add 4 entries (at max)
@@ -1826,17 +1826,37 @@ class TestTranslationCache:
         cache.set("c", "3")
         cache.set("d", "4")
 
-        # Adding 5th should prune half (2 oldest)
+        # Adding 5th should evict oldest (a)
         cache.set("e", "5")
 
         stats = cache.stats
-        # Should have 3 entries: c, d, e (a and b pruned)
-        assert stats["size"] == 3
-        assert cache.get("a") is None
-        assert cache.get("b") is None
+        # Should have 4 entries: b, c, d, e (a evicted)
+        assert stats["size"] == 4
+        assert cache.get("a") is None  # Evicted (LRU)
+        assert cache.get("b") == "2"
         assert cache.get("c") == "3"
         assert cache.get("d") == "4"
         assert cache.get("e") == "5"
+
+    def test_lru_access_updates_order(self):
+        """Accessing an entry moves it to end (most recently used)"""
+        cache = TranslationCache(max_size=3)
+
+        # Add 3 entries
+        cache.set("a", "1")
+        cache.set("b", "2")
+        cache.set("c", "3")
+
+        # Access "a" - moves it to end (most recently used)
+        assert cache.get("a") == "1"
+
+        # Add new entry - should evict "b" (now the LRU)
+        cache.set("d", "4")
+
+        assert cache.get("b") is None  # Evicted (was LRU after "a" was accessed)
+        assert cache.get("a") == "1"   # Still present (was accessed recently)
+        assert cache.get("c") == "3"
+        assert cache.get("d") == "4"
 
     def test_thread_safety(self):
         """Cache is thread-safe for concurrent access"""

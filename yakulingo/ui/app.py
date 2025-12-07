@@ -62,9 +62,12 @@ class YakuLingoApp:
         self._copilot: Optional["CopilotHandler"] = None
         self.translation_service: Optional["TranslationService"] = None
 
+        # Cache base directory and glossary path (avoid recalculation)
+        self._base_dir = Path(__file__).parent.parent.parent
+        self._glossary_path = self._base_dir / 'glossary.csv'
+
         # Load settings
-        base_dir = Path(__file__).parent.parent.parent
-        self.state.reference_files = self.settings.get_reference_file_paths(base_dir)
+        self.state.reference_files = self.settings.get_reference_file_paths(self._base_dir)
 
         # UI references for refresh
         self._header_status = None
@@ -240,6 +243,47 @@ class YakuLingoApp:
         self._update_layout_classes()
         if self._result_panel:
             self._result_panel.refresh()
+
+    def _batch_refresh(self, refresh_types: set[str]):
+        """Batch refresh multiple UI components in a single operation.
+
+        This reduces redundant DOM updates by consolidating multiple refresh calls.
+
+        Args:
+            refresh_types: Set of refresh types to perform.
+                - 'result': Refresh result panel with layout update
+                - 'button': Update translate button state
+                - 'status': Refresh connection status indicator
+                - 'content': Full content refresh (includes layout update)
+                - 'history': Refresh history list
+                - 'tabs': Refresh tab buttons
+        """
+        # Layout update is needed for result/content refreshes
+        if 'result' in refresh_types or 'content' in refresh_types:
+            self._update_layout_classes()
+
+        # Perform refreshes in order of dependency
+        if 'content' in refresh_types:
+            if self._main_content:
+                self._main_content.refresh()
+        elif 'result' in refresh_types:
+            if self._result_panel:
+                self._result_panel.refresh()
+
+        if 'button' in refresh_types:
+            self._update_translate_button_state()
+
+        if 'status' in refresh_types:
+            if self._header_status:
+                self._header_status.refresh()
+
+        if 'history' in refresh_types:
+            if self._history_list:
+                self._history_list.refresh()
+
+        if 'tabs' in refresh_types:
+            if self._tabs_container:
+                self._tabs_container.refresh()
 
     def _update_layout_classes(self):
         """Update main area layout classes based on current state"""
@@ -591,15 +635,16 @@ class YakuLingoApp:
         self._refresh_content()
 
     def _get_effective_reference_files(self) -> list[Path] | None:
-        """Get reference files including bundled glossary if enabled"""
+        """Get reference files including bundled glossary if enabled.
+
+        Uses cached glossary path to avoid repeated path calculations.
+        """
         files = list(self.state.reference_files) if self.state.reference_files else []
 
-        # Add bundled glossary if enabled
+        # Add bundled glossary if enabled (uses cached path)
         if self.settings.use_bundled_glossary:
-            base_dir = Path(__file__).parent.parent.parent
-            glossary_path = base_dir / 'glossary.csv'
-            if glossary_path.exists() and glossary_path not in files:
-                files.insert(0, glossary_path)
+            if self._glossary_path.exists() and self._glossary_path not in files:
+                files.insert(0, self._glossary_path)
 
         return files if files else None
 
@@ -643,9 +688,8 @@ class YakuLingoApp:
         with client:
             if error_message:
                 self._notify_error(error_message)
-            self._refresh_result_panel()
-            self._update_translate_button_state()
-            self._refresh_status()
+            # Batch refresh: result panel, button state, and status in one operation
+            self._batch_refresh({'result', 'button', 'status'})
 
     # =========================================================================
     # Section 6: Text Translation

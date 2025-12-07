@@ -30,6 +30,18 @@ class CellTranslator:
     # Class-level compiled regex patterns (shared across all instances)
     _compiled_skip_regex = None
 
+    # Pre-compiled regex for Japanese detection (much faster than char-by-char loop)
+    # Includes: Hiragana, Katakana, CJK Kanji, and Japanese document symbols (▲△〇※)
+    _japanese_pattern = re.compile(
+        r'[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF\u25B2\u25B3\u3007\u203B]'
+    )
+
+    # Pre-compiled regex for kana detection (hiragana/katakana only, excludes kanji)
+    _kana_pattern = re.compile(r'[\u3040-\u309F\u30A0-\u30FF]')
+
+    # Pre-compiled regex for alphabetic detection (A-Z, a-z)
+    _alphabetic_pattern = re.compile(r'[A-Za-z]')
+
     @classmethod
     def _get_skip_regex(cls):
         """Get compiled skip regex patterns (lazy initialization)."""
@@ -99,18 +111,10 @@ class CellTranslator:
           - △ (U+25B3): White up-pointing triangle
           - 〇 (U+3007): Ideographic number zero
           - ※ (U+203B): Reference mark
+
+        Uses pre-compiled regex for better performance than char-by-char loop.
         """
-        for char in text:
-            code = ord(char)
-            if (0x3040 <= code <= 0x309F or  # Hiragana
-                0x30A0 <= code <= 0x30FF or  # Katakana
-                0x4E00 <= code <= 0x9FFF or  # CJK Kanji
-                code == 0x25B2 or            # ▲ (negative marker)
-                code == 0x25B3 or            # △
-                code == 0x3007 or            # 〇 (ideographic zero)
-                code == 0x203B):             # ※ (reference mark)
-                return True
-        return False
+        return bool(self._japanese_pattern.search(text))
 
     def _is_japanese_only(self, text: str) -> bool:
         """
@@ -130,28 +134,15 @@ class CellTranslator:
             "Hello" → False (English only, translate for X→JP)
             "Hello こんにちは" → False (mixed with alphabet, translate)
             "売上げ" → True (has hiragana, skip for X→JP)
+
+        Uses pre-compiled regex for better performance than char-by-char loop.
         """
-        has_kana = False
-        has_alphabetic = False
+        has_kana = bool(self._kana_pattern.search(text))
+        if not has_kana:
+            return False
 
-        for char in text:
-            code = ord(char)
-            # Check for Japanese-specific characters (hiragana/katakana only)
-            # CJK Kanji is excluded because it's shared with Chinese
-            if (0x3040 <= code <= 0x309F or  # Hiragana
-                0x30A0 <= code <= 0x30FF):   # Katakana
-                has_kana = True
-            # Check for alphabetic characters (A-Z, a-z)
-            elif (0x0041 <= code <= 0x005A or  # A-Z
-                  0x0061 <= code <= 0x007A):   # a-z
-                has_alphabetic = True
-
-            # Early exit if we found both
-            if has_kana and has_alphabetic:
-                return False
-
-        # Japanese-only if has kana but no alphabetic
-        return has_kana and not has_alphabetic
+        has_alphabetic = bool(self._alphabetic_pattern.search(text))
+        return not has_alphabetic
 
 
 class ParagraphTranslator:
@@ -169,6 +160,18 @@ class ParagraphTranslator:
 
     # Class-level compiled regex patterns (shared across all instances)
     _compiled_skip_regex = None
+
+    # Pre-compiled regex for Japanese detection (much faster than char-by-char loop)
+    # Includes: Hiragana, Katakana, CJK Kanji, and Japanese document symbols (▲△〇※)
+    _japanese_pattern = re.compile(
+        r'[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF\u25B2\u25B3\u3007\u203B]'
+    )
+
+    # Pre-compiled regex for kana detection (hiragana/katakana only, excludes kanji)
+    _kana_pattern = re.compile(r'[\u3040-\u309F\u30A0-\u30FF]')
+
+    # Pre-compiled regex for alphabetic detection (A-Z, a-z)
+    _alphabetic_pattern = re.compile(r'[A-Za-z]')
 
     @classmethod
     def _get_skip_regex(cls):
@@ -235,18 +238,10 @@ class ParagraphTranslator:
           - △ (U+25B3): White up-pointing triangle
           - 〇 (U+3007): Ideographic number zero
           - ※ (U+203B): Reference mark
+
+        Uses pre-compiled regex for better performance than char-by-char loop.
         """
-        for char in text:
-            code = ord(char)
-            if (0x3040 <= code <= 0x309F or  # Hiragana
-                0x30A0 <= code <= 0x30FF or  # Katakana
-                0x4E00 <= code <= 0x9FFF or  # CJK Kanji
-                code == 0x25B2 or            # ▲ (negative marker)
-                code == 0x25B3 or            # △
-                code == 0x3007 or            # 〇 (ideographic zero)
-                code == 0x203B):             # ※ (reference mark)
-                return True
-        return False
+        return bool(self._japanese_pattern.search(text))
 
     def _is_japanese_only(self, text: str) -> bool:
         """
@@ -258,28 +253,15 @@ class ParagraphTranslator:
         IMPORTANT: CJK Kanji alone does NOT count as "Japanese-only" because
         Chinese text also uses the same kanji range (U+4E00-U+9FFF).
         Only hiragana/katakana are unique to Japanese.
+
+        Uses pre-compiled regex for better performance than char-by-char loop.
         """
-        has_kana = False
-        has_alphabetic = False
+        has_kana = bool(self._kana_pattern.search(text))
+        if not has_kana:
+            return False
 
-        for char in text:
-            code = ord(char)
-            # Check for Japanese-specific characters (hiragana/katakana only)
-            # CJK Kanji is excluded because it's shared with Chinese
-            if (0x3040 <= code <= 0x309F or  # Hiragana
-                0x30A0 <= code <= 0x30FF):   # Katakana
-                has_kana = True
-            # Check for alphabetic characters (A-Z, a-z)
-            elif (0x0041 <= code <= 0x005A or  # A-Z
-                  0x0061 <= code <= 0x007A):   # a-z
-                has_alphabetic = True
-
-            # Early exit if we found both
-            if has_kana and has_alphabetic:
-                return False
-
-        # Japanese-only if has kana but no alphabetic
-        return has_kana and not has_alphabetic
+        has_alphabetic = bool(self._alphabetic_pattern.search(text))
+        return not has_alphabetic
 
     def extract_paragraph_text(self, paragraph) -> str:
         """

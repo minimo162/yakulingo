@@ -217,37 +217,25 @@ class ExcelProcessor(FileProcessor):
                                                 col_idx = start_col + col_offset
                                                 translatable_cells.append((row_idx, col_idx, str(value)))
 
-                                # Second pass: get font info only for translatable cells
+                                # Second pass: yield TextBlocks for translatable cells
+                                # Note: Font info is fetched during apply_translations, not here
+                                # This avoids redundant COM calls and improves performance
                                 for row_idx, col_idx, text in translatable_cells:
                                     col_letter = get_column_letter(col_idx)
-                                    try:
-                                        cell = sheet.range(row_idx, col_idx)
-
-                                        # Get font info
-                                        font_name = None
-                                        font_size = 11.0
-                                        try:
-                                            font_name = cell.font.name
-                                            font_size = cell.font.size or 11.0
-                                        except Exception as e:
-                                            logger.debug("Error reading font info for cell %s%d: %s", col_letter, row_idx, e)
-
-                                        yield TextBlock(
-                                            id=f"{sheet_name}_{col_letter}{row_idx}",
-                                            text=text,
-                                            location=f"{sheet_name}, {col_letter}{row_idx}",
-                                            metadata={
-                                                'sheet': sheet_name,
-                                                'sheet_idx': sheet_idx,
-                                                'row': row_idx,
-                                                'col': col_idx,
-                                                'type': 'cell',
-                                                'font_name': font_name,
-                                                'font_size': font_size,
-                                            }
-                                        )
-                                    except Exception as e:
-                                        logger.warning("Error extracting cell %s%d in sheet '%s': %s", col_letter, row_idx, sheet_name, e)
+                                    yield TextBlock(
+                                        id=f"{sheet_name}_{col_letter}{row_idx}",
+                                        text=text,
+                                        location=f"{sheet_name}, {col_letter}{row_idx}",
+                                        metadata={
+                                            'sheet': sheet_name,
+                                            'sheet_idx': sheet_idx,
+                                            'row': row_idx,
+                                            'col': col_idx,
+                                            'type': 'cell',
+                                            'font_name': None,  # Fetched in apply_translations
+                                            'font_size': 11.0,  # Default, actual fetched in apply_translations
+                                        }
+                                    )
                     except Exception as e:
                         logger.warning("Error reading used_range in sheet '%s': %s", sheet_name, e)
 
@@ -417,6 +405,81 @@ class ExcelProcessor(FileProcessor):
         finally:
             wb.close()
 
+    def _group_translations_by_sheet(
+        self,
+        translations: dict[str, str],
+        sheet_names: set[str],
+    ) -> dict[str, dict]:
+        """
+        Group translations by sheet name for efficient batch processing.
+
+        Args:
+            translations: dict mapping block_id to translated text
+            sheet_names: set of valid sheet names in the workbook
+
+        Returns:
+            dict mapping sheet_name to {
+                'cells': {cell_ref: translated_text},
+                'shapes': {shape_idx: translated_text},
+                'charts': {chart_idx: {'title': text, 'category': text, 'value': text}}
+            }
+
+        Block ID formats:
+            - Cells: "SheetName_A1", "SheetName_AA100"
+            - Shapes: "SheetName_shape_0", "SheetName_shape_1"
+            - Charts: "SheetName_chart_0_title", "SheetName_chart_0_axis_category"
+        """
+        result: dict[str, dict] = {}
+
+        for block_id, translated_text in translations.items():
+            # Find matching sheet name (handles sheet names with underscores)
+            sheet_name = None
+            for name in sheet_names:
+                if block_id.startswith(f"{name}_"):
+                    sheet_name = name
+                    break
+
+            if sheet_name is None:
+                continue
+
+            # Initialize sheet entry if needed
+            if sheet_name not in result:
+                result[sheet_name] = {'cells': {}, 'shapes': {}, 'charts': {}}
+
+            # Parse the suffix after sheet name
+            suffix = block_id[len(sheet_name) + 1:]  # +1 for underscore
+
+            if suffix.startswith("shape_"):
+                # Shape: "shape_0" -> shape_idx=0
+                try:
+                    shape_idx = int(suffix[6:])  # len("shape_") = 6
+                    result[sheet_name]['shapes'][shape_idx] = translated_text
+                except ValueError:
+                    logger.debug("Invalid shape block_id: %s", block_id)
+
+            elif suffix.startswith("chart_"):
+                # Chart: "chart_0_title" or "chart_0_axis_category"
+                parts = suffix.split("_")
+                if len(parts) >= 3:
+                    try:
+                        chart_idx = int(parts[1])
+                        if chart_idx not in result[sheet_name]['charts']:
+                            result[sheet_name]['charts'][chart_idx] = {}
+
+                        if parts[2] == "title":
+                            result[sheet_name]['charts'][chart_idx]['title'] = translated_text
+                        elif parts[2] == "axis" and len(parts) >= 4:
+                            axis_name = parts[3]  # "category" or "value"
+                            result[sheet_name]['charts'][chart_idx][axis_name] = translated_text
+                    except ValueError:
+                        logger.debug("Invalid chart block_id: %s", block_id)
+
+            else:
+                # Cell reference: "A1", "AA100", etc.
+                result[sheet_name]['cells'][suffix] = translated_text
+
+        return result
+
     def apply_translations(
         self,
         input_path: Path,
@@ -442,29 +505,28 @@ class ExcelProcessor(FileProcessor):
         xw,
         settings=None,
     ) -> None:
-        """Apply translations using xlwings"""
+        """Apply translations using xlwings
+
+        Optimized: Pre-groups translations by sheet to avoid O(sheets × translations) complexity.
+        """
         font_manager = FontManager(direction, settings)
         app = xw.App(visible=False, add_book=False)
 
         try:
             wb = app.books.open(str(input_path), ignore_read_only_recommended=True)
             try:
+                # Pre-group translations by sheet name for O(translations) instead of O(sheets × translations)
+                sheet_names = {sheet.name for sheet in wb.sheets}
+                translations_by_sheet = self._group_translations_by_sheet(translations, sheet_names)
+
                 for sheet in wb.sheets:
                     sheet_name = sheet.name
+                    sheet_translations = translations_by_sheet.get(sheet_name, {})
 
                     # === Apply to cells ===
-                    # Use direct cell access instead of iterating used_range.rows
-                    # to avoid COM errors with certain Excel objects
-                    for block_id, translated_text in translations.items():
-                        if not block_id.startswith(f"{sheet_name}_"):
-                            continue
-                        # Skip non-cell blocks (shapes, charts)
-                        if "_shape_" in block_id or "_chart_" in block_id:
-                            continue
-
+                    cell_translations = sheet_translations.get('cells', {})
+                    for cell_ref, translated_text in cell_translations.items():
                         try:
-                            # Parse cell reference from block_id: "SheetName_A1" -> "A1"
-                            cell_ref = block_id[len(sheet_name) + 1:]  # +1 for underscore
                             cell = sheet.range(cell_ref)
 
                             # Get original font info
@@ -474,7 +536,7 @@ class ExcelProcessor(FileProcessor):
                                 original_font_name = cell.font.name
                                 original_font_size = cell.font.size or 11.0
                             except Exception as e:
-                                logger.debug("Error reading font for cell %s: %s", block_id, e)
+                                logger.debug("Error reading font for cell %s_%s: %s", sheet_name, cell_ref, e)
 
                             # Get new font settings
                             new_font_name, new_font_size = font_manager.select_font(
@@ -490,52 +552,53 @@ class ExcelProcessor(FileProcessor):
                                 cell.font.name = new_font_name
                                 cell.font.size = new_font_size
                             except Exception as e:
-                                logger.debug("Error applying font to cell %s: %s", block_id, e)
+                                logger.debug("Error applying font to cell %s_%s: %s", sheet_name, cell_ref, e)
 
                         except Exception as e:
-                            # Log COM errors and other exceptions but continue processing
-                            logger.warning("Error applying translation to cell %s: %s", block_id, e)
+                            logger.warning("Error applying translation to cell %s_%s: %s", sheet_name, cell_ref, e)
 
                     # === Apply to shapes ===
-                    # Wrap shape iteration in try-except to handle COM errors
-                    try:
-                        for shape_idx, shape in enumerate(sheet.shapes):
-                            block_id = f"{sheet_name}_shape_{shape_idx}"
-                            if block_id in translations:
-                                try:
-                                    shape.text = translations[block_id]
-                                except Exception as e:
-                                    logger.debug("Error applying translation to shape %s: %s", block_id, e)
-                    except Exception as e:
-                        logger.warning("Error iterating shapes in sheet '%s': %s", sheet_name, e)
+                    shape_translations = sheet_translations.get('shapes', {})
+                    if shape_translations:
+                        try:
+                            for shape_idx, shape in enumerate(sheet.shapes):
+                                if shape_idx in shape_translations:
+                                    try:
+                                        shape.text = shape_translations[shape_idx]
+                                    except Exception as e:
+                                        logger.debug("Error applying translation to shape %d in '%s': %s", shape_idx, sheet_name, e)
+                        except Exception as e:
+                            logger.warning("Error iterating shapes in sheet '%s': %s", sheet_name, e)
 
                     # === Apply to chart titles and labels ===
-                    # Wrap chart iteration in try-except to handle COM errors
-                    try:
-                        for chart_idx, chart in enumerate(sheet.charts):
-                            try:
-                                api_chart = chart.api[1]
+                    chart_translations = sheet_translations.get('charts', {})
+                    if chart_translations:
+                        try:
+                            for chart_idx, chart in enumerate(sheet.charts):
+                                if chart_idx not in chart_translations:
+                                    continue
+                                try:
+                                    api_chart = chart.api[1]
+                                    chart_data = chart_translations[chart_idx]
 
-                                # Chart title
-                                title_id = f"{sheet_name}_chart_{chart_idx}_title"
-                                if title_id in translations and api_chart.HasTitle:
-                                    api_chart.ChartTitle.Text = translations[title_id]
+                                    # Chart title
+                                    if 'title' in chart_data and api_chart.HasTitle:
+                                        api_chart.ChartTitle.Text = chart_data['title']
 
-                                # Axis titles
-                                for axis_type, axis_name in [(1, 'category'), (2, 'value')]:
-                                    axis_id = f"{sheet_name}_chart_{chart_idx}_axis_{axis_name}"
-                                    if axis_id in translations:
-                                        try:
-                                            axis = api_chart.Axes(axis_type)
-                                            if axis.HasTitle:
-                                                axis.AxisTitle.Text = translations[axis_id]
-                                        except Exception as e:
-                                            logger.debug("Error applying translation to axis %s: %s", axis_id, e)
+                                    # Axis titles
+                                    for axis_type, axis_name in [(1, 'category'), (2, 'value')]:
+                                        if axis_name in chart_data:
+                                            try:
+                                                axis = api_chart.Axes(axis_type)
+                                                if axis.HasTitle:
+                                                    axis.AxisTitle.Text = chart_data[axis_name]
+                                            except Exception as e:
+                                                logger.debug("Error applying translation to %s axis of chart %d: %s", axis_name, chart_idx, e)
 
-                            except Exception as e:
-                                logger.debug("Error applying translation to chart %d in sheet '%s': %s", chart_idx, sheet_name, e)
-                    except Exception as e:
-                        logger.warning("Error iterating charts in sheet '%s': %s", sheet_name, e)
+                                except Exception as e:
+                                    logger.debug("Error applying translation to chart %d in sheet '%s': %s", chart_idx, sheet_name, e)
+                        except Exception as e:
+                            logger.warning("Error iterating charts in sheet '%s': %s", sheet_name, e)
 
                 # Save to output path
                 try:
@@ -557,47 +620,54 @@ class ExcelProcessor(FileProcessor):
         direction: str,
         settings=None,
     ) -> None:
-        """Apply translations using openpyxl (fallback - cells only)"""
+        """Apply translations using openpyxl (fallback - cells only)
+
+        Optimized: Direct cell access instead of iterating all cells.
+        Only accesses cells that need translation.
+        """
         wb = openpyxl.load_workbook(input_path)
         font_manager = FontManager(direction, settings)
 
         try:
+            # Pre-group translations by sheet for efficient processing
+            sheet_names = set(wb.sheetnames)
+            translations_by_sheet = self._group_translations_by_sheet(translations, sheet_names)
+
             for sheet_name in wb.sheetnames:
                 sheet = wb[sheet_name]
+                sheet_translations = translations_by_sheet.get(sheet_name, {})
+                cell_translations = sheet_translations.get('cells', {})
 
-                for row in sheet.iter_rows():
-                    for cell in row:
-                        # Use cell's actual row and column attributes
-                        row_idx = cell.row
-                        col_idx = cell.column
-                        col_letter = get_column_letter(col_idx)
-                        block_id = f"{sheet_name}_{col_letter}{row_idx}"
+                # Direct cell access - only touch cells that need translation
+                for cell_ref, translated_text in cell_translations.items():
+                    try:
+                        cell = sheet[cell_ref]
 
-                        if block_id in translations:
-                            translated_text = translations[block_id]
+                        original_font_name = cell.font.name if cell.font else None
+                        original_font_size = cell.font.size if cell.font and cell.font.size else 11.0
 
-                            original_font_name = cell.font.name if cell.font else None
-                            original_font_size = cell.font.size if cell.font and cell.font.size else 11.0
+                        new_font_name, new_font_size = font_manager.select_font(
+                            original_font_name,
+                            original_font_size
+                        )
 
-                            new_font_name, new_font_size = font_manager.select_font(
-                                original_font_name,
-                                original_font_size
+                        cell.value = translated_text
+
+                        if cell.font:
+                            cell.font = Font(
+                                name=new_font_name,
+                                size=new_font_size,
+                                bold=cell.font.bold,
+                                italic=cell.font.italic,
+                                underline=cell.font.underline,
+                                strike=cell.font.strike,
+                                color=cell.font.color,
                             )
+                        else:
+                            cell.font = Font(name=new_font_name, size=new_font_size)
 
-                            cell.value = translated_text
-
-                            if cell.font:
-                                cell.font = Font(
-                                    name=new_font_name,
-                                    size=new_font_size,
-                                    bold=cell.font.bold,
-                                    italic=cell.font.italic,
-                                    underline=cell.font.underline,
-                                    strike=cell.font.strike,
-                                    color=cell.font.color,
-                                )
-                            else:
-                                cell.font = Font(name=new_font_name, size=new_font_size)
+                    except Exception as e:
+                        logger.warning("Error applying translation to cell %s_%s: %s", sheet_name, cell_ref, e)
 
             wb.save(output_path)
         finally:

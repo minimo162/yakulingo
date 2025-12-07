@@ -1356,6 +1356,12 @@ textarea:focus-visible {
     justify-content: center;
 }
 
+/* File panel card matches text input panel max-width */
+.main-area.file-mode .input-panel .main-card {
+    max-width: var(--input-panel-max-width);
+    width: 100%;
+}
+
 /* === Media Queries for Resolution Fallback === */
 /* These provide CSS-only fallback when JavaScript hasn't updated CSS variables yet */
 

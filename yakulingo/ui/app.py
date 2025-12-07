@@ -100,6 +100,10 @@ class YakuLingoApp:
         # Login polling state (prevents duplicate polling)
         self._login_polling_active = False
 
+        # Hotkey manager for quick translation (Ctrl+J)
+        self._hotkey_manager = None
+        self._quick_translate_controller = None
+
     @property
     def copilot(self) -> "CopilotHandler":
         """Lazy-load CopilotHandler for faster startup."""
@@ -107,6 +111,51 @@ class YakuLingoApp:
             from yakulingo.services.copilot_handler import CopilotHandler
             self._copilot = CopilotHandler()
         return self._copilot
+
+    def start_hotkey_manager(self):
+        """Start the global hotkey manager for quick translation (Ctrl+J)."""
+        import sys
+        if sys.platform != 'win32':
+            logger.info("Hotkey manager only available on Windows")
+            return
+
+        try:
+            from yakulingo.services.hotkey_manager import get_hotkey_manager
+            from yakulingo.ui.components.quick_popup import QuickTranslateController
+
+            self._hotkey_manager = get_hotkey_manager()
+
+            # Create controller for handling translations
+            self._quick_translate_controller = QuickTranslateController(
+                translation_service=self.translation_service,
+                copilot_handler=self._copilot,
+            )
+
+            # Set callback
+            self._hotkey_manager.set_callback(self._on_hotkey_triggered)
+            self._hotkey_manager.start()
+            logger.info("Hotkey manager started (Ctrl+J)")
+        except Exception as e:
+            logger.error(f"Failed to start hotkey manager: {e}")
+
+    def stop_hotkey_manager(self):
+        """Stop the global hotkey manager."""
+        if self._hotkey_manager:
+            try:
+                self._hotkey_manager.stop()
+                logger.info("Hotkey manager stopped")
+            except Exception as e:
+                logger.debug(f"Error stopping hotkey manager: {e}")
+            self._hotkey_manager = None
+
+    def _on_hotkey_triggered(self, content):
+        """Handle hotkey trigger - translate content and show popup.
+
+        Args:
+            content: Either text (str) or image data (bytes) from clipboard
+        """
+        if self._quick_translate_controller:
+            self._quick_translate_controller.translate_and_show(content)
 
     # =========================================================================
     # Section 2: Connection & Startup
@@ -217,6 +266,9 @@ class YakuLingoApp:
         if self._client:
             with self._client:
                 ui.notify('Ready', type='positive', position='bottom-right', timeout=2000)
+
+        # Start hotkey manager for quick translation (Ctrl+J)
+        self.start_hotkey_manager()
 
     async def _wait_for_login_completion(self):
         """ログイン完了をバックグラウンドでポーリング待機。
@@ -1855,6 +1907,9 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
         cleanup_done = True
 
         logger.info("Shutting down YakuLingo...")
+
+        # Stop hotkey manager
+        yakulingo_app.stop_hotkey_manager()
 
         # Cancel any ongoing translation (prevents incomplete output files)
         if yakulingo_app.translation_service is not None:

@@ -24,6 +24,13 @@ logger = logging.getLogger(__name__)
 
 
 # =============================================================================
+# Font Path Cache (module-level for performance)
+# =============================================================================
+# Cache for font file path lookups (font_name -> path or None)
+_font_path_cache: dict[str, Optional[str]] = {}
+
+
+# =============================================================================
 # Lazy Imports
 # =============================================================================
 _pymupdf = None
@@ -108,22 +115,42 @@ def _find_font_file(font_names: list[str]) -> Optional[str]:
     """
     Search for font file in system font directories.
 
+    Uses module-level cache to avoid repeated filesystem lookups.
+
     Args:
         font_names: List of font file names to search for (in priority order)
 
     Returns:
         Full path to font file if found, None otherwise
     """
+    # Create cache key from sorted font names
+    cache_key = "|".join(font_names)
+
+    # Check cache first
+    if cache_key in _font_path_cache:
+        return _font_path_cache[cache_key]
+
+    # Also check individual font names in cache (may have been found earlier)
+    for font_name in font_names:
+        if font_name in _font_path_cache and _font_path_cache[font_name]:
+            return _font_path_cache[font_name]
+
     font_dirs = _get_system_font_dirs()
+    result = None
 
     for font_name in font_names:
+        # Skip if already known to not exist
+        if font_name in _font_path_cache and _font_path_cache[font_name] is None:
+            continue
+
         for font_dir in font_dirs:
             if not os.path.isdir(font_dir):
                 continue
             # Direct path
             direct_path = os.path.join(font_dir, font_name)
             if os.path.isfile(direct_path):
-                return direct_path
+                result = direct_path
+                break
             # Recursive search (2 levels deep for Linux font structure)
             # Linux fonts are often in subdirectories like:
             # /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
@@ -135,7 +162,8 @@ def _find_font_file(font_names: list[str]) -> Optional[str]:
                         # Level 1 subdirectory
                         font_path = os.path.join(subdir_path, font_name)
                         if os.path.isfile(font_path):
-                            return font_path
+                            result = font_path
+                            break
                         # Level 2 subdirectory (for Linux font structure)
                         try:
                             for subsubdir in os.listdir(subdir_path):
@@ -143,13 +171,29 @@ def _find_font_file(font_names: list[str]) -> Optional[str]:
                                 if os.path.isdir(subsubdir_path):
                                     font_path = os.path.join(subsubdir_path, font_name)
                                     if os.path.isfile(font_path):
-                                        return font_path
+                                        result = font_path
+                                        break
                         except PermissionError:
                             continue
+                    if result:
+                        break
             except PermissionError:
                 continue
 
-    return None
+            if result:
+                break
+
+        if result:
+            # Cache the found path for this font name
+            _font_path_cache[font_name] = result
+            break
+        else:
+            # Mark as not found
+            _font_path_cache[font_name] = None
+
+    # Cache the result for this font name list
+    _font_path_cache[cache_key] = result
+    return result
 
 
 # Display name to font file mapping (for UI font selection)
@@ -369,6 +413,16 @@ class FontRegistry:
         # Maps font name -> pdfminer font object (PDFCIDFont or other)
         self.fontmap: dict[str, Any] = {}
 
+        # Performance caches
+        # Glyph ID cache: (font_id, char) -> glyph_id
+        self._glyph_id_cache: dict[tuple[str, str], int] = {}
+        # Character width cache: (font_id, char) -> normalized_width (multiply by font_size)
+        self._char_width_cache: dict[tuple[str, str], float] = {}
+        # Existing CID font cache (None = not yet checked, "" = no CID font found)
+        self._existing_cid_font_cache: Optional[str] = None
+        # Font selection cache: (first_special_char, target_lang) -> font_id
+        self._font_selection_cache: dict[tuple[str, str], str] = {}
+
     def register_font(self, lang: str) -> str:
         """
         Register font and return ID (cross-platform).
@@ -497,13 +551,24 @@ class FontRegistry:
         CID fonts are preferred because they typically contain
         both CJK characters and Latin characters.
 
+        Uses cache to avoid repeated lookups.
+
         Returns:
             Font ID of existing CID font, or None if not found
         """
+        # Check cache (None = not checked, "" = no CID font)
+        if self._existing_cid_font_cache is not None:
+            return self._existing_cid_font_cache if self._existing_cid_font_cache else None
+
+        # Search for existing CID font
         for key, font_info in self.fonts.items():
             if key.startswith("_existing_") and font_info.font_type == FontType.CID:
                 logger.debug("Using existing CID font: %s", font_info.font_id)
+                self._existing_cid_font_cache = font_info.font_id
                 return font_info.font_id
+
+        # No CID font found - cache empty string
+        self._existing_cid_font_cache = ""
         return None
 
     def _get_font_id_for_lang(self, lang: str) -> str:
@@ -523,6 +588,8 @@ class FontRegistry:
         Therefore, we must use the actual glyph index from has_glyph(),
         not the Unicode code point.
 
+        Uses internal cache to avoid repeated lookups.
+
         Args:
             font_id: Font ID (F1, F2, ...)
             char: Single character to look up
@@ -530,20 +597,30 @@ class FontRegistry:
         Returns:
             Glyph index for the character (for Identity-H without CIDToGIDMap)
         """
+        # Check cache first
+        cache_key = (font_id, char)
+        if cache_key in self._glyph_id_cache:
+            return self._glyph_id_cache[cache_key]
+
+        glyph_idx = 0  # Default: .notdef glyph
         font_obj = self._font_objects.get(font_id)
         if font_obj:
             try:
-                glyph_idx = font_obj.has_glyph(ord(char))
-                if glyph_idx:
-                    return glyph_idx
+                idx = font_obj.has_glyph(ord(char))
+                if idx:
+                    glyph_idx = idx
             except Exception as e:
                 logger.debug("Error getting glyph index for '%s': %s", char, e)
-        # Fallback: use .notdef glyph (index 0) for missing characters
-        return 0
+
+        # Cache the result
+        self._glyph_id_cache[cache_key] = glyph_idx
+        return glyph_idx
 
     def get_char_width(self, font_id: str, char: str, font_size: float) -> float:
         """
         Get character width in points for the specified font and size.
+
+        Uses internal cache for normalized width (scaled by font_size at runtime).
 
         Args:
             font_id: Font ID
@@ -553,52 +630,52 @@ class FontRegistry:
         Returns:
             Character width in points
         """
+        # Check cache first (stores normalized width, multiply by font_size)
+        cache_key = (font_id, char)
+        if cache_key in self._char_width_cache:
+            return self._char_width_cache[cache_key] * font_size
+
+        normalized_width = None
         font_obj = self._font_objects.get(font_id)
         if font_obj:
             try:
-                # glyph_advance returns (width, height) tuple normalized to 1.0
+                # glyph_advance returns normalized width (0.0-1.0 range)
                 advance = font_obj.glyph_advance(ord(char))
                 if advance:
-                    return advance * font_size
+                    normalized_width = advance
             except Exception as e:
                 logger.debug("Error getting char width for '%s': %s", char, e)
 
-        # Fallback: estimate based on character properties (not font)
-        # This provides accurate width estimation for existing PDF fonts
-        return self._estimate_char_width(char, font_size)
+        if normalized_width is None:
+            # Fallback: estimate based on character properties
+            # Store estimated width normalized to 1.0
+            normalized_width = self._estimate_char_width_normalized(char)
 
-    def _estimate_char_width(self, char: str, font_size: float) -> float:
+        # Cache normalized width
+        self._char_width_cache[cache_key] = normalized_width
+        return normalized_width * font_size
+
+    def _estimate_char_width_normalized(self, char: str) -> float:
         """
-        Estimate character width based on Unicode properties.
+        Estimate normalized character width (0.0-1.0) based on Unicode properties.
 
-        Used as fallback when font metrics are not available (e.g., existing PDF fonts).
-        More accurate than simple CJK/non-CJK distinction.
+        Used as fallback when font metrics are not available.
 
         Args:
             char: Single character
-            font_size: Font size in points
 
         Returns:
-            Estimated character width in points
+            Normalized character width (multiply by font_size for points)
         """
         code = ord(char)
 
-        # Half-width characters (check first to handle halfwidth katakana correctly)
-        # - Basic Latin (0020-007F)
-        # - Latin-1 Supplement (0080-00FF)
-        # - Halfwidth Katakana (FF61-FF9F) - must check before fullwidth forms
+        # Half-width characters -> 0.5
         if (0x0020 <= code <= 0x007F or  # Basic Latin
             0x0080 <= code <= 0x00FF or  # Latin-1 Supplement
             0xFF61 <= code <= 0xFF9F):   # Halfwidth Katakana
-            return font_size * 0.5
+            return 0.5
 
-        # Full-width characters (return font_size)
-        # - Hiragana (3040-309F)
-        # - Katakana (30A0-30FF)
-        # - CJK Unified Ideographs (4E00-9FFF)
-        # - CJK Extension A (3400-4DBF)
-        # - Fullwidth Forms (FF00-FF60, FFA0-FFEF) - excluding halfwidth katakana
-        # - Hangul Syllables (AC00-D7AF)
+        # Full-width characters -> 1.0
         if (0x3040 <= code <= 0x309F or  # Hiragana
             0x30A0 <= code <= 0x30FF or  # Katakana
             0x4E00 <= code <= 0x9FFF or  # CJK Unified Ideographs
@@ -607,15 +684,30 @@ class FontRegistry:
             0xFFA0 <= code <= 0xFFEF or  # Fullwidth Forms (after halfwidth)
             0xAC00 <= code <= 0xD7AF or  # Hangul Syllables
             0x3000 <= code <= 0x303F):   # CJK Symbols and Punctuation
-            return font_size
+            return 1.0
 
-        # Other characters: use character's East Asian Width property
-        # For simplicity, treat as full-width if code > 0x2E7F (roughly CJK range)
+        # Other characters: treat as full-width if in CJK range
         if code > 0x2E7F:
-            return font_size
+            return 1.0
 
-        # Default: half-width for remaining characters
-        return font_size * 0.5
+        # Default: half-width
+        return 0.5
+
+    def _estimate_char_width(self, char: str, font_size: float) -> float:
+        """
+        Estimate character width based on Unicode properties.
+
+        Used as fallback when font metrics are not available (e.g., existing PDF fonts).
+        Delegates to _estimate_char_width_normalized for the actual calculation.
+
+        Args:
+            char: Single character
+            font_size: Font size in points
+
+        Returns:
+            Estimated character width in points
+        """
+        return self._estimate_char_width_normalized(char) * font_size
 
     def embed_fonts(self, doc) -> list[str]:
         """
@@ -783,6 +875,10 @@ class FontRegistry:
         self._font_by_id[font_id] = font_info
         # Use font_name as key since it's not a language code
         self.fonts[f"_existing_{font_name}"] = font_info
+
+        # Invalidate CID font cache (new CID font may be available)
+        if font_type == FontType.CID:
+            self._existing_cid_font_cache = None
 
         logger.debug(
             "Registered existing font: id=%s, name=%s, type=%s",

@@ -52,6 +52,7 @@ class AppSettings:
 
     # Text Translation Options
     text_translation_style: str = "concise"  # テキスト翻訳の英訳スタイル: "standard", "concise", "minimal"
+    use_bundled_glossary: bool = False       # 同梱の glossary.csv を使用するか
 
     # Font Settings (ファイル翻訳用 - 全形式共通)
     # フォントサイズ調整（JP→EN時）: 0で調整なし、負値で縮小
@@ -136,6 +137,7 @@ class AppSettings:
             "translation_style": self.translation_style,
             # Text Translation Options
             "text_translation_style": self.text_translation_style,
+            "use_bundled_glossary": self.use_bundled_glossary,
             # Font Settings
             "font_size_adjustment_jp_to_en": self.font_size_adjustment_jp_to_en,
             "font_size_min": self.font_size_min,

@@ -217,37 +217,25 @@ class ExcelProcessor(FileProcessor):
                                                 col_idx = start_col + col_offset
                                                 translatable_cells.append((row_idx, col_idx, str(value)))
 
-                                # Second pass: get font info only for translatable cells
+                                # Second pass: yield TextBlocks for translatable cells
+                                # Note: Font info is fetched during apply_translations, not here
+                                # This avoids redundant COM calls and improves performance
                                 for row_idx, col_idx, text in translatable_cells:
                                     col_letter = get_column_letter(col_idx)
-                                    try:
-                                        cell = sheet.range(row_idx, col_idx)
-
-                                        # Get font info
-                                        font_name = None
-                                        font_size = 11.0
-                                        try:
-                                            font_name = cell.font.name
-                                            font_size = cell.font.size or 11.0
-                                        except Exception as e:
-                                            logger.debug("Error reading font info for cell %s%d: %s", col_letter, row_idx, e)
-
-                                        yield TextBlock(
-                                            id=f"{sheet_name}_{col_letter}{row_idx}",
-                                            text=text,
-                                            location=f"{sheet_name}, {col_letter}{row_idx}",
-                                            metadata={
-                                                'sheet': sheet_name,
-                                                'sheet_idx': sheet_idx,
-                                                'row': row_idx,
-                                                'col': col_idx,
-                                                'type': 'cell',
-                                                'font_name': font_name,
-                                                'font_size': font_size,
-                                            }
-                                        )
-                                    except Exception as e:
-                                        logger.warning("Error extracting cell %s%d in sheet '%s': %s", col_letter, row_idx, sheet_name, e)
+                                    yield TextBlock(
+                                        id=f"{sheet_name}_{col_letter}{row_idx}",
+                                        text=text,
+                                        location=f"{sheet_name}, {col_letter}{row_idx}",
+                                        metadata={
+                                            'sheet': sheet_name,
+                                            'sheet_idx': sheet_idx,
+                                            'row': row_idx,
+                                            'col': col_idx,
+                                            'type': 'cell',
+                                            'font_name': None,  # Fetched in apply_translations
+                                            'font_size': 11.0,  # Default, actual fetched in apply_translations
+                                        }
+                                    )
                     except Exception as e:
                         logger.warning("Error reading used_range in sheet '%s': %s", sheet_name, e)
 

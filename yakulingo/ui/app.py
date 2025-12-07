@@ -1077,7 +1077,9 @@ class YakuLingoApp:
             logger.exception("Long text translation error: %s", e)
             with client:
                 ui.notify(f'エラー: {e}', type='negative')
-            # Clean up temp file on error
+
+        finally:
+            # Clean up temp file (after translation or on error)
             temp_path.unlink(missing_ok=True)
 
     async def _translate_text(self):

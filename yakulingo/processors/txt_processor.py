@@ -209,7 +209,8 @@ class TxtProcessor(FileProcessor):
         for i, (orig, trans) in enumerate(zip(original_paragraphs, translated_paragraphs)):
             bilingual_parts.append(f"【原文】\n{orig}\n\n【訳文】\n{trans}")
 
-        output_path.write_text('\n\n' + '─' * 40 + '\n\n'.join(bilingual_parts), encoding='utf-8')
+        separator = '\n\n' + '─' * 40 + '\n\n'
+        output_path.write_text(separator.join(bilingual_parts), encoding='utf-8')
         logger.info("Bilingual TXT created: %s", output_path)
 
     def export_glossary_csv(

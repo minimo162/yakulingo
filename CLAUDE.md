@@ -98,6 +98,7 @@ YakuLingo/
 │   │   ├── word_processor.py      # .docx/.doc handling
 │   │   ├── pptx_processor.py      # .pptx/.ppt handling
 │   │   ├── pdf_processor.py       # .pdf handling
+│   │   ├── txt_processor.py       # .txt handling (plain text)
 │   │   ├── pdf_font_manager.py    # PDF font management (PDFMathTranslate compliant)
 │   │   ├── pdf_operators.py       # PDF low-level operator generation
 │   │   ├── font_manager.py        # Font detection & mapping
@@ -180,7 +181,7 @@ YakuLingo/
 
 ```python
 # Key enums (yakulingo/models/types.py)
-FileType: EXCEL, WORD, POWERPOINT, PDF
+FileType: EXCEL, WORD, POWERPOINT, PDF, TEXT
 TranslationStatus: PENDING, PROCESSING, COMPLETED, FAILED, CANCELLED
 TranslationPhase: EXTRACTING, OCR, TRANSLATING, APPLYING, COMPLETE  # Progress phases (OCR = layout analysis for PDF)
 
@@ -294,6 +295,10 @@ class PptxProcessor:
 class PdfProcessor:
     def create_bilingual_pdf(original, translated, output)       # Interleaved pages
     def export_glossary_csv(translations, output)                # Source/translation pairs
+
+class TxtProcessor:
+    def create_bilingual_document(original, translated, output)  # Interleaved paragraphs with separators
+    def export_glossary_csv(translations, original_texts, output)  # Source/translation pairs
 ```
 
 ## UI Design System (Material Design 3)
@@ -504,7 +509,6 @@ async def _translate_text(self):
   "max_chars_per_batch": 7000,
   "request_timeout": 120,
   "max_retries": 3,
-  "copilot_char_limit": 7500,
   "bilingual_output": false,
   "export_glossary": false,
   "translation_style": "concise",
@@ -602,11 +606,11 @@ M365 Copilot has different input limits based on license:
 - **Free license**: 8,000 characters max
 - **Paid license**: 128,000 characters max
 
-The application handles this with dynamic prompt switching:
-- If prompt exceeds `copilot_char_limit` (default: 7,500), saves prompt to temp file
-- Attaches file to Copilot instead of direct input
-- Uses trigger message: "Please follow the instructions in the attached file and translate accordingly."
-- This allows compatibility with both Free and Paid Copilot users
+The application handles long text via file translation:
+- Text translation limited to 5,000 characters (TEXT_TRANSLATION_CHAR_LIMIT)
+- Texts exceeding limit automatically switch to file translation mode
+- File translation uses batch processing with max 7,000 chars per batch
+- This ensures compatibility with both Free and Paid Copilot users
 
 ### Browser Automation Reliability
 The handler uses explicit waits instead of fixed delays:
@@ -895,10 +899,15 @@ Based on recent commits:
   - **Panel layout**: Translation result panel elements aligned to 2/3 width with center alignment
 - **Global Hotkey (Ctrl+J)**:
   - **Quick translation**: Select text in any app, press Ctrl+J to translate
-  - **Character limit**: 5,000 chars max for text translation (longer texts should use file translation)
-  - **User notification**: Shows warning if text exceeds limit, suggests file translation
+  - **Character limit**: 5,000 chars max for text translation
+  - **Auto file translation**: Texts exceeding limit automatically switch to file translation mode (saves as .txt, translates via batch processing)
   - **SendInput API**: Uses modern Windows API for reliable Ctrl+C simulation
   - **Clipboard handling**: Retries up to 10 times with 100ms intervals
+- **TXT File Support**:
+  - **TxtProcessor**: New processor for plain text (.txt) files
+  - **Paragraph-based splitting**: Splits by blank lines, chunks long paragraphs (3,000 chars max)
+  - **Bilingual output**: Interleaved original/translated with separators
+  - **Glossary CSV export**: Source/translation pairs for reuse
 
 ## Git Workflow
 

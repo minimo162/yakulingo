@@ -182,7 +182,7 @@ function Invoke-Setup {
     }
 
     # ============================================================
-    # Step 1: Prepare destination
+    # Step 1: Prepare destination (backup user data first)
     # ============================================================
     Write-Status -Message "Preparing destination..." -Progress -Step "Step 1/2: Preparing"
     if (-not $GuiMode) {
@@ -190,7 +190,31 @@ function Invoke-Setup {
         Write-Host "[1/2] Preparing destination..." -ForegroundColor Yellow
     }
 
+    # Backup user data files before removing the directory
+    $BackupFiles = @()
+    $UserDataFiles = @("glossary.csv", "config\settings.json")
+    $BackupDir = Join-Path $env:TEMP "YakuLingo_Backup_$(Get-Date -Format 'yyyyMMddHHmmss')"
+
     if (Test-Path $SetupPath) {
+        foreach ($file in $UserDataFiles) {
+            $filePath = Join-Path $SetupPath $file
+            if (Test-Path $filePath) {
+                if (-not (Test-Path $BackupDir)) {
+                    New-Item -ItemType Directory -Path $BackupDir -Force | Out-Null
+                }
+                $backupPath = Join-Path $BackupDir $file
+                $backupParent = Split-Path -Parent $backupPath
+                if (-not (Test-Path $backupParent)) {
+                    New-Item -ItemType Directory -Path $backupParent -Force | Out-Null
+                }
+                Copy-Item -Path $filePath -Destination $backupPath -Force
+                $BackupFiles += $file
+                if (-not $GuiMode) {
+                    Write-Host "      Backed up: $file" -ForegroundColor Gray
+                }
+            }
+        }
+
         if (-not $GuiMode) {
             Write-Host "      Removing existing files: $SetupPath" -ForegroundColor Gray
         }
@@ -232,6 +256,37 @@ function Invoke-Setup {
 
     if (-not $GuiMode) {
         Write-Host "[OK] Extraction completed" -ForegroundColor Green
+    }
+
+    # ============================================================
+    # Restore backed up user data files
+    # ============================================================
+    if ($BackupFiles.Count -gt 0) {
+        if (-not $GuiMode) {
+            Write-Host ""
+            Write-Host "      Restoring user data..." -ForegroundColor Gray
+        }
+        foreach ($file in $BackupFiles) {
+            $backupPath = Join-Path $BackupDir $file
+            $restorePath = Join-Path $SetupPath $file
+            if (Test-Path $backupPath) {
+                $restoreParent = Split-Path -Parent $restorePath
+                if (-not (Test-Path $restoreParent)) {
+                    New-Item -ItemType Directory -Path $restoreParent -Force | Out-Null
+                }
+                Copy-Item -Path $backupPath -Destination $restorePath -Force
+                if (-not $GuiMode) {
+                    Write-Host "      Restored: $file" -ForegroundColor Gray
+                }
+            }
+        }
+        # Clean up backup directory
+        if (Test-Path $BackupDir) {
+            Remove-Item -Path $BackupDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        if (-not $GuiMode) {
+            Write-Host "[OK] User data restored" -ForegroundColor Green
+        }
     }
 
     # ============================================================

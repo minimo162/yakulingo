@@ -510,7 +510,7 @@ class AutoUpdater:
         "uv.toml",          # UV設定
         "YakuLingo.exe",    # 起動ランチャー
         "README.md",        # ドキュメント
-        "glossary.csv",     # デフォルト用語集
+        # Note: glossary.csv はユーザー編集可能なため、アップデートで上書きしない
     ]
     # Note: config/settings.json は config/ フォルダごと上書きされる
 

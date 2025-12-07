@@ -142,10 +142,11 @@ class YakuLingoApp:
         """Handle hotkey trigger - set text and translate in main app.
 
         Args:
-            text: Text from clipboard (empty string if none)
+            text: Text from clipboard (only called when text is available)
         """
+        # Double-check: text should always be non-empty (HotkeyManager filters empty)
         if not text:
-            logger.debug("Hotkey triggered but no text selected")
+            logger.debug("Hotkey triggered but no text provided")
             return
 
         # Skip if already translating

@@ -1276,7 +1276,7 @@ class YakuLingoApp:
         Build prompt for follow-up actions.
 
         Args:
-            action_type: 'review', 'summarize', 'question', 'reply', or 'easy_explain'
+            action_type: 'review', 'summarize', 'question', or 'reply'
             source_text: Original source text
             translation: Current translation
             content: Additional content (question text, reply intent, etc.)
@@ -1288,45 +1288,6 @@ class YakuLingoApp:
 
         # Prompt file mapping and fallback templates
         prompt_configs = {
-            'easy_explain': {
-                'file': 'text_easy_explain.txt',
-                'fallback': f"""以下の英文を、専門知識がなくても分かるように、やさしい日本語で解説してください。
-
-## 原文
-{source_text}
-
-## 日本語訳（参考）
-{translation}
-
-## タスク
-複雑な内容や専門用語を、誰でも理解できるシンプルな言葉で説明してください。
-
-## 出力形式（厳守）
-訳文: （この文章が言っていることの簡単なまとめ、1行）
-
-解説:
-### ざっくり言うと
-（2-3文で要点をとてもシンプルに説明）
-
-### ポイント
-- （ポイント1をわかりやすく）
-- （ポイント2をわかりやすく）
-- （必要ならポイント3）
-
-### 専門用語の説明
-（専門用語がある場合のみ。なければ省略）
-- 「用語」: シンプルな説明
-
-## 禁止事項
-- 専門用語をそのまま使う
-- 長くて複雑な文
-- 「続けますか？」「他に質問はありますか？」などの対話継続の質問
-- 指定形式以外の追加説明やコメント""",
-                'replacements': {
-                    '{input_text}': source_text,
-                    '{translation}': translation,
-                }
-            },
             'review': {
                 'file': 'text_review_en.txt',
                 'fallback': f"""以下の英文をレビューしてください。

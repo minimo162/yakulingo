@@ -14,6 +14,8 @@ import time
 import socket
 import subprocess
 import asyncio
+import threading
+import queue as thread_queue
 from pathlib import Path
 from typing import Optional, Callable
 
@@ -48,12 +50,11 @@ class PlaywrightManager:
     """
 
     _instance = None
-    _lock = None
+    # クラス変数としてロックを初期化（競合状態を防ぐ）
+    _lock = threading.Lock()
 
     def __new__(cls):
         if cls._instance is None:
-            import threading
-            cls._lock = threading.Lock()
             with cls._lock:
                 # Double-check locking pattern
                 if cls._instance is None:
@@ -148,10 +149,6 @@ class ConnectionState:
     ERROR = 'error'              # エラー
 
 
-import threading
-import queue as thread_queue
-
-
 class PlaywrightThreadExecutor:
     """
     Executes Playwright operations in a dedicated thread to avoid greenlet context issues.
@@ -178,15 +175,17 @@ class PlaywrightThreadExecutor:
         self._request_queue = thread_queue.Queue()
         self._thread = None
         self._running = False
+        self._thread_lock = threading.Lock()  # スレッド操作用の追加ロック
         self._initialized = True
 
     def start(self):
         """Start the Playwright thread."""
-        if self._thread is not None and self._thread.is_alive():
-            return
-        self._running = True
-        self._thread = threading.Thread(target=self._worker, daemon=True)
-        self._thread.start()
+        with self._thread_lock:
+            if self._thread is not None and self._thread.is_alive():
+                return
+            self._running = True
+            self._thread = threading.Thread(target=self._worker, daemon=True)
+            self._thread.start()
 
     def stop(self):
         """Stop the Playwright thread."""
@@ -594,6 +593,7 @@ class CopilotHandler:
         from contextlib import suppress
 
         self._connected = False
+        self._gpt5_enabled = False  # 再接続時に再チェックするためリセット
 
         with suppress(Exception):
             if self._browser:
@@ -767,6 +767,7 @@ class CopilotHandler:
         from contextlib import suppress
 
         self._connected = False
+        self._gpt5_enabled = False  # 再接続時に再チェックするためリセット
 
         # Use suppress for cleanup - we want to continue even if errors occur
         # Catch all exceptions during cleanup to ensure resources are released
@@ -1508,7 +1509,7 @@ class CopilotHandler:
                     break
 
                 # 方法2: 新しいチャットボタンの近くにあるトグルボタンをJSで検索
-                gpt5_btn = self._page.evaluate_handle('''() => {
+                handle = self._page.evaluate_handle('''() => {
                     // 新しいチャットボタンを基準に探す
                     const newChatBtn = document.querySelector('#new-chat-button, [data-testid="newChatButton"]');
                     if (newChatBtn) {
@@ -1535,6 +1536,8 @@ class CopilotHandler:
                     }
                     return null;
                 }''')
+                # JSHandleをElementHandleに変換（nullの場合はNoneが返る）
+                gpt5_btn = handle.as_element() if handle else None
 
                 if gpt5_btn:
                     break

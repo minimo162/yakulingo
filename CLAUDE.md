@@ -119,7 +119,6 @@ YakuLingo/
 │   ├── text_review_en.txt         # Follow-up: review English (英文をチェック)
 │   ├── text_check_my_english.txt  # Follow-up: check user's edited English
 │   ├── text_summarize.txt         # Follow-up: extract key points (要点を教えて)
-│   ├── text_explain_more.txt      # Follow-up: detailed explanation (詳しく解説)
 │   ├── text_question.txt          # Follow-up: answer user questions
 │   └── text_reply_email.txt       # Follow-up: compose reply email
 ├── config/

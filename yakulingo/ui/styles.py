@@ -1653,7 +1653,7 @@ textarea:focus-visible {
     background: var(--md-sys-color-primary-container);
     padding: 0.875rem;  /* 14px - matches Nani's p-3.5 */
     margin-top: 0.25rem;
-    color: var(--md-sys-color-on-primary-container);
+    color: rgba(27, 27, 31, 0.8);  /* on-surface at 80% opacity - matches Nani's text-main-body/80 */
     border-radius: 1rem;
     font-size: var(--md-sys-typescale-size-sm);  /* 14px - matches Nani's text-sm */
     line-height: 1.85;  /* matches Nani's --html-base-line-height */

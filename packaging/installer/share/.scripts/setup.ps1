@@ -261,20 +261,10 @@ function Invoke-Setup {
     }
 
     # ============================================================
-    # Launch application
-    # ============================================================
-    Write-Status -Message "Launching YakuLingo..." -Progress -Step "Complete!"
-    $ExePath = Join-Path $SetupPath "YakuLingo.exe"
-    if (-not (Test-Path $ExePath)) {
-        throw "YakuLingo.exe not found after extraction.`n`nThe ZIP file may be corrupted."
-    }
-    Start-Process -FilePath $ExePath -WorkingDirectory $SetupPath
-
-    # ============================================================
     # Done
     # ============================================================
     if ($GuiMode) {
-        Show-Success "Setup completed!`n`nYakuLingo has been set up and launched."
+        Show-Success "Setup completed!`n`nPlease launch YakuLingo from the desktop shortcut."
     } else {
         Write-Host ""
         Write-Host "============================================================" -ForegroundColor Green
@@ -282,7 +272,7 @@ function Invoke-Setup {
         Write-Host "============================================================" -ForegroundColor Green
         Write-Host ""
         Write-Host " Location: $SetupPath" -ForegroundColor White
-        Write-Host " YakuLingo is now starting..." -ForegroundColor Cyan
+        Write-Host " Please launch YakuLingo from the desktop shortcut." -ForegroundColor Cyan
         Write-Host ""
     }
 }

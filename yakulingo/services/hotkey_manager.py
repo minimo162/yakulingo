@@ -35,6 +35,12 @@ VK_C = 0x43
 # Input event flags
 KEYEVENTF_KEYUP = 0x0002
 
+# Timing constants
+CLIPBOARD_WAIT_SEC = 0.1  # Wait for clipboard to update after Ctrl+C
+CLIPBOARD_RETRY_COUNT = 3  # Retry count for clipboard access
+CLIPBOARD_RETRY_DELAY_SEC = 0.05  # Delay between retries
+MESSAGE_POLL_INTERVAL_SEC = 0.05  # Interval for PeekMessage loop
+
 
 class HotkeyManager:
     """
@@ -56,6 +62,7 @@ class HotkeyManager:
         self._thread: Optional[threading.Thread] = None
         self._running = False
         self._registered = False
+        self._lock = threading.Lock()
 
     def set_callback(self, callback: Callable[[str], None]):
         """
@@ -68,22 +75,34 @@ class HotkeyManager:
 
     def start(self):
         """Start hotkey listener in background thread."""
-        if self._running:
-            logger.warning("HotkeyManager already running")
-            return
+        with self._lock:
+            if self._running:
+                logger.warning("HotkeyManager already running")
+                return
 
-        self._running = True
-        self._thread = threading.Thread(target=self._hotkey_loop, daemon=True)
-        self._thread.start()
-        logger.info("HotkeyManager started")
+            self._running = True
+            self._thread = threading.Thread(target=self._hotkey_loop, daemon=True)
+            self._thread.start()
+            logger.info("HotkeyManager started")
 
     def stop(self):
         """Stop hotkey listener."""
-        self._running = False
+        with self._lock:
+            if not self._running:
+                return
+            self._running = False
+
         if self._thread:
-            self._thread.join(timeout=1.0)
+            self._thread.join(timeout=2.0)
+            if self._thread.is_alive():
+                logger.warning("HotkeyManager thread did not stop in time")
             self._thread = None
         logger.info("HotkeyManager stopped")
+
+    @property
+    def is_running(self) -> bool:
+        """Check if hotkey manager is running."""
+        return self._running and self._registered
 
     def _hotkey_loop(self):
         """Main loop that listens for hotkey events."""
@@ -118,7 +137,7 @@ class HotkeyManager:
                         self._handle_hotkey()
                 else:
                     # Sleep a bit to avoid busy waiting
-                    time.sleep(0.05)
+                    time.sleep(MESSAGE_POLL_INTERVAL_SEC)
         finally:
             # Unregister hotkey
             if self._registered:
@@ -137,10 +156,10 @@ class HotkeyManager:
             self._send_ctrl_c()
 
             # Wait for clipboard to update
-            time.sleep(0.15)
+            time.sleep(CLIPBOARD_WAIT_SEC)
 
-            # Get text from clipboard
-            text = self._get_clipboard_text()
+            # Get text from clipboard (with retry)
+            text = self._get_clipboard_text_with_retry()
 
             # Trigger callback (empty string if no text)
             self._callback(text or "")
@@ -161,12 +180,23 @@ class HotkeyManager:
         # Key up: Ctrl
         user32.keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0)
 
+    def _get_clipboard_text_with_retry(self) -> Optional[str]:
+        """Get text from clipboard with retry on failure."""
+        for attempt in range(CLIPBOARD_RETRY_COUNT):
+            text = self._get_clipboard_text()
+            if text is not None:
+                return text
+            if attempt < CLIPBOARD_RETRY_COUNT - 1:
+                time.sleep(CLIPBOARD_RETRY_DELAY_SEC)
+        return None
+
     def _get_clipboard_text(self) -> Optional[str]:
         """Get text from clipboard."""
         user32 = ctypes.windll.user32
         kernel32 = ctypes.windll.kernel32
 
         if not user32.OpenClipboard(None):
+            logger.debug("Failed to open clipboard")
             return None
 
         try:
@@ -192,13 +222,16 @@ class HotkeyManager:
             user32.CloseClipboard()
 
 
-# Singleton instance
+# Singleton instance with thread-safe initialization
 _hotkey_manager: Optional[HotkeyManager] = None
+_hotkey_manager_lock = threading.Lock()
 
 
 def get_hotkey_manager() -> HotkeyManager:
-    """Get or create the singleton HotkeyManager instance."""
+    """Get or create the singleton HotkeyManager instance (thread-safe)."""
     global _hotkey_manager
     if _hotkey_manager is None:
-        _hotkey_manager = HotkeyManager()
+        with _hotkey_manager_lock:
+            if _hotkey_manager is None:
+                _hotkey_manager = HotkeyManager()
     return _hotkey_manager

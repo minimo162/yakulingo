@@ -269,7 +269,7 @@ class CopilotHandler:
     RESPONSE_STABLE_COUNT = 2  # Number of stable checks before considering response complete
     RESPONSE_POLL_INTERVAL = 0.3  # Seconds between response checks (legacy, kept for compatibility)
     # Dynamic polling intervals for faster response detection
-    RESPONSE_POLL_INITIAL = 0.3  # Initial interval while waiting for response to start
+    RESPONSE_POLL_INITIAL = 0.2  # Initial interval while waiting for response to start (reduced from 0.3)
     RESPONSE_POLL_ACTIVE = 0.2  # Interval after text is detected
     RESPONSE_POLL_STABLE = 0.1  # Interval during stability checking
     DEFAULT_RESPONSE_TIMEOUT = 120  # Default timeout for response in seconds
@@ -308,6 +308,8 @@ class CopilotHandler:
         self.edge_process = None
         # Connection error for detailed user feedback
         self.last_connection_error: str = self.ERROR_NONE
+        # GPT-5 toggle optimization: skip check after first successful enable
+        self._gpt5_enabled = False
 
     @property
     def is_connected(self) -> bool:
@@ -1055,7 +1057,7 @@ class CopilotHandler:
                 try:
                     send_button = self._page.wait_for_selector(
                         send_button_selector,
-                        timeout=2000,  # Reduced from 5000ms (Enter key fallback handles timeouts)
+                        timeout=1000,  # Reduced from 2000ms (Enter key fallback handles timeouts)
                         state='visible'
                     )
                     if send_button:
@@ -1468,6 +1470,10 @@ class CopilotHandler:
         Returns:
             True if GPT-5 is enabled (or button not found), False if failed to enable
         """
+        # Skip check if already enabled in this session (optimization)
+        if self._gpt5_enabled:
+            return True
+
         if not self._page:
             return True
 
@@ -1481,6 +1487,7 @@ class CopilotHandler:
                 'button.fui-ToggleButton[aria-pressed="true"]'
             )
             if enabled_btn:
+                self._gpt5_enabled = True
                 return True  # 既に有効
 
             # 無効なボタンを探す（遅延描画対応のため複数回試行）
@@ -1531,6 +1538,7 @@ class CopilotHandler:
 
             if not gpt5_btn:
                 # ボタンが見つからない = 既に有効か、ボタンが存在しない
+                self._gpt5_enabled = True
                 return True
 
             # ボタンをクリックして有効化
@@ -1543,11 +1551,13 @@ class CopilotHandler:
                     timeout=1500,
                     state='attached'
                 )
+                self._gpt5_enabled = True
                 return True
             except PlaywrightTimeoutError:
                 # 状態変更が確認できなくても、クリックは成功したかもしれない
+                self._gpt5_enabled = True
                 return True
 
         except (PlaywrightError, PlaywrightTimeoutError, AttributeError):
-            # エラーが発生しても翻訳処理は続行
+            # エラーが発生しても翻訳処理は続行（フラグは設定しない、次回再試行）
             return True

@@ -148,14 +148,22 @@ class YakuLingoApp:
             logger.debug("Hotkey triggered but no text selected")
             return
 
+        # Skip if already translating
+        if self.state.text_translating:
+            logger.debug("Hotkey ignored - translation in progress")
+            return
+
+        # Skip if client not ready
+        if not self._client:
+            logger.debug("Hotkey ignored - client not ready")
+            return
+
         # Schedule UI update on NiceGUI's event loop
         # This is called from HotkeyManager's background thread
         try:
-            import asyncio
-            loop = asyncio.get_event_loop()
-            loop.call_soon_threadsafe(
-                lambda: asyncio.create_task(self._handle_hotkey_text(text))
-            )
+            # Use background_tasks to safely schedule async work from another thread
+            from nicegui import background_tasks
+            background_tasks.create(self._handle_hotkey_text(text))
         except Exception as e:
             logger.error(f"Failed to schedule hotkey handler: {e}")
 

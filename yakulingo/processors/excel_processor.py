@@ -507,12 +507,33 @@ class ExcelProcessor(FileProcessor):
     ) -> None:
         """Apply translations using xlwings
 
-        Optimized: Pre-groups translations by sheet to avoid O(sheets × translations) complexity.
+        Optimized:
+        - Pre-groups translations by sheet to avoid O(sheets × translations) complexity
+        - Disables ScreenUpdating and sets Calculation to manual for faster COM operations
+        - Restores Excel settings after completion
         """
         font_manager = FontManager(direction, settings)
         app = xw.App(visible=False, add_book=False)
 
+        # Store original Excel settings for restoration
+        original_screen_updating = None
+        original_calculation = None
+
         try:
+            # Optimize Excel settings for batch operations
+            try:
+                original_screen_updating = app.screen_updating
+                app.screen_updating = False
+            except Exception as e:
+                logger.debug("Could not disable screen updating: %s", e)
+
+            try:
+                original_calculation = app.calculation
+                # xlCalculationManual = -4135 (Excel constant)
+                app.calculation = 'manual'
+            except Exception as e:
+                logger.debug("Could not set manual calculation: %s", e)
+
             wb = app.books.open(str(input_path), ignore_read_only_recommended=True)
             try:
                 # Pre-group translations by sheet name for O(translations) instead of O(sheets × translations)
@@ -610,6 +631,19 @@ class ExcelProcessor(FileProcessor):
                 wb.close()
 
         finally:
+            # Restore Excel settings before quitting
+            try:
+                if original_calculation is not None:
+                    app.calculation = original_calculation
+            except Exception as e:
+                logger.debug("Could not restore calculation mode: %s", e)
+
+            try:
+                if original_screen_updating is not None:
+                    app.screen_updating = original_screen_updating
+            except Exception as e:
+                logger.debug("Could not restore screen updating: %s", e)
+
             app.quit()
 
     def _apply_translations_openpyxl(
@@ -622,11 +656,47 @@ class ExcelProcessor(FileProcessor):
     ) -> None:
         """Apply translations using openpyxl (fallback - cells only)
 
-        Optimized: Direct cell access instead of iterating all cells.
-        Only accesses cells that need translation.
+        Optimized:
+        - Direct cell access instead of iterating all cells
+        - Font object caching to avoid creating duplicate Font objects
+        - Only accesses cells that need translation
         """
         wb = openpyxl.load_workbook(input_path)
         font_manager = FontManager(direction, settings)
+
+        # Font object cache: (name, size, bold, italic, underline, strike, color_rgb) -> Font
+        # openpyxl Font objects are immutable, so we can safely reuse them
+        font_cache: dict[tuple, Font] = {}
+
+        def get_cached_font(
+            name: str,
+            size: float,
+            bold: bool = False,
+            italic: bool = False,
+            underline: str | None = None,
+            strike: bool = False,
+            color=None,
+        ) -> Font:
+            """Get or create a cached Font object."""
+            # Create cache key (color needs special handling)
+            color_key = None
+            if color is not None:
+                # Extract color RGB value for cache key
+                color_key = getattr(color, 'rgb', None)
+
+            cache_key = (name, size, bold, italic, underline, strike, color_key)
+
+            if cache_key not in font_cache:
+                font_cache[cache_key] = Font(
+                    name=name,
+                    size=size,
+                    bold=bold,
+                    italic=italic,
+                    underline=underline,
+                    strike=strike,
+                    color=color,
+                )
+            return font_cache[cache_key]
 
         try:
             # Pre-group translations by sheet for efficient processing
@@ -653,8 +723,9 @@ class ExcelProcessor(FileProcessor):
 
                         cell.value = translated_text
 
+                        # Use cached font object to avoid creating duplicates
                         if cell.font:
-                            cell.font = Font(
+                            cell.font = get_cached_font(
                                 name=new_font_name,
                                 size=new_font_size,
                                 bold=cell.font.bold,
@@ -664,7 +735,7 @@ class ExcelProcessor(FileProcessor):
                                 color=cell.font.color,
                             )
                         else:
-                            cell.font = Font(name=new_font_name, size=new_font_size)
+                            cell.font = get_cached_font(name=new_font_name, size=new_font_size)
 
                     except Exception as e:
                         logger.warning("Error applying translation to cell %s_%s: %s", sheet_name, cell_ref, e)
@@ -749,16 +820,27 @@ class ExcelProcessor(FileProcessor):
             translated_wb.close()
 
     def _copy_sheet_content(self, source_sheet, target_sheet):
-        """Copy content from source sheet to target sheet."""
+        """Copy content from source sheet to target sheet.
+
+        Optimized:
+        - Only processes cells that have values or styles (skips empty cells)
+        - Uses direct dimension access to limit iteration range
+        """
         from copy import copy
 
-        # Copy cell values and styles
-        for row in source_sheet.iter_rows():
-            for cell in row:
-                target_cell = target_sheet.cell(row=cell.row, column=cell.column)
+        # Get actual data range to avoid iterating empty cells
+        # source_sheet.dimensions returns e.g., "A1:Z100" or None for empty sheets
+        dimensions = source_sheet.dimensions
+        if not dimensions or dimensions == "A1:A1":
+            # Empty or minimal sheet - check if A1 has content
+            cell = source_sheet.cell(1, 1)
+            if cell.value is None and not cell.has_style:
+                # Truly empty sheet, skip cell iteration
+                pass
+            else:
+                # Copy single cell
+                target_cell = target_sheet.cell(row=1, column=1)
                 target_cell.value = cell.value
-
-                # Copy style
                 if cell.has_style:
                     target_cell.font = copy(cell.font)
                     target_cell.fill = copy(cell.fill)
@@ -766,14 +848,35 @@ class ExcelProcessor(FileProcessor):
                     target_cell.alignment = copy(cell.alignment)
                     target_cell.number_format = cell.number_format
                     target_cell.protection = copy(cell.protection)
+        else:
+            # Copy cell values and styles - only cells with content or style
+            for row in source_sheet.iter_rows():
+                for cell in row:
+                    # Skip completely empty cells (no value and no style)
+                    if cell.value is None and not cell.has_style:
+                        continue
 
-        # Copy column widths
+                    target_cell = target_sheet.cell(row=cell.row, column=cell.column)
+                    target_cell.value = cell.value
+
+                    # Copy style only if present
+                    if cell.has_style:
+                        target_cell.font = copy(cell.font)
+                        target_cell.fill = copy(cell.fill)
+                        target_cell.border = copy(cell.border)
+                        target_cell.alignment = copy(cell.alignment)
+                        target_cell.number_format = cell.number_format
+                        target_cell.protection = copy(cell.protection)
+
+        # Copy column widths (only explicitly set widths)
         for col_letter, col_dim in source_sheet.column_dimensions.items():
-            target_sheet.column_dimensions[col_letter].width = col_dim.width
+            if col_dim.width is not None:
+                target_sheet.column_dimensions[col_letter].width = col_dim.width
 
-        # Copy row heights
+        # Copy row heights (only explicitly set heights)
         for row_num, row_dim in source_sheet.row_dimensions.items():
-            target_sheet.row_dimensions[row_num].height = row_dim.height
+            if row_dim.height is not None:
+                target_sheet.row_dimensions[row_num].height = row_dim.height
 
         # Copy merged cells
         for merged_range in source_sheet.merged_cells.ranges:

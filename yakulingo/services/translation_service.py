@@ -1967,6 +1967,15 @@ class TranslationService:
                     logger.info("Created bilingual PowerPoint: %s", bilingual_path)
                     return bilingual_path
 
+            elif ext == '.txt':
+                # Text: interleaved paragraphs with separators
+                if hasattr(processor, 'create_bilingual_document'):
+                    processor.create_bilingual_document(
+                        input_path, translated_path, bilingual_path
+                    )
+                    logger.info("Created bilingual text file: %s", bilingual_path)
+                    return bilingual_path
+
             else:
                 logger.warning(
                     "Bilingual output not supported for file type: %s", ext

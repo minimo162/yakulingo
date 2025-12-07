@@ -70,7 +70,6 @@ class TxtProcessor(FileProcessor):
         # Split by paragraphs (blank lines)
         paragraphs = [p.strip() for p in content.split('\n\n') if p.strip()]
 
-        block_index = 0
         for para_index, paragraph in enumerate(paragraphs):
             # Split long paragraphs into chunks
             if len(paragraph) > MAX_CHARS_PER_BLOCK:
@@ -87,7 +86,6 @@ class TxtProcessor(FileProcessor):
                                 'is_chunked': True,
                             }
                         )
-                        block_index += 1
             else:
                 if self.should_translate(paragraph):
                     yield TextBlock(
@@ -99,23 +97,18 @@ class TxtProcessor(FileProcessor):
                             'is_chunked': False,
                         }
                     )
-                    block_index += 1
 
     def _split_into_chunks(self, text: str, max_chars: int) -> list[str]:
         """Split long text into chunks, preferring sentence boundaries."""
+        import re
+
+        # Split by sentence-ending punctuation (keep delimiter with preceding text)
+        sentences = re.split(r'(?<=[。！？.!?\n])', text)
+        # Filter out empty strings
+        sentences = [s for s in sentences if s]
+
         chunks = []
         current_chunk = ""
-
-        # Split by sentences (roughly)
-        sentences = []
-        current_sentence = ""
-        for char in text:
-            current_sentence += char
-            if char in '。！？.!?\n':
-                sentences.append(current_sentence)
-                current_sentence = ""
-        if current_sentence:
-            sentences.append(current_sentence)
 
         for sentence in sentences:
             if len(current_chunk) + len(sentence) <= max_chars:

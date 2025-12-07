@@ -1025,13 +1025,14 @@ class YakuLingoApp:
         # Use saved client reference
         client = self._client
 
-        # Notify user
-        ui.notify(
-            f'テキストが長いため（{len(text):,}文字）、ファイル翻訳で処理します',
-            type='info',
-            position='top',
-            timeout=3000,
-        )
+        # Notify user (inside client context for proper UI update)
+        with client:
+            ui.notify(
+                f'テキストが長いため（{len(text):,}文字）、ファイル翻訳で処理します',
+                type='info',
+                position='top',
+                timeout=3000,
+            )
 
         # Detect language to determine output direction
         detected_language = await asyncio.to_thread(

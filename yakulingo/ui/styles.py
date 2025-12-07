@@ -248,17 +248,24 @@ body {
 }
 
 /* === Source Text Section (Result Panel Top) === */
+/* Nani-style: outer bg-main-bg with shadow, inner bg-main-75 */
 .source-text-section {
+    background-color: var(--md-sys-color-surface);
+    border-radius: calc(var(--md-sys-shape-corner-xl) + 0.25rem);
+    padding: 0.25rem;
+    box-shadow: var(--md-sys-elevation-1);
+    width: 100%;
+}
+
+.source-text-section > .nicegui-row {
     background-color: var(--md-sys-color-surface-container);
     border-radius: var(--md-sys-shape-corner-xl);
     padding: 1rem;
-    border: 1px solid var(--md-sys-color-outline-variant);
-    width: 100%;
 }
 
 .source-text-content {
     font-size: var(--md-sys-typescale-size-sm);
-    line-height: 1.6;
+    line-height: 1.5;
     color: var(--md-sys-color-on-surface);
     word-break: break-word;
     white-space: pre-wrap;
@@ -273,16 +280,15 @@ body {
 }
 
 .source-copy-btn:hover {
-    background-color: var(--md-sys-color-surface-container);
+    background-color: var(--md-sys-color-surface-container-high);
     color: var(--md-sys-color-primary);
 }
 
 /* === Translation Status Section === */
+/* Nani-style: simple text with icon, no background */
 .translation-status-section {
-    padding: 0.75rem 1rem;
-    background-color: var(--md-sys-color-surface-container-low);
-    border-radius: var(--md-sys-shape-corner-small);
-    border-left: 3px solid var(--md-sys-color-primary);
+    padding: 0.5rem 0.25rem;
+    background-color: transparent;
     width: 100%;
 }
 
@@ -1649,8 +1655,9 @@ textarea:focus-visible {
 }
 
 /* === Nani-style Explanation === */
+/* Nani-style: bg-primary-bg-lighter - softer primary background */
 .nani-explanation {
-    background: var(--md-sys-color-primary-container);
+    background: rgba(222, 224, 255, 0.5);  /* primary-container at 50% - matches Nani's bg-primary-bg-lighter */
     padding: 0.875rem;  /* 14px - matches Nani's p-3.5 */
     margin-top: 0.25rem;
     color: rgba(27, 27, 31, 0.8);  /* on-surface at 80% opacity - matches Nani's text-main-body/80 */

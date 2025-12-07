@@ -583,6 +583,13 @@ timeout /t 3 /nobreak >nul
 
 cd /d "{app_dir}"
 
+REM ユーザーデータをバックアップ（設定ファイル）
+set "SETTINGS_BACKUP=%TEMP%\\yakulingo_settings_backup.json"
+if exist "config\\settings.json" (
+    echo ユーザー設定をバックアップしています...
+    copy /y "config\\settings.json" "%SETTINGS_BACKUP%" >nul
+)
+
 REM ソースコードディレクトリを削除（環境ファイルは残す）
 echo ソースコードを更新しています...
 for %%d in ({dirs_to_update}) do (
@@ -598,6 +605,13 @@ for %%d in ({dirs_to_update}) do (
         echo   コピー: %%d
         xcopy /e /y /i /q "{source_dir}\\%%d" "{app_dir}\\%%d\\" >nul
     )
+)
+
+REM ユーザー設定を復元
+if exist "%SETTINGS_BACKUP%" (
+    echo ユーザー設定を復元しています...
+    copy /y "%SETTINGS_BACKUP%" "config\\settings.json" >nul
+    del "%SETTINGS_BACKUP%" >nul 2>&1
 )
 
 REM ソースコードファイルをコピー
@@ -667,6 +681,13 @@ sleep 3
 
 cd "{app_dir}"
 
+# ユーザーデータをバックアップ（設定ファイル）
+SETTINGS_BACKUP="/tmp/yakulingo_settings_backup.json"
+if [ -f "config/settings.json" ]; then
+    echo "ユーザー設定をバックアップしています..."
+    cp "config/settings.json" "$SETTINGS_BACKUP"
+fi
+
 # ソースコードディレクトリを削除（環境ファイルは残す）
 echo "ソースコードを更新しています..."
 for dir in {dirs_to_update}; do
@@ -683,6 +704,13 @@ for dir in {dirs_to_update}; do
         cp -r "{source_dir}/$dir" "{app_dir}/$dir"
     fi
 done
+
+# ユーザー設定を復元
+if [ -f "$SETTINGS_BACKUP" ]; then
+    echo "ユーザー設定を復元しています..."
+    cp "$SETTINGS_BACKUP" "config/settings.json"
+    rm -f "$SETTINGS_BACKUP"
+fi
 
 # ソースコードファイルをコピー
 for file in {files_to_update}; do

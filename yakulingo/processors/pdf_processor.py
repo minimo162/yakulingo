@@ -1046,6 +1046,8 @@ def extract_font_info_from_pdf(
     This is used to get original font sizes for OCR mode, where we can
     match OCR cell positions with original PDF text block positions.
 
+    Results are cached by (pdf_path, dpi) to avoid repeated PDF parsing.
+
     Args:
         pdf_path: Path to PDF file
         dpi: DPI used for OCR (for coordinate scaling)
@@ -1055,6 +1057,11 @@ def extract_font_info_from_pdf(
         [{'bbox': [x1, y1, x2, y2], 'font_size': float, 'font_name': str}, ...]
         Coordinates are in OCR DPI scale (not PDF 72 DPI).
     """
+    # Check cache first (thread-safe)
+    cache_key = (str(pdf_path), dpi)
+    if cache_key in _font_info_cache:
+        return _font_info_cache[cache_key]
+
     pymupdf = _get_pymupdf()
     font_info: dict[int, list[dict]] = {}
 
@@ -1101,7 +1108,17 @@ def extract_font_info_from_pdf(
 
             font_info[page_num] = page_font_info
 
+    # Store in cache (thread-safe)
+    with _font_info_cache_lock:
+        _font_info_cache[cache_key] = font_info
+
     return font_info
+
+
+def clear_font_info_cache():
+    """Clear the font info cache to free memory."""
+    with _font_info_cache_lock:
+        _font_info_cache.clear()
 
 
 def find_matching_font_size(
@@ -1150,6 +1167,10 @@ DEFAULT_OCR_DPI = 200        # Default DPI for precision
 # LayoutDetection model cache (for GPU memory efficiency) with thread safety
 _analyzer_cache: dict[str, object] = {}
 _analyzer_cache_lock = threading.Lock()
+
+# Font info cache (keyed by (pdf_path, dpi)) - avoids repeated PDF parsing
+_font_info_cache: dict[tuple[str, int], dict[int, list[dict]]] = {}
+_font_info_cache_lock = threading.Lock()
 
 # PP-DocLayout-L category mapping
 # Categories to translate (text content)
@@ -1387,6 +1408,37 @@ def analyze_layout(img, device: str = "cpu"):
     model = get_layout_model(device)
     results = model.predict(img)
     return results
+
+
+def analyze_layout_batch(images: list, device: str = "cpu") -> list:
+    """
+    Analyze document layout for multiple images using PP-DocLayout-L.
+
+    Batch processing provides better GPU utilization and can be faster
+    than processing images one by one, especially on GPU.
+
+    Args:
+        images: List of BGR images (numpy arrays)
+        device: "cpu" or "gpu"
+
+    Returns:
+        List of LayoutDetection results, one per input image.
+        Each result contains boxes with (label, coordinate, score).
+    """
+    if not images:
+        return []
+
+    model = get_layout_model(device)
+
+    # PaddleOCR's LayoutDetection.predict() accepts a list of images
+    # and returns results for each image
+    results_list = model.predict(images)
+
+    # Ensure we return a list even for single image
+    if not isinstance(results_list, list):
+        results_list = [results_list]
+
+    return results_list
 
 
 # =============================================================================
@@ -2355,6 +2407,16 @@ class PdfProcessor(FileProcessor):
                     iterate_pdf_pages(str(file_path), batch_size, dpi),
                     self._batch_pdfminer_pages(document, PDFPage, interpreter, converter, batch_size)
                 ):
+                    # Check for cancellation before processing batch
+                    if self._cancel_requested:
+                        logger.info("Hybrid extraction cancelled at batch starting page %d",
+                                   batch_start + 1)
+                        return
+
+                    # Step 1: Batch analyze layout with PP-DocLayout-L (optimization)
+                    # Process all images in the batch at once for better GPU utilization
+                    batch_layout_results = analyze_layout_batch(batch_images, actual_device)
+
                     for img_idx, (img, (page_idx, ltpage, page_height)) in enumerate(
                         zip(batch_images, pdfminer_pages)
                     ):
@@ -2388,8 +2450,8 @@ class PdfProcessor(FileProcessor):
                             ))
 
                         try:
-                            # Step 1: Analyze layout with PP-DocLayout-L (no OCR)
-                            results = analyze_layout(img, actual_device)
+                            # Get pre-computed layout results for this page
+                            results = batch_layout_results[img_idx] if img_idx < len(batch_layout_results) else []
 
                             # Step 2: Create LayoutArray from PP-DocLayout-L results
                             img_height, img_width = img.shape[:2]
@@ -2459,8 +2521,10 @@ class PdfProcessor(FileProcessor):
             if self._failed_pages:
                 logger.warning("Hybrid extraction completed with %d failed pages: %s",
                               len(self._failed_pages), self._failed_pages)
-        finally:
+        except Exception:
+            # Only clear cache on unexpected errors to free resources
             clear_analyzer_cache()
+            raise
 
     def _batch_pdfminer_pages(
         self,
@@ -2516,9 +2580,37 @@ class PdfProcessor(FileProcessor):
 
         Updates cells in-place with more accurate text from pdfminer
         when the positions overlap.
+
+        Optimization: Pre-compute block coordinates to avoid repeated
+        scale calculations in nested loop.
         """
         if not blocks or not cells:
             return
+
+        # Pre-compute scale factor once (optimization)
+        scale = dpi / 72.0
+
+        # Pre-convert all block bboxes to image coordinates (optimization)
+        # This avoids repeated coordinate conversion in the nested loop
+        converted_blocks: list[tuple[float, float, float, float, str]] = []
+        for block in blocks:
+            if not block.metadata or 'bbox' not in block.metadata:
+                continue
+            bbox = block.metadata['bbox']
+            # Convert PDF coordinates to image coordinates
+            block_x0 = bbox[0] * scale
+            block_y0 = (page_height - bbox[3]) * scale  # Flip Y
+            block_x1 = bbox[2] * scale
+            block_y1 = (page_height - bbox[1]) * scale  # Flip Y
+            converted_blocks.append((block_x0, block_y0, block_x1, block_y1, block.text))
+
+        if not converted_blocks:
+            return
+
+        # Sort blocks by y0 for potential early termination (optimization)
+        # Blocks are sorted by y0 ascending, so we can skip blocks that are
+        # definitely below the cell
+        converted_blocks.sort(key=lambda b: b[1])
 
         # For each cell, find overlapping pdfminer blocks and merge text
         for cell in cells:
@@ -2529,22 +2621,16 @@ class PdfProcessor(FileProcessor):
 
             # Find pdfminer blocks that overlap with this cell
             overlapping_texts = []
-            for block in blocks:
-                if not block.metadata or 'bbox' not in block.metadata:
-                    continue
-
-                block_bbox = block.metadata['bbox']
-                # Convert PDF coordinates to image coordinates
-                scale = dpi / 72.0
-                block_x0 = block_bbox[0] * scale
-                block_y0 = (page_height - block_bbox[3]) * scale  # Flip Y
-                block_x1 = block_bbox[2] * scale
-                block_y1 = (page_height - block_bbox[1]) * scale  # Flip Y
+            for block_x0, block_y0, block_x1, block_y1, block_text in converted_blocks:
+                # Early termination: if block is entirely below cell, skip remaining
+                # (blocks are sorted by y0, so later blocks will also be below)
+                if block_y0 > cell_y1:
+                    break
 
                 # Check overlap
                 if (block_x0 < cell_x1 and block_x1 > cell_x0 and
-                    block_y0 < cell_y1 and block_y1 > cell_y0):
-                    overlapping_texts.append(block.text)
+                    block_y1 > cell_y0):
+                    overlapping_texts.append(block_text)
 
             # If we found overlapping pdfminer text, use it
             if overlapping_texts:
@@ -2679,19 +2765,18 @@ class PdfProcessor(FileProcessor):
         # Coordinate conversion for layout array
         # pdfminer uses PDF coordinates (origin at bottom-left)
         # layout array uses image coordinates (origin at top-left)
+        # Pre-calculate scale factor once (optimization: avoid repeated division per char)
+        if layout is not None and page_height > 0 and layout.height > 0:
+            coord_scale = layout.height / page_height
+        else:
+            coord_scale = 1.0
+
         def get_char_layout_class(char) -> int:
             if layout is None:
                 return LAYOUT_BACKGROUND
-            # Convert PDF coordinates to image coordinates
-            # PDF: y=0 at bottom, 72 DPI base
-            # Image: y=0 at top, rendered at OCR DPI
-            # Scale factor = layout.height / page_height (same for x and y if aspect ratio preserved)
-            if page_height > 0 and layout.height > 0:
-                scale = layout.height / page_height
-            else:
-                scale = 1.0
-            img_x = char.x0 * scale
-            img_y = (page_height - char.y1) * scale  # Flip Y axis
+            # Convert PDF coordinates to image coordinates using pre-calculated scale
+            img_x = char.x0 * coord_scale
+            img_y = (page_height - char.y1) * coord_scale  # Flip Y axis
             return get_layout_class_at_point(layout, img_x, img_y)
 
         for char in chars:

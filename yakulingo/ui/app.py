@@ -1639,7 +1639,7 @@ class YakuLingoApp:
         # Note: Don't call _refresh_content() here as it would close the expansion panel
 
     def _select_file(self, file_path: Path):
-        """Select file for translation"""
+        """Select file for translation with auto language detection"""
         if not self._require_connection():
             return
 
@@ -1647,9 +1647,52 @@ class YakuLingoApp:
             self.state.file_info = self.translation_service.get_file_info(file_path)
             self.state.selected_file = file_path
             self.state.file_state = FileState.SELECTED
+            self.state.file_detected_language = None  # Clear previous detection
+            self._refresh_content()
+
+            # Start async language detection
+            asyncio.create_task(self._detect_file_language(file_path))
+
         except Exception as e:
             self._notify_error(str(e))
-        self._refresh_content()
+            self._refresh_content()
+
+    async def _detect_file_language(self, file_path: Path):
+        """Detect source language of file and set output language accordingly"""
+        client = self._client
+
+        try:
+            # Extract sample text from file
+            processor = self.translation_service._get_processor(file_path)
+            blocks = list(processor.extract_text_blocks(file_path))
+
+            if not blocks:
+                return
+
+            # Get sample text (first 1000 chars)
+            sample_text = ' '.join(block.text for block in blocks[:5])[:1000]
+
+            if not sample_text.strip():
+                return
+
+            # Detect language
+            detected_language = await asyncio.to_thread(
+                self.translation_service.detect_language,
+                sample_text,
+            )
+
+            # Update state based on detection
+            self.state.file_detected_language = detected_language
+            is_japanese = detected_language == "日本語"
+            self.state.file_output_language = "en" if is_japanese else "jp"
+
+            # Refresh UI to show detected language
+            with client:
+                self._refresh_content()
+
+        except Exception as e:
+            logger.debug("Language detection failed: %s", e)
+            # Keep default (no auto-detection, user must choose)
 
     async def _translate_file(self):
         """Translate file with progress dialog"""

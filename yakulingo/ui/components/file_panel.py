@@ -137,8 +137,16 @@ def create_file_panel(
 
 
 def _language_selector(state: AppState, on_change: Optional[Callable[[str], None]]):
-    """Output language selector - segmented button style with clear translation direction"""
-    with ui.row().classes('w-full justify-center mt-4'):
+    """Output language selector with auto-detection display"""
+    detected = state.file_detected_language
+
+    with ui.column().classes('w-full items-center mt-4 gap-2'):
+        # Show detected language info
+        if detected:
+            output_label = '英訳' if state.file_output_language == 'en' else '和訳'
+            ui.label(f'{detected}を検出 → {output_label}します').classes('text-xs text-muted')
+
+        # Language toggle buttons
         with ui.element('div').classes('language-selector'):
             # Translate to English option
             en_classes = 'lang-btn lang-btn-left'

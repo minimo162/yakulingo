@@ -861,8 +861,14 @@ textarea:focus-visible {
 .drop-zone {
     border: 1.5px dashed var(--md-sys-color-outline-variant);
     border-radius: var(--md-sys-shape-corner-xl);
-    padding: 3.5rem 2.5rem;
-    text-align: center;
+    /* Height matches text input panel for consistency */
+    min-height: var(--input-min-height);
+    /* Reduced padding, vertical centering via flexbox */
+    padding: 1rem 2.5rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
     cursor: pointer;
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
     background: var(--md-sys-color-surface);

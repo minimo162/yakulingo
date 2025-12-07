@@ -209,7 +209,7 @@ class TestCancellationWorkflow:
 
         # Pre-cancel
         service.cancel()
-        assert service._cancel_requested is True
+        assert service._cancel_event.is_set() is True
 
         # Start new translation - flag should reset
         result = service.translate_file(sample_excel)

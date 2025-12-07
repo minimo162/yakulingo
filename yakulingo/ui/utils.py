@@ -54,8 +54,14 @@ class TempFileManager:
         """
         Create a temporary file with the given content.
         The file will be automatically cleaned up on exit.
+
+        Note: filename is sanitized to prevent path traversal attacks.
         """
-        temp_path = self.temp_dir / filename
+        # Sanitize filename to prevent path traversal (e.g., "../../../etc/passwd")
+        safe_filename = os.path.basename(filename)
+        if not safe_filename:
+            safe_filename = "unnamed_file"
+        temp_path = self.temp_dir / safe_filename
         temp_path.write_bytes(content)
         self._temp_files.add(temp_path)
         return temp_path

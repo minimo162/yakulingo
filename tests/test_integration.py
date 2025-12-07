@@ -416,10 +416,10 @@ class TestEdgeCaseWorkflows:
         """Test cancellation flag behavior"""
         service = TranslationService(mock_copilot_with_translation, settings)
 
-        # Note: _cancel_requested is reset at start of translate_file()
+        # Note: _cancel_event is reset at start of translate_file()
         # So calling cancel() before translate_file() has no effect
         service.cancel()
-        assert service._cancel_requested is True
+        assert service._cancel_event.is_set() is True
 
         result = service.translate_file(excel_file_jp)
 

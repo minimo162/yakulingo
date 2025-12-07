@@ -293,7 +293,7 @@ class TestCancellationHandling:
 
         # Cancel before translation
         service.cancel()
-        assert service._cancel_requested is True
+        assert service._cancel_event.is_set() is True
 
         # Start translation - flag should reset
         result = service.translate_file(sample_excel)
@@ -732,7 +732,7 @@ class TestConcurrentAccessErrors:
         service.cancel()
         service.cancel()
 
-        assert service._cancel_requested is True
+        assert service._cancel_event.is_set() is True
 
 
 # --- Edge Cases in Error Messages ---

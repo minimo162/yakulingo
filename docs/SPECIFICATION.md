@@ -179,17 +179,16 @@ YakuLingo/
 │   ├── conftest.py
 │   └── test_*.py
 │
-├── prompts/                        # 翻訳プロンプト（18ファイル）
+├── prompts/                        # 翻訳プロンプト（16ファイル）
 │   ├── detect_language.txt         # 言語検出用（Copilot）
-│   ├── file_translate_to_en.txt    # ファイル翻訳ベース（日→英）
-│   ├── file_translate_to_en_{standard|concise|minimal}.txt  # スタイル別
+│   ├── file_translate_to_en_{standard|concise|minimal}.txt  # ファイル翻訳（日→英）
 │   ├── file_translate_to_jp.txt    # ファイル翻訳用（英→日）
-│   ├── text_translate_to_en.txt    # テキスト翻訳ベース（日→英）
-│   ├── text_translate_to_en_{standard|concise|minimal}.txt  # スタイル別
+│   ├── text_translate_to_en_{standard|concise|minimal}.txt  # テキスト翻訳（日→英）
 │   ├── text_translate_to_jp.txt    # テキスト翻訳用（英→日、解説付き）
 │   ├── adjust_custom.txt           # インライン調整: カスタムリクエスト
 │   ├── text_alternatives.txt       # フォローアップ: 他の言い方
 │   ├── text_review_en.txt          # フォローアップ: 英文をチェック
+│   ├── text_check_my_english.txt   # フォローアップ: ユーザー編集英文チェック
 │   ├── text_summarize.txt          # フォローアップ: 要点を教えて
 │   ├── text_explain_more.txt       # フォローアップ: 詳しく解説
 │   ├── text_question.txt           # フォローアップ: 質問への回答

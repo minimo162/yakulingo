@@ -108,17 +108,16 @@ YakuLingo/
 ├── tests/                         # Test suite (26 test files)
 │   ├── conftest.py                # Shared fixtures and mocks
 │   └── test_*.py                  # Unit tests for each module
-├── prompts/                       # Translation prompt templates (18 files)
+├── prompts/                       # Translation prompt templates (16 files)
 │   ├── detect_language.txt        # Language detection via Copilot
-│   ├── file_translate_to_en.txt   # File translation base (JP→EN)
-│   ├── file_translate_to_en_{standard|concise|minimal}.txt  # Style variants
+│   ├── file_translate_to_en_{standard|concise|minimal}.txt  # File translation (JP→EN)
 │   ├── file_translate_to_jp.txt   # File translation (EN→JP)
-│   ├── text_translate_to_en.txt   # Text translation base (JP→EN)
-│   ├── text_translate_to_en_{standard|concise|minimal}.txt  # Style variants
+│   ├── text_translate_to_en_{standard|concise|minimal}.txt  # Text translation (JP→EN)
 │   ├── text_translate_to_jp.txt   # Text translation (EN→JP, with explanation)
 │   ├── adjust_custom.txt          # Inline adjustment: custom request
 │   ├── text_alternatives.txt      # Follow-up: alternative expressions
 │   ├── text_review_en.txt         # Follow-up: review English (英文をチェック)
+│   ├── text_check_my_english.txt  # Follow-up: check user's edited English
 │   ├── text_summarize.txt         # Follow-up: extract key points (要点を教えて)
 │   ├── text_explain_more.txt      # Follow-up: detailed explanation (詳しく解説)
 │   ├── text_question.txt          # Follow-up: answer user questions

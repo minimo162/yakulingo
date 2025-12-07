@@ -39,6 +39,8 @@ Start directly with "訳文:" - NO other text before it.
 - Additional comments outside the specified format
 - Greetings or supplements at the beginning or end
 
+{reference_section}
+
 [END OF INSTRUCTIONS]
 
 === ORIGINAL TEXT ===

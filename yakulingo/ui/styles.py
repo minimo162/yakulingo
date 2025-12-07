@@ -111,6 +111,7 @@ COMPLETE_CSS = """
     --input-panel-width-wide: 100%;  /* Full width input for 2-column mode */
     --input-panel-max-width: 550px;  /* Default fallback, dynamically set based on resolution */
     --input-min-height: 200px;  /* Minimum textarea height */
+    --input-max-height: 400px;  /* Default fallback, dynamically set based on resolution */
 }
 
 /* === Base === */
@@ -1249,7 +1250,7 @@ textarea:focus-visible {
 .main-area:not(.has-results) .input-panel .main-card-inner textarea {
     flex: 1 !important;
     min-height: var(--input-min-height);
-    max-height: 50vh;  /* Limit to half screen height to avoid overwhelming empty space */
+    max-height: var(--input-max-height);  /* Dynamically set based on window height */
     height: auto !important;  /* Let flex control height (autogrow removed from large panel) */
     overflow-y: auto !important;  /* Scrollable when content exceeds space */
     resize: none !important;  /* Disable manual resize since we control height */

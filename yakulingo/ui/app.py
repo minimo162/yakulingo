@@ -1667,6 +1667,10 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
         MIN_INPUT_HEIGHT = 280
         input_min_height = max(MIN_INPUT_HEIGHT, int(REFERENCE_INPUT_MIN_HEIGHT * window_height / REFERENCE_WINDOW_HEIGHT))
 
+        # Calculate input max-height based on window height (50% of window height)
+        # Min 300px to ensure usable space, max 500px to prevent overwhelming empty space
+        input_max_height = max(300, min(500, int(window_height * 0.5)))
+
         # Calculate base font size with gentle scaling
         # Reference: 1900px window → 16px font
         # Use square root for gentle scaling (no upper limit for large screens)
@@ -1686,6 +1690,7 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
     --result-content-width: {result_content_width}px;
     --input-panel-max-width: {input_panel_max_width}px;
     --input-min-height: {input_min_height}px;
+    --input-max-height: {input_max_height}px;
 }}
 </style>''')
 

@@ -129,9 +129,9 @@ def create_file_panel(
         # Hint text (outside main-card for visibility)
         if state.file_state == FileState.EMPTY:
             with ui.element('div').classes('hint-section'):
-                with ui.element('div').classes('hint-secondary'):
-                    ui.icon('auto_awesome').classes('text-sm')
-                    ui.label('M365 Copilot による翻訳')
+                with ui.element('div').classes('hint-primary'):
+                    ui.icon('translate').classes('text-sm text-muted')
+                    ui.label('英訳・和訳を選んで翻訳します')
 
 
 def _language_selector(state: AppState, on_change: Optional[Callable[[str], None]]):

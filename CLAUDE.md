@@ -117,7 +117,7 @@ YakuLingo/
 │   ├── file_translate_to_jp.txt   # File translation (EN→JP)
 │   ├── text_translate_to_en_{standard|concise|minimal}.txt  # Text translation (JP→EN)
 │   ├── text_translate_to_jp.txt   # Text translation (EN→JP, with explanation)
-│   ├── adjust_custom.txt          # Inline adjustment: custom request
+│   ├── adjust_custom.txt          # (Reserved) Custom adjustment template
 │   ├── text_alternatives.txt      # Follow-up: alternative expressions
 │   ├── text_review_en.txt         # Follow-up: review English (英文をチェック)
 │   ├── text_check_my_english.txt  # Follow-up: check user's edited English
@@ -242,21 +242,20 @@ No manual direction selection is required.
 ### Unified UI Structure (英訳・和訳共通)
 - **Source text section** (原文セクション): 翻訳結果パネル上部に原文を表示 + コピーボタン
 - **Translation status** (翻訳状態表示): 「英訳中...」「和訳中...」→「✓ 英訳しました」「✓ 和訳しました」+ 経過時間バッジ
-- **Suggestion hint row** (吹き出し風): 💡アイコン + [再翻訳] ボタン
+- **Suggestion hint row**: [再翻訳] ボタン
 - **Action/adjustment options**: 単独オプションスタイルのボタン
-- **Inline input**: 追加リクエスト入力欄（縦幅いっぱいに拡張）
 
 ### Japanese → English (英訳)
 - **Single translation output** with configurable style (標準/簡潔/最簡潔)
 - **Inline adjustment options**:
   - Paired: もう少し短く↔より詳しく
   - Single: 他の言い方は？
-- **Inline input**: Placeholder "例: もっとカジュアルに"
+- **Check my English**: [アレンジした英文をチェック] 展開型入力欄
 
 ### English → Japanese (和訳)
 - **Single translation output** with detailed explanation
 - **Action buttons**: [英文をチェック] [要点を教えて]
-- **Inline input**: Placeholder "例: 返信の下書きを書いて"
+- **Reply composer**: [返信文を作成] 展開型入力欄
 
 ### Common Features
 - **Elapsed time badge**: Shows translation duration
@@ -662,7 +661,7 @@ The `AutoUpdater` class provides GitHub Releases-based updates:
 1. Add adjustment option to `ADJUST_OPTIONS_PAIRS` or `ADJUST_OPTIONS_SINGLE` in `text_panel.py`
 2. Handle adjustment via `adjust_translation()` in `yakulingo/ui/app.py`
    - Style-based adjustments (shorter/detailed) use translation style change
-   - Custom requests use `adjust_custom.txt` prompt template
+   - Alternative expressions use `text_alternatives.txt` prompt template
 
 ## Dependencies Overview
 
@@ -871,10 +870,11 @@ Based on recent commits:
 - **Text Translation UI Unification**:
   - **Single output**: Changed from 3 translation options to 1 option with style setting
   - **Style settings**: 標準/簡潔/最簡潔 configurable via settings dialog
-  - **Unified structure**: 英訳 and 和訳 now share same UI pattern (吹き出し風 hint + single option buttons + inline input)
-  - **Suggestion hint row**: 💡アイコン + [再翻訳] ボタン for both directions
-  - **和訳 buttons**: [英文をチェック] [要点を教えて] as single option style
-  - **Removed**: [これはどう？] quick chip, connector line design
+  - **Unified structure**: 英訳 and 和訳 now share same UI pattern (hint row + action buttons + expandable inputs)
+  - **Suggestion hint row**: [再翻訳] ボタン for both directions
+  - **和訳 buttons**: [英文をチェック] [要点を教えて] [返信文を作成] as single option style
+  - **英訳 buttons**: [もう少し短く↔より詳しく] [他の言い方は？] [アレンジした英文をチェック]
+  - **Removed**: カスタムリクエスト入力欄、[これはどう？] quick chip、connector line design
 - **Settings Dialog**: Simplified to translation style only (removed batch size, timeout, retry settings from UI)
 - **Installation**: Desktop shortcut only (removed Start Menu entry)
 - **Bilingual Output**: All file processors generate bilingual output with original + translated content

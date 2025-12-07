@@ -266,7 +266,7 @@ class TestFileProcessingErrors:
 
     def test_unsupported_file_format(self, settings, tmp_path):
         """Handle unsupported file format"""
-        unsupported_file = tmp_path / "document.txt"
+        unsupported_file = tmp_path / "document.xyz"
         unsupported_file.write_text("Plain text content")
 
         mock_copilot = MagicMock()

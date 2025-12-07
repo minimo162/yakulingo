@@ -534,6 +534,6 @@ class TestAllFileTypesWorkflow:
         service = TranslationService(mock_copilot_with_translation, settings)
 
         with pytest.raises(ValueError) as exc:
-            service._get_processor(Path("test.txt"))
+            service._get_processor(Path("test.xyz"))
 
         assert "Unsupported" in str(exc.value)

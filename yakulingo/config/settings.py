@@ -40,11 +40,6 @@ class AppSettings:
     request_timeout: int = 120          # Seconds
     max_retries: int = 3
 
-    # Copilot License
-    # Free: 8000 chars, Paid: 128000 chars
-    # Default to free (7500 with margin) for safety
-    copilot_char_limit: int = 7500      # Max prompt chars before switching to file attachment
-
     # File Translation Options (共通オプション)
     bilingual_output: bool = False      # 対訳出力（原文と翻訳を交互に配置）
     export_glossary: bool = False       # 対訳CSV出力（glossaryとして再利用可能）
@@ -138,14 +133,6 @@ class AppSettings:
             logger.warning("max_chars_per_batch too small (%d), resetting to 7000", self.max_chars_per_batch)
             self.max_chars_per_batch = 7000
 
-        # Cross-validation: batch size should fit within Copilot char limit
-        if self.max_chars_per_batch > self.copilot_char_limit:
-            logger.warning(
-                "max_chars_per_batch (%d) > copilot_char_limit (%d), adjusting",
-                self.max_chars_per_batch, self.copilot_char_limit
-            )
-            self.max_chars_per_batch = max(100, self.copilot_char_limit - 500)
-
         # Timeout constraints
         if self.request_timeout < 10:
             logger.warning("request_timeout too small (%d), resetting to 120", self.request_timeout)
@@ -174,7 +161,6 @@ class AppSettings:
             "max_chars_per_batch": self.max_chars_per_batch,
             "request_timeout": self.request_timeout,
             "max_retries": self.max_retries,
-            "copilot_char_limit": self.copilot_char_limit,
             # File Translation Options
             "bilingual_output": self.bilingual_output,
             "export_glossary": self.export_glossary,

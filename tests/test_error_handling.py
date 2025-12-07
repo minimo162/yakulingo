@@ -100,14 +100,14 @@ class TestFileErrors:
 
     def test_unsupported_file_type_in_translate(self, settings, tmp_path):
         """Handle unsupported file type"""
-        # Create a text file
-        txt_file = tmp_path / "test.txt"
-        txt_file.write_text("Test content")
+        # Create an unsupported file type (.xyz)
+        xyz_file = tmp_path / "test.xyz"
+        xyz_file.write_text("Test content")
 
         mock_copilot = Mock()
         service = TranslationService(mock_copilot, settings)
 
-        result = service.translate_file(txt_file)
+        result = service.translate_file(xyz_file)
 
         assert result.status == TranslationStatus.FAILED
         assert "Unsupported" in result.error_message

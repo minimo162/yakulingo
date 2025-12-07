@@ -448,14 +448,12 @@ class BatchTranslator:
 
     # Default values (used when settings not provided)
     DEFAULT_MAX_CHARS_PER_BATCH = 7000   # Characters per batch (fits in 8000 with ~1000 char template)
-    DEFAULT_COPILOT_CHAR_LIMIT = 7500  # Copilot input limit (Free: 8000, Paid: 128000)
 
     def __init__(
         self,
         copilot: CopilotHandler,
         prompt_builder: PromptBuilder,
         max_chars_per_batch: Optional[int] = None,
-        copilot_char_limit: Optional[int] = None,
         enable_cache: bool = True,
     ):
         self.copilot = copilot
@@ -464,7 +462,6 @@ class BatchTranslator:
 
         # Use provided values or defaults
         self.max_chars_per_batch = max_chars_per_batch or self.DEFAULT_MAX_CHARS_PER_BATCH
-        self.copilot_char_limit = copilot_char_limit or self.DEFAULT_COPILOT_CHAR_LIMIT
 
         # Translation cache for avoiding re-translation of identical text
         self._cache = TranslationCache() if enable_cache else None
@@ -670,11 +667,11 @@ class BatchTranslator:
             unique_texts, original_to_unique_idx = batch_unique_data[i]
             prompt = prompts[i]  # Use pre-built prompt
 
-            # Translate unique texts only (with char_limit for auto file attachment mode)
+            # Translate unique texts only
             # Skip clear wait for 2nd+ batches (we just finished getting a response)
             skip_clear_wait = (i > 0)
             unique_translations = self.copilot.translate_sync(
-                unique_texts, prompt, reference_files, self.copilot_char_limit, skip_clear_wait
+                unique_texts, prompt, reference_files, skip_clear_wait
             )
 
             # Validate translation count matches unique text count
@@ -792,7 +789,6 @@ class TranslationService:
             copilot,
             self.prompt_builder,
             max_chars_per_batch=config.max_chars_per_batch if config else None,
-            copilot_char_limit=config.copilot_char_limit if config else None,
         )
         self._cancel_requested = False
 
@@ -813,6 +809,7 @@ class TranslationService:
             from yakulingo.processors.word_processor import WordProcessor
             from yakulingo.processors.pptx_processor import PptxProcessor
             from yakulingo.processors.pdf_processor import PdfProcessor
+            from yakulingo.processors.txt_processor import TxtProcessor
 
             # Note: Legacy formats (.doc, .ppt) are not supported
             # Only Office Open XML formats are supported for Word/PowerPoint
@@ -822,6 +819,7 @@ class TranslationService:
                 '.docx': WordProcessor(),
                 '.pptx': PptxProcessor(),
                 '.pdf': PdfProcessor(),
+                '.txt': TxtProcessor(),
             }
         return self._processors
 
@@ -868,9 +866,8 @@ class TranslationService:
             has_refs = bool(reference_files)
             prompt = self.prompt_builder.build(text, has_refs)
 
-            # Translate (with char_limit for auto file attachment mode)
-            char_limit = self.config.copilot_char_limit if self.config else None
-            result = self.copilot.translate_single(text, prompt, reference_files, char_limit)
+            # Translate
+            result = self.copilot.translate_single(text, prompt, reference_files)
 
             return TranslationResult(
                 status=TranslationStatus.COMPLETED,
@@ -1034,9 +1031,8 @@ class TranslationService:
             if output_language == "en":
                 prompt = prompt.replace("{style}", style)
 
-            # Translate (with char_limit for auto file attachment mode)
-            char_limit = self.config.copilot_char_limit if self.config else None
-            raw_result = self.copilot.translate_single(text, prompt, reference_files, char_limit, on_chunk)
+            # Translate
+            raw_result = self.copilot.translate_single(text, prompt, reference_files, on_chunk)
 
             # Parse the result - always single option now
             options = self._parse_single_translation_result(raw_result)
@@ -1194,9 +1190,8 @@ class TranslationService:
             prompt = prompt.replace("{source_text}", source_text if source_text else "")
             prompt = prompt.replace("{input_text}", text)
 
-            # Get adjusted translation (with char_limit for auto file attachment mode)
-            char_limit = self.config.copilot_char_limit if self.config else None
-            raw_result = self.copilot.translate_single(text, prompt, reference_files, char_limit)
+            # Get adjusted translation
+            raw_result = self.copilot.translate_single(text, prompt, reference_files)
 
             # Parse the result
             option = self._parse_single_option_result(raw_result)
@@ -1264,8 +1259,7 @@ class TranslationService:
             prompt = prompt.replace("{reference_section}", reference_section)
 
             # Get alternative translation
-            char_limit = self.config.copilot_char_limit if self.config else None
-            raw_result = self.copilot.translate_single(source_text, prompt, reference_files, char_limit)
+            raw_result = self.copilot.translate_single(source_text, prompt, reference_files)
 
             # Parse the result and set style
             option = self._parse_single_option_result(raw_result)

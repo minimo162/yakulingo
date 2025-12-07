@@ -1011,6 +1011,75 @@ class YakuLingoApp:
         self.state.text_translation_elapsed_time = None
         await self._translate_text()
 
+    async def _translate_long_text_as_file(self, text: str):
+        """Translate long text using file translation mode.
+
+        When text exceeds TEXT_TRANSLATION_CHAR_LIMIT, save it as a temporary
+        .txt file and process using file translation (batch processing).
+
+        Args:
+            text: Long text to translate
+        """
+        import tempfile
+
+        # Use saved client reference
+        client = self._client
+
+        # Notify user
+        ui.notify(
+            f'テキストが長いため（{len(text):,}文字）、ファイル翻訳で処理します',
+            type='info',
+            position='top',
+            timeout=3000,
+        )
+
+        # Detect language to determine output direction
+        detected_language = await asyncio.to_thread(
+            self.translation_service.detect_language,
+            text[:1000],  # Use first 1000 chars for detection
+        )
+        is_japanese = detected_language == "日本語"
+        output_language = "en" if is_japanese else "jp"
+
+        # Create temporary file
+        with tempfile.NamedTemporaryFile(
+            mode='w',
+            suffix='.txt',
+            delete=False,
+            encoding='utf-8',
+            prefix='yakulingo_',
+        ) as f:
+            f.write(text)
+            temp_path = Path(f.name)
+
+        try:
+            # Set up file translation state
+            self.state.selected_file = temp_path
+            self.state.file_output_language = output_language
+            self.state.file_info = self.translation_service.processors['.txt'].get_file_info(temp_path)
+            self.state.source_text = ""  # Clear text input
+
+            # Switch to file tab
+            self.state.current_tab = Tab.FILE
+            self.state.file_state = FileState.SELECTED
+
+            # Refresh UI
+            with client:
+                self._refresh_content()
+
+            # Small delay for UI update
+            await asyncio.sleep(0.1)
+
+            # Start file translation
+            await self._translate_file()
+
+        except Exception as e:
+            logger.exception("Long text translation error: %s", e)
+            with client:
+                ui.notify(f'エラー: {e}', type='negative')
+            # Clean up temp file on error
+            temp_path.unlink(missing_ok=True)
+
     async def _translate_text(self):
         """Translate text with 2-step process: language detection then translation."""
         import time
@@ -1020,14 +1089,9 @@ class YakuLingoApp:
 
         source_text = self.state.source_text
 
-        # Check text length limit
+        # Check text length limit - switch to file translation for long text
         if len(source_text) > TEXT_TRANSLATION_CHAR_LIMIT:
-            ui.notify(
-                f'テキストが長すぎます（{len(source_text):,}文字）。ファイル翻訳をお使いください',
-                type='warning',
-                position='top',
-                timeout=5000,
-            )
+            await self._translate_long_text_as_file(source_text)
             return
 
         reference_files = self._get_effective_reference_files()

@@ -333,31 +333,24 @@ function Invoke-Setup {
                         $tempNewSettings = Join-Path $BackupDir "settings_new.json"
                         Copy-Item -Path $newSettingsPath -Destination $tempNewSettings -Force
 
-                        # ユーザー保護対象の設定（これ以外は開発者が自由に変更可能）
+                        # ユーザーがUIで変更した設定（これ以外は開発者が自由に変更可能）
                         $UserProtectedSettings = @(
-                            # ユーザーのファイル/フォルダ設定
-                            "reference_files",
-                            "output_directory",
-                            # ウィンドウ設定
-                            "window_width",
-                            "window_height",
-                            "last_tab",
-                            # 翻訳スタイル設定
+                            # 翻訳スタイル設定（設定ダイアログで変更）
                             "translation_style",
                             "text_translation_style",
-                            # フォント設定
+                            # フォント設定（設定ダイアログで変更）
                             "font_jp_to_en",
                             "font_en_to_jp",
-                            # 出力オプション
+                            "font_size_adjustment_jp_to_en",
+                            # 出力オプション（ファイル翻訳パネルで変更）
                             "bilingual_output",
                             "export_glossary",
                             "use_bundled_glossary",
-                            # 更新設定
-                            "auto_update_enabled",
-                            "skipped_version",
-                            # ユーザー状態
+                            # UI状態（自動保存）
+                            "last_tab",
                             "onboarding_completed",
-                            "last_update_check"
+                            # 更新設定（更新ダイアログで変更）
+                            "skipped_version"
                         )
 
                         # JSONをマージ

@@ -183,18 +183,7 @@ class YakuLingoApp:
         # Bring app window to front
         await self._bring_window_to_front()
 
-        # Check text length limit - switch to file translation for long text
-        if len(text) > TEXT_TRANSLATION_CHAR_LIMIT:
-            logger.info(
-                "Hotkey text too long (%d chars > %d limit), using file translation",
-                len(text), TEXT_TRANSLATION_CHAR_LIMIT
-            )
-            # Set source text for _translate_long_text_as_file
-            self.state.source_text = text
-            await self._translate_long_text_as_file(text)
-            return
-
-        # Set source text
+        # Set source text (length check is done in _translate_text)
         self.state.source_text = text
 
         # Switch to text tab if not already

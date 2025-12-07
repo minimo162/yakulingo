@@ -21,7 +21,7 @@ ATTACH_SVG: str = '''
 '''
 
 
-SUPPORTED_FORMATS = ".xlsx,.xls,.docx,.doc,.pptx,.ppt,.pdf"
+SUPPORTED_FORMATS = ".xlsx,.xls,.docx,.doc,.pptx,.ppt,.pdf,.txt"
 
 # File type icons (Material Icons)
 FILE_TYPE_ICONS = {
@@ -29,6 +29,7 @@ FILE_TYPE_ICONS = {
     FileType.WORD: 'description',
     FileType.POWERPOINT: 'slideshow',
     FileType.PDF: 'picture_as_pdf',
+    FileType.TEXT: 'article',
 }
 
 # File type CSS classes (defined in styles.py)
@@ -37,6 +38,7 @@ FILE_TYPE_CLASSES = {
     FileType.WORD: 'file-icon-word',
     FileType.POWERPOINT: 'file-icon-powerpoint',
     FileType.PDF: 'file-icon-pdf',
+    FileType.TEXT: 'file-icon-text',
 }
 
 
@@ -289,7 +291,7 @@ def _drop_zone(on_file_select: Callable[[Path], None]):
             ui.icon('upload_file').classes('drop-zone-icon')
             ui.label('翻訳するファイルをドロップ').classes('drop-zone-text')
             ui.label('または クリックして選択').classes('drop-zone-subtext')
-            ui.label('Excel / Word / PowerPoint / PDF').classes('drop-zone-hint')
+            ui.label('Excel / Word / PowerPoint / PDF / TXT').classes('drop-zone-hint')
 
         # Upload component (hidden, triggered by container click)
         upload = ui.upload(

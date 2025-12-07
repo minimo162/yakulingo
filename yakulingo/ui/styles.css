@@ -2901,6 +2901,11 @@ a:hover {
     color: #F40F02;
 }
 
+.file-icon-text {
+    background-color: rgba(102, 102, 102, 0.08);
+    color: #555555;
+}
+
 .file-icon-default {
     background-color: rgba(102, 102, 102, 0.08);
     color: #666666;

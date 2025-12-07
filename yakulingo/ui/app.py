@@ -1667,9 +1667,10 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
         MIN_INPUT_HEIGHT = 280
         input_min_height = max(MIN_INPUT_HEIGHT, int(REFERENCE_INPUT_MIN_HEIGHT * window_height / REFERENCE_WINDOW_HEIGHT))
 
-        # Calculate input max-height based on window height (50% of window height)
-        # Min 300px to ensure usable space, max 500px to prevent overwhelming empty space
-        input_max_height = max(300, min(500, int(window_height * 0.5)))
+        # Calculate input max-height based on input max-width to maintain consistent aspect ratio
+        # Aspect ratio 4:3 (height = width * 0.75) for balanced appearance across resolutions
+        # Min 300px to ensure usable space
+        input_max_height = max(300, int(input_panel_max_width * 0.75))
 
         # Calculate base font size with gentle scaling
         # Reference: 1900px window → 16px font

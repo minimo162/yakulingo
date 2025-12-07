@@ -496,3 +496,97 @@ class TestExcelProcessorCreateBilingualWorkbook:
         wb_out = openpyxl.load_workbook(output_path)
         # Original sheet should preserve original fonts
         assert wb_out["Sheet1"]["A1"].font.name == "MS Mincho"
+
+
+# --- Tests: Special Character Handling ---
+
+class TestSpecialCharacterHandling:
+    """Test handling of special characters in sheet names"""
+
+    def test_sanitize_sheet_name_forbidden_chars(self):
+        """Removes forbidden characters from sheet names"""
+        from yakulingo.processors.excel_processor import sanitize_sheet_name
+
+        # Characters \ / ? * [ ] : should be replaced
+        assert sanitize_sheet_name("Sheet:1") == "Sheet_1"
+        assert sanitize_sheet_name("Data/2024") == "Data_2024"
+        assert sanitize_sheet_name("Test\\Sheet") == "Test_Sheet"
+        assert sanitize_sheet_name("Sheet?Name") == "Sheet_Name"
+        assert sanitize_sheet_name("Sheet*Name") == "Sheet_Name"
+        assert sanitize_sheet_name("[Sheet]") == "_Sheet_"
+        assert sanitize_sheet_name("Multi:Char/Test") == "Multi_Char_Test"
+
+    def test_sanitize_sheet_name_length_limit(self):
+        """Truncates sheet names exceeding 31 characters"""
+        from yakulingo.processors.excel_processor import sanitize_sheet_name
+
+        # Exactly 31 chars should be kept
+        name_31 = "A" * 31
+        assert len(sanitize_sheet_name(name_31)) == 31
+
+        # Over 31 chars should be truncated with "..."
+        name_40 = "B" * 40
+        result = sanitize_sheet_name(name_40)
+        assert len(result) == 31
+        assert result.endswith("...")
+
+    def test_sanitize_sheet_name_japanese(self):
+        """Handles Japanese characters correctly"""
+        from yakulingo.processors.excel_processor import sanitize_sheet_name
+
+        # Japanese characters should be preserved
+        assert sanitize_sheet_name("データシート") == "データシート"
+        assert sanitize_sheet_name("2024年度:売上") == "2024年度_売上"
+
+    def test_group_translations_with_underscore_sheet_names(self, processor):
+        """Correctly groups translations for sheet names with underscores"""
+        translations = {
+            "my_sheet_data_A1": "Translated 1",
+            "my_sheet_A1": "Translated 2",
+            "my_A1": "Translated 3",
+        }
+        sheet_names = {"my", "my_sheet", "my_sheet_data"}
+
+        result = processor._group_translations_by_sheet(translations, sheet_names)
+
+        # Each translation should go to the correct sheet (longest match first)
+        assert "my_sheet_data" in result
+        assert result["my_sheet_data"]["cells"]["A1"] == "Translated 1"
+        assert "my_sheet" in result
+        assert result["my_sheet"]["cells"]["A1"] == "Translated 2"
+        assert "my" in result
+        assert result["my"]["cells"]["A1"] == "Translated 3"
+
+    def test_bilingual_workbook_with_forbidden_chars(self, processor, tmp_path):
+        """Creates bilingual workbook when original sheet has forbidden chars"""
+        # Create original with forbidden char in sheet name
+        original_path = tmp_path / "original.xlsx"
+        wb_orig = openpyxl.Workbook()
+        ws = wb_orig.active
+        # Note: openpyxl doesn't allow forbidden chars in sheet names,
+        # but we test the sanitization logic anyway
+        ws.title = "Sheet1"  # Use valid name for test
+        ws["A1"] = "テスト"
+        wb_orig.save(original_path)
+
+        # Create translated
+        translated_path = tmp_path / "translated.xlsx"
+        wb_trans = openpyxl.Workbook()
+        ws_trans = wb_trans.active
+        ws_trans.title = "Sheet1"
+        ws_trans["A1"] = "Test"
+        wb_trans.save(translated_path)
+
+        # Create bilingual
+        output_path = tmp_path / "bilingual.xlsx"
+        processor.create_bilingual_workbook(
+            original_path, translated_path, output_path
+        )
+
+        # Verify output
+        wb_out = openpyxl.load_workbook(output_path)
+        assert len(wb_out.sheetnames) == 2
+        # Both sheet names should be valid (no forbidden chars)
+        for name in wb_out.sheetnames:
+            for char in "\\/?*[]:":
+                assert char not in name

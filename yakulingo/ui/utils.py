@@ -26,6 +26,9 @@ _RE_QUOTE = re.compile(r'"([^"]+)"')
 _RE_TRANSLATION_TEXT = re.compile(r'訳文:\s*(.+?)(?=解説:|$)', re.DOTALL)
 _RE_EXPLANATION = re.compile(r'解説:\s*(.+)', re.DOTALL)
 
+# Filename forbidden characters (Windows: \ / : * ? " < > |, also control chars)
+_RE_FILENAME_FORBIDDEN = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
+
 
 class TempFileManager:
     """
@@ -55,12 +58,15 @@ class TempFileManager:
         Create a temporary file with the given content.
         The file will be automatically cleaned up on exit.
 
-        Note: filename is sanitized to prevent path traversal attacks.
+        Note: filename is sanitized to prevent path traversal attacks
+        and forbidden characters (Windows: \\ / : * ? " < > |).
         """
         # Sanitize filename to prevent path traversal (e.g., "../../../etc/passwd")
         safe_filename = os.path.basename(filename)
         if not safe_filename:
             safe_filename = "unnamed_file"
+        # Replace forbidden characters with underscore
+        safe_filename = _RE_FILENAME_FORBIDDEN.sub('_', safe_filename)
         temp_path = self.temp_dir / safe_filename
         temp_path.write_bytes(content)
         self._temp_files.add(temp_path)

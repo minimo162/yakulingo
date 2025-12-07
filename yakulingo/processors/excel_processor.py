@@ -7,6 +7,7 @@ Falls back to openpyxl if xlwings is not available (Linux or no Excel installed)
 """
 
 import logging
+import re
 import zipfile
 from pathlib import Path
 from typing import Iterator, Optional
@@ -43,6 +44,36 @@ def is_xlwings_available() -> bool:
     """Check if xlwings is available."""
     _get_xlwings()
     return HAS_XLWINGS
+
+
+# Excel sheet name forbidden characters: \ / ? * [ ] :
+# Maximum length: 31 characters
+_EXCEL_SHEET_NAME_FORBIDDEN = re.compile(r'[\\/?*\[\]:]')
+_EXCEL_SHEET_NAME_MAX_LENGTH = 31
+
+
+def sanitize_sheet_name(name: str, max_length: int = _EXCEL_SHEET_NAME_MAX_LENGTH) -> str:
+    """
+    Sanitize a string to be used as an Excel sheet name.
+
+    Excel sheet names cannot contain: \\ / ? * [ ] :
+    Maximum length is 31 characters.
+
+    Args:
+        name: The sheet name to sanitize
+        max_length: Maximum allowed length (default 31)
+
+    Returns:
+        Sanitized sheet name safe for Excel
+    """
+    # Replace forbidden characters with underscore
+    sanitized = _EXCEL_SHEET_NAME_FORBIDDEN.sub('_', name)
+
+    # Truncate if too long
+    if len(sanitized) > max_length:
+        sanitized = sanitized[:max_length - 3] + '...'
+
+    return sanitized
 
 
 # =============================================================================
@@ -431,10 +462,14 @@ class ExcelProcessor(FileProcessor):
         """
         result: dict[str, dict] = {}
 
+        # Sort sheet names by length (longest first) to avoid prefix collision
+        # e.g., "my_sheet" should match before "my" for block_id "my_sheet_A1"
+        sorted_sheet_names = sorted(sheet_names, key=len, reverse=True)
+
         for block_id, translated_text in translations.items():
             # Find matching sheet name (handles sheet names with underscores)
             sheet_name = None
-            for name in sheet_names:
+            for name in sorted_sheet_names:
                 if block_id.startswith(f"{name}_"):
                     sheet_name = name
                     break
@@ -780,20 +815,18 @@ class ExcelProcessor(FileProcessor):
 
             # Interleave sheets
             for i, sheet_name in enumerate(original_wb.sheetnames):
-                # Copy original sheet
+                # Copy original sheet (sanitize in case original has forbidden chars)
                 original_sheet = original_wb[sheet_name]
-                orig_copy = bilingual_wb.create_sheet(title=sheet_name)
+                safe_orig_name = sanitize_sheet_name(sheet_name)
+                orig_copy = bilingual_wb.create_sheet(title=safe_orig_name)
                 self._copy_sheet_content(original_sheet, orig_copy)
 
                 # Copy translated sheet if exists
                 if i < len(translated_wb.sheetnames):
                     trans_sheet_name = translated_wb.sheetnames[i]
                     translated_sheet = translated_wb[trans_sheet_name]
-                    # Create translated sheet with suffix
-                    trans_title = f"{sheet_name}_translated"
-                    # Truncate if too long (Excel has 31 char limit)
-                    if len(trans_title) > 31:
-                        trans_title = trans_title[:28] + "..."
+                    # Create translated sheet with suffix (sanitize for forbidden chars)
+                    trans_title = sanitize_sheet_name(f"{sheet_name}_translated")
                     trans_copy = bilingual_wb.create_sheet(title=trans_title)
                     self._copy_sheet_content(translated_sheet, trans_copy)
 
@@ -802,9 +835,8 @@ class ExcelProcessor(FileProcessor):
                 for i in range(original_sheets, translated_sheets):
                     trans_sheet_name = translated_wb.sheetnames[i]
                     translated_sheet = translated_wb[trans_sheet_name]
-                    trans_title = f"{trans_sheet_name}_translated"
-                    if len(trans_title) > 31:
-                        trans_title = trans_title[:28] + "..."
+                    # Sanitize for forbidden chars and length
+                    trans_title = sanitize_sheet_name(f"{trans_sheet_name}_translated")
                     trans_copy = bilingual_wb.create_sheet(title=trans_title)
                     self._copy_sheet_content(translated_sheet, trans_copy)
 

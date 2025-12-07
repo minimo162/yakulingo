@@ -51,5 +51,7 @@ Start directly with "訳文:" - NO other text before it.
 - Unnecessary praise or criticism
 - Long explanations when a short one suffices
 
+{reference_section}
+
 [END OF INSTRUCTIONS]
 

@@ -79,13 +79,13 @@ COMPLETE_CSS = """
     --md-comp-icon-button-icon-size: 1.5rem; /* 24dp - icon size inside button */
     --md-comp-touch-target-size: 3rem;       /* 48dp - minimum touch target */
 
-    /* Typography - font size hierarchy (larger for better readability) */
-    --md-sys-typescale-size-xs: 1rem;         /* 16px - captions, badges */
-    --md-sys-typescale-size-sm: 1.125rem;     /* 18px - labels, buttons */
-    --md-sys-typescale-size-md: 1.1875rem;    /* 19px - body text */
+    /* Typography - font size hierarchy (M3 standard with clear visual distinction) */
+    --md-sys-typescale-size-xs: 0.875rem;     /* 14px - captions, badges */
+    --md-sys-typescale-size-sm: 1rem;         /* 16px - labels, buttons */
+    --md-sys-typescale-size-md: 1.125rem;     /* 18px - body text */
     --md-sys-typescale-size-lg: 1.25rem;      /* 20px - subheadings */
-    --md-sys-typescale-size-xl: 1.625rem;     /* 26px - headings */
-    --md-sys-typescale-size-2xl: 1.875rem;    /* 30px - large headings */
+    --md-sys-typescale-size-xl: 1.5rem;       /* 24px - headings */
+    --md-sys-typescale-size-2xl: 2rem;        /* 32px - large headings */
 
     /* Typography - font weight hierarchy */
     --md-sys-typescale-weight-regular: 400;   /* Body text, descriptions */
@@ -257,12 +257,14 @@ body {
 
 .source-copy-btn {
     color: var(--md-sys-color-on-surface-variant);
-    opacity: 0.7;
     flex-shrink: 0;
+    background: transparent;
+    border-radius: var(--md-sys-shape-corner-small);
+    transition: background-color var(--md-sys-motion-duration-short), color var(--md-sys-motion-duration-short);
 }
 
 .source-copy-btn:hover {
-    opacity: 1;
+    background-color: var(--md-sys-color-surface-container);
     color: var(--md-sys-color-primary);
 }
 
@@ -735,8 +737,31 @@ body {
 .translate-btn:disabled {
     background: rgba(27, 27, 31, 0.12);
     color: rgba(27, 27, 31, 0.38);
-    cursor: default;
+    cursor: not-allowed;
     box-shadow: none;
+    opacity: 0.6;
+}
+
+/* M3 Focus state for all interactive elements */
+.btn-primary:focus-visible,
+.translate-btn:focus-visible,
+.btn-outline:focus-visible,
+.btn-tonal:focus-visible,
+.btn-text:focus-visible {
+    outline: 2px solid var(--md-sys-color-primary);
+    outline-offset: 2px;
+}
+
+button:focus-visible,
+a:focus-visible {
+    outline: 2px solid var(--md-sys-color-primary);
+    outline-offset: 2px;
+}
+
+input:focus-visible,
+textarea:focus-visible {
+    outline: 2px solid var(--md-sys-color-primary);
+    outline-offset: -2px;
 }
 
 /* Compact translate button for RESULT state */

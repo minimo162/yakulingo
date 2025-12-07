@@ -52,6 +52,70 @@ def _extract_translation_preview(text: str) -> str:
     return translation[:500] + '...' if len(translation) > 500 else translation
 
 
+def _create_textarea_with_keyhandler(
+    state: AppState,
+    on_source_change: Callable[[str], None],
+    on_translate: Callable[[], None],
+    placeholder: str = '好きな言語で入力…',
+    value: Optional[str] = None,
+    extra_classes: str = '',
+    autogrow: bool = False,
+    style: Optional[str] = None,
+) -> ui.textarea:
+    """Create a textarea with Ctrl+Enter handler for translation.
+
+    This helper function reduces code duplication across different panel states.
+
+    Args:
+        state: Application state for checking translation status
+        on_source_change: Callback for text changes
+        on_translate: Callback for translation trigger
+        placeholder: Textarea placeholder text
+        value: Initial value (defaults to state.source_text)
+        extra_classes: Additional CSS classes
+        autogrow: Whether textarea should auto-grow
+        style: Optional inline style
+
+    Returns:
+        The created textarea element
+    """
+    if value is None:
+        value = state.source_text
+
+    classes = f'w-full p-4 {extra_classes}'.strip()
+    props = 'borderless aria-label="翻訳するテキスト"'
+    if autogrow:
+        props += ' autogrow'
+
+    textarea = ui.textarea(
+        placeholder=placeholder,
+        value=value,
+        on_change=lambda e: on_source_change(e.value)
+    ).classes(classes).props(props)
+
+    if style:
+        textarea.style(style)
+
+    # Handle Ctrl+Enter in textarea with NiceGUI 3.0+ js_handler
+    # Prevent default browser behavior (newline insertion) when Ctrl+Enter is pressed
+    async def handle_keydown(e):
+        if state.can_translate() and not state.text_translating:
+            await on_translate()
+
+    textarea.on(
+        'keydown',
+        handle_keydown,
+        js_handler='''(e) => {
+            if (e.ctrlKey && e.key === "Enter") {
+                e.preventDefault();
+                emit(e);
+            }
+        }'''
+    )
+
+    return textarea
+
+
 # Action icons for →jp follow-up features
 ACTION_ICONS: dict[str, str] = {
     'review': 'rate_review',
@@ -144,27 +208,10 @@ def _create_large_input_panel(
             # Input container
             with ui.element('div').classes('main-card-inner'):
                 # Large textarea - no autogrow, fills available space via CSS flex
-                textarea = ui.textarea(
-                    placeholder='好きな言語で入力…',
-                    value=state.source_text,
-                    on_change=lambda e: on_source_change(e.value)
-                ).classes('w-full p-4').props('borderless aria-label="翻訳するテキスト"')
-
-                # Handle Ctrl+Enter in textarea with NiceGUI 3.0+ js_handler
-                # Prevent default browser behavior (newline insertion) when Ctrl+Enter is pressed
-                async def handle_keydown(e):
-                    if state.can_translate() and not state.text_translating:
-                        await on_translate()
-
-                textarea.on(
-                    'keydown',
-                    handle_keydown,
-                    js_handler='''(e) => {
-                        if (e.ctrlKey && e.key === "Enter") {
-                            e.preventDefault();
-                            emit(e);
-                        }
-                    }'''
+                _create_textarea_with_keyhandler(
+                    state=state,
+                    on_source_change=on_source_change,
+                    on_translate=on_translate,
                 )
 
                 # Bottom controls
@@ -286,27 +333,14 @@ def _create_compact_input_panel(
         with ui.element('div').classes('main-card w-full'):
             with ui.element('div').classes('main-card-inner'):
                 # Textarea - fills available space (controlled by CSS flex: 1)
-                textarea = ui.textarea(
+                _create_textarea_with_keyhandler(
+                    state=state,
+                    on_source_change=on_source_change,
+                    on_translate=on_translate,
                     placeholder='新しいテキストを入力…',
                     value=textarea_value,
-                    on_change=lambda e: on_source_change(e.value)
-                ).classes('w-full p-4 compact-textarea').props('borderless autogrow aria-label="翻訳するテキスト"')
-
-                # Handle Ctrl+Enter in textarea with NiceGUI 3.0+ js_handler
-                # Prevent default browser behavior (newline insertion) when Ctrl+Enter is pressed
-                async def handle_keydown(e):
-                    if state.can_translate() and not state.text_translating:
-                        await on_translate()
-
-                textarea.on(
-                    'keydown',
-                    handle_keydown,
-                    js_handler='''(e) => {
-                        if (e.ctrlKey && e.key === "Enter") {
-                            e.preventDefault();
-                            emit(e);
-                        }
-                    }'''
+                    extra_classes='compact-textarea',
+                    autogrow=True,
                 )
 
                 # Bottom controls - same layout as large panel
@@ -569,27 +603,12 @@ def create_text_panel(
             # Input container
             with ui.element('div').classes('main-card-inner'):
                 # Textarea with improved placeholder and accessibility
-                textarea = ui.textarea(
-                    placeholder='好きな言語で入力…',
-                    value=state.source_text,
-                    on_change=lambda e: on_source_change(e.value)
-                ).classes('w-full p-4').props('borderless autogrow aria-label="翻訳するテキスト"').style('min-height: 160px')
-
-                # Handle Ctrl+Enter in textarea with NiceGUI 3.0+ js_handler
-                # Prevent default browser behavior (newline insertion) when Ctrl+Enter is pressed
-                async def handle_keydown(e):
-                    if state.can_translate() and not state.text_translating:
-                        await on_translate()
-
-                textarea.on(
-                    'keydown',
-                    handle_keydown,
-                    js_handler='''(e) => {
-                        if (e.ctrlKey && e.key === "Enter") {
-                            e.preventDefault();
-                            emit(e);
-                        }
-                    }'''
+                _create_textarea_with_keyhandler(
+                    state=state,
+                    on_source_change=on_source_change,
+                    on_translate=on_translate,
+                    autogrow=True,
+                    style='min-height: 160px',
                 )
 
                 # Bottom controls

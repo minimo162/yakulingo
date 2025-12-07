@@ -510,7 +510,7 @@ class AutoUpdater:
         "uv.toml",          # UV設定
         "YakuLingo.exe",    # 起動ランチャー
         "README.md",        # ドキュメント
-        "glossary.csv",     # デフォルト用語集
+        # Note: glossary.csv はユーザー編集可能なため、アップデートで上書きしない
     ]
     # Note: config/settings.json は config/ フォルダごと上書きされる
 
@@ -583,6 +583,13 @@ timeout /t 3 /nobreak >nul
 
 cd /d "{app_dir}"
 
+REM ユーザーデータをバックアップ（設定ファイル）
+set "SETTINGS_BACKUP=%TEMP%\\yakulingo_settings_backup.json"
+if exist "config\\settings.json" (
+    echo ユーザー設定をバックアップしています...
+    copy /y "config\\settings.json" "%SETTINGS_BACKUP%" >nul
+)
+
 REM ソースコードディレクトリを削除（環境ファイルは残す）
 echo ソースコードを更新しています...
 for %%d in ({dirs_to_update}) do (
@@ -600,11 +607,34 @@ for %%d in ({dirs_to_update}) do (
     )
 )
 
+REM ユーザー設定を復元してマージ
+if exist "%SETTINGS_BACKUP%" (
+    echo ユーザー設定を復元しています...
+    copy /y "%SETTINGS_BACKUP%" "config\\settings.json" >nul
+    del "%SETTINGS_BACKUP%" >nul 2>&1
+)
+REM 設定ファイルのマージ（新規項目のみ追加）
+echo 設定を更新しています...
+if exist "{app_dir}\\.venv\\Scripts\\python.exe" (
+    "{app_dir}\\.venv\\Scripts\\python.exe" -c "from pathlib import Path; import sys; sys.path.insert(0, str(Path(r'{app_dir}'))); from yakulingo.services.updater import merge_settings; added = merge_settings(Path(r'{app_dir}'), Path(r'{source_dir}')); print(f'  追加: {{added}} 件の新規設定' if added > 0 else '  新規設定はありません' if added == 0 else '  設定ファイルを新規作成しました')"
+)
+
 REM ソースコードファイルをコピー
 for %%f in ({files_to_update}) do (
     if exist "{source_dir}\\%%f" (
         echo   コピー: %%f
         copy /y "{source_dir}\\%%f" "{app_dir}\\%%f" >nul
+    )
+)
+
+REM 用語集のマージ（新規用語のみ追加）
+echo.
+echo 用語集を更新しています...
+if exist "{source_dir}\\glossary.csv" (
+    if exist "{app_dir}\\.venv\\Scripts\\python.exe" (
+        "{app_dir}\\.venv\\Scripts\\python.exe" -c "from pathlib import Path; import sys; sys.path.insert(0, str(Path(r'{app_dir}'))); from yakulingo.services.updater import merge_glossary; added = merge_glossary(Path(r'{app_dir}'), Path(r'{source_dir}')); print(f'  追加: {{added}} 件の新規用語' if added > 0 else '  新規用語はありません' if added == 0 else '  用語集を新規作成しました')"
+    ) else (
+        echo   [SKIP] Python環境が見つかりません
     )
 )
 
@@ -656,6 +686,13 @@ sleep 3
 
 cd "{app_dir}"
 
+# ユーザーデータをバックアップ（設定ファイル）
+SETTINGS_BACKUP="/tmp/yakulingo_settings_backup.json"
+if [ -f "config/settings.json" ]; then
+    echo "ユーザー設定をバックアップしています..."
+    cp "config/settings.json" "$SETTINGS_BACKUP"
+fi
+
 # ソースコードディレクトリを削除（環境ファイルは残す）
 echo "ソースコードを更新しています..."
 for dir in {dirs_to_update}; do
@@ -673,6 +710,18 @@ for dir in {dirs_to_update}; do
     fi
 done
 
+# ユーザー設定を復元してマージ
+if [ -f "$SETTINGS_BACKUP" ]; then
+    echo "ユーザー設定を復元しています..."
+    cp "$SETTINGS_BACKUP" "config/settings.json"
+    rm -f "$SETTINGS_BACKUP"
+fi
+# 設定ファイルのマージ（新規項目のみ追加）
+echo "設定を更新しています..."
+if [ -f "{app_dir}/.venv/bin/python" ]; then
+    "{app_dir}/.venv/bin/python" -c "from pathlib import Path; import sys; sys.path.insert(0, str(Path(r'{app_dir}'))); from yakulingo.services.updater import merge_settings; added = merge_settings(Path(r'{app_dir}'), Path(r'{source_dir}')); print(f'  追加: {{added}} 件の新規設定' if added > 0 else '  新規設定はありません' if added == 0 else '  設定ファイルを新規作成しました')"
+fi
+
 # ソースコードファイルをコピー
 for file in {files_to_update}; do
     if [ -f "{source_dir}/$file" ]; then
@@ -680,6 +729,17 @@ for file in {files_to_update}; do
         cp "{source_dir}/$file" "{app_dir}/$file"
     fi
 done
+
+# 用語集のマージ（新規用語のみ追加）
+echo ""
+echo "用語集を更新しています..."
+if [ -f "{source_dir}/glossary.csv" ]; then
+    if [ -f "{app_dir}/.venv/bin/python" ]; then
+        "{app_dir}/.venv/bin/python" -c "from pathlib import Path; import sys; sys.path.insert(0, str(Path(r'{app_dir}'))); from yakulingo.services.updater import merge_glossary; added = merge_glossary(Path(r'{app_dir}'), Path(r'{source_dir}')); print(f'  追加: {{added}} 件の新規用語' if added > 0 else '  新規用語はありません' if added == 0 else '  用語集を新規作成しました')"
+    else
+        echo "  [SKIP] Python環境が見つかりません"
+    fi
+fi
 
 echo ""
 echo "============================================================"
@@ -729,3 +789,182 @@ def check_for_updates(
     """
     updater = AutoUpdater(repo_owner=repo_owner, repo_name=repo_name)
     return updater.check_for_updates()
+
+
+# ユーザーがUIで明示的に変更した設定項目（アップデート時に保護される）
+# これ以外の設定は開発者が自由に変更・削除可能
+USER_PROTECTED_SETTINGS = {
+    # 翻訳スタイル設定（設定ダイアログで変更）
+    "translation_style",
+    "text_translation_style",
+    # フォント設定（設定ダイアログで変更）
+    "font_jp_to_en",
+    "font_en_to_jp",
+    "font_size_adjustment_jp_to_en",
+    # 出力オプション（ファイル翻訳パネルで変更）
+    "bilingual_output",
+    "export_glossary",
+    "use_bundled_glossary",
+    # UI状態（自動保存）
+    "last_tab",
+    "onboarding_completed",
+    # 更新設定（更新ダイアログで変更）
+    "skipped_version",
+}
+
+
+def merge_settings(app_dir: Path, source_dir: Path) -> int:
+    """
+    設定ファイルをマージ（ユーザー設定を保護しつつ新しい設定を適用）
+
+    新しいバージョンの設定をベースとし、USER_PROTECTED_SETTINGS に含まれる
+    ユーザーの設定のみを上書きします。これにより：
+    - 開発者は新しい設定項目を追加できる
+    - 開発者は不要な設定項目を削除できる
+    - 開発者は技術的な設定のデフォルト値を変更できる
+    - ユーザーの明示的な設定（UIで変更した項目）は保護される
+
+    Args:
+        app_dir: アプリケーションディレクトリ（ユーザーのsettings.jsonがある場所）
+        source_dir: ソースディレクトリ（新しいsettings.jsonまたはテンプレートがある場所）
+
+    Returns:
+        int: 変更された設定項目数（正: 追加/変更, 負: 新規作成）
+    """
+    user_settings = app_dir / "config" / "settings.json"
+    # 新しい設定ファイルまたはテンプレートを探す
+    new_settings = source_dir / "config" / "settings.json"
+    if not new_settings.exists():
+        new_settings = source_dir / "config" / "settings.template.json"
+
+    if not new_settings.exists():
+        logger.info("新しい設定ファイルが見つかりません: %s", new_settings)
+        return 0
+
+    # ユーザーの設定が存在しない場合はコピー
+    if not user_settings.exists():
+        user_settings.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(new_settings, user_settings)
+        logger.info("設定ファイルをコピーしました: %s", user_settings)
+        return -1  # 新規作成を示す
+
+    # 両方の設定を読み込む
+    try:
+        with open(user_settings, "r", encoding="utf-8") as f:
+            user_data = json.load(f)
+        with open(new_settings, "r", encoding="utf-8") as f:
+            new_data = json.load(f)
+    except (json.JSONDecodeError, OSError) as e:
+        logger.warning("設定ファイルの読み込みに失敗: %s", e)
+        return 0
+
+    # 新しい設定をベースとする（開発者の変更を反映）
+    merged_data = dict(new_data)
+
+    # ユーザー保護対象の設定のみを上書き
+    preserved_count = 0
+    for key in USER_PROTECTED_SETTINGS:
+        if key in user_data:
+            # ユーザーの設定値が新しい設定にも存在する場合のみ復元
+            # （削除された設定は復元しない）
+            if key in new_data:
+                merged_data[key] = user_data[key]
+                preserved_count += 1
+                logger.debug("ユーザー設定を保持: %s", key)
+
+    # 変更があれば保存
+    with open(user_settings, "w", encoding="utf-8") as f:
+        json.dump(merged_data, f, ensure_ascii=False, indent=2)
+
+    # 追加された新規項目数をカウント
+    added_keys = set(new_data.keys()) - set(user_data.keys())
+    removed_keys = set(user_data.keys()) - set(new_data.keys())
+
+    if added_keys:
+        logger.info("新規設定項目: %s", ", ".join(added_keys))
+    if removed_keys:
+        logger.info("削除された設定項目: %s", ", ".join(removed_keys))
+    if preserved_count > 0:
+        logger.info("保持されたユーザー設定: %d 件", preserved_count)
+
+    return len(added_keys)
+
+
+def merge_glossary(app_dir: Path, source_dir: Path) -> int:
+    """
+    用語集をマージ（新規用語のみ追加）
+
+    ユーザーの用語集（glossary.csv）に、バンドル版の新規用語を追加します。
+    重複判定は「ソース用語,翻訳結果」のペア全体で行います。
+    例: 「日本,Japan」が存在しても「日本,JPN」は別の用語として追加されます。
+
+    Args:
+        app_dir: アプリケーションディレクトリ（ユーザーのglossary.csvがある場所）
+        source_dir: ソースディレクトリ（新しいglossary.csvがある場所）
+
+    Returns:
+        int: 追加された用語数
+    """
+    user_glossary = app_dir / "glossary.csv"
+    new_glossary = source_dir / "glossary.csv"
+
+    if not new_glossary.exists():
+        logger.info("新しい用語集が見つかりません: %s", new_glossary)
+        return 0
+
+    # ユーザーの用語集が存在しない場合は新しい用語集をコピー
+    if not user_glossary.exists():
+        user_glossary.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(new_glossary, user_glossary)
+        logger.info("用語集をコピーしました: %s", user_glossary)
+        return -1  # 新規作成を示す
+
+    # 既存の用語ペア（ソース,翻訳）を収集
+    existing_pairs: set[str] = set()
+
+    with open(user_glossary, "r", encoding="utf-8") as f:
+        for line in f:
+            stripped = line.strip()
+            # コメント行と空行はスキップ
+            if stripped and not stripped.startswith("#"):
+                # ペア全体（ソース,翻訳）をキーとして保存
+                existing_pairs.add(stripped)
+
+    # 新しい用語集から、既存にないペアを収集
+    new_terms: list[str] = []
+    with open(new_glossary, "r", encoding="utf-8") as f:
+        for line in f:
+            stripped = line.strip()
+            # コメント行と空行はスキップ
+            if stripped and not stripped.startswith("#"):
+                # ペア全体で重複判定
+                if stripped not in existing_pairs:
+                    new_terms.append(line if line.endswith("\n") else line + "\n")
+
+    # 新規用語があれば追加
+    if new_terms:
+        with open(user_glossary, "a", encoding="utf-8") as f:
+            f.writelines(new_terms)
+        logger.info("用語集に %d 件の新規用語を追加しました", len(new_terms))
+
+    return len(new_terms)
+
+
+# コマンドライン実行用（アップデートスクリプトから呼び出される）
+if __name__ == "__main__":
+    import sys
+
+    if len(sys.argv) >= 4 and sys.argv[1] == "merge":
+        # python -m yakulingo.services.updater merge <app_dir> <source_dir>
+        app_dir = Path(sys.argv[2])
+        source_dir = Path(sys.argv[3])
+        added = merge_glossary(app_dir, source_dir)
+        if added > 0:
+            print(f"  追加: {added} 件の新規用語")
+        elif added == -1:
+            print("  用語集を新規作成しました")
+        else:
+            print("  新規用語はありません")
+    else:
+        print("Usage: python -m yakulingo.services.updater merge <app_dir> <source_dir>")
+        sys.exit(1)

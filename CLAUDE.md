@@ -631,6 +631,39 @@ The `AutoUpdater` class provides GitHub Releases-based updates:
 - Downloads and extracts updates to local installation
 - Provides UI notifications via `update_notification.py`
 
+### User Data Protection During Updates
+
+アップデートおよび再インストール時、ユーザーデータは以下のルールで保護されます：
+
+**用語集 (glossary.csv):**
+- ユーザーの用語集を保持しつつ、開発者が追加した新規用語をマージ
+- 重複判定は「ソース,翻訳」のペア全体で行う（同じソースでも翻訳が違えば追加）
+- `merge_glossary()` 関数で実装
+
+**設定ファイル (settings.json):**
+- 新しい設定ファイルをベースとし、ユーザー保護対象の設定のみ上書き
+- `merge_settings()` 関数と `USER_PROTECTED_SETTINGS` で実装
+
+**ユーザー保護対象の設定 (USER_PROTECTED_SETTINGS):**
+
+| カテゴリ | 設定 | 変更方法 |
+|---------|------|---------|
+| 翻訳スタイル | `translation_style`, `text_translation_style` | 設定ダイアログ |
+| フォント | `font_jp_to_en`, `font_en_to_jp`, `font_size_adjustment_jp_to_en` | 設定ダイアログ |
+| 出力オプション | `bilingual_output`, `export_glossary`, `use_bundled_glossary` | ファイル翻訳パネル |
+| UI状態 | `last_tab`, `onboarding_completed` | 自動保存 |
+| 更新設定 | `skipped_version` | 更新ダイアログ |
+
+**開発者が自由に変更可能な設定:**
+- `max_chars_per_batch`, `request_timeout`, `max_retries` - 技術的設定
+- `font_size_min` - フォント最小サイズ
+- `ocr_batch_size`, `ocr_dpi`, `ocr_device` - OCR設定
+- `auto_update_check_interval` - 更新チェック間隔
+- `github_repo_owner`, `github_repo_name` - リポジトリ情報
+- `reference_files`, `output_directory` - UIで保存されない
+- `window_width`, `window_height` - 固定値
+- `auto_update_enabled`, `last_update_check` - 読み取り専用
+
 ## Common Tasks for AI Assistants
 
 ### Adding a New File Processor

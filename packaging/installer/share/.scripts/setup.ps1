@@ -182,7 +182,7 @@ function Invoke-Setup {
     }
 
     # ============================================================
-    # Step 1: Prepare destination
+    # Step 1: Prepare destination (backup user data first)
     # ============================================================
     Write-Status -Message "Preparing destination..." -Progress -Step "Step 1/2: Preparing"
     if (-not $GuiMode) {
@@ -190,7 +190,31 @@ function Invoke-Setup {
         Write-Host "[1/2] Preparing destination..." -ForegroundColor Yellow
     }
 
+    # Backup user data files before removing the directory
+    $BackupFiles = @()
+    $UserDataFiles = @("glossary.csv", "config\settings.json")
+    $BackupDir = Join-Path $env:TEMP "YakuLingo_Backup_$(Get-Date -Format 'yyyyMMddHHmmss')"
+
     if (Test-Path $SetupPath) {
+        foreach ($file in $UserDataFiles) {
+            $filePath = Join-Path $SetupPath $file
+            if (Test-Path $filePath) {
+                if (-not (Test-Path $BackupDir)) {
+                    New-Item -ItemType Directory -Path $BackupDir -Force | Out-Null
+                }
+                $backupPath = Join-Path $BackupDir $file
+                $backupParent = Split-Path -Parent $backupPath
+                if (-not (Test-Path $backupParent)) {
+                    New-Item -ItemType Directory -Path $backupParent -Force | Out-Null
+                }
+                Copy-Item -Path $filePath -Destination $backupPath -Force
+                $BackupFiles += $file
+                if (-not $GuiMode) {
+                    Write-Host "      Backed up: $file" -ForegroundColor Gray
+                }
+            }
+        }
+
         if (-not $GuiMode) {
             Write-Host "      Removing existing files: $SetupPath" -ForegroundColor Gray
         }
@@ -232,6 +256,171 @@ function Invoke-Setup {
 
     if (-not $GuiMode) {
         Write-Host "[OK] Extraction completed" -ForegroundColor Green
+    }
+
+    # ============================================================
+    # Restore/Merge backed up user data files
+    # ============================================================
+    if ($BackupFiles.Count -gt 0) {
+        if (-not $GuiMode) {
+            Write-Host ""
+            Write-Host "      Restoring user data..." -ForegroundColor Gray
+        }
+        foreach ($file in $BackupFiles) {
+            $backupPath = Join-Path $BackupDir $file
+            $restorePath = Join-Path $SetupPath $file
+            if (Test-Path $backupPath) {
+                $restoreParent = Split-Path -Parent $restorePath
+                if (-not (Test-Path $restoreParent)) {
+                    New-Item -ItemType Directory -Path $restoreParent -Force | Out-Null
+                }
+
+                if ($file -eq "glossary.csv") {
+                    # 用語集はマージ（新規用語ペアのみ追加）
+                    # 重複判定は「ソース,翻訳」のペア全体で行う（同じソースでも翻訳が違えば追加）
+                    $newGlossaryPath = $restorePath
+                    if (Test-Path $newGlossaryPath) {
+                        # 新しい用語集を一時保存
+                        $tempNewGlossary = Join-Path $BackupDir "glossary_new.csv"
+                        Copy-Item -Path $newGlossaryPath -Destination $tempNewGlossary -Force
+
+                        # 既存の用語ペア（ソース,翻訳の組み合わせ）を収集
+                        $existingPairs = @{}
+                        Get-Content -Path $backupPath -Encoding UTF8 | ForEach-Object {
+                            $line = $_.Trim()
+                            if ($line -and -not $line.StartsWith("#")) {
+                                # ペア全体をキーとして保存
+                                $existingPairs[$line] = $true
+                            }
+                        }
+
+                        # バックアップを復元（ユーザーの用語集を戻す）
+                        Copy-Item -Path $backupPath -Destination $restorePath -Force
+
+                        # 新しい用語集から、既存にないペアを追加
+                        $addedCount = 0
+                        Get-Content -Path $tempNewGlossary -Encoding UTF8 | ForEach-Object {
+                            $line = $_.Trim()
+                            if ($line -and -not $line.StartsWith("#")) {
+                                # ペア全体で重複判定
+                                if (-not $existingPairs.ContainsKey($line)) {
+                                    Add-Content -Path $restorePath -Value $_ -Encoding UTF8
+                                    $addedCount++
+                                }
+                            }
+                        }
+
+                        if (-not $GuiMode) {
+                            if ($addedCount -gt 0) {
+                                Write-Host "      Merged: $file (+$addedCount new terms)" -ForegroundColor Gray
+                            } else {
+                                Write-Host "      Restored: $file (no new terms)" -ForegroundColor Gray
+                            }
+                        }
+                    } else {
+                        # 新しい用語集がなければバックアップを復元
+                        Copy-Item -Path $backupPath -Destination $restorePath -Force
+                        if (-not $GuiMode) {
+                            Write-Host "      Restored: $file" -ForegroundColor Gray
+                        }
+                    }
+                } elseif ($file -eq "config\settings.json") {
+                    # 設定ファイルはマージ（ユーザー保護対象の設定のみ保持）
+                    # 新しい設定をベースとし、ユーザー設定の一部のみ上書き
+                    $newSettingsPath = $restorePath
+                    if (Test-Path $newSettingsPath) {
+                        # 新しい設定を一時保存
+                        $tempNewSettings = Join-Path $BackupDir "settings_new.json"
+                        Copy-Item -Path $newSettingsPath -Destination $tempNewSettings -Force
+
+                        # ユーザーがUIで変更した設定（これ以外は開発者が自由に変更可能）
+                        $UserProtectedSettings = @(
+                            # 翻訳スタイル設定（設定ダイアログで変更）
+                            "translation_style",
+                            "text_translation_style",
+                            # フォント設定（設定ダイアログで変更）
+                            "font_jp_to_en",
+                            "font_en_to_jp",
+                            "font_size_adjustment_jp_to_en",
+                            # 出力オプション（ファイル翻訳パネルで変更）
+                            "bilingual_output",
+                            "export_glossary",
+                            "use_bundled_glossary",
+                            # UI状態（自動保存）
+                            "last_tab",
+                            "onboarding_completed",
+                            # 更新設定（更新ダイアログで変更）
+                            "skipped_version"
+                        )
+
+                        # JSONをマージ
+                        try {
+                            $userData = Get-Content -Path $backupPath -Encoding UTF8 | ConvertFrom-Json
+                            $newData = Get-Content -Path $tempNewSettings -Encoding UTF8 | ConvertFrom-Json
+                            $preservedCount = 0
+
+                            # 新しい設定をベースにする
+                            $mergedData = $newData.PSObject.Copy()
+
+                            # ユーザー保護対象の設定のみを上書き
+                            foreach ($key in $UserProtectedSettings) {
+                                if ($userData.PSObject.Properties.Name -contains $key) {
+                                    # 新しい設定にもキーが存在する場合のみ復元（削除された設定は復元しない）
+                                    if ($newData.PSObject.Properties.Name -contains $key) {
+                                        $mergedData.$key = $userData.$key
+                                        $preservedCount++
+                                    }
+                                }
+                            }
+
+                            # 保存
+                            $mergedData | ConvertTo-Json -Depth 10 | Set-Content -Path $restorePath -Encoding UTF8
+
+                            # 変更カウント
+                            $addedKeys = $newData.PSObject.Properties.Name | Where-Object { -not ($userData.PSObject.Properties.Name -contains $_) }
+                            $removedKeys = $userData.PSObject.Properties.Name | Where-Object { -not ($newData.PSObject.Properties.Name -contains $_) }
+
+                            if (-not $GuiMode) {
+                                $addedCount = @($addedKeys).Count
+                                $removedCount = @($removedKeys).Count
+                                if ($addedCount -gt 0 -or $removedCount -gt 0) {
+                                    $msg = "      Merged: $file"
+                                    if ($addedCount -gt 0) { $msg += " (+$addedCount new)" }
+                                    if ($removedCount -gt 0) { $msg += " (-$removedCount removed)" }
+                                    Write-Host $msg -ForegroundColor Gray
+                                } else {
+                                    Write-Host "      Merged: $file (user settings preserved)" -ForegroundColor Gray
+                                }
+                            }
+                        } catch {
+                            # マージに失敗した場合は新しい設定を使用
+                            if (-not $GuiMode) {
+                                Write-Host "      Using new settings: $file (merge failed)" -ForegroundColor Gray
+                            }
+                        }
+                    } else {
+                        # 新しい設定がなければバックアップを復元
+                        Copy-Item -Path $backupPath -Destination $restorePath -Force
+                        if (-not $GuiMode) {
+                            Write-Host "      Restored: $file" -ForegroundColor Gray
+                        }
+                    }
+                } else {
+                    # その他のファイルはそのまま復元
+                    Copy-Item -Path $backupPath -Destination $restorePath -Force
+                    if (-not $GuiMode) {
+                        Write-Host "      Restored: $file" -ForegroundColor Gray
+                    }
+                }
+            }
+        }
+        # Clean up backup directory
+        if (Test-Path $BackupDir) {
+            Remove-Item -Path $BackupDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        if (-not $GuiMode) {
+            Write-Host "[OK] User data restored" -ForegroundColor Green
+        }
     }
 
     # ============================================================

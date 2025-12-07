@@ -791,19 +791,52 @@ def check_for_updates(
     return updater.check_for_updates()
 
 
+# ユーザーが明示的に設定した項目（アップデート時に保護される）
+# これ以外の設定は開発者が自由に変更・削除可能
+USER_PROTECTED_SETTINGS = {
+    # ユーザーのファイル/フォルダ設定
+    "reference_files",
+    "output_directory",
+    # ウィンドウ設定
+    "window_width",
+    "window_height",
+    "last_tab",
+    # 翻訳スタイル設定
+    "translation_style",
+    "text_translation_style",
+    # フォント設定
+    "font_jp_to_en",
+    "font_en_to_jp",
+    # 出力オプション
+    "bilingual_output",
+    "export_glossary",
+    "use_bundled_glossary",
+    # 更新設定
+    "auto_update_enabled",
+    "skipped_version",
+    # ユーザー状態
+    "onboarding_completed",
+    "last_update_check",
+}
+
+
 def merge_settings(app_dir: Path, source_dir: Path) -> int:
     """
-    設定ファイルをマージ（新規設定項目のみ追加）
+    設定ファイルをマージ（ユーザー設定を保護しつつ新しい設定を適用）
 
-    ユーザーの設定ファイル（settings.json）に、新しいバージョンの設定項目を追加します。
-    既存の設定は上書きしません（ユーザーの設定を尊重）。
+    新しいバージョンの設定をベースとし、USER_PROTECTED_SETTINGS に含まれる
+    ユーザーの設定のみを上書きします。これにより：
+    - 開発者は新しい設定項目を追加できる
+    - 開発者は不要な設定項目を削除できる
+    - 開発者は技術的な設定のデフォルト値を変更できる
+    - ユーザーの明示的な設定（UIで変更した項目）は保護される
 
     Args:
         app_dir: アプリケーションディレクトリ（ユーザーのsettings.jsonがある場所）
         source_dir: ソースディレクトリ（新しいsettings.jsonまたはテンプレートがある場所）
 
     Returns:
-        int: 追加された設定項目数
+        int: 変更された設定項目数（正: 追加/変更, 負: 新規作成）
     """
     user_settings = app_dir / "config" / "settings.json"
     # 新しい設定ファイルまたはテンプレートを探す
@@ -832,21 +865,36 @@ def merge_settings(app_dir: Path, source_dir: Path) -> int:
         logger.warning("設定ファイルの読み込みに失敗: %s", e)
         return 0
 
-    # 新しいキーのみ追加（既存キーは上書きしない）
-    added_count = 0
-    for key, value in new_data.items():
-        if key not in user_data:
-            user_data[key] = value
-            added_count += 1
-            logger.debug("新しい設定項目を追加: %s", key)
+    # 新しい設定をベースとする（開発者の変更を反映）
+    merged_data = dict(new_data)
 
-    # 追加があれば保存
-    if added_count > 0:
-        with open(user_settings, "w", encoding="utf-8") as f:
-            json.dump(user_data, f, ensure_ascii=False, indent=2)
-        logger.info("設定ファイルに %d 件の新規項目を追加しました", added_count)
+    # ユーザー保護対象の設定のみを上書き
+    preserved_count = 0
+    for key in USER_PROTECTED_SETTINGS:
+        if key in user_data:
+            # ユーザーの設定値が新しい設定にも存在する場合のみ復元
+            # （削除された設定は復元しない）
+            if key in new_data:
+                merged_data[key] = user_data[key]
+                preserved_count += 1
+                logger.debug("ユーザー設定を保持: %s", key)
 
-    return added_count
+    # 変更があれば保存
+    with open(user_settings, "w", encoding="utf-8") as f:
+        json.dump(merged_data, f, ensure_ascii=False, indent=2)
+
+    # 追加された新規項目数をカウント
+    added_keys = set(new_data.keys()) - set(user_data.keys())
+    removed_keys = set(user_data.keys()) - set(new_data.keys())
+
+    if added_keys:
+        logger.info("新規設定項目: %s", ", ".join(added_keys))
+    if removed_keys:
+        logger.info("削除された設定項目: %s", ", ".join(removed_keys))
+    if preserved_count > 0:
+        logger.info("保持されたユーザー設定: %d 件", preserved_count)
+
+    return len(added_keys)
 
 
 def merge_glossary(app_dir: Path, source_dir: Path) -> int:

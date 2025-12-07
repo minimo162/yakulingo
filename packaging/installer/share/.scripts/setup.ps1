@@ -325,48 +325,84 @@ function Invoke-Setup {
                         }
                     }
                 } elseif ($file -eq "config\settings.json") {
-                    # 設定ファイルはマージ（新規項目のみ追加）
+                    # 設定ファイルはマージ（ユーザー保護対象の設定のみ保持）
+                    # 新しい設定をベースとし、ユーザー設定の一部のみ上書き
                     $newSettingsPath = $restorePath
                     if (Test-Path $newSettingsPath) {
                         # 新しい設定を一時保存
                         $tempNewSettings = Join-Path $BackupDir "settings_new.json"
                         Copy-Item -Path $newSettingsPath -Destination $tempNewSettings -Force
 
-                        # バックアップを復元（ユーザーの設定を戻す）
-                        Copy-Item -Path $backupPath -Destination $restorePath -Force
+                        # ユーザー保護対象の設定（これ以外は開発者が自由に変更可能）
+                        $UserProtectedSettings = @(
+                            # ユーザーのファイル/フォルダ設定
+                            "reference_files",
+                            "output_directory",
+                            # ウィンドウ設定
+                            "window_width",
+                            "window_height",
+                            "last_tab",
+                            # 翻訳スタイル設定
+                            "translation_style",
+                            "text_translation_style",
+                            # フォント設定
+                            "font_jp_to_en",
+                            "font_en_to_jp",
+                            # 出力オプション
+                            "bilingual_output",
+                            "export_glossary",
+                            "use_bundled_glossary",
+                            # 更新設定
+                            "auto_update_enabled",
+                            "skipped_version",
+                            # ユーザー状態
+                            "onboarding_completed",
+                            "last_update_check"
+                        )
 
-                        # JSONをマージ（新規キーのみ追加）
+                        # JSONをマージ
                         try {
-                            $userData = Get-Content -Path $restorePath -Encoding UTF8 | ConvertFrom-Json
+                            $userData = Get-Content -Path $backupPath -Encoding UTF8 | ConvertFrom-Json
                             $newData = Get-Content -Path $tempNewSettings -Encoding UTF8 | ConvertFrom-Json
-                            $addedCount = 0
+                            $preservedCount = 0
 
-                            # 新しいキーのみ追加
-                            $newData.PSObject.Properties | ForEach-Object {
-                                $key = $_.Name
-                                if (-not ($userData.PSObject.Properties.Name -contains $key)) {
-                                    $userData | Add-Member -NotePropertyName $key -NotePropertyValue $_.Value
-                                    $addedCount++
+                            # 新しい設定をベースにする
+                            $mergedData = $newData.PSObject.Copy()
+
+                            # ユーザー保護対象の設定のみを上書き
+                            foreach ($key in $UserProtectedSettings) {
+                                if ($userData.PSObject.Properties.Name -contains $key) {
+                                    # 新しい設定にもキーが存在する場合のみ復元（削除された設定は復元しない）
+                                    if ($newData.PSObject.Properties.Name -contains $key) {
+                                        $mergedData.$key = $userData.$key
+                                        $preservedCount++
+                                    }
                                 }
                             }
 
                             # 保存
-                            if ($addedCount -gt 0) {
-                                $userData | ConvertTo-Json -Depth 10 | Set-Content -Path $restorePath -Encoding UTF8
-                            }
+                            $mergedData | ConvertTo-Json -Depth 10 | Set-Content -Path $restorePath -Encoding UTF8
+
+                            # 変更カウント
+                            $addedKeys = $newData.PSObject.Properties.Name | Where-Object { -not ($userData.PSObject.Properties.Name -contains $_) }
+                            $removedKeys = $userData.PSObject.Properties.Name | Where-Object { -not ($newData.PSObject.Properties.Name -contains $_) }
 
                             if (-not $GuiMode) {
-                                if ($addedCount -gt 0) {
-                                    Write-Host "      Merged: $file (+$addedCount new settings)" -ForegroundColor Gray
+                                $addedCount = @($addedKeys).Count
+                                $removedCount = @($removedKeys).Count
+                                if ($addedCount -gt 0 -or $removedCount -gt 0) {
+                                    $msg = "      Merged: $file"
+                                    if ($addedCount -gt 0) { $msg += " (+$addedCount new)" }
+                                    if ($removedCount -gt 0) { $msg += " (-$removedCount removed)" }
+                                    Write-Host $msg -ForegroundColor Gray
                                 } else {
-                                    Write-Host "      Restored: $file (no new settings)" -ForegroundColor Gray
+                                    Write-Host "      Merged: $file (user settings preserved)" -ForegroundColor Gray
                                 }
                             }
                         } catch {
-                            # マージに失敗した場合はバックアップを復元
-                            Copy-Item -Path $backupPath -Destination $restorePath -Force
+                            # マージに失敗した場合は新しい設定を使用
                             if (-not $GuiMode) {
-                                Write-Host "      Restored: $file (merge failed)" -ForegroundColor Gray
+                                Write-Host "      Using new settings: $file (merge failed)" -ForegroundColor Gray
                             }
                         }
                     } else {

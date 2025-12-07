@@ -266,10 +266,10 @@ class CopilotHandler:
     DEFAULT_CDP_PORT = 9333  # Dedicated port for translator
     EDGE_STARTUP_MAX_ATTEMPTS = 20  # Maximum iterations to wait for Edge startup
     EDGE_STARTUP_CHECK_INTERVAL = 0.3  # Seconds between startup checks
-    RESPONSE_STABLE_COUNT = 3  # Number of stable checks before considering response complete
+    RESPONSE_STABLE_COUNT = 2  # Number of stable checks before considering response complete
     RESPONSE_POLL_INTERVAL = 0.3  # Seconds between response checks (legacy, kept for compatibility)
     # Dynamic polling intervals for faster response detection
-    RESPONSE_POLL_INITIAL = 0.5  # Initial interval while waiting for response to start
+    RESPONSE_POLL_INITIAL = 0.3  # Initial interval while waiting for response to start
     RESPONSE_POLL_ACTIVE = 0.2  # Interval after text is detected
     RESPONSE_POLL_STABLE = 0.1  # Interval during stability checking
     DEFAULT_RESPONSE_TIMEOUT = 120  # Default timeout for response in seconds
@@ -416,7 +416,7 @@ class CopilotHandler:
         if self._is_port_in_use():
             logger.info("Closing previous Edge...")
             self._kill_existing_translator_edge()
-            time.sleep(1)
+            time.sleep(0.5)
             logger.info("Previous Edge closed")
 
         # Start new Edge with our dedicated port and profile

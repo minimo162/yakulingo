@@ -1538,9 +1538,8 @@ def _detect_display_settings() -> tuple[tuple[int, int], tuple[int, int, int, in
 
         # Calculate max-width for input panel in 2-column mode (centered layout)
         # Main area = window - sidebar, use 50% of available width for balanced layout
-        # Min 600px to ensure comfortable input, max 900px for readability
         main_area_width = window_width - sidebar_width
-        input_panel_max_width = max(600, min(900, int((main_area_width - 60) * 0.5)))
+        input_panel_max_width = int((main_area_width - 60) * 0.5)
 
         return ((window_width, window_height), (sidebar_width, input_panel_width, result_content_width, input_panel_max_width))
 
@@ -1669,8 +1668,7 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
 
         # Calculate input max-height based on input max-width to maintain consistent aspect ratio
         # Aspect ratio 4:3 (height = width * 0.75) for balanced appearance across resolutions
-        # Min 300px to ensure usable space
-        input_max_height = max(300, int(input_panel_max_width * 0.75))
+        input_max_height = int(input_panel_max_width * 0.75)
 
         # Calculate base font size with gentle scaling
         # Reference: 1900px window → 16px font

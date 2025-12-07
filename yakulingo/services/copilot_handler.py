@@ -764,10 +764,23 @@ class CopilotHandler:
             if self._playwright:
                 self._playwright.stop()
 
+        # Terminate Edge browser process that we started
+        with suppress(Exception):
+            if self.edge_process:
+                self.edge_process.terminate()
+                # Wait briefly for graceful shutdown
+                try:
+                    self.edge_process.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    # Force kill if it doesn't terminate gracefully
+                    self.edge_process.kill()
+                logger.info("Edge browser terminated")
+
         self._browser = None
         self._context = None
         self._page = None
         self._playwright = None
+        self.edge_process = None
 
     def _save_storage_state(self) -> bool:
         """

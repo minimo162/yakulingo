@@ -2450,6 +2450,38 @@ body {
     background: rgba(67, 85, 185, 0.12) !important;
 }
 
+/* === Glossary Toggle Button (Chip-style) === */
+.glossary-toggle-btn {
+    border-radius: var(--md-sys-shape-corner-full) !important;
+    padding: 0.25rem 0.75rem !important;
+    min-height: 32px !important;
+    color: var(--md-sys-color-on-surface-variant) !important;
+    background: transparent !important;
+    border: 1px solid var(--md-sys-color-outline-variant) !important;
+    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard) !important;
+}
+
+.glossary-toggle-btn:hover {
+    background: rgba(67, 85, 185, 0.08) !important;
+    border-color: var(--md-sys-color-primary) !important;
+    color: var(--md-sys-color-primary) !important;
+}
+
+.glossary-toggle-btn.active {
+    background: var(--md-sys-color-primary-container) !important;
+    border-color: var(--md-sys-color-primary) !important;
+    color: var(--md-sys-color-on-primary-container) !important;
+}
+
+.glossary-toggle-btn.active:hover {
+    background: var(--md-sys-color-primary-container) !important;
+    filter: brightness(0.95);
+}
+
+.glossary-toggle-btn .q-icon {
+    font-size: 1rem !important;
+}
+
 /* === Settings Dialog === */
 .settings-dialog {
     border-radius: var(--md-sys-shape-corner-large) !important;

@@ -95,6 +95,8 @@ def create_text_input_panel(
     on_settings: Optional[Callable[[], None]] = None,
     on_translate_button_created: Optional[Callable[[ui.button], None]] = None,
     is_first_use: bool = False,
+    use_bundled_glossary: bool = False,
+    on_glossary_toggle: Optional[Callable[[bool], None]] = None,
 ):
     """
     Text input panel for 3-column layout.
@@ -109,14 +111,16 @@ def create_text_input_panel(
         _create_large_input_panel(
             state, on_translate, on_source_change, on_clear,
             on_attach_reference_file, on_remove_reference_file,
-            on_settings, on_translate_button_created, is_first_use
+            on_settings, on_translate_button_created, is_first_use,
+            use_bundled_glossary, on_glossary_toggle
         )
     else:
         # RESULT/TRANSLATING state: Compact input for new translations
         _create_compact_input_panel(
             state, on_translate, on_source_change, on_clear,
             on_attach_reference_file, on_remove_reference_file,
-            on_settings, on_translate_button_created
+            on_settings, on_translate_button_created,
+            use_bundled_glossary, on_glossary_toggle
         )
 
 
@@ -130,6 +134,8 @@ def _create_large_input_panel(
     on_settings: Optional[Callable[[], None]] = None,
     on_translate_button_created: Optional[Callable[[ui.button], None]] = None,
     is_first_use: bool = False,
+    use_bundled_glossary: bool = False,
+    on_glossary_toggle: Optional[Callable[[bool], None]] = None,
 ):
     """Large input panel for INPUT state - spans 2 columns"""
     with ui.column().classes('flex-1 w-full gap-4'):
@@ -181,6 +187,17 @@ def _create_large_input_panel(
                                         ).props('flat dense round size=xs').classes('remove-btn')
 
                     with ui.row().classes('items-center gap-2'):
+                        # Bundled glossary toggle chip
+                        if on_glossary_toggle:
+                            glossary_btn = ui.button(
+                                '用語集',
+                                icon='menu_book',
+                                on_click=lambda: on_glossary_toggle(not use_bundled_glossary)
+                            ).props('flat no-caps size=sm').classes(
+                                f'glossary-toggle-btn {"active" if use_bundled_glossary else ""}'
+                            )
+                            glossary_btn.tooltip('同梱の glossary.csv を使用' if not use_bundled_glossary else '用語集を使用中')
+
                         # Settings button
                         if on_settings:
                             settings_btn = ui.button(
@@ -197,7 +214,7 @@ def _create_large_input_panel(
                             ).classes(f'attach-btn {"has-file" if has_files else ""}').props('flat')
                             with attach_btn:
                                 ui.html(ATTACH_SVG, sanitize=False)
-                            attach_btn.tooltip('参照ファイルを添付' if not has_files else '参照ファイルを追加')
+                            attach_btn.tooltip('その他の参照ファイルを添付' if not has_files else '参照ファイルを追加')
 
                         # Clear button
                         if state.source_text:
@@ -236,8 +253,8 @@ def _create_large_input_panel(
                     ui.icon('lightbulb').classes('text-sm text-muted')
                     ui.label('使い方: テキストを入力して「翻訳する」をクリック').classes('text-xs')
                 with ui.element('div').classes('hint-secondary'):
-                    ui.icon('attach_file').classes('text-sm')
-                    ui.label('📎で用語集や参考資料を添付できます').classes('text-2xs')
+                    ui.icon('menu_book').classes('text-sm')
+                    ui.label('[用語集] で同梱の glossary.csv を使用、📎で参考資料を添付できます').classes('text-2xs')
             else:
                 # Regular hints for returning users
                 with ui.element('div').classes('hint-primary'):
@@ -257,6 +274,8 @@ def _create_compact_input_panel(
     on_remove_reference_file: Optional[Callable[[int], None]] = None,
     on_settings: Optional[Callable[[], None]] = None,
     on_translate_button_created: Optional[Callable[[ui.button], None]] = None,
+    use_bundled_glossary: bool = False,
+    on_glossary_toggle: Optional[Callable[[bool], None]] = None,
 ):
     """Compact input panel for RESULT/TRANSLATING state - fills available vertical space"""
     # During translation, show empty textarea (same as post-translation state)
@@ -310,6 +329,17 @@ def _create_compact_input_panel(
                                         ).props('flat dense round size=xs').classes('remove-btn')
 
                     with ui.row().classes('items-center gap-2'):
+                        # Bundled glossary toggle chip (hide during translation)
+                        if on_glossary_toggle and not state.text_translating:
+                            glossary_btn = ui.button(
+                                '用語集',
+                                icon='menu_book',
+                                on_click=lambda: on_glossary_toggle(not use_bundled_glossary)
+                            ).props('flat no-caps size=sm').classes(
+                                f'glossary-toggle-btn {"active" if use_bundled_glossary else ""}'
+                            )
+                            glossary_btn.tooltip('同梱の glossary.csv を使用' if not use_bundled_glossary else '用語集を使用中')
+
                         # Settings button (hide during translation)
                         if on_settings and not state.text_translating:
                             settings_btn = ui.button(
@@ -326,7 +356,7 @@ def _create_compact_input_panel(
                             ).classes(f'attach-btn {"has-file" if has_files else ""}').props('flat')
                             with attach_btn:
                                 ui.html(ATTACH_SVG, sanitize=False)
-                            attach_btn.tooltip('参照ファイルを添付' if not has_files else '参照ファイルを追加')
+                            attach_btn.tooltip('その他の参照ファイルを添付' if not has_files else '参照ファイルを追加')
 
                         # Clear button (use textarea_value to match displayed content)
                         if textarea_value:

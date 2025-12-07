@@ -506,6 +506,8 @@ class YakuLingoApp:
                         on_settings=self._show_settings_dialog,
                         on_translate_button_created=self._on_translate_button_created,
                         is_first_use=not self.settings.onboarding_completed,
+                        use_bundled_glossary=self.settings.use_bundled_glossary,
+                        on_glossary_toggle=self._on_glossary_toggle,
                     )
 
                 # Result panel (right column - shown when has results)
@@ -555,6 +557,25 @@ class YakuLingoApp:
         self.state.text_result = None
         self._refresh_content()
 
+    def _on_glossary_toggle(self, enabled: bool):
+        """Toggle bundled glossary usage"""
+        self.settings.use_bundled_glossary = enabled
+        self.settings.save(self.settings_path)
+        self._refresh_content()
+
+    def _get_effective_reference_files(self) -> list[Path] | None:
+        """Get reference files including bundled glossary if enabled"""
+        files = list(self.state.reference_files) if self.state.reference_files else []
+
+        # Add bundled glossary if enabled
+        if self.settings.use_bundled_glossary:
+            base_dir = Path(__file__).parent.parent.parent
+            glossary_path = base_dir / 'glossary.csv'
+            if glossary_path.exists() and glossary_path not in files:
+                files.insert(0, glossary_path)
+
+        return files if files else None
+
     def _copy_text(self, text: str):
         """Copy specified text to clipboard"""
         if text:
@@ -571,7 +592,7 @@ class YakuLingoApp:
                     ui.label('参照ファイルを選択').classes('text-base font-medium')
                     ui.button(icon='close', on_click=dialog.close).props('flat dense round')
 
-                ui.label('用語集、スタイルガイド、参考資料など').classes('text-xs text-muted')
+                ui.label('スタイルガイド、参考資料など').classes('text-xs text-muted')
 
                 async def handle_upload(e):
                     try:
@@ -637,7 +658,7 @@ class YakuLingoApp:
             return
 
         source_text = self.state.source_text
-        reference_files = self.state.reference_files or None
+        reference_files = self._get_effective_reference_files()
 
         # Use saved client reference (context.client not available in async tasks)
         client = self._client
@@ -805,7 +826,7 @@ class YakuLingoApp:
                 current_style = self.state.text_result.options[-1].style
 
             # Get reference files for consistent translations
-            reference_files = self.state.reference_files or None
+            reference_files = self._get_effective_reference_files()
 
             result = await asyncio.to_thread(
                 lambda: self.translation_service.adjust_translation(
@@ -889,7 +910,7 @@ class YakuLingoApp:
 """
 
             # Send to Copilot (with reference files for consistent translations)
-            reference_files = self.state.reference_files or None
+            reference_files = self._get_effective_reference_files()
             result = await asyncio.to_thread(
                 lambda: self.copilot.translate_single(text, prompt, reference_files)
             )
@@ -1152,7 +1173,7 @@ class YakuLingoApp:
                 return
 
             # Send to Copilot (with reference files for consistent translations)
-            reference_files = self.state.reference_files or None
+            reference_files = self._get_effective_reference_files()
             result = await asyncio.to_thread(
                 lambda: self.copilot.translate_single(source_text, prompt, reference_files)
             )

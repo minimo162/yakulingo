@@ -15,17 +15,11 @@ $script:ScriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Pare
 $script:ShareDir = Split-Path -Parent $script:ScriptDir
 
 # Find 7-Zip (required for fast extraction)
-$script:SevenZip = $null
-$sevenZipPaths = @(
+$script:SevenZip = @(
     "$env:ProgramFiles\7-Zip\7z.exe",
     "${env:ProgramFiles(x86)}\7-Zip\7z.exe"
-)
-foreach ($path in $sevenZipPaths) {
-    if (Test-Path $path) {
-        $script:SevenZip = $path
-        break
-    }
-}
+) | Where-Object { Test-Path $_ } | Select-Object -First 1
+
 if (-not $script:SevenZip) {
     $script:SevenZip = (Get-Command "7z.exe" -ErrorAction SilentlyContinue).Source
 }
@@ -190,80 +184,63 @@ function Invoke-Setup {
     # ============================================================
     # Step 1: Prepare destination
     # ============================================================
-    Write-Status -Message "Preparing destination..." -Progress -Step "Step 1/3: Preparing"
+    Write-Status -Message "Preparing destination..." -Progress -Step "Step 1/2: Preparing"
     if (-not $GuiMode) {
         Write-Host ""
-        Write-Host "[1/3] Preparing destination..." -ForegroundColor Yellow
+        Write-Host "[1/2] Preparing destination..." -ForegroundColor Yellow
     }
 
     if (Test-Path $SetupPath) {
         if (-not $GuiMode) {
             Write-Host "      Removing existing files: $SetupPath" -ForegroundColor Gray
         }
-        # Fast parallel removal using robocopy (mirror empty dir is faster than Remove-Item)
-        $emptyDir = Join-Path $env:TEMP "empty_$(Get-Date -Format 'yyyyMMddHHmmss')"
-        New-Item -ItemType Directory -Path $emptyDir -Force | Out-Null
-        $robocopyArgs = @($emptyDir, $SetupPath, "/MIR", "/MT:8", "/NFL", "/NDL", "/NJH", "/NJS", "/NP", "/R:1", "/W:1")
-        Start-Process -FilePath "robocopy.exe" -ArgumentList $robocopyArgs -NoNewWindow -Wait | Out-Null
-        Remove-Item -Path $emptyDir -Force -ErrorAction SilentlyContinue
-        Remove-Item -Path $SetupPath -Force -ErrorAction SilentlyContinue
+        # Fast removal using .NET (handles long paths better than Remove-Item)
+        [System.IO.Directory]::Delete($SetupPath, $true)
     }
-
-    # Create destination directory
-    New-Item -ItemType Directory -Path $SetupPath -Force | Out-Null
 
     if (-not $GuiMode) {
         Write-Host "[OK] Destination ready: $SetupPath" -ForegroundColor Green
     }
 
     # ============================================================
-    # Step 2: Extract ZIP to destination
+    # Step 2: Extract ZIP directly to destination
     # ============================================================
-    Write-Status -Message "Extracting files..." -Progress -Step "Step 2/3: Extracting files"
+    Write-Status -Message "Extracting files..." -Progress -Step "Step 2/2: Extracting files"
     if (-not $GuiMode) {
         Write-Host ""
-        Write-Host "[2/3] Extracting files to destination..." -ForegroundColor Yellow
-    }
-
-    # Extract with 7-Zip (multi-threaded)
-    if ($GuiMode) {
-        Show-Progress -Title "YakuLingo Setup" -Status "Extracting files..." -Step "Step 2/3: Extracting files"
-    } else {
+        Write-Host "[2/2] Extracting files to destination..." -ForegroundColor Yellow
         Write-Host "      Extracting with 7-Zip..." -ForegroundColor Gray
     }
-    $TempDir = Join-Path $env:TEMP "YakuLingo_setup_$(Get-Date -Format 'yyyyMMddHHmmss')"
-    $sevenZipArgs = @("x", "`"$ZipFile`"", "-o`"$TempDir`"", "-y", "-bso0", "-bsp0")
-    Start-Process -FilePath $script:SevenZip -ArgumentList $sevenZipArgs -NoNewWindow -Wait | Out-Null
 
-    # Find extracted folder and move to destination
-    $ExtractedDir = Get-ChildItem -Path $TempDir -Directory | Where-Object { $_.Name -like "YakuLingo*" } | Select-Object -First 1
+    # Extract directly to destination parent, then rename (avoids temp + move)
+    $ParentDir = Split-Path -Parent $SetupPath
+    & $script:SevenZip x "$ZipFile" "-o$ParentDir" -y -bso0 -bsp0 | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to extract ZIP file.`n`nFile: $ZipFileName"
+    }
+
+    # Find extracted folder and rename to destination
+    $ExtractedDir = Get-ChildItem -Path $ParentDir -Directory | Where-Object { $_.Name -like "YakuLingo*" -and $_.FullName -ne $SetupPath } | Sort-Object LastWriteTime -Descending | Select-Object -First 1
     if (-not $ExtractedDir) {
         throw "Failed to extract ZIP file.`n`nFile: $ZipFileName"
     }
 
-    # Move files using robocopy (fast)
-    if ($GuiMode) {
-        Show-Progress -Title "YakuLingo Setup" -Status "Moving files..." -Step "Step 2/3: Extracting files"
-    } else {
-        Write-Host "      Moving files..." -ForegroundColor Gray
+    # Rename extracted folder to destination (instant operation)
+    if ($ExtractedDir.FullName -ne $SetupPath) {
+        Move-Item -Path $ExtractedDir.FullName -Destination $SetupPath -Force
     }
-    $robocopyArgs = @($ExtractedDir.FullName, $SetupPath, "/E", "/MOVE", "/MT:16", "/NFL", "/NDL", "/NJH", "/NJS", "/R:1", "/W:1")
-    Start-Process -FilePath "robocopy.exe" -ArgumentList $robocopyArgs -NoNewWindow -Wait | Out-Null
-
-    # Cleanup temp
-    Remove-Item -Path $TempDir -Recurse -Force -ErrorAction SilentlyContinue
 
     if (-not $GuiMode) {
         Write-Host "[OK] Extraction completed" -ForegroundColor Green
     }
 
     # ============================================================
-    # Step 3: Create shortcuts
+    # Finalize: Create shortcuts
     # ============================================================
-    Write-Status -Message "Creating shortcuts..." -Progress -Step "Step 3/3: Finalizing"
+    Write-Status -Message "Creating shortcuts..." -Progress -Step "Finalizing..."
     if (-not $GuiMode) {
         Write-Host ""
-        Write-Host "[3/3] Creating shortcuts..." -ForegroundColor Yellow
+        Write-Host "[OK] Creating shortcuts..." -ForegroundColor Yellow
     }
 
     $WshShell = New-Object -ComObject WScript.Shell

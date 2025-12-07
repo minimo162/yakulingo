@@ -324,8 +324,60 @@ function Invoke-Setup {
                             Write-Host "      Restored: $file" -ForegroundColor Gray
                         }
                     }
+                } elseif ($file -eq "config\settings.json") {
+                    # 設定ファイルはマージ（新規項目のみ追加）
+                    $newSettingsPath = $restorePath
+                    if (Test-Path $newSettingsPath) {
+                        # 新しい設定を一時保存
+                        $tempNewSettings = Join-Path $BackupDir "settings_new.json"
+                        Copy-Item -Path $newSettingsPath -Destination $tempNewSettings -Force
+
+                        # バックアップを復元（ユーザーの設定を戻す）
+                        Copy-Item -Path $backupPath -Destination $restorePath -Force
+
+                        # JSONをマージ（新規キーのみ追加）
+                        try {
+                            $userData = Get-Content -Path $restorePath -Encoding UTF8 | ConvertFrom-Json
+                            $newData = Get-Content -Path $tempNewSettings -Encoding UTF8 | ConvertFrom-Json
+                            $addedCount = 0
+
+                            # 新しいキーのみ追加
+                            $newData.PSObject.Properties | ForEach-Object {
+                                $key = $_.Name
+                                if (-not ($userData.PSObject.Properties.Name -contains $key)) {
+                                    $userData | Add-Member -NotePropertyName $key -NotePropertyValue $_.Value
+                                    $addedCount++
+                                }
+                            }
+
+                            # 保存
+                            if ($addedCount -gt 0) {
+                                $userData | ConvertTo-Json -Depth 10 | Set-Content -Path $restorePath -Encoding UTF8
+                            }
+
+                            if (-not $GuiMode) {
+                                if ($addedCount -gt 0) {
+                                    Write-Host "      Merged: $file (+$addedCount new settings)" -ForegroundColor Gray
+                                } else {
+                                    Write-Host "      Restored: $file (no new settings)" -ForegroundColor Gray
+                                }
+                            }
+                        } catch {
+                            # マージに失敗した場合はバックアップを復元
+                            Copy-Item -Path $backupPath -Destination $restorePath -Force
+                            if (-not $GuiMode) {
+                                Write-Host "      Restored: $file (merge failed)" -ForegroundColor Gray
+                            }
+                        }
+                    } else {
+                        # 新しい設定がなければバックアップを復元
+                        Copy-Item -Path $backupPath -Destination $restorePath -Force
+                        if (-not $GuiMode) {
+                            Write-Host "      Restored: $file" -ForegroundColor Gray
+                        }
+                    }
                 } else {
-                    # settings.json などはそのまま復元
+                    # その他のファイルはそのまま復元
                     Copy-Item -Path $backupPath -Destination $restorePath -Force
                     if (-not $GuiMode) {
                         Write-Host "      Restored: $file" -ForegroundColor Gray

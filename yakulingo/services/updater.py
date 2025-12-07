@@ -607,11 +607,16 @@ for %%d in ({dirs_to_update}) do (
     )
 )
 
-REM ユーザー設定を復元
+REM ユーザー設定を復元してマージ
 if exist "%SETTINGS_BACKUP%" (
     echo ユーザー設定を復元しています...
     copy /y "%SETTINGS_BACKUP%" "config\\settings.json" >nul
     del "%SETTINGS_BACKUP%" >nul 2>&1
+)
+REM 設定ファイルのマージ（新規項目のみ追加）
+echo 設定を更新しています...
+if exist "{app_dir}\\.venv\\Scripts\\python.exe" (
+    "{app_dir}\\.venv\\Scripts\\python.exe" -c "from pathlib import Path; import sys; sys.path.insert(0, str(Path(r'{app_dir}'))); from yakulingo.services.updater import merge_settings; added = merge_settings(Path(r'{app_dir}'), Path(r'{source_dir}')); print(f'  追加: {{added}} 件の新規設定' if added > 0 else '  新規設定はありません' if added == 0 else '  設定ファイルを新規作成しました')"
 )
 
 REM ソースコードファイルをコピー
@@ -705,11 +710,16 @@ for dir in {dirs_to_update}; do
     fi
 done
 
-# ユーザー設定を復元
+# ユーザー設定を復元してマージ
 if [ -f "$SETTINGS_BACKUP" ]; then
     echo "ユーザー設定を復元しています..."
     cp "$SETTINGS_BACKUP" "config/settings.json"
     rm -f "$SETTINGS_BACKUP"
+fi
+# 設定ファイルのマージ（新規項目のみ追加）
+echo "設定を更新しています..."
+if [ -f "{app_dir}/.venv/bin/python" ]; then
+    "{app_dir}/.venv/bin/python" -c "from pathlib import Path; import sys; sys.path.insert(0, str(Path(r'{app_dir}'))); from yakulingo.services.updater import merge_settings; added = merge_settings(Path(r'{app_dir}'), Path(r'{source_dir}')); print(f'  追加: {{added}} 件の新規設定' if added > 0 else '  新規設定はありません' if added == 0 else '  設定ファイルを新規作成しました')"
 fi
 
 # ソースコードファイルをコピー
@@ -779,6 +789,64 @@ def check_for_updates(
     """
     updater = AutoUpdater(repo_owner=repo_owner, repo_name=repo_name)
     return updater.check_for_updates()
+
+
+def merge_settings(app_dir: Path, source_dir: Path) -> int:
+    """
+    設定ファイルをマージ（新規設定項目のみ追加）
+
+    ユーザーの設定ファイル（settings.json）に、新しいバージョンの設定項目を追加します。
+    既存の設定は上書きしません（ユーザーの設定を尊重）。
+
+    Args:
+        app_dir: アプリケーションディレクトリ（ユーザーのsettings.jsonがある場所）
+        source_dir: ソースディレクトリ（新しいsettings.jsonまたはテンプレートがある場所）
+
+    Returns:
+        int: 追加された設定項目数
+    """
+    user_settings = app_dir / "config" / "settings.json"
+    # 新しい設定ファイルまたはテンプレートを探す
+    new_settings = source_dir / "config" / "settings.json"
+    if not new_settings.exists():
+        new_settings = source_dir / "config" / "settings.template.json"
+
+    if not new_settings.exists():
+        logger.info("新しい設定ファイルが見つかりません: %s", new_settings)
+        return 0
+
+    # ユーザーの設定が存在しない場合はコピー
+    if not user_settings.exists():
+        user_settings.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(new_settings, user_settings)
+        logger.info("設定ファイルをコピーしました: %s", user_settings)
+        return -1  # 新規作成を示す
+
+    # 両方の設定を読み込む
+    try:
+        with open(user_settings, "r", encoding="utf-8") as f:
+            user_data = json.load(f)
+        with open(new_settings, "r", encoding="utf-8") as f:
+            new_data = json.load(f)
+    except (json.JSONDecodeError, OSError) as e:
+        logger.warning("設定ファイルの読み込みに失敗: %s", e)
+        return 0
+
+    # 新しいキーのみ追加（既存キーは上書きしない）
+    added_count = 0
+    for key, value in new_data.items():
+        if key not in user_data:
+            user_data[key] = value
+            added_count += 1
+            logger.debug("新しい設定項目を追加: %s", key)
+
+    # 追加があれば保存
+    if added_count > 0:
+        with open(user_settings, "w", encoding="utf-8") as f:
+            json.dump(user_data, f, ensure_ascii=False, indent=2)
+        logger.info("設定ファイルに %d 件の新規項目を追加しました", added_count)
+
+    return added_count
 
 
 def merge_glossary(app_dir: Path, source_dir: Path) -> int:

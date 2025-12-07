@@ -487,6 +487,30 @@ class TestCopilotHandlerGPT5:
         handler._ensure_gpt5_enabled()
         assert handler._gpt5_enabled is True  # Should be set to True
 
+    def test_gpt5_flag_reset_on_disconnect(self):
+        """_gpt5_enabled flag is reset when disconnect() is called"""
+        handler = CopilotHandler()
+        handler._connected = True
+        handler._gpt5_enabled = True
+        handler._browser = Mock()
+        handler._playwright = Mock()
+
+        handler.disconnect()
+
+        assert handler._gpt5_enabled is False
+
+    def test_gpt5_flag_reset_on_cleanup(self):
+        """_gpt5_enabled flag is reset when _cleanup_on_error() is called"""
+        handler = CopilotHandler()
+        handler._connected = True
+        handler._gpt5_enabled = True
+        handler._browser = Mock()
+        handler._playwright = Mock()
+
+        handler._cleanup_on_error()
+
+        assert handler._gpt5_enabled is False
+
 
 class TestCopilotHandlerMockedConnect:
     """Test CopilotHandler.connect() with mocked Playwright"""

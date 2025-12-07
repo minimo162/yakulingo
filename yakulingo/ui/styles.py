@@ -164,14 +164,14 @@ body {
 }
 
 /* === Sidebar Layout === */
+/* Nani-style: simple surface background, no gradient */
 .sidebar {
     width: var(--sidebar-width);
     height: 100vh;
     position: fixed;
     left: 0;
     top: 0;
-    /* M3 surface gradient sidebar */
-    background: linear-gradient(180deg, var(--md-sys-color-surface-container-lowest) 0%, var(--md-sys-color-surface-container-low) 100%);
+    background: var(--md-sys-color-surface);
     border-right: 1px solid var(--md-sys-color-outline-variant);
     display: flex;
     flex-direction: column;
@@ -196,6 +196,7 @@ body {
 }
 
 /* Input Panel (Middle Column - Sticky) */
+/* Nani-style: clean surface with subtle shadow instead of border */
 .input-panel {
     width: var(--input-panel-width);
     min-width: var(--input-panel-width);
@@ -206,7 +207,7 @@ body {
     display: flex;
     flex-direction: column;
     background: var(--md-sys-color-surface);
-    border-right: 1px solid var(--md-sys-color-outline-variant);
+    box-shadow: 1px 0 3px rgba(0, 0, 0, 0.05);
     overflow-y: auto;
 }
 
@@ -234,6 +235,7 @@ body {
 }
 
 /* Empty Result State Placeholder */
+/* Nani-style: subtle surface with minimal border */
 .empty-result-state {
     display: flex;
     flex-direction: column;
@@ -242,9 +244,9 @@ body {
     gap: 0.75rem;
     min-height: 200px;
     padding: 2rem;
-    border: 2px dashed var(--md-sys-color-outline-variant);
-    border-radius: var(--md-sys-shape-corner-large);
-    background-color: var(--md-sys-color-surface-container-low);
+    border: 1px dashed var(--md-sys-color-outline-variant);
+    border-radius: var(--md-sys-shape-corner-xl);
+    background-color: var(--md-sys-color-surface);
 }
 
 /* === Source Text Section (Result Panel Top) === */
@@ -861,9 +863,10 @@ textarea:focus-visible {
     background: rgba(67, 85, 185, 0.12);
 }
 
-/* === Drop Zone (Gradio-inspired) === */
+/* === Drop Zone (Nani-inspired) === */
+/* Nani-style: subtle surface with thin dashed border */
 .drop-zone {
-    border: 2px dashed var(--md-sys-color-outline-variant);
+    border: 1.5px dashed var(--md-sys-color-outline-variant);
     border-radius: var(--md-sys-shape-corner-xl);
     padding: 3.5rem 2.5rem;
     text-align: center;
@@ -930,10 +933,11 @@ textarea:focus-visible {
     pointer-events: none;
 }
 
+/* Nani-style: subtle hover with softer background */
 .drop-zone:hover {
     border-color: var(--md-sys-color-primary);
-    background: var(--md-sys-color-primary-container);
-    transform: scale(1.02);
+    background: rgba(222, 224, 255, 0.3);  /* primary-container at 30% */
+    transform: scale(1.01);
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-spring);
 }
 

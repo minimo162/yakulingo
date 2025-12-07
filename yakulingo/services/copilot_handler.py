@@ -264,8 +264,8 @@ class CopilotHandler:
 
     # Configuration constants
     DEFAULT_CDP_PORT = 9333  # Dedicated port for translator
-    EDGE_STARTUP_MAX_ATTEMPTS = 20  # Maximum iterations to wait for Edge startup
-    EDGE_STARTUP_CHECK_INTERVAL = 0.3  # Seconds between startup checks
+    EDGE_STARTUP_MAX_ATTEMPTS = 30  # Maximum iterations to wait for Edge startup (increased for shorter interval)
+    EDGE_STARTUP_CHECK_INTERVAL = 0.2  # Seconds between startup checks (reduced from 0.3)
     RESPONSE_STABLE_COUNT = 2  # Number of stable checks before considering response complete
     RESPONSE_POLL_INTERVAL = 0.3  # Seconds between response checks (legacy, kept for compatibility)
     # Dynamic polling intervals for faster response detection
@@ -364,7 +364,7 @@ class CopilotHandler:
         """Check if our CDP port is in use"""
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(1)
+            sock.settimeout(0.5)  # Reduced from 1s (localhost is fast)
             result = sock.connect_ex(('127.0.0.1', self.cdp_port))
             sock.close()
             return result == 0
@@ -393,7 +393,7 @@ class CopilotHandler:
                             capture_output=True, timeout=5, cwd=local_cwd,
                             creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
                         )
-                        time.sleep(1)
+                        time.sleep(0.5)  # Reduced from 1s
                         break
         except (subprocess.SubprocessError, OSError, TimeoutError) as e:
             logger.warning("Failed to kill existing Edge: %s", e)
@@ -418,7 +418,7 @@ class CopilotHandler:
         if self._is_port_in_use():
             logger.info("Closing previous Edge...")
             self._kill_existing_translator_edge()
-            time.sleep(0.5)
+            time.sleep(0.3)  # Reduced from 0.5s
             logger.info("Previous Edge closed")
 
         # Start new Edge with our dedicated port and profile
@@ -603,7 +603,7 @@ class CopilotHandler:
                 copilot_page.wait_for_selector(input_selector, timeout=15000, state='visible')
                 logger.info("Copilot chat UI ready")
                 # Wait a bit for authentication/session to fully initialize
-                time.sleep(0.3)
+                time.sleep(0.2)  # Reduced from 0.3s
                 self._connected = True
                 self.last_connection_error = self.ERROR_NONE  # Clear error on success
             except PlaywrightTimeoutError:

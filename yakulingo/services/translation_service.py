@@ -1093,6 +1093,82 @@ class TranslationService:
                 error_message=str(e),
             )
 
+    def translate_tabular_text(
+        self,
+        text: str,
+        detected_language: str,
+        reference_files: Optional[list[Path]] = None,
+    ) -> TextTranslationResult:
+        """
+        Translate tabular text (tab-separated, e.g., from Excel).
+
+        Preserves tab and newline structure for easy paste-back to Excel.
+        No explanation is provided, only the translated table.
+
+        Args:
+            text: Tab-separated text to translate
+            detected_language: Pre-detected language (e.g., "日本語", "英語")
+            reference_files: Optional list of reference files to attach
+
+        Returns:
+            TextTranslationResult with single option containing translated table
+        """
+        try:
+            # Determine output language based on detection
+            is_japanese = detected_language == "日本語"
+            output_language = "en" if is_japanese else "jp"
+
+            # Build tabular-specific prompt
+            prompt = self.prompt_builder.build_tabular(
+                text,
+                has_reference_files=bool(reference_files),
+                output_language=output_language,
+            )
+
+            if prompt is None:
+                # Fallback to regular translation if tabular template not available
+                logger.warning("Tabular template not found, falling back to regular translation")
+                return self.translate_text_with_options(
+                    text,
+                    reference_files,
+                    pre_detected_language=detected_language,
+                )
+
+            # Translate using Copilot
+            raw_result = self.copilot.translate_single(text, prompt, reference_files)
+
+            if raw_result and raw_result.strip():
+                # Return the raw result as-is (preserving tabs and newlines)
+                return TextTranslationResult(
+                    source_text=text,
+                    source_char_count=len(text),
+                    options=[TranslationOption(
+                        text=raw_result.strip(),
+                        explanation="表形式テキストの翻訳です。Excelに値貼り付けできます。",
+                    )],
+                    output_language=output_language,
+                    detected_language=detected_language,
+                )
+            else:
+                logger.warning("Empty response received from Copilot for tabular text")
+                return TextTranslationResult(
+                    source_text=text,
+                    source_char_count=len(text),
+                    output_language=output_language,
+                    detected_language=detected_language,
+                    error_message="Copilotから応答がありませんでした。Edgeブラウザを確認してください。",
+                )
+
+        except (RuntimeError, ValueError, ConnectionError, TimeoutError) as e:
+            logger.exception("Error during tabular text translation: %s", e)
+            return TextTranslationResult(
+                source_text=text,
+                source_char_count=len(text),
+                output_language="en",  # Default
+                detected_language=detected_language,
+                error_message=str(e),
+            )
+
     def adjust_translation(
         self,
         text: str,

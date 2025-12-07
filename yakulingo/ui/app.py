@@ -1066,6 +1066,95 @@ class YakuLingoApp:
             # Clean up temp file (after translation or on error)
             temp_path.unlink(missing_ok=True)
 
+    async def _translate_tabular_text(self, source_text: str):
+        """Translate tabular text (tab-separated, e.g., from Excel).
+
+        Preserves tab and newline structure for easy paste-back to Excel.
+        No explanation is provided, only the translated table.
+
+        Args:
+            source_text: Tab-separated text to translate
+        """
+        import time
+
+        reference_files = self._get_effective_reference_files()
+
+        # Use saved client reference
+        client = self._client
+
+        # Track translation time
+        start_time = time.time()
+
+        # Update UI to show loading state
+        self.state.text_translating = True
+        self.state.text_detected_language = None
+        self.state.text_result = None
+        self.state.text_translation_elapsed_time = None
+        self.state.streaming_text = None
+        self._streaming_label = None
+        with client:
+            self._refresh_content()
+
+        error_message = None
+        detected_language = None
+        try:
+            await asyncio.sleep(0)
+
+            # Step 1: Detect language
+            detected_language = await asyncio.to_thread(
+                self.translation_service.detect_language,
+                source_text,
+            )
+
+            # Update UI with detected language
+            self.state.text_detected_language = detected_language
+            with client:
+                self._refresh_result_panel()
+
+            await asyncio.sleep(0)
+
+            # Step 2: Translate tabular text
+            result = await asyncio.to_thread(
+                self.translation_service.translate_tabular_text,
+                source_text,
+                detected_language,
+                reference_files,
+            )
+
+            # Calculate elapsed time
+            elapsed_time = time.time() - start_time
+            self.state.text_translation_elapsed_time = elapsed_time
+
+            if result and result.options:
+                from yakulingo.ui.state import TextViewState
+                self.state.text_result = result
+                self.state.text_view_state = TextViewState.RESULT
+                self._add_to_history(result, source_text)
+                self.state.source_text = ""
+                # Mark onboarding as completed
+                if not self.settings.onboarding_completed:
+                    self.settings.onboarding_completed = True
+                    self.settings.save(self.settings_path)
+            else:
+                error_message = result.error_message if result else 'Unknown error'
+
+        except Exception as e:
+            logger.exception("Tabular translation error: %s", e)
+            error_message = str(e)
+
+        # Clear states
+        self.state.streaming_text = None
+        self.state.text_translating = False
+        self.state.text_detected_language = None
+
+        # Update UI
+        with client:
+            if error_message:
+                self._notify_error(error_message)
+            self._refresh_result_panel()
+            self._update_translate_button_state()
+            self._refresh_status()
+
     async def _translate_text(self):
         """Translate text with 2-step process: language detection then translation."""
         import time
@@ -1078,6 +1167,12 @@ class YakuLingoApp:
         # Check text length limit - switch to file translation for long text
         if len(source_text) > TEXT_TRANSLATION_CHAR_LIMIT:
             await self._translate_long_text_as_file(source_text)
+            return
+
+        # Check if text is tabular (tab-separated, e.g., from Excel)
+        from yakulingo.services.prompt_builder import is_tabular_text
+        if is_tabular_text(source_text):
+            await self._translate_tabular_text(source_text)
             return
 
         reference_files = self._get_effective_reference_files()

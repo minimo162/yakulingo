@@ -1042,7 +1042,7 @@ def _render_check_my_english(
                 english_input.run_method('focus')
 
             ui.button(
-                '自分の英文をチェック',
+                'アレンジした英文をチェック',
                 icon='spellcheck',
                 on_click=show_input
             ).props('flat no-caps').classes('adjust-option-btn-full')
@@ -1050,7 +1050,7 @@ def _render_check_my_english(
         with expanded_container:
             with ui.column().classes('gap-2 w-full'):
                 # Label for the input
-                ui.label('翻訳を参考に作成した英文を入力').classes('text-sm text-muted')
+                ui.label('アレンジした英文を入力').classes('text-sm text-muted')
 
                 # Textarea for user's English
                 english_input = ui.textarea(

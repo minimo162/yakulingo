@@ -109,7 +109,7 @@ COMPLETE_CSS = """
     --input-panel-width: 420px;
     --result-content-width: 800px;
     --input-panel-width-wide: 100%;  /* Full width input for 2-column mode */
-    --input-panel-max-width: 600px;  /* Default fallback, dynamically set based on resolution */
+    --input-panel-max-width: 550px;  /* Default fallback, dynamically set based on resolution */
     --input-min-height: 200px;  /* Minimum textarea height */
 }
 

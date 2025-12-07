@@ -213,12 +213,14 @@ class TestFindFontFile:
         result = _find_font_file(["nonexistent_font_12345.ttf"])
         assert result is None
 
-    @patch('yakulingo.processors.pdf_processor._get_system_font_dirs')
+    @patch('yakulingo.processors.pdf_font_manager._get_system_font_dirs')
     @patch('os.path.isdir')
+    @patch('os.listdir')
     @patch('os.path.isfile')
-    def test_find_font_file_direct_path(self, mock_isfile, mock_isdir, mock_dirs):
+    def test_find_font_file_direct_path(self, mock_isfile, mock_listdir, mock_isdir, mock_dirs):
         mock_dirs.return_value = ["/usr/share/fonts"]
         mock_isdir.return_value = True
+        mock_listdir.return_value = ["test.ttf"]
         mock_isfile.side_effect = lambda p: p == "/usr/share/fonts/test.ttf"
 
         result = _find_font_file(["test.ttf"])
@@ -226,13 +228,14 @@ class TestFindFontFile:
 
     def test_find_font_file_priority_order(self):
         # First font in list has priority
-        with patch('yakulingo.processors.pdf_processor._get_system_font_dirs') as mock_dirs:
+        with patch('yakulingo.processors.pdf_font_manager._get_system_font_dirs') as mock_dirs:
             mock_dirs.return_value = ["/fonts"]
             with patch('os.path.isdir', return_value=True):
-                with patch('os.path.isfile') as mock_isfile:
-                    mock_isfile.side_effect = lambda p: p in ["/fonts/second.ttf", "/fonts/first.ttf"]
-                    result = _find_font_file(["first.ttf", "second.ttf"])
-                    assert result == "/fonts/first.ttf"
+                with patch('os.listdir', return_value=["first.ttf", "second.ttf"]):
+                    with patch('os.path.isfile') as mock_isfile:
+                        mock_isfile.side_effect = lambda p: p in ["/fonts/second.ttf", "/fonts/first.ttf"]
+                        result = _find_font_file(["first.ttf", "second.ttf"])
+                        assert result == "/fonts/first.ttf"
 
 
 class TestGetFontPathForLang:
@@ -522,7 +525,7 @@ class TestFontRegistry:
         assert font_id == font_registry.fonts["zh-CN"].font_id
 
     def test_get_font_path_registered(self, font_registry):
-        with patch('yakulingo.processors.pdf_processor.get_font_path_for_lang') as mock_get:
+        with patch('yakulingo.processors.pdf_font_manager.get_font_path_for_lang') as mock_get:
             mock_get.return_value = "/path/to/font.ttf"
             font_id = font_registry.register_font("ja")
             path = font_registry.get_font_path(font_id)

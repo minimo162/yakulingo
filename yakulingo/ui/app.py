@@ -1056,6 +1056,7 @@ class YakuLingoApp:
         try:
             # Set up file translation state
             self.state.selected_file = temp_path
+            self.state.file_detected_language = detected_language
             self.state.file_output_language = output_language
             self.state.file_info = self.translation_service.processors['.txt'].get_file_info(temp_path)
             self.state.source_text = ""  # Clear text input
@@ -1662,24 +1663,33 @@ class YakuLingoApp:
         client = self._client
 
         try:
-            # Extract sample text from file
-            processor = self.translation_service._get_processor(file_path)
-            blocks = list(processor.extract_text_blocks(file_path))
+            # Extract sample text from file (in thread to avoid blocking)
+            def extract_sample():
+                processor = self.translation_service._get_processor(file_path)
+                blocks = list(processor.extract_text_blocks(file_path))
+                if not blocks:
+                    return None
+                # Get sample text (first 1000 chars from first 5 blocks)
+                return ' '.join(block.text for block in blocks[:5])[:1000]
 
-            if not blocks:
+            sample_text = await asyncio.to_thread(extract_sample)
+
+            if not sample_text or not sample_text.strip():
                 return
 
-            # Get sample text (first 1000 chars)
-            sample_text = ' '.join(block.text for block in blocks[:5])[:1000]
-
-            if not sample_text.strip():
-                return
+            # Check if file selection changed during extraction
+            if self.state.selected_file != file_path:
+                return  # User selected different file, discard result
 
             # Detect language
             detected_language = await asyncio.to_thread(
                 self.translation_service.detect_language,
                 sample_text,
             )
+
+            # Check again if file selection changed during detection
+            if self.state.selected_file != file_path:
+                return  # User selected different file, discard result
 
             # Update state based on detection
             self.state.file_detected_language = detected_language

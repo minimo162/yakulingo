@@ -119,7 +119,7 @@ YakuLingo/
 │   ├── text_review_en.txt         # Follow-up: review English (英文をチェック)
 │   ├── text_check_my_english.txt  # Follow-up: check user's edited English
 │   ├── text_summarize.txt         # Follow-up: extract key points (要点を教えて)
-│   ├── text_explain_more.txt      # Follow-up: detailed explanation (詳しく解説)
+│   ├── text_easy_explain.txt       # Follow-up: explain in simple terms (わかりやすく)
 │   ├── text_question.txt          # Follow-up: answer user questions
 │   └── text_reply_email.txt       # Follow-up: compose reply email
 ├── config/
@@ -250,7 +250,7 @@ No manual direction selection is required.
 
 ### English → Japanese (和訳)
 - **Single translation output** with detailed explanation
-- **Action buttons**: [英文をチェック] [要点を教えて]
+- **Action buttons**: [英文をチェック] [要点を教えて] [わかりやすく]
 - **Inline input**: Placeholder "例: 返信の下書きを書いて"
 
 ### Common Features
@@ -866,7 +866,7 @@ Based on recent commits:
   - **Style settings**: 標準/簡潔/最簡潔 configurable via settings dialog
   - **Unified structure**: 英訳 and 和訳 now share same UI pattern (吹き出し風 hint + single option buttons + inline input)
   - **Suggestion hint row**: 💡アイコン + [再翻訳] ボタン for both directions
-  - **和訳 buttons**: [英文をチェック] [要点を教えて] as single option style
+  - **和訳 buttons**: [英文をチェック] [要点を教えて] [わかりやすく] as single option style
   - **Removed**: [これはどう？] quick chip, connector line design
 - **Settings Dialog**: Simplified to translation style only (removed batch size, timeout, retry settings from UI)
 - **Installation**: Desktop shortcut only (removed Start Menu entry)

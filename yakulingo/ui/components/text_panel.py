@@ -857,6 +857,13 @@ def _render_results_to_jp(
                         on_click=lambda: on_follow_up and on_follow_up('summarize', '')
                     ).props('flat no-caps').classes('adjust-option-btn-full')
 
+                    # Explain in simple terms
+                    ui.button(
+                        'わかりやすく',
+                        icon='lightbulb',
+                        on_click=lambda: on_follow_up and on_follow_up('easy_explain', '')
+                    ).props('flat no-caps').classes('adjust-option-btn-full')
+
                     # Reply composer section
                     if on_follow_up:
                         _render_reply_composer(on_follow_up)

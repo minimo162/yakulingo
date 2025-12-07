@@ -190,7 +190,7 @@ YakuLingo/
 │   ├── text_review_en.txt          # フォローアップ: 英文をチェック
 │   ├── text_check_my_english.txt   # フォローアップ: ユーザー編集英文チェック
 │   ├── text_summarize.txt          # フォローアップ: 要点を教えて
-│   ├── text_explain_more.txt       # フォローアップ: 詳しく解説
+│   ├── text_easy_explain.txt        # フォローアップ: わかりやすく
 │   ├── text_question.txt           # フォローアップ: 質問への回答
 │   └── text_reply_email.txt        # フォローアップ: 返信メール作成
 │

@@ -1276,7 +1276,7 @@ class YakuLingoApp:
         Build prompt for follow-up actions.
 
         Args:
-            action_type: 'review', 'summarize', 'question', 'reply', or 'explain_more'
+            action_type: 'review', 'summarize', 'question', 'reply', or 'easy_explain'
             source_text: Original source text
             translation: Current translation
             content: Additional content (question text, reply intent, etc.)
@@ -1288,44 +1288,38 @@ class YakuLingoApp:
 
         # Prompt file mapping and fallback templates
         prompt_configs = {
-            'explain_more': {
-                'file': 'text_explain_more.txt',
-                'fallback': f"""以下の翻訳について、より詳しい解説を提供してください。
+            'easy_explain': {
+                'file': 'text_easy_explain.txt',
+                'fallback': f"""以下の英文を、専門知識がなくても分かるように、やさしい日本語で解説してください。
 
 ## 原文
 {source_text}
 
-## 現在の訳文と解説
+## 日本語訳（参考）
 {translation}
 
 ## タスク
-以下の観点からより詳細な解説を提供してください：
-
-### 文法・構文の詳細分析
-- 文の構造を分解して説明
-- 使用されている文法項目の詳細
-- 関連する文法ルールや例外
-
-### 語彙・表現の深掘り
-- キーワードの語源や由来
-- 類義語・対義語との比較
-- コロケーション（よく一緒に使われる語句）
-
-### 文化・背景知識
-- この表現が使われる文化的背景
-- ビジネスシーンでの使用頻度や場面
-- 日本語との発想の違い
-
-### 応用・発展
-- この表現を使った応用例
-- 関連する表現パターン
-- 覚えておくと便利な関連フレーズ
+複雑な内容や専門用語を、誰でも理解できるシンプルな言葉で説明してください。
 
 ## 出力形式（厳守）
-訳文: （追加解説の要約タイトル）
-解説: （上記観点からの詳細解説）
+訳文: （この文章が言っていることの簡単なまとめ、1行）
+
+解説:
+### ざっくり言うと
+（2-3文で要点をとてもシンプルに説明）
+
+### ポイント
+- （ポイント1をわかりやすく）
+- （ポイント2をわかりやすく）
+- （必要ならポイント3）
+
+### 専門用語の説明
+（専門用語がある場合のみ。なければ省略）
+- 「用語」: シンプルな説明
 
 ## 禁止事項
+- 専門用語をそのまま使う
+- 長くて複雑な文
 - 「続けますか？」「他に質問はありますか？」などの対話継続の質問
 - 指定形式以外の追加説明やコメント""",
                 'replacements': {

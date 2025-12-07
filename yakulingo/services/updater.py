@@ -914,6 +914,7 @@ def merge_glossary(app_dir: Path, source_dir: Path) -> int:
 
     # ユーザーの用語集が存在しない場合は新しい用語集をコピー
     if not user_glossary.exists():
+        user_glossary.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(new_glossary, user_glossary)
         logger.info("用語集をコピーしました: %s", user_glossary)
         return -1  # 新規作成を示す

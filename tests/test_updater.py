@@ -15,6 +15,9 @@ from yakulingo.services.updater import (
     UpdateResult,
     VersionInfo,
     ProxyConfig,
+    merge_settings,
+    merge_glossary,
+    USER_PROTECTED_SETTINGS,
 )
 
 
@@ -589,3 +592,325 @@ class TestMakeRequestWithProxy:
 
             with pytest.raises(urllib.error.HTTPError):
                 updater._make_request("https://api.github.com/test")
+
+
+# --- Tests: merge_settings() ---
+
+class TestMergeSettings:
+    """Test merge_settings function"""
+
+    def test_merge_settings_new_file_created(self, tmp_path):
+        """When user settings don't exist, copy new settings"""
+        app_dir = tmp_path / "app"
+        source_dir = tmp_path / "source"
+
+        # Create source settings
+        (source_dir / "config").mkdir(parents=True)
+        new_settings = {"key1": "value1", "key2": "value2"}
+        (source_dir / "config" / "settings.json").write_text(
+            json.dumps(new_settings), encoding="utf-8"
+        )
+
+        result = merge_settings(app_dir, source_dir)
+
+        assert result == -1  # New file created
+        assert (app_dir / "config" / "settings.json").exists()
+        saved = json.loads((app_dir / "config" / "settings.json").read_text())
+        assert saved == new_settings
+
+    def test_merge_settings_preserves_protected_settings(self, tmp_path):
+        """Protected settings from user are preserved"""
+        app_dir = tmp_path / "app"
+        source_dir = tmp_path / "source"
+
+        # Create user settings with protected values
+        (app_dir / "config").mkdir(parents=True)
+        user_settings = {
+            "translation_style": "minimal",  # Protected
+            "max_chars_per_batch": 5000,      # Not protected
+            "font_jp_to_en": "Times",         # Protected
+        }
+        (app_dir / "config" / "settings.json").write_text(
+            json.dumps(user_settings), encoding="utf-8"
+        )
+
+        # Create new settings with different values
+        (source_dir / "config").mkdir(parents=True)
+        new_settings = {
+            "translation_style": "standard",  # Will be overwritten by user value
+            "max_chars_per_batch": 7000,      # Will use new value
+            "font_jp_to_en": "Arial",         # Will be overwritten by user value
+            "new_setting": "new_value",       # New setting added
+        }
+        (source_dir / "config" / "settings.json").write_text(
+            json.dumps(new_settings), encoding="utf-8"
+        )
+
+        result = merge_settings(app_dir, source_dir)
+
+        merged = json.loads((app_dir / "config" / "settings.json").read_text())
+        # Protected settings preserved from user
+        assert merged["translation_style"] == "minimal"
+        assert merged["font_jp_to_en"] == "Times"
+        # Non-protected settings updated from new
+        assert merged["max_chars_per_batch"] == 7000
+        # New settings added
+        assert merged["new_setting"] == "new_value"
+        assert result == 1  # 1 new setting added
+
+    def test_merge_settings_removes_deprecated_settings(self, tmp_path):
+        """Settings not in new version are removed"""
+        app_dir = tmp_path / "app"
+        source_dir = tmp_path / "source"
+
+        # Create user settings with deprecated setting
+        (app_dir / "config").mkdir(parents=True)
+        user_settings = {
+            "old_setting": "old_value",  # Will be removed
+            "translation_style": "concise",
+        }
+        (app_dir / "config" / "settings.json").write_text(
+            json.dumps(user_settings), encoding="utf-8"
+        )
+
+        # Create new settings without deprecated setting
+        (source_dir / "config").mkdir(parents=True)
+        new_settings = {
+            "translation_style": "standard",
+        }
+        (source_dir / "config" / "settings.json").write_text(
+            json.dumps(new_settings), encoding="utf-8"
+        )
+
+        merge_settings(app_dir, source_dir)
+
+        merged = json.loads((app_dir / "config" / "settings.json").read_text())
+        assert "old_setting" not in merged
+        # Protected setting preserved
+        assert merged["translation_style"] == "concise"
+
+    def test_merge_settings_no_source_file(self, tmp_path):
+        """Returns 0 when source settings don't exist"""
+        app_dir = tmp_path / "app"
+        source_dir = tmp_path / "source"
+        source_dir.mkdir()
+
+        result = merge_settings(app_dir, source_dir)
+        assert result == 0
+
+    def test_merge_settings_uses_template_fallback(self, tmp_path):
+        """Falls back to settings.template.json if settings.json not found"""
+        app_dir = tmp_path / "app"
+        source_dir = tmp_path / "source"
+
+        # Create template instead of settings.json
+        (source_dir / "config").mkdir(parents=True)
+        template = {"template_key": "template_value"}
+        (source_dir / "config" / "settings.template.json").write_text(
+            json.dumps(template), encoding="utf-8"
+        )
+
+        result = merge_settings(app_dir, source_dir)
+
+        assert result == -1
+        saved = json.loads((app_dir / "config" / "settings.json").read_text())
+        assert saved == template
+
+    def test_merge_settings_invalid_user_json(self, tmp_path):
+        """Returns 0 when user settings JSON is invalid"""
+        app_dir = tmp_path / "app"
+        source_dir = tmp_path / "source"
+
+        # Create invalid user settings
+        (app_dir / "config").mkdir(parents=True)
+        (app_dir / "config" / "settings.json").write_text("invalid json{", encoding="utf-8")
+
+        # Create valid source settings
+        (source_dir / "config").mkdir(parents=True)
+        (source_dir / "config" / "settings.json").write_text('{"key": "value"}', encoding="utf-8")
+
+        result = merge_settings(app_dir, source_dir)
+        assert result == 0
+
+
+# --- Tests: merge_glossary() ---
+
+class TestMergeGlossary:
+    """Test merge_glossary function"""
+
+    def test_merge_glossary_new_file_created(self, tmp_path):
+        """When user glossary doesn't exist, copy new glossary"""
+        app_dir = tmp_path / "app"
+        source_dir = tmp_path / "source"
+        source_dir.mkdir()
+
+        # Create source glossary
+        glossary_content = "日本,Japan\n英語,English\n"
+        (source_dir / "glossary.csv").write_text(glossary_content, encoding="utf-8")
+
+        result = merge_glossary(app_dir, source_dir)
+
+        assert result == -1  # New file created
+        assert (app_dir / "glossary.csv").exists()
+        assert (app_dir / "glossary.csv").read_text(encoding="utf-8") == glossary_content
+
+    def test_merge_glossary_adds_new_terms(self, tmp_path):
+        """New terms are added to user glossary"""
+        app_dir = tmp_path / "app"
+        source_dir = tmp_path / "source"
+        app_dir.mkdir()
+        source_dir.mkdir()
+
+        # Create user glossary
+        (app_dir / "glossary.csv").write_text("日本,Japan\n", encoding="utf-8")
+
+        # Create source glossary with additional term
+        (source_dir / "glossary.csv").write_text("日本,Japan\n英語,English\n", encoding="utf-8")
+
+        result = merge_glossary(app_dir, source_dir)
+
+        assert result == 1  # 1 new term added
+        content = (app_dir / "glossary.csv").read_text(encoding="utf-8")
+        assert "日本,Japan" in content
+        assert "英語,English" in content
+
+    def test_merge_glossary_pair_based_dedup(self, tmp_path):
+        """Same source with different translation is added"""
+        app_dir = tmp_path / "app"
+        source_dir = tmp_path / "source"
+        app_dir.mkdir()
+        source_dir.mkdir()
+
+        # Create user glossary with one translation
+        (app_dir / "glossary.csv").write_text("日本,Japan\n", encoding="utf-8")
+
+        # Create source glossary with different translation for same source
+        (source_dir / "glossary.csv").write_text("日本,Japan\n日本,JPN\n", encoding="utf-8")
+
+        result = merge_glossary(app_dir, source_dir)
+
+        assert result == 1  # "日本,JPN" is added (different pair)
+        content = (app_dir / "glossary.csv").read_text(encoding="utf-8")
+        assert "日本,Japan" in content
+        assert "日本,JPN" in content
+
+    def test_merge_glossary_skips_comments(self, tmp_path):
+        """Comment lines are not added as terms"""
+        app_dir = tmp_path / "app"
+        source_dir = tmp_path / "source"
+        app_dir.mkdir()
+        source_dir.mkdir()
+
+        # Create user glossary
+        (app_dir / "glossary.csv").write_text("# Comment\n日本,Japan\n", encoding="utf-8")
+
+        # Create source glossary with comments
+        (source_dir / "glossary.csv").write_text("# Header\n日本,Japan\n英語,English\n", encoding="utf-8")
+
+        result = merge_glossary(app_dir, source_dir)
+
+        assert result == 1  # Only "英語,English" is added
+        content = (app_dir / "glossary.csv").read_text(encoding="utf-8")
+        # Original comment is preserved
+        assert "# Comment" in content
+        # New comment is NOT added (comments are skipped)
+        assert content.count("# Header") == 0
+
+    def test_merge_glossary_no_new_terms(self, tmp_path):
+        """Returns 0 when all terms already exist"""
+        app_dir = tmp_path / "app"
+        source_dir = tmp_path / "source"
+        app_dir.mkdir()
+        source_dir.mkdir()
+
+        # Both have same content
+        content = "日本,Japan\n英語,English\n"
+        (app_dir / "glossary.csv").write_text(content, encoding="utf-8")
+        (source_dir / "glossary.csv").write_text(content, encoding="utf-8")
+
+        result = merge_glossary(app_dir, source_dir)
+
+        assert result == 0
+
+    def test_merge_glossary_no_source_file(self, tmp_path):
+        """Returns 0 when source glossary doesn't exist"""
+        app_dir = tmp_path / "app"
+        source_dir = tmp_path / "source"
+        source_dir.mkdir()
+
+        result = merge_glossary(app_dir, source_dir)
+        assert result == 0
+
+    def test_merge_glossary_handles_empty_lines(self, tmp_path):
+        """Empty lines are ignored in deduplication"""
+        app_dir = tmp_path / "app"
+        source_dir = tmp_path / "source"
+        app_dir.mkdir()
+        source_dir.mkdir()
+
+        # Create user glossary with empty lines
+        (app_dir / "glossary.csv").write_text("日本,Japan\n\n英語,English\n", encoding="utf-8")
+
+        # Create source glossary with empty lines and new term
+        (source_dir / "glossary.csv").write_text("\n日本,Japan\n\n中国,China\n", encoding="utf-8")
+
+        result = merge_glossary(app_dir, source_dir)
+
+        assert result == 1  # Only "中国,China" is added
+        content = (app_dir / "glossary.csv").read_text(encoding="utf-8")
+        assert "中国,China" in content
+
+    def test_merge_glossary_handles_whitespace(self, tmp_path):
+        """Whitespace-only differences are handled correctly"""
+        app_dir = tmp_path / "app"
+        source_dir = tmp_path / "source"
+        app_dir.mkdir()
+        source_dir.mkdir()
+
+        # Create user glossary
+        (app_dir / "glossary.csv").write_text("日本,Japan\n", encoding="utf-8")
+
+        # Create source glossary with same content but trailing whitespace
+        (source_dir / "glossary.csv").write_text("日本,Japan  \n新規,New\n", encoding="utf-8")
+
+        result = merge_glossary(app_dir, source_dir)
+
+        # "日本,Japan  " (with trailing spaces) should NOT be added because
+        # we compare trimmed lines. Only "新規,New" should be added.
+        assert result == 1
+        content = (app_dir / "glossary.csv").read_text(encoding="utf-8")
+        assert "新規,New" in content
+
+
+# --- Tests: USER_PROTECTED_SETTINGS ---
+
+class TestUserProtectedSettings:
+    """Test USER_PROTECTED_SETTINGS constant"""
+
+    def test_protected_settings_contains_ui_settings(self):
+        """Protected settings includes UI-changeable settings"""
+        assert "translation_style" in USER_PROTECTED_SETTINGS
+        assert "text_translation_style" in USER_PROTECTED_SETTINGS
+        assert "font_jp_to_en" in USER_PROTECTED_SETTINGS
+        assert "font_en_to_jp" in USER_PROTECTED_SETTINGS
+        assert "font_size_adjustment_jp_to_en" in USER_PROTECTED_SETTINGS
+        assert "bilingual_output" in USER_PROTECTED_SETTINGS
+        assert "export_glossary" in USER_PROTECTED_SETTINGS
+        assert "use_bundled_glossary" in USER_PROTECTED_SETTINGS
+        assert "last_tab" in USER_PROTECTED_SETTINGS
+        assert "onboarding_completed" in USER_PROTECTED_SETTINGS
+        assert "skipped_version" in USER_PROTECTED_SETTINGS
+
+    def test_protected_settings_excludes_developer_settings(self):
+        """Protected settings excludes developer-controlled settings"""
+        assert "max_chars_per_batch" not in USER_PROTECTED_SETTINGS
+        assert "request_timeout" not in USER_PROTECTED_SETTINGS
+        assert "max_retries" not in USER_PROTECTED_SETTINGS
+        assert "ocr_batch_size" not in USER_PROTECTED_SETTINGS
+        assert "ocr_dpi" not in USER_PROTECTED_SETTINGS
+        assert "ocr_device" not in USER_PROTECTED_SETTINGS
+        assert "github_repo_owner" not in USER_PROTECTED_SETTINGS
+        assert "github_repo_name" not in USER_PROTECTED_SETTINGS
+        assert "auto_update_check_interval" not in USER_PROTECTED_SETTINGS
+        assert "window_width" not in USER_PROTECTED_SETTINGS
+        assert "window_height" not in USER_PROTECTED_SETTINGS

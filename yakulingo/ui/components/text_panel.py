@@ -82,7 +82,8 @@ def _create_textarea_with_keyhandler(
     if value is None:
         value = state.source_text
 
-    classes = f'w-full p-4 {extra_classes}'.strip()
+    # Note: Padding is controlled via CSS variables (--textarea-padding-block/inline)
+    classes = f'w-full {extra_classes}'.strip()
     props = 'borderless aria-label="翻訳するテキスト"'
     if autogrow:
         props += ' autogrow'
@@ -292,24 +293,14 @@ def _create_large_input_panel(
                         if on_translate_button_created:
                             on_translate_button_created(btn)
 
-        # Hint text - only shown in INPUT state
+        # Hint text - Nani-style single line, centered
         with ui.element('div').classes('hint-section'):
-            if is_first_use:
-                # First-time user guidance
-                with ui.element('div').classes('hint-primary'):
-                    ui.icon('lightbulb').classes('text-sm text-muted')
-                    ui.label('使い方: テキストを入力して「翻訳する」をクリック').classes('text-xs')
-                with ui.element('div').classes('hint-secondary'):
-                    ui.icon('menu_book').classes('text-sm')
-                    ui.label('[用語集] で同梱の glossary.csv を使用、📎で参考資料を添付できます').classes('text-2xs')
-            else:
-                # Regular hints for returning users
-                with ui.element('div').classes('hint-primary'):
-                    ui.icon('translate').classes('text-sm text-muted')
-                    ui.label('入力言語を自動判定して翻訳します').classes('text-xs')
-                with ui.element('div').classes('hint-secondary'):
-                    ui.icon('auto_awesome').classes('text-sm')
-                    ui.label('M365 Copilot による翻訳').classes('text-2xs')
+            with ui.element('div').classes('hint-primary'):
+                ui.icon('swap_horiz').classes('text-sm text-muted')
+                if is_first_use:
+                    ui.label('テキストを入力すると、AIが言語を判定して翻訳します')
+                else:
+                    ui.label('AIが言語を検出し、日本語なら英語へ、それ以外なら日本語へ翻訳します')
 
 
 def _create_compact_input_panel(
@@ -678,14 +669,11 @@ def create_text_panel(
                         if on_translate_button_created:
                             on_translate_button_created(btn)
 
-        # Hint text
+        # Hint text - Nani-style single line, centered
         with ui.element('div').classes('hint-section'):
             with ui.element('div').classes('hint-primary'):
-                ui.icon('translate').classes('text-sm text-muted')
-                ui.label('入力言語を自動判定して翻訳します').classes('text-xs')
-            with ui.element('div').classes('hint-secondary'):
-                ui.icon('auto_awesome').classes('text-sm')
-                ui.label('M365 Copilot による翻訳').classes('text-2xs')
+                ui.icon('swap_horiz').classes('text-sm text-muted')
+                ui.label('AIが言語を検出し、日本語なら英語へ、それ以外なら日本語へ翻訳します')
 
         # Results section - language-specific UI
         if state.text_result and state.text_result.options:

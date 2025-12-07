@@ -109,9 +109,15 @@ COMPLETE_CSS = """
     --input-panel-width: 420px;
     --result-content-width: 800px;
     --input-panel-width-wide: 100%;  /* Full width input for 2-column mode */
-    --input-panel-max-width: 600px;  /* Default fallback, dynamically set based on resolution */
-    --input-min-height: 200px;  /* Minimum textarea height */
+    --input-panel-max-width: 768px;  /* Nani-style max width (max-w-3xl) */
+    --input-min-height: calc(7 * 1.5 * 1.125rem + 1.6rem);  /* 7 lines (line-height 1.5) + padding */
     --input-max-height: 450px;  /* Default fallback, dynamically set based on resolution */
+
+    /* Textarea-specific sizing (Nani-style) */
+    --textarea-font-size: 1.125rem;  /* 18px - Nani uses text-mdlg */
+    --textarea-line-height: 1.5;
+    --textarea-padding-block: 0.8em;  /* Nani-style vertical padding */
+    --textarea-padding-inline: 0.9em;  /* Nani-style horizontal padding */
 }
 
 /* === Base === */
@@ -1241,6 +1247,10 @@ textarea:focus-visible {
     height: auto !important;
     overflow-y: auto !important;  /* Scrollable when content exceeds space */
     resize: none !important;  /* Disable manual resize since we control height */
+    /* Nani-style textarea sizing */
+    font-size: var(--textarea-font-size) !important;
+    line-height: var(--textarea-line-height) !important;
+    padding: var(--textarea-padding-block) var(--textarea-padding-inline) !important;
 }
 
 /* Bottom controls row */
@@ -1304,6 +1314,10 @@ textarea:focus-visible {
     flex: 1 !important;
     min-height: 150px;
     height: auto !important;  /* Allow flex to control height */
+    /* Nani-style textarea sizing */
+    font-size: var(--textarea-font-size) !important;
+    line-height: var(--textarea-line-height) !important;
+    padding: var(--textarea-padding-block) var(--textarea-padding-inline) !important;
 }
 
 /* Bottom controls row should not grow, stay at bottom in 3-column mode */
@@ -1906,29 +1920,35 @@ textarea:focus-visible {
 }
 
 /* Hint section improvements */
+/* Nani-style hint section - single line, centered */
 .hint-section {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;  /* Nani uses single row */
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.875rem 0;
+    justify-content: center;  /* Center horizontally */
+    gap: 0.375rem;
+    margin-top: 1.125rem;  /* Nani: mt-4.5 = 18px */
+    padding: 0;
 }
 
 .hint-primary {
     display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    color: var(--md-sys-color-on-surface-variant);
-    font-size: var(--md-sys-typescale-size-xs);
-}
-
-.hint-secondary {
-    display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 0.375rem;
     color: var(--md-sys-color-on-surface-variant);
-    opacity: 0.6;
-    font-size: var(--md-sys-typescale-size-xs);
+    font-size: 0.75rem;  /* Nani: text-xs = 12px */
+    line-height: 1.5;
+}
+
+.hint-primary .q-icon,
+.hint-primary i {
+    flex-shrink: 0;
+    height: 1lh;  /* Match line height */
+}
+
+/* Hide secondary hint in Nani-style (single line only) */
+.hint-secondary {
+    display: none;
 }
 
 /* Security tooltip */
@@ -2553,6 +2573,13 @@ textarea:focus-visible {
 @keyframes skeletonShimmer {
     0% { background-position: 200% 0; }
     100% { background-position: -200% 0; }
+}
+
+/* === Textarea Nani-style Sizing (Global) === */
+.main-card-inner textarea {
+    font-size: var(--textarea-font-size) !important;
+    line-height: var(--textarea-line-height) !important;
+    padding: var(--textarea-padding-block) var(--textarea-padding-inline) !important;
 }
 
 /* === Textarea Placeholder Animation === */

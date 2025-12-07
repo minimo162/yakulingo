@@ -545,7 +545,7 @@ class CopilotHandler:
             else:
                 # CDP接続では通常contextが存在するはず、少し待ってリトライ
                 logger.warning("No existing context found, waiting...")
-                time.sleep(0.5)
+                time.sleep(0.2)
                 contexts = self._browser.contexts
                 if contexts:
                     self._context = contexts[0]
@@ -1397,7 +1397,7 @@ class CopilotHandler:
                 self._page.wait_for_selector(input_selector, timeout=5000, state='visible')
             except PlaywrightTimeoutError:
                 # Fallback: wait a bit if selector doesn't appear
-                time.sleep(1)
+                time.sleep(0.3)
 
             # Verify that previous responses are cleared (can be skipped for 2nd+ batches)
             if not skip_clear_wait:
@@ -1409,7 +1409,7 @@ class CopilotHandler:
         except (PlaywrightError, AttributeError):
             pass
 
-    def _wait_for_responses_cleared(self, timeout: float = 5.0) -> bool:
+    def _wait_for_responses_cleared(self, timeout: float = 1.0) -> bool:
         """
         Wait until all response elements are cleared from the chat.
 
@@ -1426,7 +1426,7 @@ class CopilotHandler:
             return True
 
         response_selector = '[data-testid="markdown-reply"], div[data-message-type="Chat"]'
-        poll_interval = 0.2
+        poll_interval = 0.15
         elapsed = 0.0
 
         while elapsed < timeout:

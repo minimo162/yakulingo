@@ -22,6 +22,10 @@ Translate to English and explain key points for Japanese speakers.
 
 ## Numeric: 億 → oku, thousands → k, negative → ()
 
+## Structure preservation:
+- Keep original line breaks and tabs intact
+- Preserve paragraph structure exactly as input
+
 ## Output format (MUST follow exactly):
 訳文: (translation)
 

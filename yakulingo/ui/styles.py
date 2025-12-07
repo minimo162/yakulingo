@@ -79,13 +79,13 @@ COMPLETE_CSS = """
     --md-comp-icon-button-icon-size: 1.5rem; /* 24dp - icon size inside button */
     --md-comp-touch-target-size: 3rem;       /* 48dp - minimum touch target */
 
-    /* Typography - font size hierarchy (larger for better readability) */
-    --md-sys-typescale-size-xs: 1rem;         /* 16px - captions, badges */
-    --md-sys-typescale-size-sm: 1.125rem;     /* 18px - labels, buttons */
-    --md-sys-typescale-size-md: 1.1875rem;    /* 19px - body text */
+    /* Typography - font size hierarchy (M3 standard with clear visual distinction) */
+    --md-sys-typescale-size-xs: 0.875rem;     /* 14px - captions, badges */
+    --md-sys-typescale-size-sm: 1rem;         /* 16px - labels, buttons */
+    --md-sys-typescale-size-md: 1.125rem;     /* 18px - body text */
     --md-sys-typescale-size-lg: 1.25rem;      /* 20px - subheadings */
-    --md-sys-typescale-size-xl: 1.625rem;     /* 26px - headings */
-    --md-sys-typescale-size-2xl: 1.875rem;    /* 30px - large headings */
+    --md-sys-typescale-size-xl: 1.5rem;       /* 24px - headings */
+    --md-sys-typescale-size-2xl: 2rem;        /* 32px - large headings */
 
     /* Typography - font weight hierarchy */
     --md-sys-typescale-weight-regular: 400;   /* Body text, descriptions */
@@ -109,8 +109,9 @@ COMPLETE_CSS = """
     --input-panel-width: 420px;
     --result-content-width: 800px;
     --input-panel-width-wide: 100%;  /* Full width input for 2-column mode */
-    --input-panel-max-width: 900px;  /* Maximum width for readability */
+    --input-panel-max-width: 600px;  /* Default fallback, dynamically set based on resolution */
     --input-min-height: 200px;  /* Minimum textarea height */
+    --input-max-height: 450px;  /* Default fallback, dynamically set based on resolution */
 }
 
 /* === Base === */
@@ -257,12 +258,14 @@ body {
 
 .source-copy-btn {
     color: var(--md-sys-color-on-surface-variant);
-    opacity: 0.7;
     flex-shrink: 0;
+    background: transparent;
+    border-radius: var(--md-sys-shape-corner-small);
+    transition: background-color var(--md-sys-motion-duration-short), color var(--md-sys-motion-duration-short);
 }
 
 .source-copy-btn:hover {
-    opacity: 1;
+    background-color: var(--md-sys-color-surface-container);
     color: var(--md-sys-color-primary);
 }
 
@@ -735,8 +738,31 @@ body {
 .translate-btn:disabled {
     background: rgba(27, 27, 31, 0.12);
     color: rgba(27, 27, 31, 0.38);
-    cursor: default;
+    cursor: not-allowed;
     box-shadow: none;
+    opacity: 0.6;
+}
+
+/* M3 Focus state for all interactive elements */
+.btn-primary:focus-visible,
+.translate-btn:focus-visible,
+.btn-outline:focus-visible,
+.btn-tonal:focus-visible,
+.btn-text:focus-visible {
+    outline: 2px solid var(--md-sys-color-primary);
+    outline-offset: 2px;
+}
+
+button:focus-visible,
+a:focus-visible {
+    outline: 2px solid var(--md-sys-color-primary);
+    outline-offset: 2px;
+}
+
+input:focus-visible,
+textarea:focus-visible {
+    outline: 2px solid var(--md-sys-color-primary);
+    outline-offset: -2px;
 }
 
 /* Compact translate button for RESULT state */
@@ -1158,81 +1184,68 @@ body {
 
 /* Ensure the column container fills the input panel vertically */
 .main-area:not(.has-results) .input-panel > .nicegui-column {
-    width: var(--input-panel-width-wide);
-    max-width: var(--input-panel-max-width);
-    flex: 1;  /* Fill available vertical space */
-    min-height: 0;  /* Override default min-height: auto to allow shrinking */
-    max-height: 100%;  /* Respect parent height constraint to keep hint-section in viewport */
-    overflow: hidden;  /* Prevent children from overflowing */
+    width: 100%;
+    flex: 1;
+    min-height: 0;
+    max-height: 100%;
+    overflow: hidden;
     display: flex;
     flex-direction: column;
-    align-items: stretch;  /* Stretch children to full width */
+    align-items: center;  /* Center card horizontally */
+    justify-content: flex-start;  /* Align card to top */
 }
 
-/* Center the main-card within the input panel and fill available height */
+/* Card fits content, centered horizontally */
 .main-area:not(.has-results) .input-panel .main-card {
+    max-width: var(--input-panel-max-width);
     width: 100%;
-    flex: 1;  /* Fill available vertical space */
-    min-height: 0;  /* Allow shrinking below content size */
     display: flex;
     flex-direction: column;
-    overflow: hidden;  /* Contain overflow */
+    overflow: hidden;
 }
 
 .main-area:not(.has-results) .input-panel .main-card-inner {
-    flex: 1;  /* Fill available vertical space */
-    min-height: 0;  /* Allow shrinking below content size */
     display: flex;
     flex-direction: column;
-    overflow: hidden;  /* Contain overflow */
+    overflow: hidden;
 }
 
-/* Make textarea and its NiceGUI wrapper fill available space in 2-column mode */
+/* Textarea wrapper styles for 2-column mode */
 .main-area:not(.has-results) .input-panel .main-card-inner > .nicegui-input,
 .main-area:not(.has-results) .input-panel .main-card-inner > .nicegui-textarea {
-    flex: 1 !important;
-    min-height: 0 !important;  /* Allow shrinking */
     display: flex !important;
     flex-direction: column !important;
-    overflow: hidden !important;  /* Contain overflow */
 }
 
 .main-area:not(.has-results) .input-panel .main-card-inner .q-field {
-    flex: 1 !important;
-    min-height: 0 !important;
     display: flex !important;
     flex-direction: column !important;
 }
 
 .main-area:not(.has-results) .input-panel .main-card-inner .q-field__inner,
 .main-area:not(.has-results) .input-panel .main-card-inner .q-field__control {
-    flex: 1 !important;
-    min-height: 0 !important;  /* Allow shrinking */
     display: flex !important;
     flex-direction: column !important;
-    overflow: hidden !important;  /* Contain overflow */
 }
 
 /* Target q-field__native which wraps the textarea */
 .main-area:not(.has-results) .input-panel .main-card-inner .q-field__native {
-    flex: 1 !important;
-    min-height: 0 !important;
     display: flex !important;
     flex-direction: column !important;
 }
 
 .main-area:not(.has-results) .input-panel .main-card-inner textarea {
-    flex: 1 !important;
     min-height: var(--input-min-height);
-    height: auto !important;  /* Let flex control height (autogrow removed from large panel) */
+    max-height: var(--input-max-height);  /* Dynamically set based on window height */
+    width: 100%;
+    height: auto !important;
     overflow-y: auto !important;  /* Scrollable when content exceeds space */
     resize: none !important;  /* Disable manual resize since we control height */
 }
 
-/* Bottom controls row should not grow, stay at bottom */
+/* Bottom controls row */
 .main-area:not(.has-results) .input-panel .main-card-inner > .nicegui-row {
     flex-shrink: 0 !important;
-    margin-top: auto;  /* Push to bottom */
 }
 
 /* Hint section should not grow, stay at bottom */

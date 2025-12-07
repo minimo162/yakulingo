@@ -1537,10 +1537,9 @@ def _detect_display_settings() -> tuple[tuple[int, int], tuple[int, int, int, in
             result_content_width = max(int(window_width * RESULT_CONTENT_RATIO), MIN_RESULT_CONTENT_WIDTH)
 
         # Calculate max-width for input panel in 2-column mode (centered layout)
-        # Main area = window - sidebar, leave 60px padding (30px each side) for breathing room
-        # Cap at 900px for optimal readability on large screens
+        # Main area = window - sidebar, use 50% of available width for balanced layout
         main_area_width = window_width - sidebar_width
-        input_panel_max_width = min(900, main_area_width - 60)
+        input_panel_max_width = int((main_area_width - 60) * 0.5)
 
         return ((window_width, window_height), (sidebar_width, input_panel_width, result_content_width, input_panel_max_width))
 
@@ -1667,6 +1666,10 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
         MIN_INPUT_HEIGHT = 280
         input_min_height = max(MIN_INPUT_HEIGHT, int(REFERENCE_INPUT_MIN_HEIGHT * window_height / REFERENCE_WINDOW_HEIGHT))
 
+        # Calculate input max-height based on input max-width to maintain consistent aspect ratio
+        # Aspect ratio 4:3 (height = width * 0.75) for balanced appearance across resolutions
+        input_max_height = int(input_panel_max_width * 0.75)
+
         # Calculate base font size with gentle scaling
         # Reference: 1900px window → 16px font
         # Use square root for gentle scaling (no upper limit for large screens)
@@ -1686,6 +1689,7 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
     --result-content-width: {result_content_width}px;
     --input-panel-max-width: {input_panel_max_width}px;
     --input-min-height: {input_min_height}px;
+    --input-max-height: {input_max_height}px;
 }}
 </style>''')
 

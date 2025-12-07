@@ -21,6 +21,7 @@ Translate to Japanese and explain key points for Japanese learners.
 - oku → 億, k → 千/000, () → ▲
 - Already Japanese → output as-is
 - No continuation questions or extra comments
+- Keep original line breaks and tabs intact
 
 {reference_section}
 

@@ -183,21 +183,21 @@ class TestTranslationCell:
 class TestGetSystemFontDirs:
     """Tests for _get_system_font_dirs function"""
 
-    @patch('yakulingo.processors.pdf_processor.platform.system')
+    @patch('yakulingo.processors.pdf_font_manager.platform.system')
     def test_windows_font_dirs(self, mock_system):
         mock_system.return_value = "Windows"
         with patch.dict('os.environ', {'WINDIR': 'C:\\Windows'}):
             dirs = _get_system_font_dirs()
             assert any("Fonts" in d for d in dirs)
 
-    @patch('yakulingo.processors.pdf_processor.platform.system')
+    @patch('yakulingo.processors.pdf_font_manager.platform.system')
     def test_macos_font_dirs(self, mock_system):
         mock_system.return_value = "Darwin"
         dirs = _get_system_font_dirs()
         assert "/System/Library/Fonts" in dirs
         assert "/Library/Fonts" in dirs
 
-    @patch('yakulingo.processors.pdf_processor.platform.system')
+    @patch('yakulingo.processors.pdf_font_manager.platform.system')
     def test_linux_font_dirs(self, mock_system):
         mock_system.return_value = "Linux"
         dirs = _get_system_font_dirs()
@@ -252,14 +252,14 @@ class TestGetFontPathForLang:
             assert len(FONT_FILES[lang]["primary"]) > 0
             assert len(FONT_FILES[lang]["fallback"]) > 0
 
-    @patch('yakulingo.processors.pdf_processor._find_font_file')
+    @patch('yakulingo.processors.pdf_font_manager._find_font_file')
     def test_get_font_path_returns_primary(self, mock_find):
         mock_find.side_effect = lambda names: "/fonts/primary.ttf" if "primary" in str(names) else None
         # Primary should be checked first
         result = get_font_path_for_lang("ja")
         assert mock_find.called
 
-    @patch('yakulingo.processors.pdf_processor._find_font_file')
+    @patch('yakulingo.processors.pdf_font_manager._find_font_file')
     def test_get_font_path_fallback_to_english(self, mock_find):
         mock_find.return_value = None
         result = get_font_path_for_lang("ja")

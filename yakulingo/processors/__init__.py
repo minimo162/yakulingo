@@ -22,7 +22,7 @@ _LAZY_IMPORTS = {
 
 # Submodules that can be accessed via __getattr__ (for patching support)
 _SUBMODULES = {'excel_processor', 'word_processor', 'pptx_processor', 'pdf_processor',
-               'base', 'translators', 'font_manager'}
+               'base', 'translators', 'font_manager', 'pdf_font_manager', 'pdf_operators'}
 
 
 def __getattr__(name: str):

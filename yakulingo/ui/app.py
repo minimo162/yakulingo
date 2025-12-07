@@ -180,22 +180,18 @@ class YakuLingoApp:
             logger.debug("Hotkey handler skipped - translation already in progress")
             return
 
-        # Check text length limit
+        # Bring app window to front
+        await self._bring_window_to_front()
+
+        # Check text length limit - switch to file translation for long text
         if len(text) > TEXT_TRANSLATION_CHAR_LIMIT:
             logger.info(
-                "Hotkey text too long (%d chars > %d limit), skipping",
+                "Hotkey text too long (%d chars > %d limit), using file translation",
                 len(text), TEXT_TRANSLATION_CHAR_LIMIT
             )
-            # Bring window to front to show notification
-            await self._bring_window_to_front()
-            if self._client:
-                with self._client:
-                    ui.notify(
-                        f'テキストが長すぎます（{len(text):,}文字）。ファイル翻訳をお使いください',
-                        type='warning',
-                        position='top',
-                        timeout=5000,
-                    )
+            # Set source text for _translate_long_text_as_file
+            self.state.source_text = text
+            await self._translate_long_text_as_file(text)
             return
 
         # Set source text
@@ -205,9 +201,6 @@ class YakuLingoApp:
         from yakulingo.ui.state import Tab, TextViewState
         self.state.current_tab = Tab.TEXT
         self.state.text_view_state = TextViewState.INPUT
-
-        # Bring app window to front
-        await self._bring_window_to_front()
 
         # Refresh UI to show the text
         if self._client:

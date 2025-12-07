@@ -1249,6 +1249,7 @@ textarea:focus-visible {
 .main-area:not(.has-results) .input-panel .main-card-inner textarea {
     flex: 1 !important;
     min-height: var(--input-min-height);
+    max-height: 50vh;  /* Limit to half screen height to avoid overwhelming empty space */
     height: auto !important;  /* Let flex control height (autogrow removed from large panel) */
     overflow-y: auto !important;  /* Scrollable when content exceeds space */
     resize: none !important;  /* Disable manual resize since we control height */

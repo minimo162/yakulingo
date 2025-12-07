@@ -1138,12 +1138,15 @@ class TranslationService:
             raw_result = self.copilot.translate_single(text, prompt, reference_files)
 
             if raw_result and raw_result.strip():
-                # Return the raw result as-is (preserving tabs and newlines)
+                # Parse result in case Copilot added "訳文:" tag despite instructions
+                from yakulingo.ui.utils import parse_translation_result
+                parsed_text, _ = parse_translation_result(raw_result)
+
                 return TextTranslationResult(
                     source_text=text,
                     source_char_count=len(text),
                     options=[TranslationOption(
-                        text=raw_result.strip(),
+                        text=parsed_text,
                         explanation="表形式テキストの翻訳です。Excelに値貼り付けできます。",
                     )],
                     output_language=output_language,

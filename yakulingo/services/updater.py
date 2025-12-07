@@ -758,7 +758,8 @@ def merge_glossary(app_dir: Path, source_dir: Path) -> int:
     用語集をマージ（新規用語のみ追加）
 
     ユーザーの用語集（glossary.csv）に、バンドル版の新規用語を追加します。
-    既存の用語は上書きしません（ユーザーの編集を尊重）。
+    重複判定は「ソース用語,翻訳結果」のペア全体で行います。
+    例: 「日本,Japan」が存在しても「日本,JPN」は別の用語として追加されます。
 
     Args:
         app_dir: アプリケーションディレクトリ（ユーザーのglossary.csvがある場所）
@@ -780,29 +781,26 @@ def merge_glossary(app_dir: Path, source_dir: Path) -> int:
         logger.info("用語集をコピーしました: %s", user_glossary)
         return -1  # 新規作成を示す
 
-    # 既存の用語（ソース側）を収集
-    existing_terms: set[str] = set()
-    existing_lines: list[str] = []
+    # 既存の用語ペア（ソース,翻訳）を収集
+    existing_pairs: set[str] = set()
 
     with open(user_glossary, "r", encoding="utf-8") as f:
         for line in f:
-            existing_lines.append(line)
             stripped = line.strip()
             # コメント行と空行はスキップ
             if stripped and not stripped.startswith("#"):
-                parts = stripped.split(",", 1)
-                if parts:
-                    existing_terms.add(parts[0].strip())
+                # ペア全体（ソース,翻訳）をキーとして保存
+                existing_pairs.add(stripped)
 
-    # 新しい用語集から、既存にない用語を収集
+    # 新しい用語集から、既存にないペアを収集
     new_terms: list[str] = []
     with open(new_glossary, "r", encoding="utf-8") as f:
         for line in f:
             stripped = line.strip()
             # コメント行と空行はスキップ
             if stripped and not stripped.startswith("#"):
-                parts = stripped.split(",", 1)
-                if parts and parts[0].strip() not in existing_terms:
+                # ペア全体で重複判定
+                if stripped not in existing_pairs:
                     new_terms.append(line if line.endswith("\n") else line + "\n")
 
     # 新規用語があれば追加

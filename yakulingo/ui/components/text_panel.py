@@ -162,6 +162,7 @@ def create_text_input_panel(
     is_first_use: bool = False,
     use_bundled_glossary: bool = False,
     on_glossary_toggle: Optional[Callable[[bool], None]] = None,
+    on_edit_glossary: Optional[Callable[[], None]] = None,
 ):
     """
     Text input panel for 3-column layout.
@@ -177,7 +178,7 @@ def create_text_input_panel(
             state, on_translate, on_source_change, on_clear,
             on_attach_reference_file, on_remove_reference_file,
             on_settings, on_translate_button_created, is_first_use,
-            use_bundled_glossary, on_glossary_toggle
+            use_bundled_glossary, on_glossary_toggle, on_edit_glossary
         )
     else:
         # RESULT/TRANSLATING state: Compact input for new translations
@@ -185,7 +186,7 @@ def create_text_input_panel(
             state, on_translate, on_source_change, on_clear,
             on_attach_reference_file, on_remove_reference_file,
             on_settings, on_translate_button_created,
-            use_bundled_glossary, on_glossary_toggle
+            use_bundled_glossary, on_glossary_toggle, on_edit_glossary
         )
 
 
@@ -201,6 +202,7 @@ def _create_large_input_panel(
     is_first_use: bool = False,
     use_bundled_glossary: bool = False,
     on_glossary_toggle: Optional[Callable[[bool], None]] = None,
+    on_edit_glossary: Optional[Callable[[], None]] = None,
 ):
     """Large input panel for INPUT state - spans 2 columns"""
     with ui.column().classes('flex-1 w-full gap-4'):
@@ -245,6 +247,14 @@ def _create_large_input_panel(
                                 f'glossary-toggle-btn {"active" if use_bundled_glossary else ""}'
                             )
                             glossary_btn.tooltip('同梱の glossary.csv を使用' if not use_bundled_glossary else '用語集を使用中')
+
+                            # Edit glossary button (only shown when glossary is enabled)
+                            if use_bundled_glossary and on_edit_glossary:
+                                edit_btn = ui.button(
+                                    icon='edit',
+                                    on_click=on_edit_glossary
+                                ).props('flat dense round size=sm').classes('settings-btn')
+                                edit_btn.tooltip('用語集をExcelで編集')
 
                         # Settings button
                         if on_settings:
@@ -311,6 +321,7 @@ def _create_compact_input_panel(
     on_translate_button_created: Optional[Callable[[ui.button], None]] = None,
     use_bundled_glossary: bool = False,
     on_glossary_toggle: Optional[Callable[[bool], None]] = None,
+    on_edit_glossary: Optional[Callable[[], None]] = None,
 ):
     """Compact input panel for RESULT/TRANSLATING state - fills available vertical space"""
     # During translation, show empty textarea (same as post-translation state)
@@ -361,6 +372,14 @@ def _create_compact_input_panel(
                                 f'glossary-toggle-btn {"active" if use_bundled_glossary else ""}'
                             )
                             glossary_btn.tooltip('同梱の glossary.csv を使用' if not use_bundled_glossary else '用語集を使用中')
+
+                            # Edit glossary button (only shown when glossary is enabled)
+                            if use_bundled_glossary and on_edit_glossary:
+                                edit_btn = ui.button(
+                                    icon='edit',
+                                    on_click=on_edit_glossary
+                                ).props('flat dense round size=sm').classes('settings-btn')
+                                edit_btn.tooltip('用語集をExcelで編集')
 
                         # Settings button (hide during translation)
                         if on_settings and not state.text_translating:

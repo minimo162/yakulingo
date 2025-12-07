@@ -579,6 +579,7 @@ class YakuLingoApp:
                         is_first_use=not self.settings.onboarding_completed,
                         use_bundled_glossary=self.settings.use_bundled_glossary,
                         on_glossary_toggle=self._on_glossary_toggle,
+                        on_edit_glossary=self._edit_glossary,
                     )
 
                 # Result panel (right column - shown when has results)
@@ -633,6 +634,27 @@ class YakuLingoApp:
         self.settings.use_bundled_glossary = enabled
         self.settings.save(self.settings_path)
         self._refresh_content()
+
+    async def _edit_glossary(self):
+        """Open glossary.csv in Excel/default editor with cooldown to prevent double-open"""
+        from yakulingo.ui.utils import open_file
+
+        # Check if glossary file exists
+        if not self._glossary_path.exists():
+            ui.notify('用語集ファイルが見つかりません', type='warning')
+            return
+
+        # Open the file
+        open_file(self._glossary_path)
+        ui.notify(
+            '用語集を開きました。編集後は保存してから翻訳してください',
+            type='info',
+            timeout=5000
+        )
+
+        # Cooldown: prevent rapid re-clicking by refreshing UI
+        # (button won't appear again until next refresh after 3s)
+        await asyncio.sleep(3)
 
     def _get_effective_reference_files(self) -> list[Path] | None:
         """Get reference files including bundled glossary if enabled.

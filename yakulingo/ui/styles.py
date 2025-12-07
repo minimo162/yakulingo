@@ -1363,6 +1363,64 @@ textarea:focus-visible {
     justify-content: center;
 }
 
+/* === Media Queries for Resolution Fallback === */
+/* These provide CSS-only fallback when JavaScript hasn't updated CSS variables yet */
+
+/* Small screens (< 1400px) - compact layout */
+@media (max-width: 1399px) {
+    :root {
+        --sidebar-width: 220px;
+        --input-panel-width: 340px;
+        --result-content-width: 580px;
+        --input-panel-max-width: 520px;
+        --base-font-size: 14px;
+    }
+}
+
+/* Medium screens (1400px - 1599px) - standard layout */
+@media (min-width: 1400px) and (max-width: 1599px) {
+    :root {
+        --sidebar-width: 260px;
+        --input-panel-width: 380px;
+        --result-content-width: 680px;
+        --input-panel-max-width: 560px;
+        --base-font-size: 15px;
+    }
+}
+
+/* Large screens (1600px - 1899px) - expanded layout */
+@media (min-width: 1600px) and (max-width: 1899px) {
+    :root {
+        --sidebar-width: 260px;
+        --input-panel-width: 400px;
+        --result-content-width: 720px;
+        --input-panel-max-width: 640px;
+        --base-font-size: 15.5px;
+    }
+}
+
+/* Extra large screens (1900px+) - full layout */
+@media (min-width: 1900px) {
+    :root {
+        --sidebar-width: 260px;
+        --input-panel-width: 420px;
+        --result-content-width: 800px;
+        --input-panel-max-width: 768px;
+        --base-font-size: 16px;
+    }
+}
+
+/* Very large screens (2200px+) - scaled up layout */
+@media (min-width: 2200px) {
+    :root {
+        --sidebar-width: 300px;
+        --input-panel-width: 480px;
+        --result-content-width: 920px;
+        --input-panel-max-width: 880px;
+        --base-font-size: 17px;
+    }
+}
+
 /* === Dialog === */
 .q-card {
     border-radius: var(--md-sys-shape-corner-xl) !important;

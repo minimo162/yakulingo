@@ -296,11 +296,8 @@ def _create_large_input_panel(
         # Hint text - Nani-style single line, centered
         with ui.element('div').classes('hint-section'):
             with ui.element('div').classes('hint-primary'):
-                ui.icon('swap_horiz').classes('text-sm text-muted')
-                if is_first_use:
-                    ui.label('テキストを入力すると、AIが言語を判定して翻訳します')
-                else:
-                    ui.label('AIが言語を検出し、日本語なら英語へ、それ以外なら日本語へ翻訳します')
+                ui.icon('translate').classes('text-sm text-muted')
+                ui.label('入力言語を自動判定して翻訳します')
 
 
 def _create_compact_input_panel(
@@ -672,8 +669,8 @@ def create_text_panel(
         # Hint text - Nani-style single line, centered
         with ui.element('div').classes('hint-section'):
             with ui.element('div').classes('hint-primary'):
-                ui.icon('swap_horiz').classes('text-sm text-muted')
-                ui.label('AIが言語を検出し、日本語なら英語へ、それ以外なら日本語へ翻訳します')
+                ui.icon('translate').classes('text-sm text-muted')
+                ui.label('入力言語を自動判定して翻訳します')
 
         # Results section - language-specific UI
         if state.text_result and state.text_result.options:

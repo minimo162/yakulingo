@@ -1111,6 +1111,29 @@ class YakuLingoApp:
                     '{translation}': translation,
                 }
             },
+            'check_my_english': {
+                'file': 'text_check_my_english.txt',
+                'fallback': f"""以下のユーザーが修正した英文をチェックしてください。
+
+参照訳（AI翻訳ベース）:
+{translation}
+
+ユーザーの英文:
+{content}
+
+タスク:
+- 文法ミス、スペルミス、不自然な表現をチェック
+- 問題がなければ「問題ありません」と回答
+- 問題があれば修正案を提示
+
+出力形式:
+訳文: （問題なければ「問題ありません。そのまま使えます。」、問題あれば修正版）
+解説: （簡潔なフィードバック）""",
+                'replacements': {
+                    '{reference_translation}': translation,
+                    '{user_english}': content,
+                }
+            },
         }
 
         if action_type not in prompt_configs:

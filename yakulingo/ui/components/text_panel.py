@@ -477,6 +477,7 @@ def create_text_result_panel(
                     on_back_translate,
                     elapsed_time,
                     on_retry,
+                    on_follow_up,
                 )
         elif not state.text_translating:
             # Empty state - show placeholder (spinner already shown in translation status section)
@@ -695,6 +696,7 @@ def create_text_panel(
                     on_back_translate,
                     elapsed_time,
                     on_retry,
+                    on_follow_up,
                 )
         elif state.text_translating:
             _render_loading(state.text_detected_language)
@@ -732,6 +734,7 @@ def _render_results_to_en(
     on_back_translate: Optional[Callable[[str], None]] = None,
     elapsed_time: Optional[float] = None,
     on_retry: Optional[Callable[[], None]] = None,
+    on_follow_up: Optional[Callable[[str, str], None]] = None,
 ):
     """Render →English results: multiple options with inline adjustment"""
 
@@ -753,6 +756,11 @@ def _render_results_to_en(
         if on_adjust and result.options:
             latest_option = result.options[-1]  # Use latest option for both text and style
             _render_inline_adjust_section(latest_option.text, on_adjust, on_retry, latest_option.style)
+
+        # Check my English section
+        if on_follow_up and result.options:
+            latest_option = result.options[-1]
+            _render_check_my_english(latest_option.text, on_follow_up)
 
 
 def _render_results_to_jp(
@@ -1018,68 +1026,6 @@ def _render_inline_adjust_section(
                         on_click=lambda k=key: on_adjust(text, k)
                     ).props('flat no-caps').classes('adjust-option-btn-full')
 
-                # Custom request button (expands to show input area)
-                _render_custom_request_button(text, on_adjust)
-
-
-def _render_custom_request_button(
-    text: str,
-    on_adjust: Callable[[str, str], None],
-):
-    """Render custom request button that expands to show input area"""
-    # Container for toggle behavior
-    with ui.element('div').classes('custom-request-container w-full'):
-        # Collapsed state: Button
-        collapsed_container = ui.element('div').classes('w-full')
-        # Expanded state: Input area
-        expanded_container = ui.element('div').classes('w-full custom-request-expanded').style('display: none')
-
-        with collapsed_container:
-            def show_input():
-                collapsed_container.style('display: none')
-                expanded_container.style('display: block')
-                # Focus the textarea after showing
-                request_input.run_method('focus')
-
-            ui.button(
-                'その他のリクエスト...',
-                icon='edit',
-                on_click=show_input
-            ).props('flat no-caps').classes('adjust-option-btn-full custom-request-trigger')
-
-        with expanded_container:
-            with ui.column().classes('gap-2 w-full'):
-                # Textarea for custom request
-                request_input = ui.textarea(
-                    placeholder='例: もっとカジュアルに、ビジネス向けに調整して...'
-                ).classes('w-full custom-request-input').props('autogrow rows=4')
-
-                with ui.row().classes('justify-end gap-2'):
-                    # Cancel button
-                    def cancel_input():
-                        request_input.set_value('')
-                        expanded_container.style('display: none')
-                        collapsed_container.style('display: block')
-
-                    ui.button(
-                        'キャンセル',
-                        on_click=cancel_input
-                    ).props('flat no-caps size=sm').classes('cancel-btn')
-
-                    # Send button
-                    def send_request():
-                        if request_input.value and request_input.value.strip():
-                            on_adjust(text, request_input.value.strip())
-                            request_input.set_value('')
-                            expanded_container.style('display: none')
-                            collapsed_container.style('display: block')
-
-                    ui.button(
-                        '送信',
-                        icon='send',
-                        on_click=send_request
-                    ).props('no-caps size=sm').classes('send-request-btn')
-
 
 def _render_inline_input_section_jp(
     text: str,
@@ -1137,6 +1083,68 @@ def _render_inline_input_section_jp(
                         '送信',
                         icon='send',
                         on_click=send_request
+                    ).props('no-caps size=sm').classes('send-request-btn')
+
+
+def _render_check_my_english(
+    reference_translation: str,
+    on_follow_up: Callable[[str, str], None],
+):
+    """Render check my English section for reviewing user's own English writing"""
+
+    with ui.element('div').classes('check-my-english-container w-full'):
+        # Collapsed state: Button
+        collapsed_container = ui.element('div').classes('w-full')
+        # Expanded state: Input area
+        expanded_container = ui.element('div').classes('w-full check-my-english-expanded').style('display: none')
+
+        with collapsed_container:
+            def show_input():
+                collapsed_container.style('display: none')
+                expanded_container.style('display: block')
+                english_input.run_method('focus')
+
+            ui.button(
+                '自分の英文をチェック',
+                icon='spellcheck',
+                on_click=show_input
+            ).props('flat no-caps').classes('adjust-option-btn-full')
+
+        with expanded_container:
+            with ui.column().classes('gap-2 w-full'):
+                # Label for the input
+                ui.label('翻訳を参考に作成した英文を入力').classes('text-sm text-muted')
+
+                # Textarea for user's English
+                english_input = ui.textarea(
+                    placeholder='例: I will check it tomorrow and get back to you.'
+                ).classes('w-full check-my-english-input').props('autogrow rows=3')
+
+                with ui.row().classes('justify-end gap-2'):
+                    # Cancel button
+                    def cancel_input():
+                        english_input.set_value('')
+                        expanded_container.style('display: none')
+                        collapsed_container.style('display: block')
+
+                    ui.button(
+                        'キャンセル',
+                        on_click=cancel_input
+                    ).props('flat no-caps size=sm').classes('cancel-btn')
+
+                    # Check button
+                    def check_english():
+                        user_english = english_input.value.strip() if english_input.value else ''
+                        if user_english:
+                            on_follow_up('check_my_english', user_english)
+                            english_input.set_value('')
+                            expanded_container.style('display: none')
+                            collapsed_container.style('display: block')
+
+                    ui.button(
+                        'チェック',
+                        icon='check',
+                        on_click=check_english
                     ).props('no-caps size=sm').classes('send-request-btn')
 
 

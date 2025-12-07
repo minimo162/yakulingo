@@ -264,12 +264,12 @@ class CopilotHandler:
 
     # Configuration constants
     DEFAULT_CDP_PORT = 9333  # Dedicated port for translator
-    EDGE_STARTUP_MAX_ATTEMPTS = 20  # Maximum iterations to wait for Edge startup
-    EDGE_STARTUP_CHECK_INTERVAL = 0.3  # Seconds between startup checks
+    EDGE_STARTUP_MAX_ATTEMPTS = 30  # Maximum iterations to wait for Edge startup (increased for shorter interval)
+    EDGE_STARTUP_CHECK_INTERVAL = 0.2  # Seconds between startup checks (reduced from 0.3)
     RESPONSE_STABLE_COUNT = 2  # Number of stable checks before considering response complete
     RESPONSE_POLL_INTERVAL = 0.3  # Seconds between response checks (legacy, kept for compatibility)
     # Dynamic polling intervals for faster response detection
-    RESPONSE_POLL_INITIAL = 0.3  # Initial interval while waiting for response to start
+    RESPONSE_POLL_INITIAL = 0.2  # Initial interval while waiting for response to start (reduced from 0.3)
     RESPONSE_POLL_ACTIVE = 0.2  # Interval after text is detected
     RESPONSE_POLL_STABLE = 0.1  # Interval during stability checking
     DEFAULT_RESPONSE_TIMEOUT = 120  # Default timeout for response in seconds
@@ -308,6 +308,8 @@ class CopilotHandler:
         self.edge_process = None
         # Connection error for detailed user feedback
         self.last_connection_error: str = self.ERROR_NONE
+        # GPT-5 toggle optimization: skip check after first successful enable
+        self._gpt5_enabled = False
 
     @property
     def is_connected(self) -> bool:
@@ -362,7 +364,7 @@ class CopilotHandler:
         """Check if our CDP port is in use"""
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(1)
+            sock.settimeout(0.5)  # Reduced from 1s (localhost is fast)
             result = sock.connect_ex(('127.0.0.1', self.cdp_port))
             sock.close()
             return result == 0
@@ -391,7 +393,7 @@ class CopilotHandler:
                             capture_output=True, timeout=5, cwd=local_cwd,
                             creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
                         )
-                        time.sleep(1)
+                        time.sleep(0.5)  # Reduced from 1s
                         break
         except (subprocess.SubprocessError, OSError, TimeoutError) as e:
             logger.warning("Failed to kill existing Edge: %s", e)
@@ -416,7 +418,7 @@ class CopilotHandler:
         if self._is_port_in_use():
             logger.info("Closing previous Edge...")
             self._kill_existing_translator_edge()
-            time.sleep(0.5)
+            time.sleep(0.3)  # Reduced from 0.5s
             logger.info("Previous Edge closed")
 
         # Start new Edge with our dedicated port and profile
@@ -601,7 +603,7 @@ class CopilotHandler:
                 copilot_page.wait_for_selector(input_selector, timeout=15000, state='visible')
                 logger.info("Copilot chat UI ready")
                 # Wait a bit for authentication/session to fully initialize
-                time.sleep(0.3)
+                time.sleep(0.2)  # Reduced from 0.3s
                 self._connected = True
                 self.last_connection_error = self.ERROR_NONE  # Clear error on success
             except PlaywrightTimeoutError:
@@ -1055,7 +1057,7 @@ class CopilotHandler:
                 try:
                     send_button = self._page.wait_for_selector(
                         send_button_selector,
-                        timeout=2000,  # Reduced from 5000ms (Enter key fallback handles timeouts)
+                        timeout=1000,  # Reduced from 2000ms (Enter key fallback handles timeouts)
                         state='visible'
                     )
                     if send_button:
@@ -1468,6 +1470,10 @@ class CopilotHandler:
         Returns:
             True if GPT-5 is enabled (or button not found), False if failed to enable
         """
+        # Skip check if already enabled in this session (optimization)
+        if self._gpt5_enabled:
+            return True
+
         if not self._page:
             return True
 
@@ -1481,6 +1487,7 @@ class CopilotHandler:
                 'button.fui-ToggleButton[aria-pressed="true"]'
             )
             if enabled_btn:
+                self._gpt5_enabled = True
                 return True  # 既に有効
 
             # 無効なボタンを探す（遅延描画対応のため複数回試行）
@@ -1531,6 +1538,7 @@ class CopilotHandler:
 
             if not gpt5_btn:
                 # ボタンが見つからない = 既に有効か、ボタンが存在しない
+                self._gpt5_enabled = True
                 return True
 
             # ボタンをクリックして有効化
@@ -1543,11 +1551,13 @@ class CopilotHandler:
                     timeout=1500,
                     state='attached'
                 )
+                self._gpt5_enabled = True
                 return True
             except PlaywrightTimeoutError:
                 # 状態変更が確認できなくても、クリックは成功したかもしれない
+                self._gpt5_enabled = True
                 return True
 
         except (PlaywrightError, PlaywrightTimeoutError, AttributeError):
-            # エラーが発生しても翻訳処理は続行
+            # エラーが発生しても翻訳処理は続行（フラグは設定しない、次回再試行）
             return True

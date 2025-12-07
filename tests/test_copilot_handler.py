@@ -460,6 +460,33 @@ class TestCopilotHandlerGPT5:
         result = handler._ensure_gpt5_enabled()
         assert result is True
 
+    def test_ensure_gpt5_enabled_skips_when_flag_set(self):
+        """_ensure_gpt5_enabled skips check when _gpt5_enabled flag is True"""
+        handler = CopilotHandler()
+
+        mock_page = Mock()
+        handler._page = mock_page
+        handler._gpt5_enabled = True  # Set flag to True
+
+        result = handler._ensure_gpt5_enabled()
+
+        assert result is True
+        # query_selector should NOT be called because flag skips check
+        mock_page.query_selector.assert_not_called()
+
+    def test_ensure_gpt5_enabled_sets_flag_after_success(self):
+        """_ensure_gpt5_enabled sets _gpt5_enabled flag after successful enable"""
+        handler = CopilotHandler()
+
+        mock_page = Mock()
+        mock_enabled_btn = Mock()
+        mock_page.query_selector.return_value = mock_enabled_btn
+        handler._page = mock_page
+
+        assert handler._gpt5_enabled is False  # Initially False
+        handler._ensure_gpt5_enabled()
+        assert handler._gpt5_enabled is True  # Should be set to True
+
 
 class TestCopilotHandlerMockedConnect:
     """Test CopilotHandler.connect() with mocked Playwright"""

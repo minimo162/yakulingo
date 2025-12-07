@@ -1059,11 +1059,59 @@ class FontRegistry:
             except Exception as e:
                 logger.debug("Error getting char width for '%s': %s", char, e)
 
-        # Fallback: estimate based on CJK status
-        is_cjk = self.get_is_cjk(font_id)
-        if is_cjk or ord(char) > 0x2E7F:  # CJK range
-            return font_size  # Full-width
-        return font_size * 0.5  # Half-width
+        # Fallback: estimate based on character properties (not font)
+        # This provides accurate width estimation for existing PDF fonts
+        return self._estimate_char_width(char, font_size)
+
+    def _estimate_char_width(self, char: str, font_size: float) -> float:
+        """
+        Estimate character width based on Unicode properties.
+
+        Used as fallback when font metrics are not available (e.g., existing PDF fonts).
+        More accurate than simple CJK/non-CJK distinction.
+
+        Args:
+            char: Single character
+            font_size: Font size in points
+
+        Returns:
+            Estimated character width in points
+        """
+        code = ord(char)
+
+        # Half-width characters (check first to handle halfwidth katakana correctly)
+        # - Basic Latin (0020-007F)
+        # - Latin-1 Supplement (0080-00FF)
+        # - Halfwidth Katakana (FF61-FF9F) - must check before fullwidth forms
+        if (0x0020 <= code <= 0x007F or  # Basic Latin
+            0x0080 <= code <= 0x00FF or  # Latin-1 Supplement
+            0xFF61 <= code <= 0xFF9F):   # Halfwidth Katakana
+            return font_size * 0.5
+
+        # Full-width characters (return font_size)
+        # - Hiragana (3040-309F)
+        # - Katakana (30A0-30FF)
+        # - CJK Unified Ideographs (4E00-9FFF)
+        # - CJK Extension A (3400-4DBF)
+        # - Fullwidth Forms (FF00-FF60, FFA0-FFEF) - excluding halfwidth katakana
+        # - Hangul Syllables (AC00-D7AF)
+        if (0x3040 <= code <= 0x309F or  # Hiragana
+            0x30A0 <= code <= 0x30FF or  # Katakana
+            0x4E00 <= code <= 0x9FFF or  # CJK Unified Ideographs
+            0x3400 <= code <= 0x4DBF or  # CJK Extension A
+            0xFF00 <= code <= 0xFF60 or  # Fullwidth Forms (before halfwidth)
+            0xFFA0 <= code <= 0xFFEF or  # Fullwidth Forms (after halfwidth)
+            0xAC00 <= code <= 0xD7AF or  # Hangul Syllables
+            0x3000 <= code <= 0x303F):   # CJK Symbols and Punctuation
+            return font_size
+
+        # Other characters: use character's East Asian Width property
+        # For simplicity, treat as full-width if code > 0x2E7F (roughly CJK range)
+        if code > 0x2E7F:
+            return font_size
+
+        # Default: half-width for remaining characters
+        return font_size * 0.5
 
     def embed_fonts(self, doc) -> list[str]:
         """
@@ -1087,6 +1135,14 @@ class FontRegistry:
         first_page = doc[0]
 
         for lang, font_info in self.fonts.items():
+            # Skip existing fonts from PDF (they don't need re-embedding)
+            if lang.startswith("_existing_"):
+                logger.debug(
+                    "Skipping existing font: id=%s, lang=%s (already in PDF)",
+                    font_info.font_id, lang
+                )
+                continue
+
             font_path = self.get_font_path(font_info.font_id)
             if not font_path:
                 logger.warning(

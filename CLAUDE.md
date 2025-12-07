@@ -4,7 +4,7 @@ This document provides essential context for AI assistants working with the Yaku
 
 ## Project Overview
 
-**YakuLingo** (訳リンゴ) is a bidirectional Japanese/English translation application that leverages M365 Copilot as its translation engine. It supports both text and file translation (Excel, Word, PowerPoint, PDF) while preserving document formatting and layout.
+**YakuLingo** (訳リンゴ) is a bidirectional Japanese/English translation application that leverages M365 Copilot as its translation engine. It supports both text and file translation (Excel, Word, PowerPoint, PDF, TXT) while preserving document formatting and layout.
 
 - **Package Name**: `yakulingo`
 - **Version**: 20251127 (2.0.0)
@@ -190,6 +190,10 @@ Tab: TEXT, FILE                                # Main navigation tabs
 FileState: EMPTY, SELECTED, TRANSLATING, COMPLETE, ERROR  # File panel states
 TextViewState: INPUT, RESULT                   # Text panel layout (INPUT=large textarea, RESULT=compact+results)
 
+# AppState attributes for file translation
+file_detected_language: Optional[str]          # Auto-detected source language (e.g., "日本語", "英語")
+file_output_language: str                      # Output language ("en" or "jp"), auto-set based on detection
+
 # Key dataclasses
 TextBlock(id, text, location, metadata)       # Unit of translatable text
 FileInfo(path, file_type, size_bytes, section_details, ...)  # File metadata with sections
@@ -236,7 +240,7 @@ Translation direction based on detection:
 - **Japanese input ("日本語")** → English output (single translation with inline adjustments)
 - **Non-Japanese input** → Japanese output (single translation + explanation + action buttons + inline input)
 
-No manual direction selection is required.
+No manual direction selection is required for text translation. File translation also uses auto-detection with optional manual override via language toggle buttons.
 
 ## Text Translation UI Features
 
@@ -908,6 +912,14 @@ Based on recent commits:
   - **Paragraph-based splitting**: Splits by blank lines, chunks long paragraphs (3,000 chars max)
   - **Bilingual output**: Interleaved original/translated with separators
   - **Glossary CSV export**: Source/translation pairs for reuse
+- **File Translation Language Auto-Detection**:
+  - **Auto-detection on file select**: Extracts sample text from first 5 blocks and detects language
+  - **Race condition handling**: Discards detection result if user selects different file during detection
+  - **Manual override**: Language toggle buttons allow manual selection after auto-detection
+  - **UI feedback**: Shows detected language (e.g., "日本語を検出 → 英訳します")
+- **Unified Ctrl+J Hint**:
+  - **Both panels**: Text and file translation panels show same Ctrl+J hint with keycap styling
+  - **Consistent messaging**: "[Ctrl] + [J] : 他アプリで選択したテキストを翻訳"
 
 ## Git Workflow
 

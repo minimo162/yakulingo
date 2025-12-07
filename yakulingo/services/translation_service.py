@@ -7,6 +7,7 @@ Bidirectional translation: Japanese → English, Other → Japanese (auto-detect
 
 import csv
 import logging
+import threading
 import time
 from pathlib import Path
 from typing import Optional
@@ -458,7 +459,8 @@ class BatchTranslator:
     ):
         self.copilot = copilot
         self.prompt_builder = prompt_builder
-        self._cancel_requested = False
+        # Thread-safe cancellation using Event instead of bool flag
+        self._cancel_event = threading.Event()
 
         # Use provided values or defaults
         self.max_chars_per_batch = max_chars_per_batch or self.DEFAULT_MAX_CHARS_PER_BATCH
@@ -467,12 +469,12 @@ class BatchTranslator:
         self._cache = TranslationCache() if enable_cache else None
 
     def cancel(self) -> None:
-        """Request cancellation of batch translation."""
-        self._cancel_requested = True
+        """Request cancellation of batch translation (thread-safe)."""
+        self._cancel_event.set()
 
     def reset_cancel(self) -> None:
-        """Reset cancellation flag."""
-        self._cancel_requested = False
+        """Reset cancellation flag (thread-safe)."""
+        self._cancel_event.clear()
 
     def clear_cache(self) -> None:
         """Clear translation cache."""
@@ -548,7 +550,7 @@ class BatchTranslator:
         untranslated_block_ids = []
         mismatched_batch_count = 0
 
-        self._cancel_requested = False
+        self._cancel_event.clear()  # Reset at start of new translation
         cancelled = False
 
         # Phase 0: Skip formula blocks (preserve original text)
@@ -651,8 +653,8 @@ class BatchTranslator:
         logger.debug("Pre-built %d prompts for batch translation", len(prompts))
 
         for i, batch in enumerate(batches):
-            # Check for cancellation between batches
-            if self._cancel_requested:
+            # Check for cancellation between batches (thread-safe)
+            if self._cancel_event.is_set():
                 logger.info("Batch translation cancelled at batch %d/%d", i + 1, len(batches))
                 cancelled = True
                 break
@@ -790,37 +792,42 @@ class TranslationService:
             self.prompt_builder,
             max_chars_per_batch=config.max_chars_per_batch if config else None,
         )
-        self._cancel_requested = False
+        # Thread-safe cancellation using Event instead of bool flag
+        self._cancel_event = threading.Event()
 
         # Lazy-loaded file processors for faster startup
         self._processors: Optional[dict[str, FileProcessor]] = None
+        self._processors_lock = threading.Lock()
 
         # Translation cache is handled by BatchTranslator (PDFMathTranslate compliant)
 
     @property
     def processors(self) -> dict[str, FileProcessor]:
         """
-        Lazy-load file processors on first access.
+        Lazy-load file processors on first access (thread-safe).
         This significantly improves startup time by deferring heavy imports
         (xlwings, openpyxl, python-docx, python-pptx, PyMuPDF) until needed.
         """
         if self._processors is None:
-            from yakulingo.processors.excel_processor import ExcelProcessor
-            from yakulingo.processors.word_processor import WordProcessor
-            from yakulingo.processors.pptx_processor import PptxProcessor
-            from yakulingo.processors.pdf_processor import PdfProcessor
-            from yakulingo.processors.txt_processor import TxtProcessor
+            with self._processors_lock:
+                # Double-check locking pattern for thread safety
+                if self._processors is None:
+                    from yakulingo.processors.excel_processor import ExcelProcessor
+                    from yakulingo.processors.word_processor import WordProcessor
+                    from yakulingo.processors.pptx_processor import PptxProcessor
+                    from yakulingo.processors.pdf_processor import PdfProcessor
+                    from yakulingo.processors.txt_processor import TxtProcessor
 
-            # Note: Legacy formats (.doc, .ppt) are not supported
-            # Only Office Open XML formats are supported for Word/PowerPoint
-            self._processors = {
-                '.xlsx': ExcelProcessor(),
-                '.xls': ExcelProcessor(),
-                '.docx': WordProcessor(),
-                '.pptx': PptxProcessor(),
-                '.pdf': PdfProcessor(),
-                '.txt': TxtProcessor(),
-            }
+                    # Note: Legacy formats (.doc, .ppt) are not supported
+                    # Only Office Open XML formats are supported for Word/PowerPoint
+                    self._processors = {
+                        '.xlsx': ExcelProcessor(),
+                        '.xls': ExcelProcessor(),
+                        '.docx': WordProcessor(),
+                        '.pptx': PptxProcessor(),
+                        '.pdf': PdfProcessor(),
+                        '.txt': TxtProcessor(),
+                    }
         return self._processors
 
     def clear_translation_cache(self) -> None:
@@ -1468,7 +1475,7 @@ class TranslationService:
             TranslationResult with output_path
         """
         start_time = time.time()
-        self._cancel_requested = False
+        self._cancel_event.clear()  # Reset cancellation at start
 
         # Reset PDF processor cancellation flag if applicable
         pdf_processor = self.processors.get('.pdf')
@@ -1553,8 +1560,8 @@ class TranslationService:
                 warnings=["No translatable text found in file"],
             )
 
-        # Check for cancellation
-        if self._cancel_requested:
+        # Check for cancellation (thread-safe)
+        if self._cancel_event.is_set():
             return TranslationResult(
                 status=TranslationStatus.CANCELLED,
                 duration_seconds=time.time() - start_time,
@@ -1583,8 +1590,8 @@ class TranslationService:
             translation_style=translation_style,
         )
 
-        # Check for cancellation
-        if self._cancel_requested:
+        # Check for cancellation (thread-safe)
+        if self._cancel_event.is_set():
             return TranslationResult(
                 status=TranslationStatus.CANCELLED,
                 duration_seconds=time.time() - start_time,
@@ -1718,8 +1725,8 @@ class TranslationService:
                 all_cells.extend(page_cells)
             pages_processed += 1
 
-            # Check for cancellation between pages
-            if self._cancel_requested:
+            # Check for cancellation between pages (thread-safe)
+            if self._cancel_event.is_set():
                 return TranslationResult(
                     status=TranslationStatus.CANCELLED,
                     duration_seconds=time.time() - start_time,
@@ -1766,7 +1773,7 @@ class TranslationService:
             translation_style=translation_style,
         )
 
-        if self._cancel_requested:
+        if self._cancel_event.is_set():
             return TranslationResult(
                 status=TranslationStatus.CANCELLED,
                 duration_seconds=time.time() - start_time,
@@ -1887,7 +1894,7 @@ class TranslationService:
         blocks: list[TextBlock],
         translations: dict[str, str],
         output_path: Path,
-    ) -> None:
+    ) -> bool:
         """
         Export translation pairs as glossary CSV.
 
@@ -1900,20 +1907,36 @@ class TranslationService:
             blocks: Original text blocks
             translations: Translation results (block_id -> translated_text)
             output_path: Output CSV file path
+
+        Returns:
+            True if export was successful, False otherwise
         """
-        with open(output_path, 'w', encoding='utf-8', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerow(['original', 'translated'])
+        try:
+            pair_count = 0
+            with open(output_path, 'w', encoding='utf-8', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow(['original', 'translated'])
 
-            for block in blocks:
-                if block.id in translations:
-                    original = block.text.strip()
-                    translated = translations[block.id].strip()
-                    # Skip empty pairs
-                    if original and translated:
-                        writer.writerow([original, translated])
+                for block in blocks:
+                    if block.id in translations:
+                        original = block.text.strip()
+                        translated = translations[block.id].strip()
+                        # Skip empty pairs
+                        if original and translated:
+                            writer.writerow([original, translated])
+                            pair_count += 1
 
-        logger.info("Exported glossary CSV: %s (%d pairs)", output_path, len(translations))
+            logger.info("Exported glossary CSV: %s (%d pairs)", output_path, pair_count)
+            return True
+        except (OSError, IOError) as e:
+            logger.error("Failed to export glossary CSV to %s: %s", output_path, e)
+            # Clean up incomplete file
+            try:
+                if output_path.exists():
+                    output_path.unlink()
+            except OSError:
+                pass
+            return False
 
     def _create_bilingual_output(
         self,
@@ -1998,8 +2021,8 @@ class TranslationService:
         return processor.get_file_info(file_path)
 
     def cancel(self) -> None:
-        """Request cancellation of current operation"""
-        self._cancel_requested = True
+        """Request cancellation of current operation (thread-safe)"""
+        self._cancel_event.set()
         self.batch_translator.cancel()
 
         # Also cancel PDF processor if it's running OCR
@@ -2031,13 +2054,24 @@ class TranslationService:
         if not output_path.exists():
             return output_path
 
-        # Add number if file exists
+        # Add number if file exists (with limit to prevent infinite loop)
         counter = 2
-        while True:
+        max_attempts = 10000
+        while counter <= max_attempts:
             output_path = output_dir / f"{stem}{suffix}_{counter}{ext}"
             if not output_path.exists():
                 return output_path
             counter += 1
+
+        # Fallback: use timestamp if too many files exist
+        import time
+        timestamp = int(time.time())
+        output_path = output_dir / f"{stem}{suffix}_{timestamp}{ext}"
+        logger.warning(
+            "Could not find available filename after %d attempts, using timestamp: %s",
+            max_attempts, output_path.name
+        )
+        return output_path
 
     def is_supported_file(self, file_path: Path) -> bool:
         """Check if file type is supported"""

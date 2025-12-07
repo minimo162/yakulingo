@@ -282,9 +282,9 @@ class TestTranslationServiceCancel:
         return TranslationService(Mock(), AppSettings())
 
     def test_cancel_sets_flag(self, service):
-        assert service._cancel_requested is False
+        assert service._cancel_event.is_set() is False
         service.cancel()
-        assert service._cancel_requested is True
+        assert service._cancel_event.is_set() is True
 
 
 class TestBatchTranslatorTranslateBlocks:

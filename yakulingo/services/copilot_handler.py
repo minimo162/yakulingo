@@ -358,14 +358,20 @@ class CopilotHandler:
 
     def _is_port_in_use(self) -> bool:
         """Check if our CDP port is in use"""
+        sock = None
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(0.5)  # Reduced from 1s (localhost is fast)
             result = sock.connect_ex(('127.0.0.1', self.cdp_port))
-            sock.close()
             return result == 0
         except (socket.error, OSError):
             return False
+        finally:
+            if sock:
+                try:
+                    sock.close()
+                except (socket.error, OSError):
+                    pass
 
     def _kill_existing_translator_edge(self):
         """Kill any Edge using our dedicated port/profile"""
@@ -541,9 +547,19 @@ class CopilotHandler:
 
             # Step 3: Get or create context
             self._context = self._get_or_create_context()
+            if not self._context:
+                logger.error("Failed to get or create browser context")
+                self.last_connection_error = self.ERROR_CONNECTION_FAILED
+                self._cleanup_on_error()
+                return False
 
             # Step 4: Get or create Copilot page
             self._page = self._get_or_create_copilot_page()
+            if not self._page:
+                logger.error("Failed to get or create Copilot page")
+                self.last_connection_error = self.ERROR_CONNECTION_FAILED
+                self._cleanup_on_error()
+                return False
 
             # Step 5: Wait for chat UI
             if not self._wait_for_chat_ready(self._page):
@@ -598,6 +614,10 @@ class CopilotHandler:
         Returns:
             Browser context, or None if creation failed
         """
+        if not self._browser:
+            logger.error("Cannot get context: browser is not connected")
+            return None
+
         error_types = _get_playwright_errors()
         PlaywrightError = error_types['Error']
         PlaywrightTimeoutError = error_types['TimeoutError']

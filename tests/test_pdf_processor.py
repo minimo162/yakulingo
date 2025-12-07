@@ -2062,6 +2062,69 @@ class TestFontRegistryFontType:
         assert registry.fontmap == {}
 
 
+class TestEstimateCharWidth:
+    """Tests for _estimate_char_width fallback method"""
+
+    @pytest.fixture
+    def registry(self):
+        return FontRegistry()
+
+    def test_hiragana_is_fullwidth(self, registry):
+        """Hiragana should be full-width"""
+        width = registry._estimate_char_width("あ", 10.0)
+        assert width == 10.0
+
+    def test_katakana_is_fullwidth(self, registry):
+        """Katakana should be full-width"""
+        width = registry._estimate_char_width("カ", 10.0)
+        assert width == 10.0
+
+    def test_kanji_is_fullwidth(self, registry):
+        """Kanji should be full-width"""
+        width = registry._estimate_char_width("漢", 10.0)
+        assert width == 10.0
+
+    def test_cjk_punctuation_is_fullwidth(self, registry):
+        """CJK punctuation should be full-width"""
+        width = registry._estimate_char_width("。", 10.0)
+        assert width == 10.0
+
+    def test_hangul_is_fullwidth(self, registry):
+        """Hangul should be full-width"""
+        width = registry._estimate_char_width("한", 10.0)
+        assert width == 10.0
+
+    def test_ascii_is_halfwidth(self, registry):
+        """ASCII characters should be half-width"""
+        width = registry._estimate_char_width("A", 10.0)
+        assert width == 5.0
+
+    def test_digit_is_halfwidth(self, registry):
+        """Digits should be half-width"""
+        width = registry._estimate_char_width("5", 10.0)
+        assert width == 5.0
+
+    def test_space_is_halfwidth(self, registry):
+        """Space should be half-width"""
+        width = registry._estimate_char_width(" ", 10.0)
+        assert width == 5.0
+
+    def test_latin1_is_halfwidth(self, registry):
+        """Latin-1 characters should be half-width"""
+        width = registry._estimate_char_width("é", 10.0)
+        assert width == 5.0
+
+    def test_halfwidth_katakana_is_halfwidth(self, registry):
+        """Halfwidth katakana should be half-width"""
+        width = registry._estimate_char_width("ｱ", 10.0)  # U+FF71 halfwidth A
+        assert width == 5.0
+
+    def test_fullwidth_latin_is_fullwidth(self, registry):
+        """Fullwidth Latin should be full-width"""
+        width = registry._estimate_char_width("Ａ", 10.0)  # U+FF21 fullwidth A
+        assert width == 10.0
+
+
 class TestPdfOperatorGeneratorRawString:
     """Tests for raw_string with font type encoding (PDFMathTranslate compliant)"""
 

@@ -310,15 +310,12 @@ def _create_large_input_panel(
         # Hint text - Nani-style single line, centered
         with ui.element('div').classes('hint-section'):
             with ui.element('div').classes('hint-primary'):
-                ui.icon('translate').classes('text-sm text-muted')
-                ui.label('入力言語を自動判定')
-                ui.label('｜').classes('text-muted mx-1')
-                ui.label('他アプリで選択→').classes('text-muted')
                 with ui.element('span').classes('keycap keycap-hint'):
                     ui.label('Ctrl')
                 ui.label('+').classes('text-muted text-xs mx-0.5')
                 with ui.element('span').classes('keycap keycap-hint'):
                     ui.label('J')
+                ui.label(': 他アプリで選択したテキストを翻訳').classes('text-muted ml-1')
 
 
 def _create_compact_input_panel(
@@ -700,15 +697,12 @@ def create_text_panel(
         # Hint text - Nani-style single line, centered
         with ui.element('div').classes('hint-section'):
             with ui.element('div').classes('hint-primary'):
-                ui.icon('translate').classes('text-sm text-muted')
-                ui.label('入力言語を自動判定')
-                ui.label('｜').classes('text-muted mx-1')
-                ui.label('他アプリで選択→').classes('text-muted')
                 with ui.element('span').classes('keycap keycap-hint'):
                     ui.label('Ctrl')
                 ui.label('+').classes('text-muted text-xs mx-0.5')
                 with ui.element('span').classes('keycap keycap-hint'):
                     ui.label('J')
+                ui.label(': 他アプリで選択したテキストを翻訳').classes('text-muted ml-1')
 
         # Results section - language-specific UI
         if state.text_result and state.text_result.options:

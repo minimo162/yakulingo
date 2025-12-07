@@ -111,11 +111,55 @@ class AppSettings:
                     # Filter to only known fields to handle future version settings
                     known_fields = {f.name for f in cls.__dataclass_fields__.values()}
                     filtered_data = {k: v for k, v in data.items() if k in known_fields}
-                    return cls(**filtered_data)
+                    settings = cls(**filtered_data)
+                    settings._validate()
+                    return settings
             except (json.JSONDecodeError, TypeError, UnicodeDecodeError) as e:
                 logger.warning("Failed to load settings: %s", e)
                 return cls()
         return cls()
+
+    def _validate(self) -> None:
+        """Validate and normalize setting values for consistency.
+
+        Ensures values are within acceptable ranges and cross-validates
+        related settings. Invalid values are reset to defaults with warnings.
+        """
+        # Font size constraints
+        if self.font_size_min < 1.0:
+            logger.warning("font_size_min too small (%.1f), resetting to 6.0", self.font_size_min)
+            self.font_size_min = 6.0
+        elif self.font_size_min > 72.0:
+            logger.warning("font_size_min too large (%.1f), resetting to 6.0", self.font_size_min)
+            self.font_size_min = 6.0
+
+        # Batch size constraints
+        if self.max_chars_per_batch < 100:
+            logger.warning("max_chars_per_batch too small (%d), resetting to 7000", self.max_chars_per_batch)
+            self.max_chars_per_batch = 7000
+
+        # Cross-validation: batch size should fit within Copilot char limit
+        if self.max_chars_per_batch > self.copilot_char_limit:
+            logger.warning(
+                "max_chars_per_batch (%d) > copilot_char_limit (%d), adjusting",
+                self.max_chars_per_batch, self.copilot_char_limit
+            )
+            self.max_chars_per_batch = max(100, self.copilot_char_limit - 500)
+
+        # Timeout constraints
+        if self.request_timeout < 10:
+            logger.warning("request_timeout too small (%d), resetting to 120", self.request_timeout)
+            self.request_timeout = 120
+        elif self.request_timeout > 600:
+            logger.warning("request_timeout too large (%d), resetting to 120", self.request_timeout)
+            self.request_timeout = 120
+
+        # OCR settings
+        if self.ocr_batch_size < 1:
+            self.ocr_batch_size = 5
+        if self.ocr_dpi < 72 or self.ocr_dpi > 600:
+            logger.warning("ocr_dpi out of range (%d), resetting to 200", self.ocr_dpi)
+            self.ocr_dpi = 200
 
     def save(self, path: Path) -> None:
         """Save settings to JSON file"""

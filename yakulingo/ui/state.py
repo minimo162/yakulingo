@@ -102,7 +102,19 @@ class AppState:
     _history_initialized: bool = field(default=False, repr=False)
 
     def _ensure_history_db(self) -> None:
-        """Lazy initialize history database on first access"""
+        """Lazy initialize history database on first access.
+
+        Uses two-phase check:
+        1. _history_db is not None → already initialized successfully
+        2. _history_initialized is True → already tried (may have failed)
+
+        This prevents repeated initialization attempts after failure.
+        """
+        # Already initialized successfully
+        if self._history_db is not None:
+            return
+
+        # Already tried and failed - don't retry
         if self._history_initialized:
             return
 
@@ -112,6 +124,7 @@ class AppState:
             self._history_db = HistoryDB(get_default_db_path())
             # Load recent history from database
             self.history = self._history_db.get_recent(self.max_history_entries)
+            logger.debug("History database initialized with %d entries", len(self.history))
         except (OSError, sqlite3.Error) as e:
             logger.warning("Failed to initialize history database: %s", e)
             self._history_db = None

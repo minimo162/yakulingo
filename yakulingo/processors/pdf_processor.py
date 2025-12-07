@@ -1259,13 +1259,25 @@ def load_pdf_as_images(pdf_path: str, dpi: int = DEFAULT_OCR_DPI) -> list:
     """
     Load entire PDF as images using pypdfium2.
 
-    Note: For large PDFs, use iterate_pdf_pages() instead.
+    Warning: This loads ALL pages into memory at once.
+    For large PDFs (10+ pages), use iterate_pdf_pages() instead
+    for better memory efficiency through batch processing.
     """
     np = _get_numpy()
     images = []
 
     with _open_pdf_document(pdf_path) as pdf:
-        for page_idx in range(len(pdf)):
+        page_count = len(pdf)
+
+        # Warn for large PDFs (memory-intensive operation)
+        if page_count > 10:
+            logger.warning(
+                "Loading %d pages into memory. "
+                "Consider using iterate_pdf_pages() for better memory efficiency.",
+                page_count
+            )
+
+        for page_idx in range(page_count):
             page = pdf[page_idx]
             bitmap = page.render(scale=dpi / 72)
             img = bitmap.to_numpy()

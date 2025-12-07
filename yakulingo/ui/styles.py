@@ -250,7 +250,7 @@ body {
 /* === Source Text Section (Result Panel Top) === */
 .source-text-section {
     background-color: var(--md-sys-color-surface-container);
-    border-radius: var(--md-sys-shape-corner-medium);
+    border-radius: var(--md-sys-shape-corner-xl);
     padding: 1rem;
     border: 1px solid var(--md-sys-color-outline-variant);
     width: 100%;
@@ -312,7 +312,7 @@ body {
     /* Match .nani-result-text for smooth transition */
     font-size: var(--md-sys-typescale-size-md);
     color: var(--md-sys-color-on-surface);
-    line-height: 1.6;
+    line-height: 1.4;
     white-space: pre-wrap;
     word-break: break-word;
 }
@@ -1047,7 +1047,7 @@ textarea:focus-visible {
 }
 
 .option-text {
-    line-height: 1.7;
+    line-height: 1.4;
     word-break: break-word;
     font-size: var(--md-sys-typescale-size-md);
 }
@@ -1626,7 +1626,7 @@ textarea:focus-visible {
     white-space: pre-wrap;
     flex: 1;
     font-size: var(--md-sys-typescale-size-md);
-    line-height: 1.6;
+    line-height: 1.4;
     color: var(--md-sys-color-on-surface);
     word-break: break-word;
 }
@@ -1651,13 +1651,12 @@ textarea:focus-visible {
 /* === Nani-style Explanation === */
 .nani-explanation {
     background: var(--md-sys-color-primary-container);
-    padding: 1rem 1.125rem;
+    padding: 0.875rem;  /* 14px - matches Nani's p-3.5 */
     margin-top: 0.25rem;
     color: var(--md-sys-color-on-primary-container);
     border-radius: 1rem;
-    border-left: 4px solid var(--md-sys-color-primary);
-    font-size: var(--md-sys-typescale-size-xs);
-    line-height: 1.8;
+    font-size: var(--md-sys-typescale-size-sm);  /* 14px - matches Nani's text-sm */
+    line-height: 1.85;  /* matches Nani's --html-base-line-height */
 }
 
 .nani-explanation ul {
@@ -2233,6 +2232,7 @@ textarea:focus-visible {
 
 .inline-adjust-panel {
     width: 100%;
+    max-width: 24rem;  /* 384px - matches Nani's max-w-sm */
     background: var(--md-sys-color-surface);
     border-radius: var(--md-sys-shape-corner-xl);
     padding: 0.75rem;

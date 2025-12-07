@@ -80,7 +80,8 @@ YakuLingo/
 │   ├── ui/                        # Presentation layer (NiceGUI)
 │   │   ├── app.py                 # YakuLingoApp main orchestrator
 │   │   ├── state.py               # AppState management
-│   │   ├── styles.py              # M3 design tokens & CSS
+│   │   ├── styles.py              # CSS loader (loads styles.css)
+│   │   ├── styles.css             # M3 design tokens & CSS definitions
 │   │   ├── utils.py               # UI utilities (temp files, dialogs, formatting)
 │   │   └── components/            # Reusable UI components
 │   │       ├── file_panel.py      # File translation panel (drag-drop, progress)
@@ -97,6 +98,8 @@ YakuLingo/
 │   │   ├── word_processor.py      # .docx/.doc handling
 │   │   ├── pptx_processor.py      # .pptx/.ppt handling
 │   │   ├── pdf_processor.py       # .pdf handling
+│   │   ├── pdf_font_manager.py    # PDF font management (PDFMathTranslate compliant)
+│   │   ├── pdf_operators.py       # PDF low-level operator generation
 │   │   ├── font_manager.py        # Font detection & mapping
 │   │   └── translators.py         # Translation decision logic
 │   ├── models/                    # Data structures
@@ -105,7 +108,7 @@ YakuLingo/
 │   │   └── history_db.py          # SQLite-based translation history
 │   └── config/                    # Configuration
 │       └── settings.py            # AppSettings with JSON persistence
-├── tests/                         # Test suite (26 test files)
+├── tests/                         # Test suite (27 test files)
 │   ├── conftest.py                # Shared fixtures and mocks
 │   └── test_*.py                  # Unit tests for each module
 ├── prompts/                       # Translation prompt templates (16 files)
@@ -156,20 +159,23 @@ YakuLingo/
 
 | File | Purpose | Lines |
 |------|---------|-------|
-| `yakulingo/ui/app.py` | Main application orchestrator, handles UI events and coordinates services | ~1664 |
-| `yakulingo/services/translation_service.py` | Coordinates file processors and batch translation | ~1849 |
-| `yakulingo/services/copilot_handler.py` | Browser automation for M365 Copilot | ~1466 |
-| `yakulingo/services/updater.py` | GitHub Releases-based auto-update with Windows proxy support | ~764 |
-| `yakulingo/ui/styles.py` | M3 design tokens, CSS styling definitions | ~2889 |
-| `yakulingo/ui/components/text_panel.py` | Text translation UI with source display and translation status | ~1059 |
-| `yakulingo/ui/components/file_panel.py` | File translation panel with drag-drop and progress | ~554 |
+| `yakulingo/ui/app.py` | Main application orchestrator, handles UI events and coordinates services | ~1958 |
+| `yakulingo/services/translation_service.py` | Coordinates file processors and batch translation | ~2046 |
+| `yakulingo/services/copilot_handler.py` | Browser automation for M365 Copilot | ~1598 |
+| `yakulingo/services/updater.py` | GitHub Releases-based auto-update with Windows proxy support | ~731 |
+| `yakulingo/ui/styles.py` | CSS loader (loads external styles.css) | ~28 |
+| `yakulingo/ui/styles.css` | M3 design tokens, CSS styling definitions | ~2962 |
+| `yakulingo/ui/components/text_panel.py` | Text translation UI with source display and translation status | ~1145 |
+| `yakulingo/ui/components/file_panel.py` | File translation panel with drag-drop and progress | ~509 |
 | `yakulingo/ui/components/update_notification.py` | Auto-update UI notifications | ~344 |
-| `yakulingo/ui/utils.py` | UI utilities: temp file management, dialog helpers, text formatting | ~433 |
+| `yakulingo/ui/utils.py` | UI utilities: temp file management, dialog helpers, text formatting | ~467 |
 | `yakulingo/ui/state.py` | Application state management (TextViewState, FileState enums) | ~224 |
 | `yakulingo/models/types.py` | Core data types: TextBlock, FileInfo, TranslationResult, HistoryEntry | ~297 |
 | `yakulingo/storage/history_db.py` | SQLite database for translation history | ~320 |
 | `yakulingo/processors/base.py` | Abstract base class for all file processors | ~105 |
-| `yakulingo/processors/pdf_processor.py` | PDF processing with PyMuPDF, pdfminer.six, and PP-DocLayout-L | ~3303 |
+| `yakulingo/processors/pdf_processor.py` | PDF processing with PyMuPDF, pdfminer.six, and PP-DocLayout-L | ~3228 |
+| `yakulingo/processors/pdf_font_manager.py` | PDF font management: font registry, type detection, glyph encoding | ~917 |
+| `yakulingo/processors/pdf_operators.py` | PDF low-level operator generation for text rendering | ~731 |
 
 ## Core Data Types
 
@@ -295,7 +301,7 @@ class PdfProcessor:
 
 The application uses M3 (Material Design 3) component-based styling:
 
-### Design Tokens (in `styles.py`)
+### Design Tokens (in `styles.css`)
 ```css
 /* Primary - Professional indigo palette */
 --md-sys-color-primary: #4355B9;
@@ -391,7 +397,7 @@ dialog = create_completion_dialog(
 
 - **Framework**: pytest with pytest-asyncio
 - **Test Path**: `tests/`
-- **Test Files**: 26 test files covering all major modules
+- **Test Files**: 27 test files covering all major modules
 - **Naming**: `test_*.py` files, `Test*` classes, `test_*` functions
 - **Fixtures**: Defined in `tests/conftest.py`
 - **Async Mode**: Auto-configured via pyproject.toml
@@ -516,7 +522,9 @@ async def _translate_text(self):
   "github_repo_owner": "minimo162",
   "github_repo_name": "yakulingo",
   "last_update_check": null,
-  "skipped_version": null
+  "skipped_version": null,
+  "onboarding_completed": false,
+  "use_bundled_glossary": false
 }
 ```
 
@@ -637,11 +645,11 @@ The `AutoUpdater` class provides GitHub Releases-based updates:
 1. Create component in `yakulingo/ui/components/`
 2. Update state in `yakulingo/ui/state.py` if needed
 3. Integrate in `yakulingo/ui/app.py`
-4. Add styles in `yakulingo/ui/styles.py` using M3 design tokens
+4. Add styles in `yakulingo/ui/styles.css` using M3 design tokens
 5. Use utilities from `yakulingo/ui/utils.py` for temp files and dialogs
 
 ### Modifying Styles
-1. Use M3 design tokens defined in `styles.py` (`:root` CSS variables)
+1. Use M3 design tokens defined in `styles.css` (`:root` CSS variables)
 2. Follow M3 component patterns (filled buttons, outlined buttons, etc.)
 3. Use standard motion easing: `var(--md-sys-motion-easing-standard)`
 4. Apply appropriate corner radius from shape system
@@ -876,7 +884,7 @@ Based on recent commits:
 - **Back-Translate Feature**: Verify translations by translating back to original language
 - **Auto-Update System**: GitHub Releases-based updates with Windows proxy support
 - **Native Launcher**: Rust-based `YakuLingo.exe` for Windows distribution
-- **Test Coverage**: 26 test files
+- **Test Coverage**: 27 test files
 - **Language Detection**: Hybrid approach - local detection for kana/Latin/Hangul, Copilot only for CJK-only text (Chinese/Japanese ambiguity)
 - **Translation Result UI Enhancements**:
   - **Source text section**: 翻訳結果パネル上部に原文を表示（コピーボタン付き）

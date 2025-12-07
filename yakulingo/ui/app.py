@@ -36,7 +36,22 @@ MAX_HISTORY_DISPLAY = 20  # Maximum history items to display in sidebar
 
 
 class YakuLingoApp:
-    """Main application - Nani-inspired sidebar layout"""
+    """Main application - Nani-inspired sidebar layout.
+
+    This class is organized into the following sections:
+    1. Initialization & Properties - __init__, copilot property
+    2. Connection & Startup - Edge/Copilot connection, browser ready handler
+    3. UI Refresh Methods - Methods that update UI state
+    4. UI Creation Methods - Methods that build UI components
+    5. Error Handling Helpers - Unified error handling methods
+    6. Text Translation - Text input, translation, adjustment methods
+    7. File Translation - File selection, translation, progress methods
+    8. Settings & History - Settings dialog, history management
+    """
+
+    # =========================================================================
+    # Section 1: Initialization & Properties
+    # =========================================================================
 
     def __init__(self):
         self.state = AppState()
@@ -86,6 +101,10 @@ class YakuLingoApp:
             from yakulingo.services.copilot_handler import CopilotHandler
             self._copilot = CopilotHandler()
         return self._copilot
+
+    # =========================================================================
+    # Section 2: Connection & Startup
+    # =========================================================================
 
     async def wait_for_edge_connection(self, edge_future):
         """Wait for Edge connection result from parallel startup.
@@ -201,6 +220,10 @@ class YakuLingoApp:
             # サイレントに失敗（バックグラウンド処理なのでユーザーには通知しない）
             logger.debug("Failed to check for updates: %s", e)
 
+    # =========================================================================
+    # Section 3: UI Refresh Methods
+    # =========================================================================
+
     def _refresh_status(self):
         """Refresh status indicator"""
         if self._header_status:
@@ -268,6 +291,10 @@ class YakuLingoApp:
         else:
             # Enable the button
             self._translate_button.props(':loading=false :disable=false')
+
+    # =========================================================================
+    # Section 4: UI Creation Methods
+    # =========================================================================
 
     def create_ui(self):
         """Create the UI - Nani-inspired 3-column layout"""
@@ -583,7 +610,7 @@ class YakuLingoApp:
             ui.notify('コピーしました', type='positive')
 
     # =========================================================================
-    # Error Handling Helpers
+    # Section 5: Error Handling Helpers
     # =========================================================================
 
     def _require_connection(self) -> bool:
@@ -619,6 +646,10 @@ class YakuLingoApp:
             self._refresh_result_panel()
             self._update_translate_button_state()
             self._refresh_status()
+
+    # =========================================================================
+    # Section 6: Text Translation
+    # =========================================================================
 
     async def _attach_reference_file(self):
         """Open file picker to attach a reference file (glossary, style guide, etc.)"""
@@ -1234,6 +1265,10 @@ class YakuLingoApp:
                 self._notify_error(error_message)
             self._refresh_content()
 
+    # =========================================================================
+    # Section 7: File Translation
+    # =========================================================================
+
     def _on_language_change(self, lang: str):
         """Handle output language change for file translation"""
         self.state.file_output_language = lang
@@ -1431,6 +1466,10 @@ class YakuLingoApp:
         """Reset file state"""
         self.state.reset_file_state()
         self._refresh_content()
+
+    # =========================================================================
+    # Section 8: Settings & History
+    # =========================================================================
 
     def _load_from_history(self, entry: HistoryEntry):
         """Load translation from history"""

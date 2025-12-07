@@ -830,6 +830,10 @@ def _render_results_to_jp(
                         on_click=lambda: on_follow_up and on_follow_up('summarize', '')
                     ).props('flat no-caps').classes('adjust-option-btn-full')
 
+                    # Reply composer section
+                    if on_follow_up:
+                        _render_reply_composer(on_follow_up)
+
                     # Inline input section for additional requests
                     if on_adjust:
                         _render_inline_input_section_jp(option.text, on_adjust)
@@ -1133,4 +1137,64 @@ def _render_inline_input_section_jp(
                         '送信',
                         icon='send',
                         on_click=send_request
+                    ).props('no-caps size=sm').classes('send-request-btn')
+
+
+def _render_reply_composer(
+    on_follow_up: Callable[[str, str], None],
+):
+    """Render reply composer section for creating reply emails"""
+
+    with ui.element('div').classes('reply-composer-container w-full mt-2'):
+        # Collapsed state: Button
+        collapsed_container = ui.element('div').classes('w-full')
+        # Expanded state: Input area
+        expanded_container = ui.element('div').classes('w-full reply-composer-expanded').style('display: none')
+
+        with collapsed_container:
+            def show_composer():
+                collapsed_container.style('display: none')
+                expanded_container.style('display: block')
+                reply_input.run_method('focus')
+
+            ui.button(
+                '返信文を作成',
+                icon='reply',
+                on_click=show_composer
+            ).props('flat no-caps').classes('adjust-option-btn-full')
+
+        with expanded_container:
+            with ui.column().classes('gap-2 w-full'):
+                # Label for the input
+                ui.label('返信したい内容を入力（日本語でも英語でもOK）').classes('text-sm text-muted')
+
+                # Textarea for reply intent
+                reply_input = ui.textarea(
+                    placeholder='例: 了解しました、明日確認します'
+                ).classes('w-full reply-composer-input').props('autogrow rows=3')
+
+                with ui.row().classes('justify-end gap-2'):
+                    # Cancel button
+                    def cancel_composer():
+                        reply_input.set_value('')
+                        expanded_container.style('display: none')
+                        collapsed_container.style('display: block')
+
+                    ui.button(
+                        'キャンセル',
+                        on_click=cancel_composer
+                    ).props('flat no-caps size=sm').classes('cancel-btn')
+
+                    # Create reply button
+                    def create_reply():
+                        intent = reply_input.value.strip() if reply_input.value else ''
+                        on_follow_up('reply', intent)
+                        reply_input.set_value('')
+                        expanded_container.style('display: none')
+                        collapsed_container.style('display: block')
+
+                    ui.button(
+                        '作成',
+                        icon='send',
+                        on_click=create_reply
                     ).props('no-caps size=sm').classes('send-request-btn')

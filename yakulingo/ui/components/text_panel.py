@@ -842,10 +842,6 @@ def _render_results_to_jp(
                     if on_follow_up:
                         _render_reply_composer(on_follow_up)
 
-                    # Inline input section for additional requests
-                    if on_adjust:
-                        _render_inline_input_section_jp(option.text, on_adjust)
-
 
 def _render_explanation(explanation: str):
     """Render explanation text as HTML with bullet points"""
@@ -1025,65 +1021,6 @@ def _render_inline_adjust_section(
                         label,
                         on_click=lambda k=key: on_adjust(text, k)
                     ).props('flat no-caps').classes('adjust-option-btn-full')
-
-
-def _render_inline_input_section_jp(
-    text: str,
-    on_adjust: Callable[[str, str], None],
-):
-    """Render inline input section for Japanese translation results"""
-
-    # Reuse the same expandable button pattern
-    with ui.element('div').classes('custom-request-container w-full mt-2'):
-        # Collapsed state: Button
-        collapsed_container = ui.element('div').classes('w-full')
-        # Expanded state: Input area
-        expanded_container = ui.element('div').classes('w-full custom-request-expanded').style('display: none')
-
-        with collapsed_container:
-            def show_input():
-                collapsed_container.style('display: none')
-                expanded_container.style('display: block')
-                request_input.run_method('focus')
-
-            ui.button(
-                'その他のリクエスト...',
-                icon='edit',
-                on_click=show_input
-            ).props('flat no-caps').classes('adjust-option-btn-full custom-request-trigger')
-
-        with expanded_container:
-            with ui.column().classes('gap-2 w-full'):
-                # Textarea for custom request
-                request_input = ui.textarea(
-                    placeholder='例: 返信の下書きを書いて、もっと詳しく説明して...'
-                ).classes('w-full custom-request-input').props('autogrow rows=4')
-
-                with ui.row().classes('justify-end gap-2'):
-                    # Cancel button
-                    def cancel_input():
-                        request_input.set_value('')
-                        expanded_container.style('display: none')
-                        collapsed_container.style('display: block')
-
-                    ui.button(
-                        'キャンセル',
-                        on_click=cancel_input
-                    ).props('flat no-caps size=sm').classes('cancel-btn')
-
-                    # Send button
-                    def send_request():
-                        if request_input.value and request_input.value.strip():
-                            on_adjust(text, request_input.value.strip())
-                            request_input.set_value('')
-                            expanded_container.style('display: none')
-                            collapsed_container.style('display: block')
-
-                    ui.button(
-                        '送信',
-                        icon='send',
-                        on_click=send_request
-                    ).props('no-caps size=sm').classes('send-request-btn')
 
 
 def _render_check_my_english(

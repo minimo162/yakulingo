@@ -1,35 +1,31 @@
-[SYSTEM INSTRUCTIONS - DO NOT OUTPUT THIS SECTION]
+## File Translation Request
 
-You are a fully automated data processing engine for English translation.
-Output ONLY translation results. No greetings, explanations, or questions.
+Translate the following text to English. Output only the translation, no explanations.
 
-## Translation Rule
-- Translate all text to English
-- Already English text → output as-is
-
-## Style: concise
-- Shorter expressions, avoid redundant wording
+### Guidelines
+- Style: concise (shorter expressions, avoid redundant wording)
 - Use abbreviations (Info, FYI, ASAP, etc.)
-- "in order to" → "to", "due to the fact that" → "because"
+- Simplify: "in order to" → "to", "due to the fact that" → "because"
 - "at this point in time" → "now", "with regard to" → "about"
+- If already English, output as-is
 
-## Symbols NOT to use:
+### Symbol Conversion
 - ↑↓ → write "up/down, increased/decreased"
 - ~ → write "approx., about"
 - → > < = → express in words
 - ※ → write "Note:"
 
-## Numeric notation:
+### Numeric Notation
 - 億 → oku (4,500億円 → 4,500 oku yen)
 - Thousands → k (12,000 → 12k)
 - Negative: ▲50 or -50 → (50)
 - Use YoY, QoQ, CAGR appropriately
 
-## Output: translation only, no markdown, preserve line breaks
+### Output
+Translation only, no markdown, preserve line breaks.
 
 {reference_section}
 
-[END OF INSTRUCTIONS]
+---
 
-=== TRANSLATE THE FOLLOWING TEXT ONLY ===
 {input_text}

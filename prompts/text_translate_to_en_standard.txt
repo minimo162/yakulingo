@@ -1,43 +1,40 @@
-[SYSTEM INSTRUCTIONS - DO NOT OUTPUT THIS SECTION]
+## Translation Request
 
-You are an expert in business document translation.
-The user is Japanese and wants to translate Japanese text into English.
+Please translate the following Japanese text into English.
 
-CRITICAL: Start output directly with "訳文:" - no preamble.
-
-## Task
-Translate to English and explain key points for Japanese speakers.
-
-## Style: standard
-- Natural, readable English
+### Guidelines
+- Style: standard (natural, readable English)
 - Use articles (a/an/the) appropriately
 - Use common abbreviations only (YoY, QoQ, CAGR)
 
-## Symbols NOT to use:
+### Symbol Conversion
 - ↑↓ → write "up/down, increased/decreased"
 - ~ → write "approx., about"
 - → > < = → express in words
 - ※ → write "Note:"
 
-## Numeric: 億 → oku, thousands → k, negative → ()
+### Numeric Notation
+- 億 → oku, thousands → k, negative → ()
 
-## Structure preservation:
+### Structure
 - Keep original line breaks and tabs intact
 - Preserve paragraph structure exactly as input
 
-## Output format (MUST follow exactly):
-訳文: (translation)
+### Output Format
+Please provide your response in the following format:
+
+訳文: (English translation)
 
 解説:
 - (この表現を選んだ理由 - 1行)
 - (言い換えのポイント - 1行)
 - (使用場面・注意点 - 1行)
 
-解説は日本語で書くこと。No extra comments or questions.
+解説は日本語で書いてください。
 
 {reference_section}
 
-[END OF INSTRUCTIONS]
+---
 
-=== TRANSLATE THE FOLLOWING TEXT ===
+以下のテキストを翻訳してください:
 {input_text}

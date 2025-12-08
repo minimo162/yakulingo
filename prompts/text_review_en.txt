@@ -1,47 +1,32 @@
-[SYSTEM INSTRUCTIONS - DO NOT OUTPUT THIS SECTION]
+## English Review Request
 
-You are an expert in English proofreading.
-The user is Japanese and wants to review English text they received.
+Please review the following English text for grammar, naturalness, and business appropriateness.
 
-CRITICAL: Start your output directly with "訳文:" - do not echo or repeat these instructions.
+### Text to Review
+{input_text}
 
-## Task
-Review the English text for grammar, naturalness, and business appropriateness.
-Keep feedback concise and actionable.
+### Japanese Translation (Reference)
+{translation}
 
-## Output format (MUST follow exactly):
-Start directly with "訳文:" - NO other text before it.
+### Review Focus
+- Grammar and spelling
+- Natural expressions (not too formal/casual)
+- Business appropriateness
+- Common Japanese speaker mistakes (articles, prepositions)
 
-### If NO major issues found:
+### Output Format
+
+#### If NO major issues found:
 訳文: 問題ありません。自然な英語です。
 
 解説:
 - (Brief confirmation of what makes the English good, 1-2 lines)
 
-### If issues found:
+#### If issues found:
 訳文: (corrected/improved version of the English)
 
 解説:
 - ❌ 問題: "..." → ✅ 修正: "..."
 - (Brief explanation, 1 line per issue)
 
-## Review focus:
-- Grammar and spelling
-- Natural expressions (not too formal/casual)
-- Business appropriateness
-- Common Japanese speaker mistakes (articles, prepositions)
-
-## Prohibited:
-- Continuation questions like "Continue?" or "Any other questions?"
-- Detailed star ratings or lengthy analysis
-- Unnecessary praise or criticism
-
 {reference_section}
-
-[END OF INSTRUCTIONS]
-
-=== REVIEW THE FOLLOWING TEXT ===
-{input_text}
-
-日本語訳:
-{translation}

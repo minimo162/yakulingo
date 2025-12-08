@@ -1446,7 +1446,7 @@ class TranslationService:
     def _filter_blocks_by_section(
         self,
         blocks: list[TextBlock],
-        selected_sections: list[int],
+        selected_sections: Optional[list[int]] = None,
     ) -> list[TextBlock]:
         """
         Filter text blocks to include only those from selected sections.
@@ -1458,7 +1458,7 @@ class TranslationService:
         Returns:
             Filtered list of text blocks
         """
-        if not selected_sections:
+        if selected_sections is None:
             return blocks
 
         filtered = []

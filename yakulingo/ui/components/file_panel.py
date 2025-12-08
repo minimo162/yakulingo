@@ -404,25 +404,41 @@ def _drop_zone(on_file_select: Callable[[Path], Union[None, Awaitable[None]]]):
         js_drop_handler = '''(e) => {
             e.preventDefault();
             e.currentTarget.classList.remove("drag-over");
+
             const items = e.dataTransfer.items;
-            const file = items && items.length ? items[0].getAsFile() : e.dataTransfer.files[0];
+            let file = null;
+
+            // Prefer the first file-type item to avoid grabbing non-file payloads (e.g., text/HTML)
+            if (items && items.length) {
+                for (const item of items) {
+                    if (item.kind === 'file') {
+                        file = item.getAsFile();
+                        if (file) break;
+                    }
+                }
+            }
+
+            // Fallback to the files list when items are missing or contain no file entries
+            if (!file && e.dataTransfer.files && e.dataTransfer.files.length) {
+                file = e.dataTransfer.files[0];
+            }
+
             if (!file) {
                 e.currentTarget.dispatchEvent(new CustomEvent('file-ready'));
                 return;
             }
-            if (file) {
-                const reader = new FileReader();
-                reader.onload = (event) => {
-                    const detail = {
-                        name: file.name,
-                        data: Array.from(new Uint8Array(event.target.result))
-                    };
-                    window._droppedFileData = detail;
-                    // Dispatch custom event to notify Python handler that file is ready
-                    e.currentTarget.dispatchEvent(new CustomEvent('file-ready', { detail }));
+
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const detail = {
+                    name: file.name,
+                    data: Array.from(new Uint8Array(event.target.result))
                 };
-                reader.readAsArrayBuffer(file);
-            }
+                window._droppedFileData = detail;
+                // Dispatch custom event to notify Python handler that file is ready
+                e.currentTarget.dispatchEvent(new CustomEvent('file-ready', { detail }));
+            };
+            reader.readAsArrayBuffer(file);
         }'''
         container.on('drop', js_handler=js_drop_handler)
         container.on('file-ready', handler=handle_file_ready)

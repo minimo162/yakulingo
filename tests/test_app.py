@@ -350,27 +350,35 @@ class TestYakuLingoAppFileSelection:
                     app.translation_service = mock_translation_service
                     yield app
 
-    def test_select_file_success(
+    async def test_select_file_success(
         self, app_with_service, mock_translation_service, mock_nicegui
     ):
         """Test successful file selection"""
         app = app_with_service
         test_path = Path("/tmp/test.xlsx")
+        # Mock _client for async context
+        app._client = MagicMock()
+        app._client.__enter__ = MagicMock(return_value=None)
+        app._client.__exit__ = MagicMock(return_value=None)
 
-        app._select_file(test_path)
+        await app._select_file(test_path)
 
         assert app.state.selected_file == test_path
         assert app.state.file_state == FileState.SELECTED
         mock_translation_service.get_file_info.assert_called_once_with(test_path)
 
-    def test_select_file_error(
+    async def test_select_file_error(
         self, app_with_service, mock_translation_service, mock_nicegui
     ):
         """Test file selection with error"""
         app = app_with_service
         mock_translation_service.get_file_info.side_effect = Exception("File error")
+        # Mock _client for async context
+        app._client = MagicMock()
+        app._client.__enter__ = MagicMock(return_value=None)
+        app._client.__exit__ = MagicMock(return_value=None)
 
-        app._select_file(Path("/tmp/bad.xlsx"))
+        await app._select_file(Path("/tmp/bad.xlsx"))
 
         mock_nicegui.notify.assert_called()
         # Should have called notify with negative type

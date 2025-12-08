@@ -1134,7 +1134,10 @@ class YakuLingoApp:
             self.state.selected_file = temp_path
             self.state.file_detected_language = detected_language
             self.state.file_output_language = output_language
-            self.state.file_info = self.translation_service.processors['.txt'].get_file_info(temp_path)
+            # Get file info asynchronously to avoid blocking UI
+            self.state.file_info = await asyncio.to_thread(
+                self.translation_service.processors['.txt'].get_file_info, temp_path
+            )
             self.state.source_text = ""  # Clear text input
 
             # Switch to file tab
@@ -1717,24 +1720,44 @@ class YakuLingoApp:
         self.state.toggle_section_selection(section_index, selected)
         # Note: Don't call _refresh_content() here as it would close the expansion panel
 
-    def _select_file(self, file_path: Path):
-        """Select file for translation with auto language detection"""
+    async def _select_file(self, file_path: Path):
+        """Select file for translation with auto language detection (async)"""
         if not self._require_connection():
             return
 
+        # Use saved client reference (context.client not available in async tasks)
+        client = self._client
+
         try:
-            self.state.file_info = self.translation_service.get_file_info(file_path)
+            # Set loading state immediately for fast UI feedback
             self.state.selected_file = file_path
             self.state.file_state = FileState.SELECTED
             self.state.file_detected_language = None  # Clear previous detection
+            self.state.file_info = None  # Will be loaded async
             self._refresh_content()
+
+            # Load file info in background thread to avoid UI blocking
+            file_info = await asyncio.to_thread(
+                self.translation_service.get_file_info, file_path
+            )
+
+            # Check if file selection changed during loading
+            if self.state.selected_file != file_path:
+                return  # User selected different file, discard result
+
+            self.state.file_info = file_info
+
+            # Refresh UI with loaded file info
+            with client:
+                self._refresh_content()
 
             # Start async language detection
             asyncio.create_task(self._detect_file_language(file_path))
 
         except Exception as e:
-            self._notify_error(str(e))
-            self._refresh_content()
+            with client:
+                self._notify_error(str(e))
+                self._refresh_content()
 
     async def _detect_file_language(self, file_path: Path):
         """Detect source language of file and set output language accordingly"""

@@ -953,3 +953,42 @@ class TestCopilotErrorDetection:
 
         assert _is_copilot_error_response("") is False
         assert _is_copilot_error_response(None) is False
+
+    def test_is_copilot_error_response_detects_login_required_error(self):
+        """Detects error message when not logged in"""
+        from yakulingo.services.copilot_handler import _is_copilot_error_response
+
+        # The actual error from user's log
+        error_msg = "間違えました、すみません。それについては回答を出すことができません。違う話題にしましょう。"
+        assert _is_copilot_error_response(error_msg) is True
+
+        # Test individual patterns
+        assert _is_copilot_error_response("間違えました、すみません") is True
+        assert _is_copilot_error_response("それについては回答を出すことができません") is True
+        assert _is_copilot_error_response("違う話題にしましょう") is True
+
+
+class TestLoginPageDetection:
+    """Test login page URL detection"""
+
+    def test_is_login_page_detects_microsoft_login(self):
+        """Detects Microsoft login page URLs"""
+        from yakulingo.services.copilot_handler import _is_login_page
+
+        assert _is_login_page("https://login.microsoftonline.com/abc/oauth2/authorize") is True
+        assert _is_login_page("https://login.live.com/login.srf") is True
+        assert _is_login_page("https://login.microsoft.com/common/oauth2") is True
+
+    def test_is_login_page_ignores_copilot_url(self):
+        """Copilot URL is not a login page"""
+        from yakulingo.services.copilot_handler import _is_login_page
+
+        assert _is_login_page("https://m365.cloud.microsoft/chat/?auth=2") is False
+        assert _is_login_page("https://copilot.microsoft.com/") is False
+
+    def test_is_login_page_handles_empty(self):
+        """Empty URL returns False"""
+        from yakulingo.services.copilot_handler import _is_login_page
+
+        assert _is_login_page("") is False
+        assert _is_login_page(None) is False

@@ -10,6 +10,13 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# Global error handler - writes error to stderr for VBS to capture
+trap {
+    $errorMsg = "PowerShell Error: $($_.Exception.Message)`nAt: $($_.InvocationInfo.PositionMessage)"
+    [Console]::Error.WriteLine($errorMsg)
+    exit 1
+}
+
 # Script directory (must be resolved at top-level, not inside functions)
 $script:ScriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Definition }
 $script:ShareDir = Split-Path -Parent $script:ScriptDir

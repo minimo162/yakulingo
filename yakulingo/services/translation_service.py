@@ -25,6 +25,20 @@ _RE_MULTI_OPTION = re.compile(r'\[(\d+)\]\s*\**訳文\**[:：]\s*(.+?)\s*\**解�
 _RE_TRANSLATION_TEXT = re.compile(r'\**訳文\**[:：]\s*(.+?)(?=\**解説\**[:：]|$)', re.DOTALL)
 _RE_EXPLANATION = re.compile(r'\**解説\**[:：]\s*(.+)', re.DOTALL)
 _RE_MARKDOWN_SEPARATOR = re.compile(r'\n?\s*[\*\-]{3,}\s*$')
+_RE_FILENAME_FORBIDDEN = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
+
+def _sanitize_output_stem(name: str) -> str:
+    """Sanitize a filename stem for cross-platform safety.
+
+    Replaces characters forbidden on Windows (\\, /, :, *, ?, ", <, >, | and control chars)
+    with underscores while preserving Unicode characters like Japanese or emoji.
+    Returns a fallback name when the result would be empty.
+    """
+
+    sanitized = _RE_FILENAME_FORBIDDEN.sub('_', unicodedata.normalize('NFC', name))
+    sanitized = sanitized.strip()
+    return sanitized or 'translated_file'
+
 
 # =============================================================================
 # Language Detection
@@ -2137,7 +2151,7 @@ class TranslationService:
         Adds _translated suffix, with numbering if file exists.
         """
         suffix = "_translated"
-        stem = input_path.stem
+        stem = _sanitize_output_stem(input_path.stem)
         ext = input_path.suffix
 
         # Get output directory

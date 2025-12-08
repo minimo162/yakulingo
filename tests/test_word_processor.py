@@ -160,6 +160,27 @@ class TestWordProcessorExtractTextBlocks:
         assert "データ" in table_texts
         assert "12345" not in table_texts  # Skipped
 
+    def test_extracts_merged_table_cell_once(self, processor, tmp_path):
+        """Merged cells are extracted only once to avoid duplicate IDs"""
+        doc = Document()
+        table = doc.add_table(rows=2, cols=2)
+
+        merged = table.cell(0, 0).merge(table.cell(0, 1))
+        merged.text = "Merged Cell"
+        table.cell(1, 0).text = "Bottom Left"
+        table.cell(1, 1).text = "Bottom Right"
+
+        file_path = tmp_path / "merged_cells.docx"
+        doc.save(file_path)
+
+        blocks = list(processor.extract_text_blocks(file_path, output_language="jp"))
+
+        table_block_ids = [b.id for b in blocks if b.metadata.get("type") == "table_cell"]
+
+        assert "table_0_r0_c0" in table_block_ids
+        assert "table_0_r0_c1" not in table_block_ids
+        assert table_block_ids.count("table_0_r0_c0") == 1
+
     def test_block_metadata_paragraph(self, processor, sample_docx):
         """Paragraph blocks have correct metadata"""
         blocks = list(processor.extract_text_blocks(sample_docx))
@@ -351,6 +372,38 @@ class TestWordProcessorApplyTranslations:
         assert table.cell(1, 1).text == "Data"
         # Unchanged
         assert table.cell(0, 1).text == "Header 2"
+
+    def test_applies_translations_to_merged_cells(self, processor, tmp_path):
+        """Translations for merged cells are applied once using the master cell"""
+        input_path = tmp_path / "merged_input.docx"
+        output_path = tmp_path / "merged_output.docx"
+
+        doc = Document()
+        table = doc.add_table(rows=2, cols=2)
+
+        merged = table.cell(0, 0).merge(table.cell(0, 1))
+        merged.text = "Merged Cell"
+        table.cell(1, 0).text = "Bottom Left"
+        table.cell(1, 1).text = "Bottom Right"
+
+        doc.save(input_path)
+
+        translations = {
+            "table_0_r0_c0": "結合セルの訳文",
+            "table_0_r1_c0": "左下",
+        }
+
+        processor.apply_translations(
+            input_path, output_path, translations, direction="en_to_jp"
+        )
+
+        result_doc = Document(output_path)
+        table = result_doc.tables[0]
+
+        assert table.cell(0, 0).text == "結合セルの訳文"
+        # Merged cell shares the underlying tc element
+        assert table.cell(0, 1).text == "結合セルの訳文"
+        assert table.cell(1, 0).text == "左下"
 
     def test_preserves_untranslated_content(self, processor, sample_docx, tmp_path):
         """Content not in translations dict is unchanged"""

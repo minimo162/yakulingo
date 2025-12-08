@@ -81,8 +81,14 @@ def _get_paddleocr():
     """Lazy import PaddleOCR (PP-DocLayout-L for layout analysis)"""
     global _paddleocr
     if _paddleocr is None:
-        from paddleocr import LayoutDetection
-        _paddleocr = {'LayoutDetection': LayoutDetection}
+        try:
+            from paddleocr import LayoutDetection
+            _paddleocr = {'LayoutDetection': LayoutDetection}
+        except ImportError:
+            raise ImportError(
+                "paddleocr is required for PDF layout analysis. "
+                "Install with: pip install -r requirements_pdf.txt"
+            )
     return _paddleocr
 
 

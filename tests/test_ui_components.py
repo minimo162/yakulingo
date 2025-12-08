@@ -187,6 +187,29 @@ async def test_drop_zone_rejects_unsupported_extensions(monkeypatch):
     assert called is False
     assert any('サポートされていないファイル形式です' in note[0] for note in notifications)
 
+
+@pytest.mark.asyncio
+async def test_drop_zone_rejects_invalid_data(monkeypatch):
+    """Drop handler should report errors when JS data cannot be converted to bytes"""
+
+    notifications = []
+    monkeypatch.setattr(file_panel.ui, 'notify', lambda message, **kwargs: notifications.append((message, kwargs)))
+
+    called = False
+
+    async def on_file_select(_: Path):
+        nonlocal called
+        called = True
+
+    # JS drop handler should provide byte-like data; here we simulate malformed content
+    result = {'name': 'sample.txt', 'data': 'not-a-byte-list'}
+
+    handled = await file_panel._process_drop_result(on_file_select, result)
+
+    assert handled is False
+    assert called is False
+    assert any('ファイルの読み込みに失敗しました' in note[0] for note in notifications)
+
     def test_translate_button_disabled_when_complete(self):
         """Translate button should be disabled when translation complete"""
         state = AppState(

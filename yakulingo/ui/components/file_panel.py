@@ -23,6 +23,7 @@ ATTACH_SVG: str = '''
 
 
 SUPPORTED_FORMATS = ".xlsx,.xls,.docx,.doc,.pptx,.pdf,.txt"
+SUPPORTED_EXTENSIONS = {ext.strip() for ext in SUPPORTED_FORMATS.split(',')}
 
 # File type icons (Material Icons)
 FILE_TYPE_ICONS = {
@@ -60,10 +61,14 @@ async def _process_drop_result(
         ui.notify('ファイルの読み込みに失敗しました: 空のデータです', type='negative')
         return False
 
-    content = bytes(data)
+    try:
+        content = bytes(data)
+    except (TypeError, ValueError) as err:
+        ui.notify(f'ファイルの読み込みに失敗しました: {err}', type='negative')
+        return False
+
     ext = Path(name).suffix.lower()
-    valid_exts = {'.xlsx', '.xls', '.docx', '.doc', '.pptx', '.pdf', '.txt'}
-    if ext not in valid_exts:
+    if ext not in SUPPORTED_EXTENSIONS:
         ui.notify(f'サポートされていないファイル形式です: {ext}', type='warning')
         return False
 
@@ -337,7 +342,7 @@ def _drop_zone(on_file_select: Callable[[Path], Union[None, Awaitable[None]]]):
             if asyncio.iscoroutine(result):
                 asyncio.create_task(result)
         except (OSError, AttributeError) as err:
-                ui.notify(f'ファイルの読み込みに失敗しました: {err}', type='negative')
+            ui.notify(f'ファイルの読み込みに失敗しました: {err}', type='negative')
 
     # Container with relative positioning for layering
     with ui.element('div').classes('drop-zone w-full') as container:

@@ -154,6 +154,105 @@ function Write-Status {
 }
 
 # ============================================================
+# Helper Functions
+# ============================================================
+function Get-LatestZipFile {
+    param(
+        [string]$ShareDir
+    )
+
+    $zip = Get-ChildItem -Path $ShareDir -Filter "YakuLingo*.zip" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if (-not $zip) {
+        throw "YakuLingo*.zip not found.`n`nPlease place the ZIP file in the setup folder.`n`nFolder: $ShareDir"
+    }
+    return $zip
+}
+
+function Resolve-SetupPath {
+    param(
+        [string]$InputPath,
+        [string]$AppName
+    )
+
+    $targetPath = if ([string]::IsNullOrEmpty($InputPath)) { Join-Path $env:LOCALAPPDATA $AppName } else { $InputPath }
+
+    $resolvedPath = $targetPath
+    try {
+        $resolvedPath = (Resolve-Path -Path $targetPath -ErrorAction Stop).ProviderPath
+    } catch {
+        # Path does not exist yet; keep original
+    }
+
+    $driveRoot = [System.IO.Path]::GetPathRoot($resolvedPath)
+    if ($resolvedPath -eq $driveRoot) {
+        throw "SetupPath points to a drive root. Please specify a subdirectory (e.g., $($env:LOCALAPPDATA)\\$AppName)."
+    }
+
+    $dangerousRoots = @(
+        $env:USERPROFILE,
+        $env:LOCALAPPDATA,
+        $env:APPDATA,
+        [Environment]::GetFolderPath("Windows"),
+        [Environment]::GetFolderPath("ProgramFiles"),
+        [Environment]::GetFolderPath("ProgramFilesX86"),
+        [Environment]::GetFolderPath("System"),
+        [Environment]::GetFolderPath("SystemX86")
+    ) | Where-Object { $_ }
+
+    foreach ($dangerousRoot in $dangerousRoots) {
+        if ($resolvedPath.TrimEnd('\\') -eq $dangerousRoot.TrimEnd('\\')) {
+            throw "SetupPath cannot be a system directory: $resolvedPath"
+        }
+    }
+
+    return $targetPath
+}
+
+function Prepare-TempWorkspace {
+    param(
+        [string]$ZipFileName
+    )
+
+    Get-ChildItem -Path $env:TEMP -Directory -Filter "YakuLingo_Setup_*" -ErrorAction SilentlyContinue | ForEach-Object {
+        Remove-Item -Path $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    $TempZipDir = Join-Path $env:TEMP "YakuLingo_Setup_$(Get-Date -Format 'yyyyMMddHHmmss')"
+    New-Item -ItemType Directory -Path $TempZipDir -Force | Out-Null
+
+    return @{ TempZipDir = $TempZipDir; TempZipFile = Join-Path $TempZipDir $ZipFileName }
+}
+
+function Copy-FileBuffered {
+    param(
+        [string]$Source,
+        [string]$Destination,
+        [int]$BufferSize = 1MB
+    )
+
+    $sourceStream = $null
+    $destStream = $null
+    try {
+        $sourceStream = [System.IO.File]::Open($Source, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read)
+        $destStream = [System.IO.File]::Create($Destination, $BufferSize)
+        $sourceStream.CopyTo($destStream, $BufferSize)
+    } finally {
+        if ($destStream) { $destStream.Dispose() }
+        if ($sourceStream) { $sourceStream.Dispose() }
+    }
+}
+
+function Cleanup-Directory {
+    param(
+        [string]$Path
+    )
+
+    if (Test-Path $Path) {
+        Remove-Item -Path $Path -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+# ============================================================
 # Main Setup Logic (wrapped in function for error handling)
 # ============================================================
 function Invoke-Setup {
@@ -173,50 +272,15 @@ function Invoke-Setup {
     $ShareDir = $script:ShareDir
 
     # Auto-detect ZIP file (use newest one)
-    $ZipFiles = Get-ChildItem -Path $ShareDir -Filter "YakuLingo*.zip" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending
-    if ($ZipFiles.Count -eq 0) {
-        throw "YakuLingo*.zip not found.`n`nPlease place the ZIP file in the setup folder.`n`nFolder: $ShareDir"
-    }
-    $ZipFile = $ZipFiles[0].FullName
-    $ZipFileName = $ZipFiles[0].Name
+    $ZipInfo = Get-LatestZipFile -ShareDir $ShareDir
+    $ZipFile = $ZipInfo.FullName
+    $ZipFileName = $ZipInfo.Name
     if (-not $GuiMode) {
         Write-Host "[INFO] Using: $ZipFileName" -ForegroundColor Cyan
     }
 
-    # Default path: LocalAppData\YakuLingo
-    if ([string]::IsNullOrEmpty($SetupPath)) {
-        $SetupPath = Join-Path $env:LOCALAPPDATA $AppName
-    }
-
-    # Safety check: avoid destructive destinations (drive roots or system folders)
-    $resolvedSetupPath = $SetupPath
-    try {
-        $resolvedSetupPath = (Resolve-Path -Path $SetupPath -ErrorAction Stop).ProviderPath
-    } catch {
-        # Keep original if the path does not exist yet
-    }
-
-    $driveRoot = [System.IO.Path]::GetPathRoot($resolvedSetupPath)
-    if ($resolvedSetupPath -eq $driveRoot) {
-        throw "SetupPath points to a drive root. Please specify a subdirectory (e.g., $($env:LOCALAPPDATA)\\$AppName)."
-    }
-
-    $dangerousRoots = @(
-        $env:USERPROFILE,
-        $env:LOCALAPPDATA,
-        $env:APPDATA,
-        [Environment]::GetFolderPath("Windows"),
-        [Environment]::GetFolderPath("ProgramFiles"),
-        [Environment]::GetFolderPath("ProgramFilesX86"),
-        [Environment]::GetFolderPath("System"),
-        [Environment]::GetFolderPath("SystemX86")
-    ) | Where-Object { $_ }
-
-    foreach ($dangerousRoot in $dangerousRoots) {
-        if ($resolvedSetupPath.TrimEnd('\\') -eq $dangerousRoot.TrimEnd('\\')) {
-            throw "SetupPath cannot be a system directory: $resolvedSetupPath"
-        }
-    }
+    # Default path: LocalAppData\YakuLingo with safety checks
+    $SetupPath = Resolve-SetupPath -InputPath $SetupPath -AppName $AppName
 
     # ============================================================
     # Step 1: Prepare destination (backup user data first)
@@ -305,27 +369,13 @@ function Invoke-Setup {
         Write-Host "[2/3] Copying ZIP to local temp folder..." -ForegroundColor Yellow
     }
 
-    # Clean up any old temp folders first
-    Get-ChildItem -Path $env:TEMP -Directory -Filter "YakuLingo_Setup_*" -ErrorAction SilentlyContinue | ForEach-Object {
-        Remove-Item -Path $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
-    }
+    $workspace = Prepare-TempWorkspace -ZipFileName $ZipFileName
+    $TempZipDir = $workspace.TempZipDir
+    $TempZipFile = $workspace.TempZipFile
 
-    $TempZipDir = Join-Path $env:TEMP "YakuLingo_Setup_$(Get-Date -Format 'yyyyMMddHHmmss')"
-    New-Item -ItemType Directory -Path $TempZipDir -Force | Out-Null
-    $TempZipFile = Join-Path $TempZipDir $ZipFileName
     # Use .NET FileStream with large buffer for fast network file copy
     # 1MB buffer matches Explorer's copy performance better than robocopy for single large files
-    $bufferSize = 1MB
-    $sourceStream = $null
-    $destStream = $null
-    try {
-        $sourceStream = [System.IO.File]::Open($ZipFile, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read)
-        $destStream = [System.IO.File]::Create($TempZipFile, $bufferSize)
-        $sourceStream.CopyTo($destStream, $bufferSize)
-    } finally {
-        if ($destStream) { $destStream.Dispose() }
-        if ($sourceStream) { $sourceStream.Dispose() }
-    }
+    Copy-FileBuffered -Source $ZipFile -Destination $TempZipFile
 
     if (-not $GuiMode) {
         Write-Host "[OK] ZIP copied to temp folder" -ForegroundColor Green
@@ -341,40 +391,28 @@ function Invoke-Setup {
         Write-Host "      Extracting with 7-Zip..." -ForegroundColor Gray
     }
 
-    # Extract to temp folder first
-    & $script:SevenZip x "$TempZipFile" "-o$TempZipDir" -y -bso0 -bsp0 | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        # Clean up temp folder on error
-        if (Test-Path $TempZipDir) {
-            Remove-Item -Path $TempZipDir -Recurse -Force -ErrorAction SilentlyContinue
+    try {
+        # Extract to temp folder first
+        & $script:SevenZip x "$TempZipFile" "-o$TempZipDir" -y -bso0 -bsp0 | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to extract ZIP file.`n`nFile: $ZipFileName"
         }
-        throw "Failed to extract ZIP file.`n`nFile: $ZipFileName"
-    }
 
-    # Find extracted folder
-    $ExtractedDir = Get-ChildItem -Path $TempZipDir -Directory | Where-Object { $_.Name -like "YakuLingo*" } | Select-Object -First 1
-    if (-not $ExtractedDir) {
-        # Clean up temp folder on error
-        if (Test-Path $TempZipDir) {
-            Remove-Item -Path $TempZipDir -Recurse -Force -ErrorAction SilentlyContinue
+        # Find extracted folder
+        $ExtractedDir = Get-ChildItem -Path $TempZipDir -Directory | Where-Object { $_.Name -like "YakuLingo*" } | Select-Object -First 1
+        if (-not $ExtractedDir) {
+            throw "Failed to extract ZIP file.`n`nFile: $ZipFileName"
         }
-        throw "Failed to extract ZIP file.`n`nFile: $ZipFileName"
-    }
 
-    # Copy extracted folder to destination using robocopy (more robust than Move-Item)
-    $robocopyResult = & robocopy $ExtractedDir.FullName $SetupPath /E /MOVE /MT:8 /R:3 /W:1 /NFL /NDL /NJH /NJS /NP 2>&1
-    # robocopy returns 0-7 for success, 8+ for errors
-    if ($LASTEXITCODE -ge 8) {
-        # Clean up temp folder on error
-        if (Test-Path $TempZipDir) {
-            Remove-Item -Path $TempZipDir -Recurse -Force -ErrorAction SilentlyContinue
+        # Copy extracted folder to destination using robocopy (more robust than Move-Item)
+        $robocopyResult = & robocopy $ExtractedDir.FullName $SetupPath /E /MOVE /MT:8 /R:3 /W:1 /NFL /NDL /NJH /NJS /NP 2>&1
+        # robocopy returns 0-7 for success, 8+ for errors
+        if ($LASTEXITCODE -ge 8) {
+            throw "Failed to copy files to destination.`n`nDestination: $SetupPath"
         }
-        throw "Failed to copy files to destination.`n`nDestination: $SetupPath"
-    }
-
-    # Clean up temp folder (robocopy /MOVE should handle most of it, but ensure cleanup)
-    if (Test-Path $TempZipDir) {
-        Remove-Item -Path $TempZipDir -Recurse -Force -ErrorAction SilentlyContinue
+    } finally {
+        # Clean up temp folder (robocopy /MOVE should handle most of it, but ensure cleanup)
+        Cleanup-Directory -Path $TempZipDir
     }
 
     if (-not $GuiMode) {

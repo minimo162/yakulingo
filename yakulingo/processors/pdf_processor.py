@@ -132,16 +132,19 @@ def _get_pdf_converter_ex_class():
         def __init__(self, rsrcmgr):
             PDFConverter.__init__(self, rsrcmgr, None, "utf-8", 1, None)
             self.pages = []  # Collected LTPage objects
+            self._page_count = 0  # Internal page counter (PDFPage doesn't have pageno)
 
         def begin_page(self, page, ctm):
             (x0, y0, x1, y1) = page.cropbox
             (x0, y0) = apply_matrix_pt(ctm, (x0, y0))
             (x1, y1) = apply_matrix_pt(ctm, (x1, y1))
             mediabox = (0, 0, abs(x0 - x1), abs(y0 - y1))
-            self.cur_item = LTPage(page.pageno, mediabox)
+            # Use internal counter instead of page.pageno (not available in pdfminer.six)
+            self.cur_item = LTPage(self._page_count, mediabox)
 
         def end_page(self, page):
             self.pages.append(self.cur_item)
+            self._page_count += 1
 
         def render_char(self, matrix, font, fontsize, scaling, rise, cid, ncs,
                         graphicstate):

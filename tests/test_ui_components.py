@@ -190,6 +190,28 @@ async def test_drop_zone_rejects_unsupported_extensions(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_drop_zone_rejects_legacy_doc(monkeypatch):
+    """Legacy .doc files should be rejected before showing settings"""
+
+    notifications = []
+    monkeypatch.setattr(file_panel.ui, 'notify', lambda message, **kwargs: notifications.append((message, kwargs)))
+
+    called = False
+
+    async def on_file_select(_: Path):
+        nonlocal called
+        called = True
+
+    result = {'name': 'legacy.doc', 'data': [0, 1, 2]}
+
+    handled = await file_panel._process_drop_result(on_file_select, result)
+
+    assert handled is False
+    assert called is False
+    assert any('.doc' in note[0] for note in notifications)
+
+
+@pytest.mark.asyncio
 async def test_drop_zone_rejects_invalid_data(monkeypatch):
     """Drop handler should report errors when JS data cannot be converted to bytes"""
 

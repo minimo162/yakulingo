@@ -48,6 +48,9 @@ LOGIN_PAGE_PATTERNS = [
     "login.microsoftonline.com",
     "login.live.com",
     "login.microsoft.com",
+    "account.live.com",
+    "account.microsoft.com",
+    "signup.live.com",
     "microsoftonline.com/oauth",
 ]
 

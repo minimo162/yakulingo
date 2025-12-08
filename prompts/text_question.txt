@@ -12,10 +12,14 @@ Answer the user's question about the translation.
 - **Practicality**: Include points useful for business and daily life
 - **Examples**: Provide concrete examples when possible
 - **Comparison**: Add similar expressions or alternatives if relevant
+- **Clarity**: Keep the answer concise and easy to skim
 
 ### Output Format
 訳文: one-line summary answer
 
-解説: detailed explanation with examples/comparisons as needed
+解説:
+- Provide the key reason for the answer (1 line)
+- Add examples or comparisons if helpful (1-2 lines)
+- Keep the explanation in Japanese
 
 {reference_section}

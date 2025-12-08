@@ -4,6 +4,7 @@
 import pytest
 from pathlib import Path
 from pptx import Presentation
+from pptx.enum.shapes import MSO_SHAPE, MSO_SHAPE_TYPE
 from pptx.util import Inches, Pt
 
 from yakulingo.processors.pptx_processor import PptxProcessor
@@ -443,6 +444,51 @@ class TestPptxProcessorEdgeCases:
 
         info = processor.get_file_info(file_path)
         assert info.slide_count == 10
+
+    def test_group_shape_textboxes(self, processor, tmp_path):
+        """Extracts and applies translations for text inside grouped shapes"""
+        file_path = tmp_path / "grouped.pptx"
+        output_path = tmp_path / "grouped_out.pptx"
+        prs = Presentation()
+
+        slide_layout = prs.slide_layouts[5]
+        slide = prs.slides.add_slide(slide_layout)
+
+        group = slide.shapes.add_group_shape()
+        group.left, group.top, group.width, group.height = (
+            Inches(1),
+            Inches(1),
+            Inches(5),
+            Inches(2),
+        )
+        shape = group.shapes.add_shape(
+            MSO_SHAPE.RECTANGLE,
+            Inches(0),
+            Inches(0),
+            Inches(4),
+            Inches(1),
+        )
+        shape.text = "グループ内テキスト"
+
+        prs.save(file_path)
+
+        blocks = list(processor.extract_text_blocks(file_path))
+        assert any(b.text == "グループ内テキスト" for b in blocks)
+
+        translations = {
+            blocks[0].id: "Grouped text translated",
+        }
+
+        processor.apply_translations(file_path, output_path, translations)
+        out_prs = Presentation(output_path)
+        texts = []
+        for shape in out_prs.slides[0].shapes:
+            if shape.shape_type == MSO_SHAPE_TYPE.GROUP:
+                for sub_shape in shape.shapes:
+                    if sub_shape.has_text_frame:
+                        texts.append(sub_shape.text_frame.text)
+
+        assert "Grouped text translated" in texts
 
 
 # --- Tests: create_bilingual_presentation ---

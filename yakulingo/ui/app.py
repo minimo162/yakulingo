@@ -1524,7 +1524,14 @@ class YakuLingoApp:
 
         self._on_text_translation_complete(client, error_message)
 
-    def _build_follow_up_prompt(self, action_type: str, source_text: str, translation: str, content: str = "") -> Optional[str]:
+    def _build_follow_up_prompt(
+        self,
+        action_type: str,
+        source_text: str,
+        translation: str,
+        content: str = "",
+        reference_files: Optional[list[Path]] = None,
+    ) -> Optional[str]:
         """
         Build prompt for follow-up actions.
 
@@ -1533,11 +1540,21 @@ class YakuLingoApp:
             source_text: Original source text
             translation: Current translation
             content: Additional content (question text, reply intent, etc.)
+            reference_files: Attached reference files for prompt context
 
         Returns:
             Built prompt string, or None if action_type is unknown
         """
         prompts_dir = get_default_prompts_dir()
+
+        reference_section = ""
+        if reference_files and self.translation_service:
+            reference_section = self.translation_service.prompt_builder.build_reference_section(reference_files)
+        elif reference_files:
+            # Fallback in unlikely case translation_service is not ready
+            from yakulingo.services.prompt_builder import REFERENCE_INSTRUCTION
+
+            reference_section = REFERENCE_INSTRUCTION
 
         # Prompt file mapping and fallback templates
         prompt_configs = {
@@ -1673,9 +1690,10 @@ class YakuLingoApp:
             prompt = prompt_file.read_text(encoding='utf-8')
             for placeholder, value in config['replacements'].items():
                 prompt = prompt.replace(placeholder, value)
-            return prompt
+            return prompt.replace("{reference_section}", reference_section)
         else:
-            return config['fallback']
+            prompt = config['fallback']
+            return prompt.replace("{reference_section}", reference_section)
 
     def _add_follow_up_result(self, source_text: str, text: str, explanation: str):
         """Add follow-up result to current translation options."""
@@ -1711,8 +1729,12 @@ class YakuLingoApp:
             source_text = self.state.text_result.source_text if self.state.text_result else self.state.source_text
             translation = self.state.text_result.options[-1].text if self.state.text_result and self.state.text_result.options else ""
 
+            reference_files = self._get_effective_reference_files()
+
             # Build prompt
-            prompt = self._build_follow_up_prompt(action_type, source_text, translation, content)
+            prompt = self._build_follow_up_prompt(
+                action_type, source_text, translation, content, reference_files
+            )
             if prompt is None:
                 error_message = '不明なアクションタイプです'
                 self.state.text_translating = False
@@ -1722,7 +1744,6 @@ class YakuLingoApp:
                 return
 
             # Send to Copilot (with reference files for consistent translations)
-            reference_files = self._get_effective_reference_files()
             result = await asyncio.to_thread(
                 lambda: self.copilot.translate_single(source_text, prompt, reference_files)
             )

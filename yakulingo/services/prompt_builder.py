@@ -14,7 +14,7 @@ Reference files are attached to Copilot, not embedded in prompt.
 
 import re
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Sequence
 
 
 # 参考ファイル参照の指示文（ファイル添付時のみ挿入）
@@ -323,6 +323,12 @@ class PromptBuilder:
         )
 
         return self.build(numbered_input, has_reference_files, output_language, translation_style)
+
+    def build_reference_section(self, reference_files: Optional[Sequence[Path]]) -> str:
+        """Return reference section text when reference files are provided."""
+
+        has_reference_files = bool(reference_files)
+        return REFERENCE_INSTRUCTION if has_reference_files else ""
 
     def parse_batch_result(self, result: str, expected_count: int) -> list[str]:
         """

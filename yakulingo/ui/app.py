@@ -456,7 +456,11 @@ class YakuLingoApp:
             self._refresh_status()
         except Exception as e:
             # Connection failed - refresh status to show error
-            logger.debug("Background connection failed: %s", e)
+            logger.debug("Background connection failed: %s", e, exc_info=True)
+            if self._copilot:
+                logger.info(
+                    "Copilot connection error: %s", self.copilot.last_connection_error
+                )
             self._refresh_status()
 
     async def start_edge_and_connect(self):

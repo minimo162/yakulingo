@@ -16,6 +16,7 @@ import subprocess
 import asyncio
 import threading
 import queue as thread_queue
+import shutil
 from pathlib import Path
 from typing import Optional, Callable
 
@@ -410,14 +411,41 @@ class CopilotHandler:
         return Path.home() / ".yakulingo" / "edge-profile" / "storage_state.json"
 
     def _find_edge_exe(self) -> Optional[str]:
-        """Find Edge executable"""
-        edge_paths = [
-            r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
-            r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
-        ]
-        for path in edge_paths:
+        """Find Edge executable across supported platforms.
+
+        Returns:
+            First matching executable path, or None if not found.
+        """
+        candidates: list[str] = []
+
+        if sys.platform == "win32":
+            candidates = [
+                r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+                r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+            ]
+        elif sys.platform == "darwin":
+            candidates = [
+                "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+                str(Path.home() / "Applications" / "Microsoft Edge.app" / "Contents" / "MacOS" / "Microsoft Edge"),
+            ]
+        else:
+            # Linux / WSL: check common executable names and install locations
+            for binary in ["microsoft-edge", "microsoft-edge-stable", "msedge", "edge"]:
+                which_path = shutil.which(binary)
+                if which_path:
+                    candidates.append(which_path)
+            candidates.extend([
+                "/usr/bin/microsoft-edge",
+                "/opt/microsoft/msedge/msedge",
+            ])
+
+        for path in candidates:
+            logger.debug("Checking Edge executable at %s", path)
             if Path(path).exists():
+                logger.info("Using Edge executable: %s", path)
                 return path
+
+        logger.debug("No Edge executable found (platform=%s, candidates=%d)", sys.platform, len(candidates))
         return None
 
     def start_edge(self) -> bool:

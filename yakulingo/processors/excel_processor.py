@@ -319,6 +319,7 @@ class ExcelProcessor(FileProcessor):
         xlwings is still used for extract_text_blocks() and apply_translations()
         when full Excel functionality (shapes, charts) is needed.
         """
+        self._ensure_xls_supported(file_path)
         return self._get_file_info_openpyxl(file_path)
 
     def _get_file_info_xlwings(self, file_path: Path, xw) -> FileInfo:
@@ -418,6 +419,8 @@ class ExcelProcessor(FileProcessor):
             output_language: "en" for JP→EN, "jp" for EN→JP translation
         """
         xw = _get_xlwings()
+
+        self._ensure_xls_supported(file_path)
 
         if HAS_XLWINGS:
             yield from self._extract_text_blocks_xlwings(file_path, xw, output_language)
@@ -784,10 +787,29 @@ class ExcelProcessor(FileProcessor):
         """Apply translations to Excel file"""
         xw = _get_xlwings()
 
+        self._ensure_xls_supported(input_path)
+
         if HAS_XLWINGS:
             self._apply_translations_xlwings(input_path, output_path, translations, direction, xw, settings)
         else:
             self._apply_translations_openpyxl(input_path, output_path, translations, direction, settings)
+
+    def _ensure_xls_supported(self, file_path: Path) -> None:
+        """Validate that .xls files can be processed.
+
+        On platforms without Excel/xlwings support (e.g., this Linux runtime),
+        .xls files cannot be opened by openpyxl. Surface a clear error instead
+        of failing with a confusing ZIP parsing exception.
+        """
+
+        # Refresh xlwings availability in case environment changes at runtime
+        _get_xlwings()
+
+        if file_path.suffix.lower() == '.xls' and not HAS_XLWINGS:
+            raise ValueError(
+                "XLS files require Microsoft Excel via xlwings. "
+                "Install xlwings with Excel or convert the file to XLSX."
+            )
 
     def _apply_translations_xlwings(
         self,

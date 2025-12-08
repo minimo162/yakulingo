@@ -368,6 +368,9 @@ class YakuLingoApp:
                     self.copilot.last_connection_error = None
                     self.state.copilot_ready = True
 
+                    # Save storage_state to preserve login session
+                    await asyncio.to_thread(self.copilot._save_storage_state)
+
                     if self._client:
                         with self._client:
                             self._refresh_status()

@@ -979,6 +979,14 @@ class TestLoginPageDetection:
         assert _is_login_page("https://login.live.com/login.srf") is True
         assert _is_login_page("https://login.microsoft.com/common/oauth2") is True
 
+    def test_is_login_page_detects_account_login(self):
+        """Detects Microsoft account login/verification pages"""
+        from yakulingo.services.copilot_handler import _is_login_page
+
+        assert _is_login_page("https://account.live.com/identity/confirm?mkt=ja-JP") is True
+        assert _is_login_page("https://account.microsoft.com/rewards/dashboard") is True
+        assert _is_login_page("https://signup.live.com/signup") is True
+
     def test_is_login_page_ignores_copilot_url(self):
         """Copilot URL is not a login page"""
         from yakulingo.services.copilot_handler import _is_login_page

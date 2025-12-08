@@ -466,7 +466,14 @@ class CopilotHandler:
             return False
 
     def _is_page_valid(self) -> bool:
-        """Check if the current page reference is still valid and usable."""
+        """Check if the current page reference is still valid and usable.
+
+        Performs two checks:
+        1. URL contains Copilot domain (page not navigated away)
+        2. Chat input element exists (user is logged in, not on login page)
+
+        Uses instant query_selector (no wait) for fast validation.
+        """
         if not self._page:
             logger.debug("Page validity check: _page is None")
             return False
@@ -475,13 +482,23 @@ class CopilotHandler:
         PlaywrightError = error_types['Error']
 
         try:
-            # Try to access the page URL - this will fail if page is closed/stale
+            # Check 1: URL is still Copilot page
             url = self._page.url
-            # Also verify it's still a Copilot page
             is_copilot = "m365.cloud.microsoft" in url
             if not is_copilot:
                 logger.debug("Page validity check: URL is not Copilot (%s)", url[:50] if url else "empty")
-            return is_copilot
+                return False
+
+            # Check 2: Chat input element exists (verifies login state)
+            # Use query_selector for instant check (no wait/timeout)
+            input_selector = '#m365-chat-editor-target-element, [data-lexical-editor="true"]'
+            input_elem = self._page.query_selector(input_selector)
+            if input_elem:
+                return True
+            else:
+                logger.debug("Page validity check: chat input not found (may need login)")
+                return False
+
         except PlaywrightError as e:
             logger.debug("Page validity check failed (Playwright): %s", e)
             return False
@@ -910,7 +927,10 @@ class CopilotHandler:
         # Call _connect_impl directly since we're already in the Playwright thread
         # (calling connect() would cause nested executor calls)
         if not self._connect_impl():
-            raise RuntimeError("ブラウザに接続できませんでした。Edgeが起動しているか、Copilotにログインしているか確認してください。")
+            # Provide specific error message based on connection error type
+            if self.last_connection_error == self.ERROR_LOGIN_REQUIRED:
+                raise RuntimeError("Copilotへのログインが必要です。Edgeブラウザでログインしてください。")
+            raise RuntimeError("ブラウザに接続できませんでした。Edgeが起動しているか確認してください。")
 
         # Start a new chat to clear previous context (prevents using old responses)
         self.start_new_chat(skip_clear_wait=skip_clear_wait)
@@ -982,7 +1002,10 @@ class CopilotHandler:
         """
         # Call _connect_impl directly since we're already in the Playwright thread
         if not self._connect_impl():
-            raise RuntimeError("ブラウザに接続できませんでした。Edgeが起動しているか、Copilotにログインしているか確認してください。")
+            # Provide specific error message based on connection error type
+            if self.last_connection_error == self.ERROR_LOGIN_REQUIRED:
+                raise RuntimeError("Copilotへのログインが必要です。Edgeブラウザでログインしてください。")
+            raise RuntimeError("ブラウザに接続できませんでした。Edgeが起動しているか確認してください。")
 
         for attempt in range(max_retries + 1):
             # Start a new chat to clear previous context

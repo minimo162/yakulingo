@@ -18,8 +18,8 @@ class AppSettings:
     """Application settings"""
 
     # Reference Files (用語集、参考資料など)
-    # Default includes bundled glossary for consistency with templates/docs
-    reference_files: list[str] = field(default_factory=lambda: ["glossary.csv"])
+    # Default is empty; bundled glossary can be enabled via use_bundled_glossary
+    reference_files: list[str] = field(default_factory=list)
 
     # Cache for resolved reference file paths (not persisted)
     _ref_paths_cache: Optional[tuple[str, list[Path]]] = field(

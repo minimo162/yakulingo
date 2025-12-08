@@ -112,7 +112,7 @@ python app.py
 
 ```json
 {
-  "reference_files": ["glossary.csv"],
+  "reference_files": [],
   "output_directory": null,
   "last_tab": "text",
   "window_width": 1400,

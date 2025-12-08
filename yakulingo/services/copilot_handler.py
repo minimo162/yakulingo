@@ -1261,13 +1261,15 @@ class CopilotHandler:
 
     def bring_to_foreground(self) -> None:
         """Edgeウィンドウを前面に表示"""
-        if self._page:
-            error_types = _get_playwright_errors()
-            PlaywrightError = error_types['Error']
-            try:
-                self._page.bring_to_front()
-            except PlaywrightError as e:
-                logger.debug("Failed to bring window to foreground: %s", e)
+        if not self._page:
+            logger.debug("Skipping bring_to_foreground: no page available")
+            return
+
+        try:
+            # Execute in Playwright thread to avoid cross-thread access issues
+            _playwright_executor.execute(self._bring_to_foreground_impl, self._page)
+        except Exception as e:
+            logger.debug("Failed to bring window to foreground: %s", e)
 
     def disconnect(self) -> None:
         """Close browser and cleanup"""

@@ -873,23 +873,27 @@ class TestCopilotHandlerLoginDetection:
         assert result == ConnectionState.LOGIN_REQUIRED
 
     def test_bring_to_foreground_with_page(self):
-        """bring_to_foreground calls page.bring_to_front"""
+        """bring_to_foreground delegates to Playwright thread executor"""
         handler = CopilotHandler()
 
         mock_page = MagicMock()
         handler._page = mock_page
 
-        handler.bring_to_foreground()
+        with patch('yakulingo.services.copilot_handler._playwright_executor') as mock_executor:
+            handler.bring_to_foreground()
 
-        mock_page.bring_to_front.assert_called_once()
+        mock_executor.execute.assert_called_once_with(handler._bring_to_foreground_impl, mock_page)
 
     def test_bring_to_foreground_no_page(self):
         """bring_to_foreground handles no page gracefully"""
         handler = CopilotHandler()
         handler._page = None
 
-        # Should not raise
-        handler.bring_to_foreground()
+        with patch('yakulingo.services.copilot_handler._playwright_executor') as mock_executor:
+            # Should not raise and should not call executor
+            handler.bring_to_foreground()
+
+        mock_executor.execute.assert_not_called()
 
     def test_connect_simplified(self):
         """connect() establishes browser connection without state check"""

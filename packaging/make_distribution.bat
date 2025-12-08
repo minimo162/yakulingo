@@ -102,9 +102,8 @@ if exist ".wheels" rd /s /q ".wheels" 2>nul
 del /q "*.tmp" 2>nul
 del /q ".venv\pyvenv.cfg.tmp" 2>nul
 
-:: Pre-compile Python bytecode for faster first launch
-echo        Pre-compiling Python bytecode...
-".venv\Scripts\python.exe" -m compileall -q -f yakulingo 2>nul
+:: Note: Python bytecode is pre-compiled by install_deps.bat
+:: __pycache__ directories are preserved for faster first launch
 
 :: Fix pyvenv.cfg - extract version and rewrite
 set "PYTHON_VERSION="

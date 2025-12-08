@@ -191,10 +191,10 @@ function Invoke-Setup {
     # ============================================================
     # Step 1: Prepare destination (backup user data first)
     # ============================================================
-    Write-Status -Message "Preparing destination..." -Progress -Step "Step 1/5: Preparing"
+    Write-Status -Message "Preparing destination..." -Progress -Step "Step 1/3: Preparing"
     if (-not $GuiMode) {
         Write-Host ""
-        Write-Host "[1/5] Preparing destination..." -ForegroundColor Yellow
+        Write-Host "[1/3] Preparing destination..." -ForegroundColor Yellow
     }
 
     # Backup user data files before removing the directory
@@ -236,10 +236,10 @@ function Invoke-Setup {
     # ============================================================
     # Step 2: Copy ZIP to temp folder (faster than extracting over network)
     # ============================================================
-    Write-Status -Message "Copying files..." -Progress -Step "Step 2/5: Copying"
+    Write-Status -Message "Copying files..." -Progress -Step "Step 2/3: Copying"
     if (-not $GuiMode) {
         Write-Host ""
-        Write-Host "[2/5] Copying ZIP to local temp folder..." -ForegroundColor Yellow
+        Write-Host "[2/3] Copying ZIP to local temp folder..." -ForegroundColor Yellow
     }
 
     # Clean up any old temp folders first
@@ -271,10 +271,10 @@ function Invoke-Setup {
     # ============================================================
     # Step 3: Extract ZIP locally (much faster than over network)
     # ============================================================
-    Write-Status -Message "Extracting files..." -Progress -Step "Step 3/5: Extracting"
+    Write-Status -Message "Extracting files..." -Progress -Step "Step 3/3: Extracting"
     if (-not $GuiMode) {
         Write-Host ""
-        Write-Host "[3/5] Extracting files locally..." -ForegroundColor Yellow
+        Write-Host "[3/3] Extracting files locally..." -ForegroundColor Yellow
         Write-Host "      Extracting with 7-Zip..." -ForegroundColor Gray
     }
 
@@ -486,10 +486,10 @@ function Invoke-Setup {
     # ============================================================
     # Finalize: Create shortcuts
     # ============================================================
-    Write-Status -Message "Creating shortcuts..." -Progress -Step "Step 4/5: Creating shortcuts"
+    Write-Status -Message "Creating shortcuts..." -Progress -Step "Finalizing..."
     if (-not $GuiMode) {
         Write-Host ""
-        Write-Host "[4/5] Creating shortcuts..." -ForegroundColor Yellow
+        Write-Host "[OK] Creating shortcuts..." -ForegroundColor Yellow
     }
 
     $WshShell = New-Object -ComObject WScript.Shell
@@ -507,68 +507,6 @@ function Invoke-Setup {
     if (-not $GuiMode) {
         Write-Host "      Desktop: $ShortcutPath" -ForegroundColor Gray
         Write-Host "[OK] Shortcuts created" -ForegroundColor Green
-    }
-
-    # ============================================================
-    # Step 5: Warm up Python for faster first launch
-    # ============================================================
-    Write-Status -Message "Preparing for first launch..." -Progress -Step "Step 5/5: Preparing for first launch"
-    if (-not $GuiMode) {
-        Write-Host ""
-        Write-Host "[5/5] Preparing for first launch..." -ForegroundColor Yellow
-    }
-
-    # Find Python in .uv-python
-    $UvPythonDir = Join-Path $SetupPath ".uv-python"
-    $PythonDir = Get-ChildItem -Path $UvPythonDir -Directory -Filter "cpython-*" -ErrorAction SilentlyContinue | Select-Object -First 1
-
-    if ($PythonDir) {
-        $VenvPython = Join-Path $SetupPath ".venv\Scripts\python.exe"
-
-        if (Test-Path $VenvPython) {
-            # Fix pyvenv.cfg with actual path
-            $PyvenvCfg = Join-Path $SetupPath ".venv\pyvenv.cfg"
-            if (Test-Path $PyvenvCfg) {
-                $cfgContent = Get-Content -Path $PyvenvCfg -Raw
-                $cfgContent = $cfgContent -replace "home = __PYTHON_HOME__", "home = $($PythonDir.FullName)"
-                Set-Content -Path $PyvenvCfg -Value $cfgContent -NoNewline
-            }
-
-            # Set environment variables for Python
-            $env:VIRTUAL_ENV = Join-Path $SetupPath ".venv"
-            $env:PLAYWRIGHT_BROWSERS_PATH = Join-Path $SetupPath ".playwright-browsers"
-            $env:PYWEBVIEW_GUI = "edgechromium"
-            $env:NO_PROXY = "localhost,127.0.0.1"
-
-            # Warm up: import main modules to create bytecode cache
-            # This runs in background and exits quickly
-            $warmupCode = @"
-import sys
-sys.path.insert(0, r'$SetupPath')
-try:
-    # Import heavy modules to cache bytecode
-    import nicegui
-    import pywebview
-    from yakulingo.ui import app as ui_app
-    from yakulingo.services import translation_service
-except:
-    pass
-"@
-            if (-not $GuiMode) {
-                Write-Host "      Warming up Python modules..." -ForegroundColor Gray
-            }
-
-            # Run warmup with timeout (max 30 seconds)
-            $warmupProcess = Start-Process -FilePath $VenvPython -ArgumentList "-c", "`"$warmupCode`"" -WorkingDirectory $SetupPath -WindowStyle Hidden -PassThru
-            $warmupProcess | Wait-Process -Timeout 30 -ErrorAction SilentlyContinue
-            if (-not $warmupProcess.HasExited) {
-                $warmupProcess | Stop-Process -Force -ErrorAction SilentlyContinue
-            }
-
-            if (-not $GuiMode) {
-                Write-Host "[OK] Warmup completed" -ForegroundColor Green
-            }
-        }
     }
 
     # ============================================================

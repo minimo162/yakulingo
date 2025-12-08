@@ -22,7 +22,7 @@ ATTACH_SVG: str = '''
 '''
 
 
-SUPPORTED_FORMATS = ".xlsx,.xls,.docx,.doc,.pptx,.ppt,.pdf,.txt"
+SUPPORTED_FORMATS = ".xlsx,.xls,.docx,.doc,.pptx,.pdf,.txt"
 
 # File type icons (Material Icons)
 FILE_TYPE_ICONS = {
@@ -346,7 +346,7 @@ def _drop_zone(on_file_select: Callable[[Path], Union[None, Awaitable[None]]]):
                 await ui.run_javascript('window._droppedFileData = null')
                 # Validate file extension
                 ext = Path(name).suffix.lower()
-                valid_exts = {'.xlsx', '.xls', '.docx', '.doc', '.pptx', '.ppt', '.pdf', '.txt'}
+                valid_exts = {'.xlsx', '.xls', '.docx', '.doc', '.pptx', '.pdf', '.txt'}
                 if ext not in valid_exts:
                     ui.notify(f'サポートされていないファイル形式です: {ext}', type='warning')
                     return
@@ -484,7 +484,6 @@ def _output_file_row(file_path: Path, description: str):
         '.docx': 'description',
         '.doc': 'description',
         '.pptx': 'slideshow',
-        '.ppt': 'slideshow',
         '.pdf': 'picture_as_pdf',
         '.csv': 'grid_on',
     }

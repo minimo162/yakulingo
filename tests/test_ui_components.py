@@ -232,6 +232,19 @@ class TestFileInfoDisplay:
         assert len(info.section_details) == 1
 
 
+class TestFilePanelSettings:
+    """Tests for file panel configuration"""
+
+    def test_supported_formats_excludes_legacy_ppt(self):
+        """UI should not advertise unsupported .ppt files"""
+        from yakulingo.ui.components.file_panel import SUPPORTED_FORMATS
+
+        formats = {ext.strip() for ext in SUPPORTED_FORMATS.split(',')}
+
+        assert '.pptx' in formats
+        assert '.ppt' not in formats
+
+
 class TestTabSwitching:
     """Tests for tab switching logic"""
 

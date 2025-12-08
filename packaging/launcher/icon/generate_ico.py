@@ -2,9 +2,73 @@
 """
 Generate ICO file for Windows application icon.
 Requires: pip install pillow
+
+Uses manual ICO creation with PNG-embedded images for proper transparency support.
+Pillow's default ICO save may not handle transparency correctly for smaller sizes.
 """
 
+import struct
+from io import BytesIO
 from pathlib import Path
+
+
+def save_ico_with_png(images: list, output_path: Path) -> None:
+    """
+    Create ICO file with PNG-embedded images for proper transparency.
+
+    Windows Vista+ supports PNG-embedded ICO files, which preserve
+    alpha channel transparency correctly (unlike BMP-based ICO).
+
+    Args:
+        images: List of PIL.Image objects (RGBA mode), sorted by size descending
+        output_path: Output ICO file path
+    """
+    from PIL import Image
+
+    num_images = len(images)
+
+    # Prepare PNG data for each image
+    png_data_list = []
+    for img in images:
+        buffer = BytesIO()
+        img.save(buffer, format='PNG', compress_level=9)
+        png_data_list.append(buffer.getvalue())
+
+    # ICO file structure:
+    # - ICONDIR header (6 bytes)
+    # - ICONDIRENTRY array (16 bytes each)
+    # - Image data (PNG format)
+
+    # ICONDIR: Reserved(2) + Type(2, 1=ICO) + Count(2)
+    icondir = struct.pack('<HHH', 0, 1, num_images)
+
+    # Calculate data offset (after header and all entries)
+    header_size = 6 + 16 * num_images
+    offset = header_size
+
+    # Build ICONDIRENTRY array
+    entries = b''
+    for i, img in enumerate(images):
+        # Width/Height: 0 means 256
+        width = img.width if img.width < 256 else 0
+        height = img.height if img.height < 256 else 0
+        data_size = len(png_data_list[i])
+
+        # ICONDIRENTRY: Width(1) Height(1) ColorCount(1) Reserved(1)
+        #               Planes(2) BitCount(2) BytesInRes(4) ImageOffset(4)
+        entry = struct.pack('<BBBBHHII',
+                            width, height, 0, 0,  # Width, Height, ColorCount, Reserved
+                            1, 32,                 # Planes, BitCount (32-bit RGBA)
+                            data_size, offset)     # BytesInRes, ImageOffset
+        entries += entry
+        offset += data_size
+
+    # Write ICO file
+    with open(output_path, 'wb') as f:
+        f.write(icondir)
+        f.write(entries)
+        for data in png_data_list:
+            f.write(data)
 
 
 def generate_ico():
@@ -17,22 +81,26 @@ def generate_ico():
     BRAND_COLOR = (67, 85, 185, 255)  # #4355B9
     WHITE = (255, 255, 255, 255)
 
-    # Standard Windows icon sizes
+    # Standard Windows icon sizes (must be sorted descending for ICO format)
     sizes = [256, 48, 32, 16]
+
+    # Supersampling factor for antialiased edges
+    # Higher = smoother edges but slower
+    SUPERSAMPLE = 4
 
     images = []
     for size in sizes:
-        # Create transparent RGBA image
-        img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(img)
+        # Create larger image for supersampling (antialiased edges)
+        large_size = size * SUPERSAMPLE
+        large_img = Image.new("RGBA", (large_size, large_size), (0, 0, 0, 0))
+        large_draw = ImageDraw.Draw(large_img)
 
-        # Draw filled circle (brand color background)
-        draw.ellipse([0, 0, size - 1, size - 1], fill=BRAND_COLOR)
+        # Draw filled circle (brand color background) at larger size
+        large_draw.ellipse([0, 0, large_size - 1, large_size - 1], fill=BRAND_COLOR)
 
         # Draw translate icon (simplified for small sizes)
-        # Scale factor from 24x24 base to target size
-        scale = size / 24
-        cx, cy = size / 2, size / 2
+        # Scale factor from 24x24 base to target large size
+        scale = large_size / 24
 
         if size >= 32:
             # Full icon for larger sizes
@@ -46,7 +114,7 @@ def generate_ico():
                 (14 * scale, 17 * scale),    # inner left
                 (12 * scale, 17 * scale),    # bottom left
             ]
-            draw.polygon(a_points, fill=WHITE)
+            large_draw.polygon(a_points, fill=WHITE)
 
             # "A" crossbar cutout
             a_bar = [
@@ -54,42 +122,42 @@ def generate_ico():
                 (17.5 * scale, 12 * scale),
                 (16.5 * scale, 9 * scale),
             ]
-            draw.polygon(a_bar, fill=BRAND_COLOR)
+            large_draw.polygon(a_bar, fill=BRAND_COLOR)
 
             # Japanese text symbol (left side) - simplified
             # Horizontal lines
             line_width = max(1, int(1.5 * scale))
-            draw.rectangle([4 * scale, 5 * scale, 12 * scale, 5 * scale + line_width], fill=WHITE)
-            draw.rectangle([4 * scale, 8 * scale, 11 * scale, 8 * scale + line_width], fill=WHITE)
+            large_draw.rectangle([4 * scale, 5 * scale, 12 * scale, 5 * scale + line_width], fill=WHITE)
+            large_draw.rectangle([4 * scale, 8 * scale, 11 * scale, 8 * scale + line_width], fill=WHITE)
 
             # Vertical line
-            draw.rectangle([8 * scale, 5 * scale, 8 * scale + line_width, 10 * scale], fill=WHITE)
+            large_draw.rectangle([8 * scale, 5 * scale, 8 * scale + line_width, 10 * scale], fill=WHITE)
 
             # Curved arrow (simplified as lines)
-            draw.line([(5 * scale, 14 * scale), (9 * scale, 10 * scale)], fill=WHITE, width=line_width)
-            draw.line([(9 * scale, 10 * scale), (12 * scale, 14 * scale)], fill=WHITE, width=line_width)
+            large_draw.line([(5 * scale, 14 * scale), (9 * scale, 10 * scale)], fill=WHITE, width=line_width)
+            large_draw.line([(9 * scale, 10 * scale), (12 * scale, 14 * scale)], fill=WHITE, width=line_width)
 
         else:
             # Simplified icon for 16x16
             # Just draw "文A" text representation
             line_width = max(1, int(scale))
             # Horizontal bar
-            draw.rectangle([4 * scale, 7 * scale, 20 * scale, 7 * scale + line_width * 2], fill=WHITE)
+            large_draw.rectangle([4 * scale, 7 * scale, 20 * scale, 7 * scale + line_width * 2], fill=WHITE)
             # Vertical bar
-            draw.rectangle([11 * scale, 5 * scale, 13 * scale, 19 * scale], fill=WHITE)
+            large_draw.rectangle([11 * scale, 5 * scale, 13 * scale, 19 * scale], fill=WHITE)
 
+        # Downsample with high-quality resampling for antialiased edges
+        img = large_img.resize((size, size), Image.LANCZOS)
         images.append(img)
 
-    # Save as ICO with all sizes
-    images[0].save(
-        ico_path,
-        format="ICO",
-        sizes=[(s, s) for s in sizes],
-        append_images=images[1:]
-    )
+    # Save as ICO with PNG-embedded images for proper transparency
+    # (Pillow's default ICO save may use BMP format for smaller sizes,
+    # which can cause transparency issues on some Windows versions)
+    save_ico_with_png(images, ico_path)
 
     print(f"Generated: {ico_path}")
     print(f"Sizes: {sizes}")
+    print("Using PNG-embedded format for proper transparency")
 
 
 if __name__ == "__main__":

@@ -308,14 +308,15 @@ class CopilotHandler:
 
     @property
     def is_connected(self) -> bool:
-        """Check if connected to Copilot with valid page.
+        """Check if connected to Copilot.
 
-        This property verifies the actual connection state, not just the cached flag.
-        Returns False if the page reference is stale or invalid.
+        Returns the cached connection state flag. This is safe to call from any thread.
+        Actual page validity is verified lazily in _connect_impl() before translation.
+
+        Note: This does NOT verify if the page is still valid (e.g., login required).
+        Use _is_page_valid() within Playwright thread for actual validation.
         """
-        if not self._connected:
-            return False
-        return self._is_page_valid()
+        return self._connected
 
     def _get_storage_state_path(self) -> Path:
         """Get path to storage_state.json for cookie/session persistence."""

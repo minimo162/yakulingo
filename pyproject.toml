@@ -18,7 +18,7 @@ dependencies = [
     "pdfminer.six>=20231228",  # PDF font analysis (PDFMathTranslate compliant)
     "pypdfium2>=4.30.0",  # PDF to image conversion for layout analysis
     # Web UI
-    "nicegui>=1.4.0",
+    "nicegui>=3.3.1",
     "pywebview>=5.0.0",  # Native window mode (no browser needed)
     # Windows NTLM proxy authentication support (for auto-update)
     "pywin32>=306; sys_platform == 'win32'",

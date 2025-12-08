@@ -709,7 +709,7 @@ The `AutoUpdater` class provides GitHub Releases-based updates:
 ### Core Dependencies
 | Package | Purpose |
 |---------|---------|
-| `nicegui>=1.4.0` | Web-based GUI framework |
+| `nicegui>=3.3.1` | Web-based GUI framework |
 | `pywebview>=5.0.0` | Native window mode (no browser needed) |
 | `playwright>=1.40.0` | Browser automation for Copilot |
 | `xlwings>=0.32.0` | Excel with shapes/charts (Windows/macOS, requires Excel) |

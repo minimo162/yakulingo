@@ -1289,7 +1289,7 @@ YakuLingo.exe    # Rust製ネイティブランチャー
 ### 12.5 依存パッケージ
 
 ```
-nicegui>=1.4.0
+nicegui>=3.3.1
 pywebview>=5.0.0
 playwright>=1.40.0
 openpyxl>=3.1.0

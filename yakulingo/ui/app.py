@@ -10,10 +10,43 @@ import logging
 from pathlib import Path
 from typing import Optional, TYPE_CHECKING
 
+import nicegui
 from nicegui import ui
 
 # Module logger
 logger = logging.getLogger(__name__)
+
+# Minimum supported NiceGUI version (major, minor, patch)
+MIN_NICEGUI_VERSION = (3, 0, 0)
+
+
+def _ensure_nicegui_version():
+    """Validate that the installed NiceGUI version meets the minimum requirement.
+
+    NiceGUI 3.0 introduced several breaking changes (e.g., Quasar v2 upgrade,
+    revised native window handling). Ensure we fail fast with a clear message
+    rather than hitting obscure runtime errors when an older version is
+    installed.
+    """
+
+    version_str = getattr(nicegui, '__version__', '')
+    try:
+        version_parts = tuple(int(part) for part in version_str.split('.')[:3])
+    except ValueError:
+        logger.warning(
+            "Unable to parse NiceGUI version '%s'; proceeding without check", version_str
+        )
+        return
+
+    if version_parts < MIN_NICEGUI_VERSION:
+        raise RuntimeError(
+            f"NiceGUI>={'.'.join(str(p) for p in MIN_NICEGUI_VERSION)} is required; "
+            f"found {version_str}. Please upgrade NiceGUI to 3.x or newer."
+        )
+
+
+# Validate NiceGUI version as early as possible
+_ensure_nicegui_version()
 
 # Fast imports - required at startup (lightweight modules only)
 from yakulingo.ui.state import AppState, Tab, FileState, ConnectionState

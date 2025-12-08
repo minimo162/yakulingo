@@ -38,6 +38,17 @@ COPILOT_ERROR_PATTERNS = [
     "チャットを保存して新しいチャットを開始",  # "Save chat and start new chat"
     "I can't help with that",  # English equivalent
     "I'm not able to help with this",  # Another English pattern
+    "間違えました、すみません",  # "I made a mistake, sorry" - appears when not logged in
+    "それについては回答を出すことができません",  # "I can't provide an answer about that"
+    "違う話題にしましょう",  # "Let's change the topic"
+]
+
+# Login page detection patterns
+LOGIN_PAGE_PATTERNS = [
+    "login.microsoftonline.com",
+    "login.live.com",
+    "login.microsoft.com",
+    "microsoftonline.com/oauth",
 ]
 
 
@@ -137,6 +148,24 @@ def _is_copilot_error_response(response: str) -> bool:
     for pattern in COPILOT_ERROR_PATTERNS:
         if pattern in response:
             logger.debug("Detected Copilot error pattern: %s", pattern)
+            return True
+    return False
+
+
+def _is_login_page(url: str) -> bool:
+    """
+    Check if the URL is a Microsoft login page.
+
+    Args:
+        url: The current page URL
+
+    Returns:
+        True if URL is a login page
+    """
+    if not url:
+        return False
+    for pattern in LOGIN_PAGE_PATTERNS:
+        if pattern in url:
             return True
     return False
 
@@ -469,9 +498,10 @@ class CopilotHandler:
     def _is_page_valid(self) -> bool:
         """Check if the current page reference is still valid and usable.
 
-        Performs two checks:
-        1. URL contains Copilot domain (page not navigated away)
-        2. Chat input element exists (user is logged in, not on login page)
+        Performs three checks:
+        1. URL is not a login page (redirected to auth)
+        2. URL contains Copilot domain (page not navigated away)
+        3. Chat input element exists (user is logged in, not on login page)
 
         Uses instant query_selector (no wait) for fast validation.
         """
@@ -483,14 +513,20 @@ class CopilotHandler:
         PlaywrightError = error_types['Error']
 
         try:
-            # Check 1: URL is still Copilot page
+            # Check 1: Not on login page
             url = self._page.url
+            if _is_login_page(url):
+                logger.debug("Page validity check: on login page (%s)", url[:50] if url else "empty")
+                self.last_connection_error = self.ERROR_LOGIN_REQUIRED
+                return False
+
+            # Check 2: URL is still Copilot page
             is_copilot = "m365.cloud.microsoft" in url
             if not is_copilot:
                 logger.debug("Page validity check: URL is not Copilot (%s)", url[:50] if url else "empty")
                 return False
 
-            # Check 2: Chat input element exists (verifies login state)
+            # Check 3: Chat input element exists (verifies login state)
             # Use query_selector for instant check (no wait/timeout)
             input_selector = '#m365-chat-editor-target-element, [data-lexical-editor="true"]'
             input_elem = self._page.query_selector(input_selector)
@@ -698,20 +734,35 @@ class CopilotHandler:
         copilot_page.goto(self.COPILOT_URL, wait_until='commit', timeout=30000)
         return copilot_page
 
-    def _wait_for_chat_ready(self, page) -> bool:
+    def _wait_for_chat_ready(self, page, wait_for_login: bool = True) -> bool:
         """Wait for Copilot chat UI to be ready.
+
+        If login is required, brings the browser to foreground and waits
+        for the user to complete login.
 
         Args:
             page: Playwright page to wait on
+            wait_for_login: If True, wait for user to complete login (up to 5 minutes)
 
         Returns:
-            True if chat is ready, False if login required
+            True if chat is ready, False if login required and not completed
         """
         error_types = _get_playwright_errors()
         PlaywrightTimeoutError = error_types['TimeoutError']
+        PlaywrightError = error_types['Error']
 
         logger.info("Waiting for Copilot chat UI...")
         input_selector = '#m365-chat-editor-target-element, [data-lexical-editor="true"]'
+
+        # First, check if we're on a login page
+        url = page.url
+        if _is_login_page(url):
+            logger.warning("Redirected to login page: %s", url[:50])
+            self.last_connection_error = self.ERROR_LOGIN_REQUIRED
+
+            if wait_for_login:
+                return self._wait_for_login_completion(page)
+            return False
 
         try:
             page.wait_for_selector(input_selector, timeout=15000, state='visible')
@@ -723,15 +774,110 @@ class CopilotHandler:
                 if "認証" in dialog_text or "ログイン" in dialog_text or "サインイン" in dialog_text:
                     logger.warning("Authentication dialog detected during connect: %s", dialog_text)
                     self.last_connection_error = self.ERROR_LOGIN_REQUIRED
+
+                    if wait_for_login:
+                        # Bring browser to foreground so user can see the dialog
+                        self._bring_to_foreground_impl(page)
+                        return self._wait_for_login_completion(page)
                     return False
 
             logger.info("Copilot chat UI ready")
             time.sleep(0.2)  # Wait for session to fully initialize
             return True
         except PlaywrightTimeoutError:
-            logger.warning("Chat input not found - login required in Edge browser")
+            # Check if we got redirected to login page during wait
+            url = page.url
+            if _is_login_page(url):
+                logger.warning("Redirected to login page during wait: %s", url[:50])
+                self.last_connection_error = self.ERROR_LOGIN_REQUIRED
+
+                if wait_for_login:
+                    return self._wait_for_login_completion(page)
+                return False
+
+            logger.warning("Chat input not found - login may be required")
             self.last_connection_error = self.ERROR_LOGIN_REQUIRED
+
+            if wait_for_login:
+                # Bring browser to foreground so user can complete login
+                self._bring_to_foreground_impl(page)
+                return self._wait_for_login_completion(page)
             return False
+
+    def _bring_to_foreground_impl(self, page) -> None:
+        """Bring browser window to foreground (internal implementation).
+
+        Args:
+            page: The Playwright page to bring to front
+        """
+        error_types = _get_playwright_errors()
+        PlaywrightError = error_types['Error']
+
+        try:
+            page.bring_to_front()
+            logger.info("Browser window brought to foreground for login")
+        except PlaywrightError as e:
+            logger.debug("Failed to bring window to foreground: %s", e)
+
+    def _wait_for_login_completion(self, page, timeout: int = 300) -> bool:
+        """Wait for user to complete login in the browser.
+
+        Brings browser to foreground and polls until login is complete
+        (indicated by chat input element appearing).
+
+        Args:
+            page: Playwright page to monitor
+            timeout: Maximum wait time in seconds (default: 5 minutes)
+
+        Returns:
+            True if login completed successfully
+        """
+        error_types = _get_playwright_errors()
+        PlaywrightError = error_types['Error']
+        PlaywrightTimeoutError = error_types['TimeoutError']
+
+        logger.info("Waiting for login completion (timeout: %ds)...", timeout)
+        logger.info("Edgeブラウザでログインしてください / Please log in to the Edge browser")
+
+        # Bring browser to foreground
+        self._bring_to_foreground_impl(page)
+
+        input_selector = '#m365-chat-editor-target-element, [data-lexical-editor="true"]'
+        poll_interval = 1.0  # Check every second
+        elapsed = 0.0
+
+        while elapsed < timeout:
+            try:
+                # Check if still on login page
+                url = page.url
+                if _is_login_page(url):
+                    # Still on login page, wait and retry
+                    time.sleep(poll_interval)
+                    elapsed += poll_interval
+                    continue
+
+                # Check if we're back on Copilot with chat input
+                if "m365.cloud.microsoft" in url:
+                    # Try to find chat input
+                    try:
+                        page.wait_for_selector(input_selector, timeout=3000, state='visible')
+                        logger.info("Login completed successfully")
+                        self.last_connection_error = self.ERROR_NONE
+                        return True
+                    except PlaywrightTimeoutError:
+                        # Chat input not visible yet, might still be loading
+                        pass
+
+                time.sleep(poll_interval)
+                elapsed += poll_interval
+
+            except PlaywrightError as e:
+                logger.debug("Error during login wait: %s", e)
+                time.sleep(poll_interval)
+                elapsed += poll_interval
+
+        logger.warning("Login timeout - user did not complete login within %ds", timeout)
+        return False
 
     def _check_copilot_state(self, timeout: int = 5) -> str:
         """
@@ -927,6 +1073,7 @@ class CopilotHandler:
         prompt: str,
         reference_files: Optional[list[Path]] = None,
         skip_clear_wait: bool = False,
+        max_retries: int = 2,
     ) -> list[str]:
         """
         Implementation of translate_sync that runs in the Playwright thread.
@@ -937,6 +1084,7 @@ class CopilotHandler:
         Args:
             skip_clear_wait: Skip response clear verification (for 2nd+ batches
                            where we just finished getting a response)
+            max_retries: Number of retries on Copilot error responses
         """
         # Call _connect_impl directly since we're already in the Playwright thread
         # (calling connect() would cause nested executor calls)
@@ -946,30 +1094,69 @@ class CopilotHandler:
                 raise RuntimeError("Copilotへのログインが必要です。Edgeブラウザでログインしてください。")
             raise RuntimeError("ブラウザに接続できませんでした。Edgeが起動しているか確認してください。")
 
-        # Start a new chat to clear previous context (prevents using old responses)
-        self.start_new_chat(skip_clear_wait=skip_clear_wait)
+        for attempt in range(max_retries + 1):
+            # Start a new chat to clear previous context (prevents using old responses)
+            self.start_new_chat(skip_clear_wait=skip_clear_wait if attempt == 0 else True)
 
-        # Attach reference files first (before sending prompt)
-        if reference_files:
-            for file_path in reference_files:
-                if file_path.exists():
-                    self._attach_file(file_path)
+            # Attach reference files first (before sending prompt)
+            if reference_files:
+                for file_path in reference_files:
+                    if file_path.exists():
+                        self._attach_file(file_path)
 
-        # Send the prompt
-        self._send_message(prompt)
+            # Send the prompt
+            self._send_message(prompt)
 
-        # Get response
-        result = self._get_response()
+            # Get response
+            result = self._get_response()
 
-        # Save storage_state after successful translation (session is confirmed valid)
-        self._save_storage_state()
+            # Check for Copilot error response patterns
+            if result and _is_copilot_error_response(result):
+                logger.warning(
+                    "Copilot returned error response (attempt %d/%d): %s",
+                    attempt + 1, max_retries + 1, result[:100]
+                )
 
-        # Reset chat after translation to ensure clean state for next request
-        # This prevents stale responses from being detected on subsequent translations
-        self.start_new_chat(skip_clear_wait=True)
+                if attempt < max_retries:
+                    # Bring browser to foreground - user may need to log in
+                    if self._page:
+                        self._bring_to_foreground_impl(self._page)
+                        logger.info("Browser brought to foreground - check if login is needed")
 
-        # Parse batch result
-        return self._parse_batch_result(result, len(texts))
+                        # Wait a bit for user to see the browser
+                        time.sleep(2)
+
+                        # Re-check connection state
+                        if not self._is_page_valid():
+                            logger.info("Page became invalid, waiting for login...")
+                            if self._wait_for_login_completion(self._page, timeout=60):
+                                logger.info("Login completed, retrying translation")
+                                continue
+                            else:
+                                raise RuntimeError("Copilotへのログインが必要です。Edgeブラウザでログインしてください。")
+
+                    continue
+                else:
+                    # Final attempt failed - show browser and raise error
+                    if self._page:
+                        self._bring_to_foreground_impl(self._page)
+                    raise RuntimeError(
+                        "Copilotがエラーを返しました。Edgeブラウザでログイン状態を確認してください。\n"
+                        f"エラー内容: {result[:100]}"
+                    )
+
+            # Save storage_state after successful translation (session is confirmed valid)
+            self._save_storage_state()
+
+            # Reset chat after translation to ensure clean state for next request
+            # This prevents stale responses from being detected on subsequent translations
+            self.start_new_chat(skip_clear_wait=True)
+
+            # Parse batch result
+            return self._parse_batch_result(result, len(texts))
+
+        # Should not reach here, but return empty list as fallback
+        return [""] * len(texts)
 
     def translate_single(
         self,
@@ -1000,7 +1187,7 @@ class CopilotHandler:
         prompt: str,
         reference_files: Optional[list[Path]] = None,
         on_chunk: "Callable[[str], None] | None" = None,
-        max_retries: int = 1,
+        max_retries: int = 2,
     ) -> str:
         """Implementation of translate_single that runs in the Playwright thread.
 
@@ -1039,19 +1226,38 @@ class CopilotHandler:
 
             # Check for Copilot error response patterns
             if result and _is_copilot_error_response(result):
+                logger.warning(
+                    "Copilot returned error response (attempt %d/%d): %s",
+                    attempt + 1, max_retries + 1, result[:100]
+                )
+
                 if attempt < max_retries:
-                    logger.warning(
-                        "Copilot returned error response (attempt %d/%d), retrying with new chat: %s",
-                        attempt + 1, max_retries + 1, result[:100]
-                    )
+                    # Bring browser to foreground - user may need to log in
+                    if self._page:
+                        self._bring_to_foreground_impl(self._page)
+                        logger.info("Browser brought to foreground - check if login is needed")
+
+                        # Wait a bit for user to see the browser and potentially complete auth
+                        time.sleep(2)
+
+                        # Re-check connection state
+                        if not self._is_page_valid():
+                            logger.info("Page became invalid, waiting for login...")
+                            if self._wait_for_login_completion(self._page, timeout=60):
+                                logger.info("Login completed, retrying translation")
+                                continue
+                            else:
+                                raise RuntimeError("Copilotへのログインが必要です。Edgeブラウザでログインしてください。")
+
                     continue
                 else:
-                    logger.error(
-                        "Copilot returned error response after %d attempts: %s",
-                        max_retries + 1, result[:100]
+                    # Final attempt failed - show browser and raise error
+                    if self._page:
+                        self._bring_to_foreground_impl(self._page)
+                    raise RuntimeError(
+                        "Copilotがエラーを返しました。Edgeブラウザでログイン状態を確認してください。\n"
+                        f"エラー内容: {result[:100]}"
                     )
-                    # Return empty to let caller handle the error
-                    return ""
 
             # Save storage_state after successful translation
             self._save_storage_state()

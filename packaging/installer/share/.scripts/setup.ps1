@@ -263,6 +263,40 @@ function Cleanup-Directory {
     }
 }
 
+function Update-PyVenvConfig {
+    param(
+        [string]$SetupPath
+    )
+
+    $pyvenvPath = Join-Path $SetupPath ".venv\\pyvenv.cfg"
+    if (-not (Test-Path $pyvenvPath)) {
+        throw "pyvenv.cfg not found. The package seems to be incomplete." 
+    }
+
+    $pythonExe = Get-ChildItem -Path (Join-Path $SetupPath ".uv-python") -Filter "python.exe" -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $pythonExe) {
+        throw "python.exe not found under .uv-python. Please ensure the distribution contains the bundled Python runtime."
+    }
+
+    $pythonHome = Split-Path -Parent $pythonExe.FullName
+
+    $updated = $false
+    $newLines = Get-Content -Path $pyvenvPath | ForEach-Object {
+        if ($_ -match '^home\s*=') {
+            $updated = $true
+            "home = $pythonHome"
+        } else {
+            $_
+        }
+    }
+
+    if (-not $updated) {
+        $newLines += "home = $pythonHome"
+    }
+
+    $newLines | Set-Content -Path $pyvenvPath -Encoding ASCII
+}
+
 # ============================================================
 # Main Setup Logic (wrapped in function for error handling)
 # ============================================================
@@ -432,6 +466,13 @@ function Invoke-Setup {
         Write-Host "[OK] Extraction completed" -ForegroundColor Green
     }
     Write-Status -Message "Files extracted" -Progress -Step "Step 3/4: Extracting" -Percent 80
+
+    # Fix pyvenv.cfg placeholder (__PYTHON_HOME__) to the actual bundled runtime path
+    Write-Status -Message "Configuring Python runtime..." -Progress -Step "Step 3/4: Extracting" -Percent 85
+    Update-PyVenvConfig -SetupPath $SetupPath
+    if (-not $GuiMode) {
+        Write-Host "      Updated pyvenv.cfg with bundled Python path" -ForegroundColor Gray
+    }
 
     # ============================================================
     # Restore/Merge backed up user data files

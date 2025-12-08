@@ -262,7 +262,7 @@ def _ensure_unique_sheet_name(name: str, existing_names: set[str]) -> str:
 # openpyxl fallback
 # =============================================================================
 import openpyxl
-from openpyxl.utils import get_column_letter
+from openpyxl.utils import get_column_letter, range_boundaries
 from openpyxl.styles import Font
 
 
@@ -600,20 +600,33 @@ class ExcelProcessor(FileProcessor):
             for sheet_idx, sheet_name in enumerate(wb.sheetnames):
                 sheet = wb[sheet_name]
 
-                for row in sheet.iter_rows():
-                    for cell in row:
-                        if cell.value and isinstance(cell.value, str):
-                            if self.cell_translator.should_translate(str(cell.value), output_language):
-                                # Use cell's actual row and column attributes
-                                row_idx = cell.row
-                                col_idx = cell.column
+                # Limit iteration to the used range for the sheet to avoid scanning
+                # entire default grids (e.g., 1,048,576 rows).
+                min_col, min_row, max_col, max_row = range_boundaries(sheet.calculate_dimension())
+
+                for row_idx, row_values in enumerate(
+                    sheet.iter_rows(
+                        min_row=min_row,
+                        max_row=max_row,
+                        min_col=min_col,
+                        max_col=max_col,
+                        values_only=True,
+                    ),
+                    start=min_row,
+                ):
+                    if not row_values:
+                        continue
+
+                    for col_idx, value in enumerate(row_values, start=min_col):
+                        if value and isinstance(value, str):
+                            if self.cell_translator.should_translate(str(value), output_language):
                                 col_letter = get_column_letter(col_idx)
 
                                 # Font info not available in read_only mode
                                 # Will be fetched during apply_translations
                                 yield TextBlock(
                                     id=f"{sheet_name}_{col_letter}{row_idx}",
-                                    text=str(cell.value),
+                                    text=str(value),
                                     location=f"{sheet_name}, {col_letter}{row_idx}",
                                     metadata={
                                         'sheet': sheet_name,

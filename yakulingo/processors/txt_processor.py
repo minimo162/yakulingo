@@ -137,6 +137,7 @@ class TxtProcessor(FileProcessor):
         output_path: Path,
         translations: dict[str, str],
         direction: str = "jp_to_en",
+        settings=None,
     ) -> Optional[dict[str, Any]]:
         """
         Apply translations to text file.

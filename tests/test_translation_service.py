@@ -91,6 +91,38 @@ class TestBatchTranslatorCreateBatches:
         assert batches[3][0].id == "3"
 
 
+class TestFilterBlocksBySection:
+    """Section filtering for partial translation."""
+
+    @pytest.fixture
+    def service(self):
+        return TranslationService(Mock(), AppSettings())
+
+    def test_empty_selection_skips_all_blocks(self, service):
+        """No sections selected should result in no blocks being processed."""
+
+        blocks = [
+            TextBlock(id="sheet1_A1", text="Hello", location="Sheet1, A1", metadata={"sheet_idx": 0}),
+            TextBlock(id="sheet2_A1", text="World", location="Sheet2, A1", metadata={"sheet_idx": 1}),
+        ]
+
+        filtered = service._filter_blocks_by_section(blocks, [])
+
+        assert filtered == []
+
+    def test_selected_section_included(self, service):
+        """Only blocks from selected sections are kept."""
+
+        blocks = [
+            TextBlock(id="sheet1_A1", text="Hello", location="Sheet1, A1", metadata={"sheet_idx": 0}),
+            TextBlock(id="sheet2_A1", text="World", location="Sheet2, A1", metadata={"sheet_idx": 1}),
+        ]
+
+        filtered = service._filter_blocks_by_section(blocks, [1])
+
+        assert [block.id for block in filtered] == ["sheet2_A1"]
+
+
 class TestTranslationServiceInit:
     """Tests for TranslationService initialization"""
 

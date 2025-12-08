@@ -745,7 +745,7 @@ class YakuLingoApp:
         if self._translate_button is None:
             return
 
-        if self.state.text_translating:
+        if self.state.is_translating():
             # Show loading spinner and disable
             self._translate_button.props('loading disable')
         elif not self.state.can_translate():

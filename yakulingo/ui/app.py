@@ -1858,15 +1858,10 @@ class YakuLingoApp:
 
         try:
             # Extract sample text from file (in thread to avoid blocking)
-            def extract_sample():
-                processor = self.translation_service._get_processor(file_path)
-                blocks = list(processor.extract_text_blocks(file_path))
-                if not blocks:
-                    return None
-                # Get sample text (first 1000 chars from first 5 blocks)
-                return ' '.join(block.text for block in blocks[:5])[:1000]
-
-            sample_text = await asyncio.to_thread(extract_sample)
+            sample_text = await asyncio.to_thread(
+                self.translation_service.extract_detection_sample,
+                file_path,
+            )
 
             if not sample_text or not sample_text.strip():
                 return

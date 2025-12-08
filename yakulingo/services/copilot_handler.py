@@ -715,6 +715,16 @@ class CopilotHandler:
 
         try:
             page.wait_for_selector(input_selector, timeout=15000, state='visible')
+
+            # Check for authentication dialog that may block input
+            auth_dialog = page.query_selector('.fui-DialogTitle, [role="dialog"] h2')
+            if auth_dialog:
+                dialog_text = auth_dialog.inner_text().strip()
+                if "認証" in dialog_text or "ログイン" in dialog_text or "サインイン" in dialog_text:
+                    logger.warning("Authentication dialog detected during connect: %s", dialog_text)
+                    self.last_connection_error = self.ERROR_LOGIN_REQUIRED
+                    return False
+
             logger.info("Copilot chat UI ready")
             time.sleep(0.2)  # Wait for session to fully initialize
             return True
@@ -1060,6 +1070,15 @@ class CopilotHandler:
         PlaywrightTimeoutError = error_types['TimeoutError']
 
         logger.info("Sending message to Copilot (length: %d chars)", len(message))
+
+        # Check for authentication dialog that blocks input
+        # This can appear even after initial login (MFA re-auth, session expiry)
+        auth_dialog = self._page.query_selector('.fui-DialogTitle, [role="dialog"] h2')
+        if auth_dialog:
+            dialog_text = auth_dialog.inner_text().strip()
+            if "認証" in dialog_text or "ログイン" in dialog_text or "サインイン" in dialog_text:
+                logger.warning("Authentication dialog detected: %s", dialog_text)
+                raise RuntimeError(f"Edgeブラウザで認証が必要です。ダイアログを確認してください: {dialog_text}")
 
         try:
             # Find input area

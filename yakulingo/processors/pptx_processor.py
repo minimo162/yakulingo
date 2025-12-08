@@ -7,6 +7,7 @@ import logging
 from pathlib import Path
 from typing import Iterator
 from pptx import Presentation
+from pptx.enum.shapes import MSO_SHAPE_TYPE
 from pptx.util import Pt
 
 from .base import FileProcessor
@@ -79,79 +80,15 @@ class PptxProcessor(FileProcessor):
         prs = Presentation(file_path)
 
         for slide_idx, slide in enumerate(prs.slides):
-            shape_counter = 0
-            table_counter = 0
+            counters = {'shape': 0, 'table': 0}
 
             for shape in slide.shapes:
-                # === Text Shapes ===
-                if shape.has_text_frame:
-                    for para_idx, para in enumerate(shape.text_frame.paragraphs):
-                        if para.text and self.para_translator.should_translate(para.text, output_language):
-                            # Get font info from first run
-                            font_name = None
-                            font_size = 18.0  # default for PPT
-                            if para.runs:
-                                first_run = para.runs[0]
-                                if first_run.font.name:
-                                    font_name = first_run.font.name
-                                if first_run.font.size:
-                                    font_size = first_run.font.size.pt
-
-                            # Get font from first valid run if multiple runs
-                            if len(para.runs) > 1:
-                                font_names = [r.font.name for r in para.runs if r.font.name]
-                                if font_names:
-                                    font_name = font_names[0]
-
-                            yield TextBlock(
-                                id=f"s{slide_idx}_sh{shape_counter}_p{para_idx}",
-                                text=para.text,
-                                location=f"Slide {slide_idx + 1}, Shape {shape_counter + 1}",
-                                metadata={
-                                    'type': 'shape',
-                                    'slide_idx': slide_idx,
-                                    'shape': shape_counter,
-                                    'para': para_idx,
-                                    'font_name': font_name,
-                                    'font_size': font_size,
-                                }
-                            )
-                    shape_counter += 1
-
-                # === Tables (Excel-compatible) ===
-                if shape.has_table:
-                    table = shape.table
-                    for row_idx, row in enumerate(table.rows):
-                        for cell_idx, cell in enumerate(row.cells):
-                            cell_text = cell.text_frame.text if cell.text_frame else ""
-                            if cell_text and self.cell_translator.should_translate(cell_text, output_language):
-                                # Get font info
-                                font_name = None
-                                font_size = 14.0
-                                if cell.text_frame and cell.text_frame.paragraphs:
-                                    first_para = cell.text_frame.paragraphs[0]
-                                    if first_para.runs:
-                                        first_run = first_para.runs[0]
-                                        if first_run.font.name:
-                                            font_name = first_run.font.name
-                                        if first_run.font.size:
-                                            font_size = first_run.font.size.pt
-
-                                yield TextBlock(
-                                    id=f"s{slide_idx}_tbl{table_counter}_r{row_idx}_c{cell_idx}",
-                                    text=cell_text,
-                                    location=f"Slide {slide_idx + 1}, Table {table_counter + 1}, Row {row_idx + 1}, Cell {cell_idx + 1}",
-                                    metadata={
-                                        'type': 'table_cell',
-                                        'slide_idx': slide_idx,
-                                        'table': table_counter,
-                                        'row': row_idx,
-                                        'col': cell_idx,
-                                        'font_name': font_name,
-                                        'font_size': font_size,
-                                    }
-                                )
-                    table_counter += 1
+                yield from self._extract_shape_text_blocks(
+                    shape,
+                    slide_idx,
+                    counters,
+                    output_language,
+                )
 
             # === Speaker Notes ===
             if slide.has_notes_slide and slide.notes_slide.notes_text_frame:
@@ -182,44 +119,16 @@ class PptxProcessor(FileProcessor):
         font_manager = FontManager(direction, settings)
 
         for slide_idx, slide in enumerate(prs.slides):
-            shape_counter = 0
-            table_counter = 0
+            counters = {'shape': 0, 'table': 0}
 
             for shape in slide.shapes:
-                # === Apply to text shapes ===
-                if shape.has_text_frame:
-                    for para_idx, para in enumerate(shape.text_frame.paragraphs):
-                        block_id = f"s{slide_idx}_sh{shape_counter}_p{para_idx}"
-                        if block_id in translations:
-                            self._apply_to_paragraph(para, translations[block_id], font_manager)
-                    shape_counter += 1
-
-                # === Apply to tables ===
-                if shape.has_table:
-                    table = shape.table
-                    for row_idx, row in enumerate(table.rows):
-                        for cell_idx, cell in enumerate(row.cells):
-                            block_id = f"s{slide_idx}_tbl{table_counter}_r{row_idx}_c{cell_idx}"
-                            if block_id in translations:
-                                text_frame = cell.text_frame
-                                if text_frame:
-                                    paragraphs = list(text_frame.paragraphs)
-                                    if paragraphs:
-                                        target_para = paragraphs[0]
-                                    else:
-                                        target_para = text_frame.add_paragraph()
-
-                                    self._apply_to_paragraph(
-                                        target_para,
-                                        translations[block_id],
-                                        font_manager
-                                    )
-
-                                    # Remove additional paragraphs entirely to avoid
-                                    # trailing blank lines when reading cell.text
-                                    for para in paragraphs[1:]:
-                                        text_frame._element.remove(para._p)
-                    table_counter += 1
+                self._apply_translations_to_shape(
+                    shape,
+                    slide_idx,
+                    counters,
+                    translations,
+                    font_manager,
+                )
 
             # === Apply to speaker notes ===
             if slide.has_notes_slide and slide.notes_slide.notes_text_frame:
@@ -230,6 +139,149 @@ class PptxProcessor(FileProcessor):
                         self._apply_to_paragraph(para, translations[block_id], font_manager)
 
         prs.save(output_path)
+
+    def _extract_shape_text_blocks(
+        self,
+        shape,
+        slide_idx: int,
+        counters: dict[str, int],
+        output_language: str,
+    ) -> Iterator[TextBlock]:
+        """Recursively extract text blocks from a shape and its children."""
+        # === Text Shapes ===
+        if shape.has_text_frame:
+            for para_idx, para in enumerate(shape.text_frame.paragraphs):
+                if para.text and self.para_translator.should_translate(para.text, output_language):
+                    # Get font info from first run
+                    font_name = None
+                    font_size = 18.0  # default for PPT
+                    if para.runs:
+                        first_run = para.runs[0]
+                        if first_run.font.name:
+                            font_name = first_run.font.name
+                        if first_run.font.size:
+                            font_size = first_run.font.size.pt
+
+                    # Get font from first valid run if multiple runs
+                    if len(para.runs) > 1:
+                        font_names = [r.font.name for r in para.runs if r.font.name]
+                        if font_names:
+                            font_name = font_names[0]
+
+                    yield TextBlock(
+                        id=f"s{slide_idx}_sh{counters['shape']}_p{para_idx}",
+                        text=para.text,
+                        location=f"Slide {slide_idx + 1}, Shape {counters['shape'] + 1}",
+                        metadata={
+                            'type': 'shape',
+                            'slide_idx': slide_idx,
+                            'shape': counters['shape'],
+                            'para': para_idx,
+                            'font_name': font_name,
+                            'font_size': font_size,
+                        }
+                    )
+            counters['shape'] += 1
+
+        # === Tables (Excel-compatible) ===
+        if shape.has_table:
+            table = shape.table
+            for row_idx, row in enumerate(table.rows):
+                for cell_idx, cell in enumerate(row.cells):
+                    cell_text = cell.text_frame.text if cell.text_frame else ""
+                    if cell_text and self.cell_translator.should_translate(cell_text, output_language):
+                        # Get font info
+                        font_name = None
+                        font_size = 14.0
+                        if cell.text_frame and cell.text_frame.paragraphs:
+                            first_para = cell.text_frame.paragraphs[0]
+                            if first_para.runs:
+                                first_run = first_para.runs[0]
+                                if first_run.font.name:
+                                    font_name = first_run.font.name
+                                if first_run.font.size:
+                                    font_size = first_run.font.size.pt
+
+                        yield TextBlock(
+                            id=f"s{slide_idx}_tbl{counters['table']}_r{row_idx}_c{cell_idx}",
+                            text=cell_text,
+                            location=f"Slide {slide_idx + 1}, Table {counters['table'] + 1}, Row {row_idx + 1}, Cell {cell_idx + 1}",
+                            metadata={
+                                'type': 'table_cell',
+                                'slide_idx': slide_idx,
+                                'table': counters['table'],
+                                'row': row_idx,
+                                'col': cell_idx,
+                                'font_name': font_name,
+                                'font_size': font_size,
+                            }
+                        )
+            counters['table'] += 1
+
+        # === Grouped shapes ===
+        if shape.shape_type == MSO_SHAPE_TYPE.GROUP:
+            for sub_shape in shape.shapes:
+                yield from self._extract_shape_text_blocks(
+                    sub_shape,
+                    slide_idx,
+                    counters,
+                    output_language,
+                )
+
+    def _apply_translations_to_shape(
+        self,
+        shape,
+        slide_idx: int,
+        counters: dict[str, int],
+        translations: dict[str, str],
+        font_manager: FontManager,
+    ) -> None:
+        """Recursively apply translations to a shape and its children."""
+        # === Apply to text shapes ===
+        if shape.has_text_frame:
+            for para_idx, para in enumerate(shape.text_frame.paragraphs):
+                block_id = f"s{slide_idx}_sh{counters['shape']}_p{para_idx}"
+                if block_id in translations:
+                    self._apply_to_paragraph(para, translations[block_id], font_manager)
+            counters['shape'] += 1
+
+        # === Apply to tables ===
+        if shape.has_table:
+            table = shape.table
+            for row_idx, row in enumerate(table.rows):
+                for cell_idx, cell in enumerate(row.cells):
+                    block_id = f"s{slide_idx}_tbl{counters['table']}_r{row_idx}_c{cell_idx}"
+                    if block_id in translations:
+                        text_frame = cell.text_frame
+                        if text_frame:
+                            paragraphs = list(text_frame.paragraphs)
+                            if paragraphs:
+                                target_para = paragraphs[0]
+                            else:
+                                target_para = text_frame.add_paragraph()
+
+                            self._apply_to_paragraph(
+                                target_para,
+                                translations[block_id],
+                                font_manager
+                            )
+
+                            # Remove additional paragraphs entirely to avoid
+                            # trailing blank lines when reading cell.text
+                            for para in paragraphs[1:]:
+                                text_frame._element.remove(para._p)
+            counters['table'] += 1
+
+        # === Grouped shapes ===
+        if shape.shape_type == MSO_SHAPE_TYPE.GROUP:
+            for sub_shape in shape.shapes:
+                self._apply_translations_to_shape(
+                    sub_shape,
+                    slide_idx,
+                    counters,
+                    translations,
+                    font_manager,
+                )
 
     def _apply_to_paragraph(self, para, translated_text: str, font_manager: FontManager) -> None:
         """

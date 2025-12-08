@@ -16,6 +16,7 @@ from functools import lru_cache
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator, Optional
+from xml.etree import ElementTree as ET
 
 from .base import FileProcessor
 from .translators import CellTranslator
@@ -345,7 +346,23 @@ class ExcelProcessor(FileProcessor):
             app.quit()
 
     def _get_file_info_openpyxl(self, file_path: Path) -> FileInfo:
-        """Get file info using openpyxl (fast: sheet names only, no cell scanning)"""
+        """Get file info using fast ZIP parsing, falling back to openpyxl."""
+        # Fast path: parse workbook.xml directly for sheet names (avoids full workbook load)
+        try:
+            fast_details = self._get_sheet_details_fast(file_path)
+            if fast_details is not None:
+                return FileInfo(
+                    path=file_path,
+                    file_type=FileType.EXCEL,
+                    size_bytes=file_path.stat().st_size,
+                    sheet_count=len(fast_details),
+                    section_details=fast_details,
+                )
+        except Exception as e:
+            # If fast path fails for any reason, fall back to openpyxl
+            logger.debug("Fast sheet parse failed, falling back to openpyxl: %s", e)
+
+        # Fallback: use openpyxl (read_only) to obtain sheet names
         try:
             wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
             try:
@@ -367,6 +384,29 @@ class ExcelProcessor(FileProcessor):
             sheet_count=sheet_count,
             section_details=section_details,
         )
+
+    def _get_sheet_details_fast(self, file_path: Path) -> Optional[list[SectionDetail]]:
+        """Extract sheet metadata by reading workbook.xml directly.
+
+        This avoids fully loading the workbook with openpyxl, which can be slow for
+        large files or when many uploads are processed in succession.
+        """
+        if file_path.suffix.lower() != ".xlsx":
+            return None
+
+        with zipfile.ZipFile(file_path) as zf:
+            workbook_xml = zf.read("xl/workbook.xml")
+
+        root = ET.fromstring(workbook_xml)
+        namespace = {"ns": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+        sheets = root.findall("ns:sheets/ns:sheet", namespaces=namespace)
+
+        section_details = [
+            SectionDetail(index=idx, name=sheet.attrib.get("name", f"Sheet{idx+1}"))
+            for idx, sheet in enumerate(sheets)
+        ]
+
+        return section_details if section_details else None
 
     def extract_text_blocks(
         self, file_path: Path, output_language: str = "en"

@@ -1185,6 +1185,7 @@ class TestDetectLanguage:
         result = service.detect_language("東京")
         assert result == "日本語"
 
+
     def test_detect_language_fallback_on_error_response(self, mock_copilot):
         """detect_language falls back when Copilot returns error message"""
         # This error message is longer than 20 chars, triggering fallback
@@ -1194,6 +1195,26 @@ class TestDetectLanguage:
         # CJK-only text should be detected via fallback
         result = service.detect_language("東京")
         assert result == "日本語"
+
+
+class TestExtractDetectionSample:
+    """Tests for TranslationService.extract_detection_sample"""
+
+    def test_retries_with_alternate_direction_for_english_docx(self, tmp_path):
+        """English-only files still return a sample for detection."""
+        from docx import Document
+
+        doc_path = tmp_path / "english.docx"
+        doc = Document()
+        doc.add_paragraph("Hello world")
+        doc.save(doc_path)
+
+        service = TranslationService(Mock(), AppSettings())
+
+        sample = service.extract_detection_sample(doc_path)
+
+        assert sample is not None
+        assert "Hello world" in sample
 
 
 # --- Tests: adjust_translation() ---

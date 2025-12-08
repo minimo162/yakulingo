@@ -1129,6 +1129,37 @@ class TranslationService:
                 error_message=str(e),
             )
 
+    def extract_detection_sample(self, file_path: Path, max_blocks: int = 5) -> Optional[str]:
+        """Extract a lightweight text sample for language detection.
+
+        The standard extraction path filters blocks based on translation
+        direction (JP→EN vs EN→JP). That filter can produce no blocks for
+        English-only or Chinese-only files when using the default JP→EN
+        path. To avoid missing content, this method retries extraction with
+        the opposite direction if the first pass returns no blocks.
+
+        Args:
+            file_path: File to inspect.
+            max_blocks: Maximum number of text blocks to sample.
+
+        Returns:
+            Concatenated sample text (up to 1000 chars) or None if nothing
+            is readable.
+        """
+        processor = self._get_processor(file_path)
+
+        # First pass: JP→EN extraction (default)
+        blocks = list(processor.extract_text_blocks(file_path, output_language="en"))
+
+        # Retry with EN→JP extraction to capture English/Chinese-only files
+        if not blocks:
+            blocks = list(processor.extract_text_blocks(file_path, output_language="jp"))
+
+        if not blocks:
+            return None
+
+        return " ".join(block.text for block in blocks[:max_blocks])[:1000]
+
     def adjust_translation(
         self,
         text: str,

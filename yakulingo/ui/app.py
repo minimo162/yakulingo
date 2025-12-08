@@ -2457,7 +2457,7 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
 
         # Add JavaScript for dynamic resize handling
         # This updates CSS variables when the window is resized
-    ui.add_head_html('''<script>
+        ui.add_head_html('''<script>
 (function() {
     // Constants matching Python calculation (from _detect_display_settings)
     const REFERENCE_WINDOW_WIDTH = 1900;

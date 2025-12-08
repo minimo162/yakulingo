@@ -3,6 +3,7 @@
 
 import pytest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import Mock, MagicMock, patch, AsyncMock
 import asyncio
 import sys
@@ -227,6 +228,49 @@ class TestYakuLingoAppInit:
 
         # Verify settings object is stored
         assert app.settings is not None
+
+
+# =============================================================================
+# Tests: Native mode detection
+# =============================================================================
+
+class TestNativeModeDetection:
+    """Tests for native mode enablement logic"""
+
+    def test_native_disabled_without_display(self, monkeypatch):
+        """Headless Linux should disable native mode to avoid pywebview crashes."""
+
+        import yakulingo.ui.app as ui_app
+
+        monkeypatch.setattr(sys, 'platform', 'linux')
+        monkeypatch.delenv('DISPLAY', raising=False)
+        monkeypatch.delenv('WAYLAND_DISPLAY', raising=False)
+
+        assert ui_app._native_mode_enabled(True) is False
+
+    def test_native_disabled_without_backend(self, monkeypatch):
+        """Native mode should fall back when pywebview has no GUI backend."""
+
+        import yakulingo.ui.app as ui_app
+
+        monkeypatch.setattr(sys, 'platform', 'linux')
+        monkeypatch.setenv('DISPLAY', ':0')
+        monkeypatch.setenv('WAYLAND_DISPLAY', 'wayland-0')
+        monkeypatch.setitem(sys.modules, 'webview', SimpleNamespace(guilib=None))
+
+        assert ui_app._native_mode_enabled(True) is False
+
+    def test_native_enabled_when_backend_available(self, monkeypatch):
+        """Native mode remains enabled when a GUI backend is present."""
+
+        import yakulingo.ui.app as ui_app
+
+        monkeypatch.setattr(sys, 'platform', 'linux')
+        monkeypatch.setenv('DISPLAY', ':0')
+        monkeypatch.setenv('WAYLAND_DISPLAY', 'wayland-0')
+        monkeypatch.setitem(sys.modules, 'webview', SimpleNamespace(guilib=object()))
+
+        assert ui_app._native_mode_enabled(True) is True
 
 
 # =============================================================================

@@ -2242,6 +2242,44 @@ def _detect_display_settings() -> tuple[tuple[int, int], tuple[int, int, int, in
         return (default_window, default_panels)
 
 
+def _native_mode_enabled(native_requested: bool) -> bool:
+    """Return whether native (pywebview) mode can be used safely."""
+
+    if not native_requested:
+        return False
+
+    import os
+    import sys
+
+    # Linux containers often lack a display server; avoid pywebview crashes
+    if sys.platform.startswith('linux') and not (
+        os.environ.get('DISPLAY') or os.environ.get('WAYLAND_DISPLAY')
+    ):
+        logger.warning(
+            "Native mode requested but no display detected (DISPLAY / WAYLAND_DISPLAY); "
+            "falling back to browser mode."
+        )
+        return False
+
+    try:
+        import webview  # type: ignore
+    except Exception as e:  # pragma: no cover - defensive import guard
+        logger.warning(
+            "Native mode requested but pywebview is unavailable: %s; starting in browser mode.", e
+        )
+        return False
+
+    # pywebview sets a resolved backend in `guilib`; if it is None, no GUI toolkit is present
+    if getattr(webview, 'guilib', None) is None:
+        logger.warning(
+            "Native mode requested but no GUI backend was found for pywebview; "
+            "starting in browser mode instead."
+        )
+        return False
+
+    return True
+
+
 def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
     """Run the application"""
     import time
@@ -2257,14 +2295,19 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
 
     # Detect optimal window size BEFORE ui.run() to avoid resize flicker
     _t2 = time.perf_counter()
+    # Fallback to browser mode when pywebview cannot create a native window (e.g., headless Linux)
+    native = _native_mode_enabled(native)
+    logger.info("Native mode enabled: %s", native)
     if native:
         window_size, panel_sizes = _detect_display_settings()
         yakulingo_app._panel_sizes = panel_sizes  # (sidebar_width, input_panel_width, result_content_width, input_panel_max_width)
         yakulingo_app._window_size = window_size
+        run_window_size = window_size
     else:
         window_size = (1900, 1100)  # Default size for browser mode
         yakulingo_app._panel_sizes = (260, 420, 800, 900)  # Default panel sizes
         yakulingo_app._window_size = window_size
+        run_window_size = None  # Passing a size would re-enable native mode inside NiceGUI
     logger.info("[TIMING] _detect_display_settings: %.2fs", time.perf_counter() - _t2)
 
     # Track if cleanup has been executed (prevent double execution)
@@ -2557,7 +2600,7 @@ document.fonts.ready.then(function() {
         dark=False,
         reload=False,
         native=native,
-        window_size=window_size,
+        window_size=run_window_size,
         frameless=False,
         show=False,  # Don't open browser (native mode uses pywebview window)
         reconnect_timeout=30.0,  # Increase from default 3s for stable WebSocket connection

@@ -156,6 +156,13 @@ class YakuLingoApp:
             logger.info("[TIMING] AppSettings.load: %.2fs", time.perf_counter() - start)
         return self._settings
 
+    @settings.setter
+    def settings(self, value: AppSettings):
+        """Allow injecting settings (useful for tests and future runtime updates)."""
+        self._settings = value
+        if value is not None:
+            self.state.reference_files = value.get_reference_file_paths(self._base_dir)
+
     def start_hotkey_manager(self):
         """Start the global hotkey manager for quick translation (Ctrl+J)."""
         import sys

@@ -894,6 +894,41 @@ class TestTranslateTextWithOptions:
         assert result.source_text == "テスト"
         # May have options or error depending on parsing
 
+    def test_streaming_callback_passed_to_translation(self, mock_copilot, service):
+        """Streaming callback is forwarded to Copilot translation call"""
+        mock_copilot.translate_single.side_effect = [
+            "日本語",  # detect_language result
+            """訳文: Hello\n解説: Greeting""",
+        ]
+
+        chunks: list[str] = []
+        def on_chunk(text: str):
+            chunks.append(text)
+
+        service.translate_text_with_options("こんにちは", on_chunk=on_chunk)
+
+        # The translation call should receive the streaming callback
+        assert mock_copilot.translate_single.call_args_list
+        assert mock_copilot.translate_single.call_args_list[-1].args[3] is on_chunk
+
+    def test_streaming_callback_passed_in_fallback(self, mock_copilot, service):
+        """Fallback path also forwards streaming callback to translation"""
+        # Force fallback by returning None from get_text_template
+        service.prompt_builder.get_text_template = Mock(return_value=None)
+        mock_copilot.translate_single.side_effect = [
+            "日本語",  # detect_language result
+            "訳文: Hello\n解説: Greeting",  # translation result
+        ]
+
+        chunks: list[str] = []
+        def on_chunk(text: str):
+            chunks.append(text)
+
+        service.translate_text_with_options("こんにちは", on_chunk=on_chunk)
+
+        assert mock_copilot.translate_single.call_args_list
+        assert mock_copilot.translate_single.call_args_list[-1].args[3] is on_chunk
+
 
 # --- Tests: detect_language_local() ---
 

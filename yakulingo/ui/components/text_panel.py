@@ -869,9 +869,9 @@ def _render_results_to_jp(
                         on_click=lambda: on_follow_up and on_follow_up('summarize', '')
                     ).props('flat no-caps').classes('adjust-option-btn-full')
 
-                    # Reply composer section
-                    if on_follow_up:
-                        _render_reply_composer(on_follow_up)
+        # Reply composer section (outside inline-adjust-panel, same structure as check-my-english)
+        if on_follow_up:
+            _render_reply_composer(on_follow_up)
 
 
 def _render_explanation(explanation: str):
@@ -1121,7 +1121,7 @@ def _render_reply_composer(
 ):
     """Render reply composer section for creating reply emails"""
 
-    with ui.element('div').classes('reply-composer-container w-full mt-2'):
+    with ui.element('div').classes('reply-composer-container w-full'):
         # Collapsed state: Button
         collapsed_container = ui.element('div').classes('w-full')
         # Expanded state: Input area
@@ -1164,10 +1164,11 @@ def _render_reply_composer(
                     # Create reply button
                     def create_reply():
                         intent = reply_input.value.strip() if reply_input.value else ''
-                        on_follow_up('reply', intent)
-                        reply_input.set_value('')
-                        expanded_container.style('display: none')
-                        collapsed_container.style('display: block')
+                        if intent:
+                            on_follow_up('reply', intent)
+                            reply_input.set_value('')
+                            expanded_container.style('display: none')
+                            collapsed_container.style('display: block')
 
                     ui.button(
                         '作成',

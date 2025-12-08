@@ -807,17 +807,162 @@ class CopilotHandler:
     def _bring_to_foreground_impl(self, page) -> None:
         """Bring browser window to foreground (internal implementation).
 
+        Uses multiple methods to ensure the window is brought to front:
+        1. Playwright's bring_to_front() - works within browser context
+        2. Windows API (pywin32/ctypes) - forces window to foreground
+
         Args:
             page: The Playwright page to bring to front
         """
         error_types = _get_playwright_errors()
         PlaywrightError = error_types['Error']
 
+        # Method 1: Playwright's bring_to_front
         try:
             page.bring_to_front()
-            logger.info("Browser window brought to foreground for login")
+            logger.debug("Playwright bring_to_front() called")
         except PlaywrightError as e:
-            logger.debug("Failed to bring window to foreground: %s", e)
+            logger.debug("Playwright bring_to_front failed: %s", e)
+
+        # Method 2: Windows API to force window to foreground
+        if sys.platform == "win32":
+            self._bring_edge_window_to_front()
+
+        logger.info("Browser window brought to foreground for login")
+
+    def _bring_edge_window_to_front(self) -> bool:
+        """Bring Edge browser window to foreground using Windows API.
+
+        Uses multiple approaches to ensure window activation:
+        1. Find Edge window by process ID (most reliable for our dedicated Edge)
+        2. Find Edge window by class name and title (fallback)
+        3. Use SetForegroundWindow with workarounds for Windows restrictions
+
+        Returns:
+            True if window was successfully brought to front
+        """
+        if sys.platform != "win32":
+            return False
+
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            # Windows API constants
+            SW_RESTORE = 9
+            SW_SHOW = 5
+            HWND_TOPMOST = -1
+            HWND_NOTOPMOST = -2
+            SWP_NOMOVE = 0x0002
+            SWP_NOSIZE = 0x0001
+            SWP_SHOWWINDOW = 0x0040
+
+            user32 = ctypes.windll.user32
+
+            # Find Edge window
+            # Edge uses "Chrome_WidgetWin_1" class (same as Chrome)
+            edge_hwnd = None
+            target_pid = self.edge_process.pid if self.edge_process else None
+
+            # Callback function for EnumWindows
+            EnumWindowsProc = ctypes.WINFUNCTYPE(
+                wintypes.BOOL, wintypes.HWND, wintypes.LPARAM
+            )
+
+            def enum_windows_callback(hwnd, lparam):
+                nonlocal edge_hwnd
+                # Check if window is visible
+                if not user32.IsWindowVisible(hwnd):
+                    return True
+
+                # Get window class name
+                class_name = ctypes.create_unicode_buffer(256)
+                user32.GetClassNameW(hwnd, class_name, 256)
+
+                # Only check Chrome_WidgetWin_1 windows (Edge/Chrome)
+                if class_name.value != "Chrome_WidgetWin_1":
+                    return True
+
+                # Method 1: Match by process ID (most reliable)
+                if target_pid:
+                    window_pid = wintypes.DWORD()
+                    user32.GetWindowThreadProcessId(hwnd, ctypes.byref(window_pid))
+                    if window_pid.value == target_pid:
+                        edge_hwnd = hwnd
+                        return False  # Stop enumeration
+
+                # Method 2: Match by window title (fallback)
+                title_length = user32.GetWindowTextLengthW(hwnd) + 1
+                title = ctypes.create_unicode_buffer(title_length)
+                user32.GetWindowTextW(hwnd, title, title_length)
+                title_text = title.value.lower()
+
+                # Look for Edge windows with Copilot or login content
+                if ("edge" in title_text or "copilot" in title_text or
+                    "m365" in title_text or "microsoft 365" in title_text or
+                    "microsoft" in title_text or "sign in" in title_text or
+                    "サインイン" in title_text or "ログイン" in title_text):
+                    edge_hwnd = hwnd
+                    return False  # Stop enumeration
+
+                return True
+
+            # Enumerate all windows
+            user32.EnumWindows(EnumWindowsProc(enum_windows_callback), 0)
+
+            if not edge_hwnd:
+                logger.debug("Edge window not found via EnumWindows")
+                return False
+
+            # Workaround for Windows foreground restrictions:
+            # Windows prevents apps from stealing focus unless they have input
+            # We use a combination of techniques to work around this
+
+            # 1. Restore window if minimized
+            user32.ShowWindow(edge_hwnd, SW_RESTORE)
+
+            # 2. Use SetWindowPos with HWND_TOPMOST to bring to front
+            user32.SetWindowPos(
+                edge_hwnd, HWND_TOPMOST,
+                0, 0, 0, 0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW
+            )
+
+            # 3. Remove topmost flag to allow other windows on top later
+            user32.SetWindowPos(
+                edge_hwnd, HWND_NOTOPMOST,
+                0, 0, 0, 0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW
+            )
+
+            # 4. Set foreground window
+            user32.SetForegroundWindow(edge_hwnd)
+
+            # 5. Flash taskbar icon to get user attention
+            # FLASHW_ALL = 3, FLASHW_TIMERNOFG = 12
+            class FLASHWINFO(ctypes.Structure):
+                _fields_ = [
+                    ("cbSize", wintypes.UINT),
+                    ("hwnd", wintypes.HWND),
+                    ("dwFlags", wintypes.DWORD),
+                    ("uCount", wintypes.UINT),
+                    ("dwTimeout", wintypes.DWORD),
+                ]
+
+            fwi = FLASHWINFO()
+            fwi.cbSize = ctypes.sizeof(FLASHWINFO)
+            fwi.hwnd = edge_hwnd
+            fwi.dwFlags = 3 | 12  # FLASHW_ALL | FLASHW_TIMERNOFG
+            fwi.uCount = 5
+            fwi.dwTimeout = 0
+            user32.FlashWindowEx(ctypes.byref(fwi))
+
+            logger.debug("Edge window brought to foreground via Windows API")
+            return True
+
+        except Exception as e:
+            logger.debug("Failed to bring Edge window to foreground via Windows API: %s", e)
+            return False
 
     def _wait_for_login_completion(self, page, timeout: int = 300) -> bool:
         """Wait for user to complete login in the browser.

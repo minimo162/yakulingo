@@ -201,16 +201,24 @@ class PptxProcessor(FileProcessor):
                         for cell_idx, cell in enumerate(row.cells):
                             block_id = f"s{slide_idx}_tbl{table_counter}_r{row_idx}_c{cell_idx}"
                             if block_id in translations:
-                                if cell.text_frame and cell.text_frame.paragraphs:
+                                text_frame = cell.text_frame
+                                if text_frame:
+                                    paragraphs = list(text_frame.paragraphs)
+                                    if paragraphs:
+                                        target_para = paragraphs[0]
+                                    else:
+                                        target_para = text_frame.add_paragraph()
+
                                     self._apply_to_paragraph(
-                                        cell.text_frame.paragraphs[0],
+                                        target_para,
                                         translations[block_id],
                                         font_manager
                                     )
-                                    # Clear remaining paragraphs
-                                    for para in cell.text_frame.paragraphs[1:]:
-                                        for run in para.runs:
-                                            run.text = ""
+
+                                    # Remove additional paragraphs entirely to avoid
+                                    # trailing blank lines when reading cell.text
+                                    for para in paragraphs[1:]:
+                                        text_frame._element.remove(para._p)
                     table_counter += 1
 
             # === Apply to speaker notes ===

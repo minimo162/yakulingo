@@ -289,6 +289,35 @@ class TestPptxProcessorApplyTranslations:
         # Unchanged
         assert table.cell(0, 1).text == "Header 2"
 
+    def test_table_translation_clears_extra_paragraphs(self, processor, tmp_path):
+        """Applying translation removes leftover blank paragraphs"""
+        file_path = tmp_path / "multi_para_table.pptx"
+        prs = Presentation()
+
+        slide_layout = prs.slide_layouts[5]
+        slide = prs.slides.add_slide(slide_layout)
+
+        table = slide.shapes.add_table(1, 1, Inches(1), Inches(1), Inches(4), Inches(1)).table
+        cell = table.cell(0, 0)
+        cell.text = "セル1"  # Japanese text to ensure extraction would target this cell
+        para = cell.text_frame.add_paragraph()
+        para.text = "追加入力"
+
+        prs.save(file_path)
+
+        output_path = tmp_path / "output.pptx"
+        translations = {"s0_tbl0_r0_c0": "Translated cell"}
+
+        processor.apply_translations(file_path, output_path, translations, "jp_to_en")
+
+        prs_out = Presentation(output_path)
+        table_shape = next(s for s in prs_out.slides[0].shapes if s.has_table)
+        cell_out = table_shape.table.cell(0, 0)
+
+        assert cell_out.text == "Translated cell"
+        assert len(cell_out.text_frame.paragraphs) == 1
+        assert cell_out.text_frame.paragraphs[0].text == "Translated cell"
+
     def test_preserves_untranslated_content(self, processor, pptx_with_multiple_slides, tmp_path):
         """Content not in translations dict is unchanged"""
         output_path = tmp_path / "output.pptx"

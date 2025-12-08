@@ -1601,6 +1601,11 @@ class CopilotHandler:
         Returns:
             Raw response text from Copilot
         """
+        logger.debug(
+            "Starting translate_single (streaming=%s, refs=%d)",
+            bool(on_chunk),
+            len(reference_files) if reference_files else 0,
+        )
         # Call _connect_impl directly since we're already in the Playwright thread
         if not self._connect_impl():
             # Provide specific error message based on connection error type
@@ -1647,6 +1652,10 @@ class CopilotHandler:
 
             # Get response and return raw (no parsing - preserves 訳文/解説 format)
             result = self._get_response(on_chunk=on_chunk)
+
+            logger.debug(
+                "translate_single received response (length=%d)", len(result) if result else 0
+            )
 
             # Check for Copilot error response patterns
             if result and _is_copilot_error_response(result):
@@ -1811,6 +1820,8 @@ class CopilotHandler:
         PlaywrightError = error_types['Error']
         PlaywrightTimeoutError = error_types['TimeoutError']
 
+        streaming_logged = False  # Avoid spamming logs for every tiny delta
+
         try:
             # Wait for response element to appear (instead of fixed sleep)
             response_selector = '[data-testid="markdown-reply"], div[data-message-type="Chat"]'
@@ -1880,6 +1891,12 @@ class CopilotHandler:
                                     on_chunk(current_text)
                                 except Exception as e:
                                     logger.debug("Streaming callback error: %s", e)
+                                if not streaming_logged:
+                                    logger.debug(
+                                        "Streaming update received from Copilot (length=%d)",
+                                        len(current_text),
+                                    )
+                                    streaming_logged = True
                     else:
                         # Reset stability counter if text is empty
                         stable_count = 0

@@ -1073,6 +1073,11 @@ class TranslationService:
                 prompt = prompt.replace("{style}", style)
 
             # Translate
+            logger.debug(
+                "Sending text to Copilot (streaming=%s, refs=%d)",
+                bool(on_chunk),
+                len(reference_files) if reference_files else 0,
+            )
             raw_result = self.copilot.translate_single(text, prompt, reference_files, on_chunk)
 
             # Parse the result - always single option now

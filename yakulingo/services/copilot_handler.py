@@ -1382,9 +1382,9 @@ class CopilotHandler:
             # Save storage_state after successful translation (session is confirmed valid)
             self._save_storage_state()
 
-            # Reset chat after translation to ensure clean state for next request
-            # This prevents stale responses from being detected on subsequent translations
-            self.start_new_chat(skip_clear_wait=True)
+            # Note: We no longer call start_new_chat() here after translation completion.
+            # The next translation will call start_new_chat() at the beginning anyway.
+            # Removing this prevents the browser from stealing focus after file translation.
 
             # Parse batch result
             return self._parse_batch_result(result, len(texts))
@@ -1496,8 +1496,9 @@ class CopilotHandler:
             # Save storage_state after successful translation
             self._save_storage_state()
 
-            # Reset chat after translation to ensure clean state for next request
-            self.start_new_chat(skip_clear_wait=True)
+            # Note: We no longer call start_new_chat() here after translation completion.
+            # The next translation will call start_new_chat() at the beginning anyway.
+            # Removing this prevents the browser from stealing focus after translation.
 
             return result.strip() if result else ""
 

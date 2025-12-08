@@ -499,6 +499,12 @@ function Invoke-Setup {
                     # 設定ファイルはマージ（ユーザー保護対象の設定のみ保持）
                     # 新しい設定をベースとし、ユーザー設定の一部のみ上書き
                     $newSettingsPath = $restorePath
+                    $templateSettingsPath = Join-Path $SetupPath "config\\settings.template.json"
+                    if (-not (Test-Path $newSettingsPath) -and (Test-Path $templateSettingsPath)) {
+                        # settings.json が無い場合はテンプレートを使用（アップデーターと同様の挙動）
+                        $newSettingsPath = $templateSettingsPath
+                    }
+
                     if (Test-Path $newSettingsPath) {
                         # 新しい設定を一時保存
                         $tempNewSettings = Join-Path $BackupDir "settings_new.json"

@@ -45,7 +45,23 @@ KEY_EVENT_DELAY_SEC = 0.02  # Delay between key events for reliability (increase
 CTRL_RELEASE_WAIT_SEC = 0.1  # Wait for user to release Ctrl key
 
 
-# SendInput structures
+# ULONG_PTR type (pointer-sized unsigned integer)
+ULONG_PTR = ctypes.c_size_t
+
+
+# SendInput structures (must match Windows API exactly)
+class MOUSEINPUT(ctypes.Structure):
+    """Mouse input structure for SendInput."""
+    _fields_ = [
+        ("dx", ctypes.wintypes.LONG),
+        ("dy", ctypes.wintypes.LONG),
+        ("mouseData", ctypes.wintypes.DWORD),
+        ("dwFlags", ctypes.wintypes.DWORD),
+        ("time", ctypes.wintypes.DWORD),
+        ("dwExtraInfo", ULONG_PTR),
+    ]
+
+
 class KEYBDINPUT(ctypes.Structure):
     """Keyboard input structure for SendInput."""
     _fields_ = [
@@ -53,20 +69,38 @@ class KEYBDINPUT(ctypes.Structure):
         ("wScan", ctypes.wintypes.WORD),
         ("dwFlags", ctypes.wintypes.DWORD),
         ("time", ctypes.wintypes.DWORD),
-        ("dwExtraInfo", ctypes.POINTER(ctypes.c_ulong)),
+        ("dwExtraInfo", ULONG_PTR),
+    ]
+
+
+class HARDWAREINPUT(ctypes.Structure):
+    """Hardware input structure for SendInput."""
+    _fields_ = [
+        ("uMsg", ctypes.wintypes.DWORD),
+        ("wParamL", ctypes.wintypes.WORD),
+        ("wParamH", ctypes.wintypes.WORD),
     ]
 
 
 class INPUT(ctypes.Structure):
-    """Input structure for SendInput."""
+    """Input structure for SendInput (must include all input types for correct size)."""
     class _INPUT_UNION(ctypes.Union):
-        _fields_ = [("ki", KEYBDINPUT)]
+        _fields_ = [
+            ("mi", MOUSEINPUT),
+            ("ki", KEYBDINPUT),
+            ("hi", HARDWAREINPUT),
+        ]
 
     _anonymous_ = ("_input_union",)
     _fields_ = [
         ("type", ctypes.wintypes.DWORD),
         ("_input_union", _INPUT_UNION),
     ]
+
+
+# WinDLL with use_last_error for proper GetLastError retrieval
+_user32 = ctypes.WinDLL("user32", use_last_error=True)
+_kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 
 
 class HotkeyManager:
@@ -134,11 +168,9 @@ class HotkeyManager:
 
     def _hotkey_loop(self):
         """Main loop that listens for hotkey events."""
-        user32 = ctypes.windll.user32
-
         # Register hotkey: Ctrl+J
         # MOD_NOREPEAT prevents repeated firing when key is held
-        success = user32.RegisterHotKey(
+        success = _user32.RegisterHotKey(
             None,  # No window, thread-level hotkey
             self.HOTKEY_ID,
             MOD_CONTROL | MOD_NOREPEAT,
@@ -159,7 +191,7 @@ class HotkeyManager:
             msg = ctypes.wintypes.MSG()
             while self._running:
                 # PeekMessage with PM_REMOVE (non-blocking)
-                if user32.PeekMessageW(ctypes.byref(msg), None, 0, 0, 1):
+                if _user32.PeekMessageW(ctypes.byref(msg), None, 0, 0, 1):
                     if msg.message == WM_HOTKEY and msg.wParam == self.HOTKEY_ID:
                         logger.debug("Hotkey Ctrl+J triggered")
                         self._handle_hotkey()
@@ -169,7 +201,7 @@ class HotkeyManager:
         finally:
             # Unregister hotkey
             if self._registered:
-                user32.UnregisterHotKey(None, self.HOTKEY_ID)
+                _user32.UnregisterHotKey(None, self.HOTKEY_ID)
                 self._registered = False
                 logger.info("Unregistered global hotkey: Ctrl+J")
 
@@ -216,13 +248,12 @@ class HotkeyManager:
 
     def _wait_for_ctrl_release(self):
         """Wait for user to release Ctrl key to avoid key state conflicts."""
-        user32 = ctypes.windll.user32
         max_wait = 1.0  # Maximum wait time in seconds
         start_time = time.time()
 
         while time.time() - start_time < max_wait:
             # GetAsyncKeyState returns negative if key is pressed
-            ctrl_state = user32.GetAsyncKeyState(VK_CONTROL)
+            ctrl_state = _user32.GetAsyncKeyState(VK_CONTROL)
             if not (ctrl_state & 0x8000):  # High bit indicates key is down
                 time.sleep(CTRL_RELEASE_WAIT_SEC)  # Small additional delay
                 return
@@ -232,7 +263,13 @@ class HotkeyManager:
 
     def _send_ctrl_c(self):
         """Send Ctrl+C keystroke using SendInput (modern API)."""
-        user32 = ctypes.windll.user32
+        # Set argument types for SendInput
+        _user32.SendInput.argtypes = [
+            ctypes.wintypes.UINT,
+            ctypes.POINTER(INPUT),
+            ctypes.c_int,
+        ]
+        _user32.SendInput.restype = ctypes.wintypes.UINT
 
         # Create input events: Ctrl down, C down, C up, Ctrl up
         inputs = (INPUT * 4)()
@@ -258,9 +295,11 @@ class HotkeyManager:
         inputs[3].ki.dwFlags = KEYEVENTF_KEYUP
 
         # Send all inputs at once for better reliability
-        sent = user32.SendInput(4, ctypes.byref(inputs), ctypes.sizeof(INPUT))
+        input_size = ctypes.sizeof(INPUT)
+        sent = _user32.SendInput(4, inputs, input_size)
         if sent != 4:
-            logger.warning(f"SendInput sent {sent}/4 inputs")
+            error_code = ctypes.get_last_error()
+            logger.warning(f"SendInput sent {sent}/4 inputs (error: {error_code}, input_size: {input_size})")
 
     def _get_clipboard_text_with_retry(self) -> Optional[str]:
         """Get text from clipboard with retry on failure."""
@@ -277,40 +316,49 @@ class HotkeyManager:
 
     def _get_clipboard_text(self) -> Optional[str]:
         """Get text from clipboard with proper type safety."""
-        user32 = ctypes.windll.user32
-        kernel32 = ctypes.windll.kernel32
+        # Set argument and return types for type safety
+        _user32.OpenClipboard.argtypes = [ctypes.wintypes.HWND]
+        _user32.OpenClipboard.restype = ctypes.wintypes.BOOL
+        _user32.CloseClipboard.argtypes = []
+        _user32.CloseClipboard.restype = ctypes.wintypes.BOOL
+        _user32.IsClipboardFormatAvailable.argtypes = [ctypes.wintypes.UINT]
+        _user32.IsClipboardFormatAvailable.restype = ctypes.wintypes.BOOL
+        _user32.GetClipboardData.argtypes = [ctypes.wintypes.UINT]
+        _user32.GetClipboardData.restype = ctypes.wintypes.HANDLE
 
-        # Set return types for type safety
-        kernel32.GlobalLock.argtypes = [ctypes.c_void_p]
-        kernel32.GlobalLock.restype = ctypes.c_void_p
-        kernel32.GlobalUnlock.argtypes = [ctypes.c_void_p]
-        kernel32.GlobalUnlock.restype = ctypes.wintypes.BOOL
-        kernel32.GlobalSize.argtypes = [ctypes.c_void_p]
-        kernel32.GlobalSize.restype = ctypes.c_size_t
+        _kernel32.GlobalLock.argtypes = [ctypes.wintypes.HGLOBAL]
+        _kernel32.GlobalLock.restype = ctypes.wintypes.LPVOID
+        _kernel32.GlobalUnlock.argtypes = [ctypes.wintypes.HGLOBAL]
+        _kernel32.GlobalUnlock.restype = ctypes.wintypes.BOOL
+        _kernel32.GlobalSize.argtypes = [ctypes.wintypes.HGLOBAL]
+        _kernel32.GlobalSize.restype = ctypes.c_size_t
 
-        if not user32.OpenClipboard(None):
-            logger.warning("Failed to open clipboard (may be in use by another app)")
+        if not _user32.OpenClipboard(None):
+            error_code = ctypes.get_last_error()
+            logger.warning(f"Failed to open clipboard (error: {error_code})")
             return None
 
         try:
-            if not user32.IsClipboardFormatAvailable(CF_UNICODETEXT):
+            if not _user32.IsClipboardFormatAvailable(CF_UNICODETEXT):
                 logger.debug("No unicode text in clipboard")
                 return None
 
-            handle = user32.GetClipboardData(CF_UNICODETEXT)
+            handle = _user32.GetClipboardData(CF_UNICODETEXT)
             if not handle:
-                logger.debug("GetClipboardData returned null")
+                error_code = ctypes.get_last_error()
+                logger.debug(f"GetClipboardData returned null (error: {error_code})")
                 return None
 
             # Lock global memory with proper type
-            ptr = kernel32.GlobalLock(handle)
+            ptr = _kernel32.GlobalLock(handle)
             if not ptr:
-                logger.warning("GlobalLock failed")
+                error_code = ctypes.get_last_error()
+                logger.warning(f"GlobalLock failed (error: {error_code})")
                 return None
 
             try:
                 # Get the size of the global memory block for safety
-                size = kernel32.GlobalSize(handle)
+                size = _kernel32.GlobalSize(handle)
                 if size == 0:
                     logger.debug("GlobalSize returned 0")
                     return None
@@ -329,9 +377,9 @@ class HotkeyManager:
                     logger.warning(f"Failed to read clipboard string: {e}")
                     return None
             finally:
-                kernel32.GlobalUnlock(handle)
+                _kernel32.GlobalUnlock(handle)
         finally:
-            user32.CloseClipboard()
+            _user32.CloseClipboard()
 
 
 # Singleton instance with thread-safe initialization

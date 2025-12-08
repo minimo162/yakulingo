@@ -178,6 +178,13 @@ def _is_login_page(url: str) -> bool:
     return False
 
 
+def _is_copilot_url(url: str) -> bool:
+    """Check if the URL belongs to a Copilot host."""
+    if not url:
+        return False
+    return any(pattern in url for pattern in CopilotHandler.COPILOT_URL_PATTERNS)
+
+
 class ConnectionState:
     """Connection state constants"""
     READY = 'ready'              # チャットUI表示済み、使用可能
@@ -810,6 +817,29 @@ class CopilotHandler:
                 return self._wait_for_login_completion(page)
             return False
 
+        # If we're on Copilot but still on landing or another interim page, wait for chat
+        if _is_copilot_url(url) and any(path in url for path in ("/landing", "/landingv2")):
+            logger.info("Detected Copilot landing page, waiting for redirect to /chat...")
+            try:
+                page.wait_for_load_state('networkidle', timeout=5000)
+            except PlaywrightTimeoutError:
+                pass
+            url = page.url
+            if any(path in url for path in ("/landing", "/landingv2")):
+                logger.debug("Still on landing page after wait, navigating to chat...")
+                try:
+                    page.goto(self.COPILOT_URL, wait_until='domcontentloaded', timeout=30000)
+                    page.wait_for_load_state('domcontentloaded', timeout=10000)
+                except (PlaywrightTimeoutError, PlaywrightError) as nav_err:
+                    logger.warning("Failed to navigate to chat from landing: %s", nav_err)
+        elif _is_copilot_url(url) and "/chat" not in url:
+            logger.info("On Copilot domain but not /chat, navigating...")
+            try:
+                page.goto(self.COPILOT_URL, wait_until='domcontentloaded', timeout=30000)
+                page.wait_for_load_state('domcontentloaded', timeout=10000)
+            except (PlaywrightTimeoutError, PlaywrightError) as nav_err:
+                logger.warning("Navigation to chat failed: %s", nav_err)
+
         try:
             page.wait_for_selector(input_selector, timeout=15000, state='visible')
 
@@ -842,6 +872,23 @@ class CopilotHandler:
                     self._bring_to_foreground_impl(page)
                     return self._wait_for_login_completion(page)
                 return False
+
+            # On Copilot domain but not yet on chat page, wait for proper navigation
+            if _is_copilot_url(url):
+                logger.info("Copilot page still loading, waiting for /chat before continuing...")
+                try:
+                    page.wait_for_load_state('networkidle', timeout=5000)
+                except PlaywrightTimeoutError:
+                    pass
+                if any(path in url for path in ("/landing", "/landingv2")):
+                    logger.debug("Still on landing page, deferring chat UI lookup")
+                    return self._wait_for_login_completion(page)
+                if "/chat" not in url:
+                    try:
+                        page.goto(self.COPILOT_URL, wait_until='domcontentloaded', timeout=30000)
+                    except (PlaywrightTimeoutError, PlaywrightError) as nav_err:
+                        logger.warning("Failed to navigate to chat during wait: %s", nav_err)
+                return self._wait_for_login_completion(page)
 
             logger.warning("Chat input not found - login may be required")
             self.last_connection_error = self.ERROR_LOGIN_REQUIRED
@@ -1095,12 +1142,12 @@ class CopilotHandler:
                     continue
 
                 # Check if we're back on Copilot with chat input
-                if "m365.cloud.microsoft" in url:
+                if _is_copilot_url(url):
                     logger.debug("Login wait: detected m365 domain, checking for chat UI...")
 
                     # Check if we're on landing page - wait for JS-based auto-redirect
                     # OAuth2 login redirects to /landing or /landingv2, which should auto-redirect to /chat
-                    if "/landing" in url:
+                    if any(path in url for path in ("/landing", "/landingv2")):
                         logger.debug("Login wait: on landing page, waiting for auto-redirect...")
                         # Wait for page load and JS execution that handles auto-redirect
                         try:
@@ -1121,6 +1168,18 @@ class CopilotHandler:
                             except (PlaywrightTimeoutError, PlaywrightError) as nav_err:
                                 logger.warning("Failed to navigate to chat: %s", nav_err)
                         continue  # Re-check URL and chat input
+
+                    # On Copilot domain but not yet on chat path - ensure navigation completes
+                    if "/chat" not in url:
+                        logger.debug("Login wait: Copilot domain but not /chat, navigating...")
+                        try:
+                            page.goto(self.COPILOT_URL, wait_until='domcontentloaded', timeout=30000)
+                            time.sleep(0.5)
+                        except (PlaywrightTimeoutError, PlaywrightError) as nav_err:
+                            logger.warning("Failed to navigate to chat: %s", nav_err)
+                        time.sleep(poll_interval)
+                        elapsed += poll_interval
+                        continue
 
                     # Try to find chat input
                     try:

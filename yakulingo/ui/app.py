@@ -164,6 +164,24 @@ class YakuLingoApp:
             self._copilot = CopilotHandler()
         return self._copilot
 
+    def _ensure_translation_service(self) -> bool:
+        """Initialize TranslationService if it hasn't been created yet."""
+
+        if self.translation_service is not None:
+            return True
+
+        try:
+            from yakulingo.services.translation_service import TranslationService
+
+            self.translation_service = TranslationService(
+                self.copilot, self.settings, get_default_prompts_dir()
+            )
+            return True
+        except Exception as e:  # pragma: no cover - defensive guard for unexpected init errors
+            logger.error("Failed to initialize translation service: %s", e)
+            ui.notify('翻訳サービスの初期化に失敗しました', type='negative')
+            return False
+
     @property
     def settings(self) -> AppSettings:
         """Lazy-load settings to defer disk I/O until the UI is requested."""
@@ -410,10 +428,8 @@ class YakuLingoApp:
         import concurrent.futures
 
         # Initialize TranslationService immediately (doesn't need connection)
-        from yakulingo.services.translation_service import TranslationService
-        self.translation_service = TranslationService(
-            self.copilot, self.settings, get_default_prompts_dir()
-        )
+        if not self._ensure_translation_service():
+            return
 
         # Small delay to let UI render first
         await asyncio.sleep(0.05)
@@ -448,10 +464,8 @@ class YakuLingoApp:
         Login state is NOT checked here - only browser connection.
         Note: This is kept for compatibility but wait_for_edge_connection is preferred."""
         # Initialize TranslationService immediately (doesn't need connection)
-        from yakulingo.services.translation_service import TranslationService
-        self.translation_service = TranslationService(
-            self.copilot, self.settings, get_default_prompts_dir()
-        )
+        if not self._ensure_translation_service():
+            return
 
         # Small delay to let UI render first
         await asyncio.sleep(0.05)
@@ -1096,8 +1110,7 @@ class YakuLingoApp:
         Returns:
             True if connected, False otherwise (also shows warning notification)
         """
-        if not self.translation_service:
-            ui.notify('接続されていません', type='warning')
+        if not self._ensure_translation_service():
             return False
         return True
 

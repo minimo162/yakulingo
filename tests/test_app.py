@@ -436,6 +436,42 @@ class TestYakuLingoAppFileSelection:
         mock_nicegui.notify.assert_called()
         # Should have called notify with negative type
 
+    async def test_select_file_initializes_service_when_missing(
+        self, mock_settings, mock_copilot, mock_nicegui
+    ):
+        """Translation service should be initialized on demand for file selection"""
+
+        with patch('yakulingo.ui.app.AppSettings') as mock_settings_class:
+            with patch('yakulingo.ui.app.get_default_settings_path'):
+                with patch('yakulingo.ui.app.get_default_prompts_dir'):
+                    mock_settings_class.load.return_value = mock_settings
+
+                    with patch('yakulingo.services.translation_service.TranslationService') as mock_service_cls:
+                        service_instance = MagicMock()
+                        service_instance.get_file_info.return_value = FileInfo(
+                            path=Path("/tmp/auto.xlsx"),
+                            file_type=FileType.EXCEL,
+                            size_bytes=512,
+                        )
+                        mock_service_cls.return_value = service_instance
+
+                        from yakulingo.ui.app import YakuLingoApp
+
+                        app = YakuLingoApp()
+                        app._copilot = mock_copilot
+                        # translation_service intentionally left as None to test lazy init
+                        app._client = MagicMock()
+                        app._client.__enter__ = MagicMock(return_value=None)
+                        app._client.__exit__ = MagicMock(return_value=None)
+
+                        test_path = Path("/tmp/auto.xlsx")
+                        await app._select_file(test_path)
+
+                        mock_service_cls.assert_called_once()
+                        service_instance.get_file_info.assert_called_once_with(test_path)
+                        assert app.translation_service is service_instance
+                        assert app.state.file_state == FileState.SELECTED
+
 
 # =============================================================================
 # Tests: YakuLingoApp File Translation

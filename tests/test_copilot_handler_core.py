@@ -396,6 +396,23 @@ class TestCopilotHandlerTranslateSync:
 
         assert result == []
 
+    def test_translate_sync_raises_on_empty_response(self):
+        """translate_sync raises when Copilot returns no content"""
+        handler = CopilotHandler()
+        handler._connected = True
+        mock_page = Mock()
+        mock_page.url = "https://m365.cloud.microsoft/chat"
+        mock_page.query_selector_all.return_value = []  # No responses (cleared)
+        handler._page = mock_page
+        handler._send_message = Mock()
+        handler._get_response = Mock(return_value="   ")
+        handler._save_storage_state = Mock()
+
+        with pytest.raises(RuntimeError):
+            handler.translate_sync(["text"], "prompt")
+
+        handler._save_storage_state.assert_not_called()
+
 
 class TestCopilotHandlerTranslateSingle:
     """Tests for translate_single() method"""
@@ -425,7 +442,7 @@ class TestCopilotHandlerTranslateSingle:
         assert result == "訳文: Translated\n解説: This is explanation"
 
     def test_translate_single_handles_empty_result(self):
-        """translate_single returns empty string for empty result"""
+        """translate_single raises when Copilot returns empty content"""
         handler = CopilotHandler()
         handler._connected = False
         mock_page = Mock()
@@ -443,9 +460,10 @@ class TestCopilotHandlerTranslateSingle:
         handler._get_response = Mock(return_value="")
         handler._save_storage_state = Mock()
 
-        result = handler.translate_single("テスト", "prompt")
+        with pytest.raises(RuntimeError):
+            handler.translate_single("テスト", "prompt")
 
-        assert result == ""
+        handler._save_storage_state.assert_not_called()
 
     def test_translate_single_with_reference_files(self):
         """translate_single attaches reference files"""

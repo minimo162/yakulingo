@@ -1505,6 +1505,12 @@ class CopilotHandler:
                         f"エラー内容: {result[:100]}"
                     )
 
+            # Guard against empty/whitespace-only responses (timeout or Copilot failure)
+            if len(texts) > 0 and (not result or not result.strip()):
+                raise RuntimeError(
+                    "Copilotから翻訳結果を取得できませんでした。Edgeブラウザの状態を確認して再試行してください。"
+                )
+
             # Save storage_state after successful translation (session is confirmed valid)
             self._save_storage_state()
 
@@ -1645,6 +1651,12 @@ class CopilotHandler:
                         f"エラー内容: {result[:100]}"
                     )
 
+            # Guard against empty/whitespace-only responses (timeout or Copilot failure)
+            if not result or not result.strip():
+                raise RuntimeError(
+                    "Copilotから翻訳結果を取得できませんでした。Edgeブラウザの状態を確認して再試行してください。"
+                )
+
             # Save storage_state after successful translation
             self._save_storage_state()
 
@@ -1652,7 +1664,7 @@ class CopilotHandler:
             # The next translation will call start_new_chat() at the beginning anyway.
             # Removing this prevents the browser from stealing focus after translation.
 
-            return result.strip() if result else ""
+            return result.strip()
 
         return ""
 

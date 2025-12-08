@@ -12,7 +12,8 @@ Translate the following text to Japanese. Output only the translation, no explan
 - () → ▲ ((50) → ▲50)
 
 ### Output
-Translation only, no markdown, preserve line breaks.
+- If input is numbered (1., 2., 3., ...), output translations with matching numbers.
+- Translation only, no markdown, preserve line breaks within each item.
 
 {reference_section}
 

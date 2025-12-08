@@ -2,12 +2,15 @@
 """Tests for yakulingo.processors.word_processor"""
 
 import pytest
+import zipfile
 from pathlib import Path
+from xml.etree import ElementTree as ET
+
 from docx import Document
 from docx.shared import Pt
 from docx.enum.style import WD_STYLE_TYPE
 
-from yakulingo.processors.word_processor import WordProcessor
+from yakulingo.processors.word_processor import WORD_NS, WordProcessor
 from yakulingo.models.types import FileType
 
 
@@ -193,6 +196,109 @@ class TestWordProcessorExtractTextBlocks:
         """Empty file yields no blocks"""
         blocks = list(processor.extract_text_blocks(empty_docx))
         assert blocks == []
+
+
+class TestWordProcessorTextBoxes:
+    """TextBox extraction and translation application"""
+
+    def _add_textbox(self, doc_path: Path, text: str) -> None:
+        """Inject a simple textbox paragraph into an existing docx file."""
+        with zipfile.ZipFile(doc_path, "r") as zf:
+            contents = {name: zf.read(name) for name in zf.namelist()}
+
+        root = ET.fromstring(contents["word/document.xml"])
+
+        ET.register_namespace("w", WORD_NS["w"])
+        ET.register_namespace("wp", WORD_NS["wp"])
+        ET.register_namespace("wps", WORD_NS["wps"])
+        ET.register_namespace("a", WORD_NS["a"])
+        ET.register_namespace("mc", WORD_NS["mc"])
+        ET.register_namespace("v", WORD_NS["v"])
+
+        body = root.find("w:body", WORD_NS)
+        assert body is not None
+
+        p = ET.Element("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p")
+        r = ET.SubElement(p, "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}r")
+        drawing = ET.SubElement(r, "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}drawing")
+        inline = ET.SubElement(drawing, "{http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing}inline")
+        graphic = ET.SubElement(inline, "{http://schemas.openxmlformats.org/drawingml/2006/main}graphic")
+        graphicData = ET.SubElement(
+            graphic,
+            "{http://schemas.openxmlformats.org/drawingml/2006/main}graphicData",
+            {
+                "{http://schemas.openxmlformats.org/drawingml/2006/main}uri": (
+                    "http://schemas.microsoft.com/office/word/2010/wordprocessingShape"
+                )
+            },
+        )
+        wsp = ET.SubElement(
+            graphicData, "{http://schemas.microsoft.com/office/word/2010/wordprocessingShape}wsp"
+        )
+        txbx = ET.SubElement(
+            wsp, "{http://schemas.microsoft.com/office/word/2010/wordprocessingShape}txbx"
+        )
+        txbxContent = ET.SubElement(
+            txbx, "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}txbxContent"
+        )
+        inner_p = ET.SubElement(
+            txbxContent, "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p"
+        )
+        inner_r = ET.SubElement(
+            inner_p, "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}r"
+        )
+        t = ET.SubElement(inner_r, "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t")
+        t.text = text
+
+        body.append(p)
+
+        contents["word/document.xml"] = ET.tostring(root, encoding="utf-8")
+
+        with zipfile.ZipFile(doc_path, "w", zipfile.ZIP_DEFLATED) as zf_out:
+            for name, data in contents.items():
+                zf_out.writestr(name, data)
+
+    def test_extracts_textbox_content(self, processor, tmp_path):
+        """TextBox content is included in extracted text blocks."""
+        file_path = tmp_path / "textbox.docx"
+        doc = Document()
+        doc.add_paragraph("通常の段落")
+        doc.save(file_path)
+
+        self._add_textbox(file_path, "テキストボックスの内容")
+
+        blocks = list(processor.extract_text_blocks(file_path))
+        textbox_blocks = [b for b in blocks if b.metadata.get("type") == "textbox"]
+
+        assert len(textbox_blocks) == 1
+        assert textbox_blocks[0].text == "テキストボックスの内容"
+
+    def test_applies_textbox_translation(self, processor, tmp_path):
+        """Translations are applied to textbox content in the output docx."""
+        input_path = tmp_path / "textbox.docx"
+        doc = Document()
+        doc.add_paragraph("通常の段落")
+        doc.save(input_path)
+
+        self._add_textbox(input_path, "未翻訳")
+
+        translations = {
+            "para_0": "Standard paragraph",
+            "textbox_0": "Translated textbox",
+        }
+
+        output_path = tmp_path / "translated.docx"
+        processor.apply_translations(
+            input_path,
+            output_path,
+            translations,
+            direction="jp_to_en",
+        )
+
+        with zipfile.ZipFile(output_path, "r") as zf:
+            document_xml = zf.read("word/document.xml").decode("utf-8")
+
+        assert "Translated textbox" in document_xml
 
 
 # --- Tests: apply_translations ---

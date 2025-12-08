@@ -1,12 +1,12 @@
 @echo off
 setlocal enabledelayedexpansion
 
-:: エラー発生時にもpauseするためのトラップ設定
+:: Error trap to ensure pause on unexpected exit
 if "%~1"=="--no-trap" goto :no_trap
 cmd /c "%~f0" --no-trap %*
 if errorlevel 1 (
     echo.
-    echo [ERROR] スクリプトが予期せず終了しました。
+    echo [ERROR] Script terminated unexpectedly.
     pause
 )
 exit /b %errorlevel%
@@ -21,10 +21,10 @@ echo.
 
 cd /d "%~dp0\.."
 
-:: PowerShellが利用可能かチェック
+:: Check if PowerShell is available
 where powershell >nul 2>&1
 if errorlevel 1 (
-    echo [ERROR] PowerShell が見つかりません。
+    echo [ERROR] PowerShell not found.
     exit /b 1
 )
 

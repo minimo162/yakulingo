@@ -6,6 +6,7 @@ from pathlib import Path
 import openpyxl
 from openpyxl.styles import Font
 
+import yakulingo.processors.excel_processor as excel_processor
 from yakulingo.processors.excel_processor import ExcelProcessor
 from yakulingo.models.types import FileType
 
@@ -310,6 +311,16 @@ class TestExcelProcessorApplyTranslations:
 
 class TestExcelProcessorEdgeCases:
     """Test edge cases"""
+
+    def test_xls_requires_xlwings_when_unavailable(self, processor, tmp_path, monkeypatch):
+        """Provides a clear error if .xls is processed without xlwings support"""
+        monkeypatch.setattr(excel_processor, "HAS_XLWINGS", False)
+
+        xls_path = tmp_path / "sample.xls"
+        xls_path.write_bytes(b"dummy")
+
+        with pytest.raises(ValueError, match="XLS files require"):
+            processor.get_file_info(xls_path)
 
     def test_large_row_numbers(self, processor, tmp_path):
         """Handles cells beyond row 10"""

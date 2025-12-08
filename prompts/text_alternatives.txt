@@ -21,7 +21,7 @@ Suggest one alternative for the current English translation.
 - ↑ ↓ → "increased, up" / "decreased, down"
 - ~ → "approx., about, around"
 - → > < = → express in words
-- ※ → "Note:, *"
+- ※ → "Note:" (use as a short prefix for remarks)
 
 ### Output Format
 訳文: (alternative expression)
@@ -29,5 +29,7 @@ Suggest one alternative for the current English translation.
 解説:
 - Difference from current translation (1 line)
 - Situations where this expression fits (1 line)
+
+解説は日本語で書いてください。
 
 {reference_section}

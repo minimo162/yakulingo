@@ -1211,7 +1211,6 @@ class AppSettings:
     last_tab: str = "text"
     window_width: int = 1400              # 3カラムレイアウト対応
     window_height: int = 850
-    onboarding_completed: bool = False    # 初回オンボーディング完了フラグ
 
     # Advanced
     max_chars_per_batch: int = 7000      # Copilot Free 8000制限対応

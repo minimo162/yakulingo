@@ -2081,6 +2081,14 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
             except Exception as e:
                 logger.debug("Error cancelling translation: %s", e)
 
+        # Cancel login wait if in progress (allows graceful shutdown during login)
+        if yakulingo_app._copilot is not None:
+            try:
+                yakulingo_app._copilot.cancel_login_wait()
+                logger.debug("Login wait cancelled")
+            except Exception as e:
+                logger.debug("Error cancelling login wait: %s", e)
+
         # Disconnect from Copilot (close Edge browser)
         if yakulingo_app._copilot is not None:
             try:

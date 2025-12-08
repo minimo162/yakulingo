@@ -245,6 +245,9 @@ else:
                 # Wait for user to release Ctrl key to avoid interference
                 self._wait_for_ctrl_release()
 
+                # Track clipboard sequence to detect actual updates even if content is identical
+                sequence_before = self._get_clipboard_sequence_number()
+
                 # Get current clipboard content to detect change
                 old_text = self._get_clipboard_text()
 
@@ -257,10 +260,25 @@ else:
                 # Get text from clipboard (with retry)
                 text = self._get_clipboard_text_with_retry()
 
+                # Check clipboard sequence after copy (may be None on failure)
+                sequence_after = self._get_clipboard_sequence_number()
+
+                clipboard_changed = None
+                if sequence_before is not None and sequence_after is not None:
+                    clipboard_changed = sequence_after != sequence_before
+
                 # If clipboard didn't change, no text was selected - skip translation
                 if text is not None and text == old_text:
-                    logger.info("Clipboard unchanged - no text was selected, skipping")
-                    return
+                    if clipboard_changed is False:
+                        logger.info(
+                            "Clipboard sequence unchanged (%s) - skipping hotkey translation",
+                            sequence_after,
+                        )
+                        return
+
+                    if clipboard_changed is None:
+                        logger.info("Clipboard unchanged - no text was selected, skipping")
+                        return
 
                 # If clipboard is empty after Ctrl+C, nothing was selected
                 if text is None:
@@ -342,6 +360,24 @@ else:
 
             logger.warning("Failed to get clipboard text after all retries")
             return None
+
+        def _get_clipboard_sequence_number(self) -> Optional[int]:
+            """Return the clipboard sequence number or None on failure.
+
+            The sequence number increments whenever the clipboard content changes,
+            allowing us to detect a copy operation even if the text itself is
+            identical to the previous clipboard contents.
+            """
+
+            _user32.GetClipboardSequenceNumber.restype = ctypes.wintypes.DWORD
+
+            try:
+                value = _user32.GetClipboardSequenceNumber()
+            except OSError:
+                return None
+
+            # 0 can be returned on failure; treat as unavailable
+            return int(value) if value else None
 
         def _get_clipboard_text(self) -> Optional[str]:
             """Get text from clipboard with proper type safety."""

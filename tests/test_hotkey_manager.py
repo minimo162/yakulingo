@@ -338,9 +338,10 @@ class TestHandleHotkey:
         with patch.object(manager, '_wait_for_ctrl_release'):
             with patch.object(manager, '_get_clipboard_text', return_value="same text"):
                 with patch.object(manager, '_send_ctrl_c'):
-                    with patch.object(manager, '_get_clipboard_text_with_retry', return_value="same text"):
-                        with patch('time.sleep'):
-                            manager._handle_hotkey()
+                    with patch.object(manager, '_get_clipboard_sequence_number', side_effect=[10, 10]):
+                        with patch.object(manager, '_get_clipboard_text_with_retry', return_value="same text"):
+                            with patch('time.sleep'):
+                                manager._handle_hotkey()
 
         callback.assert_not_called()
 
@@ -372,11 +373,30 @@ class TestHandleHotkey:
         with patch.object(manager, '_wait_for_ctrl_release'):
             with patch.object(manager, '_get_clipboard_text', return_value="old text"):
                 with patch.object(manager, '_send_ctrl_c'):
-                    with patch.object(manager, '_get_clipboard_text_with_retry', return_value="new text"):
-                        with patch('time.sleep'):
-                            manager._handle_hotkey()
+                    with patch.object(manager, '_get_clipboard_sequence_number', side_effect=[5, 6]):
+                        with patch.object(manager, '_get_clipboard_text_with_retry', return_value="new text"):
+                            with patch('time.sleep'):
+                                manager._handle_hotkey()
 
         callback.assert_called_once_with("new text")
+
+    def test_handle_hotkey_allows_same_text_when_sequence_changes(self):
+        """Even identical text should be processed when clipboard actually updates."""
+        from yakulingo.services.hotkey_manager import HotkeyManager
+
+        manager = HotkeyManager()
+        callback = Mock()
+        manager.set_callback(callback)
+
+        with patch.object(manager, '_wait_for_ctrl_release'):
+            with patch.object(manager, '_get_clipboard_text', return_value="duplicate"):
+                with patch.object(manager, '_send_ctrl_c'):
+                    with patch.object(manager, '_get_clipboard_sequence_number', side_effect=[1, 2]):
+                        with patch.object(manager, '_get_clipboard_text_with_retry', return_value="duplicate"):
+                            with patch('time.sleep'):
+                                manager._handle_hotkey()
+
+        callback.assert_called_once_with("duplicate")
 
 
 class TestSingleton:

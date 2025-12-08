@@ -1544,7 +1544,15 @@ class TranslationService:
                 selected_sections,
             )
 
-        except (OSError, RuntimeError, ValueError, ConnectionError, TimeoutError, BadZipFile) as e:
+        except (
+            OSError,
+            RuntimeError,
+            ValueError,
+            ConnectionError,
+            TimeoutError,
+            BadZipFile,
+            ImportError,
+        ) as e:
             # Catch specific exceptions for graceful error handling
             logger.exception("Translation failed: %s", e)
             return TranslationResult(

@@ -626,6 +626,22 @@ class TestTranslationServiceTranslateFile:
         assert result.status == TranslationStatus.FAILED
         assert "API Error" in result.error_message
 
+    def test_translate_pdf_missing_dependency(self, tmp_path):
+        """Missing PDF dependencies are reported as failures instead of crashing"""
+        pdf_path = tmp_path / "missing_dep.pdf"
+        pdf_path.write_bytes(b"%PDF-1.4 dummy")
+
+        service = TranslationService(Mock(), AppSettings())
+
+        mock_processor = Mock()
+        mock_processor.get_page_count.side_effect = ImportError("pymupdf not installed")
+
+        with patch.object(service, '_get_processor', return_value=mock_processor):
+            result = service.translate_file(pdf_path)
+
+        assert result.status == TranslationStatus.FAILED
+        assert "pymupdf not installed" in result.error_message
+
     def test_translate_file_custom_output_dir(self, mock_copilot, sample_xlsx, tmp_path):
         """Output goes to custom directory when configured"""
         output_dir = tmp_path / "custom_output"

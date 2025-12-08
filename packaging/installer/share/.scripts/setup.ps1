@@ -250,7 +250,9 @@ function Invoke-Setup {
     $TempZipDir = Join-Path $env:TEMP "YakuLingo_Setup_$(Get-Date -Format 'yyyyMMddHHmmss')"
     New-Item -ItemType Directory -Path $TempZipDir -Force | Out-Null
     $TempZipFile = Join-Path $TempZipDir $ZipFileName
-    Copy-Item -Path $ZipFile -Destination $TempZipFile -Force
+    # Use robocopy for faster network file copy (better buffering than Copy-Item)
+    $ZipSourceDir = Split-Path -Parent $ZipFile
+    & robocopy $ZipSourceDir $TempZipDir $ZipFileName /R:3 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null
 
     if (-not $GuiMode) {
         Write-Host "[OK] ZIP copied to temp folder" -ForegroundColor Green

@@ -723,6 +723,53 @@ class TestTranslationServiceTranslateFile:
         assert result.status == TranslationStatus.COMPLETED
         assert result.blocks_total == 1
 
+    def test_pdf_glossary_export_includes_cells(self, tmp_path):
+        """Glossary export for PDFs uses page/address metadata when available"""
+        settings = AppSettings(export_glossary=True, output_directory=str(tmp_path))
+        service = TranslationService(Mock(), settings)
+
+        processor = Mock()
+        processor.get_page_count.return_value = 1
+        processor.failed_pages = []
+
+        block = TextBlock(id="P1_0", text="原文", location="Page 1")
+        cell = TranslationCell(address="P1_0", text="原文", box=[0, 0, 10, 10], page_num=1)
+        processor.extract_text_blocks_streaming.return_value = [([block], [cell])]
+
+        # Create translated PDF output
+        processor.apply_translations_with_cells.side_effect = (
+            lambda _input_path, output_path, *_args, **_kwargs: output_path.write_bytes(b"pdf")
+        )
+        processor.create_bilingual_pdf = Mock()
+
+        def export_glossary(translations, output_path, cells=None):
+            output_path.write_text(
+                "original,translated,page,address\n原文,訳文,1,P1_0",
+                encoding="utf-8-sig",
+            )
+            return {"total": len(translations), "exported": 1, "skipped": 0}
+
+        processor.export_glossary_csv = Mock(side_effect=export_glossary)
+
+        service.batch_translator = Mock()
+        service.batch_translator.translate_blocks.return_value = {block.id: "訳文"}
+
+        input_path = tmp_path / "input.pdf"
+        input_path.write_bytes(b"%PDF-1.4\n%%EOF")
+
+        # Avoid loading real processors (openpyxl dependency) during test
+        service._processors = {'.pdf': processor}
+
+        with patch.object(service, '_get_processor', return_value=processor):
+            result = service.translate_file(input_path)
+
+        glossary_path = tmp_path / "input_glossary.csv"
+
+        processor.export_glossary_csv.assert_called_once()
+        assert result.glossary_path == glossary_path
+        assert glossary_path.exists()
+        assert glossary_path.read_text(encoding="utf-8-sig").startswith("original,translated")
+
     def test_translate_file_custom_output_dir(self, mock_copilot, sample_xlsx, tmp_path):
         """Output goes to custom directory when configured"""
         output_dir = tmp_path / "custom_output"

@@ -1891,7 +1891,15 @@ class TranslationService:
             glossary_path = output_path.parent / (
                 output_path.stem.replace('_translated', '') + '_glossary.csv'
             )
-            self._export_glossary_csv(all_blocks, translations, glossary_path)
+            if all_cells:
+                # Use processor-level export to include page/address metadata
+                processor.export_glossary_csv(
+                    translations,
+                    glossary_path,
+                    cells=all_cells,
+                )
+            else:
+                self._export_glossary_csv(all_blocks, translations, glossary_path)
 
         if on_progress:
             on_progress(TranslationProgress(

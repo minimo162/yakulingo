@@ -62,7 +62,7 @@ def _create_textarea_with_keyhandler(
     autogrow: bool = False,
     style: Optional[str] = None,
 ) -> ui.textarea:
-    """Create a textarea with Ctrl+Enter handler for translation.
+    """Create a textarea with Ctrl/Cmd+Enter handler for translation.
 
     This helper function reduces code duplication across different panel states.
 
@@ -97,8 +97,8 @@ def _create_textarea_with_keyhandler(
     if style:
         textarea.style(style)
 
-    # Handle Ctrl+Enter in textarea with NiceGUI 3.0+ js_handler
-    # Prevent default browser behavior (newline insertion) when Ctrl+Enter is pressed
+    # Handle Ctrl/Cmd+Enter in textarea with NiceGUI 3.0+ js_handler
+    # Prevent default browser behavior (newline insertion) when Ctrl/Cmd+Enter is pressed
     async def handle_keydown(e):
         # can_translate() already checks text_translating internally
         if state.can_translate():
@@ -111,7 +111,7 @@ def _create_textarea_with_keyhandler(
         'keydown',
         handle_keydown,
         js_handler='''(e) => {
-            if (e.ctrlKey && e.key === "Enter") {
+            if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
                 e.preventDefault();
                 emit(e);
             }
@@ -293,7 +293,7 @@ def _create_large_input_panel(
                             ui.label('翻訳する')
                             with ui.row().classes('shortcut-keys ml-2'):
                                 with ui.element('span').classes('keycap'):
-                                    ui.label('Ctrl')
+                                    ui.label('Ctrl / ⌘')
                                 with ui.element('span').classes('keycap-plus'):
                                     ui.label('+')
                                 with ui.element('span').classes('keycap'):
@@ -422,7 +422,7 @@ def _create_compact_input_panel(
                             ui.label('翻訳する')
                             with ui.row().classes('shortcut-keys ml-2'):
                                 with ui.element('span').classes('keycap'):
-                                    ui.label('Ctrl')
+                                    ui.label('Ctrl / ⌘')
                                 with ui.element('span').classes('keycap-plus'):
                                     ui.label('+')
                                 with ui.element('span').classes('keycap'):
@@ -680,7 +680,7 @@ def create_text_panel(
                             ui.label('翻訳する')
                             with ui.row().classes('shortcut-keys ml-2'):
                                 with ui.element('span').classes('keycap'):
-                                    ui.label('Ctrl')
+                                    ui.label('Ctrl / ⌘')
                                 with ui.element('span').classes('keycap-plus'):
                                     ui.label('+')
                                 with ui.element('span').classes('keycap'):

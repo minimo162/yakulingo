@@ -9,6 +9,7 @@ Falls back to openpyxl if xlwings is not available (Linux or no Excel installed)
 import logging
 import re
 import sys
+import threading
 import time
 import zipfile
 from contextlib import contextmanager
@@ -75,15 +76,19 @@ def com_initialized():
             # Try CoInitializeEx with COINIT_APARTMENTTHREADED (STA) first
             # This is the default mode and required by most COM servers including Excel
             # If already initialized, it returns RPC_E_CHANGED_MODE (0x80010106)
+            thread_id = threading.current_thread().ident
             try:
                 hr = pythoncom.CoInitializeEx(pythoncom.COINIT_APARTMENTTHREADED)
-                initialized = (hr == 0)  # S_OK means we initialized
-                logger.debug("COM initialized (STA) for thread (hr=%s)", hr)
+                # S_OK (0) = newly initialized, S_FALSE (1) = already initialized
+                # Some pywin32 versions may return None on success
+                # Only set initialized=True for S_OK (0) or None to ensure proper cleanup
+                initialized = (hr == 0 or hr is None)
+                logger.debug("COM initialized (STA) thread=%s hr=%s will_uninit=%s", thread_id, hr, initialized)
             except Exception:
                 # Fall back to simple CoInitialize if CoInitializeEx fails
                 hr = pythoncom.CoInitialize()
-                initialized = (hr == 0)
-                logger.debug("COM initialized (fallback) for thread (hr=%s)", hr)
+                initialized = (hr == 0 or hr is None)
+                logger.debug("COM initialized (fallback) thread=%s hr=%s will_uninit=%s", thread_id, hr, initialized)
         except Exception as e:
             logger.debug("COM initialization skipped: %s", e)
 
@@ -92,8 +97,9 @@ def com_initialized():
     finally:
         if initialized and pythoncom is not None:
             try:
+                thread_id = threading.current_thread().ident
                 pythoncom.CoUninitialize()
-                logger.debug("COM uninitialized for thread")
+                logger.debug("COM uninitialized thread=%s", thread_id)
             except Exception as e:
                 logger.debug("COM uninitialization failed: %s", e)
 

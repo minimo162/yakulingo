@@ -15,6 +15,8 @@ Run specific test categories:
 - pytest -m "not e2e"     # Skip E2E tests
 """
 
+import asyncio
+import inspect
 import pytest
 import tempfile
 from pathlib import Path
@@ -44,6 +46,20 @@ _SLOW_FILES = {
 }
 
 
+def pytest_addoption(parser):
+    """Register minimal asyncio config to mirror pytest-asyncio defaults."""
+    parser.addini(
+        "asyncio_mode",
+        "Fallback asyncio execution mode when pytest-asyncio is unavailable",
+        default="auto",
+    )
+
+
+def pytest_configure(config):
+    """Ensure asyncio mark is known even without pytest-asyncio installed."""
+    config.addinivalue_line("markers", "asyncio: mark tests that run asynchronously")
+
+
 def pytest_collection_modifyitems(config, items):
     """Automatically add markers based on test file names."""
     for item in items:
@@ -61,6 +77,43 @@ def pytest_collection_modifyitems(config, items):
 
         if file_name in _SLOW_FILES:
             item.add_marker(pytest.mark.slow)
+
+
+def pytest_pyfunc_call(pyfuncitem):
+    """Lightweight asyncio support when pytest-asyncio isn't available.
+
+    Pytest 8 removed native coroutine support, so async tests require a plugin.
+    Network-restricted environments (like this one) may not have `pytest-asyncio`
+    installed. This hook runs coroutine test functions with a fresh event loop,
+    mimicking the essential behavior of pytest-asyncio's auto mode.
+    """
+
+    test_func = pyfuncitem.obj
+    if not inspect.iscoroutinefunction(test_func):
+        return None
+
+    # Filter to arguments the test function actually accepts. pytest stores
+    # dependent fixture values in funcargs, but some coroutine tests only
+    # declare a subset (e.g., class-scope fixtures). Without filtering we hit
+    # unexpected-keyword errors.
+    sig = inspect.signature(test_func)
+    call_kwargs = {
+        name: value for name, value in pyfuncitem.funcargs.items()
+        if name in sig.parameters
+    }
+
+    loop = asyncio.new_event_loop()
+    try:
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(test_func(**call_kwargs))
+    finally:
+        try:
+            loop.run_until_complete(loop.shutdown_asyncgens())
+        finally:
+            asyncio.set_event_loop(None)
+            loop.close()
+
+    return True
 
 
 from yakulingo.models.types import (

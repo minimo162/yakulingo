@@ -9,6 +9,8 @@ Japanese → English, Other → Japanese (auto-detected by AI).
 import atexit
 import asyncio
 import logging
+import uuid
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, TYPE_CHECKING
 
@@ -89,6 +91,55 @@ MAX_HISTORY_DISPLAY = 20  # Maximum history items to display in sidebar
 TEXT_TRANSLATION_CHAR_LIMIT = 5000  # Max chars for text translation (Ctrl+J, Ctrl+Enter)
 
 
+@dataclass
+class ClipboardDebugSummary:
+    """Debug information for clipboard-triggered translations."""
+
+    char_count: int
+    line_count: int
+    excel_like: bool
+    row_count: int
+    max_columns: int
+    preview: str
+
+
+def summarize_clipboard_text(text: str, max_preview: int = 200) -> ClipboardDebugSummary:
+    """Create a concise summary of clipboard text for debugging.
+
+    Args:
+        text: Clipboard text captured via the hotkey.
+        max_preview: Maximum length for the preview string (with escaped newlines/tabs).
+
+    Returns:
+        ClipboardDebugSummary with structural information useful for debugging Excel copies.
+    """
+
+    # Normalize newlines for consistent counting
+    normalized = text.replace("\r\n", "\n")
+    lines = normalized.split("\n") or [""]
+
+    # Excel copies typically contain tab-separated columns and newline-separated rows
+    excel_like = any("\t" in line for line in lines)
+    row_count = len(lines)
+    max_columns = 0
+    for line in lines:
+        columns = line.split("\t") if excel_like else [line]
+        max_columns = max(max_columns, len(columns))
+
+    preview = normalized.replace("\n", "\\n").replace("\t", "\\t")
+    if len(preview) > max_preview:
+        preview = preview[: max_preview - 1] + "…"
+
+    return ClipboardDebugSummary(
+        char_count=len(text),
+        line_count=row_count,
+        excel_like=excel_like,
+        row_count=row_count,
+        max_columns=max_columns or (1 if text else 0),
+        preview=preview,
+    )
+
+
 class YakuLingoApp:
     """Main application - Nani-inspired sidebar layout.
 
@@ -136,6 +187,9 @@ class YakuLingoApp:
 
         # Client reference for async handlers (saved from @ui.page handler)
         self._client = None
+
+        # Debug trace identifier for correlating hotkey → translation pipeline
+        self._active_translation_trace_id: Optional[str] = None
 
         # Streaming label reference for direct updates (avoids UI flickering)
         self._streaming_label: Optional[ui.label] = None
@@ -274,6 +328,11 @@ class YakuLingoApp:
             logger.debug("Hotkey handler skipped - translation already in progress")
             return
 
+        trace_id = f"hotkey-{uuid.uuid4().hex[:8]}"
+        self._active_translation_trace_id = trace_id
+        summary = summarize_clipboard_text(text)
+        self._log_hotkey_debug_info(trace_id, summary)
+
         # Bring app window to front
         await self._bring_window_to_front()
 
@@ -300,6 +359,22 @@ class YakuLingoApp:
 
         # Trigger translation
         await self._translate_text()
+
+    def _log_hotkey_debug_info(self, trace_id: str, summary: ClipboardDebugSummary) -> None:
+        """Log structured debug info for clipboard-triggered translations."""
+
+        logger.info(
+            "Hotkey translation [%s]: chars=%d, lines=%d, excel_like=%s, rows=%d, max_cols=%d",
+            trace_id,
+            summary.char_count,
+            summary.line_count,
+            summary.excel_like,
+            summary.row_count,
+            summary.max_columns,
+        )
+
+        if summary.preview:
+            logger.debug("Hotkey translation [%s] preview: %s", trace_id, summary.preview)
 
     async def _bring_window_to_front(self):
         """Bring the app window to front.
@@ -1302,9 +1377,22 @@ class YakuLingoApp:
 
         source_text = self.state.source_text
 
+        trace_id = self._active_translation_trace_id or f"text-{uuid.uuid4().hex[:8]}"
+        self._active_translation_trace_id = trace_id
+        logger.info("Translation [%s] starting (chars=%d)", trace_id, len(source_text))
+
         # Check text length limit - switch to file translation for long text
         if len(source_text) > TEXT_TRANSLATION_CHAR_LIMIT:
-            await self._translate_long_text_as_file(source_text)
+            logger.info(
+                "Translation [%s] switching to file mode (len=%d > limit=%d)",
+                trace_id,
+                len(source_text),
+                TEXT_TRANSLATION_CHAR_LIMIT,
+            )
+            try:
+                await self._translate_long_text_as_file(source_text)
+            finally:
+                self._active_translation_trace_id = None
             return
 
         reference_files = self._get_effective_reference_files()
@@ -1388,6 +1476,8 @@ class YakuLingoApp:
                 source_text,
             )
 
+            logger.debug("Translation [%s] detected language: %s", trace_id, detected_language)
+
             # Update UI with detected language
             self.state.text_detected_language = detected_language
             with client:
@@ -1410,6 +1500,14 @@ class YakuLingoApp:
             elapsed_time = time.time() - start_time
             self.state.text_translation_elapsed_time = elapsed_time
 
+            status_value = getattr(getattr(result, "status", None), "value", "unknown")
+            logger.info(
+                "Translation [%s] completed in %.2fs (status=%s)",
+                trace_id,
+                elapsed_time,
+                status_value,
+            )
+
             if result and result.options:
                 from yakulingo.ui.state import TextViewState
                 self.state.text_result = result
@@ -1424,7 +1522,7 @@ class YakuLingoApp:
                 error_message = result.error_message if result else 'Unknown error'
 
         except Exception as e:
-            logger.exception("Translation error: %s", e)
+            logger.exception("Translation error [%s]: %s", trace_id, e)
             error_message = str(e)
 
         # Stop streaming timer and clear streaming state
@@ -1443,6 +1541,8 @@ class YakuLingoApp:
             self._update_translate_button_state()
             # Update connection status (may have changed during translation)
             self._refresh_status()
+
+        self._active_translation_trace_id = None
 
     async def _adjust_text(self, text: str, adjust_type: str):
         """Adjust translation based on user request

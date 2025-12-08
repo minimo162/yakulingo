@@ -1482,7 +1482,7 @@ class TestExportGlossaryCsv:
 
         assert output_path.exists()
 
-        with open(output_path, 'r', encoding='utf-8') as f:
+        with open(output_path, 'r', encoding='utf-8-sig') as f:
             reader = csv.reader(f)
             rows = list(reader)
 
@@ -1508,7 +1508,7 @@ class TestExportGlossaryCsv:
         output_path = tmp_path / "glossary.csv"
         service._export_glossary_csv(blocks, translations, output_path)
 
-        with open(output_path, 'r', encoding='utf-8') as f:
+        with open(output_path, 'r', encoding='utf-8-sig') as f:
             reader = csv.reader(f)
             rows = list(reader)
 
@@ -1533,7 +1533,7 @@ class TestExportGlossaryCsv:
         output_path = tmp_path / "glossary.csv"
         service._export_glossary_csv(blocks, translations, output_path)
 
-        with open(output_path, 'r', encoding='utf-8') as f:
+        with open(output_path, 'r', encoding='utf-8-sig') as f:
             reader = csv.reader(f)
             rows = list(reader)
 
@@ -1555,7 +1555,7 @@ class TestExportGlossaryCsv:
         output_path = tmp_path / "glossary.csv"
         service._export_glossary_csv(blocks, translations, output_path)
 
-        with open(output_path, 'r', encoding='utf-8') as f:
+        with open(output_path, 'r', encoding='utf-8-sig') as f:
             reader = csv.reader(f)
             rows = list(reader)
 
@@ -1579,7 +1579,7 @@ class TestExportGlossaryCsv:
         output_path = tmp_path / "glossary.csv"
         service._export_glossary_csv(blocks, translations, output_path)
 
-        with open(output_path, 'r', encoding='utf-8') as f:
+        with open(output_path, 'r', encoding='utf-8-sig') as f:
             reader = csv.reader(f)
             rows = list(reader)
 
@@ -1595,7 +1595,7 @@ class TestExportGlossaryCsv:
         output_path = tmp_path / "glossary.csv"
         service._export_glossary_csv([], {}, output_path)
 
-        with open(output_path, 'r', encoding='utf-8') as f:
+        with open(output_path, 'r', encoding='utf-8-sig') as f:
             reader = csv.reader(f)
             rows = list(reader)
 

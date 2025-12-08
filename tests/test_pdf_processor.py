@@ -1812,7 +1812,7 @@ class TestExportGlossaryCsv:
 
         # Verify CSV content
         import csv
-        with open(output_path, 'r', encoding='utf-8') as f:
+        with open(output_path, 'r', encoding='utf-8-sig') as f:
             reader = csv.reader(f)
             rows = list(reader)
             assert rows[0] == ['original', 'translated', 'page', 'address']

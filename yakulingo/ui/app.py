@@ -10,8 +10,7 @@ import logging
 from pathlib import Path
 from typing import Optional, TYPE_CHECKING
 
-import nicegui
-from nicegui import ui
+from types import ModuleType
 
 # Module logger
 logger = logging.getLogger(__name__)
@@ -20,7 +19,7 @@ logger = logging.getLogger(__name__)
 MIN_NICEGUI_VERSION = (3, 0, 0)
 
 
-def _ensure_nicegui_version():
+def _ensure_nicegui_version(nicegui_module: ModuleType) -> None:
     """Validate that the installed NiceGUI version meets the minimum requirement.
 
     NiceGUI 3.0 introduced several breaking changes (e.g., Quasar v2 upgrade,
@@ -29,7 +28,7 @@ def _ensure_nicegui_version():
     installed.
     """
 
-    version_str = getattr(nicegui, '__version__', '')
+    version_str = getattr(nicegui_module, '__version__', '')
     try:
         version_parts = tuple(int(part) for part in version_str.split('.')[:3])
     except ValueError:
@@ -45,8 +44,27 @@ def _ensure_nicegui_version():
         )
 
 
-# Validate NiceGUI version as early as possible
-_ensure_nicegui_version()
+# Lazily loaded NiceGUI modules (initialized in _lazy_import_nicegui)
+nicegui: ModuleType | None = None
+ui: ModuleType | None = None
+
+
+def _lazy_import_nicegui() -> ModuleType:
+    """Import NiceGUI only when needed to speed up module import time."""
+
+    global nicegui, ui
+
+    if ui is not None and nicegui is not None:
+        return ui
+
+    import nicegui as nicegui_module
+    from nicegui import ui as ui_module
+
+    _ensure_nicegui_version(nicegui_module)
+
+    nicegui = nicegui_module
+    ui = ui_module
+    return ui_module
 
 # Fast imports - required at startup (lightweight modules only)
 from yakulingo.ui.state import AppState, Tab, FileState, ConnectionState
@@ -2081,6 +2099,7 @@ class YakuLingoApp:
 
 def create_app() -> YakuLingoApp:
     """Create application instance"""
+    _lazy_import_nicegui()
     return YakuLingoApp()
 
 
@@ -2205,6 +2224,7 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
     import time
     _t0 = time.perf_counter()
 
+    _lazy_import_nicegui()
     from nicegui import app as nicegui_app, Client
     logger.info("[TIMING] NiceGUI import: %.2fs", time.perf_counter() - _t0)
 

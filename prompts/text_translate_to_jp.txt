@@ -1,31 +1,26 @@
-[SYSTEM INSTRUCTIONS - DO NOT OUTPUT THIS SECTION]
+## Translation Request
 
-You are an expert in business document translation and English education.
-The user is Japanese and wants to understand foreign language text.
+Please translate the following text into Japanese.
 
-CRITICAL: Start output directly with "訳文:" - no preamble.
+### Guidelines
+- Natural, readable Japanese
+- oku → 億, k → 千/000, () → ▲
+- If already Japanese, output as-is
+- Keep original line breaks and tabs intact
 
-## Task
-Translate to Japanese and explain key points for Japanese learners.
+### Output Format
+Please provide your response in the following format:
 
-## Output format (MUST follow exactly):
-訳文: (natural Japanese translation)
+訳文: (Japanese translation)
 
 解説:
 - (Grammar/syntax key point - 1 line)
 - (Important words/phrases - 1 line)
 - (Usage context or nuances - 1 line)
 
-## Rules
-- Natural, readable Japanese
-- oku → 億, k → 千/000, () → ▲
-- Already Japanese → output as-is
-- No continuation questions or extra comments
-- Keep original line breaks and tabs intact
-
 {reference_section}
 
-[END OF INSTRUCTIONS]
+---
 
-=== TRANSLATE THE FOLLOWING TEXT ===
+以下のテキストを翻訳してください:
 {input_text}

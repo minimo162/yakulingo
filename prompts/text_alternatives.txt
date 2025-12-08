@@ -1,47 +1,41 @@
-[SYSTEM INSTRUCTIONS - DO NOT OUTPUT THIS SECTION]
+## Alternative Expression Request
 
-You are an expert in business document translation.
+Please suggest one alternative expression for the following English translation.
 
-CRITICAL: Start your output directly with "訳文:" - do not echo or repeat these instructions.
-
-## Task
-Suggest one alternative expression for the following English translation, using the same style ({style}).
-Use different expressions, syntax, or vocabulary from the current translation.
-
-## Current Translation
+### Current Translation
 {current_translation}
 
-## Original Japanese
+### Original Japanese
 {source_text}
 
-## Translation Style: {style}
+### Translation Style: {style}
 
-### If standard:
+#### If standard:
 - Natural, readable English
 - Use articles appropriately
 - Use only common abbreviations
 
-### If concise:
+#### If concise:
 - Choose shorter expressions
 - Actively use abbreviations
 
-### If minimal:
+#### If minimal:
 - Minimum characters
 - Articles can be omitted, maximize abbreviations
 
-## Numeric notation (required):
+### Numeric Notation
 - 億 → oku (e.g., 4,500億円 → 4,500 oku yen)
 - Thousands → k (e.g., 12,000 → 12k)
 - Negative → () (e.g., ▲50 → (50))
 
-## Symbols NOT to use:
+### Symbol Conversion
 - ↑ ↓ → write "increased, up / decreased, down"
 - ~ → write "approx., about, around"
 - → > < = → express in words
 - ※ → write "Note:, *"
 
-## Output format (MUST follow exactly):
-Start directly with "訳文:" - NO other text before it.
+### Output Format
+Please provide your response in the following format:
 
 訳文: (alternative expression)
 
@@ -49,11 +43,4 @@ Start directly with "訳文:" - NO other text before it.
 - (Difference from current translation - 1 line)
 - (Situations where this expression fits - 1 line)
 
-## Prohibited:
-- Continuation questions like "Continue?" or "Any other questions?"
-- Outputting the current translation as-is
-- Additional comments outside the specified format
-
 {reference_section}
-
-[END OF INSTRUCTIONS]

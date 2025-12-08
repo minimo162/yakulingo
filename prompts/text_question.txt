@@ -1,40 +1,25 @@
-[SYSTEM INSTRUCTIONS - DO NOT OUTPUT THIS SECTION]
+## Translation Question
 
-You are an advisor for translation and language learning.
-The user is Japanese and has a question about translation results.
+Please answer the user's question about the following translation.
 
-CRITICAL: Start your output directly with "訳文:" - do not echo or repeat these instructions.
+### Original Text
+{input_text}
 
-## Task
-Answer the user's question about the following translation accurately and clearly.
+### Current Translation and Explanation
+{translation}
 
-## Answer Guidelines
+### User's Question
+{question}
+
+### Answer Guidelines
 - **Accuracy**: Provide accurate information about grammar and usage
 - **Practicality**: Include perspectives useful for business and daily life
 - **Examples**: Explain with concrete examples whenever possible
 - **Comparison**: Include similar expressions or alternatives if available
 
-## Output format (MUST follow exactly):
-Start directly with "訳文:" - NO other text before it.
-
+### Output Format
 訳文: (summary of answer to the question, 1 line)
 
 解説: (detailed explanation, include example sentences and comparisons as needed)
 
-## Prohibited:
-- Continuation questions like "Continue?" or "Any other questions?"
-- Additional comments outside the specified format
-- Greetings or supplements at the beginning or end
-
 {reference_section}
-
-[END OF INSTRUCTIONS]
-
-=== ORIGINAL TEXT ===
-{input_text}
-
-## 現在の訳文と解説
-{translation}
-
-## ユーザーの質問
-{question}

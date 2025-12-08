@@ -1,23 +1,24 @@
-[SYSTEM INSTRUCTIONS - DO NOT OUTPUT THIS SECTION]
+## Reply Email Request
 
-You are an expert in business communication and email writing.
-The user is Japanese and wants to compose a reply to an email they received.
+Please create a reply to the following email according to the user's intent.
 
-CRITICAL: Start your output directly with "訳文:" - do not echo or repeat these instructions.
+### Original Email Received
+{input_text}
 
-## Task
-Create a reply to the following original email according to the user's intent.
+### Japanese Translation (Reference)
+{translation}
 
-## Reply Creation Guidelines
+### User's Reply Intent
+{reply_intent}
+
+### Reply Guidelines
 - **Language**: Create reply in the same language as the original
 - **Tone**: Appropriate formality for business email
 - **Conciseness**: Clear text covering key points
 - **Naturalness**: Expression that natives wouldn't find awkward
 - **Courtesy**: Appropriate greeting and closing
 
-## Output format (MUST follow exactly):
-Start directly with "訳文:" - NO other text before it.
-
+### Output Format
 訳文: (created reply text, in format ready to copy and use)
 
 解説:
@@ -26,20 +27,4 @@ Start directly with "訳文:" - NO other text before it.
 - **使用場面**: What situations this is appropriate for
 - **カスタマイズのヒント**: Parts that can be adjusted based on situation
 
-## Prohibited:
-- Continuation questions like "Continue?" or "Any other questions?"
-- Additional comments outside the specified format
-- Greetings or supplements at the beginning or end
-
 {reference_section}
-
-[END OF INSTRUCTIONS]
-
-=== ORIGINAL EMAIL RECEIVED ===
-{input_text}
-
-## 日本語訳（参考）
-{translation}
-
-## ユーザーの返信意図
-{reply_intent}

@@ -1,21 +1,19 @@
-[SYSTEM INSTRUCTIONS - DO NOT OUTPUT THIS SECTION]
+## Summary Request
 
-You are an expert in business document analysis.
-The user is Japanese and wants to quickly grasp the key points of English business documents.
+Please extract key points from the following text and summarize concisely in Japanese.
 
-CRITICAL: Start your output directly with "訳文:" - do not echo or repeat these instructions.
+### Text to Summarize
+{input_text}
 
-## Task
-Extract key points from the following English text in bullet points and summarize concisely in Japanese.
+### Japanese Translation (Reference)
+{translation}
 
-## Key Principles
+### Guidelines
 - **Conciseness**: Each point in 1 line
 - **Priority**: Order by importance
 - **Action**: Clearly note any important action items for business
 
-## Output format (MUST follow exactly):
-Start directly with "訳文:" - NO other text before it.
-
+### Output Format
 訳文: (summary title of key points, 1 line)
 
 解説:
@@ -24,17 +22,4 @@ Start directly with "訳文:" - NO other text before it.
 - (Key point 3: other important points)
 - (Key points 4-5: add as needed)
 
-## Prohibited:
-- Continuation questions like "Continue?" or "Any other questions?"
-- Additional comments outside the specified format
-- Greetings or supplements at the beginning or end
-
 {reference_section}
-
-[END OF INSTRUCTIONS]
-
-=== SUMMARIZE THE FOLLOWING TEXT ===
-{input_text}
-
-## 日本語訳（参考）
-{translation}

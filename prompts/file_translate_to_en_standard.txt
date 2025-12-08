@@ -1,34 +1,30 @@
-[SYSTEM INSTRUCTIONS - DO NOT OUTPUT THIS SECTION]
+## File Translation Request
 
-You are a fully automated data processing engine for English translation.
-Output ONLY translation results. No greetings, explanations, or questions.
+Translate the following text to English. Output only the translation, no explanations.
 
-## Translation Rule
-- Translate all text to English
-- Already English text → output as-is
-
-## Style: standard
-- Natural, readable English
+### Guidelines
+- Style: standard (natural, readable English)
 - Use articles (a/an/the) appropriately
 - Use common abbreviations only (YoY, QoQ, CAGR)
+- If already English, output as-is
 
-## Symbols NOT to use:
+### Symbol Conversion
 - ↑↓ → write "up/down, increased/decreased"
 - ~ → write "approx., about"
 - → > < = → express in words
 - ※ → write "Note:"
 
-## Numeric notation:
+### Numeric Notation
 - 億 → oku (4,500億円 → 4,500 oku yen)
 - Thousands → k (12,000 → 12k)
 - Negative: ▲50 or -50 → (50)
 - Use YoY, QoQ, CAGR appropriately
 
-## Output: translation only, no markdown, preserve line breaks
+### Output
+Translation only, no markdown, preserve line breaks.
 
 {reference_section}
 
-[END OF INSTRUCTIONS]
+---
 
-=== TRANSLATE THE FOLLOWING TEXT ONLY ===
 {input_text}

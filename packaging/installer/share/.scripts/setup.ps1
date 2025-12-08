@@ -242,10 +242,17 @@ function Invoke-Setup {
         Write-Host "[2/3] Copying ZIP to local temp folder..." -ForegroundColor Yellow
     }
 
+    # Clean up any old temp folders first
+    Get-ChildItem -Path $env:TEMP -Directory -Filter "YakuLingo_Setup_*" -ErrorAction SilentlyContinue | ForEach-Object {
+        Remove-Item -Path $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
     $TempZipDir = Join-Path $env:TEMP "YakuLingo_Setup_$(Get-Date -Format 'yyyyMMddHHmmss')"
     New-Item -ItemType Directory -Path $TempZipDir -Force | Out-Null
     $TempZipFile = Join-Path $TempZipDir $ZipFileName
-    Copy-Item -Path $ZipFile -Destination $TempZipFile -Force
+    # Use robocopy for faster network file copy (better buffering than Copy-Item)
+    $ZipSourceDir = Split-Path -Parent $ZipFile
+    & robocopy $ZipSourceDir $TempZipDir $ZipFileName /R:3 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null
 
     if (-not $GuiMode) {
         Write-Host "[OK] ZIP copied to temp folder" -ForegroundColor Green
@@ -281,10 +288,18 @@ function Invoke-Setup {
         throw "Failed to extract ZIP file.`n`nFile: $ZipFileName"
     }
 
-    # Move extracted folder to destination (local to local = fast)
-    Move-Item -Path $ExtractedDir.FullName -Destination $SetupPath -Force
+    # Copy extracted folder to destination using robocopy (more robust than Move-Item)
+    $robocopyResult = & robocopy $ExtractedDir.FullName $SetupPath /E /MOVE /MT:8 /R:3 /W:1 /NFL /NDL /NJH /NJS /NP 2>&1
+    # robocopy returns 0-7 for success, 8+ for errors
+    if ($LASTEXITCODE -ge 8) {
+        # Clean up temp folder on error
+        if (Test-Path $TempZipDir) {
+            Remove-Item -Path $TempZipDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        throw "Failed to copy files to destination.`n`nDestination: $SetupPath"
+    }
 
-    # Clean up temp folder
+    # Clean up temp folder (robocopy /MOVE should handle most of it, but ensure cleanup)
     if (Test-Path $TempZipDir) {
         Remove-Item -Path $TempZipDir -Recurse -Force -ErrorAction SilentlyContinue
     }

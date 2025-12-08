@@ -2657,11 +2657,14 @@ document.fonts.ready.then(function() {
 
     # window_size is already determined at the start of run_app()
     logger.info("[TIMING] Before ui.run(): %.2fs", time.perf_counter() - _t0)
+    # Use the same icon as desktop shortcut for taskbar
+    icon_path = Path(__file__).parent / 'yakulingo.ico'
+
     ui.run(
         host=host,
         port=port,
         title='YakuLingo',
-        favicon='🍎',
+        favicon=icon_path,
         dark=False,
         reload=False,
         native=native,

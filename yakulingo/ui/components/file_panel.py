@@ -305,7 +305,7 @@ def _drop_zone(on_file_select: Callable[[Path], Union[None, Awaitable[None]]]):
             if asyncio.iscoroutine(result):
                 asyncio.create_task(result)
         except (OSError, AttributeError) as err:
-            ui.notify(f'ファイルの読み込みに失敗しました: {err}', type='negative')
+                ui.notify(f'ファイルの読み込みに失敗しました: {err}', type='negative')
 
     # Container with relative positioning for layering
     with ui.element('div').classes('drop-zone w-full') as container:
@@ -329,30 +329,41 @@ def _drop_zone(on_file_select: Callable[[Path], Union[None, Awaitable[None]]]):
         # This is necessary because CSS hides Quasar's internal drop zone element
         async def handle_file_ready():
             """Process dropped files after JS has read the file data"""
-            # Get file data that was read by JavaScript
-            result = await ui.run_javascript('window._droppedFileData')
-            if result and result.get('name') and result.get('data'):
-                try:
-                    content = bytes(result['data'])
-                    name = result['name']
-                    # Clear the global variable
-                    await ui.run_javascript('window._droppedFileData = null')
-                    # Validate file extension
-                    ext = Path(name).suffix.lower()
-                    valid_exts = {'.xlsx', '.xls', '.docx', '.doc', '.pptx', '.ppt', '.pdf', '.txt'}
-                    if ext not in valid_exts:
-                        ui.notify(f'サポートされていないファイル形式です: {ext}', type='warning')
-                        return
-                    temp_path = temp_file_manager.create_temp_file(content, name)
-                    # Support async callback (await if coroutine)
-                    callback_result = on_file_select(temp_path)
-                    if asyncio.iscoroutine(callback_result):
-                        await callback_result
-                except Exception as err:
-                    ui.notify(f'ファイルの読み込みに失敗しました: {err}', type='negative')
+            try:
+                # Get file data that was read by JavaScript
+                result = await ui.run_javascript('window._droppedFileData')
+                if not result:
+                    ui.notify('ファイルがドロップされませんでした', type='warning')
+                    return
+
+                if not result.get('name') or not result.get('data'):
+                    ui.notify('ファイルの読み込みに失敗しました: 空のデータです', type='negative')
+                    return
+
+                content = bytes(result['data'])
+                name = result['name']
+                # Clear the global variable
+                await ui.run_javascript('window._droppedFileData = null')
+                # Validate file extension
+                ext = Path(name).suffix.lower()
+                valid_exts = {'.xlsx', '.xls', '.docx', '.doc', '.pptx', '.ppt', '.pdf', '.txt'}
+                if ext not in valid_exts:
+                    ui.notify(f'サポートされていないファイル形式です: {ext}', type='warning')
+                    return
+                temp_path = temp_file_manager.create_temp_file(content, name)
+                # Support async callback (await if coroutine)
+                callback_result = on_file_select(temp_path)
+                if asyncio.iscoroutine(callback_result):
+                    await callback_result
+            except Exception as err:
+                ui.notify(f'ファイルの読み込みに失敗しました: {err}', type='negative')
+            finally:
+                # Avoid stale data if any branch exits early
+                await ui.run_javascript('window._droppedFileData = null')
 
         # Set up drag & drop event handlers
-        container.on('dragover', js_handler='(e) => { e.preventDefault(); e.currentTarget.classList.add("drag-over"); }')
+        container.on('dragenter', js_handler='(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; e.currentTarget.classList.add("drag-over"); }')
+        container.on('dragover', js_handler='(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; e.currentTarget.classList.add("drag-over"); }')
         container.on('dragleave', js_handler='(e) => { e.currentTarget.classList.remove("drag-over"); }')
 
         # Drop handler: Read file in JS first, then dispatch custom event to trigger Python handler
@@ -360,7 +371,12 @@ def _drop_zone(on_file_select: Callable[[Path], Union[None, Awaitable[None]]]):
         js_drop_handler = '''(e) => {
             e.preventDefault();
             e.currentTarget.classList.remove("drag-over");
-            const file = e.dataTransfer.files[0];
+            const items = e.dataTransfer.items;
+            const file = items && items.length ? items[0].getAsFile() : e.dataTransfer.files[0];
+            if (!file) {
+                e.currentTarget.dispatchEvent(new CustomEvent('file-ready'));
+                return;
+            }
             if (file) {
                 const reader = new FileReader();
                 reader.onload = (event) => {

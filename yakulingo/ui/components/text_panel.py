@@ -1085,7 +1085,7 @@ def _render_check_my_english(
 
                 # Textarea for user's English
                 english_input = ui.textarea(
-                    placeholder='例: I will check it tomorrow and get back to you.'
+                    placeholder='例: I will review the document tomorrow and update you.'
                 ).classes('w-full check-my-english-input').props('autogrow rows=3')
 
                 with ui.row().classes('justify-end gap-2'):
@@ -1146,7 +1146,7 @@ def _render_reply_composer(
 
                 # Textarea for reply intent
                 reply_input = ui.textarea(
-                    placeholder='例: 了解しました、明日確認します'
+                    placeholder='例: 承知しました。明日確認してご連絡します。'
                 ).classes('w-full reply-composer-input').props('autogrow rows=3')
 
                 with ui.row().classes('justify-end gap-2'):

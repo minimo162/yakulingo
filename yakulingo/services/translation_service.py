@@ -313,7 +313,7 @@ from yakulingo.models.types import (
     ProgressCallback,
 )
 from yakulingo.config.settings import AppSettings
-from yakulingo.services.copilot_handler import CopilotHandler
+from yakulingo.services.copilot_handler import CopilotHandler, TranslationCancelledError
 from yakulingo.services.prompt_builder import PromptBuilder, REFERENCE_INSTRUCTION
 from yakulingo.processors.base import FileProcessor
 
@@ -553,6 +553,9 @@ class BatchTranslator:
         self._cancel_event.clear()  # Reset at start of new translation
         cancelled = False
 
+        # Set cancel callback on CopilotHandler for responsive cancellation
+        self.copilot.set_cancel_callback(lambda: self._cancel_event.is_set())
+
         # Phase 0: Skip formula blocks (preserve original text)
         formula_skipped = 0
         translatable_blocks = []
@@ -672,9 +675,14 @@ class BatchTranslator:
             # Translate unique texts only
             # Skip clear wait for 2nd+ batches (we just finished getting a response)
             skip_clear_wait = (i > 0)
-            unique_translations = self.copilot.translate_sync(
-                unique_texts, prompt, reference_files, skip_clear_wait
-            )
+            try:
+                unique_translations = self.copilot.translate_sync(
+                    unique_texts, prompt, reference_files, skip_clear_wait
+                )
+            except TranslationCancelledError:
+                logger.info("Translation cancelled during batch %d/%d", i + 1, len(batches))
+                cancelled = True
+                break
 
             # Validate translation count matches unique text count
             if len(unique_translations) != len(unique_texts):
@@ -721,6 +729,9 @@ class BatchTranslator:
         # Log summary if there were issues
         if result.has_issues:
             logger.warning("Translation completed with issues: %s", result.get_summary())
+
+        # Clear cancel callback to avoid holding reference
+        self.copilot.set_cancel_callback(None)
 
         return result
 
@@ -884,6 +895,13 @@ class TranslationService:
                 duration_seconds=time.time() - start_time,
             )
 
+        except TranslationCancelledError:
+            logger.info("Text translation cancelled")
+            return TranslationResult(
+                status=TranslationStatus.CANCELLED,
+                error_message="翻訳がキャンセルされました",
+                duration_seconds=time.time() - start_time,
+            )
         except OSError as e:
             logger.warning("File I/O error during translation: %s", e)
             return TranslationResult(
@@ -1080,6 +1098,15 @@ class TranslationService:
                     error_message="Copilotから応答がありませんでした。Edgeブラウザを確認してください。",
                 )
 
+        except TranslationCancelledError:
+            logger.info("Text translation with options cancelled")
+            return TextTranslationResult(
+                source_text=text,
+                source_char_count=len(text),
+                output_language="en",  # Default
+                detected_language=detected_language,
+                error_message="翻訳がキャンセルされました",
+            )
         except OSError as e:
             logger.warning("File I/O error during translation: %s", e)
             return TextTranslationResult(
@@ -1205,6 +1232,9 @@ class TranslationService:
 
             return option
 
+        except TranslationCancelledError:
+            logger.info("Translation adjustment cancelled")
+            return None
         except OSError as e:
             logger.warning("File I/O error during translation adjustment: %s", e)
             return None
@@ -1274,6 +1304,9 @@ class TranslationService:
                 option.style = style
             return option
 
+        except TranslationCancelledError:
+            logger.info("Alternative translation cancelled")
+            return None
         except OSError as e:
             logger.warning("File I/O error during alternative translation: %s", e)
             return None

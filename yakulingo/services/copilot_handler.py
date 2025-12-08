@@ -52,6 +52,11 @@ LOGIN_PAGE_PATTERNS = [
 ]
 
 
+class TranslationCancelledError(Exception):
+    """Raised when translation is cancelled by user."""
+    pass
+
+
 class PlaywrightManager:
     """
     Thread-safe singleton manager for Playwright imports.
@@ -336,6 +341,8 @@ class CopilotHandler:
         self._gpt5_enabled = False
         # Login wait cancellation flag (set by cancel_login_wait to interrupt login wait loop)
         self._login_cancelled = False
+        # Translation cancellation callback (returns True if cancelled)
+        self._cancel_callback: Optional[Callable[[], bool]] = None
 
     @property
     def is_connected(self) -> bool:
@@ -358,6 +365,25 @@ class CopilotHandler:
         """
         self._login_cancelled = True
         logger.debug("Login wait cancellation requested")
+
+    def set_cancel_callback(self, callback: Optional[Callable[[], bool]]) -> None:
+        """Set the translation cancellation callback.
+
+        Args:
+            callback: A callable that returns True if translation should be cancelled.
+                     Pass None to clear the callback.
+        """
+        self._cancel_callback = callback
+
+    def _is_cancelled(self) -> bool:
+        """Check if translation has been cancelled.
+
+        Returns:
+            True if cancellation was requested, False otherwise.
+        """
+        if self._cancel_callback is not None:
+            return self._cancel_callback()
+        return False
 
     def _get_storage_state_path(self) -> Path:
         """Get path to storage_state.json for cookie/session persistence."""
@@ -1328,18 +1354,42 @@ class CopilotHandler:
                 raise RuntimeError("Copilotへのログインが必要です。Edgeブラウザでログインしてください。")
             raise RuntimeError("ブラウザに接続できませんでした。Edgeが起動しているか確認してください。")
 
+        # Check for cancellation before starting translation
+        if self._is_cancelled():
+            logger.info("Translation cancelled before starting")
+            raise TranslationCancelledError("Translation cancelled by user")
+
         for attempt in range(max_retries + 1):
+            # Check for cancellation at the start of each attempt
+            if self._is_cancelled():
+                logger.info("Translation cancelled before attempt %d", attempt + 1)
+                raise TranslationCancelledError("Translation cancelled by user")
+
             # Start a new chat to clear previous context (prevents using old responses)
             self.start_new_chat(skip_clear_wait=skip_clear_wait if attempt == 0 else True)
+
+            # Check for cancellation after starting new chat
+            if self._is_cancelled():
+                logger.info("Translation cancelled after starting new chat")
+                raise TranslationCancelledError("Translation cancelled by user")
 
             # Attach reference files first (before sending prompt)
             if reference_files:
                 for file_path in reference_files:
                     if file_path.exists():
                         self._attach_file(file_path)
+                        # Check for cancellation after each file attachment
+                        if self._is_cancelled():
+                            logger.info("Translation cancelled during file attachment")
+                            raise TranslationCancelledError("Translation cancelled by user")
 
             # Send the prompt
             self._send_message(prompt)
+
+            # Check for cancellation after sending message (before waiting for response)
+            if self._is_cancelled():
+                logger.info("Translation cancelled after sending message")
+                raise TranslationCancelledError("Translation cancelled by user")
 
             # Get response
             result = self._get_response()
@@ -1442,18 +1492,42 @@ class CopilotHandler:
                 raise RuntimeError("Copilotへのログインが必要です。Edgeブラウザでログインしてください。")
             raise RuntimeError("ブラウザに接続できませんでした。Edgeが起動しているか確認してください。")
 
+        # Check for cancellation before starting translation
+        if self._is_cancelled():
+            logger.info("Translation cancelled before starting (single)")
+            raise TranslationCancelledError("Translation cancelled by user")
+
         for attempt in range(max_retries + 1):
+            # Check for cancellation at the start of each attempt
+            if self._is_cancelled():
+                logger.info("Translation cancelled before attempt %d (single)", attempt + 1)
+                raise TranslationCancelledError("Translation cancelled by user")
+
             # Start a new chat to clear previous context
             self.start_new_chat()
+
+            # Check for cancellation after starting new chat
+            if self._is_cancelled():
+                logger.info("Translation cancelled after starting new chat (single)")
+                raise TranslationCancelledError("Translation cancelled by user")
 
             # Attach reference files first (before sending prompt)
             if reference_files:
                 for file_path in reference_files:
                     if file_path.exists():
                         self._attach_file(file_path)
+                        # Check for cancellation after each file attachment
+                        if self._is_cancelled():
+                            logger.info("Translation cancelled during file attachment (single)")
+                            raise TranslationCancelledError("Translation cancelled by user")
 
             # Send the prompt
             self._send_message(prompt)
+
+            # Check for cancellation after sending message
+            if self._is_cancelled():
+                logger.info("Translation cancelled after sending message (single)")
+                raise TranslationCancelledError("Translation cancelled by user")
 
             # Get response and return raw (no parsing - preserves 訳文/解説 format)
             result = self._get_response(on_chunk=on_chunk)
@@ -1622,6 +1696,11 @@ class CopilotHandler:
                 # Response may already be present or selector changed, continue polling
                 pass
 
+            # Check for cancellation after initial wait
+            if self._is_cancelled():
+                logger.info("Translation cancelled after initial wait")
+                raise TranslationCancelledError("Translation cancelled by user")
+
             # Wait for response completion with dynamic polling
             max_wait = float(timeout)
             last_text = ""
@@ -1629,6 +1708,11 @@ class CopilotHandler:
             has_content = False  # Track if we've seen any content
 
             while max_wait > 0:
+                # Check for cancellation at the start of each polling iteration
+                if self._is_cancelled():
+                    logger.info("Translation cancelled during response polling")
+                    raise TranslationCancelledError("Translation cancelled by user")
+
                 # Check if Copilot is still generating (stop button visible)
                 # If stop button is present, response is not complete yet
                 # 実際のCopilot HTML: <div class="fai-SendButton__stopBackground ..."></div>

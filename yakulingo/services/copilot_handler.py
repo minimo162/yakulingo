@@ -1029,14 +1029,12 @@ class CopilotHandler:
         self._login_cancelled = False
 
         logger.info("Waiting for login completion (timeout: %ds)...", timeout)
-        logger.info("Edgeブラウザでログインしてください / Please log in to the Edge browser")
-
-        # Bring browser to foreground
-        self._bring_to_foreground_impl(page)
 
         input_selector = '#m365-chat-editor-target-element, [data-lexical-editor="true"]'
         poll_interval = 1.0  # Check every second
         elapsed = 0.0
+        browser_shown = False  # Track if we've shown browser to user
+        auto_login_grace_period = 3.0  # Wait this long before showing browser
 
         while elapsed < timeout:
             # Check for cancellation (allows graceful shutdown)
@@ -1056,7 +1054,12 @@ class CopilotHandler:
                 logger.debug("Login wait: current URL = %s (elapsed: %.1fs)", url[:80], elapsed)
 
                 if _is_login_page(url):
-                    # Still on login page, wait and retry
+                    # Still on login page
+                    # After grace period, show browser for manual login
+                    if not browser_shown and elapsed >= auto_login_grace_period:
+                        logger.info("Edgeブラウザでログインしてください / Please log in to the Edge browser")
+                        self._bring_to_foreground_impl(page)
+                        browser_shown = True
                     time.sleep(poll_interval)
                     elapsed += poll_interval
                     continue

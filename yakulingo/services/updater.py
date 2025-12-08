@@ -18,6 +18,7 @@ import subprocess
 import sys
 import tempfile
 import zipfile
+import time
 
 # HTTP関連
 import base64
@@ -329,7 +330,9 @@ class AutoUpdater:
 
         self.opener = urllib.request.build_opener(*handlers)
 
-    def _make_request(self, url: str, headers: Optional[dict] = None) -> bytes:
+    def _make_request(
+        self, url: str, headers: Optional[dict] = None, return_headers: bool = False
+    ):
         """HTTP GETリクエストを実行"""
         req = urllib.request.Request(url)
         req.add_header("User-Agent", f"YakuLingo/{self.current_version}")
@@ -341,7 +344,10 @@ class AutoUpdater:
 
         try:
             with self.opener.open(req, timeout=30) as response:
-                return response.read()
+                data = response.read()
+                if return_headers:
+                    return data, response.headers
+                return data
         except urllib.error.HTTPError as e:
             if e.code == 407:
                 raise RuntimeError(
@@ -349,6 +355,37 @@ class AutoUpdater:
                     "Windows認証プロキシを使用する場合は、pywin32をインストールしてください。"
                 )
             raise
+
+    def _load_release_cache(self) -> Optional[dict]:
+        """最新リリース情報のキャッシュを読み込む"""
+        cache_file = self.cache_dir / "latest_release.json"
+        if not cache_file.exists():
+            return None
+
+        try:
+            payload = json.loads(cache_file.read_text(encoding="utf-8"))
+            # 1時間を超えたキャッシュは無効化
+            if time.time() - payload.get("timestamp", 0) > 3600:
+                return None
+            return payload
+        except (OSError, json.JSONDecodeError, ValueError):
+            return None
+
+    def _save_release_cache(self, body: bytes, etag: Optional[str]) -> None:
+        """最新リリース情報のキャッシュを保存"""
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        cache_file = self.cache_dir / "latest_release.json"
+        payload = {
+            "timestamp": time.time(),
+            "body": body.decode("utf-8", errors="ignore"),
+        }
+        if etag:
+            payload["etag"] = etag
+
+        try:
+            cache_file.write_text(json.dumps(payload), encoding="utf-8")
+        except OSError:
+            logger.debug("Failed to write release cache", exc_info=True)
 
     def check_for_updates(self) -> UpdateResult:
         """
@@ -361,7 +398,23 @@ class AutoUpdater:
             # GitHub API: 最新リリースを取得
             api_url = f"https://api.github.com/repos/{self.repo_owner}/{self.repo_name}/releases/latest"
 
-            response_data = self._make_request(api_url)
+            cached_release = self._load_release_cache()
+            headers: dict[str, str] = {}
+            if cached_release and cached_release.get("etag"):
+                headers["If-None-Match"] = cached_release["etag"]
+
+            try:
+                response_data, response_headers = self._make_request(
+                    api_url, headers=headers or None, return_headers=True
+                )
+                etag = response_headers.get("ETag")
+                self._save_release_cache(response_data, etag)
+            except urllib.error.HTTPError as e:
+                if e.code == 304 and cached_release and "body" in cached_release:
+                    response_data = cached_release["body"].encode("utf-8")
+                else:
+                    raise
+
             release_info = json.loads(response_data.decode("utf-8"))
 
             # バージョン情報を抽出
@@ -474,16 +527,19 @@ class AutoUpdater:
 
         download_path = self.cache_dir / f"yakulingo-{version_info.version}.zip"
 
-        # 既にダウンロード済みの場合はスキップ
+        # 既にダウンロード済みの場合はスキップ（サイズ一致時のみ）
         if download_path.exists():
-            return download_path
+            if version_info.file_size and download_path.stat().st_size != version_info.file_size:
+                download_path.unlink(missing_ok=True)
+            else:
+                return download_path
 
         # ダウンロード実行
         req = urllib.request.Request(version_info.download_url)
         req.add_header("User-Agent", f"YakuLingo/{self.current_version}")
 
         with self.opener.open(req, timeout=300) as response:
-            total_size = int(response.headers.get("Content-Length", 0))
+            total_size = int(response.headers.get("Content-Length", 0) or version_info.file_size or 0)
             downloaded = 0
 
             with open(download_path, "wb") as f:

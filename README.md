@@ -45,7 +45,7 @@ YakuLingoが提供する主な機能一覧です。
 | 形式 | 拡張子 | 翻訳対象 | 対訳出力 |
 |------|--------|----------|----------|
 | Excel | `.xlsx` `.xls` | セル、図形、グラフタイトル | 原文/訳文シート並列 |
-| Word | `.docx` | 段落、表、テキストボックス | 原文→訳文の段落交互 |
+| Word | `.docx` | 段落、表、テキストボックス（*.doc* は未対応） | 原文→訳文の段落交互 |
 | PowerPoint | `.pptx` | スライド、ノート、図形 | 原文→訳文のスライド交互 |
 | PDF | `.pdf` | 全ページテキスト | 原文→訳文のページ交互 |
 | テキスト | `.txt` | プレーンテキスト | 原文/訳文の交互 |
@@ -182,6 +182,7 @@ python app.py
 | `max_chars_per_batch` | Copilot送信1回あたりの最大文字数（テンプレート込みで安全マージン確保） | 7000 |
 | `request_timeout` | 翻訳リクエストのタイムアウト（秒） | 120 |
 | `output_directory` | 出力先フォルダ（nullは入力と同じ場所） | null |
+| `onboarding_completed` | 初回翻訳後に自動でオンになるオンボーディング完了フラグ | false |
 | `window_width` / `window_height` | ウィンドウ初期サイズ | 1400 / 850 |
 
 **翻訳スタイル**: `"standard"`（標準）, `"concise"`（簡潔）, `"minimal"`（最簡潔）
@@ -274,8 +275,8 @@ YakuLingo/
 ├── packaging/                # 配布・ビルド関連
 │   ├── launcher/             # ネイティブランチャー（Rust製）
 │   └── installer/            # ネットワーク共有インストーラ
-├── tests/                    # テストスイート（26ファイル）
-├── prompts/                  # 翻訳プロンプト
+├── tests/                    # テストスイート（33ファイル）
+├── prompts/                  # 翻訳プロンプト（17ファイル）
 ├── config/settings.template.json  # 設定テンプレート
 └── glossary.csv              # デフォルト参照ファイル
 ```

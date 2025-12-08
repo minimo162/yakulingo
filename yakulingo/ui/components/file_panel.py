@@ -327,25 +327,16 @@ def _drop_zone(on_file_select: Callable[[Path], Union[None, Awaitable[None]]]):
 
         # Handle drag & drop directly via HTML5 API (more reliable than Quasar's internal handling)
         # This is necessary because CSS hides Quasar's internal drop zone element
-        async def handle_drop():
-            """Process dropped files via JavaScript File API"""
-            js_code = '''
-            (async () => {
-                const dt = window._lastDropEvent?.dataTransfer;
-                if (!dt || !dt.files || dt.files.length === 0) return null;
-                const file = dt.files[0];
-                const buffer = await file.arrayBuffer();
-                return {
-                    name: file.name,
-                    data: Array.from(new Uint8Array(buffer))
-                };
-            })()
-            '''
-            result = await ui.run_javascript(js_code)
+        async def handle_file_ready():
+            """Process dropped files after JS has read the file data"""
+            # Get file data that was read by JavaScript
+            result = await ui.run_javascript('window._droppedFileData')
             if result and result.get('name') and result.get('data'):
                 try:
                     content = bytes(result['data'])
                     name = result['name']
+                    # Clear the global variable
+                    await ui.run_javascript('window._droppedFileData = null')
                     # Validate file extension
                     ext = Path(name).suffix.lower()
                     valid_exts = {'.xlsx', '.xls', '.docx', '.doc', '.pptx', '.ppt', '.pdf', '.txt'}
@@ -363,8 +354,28 @@ def _drop_zone(on_file_select: Callable[[Path], Union[None, Awaitable[None]]]):
         # Set up drag & drop event handlers
         container.on('dragover', js_handler='(e) => { e.preventDefault(); e.currentTarget.classList.add("drag-over"); }')
         container.on('dragleave', js_handler='(e) => { e.currentTarget.classList.remove("drag-over"); }')
-        container.on('drop', handler=handle_drop,
-                     js_handler='(e) => { e.preventDefault(); e.currentTarget.classList.remove("drag-over"); window._lastDropEvent = e; }')
+
+        # Drop handler: Read file in JS first, then dispatch custom event to trigger Python handler
+        # This is necessary because dataTransfer.files is only available during the drop event
+        js_drop_handler = '''(e) => {
+            e.preventDefault();
+            e.currentTarget.classList.remove("drag-over");
+            const file = e.dataTransfer.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    window._droppedFileData = {
+                        name: file.name,
+                        data: Array.from(new Uint8Array(event.target.result))
+                    };
+                    // Dispatch custom event to notify Python handler that file is ready
+                    e.currentTarget.dispatchEvent(new CustomEvent('file-ready'));
+                };
+                reader.readAsArrayBuffer(file);
+            }
+        }'''
+        container.on('drop', js_handler=js_drop_handler)
+        container.on('file-ready', handler=handle_file_ready)
 
 
 def _file_card(file_info: FileInfo, on_remove: Callable[[], None]):

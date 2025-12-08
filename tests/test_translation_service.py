@@ -279,6 +279,24 @@ class TestTranslationServiceGenerateOutputPath:
 
             assert output.parent == output_dir
 
+    def test_sanitizes_forbidden_chars_in_filename(self, service):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Windows-forbidden characters (:/?* etc.) should be replaced
+            input_path = Path(tmpdir) / "レポート:2024?.xlsx"
+
+            output = service._generate_output_path(input_path)
+
+            assert output.name == "レポート_2024__translated.xlsx"
+
+    def test_preserves_full_width_characters(self, service):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Full-width characters should remain intact after sanitization
+            input_path = Path(tmpdir) / "データ２０２４.xlsx"
+
+            output = service._generate_output_path(input_path)
+
+            assert output.name == "データ２０２４_translated.xlsx"
+
 
 class TestTranslationServiceGetProcessor:
     """Tests for TranslationService._get_processor()"""

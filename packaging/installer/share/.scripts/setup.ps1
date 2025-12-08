@@ -152,11 +152,12 @@ function Write-Status {
         [string]$Message,
         [string]$Color = "White",
         [switch]$Progress,
-        [string]$Step = ""
+        [string]$Step = "",
+        [int]$Percent = -1
     )
     if ($GuiMode) {
         if ($Progress) {
-            Show-Progress -Title "YakuLingo Setup" -Status $Message -Step $Step
+            Show-Progress -Title "YakuLingo Setup" -Status $Message -Step $Step -Percent $Percent
         }
     } else {
         Write-Host $Message -ForegroundColor $Color
@@ -295,10 +296,10 @@ function Invoke-Setup {
     # ============================================================
     # Step 1: Prepare destination (backup user data first)
     # ============================================================
-    Write-Status -Message "Preparing destination..." -Progress -Step "Step 1/3: Preparing"
+    Write-Status -Message "Preparing destination..." -Progress -Step "Step 1/4: Preparing" -Percent 5
     if (-not $GuiMode) {
         Write-Host ""
-        Write-Host "[1/3] Preparing destination..." -ForegroundColor Yellow
+        Write-Host "[1/4] Preparing destination..." -ForegroundColor Yellow
     }
 
     # Backup user data files before removing the directory
@@ -369,14 +370,15 @@ function Invoke-Setup {
     if (-not $GuiMode) {
         Write-Host "[OK] Destination ready: $SetupPath" -ForegroundColor Green
     }
+    Write-Status -Message "Destination prepared" -Progress -Step "Step 1/4: Preparing" -Percent 25
 
     # ============================================================
     # Step 2: Copy ZIP to temp folder (faster than extracting over network)
     # ============================================================
-    Write-Status -Message "Copying files..." -Progress -Step "Step 2/3: Copying"
+    Write-Status -Message "Copying files..." -Progress -Step "Step 2/4: Copying" -Percent 30
     if (-not $GuiMode) {
         Write-Host ""
-        Write-Host "[2/3] Copying ZIP to local temp folder..." -ForegroundColor Yellow
+        Write-Host "[2/4] Copying ZIP to local temp folder..." -ForegroundColor Yellow
     }
 
     $workspace = Prepare-TempWorkspace -ZipFileName $ZipFileName
@@ -390,14 +392,15 @@ function Invoke-Setup {
     if (-not $GuiMode) {
         Write-Host "[OK] ZIP copied to temp folder" -ForegroundColor Green
     }
+    Write-Status -Message "Files copied" -Progress -Step "Step 2/4: Copying" -Percent 50
 
     # ============================================================
     # Step 3: Extract ZIP locally (much faster than over network)
     # ============================================================
-    Write-Status -Message "Extracting files..." -Progress -Step "Step 3/3: Extracting"
+    Write-Status -Message "Extracting files..." -Progress -Step "Step 3/4: Extracting" -Percent 60
     if (-not $GuiMode) {
         Write-Host ""
-        Write-Host "[3/3] Extracting files locally..." -ForegroundColor Yellow
+        Write-Host "[3/4] Extracting files locally..." -ForegroundColor Yellow
         Write-Host "      Extracting with 7-Zip..." -ForegroundColor Gray
     }
 
@@ -428,6 +431,7 @@ function Invoke-Setup {
     if (-not $GuiMode) {
         Write-Host "[OK] Extraction completed" -ForegroundColor Green
     }
+    Write-Status -Message "Files extracted" -Progress -Step "Step 3/4: Extracting" -Percent 80
 
     # ============================================================
     # Restore/Merge backed up user data files
@@ -603,10 +607,10 @@ function Invoke-Setup {
     # ============================================================
     # Finalize: Create shortcuts
     # ============================================================
-    Write-Status -Message "Creating shortcuts..." -Progress -Step "Finalizing..."
+    Write-Status -Message "Creating shortcuts..." -Progress -Step "Step 4/4: Finalizing" -Percent 90
     if (-not $GuiMode) {
         Write-Host ""
-        Write-Host "[OK] Creating shortcuts..." -ForegroundColor Yellow
+        Write-Host "[4/4] Creating shortcuts..." -ForegroundColor Yellow
     }
 
     $WshShell = New-Object -ComObject WScript.Shell
@@ -630,6 +634,7 @@ function Invoke-Setup {
     # Done
     # ============================================================
     if ($GuiMode) {
+        Write-Status -Message "Setup completed!" -Progress -Step "Step 4/4: Finalizing" -Percent 100
         Show-Success "Setup completed!`n`nPlease launch YakuLingo from the desktop shortcut."
     } else {
         Write-Host ""

@@ -305,7 +305,7 @@ def _drop_zone(on_file_select: Callable[[Path], None]):
             ui.label('または クリックして選択').classes('drop-zone-subtext')
             ui.label('Excel / Word / PowerPoint / PDF / TXT').classes('drop-zone-hint')
 
-        # Upload component (hidden, triggered by container click)
+        # Upload component for click selection
         upload = ui.upload(
             on_upload=handle_upload,
             auto_upload=True,
@@ -313,6 +313,44 @@ def _drop_zone(on_file_select: Callable[[Path], None]):
 
         # Make container click trigger the upload file dialog
         container.on('click', lambda: upload.run_method('pickFiles'))
+
+        # Handle drag & drop directly via HTML5 API (more reliable than Quasar's internal handling)
+        # This is necessary because CSS hides Quasar's internal drop zone element
+        async def handle_drop(e):
+            """Process dropped files via JavaScript File API"""
+            js_code = '''
+            (async () => {
+                const dt = window._lastDropEvent?.dataTransfer;
+                if (!dt || !dt.files || dt.files.length === 0) return null;
+                const file = dt.files[0];
+                const buffer = await file.arrayBuffer();
+                return {
+                    name: file.name,
+                    data: Array.from(new Uint8Array(buffer))
+                };
+            })()
+            '''
+            result = await ui.run_javascript(js_code)
+            if result and result.get('name') and result.get('data'):
+                try:
+                    content = bytes(result['data'])
+                    name = result['name']
+                    # Validate file extension
+                    ext = Path(name).suffix.lower()
+                    valid_exts = {'.xlsx', '.xls', '.docx', '.doc', '.pptx', '.ppt', '.pdf', '.txt'}
+                    if ext not in valid_exts:
+                        ui.notify(f'サポートされていないファイル形式です: {ext}', type='warning')
+                        return
+                    temp_path = temp_file_manager.create_temp_file(content, name)
+                    on_file_select(temp_path)
+                except Exception as err:
+                    ui.notify(f'ファイルの読み込みに失敗しました: {err}', type='negative')
+
+        # Set up drag & drop event handlers
+        container.on('dragover', js_handler='(e) => { e.preventDefault(); e.currentTarget.classList.add("drag-over"); }')
+        container.on('dragleave', js_handler='(e) => { e.currentTarget.classList.remove("drag-over"); }')
+        container.on('drop', handler=handle_drop, args=['event'],
+                     js_handler='(e) => { e.preventDefault(); e.currentTarget.classList.remove("drag-over"); window._lastDropEvent = e; }')
 
 
 def _file_card(file_info: FileInfo, on_remove: Callable[[], None]):

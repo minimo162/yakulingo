@@ -951,6 +951,15 @@ textarea:focus-visible {
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-spring);
 }
 
+/* Active drag-over state (more prominent than hover) */
+.drop-zone.drag-over {
+    border-color: var(--md-sys-color-primary);
+    border-style: solid;
+    background: rgba(222, 224, 255, 0.5);  /* primary-container at 50% */
+    transform: scale(1.02);
+    box-shadow: 0 0 0 2px var(--md-sys-color-primary-container);
+}
+
 .drop-zone-icon {
     font-size: 3rem;
     color: var(--md-sys-color-on-surface-variant);

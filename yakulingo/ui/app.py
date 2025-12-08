@@ -2078,6 +2078,8 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
 
     def cleanup():
         """Clean up resources on shutdown."""
+        import gc
+
         nonlocal cleanup_done
         if cleanup_done:
             return
@@ -2129,6 +2131,39 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
             logger.debug("Database connections closed")
         except Exception as e:
             logger.debug("Error closing database: %s", e)
+
+        # Clear references to help with garbage collection
+        yakulingo_app._copilot = None
+        yakulingo_app.translation_service = None
+        yakulingo_app._login_polling_task = None
+
+        # Force garbage collection to clean up before Python shutdown
+        # This helps prevent WeakSet errors during interpreter shutdown
+        gc.collect()
+        logger.debug("Cleanup completed")
+
+    # Suppress WeakSet errors during Python shutdown
+    # These occur when garbage collection runs during interpreter shutdown
+    # and are harmless but produce confusing error messages (shown as "Exception ignored")
+    import sys
+
+    # Handle "Exception ignored" messages (unraisable exceptions)
+    _original_unraisablehook = getattr(sys, 'unraisablehook', None)
+
+    def _shutdown_unraisablehook(unraisable):
+        # Ignore KeyboardInterrupt during shutdown (WeakSet cleanup noise)
+        if unraisable.exc_type is KeyboardInterrupt:
+            return
+        # For other exceptions, use original handler if available
+        if _original_unraisablehook:
+            _original_unraisablehook(unraisable)
+        else:
+            # Fallback: print to stderr (default behavior)
+            import traceback
+            print(f"Exception ignored in: {unraisable.object}", file=sys.stderr)
+            traceback.print_exception(unraisable.exc_type, unraisable.exc_value, unraisable.exc_tb)
+
+    sys.unraisablehook = _shutdown_unraisablehook
 
     # Register shutdown handler (both for reliability)
     # - on_shutdown: Called when NiceGUI server shuts down gracefully

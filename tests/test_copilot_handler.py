@@ -2,7 +2,7 @@
 """Tests for yakulingo.services.copilot_handler"""
 
 import pytest
-from unittest.mock import Mock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 from pathlib import Path
 
 from yakulingo.services.copilot_handler import CopilotHandler
@@ -755,6 +755,28 @@ class TestCopilotHandlerAsync:
 
         assert len(results) == 1
         assert results[0] == "Result"
+
+    @pytest.mark.asyncio
+    async def test_translate_async_attaches_files_before_prompt(self, tmp_path):
+        """Reference files should be attached before sending the prompt."""
+        handler = CopilotHandler()
+        handler._connected = True
+        handler._page = MagicMock()
+
+        reference = tmp_path / "ref.txt"
+        reference.write_text("reference content", encoding="utf-8")
+
+        call_order = []
+
+        handler._attach_file_async = AsyncMock(side_effect=lambda *_: call_order.append("attach"))
+        handler._send_message_async = AsyncMock(side_effect=lambda *_: call_order.append("send"))
+        handler._get_response_async = AsyncMock(return_value="1. Result")
+
+        await handler.translate(["Text"], "prompt", [reference])
+
+        handler._attach_file_async.assert_awaited_once_with(reference)
+        handler._send_message_async.assert_awaited_once_with("prompt")
+        assert call_order == ["attach", "send"]
 
 
 class TestCopilotHandlerEdgeCases:

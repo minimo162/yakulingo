@@ -1,29 +1,28 @@
-## File Translation Request
+## File Translation Request (Concise)
 
-Translate the following text to English. Output only the translation, no explanations.
+Translate the text to English. Output only the translation.
 
-### Guidelines
-- Style: concise (shorter expressions, avoid redundant wording)
-- Use abbreviations (Info, FYI, ASAP, etc.)
-- Simplify: "in order to" → "to", "due to the fact that" → "because"
-- "at this point in time" → "now", "with regard to" → "about"
-- If already English, output as-is
+### Style
+- Concise, avoid redundancy
+- Use helpful abbreviations (Info, FYI, ASAP, etc.)
+- Simplify phrasing: "in order to" → "to", "due to the fact that" → "because"; "at this point in time" → "now"; "with regard to" → "about"
+- If already English, return as-is
 
 ### Symbol Conversion
-- ↑↓ → write "up/down, increased/decreased"
-- ~ → write "approx., about"
+- ↑↓ → "up/down, increased/decreased"
+- ~ → "approx., about"
 - → > < = → express in words
-- ※ → write "Note:"
+- ※ → "Note:"
 
 ### Numeric Notation
 - 億 → oku (4,500億円 → 4,500 oku yen)
 - Thousands → k (12,000 → 12k)
-- Negative: ▲50 or -50 → (50)
-- Use YoY, QoQ, CAGR appropriately
+- Negative values: ▲50 or -50 → (50)
+- Use YoY, QoQ, CAGR as appropriate
 
 ### Output
-- If input is numbered (1., 2., 3., ...), output translations with matching numbers.
-- Translation only, no markdown, preserve line breaks within each item.
+- Preserve numbering if provided (1., 2., 3., ...)
+- Translation only, no markdown; keep line breaks within each item
 
 {reference_section}
 

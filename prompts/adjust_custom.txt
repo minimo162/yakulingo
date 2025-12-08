@@ -1,54 +1,30 @@
 ## Custom Adjustment Request
 
-Please process the user's request based on the original text and its translation.
+Use the original text and its translation to fulfill the user's request.
 
-### User Request
-{user_instruction}
+### Inputs
+- User request: {user_instruction}
+- Original text: {source_text}
+- Translation: {input_text}
 
-### Original Text
-{source_text}
+### Request Options
+- **Tone changes**: フォーマルに / カジュアルに / やわらかく / 強めに / 具体的に / 簡潔に
+- **Content creation**: 返信の下書きを書いて / reply, 要約して / summarize, 説明して / explain
 
-### Translation
-{input_text}
-
-### Request Types and Approaches
-
-#### Text Adjustments
-- "フォーマルに": Convert to honorific/polite expressions
-- "カジュアルに": Convert to friendly expressions
-- "やわらかく": Convert direct expressions to euphemisms
-- "強めに": Convert to assertive, persuasive expressions
-- "具体的に": Add detailed information
-- "簡潔に": Remove redundant parts
-
-#### Content Creation Requests
-- "返信の下書きを書いて" / "reply": Create a reply email based on the original text
-- "要約して" / "summarize": Summarize the key points
-- "説明して" / "explain": Provide detailed explanation
-
-#### Reply Email Guidelines (when user requests reply/返信)
-- Create reply in the same language as the original text
-- Use appropriate business tone
-- Include proper greeting and closing
-- Address the key points from the original
+### Reply Emails (when requested)
+- Write in the same language as the original text
+- Business-appropriate tone with greeting and closing
+- Address all key points in the original
 
 ### Numeric Notation (for English output)
 - 億 → oku
 - Thousands → k
-- Negative/deficit → () (use parentheses, not minus sign -)
+- Negative or deficit → () (use parentheses instead of a minus sign)
 
 ### Output Format
-訳文: (your response - adjusted text, reply draft, summary, etc.)
+訳文: (adjusted text, reply draft, summary, etc.)
 
 解説:
-### リクエストの解釈
-- How the request was understood
-- What was specifically done
-
-### 詳細
-- Relevant details about the output
-- Key points addressed
-
-### 追加の提案（あれば）
-- Options for further improvement
-- Alternatives depending on situation
+- リクエストの解釈: what the request meant and what you changed
+- 詳細: key details addressed
+- 追加の提案（あれば）: optional follow-up ideas or alternatives

@@ -1,40 +1,28 @@
 ## English Check Request
 
-Please check the user's modified English for any errors.
+Check the user's edited English for errors.
 
-### Reference Translation (AI-generated base)
-{reference_translation}
+### Inputs
+- Reference translation (AI base): {reference_translation}
+- User-edited English: {user_english}
+- Context: The user adjusted the AI translation; confirm the edits are valid English.
 
-### User's Modified English (to be checked)
-{user_english}
-
-### Context
-The user took an AI translation as a base and made partial modifications.
-Please check if those modifications are correct English.
-
-### Check Focus
-- Grammar mistakes
-- Spelling errors
-- Unnatural expressions
+### What to Check
+- Grammar
+- Spelling
+- Naturalness (no awkward phrasing)
 
 ### Output Format
-
-#### If NO errors found:
-訳文: 問題ありません。そのまま使えます。
-
-解説:
-- (1-2 sentences confirming the English is correct)
-
-#### If errors found:
-訳文: (corrected version of user's English)
-
-解説:
-- ❌ 問題: "..." → ✅ 修正: "..."
-- (Brief explanation of why this is incorrect, 1 line per issue)
+- **No errors:**
+  - 訳文: 問題ありません。そのまま使えます。
+  - 解説: 1-2 sentences confirming the English is fine
+- **Errors found:**
+  - 訳文: corrected version
+  - 解説: list each issue as ❌ 問題: "..." → ✅ 修正: "..." with brief reasons
 
 ### Important
-- Only point out actual errors, not stylistic preferences
-- If the user's version is valid (even if different from AI), say it's OK
+- Flag only real errors, not style preferences
+- If the user's version is valid even if different from AI, say it's OK
 - Keep explanations concise
 
 {reference_section}

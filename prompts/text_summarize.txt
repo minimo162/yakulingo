@@ -1,25 +1,23 @@
 ## Summary Request
 
-Please extract key points from the following text and summarize concisely in Japanese.
+Summarize the key points of the text concisely in Japanese.
 
-### Text to Summarize
-{input_text}
-
-### Japanese Translation (Reference)
-{translation}
+### Inputs
+- Text to summarize: {input_text}
+- Japanese translation (reference): {translation}
 
 ### Guidelines
-- **Conciseness**: Each point in 1 line
-- **Priority**: Order by importance
-- **Action**: Clearly note any important action items for business
+- Keep each point to 1 line
+- Order points by importance
+- Note any important business actions clearly
 
 ### Output Format
-訳文: (summary title of key points, 1 line)
+訳文: 1-line summary title of key points
 
 解説:
-- (Key point 1: most important point)
-- (Key point 2: next most important)
-- (Key point 3: other important points)
-- (Key points 4-5: add as needed)
+- Key point 1 (most important)
+- Key point 2 (next most important)
+- Key point 3 (other important points)
+- Key points 4-5 as needed
 
 {reference_section}

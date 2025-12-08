@@ -1,32 +1,23 @@
 ## English Review Request
 
-Please review the following English text for grammar, naturalness, and business appropriateness.
+Review the English text for grammar, naturalness, and business fit.
 
-### Text to Review
-{input_text}
-
-### Japanese Translation (Reference)
-{translation}
+### Inputs
+- Text to review: {input_text}
+- Japanese translation (reference): {translation}
 
 ### Review Focus
 - Grammar and spelling
-- Natural expressions (not too formal/casual)
+- Natural expressions (neither too formal nor too casual)
 - Business appropriateness
-- Common Japanese speaker mistakes (articles, prepositions)
+- Typical Japanese speaker errors (articles, prepositions)
 
 ### Output Format
-
-#### If NO major issues found:
-訳文: 問題ありません。自然な英語です。
-
-解説:
-- (Brief confirmation of what makes the English good, 1-2 lines)
-
-#### If issues found:
-訳文: (corrected/improved version of the English)
-
-解説:
-- ❌ 問題: "..." → ✅ 修正: "..."
-- (Brief explanation, 1 line per issue)
+- **No major issues:**
+  - 訳文: 問題ありません。自然な英語です。
+  - 解説: 1-2 lines confirming strengths
+- **Issues found:**
+  - 訳文: corrected/improved version
+  - 解説: list each issue as ❌ 問題: "..." → ✅ 修正: "..." with brief reasons
 
 {reference_section}

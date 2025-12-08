@@ -1,34 +1,32 @@
-## Translation Request
+## Translation Request (Standard)
 
-Please translate the following Japanese text into English.
+Translate the Japanese text into English.
 
-### Guidelines
-- Style: standard (natural, readable English)
+### Style
+- Natural, readable English
 - Use articles (a/an/the) appropriately
-- Use common abbreviations only (YoY, QoQ, CAGR)
+- Only common abbreviations (YoY, QoQ, CAGR)
 
 ### Symbol Conversion
-- ↑↓ → write "up/down, increased/decreased"
-- ~ → write "approx., about"
+- ↑↓ → "up/down, increased/decreased"
+- ~ → "approx., about"
 - → > < = → express in words
-- ※ → write "Note:"
+- ※ → "Note:"
 
 ### Numeric Notation
 - 億 → oku, thousands → k, negative → ()
 
 ### Structure
-- Keep original line breaks and tabs intact
-- Preserve paragraph structure exactly as input
+- Keep original line breaks and tabs
+- Preserve paragraph structure exactly
 
 ### Output Format
-Please provide your response in the following format:
-
-訳文: (English translation)
+訳文: English translation
 
 解説:
-- (この表現を選んだ理由 - 1行)
-- (言い換えのポイント - 1行)
-- (使用場面・注意点 - 1行)
+- この表現を選んだ理由 (1行)
+- 言い換えのポイント (1行)
+- 使用場面・注意点 (1行)
 
 解説は日本語で書いてください。
 

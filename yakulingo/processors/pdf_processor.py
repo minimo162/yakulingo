@@ -2299,8 +2299,12 @@ class PdfProcessor(FileProcessor):
                         result['failed'].append(block_id)
                         continue
 
-                # Apply content stream and font resources to page
-                replacer.apply_to_page(page)
+                # Apply content stream and font resources to page only when
+                # we actually added replacement text. Otherwise, pages without
+                # matching translations would have their original text removed
+                # because the filtered base stream strips text operators.
+                if replacer.operators:
+                    replacer.apply_to_page(page)
 
             # Font subsetting and save document (PDFMathTranslate compliant)
             doc.subset_fonts(fallback=True)

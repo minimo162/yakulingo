@@ -2,9 +2,73 @@
 """
 Generate ICO file for Windows application icon.
 Requires: pip install pillow
+
+Uses manual ICO creation with PNG-embedded images for proper transparency support.
+Pillow's default ICO save may not handle transparency correctly for smaller sizes.
 """
 
+import struct
+from io import BytesIO
 from pathlib import Path
+
+
+def save_ico_with_png(images: list, output_path: Path) -> None:
+    """
+    Create ICO file with PNG-embedded images for proper transparency.
+
+    Windows Vista+ supports PNG-embedded ICO files, which preserve
+    alpha channel transparency correctly (unlike BMP-based ICO).
+
+    Args:
+        images: List of PIL.Image objects (RGBA mode), sorted by size descending
+        output_path: Output ICO file path
+    """
+    from PIL import Image
+
+    num_images = len(images)
+
+    # Prepare PNG data for each image
+    png_data_list = []
+    for img in images:
+        buffer = BytesIO()
+        img.save(buffer, format='PNG', compress_level=9)
+        png_data_list.append(buffer.getvalue())
+
+    # ICO file structure:
+    # - ICONDIR header (6 bytes)
+    # - ICONDIRENTRY array (16 bytes each)
+    # - Image data (PNG format)
+
+    # ICONDIR: Reserved(2) + Type(2, 1=ICO) + Count(2)
+    icondir = struct.pack('<HHH', 0, 1, num_images)
+
+    # Calculate data offset (after header and all entries)
+    header_size = 6 + 16 * num_images
+    offset = header_size
+
+    # Build ICONDIRENTRY array
+    entries = b''
+    for i, img in enumerate(images):
+        # Width/Height: 0 means 256
+        width = img.width if img.width < 256 else 0
+        height = img.height if img.height < 256 else 0
+        data_size = len(png_data_list[i])
+
+        # ICONDIRENTRY: Width(1) Height(1) ColorCount(1) Reserved(1)
+        #               Planes(2) BitCount(2) BytesInRes(4) ImageOffset(4)
+        entry = struct.pack('<BBBBHHII',
+                            width, height, 0, 0,  # Width, Height, ColorCount, Reserved
+                            1, 32,                 # Planes, BitCount (32-bit RGBA)
+                            data_size, offset)     # BytesInRes, ImageOffset
+        entries += entry
+        offset += data_size
+
+    # Write ICO file
+    with open(output_path, 'wb') as f:
+        f.write(icondir)
+        f.write(entries)
+        for data in png_data_list:
+            f.write(data)
 
 
 def generate_ico():
@@ -17,7 +81,7 @@ def generate_ico():
     BRAND_COLOR = (67, 85, 185, 255)  # #4355B9
     WHITE = (255, 255, 255, 255)
 
-    # Standard Windows icon sizes
+    # Standard Windows icon sizes (must be sorted descending for ICO format)
     sizes = [256, 48, 32, 16]
 
     # Supersampling factor for antialiased edges
@@ -86,16 +150,14 @@ def generate_ico():
         img = large_img.resize((size, size), Image.LANCZOS)
         images.append(img)
 
-    # Save as ICO with all sizes
-    images[0].save(
-        ico_path,
-        format="ICO",
-        sizes=[(s, s) for s in sizes],
-        append_images=images[1:]
-    )
+    # Save as ICO with PNG-embedded images for proper transparency
+    # (Pillow's default ICO save may use BMP format for smaller sizes,
+    # which can cause transparency issues on some Windows versions)
+    save_ico_with_png(images, ico_path)
 
     print(f"Generated: {ico_path}")
     print(f"Sizes: {sizes}")
+    print("Using PNG-embedded format for proper transparency")
 
 
 if __name__ == "__main__":

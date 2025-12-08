@@ -8,6 +8,7 @@ from unittest.mock import Mock, patch, MagicMock
 from pathlib import Path
 import json
 import platform
+import time
 
 from yakulingo.services.updater import (
     AutoUpdater,
@@ -135,7 +136,10 @@ class TestAutoUpdater:
             "zipball_url": "https://api.github.com/repos/test/repo/zipball/v2.0.0",
             "assets": [],
         }
-        mock_request.return_value = json.dumps(mock_response).encode("utf-8")
+        mock_request.return_value = (
+            json.dumps(mock_response).encode("utf-8"),
+            {"ETag": "W/\"123\""},
+        )
 
         updater = AutoUpdater(current_version="1.0.0")
         result = updater.check_for_updates()
@@ -155,7 +159,10 @@ class TestAutoUpdater:
             "zipball_url": "https://api.github.com/repos/test/repo/zipball/v1.0.0",
             "assets": [],
         }
-        mock_request.return_value = json.dumps(mock_response).encode("utf-8")
+        mock_request.return_value = (
+            json.dumps(mock_response).encode("utf-8"),
+            {},
+        )
 
         updater = AutoUpdater(current_version="1.0.0")
         result = updater.check_for_updates()
@@ -179,7 +186,10 @@ class TestAutoUpdater:
                 }
             ],
         }
-        mock_request.return_value = json.dumps(mock_response).encode("utf-8")
+        mock_request.return_value = (
+            json.dumps(mock_response).encode("utf-8"),
+            {"ETag": "W/\"456\""},
+        )
 
         updater = AutoUpdater(current_version="1.0.0")
         result = updater.check_for_updates()
@@ -187,6 +197,44 @@ class TestAutoUpdater:
         assert result.status == UpdateStatus.UPDATE_AVAILABLE
         assert result.version_info.file_size == 1024000
         assert "yakulingo-2.0.0.zip" in result.version_info.download_url
+
+    @patch("yakulingo.services.updater.AutoUpdater._make_request")
+    def test_check_for_updates_uses_cache_on_304(self, mock_request, tmp_path):
+        """Test that cached release info is used when server returns 304"""
+        cached_response = {
+            "tag_name": "v1.2.0",
+            "published_at": "2025-01-01T00:00:00Z",
+            "body": "Release notes",
+            "zipball_url": "https://api.github.com/repos/test/repo/zipball/v1.2.0",
+            "assets": [],
+        }
+
+        updater = AutoUpdater(current_version="1.0.0")
+        updater.cache_dir = tmp_path / "cache"
+        updater.cache_dir.mkdir(parents=True, exist_ok=True)
+
+        cache_payload = {
+            "timestamp": time.time(),
+            "body": json.dumps(cached_response),
+            "etag": "W/\"cached\"",
+        }
+        (updater.cache_dir / "latest_release.json").write_text(
+            json.dumps(cache_payload), encoding="utf-8"
+        )
+
+        import urllib.error
+
+        api_url = (
+            f"https://api.github.com/repos/{updater.repo_owner}/{updater.repo_name}/releases/latest"
+        )
+        mock_request.side_effect = urllib.error.HTTPError(
+            api_url, 304, "Not Modified", {}, None
+        )
+
+        result = updater.check_for_updates()
+
+        assert result.status == UpdateStatus.UPDATE_AVAILABLE
+        assert result.latest_version == "1.2.0"
 
     @patch("yakulingo.services.updater.AutoUpdater._make_request")
     def test_check_for_updates_network_error(self, mock_request):
@@ -283,7 +331,10 @@ class TestRequiresReinstallDetection:
             "zipball_url": "https://api.github.com/repos/test/repo/zipball/v2.0.0",
             "assets": [],
         }
-        mock_request.return_value = json.dumps(mock_response).encode("utf-8")
+        mock_request.return_value = (
+            json.dumps(mock_response).encode("utf-8"),
+            {},
+        )
 
         updater = AutoUpdater(current_version="1.0.0")
         result = updater.check_for_updates()
@@ -301,7 +352,10 @@ class TestRequiresReinstallDetection:
             "zipball_url": "https://api.github.com/repos/test/repo/zipball/v2.0.0",
             "assets": [],
         }
-        mock_request.return_value = json.dumps(mock_response).encode("utf-8")
+        mock_request.return_value = (
+            json.dumps(mock_response).encode("utf-8"),
+            {},
+        )
 
         updater = AutoUpdater(current_version="1.0.0")
         result = updater.check_for_updates()
@@ -418,7 +472,7 @@ class TestDownloadUpdate:
         """Download skips if file already exists"""
         updater.cache_dir.mkdir(parents=True, exist_ok=True)
         zip_file = updater.cache_dir / f"yakulingo-{version_info.version}.zip"
-        zip_file.write_bytes(b"Existing content")
+        zip_file.write_bytes(b"0" * version_info.file_size)
 
         with patch.object(updater, "opener") as mock_opener:
             result = updater.download_update(version_info)

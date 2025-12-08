@@ -62,7 +62,7 @@ M365 Copilotを翻訳エンジンとして使用し、テキストとドキュ�
 | 形式 | 拡張子 | ライブラリ |
 |------|--------|----------|
 | Excel | `.xlsx` `.xls` | xlwings (Win/Mac) / openpyxl (fallback) |
-| Word | `.docx` `.doc` | python-docx |
+| Word | `.docx` | python-docx（*.doc* は未対応） |
 | PowerPoint | `.pptx` `.ppt` | python-pptx |
 | PDF | `.pdf` | PyMuPDF, pdfminer.six, PP-DocLayout-L (PaddleOCR) |
 | Text | `.txt` | Built-in (plain text) |
@@ -146,6 +146,7 @@ YakuLingo/
 │   │   ├── app.py                  # YakuLingoApp クラス
 │   │   ├── state.py                # AppState
 │   │   ├── styles.py               # M3 デザイントークン & CSS
+│   │   ├── styles.css              # 静的CSS（グローバルスタイル）
 │   │   ├── utils.py                # UI utilities (temp files, dialogs, text formatting)
 │   │   └── components/
 │   │       ├── text_panel.py       # テキスト翻訳パネル
@@ -179,12 +180,13 @@ YakuLingo/
 │   └── config/
 │       └── settings.py             # AppSettings
 │
-├── tests/                          # テストスイート（26ファイル）
+├── tests/                          # テストスイート（33ファイル）
 │   ├── conftest.py
 │   └── test_*.py
 │
-├── prompts/                        # 翻訳プロンプト（16ファイル）
+├── prompts/                        # 翻訳プロンプト（17ファイル）
 │   ├── detect_language.txt         # 言語検出用（Copilot）
+│   ├── copilot_injection_review.md # プロンプトのインジェクションリスクレビュー
 │   ├── file_translate_to_en_{standard|concise|minimal}.txt  # ファイル翻訳（日→英）
 │   ├── file_translate_to_jp.txt    # ファイル翻訳用（英→日）
 │   ├── text_translate_to_en_{standard|concise|minimal}.txt  # テキスト翻訳（日→英）

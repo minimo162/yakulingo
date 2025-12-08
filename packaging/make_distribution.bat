@@ -94,20 +94,16 @@ if not defined SEVENZIP (
 :: Prepare: cleanup, fix pyvenv.cfg, get date
 echo        Cleaning up and preparing...
 
-:: Delete __pycache__ directories
-for /d /r ".venv" %%d in (__pycache__) do if exist "%%d" rd /s /q "%%d" 2>nul
-for /d /r "yakulingo" %%d in (__pycache__) do if exist "%%d" rd /s /q "%%d" 2>nul
-
-:: Delete .pyc files
-del /s /q ".venv\*.pyc" 2>nul
-
-:: Delete cache directories
+:: Delete cache directories (but keep __pycache__ for faster startup)
 if exist ".uv-cache" rd /s /q ".uv-cache" 2>nul
 if exist ".wheels" rd /s /q ".wheels" 2>nul
 
 :: Delete temp files
 del /q "*.tmp" 2>nul
 del /q ".venv\pyvenv.cfg.tmp" 2>nul
+
+:: Note: Python bytecode is pre-compiled by install_deps.bat
+:: __pycache__ directories are preserved for faster first launch
 
 :: Fix pyvenv.cfg - extract version and rewrite
 set "PYTHON_VERSION="

@@ -35,7 +35,7 @@ if not defined PROXY_USER (
 :: ============================================================
 if not exist "uv.exe" (
     echo.
-    echo [1/4] Downloading uv...
+    echo [1/5] Downloading uv...
 
     powershell -ExecutionPolicy Bypass -Command ^
         "$ProgressPreference = 'SilentlyContinue'; " ^
@@ -53,14 +53,14 @@ if not exist "uv.exe" (
     )
     echo [DONE] uv downloaded.
 ) else (
-    echo [1/4] SKIP - uv.exe already exists.
+    echo [1/5] SKIP - uv.exe already exists.
 )
 
 :: ============================================================
 :: Step 2: Install Python
 :: ============================================================
 echo.
-echo [2/4] Installing Python...
+echo [2/5] Installing Python...
 
 :: Check if Python 3.11 is already installed via uv
 uv.exe python find 3.11 >nul 2>&1
@@ -131,7 +131,7 @@ echo [DONE] Python installed.
 :: Step 3: Install dependencies
 :: ============================================================
 echo.
-echo [3/4] Installing dependencies...
+echo [3/5] Installing dependencies...
 uv.exe venv --native-tls
 if errorlevel 1 (
     echo [ERROR] Failed to create virtual environment.
@@ -151,7 +151,7 @@ echo [DONE] Dependencies installed.
 :: Step 4: Install Playwright browser
 :: ============================================================
 echo.
-echo [4/4] Installing Playwright browser...
+echo [4/5] Installing Playwright browser...
 
 uv.exe run --native-tls playwright install chromium
 if errorlevel 1 (
@@ -160,6 +160,15 @@ if errorlevel 1 (
     exit /b 1
 )
 echo [DONE] Playwright browser installed.
+
+:: ============================================================
+:: Step 5: Pre-compile Python bytecode for faster first launch
+:: ============================================================
+echo.
+echo [5/5] Pre-compiling Python bytecode...
+.venv\Scripts\python.exe -m compileall -q yakulingo 2>nul
+.venv\Scripts\python.exe -c "import nicegui; import pywebview; from yakulingo.ui import app; from yakulingo.services import translation_service" 2>nul
+echo [DONE] Bytecode pre-compiled.
 
 echo.
 echo ============================================================

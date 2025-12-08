@@ -922,7 +922,7 @@ def merge_glossary(app_dir: Path, source_dir: Path) -> int:
     # 既存の用語ペア（ソース,翻訳）を収集
     existing_pairs: set[str] = set()
 
-    with open(user_glossary, "r", encoding="utf-8") as f:
+    with open(user_glossary, "r", encoding="utf-8-sig") as f:
         for line in f:
             stripped = line.strip()
             # コメント行と空行はスキップ
@@ -932,7 +932,7 @@ def merge_glossary(app_dir: Path, source_dir: Path) -> int:
 
     # 新しい用語集から、既存にないペアを収集
     new_terms: list[str] = []
-    with open(new_glossary, "r", encoding="utf-8") as f:
+    with open(new_glossary, "r", encoding="utf-8-sig") as f:
         for line in f:
             stripped = line.strip()
             # コメント行と空行はスキップ
@@ -942,6 +942,7 @@ def merge_glossary(app_dir: Path, source_dir: Path) -> int:
                     new_terms.append(line if line.endswith("\n") else line + "\n")
 
     # 新規用語があれば追加
+    # Note: 追記モードでは utf-8 を使用（utf-8-sig は追記時に余分な BOM を追加してしまう）
     if new_terms:
         with open(user_glossary, "a", encoding="utf-8") as f:
             f.writelines(new_terms)

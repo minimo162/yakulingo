@@ -286,6 +286,8 @@ class YakuLingoApp:
         """
         import sys
 
+        logger.debug("Attempting to bring app window to front (platform=%s)", sys.platform)
+
         # Method 1: pywebview's on_top property
         try:
             from nicegui import app as nicegui_app
@@ -294,12 +296,14 @@ class YakuLingoApp:
                 window.on_top = True
                 await asyncio.sleep(0.05)
                 window.on_top = False
+                logger.debug("pywebview on_top toggle executed")
         except (ImportError, AttributeError, RuntimeError) as e:
             logger.debug(f"pywebview bring_to_front failed: {e}")
 
         # Method 2: Windows API (more reliable for hotkey activation)
         if sys.platform == 'win32':
-            await asyncio.to_thread(self._bring_window_to_front_win32)
+            win32_success = await asyncio.to_thread(self._bring_window_to_front_win32)
+            logger.debug("Windows API bring_to_front result: %s", win32_success)
 
     def _bring_window_to_front_win32(self) -> bool:
         """Bring YakuLingo window to front using Windows API.
@@ -328,11 +332,39 @@ class YakuLingoApp:
 
             user32 = ctypes.windll.user32
 
-            # Find YakuLingo window by title
+            # Find YakuLingo window by title (exact match first)
             hwnd = user32.FindWindowW(None, "YakuLingo")
+            matched_title = "YakuLingo"
+
+            # Fallback: enumerate windows to find a partial match (useful if the
+            # host window modifies the title, e.g., "YakuLingo - Chrome")
             if not hwnd:
-                logger.debug("YakuLingo window not found by title")
+                EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
+                found_hwnd = {'value': None, 'title': None}
+
+                @EnumWindowsProc
+                def _enum_windows(hwnd_enum, _):
+                    length = user32.GetWindowTextLengthW(hwnd_enum)
+                    if length == 0:
+                        return True
+                    buffer = ctypes.create_unicode_buffer(length + 1)
+                    user32.GetWindowTextW(hwnd_enum, buffer, length + 1)
+                    title = buffer.value
+                    if "YakuLingo" in title:
+                        found_hwnd['value'] = hwnd_enum
+                        found_hwnd['title'] = title
+                        return False  # stop enumeration
+                    return True
+
+                user32.EnumWindows(_enum_windows, 0)
+                hwnd = found_hwnd['value']
+                matched_title = found_hwnd['title']
+
+            if not hwnd:
+                logger.debug("YakuLingo window not found by title (exact or partial)")
                 return False
+
+            logger.debug("Found YakuLingo window handle=%s title=%s", hwnd, matched_title)
 
             # Check if window is minimized and restore it
             if user32.IsIconic(hwnd):

@@ -1,27 +1,16 @@
 ## Alternative Expression Request
 
-Please suggest one alternative expression for the following English translation.
+Suggest one alternative for the current English translation.
 
-### Current Translation
-{current_translation}
+### Inputs
+- Current translation: {current_translation}
+- Original Japanese: {source_text}
+- Translation style: {style}
 
-### Original Japanese
-{source_text}
-
-### Translation Style: {style}
-
-#### If standard:
-- Natural, readable English
-- Use articles appropriately
-- Use only common abbreviations
-
-#### If concise:
-- Choose shorter expressions
-- Actively use abbreviations
-
-#### If minimal:
-- Minimum characters
-- Articles can be omitted, maximize abbreviations
+### Style Rules
+- **standard**: natural, readable English; use articles and only common abbreviations
+- **concise**: shorter wording; actively use abbreviations
+- **minimal**: minimum characters; articles may be omitted and abbreviations maximized
 
 ### Numeric Notation
 - 億 → oku (e.g., 4,500億円 → 4,500 oku yen)
@@ -29,18 +18,16 @@ Please suggest one alternative expression for the following English translation.
 - Negative → () (e.g., ▲50 → (50))
 
 ### Symbol Conversion
-- ↑ ↓ → write "increased, up / decreased, down"
-- ~ → write "approx., about, around"
+- ↑ ↓ → "increased, up" / "decreased, down"
+- ~ → "approx., about, around"
 - → > < = → express in words
-- ※ → write "Note:, *"
+- ※ → "Note:, *"
 
 ### Output Format
-Please provide your response in the following format:
-
 訳文: (alternative expression)
 
 解説:
-- (Difference from current translation - 1 line)
-- (Situations where this expression fits - 1 line)
+- Difference from current translation (1 line)
+- Situations where this expression fits (1 line)
 
 {reference_section}

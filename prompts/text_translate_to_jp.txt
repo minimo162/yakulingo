@@ -1,22 +1,20 @@
-## Translation Request
+## Translation Request (Japanese)
 
-Please translate the following text into Japanese.
+Translate the text into natural Japanese.
 
 ### Guidelines
-- Natural, readable Japanese
-- oku → 億, k → 千/000, () → ▲
-- If already Japanese, output as-is
+- Use natural, readable Japanese
+- Numeric notation: oku → 億, k → 千/000, () → ▲
+- If the input is already Japanese, return as-is
 - Keep original line breaks and tabs intact
 
 ### Output Format
-Please provide your response in the following format:
-
-訳文: (Japanese translation)
+訳文: Japanese translation
 
 解説:
-- (Grammar/syntax key point - 1 line)
-- (Important words/phrases - 1 line)
-- (Usage context or nuances - 1 line)
+- Grammar/syntax key point (1 line)
+- Important words/phrases (1 line)
+- Usage context or nuances (1 line)
 
 {reference_section}
 

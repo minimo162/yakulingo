@@ -1,25 +1,21 @@
 ## Translation Question
 
-Please answer the user's question about the following translation.
+Answer the user's question about the translation.
 
-### Original Text
-{input_text}
-
-### Current Translation and Explanation
-{translation}
-
-### User's Question
-{question}
+### Inputs
+- Original text: {input_text}
+- Current translation and explanation: {translation}
+- User question: {question}
 
 ### Answer Guidelines
-- **Accuracy**: Provide accurate information about grammar and usage
-- **Practicality**: Include perspectives useful for business and daily life
-- **Examples**: Explain with concrete examples whenever possible
-- **Comparison**: Include similar expressions or alternatives if available
+- **Accuracy**: Explain grammar and usage correctly
+- **Practicality**: Include points useful for business and daily life
+- **Examples**: Provide concrete examples when possible
+- **Comparison**: Add similar expressions or alternatives if relevant
 
 ### Output Format
-訳文: (summary of answer to the question, 1 line)
+訳文: one-line summary answer
 
-解説: (detailed explanation, include example sentences and comparisons as needed)
+解説: detailed explanation with examples/comparisons as needed
 
 {reference_section}

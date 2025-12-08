@@ -1,29 +1,28 @@
-## File Translation Request
+## File Translation Request (Minimal)
 
-Translate the following text to English. Output only the translation, no explanations.
+Translate the text to English. Output only the translation.
 
-### Guidelines
-- Style: minimal (minimum characters, key points only)
-- Suitable for subject lines, headings, table cells
-- Articles may be omitted, maximize abbreviation
+### Style
+- Minimal characters, key points only; suitable for titles, headings, table cells
+- Articles may be omitted; maximize abbreviation
 - Allowed symbols: & / vs. % # w/ w/o @ +
-- If already English, output as-is
+- If already English, return as-is
 
 ### Symbol Conversion
-- ↑↓ → write "up/down, increased/decreased"
-- ~ → write "approx., about"
+- ↑↓ → "up/down, increased/decreased"
+- ~ → "approx., about"
 - → > < = → express in words
-- ※ → write "Note:"
+- ※ → "Note:"
 
 ### Numeric Notation
 - 億 → oku (4,500億円 → 4,500 oku yen)
 - Thousands → k (12,000 → 12k)
-- Negative: ▲50 or -50 → (50)
-- Use YoY, QoQ, CAGR appropriately
+- Negative values: ▲50 or -50 → (50)
+- Use YoY, QoQ, CAGR as appropriate
 
 ### Output
-- If input is numbered (1., 2., 3., ...), output translations with matching numbers.
-- Translation only, no markdown, preserve line breaks within each item.
+- Preserve numbering if provided (1., 2., 3., ...)
+- Translation only, no markdown; keep line breaks within each item
 
 {reference_section}
 

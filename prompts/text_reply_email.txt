@@ -1,30 +1,26 @@
 ## Reply Email Request
 
-Please create a reply to the following email according to the user's intent.
+Create a reply that matches the user's intent.
 
-### Original Email Received
-{input_text}
-
-### Japanese Translation (Reference)
-{translation}
-
-### User's Reply Intent
-{reply_intent}
+### Inputs
+- Original email received: {input_text}
+- Japanese translation (reference): {translation}
+- User's reply intent: {reply_intent}
 
 ### Reply Guidelines
-- **Language**: Create reply in the same language as the original
-- **Tone**: Appropriate formality for business email
-- **Conciseness**: Clear text covering key points
-- **Naturalness**: Expression that natives wouldn't find awkward
-- **Courtesy**: Appropriate greeting and closing
+- Language: same as the original email
+- Tone: suitable business formality
+- Conciseness: cover key points clearly
+- Naturalness: avoid awkward phrasing for natives
+- Courtesy: include appropriate greeting and closing
 
 ### Output Format
-訳文: (created reply text, in format ready to copy and use)
+訳文: ready-to-send reply text
 
 解説:
-- **返信のポイント**: Main message conveyed in this reply
-- **トーンについて**: Politeness level chosen and reason
-- **使用場面**: What situations this is appropriate for
-- **カスタマイズのヒント**: Parts that can be adjusted based on situation
+- 返信のポイント: main message conveyed
+- トーンについて: chosen politeness level and why
+- 使用場面: suitable situations
+- カスタマイズのヒント: parts that can be adjusted
 
 {reference_section}

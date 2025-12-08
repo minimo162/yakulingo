@@ -1,35 +1,32 @@
-## Translation Request
+## Translation Request (Minimal)
 
-Please translate the following Japanese text into English.
+Translate the Japanese text into English.
 
-### Guidelines
-- Style: minimal (minimum characters, key points only)
-- Suitable for subject lines, headings, table cells
-- Articles may be omitted, maximize abbreviation
+### Style
+- Minimum characters, key points only; good for subjects/headings/tables
+- Articles may be omitted; maximize abbreviation
 - Allowed symbols: & / vs. % # w/ w/o @ +
 
 ### Symbol Conversion
-- ↑↓ → write "up/down, increased/decreased"
-- ~ → write "approx., about"
+- ↑↓ → "up/down, increased/decreased"
+- ~ → "approx., about"
 - → > < = → express in words
-- ※ → write "Note:"
+- ※ → "Note:"
 
 ### Numeric Notation
 - 億 → oku, thousands → k, negative → ()
 
 ### Structure
-- Keep original line breaks and tabs intact
-- Preserve paragraph structure exactly as input
+- Keep original line breaks and tabs
+- Preserve paragraph structure exactly
 
 ### Output Format
-Please provide your response in the following format:
-
-訳文: (English translation)
+訳文: English translation
 
 解説:
-- (この表現を選んだ理由 - 1行)
-- (言い換えのポイント - 1行)
-- (使用場面・注意点 - 1行)
+- この表現を選んだ理由 (1行)
+- 言い換えのポイント (1行)
+- 使用場面・注意点 (1行)
 
 解説は日本語で書いてください。
 

@@ -210,16 +210,92 @@ class YakuLingoApp:
         await self._translate_text()
 
     async def _bring_window_to_front(self):
-        """Bring the app window to front."""
+        """Bring the app window to front.
+
+        Uses multiple methods to ensure the window is brought to front:
+        1. pywebview's on_top property
+        2. Windows API (SetForegroundWindow, SetWindowPos) for reliability
+        """
+        import sys
+
+        # Method 1: pywebview's on_top property
         try:
             from nicegui import app as nicegui_app
             if hasattr(nicegui_app, 'native') and nicegui_app.native.main_window:
                 window = nicegui_app.native.main_window
                 window.on_top = True
-                await asyncio.sleep(0.1)
+                await asyncio.sleep(0.05)
                 window.on_top = False
         except (ImportError, AttributeError, RuntimeError) as e:
-            logger.debug(f"Failed to bring window to front: {e}")
+            logger.debug(f"pywebview bring_to_front failed: {e}")
+
+        # Method 2: Windows API (more reliable for hotkey activation)
+        if sys.platform == 'win32':
+            await asyncio.to_thread(self._bring_window_to_front_win32)
+
+    def _bring_window_to_front_win32(self) -> bool:
+        """Bring YakuLingo window to front using Windows API.
+
+        Uses multiple techniques to ensure window activation:
+        1. Find window by title "YakuLingo"
+        2. Temporarily set as topmost (HWND_TOPMOST)
+        3. SetForegroundWindow with workarounds for Windows restrictions
+        4. Reset to normal (HWND_NOTOPMOST)
+
+        Returns:
+            True if window was successfully brought to front
+        """
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            # Windows API constants
+            SW_RESTORE = 9
+            SW_SHOW = 5
+            HWND_TOPMOST = -1
+            HWND_NOTOPMOST = -2
+            SWP_NOMOVE = 0x0002
+            SWP_NOSIZE = 0x0001
+            SWP_SHOWWINDOW = 0x0040
+
+            user32 = ctypes.windll.user32
+
+            # Find YakuLingo window by title
+            hwnd = user32.FindWindowW(None, "YakuLingo")
+            if not hwnd:
+                logger.debug("YakuLingo window not found by title")
+                return False
+
+            # Check if window is minimized and restore it
+            if user32.IsIconic(hwnd):
+                user32.ShowWindow(hwnd, SW_RESTORE)
+
+            # Allow any process to set foreground window
+            # This is important when called from hotkey handler
+            ASFW_ANY = -1
+            user32.AllowSetForegroundWindow(ASFW_ANY)
+
+            # Temporarily set as topmost to ensure visibility
+            user32.SetWindowPos(
+                hwnd, HWND_TOPMOST, 0, 0, 0, 0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW
+            )
+
+            # Set as foreground window
+            user32.SetForegroundWindow(hwnd)
+
+            # Reset to non-topmost (so other windows can go on top later)
+            user32.SetWindowPos(
+                hwnd, HWND_NOTOPMOST, 0, 0, 0, 0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW
+            )
+
+            logger.debug("YakuLingo window brought to front via Windows API")
+            return True
+
+        except Exception as e:
+            logger.debug(f"Windows API bring_to_front failed: {e}")
+            return False
 
     # =========================================================================
     # Section 2: Connection & Startup

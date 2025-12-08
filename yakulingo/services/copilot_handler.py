@@ -626,8 +626,8 @@ class CopilotHandler:
                 self._cleanup_on_error()
                 return False
 
-            # Show browser window (consistent behavior on every startup)
-            self._bring_to_foreground_impl(self._page)
+            # Note: Browser is only brought to foreground when login is required
+            # (handled in _wait_for_chat_ready), not on every startup
 
             # Step 5: Wait for chat UI
             if not self._wait_for_chat_ready(self._page):

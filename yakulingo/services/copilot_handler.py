@@ -1055,6 +1055,19 @@ class CopilotHandler:
 
                 # Check if we're back on Copilot with chat input
                 if "m365.cloud.microsoft" in url:
+                    # Check if we're on landing page (OAuth2 redirect destination)
+                    # and need to navigate to chat page
+                    if "/landing" in url and "/chat" not in url:
+                        logger.info("Detected landing page after login, navigating to chat...")
+                        try:
+                            page.goto(self.COPILOT_URL, wait_until='commit', timeout=30000)
+                            # Continue loop to wait for chat UI
+                            time.sleep(poll_interval)
+                            elapsed += poll_interval
+                            continue
+                        except PlaywrightError as e:
+                            logger.debug("Failed to navigate to chat: %s", e)
+
                     # Try to find chat input
                     try:
                         page.wait_for_selector(input_selector, timeout=3000, state='visible')

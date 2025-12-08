@@ -828,7 +828,11 @@ class YakuLingoApp:
 
                 ui.menu_item('削除', on_click=delete_entry).classes('text-error')
 
-            menu_btn.on('click', lambda e: (e.stop_propagation(), menu.open()))
+            def open_menu(event):
+                event.stop_propagation()
+                menu.open(target=menu_btn)
+
+            menu_btn.on('click', open_menu)
 
     def _get_main_area_classes(self) -> str:
         """Get dynamic CSS classes for main-area based on current state."""

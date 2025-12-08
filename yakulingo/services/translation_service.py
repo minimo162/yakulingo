@@ -1913,7 +1913,7 @@ class TranslationService:
         """
         try:
             pair_count = 0
-            with open(output_path, 'w', encoding='utf-8', newline='') as f:
+            with open(output_path, 'w', encoding='utf-8-sig', newline='') as f:
                 writer = csv.writer(f)
                 writer.writerow(['original', 'translated'])
 

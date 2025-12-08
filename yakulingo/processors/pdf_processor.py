@@ -3183,7 +3183,7 @@ class PdfProcessor(FileProcessor):
             cell_map = {cell.address: cell for cell in cells}
 
         try:
-            with open(output_path, 'w', encoding='utf-8', newline='') as f:
+            with open(output_path, 'w', encoding='utf-8-sig', newline='') as f:
                 writer = csv.writer(f)
 
                 # Header with metadata columns if cells available

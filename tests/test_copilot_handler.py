@@ -271,19 +271,26 @@ class TestCopilotHandlerTranslateSingle:
         assert "解説:" in result
 
     def test_translate_single_empty_result(self, monkeypatch):
-        """translate_single handles empty result"""
+        """translate_single raises when Copilot returns no content"""
         from yakulingo.services import copilot_handler
 
         handler = CopilotHandler()
 
+        # Run the real implementation through execute to hit the empty-response guard
         def mock_execute(func, *args):
-            return ""
+            return func(*args)
+
+        handler._connect_impl = lambda: True
+        handler._is_cancelled = lambda: False
+        handler.start_new_chat = lambda: None
+        handler._send_message = lambda prompt: None
+        handler._get_response = lambda on_chunk=None: ""
+        handler._save_storage_state = lambda: None
 
         monkeypatch.setattr(copilot_handler._playwright_executor, 'execute', mock_execute)
 
-        result = handler.translate_single("Test", "prompt")
-
-        assert result == ""
+        with pytest.raises(RuntimeError):
+            handler.translate_single("Test", "prompt")
 
 
 class TestCopilotHandlerEdgePath:

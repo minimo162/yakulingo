@@ -1,18 +1,19 @@
 ## Reply Email Request
 
-Create a reply that matches the user's intent.
+Create a polished, ready-to-send reply that matches the user's intent.
 
 ### Inputs
 - Original email received: {input_text}
 - Japanese translation (reference): {translation}
 - User's reply intent: {reply_intent}
 
-### Reply Guidelines
-- Language: same as the original email
-- Tone: suitable business formality
-- Conciseness: cover key points clearly
-- Naturalness: avoid awkward phrasing for natives
-- Courtesy: include appropriate greeting and closing
+### Reply Composition Steps
+- Read the original email to keep the same language and context (translation is only a reference).
+- Start with a courteous greeting that fits the relationship and subject.
+- Address the user's intent clearly (answer questions, acknowledge receipt, propose times, etc.).
+- Highlight key actions or decisions in concise sentences or short bullets.
+- Close with an appreciative, professional sign-off and keep the tone consistent throughout.
+- Avoid filler phrases and keep the reply concise and natural for a native speaker.
 
 ### Output Format
 訳文: ready-to-send reply text

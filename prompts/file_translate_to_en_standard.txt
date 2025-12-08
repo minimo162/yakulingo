@@ -21,7 +21,8 @@ Translate the following text to English. Output only the translation, no explana
 - Use YoY, QoQ, CAGR appropriately
 
 ### Output
-Translation only, no markdown, preserve line breaks.
+- If input is numbered (1., 2., 3., ...), output translations with matching numbers.
+- Translation only, no markdown, preserve line breaks within each item.
 
 {reference_section}
 

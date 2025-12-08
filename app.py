@@ -63,6 +63,7 @@ def main():
     This can cut startup time in half.
     See: https://github.com/zauberzeug/nicegui/issues/3356
     """
+    import asyncio
     import multiprocessing
     import os
     import time
@@ -88,11 +89,21 @@ def main():
     from yakulingo.ui.app import run_app
     logger.info("[TIMING] yakulingo.ui.app import: %.2fs", time.perf_counter() - _t_import)
 
-    run_app(
-        host='127.0.0.1',
-        port=8765,
-        native=True,  # Native window mode (no browser needed)
-    )
+    try:
+        run_app(
+            host='127.0.0.1',
+            port=8765,
+            native=True,  # Native window mode (no browser needed)
+        )
+    except KeyboardInterrupt:
+        # Normal shutdown via window close or Ctrl+C
+        logger.debug("Application shutdown via KeyboardInterrupt")
+    except asyncio.CancelledError:
+        # Async task cancellation during shutdown is expected
+        logger.debug("Application shutdown via CancelledError")
+    except SystemExit:
+        # Normal exit
+        pass
 
 
 if __name__ == '__main__':

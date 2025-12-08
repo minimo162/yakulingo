@@ -776,6 +776,8 @@ class CopilotHandler:
             self.last_connection_error = self.ERROR_LOGIN_REQUIRED
 
             if wait_for_login:
+                # Bring browser to foreground so user can complete login
+                self._bring_to_foreground_impl(page)
                 return self._wait_for_login_completion(page)
             return False
 
@@ -807,6 +809,8 @@ class CopilotHandler:
                 self.last_connection_error = self.ERROR_LOGIN_REQUIRED
 
                 if wait_for_login:
+                    # Bring browser to foreground so user can complete login
+                    self._bring_to_foreground_impl(page)
                     return self._wait_for_login_completion(page)
                 return False
 

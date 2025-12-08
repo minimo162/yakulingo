@@ -232,10 +232,18 @@ class TestCopilotHandlerGetResponse:
         def mock_query_selector(selector):
             if 'stopBackground' in selector:
                 return mock_stop_button
-            return mock_response_elem
+            return None
+
+        def mock_query_selector_all(selector):
+            if 'markdown-reply' in selector or 'data-message-type="Chat"' in selector:
+                return [mock_response_elem]
+            if 'data-message-author-role="assistant"' in selector:
+                return [mock_response_elem]
+            return []
 
         mock_page = Mock()
         mock_page.query_selector.side_effect = mock_query_selector
+        mock_page.query_selector_all.side_effect = mock_query_selector_all
         mock_page.wait_for_selector.return_value = None
 
         handler._page = mock_page
@@ -269,10 +277,18 @@ class TestCopilotHandlerGetResponse:
         def mock_query_selector(selector):
             if 'stopBackground' in selector:
                 return mock_stop_button
-            return mock_response_elem
+            return None
+
+        def mock_query_selector_all(selector):
+            if 'data-message-type="Chat"' in selector or 'markdown-reply' in selector:
+                return [mock_response_elem]
+            if 'data-message-author-role="assistant"' in selector:
+                return [mock_response_elem]
+            return []
 
         mock_page = Mock()
         mock_page.query_selector.side_effect = mock_query_selector
+        mock_page.query_selector_all.side_effect = mock_query_selector_all
         mock_page.wait_for_selector.return_value = None
 
         handler._page = mock_page
@@ -297,6 +313,7 @@ class TestCopilotHandlerGetResponse:
 
         mock_page = Mock()
         mock_page.query_selector.side_effect = mock_query_selector
+        mock_page.query_selector_all.return_value = []
         mock_page.wait_for_selector.return_value = None
 
         handler._page = mock_page
@@ -313,6 +330,7 @@ class TestCopilotHandlerGetResponse:
         mock_page = Mock()
         # Use AttributeError which is caught by the implementation
         mock_page.query_selector.side_effect = AttributeError("Element not found")
+        mock_page.query_selector_all.side_effect = AttributeError("Element not found")
         mock_page.wait_for_selector.return_value = None
 
         handler._page = mock_page
@@ -321,6 +339,44 @@ class TestCopilotHandlerGetResponse:
             result = handler._get_response(timeout=3)
 
         assert result == ""
+
+    def test_get_response_reads_assistant_role_selector(self):
+        """_get_response picks up assistant-role message containers when markup changes"""
+
+        handler = CopilotHandler()
+
+        mock_response_elem = Mock()
+        mock_response_elem.inner_text.return_value = "Assistant role text"
+
+        mock_stop_button = Mock()
+        mock_stop_button.is_visible.return_value = False
+
+        def mock_query_selector(selector):
+            if 'stopBackground' in selector:
+                return mock_stop_button
+            return None
+
+        def mock_query_selector_all(selector):
+            selector_map = {
+                handler.RESPONSE_SELECTORS[0]: [],  # markdown reply
+                handler.RESPONSE_SELECTORS[1]: [],  # legacy chat container
+                handler.RESPONSE_SELECTORS[2]: [mock_response_elem],  # assistant role content element
+                handler.RESPONSE_SELECTORS[3]: [],
+                handler.RESPONSE_SELECTORS[4]: [],
+            }
+            return selector_map.get(selector, [])
+
+        mock_page = Mock()
+        mock_page.query_selector.side_effect = mock_query_selector
+        mock_page.query_selector_all.side_effect = mock_query_selector_all
+        mock_page.wait_for_selector.return_value = None
+
+        handler._page = mock_page
+
+        with patch('time.sleep'):
+            result = handler._get_response(timeout=5)
+
+        assert result == "Assistant role text"
 
 
 class TestCopilotHandlerTranslateSync:

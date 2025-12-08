@@ -57,7 +57,7 @@ class YakuLingoApp:
     def __init__(self):
         self.state = AppState()
         self.settings_path = get_default_settings_path()
-        self.settings = AppSettings.load(self.settings_path)
+        self._settings: Optional[AppSettings] = None  # Lazy-loaded for faster startup
 
         # Lazy-loaded heavy components for faster startup
         self._copilot: Optional["CopilotHandler"] = None
@@ -66,9 +66,6 @@ class YakuLingoApp:
         # Cache base directory and glossary path (avoid recalculation)
         self._base_dir = Path(__file__).parent.parent.parent
         self._glossary_path = self._base_dir / 'glossary.csv'
-
-        # Load settings
-        self.state.reference_files = self.settings.get_reference_file_paths(self._base_dir)
 
         # UI references for refresh
         self._header_status = None
@@ -113,6 +110,18 @@ class YakuLingoApp:
             from yakulingo.services.copilot_handler import CopilotHandler
             self._copilot = CopilotHandler()
         return self._copilot
+
+    @property
+    def settings(self) -> AppSettings:
+        """Lazy-load settings to defer disk I/O until the UI is requested."""
+        if self._settings is None:
+            import time
+
+            start = time.perf_counter()
+            self._settings = AppSettings.load(self.settings_path)
+            self.state.reference_files = self._settings.get_reference_file_paths(self._base_dir)
+            logger.info("[TIMING] AppSettings.load: %.2fs", time.perf_counter() - start)
+        return self._settings
 
     def start_hotkey_manager(self):
         """Start the global hotkey manager for quick translation (Ctrl+J)."""
@@ -2278,6 +2287,9 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
     async def main_page(client: Client):
         # Save client reference for async handlers (context.client not available in async tasks)
         yakulingo_app._client = client
+
+        # Lazy-load settings when the first client connects (defers disk I/O from startup)
+        yakulingo_app.settings
 
         # Set dynamic panel sizes as CSS variables (calculated from monitor resolution)
         sidebar_width, input_panel_width, result_content_width, input_panel_max_width = yakulingo_app._panel_sizes

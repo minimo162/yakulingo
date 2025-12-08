@@ -1045,8 +1045,16 @@ class CopilotHandler:
                 return False
 
             try:
+                # Wait for any pending navigation to complete
+                try:
+                    page.wait_for_load_state('domcontentloaded', timeout=2000)
+                except PlaywrightTimeoutError:
+                    pass  # Continue even if timeout
+
                 # Check if still on login page
                 url = page.url
+                logger.debug("Login wait: current URL = %s (elapsed: %.1fs)", url[:80], elapsed)
+
                 if _is_login_page(url):
                     # Still on login page, wait and retry
                     time.sleep(poll_interval)
@@ -1055,6 +1063,7 @@ class CopilotHandler:
 
                 # Check if we're back on Copilot with chat input
                 if "m365.cloud.microsoft" in url:
+                    logger.debug("Login wait: detected m365 domain, checking for chat UI...")
                     # Try to find chat input
                     try:
                         page.wait_for_selector(input_selector, timeout=3000, state='visible')
@@ -1063,7 +1072,10 @@ class CopilotHandler:
                         return True
                     except PlaywrightTimeoutError:
                         # Chat input not visible yet, might still be loading
+                        logger.debug("Login wait: chat input not found yet, retrying...")
                         pass
+                else:
+                    logger.debug("Login wait: URL is not login page nor m365 domain")
 
                 time.sleep(poll_interval)
                 elapsed += poll_interval

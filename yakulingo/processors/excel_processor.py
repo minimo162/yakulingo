@@ -8,7 +8,9 @@ Falls back to openpyxl if xlwings is not available (Linux or no Excel installed)
 
 import logging
 import re
+import sys
 import zipfile
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator, Optional
 
@@ -19,6 +21,59 @@ from yakulingo.models.types import TextBlock, FileInfo, FileType, SectionDetail
 
 # Module logger
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# COM initialization for Windows (required for xlwings in worker threads)
+# =============================================================================
+_pythoncom = None
+
+def _get_pythoncom():
+    """Lazy import pythoncom (Windows COM library)."""
+    global _pythoncom
+    if _pythoncom is None and sys.platform == 'win32':
+        try:
+            import pythoncom
+            _pythoncom = pythoncom
+        except ImportError:
+            logger.debug("pythoncom not available")
+    return _pythoncom
+
+
+@contextmanager
+def com_initialized():
+    """
+    Context manager to ensure COM is initialized for the current thread.
+
+    Required when xlwings is called from a worker thread (e.g., asyncio.to_thread).
+    On non-Windows platforms, this is a no-op.
+
+    Usage:
+        with com_initialized():
+            app = xw.App(visible=False)
+            ...
+    """
+    pythoncom = _get_pythoncom()
+    initialized = False
+
+    if pythoncom is not None:
+        try:
+            # CoInitialize returns S_OK (0) on success, S_FALSE (1) if already initialized
+            hr = pythoncom.CoInitialize()
+            initialized = (hr == 0)  # Only uninitialize if we initialized
+            logger.debug("COM initialized for thread (hr=%s)", hr)
+        except Exception as e:
+            logger.debug("COM initialization skipped: %s", e)
+
+    try:
+        yield
+    finally:
+        if initialized and pythoncom is not None:
+            try:
+                pythoncom.CoUninitialize()
+                logger.debug("COM uninitialized for thread")
+            except Exception as e:
+                logger.debug("COM uninitialization failed: %s", e)
 
 
 # =============================================================================
@@ -209,185 +264,195 @@ class ExcelProcessor(FileProcessor):
             file_path: Path to the Excel file
             xw: xlwings module
             output_language: "en" for JP→EN, "jp" for EN→JP translation
+
+        Note: COM initialization is required when called from worker threads.
+        Blocks are collected into a list before yielding to ensure COM operations
+        complete within the com_initialized() context.
         """
-        app = xw.App(visible=False, add_book=False)
-        try:
-            wb = app.books.open(str(file_path), ignore_read_only_recommended=True)
+        blocks: list[TextBlock] = []
+
+        with com_initialized():
+            app = xw.App(visible=False, add_book=False)
             try:
-                for sheet_idx, sheet in enumerate(wb.sheets):
-                    sheet_name = sheet.name
+                wb = app.books.open(str(file_path), ignore_read_only_recommended=True)
+                try:
+                    for sheet_idx, sheet in enumerate(wb.sheets):
+                        sheet_name = sheet.name
 
-                    # === Cells (bulk read optimization) ===
-                    # Wrap in try-except to handle COM errors
-                    try:
-                        used_range = sheet.used_range
-                        if used_range is not None:
-                            # Get all values at once (much faster than cell-by-cell)
-                            all_values = used_range.value
-                            if all_values is not None:
-                                # Normalize to 2D list (single cell returns scalar, single row/col returns 1D)
-                                if not isinstance(all_values, list):
-                                    all_values = [[all_values]]
-                                elif all_values and not isinstance(all_values[0], list):
-                                    # Single row case
-                                    all_values = [all_values]
+                        # === Cells (bulk read optimization) ===
+                        # Wrap in try-except to handle COM errors
+                        try:
+                            used_range = sheet.used_range
+                            if used_range is not None:
+                                # Get all values at once (much faster than cell-by-cell)
+                                all_values = used_range.value
+                                if all_values is not None:
+                                    # Normalize to 2D list (single cell returns scalar, single row/col returns 1D)
+                                    if not isinstance(all_values, list):
+                                        all_values = [[all_values]]
+                                    elif all_values and not isinstance(all_values[0], list):
+                                        # Single row case
+                                        all_values = [all_values]
 
-                                # Get start position of used_range
-                                start_row = used_range.row
-                                start_col = used_range.column
+                                    # Get start position of used_range
+                                    start_row = used_range.row
+                                    start_col = used_range.column
 
-                                # First pass: identify translatable cells
-                                translatable_cells = []
-                                for row_offset, row_values in enumerate(all_values):
-                                    if row_values is None:
-                                        continue
-                                    for col_offset, value in enumerate(row_values):
-                                        if value and isinstance(value, str):
-                                            if self.cell_translator.should_translate(str(value), output_language):
-                                                row_idx = start_row + row_offset
-                                                col_idx = start_col + col_offset
-                                                translatable_cells.append((row_idx, col_idx, str(value)))
+                                    # First pass: identify translatable cells
+                                    translatable_cells = []
+                                    for row_offset, row_values in enumerate(all_values):
+                                        if row_values is None:
+                                            continue
+                                        for col_offset, value in enumerate(row_values):
+                                            if value and isinstance(value, str):
+                                                if self.cell_translator.should_translate(str(value), output_language):
+                                                    row_idx = start_row + row_offset
+                                                    col_idx = start_col + col_offset
+                                                    translatable_cells.append((row_idx, col_idx, str(value)))
 
-                                # Second pass: yield TextBlocks for translatable cells
-                                # Note: Font info is fetched during apply_translations, not here
-                                # This avoids redundant COM calls and improves performance
-                                for row_idx, col_idx, text in translatable_cells:
-                                    col_letter = get_column_letter(col_idx)
-                                    yield TextBlock(
-                                        id=f"{sheet_name}_{col_letter}{row_idx}",
-                                        text=text,
-                                        location=f"{sheet_name}, {col_letter}{row_idx}",
-                                        metadata={
-                                            'sheet': sheet_name,
-                                            'sheet_idx': sheet_idx,
-                                            'row': row_idx,
-                                            'col': col_idx,
-                                            'type': 'cell',
-                                            'font_name': None,  # Fetched in apply_translations
-                                            'font_size': 11.0,  # Default, actual fetched in apply_translations
-                                        }
-                                    )
-                    except Exception as e:
-                        logger.warning("Error reading used_range in sheet '%s': %s", sheet_name, e)
-
-                    # === Shapes (TextBox, etc.) ===
-                    # Wrap shape iteration in try-except to handle COM errors
-                    # Note: Some shape types (images, OLE objects, charts) don't have
-                    # a text property and will raise COM errors when accessed
-                    try:
-                        for shape_idx, shape in enumerate(sheet.shapes):
-                            try:
-                                # First check shape type - some shapes don't support text
-                                # xlwings shape types: 1=msoAutoShape, 17=msoTextBox, etc.
-                                # Skip shapes that typically don't have text (images, OLE, etc.)
-                                shape_type = None
-                                try:
-                                    shape_type = shape.type
-                                except Exception:
-                                    # If we can't even get the type, skip this shape
-                                    continue
-
-                                # Skip shape types that don't have text:
-                                # 13 = msoPicture (images)
-                                # 3 = msoChart (embedded charts)
-                                # 12 = msoOLEControlObject
-                                # 7 = msoEmbeddedOLEObject
-                                # 10 = msoLinkedOLEObject
-                                # 19 = msoMedia
-                                non_text_types = {3, 7, 10, 12, 13, 19}
-                                if shape_type in non_text_types:
-                                    continue
-
-                                # Try to get text from shape
-                                text = None
-                                try:
-                                    if hasattr(shape, 'text'):
-                                        raw_text = shape.text  # Access only once
-                                        if raw_text:
-                                            text = raw_text.strip()
-                                except Exception:
-                                    # COM error accessing text - shape doesn't support text
-                                    continue
-
-                                if text and self.cell_translator.should_translate(text, output_language):
-                                    # Get shape name safely
-                                    shape_name = None
-                                    try:
-                                        shape_name = shape.name
-                                    except Exception:
-                                        shape_name = f"Shape_{shape_idx}"
-
-                                    yield TextBlock(
-                                        id=f"{sheet_name}_shape_{shape_idx}",
-                                        text=text,
-                                        location=f"{sheet_name}, Shape '{shape_name}'",
-                                        metadata={
-                                            'sheet': sheet_name,
-                                            'sheet_idx': sheet_idx,
-                                            'shape': shape_idx,
-                                            'shape_name': shape_name,
-                                            'type': 'shape',
-                                        }
-                                    )
-                            except Exception as e:
-                                # Log at debug level - many shapes legitimately don't have text
-                                logger.debug("Skipping shape %d in sheet '%s': %s", shape_idx, sheet_name, e)
-                    except Exception as e:
-                        logger.warning("Error iterating shapes in sheet '%s': %s", sheet_name, e)
-
-                    # === Chart Titles and Labels ===
-                    # Wrap chart iteration in try-except to handle COM errors
-                    try:
-                        for chart_idx, chart in enumerate(sheet.charts):
-                            try:
-                                api_chart = chart.api[1]  # xlwings COM object (1-indexed)
-
-                                # Chart title
-                                if api_chart.HasTitle:
-                                    title = api_chart.ChartTitle.Text
-                                    if title and self.cell_translator.should_translate(title, output_language):
-                                        yield TextBlock(
-                                            id=f"{sheet_name}_chart_{chart_idx}_title",
-                                            text=title,
-                                            location=f"{sheet_name}, Chart {chart_idx + 1} Title",
+                                    # Second pass: collect TextBlocks for translatable cells
+                                    # Note: Font info is fetched during apply_translations, not here
+                                    # This avoids redundant COM calls and improves performance
+                                    for row_idx, col_idx, text in translatable_cells:
+                                        col_letter = get_column_letter(col_idx)
+                                        blocks.append(TextBlock(
+                                            id=f"{sheet_name}_{col_letter}{row_idx}",
+                                            text=text,
+                                            location=f"{sheet_name}, {col_letter}{row_idx}",
                                             metadata={
                                                 'sheet': sheet_name,
                                                 'sheet_idx': sheet_idx,
-                                                'chart': chart_idx,
-                                                'type': 'chart_title',
+                                                'row': row_idx,
+                                                'col': col_idx,
+                                                'type': 'cell',
+                                                'font_name': None,  # Fetched in apply_translations
+                                                'font_size': 11.0,  # Default, actual fetched in apply_translations
                                             }
-                                        )
+                                        ))
+                        except Exception as e:
+                            logger.warning("Error reading used_range in sheet '%s': %s", sheet_name, e)
 
-                                # Axis titles
-                                for axis_type, axis_name in [(1, 'category'), (2, 'value')]:
+                        # === Shapes (TextBox, etc.) ===
+                        # Wrap shape iteration in try-except to handle COM errors
+                        # Note: Some shape types (images, OLE objects, charts) don't have
+                        # a text property and will raise COM errors when accessed
+                        try:
+                            for shape_idx, shape in enumerate(sheet.shapes):
+                                try:
+                                    # First check shape type - some shapes don't support text
+                                    # xlwings shape types: 1=msoAutoShape, 17=msoTextBox, etc.
+                                    # Skip shapes that typically don't have text (images, OLE, etc.)
+                                    shape_type = None
                                     try:
-                                        axis = api_chart.Axes(axis_type)
-                                        if axis.HasTitle:
-                                            axis_title = axis.AxisTitle.Text
-                                            if axis_title and self.cell_translator.should_translate(axis_title, output_language):
-                                                yield TextBlock(
-                                                    id=f"{sheet_name}_chart_{chart_idx}_axis_{axis_name}",
-                                                    text=axis_title,
-                                                    location=f"{sheet_name}, Chart {chart_idx + 1} {axis_name.title()} Axis",
-                                                    metadata={
-                                                        'sheet': sheet_name,
-                                                        'sheet_idx': sheet_idx,
-                                                        'chart': chart_idx,
-                                                        'axis': axis_name,
-                                                        'type': 'chart_axis_title',
-                                                    }
-                                                )
-                                    except Exception as e:
-                                        logger.debug("Error reading %s axis title for chart %d: %s", axis_name, chart_idx, e)
+                                        shape_type = shape.type
+                                    except Exception:
+                                        # If we can't even get the type, skip this shape
+                                        continue
 
-                            except Exception as e:
-                                logger.debug("Error extracting chart %d in sheet '%s': %s", chart_idx, sheet_name, e)
-                    except Exception as e:
-                        logger.warning("Error iterating charts in sheet '%s': %s", sheet_name, e)
+                                    # Skip shape types that don't have text:
+                                    # 13 = msoPicture (images)
+                                    # 3 = msoChart (embedded charts)
+                                    # 12 = msoOLEControlObject
+                                    # 7 = msoEmbeddedOLEObject
+                                    # 10 = msoLinkedOLEObject
+                                    # 19 = msoMedia
+                                    non_text_types = {3, 7, 10, 12, 13, 19}
+                                    if shape_type in non_text_types:
+                                        continue
+
+                                    # Try to get text from shape
+                                    text = None
+                                    try:
+                                        if hasattr(shape, 'text'):
+                                            raw_text = shape.text  # Access only once
+                                            if raw_text:
+                                                text = raw_text.strip()
+                                    except Exception:
+                                        # COM error accessing text - shape doesn't support text
+                                        continue
+
+                                    if text and self.cell_translator.should_translate(text, output_language):
+                                        # Get shape name safely
+                                        shape_name = None
+                                        try:
+                                            shape_name = shape.name
+                                        except Exception:
+                                            shape_name = f"Shape_{shape_idx}"
+
+                                        blocks.append(TextBlock(
+                                            id=f"{sheet_name}_shape_{shape_idx}",
+                                            text=text,
+                                            location=f"{sheet_name}, Shape '{shape_name}'",
+                                            metadata={
+                                                'sheet': sheet_name,
+                                                'sheet_idx': sheet_idx,
+                                                'shape': shape_idx,
+                                                'shape_name': shape_name,
+                                                'type': 'shape',
+                                            }
+                                        ))
+                                except Exception as e:
+                                    # Log at debug level - many shapes legitimately don't have text
+                                    logger.debug("Skipping shape %d in sheet '%s': %s", shape_idx, sheet_name, e)
+                        except Exception as e:
+                            logger.warning("Error iterating shapes in sheet '%s': %s", sheet_name, e)
+
+                        # === Chart Titles and Labels ===
+                        # Wrap chart iteration in try-except to handle COM errors
+                        try:
+                            for chart_idx, chart in enumerate(sheet.charts):
+                                try:
+                                    api_chart = chart.api[1]  # xlwings COM object (1-indexed)
+
+                                    # Chart title
+                                    if api_chart.HasTitle:
+                                        title = api_chart.ChartTitle.Text
+                                        if title and self.cell_translator.should_translate(title, output_language):
+                                            blocks.append(TextBlock(
+                                                id=f"{sheet_name}_chart_{chart_idx}_title",
+                                                text=title,
+                                                location=f"{sheet_name}, Chart {chart_idx + 1} Title",
+                                                metadata={
+                                                    'sheet': sheet_name,
+                                                    'sheet_idx': sheet_idx,
+                                                    'chart': chart_idx,
+                                                    'type': 'chart_title',
+                                                }
+                                            ))
+
+                                    # Axis titles
+                                    for axis_type, axis_name in [(1, 'category'), (2, 'value')]:
+                                        try:
+                                            axis = api_chart.Axes(axis_type)
+                                            if axis.HasTitle:
+                                                axis_title = axis.AxisTitle.Text
+                                                if axis_title and self.cell_translator.should_translate(axis_title, output_language):
+                                                    blocks.append(TextBlock(
+                                                        id=f"{sheet_name}_chart_{chart_idx}_axis_{axis_name}",
+                                                        text=axis_title,
+                                                        location=f"{sheet_name}, Chart {chart_idx + 1} {axis_name.title()} Axis",
+                                                        metadata={
+                                                            'sheet': sheet_name,
+                                                            'sheet_idx': sheet_idx,
+                                                            'chart': chart_idx,
+                                                            'axis': axis_name,
+                                                            'type': 'chart_axis_title',
+                                                        }
+                                                    ))
+                                        except Exception as e:
+                                            logger.debug("Error reading %s axis title for chart %d: %s", axis_name, chart_idx, e)
+
+                                except Exception as e:
+                                    logger.debug("Error extracting chart %d in sheet '%s': %s", chart_idx, sheet_name, e)
+                        except Exception as e:
+                            logger.warning("Error iterating charts in sheet '%s': %s", sheet_name, e)
+                finally:
+                    wb.close()
             finally:
-                wb.close()
-        finally:
-            app.quit()
+                app.quit()
+
+        # Yield blocks after COM operations complete
+        yield from blocks
 
     def _extract_text_blocks_openpyxl(
         self, file_path: Path, output_language: str = "en"
@@ -546,140 +611,144 @@ class ExcelProcessor(FileProcessor):
         - Pre-groups translations by sheet to avoid O(sheets × translations) complexity
         - Disables ScreenUpdating and sets Calculation to manual for faster COM operations
         - Restores Excel settings after completion
+
+        Note: COM initialization is required when called from worker threads.
         """
         font_manager = FontManager(direction, settings)
-        app = xw.App(visible=False, add_book=False)
 
-        # Store original Excel settings for restoration
-        original_screen_updating = None
-        original_calculation = None
+        with com_initialized():
+            app = xw.App(visible=False, add_book=False)
 
-        try:
-            # Optimize Excel settings for batch operations
-            try:
-                original_screen_updating = app.screen_updating
-                app.screen_updating = False
-            except Exception as e:
-                logger.debug("Could not disable screen updating: %s", e)
+            # Store original Excel settings for restoration
+            original_screen_updating = None
+            original_calculation = None
 
             try:
-                original_calculation = app.calculation
-                # xlCalculationManual = -4135 (Excel constant)
-                app.calculation = 'manual'
-            except Exception as e:
-                logger.debug("Could not set manual calculation: %s", e)
-
-            wb = app.books.open(str(input_path), ignore_read_only_recommended=True)
-            try:
-                # Pre-group translations by sheet name for O(translations) instead of O(sheets × translations)
-                sheet_names = {sheet.name for sheet in wb.sheets}
-                translations_by_sheet = self._group_translations_by_sheet(translations, sheet_names)
-
-                for sheet in wb.sheets:
-                    sheet_name = sheet.name
-                    sheet_translations = translations_by_sheet.get(sheet_name, {})
-
-                    # === Apply to cells ===
-                    cell_translations = sheet_translations.get('cells', {})
-                    for cell_ref, translated_text in cell_translations.items():
-                        try:
-                            cell = sheet.range(cell_ref)
-
-                            # Get original font info
-                            original_font_name = None
-                            original_font_size = 11.0
-                            try:
-                                original_font_name = cell.font.name
-                                original_font_size = cell.font.size or 11.0
-                            except Exception as e:
-                                logger.debug("Error reading font for cell %s_%s: %s", sheet_name, cell_ref, e)
-
-                            # Get new font settings
-                            new_font_name, new_font_size = font_manager.select_font(
-                                original_font_name,
-                                original_font_size
-                            )
-
-                            # Apply translation
-                            cell.value = translated_text
-
-                            # Apply new font
-                            try:
-                                cell.font.name = new_font_name
-                                cell.font.size = new_font_size
-                            except Exception as e:
-                                logger.debug("Error applying font to cell %s_%s: %s", sheet_name, cell_ref, e)
-
-                        except Exception as e:
-                            logger.warning("Error applying translation to cell %s_%s: %s", sheet_name, cell_ref, e)
-
-                    # === Apply to shapes ===
-                    shape_translations = sheet_translations.get('shapes', {})
-                    if shape_translations:
-                        try:
-                            for shape_idx, shape in enumerate(sheet.shapes):
-                                if shape_idx in shape_translations:
-                                    try:
-                                        shape.text = shape_translations[shape_idx]
-                                    except Exception as e:
-                                        logger.debug("Error applying translation to shape %d in '%s': %s", shape_idx, sheet_name, e)
-                        except Exception as e:
-                            logger.warning("Error iterating shapes in sheet '%s': %s", sheet_name, e)
-
-                    # === Apply to chart titles and labels ===
-                    chart_translations = sheet_translations.get('charts', {})
-                    if chart_translations:
-                        try:
-                            for chart_idx, chart in enumerate(sheet.charts):
-                                if chart_idx not in chart_translations:
-                                    continue
-                                try:
-                                    api_chart = chart.api[1]
-                                    chart_data = chart_translations[chart_idx]
-
-                                    # Chart title
-                                    if 'title' in chart_data and api_chart.HasTitle:
-                                        api_chart.ChartTitle.Text = chart_data['title']
-
-                                    # Axis titles
-                                    for axis_type, axis_name in [(1, 'category'), (2, 'value')]:
-                                        if axis_name in chart_data:
-                                            try:
-                                                axis = api_chart.Axes(axis_type)
-                                                if axis.HasTitle:
-                                                    axis.AxisTitle.Text = chart_data[axis_name]
-                                            except Exception as e:
-                                                logger.debug("Error applying translation to %s axis of chart %d: %s", axis_name, chart_idx, e)
-
-                                except Exception as e:
-                                    logger.debug("Error applying translation to chart %d in sheet '%s': %s", chart_idx, sheet_name, e)
-                        except Exception as e:
-                            logger.warning("Error iterating charts in sheet '%s': %s", sheet_name, e)
-
-                # Save to output path
+                # Optimize Excel settings for batch operations
                 try:
-                    wb.save(str(output_path))
+                    original_screen_updating = app.screen_updating
+                    app.screen_updating = False
                 except Exception as e:
-                    logger.error("Error saving workbook: %s", e)
-                    raise
+                    logger.debug("Could not disable screen updating: %s", e)
+
+                try:
+                    original_calculation = app.calculation
+                    # xlCalculationManual = -4135 (Excel constant)
+                    app.calculation = 'manual'
+                except Exception as e:
+                    logger.debug("Could not set manual calculation: %s", e)
+
+                wb = app.books.open(str(input_path), ignore_read_only_recommended=True)
+                try:
+                    # Pre-group translations by sheet name for O(translations) instead of O(sheets × translations)
+                    sheet_names = {sheet.name for sheet in wb.sheets}
+                    translations_by_sheet = self._group_translations_by_sheet(translations, sheet_names)
+
+                    for sheet in wb.sheets:
+                        sheet_name = sheet.name
+                        sheet_translations = translations_by_sheet.get(sheet_name, {})
+
+                        # === Apply to cells ===
+                        cell_translations = sheet_translations.get('cells', {})
+                        for cell_ref, translated_text in cell_translations.items():
+                            try:
+                                cell = sheet.range(cell_ref)
+
+                                # Get original font info
+                                original_font_name = None
+                                original_font_size = 11.0
+                                try:
+                                    original_font_name = cell.font.name
+                                    original_font_size = cell.font.size or 11.0
+                                except Exception as e:
+                                    logger.debug("Error reading font for cell %s_%s: %s", sheet_name, cell_ref, e)
+
+                                # Get new font settings
+                                new_font_name, new_font_size = font_manager.select_font(
+                                    original_font_name,
+                                    original_font_size
+                                )
+
+                                # Apply translation
+                                cell.value = translated_text
+
+                                # Apply new font
+                                try:
+                                    cell.font.name = new_font_name
+                                    cell.font.size = new_font_size
+                                except Exception as e:
+                                    logger.debug("Error applying font to cell %s_%s: %s", sheet_name, cell_ref, e)
+
+                            except Exception as e:
+                                logger.warning("Error applying translation to cell %s_%s: %s", sheet_name, cell_ref, e)
+
+                        # === Apply to shapes ===
+                        shape_translations = sheet_translations.get('shapes', {})
+                        if shape_translations:
+                            try:
+                                for shape_idx, shape in enumerate(sheet.shapes):
+                                    if shape_idx in shape_translations:
+                                        try:
+                                            shape.text = shape_translations[shape_idx]
+                                        except Exception as e:
+                                            logger.debug("Error applying translation to shape %d in '%s': %s", shape_idx, sheet_name, e)
+                            except Exception as e:
+                                logger.warning("Error iterating shapes in sheet '%s': %s", sheet_name, e)
+
+                        # === Apply to chart titles and labels ===
+                        chart_translations = sheet_translations.get('charts', {})
+                        if chart_translations:
+                            try:
+                                for chart_idx, chart in enumerate(sheet.charts):
+                                    if chart_idx not in chart_translations:
+                                        continue
+                                    try:
+                                        api_chart = chart.api[1]
+                                        chart_data = chart_translations[chart_idx]
+
+                                        # Chart title
+                                        if 'title' in chart_data and api_chart.HasTitle:
+                                            api_chart.ChartTitle.Text = chart_data['title']
+
+                                        # Axis titles
+                                        for axis_type, axis_name in [(1, 'category'), (2, 'value')]:
+                                            if axis_name in chart_data:
+                                                try:
+                                                    axis = api_chart.Axes(axis_type)
+                                                    if axis.HasTitle:
+                                                        axis.AxisTitle.Text = chart_data[axis_name]
+                                                except Exception as e:
+                                                    logger.debug("Error applying translation to %s axis of chart %d: %s", axis_name, chart_idx, e)
+
+                                    except Exception as e:
+                                        logger.debug("Error applying translation to chart %d in sheet '%s': %s", chart_idx, sheet_name, e)
+                            except Exception as e:
+                                logger.warning("Error iterating charts in sheet '%s': %s", sheet_name, e)
+
+                    # Save to output path
+                    try:
+                        wb.save(str(output_path))
+                    except Exception as e:
+                        logger.error("Error saving workbook: %s", e)
+                        raise
+                finally:
+                    wb.close()
+
             finally:
-                wb.close()
+                # Restore Excel settings before quitting
+                try:
+                    if original_calculation is not None:
+                        app.calculation = original_calculation
+                except Exception as e:
+                    logger.debug("Could not restore calculation mode: %s", e)
 
-        finally:
-            # Restore Excel settings before quitting
-            try:
-                if original_calculation is not None:
-                    app.calculation = original_calculation
-            except Exception as e:
-                logger.debug("Could not restore calculation mode: %s", e)
+                try:
+                    if original_screen_updating is not None:
+                        app.screen_updating = original_screen_updating
+                except Exception as e:
+                    logger.debug("Could not restore screen updating: %s", e)
 
-            try:
-                if original_screen_updating is not None:
-                    app.screen_updating = original_screen_updating
-            except Exception as e:
-                logger.debug("Could not restore screen updating: %s", e)
-
-            app.quit()
+                app.quit()
 
     def _apply_translations_openpyxl(
         self,

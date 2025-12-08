@@ -325,14 +325,12 @@ class WordProcessor(FileProcessor):
 
         # === Tables (Excel-compatible) ===
         # Track processed cells to avoid extracting merged cells multiple times
-        # Note: id(cell._tc) can be unreliable in some python-docx versions,
-        # so we use (row_idx, cell_idx, text_hash) as the unique key
         for table_idx, table in enumerate(doc.tables):
             processed_cells = set()
             for row_idx, row in enumerate(table.rows):
                 for cell_idx, cell in enumerate(row.cells):
-                    # Use position + text hash to identify unique cells (handles merged cells)
-                    cell_key = (row_idx, cell_idx, hash(cell.text))
+                    # Use the underlying tc element to deduplicate merged cells
+                    cell_key = cell._tc
                     if cell_key in processed_cells:
                         continue
                     processed_cells.add(cell_key)
@@ -403,12 +401,11 @@ class WordProcessor(FileProcessor):
 
         # === Apply to tables ===
         # Track processed cells to avoid applying to merged cells multiple times
-        # Note: id(cell._tc) can be unreliable, use position instead
         for table_idx, table in enumerate(doc.tables):
             processed_cells = set()
             for row_idx, row in enumerate(table.rows):
                 for cell_idx, cell in enumerate(row.cells):
-                    cell_key = (row_idx, cell_idx)
+                    cell_key = cell._tc
                     if cell_key in processed_cells:
                         continue
                     processed_cells.add(cell_key)

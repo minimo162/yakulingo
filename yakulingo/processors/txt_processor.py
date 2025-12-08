@@ -159,16 +159,14 @@ class TxtProcessor(FileProcessor):
             ]
 
             if chunked_ids:
-                # Reconstruct from chunks
+                # Reconstruct from chunks, preserving untranslated parts
                 chunk_texts = []
-                chunk_index = 0
-                while True:
+                chunks = self._split_into_chunks(paragraph, MAX_CHARS_PER_BLOCK)
+
+                for chunk_index, chunk in enumerate(chunks):
                     chunk_id = f"para_{para_index}_chunk_{chunk_index}"
-                    if chunk_id in translations:
-                        chunk_texts.append(translations[chunk_id])
-                        chunk_index += 1
-                    else:
-                        break
+                    chunk_texts.append(translations.get(chunk_id, chunk))
+
                 translated_paragraphs.append(''.join(chunk_texts))
             else:
                 # Single block paragraph

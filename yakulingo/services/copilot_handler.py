@@ -975,6 +975,68 @@ class CopilotHandler:
 
         logger.info("Browser window brought to foreground for login")
 
+    def _find_edge_window_handle(self, page_title: str = None):
+        """Locate the Edge window handle using Win32 APIs."""
+        if sys.platform != "win32":
+            return None
+
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            user32 = ctypes.WinDLL('user32', use_last_error=True)
+
+            EnumWindowsProc = ctypes.WINFUNCTYPE(
+                wintypes.BOOL, wintypes.HWND, wintypes.LPARAM
+            )
+
+            target_pid = self.edge_process.pid if self.edge_process else None
+            exact_match_hwnd = None
+            fallback_hwnd = None
+
+            def enum_windows_callback(hwnd, lparam):
+                nonlocal exact_match_hwnd, fallback_hwnd
+
+                class_name = ctypes.create_unicode_buffer(256)
+                user32.GetClassNameW(hwnd, class_name, 256)
+
+                if class_name.value != "Chrome_WidgetWin_1":
+                    return True
+
+                title_length = user32.GetWindowTextLengthW(hwnd) + 1
+                title = ctypes.create_unicode_buffer(title_length)
+                user32.GetWindowTextW(hwnd, title, title_length)
+                window_title = title.value
+                window_title_lower = window_title.lower()
+
+                if page_title and page_title in window_title:
+                    logger.debug("Found exact title match: %s", window_title[:60])
+                    exact_match_hwnd = hwnd
+                    return False
+
+                if target_pid:
+                    window_pid = wintypes.DWORD()
+                    user32.GetWindowThreadProcessId(hwnd, ctypes.byref(window_pid))
+                    if window_pid.value == target_pid and fallback_hwnd is None:
+                        fallback_hwnd = hwnd
+
+                if ("copilot" in window_title_lower or
+                    "m365" in window_title_lower or
+                    "sign in" in window_title_lower or
+                    "サインイン" in window_title_lower or
+                    "ログイン" in window_title_lower or
+                    "アカウント" in window_title_lower):
+                    if fallback_hwnd is None:
+                        fallback_hwnd = hwnd
+
+                return True
+
+            user32.EnumWindows(EnumWindowsProc(enum_windows_callback), 0)
+            return exact_match_hwnd or fallback_hwnd
+        except Exception as e:
+            logger.debug("Failed to locate Edge window handle: %s", e)
+            return None
+
     def _bring_edge_window_to_front(self, page_title: str = None) -> bool:
         """Bring Edge browser window to foreground using Windows API.
 
@@ -997,90 +1059,21 @@ class CopilotHandler:
             import ctypes
             from ctypes import wintypes
 
-            # Windows API constants
-            SW_RESTORE = 9
+            user32 = ctypes.WinDLL('user32', use_last_error=True)
+
+            edge_hwnd = self._find_edge_window_handle(page_title)
+
+            if not edge_hwnd:
+                logger.debug("Edge window not found via EnumWindows")
+                return False
+
             SW_SHOW = 5
+            SW_RESTORE = 9
             HWND_TOPMOST = -1
             HWND_NOTOPMOST = -2
             SWP_NOMOVE = 0x0002
             SWP_NOSIZE = 0x0001
             SWP_SHOWWINDOW = 0x0040
-
-            user32 = ctypes.windll.user32
-
-            # Find Edge window
-            # Edge uses "Chrome_WidgetWin_1" class (same as Chrome)
-            edge_hwnd = None
-            exact_match_hwnd = None
-            fallback_hwnd = None
-            target_pid = self.edge_process.pid if self.edge_process else None
-
-            # Callback function for EnumWindows
-            EnumWindowsProc = ctypes.WINFUNCTYPE(
-                wintypes.BOOL, wintypes.HWND, wintypes.LPARAM
-            )
-
-            def enum_windows_callback(hwnd, lparam):
-                nonlocal exact_match_hwnd, fallback_hwnd
-
-                # Get window class name
-                class_name = ctypes.create_unicode_buffer(256)
-                user32.GetClassNameW(hwnd, class_name, 256)
-
-                # Only check Chrome_WidgetWin_1 windows (Edge/Chrome)
-                if class_name.value != "Chrome_WidgetWin_1":
-                    return True
-
-                # Note: We don't check IsWindowVisible because:
-                # 1. The window may be minimized or hidden initially
-                # 2. We will show and restore it anyway via ShowWindow
-
-                # Get window title
-                title_length = user32.GetWindowTextLengthW(hwnd) + 1
-                title = ctypes.create_unicode_buffer(title_length)
-                user32.GetWindowTextW(hwnd, title, title_length)
-                window_title = title.value
-                window_title_lower = window_title.lower()
-
-                # Priority 1: Exact page title match (most reliable)
-                # Edge appends " - Microsoft Edge" to page titles
-                if page_title and page_title in window_title:
-                    logger.debug("Found exact title match: %s", window_title[:60])
-                    exact_match_hwnd = hwnd
-                    return False  # Stop enumeration - found exact match
-
-                # Priority 2: Match by process ID
-                if target_pid:
-                    window_pid = wintypes.DWORD()
-                    user32.GetWindowThreadProcessId(hwnd, ctypes.byref(window_pid))
-                    if window_pid.value == target_pid:
-                        if fallback_hwnd is None:
-                            fallback_hwnd = hwnd
-                        # Continue to look for exact match
-
-                # Priority 3: Match by window title patterns (fallback)
-                # Look for Edge windows with Copilot or login content
-                if ("copilot" in window_title_lower or
-                    "m365" in window_title_lower or
-                    "sign in" in window_title_lower or
-                    "サインイン" in window_title_lower or
-                    "ログイン" in window_title_lower or
-                    "アカウント" in window_title_lower):
-                    if fallback_hwnd is None:
-                        fallback_hwnd = hwnd
-                    # Continue to look for exact match
-
-                return True
-
-            # Enumerate all windows
-            user32.EnumWindows(EnumWindowsProc(enum_windows_callback), 0)
-
-            # Use exact match if found, otherwise fallback
-            edge_hwnd = exact_match_hwnd or fallback_hwnd
-
-            if not edge_hwnd:
-                logger.debug("Edge window not found via EnumWindows")
-                return False
 
             # Workaround for Windows foreground restrictions:
             # Windows prevents apps from stealing focus unless they have input
@@ -1132,6 +1125,49 @@ class CopilotHandler:
         except Exception as e:
             logger.debug("Failed to bring Edge window to foreground via Windows API: %s", e)
             return False
+
+    def _minimize_edge_window(self, page_title: str = None) -> bool:
+        """Minimize Edge window to return it to the background after login."""
+        if sys.platform != "win32":
+            return False
+
+        try:
+            import ctypes
+
+            user32 = ctypes.WinDLL('user32', use_last_error=True)
+            SW_MINIMIZE = 6
+            SW_HIDE = 0
+
+            edge_hwnd = self._find_edge_window_handle(page_title)
+            if not edge_hwnd:
+                logger.debug("Edge window not found for minimization")
+                return False
+
+            user32.ShowWindow(edge_hwnd, SW_MINIMIZE)
+            user32.ShowWindow(edge_hwnd, SW_HIDE)
+            logger.debug("Edge window minimized after login")
+            return True
+        except Exception as e:
+            logger.debug("Failed to minimize Edge window: %s", e)
+            return False
+
+    def _send_to_background_impl(self, page) -> None:
+        """Hide or minimize the Edge window after login completes."""
+        error_types = _get_playwright_errors()
+        PlaywrightError = error_types['Error']
+
+        page_title = None
+        try:
+            page_title = page.title()
+        except PlaywrightError as e:
+            logger.debug("Failed to get page title while minimizing: %s", e)
+
+        if sys.platform == "win32":
+            self._minimize_edge_window(page_title)
+        else:
+            logger.debug("Background minimization not implemented for this platform")
+
+        logger.info("Browser window returned to background after login")
 
     def _wait_for_login_completion(self, page, timeout: int = 300) -> bool:
         """Wait for user to complete login in the browser.
@@ -1228,6 +1264,7 @@ class CopilotHandler:
                         page.wait_for_selector(input_selector, timeout=3000, state='visible')
                         logger.info("Login completed successfully")
                         self.last_connection_error = self.ERROR_NONE
+                        self._send_to_background_impl(page)
                         return True
                     except PlaywrightTimeoutError:
                         # Chat input not visible yet, might still be loading

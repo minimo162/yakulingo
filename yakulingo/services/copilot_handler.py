@@ -334,6 +334,8 @@ class CopilotHandler:
         self.last_connection_error: str = self.ERROR_NONE
         # GPT-5 toggle optimization: skip check after first successful enable
         self._gpt5_enabled = False
+        # Login wait cancellation flag (set by cancel_login_wait to interrupt login wait loop)
+        self._login_cancelled = False
 
     @property
     def is_connected(self) -> bool:
@@ -346,6 +348,16 @@ class CopilotHandler:
         Use _is_page_valid() within Playwright thread for actual validation.
         """
         return self._connected
+
+    def cancel_login_wait(self) -> None:
+        """Cancel the login wait loop.
+
+        Called from cleanup/shutdown handler to interrupt the login wait loop
+        in _wait_for_login_completion. This allows the application to exit
+        gracefully even when waiting for user login.
+        """
+        self._login_cancelled = True
+        logger.debug("Login wait cancellation requested")
 
     def _get_storage_state_path(self) -> Path:
         """Get path to storage_state.json for cookie/session persistence."""
@@ -817,6 +829,14 @@ class CopilotHandler:
         error_types = _get_playwright_errors()
         PlaywrightError = error_types['Error']
 
+        # Get page title for window identification
+        page_title = None
+        try:
+            page_title = page.title()
+            logger.debug("Current page title: %s", page_title)
+        except PlaywrightError as e:
+            logger.debug("Failed to get page title: %s", e)
+
         # Method 1: Playwright's bring_to_front
         try:
             page.bring_to_front()
@@ -826,17 +846,21 @@ class CopilotHandler:
 
         # Method 2: Windows API to force window to foreground
         if sys.platform == "win32":
-            self._bring_edge_window_to_front()
+            self._bring_edge_window_to_front(page_title)
 
         logger.info("Browser window brought to foreground for login")
 
-    def _bring_edge_window_to_front(self) -> bool:
+    def _bring_edge_window_to_front(self, page_title: str = None) -> bool:
         """Bring Edge browser window to foreground using Windows API.
 
         Uses multiple approaches to ensure window activation:
-        1. Find Edge window by process ID (most reliable for our dedicated Edge)
-        2. Find Edge window by class name and title (fallback)
-        3. Use SetForegroundWindow with workarounds for Windows restrictions
+        1. Find Edge window by exact page title match (most reliable when we know the title)
+        2. Find Edge window by process ID
+        3. Find Edge window by class name and generic title patterns (fallback)
+        4. Use SetForegroundWindow with workarounds for Windows restrictions
+
+        Args:
+            page_title: The current page title from Playwright (for exact matching)
 
         Returns:
             True if window was successfully brought to front
@@ -862,6 +886,8 @@ class CopilotHandler:
             # Find Edge window
             # Edge uses "Chrome_WidgetWin_1" class (same as Chrome)
             edge_hwnd = None
+            exact_match_hwnd = None
+            fallback_hwnd = None
             target_pid = self.edge_process.pid if self.edge_process else None
 
             # Callback function for EnumWindows
@@ -870,7 +896,7 @@ class CopilotHandler:
             )
 
             def enum_windows_callback(hwnd, lparam):
-                nonlocal edge_hwnd
+                nonlocal exact_match_hwnd, fallback_hwnd
                 # Check if window is visible
                 if not user32.IsWindowVisible(hwnd):
                     return True
@@ -883,32 +909,48 @@ class CopilotHandler:
                 if class_name.value != "Chrome_WidgetWin_1":
                     return True
 
-                # Method 1: Match by process ID (most reliable)
+                # Get window title
+                title_length = user32.GetWindowTextLengthW(hwnd) + 1
+                title = ctypes.create_unicode_buffer(title_length)
+                user32.GetWindowTextW(hwnd, title, title_length)
+                window_title = title.value
+                window_title_lower = window_title.lower()
+
+                # Priority 1: Exact page title match (most reliable)
+                # Edge appends " - Microsoft Edge" to page titles
+                if page_title and page_title in window_title:
+                    logger.debug("Found exact title match: %s", window_title[:60])
+                    exact_match_hwnd = hwnd
+                    return False  # Stop enumeration - found exact match
+
+                # Priority 2: Match by process ID
                 if target_pid:
                     window_pid = wintypes.DWORD()
                     user32.GetWindowThreadProcessId(hwnd, ctypes.byref(window_pid))
                     if window_pid.value == target_pid:
-                        edge_hwnd = hwnd
-                        return False  # Stop enumeration
+                        if fallback_hwnd is None:
+                            fallback_hwnd = hwnd
+                        # Continue to look for exact match
 
-                # Method 2: Match by window title (fallback)
-                title_length = user32.GetWindowTextLengthW(hwnd) + 1
-                title = ctypes.create_unicode_buffer(title_length)
-                user32.GetWindowTextW(hwnd, title, title_length)
-                title_text = title.value.lower()
-
+                # Priority 3: Match by window title patterns (fallback)
                 # Look for Edge windows with Copilot or login content
-                if ("edge" in title_text or "copilot" in title_text or
-                    "m365" in title_text or "microsoft 365" in title_text or
-                    "microsoft" in title_text or "sign in" in title_text or
-                    "サインイン" in title_text or "ログイン" in title_text):
-                    edge_hwnd = hwnd
-                    return False  # Stop enumeration
+                if ("copilot" in window_title_lower or
+                    "m365" in window_title_lower or
+                    "sign in" in window_title_lower or
+                    "サインイン" in window_title_lower or
+                    "ログイン" in window_title_lower or
+                    "アカウント" in window_title_lower):
+                    if fallback_hwnd is None:
+                        fallback_hwnd = hwnd
+                    # Continue to look for exact match
 
                 return True
 
             # Enumerate all windows
             user32.EnumWindows(EnumWindowsProc(enum_windows_callback), 0)
+
+            # Use exact match if found, otherwise fallback
+            edge_hwnd = exact_match_hwnd or fallback_hwnd
 
             if not edge_hwnd:
                 logger.debug("Edge window not found via EnumWindows")
@@ -981,6 +1023,9 @@ class CopilotHandler:
         PlaywrightError = error_types['Error']
         PlaywrightTimeoutError = error_types['TimeoutError']
 
+        # Reset cancellation flag at start of wait
+        self._login_cancelled = False
+
         logger.info("Waiting for login completion (timeout: %ds)...", timeout)
         logger.info("Edgeブラウザでログインしてください / Please log in to the Edge browser")
 
@@ -992,6 +1037,11 @@ class CopilotHandler:
         elapsed = 0.0
 
         while elapsed < timeout:
+            # Check for cancellation (allows graceful shutdown)
+            if self._login_cancelled:
+                logger.info("Login wait cancelled by shutdown request")
+                return False
+
             try:
                 # Check if still on login page
                 url = page.url

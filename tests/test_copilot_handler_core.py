@@ -149,11 +149,13 @@ class TestCopilotHandlerSendMessage:
         handler = CopilotHandler()
 
         mock_input = Mock()
+        mock_input.inner_text.return_value = "Test message"  # Non-empty after fill
         mock_send_button = Mock()
         mock_send_button.get_attribute.return_value = None  # Button is enabled
         mock_page = Mock()
         # First call returns input, second call returns send button
         mock_page.wait_for_selector.side_effect = [mock_input, mock_send_button]
+        mock_page.query_selector.return_value = None  # No auth dialog
 
         handler._page = mock_page
         handler._ensure_gpt5_enabled = Mock()  # Mock GPT-5 check
@@ -169,9 +171,10 @@ class TestCopilotHandlerSendMessage:
         handler = CopilotHandler()
 
         mock_input = Mock()
+        mock_input.inner_text.return_value = "Test message"  # Non-empty after fill
         mock_page = Mock()
         mock_page.wait_for_selector.return_value = mock_input
-        mock_page.query_selector.return_value = None  # No send button
+        mock_page.query_selector.return_value = None  # No auth dialog / No send button
 
         handler._page = mock_page
 
@@ -184,6 +187,7 @@ class TestCopilotHandlerSendMessage:
         handler = CopilotHandler()
 
         mock_page = Mock()
+        mock_page.query_selector.return_value = None  # No auth dialog
         mock_page.wait_for_selector.side_effect = Exception("Timeout")
 
         handler._page = mock_page
@@ -198,9 +202,10 @@ class TestCopilotHandlerSendMessage:
         handler = CopilotHandler()
 
         mock_input = Mock()
+        mock_input.inner_text.return_value = "日本語テスト"  # Non-empty after fill
         mock_page = Mock()
         mock_page.wait_for_selector.return_value = mock_input
-        mock_page.query_selector.return_value = Mock()
+        mock_page.query_selector.return_value = None  # No auth dialog
 
         handler._page = mock_page
 
@@ -358,6 +363,7 @@ class TestCopilotHandlerTranslateSync:
         handler._connected = False
         mock_page = Mock()
         mock_page.query_selector_all.return_value = []  # No responses (cleared)
+        mock_page.query_selector.return_value = None  # No auth dialog
         handler._page = mock_page
 
         # Mock _connect_impl (called directly by _translate_sync_impl to avoid nested executor)
@@ -366,6 +372,7 @@ class TestCopilotHandlerTranslateSync:
             return True
 
         handler._connect_impl = mock_connect_impl
+        handler._send_message = Mock()  # Mock to avoid auth dialog check
         handler._send_prompt_smart = Mock()
         handler._get_response = Mock(return_value="1. Result")
         handler._save_storage_state = Mock()
@@ -399,6 +406,7 @@ class TestCopilotHandlerTranslateSingle:
         handler._connected = False
         mock_page = Mock()
         mock_page.query_selector_all.return_value = []  # No responses (cleared)
+        mock_page.query_selector.return_value = None  # No auth dialog
         handler._page = mock_page
 
         # Mock _connect_impl
@@ -407,6 +415,7 @@ class TestCopilotHandlerTranslateSingle:
             return True
 
         handler._connect_impl = mock_connect_impl
+        handler._send_message = Mock()  # Mock to avoid auth dialog check
         handler._send_prompt_smart = Mock()
         handler._get_response = Mock(return_value="訳文: Translated\n解説: This is explanation")
         handler._save_storage_state = Mock()
@@ -421,6 +430,7 @@ class TestCopilotHandlerTranslateSingle:
         handler._connected = False
         mock_page = Mock()
         mock_page.query_selector_all.return_value = []
+        mock_page.query_selector.return_value = None  # No auth dialog
         handler._page = mock_page
 
         def mock_connect_impl():
@@ -428,6 +438,7 @@ class TestCopilotHandlerTranslateSingle:
             return True
 
         handler._connect_impl = mock_connect_impl
+        handler._send_message = Mock()  # Mock to avoid auth dialog check
         handler._send_prompt_smart = Mock()
         handler._get_response = Mock(return_value="")
         handler._save_storage_state = Mock()
@@ -442,6 +453,7 @@ class TestCopilotHandlerTranslateSingle:
         handler._connected = False
         mock_page = Mock()
         mock_page.query_selector_all.return_value = []
+        mock_page.query_selector.return_value = None  # No auth dialog
         handler._page = mock_page
 
         def mock_connect_impl():
@@ -449,6 +461,7 @@ class TestCopilotHandlerTranslateSingle:
             return True
 
         handler._connect_impl = mock_connect_impl
+        handler._send_message = Mock()  # Mock to avoid auth dialog check
         handler._attach_file = Mock(return_value=True)
         handler._send_prompt_smart = Mock()
         handler._get_response = Mock(return_value="Translated")

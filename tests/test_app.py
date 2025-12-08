@@ -5,6 +5,7 @@ import pytest
 from pathlib import Path
 from unittest.mock import Mock, MagicMock, patch, AsyncMock
 import asyncio
+import sys
 
 from yakulingo.models.types import (
     TranslationProgress,
@@ -26,6 +27,7 @@ def mock_settings():
     settings = MagicMock()
     settings.last_tab = "text"
     settings.get_reference_file_paths.return_value = []
+    settings.use_bundled_glossary = False
     return settings
 
 
@@ -59,9 +61,16 @@ def mock_translation_service():
 
 
 @pytest.fixture
-def mock_nicegui():
+def mock_nicegui(monkeypatch):
     """Mock NiceGUI module"""
-    with patch('yakulingo.ui.app.ui') as mock_ui:
+    mock_ui = MagicMock()
+    dummy_module = MagicMock()
+    dummy_module.ui = mock_ui
+
+    # Inject stub module to satisfy `from nicegui import ui` without real dependency
+    monkeypatch.setitem(sys.modules, 'nicegui', dummy_module)
+
+    with patch('yakulingo.ui.app.ui', mock_ui):
         mock_ui.notify = MagicMock()
         mock_ui.navigate = MagicMock()
         mock_ui.navigate.reload = MagicMock()
@@ -382,6 +391,54 @@ class TestYakuLingoAppFileSelection:
 
         mock_nicegui.notify.assert_called()
         # Should have called notify with negative type
+
+
+# =============================================================================
+# Tests: YakuLingoApp File Translation
+# =============================================================================
+
+class TestYakuLingoAppFileTranslation:
+    """Tests for file translation behavior"""
+
+    @pytest.fixture
+    def app_with_service(self, mock_settings, mock_copilot, mock_translation_service, mock_nicegui):
+        """Create app with translation service"""
+        with patch('yakulingo.ui.app.AppSettings') as mock_settings_class:
+            with patch('yakulingo.ui.app.get_default_settings_path'):
+                with patch('yakulingo.ui.app.get_default_prompts_dir'):
+                    mock_settings_class.load.return_value = mock_settings
+
+                    from yakulingo.ui.app import YakuLingoApp
+                    app = YakuLingoApp()
+                    app._copilot = mock_copilot
+                    app.translation_service = mock_translation_service
+                    yield app
+
+    async def test_translate_file_uses_effective_reference_files(
+        self, app_with_service, mock_translation_service
+    ):
+        """File translation should include bundled glossary when enabled"""
+
+        app = app_with_service
+        app.settings.use_bundled_glossary = True
+
+        # Prepare file state
+        app.state.selected_file = Path("/tmp/test.xlsx")
+        app.state.file_state = FileState.SELECTED
+        app.state.file_output_language = "en"
+        app._client = MagicMock()
+        app._client.__enter__ = MagicMock(return_value=None)
+        app._client.__exit__ = MagicMock(return_value=None)
+        app.state.file_info = FileInfo(
+            path=app.state.selected_file,
+            file_type=FileType.EXCEL,
+            size_bytes=1024,
+        )
+
+        await app._translate_file()
+
+        reference_files = mock_translation_service.translate_file.call_args.args[1]
+        assert app._glossary_path in reference_files
 
 
 # =============================================================================

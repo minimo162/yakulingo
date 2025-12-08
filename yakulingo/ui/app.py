@@ -1879,7 +1879,7 @@ class YakuLingoApp:
             result = await asyncio.to_thread(
                 lambda: self.translation_service.translate_file(
                     self.state.selected_file,
-                    self.state.reference_files or None,
+                    self._get_effective_reference_files(),
                     on_progress,
                     output_language=self.state.file_output_language,
                     translation_style=self.settings.translation_style,

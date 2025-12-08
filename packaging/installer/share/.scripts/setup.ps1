@@ -250,9 +250,19 @@ function Invoke-Setup {
     $TempZipDir = Join-Path $env:TEMP "YakuLingo_Setup_$(Get-Date -Format 'yyyyMMddHHmmss')"
     New-Item -ItemType Directory -Path $TempZipDir -Force | Out-Null
     $TempZipFile = Join-Path $TempZipDir $ZipFileName
-    # Use robocopy for faster network file copy (better buffering than Copy-Item)
-    $ZipSourceDir = Split-Path -Parent $ZipFile
-    & robocopy $ZipSourceDir $TempZipDir $ZipFileName /R:3 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null
+    # Use .NET FileStream with large buffer for fast network file copy
+    # 1MB buffer matches Explorer's copy performance better than robocopy for single large files
+    $bufferSize = 1MB
+    $sourceStream = $null
+    $destStream = $null
+    try {
+        $sourceStream = [System.IO.File]::Open($ZipFile, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read)
+        $destStream = [System.IO.File]::Create($TempZipFile, $bufferSize)
+        $sourceStream.CopyTo($destStream, $bufferSize)
+    } finally {
+        if ($destStream) { $destStream.Dispose() }
+        if ($sourceStream) { $sourceStream.Dispose() }
+    }
 
     if (-not $GuiMode) {
         Write-Host "[OK] ZIP copied to temp folder" -ForegroundColor Green

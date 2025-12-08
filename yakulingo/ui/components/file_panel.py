@@ -316,7 +316,7 @@ def _drop_zone(on_file_select: Callable[[Path], None]):
 
         # Handle drag & drop directly via HTML5 API (more reliable than Quasar's internal handling)
         # This is necessary because CSS hides Quasar's internal drop zone element
-        async def handle_drop(e):
+        async def handle_drop():
             """Process dropped files via JavaScript File API"""
             js_code = '''
             (async () => {
@@ -349,7 +349,7 @@ def _drop_zone(on_file_select: Callable[[Path], None]):
         # Set up drag & drop event handlers
         container.on('dragover', js_handler='(e) => { e.preventDefault(); e.currentTarget.classList.add("drag-over"); }')
         container.on('dragleave', js_handler='(e) => { e.currentTarget.classList.remove("drag-over"); }')
-        container.on('drop', handler=handle_drop, args=['event'],
+        container.on('drop', handler=handle_drop,
                      js_handler='(e) => { e.preventDefault(); e.currentTarget.classList.remove("drag-over"); window._lastDropEvent = e; }')
 
 

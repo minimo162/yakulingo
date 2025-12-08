@@ -10,11 +10,12 @@
 
 use std::env;
 use std::fs;
+use std::fs::OpenOptions;
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::path::PathBuf;
 use std::process::Command;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -31,21 +32,29 @@ fn main() {
 
 fn run() -> Result<(), String> {
     // Get executable directory
-    let exe_path = env::current_exe()
-        .map_err(|e| format!("Failed to get executable path: {}", e))?;
+    let exe_path =
+        env::current_exe().map_err(|e| format!("Failed to get executable path: {}", e))?;
     let base_dir = exe_path
         .parent()
         .ok_or("Failed to get executable directory")?
         .to_path_buf();
 
+    let log_path = init_log_path(&base_dir);
+    log_event(
+        &log_path,
+        &format!("Launcher start (exe: {:?}, base: {:?})", exe_path, base_dir),
+    );
+
     // Check if already running
     if is_app_running(APP_PORT) {
+        log_event(&log_path, "Application already running - aborting launch");
         show_info("YakuLingo is already running.");
         return Ok(());
     }
 
     // Find Python directory in .uv-python
     let python_dir = find_python_dir(&base_dir)?;
+    log_event(&log_path, &format!("Using Python dir: {:?}", python_dir));
 
     // Check venv exists
     let venv_dir = base_dir.join(".venv");
@@ -54,31 +63,62 @@ fn run() -> Result<(), String> {
     let python_exe = venv_dir.join("Scripts").join("python.exe");
 
     if !python_exe.exists() {
+        log_event(&log_path, ".venv not found - aborting");
         return Err(".venv not found.\n\nPlease reinstall the application.".to_string());
     }
 
     // Fix pyvenv.cfg for portability
     fix_pyvenv_cfg(&venv_dir, &python_dir)?;
+    log_event(&log_path, "pyvenv.cfg patched");
 
     // Setup environment variables
     setup_environment(&base_dir, &venv_dir, &python_dir);
+    log_event(&log_path, "Environment variables configured");
 
     // Launch application
     let app_script = base_dir.join("app.py");
     launch_app(&python_exe, &app_script, &base_dir)?;
+    log_event(&log_path, "Launch command issued successfully");
 
     Ok(())
+}
+
+fn init_log_path(base_dir: &PathBuf) -> Option<PathBuf> {
+    let mut candidate = env::var("LOCALAPPDATA")
+        .map(PathBuf::from)
+        .map(|p| p.join("YakuLingo").join("logs"))
+        .ok();
+
+    if candidate.is_none() {
+        candidate = Some(base_dir.join("logs"));
+    }
+
+    if let Some(dir) = candidate {
+        if fs::create_dir_all(&dir).is_ok() {
+            return Some(dir.join("launcher.log"));
+        }
+    }
+
+    None
+}
+
+fn log_event(log_path: &Option<PathBuf>, message: &str) {
+    if let Some(path) = log_path {
+        if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
+            let timestamp = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_else(|_| Duration::from_secs(0))
+                .as_secs();
+            let _ = writeln!(file, "[{}] {}", timestamp, message);
+        }
+    }
 }
 
 /// Check if the application is already running by attempting TCP connection
 fn is_app_running(port: u16) -> bool {
     let addr = format!("127.0.0.1:{}", port);
     // Reduced timeout from 500ms to 100ms for faster startup when app isn't running
-    TcpStream::connect_timeout(
-        &addr.parse().unwrap(),
-        Duration::from_millis(100),
-    )
-    .is_ok()
+    TcpStream::connect_timeout(&addr.parse().unwrap(), Duration::from_millis(100)).is_ok()
 }
 
 /// Find Python directory in .uv-python (cpython-*)
@@ -86,7 +126,10 @@ fn find_python_dir(base_dir: &PathBuf) -> Result<PathBuf, String> {
     let uv_python_dir = base_dir.join(".uv-python");
 
     if !uv_python_dir.exists() {
-        return Err("Python not found in .uv-python directory.\n\nPlease reinstall the application.".to_string());
+        return Err(
+            "Python not found in .uv-python directory.\n\nPlease reinstall the application."
+                .to_string(),
+        );
     }
 
     let entries = fs::read_dir(&uv_python_dir)
@@ -100,7 +143,10 @@ fn find_python_dir(base_dir: &PathBuf) -> Result<PathBuf, String> {
         }
     }
 
-    Err("Python not found in .uv-python directory.\n\nPlease reinstall the application.".to_string())
+    Err(
+        "Python not found in .uv-python directory.\n\nPlease reinstall the application."
+            .to_string(),
+    )
 }
 
 /// Fix pyvenv.cfg home path for portability (only if needed)
@@ -148,8 +194,7 @@ fn fix_pyvenv_cfg(venv_dir: &PathBuf, python_dir: &PathBuf) -> Result<(), String
         new_content.push('\n');
     }
 
-    fs::write(&cfg_path, new_content)
-        .map_err(|e| format!("Failed to write pyvenv.cfg: {}", e))?;
+    fs::write(&cfg_path, new_content).map_err(|e| format!("Failed to write pyvenv.cfg: {}", e))?;
 
     Ok(())
 }
@@ -189,7 +234,11 @@ fn setup_environment(base_dir: &PathBuf, venv_dir: &PathBuf, python_dir: &PathBu
 
 /// Launch the application
 #[cfg(windows)]
-fn launch_app(python_exe: &PathBuf, app_script: &PathBuf, working_dir: &PathBuf) -> Result<(), String> {
+fn launch_app(
+    python_exe: &PathBuf,
+    app_script: &PathBuf,
+    working_dir: &PathBuf,
+) -> Result<(), String> {
     Command::new(python_exe)
         .arg(app_script)
         .current_dir(working_dir)
@@ -201,7 +250,11 @@ fn launch_app(python_exe: &PathBuf, app_script: &PathBuf, working_dir: &PathBuf)
 }
 
 #[cfg(not(windows))]
-fn launch_app(python_exe: &PathBuf, app_script: &PathBuf, working_dir: &PathBuf) -> Result<(), String> {
+fn launch_app(
+    python_exe: &PathBuf,
+    app_script: &PathBuf,
+    working_dir: &PathBuf,
+) -> Result<(), String> {
     Command::new(python_exe)
         .arg(app_script)
         .current_dir(working_dir)
@@ -219,10 +272,7 @@ fn show_error(message: &str) {
     use std::os::windows::ffi::OsStrExt;
     use std::ptr::null_mut;
 
-    let wide_message: Vec<u16> = OsStr::new(message)
-        .encode_wide()
-        .chain(once(0))
-        .collect();
+    let wide_message: Vec<u16> = OsStr::new(message).encode_wide().chain(once(0)).collect();
     let wide_title: Vec<u16> = OsStr::new("YakuLingo - Error")
         .encode_wide()
         .chain(once(0))
@@ -251,10 +301,7 @@ fn show_info(message: &str) {
     use std::os::windows::ffi::OsStrExt;
     use std::ptr::null_mut;
 
-    let wide_message: Vec<u16> = OsStr::new(message)
-        .encode_wide()
-        .chain(once(0))
-        .collect();
+    let wide_message: Vec<u16> = OsStr::new(message).encode_wide().chain(once(0)).collect();
     let wide_title: Vec<u16> = OsStr::new("YakuLingo")
         .encode_wide()
         .chain(once(0))

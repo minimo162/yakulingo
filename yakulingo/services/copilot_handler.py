@@ -897,9 +897,6 @@ class CopilotHandler:
 
             def enum_windows_callback(hwnd, lparam):
                 nonlocal exact_match_hwnd, fallback_hwnd
-                # Check if window is visible
-                if not user32.IsWindowVisible(hwnd):
-                    return True
 
                 # Get window class name
                 class_name = ctypes.create_unicode_buffer(256)
@@ -908,6 +905,10 @@ class CopilotHandler:
                 # Only check Chrome_WidgetWin_1 windows (Edge/Chrome)
                 if class_name.value != "Chrome_WidgetWin_1":
                     return True
+
+                # Note: We don't check IsWindowVisible because:
+                # 1. The window may be minimized or hidden initially
+                # 2. We will show and restore it anyway via ShowWindow
 
                 # Get window title
                 title_length = user32.GetWindowTextLengthW(hwnd) + 1
@@ -960,7 +961,8 @@ class CopilotHandler:
             # Windows prevents apps from stealing focus unless they have input
             # We use a combination of techniques to work around this
 
-            # 1. Restore window if minimized
+            # 1. Show window if hidden, then restore if minimized
+            user32.ShowWindow(edge_hwnd, SW_SHOW)
             user32.ShowWindow(edge_hwnd, SW_RESTORE)
 
             # 2. Use SetWindowPos with HWND_TOPMOST to bring to front

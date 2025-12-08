@@ -100,6 +100,8 @@ class YakuLingoApp:
 
         # Login polling state (prevents duplicate polling)
         self._login_polling_active = False
+        self._login_polling_task: "asyncio.Task | None" = None
+        self._shutdown_requested = False
 
         # Hotkey manager for quick translation (Ctrl+J)
         self._hotkey_manager = None
@@ -300,10 +302,12 @@ class YakuLingoApp:
 
     async def _start_login_polling_if_needed(self):
         """ログインが必要な場合にポーリングを開始する。"""
+        if self._shutdown_requested:
+            return
         from yakulingo.services.copilot_handler import CopilotHandler
         if self.copilot.last_connection_error == CopilotHandler.ERROR_LOGIN_REQUIRED:
             if not self._login_polling_active:
-                asyncio.create_task(self._wait_for_login_completion())
+                self._login_polling_task = asyncio.create_task(self._wait_for_login_completion())
 
     async def _on_browser_ready(self):
         """Called when browser connection is ready. Brings app to front and notifies user."""
@@ -338,8 +342,9 @@ class YakuLingoApp:
         ログインが必要な状態になった時に呼び出され、ユーザーがEdgeでログインするのを待つ。
         ログイン完了を検出したら、自動でアプリを前面に戻して通知する。
         """
-        if self._login_polling_active:
-            logger.debug("Login polling already active, skipping")
+        if self._login_polling_active or self._shutdown_requested:
+            logger.debug("Login polling skipped: active=%s, shutdown=%s",
+                        self._login_polling_active, self._shutdown_requested)
             return
 
         self._login_polling_active = True
@@ -352,9 +357,14 @@ class YakuLingoApp:
         try:
             from yakulingo.services.copilot_handler import ConnectionState as CopilotConnectionState
 
-            while elapsed < max_wait_time:
+            while elapsed < max_wait_time and not self._shutdown_requested:
                 await asyncio.sleep(polling_interval)
                 elapsed += polling_interval
+
+                # Check for shutdown request after sleep
+                if self._shutdown_requested:
+                    logger.debug("Login polling cancelled by shutdown")
+                    return
 
                 # 短いタイムアウトで状態確認
                 state = await asyncio.to_thread(
@@ -371,19 +381,24 @@ class YakuLingoApp:
                     # Save storage_state to preserve login session
                     await asyncio.to_thread(self.copilot._save_storage_state)
 
-                    if self._client:
+                    if self._client and not self._shutdown_requested:
                         with self._client:
                             self._refresh_status()
 
-                    await self._on_browser_ready()
+                    if not self._shutdown_requested:
+                        await self._on_browser_ready()
                     return
 
             # タイムアウト（翻訳ボタン押下時に再試行される）
-            logger.info("Login polling timed out after %ds", max_wait_time)
+            if not self._shutdown_requested:
+                logger.info("Login polling timed out after %ds", max_wait_time)
+        except asyncio.CancelledError:
+            logger.debug("Login polling task cancelled")
         except Exception as e:
             logger.debug("Login polling error: %s", e)
         finally:
             self._login_polling_active = False
+            self._login_polling_task = None
 
     async def _reconnect(self):
         """再接続を試みる（UIボタン用）。"""
@@ -407,8 +422,8 @@ class YakuLingoApp:
                         # ログイン必要な場合はポーリングを開始
                         from yakulingo.services.copilot_handler import CopilotHandler
                         if self.copilot.last_connection_error == CopilotHandler.ERROR_LOGIN_REQUIRED:
-                            if not self._login_polling_active:
-                                asyncio.create_task(self._wait_for_login_completion())
+                            if not self._login_polling_active and not self._shutdown_requested:
+                                self._login_polling_task = asyncio.create_task(self._wait_for_login_completion())
         except Exception as e:
             logger.debug("Reconnect failed: %s", e)
             if self._client:
@@ -2070,8 +2085,19 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
 
         logger.info("Shutting down YakuLingo...")
 
+        # Set shutdown flag FIRST to prevent new tasks from starting
+        yakulingo_app._shutdown_requested = True
+
         # Stop hotkey manager
         yakulingo_app.stop_hotkey_manager()
+
+        # Cancel login polling task in app.py (async task)
+        if yakulingo_app._login_polling_task is not None:
+            try:
+                yakulingo_app._login_polling_task.cancel()
+                logger.debug("Login polling task cancelled")
+            except Exception as e:
+                logger.debug("Error cancelling login polling task: %s", e)
 
         # Cancel any ongoing translation (prevents incomplete output files)
         if yakulingo_app.translation_service is not None:
@@ -2081,7 +2107,7 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
             except Exception as e:
                 logger.debug("Error cancelling translation: %s", e)
 
-        # Cancel login wait if in progress (allows graceful shutdown during login)
+        # Cancel login wait if in progress in copilot_handler (sync loop)
         if yakulingo_app._copilot is not None:
             try:
                 yakulingo_app._copilot.cancel_login_wait()

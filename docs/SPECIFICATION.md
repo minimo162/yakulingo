@@ -1291,6 +1291,7 @@ python-docx>=1.1.0
 python-pptx>=0.6.23
 PyMuPDF>=1.24.0
 pdfminer.six>=20231228
+pypdfium2>=4.30.0
 pillow>=10.0.0
 numpy>=1.24.0
 ```

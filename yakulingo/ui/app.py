@@ -519,7 +519,10 @@ class YakuLingoApp:
                     # ログイン完了 → 接続状態を更新
                     logger.info("Login completed, updating connection state")
                     self.copilot._connected = True
-                    self.copilot.last_connection_error = None
+                    from yakulingo.services.copilot_handler import CopilotHandler
+
+                    # Use explicit constant to reflect successful login
+                    self.copilot.last_connection_error = CopilotHandler.ERROR_NONE
                     self.state.copilot_ready = True
 
                     # Save storage_state to preserve login session

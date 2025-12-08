@@ -753,10 +753,23 @@ class CopilotHandler:
             if self._playwright:
                 self._playwright.stop()
 
+        # Terminate Edge browser process if we started it and a connection
+        # error occurred. Otherwise, the remote debugging port remains
+        # occupied, preventing fresh launches on subsequent retries.
+        with suppress(Exception):
+            if self.edge_process:
+                self.edge_process.terminate()
+                try:
+                    self.edge_process.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    self.edge_process.kill()
+                logger.info("Edge browser terminated after connection error")
+
         self._browser = None
         self._context = None
         self._page = None
         self._playwright = None
+        self.edge_process = None
 
     def _get_or_create_context(self):
         """Get existing browser context or create a new one.

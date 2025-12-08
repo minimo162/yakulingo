@@ -11,9 +11,19 @@ param(
 $ErrorActionPreference = "Stop"
 
 # Global error handler - writes error to stderr for VBS to capture
-trap {
-    $errorMsg = "PowerShell Error: $($_.Exception.Message)`nAt: $($_.InvocationInfo.PositionMessage)"
+function Write-ErrorLog {
+    param(
+        [System.Management.Automation.ErrorRecord]$ErrorRecord
+    )
+
+    if (-not $ErrorRecord) { return }
+
+    $errorMsg = "PowerShell Error: $($ErrorRecord.Exception.Message)`nAt: $($ErrorRecord.InvocationInfo.PositionMessage)"
     [Console]::Error.WriteLine($errorMsg)
+}
+
+trap {
+    Write-ErrorLog -ErrorRecord $_
     exit 1
 }
 
@@ -635,6 +645,7 @@ if ($GuiMode) {
         Invoke-Setup
         exit 0
     } catch {
+        Write-ErrorLog -ErrorRecord $_
         Show-Error $_.Exception.Message
         exit 1
     }

@@ -1463,6 +1463,7 @@ class YakuLingoApp:
         # Streaming callback - updates state from Playwright thread
         def on_chunk(text: str):
             self.state.streaming_text = text
+            logger.debug("Streaming text updated (length=%d)", len(text) if text else 0)
 
         error_message = None
         detected_language = None

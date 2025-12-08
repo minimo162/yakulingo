@@ -1365,14 +1365,14 @@ class CopilotHandler:
         if not self._connected or not self._page:
             raise RuntimeError("Not connected to Copilot")
 
-        # Send the prompt
-        await self._send_message_async(prompt)
-
-        # Attach reference files if provided
+        # Attach reference files first so Copilot receives them with the request
         if reference_files:
             for file_path in reference_files:
                 if file_path.exists():
                     await self._attach_file_async(file_path)
+
+        # Send the prompt
+        await self._send_message_async(prompt)
 
         # Get response
         result = await self._get_response_async()

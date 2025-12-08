@@ -225,8 +225,41 @@ function Invoke-Setup {
         if (-not $GuiMode) {
             Write-Host "      Removing existing files: $SetupPath" -ForegroundColor Gray
         }
-        # Fast removal using .NET (handles long paths better than Remove-Item)
-        [System.IO.Directory]::Delete($SetupPath, $true)
+        # Remove directory contents, skipping locked files (e.g., Edge's CrashpadMetrics-active.pma)
+        # These browser-related files don't affect application functionality
+        $lockedFiles = @()
+        Get-ChildItem -Path $SetupPath -Recurse -Force -ErrorAction SilentlyContinue |
+            Sort-Object { $_.FullName.Length } -Descending |
+            ForEach-Object {
+                try {
+                    if ($_.PSIsContainer) {
+                        # Skip directories in first pass (will be removed after files)
+                    } else {
+                        Remove-Item -Path $_.FullName -Force -ErrorAction Stop
+                    }
+                } catch {
+                    $lockedFiles += $_.FullName
+                }
+            }
+        # Remove empty directories (bottom-up)
+        Get-ChildItem -Path $SetupPath -Directory -Recurse -Force -ErrorAction SilentlyContinue |
+            Sort-Object { $_.FullName.Length } -Descending |
+            ForEach-Object {
+                try {
+                    Remove-Item -Path $_.FullName -Force -ErrorAction Stop
+                } catch {
+                    # Directory not empty (contains locked files), skip
+                }
+            }
+        # Remove the root directory if empty
+        try {
+            Remove-Item -Path $SetupPath -Force -ErrorAction Stop
+        } catch {
+            # Root directory contains locked files, will be overwritten by robocopy
+            if (-not $GuiMode -and $lockedFiles.Count -gt 0) {
+                Write-Host "      Note: $($lockedFiles.Count) file(s) skipped (in use by another process)" -ForegroundColor DarkGray
+            }
+        }
     }
 
     if (-not $GuiMode) {

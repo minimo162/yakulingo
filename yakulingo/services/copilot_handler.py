@@ -707,8 +707,20 @@ class CopilotHandler:
             # Note: Browser is only brought to foreground when login is required
             # (handled in _wait_for_chat_ready), not on every startup
 
-            # Step 5: Wait for chat UI
-            if not self._wait_for_chat_ready(self._page):
+            # Step 5: Wait for chat UI. Do not block for login; let the UI handle
+            # login-required state via polling so the user sees feedback immediately.
+            chat_ready = self._wait_for_chat_ready(self._page, wait_for_login=False)
+            if not chat_ready:
+                # Keep Edge/Playwright alive when login is required so the UI can
+                # poll for completion while the user signs in.
+                if self.last_connection_error == self.ERROR_LOGIN_REQUIRED:
+                    try:
+                        self._bring_to_foreground_impl(self._page)
+                    except Exception:
+                        logger.debug("Failed to bring browser to front after login detection", exc_info=True)
+                    logger.info("Login required; preserving browser session for user sign-in")
+                    return False
+
                 self._cleanup_on_error()
                 return False
 

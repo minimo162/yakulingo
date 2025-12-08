@@ -585,6 +585,9 @@ class CopilotHandler:
             self._connected = True
             self.last_connection_error = self.ERROR_NONE
 
+            # Save storage_state to preserve login session
+            self._save_storage_state()
+
             # Stop browser loading indicator (optional)
             try:
                 self._page.evaluate("window.stop()")

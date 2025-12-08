@@ -1,14 +1,14 @@
 # PDF Translation Dependencies
 # Install with: pip install -r requirements_pdf.txt
 #
-# Note: PP-DocLayout-L requires PaddlePaddle framework.
-# GPU is recommended but CPU is also supported (slower).
+# Layout analysis (PP-DocLayout-L via PaddleOCR)
+# - Requires PaddlePaddle framework.
+# - GPU recommended, CPU supported (slower).
 # See: https://www.paddlepaddle.org.cn/install/quick
-
-# PaddleOCR (PP-DocLayout-L for document layout analysis)
-# Includes: paddlepaddle, opencv-python, pyclipper, shapely, etc.
 paddleocr>=3.0.0
 paddlepaddle>=3.0.0
 
-# PDF text extraction and reconstruction (required separately)
-PyMuPDF>=1.24.0
+# PDF text/image handling (core translation stack)
+PyMuPDF>=1.24.0         # Page manipulation, bilingual PDF creation
+pdfminer.six>=20231228  # Text extraction, font analysis (PDFMathTranslate compliant)
+pypdfium2>=4.30.0       # PDF-to-image conversion for layout analysis

@@ -229,6 +229,30 @@ class TestYakuLingoAppInit:
         # Verify settings object is stored
         assert app.settings is not None
 
+    @patch('yakulingo.ui.app.AppSettings')
+    @patch('yakulingo.ui.app.get_default_settings_path')
+    @patch('yakulingo.ui.app.get_default_prompts_dir')
+    def test_app_applies_last_tab_from_settings(
+        self,
+        mock_prompts_dir,
+        mock_settings_path,
+        mock_settings_class,
+    ):
+        """App should reflect persisted last tab on first load."""
+        mock_settings = MagicMock(
+            get_reference_file_paths=MagicMock(return_value=[]),
+            last_tab="file",
+        )
+        mock_settings_class.load.return_value = mock_settings
+
+        from yakulingo.ui.app import YakuLingoApp
+
+        app = YakuLingoApp()
+        # Trigger settings load to apply preferences
+        _ = app.settings
+
+        assert app.state.current_tab == Tab.FILE
+
 
 # =============================================================================
 # Tests: Native mode detection

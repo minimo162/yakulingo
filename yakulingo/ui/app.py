@@ -192,6 +192,12 @@ class YakuLingoApp:
             self._settings = AppSettings.load(self.settings_path)
             self.state.reference_files = self._settings.get_reference_file_paths(self._base_dir)
             logger.info("[TIMING] AppSettings.load: %.2fs", time.perf_counter() - start)
+            # Apply persisted UI preferences (e.g., last opened tab)
+            tab_map = {
+                Tab.TEXT.value: Tab.TEXT,
+                Tab.FILE.value: Tab.FILE,
+            }
+            self.state.current_tab = tab_map.get(self._settings.last_tab, Tab.TEXT)
         return self._settings
 
     @settings.setter

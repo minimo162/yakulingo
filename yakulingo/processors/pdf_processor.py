@@ -1965,6 +1965,7 @@ class PdfProcessor(FileProcessor):
         direction: str = "jp_to_en",
         settings=None,
         dpi: int = DEFAULT_OCR_DPI,
+        pages: Optional[list[int]] = None,
     ) -> dict[str, Any]:
         """
         Apply translations using TranslationCell data (PP-DocLayout-L integration).
@@ -1980,6 +1981,8 @@ class PdfProcessor(FileProcessor):
             direction: Translation direction
             settings: AppSettings for font configuration (font_en_to_jp, font_jp_to_en)
             dpi: DPI used for OCR (for coordinate scaling)
+            pages: Optional list of page numbers to translate (1-indexed). If None,
+                all pages are processed.
 
         Returns:
             Dictionary with processing statistics:
@@ -1990,7 +1993,8 @@ class PdfProcessor(FileProcessor):
         """
         return self.apply_translations_low_level(
             input_path, output_path, translations,
-            cells=cells, direction=direction, settings=settings, dpi=dpi
+            cells=cells, direction=direction, settings=settings, dpi=dpi,
+            pages=pages,
         )
 
     def apply_translations_low_level(

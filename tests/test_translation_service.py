@@ -12,6 +12,7 @@ from yakulingo.models.types import (
     FileType,
 )
 from yakulingo.config.settings import AppSettings
+from yakulingo.processors.pdf_processor import TranslationCell
 from yakulingo.services.translation_service import (
     BatchTranslator,
     TranslationCache,
@@ -673,6 +674,54 @@ class TestTranslationServiceTranslateFile:
 
         assert result.status == TranslationStatus.FAILED
         assert "pymupdf not installed" in result.error_message
+
+    def test_pdf_translation_respects_selected_sections(self, tmp_path):
+        """PDF translation applies only to chosen pages"""
+        settings = AppSettings(output_directory=str(tmp_path))
+        service = TranslationService(Mock(), settings)
+
+        processor = Mock()
+        processor.get_page_count.return_value = 3
+        processor.failed_pages = []
+
+        page1_block = TextBlock(
+            id="page_0_block_0", text="Page1", location="Page 1", metadata={'page_idx': 0}
+        )
+        page2_block = TextBlock(
+            id="page_1_block_0", text="Page2", location="Page 2", metadata={'page_idx': 1}
+        )
+
+        cell_page1 = TranslationCell(address="P1_0", text="One", box=[0, 0, 10, 10], page_num=1)
+        cell_page2 = TranslationCell(address="P2_0", text="Two", box=[0, 0, 10, 10], page_num=2)
+
+        processor.extract_text_blocks_streaming.return_value = [
+            ([page1_block], [cell_page1]),
+            ([page2_block], [cell_page2]),
+        ]
+
+        translations = {page2_block.id: "Translated page 2"}
+        service.batch_translator = Mock()
+        service.batch_translator.translate_blocks.return_value = translations
+
+        input_path = tmp_path / "sectioned.pdf"
+        input_path.write_bytes(b"%PDF-1.4\n%%EOF")
+
+        with patch.object(service, '_get_processor', return_value=processor):
+            result = service.translate_file(
+                input_path,
+                selected_sections=[1],
+            )
+
+        # Translation should target only the second page (index 1)
+        translate_blocks_args = service.batch_translator.translate_blocks.call_args.args[0]
+        assert translate_blocks_args == [page2_block]
+
+        apply_args, apply_kwargs = processor.apply_translations_with_cells.call_args
+        assert apply_args[3] == [cell_page2]
+        assert apply_kwargs["pages"] == [2]
+
+        assert result.status == TranslationStatus.COMPLETED
+        assert result.blocks_total == 1
 
     def test_translate_file_custom_output_dir(self, mock_copilot, sample_xlsx, tmp_path):
         """Output goes to custom directory when configured"""

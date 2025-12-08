@@ -529,7 +529,6 @@ async def _translate_text(self):
   "github_repo_name": "yakulingo",
   "last_update_check": null,
   "skipped_version": null,
-  "onboarding_completed": false,
   "use_bundled_glossary": false
 }
 ```
@@ -651,7 +650,7 @@ The `AutoUpdater` class provides GitHub Releases-based updates:
 | 翻訳スタイル | `translation_style`, `text_translation_style` | 設定ダイアログ |
 | フォント | `font_jp_to_en`, `font_en_to_jp`, `font_size_adjustment_jp_to_en` | 設定ダイアログ |
 | 出力オプション | `bilingual_output`, `export_glossary`, `use_bundled_glossary` | ファイル翻訳パネル |
-| UI状態 | `last_tab`, `onboarding_completed` | 自動保存 |
+| UI状態 | `last_tab` | 自動保存 |
 | 更新設定 | `skipped_version` | 更新ダイアログ |
 
 **開発者が自由に変更可能な設定:**

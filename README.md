@@ -159,8 +159,7 @@ python app.py
   "github_repo_owner": "minimo162",
   "github_repo_name": "yakulingo",
   "last_update_check": null,
-  "skipped_version": null,
-  "onboarding_completed": false
+  "skipped_version": null
 }
 ```
 
@@ -182,7 +181,6 @@ python app.py
 | `max_chars_per_batch` | Copilot送信1回あたりの最大文字数（テンプレート込みで安全マージン確保） | 7000 |
 | `request_timeout` | 翻訳リクエストのタイムアウト（秒） | 120 |
 | `output_directory` | 出力先フォルダ（nullは入力と同じ場所） | null |
-| `onboarding_completed` | 初回翻訳後に自動でオンになるオンボーディング完了フラグ | false |
 | `window_width` / `window_height` | ウィンドウ初期サイズ | 1400 / 850 |
 
 **翻訳スタイル**: `"standard"`（標準）, `"concise"`（簡潔）, `"minimal"`（最簡潔）

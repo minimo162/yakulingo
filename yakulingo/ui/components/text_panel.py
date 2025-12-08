@@ -163,7 +163,6 @@ def create_text_input_panel(
     on_remove_reference_file: Optional[Callable[[int], None]] = None,
     on_settings: Optional[Callable[[], None]] = None,
     on_translate_button_created: Optional[Callable[[ui.button], None]] = None,
-    is_first_use: bool = False,
     use_bundled_glossary: bool = False,
     on_glossary_toggle: Optional[Callable[[bool], None]] = None,
     on_edit_glossary: Optional[Callable[[], None]] = None,
@@ -181,7 +180,7 @@ def create_text_input_panel(
         _create_large_input_panel(
             state, on_translate, on_source_change, on_clear,
             on_attach_reference_file, on_remove_reference_file,
-            on_settings, on_translate_button_created, is_first_use,
+            on_settings, on_translate_button_created,
             use_bundled_glossary, on_glossary_toggle, on_edit_glossary
         )
     else:
@@ -203,7 +202,6 @@ def _create_large_input_panel(
     on_remove_reference_file: Optional[Callable[[int], None]] = None,
     on_settings: Optional[Callable[[], None]] = None,
     on_translate_button_created: Optional[Callable[[ui.button], None]] = None,
-    is_first_use: bool = False,
     use_bundled_glossary: bool = False,
     on_glossary_toggle: Optional[Callable[[bool], None]] = None,
     on_edit_glossary: Optional[Callable[[], None]] = None,

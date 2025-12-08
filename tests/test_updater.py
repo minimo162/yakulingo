@@ -952,7 +952,6 @@ class TestUserProtectedSettings:
         assert "export_glossary" in USER_PROTECTED_SETTINGS
         assert "use_bundled_glossary" in USER_PROTECTED_SETTINGS
         assert "last_tab" in USER_PROTECTED_SETTINGS
-        assert "onboarding_completed" in USER_PROTECTED_SETTINGS
         assert "skipped_version" in USER_PROTECTED_SETTINGS
 
     def test_protected_settings_excludes_developer_settings(self):

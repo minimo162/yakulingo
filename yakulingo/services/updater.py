@@ -863,7 +863,6 @@ USER_PROTECTED_SETTINGS = {
     "use_bundled_glossary",
     # UI状態（自動保存）
     "last_tab",
-    "onboarding_completed",
     # 更新設定（更新ダイアログで変更）
     "skipped_version",
 }

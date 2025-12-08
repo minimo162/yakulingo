@@ -315,6 +315,16 @@ class CopilotHandler:
     RESPONSE_STABLE_COUNT = 2  # Number of stable checks before considering response complete
     DEFAULT_RESPONSE_TIMEOUT = 120  # Default timeout for response in seconds
 
+    # Copilot response selectors (fallback for DOM changes)
+    RESPONSE_SELECTORS = (
+        '[data-testid="markdown-reply"]',
+        'div[data-message-type="Chat"]',
+        '[data-message-author-role="assistant"] [data-content-element]',
+        'article[data-message-author-role="assistant"]',
+        'div[data-message-author-role="assistant"]',
+    )
+    RESPONSE_SELECTOR_COMBINED = ", ".join(RESPONSE_SELECTORS)
+
     # Dynamic polling intervals for faster response detection
     RESPONSE_POLL_INITIAL = 0.2  # Initial interval while waiting for response to start
     RESPONSE_POLL_ACTIVE = 0.2  # Interval after text is detected
@@ -1804,6 +1814,36 @@ class CopilotHandler:
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, self._send_message, message)
 
+    def _get_latest_response_text(self) -> tuple[str, bool]:
+        """Return the latest Copilot response text and whether an element was found."""
+
+        if not self._page:
+            return "", False
+
+        error_types = _get_playwright_errors()
+        PlaywrightError = error_types['Error']
+
+        for selector in self.RESPONSE_SELECTORS:
+            try:
+                elements = self._page.query_selector_all(selector)
+            except PlaywrightError as e:
+                logger.debug("Response selector failed (%s): %s", selector, e)
+                continue
+
+            if not elements:
+                continue
+
+            for element in reversed(elements):
+                try:
+                    text = element.inner_text()
+                except PlaywrightError as e:
+                    logger.debug("Failed to read response element (%s): %s", selector, e)
+                    continue
+
+                return text or "", True
+
+        return "", False
+
     def _get_response(self, timeout: int = 120, on_chunk: "Callable[[str], None] | None" = None) -> str:
         """Get response from Copilot (sync)
 
@@ -1824,9 +1864,10 @@ class CopilotHandler:
 
         try:
             # Wait for response element to appear (instead of fixed sleep)
-            response_selector = '[data-testid="markdown-reply"], div[data-message-type="Chat"]'
             try:
-                self._page.wait_for_selector(response_selector, timeout=10000, state='visible')
+                self._page.wait_for_selector(
+                    self.RESPONSE_SELECTOR_COMBINED, timeout=10000, state='visible'
+                )
             except PlaywrightTimeoutError:
                 # Response may already be present or selector changed, continue polling
                 pass
@@ -1860,15 +1901,10 @@ class CopilotHandler:
                     max_wait -= poll_interval
                     continue
 
-                # Get the latest message
-                # 実際のCopilot HTML: <div data-testid="markdown-reply" data-message-type="Chat">
-                response_elem = self._page.query_selector(
-                    '[data-testid="markdown-reply"]:last-of-type, div[data-message-type="Chat"]:last-of-type'
-                )
+                current_text, found_response = self._get_latest_response_text()
 
-                if response_elem:
-                    current_text = response_elem.inner_text()
-
+                if found_response:
+                    
                     # Only count stability if there's actual content
                     # Don't consider empty or whitespace-only text as stable
                     if current_text and current_text.strip():
@@ -2145,7 +2181,7 @@ class CopilotHandler:
         if not self._page:
             return True
 
-        response_selector = '[data-testid="markdown-reply"], div[data-message-type="Chat"]'
+        response_selector = self.RESPONSE_SELECTOR_COMBINED
         poll_interval = 0.15
         elapsed = 0.0
 

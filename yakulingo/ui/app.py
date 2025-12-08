@@ -604,7 +604,7 @@ class YakuLingoApp:
                         with ui.column().classes('gap-0'):
                             ui.label('ログインが必要').classes('text-xs')
                             ui.label('ログイン後、自動で接続します').classes('text-2xs text-muted')
-                            ui.link('再接続', on_click=lambda: asyncio.create_task(self._reconnect())).classes('text-2xs cursor-pointer')
+                            ui.label('再接続').classes('text-2xs cursor-pointer text-primary').style('text-decoration: underline').on('click', lambda: asyncio.create_task(self._reconnect()))
                 elif error == CopilotHandler.ERROR_EDGE_NOT_FOUND:
                     self.state.connection_state = ConnectionState.EDGE_NOT_RUNNING
                     with ui.element('div').classes('status-indicator error').props('role="status" aria-live="polite"'):

@@ -8,6 +8,7 @@ Bidirectional translation (no language direction selection).
 import pytest
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import Mock, MagicMock, patch
 
 # Add project root to path for direct imports
@@ -209,6 +210,22 @@ async def test_drop_zone_rejects_invalid_data(monkeypatch):
     assert handled is False
     assert called is False
     assert any('ファイルの読み込みに失敗しました' in note[0] for note in notifications)
+
+
+def test_extract_drop_payload_from_detail():
+    """Custom event detail should be preferred when present"""
+
+    event = SimpleNamespace(args={'detail': {'name': 'from-detail.txt', 'data': [1]}})
+
+    assert file_panel._extract_drop_payload(event) == {'name': 'from-detail.txt', 'data': [1]}
+
+
+def test_extract_drop_payload_from_args():
+    """Fallback to direct args when no detail field is present"""
+
+    event = SimpleNamespace(args={'name': 'from-args.txt', 'data': [2]})
+
+    assert file_panel._extract_drop_payload(event) == {'name': 'from-args.txt', 'data': [2]}
 
     def test_translate_button_disabled_when_complete(self):
         """Translate button should be disabled when translation complete"""

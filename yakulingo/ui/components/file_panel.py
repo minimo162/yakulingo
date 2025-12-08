@@ -5,7 +5,7 @@ Simple, focused, warm.
 """
 
 from nicegui import ui, events
-from typing import Awaitable, Callable, List, Optional, Union
+from typing import Any, Awaitable, Callable, List, Optional, Union
 from pathlib import Path
 import asyncio
 
@@ -78,6 +78,22 @@ async def _process_drop_result(
         await callback_result
 
     return True
+
+
+def _extract_drop_payload(event: Optional[events.GenericEventArguments]) -> Optional[dict]:
+    """Normalize drop payload from a custom event."""
+
+    if not event:
+        return None
+
+    args: Any = getattr(event, 'args', None)
+    if isinstance(args, dict):
+        detail = args.get('detail') if 'detail' in args else None
+        if isinstance(detail, dict):
+            return detail
+        return args
+
+    return None
 
 
 def create_file_panel(
@@ -364,11 +380,13 @@ def _drop_zone(on_file_select: Callable[[Path], Union[None, Awaitable[None]]]):
 
         # Handle drag & drop directly via HTML5 API (more reliable than Quasar's internal handling)
         # This is necessary because CSS hides Quasar's internal drop zone element
-        async def handle_file_ready():
+        async def handle_file_ready(event: Optional[events.GenericEventArguments] = None):
             """Process dropped files after JS has read the file data"""
             try:
-                # Get file data that was read by JavaScript
-                result = await ui.run_javascript('window._droppedFileData')
+                # Prefer payload attached to the custom event to avoid races with globals
+                result = _extract_drop_payload(event)
+                if result is None:
+                    result = await ui.run_javascript('window._droppedFileData')
                 await _process_drop_result(on_file_select, result)
             except Exception as err:
                 ui.notify(f'ファイルの読み込みに失敗しました: {err}', type='negative')
@@ -395,12 +413,13 @@ def _drop_zone(on_file_select: Callable[[Path], Union[None, Awaitable[None]]]):
             if (file) {
                 const reader = new FileReader();
                 reader.onload = (event) => {
-                    window._droppedFileData = {
+                    const detail = {
                         name: file.name,
                         data: Array.from(new Uint8Array(event.target.result))
                     };
+                    window._droppedFileData = detail;
                     // Dispatch custom event to notify Python handler that file is ready
-                    e.currentTarget.dispatchEvent(new CustomEvent('file-ready'));
+                    e.currentTarget.dispatchEvent(new CustomEvent('file-ready', { detail }));
                 };
                 reader.readAsArrayBuffer(file);
             }

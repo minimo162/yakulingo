@@ -315,7 +315,7 @@ def _create_large_input_panel(
                 ui.label('+').classes('text-muted text-xs mx-0.5')
                 with ui.element('span').classes('keycap keycap-hint'):
                     ui.label('J')
-                ui.label(': 他アプリで選択したテキストを翻訳').classes('text-muted ml-1')
+                ui.label(': 他のアプリで選択中の文章を取り込んで翻訳').classes('text-muted ml-1')
 
 
 def _create_compact_input_panel(
@@ -702,7 +702,7 @@ def create_text_panel(
                 ui.label('+').classes('text-muted text-xs mx-0.5')
                 with ui.element('span').classes('keycap keycap-hint'):
                     ui.label('J')
-                ui.label(': 他アプリで選択したテキストを翻訳').classes('text-muted ml-1')
+                ui.label(': 他のアプリで選択中の文章を取り込んで翻訳').classes('text-muted ml-1')
 
         # Results section - language-specific UI
         if state.text_result and state.text_result.options:

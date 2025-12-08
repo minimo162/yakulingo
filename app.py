@@ -65,6 +65,9 @@ def main():
     """
     import multiprocessing
     import os
+    import time
+
+    _t_start = time.perf_counter()
 
     # Windows用: multiprocessing対策（pyinstallerでの実行時に必要）
     multiprocessing.freeze_support()
@@ -77,8 +80,13 @@ def main():
     global _global_log_handler
     _global_log_handler = setup_logging()  # Keep reference to prevent garbage collection
 
+    logger = logging.getLogger(__name__)
+    logger.info("[TIMING] main() setup: %.2fs", time.perf_counter() - _t_start)
+
     # Import here to avoid double initialization in native mode
+    _t_import = time.perf_counter()
     from yakulingo.ui.app import run_app
+    logger.info("[TIMING] yakulingo.ui.app import: %.2fs", time.perf_counter() - _t_import)
 
     run_app(
         host='127.0.0.1',

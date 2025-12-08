@@ -512,7 +512,7 @@ class YakuLingoApp:
 
                 # 短いタイムアウトで状態確認
                 state = await asyncio.to_thread(
-                    self.copilot._check_copilot_state, 3  # 3秒タイムアウト
+                    self.copilot.check_copilot_state, 3  # 3秒タイムアウト
                 )
 
                 if state == CopilotConnectionState.READY:
@@ -523,7 +523,7 @@ class YakuLingoApp:
                     self.state.copilot_ready = True
 
                     # Save storage_state to preserve login session
-                    await asyncio.to_thread(self.copilot._save_storage_state)
+                    await asyncio.to_thread(self.copilot.save_storage_state)
 
                     if self._client and not self._shutdown_requested:
                         with self._client:

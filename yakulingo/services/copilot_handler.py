@@ -1247,6 +1247,14 @@ class CopilotHandler:
             logger.debug("Error checking Copilot state: %s", e)
             return ConnectionState.ERROR
 
+    def save_storage_state(self) -> bool:
+        """Thread-safe wrapper to persist the current login session."""
+        return _playwright_executor.execute(self._save_storage_state)
+
+    def check_copilot_state(self, timeout: int = 5) -> str:
+        """Thread-safe wrapper for _check_copilot_state."""
+        return _playwright_executor.execute(self._check_copilot_state, timeout)
+
     def bring_to_foreground(self) -> None:
         """Edgeウィンドウを前面に表示"""
         if self._page:

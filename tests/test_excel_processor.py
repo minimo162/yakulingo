@@ -475,6 +475,47 @@ class TestExcelProcessorCreateBilingualWorkbook:
         for name in wb_out.sheetnames:
             assert len(name) <= 31
 
+    def test_handles_duplicate_sheet_names_after_sanitization(self, processor, tmp_path):
+        """Avoids sheet name collisions when sanitized names overlap"""
+        original_path = tmp_path / "original.xlsx"
+        wb_orig = openpyxl.Workbook()
+        ws1 = wb_orig.active
+        ws1.title = "Sheet1"
+        ws1["A1"] = "Original 1"
+        ws2 = wb_orig.create_sheet("Sheet1_translated")
+        ws2["A1"] = "Original 2"
+        wb_orig.save(original_path)
+
+        translated_path = tmp_path / "translated.xlsx"
+        wb_trans = openpyxl.Workbook()
+        ts1 = wb_trans.active
+        ts1.title = "Sheet1"
+        ts1["A1"] = "Translated 1"
+        ts2 = wb_trans.create_sheet("Sheet1_translated")
+        ts2["A1"] = "Translated 2"
+        wb_trans.save(translated_path)
+
+        output_path = tmp_path / "bilingual.xlsx"
+        result = processor.create_bilingual_workbook(
+            original_path, translated_path, output_path
+        )
+
+        wb_out = openpyxl.load_workbook(output_path)
+        assert result["total_sheets"] == 4
+        assert len(wb_out.sheetnames) == 4
+        assert len(set(wb_out.sheetnames)) == 4
+        assert wb_out.sheetnames == [
+            "Sheet1",
+            "Sheet1_translated",
+            "Sheet1_translated_1",
+            "Sheet1_translated_translated",
+        ]
+
+        assert wb_out["Sheet1"]["A1"].value == "Original 1"
+        assert wb_out["Sheet1_translated"]["A1"].value == "Translated 1"
+        assert wb_out["Sheet1_translated_1"]["A1"].value == "Original 2"
+        assert wb_out["Sheet1_translated_translated"]["A1"].value == "Translated 2"
+
     def test_copies_cell_styles(self, processor, xlsx_with_font, tmp_path):
         """Preserves cell styles in bilingual output"""
         # Create translated version

@@ -233,6 +233,31 @@ def sanitize_sheet_name(name: str, max_length: int = _EXCEL_SHEET_NAME_MAX_LENGT
     return sanitized
 
 
+def _ensure_unique_sheet_name(name: str, existing_names: set[str]) -> str:
+    """Ensure sheet name is unique within the workbook while respecting Excel limits."""
+
+    # If name already sanitized and unique, return as-is
+    if name not in existing_names:
+        existing_names.add(name)
+        return name
+
+    base_name = name
+    counter = 1
+
+    # Append incremental suffixes until unique (truncating to 31 chars if needed)
+    while True:
+        suffix = f"_{counter}"
+        max_base_length = _EXCEL_SHEET_NAME_MAX_LENGTH - len(suffix)
+        truncated_base = base_name[:max_base_length]
+        candidate = f"{truncated_base}{suffix}"
+
+        if candidate not in existing_names:
+            existing_names.add(candidate)
+            return candidate
+
+        counter += 1
+
+
 # =============================================================================
 # openpyxl fallback
 # =============================================================================
@@ -981,6 +1006,8 @@ class ExcelProcessor(FileProcessor):
             default_sheet = bilingual_wb.active
             bilingual_wb.remove(default_sheet)
 
+            existing_names: set[str] = set()
+
             original_sheets = len(original_wb.sheetnames)
             translated_sheets = len(translated_wb.sheetnames)
 
@@ -989,7 +1016,8 @@ class ExcelProcessor(FileProcessor):
                 # Copy original sheet (sanitize in case original has forbidden chars)
                 original_sheet = original_wb[sheet_name]
                 safe_orig_name = sanitize_sheet_name(sheet_name)
-                orig_copy = bilingual_wb.create_sheet(title=safe_orig_name)
+                unique_orig_name = _ensure_unique_sheet_name(safe_orig_name, existing_names)
+                orig_copy = bilingual_wb.create_sheet(title=unique_orig_name)
                 self._copy_sheet_content(original_sheet, orig_copy)
 
                 # Copy translated sheet if exists
@@ -998,7 +1026,8 @@ class ExcelProcessor(FileProcessor):
                     translated_sheet = translated_wb[trans_sheet_name]
                     # Create translated sheet with suffix (sanitize for forbidden chars)
                     trans_title = sanitize_sheet_name(f"{sheet_name}_translated")
-                    trans_copy = bilingual_wb.create_sheet(title=trans_title)
+                    unique_trans_title = _ensure_unique_sheet_name(trans_title, existing_names)
+                    trans_copy = bilingual_wb.create_sheet(title=unique_trans_title)
                     self._copy_sheet_content(translated_sheet, trans_copy)
 
             # Handle extra translated sheets if any
@@ -1008,7 +1037,8 @@ class ExcelProcessor(FileProcessor):
                     translated_sheet = translated_wb[trans_sheet_name]
                     # Sanitize for forbidden chars and length
                     trans_title = sanitize_sheet_name(f"{trans_sheet_name}_translated")
-                    trans_copy = bilingual_wb.create_sheet(title=trans_title)
+                    unique_trans_title = _ensure_unique_sheet_name(trans_title, existing_names)
+                    trans_copy = bilingual_wb.create_sheet(title=unique_trans_title)
                     self._copy_sheet_content(translated_sheet, trans_copy)
 
             bilingual_wb.save(output_path)

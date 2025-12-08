@@ -901,6 +901,7 @@ textarea:focus-visible {
     width: 100% !important;
     height: 100% !important;
     z-index: 10 !important;
+    pointer-events: none !important;
 }
 
 /* Make q-uploader completely invisible */

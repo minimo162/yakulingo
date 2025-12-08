@@ -307,8 +307,8 @@ class CopilotHandler:
 
     # Configuration constants
     DEFAULT_CDP_PORT = 9333  # Dedicated port for translator
-    EDGE_STARTUP_MAX_ATTEMPTS = 30  # Maximum iterations to wait for Edge startup
-    EDGE_STARTUP_CHECK_INTERVAL = 0.2  # Seconds between startup checks
+    EDGE_STARTUP_MAX_ATTEMPTS = 40  # Maximum iterations to wait for Edge startup
+    EDGE_STARTUP_CHECK_INTERVAL = 0.15  # Seconds between startup checks (faster detection)
 
     # Response detection settings
     RESPONSE_STABLE_COUNT = 2  # Number of stable checks before considering response complete
@@ -318,6 +318,10 @@ class CopilotHandler:
     RESPONSE_POLL_INITIAL = 0.2  # Initial interval while waiting for response to start
     RESPONSE_POLL_ACTIVE = 0.2  # Interval after text is detected
     RESPONSE_POLL_STABLE = 0.1  # Interval during stability checking
+
+    # Login handling settings
+    LOGIN_POLL_INTERVAL = 0.5  # Interval for checking login completion
+    LOGIN_REDIRECT_WAIT = 0.5  # Wait time for landing page auto-redirect
 
     # URL patterns for Copilot detection (login complete check)
     # These domains indicate we are on a Copilot page
@@ -1115,7 +1119,7 @@ class CopilotHandler:
         logger.info("Edgeブラウザでログインしてください / Please log in to the Edge browser")
 
         input_selector = '#m365-chat-editor-target-element, [data-lexical-editor="true"]'
-        poll_interval = 1.0  # Check every second
+        poll_interval = self.LOGIN_POLL_INTERVAL
         elapsed = 0.0
 
         while elapsed < timeout:
@@ -1155,7 +1159,7 @@ class CopilotHandler:
                         except PlaywrightTimeoutError:
                             pass  # Continue even if timeout
                         # Brief wait for JS redirect to occur
-                        time.sleep(1.0)
+                        time.sleep(self.LOGIN_REDIRECT_WAIT)
                         # Check if URL changed (auto-redirect happened)
                         new_url = page.url
                         if "/landing" in new_url:
@@ -1164,7 +1168,7 @@ class CopilotHandler:
                             logger.info("Login wait: auto-redirect didn't occur, navigating to chat manually...")
                             try:
                                 page.goto(self.COPILOT_URL, wait_until='commit', timeout=30000)
-                                time.sleep(0.5)
+                                time.sleep(self.LOGIN_REDIRECT_WAIT)
                             except (PlaywrightTimeoutError, PlaywrightError) as nav_err:
                                 logger.warning("Failed to navigate to chat: %s", nav_err)
                         continue  # Re-check URL and chat input
@@ -1174,7 +1178,7 @@ class CopilotHandler:
                         logger.debug("Login wait: Copilot domain but not /chat, navigating...")
                         try:
                             page.goto(self.COPILOT_URL, wait_until='domcontentloaded', timeout=30000)
-                            time.sleep(0.5)
+                            time.sleep(self.LOGIN_REDIRECT_WAIT)
                         except (PlaywrightTimeoutError, PlaywrightError) as nav_err:
                             logger.warning("Failed to navigate to chat: %s", nav_err)
                         time.sleep(poll_interval)

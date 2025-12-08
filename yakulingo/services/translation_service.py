@@ -1775,9 +1775,18 @@ class TranslationService:
                     duration_seconds=time.time() - start_time,
                 )
 
-        # Filter blocks by selected sections if specified
+        # Filter blocks/cells by selected sections if specified
+        selected_pages = None
         if selected_sections is not None:
             all_blocks = self._filter_blocks_by_section(all_blocks, selected_sections)
+            selected_pages = [idx + 1 for idx in selected_sections]
+
+            if all_cells:
+                # Keep only cells on selected pages (page_num is 1-indexed)
+                all_cells = [
+                    cell for cell in all_cells
+                    if (cell.page_num - 1) in selected_sections
+                ]
 
         total_blocks = len(all_blocks)
 
@@ -1839,11 +1848,14 @@ class TranslationService:
             # OCR mode: use apply_translations_with_cells for better positioning
             processor.apply_translations_with_cells(
                 input_path, output_path, translations, all_cells, direction, self.config,
-                dpi=dpi  # Pass DPI for coordinate scaling
+                dpi=dpi, pages=selected_pages  # Pass DPI for coordinate scaling
             )
         else:
             # Standard mode: use regular apply_translations
-            processor.apply_translations(input_path, output_path, translations, direction, self.config)
+            processor.apply_translations(
+                input_path, output_path, translations, direction, self.config,
+                pages=selected_pages,
+            )
 
         # Create bilingual PDF if enabled
         bilingual_path = None

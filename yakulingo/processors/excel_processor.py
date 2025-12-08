@@ -9,6 +9,7 @@ Falls back to openpyxl if xlwings is not available (Linux or no Excel installed)
 import logging
 import re
 import sys
+import time
 import zipfile
 from contextlib import contextmanager
 from pathlib import Path
@@ -27,6 +28,7 @@ logger = logging.getLogger(__name__)
 # COM initialization for Windows (required for xlwings in worker threads)
 # =============================================================================
 _pythoncom = None
+_pywintypes = None
 
 def _get_pythoncom():
     """Lazy import pythoncom (Windows COM library)."""
@@ -38,6 +40,18 @@ def _get_pythoncom():
         except ImportError:
             logger.debug("pythoncom not available")
     return _pythoncom
+
+
+def _get_pywintypes():
+    """Lazy import pywintypes (Windows COM error types)."""
+    global _pywintypes
+    if _pywintypes is None and sys.platform == 'win32':
+        try:
+            import pywintypes
+            _pywintypes = pywintypes
+        except ImportError:
+            logger.debug("pywintypes not available")
+    return _pywintypes
 
 
 @contextmanager
@@ -58,10 +72,18 @@ def com_initialized():
 
     if pythoncom is not None:
         try:
-            # CoInitialize returns S_OK (0) on success, S_FALSE (1) if already initialized
-            hr = pythoncom.CoInitialize()
-            initialized = (hr == 0)  # Only uninitialize if we initialized
-            logger.debug("COM initialized for thread (hr=%s)", hr)
+            # Try CoInitializeEx with COINIT_APARTMENTTHREADED (STA) first
+            # This is the default mode and required by most COM servers including Excel
+            # If already initialized, it returns RPC_E_CHANGED_MODE (0x80010106)
+            try:
+                hr = pythoncom.CoInitializeEx(pythoncom.COINIT_APARTMENTTHREADED)
+                initialized = (hr == 0)  # S_OK means we initialized
+                logger.debug("COM initialized (STA) for thread (hr=%s)", hr)
+            except Exception:
+                # Fall back to simple CoInitialize if CoInitializeEx fails
+                hr = pythoncom.CoInitialize()
+                initialized = (hr == 0)
+                logger.debug("COM initialized (fallback) for thread (hr=%s)", hr)
         except Exception as e:
             logger.debug("COM initialization skipped: %s", e)
 
@@ -99,6 +121,80 @@ def is_xlwings_available() -> bool:
     """Check if xlwings is available."""
     _get_xlwings()
     return HAS_XLWINGS
+
+
+# Retry settings for Excel COM server connection
+_EXCEL_RETRY_COUNT = 3
+_EXCEL_RETRY_DELAY = 1.0  # seconds
+
+
+def _create_excel_app_with_retry(xw, max_retries: int = _EXCEL_RETRY_COUNT, retry_delay: float = _EXCEL_RETRY_DELAY):
+    """
+    Create xlwings App with retry logic.
+
+    Handles COM server errors like "サーバーの実行に失敗しました" (Server execution failed)
+    by retrying with exponential backoff.
+
+    Args:
+        xw: xlwings module
+        max_retries: Maximum number of retry attempts
+        retry_delay: Initial delay between retries (doubled each attempt)
+
+    Returns:
+        xlwings App instance
+
+    Raises:
+        Exception: If all retry attempts fail
+    """
+    pywintypes = _get_pywintypes()
+    last_error = None
+
+    for attempt in range(max_retries):
+        try:
+            app = xw.App(visible=False, add_book=False)
+            return app
+        except Exception as e:
+            last_error = e
+            error_str = str(e)
+
+            # Check if this is a COM server error that might be recoverable
+            is_com_error = False
+            if pywintypes is not None:
+                is_com_error = isinstance(e, pywintypes.com_error)
+
+            # Also check for common COM error messages (Japanese Windows)
+            recoverable_errors = [
+                "サーバーの実行に失敗しました",  # Server execution failed
+                "RPC server",
+                "RPC サーバー",
+                "オートメーション",  # Automation error
+                "Call was rejected",  # COM call rejected
+                "-2147418111",  # RPC_E_CALL_REJECTED
+                "-2146959355",  # CO_E_SERVER_EXEC_FAILURE
+            ]
+
+            is_recoverable = is_com_error or any(
+                err_msg in error_str for err_msg in recoverable_errors
+            )
+
+            if is_recoverable and attempt < max_retries - 1:
+                delay = retry_delay * (2 ** attempt)  # Exponential backoff
+                logger.warning(
+                    "Excel COM error (attempt %d/%d): %s. Retrying in %.1fs...",
+                    attempt + 1, max_retries, error_str, delay
+                )
+                time.sleep(delay)
+            else:
+                # Non-recoverable error or last attempt
+                logger.error(
+                    "Excel COM error (final attempt %d/%d): %s",
+                    attempt + 1, max_retries, error_str
+                )
+                raise
+
+    # All retries exhausted (shouldn't reach here)
+    if last_error:
+        raise last_error
 
 
 # Excel sheet name forbidden characters: \ / ? * [ ] :
@@ -272,7 +368,7 @@ class ExcelProcessor(FileProcessor):
         blocks: list[TextBlock] = []
 
         with com_initialized():
-            app = xw.App(visible=False, add_book=False)
+            app = _create_excel_app_with_retry(xw)
             try:
                 wb = app.books.open(str(file_path), ignore_read_only_recommended=True)
                 try:
@@ -617,7 +713,7 @@ class ExcelProcessor(FileProcessor):
         font_manager = FontManager(direction, settings)
 
         with com_initialized():
-            app = xw.App(visible=False, add_book=False)
+            app = _create_excel_app_with_retry(xw)
 
             # Store original Excel settings for restoration
             original_screen_updating = None

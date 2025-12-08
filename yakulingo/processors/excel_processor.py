@@ -12,6 +12,7 @@ import sys
 import threading
 import time
 import zipfile
+from functools import lru_cache
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator, Optional
@@ -262,7 +263,12 @@ def _ensure_unique_sheet_name(name: str, existing_names: set[str]) -> str:
 # openpyxl fallback
 # =============================================================================
 import openpyxl
-from openpyxl.utils import get_column_letter, range_boundaries
+from openpyxl.utils import (
+    column_index_from_string,
+    coordinate_from_string,
+    get_column_letter,
+    range_boundaries,
+)
 from openpyxl.styles import Font
 
 
@@ -596,6 +602,9 @@ class ExcelProcessor(FileProcessor):
         """
         wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
 
+        # Cache column letters to avoid repeated conversions during large reads
+        column_letter_cache: dict[int, str] = {}
+
         try:
             for sheet_idx, sheet_name in enumerate(wb.sheetnames):
                 sheet = wb[sheet_name]
@@ -619,14 +628,18 @@ class ExcelProcessor(FileProcessor):
 
                     for col_idx, value in enumerate(row_values, start=min_col):
                         if value and isinstance(value, str):
-                            if self.cell_translator.should_translate(str(value), output_language):
-                                col_letter = get_column_letter(col_idx)
+                            value_str = str(value)
+                            if self.cell_translator.should_translate(value_str, output_language):
+                                col_letter = column_letter_cache.get(col_idx)
+                                if col_letter is None:
+                                    col_letter = get_column_letter(col_idx)
+                                    column_letter_cache[col_idx] = col_letter
 
                                 # Font info not available in read_only mode
                                 # Will be fetched during apply_translations
                                 yield TextBlock(
                                     id=f"{sheet_name}_{col_letter}{row_idx}",
-                                    text=str(value),
+                                    text=value_str,
                                     location=f"{sheet_name}, {col_letter}{row_idx}",
                                     metadata={
                                         'sheet': sheet_name,
@@ -908,6 +921,12 @@ class ExcelProcessor(FileProcessor):
         wb = openpyxl.load_workbook(input_path)
         font_manager = FontManager(direction, settings)
 
+        # Cache parsed coordinates to avoid repeatedly converting A1 notation
+        @lru_cache(maxsize=2048)
+        def _cell_ref_to_row_col(cell_ref: str) -> tuple[int, int]:
+            column_letters, row_idx = coordinate_from_string(cell_ref)
+            return row_idx, column_index_from_string(column_letters)
+
         # Font object cache: (name, size, bold, italic, underline, strike, color_rgb) -> Font
         # openpyxl Font objects are immutable, so we can safely reuse them
         font_cache: dict[tuple, Font] = {}
@@ -955,7 +974,8 @@ class ExcelProcessor(FileProcessor):
                 # Direct cell access - only touch cells that need translation
                 for cell_ref, translated_text in cell_translations.items():
                     try:
-                        cell = sheet[cell_ref]
+                        row_idx, col_idx = _cell_ref_to_row_col(cell_ref)
+                        cell = sheet.cell(row=row_idx, column=col_idx)
 
                         original_font_name = cell.font.name if cell.font else None
                         original_font_size = cell.font.size if cell.font and cell.font.size else 11.0

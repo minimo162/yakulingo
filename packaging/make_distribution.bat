@@ -58,7 +58,7 @@ exit /b 0
 :: ============================================================
 :: Step 1: Prepare (check files, cleanup, fix paths, copy files)
 :: ============================================================
-call :ShowProgress 1 "Preparing..."
+call :ShowProgress 0 "Preparing..."
 
 :: Check required files
 echo        Checking required files...
@@ -140,7 +140,7 @@ for %%f in ("YakuLingo.exe" "app.py" "glossary.csv" "pyproject.toml" "uv.lock" "
 :: ============================================================
 :: Step 2: Copy folders (parallel robocopy via PowerShell jobs)
 :: ============================================================
-call :ShowProgress 2 "Copying folders..."
+call :ShowProgress 1 "Copying folders..."
 
 echo        Copying .venv, .uv-python, .playwright-browsers, yakulingo, prompts, config...
 
@@ -155,7 +155,7 @@ for %%f in (yakulingo prompts config) do (
 :: ============================================================
 :: Step 3: Create ZIP and finalize
 :: ============================================================
-call :ShowProgress 3 "Creating ZIP and finalizing..."
+call :ShowProgress 2 "Creating ZIP and finalizing..."
 
 :: Create ZIP archive
 echo        Creating ZIP archive...
@@ -172,6 +172,8 @@ rd /s /q "dist_temp" 2>nul
 
 :: Calculate elapsed time using PowerShell ticks
 for /f %%e in ('powershell -NoProfile -Command "$e=([DateTime]::Now.Ticks-%START_TICKS%)/10000000;$m=[math]::Floor($e/60);$s=[math]::Floor($e%%60);if($m-gt0){\"${m}m ${s}s\"}else{\"${s}s\"}"') do set "ELAPSED_TIME=%%e"
+
+call :ShowProgress 3 "Complete!"
 
 if exist "%SHARE_DIR%\%DIST_ZIP%" (
     echo.

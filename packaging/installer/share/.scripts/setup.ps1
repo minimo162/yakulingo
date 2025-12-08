@@ -188,6 +188,36 @@ function Invoke-Setup {
         $SetupPath = Join-Path $env:LOCALAPPDATA $AppName
     }
 
+    # Safety check: avoid destructive destinations (drive roots or system folders)
+    $resolvedSetupPath = $SetupPath
+    try {
+        $resolvedSetupPath = (Resolve-Path -Path $SetupPath -ErrorAction Stop).ProviderPath
+    } catch {
+        # Keep original if the path does not exist yet
+    }
+
+    $driveRoot = [System.IO.Path]::GetPathRoot($resolvedSetupPath)
+    if ($resolvedSetupPath -eq $driveRoot) {
+        throw "SetupPath points to a drive root. Please specify a subdirectory (e.g., $($env:LOCALAPPDATA)\\$AppName)."
+    }
+
+    $dangerousRoots = @(
+        $env:USERPROFILE,
+        $env:LOCALAPPDATA,
+        $env:APPDATA,
+        [Environment]::GetFolderPath("Windows"),
+        [Environment]::GetFolderPath("ProgramFiles"),
+        [Environment]::GetFolderPath("ProgramFilesX86"),
+        [Environment]::GetFolderPath("System"),
+        [Environment]::GetFolderPath("SystemX86")
+    ) | Where-Object { $_ }
+
+    foreach ($dangerousRoot in $dangerousRoots) {
+        if ($resolvedSetupPath.TrimEnd('\\') -eq $dangerousRoot.TrimEnd('\\')) {
+            throw "SetupPath cannot be a system directory: $resolvedSetupPath"
+        }
+    }
+
     # ============================================================
     # Step 1: Prepare destination (backup user data first)
     # ============================================================

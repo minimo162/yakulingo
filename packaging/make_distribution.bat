@@ -1,6 +1,18 @@
 @echo off
 setlocal enabledelayedexpansion
 
+:: エラー発生時にもpauseするためのトラップ設定
+if "%~1"=="--no-trap" goto :no_trap
+cmd /c "%~f0" --no-trap %*
+if errorlevel 1 (
+    echo.
+    echo [ERROR] スクリプトが予期せず終了しました。
+    pause
+)
+exit /b %errorlevel%
+
+:no_trap
+
 echo.
 echo ============================================================
 echo YakuLingo - Distribution Package Builder
@@ -8,6 +20,13 @@ echo ============================================================
 echo.
 
 cd /d "%~dp0\.."
+
+:: PowerShellが利用可能かチェック
+where powershell >nul 2>&1
+if errorlevel 1 (
+    echo [ERROR] PowerShell が見つかりません。
+    exit /b 1
+)
 
 :: Timer start (using PowerShell for accuracy)
 for /f %%t in ('powershell -NoProfile -Command "[DateTime]::Now.Ticks"') do set START_TICKS=%%t

@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from yakulingo.ui.state import AppState, Tab, FileState
 from yakulingo.models.types import FileType, FileInfo
+from yakulingo.ui.components import file_panel
 
 
 class TestTextPanelLogic:
@@ -140,6 +141,51 @@ class TestFilePanelLogic:
         )
 
         assert state.can_translate() is False
+
+
+@pytest.mark.asyncio
+async def test_drop_zone_processes_js_drop_result(monkeypatch):
+    """Drop handler should create a temp file and forward it to the callback"""
+
+    notifications = []
+    monkeypatch.setattr(file_panel.ui, 'notify', lambda *args, **kwargs: notifications.append((args, kwargs)))
+
+    received = {}
+
+    async def on_file_select(path: Path):
+        received['path'] = path
+        received['content'] = path.read_bytes()
+
+    result = {'name': 'sample.txt', 'data': [65, 66, 67]}
+
+    handled = await file_panel._process_drop_result(on_file_select, result)
+
+    assert handled is True
+    assert received['path'].name == 'sample.txt'
+    assert received['content'] == b'ABC'
+    assert notifications == []
+
+
+@pytest.mark.asyncio
+async def test_drop_zone_rejects_unsupported_extensions(monkeypatch):
+    """Drop handler should warn and skip unsupported file types"""
+
+    notifications = []
+    monkeypatch.setattr(file_panel.ui, 'notify', lambda message, **kwargs: notifications.append((message, kwargs)))
+
+    called = False
+
+    async def on_file_select(_: Path):
+        nonlocal called
+        called = True
+
+    result = {'name': 'image.png', 'data': [0, 1, 2]}
+
+    handled = await file_panel._process_drop_result(on_file_select, result)
+
+    assert handled is False
+    assert called is False
+    assert any('サポートされていないファイル形式です' in note[0] for note in notifications)
 
     def test_translate_button_disabled_when_complete(self):
         """Translate button should be disabled when translation complete"""

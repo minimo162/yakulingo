@@ -43,6 +43,38 @@ FILE_TYPE_CLASSES = {
 }
 
 
+async def _process_drop_result(
+    on_file_select: Callable[[Path], Union[None, Awaitable[None]]],
+    result: Optional[dict],
+) -> bool:
+    """Validate JS drop data and forward it to the Python callback."""
+
+    if not result:
+        ui.notify('ファイルがドロップされませんでした', type='warning')
+        return False
+
+    name = result.get('name') if isinstance(result, dict) else None
+    data = result.get('data') if isinstance(result, dict) else None
+
+    if not name or not data:
+        ui.notify('ファイルの読み込みに失敗しました: 空のデータです', type='negative')
+        return False
+
+    content = bytes(data)
+    ext = Path(name).suffix.lower()
+    valid_exts = {'.xlsx', '.xls', '.docx', '.doc', '.pptx', '.pdf', '.txt'}
+    if ext not in valid_exts:
+        ui.notify(f'サポートされていないファイル形式です: {ext}', type='warning')
+        return False
+
+    temp_path = temp_file_manager.create_temp_file(content, name)
+    callback_result = on_file_select(temp_path)
+    if asyncio.iscoroutine(callback_result):
+        await callback_result
+
+    return True
+
+
 def create_file_panel(
     state: AppState,
     on_file_select: Callable[[Path], Union[None, Awaitable[None]]],
@@ -332,29 +364,7 @@ def _drop_zone(on_file_select: Callable[[Path], Union[None, Awaitable[None]]]):
             try:
                 # Get file data that was read by JavaScript
                 result = await ui.run_javascript('window._droppedFileData')
-                if not result:
-                    ui.notify('ファイルがドロップされませんでした', type='warning')
-                    return
-
-                if not result.get('name') or not result.get('data'):
-                    ui.notify('ファイルの読み込みに失敗しました: 空のデータです', type='negative')
-                    return
-
-                content = bytes(result['data'])
-                name = result['name']
-                # Clear the global variable
-                await ui.run_javascript('window._droppedFileData = null')
-                # Validate file extension
-                ext = Path(name).suffix.lower()
-                valid_exts = {'.xlsx', '.xls', '.docx', '.doc', '.pptx', '.pdf', '.txt'}
-                if ext not in valid_exts:
-                    ui.notify(f'サポートされていないファイル形式です: {ext}', type='warning')
-                    return
-                temp_path = temp_file_manager.create_temp_file(content, name)
-                # Support async callback (await if coroutine)
-                callback_result = on_file_select(temp_path)
-                if asyncio.iscoroutine(callback_result):
-                    await callback_result
+                await _process_drop_result(on_file_select, result)
             except Exception as err:
                 ui.notify(f'ファイルの読み込みに失敗しました: {err}', type='negative')
             finally:

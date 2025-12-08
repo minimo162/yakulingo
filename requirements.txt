@@ -13,7 +13,7 @@ PyMuPDF>=1.24.0
 pdfminer.six>=20231228
 
 # Web UI
-nicegui>=1.4.0
+nicegui>=3.3.1
 pywebview>=5.0.0
 
 # Platform-specific (install manually if needed)

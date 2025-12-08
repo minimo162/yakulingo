@@ -9,6 +9,8 @@ from yakulingo.services.prompt_builder import (
     REFERENCE_INSTRUCTION,
     DEFAULT_TO_EN_TEMPLATE,
     DEFAULT_TO_JP_TEMPLATE,
+    DEFAULT_TEXT_TO_EN_TEMPLATE,
+    DEFAULT_TEXT_TO_JP_TEMPLATE,
 )
 
 
@@ -25,6 +27,13 @@ class TestPromptBuilder:
         assert ("jp", "concise") in builder._templates
         assert builder._templates[("en", "concise")] == DEFAULT_TO_EN_TEMPLATE
         assert builder._templates[("jp", "concise")] == DEFAULT_TO_JP_TEMPLATE
+
+    def test_default_text_templates_used_when_no_dir(self):
+        """Default text templates are loaded when prompts_dir is None"""
+        builder = PromptBuilder(prompts_dir=None)
+
+        assert builder._text_templates[("en", "concise")] == DEFAULT_TEXT_TO_EN_TEMPLATE
+        assert builder._text_templates[("jp", "concise")] == DEFAULT_TEXT_TO_JP_TEMPLATE
 
     def test_build_includes_input_text(self):
         """Build includes input text in prompt"""
@@ -95,6 +104,20 @@ class TestPromptBuilder:
         assert "1. Hello" in prompt
         assert "2. World" in prompt
         assert "日本語" in prompt
+
+    def test_missing_text_prompts_fall_back_to_defaults(self, tmp_path):
+        """Text templates fall back to defaults when files are missing"""
+        prompts_dir = tmp_path / "prompts"
+        prompts_dir.mkdir()
+
+        custom_en = prompts_dir / "text_translate_to_en_standard.txt"
+        custom_en.write_text("custom en standard", encoding="utf-8")
+
+        builder = PromptBuilder(prompts_dir=prompts_dir)
+
+        assert builder._text_templates[("en", "standard")] == "custom en standard"
+        assert builder._text_templates[("en", "minimal")] == DEFAULT_TEXT_TO_EN_TEMPLATE
+        assert builder._text_templates[("jp", "concise")] == DEFAULT_TEXT_TO_JP_TEMPLATE
 
 
 class TestPromptBuilderParseBatchResult:

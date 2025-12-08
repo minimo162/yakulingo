@@ -93,6 +93,64 @@ Input
 {input_text}
 """
 
+# Fallback templates for text translation (used when text_translate_*.txt don't exist)
+DEFAULT_TEXT_TO_EN_TEMPLATE = """## Translation Request
+
+Please translate the following Japanese text into English.
+
+### Guidelines
+- Style: {style}
+- If the input is already English, output it as-is
+- Keep the translation concise and natural
+
+### Output Format
+Please provide your response in the following format:
+
+訳文: (English translation)
+
+解説:
+- (Key grammar/word choice point - 1 line)
+- (Important terms - 1 line)
+- (Usage context or nuance - 1 line)
+
+解説は日本語で書いてください。
+
+{reference_section}
+
+---
+
+以下のテキストを翻訳してください:
+{input_text}
+"""
+
+DEFAULT_TEXT_TO_JP_TEMPLATE = """## Translation Request
+
+Please translate the following text into Japanese.
+
+### Guidelines
+- If the input is already Japanese, output it as-is
+- Keep original line breaks and tabs intact
+- Use concise, natural Japanese
+- oku → 億, k → 千/000, () → ▲
+
+### Output Format
+Please provide your response in the following format:
+
+訳文: (Japanese translation)
+
+解説:
+- (Grammar/syntax key point - 1 line)
+- (Important words/phrases - 1 line)
+- (Usage context or nuances - 1 line)
+
+{reference_section}
+
+---
+
+以下のテキストを翻訳してください:
+{input_text}
+"""
+
 
 class PromptBuilder:
     """
@@ -156,13 +214,19 @@ class PromptBuilder:
             text_to_jp = self.prompts_dir / "text_translate_to_jp.txt"
             if text_to_jp.exists():
                 jp_text_template = text_to_jp.read_text(encoding='utf-8')
-                for style in styles:
-                    self._text_templates[("jp", style)] = jp_text_template
+            else:
+                jp_text_template = DEFAULT_TEXT_TO_JP_TEMPLATE
+
+            for style in styles:
+                self._text_templates.setdefault(("jp", style), jp_text_template)
+                self._text_templates.setdefault(("en", style), DEFAULT_TEXT_TO_EN_TEMPLATE)
         else:
             # Use defaults
             for style in styles:
                 self._templates[("en", style)] = DEFAULT_TO_EN_TEMPLATE
                 self._templates[("jp", style)] = DEFAULT_TO_JP_TEMPLATE
+                self._text_templates[("en", style)] = DEFAULT_TEXT_TO_EN_TEMPLATE
+                self._text_templates[("jp", style)] = DEFAULT_TEXT_TO_JP_TEMPLATE
 
     def _get_template(self, output_language: str = "en", translation_style: str = "concise") -> str:
         """Get appropriate template based on output language and style."""

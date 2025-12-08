@@ -515,6 +515,13 @@ class YakuLingoApp:
         # Small delay to let UI render first
         await asyncio.sleep(0.05)
 
+        # Reset connection state to indicate active connection attempt
+        from yakulingo.services.copilot_handler import CopilotHandler
+
+        self.copilot.last_connection_error = CopilotHandler.ERROR_NONE
+        self.state.connection_state = ConnectionState.CONNECTING
+        self._refresh_status()
+
         # Wait for Edge connection result from parallel startup
         try:
             loop = asyncio.get_running_loop()
@@ -554,6 +561,13 @@ class YakuLingoApp:
 
         # Small delay to let UI render first
         await asyncio.sleep(0.05)
+
+        # Reset connection state to indicate active connection attempt
+        from yakulingo.services.copilot_handler import CopilotHandler
+
+        self.copilot.last_connection_error = CopilotHandler.ERROR_NONE
+        self.state.connection_state = ConnectionState.CONNECTING
+        self._refresh_status()
 
         # Connect to browser (starts Edge if needed, doesn't check login state)
         # connect() now runs in dedicated Playwright thread via PlaywrightThreadExecutor
@@ -683,6 +697,13 @@ class YakuLingoApp:
         if self._client:
             with self._client:
                 ui.notify('再接続中...', type='info', position='bottom-right', timeout=2000)
+
+        # Reset connection indicators for the retry attempt
+        from yakulingo.services.copilot_handler import CopilotHandler
+
+        self.copilot.last_connection_error = CopilotHandler.ERROR_NONE
+        self.state.connection_state = ConnectionState.CONNECTING
+        self._refresh_status()
 
         try:
             connected = await asyncio.to_thread(self.copilot.connect)

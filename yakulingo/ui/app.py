@@ -2034,11 +2034,18 @@ def _detect_display_settings() -> tuple[tuple[int, int], tuple[int, int, int, in
 
 def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
     """Run the application"""
-    from nicegui import app as nicegui_app, Client
+    import time
+    _t0 = time.perf_counter()
 
+    from nicegui import app as nicegui_app, Client
+    logger.info("[TIMING] NiceGUI import: %.2fs", time.perf_counter() - _t0)
+
+    _t1 = time.perf_counter()
     yakulingo_app = create_app()
+    logger.info("[TIMING] create_app: %.2fs", time.perf_counter() - _t1)
 
     # Detect optimal window size BEFORE ui.run() to avoid resize flicker
+    _t2 = time.perf_counter()
     if native:
         window_size, panel_sizes = _detect_display_settings()
         yakulingo_app._panel_sizes = panel_sizes  # (sidebar_width, input_panel_width, result_content_width, input_panel_max_width)
@@ -2047,6 +2054,7 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
         window_size = (1900, 1100)  # Default size for browser mode
         yakulingo_app._panel_sizes = (260, 420, 800, 900)  # Default panel sizes
         yakulingo_app._window_size = window_size
+    logger.info("[TIMING] _detect_display_settings: %.2fs", time.perf_counter() - _t2)
 
     # Track if cleanup has been executed (prevent double execution)
     cleanup_done = False
@@ -2255,18 +2263,24 @@ document.fonts.ready.then(function() {
             ui.label('YakuLingo').classes('loading-title')
 
         # Wait for client connection
+        import time as _time_module
+        _t_conn = _time_module.perf_counter()
         await client.connected()
+        logger.info("[TIMING] client.connected(): %.2fs", _time_module.perf_counter() - _t_conn)
 
         # Remove loading screen and show main UI
         loading_container.delete()
+        _t_ui = _time_module.perf_counter()
         yakulingo_app.create_ui()
+        logger.info("[TIMING] create_ui(): %.2fs", _time_module.perf_counter() - _t_ui)
 
         # Start Edge connection AFTER UI is displayed
         asyncio.create_task(yakulingo_app.start_edge_and_connect())
         asyncio.create_task(yakulingo_app.check_for_updates())
+        logger.info("[TIMING] UI displayed - total from run_app: %.2fs", _time_module.perf_counter() - _t0)
 
     # window_size is already determined at the start of run_app()
-
+    logger.info("[TIMING] Before ui.run(): %.2fs", time.perf_counter() - _t0)
     ui.run(
         host=host,
         port=port,

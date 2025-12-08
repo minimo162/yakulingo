@@ -1065,19 +1065,29 @@ class CopilotHandler:
                 if "m365.cloud.microsoft" in url:
                     logger.debug("Login wait: detected m365 domain, checking for chat UI...")
 
-                    # Check if we're on landing page (needs navigation to chat)
-                    # OAuth2 login often redirects to /landing or /landingv2 instead of /chat
+                    # Check if we're on landing page - wait for JS-based auto-redirect
+                    # OAuth2 login redirects to /landing or /landingv2, which should auto-redirect to /chat
                     if "/landing" in url:
-                        logger.info("Login wait: redirected to landing page, navigating to chat...")
+                        logger.debug("Login wait: on landing page, waiting for auto-redirect...")
+                        # Wait for page load and JS execution that handles auto-redirect
                         try:
-                            page.goto(self.COPILOT_URL, wait_until='commit', timeout=30000)
-                            # Wait a moment for page to stabilize
-                            time.sleep(0.5)
-                            # Continue loop to check for chat input
-                            continue
-                        except (PlaywrightTimeoutError, PlaywrightError) as nav_err:
-                            logger.warning("Failed to navigate to chat: %s", nav_err)
-                            # Continue and retry
+                            page.wait_for_load_state('networkidle', timeout=5000)
+                        except PlaywrightTimeoutError:
+                            pass  # Continue even if timeout
+                        # Brief wait for JS redirect to occur
+                        time.sleep(1.0)
+                        # Check if URL changed (auto-redirect happened)
+                        new_url = page.url
+                        if "/landing" in new_url:
+                            # Still on landing page after waiting - JS redirect didn't happen
+                            # This can occur when Playwright blocks some JS or network requests
+                            logger.info("Login wait: auto-redirect didn't occur, navigating to chat manually...")
+                            try:
+                                page.goto(self.COPILOT_URL, wait_until='commit', timeout=30000)
+                                time.sleep(0.5)
+                            except (PlaywrightTimeoutError, PlaywrightError) as nav_err:
+                                logger.warning("Failed to navigate to chat: %s", nav_err)
+                        continue  # Re-check URL and chat input
 
                     # Try to find chat input
                     try:

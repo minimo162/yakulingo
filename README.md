@@ -76,7 +76,7 @@ pip install -r requirements.txt
 # Playwrightブラウザのインストール
 playwright install chromium
 
-# 起動
+# 起動（pywebview のネイティブウィンドウが自動で立ち上がります）
 python app.py
 ```
 
@@ -85,7 +85,7 @@ python app.py
 ### クイックスタート（最短手順）
 1. `uv sync`（または `pip install -r requirements.txt`）
 2. `playwright install chromium`
-3. `python app.py` を実行し、ブラウザから http://localhost:8080 にアクセス
+3. `python app.py` を実行（通常はネイティブウィンドウが開く）。ブラウザで開く場合は http://127.0.0.1:8765
 
 ## 使用方法
 
@@ -98,6 +98,7 @@ python app.py
    - **日本語入力時（英訳）**：英語訳 + インライン調整オプション
    - **その他入力時（和訳）**：日本語訳 + 解説 + [英文をチェック][要点を教えて]ボタン
 5. インライン入力欄で追加のリクエストが可能（例: 「もっとカジュアルに」「返信の下書きを書いて」）
+> **Note**: テキスト翻訳は最大5,000文字まで（クリップボード翻訳含む）
 
 ### ファイル翻訳
 
@@ -122,7 +123,8 @@ python app.py
 
 | ショートカット | 動作 |
 |--------------|------|
-| `Ctrl + Enter` | 翻訳実行 |
+| `Ctrl + Enter` | テキスト入力欄で翻訳実行 |
+| `Ctrl + J` (Windows) | クリップボードのテキストを即翻訳（グローバルホットキー） |
 
 ## 設定
 
@@ -138,7 +140,6 @@ python app.py
   "max_chars_per_batch": 7000,
   "request_timeout": 120,
   "max_retries": 3,
-  "copilot_char_limit": 7500,
   "bilingual_output": false,
   "export_glossary": false,
   "translation_style": "concise",
@@ -176,10 +177,9 @@ python app.py
 | `ocr_dpi` | PDFレイアウト解析の解像度 | 200 |
 | `auto_update_enabled` | 起動時の自動更新チェックを有効化 | true |
 | `auto_update_check_interval` | 更新チェック間隔（秒） | 86400 |
-| `max_chars_per_batch` | Copilot送信1回あたりの最大文字数 | 7000 |
-| `copilot_char_limit` | Copilotの1リクエスト上限（プロンプトを含む送信サイズの安全マージン） | 7500 |
+| `max_chars_per_batch` | Copilot送信1回あたりの最大文字数（テンプレート込みで安全マージン確保） | 7000 |
 | `request_timeout` | 翻訳リクエストのタイムアウト（秒） | 120 |
-| `output_directory` | 出力先フォルダ（nullは入力と同じ） | null |
+| `output_directory` | 出力先フォルダ（nullは入力と同じ場所） | null |
 | `window_width` / `window_height` | ウィンドウ初期サイズ | 1400 / 850 |
 
 **翻訳スタイル**: `"standard"`（標準）, `"concise"`（簡潔）, `"minimal"`（最簡潔）

@@ -285,6 +285,8 @@ class HotkeyManager:
         kernel32.GlobalLock.restype = ctypes.c_void_p
         kernel32.GlobalUnlock.argtypes = [ctypes.c_void_p]
         kernel32.GlobalUnlock.restype = ctypes.wintypes.BOOL
+        kernel32.GlobalSize.argtypes = [ctypes.c_void_p]
+        kernel32.GlobalSize.restype = ctypes.c_size_t
 
         if not user32.OpenClipboard(None):
             logger.warning("Failed to open clipboard (may be in use by another app)")
@@ -307,9 +309,25 @@ class HotkeyManager:
                 return None
 
             try:
-                # Read as Unicode string
-                text = ctypes.wstring_at(ptr)
-                return text if text else None
+                # Get the size of the global memory block for safety
+                size = kernel32.GlobalSize(handle)
+                if size == 0:
+                    logger.debug("GlobalSize returned 0")
+                    return None
+
+                # Calculate max characters (size is in bytes, wchar is 2 bytes)
+                max_chars = size // 2
+
+                # Read as Unicode string with size limit for safety
+                try:
+                    text = ctypes.wstring_at(ptr, max_chars)
+                    # Remove null terminator if present
+                    if text and '\x00' in text:
+                        text = text.split('\x00')[0]
+                    return text if text else None
+                except OSError as e:
+                    logger.warning(f"Failed to read clipboard string: {e}")
+                    return None
             finally:
                 kernel32.GlobalUnlock(handle)
         finally:

@@ -7,6 +7,8 @@ import logging
 from pathlib import Path
 from typing import Any, Iterator, Optional
 
+from itertools import zip_longest
+
 from yakulingo.models.types import TextBlock, FileInfo, FileType, SectionDetail
 from yakulingo.processors.base import FileProcessor
 
@@ -200,7 +202,9 @@ class TxtProcessor(FileProcessor):
         translated_paragraphs = [p.strip() for p in translated_content.split('\n\n') if p.strip()]
 
         bilingual_parts = []
-        for i, (orig, trans) in enumerate(zip(original_paragraphs, translated_paragraphs)):
+        for i, (orig, trans) in enumerate(
+            zip_longest(original_paragraphs, translated_paragraphs, fillvalue="")
+        ):
             bilingual_parts.append(f"【原文】\n{orig}\n\n【訳文】\n{trans}")
 
         separator = '\n\n' + '─' * 40 + '\n\n'

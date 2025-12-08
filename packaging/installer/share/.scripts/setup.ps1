@@ -191,10 +191,10 @@ function Invoke-Setup {
     # ============================================================
     # Step 1: Prepare destination (backup user data first)
     # ============================================================
-    Write-Status -Message "Preparing destination..." -Progress -Step "Step 1/2: Preparing"
+    Write-Status -Message "Preparing destination..." -Progress -Step "Step 1/3: Preparing"
     if (-not $GuiMode) {
         Write-Host ""
-        Write-Host "[1/2] Preparing destination..." -ForegroundColor Yellow
+        Write-Host "[1/3] Preparing destination..." -ForegroundColor Yellow
     }
 
     # Backup user data files before removing the directory
@@ -234,31 +234,59 @@ function Invoke-Setup {
     }
 
     # ============================================================
-    # Step 2: Extract ZIP directly to destination
+    # Step 2: Copy ZIP to temp folder (faster than extracting over network)
     # ============================================================
-    Write-Status -Message "Extracting files..." -Progress -Step "Step 2/2: Extracting files"
+    Write-Status -Message "Copying files..." -Progress -Step "Step 2/3: Copying"
     if (-not $GuiMode) {
         Write-Host ""
-        Write-Host "[2/2] Extracting files to destination..." -ForegroundColor Yellow
+        Write-Host "[2/3] Copying ZIP to local temp folder..." -ForegroundColor Yellow
+    }
+
+    $TempZipDir = Join-Path $env:TEMP "YakuLingo_Setup_$(Get-Date -Format 'yyyyMMddHHmmss')"
+    New-Item -ItemType Directory -Path $TempZipDir -Force | Out-Null
+    $TempZipFile = Join-Path $TempZipDir $ZipFileName
+    Copy-Item -Path $ZipFile -Destination $TempZipFile -Force
+
+    if (-not $GuiMode) {
+        Write-Host "[OK] ZIP copied to temp folder" -ForegroundColor Green
+    }
+
+    # ============================================================
+    # Step 3: Extract ZIP locally (much faster than over network)
+    # ============================================================
+    Write-Status -Message "Extracting files..." -Progress -Step "Step 3/3: Extracting"
+    if (-not $GuiMode) {
+        Write-Host ""
+        Write-Host "[3/3] Extracting files locally..." -ForegroundColor Yellow
         Write-Host "      Extracting with 7-Zip..." -ForegroundColor Gray
     }
 
-    # Extract directly to destination parent, then rename (avoids temp + move)
-    $ParentDir = Split-Path -Parent $SetupPath
-    & $script:SevenZip x "$ZipFile" "-o$ParentDir" -y -bso0 -bsp0 | Out-Null
+    # Extract to temp folder first
+    & $script:SevenZip x "$TempZipFile" "-o$TempZipDir" -y -bso0 -bsp0 | Out-Null
     if ($LASTEXITCODE -ne 0) {
+        # Clean up temp folder on error
+        if (Test-Path $TempZipDir) {
+            Remove-Item -Path $TempZipDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
         throw "Failed to extract ZIP file.`n`nFile: $ZipFileName"
     }
 
-    # Find extracted folder and rename to destination
-    $ExtractedDir = Get-ChildItem -Path $ParentDir -Directory | Where-Object { $_.Name -like "YakuLingo*" -and $_.FullName -ne $SetupPath } | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    # Find extracted folder
+    $ExtractedDir = Get-ChildItem -Path $TempZipDir -Directory | Where-Object { $_.Name -like "YakuLingo*" } | Select-Object -First 1
     if (-not $ExtractedDir) {
+        # Clean up temp folder on error
+        if (Test-Path $TempZipDir) {
+            Remove-Item -Path $TempZipDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
         throw "Failed to extract ZIP file.`n`nFile: $ZipFileName"
     }
 
-    # Rename extracted folder to destination (instant operation)
-    if ($ExtractedDir.FullName -ne $SetupPath) {
-        Move-Item -Path $ExtractedDir.FullName -Destination $SetupPath -Force
+    # Move extracted folder to destination (local to local = fast)
+    Move-Item -Path $ExtractedDir.FullName -Destination $SetupPath -Force
+
+    # Clean up temp folder
+    if (Test-Path $TempZipDir) {
+        Remove-Item -Path $TempZipDir -Recurse -Force -ErrorAction SilentlyContinue
     }
 
     if (-not $GuiMode) {

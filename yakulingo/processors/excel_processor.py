@@ -263,7 +263,7 @@ def _ensure_unique_sheet_name(name: str, existing_names: set[str]) -> str:
 # openpyxl fallback
 # =============================================================================
 import openpyxl
-from openpyxl.utils import (
+from openpyxl.utils.cell import (
     column_index_from_string,
     coordinate_from_string,
     get_column_letter,

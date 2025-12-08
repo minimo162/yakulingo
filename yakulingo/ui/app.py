@@ -1,4 +1,6 @@
 # yakulingo/ui/app.py
+from __future__ import annotations
+
 """
 YakuLingo - Nani-inspired sidebar layout with bidirectional translation.
 Japanese → English, Other → Japanese (auto-detected by AI).

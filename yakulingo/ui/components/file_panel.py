@@ -5,8 +5,9 @@ Simple, focused, warm.
 """
 
 from nicegui import ui, events
-from typing import Callable, List, Optional
+from typing import Awaitable, Callable, List, Optional, Union
 from pathlib import Path
+import asyncio
 
 from yakulingo.ui.state import AppState, FileState
 from yakulingo.ui.utils import temp_file_manager, download_to_folder_and_open
@@ -44,7 +45,7 @@ FILE_TYPE_CLASSES = {
 
 def create_file_panel(
     state: AppState,
-    on_file_select: Callable[[Path], None],
+    on_file_select: Callable[[Path], Union[None, Awaitable[None]]],
     on_translate: Callable[[], None],
     on_cancel: Callable[[], None],
     on_download: Callable[[], None],
@@ -78,7 +79,11 @@ def create_file_panel(
                     _drop_zone(on_file_select)
 
                 elif state.file_state == FileState.SELECTED:
-                    _file_card(state.file_info, on_reset)
+                    if state.file_info:
+                        _file_card(state.file_info, on_reset)
+                    else:
+                        # Show loading state while file info is being loaded
+                        _file_loading_card(state.selected_file, on_reset)
                     # Output language selector
                     _language_selector(state, on_language_change)
                     # Translation style selector (only for English output)
@@ -111,7 +116,10 @@ def create_file_panel(
                     if state.file_info and len(state.file_info.section_details) > 1:
                         _section_selector(state.file_info, on_section_toggle)
                     with ui.row().classes('justify-center mt-4'):
-                        with ui.button(on_click=on_translate).classes('translate-btn').props('no-caps'):
+                        # Disable button while file info is loading
+                        btn_disabled = state.file_info is None
+                        btn_props = 'no-caps disable' if btn_disabled else 'no-caps'
+                        with ui.button(on_click=on_translate).classes('translate-btn').props(btn_props):
                             ui.label('翻訳する')
                             ui.icon('south').classes('text-base')
 
@@ -269,7 +277,7 @@ def _reference_file_selector(
                         ).props('flat dense round size=xs').classes('remove-btn')
 
 
-def _drop_zone(on_file_select: Callable[[Path], None]):
+def _drop_zone(on_file_select: Callable[[Path], Union[None, Awaitable[None]]]):
     """Simple drop zone with managed temp files"""
 
     def handle_upload(e: events.UploadEventArguments):
@@ -292,7 +300,10 @@ def _drop_zone(on_file_select: Callable[[Path], None]):
                 name = e.name
             # Use temp file manager for automatic cleanup
             temp_path = temp_file_manager.create_temp_file(content, name)
-            on_file_select(temp_path)
+            # Support async callback (use create_task for async functions)
+            result = on_file_select(temp_path)
+            if asyncio.iscoroutine(result):
+                asyncio.create_task(result)
         except (OSError, AttributeError) as err:
             ui.notify(f'ファイルの読み込みに失敗しました: {err}', type='negative')
 
@@ -342,7 +353,10 @@ def _drop_zone(on_file_select: Callable[[Path], None]):
                         ui.notify(f'サポートされていないファイル形式です: {ext}', type='warning')
                         return
                     temp_path = temp_file_manager.create_temp_file(content, name)
-                    on_file_select(temp_path)
+                    # Support async callback (await if coroutine)
+                    callback_result = on_file_select(temp_path)
+                    if asyncio.iscoroutine(callback_result):
+                        await callback_result
                 except Exception as err:
                     ui.notify(f'ファイルの読み込みに失敗しました: {err}', type='negative')
 
@@ -381,6 +395,23 @@ def _file_card(file_info: FileInfo, on_remove: Callable[[], None]):
                 ui.label(f'{file_info.page_count} ページ').classes('chip')
             if file_info.slide_count:
                 ui.label(f'{file_info.slide_count} スライド').classes('chip')
+
+
+def _file_loading_card(file_path: Optional[Path], on_remove: Callable[[], None]):
+    """Loading card shown while file info is being loaded asynchronously"""
+    with ui.card().classes('file-card w-full max-w-md'):
+        with ui.row().classes('items-center gap-3 w-full'):
+            # Loading spinner
+            ui.spinner('dots', size='md').classes('text-primary')
+
+            # File name (from path)
+            with ui.column().classes('flex-1 gap-0.5'):
+                file_name = file_path.name if file_path else '読み込み中...'
+                ui.label(file_name).classes('font-medium text-sm file-name')
+                ui.label('ファイル情報を読み込み中...').classes('text-xs text-muted')
+
+            # Remove button
+            ui.button(icon='close', on_click=on_remove).props('flat dense round').classes('text-muted')
 
 
 def _progress_card(file_info: FileInfo, progress: float, status: str):

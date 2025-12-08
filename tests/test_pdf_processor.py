@@ -6,6 +6,8 @@ from pathlib import Path
 from unittest.mock import Mock, MagicMock, patch
 import platform
 
+import yakulingo.processors.pdf_font_manager as pdf_font_manager
+
 from yakulingo.processors.pdf_processor import (
     # Utility functions
     _get_system_font_dirs,
@@ -493,6 +495,29 @@ class TestFontRegistry:
     def test_get_is_cjk_unknown(self, font_registry):
         assert font_registry.get_is_cjk("F99") is False
 
+    def test_select_font_prefers_existing_cid_font(self, monkeypatch):
+        registry = FontRegistry()
+
+        class DummyCIDFont:
+            pass
+
+        # Ensure register_existing_font treats DummyCIDFont as CID
+        monkeypatch.setattr(
+            pdf_font_manager,
+            "_get_pdfminer",
+            lambda: {"PDFCIDFont": DummyCIDFont},
+        )
+
+        cid_font = DummyCIDFont()
+        font_id = registry.register_existing_font("CIDFont", cid_font)
+        # Register embedded fonts as fallbacks
+        registry.register_font("ja")
+        registry.register_font("en")
+
+        selected = registry.select_font_for_text("Hello")
+        assert selected == font_id
+        assert registry.get_font_type(selected) == FontType.CID
+
     def test_select_font_for_hiragana(self, font_registry):
         font_registry.register_font("ja")
         font_registry.register_font("en")
@@ -534,6 +559,24 @@ class TestFontRegistry:
     def test_get_font_path_unknown(self, font_registry):
         path = font_registry.get_font_path("F99")
         assert path is None
+
+    def test_register_existing_simple_font(self, monkeypatch):
+        registry = FontRegistry()
+
+        class DummySimpleFont:
+            pass
+
+        # Treat DummySimpleFont as non-CID
+        monkeypatch.setattr(
+            pdf_font_manager,
+            "_get_pdfminer",
+            lambda: {"PDFCIDFont": type("Other", (), {})},
+        )
+
+        simple_font = DummySimpleFont()
+        font_id = registry.register_existing_font("SimpleFont", simple_font)
+
+        assert registry.get_font_type(font_id) == FontType.SIMPLE
 
 
 # =============================================================================

@@ -10,7 +10,7 @@ import logging
 import threading
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 from zipfile import BadZipFile
 import unicodedata
 
@@ -863,6 +863,7 @@ class TranslationService:
         self,
         text: str,
         reference_files: Optional[list[Path]] = None,
+        on_chunk: "Callable[[str], None] | None" = None,
     ) -> TranslationResult:
         """
         Translate plain text (bidirectional: JP→EN or Other→JP).
@@ -873,6 +874,7 @@ class TranslationService:
         Args:
             text: Source text to translate
             reference_files: Optional list of reference files to attach
+            on_chunk: Optional callback called with partial text during streaming
 
         Returns:
             TranslationResult with output_text
@@ -885,7 +887,7 @@ class TranslationService:
             prompt = self.prompt_builder.build(text, has_refs)
 
             # Translate
-            result = self.copilot.translate_single(text, prompt, reference_files)
+            result = self.copilot.translate_single(text, prompt, reference_files, on_chunk)
 
             return TranslationResult(
                 status=TranslationStatus.COMPLETED,
@@ -1028,7 +1030,7 @@ class TranslationService:
 
             if template is None:
                 # Fallback to basic translation
-                result = self.translate_text(text, reference_files)
+                result = self.translate_text(text, reference_files, on_chunk)
                 if result.output_text:
                     return TextTranslationResult(
                         source_text=text,

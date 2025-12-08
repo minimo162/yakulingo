@@ -1,7 +1,7 @@
 # YakuLingo - 技術仕様書
 
-> **Version**: 2.14
-> **Date**: 2025-12
+> **Version**: 20251127 (2.0.0)
+> **Date**: 2025-11-27
 > **App Name**: YakuLingo (訳リンゴ)
 
 ---
@@ -36,11 +36,11 @@ M365 Copilotを翻訳エンジンとして使用し、テキストとドキュ�
 | 機能 | 説明 |
 |------|------|
 | **Text Translation** | テキストを入力して即座に翻訳（言語自動検出） |
-| **File Translation** | Excel/Word/PowerPoint/PDF の一括翻訳 |
+| **File Translation** | Excel/Word/PowerPoint/PDF/TXT の一括翻訳 |
 | **Layout Preservation** | 翻訳後もファイルの体裁を維持 |
 | **Bilingual Output** | 原文と訳文を並べた対訳ファイルを自動生成 |
 | **Glossary Export** | 翻訳ペアをCSVで出力（用語管理に活用） |
-| **Reference Files** | 用語集・スタイルガイド・参考資料による一貫した翻訳 |
+| **Reference Files** | 用語集・スタイルガイド・参考資料による一貫した翻訳（同梱glossaryの使用ON/OFF切替可） |
 | **Translation History** | 過去の翻訳をローカルに保存・検索 |
 | **Auto Update** | GitHub Releases経由で自動更新 |
 
@@ -65,6 +65,7 @@ M365 Copilotを翻訳エンジンとして使用し、テキストとドキュ�
 | Word | `.docx` `.doc` | python-docx |
 | PowerPoint | `.pptx` `.ppt` | python-pptx |
 | PDF | `.pdf` | PyMuPDF, pdfminer.six, PP-DocLayout-L (PaddleOCR) |
+| Text | `.txt` | Built-in (plain text) |
 
 ### 1.5 技術スタック
 
@@ -109,8 +110,8 @@ M365 Copilotを翻訳エンジンとして使用し、テキストとドキュ�
 │          ▼                         ▼                         ▼          │
 │  ┌───────────────┐     ┌─────────────────────┐     ┌───────────────┐    │
 │  │ CopilotHandler│     │   File Processors   │     │   HistoryDB   │    │
-│  │ (Edge+        │     │ Excel/Word/PPT/PDF  │     │   (SQLite)    │    │
-│  │  Playwright)  │     │                     │     │               │    │
+│  │ (Edge+        │     │ Excel/Word/PPT/PDF │     │   (SQLite)    │    │
+│  │  Playwright)  │     │ + TXT              │     │               │    │
 │  └───────────────┘     └─────────────────────┘     └───────────────┘    │
 │                                                                         │
 └─────────────────────────────────────────────────────────────────────────┘
@@ -161,10 +162,13 @@ YakuLingo/
 │   │   ├── base.py                 # FileProcessor (ABC)
 │   │   ├── translators.py          # CellTranslator, ParagraphTranslator
 │   │   ├── font_manager.py         # FontManager, FontTypeDetector
+│   │   ├── pdf_font_manager.py     # PDFフォント置換・選択
+│   │   ├── pdf_operators.py        # PDFオペレーター生成ユーティリティ
 │   │   ├── excel_processor.py
 │   │   ├── word_processor.py
 │   │   ├── pptx_processor.py
-│   │   └── pdf_processor.py
+│   │   ├── pdf_processor.py
+│   │   └── txt_processor.py
 │   │
 │   ├── storage/                    # Storage Layer
 │   │   └── history_db.py           # HistoryDB (SQLite)
@@ -223,6 +227,7 @@ class FileType(Enum):
     WORD = "word"
     POWERPOINT = "powerpoint"
     PDF = "pdf"
+    TEXT = "text"
 
 class TranslationStatus(Enum):
     PENDING = "pending"
@@ -726,7 +731,7 @@ class CopilotHandler:
 - Paid ライセンス: 128,000文字
 
 **動的プロンプト切り替え:**
-プロンプトが`copilot_char_limit`（デフォルト: 7,500文字）を超える場合、自動的にファイル添付モードに切り替え：
+プロンプトが`max_chars_per_batch`（デフォルト: 7,000文字）を超える場合、自動的にファイル添付モードに切り替え：
 1. プロンプトを一時ファイルとして保存
 2. Copilotにファイルを添付
 3. トリガーメッセージを送信: "Please follow the instructions in the attached file and translate accordingly."
@@ -747,6 +752,7 @@ class TranslationService:
         '.pptx': PptxProcessor(),
         '.ppt': PptxProcessor(),
         '.pdf': PdfProcessor(),
+        '.txt': TxtProcessor(),
     }
 
     def detect_language(text: str) -> str:
@@ -1195,21 +1201,19 @@ if HAS_PYWIN32:
 @dataclass
 class AppSettings:
     # Reference Files (用語集、参考資料など)
-    reference_files: list[str] = ["glossary.csv"]
+    reference_files: list[str] = field(default_factory=list)
     output_directory: Optional[str] = None  # None = 入力と同じ
 
     # UI
     last_tab: str = "text"
     window_width: int = 1400              # 3カラムレイアウト対応
     window_height: int = 850
+    onboarding_completed: bool = False    # 初回オンボーディング完了フラグ
 
     # Advanced
     max_chars_per_batch: int = 7000      # Copilot Free 8000制限対応
     request_timeout: int = 120
     max_retries: int = 3
-
-    # Copilot License
-    copilot_char_limit: int = 7500       # ファイル添付切り替え閾値
 
     # File Translation Options
     bilingual_output: bool = False       # 対訳出力（原文と翻訳を交互に配置）
@@ -1218,6 +1222,7 @@ class AppSettings:
 
     # Text Translation Options
     text_translation_style: str = "concise"  # "standard", "concise", "minimal"
+    use_bundled_glossary: bool = False        # 同梱glossary.csvを常に利用
 
     # Font Settings (全ファイル形式共通)
     font_size_adjustment_jp_to_en: float = 0.0  # pt（0で調整なし）

@@ -7,11 +7,11 @@
 | 機能 | 説明 |
 |------|------|
 | **テキスト翻訳** | テキストを入力して即座に翻訳（言語自動検出） |
-| **ファイル翻訳** | Excel/Word/PowerPoint/PDF の一括翻訳 |
+| **ファイル翻訳** | Excel/Word/PowerPoint/PDF/TXT の一括翻訳 |
 | **レイアウト保持** | 翻訳後もファイルの体裁を維持 |
 | **対訳出力** | 原文と訳文を並べた対訳ファイルを自動生成 |
 | **用語集エクスポート** | 翻訳ペアをCSVで出力（用語管理に活用） |
-| **参照ファイル** | 用語集・スタイルガイド・参考資料による一貫した翻訳 |
+| **参照ファイル** | 用語集・スタイルガイド・参考資料による一貫した翻訳（同梱glossaryの有効/無効を切替可能） |
 | **フォント自動調整** | 翻訳方向に応じた適切なフォント選択 |
 | **翻訳履歴** | 過去の翻訳をローカルに保存・検索 |
 | **自動更新** | GitHub Releases経由で最新版に自動更新 |
@@ -35,6 +35,7 @@
 | Word | `.docx` | 段落、表、テキストボックス | 原文→訳文の段落交互 |
 | PowerPoint | `.pptx` | スライド、ノート、図形 | 原文→訳文のスライド交互 |
 | PDF | `.pdf` | 全ページテキスト | 原文→訳文のページ交互 |
+| テキスト | `.txt` | プレーンテキスト | 原文/訳文の交互 |
 
 > **Note**: ヘッダー/フッターは全形式で翻訳対象外
 
@@ -113,14 +114,31 @@ python app.py
 {
   "reference_files": ["glossary.csv"],
   "output_directory": null,
+  "last_tab": "text",
+  "window_width": 1400,
+  "window_height": 850,
+  "max_chars_per_batch": 7000,
+  "request_timeout": 120,
+  "max_retries": 3,
   "bilingual_output": false,
   "export_glossary": false,
   "translation_style": "concise",
   "text_translation_style": "concise",
+  "use_bundled_glossary": false,
+  "font_size_adjustment_jp_to_en": 0.0,
+  "font_size_min": 6.0,
   "font_jp_to_en": "Arial",
   "font_en_to_jp": "MS Pゴシック",
-  "font_size_adjustment_jp_to_en": 0.0,
-  "auto_update_enabled": true
+  "ocr_batch_size": 5,
+  "ocr_dpi": 200,
+  "ocr_device": "auto",
+  "auto_update_enabled": true,
+  "auto_update_check_interval": 86400,
+  "github_repo_owner": "minimo162",
+  "github_repo_name": "yakulingo",
+  "last_update_check": null,
+  "skipped_version": null,
+  "onboarding_completed": false
 }
 ```
 
@@ -128,11 +146,21 @@ python app.py
 |------|------|----------|
 | `bilingual_output` | 対訳ファイルを生成 | false |
 | `export_glossary` | 用語集CSVを生成 | false |
-| `translation_style` | ファイル翻訳のスタイル | "concise" |
-| `text_translation_style` | テキスト翻訳のスタイル | "concise" |
+| `translation_style` | ファイル翻訳のスタイル (`standard`/`concise`/`minimal`) | "concise" |
+| `text_translation_style` | テキスト翻訳のスタイル (`standard`/`concise`/`minimal`) | "concise" |
+| `use_bundled_glossary` | 同梱 `glossary.csv` を常に利用 | false |
 | `font_jp_to_en` | 英訳時の出力フォント（全形式共通） | Arial |
 | `font_en_to_jp` | 和訳時の出力フォント（全形式共通） | MS Pゴシック |
-| `font_size_adjustment_jp_to_en` | JP→EN時のサイズ調整 | 0.0 (pt) |
+| `font_size_adjustment_jp_to_en` | JP→EN時のサイズ調整 (pt) | 0.0 |
+| `font_size_min` | 最小フォントサイズ (pt) | 6.0 |
+| `ocr_batch_size` | PDFレイアウト解析のバッチページ数 | 5 |
+| `ocr_dpi` | PDFレイアウト解析の解像度 | 200 |
+| `auto_update_enabled` | 起動時の自動更新チェックを有効化 | true |
+| `auto_update_check_interval` | 更新チェック間隔（秒） | 86400 |
+| `max_chars_per_batch` | Copilot送信1回あたりの最大文字数 | 7000 |
+| `request_timeout` | 翻訳リクエストのタイムアウト（秒） | 120 |
+| `output_directory` | 出力先フォルダ（nullは入力と同じ） | null |
+| `window_width` / `window_height` | ウィンドウ初期サイズ | 1400 / 850 |
 
 **翻訳スタイル**: `"standard"`（標準）, `"concise"`（簡潔）, `"minimal"`（最簡潔）
 
@@ -179,7 +207,7 @@ python app.py
 
 - ファイルが破損していないか確認
 - ファイルサイズが50MB以下か確認
-- 対応形式（.xlsx, .docx, .pptx, .pdf）か確認
+- 対応形式（.xlsx, .docx, .pptx, .pdf, .txt）か確認
 
 ### 翻訳結果が期待と異なる
 

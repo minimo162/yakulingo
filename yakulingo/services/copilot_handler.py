@@ -1405,9 +1405,11 @@ class CopilotHandler:
                     attempt + 1, max_retries + 1, result[:100]
                 )
 
+                page_invalid = self._page and not self._is_page_valid()
+
                 if attempt < max_retries:
-                    # Bring browser to foreground - user may need to log in
-                    if self._page:
+                    # Bring browser to foreground only when login is likely needed
+                    if self._page and page_invalid:
                         self._bring_to_foreground_impl(self._page)
                         logger.info("Browser brought to foreground - check if login is needed")
 
@@ -1425,8 +1427,8 @@ class CopilotHandler:
 
                     continue
                 else:
-                    # Final attempt failed - show browser and raise error
-                    if self._page:
+                    # Final attempt failed - show browser and raise error when login is suspected
+                    if self._page and page_invalid:
                         self._bring_to_foreground_impl(self._page)
                     raise RuntimeError(
                         "Copilotがエラーを返しました。Edgeブラウザでログイン状態を確認してください。\n"
@@ -1543,9 +1545,11 @@ class CopilotHandler:
                     attempt + 1, max_retries + 1, result[:100]
                 )
 
+                page_invalid = self._page and not self._is_page_valid()
+
                 if attempt < max_retries:
-                    # Bring browser to foreground - user may need to log in
-                    if self._page:
+                    # Bring browser to foreground only when login is likely needed
+                    if self._page and page_invalid:
                         self._bring_to_foreground_impl(self._page)
                         logger.info("Browser brought to foreground - check if login is needed")
 
@@ -1563,8 +1567,8 @@ class CopilotHandler:
 
                     continue
                 else:
-                    # Final attempt failed - show browser and raise error
-                    if self._page:
+                    # Final attempt failed - show browser and raise error when login is suspected
+                    if self._page and page_invalid:
                         self._bring_to_foreground_impl(self._page)
                     raise RuntimeError(
                         "Copilotがエラーを返しました。Edgeブラウザでログイン状態を確認してください。\n"

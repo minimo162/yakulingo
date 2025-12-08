@@ -1201,7 +1201,8 @@ if HAS_PYWIN32:
 @dataclass
 class AppSettings:
     # Reference Files (用語集、参考資料など)
-    reference_files: list[str] = field(default_factory=list)
+    # デフォルトで同梱のglossary.csvを参照
+    reference_files: list[str] = field(default_factory=lambda: ["glossary.csv"])
     output_directory: Optional[str] = None  # None = 入力と同じ
 
     # UI

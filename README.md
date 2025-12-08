@@ -120,6 +120,7 @@ python app.py
   "max_chars_per_batch": 7000,
   "request_timeout": 120,
   "max_retries": 3,
+  "copilot_char_limit": 7500,
   "bilingual_output": false,
   "export_glossary": false,
   "translation_style": "concise",
@@ -158,6 +159,7 @@ python app.py
 | `auto_update_enabled` | 起動時の自動更新チェックを有効化 | true |
 | `auto_update_check_interval` | 更新チェック間隔（秒） | 86400 |
 | `max_chars_per_batch` | Copilot送信1回あたりの最大文字数 | 7000 |
+| `copilot_char_limit` | Copilotの1リクエスト上限（プロンプトを含む送信サイズの安全マージン） | 7500 |
 | `request_timeout` | 翻訳リクエストのタイムアウト（秒） | 120 |
 | `output_directory` | 出力先フォルダ（nullは入力と同じ） | null |
 | `window_width` / `window_height` | ウィンドウ初期サイズ | 1400 / 850 |

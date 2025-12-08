@@ -1144,7 +1144,9 @@ class YakuLingoApp:
                 last_streaming_text = self.state.streaming_text or ""
 
         # Start streaming UI refresh timer (0.2s interval) - only updates label
-        streaming_timer = ui.timer(0.2, update_streaming_label)
+        # Must be within client context to create UI elements in async task
+        with client:
+            streaming_timer = ui.timer(0.2, update_streaming_label)
 
         # Streaming callback - updates state from Playwright thread
         def on_chunk(text: str):

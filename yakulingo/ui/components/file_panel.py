@@ -22,7 +22,7 @@ ATTACH_SVG: str = '''
 '''
 
 
-SUPPORTED_FORMATS = ".xlsx,.xls,.docx,.doc,.pptx,.pdf,.txt"
+SUPPORTED_FORMATS = ".xlsx,.xls,.docx,.pptx,.pdf,.txt"
 SUPPORTED_EXTENSIONS = {ext.strip() for ext in SUPPORTED_FORMATS.split(',')}
 
 # File type icons (Material Icons)

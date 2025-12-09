@@ -2107,6 +2107,9 @@ class CopilotHandler:
             logger.info("[TIMING] wait_for_input_element: %.2fs", time.time() - input_wait_start)
 
             if input_elem:
+                # GPT-5を有効化（fillの前に行う。fill後だとフォーカスが外れる可能性がある）
+                self._ensure_gpt5_enabled()
+
                 logger.debug("Input element found, setting text via JS...")
                 fill_start = time.time()
                 fill_success = False
@@ -2181,7 +2184,6 @@ class CopilotHandler:
                     raise RuntimeError("Copilotに入力できませんでした。Edgeブラウザを確認してください。")
 
                 # Send the message via Enter key (most reliable)
-                self._ensure_gpt5_enabled()
                 input_elem.press("Enter")
                 logger.info("Message sent via Enter key")
             else:

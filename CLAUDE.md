@@ -926,6 +926,7 @@ SAME_LINE_Y_THRESHOLD = 3.0       # 3pt以内は同じ行
 SAME_PARA_Y_THRESHOLD = 20.0      # 20pt以内は同じ段落
 WORD_SPACE_X_THRESHOLD = 2.0      # 2pt以上の間隔でスペース挿入
 LINE_BREAK_X_THRESHOLD = 1.0      # X座標が戻ったら改行
+COLUMN_JUMP_X_THRESHOLD = 100.0   # 100pt以上のX移動は段組み変更
 
 # _group_chars_into_blocks でのスタック管理
 sstk: list[str] = []           # 文字列スタック（段落テキスト）
@@ -933,6 +934,13 @@ vstk: list = []                # 数式スタック（数式文字バッファ�
 var: list[FormulaVar] = []     # 数式格納配列
 pstk: list[Paragraph] = []     # 段落メタデータスタック
 ```
+
+**PP-DocLayout-Lフォールバック処理:**
+
+PP-DocLayout-Lが結果を返さない場合のフォールバック処理：
+- `LayoutArray.fallback_used`: フォールバックモード使用時にTrueに設定
+- Y座標ベースの段落検出 + X座標による多段組み検出
+- 大きなX移動（>100pt）かつY座標が上昇→新しい段落と判定
 
 **PP-DocLayout-L Settings:**
 ```python
@@ -955,6 +963,30 @@ model = LayoutDetection(
 - 有効範囲: 72〜600 DPI
 - A4 @ 300 DPI ≈ 2480×3508 px × 3 channels ≈ 26MB/page（画像データ）
 - scale計算: `layout_height / page_height = (page_height_pt × dpi / 72) / page_height_pt = dpi / 72`
+
+**メモリチェック機能:**
+
+大規模PDF処理時のメモリ不足を防ぐための事前チェック機能：
+
+```python
+from yakulingo.processors.pdf_processor import (
+    estimate_memory_usage_mb,       # メモリ使用量推定
+    check_memory_for_pdf_processing,  # 処理前チェック
+)
+
+# 使用例
+is_safe, estimated_mb, available_mb = check_memory_for_pdf_processing(
+    page_count=100,
+    dpi=300,
+    warn_only=True,  # Falseにするとメモリ不足時にMemoryError発生
+)
+```
+
+| 定数 | 値 | 説明 |
+|------|------|------|
+| `MEMORY_BASE_MB_PER_PAGE_300DPI` | 26.0 | A4 300DPI時の1ページあたりメモリ |
+| `MEMORY_AVAILABLE_RATIO` | 0.5 | 利用可能メモリの最大使用率 |
+| `MEMORY_WARNING_THRESHOLD_MB` | 1024 | 警告出力の閾値 |
 
 **Line Break Handling:**
 - PDF text extraction removes line breaks: `text.replace("\n", "")`
@@ -1201,6 +1233,16 @@ Based on recent commits:
   - **Text merging**: LayoutArrayを参照して文字を段落にグループ化（_group_chars_into_blocks）
   - **Font object missing detection**: `get_glyph_id()`でFont object不在時に警告ログを出力、テキスト非表示問題の診断を容易化
   - **Dynamic batch_size adjustment**: psutilで利用可能メモリを確認し、batch_sizeを自動調整（OOM防止）。DPIに応じてメモリ使用量を推定（`26 * (dpi/300)²` MB/page）
+- **PDF Translation Reliability & Error Handling (2024-12)**:
+  - **Glyph ID 0 fix**: `if idx:` → `if idx is not None and idx != 0:` で明確化。グリフID 0がFalsyと評価されるバグを修正
+  - **Multi-column fallback**: PP-DocLayout-L結果なし時に`COLUMN_JUMP_X_THRESHOLD=100pt`でX座標も考慮した多段組み検出
+  - **LayoutArray.fallback_used**: フォールバックモード使用時にフラグを設定、下流処理で参照可能に
+  - **Detailed exception logging**: 7種類の例外を個別にログ出力（RuntimeError, ValueError, TypeError, KeyError, IndexError, AttributeError, OSError）
+  - **Font embedding fallback**: フォント埋め込み失敗時に言語別フォールバック→英語フォールバックを自動試行
+  - **Cache memory release**: `clear_analyzer_cache()`でGPUメモリ解放（`paddle.device.cuda.empty_cache()`）とGCトリガー
+  - **Page height validation**: `page_height <= 0`チェックで無効ページをスキップ
+  - **Memory pre-check**: `check_memory_for_pdf_processing()`で処理前に警告出力
+  - **CID encoding docs**: CIDフォントエンコーディングの制限事項をドキュメント化、`get_width(cid)`引数修正
 - **Font Settings Simplification**:
   - **Unified settings**: 4 font settings → 2 settings (`font_jp_to_en`, `font_en_to_jp`)
   - **PDF settings removed**: `pdf_font_ja`, `pdf_font_en` removed, now uses common settings

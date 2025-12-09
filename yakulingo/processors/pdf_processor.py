@@ -1319,6 +1319,20 @@ def load_pdf_as_images(pdf_path: str, dpi: int = DEFAULT_OCR_DPI) -> list:
     return images
 
 
+def is_layout_available() -> bool:
+    """
+    Check if PP-DocLayout-L is available.
+
+    Returns:
+        True if paddleocr is installed and LayoutDetection is available
+    """
+    try:
+        from paddleocr import LayoutDetection  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
 def get_device(config_device: str = "auto") -> str:
     """
     Determine execution device for PP-DocLayout-L.
@@ -1379,10 +1393,12 @@ def get_layout_model(device: str = "cpu"):
             # Check again after acquiring lock
             if cache_key not in _analyzer_cache:
                 paddleocr = _get_paddleocr()
+                logger.info("PP-DocLayout-L を初期化中 (device=%s)...", device)
                 _analyzer_cache[cache_key] = paddleocr['LayoutDetection'](
                     model_name="PP-DocLayout-L",
                     device=device,
                 )
+                logger.info("PP-DocLayout-L 準備完了")
     return _analyzer_cache[cache_key]
 
 

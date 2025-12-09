@@ -313,6 +313,14 @@ function Update-PyVenvConfig {
 # ============================================================
 function Invoke-Setup {
     # ============================================================
+    # Check if YakuLingo is running
+    # ============================================================
+    $runningProcess = Get-Process -Name "YakuLingo" -ErrorAction SilentlyContinue
+    if ($runningProcess) {
+        throw "YakuLingo is currently running.`n`nPlease close YakuLingo and try again."
+    }
+
+    # ============================================================
     # Check requirements
     # ============================================================
     if (-not $script:SevenZip) {
@@ -449,9 +457,16 @@ function Invoke-Setup {
         # This ensures clean updates without needing to delete the destination first
         # /R:0 /W:0: don't retry locked files (skip them instead of hanging)
         $robocopyResult = & robocopy $ExtractedDir.FullName $SetupPath /MIR /MT:8 /R:0 /W:0 /NFL /NDL /NJH /NJS /NP 2>&1
+        $robocopyExitCode = $LASTEXITCODE
         # robocopy returns 0-7 for success, 8+ for errors
-        if ($LASTEXITCODE -ge 8) {
+        if ($robocopyExitCode -ge 8) {
             throw "Failed to copy files to destination.`n`nDestination: $SetupPath"
+        }
+        # Warn if some files were skipped (exit code 1-7 indicates partial success)
+        if ($robocopyExitCode -gt 0 -and $robocopyExitCode -lt 8) {
+            if (-not $GuiMode) {
+                Write-Host "      Warning: Some files may have been skipped (exit code: $robocopyExitCode)" -ForegroundColor Yellow
+            }
         }
     } finally {
         # Clean up temp folder
@@ -474,6 +489,7 @@ function Invoke-Setup {
     # Restore/Merge backed up user data files
     # ============================================================
     if ($BackupFiles.Count -gt 0) {
+        Write-Status -Message "Restoring user data..." -Progress -Step "Step 3/4: Extracting" -Percent 87
         if (-not $GuiMode) {
             Write-Host ""
             Write-Host "      Restoring user data..." -ForegroundColor Gray
@@ -497,11 +513,12 @@ function Invoke-Setup {
                         Copy-Item -Path $newGlossaryPath -Destination $tempNewGlossary -Force
 
                         # 既存の用語ペア（ソース,翻訳の組み合わせ）を収集
+                        # Trimして正規化した値をキーとして使用
                         $existingPairs = @{}
                         Get-Content -Path $backupPath -Encoding UTF8 | ForEach-Object {
                             $line = $_.Trim()
                             if ($line -and -not $line.StartsWith("#")) {
-                                # ペア全体をキーとして保存
+                                # ペア全体をキーとして保存（正規化済み）
                                 $existingPairs[$line] = $true
                             }
                         }
@@ -509,14 +526,21 @@ function Invoke-Setup {
                         # バックアップを復元（ユーザーの用語集を戻す）
                         Copy-Item -Path $backupPath -Destination $restorePath -Force
 
+                        # ファイル末尾に改行があるか確認し、なければ追加
+                        $content = [System.IO.File]::ReadAllText($restorePath)
+                        if ($content.Length -gt 0 -and -not $content.EndsWith("`n")) {
+                            Add-Content -Path $restorePath -Value "" -Encoding UTF8
+                        }
+
                         # 新しい用語集から、既存にないペアを追加
                         $addedCount = 0
                         Get-Content -Path $tempNewGlossary -Encoding UTF8 | ForEach-Object {
                             $line = $_.Trim()
                             if ($line -and -not $line.StartsWith("#")) {
-                                # ペア全体で重複判定
+                                # ペア全体で重複判定（正規化済みの値で比較）
                                 if (-not $existingPairs.ContainsKey($line)) {
-                                    Add-Content -Path $restorePath -Value $_ -Encoding UTF8
+                                    # 正規化した値を追加（末尾スペース等を除去）
+                                    Add-Content -Path $restorePath -Value $line -Encoding UTF8
                                     $addedCount++
                                 }
                             }
@@ -574,11 +598,12 @@ function Invoke-Setup {
                         # JSONをマージ
                         try {
                             $userData = Get-Content -Path $backupPath -Encoding UTF8 | ConvertFrom-Json
-                            $newData = Get-Content -Path $tempNewSettings -Encoding UTF8 | ConvertFrom-Json
+                            $newDataJson = Get-Content -Path $tempNewSettings -Encoding UTF8 -Raw
+                            $newData = $newDataJson | ConvertFrom-Json
                             $preservedCount = 0
 
-                            # 新しい設定をベースにする
-                            $mergedData = $newData.PSObject.Copy()
+                            # 新しい設定をベースにする（深いコピー: JSON経由で再生成）
+                            $mergedData = $newDataJson | ConvertFrom-Json
 
                             # ユーザー保護対象の設定のみを上書き
                             foreach ($key in $UserProtectedSettings) {
@@ -639,6 +664,7 @@ function Invoke-Setup {
                 & cmd /c "rd /s /q `"$BackupDir`" 2>nul"
             }
         }
+        Write-Status -Message "User data restored" -Progress -Step "Step 3/4: Extracting" -Percent 89
         if (-not $GuiMode) {
             Write-Host "[OK] User data restored" -ForegroundColor Green
         }

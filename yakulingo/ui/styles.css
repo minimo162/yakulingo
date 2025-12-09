@@ -3081,20 +3081,22 @@ a:hover {
     font-size: 1.25rem !important;  /* 20px icon */
 }
 
-/* === File Panel Settings Panel (Expansion) === */
-.section-selector {
+/* === File Panel Translation Settings Card === */
+.file-settings-card {
     background-color: var(--md-sys-color-surface);
     border-radius: var(--md-sys-shape-corner-large);
+    padding: 1rem;
+    margin-top: 1rem;
+}
+
+/* === File Panel Settings Panel (Expansion) === */
+.section-selector {
+    border-radius: var(--md-sys-shape-corner-medium);
     border: 1px solid var(--md-sys-color-outline-variant);
     overflow: hidden;
 }
 
-.section-selector .q-expansion-item__container {
-    background-color: var(--md-sys-color-surface);
-}
-
 .section-selector .q-item {
-    background-color: var(--md-sys-color-surface);
     color: var(--md-sys-color-on-surface);
     min-height: 44px;
 }
@@ -3105,7 +3107,6 @@ a:hover {
 }
 
 .section-selector .q-expansion-item__content {
-    background-color: var(--md-sys-color-surface);
     padding: 0.5rem 1rem 1rem;
 }
 

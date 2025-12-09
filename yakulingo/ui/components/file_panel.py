@@ -162,43 +162,45 @@ def create_file_panel(
                     else:
                         # Show loading state while file info is being loaded
                         _file_loading_card(state.selected_file, on_reset)
-                    # Output language selector
-                    _language_selector(state, on_language_change)
-                    # Translation style selector (only for English output)
-                    if state.file_output_language == 'en':
-                        _style_selector(translation_style, on_style_change)
-                    # Common file translation options (for all file types)
-                    _bilingual_selector(
-                        state.file_info.file_type if state.file_info else None,
-                        bilingual_enabled,
-                        on_bilingual_change,
-                    )
-                    _export_glossary_selector(export_glossary_enabled, on_export_glossary_change)
-                    # Bundled glossary toggle
-                    _glossary_selector(
-                        use_bundled_glossary,
-                        on_glossary_toggle,
-                        on_edit_glossary,
-                    )
-                    # Reference file selector
-                    _reference_file_selector(
-                        reference_files,
-                        on_attach_reference_file,
-                        on_remove_reference_file,
-                    )
-                    # Font settings (unified for all file types)
-                    if state.file_info:
-                        _font_settings_selector(
-                            state.file_output_language,
-                            font_size_adjustment,
-                            font_jp_to_en,
-                            font_en_to_jp,
-                            on_font_size_change,
-                            on_font_name_change,
+                    # Translation settings card (white background container)
+                    with ui.element('div').classes('file-settings-card'):
+                        # Output language selector
+                        _language_selector(state, on_language_change)
+                        # Translation style selector (only for English output)
+                        if state.file_output_language == 'en':
+                            _style_selector(translation_style, on_style_change)
+                        # Common file translation options (for all file types)
+                        _bilingual_selector(
+                            state.file_info.file_type if state.file_info else None,
+                            bilingual_enabled,
+                            on_bilingual_change,
                         )
-                    # Section selector for partial translation
-                    if state.file_info and len(state.file_info.section_details) > 1:
-                        _section_selector(state.file_info, on_section_toggle)
+                        _export_glossary_selector(export_glossary_enabled, on_export_glossary_change)
+                        # Bundled glossary toggle
+                        _glossary_selector(
+                            use_bundled_glossary,
+                            on_glossary_toggle,
+                            on_edit_glossary,
+                        )
+                        # Reference file selector
+                        _reference_file_selector(
+                            reference_files,
+                            on_attach_reference_file,
+                            on_remove_reference_file,
+                        )
+                        # Font settings (unified for all file types)
+                        if state.file_info:
+                            _font_settings_selector(
+                                state.file_output_language,
+                                font_size_adjustment,
+                                font_jp_to_en,
+                                font_en_to_jp,
+                                on_font_size_change,
+                                on_font_name_change,
+                            )
+                        # Section selector for partial translation
+                        if state.file_info and len(state.file_info.section_details) > 1:
+                            _section_selector(state.file_info, on_section_toggle)
                     with ui.row().classes('justify-center mt-4'):
                         # Disable button while file info is loading
                         btn_disabled = state.file_info is None

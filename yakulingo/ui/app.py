@@ -2544,6 +2544,17 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
         run_window_size = None  # Passing a size would re-enable native mode inside NiceGUI
     logger.info("[TIMING] _detect_display_settings: %.2fs", time.perf_counter() - _t2)
 
+    # Pre-initialize PP-DocLayout-L (PDF layout analysis) on the main thread
+    # BEFORE any Playwright connection. PaddlePaddle's subprocess initialization
+    # can interfere with Playwright's Node.js pipe communication if done concurrently.
+    _t3 = time.perf_counter()
+    try:
+        from yakulingo.processors.pdf_processor import prewarm_layout_model
+        prewarm_layout_model()
+    except Exception as e:
+        logger.debug("PP-DocLayout-L prewarm skipped: %s", e)
+    logger.info("[TIMING] prewarm_layout_model: %.2fs", time.perf_counter() - _t3)
+
     # Track if cleanup has been executed (prevent double execution)
     cleanup_done = False
 

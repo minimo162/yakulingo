@@ -1427,6 +1427,54 @@ def get_layout_model(device: str = "cpu"):
     return _analyzer_cache[cache_key]
 
 
+def prewarm_layout_model(device: str = "auto") -> bool:
+    """
+    Pre-initialize PP-DocLayout-L model with a dummy inference.
+
+    This function should be called on the main thread during application startup,
+    BEFORE any Playwright connection is established. PaddlePaddle's subprocess
+    initialization can interfere with Playwright's Node.js pipe communication
+    if done concurrently.
+
+    The function performs:
+    1. Model initialization (loads weights into memory)
+    2. Dummy inference (triggers oneDNN and other runtime initialization)
+
+    Args:
+        device: "cpu", "gpu", or "auto" (default: auto-detect)
+
+    Returns:
+        True if pre-warming succeeded, False if paddleocr is not available
+    """
+    try:
+        # Check if paddleocr is available
+        _get_paddleocr()
+    except ImportError:
+        logger.debug("paddleocr not available, skipping PP-DocLayout-L prewarm")
+        return False
+
+    # Determine device
+    if device == "auto":
+        device = _determine_ocr_device()
+
+    logger.info("PP-DocLayout-L をウォームアップ中 (device=%s)...", device)
+
+    try:
+        # Initialize model
+        model = get_layout_model(device)
+
+        # Perform dummy inference to trigger runtime initialization (oneDNN, etc.)
+        import numpy as np
+        dummy_image = np.zeros((100, 100, 3), dtype=np.uint8)
+        _ = model(dummy_image)
+
+        logger.info("PP-DocLayout-L ウォームアップ完了")
+        return True
+    except Exception as e:
+        logger.warning("PP-DocLayout-L ウォームアップ失敗: %s", e)
+        return False
+
+
 def clear_analyzer_cache():
     """
     Clear the LayoutDetection cache to free GPU memory.

@@ -9,6 +9,7 @@ Japanese → English, Other → Japanese (auto-detected by AI).
 import atexit
 import asyncio
 import logging
+import threading
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -186,13 +187,19 @@ class YakuLingoApp:
         self._translate_button: Optional[ui.button] = None
 
         # Client reference for async handlers (saved from @ui.page handler)
+        # Protected by _client_lock for thread-safe access across async operations
         self._client = None
+        self._client_lock = threading.Lock()
 
         # Debug trace identifier for correlating hotkey → translation pipeline
         self._active_translation_trace_id: Optional[str] = None
 
         # Streaming label reference for direct updates (avoids UI flickering)
         self._streaming_label: Optional[ui.label] = None
+
+        # Streaming timer management (prevents orphaned timers on concurrent translations)
+        self._active_streaming_timer: Optional[ui.timer] = None
+        self._streaming_timer_lock = threading.Lock()
 
         # Panel sizes (sidebar_width, input_panel_width, result_content_width, input_panel_max_width) in pixels
         # Set by run_app() based on monitor detection
@@ -1319,8 +1326,12 @@ class YakuLingoApp:
         """
         import tempfile
 
-        # Use saved client reference
-        client = self._client
+        # Use saved client reference (protected by _client_lock)
+        with self._client_lock:
+            client = self._client
+            if not client:
+                logger.warning("Long text translation aborted: no client connected")
+                return
 
         # Notify user (inside client context for proper UI update)
         with client:
@@ -1414,7 +1425,13 @@ class YakuLingoApp:
         reference_files = self._get_effective_reference_files()
 
         # Use saved client reference (context.client not available in async tasks)
-        client = self._client
+        # Protected by _client_lock for thread-safe access
+        with self._client_lock:
+            client = self._client
+            if not client:
+                logger.warning("Translation [%s] aborted: no client connected", trace_id)
+                self._active_translation_trace_id = None
+                return
 
         # Track translation time
         start_time = time.time()
@@ -1502,8 +1519,17 @@ class YakuLingoApp:
 
         # Start streaming UI refresh timer (0.2s interval) - only updates label
         # Must be within client context to create UI elements in async task
-        with client:
-            streaming_timer = ui.timer(0.2, update_streaming_label)
+        # Protected by _streaming_timer_lock to prevent orphaned timers on concurrent translations
+        with self._streaming_timer_lock:
+            # Cancel any existing timer before creating new one
+            if self._active_streaming_timer:
+                try:
+                    self._active_streaming_timer.cancel()
+                except Exception:
+                    pass  # Timer may already be cancelled
+            with client:
+                streaming_timer = ui.timer(0.2, update_streaming_label)
+            self._active_streaming_timer = streaming_timer
 
         # Streaming callback - updates state from Playwright thread
         def on_chunk(text: str):
@@ -1571,7 +1597,17 @@ class YakuLingoApp:
             error_message = str(e)
 
         # Stop streaming timer and clear streaming state
-        streaming_timer.cancel()
+        # Protected by _streaming_timer_lock to ensure proper cleanup
+        with self._streaming_timer_lock:
+            if self._active_streaming_timer is streaming_timer:
+                streaming_timer.cancel()
+                self._active_streaming_timer = None
+            elif streaming_timer:
+                # Timer was replaced by concurrent translation, still cancel our local reference
+                try:
+                    streaming_timer.cancel()
+                except Exception:
+                    pass
         self.state.streaming_text = None
         self.state.text_translating = False
         self.state.text_detected_language = None
@@ -1604,7 +1640,12 @@ class YakuLingoApp:
             return
 
         # Use saved client reference (context.client not available in async tasks)
-        client = self._client
+        # Protected by _client_lock for thread-safe access
+        with self._client_lock:
+            client = self._client
+            if not client:
+                logger.warning("Adjust text aborted: no client connected")
+                return
 
         self.state.text_translating = True
         # Only refresh result panel and button (input panel is already in compact state)
@@ -1667,8 +1708,12 @@ class YakuLingoApp:
         if not self._require_connection():
             return
 
-        # Use saved client reference (context.client not available in async tasks)
-        client = self._client
+        # Use saved client reference (protected by _client_lock)
+        with self._client_lock:
+            client = self._client
+            if not client:
+                logger.warning("Back translate aborted: no client connected")
+                return
 
         self.state.text_translating = True
         # Only refresh result panel and button (input panel is already in compact state)
@@ -1930,8 +1975,12 @@ class YakuLingoApp:
         if not self._require_connection():
             return
 
-        # Use saved client reference (context.client not available in async tasks)
-        client = self._client
+        # Use saved client reference (protected by _client_lock)
+        with self._client_lock:
+            client = self._client
+            if not client:
+                logger.warning("Follow-up action aborted: no client connected")
+                return
 
         self.state.text_translating = True
         self._refresh_content()
@@ -2037,8 +2086,12 @@ class YakuLingoApp:
         if not self._require_connection():
             return
 
-        # Use saved client reference (context.client not available in async tasks)
-        client = self._client
+        # Use saved client reference (protected by _client_lock)
+        with self._client_lock:
+            client = self._client
+            if not client:
+                logger.warning("File selection aborted: no client connected")
+                return
 
         try:
             # Check PP-DocLayout-L availability for PDF files
@@ -2086,7 +2139,12 @@ class YakuLingoApp:
 
     async def _detect_file_language(self, file_path: Path):
         """Detect source language of file and set output language accordingly"""
-        client = self._client
+        # Use saved client reference (protected by _client_lock)
+        with self._client_lock:
+            client = self._client
+            if not client:
+                logger.warning("File language detection aborted: no client connected")
+                return
 
         try:
             # Extract sample text from file (in thread to avoid blocking)
@@ -2132,8 +2190,12 @@ class YakuLingoApp:
         if not self.translation_service or not self.state.selected_file:
             return
 
-        # Use saved client reference (context.client not available in async tasks)
-        client = self._client
+        # Use saved client reference (protected by _client_lock)
+        with self._client_lock:
+            client = self._client
+            if not client:
+                logger.warning("File translation aborted: no client connected")
+                return
 
         # Track translation time from user's perspective
         start_time = time.time()

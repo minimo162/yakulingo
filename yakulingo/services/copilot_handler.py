@@ -8,6 +8,7 @@ Refactored from translate.py with method name changes:
 
 import logging
 import os
+import random
 import re
 import sys
 import time
@@ -237,8 +238,14 @@ class PlaywrightThreadExecutor:
         self._initialized = True
 
     def start(self):
-        """Start the Playwright thread."""
+        """Start the Playwright thread.
+
+        Raises:
+            RuntimeError: If the executor has been shutdown
+        """
         with self._thread_lock:
+            if self._shutdown_flag:
+                raise RuntimeError("Executor has been shutdown and cannot be restarted")
             if self._thread is not None and self._thread.is_alive():
                 return
             self._running = True
@@ -247,7 +254,8 @@ class PlaywrightThreadExecutor:
 
     def stop(self):
         """Stop the Playwright thread."""
-        self._running = False
+        with self._thread_lock:
+            self._running = False
         if self._thread is not None:
             # Send stop signal
             self._request_queue.put((None, None, None))
@@ -353,6 +361,58 @@ class CopilotHandler:
     RESPONSE_STABLE_COUNT = 2  # Number of stable checks before considering response complete
     DEFAULT_RESPONSE_TIMEOUT = 600  # Default timeout for response in seconds (10 minutes)
 
+    # =========================================================================
+    # Timeout Settings - Centralized for consistency across operations
+    # =========================================================================
+    # Page navigation timeouts (milliseconds) - for Playwright page.goto()
+    PAGE_GOTO_TIMEOUT_MS = 30000        # 30 seconds for initial page load
+    PAGE_LOAD_STATE_TIMEOUT_MS = 10000  # 10 seconds for load state checks
+    PAGE_NETWORK_IDLE_TIMEOUT_MS = 5000 # 5 seconds for network idle checks
+
+    # Selector wait timeouts (milliseconds) - for Playwright wait_for_selector()
+    SELECTOR_CHAT_INPUT_TIMEOUT_MS = 15000   # 15 seconds for chat input to appear
+    SELECTOR_LOGIN_CHECK_TIMEOUT_MS = 2000   # 2 seconds for login state checks
+    SELECTOR_QUICK_CHECK_TIMEOUT_MS = 500    # 0.5 seconds for instant checks
+
+    # Login/connection timeouts (seconds)
+    LOGIN_WAIT_TIMEOUT_SECONDS = 300     # 5 minutes to wait for user login
+    AUTO_LOGIN_TIMEOUT_SECONDS = 15      # 15 seconds for auto-login to complete
+
+    # Thread/IPC timeouts (seconds)
+    THREAD_JOIN_TIMEOUT_SECONDS = 5      # 5 seconds for thread cleanup
+    EXECUTOR_TIMEOUT_BUFFER_SECONDS = 60 # Extra time for executor vs response timeout
+
+    # =========================================================================
+    # UI Selectors - Centralized for easier maintenance when Copilot UI changes
+    # =========================================================================
+
+    # Chat input field selectors
+    CHAT_INPUT_SELECTOR = '#m365-chat-editor-target-element, [data-lexical-editor="true"]'
+    CHAT_INPUT_SELECTOR_EXTENDED = '#m365-chat-editor-target-element, [data-lexical-editor="true"], [contenteditable="true"]'
+
+    # Send button selectors
+    SEND_BUTTON_SELECTOR = '.fai-SendButton:not([disabled]), button[type="submit"]:not([disabled])'
+    SEND_BUTTON_ANY = '.fai-SendButton, button[type="submit"]'
+
+    # Stop button selectors (for cancelling generation)
+    STOP_BUTTON_SELECTORS = (
+        '.fai-SendButton__stopBackground',
+        'button[aria-label*="Stop"]',
+        'button[aria-label*="停止"]',
+        '[data-testid="stopGeneratingButton"]',
+    )
+    STOP_BUTTON_SELECTOR_COMBINED = ", ".join(STOP_BUTTON_SELECTORS)
+
+    # New chat button selectors
+    NEW_CHAT_BUTTON_SELECTOR = '#new-chat-button, [data-testid="newChatButton"], button[aria-label="新しいチャット"]'
+
+    # File upload selectors
+    PLUS_MENU_BUTTON_SELECTOR = '[data-testid="PlusMenuButton"]'
+    FILE_INPUT_SELECTOR = '[data-testid="uploadFileDialogInput"]'
+
+    # Auth dialog selectors
+    AUTH_DIALOG_TITLE_SELECTOR = '.fui-DialogTitle, [role="dialog"] h2'
+
     # Copilot response selectors (fallback for DOM changes)
     RESPONSE_SELECTORS = (
         '[data-testid="markdown-reply"]',
@@ -388,6 +448,13 @@ class CopilotHandler:
     ERROR_LOGIN_REQUIRED = "login_required"
     ERROR_CONNECTION_FAILED = "connection_failed"
     ERROR_NETWORK = "network_error"
+    ERROR_RATE_LIMITED = "rate_limited"
+    ERROR_SESSION_EXPIRED = "session_expired"
+
+    # Rate limiting / retry settings
+    RETRY_BACKOFF_BASE = 2.0  # Base for exponential backoff (2^attempt seconds)
+    RETRY_BACKOFF_MAX = 16.0  # Maximum backoff time in seconds
+    RETRY_JITTER_MAX = 1.0    # Random jitter to avoid thundering herd
 
     def __init__(self):
         self._playwright = None
@@ -418,6 +485,29 @@ class CopilotHandler:
         Use _is_page_valid() within Playwright thread for actual validation.
         """
         return self._connected
+
+    def _apply_retry_backoff(self, attempt: int, max_retries: int) -> None:
+        """Apply exponential backoff before retry.
+
+        Calculates backoff time using exponential formula with jitter
+        to avoid thundering herd problem when multiple clients retry simultaneously.
+
+        Args:
+            attempt: Current attempt number (0-indexed)
+            max_retries: Maximum number of retries for logging
+        """
+        backoff_time = min(
+            self.RETRY_BACKOFF_BASE ** attempt,
+            self.RETRY_BACKOFF_MAX
+        )
+        # Add jitter to avoid thundering herd
+        jitter = random.uniform(0, self.RETRY_JITTER_MAX)
+        wait_time = backoff_time + jitter
+        logger.info(
+            "Retrying in %.1f seconds (attempt %d/%d, backoff=%.1f, jitter=%.2f)",
+            wait_time, attempt + 1, max_retries + 1, backoff_time, jitter
+        )
+        time.sleep(wait_time)
 
     def cancel_login_wait(self) -> None:
         """Cancel the login wait loop.
@@ -662,7 +752,7 @@ class CopilotHandler:
 
             # Check 3: Chat input element exists (verifies login state)
             # Use query_selector for instant check (no wait/timeout)
-            input_selector = '#m365-chat-editor-target-element, [data-lexical-editor="true"]'
+            input_selector = self.CHAT_INPUT_SELECTOR
             input_elem = self._page.query_selector(input_selector)
             if input_elem:
                 return True
@@ -927,7 +1017,7 @@ class CopilotHandler:
 
         # Navigate with 'commit' (fastest - just wait for first response)
         logger.info("Navigating to Copilot...")
-        copilot_page.goto(self.COPILOT_URL, wait_until='commit', timeout=30000)
+        copilot_page.goto(self.COPILOT_URL, wait_until='commit', timeout=self.PAGE_GOTO_TIMEOUT_MS)
         return copilot_page
 
     def _wait_for_chat_ready(self, page, wait_for_login: bool = True) -> bool:
@@ -948,7 +1038,7 @@ class CopilotHandler:
         PlaywrightError = error_types['Error']
 
         logger.info("Waiting for Copilot chat UI...")
-        input_selector = '#m365-chat-editor-target-element, [data-lexical-editor="true"]'
+        input_selector = self.CHAT_INPUT_SELECTOR
 
         # First, check if we're on a login page
         url = page.url
@@ -986,7 +1076,7 @@ class CopilotHandler:
                 logger.warning("Navigation to chat failed: %s", nav_err)
 
         try:
-            page.wait_for_selector(input_selector, timeout=15000, state='visible')
+            page.wait_for_selector(input_selector, timeout=self.SELECTOR_CHAT_INPUT_TIMEOUT_MS, state='visible')
 
             # Check for authentication dialog that may block input
             auth_dialog = page.query_selector('.fui-DialogTitle, [role="dialog"] h2')
@@ -1186,7 +1276,7 @@ class CopilotHandler:
         while elapsed < max_wait:
             try:
                 # Check if chat UI is now available
-                input_selector = '#m365-chat-editor-target-element, [data-lexical-editor="true"]'
+                input_selector = self.CHAT_INPUT_SELECTOR
                 try:
                     self._page.wait_for_selector(input_selector, timeout=500, state='visible')
                     logger.info("Auto-login completed - chat UI is ready (%.1fs)", elapsed)
@@ -1239,7 +1329,7 @@ class CopilotHandler:
                 logger.info("Auto-login timeout - still on login page after %.1fs", max_wait)
                 return False
             # Not on login page, give one more chance to check chat UI
-            input_selector = '#m365-chat-editor-target-element, [data-lexical-editor="true"]'
+            input_selector = self.CHAT_INPUT_SELECTOR
             try:
                 self._page.wait_for_selector(input_selector, timeout=2000, state='visible')
                 logger.info("Auto-login completed at timeout - chat UI ready")
@@ -1507,7 +1597,7 @@ class CopilotHandler:
         logger.info("Waiting for login completion (timeout: %ds)...", timeout)
         logger.info("Edgeブラウザでログインしてください / Please log in to the Edge browser")
 
-        input_selector = '#m365-chat-editor-target-element, [data-lexical-editor="true"]'
+        input_selector = self.CHAT_INPUT_SELECTOR
         poll_interval = self.LOGIN_POLL_INTERVAL
         elapsed = 0.0
 
@@ -1623,7 +1713,7 @@ class CopilotHandler:
 
         try:
             # チャット入力欄の存在を確認（ログイン済みの証拠）
-            input_selector = '#m365-chat-editor-target-element, [data-lexical-editor="true"]'
+            input_selector = self.CHAT_INPUT_SELECTOR
             try:
                 self._page.wait_for_selector(
                     input_selector,
@@ -1845,8 +1935,8 @@ class CopilotHandler:
         """
         # Execute all Playwright operations in the dedicated thread
         # This avoids greenlet thread-switching errors when called from asyncio.to_thread
-        # Add 60 seconds margin for start_new_chat and send_message operations
-        executor_timeout = timeout + 60
+        # Add buffer for start_new_chat and send_message operations
+        executor_timeout = timeout + self.EXECUTOR_TIMEOUT_BUFFER_SECONDS
         return _playwright_executor.execute(
             self._translate_sync_impl, texts, prompt, reference_files, skip_clear_wait, timeout,
             timeout=executor_timeout
@@ -1956,6 +2046,8 @@ class CopilotHandler:
                             # Not a login issue - retry without showing browser
                             logger.debug("Page invalid but not login page; retrying silently")
 
+                    # Apply exponential backoff before retry
+                    self._apply_retry_backoff(attempt, max_retries)
                     continue
                 else:
                     # Final attempt failed - only show browser if login is suspected
@@ -2136,6 +2228,8 @@ class CopilotHandler:
                             # Not a login issue - retry without showing browser
                             logger.debug("Page invalid but not login page; retrying silently")
 
+                    # Apply exponential backoff before retry
+                    self._apply_retry_backoff(attempt, max_retries)
                     continue
                 else:
                     # Final attempt failed - only show browser if login is suspected
@@ -2190,7 +2284,7 @@ class CopilotHandler:
         try:
             # Find input area
             # 実際のCopilot HTML: <span role="combobox" contenteditable="true" id="m365-chat-editor-target-element" ...>
-            input_selector = '#m365-chat-editor-target-element, [data-lexical-editor="true"], [contenteditable="true"]'
+            input_selector = self.CHAT_INPUT_SELECTOR_EXTENDED
             logger.debug("Waiting for input element...")
             input_wait_start = time.time()
             input_elem = self._page.wait_for_selector(input_selector, timeout=10000)
@@ -2275,7 +2369,7 @@ class CopilotHandler:
 
                 # Wait for send button to become enabled before pressing Enter
                 # This ensures Copilot has processed the input text
-                send_button_selector = '.fai-SendButton:not([disabled]), button[type="submit"]:not([disabled])'
+                send_button_selector = self.SEND_BUTTON_SELECTOR
                 send_wait_start = time.time()
                 try:
                     self._page.wait_for_selector(send_button_selector, timeout=5000, state='visible')
@@ -2383,7 +2477,9 @@ class CopilotHandler:
             last_log_time = time.time()
 
             current_url = self._page.url if self._page else "unknown"
-            logger.info("[POLLING] Starting response polling (timeout=%.0fs, URL: %s)", max_wait, current_url[:80] if current_url else "empty")
+            # Ensure current_url is a string before slicing (for test mocks)
+            url_str = str(current_url) if current_url else "empty"
+            logger.info("[POLLING] Starting response polling (timeout=%.0fs, URL: %s)", max_wait, url_str[:80])
 
             while max_wait > 0:
                 poll_iteration += 1
@@ -2397,12 +2493,7 @@ class CopilotHandler:
                 # Try multiple selectors for stop/loading indicators
                 stop_button = None
                 stop_button_selector = None
-                for stop_sel in [
-                    '.fai-SendButton__stopBackground',
-                    'button[aria-label*="Stop"]',
-                    'button[aria-label*="停止"]',
-                    '[data-testid*="stop"]',
-                ]:
+                for stop_sel in self.STOP_BUTTON_SELECTORS:
                     stop_button = self._page.query_selector(stop_sel)
                     if stop_button:
                         stop_button_selector = stop_sel
@@ -2539,7 +2630,7 @@ class CopilotHandler:
 
             # Priority 2: Two-step menu process (selectors may change)
             # Step 1: Click the "+" button to open the menu
-            plus_btn = self._page.query_selector('[data-testid="PlusMenuButton"]')
+            plus_btn = self._page.query_selector(self.PLUS_MENU_BUTTON_SELECTOR)
             if not plus_btn:
                 plus_btn = self._page.query_selector(
                     'button[aria-label*="コンテンツ"], button[aria-label*="追加"]'
@@ -2692,9 +2783,7 @@ class CopilotHandler:
             new_chat_total_start = time.time()
             # 実際のCopilot HTML: <button id="new-chat-button" data-testid="newChatButton" aria-label="新しいチャット">
             query_start = time.time()
-            new_chat_btn = self._page.query_selector(
-                '#new-chat-button, [data-testid="newChatButton"], button[aria-label="新しいチャット"]'
-            )
+            new_chat_btn = self._page.query_selector(self.NEW_CHAT_BUTTON_SELECTOR)
             logger.info("[TIMING] new_chat: query_selector: %.2fs", time.time() - query_start)
             if new_chat_btn:
                 click_start = time.time()
@@ -2706,7 +2795,7 @@ class CopilotHandler:
                 logger.warning("New chat button not found - chat context may not be cleared")
 
             # Wait for new chat to be ready (input field becomes available)
-            input_selector = '#m365-chat-editor-target-element, [data-lexical-editor="true"], [contenteditable="true"]'
+            input_selector = self.CHAT_INPUT_SELECTOR_EXTENDED
             input_ready_start = time.time()
             try:
                 self._page.wait_for_selector(input_selector, timeout=5000, state='visible')

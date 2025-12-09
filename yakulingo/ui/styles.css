@@ -215,7 +215,7 @@ body {
 }
 
 /* Input Panel (Middle Column - Sticky) */
-/* Nani-style: clean surface with minimal shadow */
+/* Transparent background to match result panel (both show body's gray canvas) */
 .input-panel {
     width: var(--input-panel-width);
     min-width: var(--input-panel-width);
@@ -225,8 +225,6 @@ body {
     padding: 1.5rem;
     display: flex;
     flex-direction: column;
-    background: var(--md-sys-color-surface);
-    box-shadow: 1px 0 2px rgba(0, 0, 0, 0.03);
     overflow-y: auto;
 }
 

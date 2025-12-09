@@ -575,6 +575,10 @@ class CopilotHandler:
                 time.sleep(self.EDGE_STARTUP_CHECK_INTERVAL)
                 if self._is_port_in_use():
                     logger.info("Edge started successfully")
+                    # Minimize window immediately to prevent visual flash
+                    # Give Edge a moment to create its window, then minimize
+                    time.sleep(0.3)
+                    self._minimize_edge_window()
                     return True
 
             logger.warning("Edge startup timeout")

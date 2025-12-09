@@ -17,6 +17,8 @@ set PROXY_SERVER=136.131.63.233:8082
 set UV_CACHE_DIR=.uv-cache
 set UV_PYTHON_INSTALL_DIR=.uv-python
 set PLAYWRIGHT_BROWSERS_PATH=.playwright-browsers
+:: Increase timeout for large packages like paddlepaddle (~500MB-1GB)
+set UV_HTTP_TIMEOUT=600
 
 :: ============================================================
 :: Proxy Authentication (required)
@@ -139,9 +141,12 @@ if errorlevel 1 (
     exit /b 1
 )
 
+echo [INFO] Installing packages (including paddlepaddle ~500MB-1GB)...
+echo [INFO] This may take 5-15 minutes depending on network speed...
 uv.exe sync --native-tls --extra ocr
 if errorlevel 1 (
     echo [ERROR] Failed to install dependencies.
+    echo [INFO] If this was a timeout, try running the script again.
     pause
     exit /b 1
 )
@@ -168,11 +173,13 @@ echo [DONE] Playwright browser installed.
 :: ============================================================
 echo.
 echo [5/6] Verifying paddlepaddle installation...
-:: Use -W ignore to suppress ccache and other warnings
-.venv\Scripts\python.exe -W ignore -c "import warnings; warnings.filterwarnings('ignore'); import paddle; print('[OK] paddlepaddle version:', paddle.__version__)" 2>nul
+echo [INFO] This may take a moment...
+:: Use -W ignore to suppress ccache and other warnings, but show errors
+.venv\Scripts\python.exe -W ignore -c "import warnings; warnings.filterwarnings('ignore'); import paddle; print('[OK] paddlepaddle version:', paddle.__version__)"
 if errorlevel 1 (
     echo [WARNING] paddlepaddle is not installed correctly.
     echo [INFO] Attempting manual installation via uv pip...
+    echo [INFO] paddlepaddle is large (~500MB-1GB), this may take several minutes...
     uv.exe pip install --native-tls paddlepaddle>=3.0.0 paddleocr>=3.0.0
     if errorlevel 1 (
         echo [ERROR] Failed to install paddlepaddle.
@@ -180,7 +187,7 @@ if errorlevel 1 (
     ) else (
         echo [OK] paddlepaddle installed successfully.
         :: Verify again after install
-        .venv\Scripts\python.exe -W ignore -c "import warnings; warnings.filterwarnings('ignore'); import paddle; print('[OK] paddlepaddle version:', paddle.__version__)" 2>nul
+        .venv\Scripts\python.exe -W ignore -c "import warnings; warnings.filterwarnings('ignore'); import paddle; print('[OK] paddlepaddle version:', paddle.__version__)"
     )
 )
 
@@ -189,15 +196,25 @@ if errorlevel 1 (
 :: ============================================================
 echo.
 echo [6/6] Pre-compiling Python bytecode...
-.venv\Scripts\python.exe -m compileall -q yakulingo 2>nul
-.venv\Scripts\python.exe -c "import nicegui; import pywebview; from yakulingo.ui import app; from yakulingo.services import translation_service" 2>nul
+.venv\Scripts\python.exe -m compileall -q yakulingo
+if errorlevel 1 (
+    echo [WARNING] Some bytecode compilation failed, but this is not critical.
+)
+
+echo [INFO] Pre-importing modules for faster startup...
+.venv\Scripts\python.exe -c "import nicegui; import pywebview; from yakulingo.ui import app; from yakulingo.services import translation_service"
+if errorlevel 1 (
+    echo [WARNING] Some module imports failed. Check the error above.
+)
+
 :: Pre-import paddle/paddleocr to download models and cache them (may take a while)
-:: Suppress all warnings including ccache and CUDA-related messages
-.venv\Scripts\python.exe -W ignore -c "import warnings; warnings.filterwarnings('ignore'); import paddle; from paddleocr import LayoutDetection" 2>nul
+echo [INFO] Downloading paddleocr models (this may take a few minutes on first run)...
+.venv\Scripts\python.exe -W ignore -c "import warnings; warnings.filterwarnings('ignore'); import paddle; from paddleocr import LayoutDetection; print('[OK] paddleocr models ready.')"
 if errorlevel 1 (
     echo [WARNING] paddleocr model download may have failed. PDF layout analysis may not work.
+    echo [INFO] You can try running YakuLingo anyway - models will be downloaded on first PDF translation.
 )
-echo [DONE] Bytecode pre-compiled.
+echo [DONE] Pre-compilation complete.
 
 echo.
 echo ============================================================

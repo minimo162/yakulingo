@@ -640,8 +640,10 @@ class TestGetResponse:
         handler._page = mock_page
 
         # Mock time to avoid actual waiting
+        # Need enough values for all time.time() calls (timing logs added multiple calls)
+        time_values = [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 5, 10, 15, 20]
         with patch("time.sleep"):
-            with patch("time.time", side_effect=[0, 0.1, 0.2, 5]):  # Simulate time passing
+            with patch("time.time", side_effect=time_values):
                 result = handler._get_response()
 
         # Result depends on implementation details

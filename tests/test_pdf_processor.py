@@ -1106,28 +1106,22 @@ class TestPdfProcessorExtractTextBlocks:
             }
         )
 
-        # Mock _extract_with_pdfminer_streaming to return expected blocks
+        # Mock extract_text_blocks_streaming to return expected blocks
+        # (extract_text_blocks now delegates to extract_text_blocks_streaming)
         with patch.object(
-            processor, '_extract_with_pdfminer_streaming',
+            processor, 'extract_text_blocks_streaming',
             return_value=iter([([expected_block], None)])
         ):
-            with patch('yakulingo.processors.pdf_processor._get_pymupdf') as mock_get_pymupdf:
-                mock_fitz = MagicMock()
-                mock_get_pymupdf.return_value = mock_fitz
-                mock_doc = MagicMock()
-                mock_doc.__len__ = Mock(return_value=1)
-                mock_fitz.open.return_value = mock_doc
+            pdf_path = tmp_path / "test.pdf"
+            pdf_path.write_bytes(b"%PDF-1.4 dummy")
 
-                pdf_path = tmp_path / "test.pdf"
-                pdf_path.write_bytes(b"%PDF-1.4 dummy")
+            blocks = list(processor.extract_text_blocks(pdf_path))
 
-                blocks = list(processor.extract_text_blocks(pdf_path))
-
-                assert len(blocks) == 1
-                assert blocks[0].text == "テストテキスト"
-                assert blocks[0].id == "page_0_block_0"
-                assert blocks[0].metadata["font_name"] == "MS Mincho"
-                assert blocks[0].metadata["font_size"] == 12.0
+            assert len(blocks) == 1
+            assert blocks[0].text == "テストテキスト"
+            assert blocks[0].id == "page_0_block_0"
+            assert blocks[0].metadata["font_name"] == "MS Mincho"
+            assert blocks[0].metadata["font_size"] == 12.0
 
 
 class TestPdfProcessorApplyTranslations:

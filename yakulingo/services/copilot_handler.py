@@ -1942,169 +1942,84 @@ class CopilotHandler:
                 logger.debug("Input element found, setting text via JS...")
                 fill_start = time.time()
                 fill_success = False
-                send_button_enabled = False
-                send_button_selector = '.fai-SendButton:not([disabled]), button[type="submit"]:not([disabled]), button[data-testid="chat-input-send-button"]:not([disabled])'
+                fill_method = None  # Track which method succeeded
 
-                # Method 1: Use execCommand('insertText') - works with Lexical contenteditable
-                # This is the most reliable method for contenteditable elements
+                # Method 1: Use Playwright's keyboard.insert_text() - fast IME-style input
                 try:
                     input_elem.evaluate('el => { el.focus(); el.click(); }')
                     time.sleep(0.05)
-                    # Select all to replace existing content
                     input_elem.press("Control+a")
                     time.sleep(0.05)
-                    # Use execCommand to insert text (works with Lexical)
-                    fill_success = self._page.evaluate('''(text) => {
-                        return document.execCommand('insertText', false, text);
-                    }''', message)
+                    self._page.keyboard.insert_text(message)
+                    time.sleep(0.1)
+                    content = input_elem.inner_text()
+                    fill_success = len(content.strip()) > 0
                     if fill_success:
-                        # Verify content was set
-                        content = input_elem.inner_text()
-                        fill_success = len(content.strip()) > 0
+                        fill_method = 1
                 except Exception as e:
-                    logger.debug("Method 1 (execCommand insertText) failed: %s", e)
+                    logger.debug("Method 1 (keyboard.insert_text) failed: %s", e)
                     fill_success = False
 
-                # Check if send button became enabled (indicates Lexical recognized the input)
-                if fill_success:
-                    for _ in range(5):  # Wait up to 0.25 second
-                        send_btn = self._page.query_selector(send_button_selector)
-                        if send_btn:
-                            send_button_enabled = True
-                            logger.debug("Send button is enabled (Method 1)")
-                            break
-                        time.sleep(0.05)
-                    if not send_button_enabled:
-                        logger.debug("Send button still disabled after Method 1")
-                        fill_success = False  # Force fallback to other methods
-
-                # Method 2: Use Playwright's keyboard.insert_text() - fast text insertion
-                # This is faster than type() and handles text as a single insertion
+                # Method 2: Use execCommand('insertText') - backup for older browsers
                 if not fill_success:
-                    logger.debug("Method 1 failed, trying keyboard.insert_text()...")
+                    logger.debug("Method 1 failed, trying execCommand('insertText')...")
                     try:
                         input_elem.evaluate('el => { el.focus(); el.click(); }')
                         time.sleep(0.05)
                         input_elem.press("Control+a")
                         time.sleep(0.05)
-                        # insert_text sends text as IME input, much faster than type()
-                        self._page.keyboard.insert_text(message)
-                        time.sleep(0.1)
-                        # Verify content was set
-                        content = input_elem.inner_text()
-                        fill_success = len(content.strip()) > 0
-                        if fill_success:
-                            for _ in range(5):
-                                send_btn = self._page.query_selector(send_button_selector)
-                                if send_btn:
-                                    send_button_enabled = True
-                                    logger.debug("Send button is enabled (Method 2)")
-                                    break
-                                time.sleep(0.05)
-                            if not send_button_enabled:
-                                fill_success = False
-                    except Exception as e:
-                        logger.debug("Method 2 (keyboard.insert_text) failed: %s", e)
-                        fill_success = False
-
-                # Method 3: Use DataTransfer paste event simulation
-                if not fill_success:
-                    logger.debug("Method 2 failed, trying DataTransfer paste...")
-                    try:
-                        fill_success = input_elem.evaluate('''(elem, text) => {
-                            if (!elem) return false;
-                            elem.focus();
-                            // Select all existing content
-                            const selection = window.getSelection();
-                            const range = document.createRange();
-                            range.selectNodeContents(elem);
-                            selection.removeAllRanges();
-                            selection.addRange(range);
-                            // Create and dispatch paste event
-                            const dataTransfer = new DataTransfer();
-                            dataTransfer.setData('text/plain', text);
-                            const pasteEvent = new ClipboardEvent('paste', {
-                                bubbles: true,
-                                cancelable: true,
-                                clipboardData: dataTransfer
-                            });
-                            elem.dispatchEvent(pasteEvent);
-                            // Wait for processing
-                            return new Promise(resolve => {
-                                setTimeout(() => resolve(elem.innerText.trim().length > 0), 100);
-                            });
+                        fill_success = self._page.evaluate('''(text) => {
+                            return document.execCommand('insertText', false, text);
                         }''', message)
                         if fill_success:
-                            for _ in range(5):
-                                send_btn = self._page.query_selector(send_button_selector)
-                                if send_btn:
-                                    send_button_enabled = True
-                                    logger.debug("Send button is enabled (Method 3)")
-                                    break
-                                time.sleep(0.05)
-                            if not send_button_enabled:
-                                fill_success = False
+                            content = input_elem.inner_text()
+                            fill_success = len(content.strip()) > 0
+                            if fill_success:
+                                fill_method = 2
                     except Exception as e:
-                        logger.debug("Method 3 (DataTransfer paste) failed: %s", e)
+                        logger.debug("Method 2 (execCommand insertText) failed: %s", e)
                         fill_success = False
 
-                # Method 4: Click and type line by line (slowest, last resort)
-                # Note: type() interprets \n as Enter key which sends the message in Copilot.
-                # We split by newlines and use Shift+Enter for line breaks.
+                # Method 3: Click and type line by line (slowest, last resort)
+                # Note: type() interprets \n as Enter key, so we use Shift+Enter for line breaks
                 if not fill_success:
-                    logger.debug("Method 3 failed, trying click + type...")
+                    logger.debug("Method 2 failed, trying click + type...")
                     try:
-                        # Focus the input element (use JS click to avoid bringing browser to front)
                         input_elem.evaluate('el => { el.focus(); el.click(); }')
-                        # Clear any existing content
                         input_elem.press("Control+a")
                         time.sleep(0.05)
-                        # Type the message line by line, using Shift+Enter for newlines
-                        # This prevents Enter from triggering send
                         lines = message.split('\n')
                         for i, line in enumerate(lines):
-                            if line:  # Only type non-empty lines
+                            if line:
                                 input_elem.type(line, delay=0)
-                            if i < len(lines) - 1:  # Add newline except after last line
+                            if i < len(lines) - 1:
                                 input_elem.press("Shift+Enter")
-                        # Verify content was set
                         content = input_elem.inner_text()
                         fill_success = len(content.strip()) > 0
-                        # Wait for send button to enable
                         if fill_success:
-                            for _ in range(5):
-                                send_btn = self._page.query_selector(send_button_selector)
-                                if send_btn:
-                                    send_button_enabled = True
-                                    break
-                                time.sleep(0.05)
+                            fill_method = 3
                     except Exception as e:
-                        logger.debug("Method 4 (type) failed: %s", e)
+                        logger.debug("Method 3 (type) failed: %s", e)
                         fill_success = False
 
-                logger.info("[TIMING] js_set_text: %.2fs", time.time() - fill_start)
+                # Log timing and method used
+                method_names = {
+                    1: "keyboard.insert_text",
+                    2: "execCommand insertText",
+                    3: "type line by line",
+                }
+                method_name = method_names.get(fill_method, "unknown")
+                logger.info("[TIMING] js_set_text (Method %s: %s): %.2fs", fill_method, method_name, time.time() - fill_start)
 
                 # Verify input was successful
                 if not fill_success:
                     logger.warning("Input field is empty after fill - Copilot may need attention")
                     raise RuntimeError("Copilotに入力できませんでした。Edgeブラウザを確認してください。")
-                logger.debug("Input verified (has content, send_button_enabled=%s)", send_button_enabled)
 
-                # Send the message
+                # Send the message via Enter key (most reliable)
                 self._ensure_gpt5_enabled()
-                if send_button_enabled:
-                    # Click the send button if it's enabled (use JS click to avoid bringing browser to front)
-                    send_btn = self._page.query_selector(send_button_selector)
-                    if send_btn:
-                        send_btn.evaluate('el => el.click()')
-                        logger.info("Message sent via button click")
-                    else:
-                        input_elem.press("Enter")
-                        logger.info("Message sent via Enter key (button not found)")
-                else:
-                    # Fallback to Enter key
-                    input_elem.press("Enter")
-                    logger.info("Message sent via Enter key")
+                input_elem.press("Enter")
+                logger.info("Message sent via Enter key")
             else:
                 logger.error("Input element not found!")
                 raise RuntimeError("Copilot入力欄が見つかりませんでした")

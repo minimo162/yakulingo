@@ -9,6 +9,7 @@ paddleocr>=3.0.0
 paddlepaddle>=3.0.0
 
 # PDF text/image handling (core translation stack)
+fonttools>=4.53.0      # Required for PyMuPDF font subsetting
 PyMuPDF>=1.24.0         # Page manipulation, bilingual PDF creation
 pdfminer.six>=20231228  # Text extraction, font analysis (PDFMathTranslate compliant)
 pypdfium2>=4.30.0       # PDF-to-image conversion for layout analysis

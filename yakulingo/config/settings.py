@@ -36,7 +36,7 @@ class AppSettings:
 
     # Advanced
     max_chars_per_batch: int = 7000     # Max characters per batch (fits in 8000 with template)
-    request_timeout: int = 120          # Seconds
+    request_timeout: int = 300          # Seconds (5 minutes - allows for large translations)
     max_retries: int = 3
 
     # File Translation Options (共通オプション)
@@ -134,11 +134,11 @@ class AppSettings:
 
         # Timeout constraints
         if self.request_timeout < 10:
-            logger.warning("request_timeout too small (%d), resetting to 120", self.request_timeout)
-            self.request_timeout = 120
+            logger.warning("request_timeout too small (%d), resetting to 300", self.request_timeout)
+            self.request_timeout = 300
         elif self.request_timeout > 600:
-            logger.warning("request_timeout too large (%d), resetting to 120", self.request_timeout)
-            self.request_timeout = 120
+            logger.warning("request_timeout too large (%d), resetting to 300", self.request_timeout)
+            self.request_timeout = 300
 
         # OCR settings
         if self.ocr_batch_size < 1:

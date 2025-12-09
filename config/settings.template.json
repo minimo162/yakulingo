@@ -5,7 +5,7 @@
   "window_width": 1400,
   "window_height": 850,
   "max_chars_per_batch": 7000,
-  "request_timeout": 120,
+  "request_timeout": 300,
   "max_retries": 3,
   "copilot_char_limit": 7500,
   "bilingual_output": false,

@@ -313,7 +313,7 @@ class CopilotHandler:
 
     # Response detection settings
     RESPONSE_STABLE_COUNT = 2  # Number of stable checks before considering response complete
-    DEFAULT_RESPONSE_TIMEOUT = 120  # Default timeout for response in seconds
+    DEFAULT_RESPONSE_TIMEOUT = 300  # Default timeout for response in seconds (5 minutes)
 
     # Copilot response selectors (fallback for DOM changes)
     RESPONSE_SELECTORS = (
@@ -1558,7 +1558,7 @@ class CopilotHandler:
         prompt: str,
         reference_files: Optional[list[Path]] = None,
         skip_clear_wait: bool = False,
-        timeout: int = 120,
+        timeout: int = 300,
     ) -> list[str]:
         """
         Synchronous version of translate for non-async contexts.
@@ -1570,7 +1570,7 @@ class CopilotHandler:
             prompt: The translation prompt to send to Copilot
             reference_files: Optional list of reference files to attach
             skip_clear_wait: Skip response clear verification (for 2nd+ batches)
-            timeout: Response timeout in seconds (default 120)
+            timeout: Response timeout in seconds (default 300 = 5 minutes)
 
         Returns:
             List of translated strings parsed from Copilot's response
@@ -1590,7 +1590,7 @@ class CopilotHandler:
         prompt: str,
         reference_files: Optional[list[Path]] = None,
         skip_clear_wait: bool = False,
-        timeout: int = 120,
+        timeout: int = 300,
         max_retries: int = 2,
     ) -> list[str]:
         """

@@ -467,7 +467,7 @@ class BatchTranslator:
 
     # Default values (used when settings not provided)
     DEFAULT_MAX_CHARS_PER_BATCH = 7000   # Characters per batch (fits in 8000 with ~1000 char template)
-    DEFAULT_REQUEST_TIMEOUT = 120  # Default timeout for Copilot response
+    DEFAULT_REQUEST_TIMEOUT = 300  # Default timeout for Copilot response (5 minutes)
 
     def __init__(
         self,

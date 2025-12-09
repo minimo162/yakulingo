@@ -16,7 +16,7 @@ class TestAppSettings:
         assert settings.output_directory is None
         assert settings.last_tab == "text"
         assert settings.max_chars_per_batch == 7000
-        assert settings.request_timeout == 120
+        assert settings.request_timeout == 300
         assert settings.max_retries == 3
         # Auto-update defaults
         assert settings.auto_update_enabled is True
@@ -224,7 +224,7 @@ class TestSettingsEdgeCases:
             assert settings.last_tab == "file"
             assert settings.max_chars_per_batch == 5000
             # Other fields use defaults
-            assert settings.request_timeout == 120
+            assert settings.request_timeout == 300
 
     def test_load_with_extra_fields(self):
         """Load settings with unknown extra fields"""

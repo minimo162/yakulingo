@@ -346,7 +346,8 @@ class TestCopilotHandlerNewChat:
 
         # query_selectorは複数回呼ばれる（新しいチャットボタン、GPT-5状態確認）
         assert mock_page.query_selector.call_count >= 1
-        mock_new_chat_btn.click.assert_called()
+        # JavaScript click to avoid Playwright's actionability checks
+        mock_new_chat_btn.evaluate.assert_called_with('el => el.click()')
 
     def test_start_new_chat_handles_no_button(self):
         """start_new_chat handles missing button gracefully"""

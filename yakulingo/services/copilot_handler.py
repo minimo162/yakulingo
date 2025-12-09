@@ -1973,13 +1973,13 @@ class CopilotHandler:
 
                 # Check if send button became enabled (indicates Lexical recognized the input)
                 if fill_success:
-                    for _ in range(10):  # Wait up to 1 second
+                    for _ in range(5):  # Wait up to 0.25 second
                         send_btn = self._page.query_selector(send_button_selector)
                         if send_btn:
                             send_button_enabled = True
                             logger.debug("Send button is enabled")
                             break
-                        time.sleep(0.1)
+                        time.sleep(0.05)
                     if not send_button_enabled:
                         logger.debug("Send button still disabled after Method 1, Lexical may not have recognized input")
                         fill_success = False  # Force fallback to other methods
@@ -2007,12 +2007,12 @@ class CopilotHandler:
                         fill_success = len(content.strip()) > 0
                         # Check send button
                         if fill_success:
-                            for _ in range(10):
+                            for _ in range(5):
                                 send_btn = self._page.query_selector(send_button_selector)
                                 if send_btn:
                                     send_button_enabled = True
                                     break
-                                time.sleep(0.1)
+                                time.sleep(0.05)
                             if not send_button_enabled:
                                 fill_success = False
                     except Exception as e:
@@ -2029,12 +2029,12 @@ class CopilotHandler:
                         fill_success = len(content.strip()) > 0
                         # Check send button again
                         if fill_success:
-                            for _ in range(10):
+                            for _ in range(5):
                                 send_btn = self._page.query_selector(send_button_selector)
                                 if send_btn:
                                     send_button_enabled = True
                                     break
-                                time.sleep(0.1)
+                                time.sleep(0.05)
                             if not send_button_enabled:
                                 fill_success = False
                     except Exception as e:
@@ -2056,12 +2056,12 @@ class CopilotHandler:
                         fill_success = len(content.strip()) > 0
                         # Wait for send button to enable
                         if fill_success:
-                            for _ in range(10):
+                            for _ in range(5):
                                 send_btn = self._page.query_selector(send_button_selector)
                                 if send_btn:
                                     send_button_enabled = True
                                     break
-                                time.sleep(0.1)
+                                time.sleep(0.05)
                     except Exception as e:
                         logger.debug("Method 4 (type) failed: %s", e)
                         fill_success = False
@@ -2455,7 +2455,9 @@ class CopilotHandler:
             logger.info("[TIMING] new_chat: query_selector: %.2fs", time.time() - query_start)
             if new_chat_btn:
                 click_start = time.time()
-                new_chat_btn.click()
+                # Use JavaScript click to avoid Playwright's actionability checks
+                # which can block for 30s on slow page loads
+                new_chat_btn.evaluate('el => el.click()')
                 logger.info("[TIMING] new_chat: click: %.2fs", time.time() - click_start)
             else:
                 logger.warning("New chat button not found - chat context may not be cleared")

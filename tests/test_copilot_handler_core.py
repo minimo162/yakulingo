@@ -174,20 +174,22 @@ class TestCopilotHandlerSendMessage:
 
         mock_input = Mock()
         mock_input.inner_text.return_value = "Test message"  # Non-empty after JS set
+        mock_input.evaluate.return_value = True  # Method 1 succeeds
         mock_send_button = Mock()
         mock_send_button.get_attribute.return_value = None  # Button is enabled
         mock_page = Mock()
-        # First call returns input, second call returns send button
-        mock_page.wait_for_selector.side_effect = [mock_input, mock_send_button]
-        mock_page.query_selector.return_value = None  # No auth dialog
+        # wait_for_selector returns input element
+        mock_page.wait_for_selector.return_value = mock_input
+        # query_selector returns None for auth dialog, then send button for button checks
+        mock_page.query_selector.side_effect = [None, mock_send_button, mock_send_button]
 
         handler._page = mock_page
         handler._ensure_gpt5_enabled = Mock()  # Mock GPT-5 check
 
         handler._send_message("Test message")
 
-        # JS evaluate is used instead of click+fill for performance
-        mock_page.evaluate.assert_called_once()
+        # JS evaluate is used on input element for DataTransfer paste
+        mock_input.evaluate.assert_called_once()
         mock_send_button.click.assert_called_once()
 
     def test_send_message_presses_enter_when_no_button(self):
@@ -196,15 +198,18 @@ class TestCopilotHandlerSendMessage:
 
         mock_input = Mock()
         mock_input.inner_text.return_value = "Test message"  # Non-empty after fill
+        mock_input.evaluate.return_value = True  # Method 1 succeeds
         mock_page = Mock()
         mock_page.wait_for_selector.return_value = mock_input
         mock_page.query_selector.return_value = None  # No auth dialog / No send button
 
         handler._page = mock_page
+        handler._ensure_gpt5_enabled = Mock()
 
         handler._send_message("Test message")
 
-        mock_input.press.assert_called_once_with("Enter")
+        # Final press is Enter (after Method 1 succeeds but no send button found)
+        assert mock_input.press.call_args_list[-1] == (("Enter",),)
 
     def test_send_message_handles_timeout(self):
         """_send_message handles input element timeout"""
@@ -678,7 +683,8 @@ class TestCopilotHandlerStartNewChat:
         with patch('time.sleep'):
             handler.start_new_chat()
 
-        mock_button.click.assert_called_once()
+        # JavaScript click to avoid Playwright's actionability checks
+        mock_button.evaluate.assert_called_with('el => el.click()')
 
     def test_start_new_chat_no_button_found(self):
         """start_new_chat handles missing button gracefully"""
@@ -708,9 +714,10 @@ class TestCopilotHandlerStartNewChat:
 
         mock_button = Mock()
         # Use AttributeError which is caught by start_new_chat
-        mock_button.click.side_effect = AttributeError("Click failed")
+        mock_button.evaluate.side_effect = AttributeError("Click failed")
         mock_page = Mock()
         mock_page.query_selector.return_value = mock_button
+        mock_page.query_selector_all.return_value = []  # No responses (cleared)
 
         handler._page = mock_page
 

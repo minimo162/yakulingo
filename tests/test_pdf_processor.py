@@ -1450,27 +1450,28 @@ class TestExtractTextBlocksStreaming:
             yield [block2], []
 
         with patch.object(processor, '_extract_hybrid_streaming', side_effect=mock_streaming):
-            with patch('yakulingo.processors.pdf_processor._get_pymupdf') as mock_get_pymupdf:
-                mock_fitz = MagicMock()
-                mock_get_pymupdf.return_value = mock_fitz
-                mock_doc = MagicMock()
-                mock_doc.__len__ = Mock(return_value=2)
-                mock_fitz.open.return_value = mock_doc
+            with patch.object(processor, '_check_scanned_pdf'):  # Skip scanned PDF check for mock
+                with patch('yakulingo.processors.pdf_processor._get_pymupdf') as mock_get_pymupdf:
+                    mock_fitz = MagicMock()
+                    mock_get_pymupdf.return_value = mock_fitz
+                    mock_doc = MagicMock()
+                    mock_doc.__len__ = Mock(return_value=2)
+                    mock_fitz.open.return_value = mock_doc
 
-                pdf_path = tmp_path / "test.pdf"
-                pdf_path.write_bytes(b"%PDF-1.4 dummy")
+                    pdf_path = tmp_path / "test.pdf"
+                    pdf_path.write_bytes(b"%PDF-1.4 dummy")
 
-                # Collect results from streaming (hybrid mode)
-                all_blocks = []
-                page_count = 0
-                for blocks, cells in processor.extract_text_blocks_streaming(pdf_path):
-                    all_blocks.extend(blocks)
-                    page_count += 1
+                    # Collect results from streaming (hybrid mode)
+                    all_blocks = []
+                    page_count = 0
+                    for blocks, cells in processor.extract_text_blocks_streaming(pdf_path):
+                        all_blocks.extend(blocks)
+                        page_count += 1
 
-                assert page_count == 2
-                assert len(all_blocks) == 2
-                assert all_blocks[0].text == "ページ1のテキスト"
-                assert all_blocks[1].text == "ページ2のテキスト"
+                    assert page_count == 2
+                    assert len(all_blocks) == 2
+                    assert all_blocks[0].text == "ページ1のテキスト"
+                    assert all_blocks[1].text == "ページ2のテキスト"
 
     def test_streaming_progress_callback(self, processor, tmp_path):
         """Test that progress callback is called during streaming"""
@@ -1507,32 +1508,33 @@ class TestExtractTextBlocksStreaming:
                 yield [block], []
 
         with patch.object(processor, '_extract_hybrid_streaming', side_effect=mock_streaming):
-            with patch('yakulingo.processors.pdf_processor._get_pymupdf') as mock_get_pymupdf:
-                mock_fitz = MagicMock()
-                mock_get_pymupdf.return_value = mock_fitz
-                mock_doc = MagicMock()
-                mock_doc.__len__ = Mock(return_value=3)
-                mock_fitz.open.return_value = mock_doc
+            with patch.object(processor, '_check_scanned_pdf'):  # Skip scanned PDF check for mock
+                with patch('yakulingo.processors.pdf_processor._get_pymupdf') as mock_get_pymupdf:
+                    mock_fitz = MagicMock()
+                    mock_get_pymupdf.return_value = mock_fitz
+                    mock_doc = MagicMock()
+                    mock_doc.__len__ = Mock(return_value=3)
+                    mock_fitz.open.return_value = mock_doc
 
-                pdf_path = tmp_path / "test.pdf"
-                pdf_path.write_bytes(b"%PDF-1.4 dummy")
+                    pdf_path = tmp_path / "test.pdf"
+                    pdf_path.write_bytes(b"%PDF-1.4 dummy")
 
-                progress_calls = []
+                    progress_calls = []
 
-                def on_progress(progress):
-                    progress_calls.append(progress)
+                    def on_progress(progress):
+                        progress_calls.append(progress)
 
-                # Consume the generator (hybrid mode)
-                list(processor.extract_text_blocks_streaming(
-                    pdf_path, on_progress=on_progress
-                ))
+                    # Consume the generator (hybrid mode)
+                    list(processor.extract_text_blocks_streaming(
+                        pdf_path, on_progress=on_progress
+                    ))
 
-                # Should have 3 progress calls (one per page)
-                assert len(progress_calls) == 3
-                assert progress_calls[0].current == 1
-                assert progress_calls[1].current == 2
-                assert progress_calls[2].current == 3
-                assert all(p.total == 3 for p in progress_calls)
+                    # Should have 3 progress calls (one per page)
+                    assert len(progress_calls) == 3
+                    assert progress_calls[0].current == 1
+                    assert progress_calls[1].current == 2
+                    assert progress_calls[2].current == 3
+                    assert all(p.total == 3 for p in progress_calls)
 
     def test_get_page_count(self, processor, tmp_path):
         """Test get_page_count method"""
@@ -1552,6 +1554,49 @@ class TestExtractTextBlocksStreaming:
 
             assert count == 5
             mock_doc.close.assert_called_once()
+
+
+class TestScannedPdfDetection:
+    """Tests for scanned PDF early detection"""
+
+    @pytest.fixture
+    def processor(self):
+        from yakulingo.processors.pdf_processor import PdfProcessor
+        return PdfProcessor()
+
+    def test_scanned_pdf_error_class_exists(self):
+        """Test that ScannedPdfError is exported properly"""
+        from yakulingo.processors import ScannedPdfError
+        from yakulingo.processors.pdf_processor import ScannedPdfError as DirectImport
+
+        assert ScannedPdfError is DirectImport
+        assert issubclass(ScannedPdfError, Exception)
+
+    def test_scanned_pdf_error_message(self):
+        """Test ScannedPdfError default message"""
+        from yakulingo.processors.pdf_processor import ScannedPdfError
+
+        error = ScannedPdfError()
+        assert "スキャンPDF" in str(error)
+        assert "テキストが埋め込まれていません" in str(error)
+
+    def test_scanned_pdf_error_custom_message(self):
+        """Test ScannedPdfError with custom message"""
+        from yakulingo.processors.pdf_processor import ScannedPdfError
+
+        error = ScannedPdfError("Custom message")
+        assert str(error) == "Custom message"
+
+    def test_scan_check_pages_constant(self):
+        """Test SCAN_CHECK_PAGES constant is defined"""
+        from yakulingo.processors.pdf_processor import SCAN_CHECK_PAGES
+
+        assert SCAN_CHECK_PAGES == 3  # Default: check first 3 pages
+
+    def test_check_scanned_pdf_method_exists(self, processor):
+        """Test that _check_scanned_pdf method exists on processor"""
+        assert hasattr(processor, '_check_scanned_pdf')
+        assert callable(processor._check_scanned_pdf)
 
 
 # =============================================================================

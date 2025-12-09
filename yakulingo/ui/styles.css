@@ -1,41 +1,41 @@
 /* === M3 Design Tokens === */
 :root {
-    /* Primary - Professional indigo (M3 compliant, inspired by baseline) */
-    --md-sys-color-primary: #4355B9;
+    /* Primary - Purple/blue CTA inspired by Nani's action buttons */
+    --md-sys-color-primary: #6758D1;
     --md-sys-color-on-primary: #FFFFFF;
-    --md-sys-color-primary-container: #DEE0FF;
-    --md-sys-color-on-primary-container: #00105C;
+    --md-sys-color-primary-container: #E8E6FF;
+    --md-sys-color-on-primary-container: #24186F;
 
-    /* Secondary - Neutral blue-gray for balance */
-    --md-sys-color-secondary: #595D72;
+    /* Secondary - Cool neutral for supportive controls */
+    --md-sys-color-secondary: #56606C;
     --md-sys-color-on-secondary: #FFFFFF;
-    --md-sys-color-secondary-container: #DDE1F9;
-    --md-sys-color-on-secondary-container: #161B2C;
+    --md-sys-color-secondary-container: #E2E6ED;
+    --md-sys-color-on-secondary-container: #1E242C;
 
-    /* Tertiary - Warm mauve accent for highlights */
-    --md-sys-color-tertiary: #76546E;
-    --md-sys-color-on-tertiary: #FFFFFF;
-    --md-sys-color-tertiary-container: #FFD7F2;
-    --md-sys-color-on-tertiary-container: #2D1228;
+    /* Tertiary - Gold accent reminiscent of Nani logo highlights */
+    --md-sys-color-tertiary: #FFCF51;
+    --md-sys-color-on-tertiary: #3B2A00;
+    --md-sys-color-tertiary-container: #FFF4D8;
+    --md-sys-color-on-tertiary-container: #4D3600;
 
-    /* Surface - M3 neutral palette with subtle warmth */
-    --md-sys-color-surface: #FEFBFF;
-    --md-sys-color-surface-dim: #DDD9DE;
-    --md-sys-color-surface-bright: #FEFBFF;
+    /* Surface - Neutral light grays to keep focus on content */
+    --md-sys-color-surface: #FFFFFF;
+    --md-sys-color-surface-dim: #E8EBEF;
+    --md-sys-color-surface-bright: #FFFFFF;
     --md-sys-color-surface-container-lowest: #FFFFFF;
-    --md-sys-color-surface-container-low: #F8F5FA;
-    --md-sys-color-surface-container: #F2EFF4;
-    --md-sys-color-surface-container-high: #ECE9EE;
-    --md-sys-color-surface-container-highest: #E6E3E8;
-    --md-sys-color-on-surface: #1B1B1F;
-    --md-sys-color-on-surface-variant: #46464F;
-    --md-sys-color-outline: #777680;
-    --md-sys-color-outline-variant: #C7C5D0;
+    --md-sys-color-surface-container-low: #F6F8FA;
+    --md-sys-color-surface-container: #F2F4F7;
+    --md-sys-color-surface-container-high: #EEF1F5;
+    --md-sys-color-surface-container-highest: #EAEFF3;
+    --md-sys-color-on-surface: #2C3538;
+    --md-sys-color-on-surface-variant: #4E5962;
+    --md-sys-color-outline: #C2C9D2;
+    --md-sys-color-outline-variant: #DDE2E8;
 
     /* Inverse (for snackbars, tooltips) */
-    --md-sys-color-inverse-surface: #303034;
-    --md-sys-color-inverse-on-surface: #F3EFF4;
-    --md-sys-color-inverse-primary: #BAC3FF;
+    --md-sys-color-inverse-surface: #2E3237;
+    --md-sys-color-inverse-on-surface: #F5F7FA;
+    --md-sys-color-inverse-primary: #C6CEFF;
 
     /* States */
     --md-sys-color-error: #BA1A1A;
@@ -97,11 +97,11 @@
     --md-sys-elevation-2: 0 4px 12px rgba(0,0,0,0.06), 0 2px 4px rgba(0,0,0,0.04);
 
     /* Expressive overlays (inspired by M3 Expressive article) */
-    --md-expressive-primary-glow: radial-gradient(circle at 20% 20%, rgba(67, 85, 185, 0.08), transparent 60%);
-    --md-expressive-secondary-glow: radial-gradient(circle at 82% 10%, rgba(118, 84, 110, 0.07), transparent 55%);
-    --md-expressive-surface: color-mix(in srgb, var(--md-sys-color-surface-container) 70%, var(--md-sys-color-surface) 30%);
-    --md-expressive-border: 1px solid color-mix(in srgb, var(--md-sys-color-outline-variant) 80%, transparent);
-    --md-expressive-outline: 1px solid color-mix(in srgb, var(--md-sys-color-outline-variant) 70%, transparent);
+    --md-expressive-primary-glow: radial-gradient(circle at 18% 20%, rgba(103, 88, 209, 0.07), transparent 58%);
+    --md-expressive-secondary-glow: radial-gradient(circle at 80% 12%, rgba(255, 207, 81, 0.05), transparent 55%);
+    --md-expressive-surface: #F4F6F8;
+    --md-expressive-border: 1px solid color-mix(in srgb, var(--md-sys-color-outline-variant) 70%, transparent);
+    --md-expressive-outline: 1px solid color-mix(in srgb, var(--md-sys-color-outline-variant) 60%, transparent);
 
     /* Sidebar, Input Panel, and Result Content widths are set dynamically via JavaScript
        based on monitor resolution. Default values as fallback. */
@@ -135,12 +135,14 @@ body {
     /* Yu Gothic UI: Windows 8.1+用、UI最適化版 */
     /* Hiragino Sans: macOS用 */
     font-family: 'BIZ UDPGothic', 'Yu Gothic UI', 'Hiragino Sans', 'Segoe UI', -apple-system, sans-serif;
-    /* Expressive Material background layering */
-    background:
+    /* Light gray canvas with subtle dot texture inspired by Nani */
+    background-color: var(--md-expressive-surface);
+    background-image:
+        radial-gradient(circle at 1px 1px, rgba(0, 0, 0, 0.035) 1px, transparent 0),
+        radial-gradient(circle at 1px 1px, rgba(0, 0, 0, 0.02) 1px, transparent 0),
         var(--md-expressive-primary-glow),
-        var(--md-expressive-secondary-glow),
-        var(--md-expressive-surface);
-    background-size: 100% 100%, 100% 100%, 100% 100%;
+        var(--md-expressive-secondary-glow);
+    background-size: 22px 22px, 44px 44px, 100% 100%, 100% 100%;
     background-attachment: fixed;
     color: var(--md-sys-color-on-surface);
     font-size: 1rem;  /* 16px - comfortable reading size */
@@ -364,7 +366,7 @@ body {
     justify-content: center;
     color: var(--md-sys-color-on-primary);
     box-shadow:
-        0 4px 12px rgba(67, 85, 185, 0.25),
+        0 4px 12px color-mix(in srgb, var(--md-sys-color-primary) 25%, transparent),
         0 2px 4px rgba(0, 0, 0, 0.08);
 }
 
@@ -632,7 +634,7 @@ body {
 
 /* Focus state for main card (when textarea is focused) */
 .main-card-inner:focus-within {
-    box-shadow: 0 0 0 3px rgba(67, 85, 185, 0.12);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--md-sys-color-primary) 12%, transparent);
     transform: scale(1.005);
 }
 
@@ -647,7 +649,7 @@ body {
 
 .text-box:focus-within {
     border-color: var(--md-sys-color-primary);
-    box-shadow: 0 0 0 2px rgba(67, 85, 185, 0.15);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--md-sys-color-primary) 15%, transparent);
 }
 
 /* === Translate Button (alias for btn-primary) === */
@@ -715,12 +717,12 @@ body {
 }
 
 .btn-outline:hover {
-    background: rgba(67, 85, 185, 0.08);
+    background: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent);
     border-color: var(--md-sys-color-outline);
 }
 
 .btn-outline:active {
-    background: rgba(67, 85, 185, 0.12);
+    background: color-mix(in srgb, var(--md-sys-color-primary) 12%, transparent);
 }
 
 .btn-outline:disabled {
@@ -874,11 +876,11 @@ textarea:focus-visible {
 }
 
 .btn-text:hover {
-    background: rgba(67, 85, 185, 0.08);
+    background: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent);
 }
 
 .btn-text:active {
-    background: rgba(67, 85, 185, 0.12);
+    background: color-mix(in srgb, var(--md-sys-color-primary) 12%, transparent);
 }
 
 /* === Drop Zone (Nani-inspired) === */
@@ -1814,11 +1816,11 @@ textarea:focus-visible {
 }
 
 .follow-up-btn:hover {
-    background: rgba(67, 85, 185, 0.08) !important;
+    background: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent) !important;
 }
 
 .follow-up-btn:active {
-    background: rgba(67, 85, 185, 0.12) !important;
+    background: color-mix(in srgb, var(--md-sys-color-primary) 12%, transparent) !important;
 }
 
 /* === Additional Result Cards (for follow-up responses) === */
@@ -2201,12 +2203,12 @@ textarea:focus-visible {
 }
 
 .attach-btn:hover {
-    background: rgba(67, 85, 185, 0.08);
+    background: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent);
     color: var(--md-sys-color-primary);
 }
 
 .attach-btn:active {
-    background: rgba(67, 85, 185, 0.12);
+    background: color-mix(in srgb, var(--md-sys-color-primary) 12%, transparent);
 }
 
 .attach-btn.has-file {
@@ -2519,11 +2521,11 @@ textarea:focus-visible {
 }
 
 .back-translate-btn:hover {
-    background: rgba(67, 85, 185, 0.08) !important;
+    background: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent) !important;
 }
 
 .back-translate-btn:active {
-    background: rgba(67, 85, 185, 0.12) !important;
+    background: color-mix(in srgb, var(--md-sys-color-primary) 12%, transparent) !important;
 }
 
 .back-translate-btn .q-icon {
@@ -2563,11 +2565,11 @@ textarea:focus-visible {
 }
 
 .explain-more-btn:hover {
-    background: rgba(67, 85, 185, 0.08) !important;
+    background: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent) !important;
 }
 
 .explain-more-btn:active {
-    background: rgba(67, 85, 185, 0.12) !important;
+    background: color-mix(in srgb, var(--md-sys-color-primary) 12%, transparent) !important;
 }
 
 .explain-more-btn .q-icon {
@@ -2584,12 +2586,12 @@ textarea:focus-visible {
 }
 
 .settings-btn:hover {
-    background: rgba(67, 85, 185, 0.08) !important;
+    background: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent) !important;
     color: var(--md-sys-color-primary) !important;
 }
 
 .settings-btn:active {
-    background: rgba(67, 85, 185, 0.12) !important;
+    background: color-mix(in srgb, var(--md-sys-color-primary) 12%, transparent) !important;
 }
 
 /* === Glossary Toggle Button (Chip-style) === */
@@ -2604,7 +2606,7 @@ textarea:focus-visible {
 }
 
 .glossary-toggle-btn:hover {
-    background: rgba(67, 85, 185, 0.08) !important;
+    background: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent) !important;
     border-color: var(--md-sys-color-primary) !important;
     color: var(--md-sys-color-primary) !important;
 }
@@ -2752,12 +2754,12 @@ textarea:focus-visible {
 
 /* === Text Selection (Brand Color) === */
 ::selection {
-    background: rgba(67, 85, 185, 0.2);
+    background: color-mix(in srgb, var(--md-sys-color-primary) 20%, transparent);
     color: inherit;
 }
 
 ::-moz-selection {
-    background: rgba(67, 85, 185, 0.2);
+    background: color-mix(in srgb, var(--md-sys-color-primary) 20%, transparent);
     color: inherit;
 }
 
@@ -2788,7 +2790,7 @@ input, textarea {
 button:focus-visible,
 .q-btn:focus-visible {
     outline: none;
-    box-shadow: 0 0 0 3px rgba(67, 85, 185, 0.2) !important;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--md-sys-color-primary) 20%, transparent) !important;
 }
 
 /* === Link Hover Effect === */

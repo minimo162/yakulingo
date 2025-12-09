@@ -1945,43 +1945,24 @@ class CopilotHandler:
                 send_button_enabled = False
                 send_button_selector = '.fai-SendButton:not([disabled]), button[type="submit"]:not([disabled]), button[data-testid="chat-input-send-button"]:not([disabled])'
 
-                # Method 1: Use DataTransfer API to simulate paste (works with Lexical)
-                # Lexical handles paste events by reading from DataTransfer
+                # Method 1: Use execCommand('insertText') - works with Lexical contenteditable
+                # This is the most reliable method for contenteditable elements
                 try:
-                    fill_success = input_elem.evaluate('''(elem, text) => {
-                        if (!elem) return false;
-
-                        // Focus the element
-                        elem.focus();
-
-                        // Select all existing content to replace
-                        const selection = window.getSelection();
-                        const range = document.createRange();
-                        range.selectNodeContents(elem);
-                        selection.removeAllRanges();
-                        selection.addRange(range);
-
-                        // Create DataTransfer with the text
-                        const dataTransfer = new DataTransfer();
-                        dataTransfer.setData('text/plain', text);
-
-                        // Dispatch paste event - Lexical handles this
-                        const pasteEvent = new ClipboardEvent('paste', {
-                            bubbles: true,
-                            cancelable: true,
-                            clipboardData: dataTransfer
-                        });
-                        elem.dispatchEvent(pasteEvent);
-
-                        // Wait for Lexical to process
-                        return new Promise(resolve => {
-                            setTimeout(() => {
-                                resolve(elem.innerText.trim().length > 0);
-                            }, 100);
-                        });
+                    input_elem.evaluate('el => { el.focus(); el.click(); }')
+                    time.sleep(0.05)
+                    # Select all to replace existing content
+                    input_elem.press("Control+a")
+                    time.sleep(0.05)
+                    # Use execCommand to insert text (works with Lexical)
+                    fill_success = self._page.evaluate('''(text) => {
+                        return document.execCommand('insertText', false, text);
                     }''', message)
+                    if fill_success:
+                        # Verify content was set
+                        content = input_elem.inner_text()
+                        fill_success = len(content.strip()) > 0
                 except Exception as e:
-                    logger.debug("Method 1 (DataTransfer paste) failed: %s", e)
+                    logger.debug("Method 1 (execCommand insertText) failed: %s", e)
                     fill_success = False
 
                 # Check if send button became enabled (indicates Lexical recognized the input)
@@ -1990,68 +1971,81 @@ class CopilotHandler:
                         send_btn = self._page.query_selector(send_button_selector)
                         if send_btn:
                             send_button_enabled = True
-                            logger.debug("Send button is enabled")
+                            logger.debug("Send button is enabled (Method 1)")
                             break
                         time.sleep(0.05)
                     if not send_button_enabled:
-                        logger.debug("Send button still disabled after Method 1, Lexical may not have recognized input")
+                        logger.debug("Send button still disabled after Method 1")
                         fill_success = False  # Force fallback to other methods
 
-                # Method 2: Use clipboard paste (fast and reliable for Lexical)
+                # Method 2: Use Playwright's keyboard.insert_text() - fast text insertion
+                # This is faster than type() and handles text as a single insertion
                 if not fill_success:
-                    logger.debug("Method 1 failed or Lexical didn't recognize, trying clipboard paste...")
+                    logger.debug("Method 1 failed, trying keyboard.insert_text()...")
                     try:
-                        # Focus the input element (use JS click to avoid bringing browser to front)
                         input_elem.evaluate('el => { el.focus(); el.click(); }')
                         time.sleep(0.05)
-                        # Clear any existing content
                         input_elem.press("Control+a")
                         time.sleep(0.05)
-                        # Set clipboard content via JavaScript (async)
-                        self._page.evaluate('''async (text) => {
-                            await navigator.clipboard.writeText(text);
-                        }''', message)
-                        time.sleep(0.05)
-                        # Paste from clipboard (Ctrl+V)
-                        input_elem.press("Control+v")
+                        # insert_text sends text as IME input, much faster than type()
+                        self._page.keyboard.insert_text(message)
                         time.sleep(0.1)
                         # Verify content was set
                         content = input_elem.inner_text()
                         fill_success = len(content.strip()) > 0
-                        # Check send button
                         if fill_success:
                             for _ in range(5):
                                 send_btn = self._page.query_selector(send_button_selector)
                                 if send_btn:
                                     send_button_enabled = True
+                                    logger.debug("Send button is enabled (Method 2)")
                                     break
                                 time.sleep(0.05)
                             if not send_button_enabled:
                                 fill_success = False
                     except Exception as e:
-                        logger.debug("Method 2 (clipboard paste) failed: %s", e)
+                        logger.debug("Method 2 (keyboard.insert_text) failed: %s", e)
                         fill_success = False
 
-                # Method 3: Try Playwright's fill() method
+                # Method 3: Use DataTransfer paste event simulation
                 if not fill_success:
-                    logger.debug("Method 2 failed, trying fill()...")
+                    logger.debug("Method 2 failed, trying DataTransfer paste...")
                     try:
-                        input_elem.fill(message)
-                        # Verify content was set
-                        content = input_elem.inner_text()
-                        fill_success = len(content.strip()) > 0
-                        # Check send button again
+                        fill_success = input_elem.evaluate('''(elem, text) => {
+                            if (!elem) return false;
+                            elem.focus();
+                            // Select all existing content
+                            const selection = window.getSelection();
+                            const range = document.createRange();
+                            range.selectNodeContents(elem);
+                            selection.removeAllRanges();
+                            selection.addRange(range);
+                            // Create and dispatch paste event
+                            const dataTransfer = new DataTransfer();
+                            dataTransfer.setData('text/plain', text);
+                            const pasteEvent = new ClipboardEvent('paste', {
+                                bubbles: true,
+                                cancelable: true,
+                                clipboardData: dataTransfer
+                            });
+                            elem.dispatchEvent(pasteEvent);
+                            // Wait for processing
+                            return new Promise(resolve => {
+                                setTimeout(() => resolve(elem.innerText.trim().length > 0), 100);
+                            });
+                        }''', message)
                         if fill_success:
                             for _ in range(5):
                                 send_btn = self._page.query_selector(send_button_selector)
                                 if send_btn:
                                     send_button_enabled = True
+                                    logger.debug("Send button is enabled (Method 3)")
                                     break
                                 time.sleep(0.05)
                             if not send_button_enabled:
                                 fill_success = False
                     except Exception as e:
-                        logger.debug("Method 3 (fill) failed: %s", e)
+                        logger.debug("Method 3 (DataTransfer paste) failed: %s", e)
                         fill_success = False
 
                 # Method 4: Click and type line by line (slowest, last resort)

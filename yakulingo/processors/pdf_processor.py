@@ -1838,6 +1838,7 @@ class PdfProcessor(FileProcessor):
         """Initialize PDF processor with cancellation support."""
         self._cancel_requested = False
         self._failed_pages: list[int] = []
+        self._failed_page_reasons: dict[int, str] = {}
         self._output_language = "en"  # Default to JP→EN translation
         # Use CellTranslator for consistent language-based filtering
         from .translators import CellTranslator
@@ -1856,6 +1857,13 @@ class PdfProcessor(FileProcessor):
         """
         return self._cell_translator.should_translate(text, self._output_language)
 
+    def _record_failed_page(self, page_num: int, reason: str | None = None) -> None:
+        """Track pages that could not be processed and optional reasons."""
+        if page_num not in self._failed_pages:
+            self._failed_pages.append(page_num)
+        if reason:
+            self._failed_page_reasons[page_num] = reason
+
     def cancel(self) -> None:
         """Request cancellation of OCR processing."""
         self._cancel_requested = True
@@ -1864,11 +1872,17 @@ class PdfProcessor(FileProcessor):
         """Reset cancellation flag for new processing."""
         self._cancel_requested = False
         self._failed_pages = []
+        self._failed_page_reasons = {}
 
     @property
     def failed_pages(self) -> list[int]:
         """Get list of pages that failed during OCR."""
         return self._failed_pages.copy()
+
+    @property
+    def failed_page_reasons(self) -> dict[int, str]:
+        """Reasons for failed pages (if known)."""
+        return self._failed_page_reasons.copy()
 
     @property
     def file_type(self) -> FileType:
@@ -2495,6 +2509,17 @@ class PdfProcessor(FileProcessor):
                             if ltpage:
                                 collect_chars(ltpage)
 
+                            if not chars:
+                                reason = (
+                                    "No embedded text detected (scanned PDFs are not supported)"
+                                )
+                                logger.warning(
+                                    "Hybrid extraction skipped page %d: %s",
+                                    page_num,
+                                    reason,
+                                )
+                                self._record_failed_page(page_num, reason)
+
                             # Step 4: Group characters using PP-DocLayout-L layout
                             if chars:
                                 blocks = self._group_chars_into_blocks(
@@ -2536,7 +2561,7 @@ class PdfProcessor(FileProcessor):
 
                         except (RuntimeError, ValueError, OSError, MemoryError) as e:
                             logger.error("Hybrid extraction failed for page %d: %s", page_num, e)
-                            self._failed_pages.append(page_num)
+                            self._record_failed_page(page_num, str(e))
                             yield [], []
 
             if self._failed_pages:

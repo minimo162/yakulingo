@@ -112,8 +112,9 @@ YakuLingo/
 ├── tests/                         # Test suite (32 test files)
 │   ├── conftest.py                # Shared fixtures and mocks
 │   └── test_*.py                  # Unit tests for each module
-├── prompts/                       # Translation prompt templates (16 files)
+├── prompts/                       # Translation prompt templates (17 files)
 │   ├── detect_language.txt        # Language detection via Copilot
+│   ├── copilot_injection_review.md # Prompt injection risk review
 │   ├── file_translate_to_en_{standard|concise|minimal}.txt  # File translation (JP→EN)
 │   ├── file_translate_to_jp.txt   # File translation (EN→JP)
 │   ├── text_translate_to_en_{standard|concise|minimal}.txt  # Text translation (JP→EN)
@@ -159,13 +160,13 @@ YakuLingo/
 
 | File | Purpose | Lines |
 |------|---------|-------|
-| `yakulingo/ui/app.py` | Main application orchestrator, handles UI events and coordinates services | ~1958 |
-| `yakulingo/services/translation_service.py` | Coordinates file processors and batch translation | ~2046 |
-| `yakulingo/services/copilot_handler.py` | Browser automation for M365 Copilot | ~1598 |
+| `yakulingo/ui/app.py` | Main application orchestrator, handles UI events and coordinates services | ~2864 |
+| `yakulingo/services/translation_service.py` | Coordinates file processors and batch translation | ~2235 |
+| `yakulingo/services/copilot_handler.py` | Browser automation for M365 Copilot | ~2718 |
 | `yakulingo/services/updater.py` | GitHub Releases-based auto-update with Windows proxy support | ~731 |
 | `yakulingo/ui/styles.py` | CSS loader (loads external styles.css) | ~28 |
-| `yakulingo/ui/styles.css` | M3 design tokens, CSS styling definitions | ~2962 |
-| `yakulingo/ui/components/text_panel.py` | Text translation UI with source display and translation status | ~1145 |
+| `yakulingo/ui/styles.css` | M3 design tokens, CSS styling definitions | ~3099 |
+| `yakulingo/ui/components/text_panel.py` | Text translation UI with source display and translation status | ~1269 |
 | `yakulingo/ui/components/file_panel.py` | File translation panel with drag-drop and progress | ~509 |
 | `yakulingo/ui/components/update_notification.py` | Auto-update UI notifications | ~344 |
 | `yakulingo/ui/utils.py` | UI utilities: temp file management, dialog helpers, text formatting | ~467 |
@@ -173,7 +174,7 @@ YakuLingo/
 | `yakulingo/models/types.py` | Core data types: TextBlock, FileInfo, TranslationResult, HistoryEntry | ~297 |
 | `yakulingo/storage/history_db.py` | SQLite database for translation history | ~320 |
 | `yakulingo/processors/base.py` | Abstract base class for all file processors | ~105 |
-| `yakulingo/processors/pdf_processor.py` | PDF processing with PyMuPDF, pdfminer.six, and PP-DocLayout-L | ~3228 |
+| `yakulingo/processors/pdf_processor.py` | PDF processing with PyMuPDF, pdfminer.six, and PP-DocLayout-L | ~3483 |
 | `yakulingo/processors/pdf_font_manager.py` | PDF font management: font registry, type detection, glyph encoding | ~917 |
 | `yakulingo/processors/pdf_operators.py` | PDF low-level operator generation for text rendering | ~731 |
 

@@ -360,6 +360,8 @@ class CopilotHandler:
     # Response detection settings
     RESPONSE_STABLE_COUNT = 3  # Number of stable checks before considering response complete
     DEFAULT_RESPONSE_TIMEOUT = 600  # Default timeout for response in seconds (10 minutes)
+    # When stop button is never detected (possible stale selector), use higher stable count
+    STALE_SELECTOR_STABLE_COUNT = 5  # Extra stability checks when stop button not detected
 
     # =========================================================================
     # Timeout Settings - Centralized for consistency across operations
@@ -2022,12 +2024,22 @@ class CopilotHandler:
             # Get response
             result = self._get_response(timeout=timeout)
 
-            # Check for Copilot error response patterns
-            if result and _is_copilot_error_response(result):
-                logger.warning(
-                    "Copilot returned error response (attempt %d/%d): %s",
-                    attempt + 1, max_retries + 1, result[:100]
-                )
+            # Check for error conditions: Copilot error response patterns OR empty response
+            is_error_response = result and _is_copilot_error_response(result)
+            is_empty_response = len(texts) > 0 and (not result or not result.strip())
+
+            if is_error_response or is_empty_response:
+                if is_error_response:
+                    logger.warning(
+                        "Copilot returned error response (attempt %d/%d): %s",
+                        attempt + 1, max_retries + 1, result[:100]
+                    )
+                else:
+                    logger.warning(
+                        "Copilot returned empty response (attempt %d/%d). "
+                        "This may indicate a timeout or temporary Copilot issue.",
+                        attempt + 1, max_retries + 1
+                    )
 
                 page_invalid = self._page and not self._is_page_valid()
 
@@ -2052,7 +2064,15 @@ class CopilotHandler:
                                     logger.info("Login completed, retrying translation")
                                     continue
                                 else:
-                                    raise RuntimeError("Copilotへのログインが必要です。Edgeブラウザでログインしてください。")
+                                    # Login timeout - continue retry loop instead of immediate failure
+                                    # This gives user more time if they're in the middle of logging in
+                                    logger.warning(
+                                        "Login wait timed out (attempt %d/%d), continuing retry loop...",
+                                        attempt + 1, max_retries + 1
+                                    )
+                                    # Apply backoff and continue to next retry
+                                    self._apply_retry_backoff(attempt, max_retries)
+                                    continue
                         else:
                             # Not a login issue - retry without showing browser
                             logger.debug("Page invalid but not login page; retrying silently")
@@ -2066,16 +2086,16 @@ class CopilotHandler:
                         url = self._page.url
                         if _is_login_page(url) or self._has_auth_dialog():
                             self._bring_to_foreground_impl(self._page, reason="translate_sync final retry: login required")
-                    raise RuntimeError(
-                        "Copilotがエラーを返しました。Edgeブラウザでログイン状態を確認してください。\n"
-                        f"エラー内容: {result[:100]}"
-                    )
 
-            # Guard against empty/whitespace-only responses (timeout or Copilot failure)
-            if len(texts) > 0 and (not result or not result.strip()):
-                raise RuntimeError(
-                    "Copilotから翻訳結果を取得できませんでした。Edgeブラウザの状態を確認して再試行してください。"
-                )
+                    if is_empty_response:
+                        raise RuntimeError(
+                            "Copilotから翻訳結果を取得できませんでした。Edgeブラウザの状態を確認して再試行してください。"
+                        )
+                    else:
+                        raise RuntimeError(
+                            "Copilotがエラーを返しました。Edgeブラウザでログイン状態を確認してください。\n"
+                            f"エラー内容: {result[:100]}"
+                        )
 
             # Minimize browser after a successful translation to avoid stealing focus
             # Note: storage_state is saved on disconnect() to avoid window activation
@@ -2204,12 +2224,22 @@ class CopilotHandler:
                 "translate_single received response (length=%d)", len(result) if result else 0
             )
 
-            # Check for Copilot error response patterns
-            if result and _is_copilot_error_response(result):
-                logger.warning(
-                    "Copilot returned error response (attempt %d/%d): %s",
-                    attempt + 1, max_retries + 1, result[:100]
-                )
+            # Check for error conditions: Copilot error response patterns OR empty response
+            is_error_response = result and _is_copilot_error_response(result)
+            is_empty_response = not result or not result.strip()
+
+            if is_error_response or is_empty_response:
+                if is_error_response:
+                    logger.warning(
+                        "Copilot returned error response (attempt %d/%d): %s",
+                        attempt + 1, max_retries + 1, result[:100]
+                    )
+                else:
+                    logger.warning(
+                        "Copilot returned empty response (attempt %d/%d). "
+                        "This may indicate a timeout or temporary Copilot issue.",
+                        attempt + 1, max_retries + 1
+                    )
 
                 page_invalid = self._page and not self._is_page_valid()
 
@@ -2234,7 +2264,15 @@ class CopilotHandler:
                                     logger.info("Login completed, retrying translation")
                                     continue
                                 else:
-                                    raise RuntimeError("Copilotへのログインが必要です。Edgeブラウザでログインしてください。")
+                                    # Login timeout - continue retry loop instead of immediate failure
+                                    # This gives user more time if they're in the middle of logging in
+                                    logger.warning(
+                                        "Login wait timed out (attempt %d/%d), continuing retry loop...",
+                                        attempt + 1, max_retries + 1
+                                    )
+                                    # Apply backoff and continue to next retry
+                                    self._apply_retry_backoff(attempt, max_retries)
+                                    continue
                         else:
                             # Not a login issue - retry without showing browser
                             logger.debug("Page invalid but not login page; retrying silently")
@@ -2248,16 +2286,16 @@ class CopilotHandler:
                         url = self._page.url
                         if _is_login_page(url) or self._has_auth_dialog():
                             self._bring_to_foreground_impl(self._page, reason="translate_single final retry: login required")
-                    raise RuntimeError(
-                        "Copilotがエラーを返しました。Edgeブラウザでログイン状態を確認してください。\n"
-                        f"エラー内容: {result[:100]}"
-                    )
 
-            # Guard against empty/whitespace-only responses (timeout or Copilot failure)
-            if not result or not result.strip():
-                raise RuntimeError(
-                    "Copilotから翻訳結果を取得できませんでした。Edgeブラウザの状態を確認して再試行してください。"
-                )
+                    if is_empty_response:
+                        raise RuntimeError(
+                            "Copilotから翻訳結果を取得できませんでした。Edgeブラウザの状態を確認して再試行してください。"
+                        )
+                    else:
+                        raise RuntimeError(
+                            "Copilotがエラーを返しました。Edgeブラウザでログイン状態を確認してください。\n"
+                            f"エラー内容: {result[:100]}"
+                        )
 
             # Minimize browser after a successful translation to keep it in background
             # Note: storage_state is saved on disconnect() to avoid window activation
@@ -2545,9 +2583,19 @@ class CopilotHandler:
 
                 # Warn if stop button was never found (possible selector change)
                 if has_content and not stop_button_ever_seen and not stop_button_warning_logged:
-                    logger.warning("[POLLING] Stop button never detected - selectors may need update: %s",
-                                   self.STOP_BUTTON_SELECTORS)
+                    logger.warning("[POLLING] Stop button never detected - selectors may need update: %s. "
+                                   "Using higher stability threshold (%d instead of %d).",
+                                   self.STOP_BUTTON_SELECTORS,
+                                   self.STALE_SELECTOR_STABLE_COUNT,
+                                   self.RESPONSE_STABLE_COUNT)
                     stop_button_warning_logged = True
+
+                # Use higher stable count threshold if stop button was never seen
+                # This provides extra safety when selectors may be stale
+                required_stable_count = (
+                    self.STALE_SELECTOR_STABLE_COUNT if (has_content and not stop_button_ever_seen)
+                    else self.RESPONSE_STABLE_COUNT
+                )
 
                 current_text, found_response = self._get_latest_response_text()
                 text_len = len(current_text) if current_text else 0
@@ -2564,17 +2612,18 @@ class CopilotHandler:
                         has_content = True
                         if current_text == last_text:
                             stable_count += 1
-                            if stable_count >= self.RESPONSE_STABLE_COUNT:
-                                logger.info("[TIMING] response_stabilized: %.2fs (content generation: %.2fs)",
+                            if stable_count >= required_stable_count:
+                                logger.info("[TIMING] response_stabilized: %.2fs (content generation: %.2fs, stable_threshold=%d)",
                                            time.time() - response_start_time,
-                                           time.time() - first_content_time if first_content_time else 0)
+                                           time.time() - first_content_time if first_content_time else 0,
+                                           required_stable_count)
                                 return current_text
                             # Use fastest interval during stability checking
                             poll_interval = self.RESPONSE_POLL_STABLE
                             # Log stability check progress
                             if time.time() - last_log_time >= 1.0:
                                 logger.info("[POLLING] iter=%d stable_count=%d/%d, text_len=%d (remaining=%.1fs)",
-                                           poll_iteration, stable_count, self.RESPONSE_STABLE_COUNT, text_len, max_wait)
+                                           poll_iteration, stable_count, required_stable_count, text_len, max_wait)
                                 last_log_time = time.time()
                         else:
                             stable_count = 0
@@ -2785,9 +2834,12 @@ class CopilotHandler:
             with additional context
             2. Second translation
         Returns: ["First translation\nwith additional context", "Second translation"]
+
+        Validates number completeness and inserts empty strings for missing numbers
+        to maintain correct index mapping.
         """
         result_text = result.strip()
-        translations = []
+        translations: list[str] = []
 
         # Find all numbered items with their content (including multiline)
         matches = _RE_BATCH_ITEM.findall(result_text)
@@ -2796,17 +2848,44 @@ class CopilotHandler:
             # Sort by number to ensure correct order
             numbered_items = [(int(num), content.strip()) for num, content in matches]
             numbered_items.sort(key=lambda x: x[0])
-            translations = [content for _, content in numbered_items]
+
+            # Validate number completeness and build result with correct indices
+            # Expected numbers: 1, 2, 3, ..., expected_count
+            found_numbers = {num for num, _ in numbered_items}
+            expected_numbers = set(range(1, expected_count + 1))
+            missing_numbers = expected_numbers - found_numbers
+
+            if missing_numbers:
+                logger.warning(
+                    "Missing translation numbers detected: %s (expected 1-%d, got %s). "
+                    "Empty strings will be inserted for missing items.",
+                    sorted(missing_numbers),
+                    expected_count,
+                    sorted(found_numbers),
+                )
+
+            # Build translations list with correct index mapping
+            # Create a dict for O(1) lookup
+            num_to_content = {num: content for num, content in numbered_items}
+            for i in range(1, expected_count + 1):
+                if i in num_to_content:
+                    translations.append(num_to_content[i])
+                else:
+                    # Insert empty string for missing number
+                    translations.append("")
         else:
             # Fallback: if no numbered pattern found, split by newlines
+            logger.debug(
+                "No numbered pattern found in batch result, using line-split fallback"
+            )
             for line in result_text.split('\n'):
                 line = line.strip()
                 if line:
                     translations.append(line)
 
-        # Pad with empty strings if needed
-        while len(translations) < expected_count:
-            translations.append("")
+            # Pad with empty strings if needed
+            while len(translations) < expected_count:
+                translations.append("")
 
         return translations[:expected_count]
 

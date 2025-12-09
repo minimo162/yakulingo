@@ -1512,7 +1512,16 @@ class YakuLingoApp:
             return translation[:500] + '...' if len(translation) > 500 else translation
 
         def update_streaming_label():
-            """Update streaming label and show partial result when explanation starts"""
+            """Update streaming label and show partial result when explanation starts.
+
+            Note on thread safety:
+            - streaming_text is read under lock protection
+            - Subsequent state changes (text_partial_result, explanation_loading) are done
+              outside the lock to avoid blocking the on_chunk callback
+            - This creates a theoretical TOCTOU window, but the impact is minimal:
+              at worst, the partial result may show slightly stale text, which will be
+              corrected on the next timer tick (0.1s) or when final result arrives
+            """
             nonlocal last_streaming_text, partial_result_displayed
             # Protected by _streaming_text_lock to prevent race conditions with on_chunk
             with self._streaming_text_lock:
@@ -1537,10 +1546,16 @@ class YakuLingoApp:
 
                 # Fallback: Show partial result if text is long enough (likely complete translation)
                 # This handles cases where Copilot doesn't use expected markers
-                MIN_TEXT_LENGTH_FOR_FALLBACK = 200  # chars
+                # Reduced from 200 to 50 chars to support short translations
+                MIN_TEXT_LENGTH_FOR_FALLBACK = 50  # chars
+                # Check for translation markers (Japanese or English)
+                has_translation_marker = any(
+                    marker in current_text.lower()
+                    for marker in ['訳文', '翻訳', 'translation']
+                )
                 text_length_fallback = (
                     len(current_text) >= MIN_TEXT_LENGTH_FOR_FALLBACK
-                    and '訳文' in current_text
+                    and has_translation_marker
                     and not has_explanation_marker
                 )
 

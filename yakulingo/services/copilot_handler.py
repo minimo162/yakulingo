@@ -2183,6 +2183,16 @@ class CopilotHandler:
                     logger.warning("Input field is empty after fill - Copilot may need attention")
                     raise RuntimeError("Copilotに入力できませんでした。Edgeブラウザを確認してください。")
 
+                # Wait for send button to become enabled before pressing Enter
+                # This ensures Copilot has processed the input text
+                send_button_selector = '.fai-SendButton:not([disabled]), button[type="submit"]:not([disabled])'
+                send_wait_start = time.time()
+                try:
+                    self._page.wait_for_selector(send_button_selector, timeout=5000, state='visible')
+                    logger.info("[TIMING] wait_for_send_button: %.2fs", time.time() - send_wait_start)
+                except Exception as e:
+                    logger.debug("Send button wait timed out after %.2fs (may still work): %s", time.time() - send_wait_start, e)
+
                 # Send the message via Enter key (most reliable)
                 input_elem.press("Enter")
                 logger.info("Message sent via Enter key")

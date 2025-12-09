@@ -53,6 +53,18 @@ LOGIN_PAGE_PATTERNS = [
     "account.microsoft.com",
     "signup.live.com",
     "microsoftonline.com/oauth",
+    # Additional patterns for newer Microsoft auth flows
+    "authn.microsoft.com",
+    "aadcdn.msauth.net",
+    "msauth.net",
+    "microsoftonline-p.com",
+    # SAML/Federation endpoints
+    "adfs.",
+    "/adfs/",
+    "sts.",
+    "/federationmetadata/",
+    # Entra ID (Azure AD) patterns
+    "entra.microsoft.com",
 ]
 
 
@@ -747,10 +759,11 @@ class CopilotHandler:
                 # poll for completion while the user signs in.
                 if self.last_connection_error == self.ERROR_LOGIN_REQUIRED:
                     try:
-                        # Wait for auto-login (Windows integrated auth, SSO, etc.) to complete.
+                        # Wait for auto-login (Windows integrated auth, SSO, MFA, etc.) to complete.
                         # This monitors URL changes to detect if auto-login is in progress,
                         # and only returns False if the login page becomes stable (no redirects).
-                        if self._wait_for_auto_login_impl(max_wait=15.0, poll_interval=1.0):
+                        # 60 seconds allows time for MFA approval on mobile devices.
+                        if self._wait_for_auto_login_impl(max_wait=60.0, poll_interval=1.0):
                             logger.info("Auto-login completed successfully")
                             self._finalize_connected_state()
                             return True
@@ -1040,11 +1053,66 @@ class CopilotHandler:
                 return self._wait_for_login_completion(page)
             return False
 
+    # Authentication keywords for multi-language support
+    AUTH_KEYWORDS = (
+        # Japanese
+        "認証", "ログイン", "サインイン", "パスワード", "資格情報",
+        # English
+        "Sign in", "Log in", "Login", "Password", "Credentials", "Authentication",
+        "Enter your", "Verify your identity", "Approve sign in",
+        # Chinese (Simplified & Traditional)
+        "登录", "登錄", "密码", "密碼", "验证", "驗證", "身份验证", "身份驗證",
+        # Korean
+        "로그인", "비밀번호", "인증",
+        # French
+        "Connexion", "Se connecter", "Mot de passe",
+        # German
+        "Anmelden", "Kennwort", "Passwort",
+        # Spanish
+        "Iniciar sesión", "Contraseña",
+        # Portuguese
+        "Entrar", "Senha",
+        # Italian
+        "Accedi", "Password",
+    )
+
+    # Extended selectors for authentication dialogs and forms
+    AUTH_DIALOG_SELECTORS = [
+        # Fluent UI dialogs
+        '.fui-DialogTitle',
+        '[role="dialog"] h2',
+        '[role="dialog"] h1',
+        # Microsoft login page elements
+        '.login-paginated-page',
+        '#loginHeader',
+        '.login-title',
+        '#displayName',
+        # ADFS and custom IdP
+        '#userNameInput',
+        '#passwordInput',
+        '.submit-button',
+        # MFA screens
+        '.mfa-notice',
+        '#idDiv_SAOTCC_Title',
+        '.verificationCodeInput',
+        # Generic auth forms
+        'form[action*="login"]',
+        'form[action*="auth"]',
+        'input[type="password"]',
+    ]
+
     def _has_auth_dialog(self) -> bool:
-        """Check if an authentication dialog is visible on the current page.
+        """Check if an authentication dialog or login form is visible on the current page.
+
+        Supports multiple languages and various authentication UI patterns including:
+        - Fluent UI dialogs
+        - Microsoft login pages
+        - ADFS/SAML login forms
+        - MFA verification screens
+        - Custom IdP login pages
 
         Returns:
-            True if an authentication dialog (認証/ログイン/サインイン) is detected
+            True if an authentication dialog or login form is detected
         """
         if not self._page:
             return False
@@ -1053,12 +1121,33 @@ class CopilotHandler:
         PlaywrightError = error_types['Error']
 
         try:
-            auth_dialog = self._page.query_selector('.fui-DialogTitle, [role="dialog"] h2')
-            if auth_dialog:
-                dialog_text = auth_dialog.inner_text().strip()
-                if any(keyword in dialog_text for keyword in ("認証", "ログイン", "サインイン", "Sign in", "Log in")):
-                    logger.debug("Authentication dialog detected: %s", dialog_text)
+            # Check dialog/form elements with extended selectors
+            for selector in self.AUTH_DIALOG_SELECTORS:
+                element = self._page.query_selector(selector)
+                if element:
+                    # For text-containing elements, check for auth keywords
+                    try:
+                        element_text = element.inner_text().strip()
+                        if element_text and any(keyword.lower() in element_text.lower() for keyword in self.AUTH_KEYWORDS):
+                            logger.debug("Authentication element detected: selector=%s, text=%s", selector, element_text[:50])
+                            return True
+                    except Exception:
+                        pass  # Element may not support inner_text (e.g., input)
+
+                    # For input[type="password"], presence alone indicates auth page
+                    if 'password' in selector:
+                        logger.debug("Password input detected: %s", selector)
+                        return True
+
+            # Check page title for auth keywords
+            try:
+                page_title = self._page.title()
+                if page_title and any(keyword.lower() in page_title.lower() for keyword in self.AUTH_KEYWORDS):
+                    logger.debug("Authentication page title detected: %s", page_title)
                     return True
+            except Exception:
+                pass
+
             return False
         except PlaywrightError:
             return False
@@ -1089,7 +1178,8 @@ class CopilotHandler:
         elapsed = 0.0
         last_url = None
         stable_count = 0  # Counter for how many consecutive checks show no URL change
-        STABLE_THRESHOLD = 2  # If URL doesn't change for this many checks, consider it stable
+        # Increased from 2 to 4 to avoid false positives during network delays
+        STABLE_THRESHOLD = 4  # If URL doesn't change for this many checks (4s), consider it stable
 
         logger.info("Waiting for auto-login to complete (max %.1fs)...", max_wait)
 

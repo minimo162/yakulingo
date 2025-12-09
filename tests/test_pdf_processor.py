@@ -26,6 +26,7 @@ from yakulingo.processors.pdf_processor import (
     find_matching_font_size,
     restore_formula_placeholders,
     extract_formula_vars_from_metadata,
+    extract_formula_vars_for_block,
     get_layout_class_at_point,
     is_same_region,
     should_abandon_region,
@@ -2646,6 +2647,53 @@ class TestExtractFormulaVarsFromMetadata:
         """Should return empty list for empty metadata"""
         result = extract_formula_vars_from_metadata({})
         assert result == []
+
+
+# =============================================================================
+# Tests for extract_formula_vars_for_block
+# =============================================================================
+class TestExtractFormulaVarsForBlock:
+    """Tests for extract_formula_vars_for_block function"""
+
+    def test_extract_single_var(self):
+        """Should extract single formula var from text"""
+        vars = [FormulaVar(text="x"), FormulaVar(text="y")]
+        result = extract_formula_vars_for_block("Test {v0} here", vars)
+        assert len(result) == 1
+        assert result[0].text == "x"
+
+    def test_extract_multiple_vars(self):
+        """Should extract multiple formula vars from text"""
+        vars = [FormulaVar(text="x"), FormulaVar(text="y"), FormulaVar(text="z")]
+        result = extract_formula_vars_for_block("Test {v0} and {v2}", vars)
+        assert len(result) == 2
+        assert result[0].text == "x"
+        assert result[1].text == "z"
+
+    def test_no_placeholders(self):
+        """Should return empty list when no placeholders in text"""
+        vars = [FormulaVar(text="x")]
+        result = extract_formula_vars_for_block("Test without placeholders", vars)
+        assert result == []
+
+    def test_empty_var_list(self):
+        """Should return empty list when var list is empty"""
+        result = extract_formula_vars_for_block("Test {v0}", [])
+        assert result == []
+
+    def test_out_of_range_index(self):
+        """Should skip placeholders with out-of-range indices"""
+        vars = [FormulaVar(text="x")]
+        result = extract_formula_vars_for_block("Test {v0} and {v5}", vars)
+        assert len(result) == 1
+        assert result[0].text == "x"
+
+    def test_space_in_placeholder(self):
+        """Should handle spaces in placeholder notation"""
+        vars = [FormulaVar(text="formula")]
+        result = extract_formula_vars_for_block("Test { v0 } here", vars)
+        assert len(result) == 1
+        assert result[0].text == "formula"
 
 
 # =============================================================================

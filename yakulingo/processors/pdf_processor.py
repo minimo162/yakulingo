@@ -64,6 +64,7 @@ from .pdf_converter import (
     # Functions
     get_pdf_converter_ex_class,
     vflag, restore_formula_placeholders, extract_formula_vars_from_metadata,
+    extract_formula_vars_for_block,
     is_subscript_superscript, detect_text_style,
     detect_paragraph_boundary, classify_char_type,
     create_paragraph_from_char, create_formula_var_from_chars,
@@ -2690,7 +2691,7 @@ class PdfProcessor(FileProcessor):
             bbox = (para.x0, para.y0, para.x1, para.y1)
 
             # Extract formula vars for this block
-            block_vars = extract_formula_vars_from_metadata(text, var)
+            block_vars = extract_formula_vars_for_block(text, var)
 
             blocks.append(TextBlock(
                 id=f"page_{page_idx}_block_{block_idx}",

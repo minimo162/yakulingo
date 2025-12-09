@@ -2317,6 +2317,7 @@ class PdfProcessor(FileProcessor):
         settings=None,
         pages: Optional[list[int]] = None,
         formula_vars_map: Optional[dict[str, list[FormulaVar]]] = None,
+        text_blocks: Optional[list[TextBlock]] = None,
     ) -> dict[str, Any]:
         """
         Apply translations to PDF using low-level PDF operators.
@@ -2335,6 +2336,9 @@ class PdfProcessor(FileProcessor):
             formula_vars_map: Optional mapping of block IDs to FormulaVar lists.
                    If provided, formula placeholders {vN} in translated text
                    will be restored to original formula text.
+            text_blocks: Optional list of TextBlocks from extract_text_blocks_streaming.
+                   PDFMathTranslate compliant: Uses TextBlock metadata for precise
+                   coordinate information (PDF coordinates, already extracted).
 
         Returns:
             Dictionary with processing statistics:
@@ -2345,8 +2349,8 @@ class PdfProcessor(FileProcessor):
         """
         return self.apply_translations_low_level(
             input_path, output_path, translations,
-            cells=None, direction=direction, settings=settings, pages=pages,
-            formula_vars_map=formula_vars_map,
+            direction=direction, settings=settings, pages=pages,
+            formula_vars_map=formula_vars_map, text_blocks=text_blocks,
         )
 
     def apply_translations_with_cells(
@@ -2359,35 +2363,38 @@ class PdfProcessor(FileProcessor):
         settings=None,
         dpi: int = DEFAULT_OCR_DPI,
         pages: Optional[list[int]] = None,
+        text_blocks: Optional[list[TextBlock]] = None,
     ) -> dict[str, Any]:
         """
-        Apply translations using TranslationCell data (PP-DocLayout-L integration).
+        Apply translations using TranslationCell data.
 
-        PDFMathTranslate compliant: Uses low-level PDF operators for precise
-        text placement and dynamic line height compression.
+        DEPRECATED: This method is deprecated in favor of apply_translations()
+        with text_blocks parameter. TranslationCell is no longer used.
+        PDFMathTranslate compliant implementation uses TextBlock directly.
 
         Args:
             input_path: Path to original PDF
             output_path: Path for translated PDF
             translations: Mapping of addresses to translated text
-            cells: TranslationCell list with position info (image coordinates)
+            cells: TranslationCell list (DEPRECATED, ignored if text_blocks provided)
             direction: Translation direction
-            settings: AppSettings for font configuration (font_en_to_jp, font_jp_to_en)
-            dpi: DPI used for OCR (for coordinate scaling)
-            pages: Optional list of page numbers to translate (1-indexed). If None,
-                all pages are processed.
+            settings: AppSettings for font configuration
+            dpi: DPI used for OCR (DEPRECATED, not used with text_blocks)
+            pages: Optional list of page numbers to translate (1-indexed)
+            text_blocks: Optional list of TextBlocks (preferred over cells)
 
         Returns:
-            Dictionary with processing statistics:
-            - 'total': Total cells to translate
-            - 'success': Successfully translated cells
-            - 'failed': List of failed cell addresses
-            - 'failed_fonts': List of fonts that failed to embed
+            Dictionary with processing statistics
         """
+        if text_blocks is None and cells:
+            logger.warning(
+                "apply_translations_with_cells() with TranslationCell is deprecated. "
+                "Use apply_translations() with text_blocks parameter instead."
+            )
         return self.apply_translations_low_level(
             input_path, output_path, translations,
-            cells=cells, direction=direction, settings=settings, dpi=dpi,
-            pages=pages,
+            direction=direction, settings=settings, pages=pages,
+            text_blocks=text_blocks,
         )
 
     def apply_translations_low_level(
@@ -2395,15 +2402,17 @@ class PdfProcessor(FileProcessor):
         input_path: Path,
         output_path: Path,
         translations: dict[str, str],
-        cells: Optional[list[TranslationCell]] = None,
         direction: str = "jp_to_en",
         settings=None,
-        dpi: int = DEFAULT_OCR_DPI,
         pages: Optional[list[int]] = None,
         formula_vars_map: Optional[dict[str, list[FormulaVar]]] = None,
+        text_blocks: Optional[list[TextBlock]] = None,
     ) -> dict[str, Any]:
         """
         Apply translations using low-level PDF operators.
+
+        PDFMathTranslate compliant: Uses low-level PDF operators for precise
+        text placement and dynamic line height compression.
 
         This method provides precise control over text placement including:
         - Dynamic line height compression for long text
@@ -2411,21 +2420,21 @@ class PdfProcessor(FileProcessor):
         - Proper glyph ID encoding for all font types
         - Formula placeholder restoration (PDFMathTranslate compliant)
 
-        Supports both standard block IDs (page_X_block_Y) and OCR addresses (P1_0, T1_0_0_0).
-
         Args:
             input_path: Path to original PDF
             output_path: Path for translated PDF
-            translations: Mapping of block IDs or addresses to translated text
-            cells: Optional TranslationCell list for OCR mode
+            translations: Mapping of block IDs to translated text
             direction: Translation direction ("jp_to_en" or "en_to_jp")
             settings: AppSettings for font configuration
-            dpi: DPI used for OCR (for coordinate scaling)
             pages: Optional list of page numbers to translate (1-indexed).
                    If None, all pages are translated. PDFMathTranslate compliant.
             formula_vars_map: Optional mapping of block IDs to FormulaVar lists.
                    If provided, formula placeholders {vN} in translated text
                    will be restored to original formula text.
+            text_blocks: Optional list of TextBlocks from extract_text_blocks_streaming.
+                   PDFMathTranslate compliant: Uses TextBlock metadata for precise
+                   coordinate information (PDF coordinates, already extracted).
+                   If None, falls back to PyMuPDF block extraction.
 
         Returns:
             Dictionary with processing statistics
@@ -2473,20 +2482,10 @@ class PdfProcessor(FileProcessor):
             # Create operator generator
             op_gen = PdfOperatorGenerator(font_registry)
 
-            # Cell lookup for OCR mode
-            cell_map = {cell.address: cell for cell in cells} if cells else {}
-
-            # DPI scale factor
-            scale = 72.0 / dpi
-
-            # Extract original font info from PDF for better font size matching
-            # This helps when OCR is used on text-based PDFs
-            try:
-                original_font_info = extract_font_info_from_pdf(input_path, dpi)
-                logger.debug("Low-level API: Extracted font info from %d pages", len(original_font_info))
-            except Exception as e:
-                logger.debug("Low-level API: Could not extract font info: %s", e)
-                original_font_info = {}
+            # PDFMathTranslate compliant: Build TextBlock lookup map
+            # TextBlock contains PDF coordinates (origin at bottom-left)
+            # No DPI scaling needed - coordinates are already in PDF points
+            block_map = {block.id: block for block in text_blocks} if text_blocks else {}
 
             # Process each page
             for page_idx, page in enumerate(doc):
@@ -2505,17 +2504,14 @@ class PdfProcessor(FileProcessor):
                 replacer = ContentStreamReplacer(doc, font_registry, preserve_graphics=True)
                 replacer.set_base_stream(page)
 
-                # Get font info for this page (for font size matching)
-                page_font_info = original_font_info.get(page_num, [])
-
-                # Get block info for standard mode
-                blocks_dict = {}
-                if not cells:
+                # Fallback: Get block info using PyMuPDF (if no text_blocks provided)
+                pymupdf_blocks_dict = {}
+                if not text_blocks:
                     blocks = page.get_text("dict")["blocks"]
                     for block_idx, block in enumerate(blocks):
                         if block.get("type") == 0:
                             block_id = f"page_{page_idx}_block_{block_idx}"
-                            blocks_dict[block_id] = block
+                            pymupdf_blocks_dict[block_id] = block
 
                 # Process translations for this page
                 for block_id, translated in translations.items():
@@ -2527,58 +2523,69 @@ class PdfProcessor(FileProcessor):
                             translated, formula_vars_map[block_id]
                         )
 
-                    # Determine if this block belongs to this page
-                    if cells:
-                        # OCR mode: check address
-                        if not _is_address_on_page(block_id, page_num):
+                    # Check block ID prefix to determine if this block belongs to this page
+                    if not block_id.startswith(f"page_{page_idx}_"):
+                        continue
+
+                    # PDFMathTranslate compliant: Get coordinates from TextBlock
+                    if text_blocks:
+                        text_block = block_map.get(block_id)
+                        if not text_block:
                             continue
-                        cell = cell_map.get(block_id)
-                        if not cell:
+                        # TextBlock bbox is already in PDF coordinates (origin at bottom-left)
+                        # Format: (x0, y0, x1, y1) where y0 < y1
+                        bbox = text_block.metadata.get('bbox')
+                        if not bbox:
                             continue
-                        # Scale coordinates
-                        x1 = cell.box[0] * scale
-                        y1 = cell.box[1] * scale
-                        x2 = cell.box[2] * scale
-                        y2 = cell.box[3] * scale
-                        original_text = cell.text
-                        # Estimate original line count from box height and text length
-                        # This is an approximation since line breaks were removed during OCR processing
-                        box_h = y2 - y1
-                        if box_h > 0 and len(original_text) > 0:
-                            estimated_font = box_h / max(1, original_text.count('\n') + 1) / 1.2
-                            chars_per_line = max(1, (x2 - x1) / max(1, estimated_font * 0.6))
-                            original_line_count = max(1, int(len(original_text) / chars_per_line) + 1)
-                        else:
-                            original_line_count = 1
+                        # PDF coordinates: x0=left, y0=bottom, x1=right, y1=top
+                        x1, y1, x2, y2 = bbox[0], bbox[1], bbox[2], bbox[3]
+                        original_text = text_block.text
+                        # Get font size from Paragraph metadata
+                        paragraph = text_block.metadata.get('paragraph')
+                        stored_font_size = paragraph.size if paragraph else None
                     else:
-                        # Standard mode: check block ID prefix
-                        if not block_id.startswith(f"page_{page_idx}_"):
-                            continue
-                        block = blocks_dict.get(block_id)
+                        # Fallback: PyMuPDF block extraction
+                        block = pymupdf_blocks_dict.get(block_id)
                         if not block:
                             continue
                         bbox = block.get("bbox")
                         if not bbox:
                             continue
+                        # PyMuPDF bbox is in page coordinates (origin at top-left)
                         x1, y1, x2, y2 = bbox
                         original_text = ""
+                        stored_font_size = None
                         original_line_count = 0
                         for line in block.get("lines", []):
                             line_text = ""
                             for span in line.get("spans", []):
                                 line_text += span.get("text", "")
+                                if stored_font_size is None:
+                                    stored_font_size = span.get("size")
                             original_text += line_text
                             if line_text.strip():
                                 original_line_count += 1
 
                     try:
-                        # Convert to PDF coordinates (y-axis inversion)
-                        box_pdf = convert_to_pdf_coordinates(
-                            [x1, y1, x2, y2], page_height
-                        )
-                        pdf_x1, pdf_y1, pdf_x2, pdf_y2 = box_pdf
-                        box_width = pdf_x2 - pdf_x1
-                        box_height = pdf_y2 - pdf_y1
+                        # Get box dimensions
+                        # TextBlock bbox: PDF coordinates (y0=bottom, y1=top)
+                        # PyMuPDF bbox: page coordinates (y0=top, y1=bottom)
+                        if text_blocks:
+                            # TextBlock: already in PDF coordinates, use directly
+                            # bbox = (x0, y0, x1, y1) where y0 < y1 (bottom < top)
+                            pdf_x1, pdf_y0, pdf_x2, pdf_y1 = x1, y1, x2, y2
+                            box_width = pdf_x2 - pdf_x1
+                            box_height = pdf_y1 - pdf_y0  # y1 (top) - y0 (bottom)
+                            # Estimate line count from text (since we removed line breaks)
+                            original_line_count = max(1, original_text.count('\n') + 1)
+                        else:
+                            # PyMuPDF: convert to PDF coordinates (y-axis inversion)
+                            box_pdf = convert_to_pdf_coordinates(
+                                [x1, y1, x2, y2], page_height
+                            )
+                            pdf_x1, pdf_y0, pdf_x2, pdf_y1 = box_pdf
+                            box_width = pdf_x2 - pdf_x1
+                            box_height = pdf_y1 - pdf_y0
 
                         # Adjust box_width for multi-line blocks to prevent excessive fragmentation
                         # When original text was wrapped into N lines in a narrow box, the box_width
@@ -2611,45 +2618,33 @@ class PdfProcessor(FileProcessor):
                         # Select font based on text content
                         font_id = font_registry.select_font_for_text(translated, target_lang)
 
-                        # Get initial font size: try matching with original PDF first,
-                        # then estimate from box height and original text
+                        # PDFMathTranslate compliant: Get font size from extraction metadata
+                        # TextBlock stores font size from pdfminer extraction (paragraph.size)
                         initial_font_size = None
 
-                        # Method 1: Match with original PDF font info
-                        if page_font_info:
-                            if cells:
-                                # OCR mode: cell.box is in OCR DPI coordinates
-                                matched_size = find_matching_font_size(
-                                    cell.box, page_font_info, default_size=None
-                                )
-                            else:
-                                # Standard mode: convert PDF coordinates to OCR DPI
-                                ocr_scale = dpi / 72.0
-                                ocr_box = [
-                                    x1 * ocr_scale, y1 * ocr_scale,
-                                    x2 * ocr_scale, y2 * ocr_scale
-                                ]
-                                matched_size = find_matching_font_size(
-                                    ocr_box, page_font_info, default_size=None
-                                )
-                            if matched_size is not None:
-                                initial_font_size = matched_size
-                                logger.debug(
-                                    "Low-level API: Matched font size %.1f for block %s",
-                                    initial_font_size, block_id
-                                )
+                        # Method 1: Use stored font size from TextBlock (most accurate)
+                        if stored_font_size is not None:
+                            initial_font_size = stored_font_size
+                            logger.debug(
+                                "Low-level API: Using stored font size %.1f for block %s",
+                                initial_font_size, block_id
+                            )
 
                         # Method 2: Estimate from box height and original text (fallback)
                         if initial_font_size is None:
                             initial_font_size = estimate_font_size_from_box_height(
-                                [x1, y1, x2, y2], original_text
+                                [pdf_x1, pdf_y0, pdf_x2, pdf_y1], original_text
                             )
 
                         initial_font_size = max(MIN_FONT_SIZE, min(initial_font_size, MAX_FONT_SIZE))
 
+                        # Unified box_pdf for both modes (PDF coordinates)
+                        # Format: [x1, y0, x2, y1] where y0 < y1 (bottom < top)
+                        box_pdf = [pdf_x1, pdf_y0, pdf_x2, pdf_y1]
+
                         # Calculate line height with dynamic compression using font metrics
                         line_height = calculate_line_height_with_font(
-                            translated, [pdf_x1, pdf_y1, pdf_x2, pdf_y2],
+                            translated, box_pdf,
                             initial_font_size, font_id, font_registry, target_lang
                         )
 
@@ -2930,6 +2925,9 @@ class PdfProcessor(FileProcessor):
                                     self._record_failed_page(page_num, reason)
 
                                 # Step 4: Group characters using PP-DocLayout-L layout
+                                # PDFMathTranslate compliant: Single-pass processing
+                                # Characters are grouped into paragraphs using layout array
+                                # No separate TranslationCell merge step needed
                                 if chars:
                                     blocks = self._group_chars_into_blocks(
                                         chars, p_idx, LTChar,
@@ -2939,42 +2937,12 @@ class PdfProcessor(FileProcessor):
                                 else:
                                     blocks = []
 
-                                # Step 5: Create TranslationCells from PP-DocLayout-L results
-                                cells = prepare_translation_cells(results, page_num)
-
-                                # Step 6: If pdfminer got text, update cells with it
-                                if blocks:
-                                    self._merge_pdfminer_text_to_cells(
-                                        blocks, cells, layout_array, p_height, dpi
-                                    )
-
-                                # Convert cells to TextBlocks if no pdfminer blocks
-                                if not blocks:
-                                    for cell in cells:
-                                        if cell.text and self.should_translate(cell.text):
-                                            blocks.append(TextBlock(
-                                                id=cell.address,
-                                                text=cell.text,
-                                                location=f"Page {page_num}",
-                                                metadata={
-                                                    'type': 'ocr_cell',
-                                                    'page_idx': page_num - 1,
-                                                    'address': cell.address,
-                                                    'bbox': cell.box,
-                                                    'direction': cell.direction,
-                                                    'role': cell.role,
-                                                }
-                                            ))
-
-                                # Step 7: Filter out empty cells (no text after merge)
-                                # This removes PP-DocLayout-L detected regions that had no
-                                # corresponding pdfminer text (e.g., images, decorative elements)
-                                cells = [
-                                    cell for cell in cells
-                                    if cell.text and cell.text.strip()
-                                ]
-
-                                yield blocks, cells
+                                # PDFMathTranslate compliant: TextBlock contains all needed info
+                                # - metadata['bbox']: PDF coordinates (origin at bottom-left)
+                                # - metadata['paragraph']: Paragraph with position/size info
+                                # - metadata['font_size']: Font size for rendering
+                                # TranslationCell is no longer needed (cells=None)
+                                yield blocks, None
 
                             except (RuntimeError, ValueError, OSError, MemoryError) as e:
                                 logger.error("Hybrid extraction failed for page %d: %s", page_num, e)

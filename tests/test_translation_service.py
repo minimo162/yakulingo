@@ -709,12 +709,10 @@ class TestTranslationServiceTranslateFile:
             id="page_1_block_0", text="Page2", location="Page 2", metadata={'page_idx': 1}
         )
 
-        cell_page1 = TranslationCell(address="P1_0", text="One", box=[0, 0, 10, 10], page_num=1)
-        cell_page2 = TranslationCell(address="P2_0", text="Two", box=[0, 0, 10, 10], page_num=2)
-
+        # PDFMathTranslate compliant: page_cells is always None
         processor.extract_text_blocks_streaming.return_value = [
-            ([page1_block], [cell_page1]),
-            ([page2_block], [cell_page2]),
+            ([page1_block], None),
+            ([page2_block], None),
         ]
 
         translations = {page2_block.id: "Translated page 2"}
@@ -734,15 +732,16 @@ class TestTranslationServiceTranslateFile:
         translate_blocks_args = service.batch_translator.translate_blocks.call_args.args[0]
         assert translate_blocks_args == [page2_block]
 
-        apply_args, apply_kwargs = processor.apply_translations_with_cells.call_args
-        assert apply_args[3] == [cell_page2]
+        # PDFMathTranslate compliant: apply_translations is called with text_blocks
+        apply_kwargs = processor.apply_translations.call_args.kwargs
         assert apply_kwargs["pages"] == [2]
+        assert apply_kwargs["text_blocks"] == [page2_block]
 
         assert result.status == TranslationStatus.COMPLETED
         assert result.blocks_total == 1
 
-    def test_pdf_glossary_export_includes_cells(self, tmp_path):
-        """Glossary export for PDFs uses page/address metadata when available"""
+    def test_pdf_glossary_export_uses_text_blocks(self, tmp_path):
+        """Glossary export for PDFs uses TextBlock metadata (PDFMathTranslate compliant)"""
         settings = AppSettings(export_glossary=True, output_directory=str(tmp_path))
         service = TranslationService(Mock(), settings)
 
@@ -750,24 +749,15 @@ class TestTranslationServiceTranslateFile:
         processor.get_page_count.return_value = 1
         processor.failed_pages = []
 
-        block = TextBlock(id="P1_0", text="原文", location="Page 1")
-        cell = TranslationCell(address="P1_0", text="原文", box=[0, 0, 10, 10], page_num=1)
-        processor.extract_text_blocks_streaming.return_value = [([block], [cell])]
+        # PDFMathTranslate compliant: page_cells is always None
+        block = TextBlock(id="page_0_block_0", text="原文", location="Page 1")
+        processor.extract_text_blocks_streaming.return_value = [([block], None)]
 
         # Create translated PDF output
-        processor.apply_translations_with_cells.side_effect = (
+        processor.apply_translations.side_effect = (
             lambda _input_path, output_path, *_args, **_kwargs: output_path.write_bytes(b"pdf")
         )
         processor.create_bilingual_pdf = Mock()
-
-        def export_glossary(translations, output_path, cells=None):
-            output_path.write_text(
-                "original,translated,page,address\n原文,訳文,1,P1_0",
-                encoding="utf-8-sig",
-            )
-            return {"total": len(translations), "exported": 1, "skipped": 0}
-
-        processor.export_glossary_csv = Mock(side_effect=export_glossary)
 
         service.batch_translator = Mock()
         service.batch_translator.translate_blocks.return_value = {block.id: "訳文"}
@@ -783,7 +773,8 @@ class TestTranslationServiceTranslateFile:
 
         glossary_path = tmp_path / "input_glossary.csv"
 
-        processor.export_glossary_csv.assert_called_once()
+        # PDFMathTranslate compliant: glossary export uses _export_glossary_csv
+        # which is called with TextBlocks (not processor.export_glossary_csv with cells)
         assert result.glossary_path == glossary_path
         assert glossary_path.exists()
         assert glossary_path.read_text(encoding="utf-8-sig").startswith("original,translated")

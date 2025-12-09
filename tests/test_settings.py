@@ -15,8 +15,8 @@ class TestAppSettings:
         assert settings.reference_files == []  # Empty by default for new users
         assert settings.output_directory is None
         assert settings.last_tab == "text"
-        assert settings.max_chars_per_batch == 7000
-        assert settings.request_timeout == 300
+        assert settings.max_chars_per_batch == 4000  # Reduced for reliability
+        assert settings.request_timeout == 600  # 10 minutes for large translations
         assert settings.max_retries == 3
         # Auto-update defaults
         assert settings.auto_update_enabled is True
@@ -210,7 +210,7 @@ class TestSettingsEdgeCases:
             settings = AppSettings.load(settings_path)
 
             # Should use defaults for missing fields
-            assert settings.max_chars_per_batch == 7000
+            assert settings.max_chars_per_batch == 4000  # Reduced for reliability
             assert settings.reference_files == []  # Empty by default
 
     def test_load_partial_json(self):
@@ -224,7 +224,7 @@ class TestSettingsEdgeCases:
             assert settings.last_tab == "file"
             assert settings.max_chars_per_batch == 5000
             # Other fields use defaults
-            assert settings.request_timeout == 300
+            assert settings.request_timeout == 600  # 10 minutes for large translations
 
     def test_load_with_extra_fields(self):
         """Load settings with unknown extra fields"""

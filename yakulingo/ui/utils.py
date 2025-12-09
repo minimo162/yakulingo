@@ -40,43 +40,6 @@ class TempFileManager:
 
     _instance: Optional['TempFileManager'] = None
 
-
-def _get_ui():
-    """Return the current NiceGUI ``ui`` object, allowing test overrides.
-
-    The NiceGUI module can be monkeypatched in tests, so importing it lazily
-    ensures we pick up any injected stubs instead of the initially imported
-    global ``ui`` reference.
-    """
-
-    try:
-        module = importlib.import_module('nicegui')
-        return getattr(module, 'ui', ui)
-    except Exception as e:  # pragma: no cover - defensive fallback
-        logger.debug("Falling back to default ui after import error: %s", e)
-        return ui
-
-
-def _get_nicegui_app():
-    """Safely obtain the NiceGUI ``app`` module if available."""
-
-    try:
-        module = importlib.import_module('nicegui')
-        return getattr(module, 'app', None)
-    except Exception as e:  # pragma: no cover - defensive fallback
-        logger.debug("Falling back to default app after import error: %s", e)
-        return None
-
-
-def _safe_notify(message: str, **kwargs) -> None:
-    """Attempt to display a NiceGUI notification without raising in background tasks."""
-
-    ui_module = _get_ui()
-    try:
-        ui_module.notify(message, **kwargs)
-    except RuntimeError as e:
-        logger.debug("Skipping notification outside UI context: %s", e)
-
     def __new__(cls) -> 'TempFileManager':
         if cls._instance is None:
             cls._instance = super().__new__(cls)
@@ -175,6 +138,43 @@ def _safe_notify(message: str, **kwargs) -> None:
 
 # Singleton instance
 temp_file_manager = TempFileManager()
+
+
+def _get_ui():
+    """Return the current NiceGUI ``ui`` object, allowing test overrides.
+
+    The NiceGUI module can be monkeypatched in tests, so importing it lazily
+    ensures we pick up any injected stubs instead of the initially imported
+    global ``ui`` reference.
+    """
+
+    try:
+        module = importlib.import_module('nicegui')
+        return getattr(module, 'ui', ui)
+    except Exception as e:  # pragma: no cover - defensive fallback
+        logger.debug("Falling back to default ui after import error: %s", e)
+        return ui
+
+
+def _get_nicegui_app():
+    """Safely obtain the NiceGUI ``app`` module if available."""
+
+    try:
+        module = importlib.import_module('nicegui')
+        return getattr(module, 'app', None)
+    except Exception as e:  # pragma: no cover - defensive fallback
+        logger.debug("Falling back to default app after import error: %s", e)
+        return None
+
+
+def _safe_notify(message: str, **kwargs) -> None:
+    """Attempt to display a NiceGUI notification without raising in background tasks."""
+
+    ui_module = _get_ui()
+    try:
+        ui_module.notify(message, **kwargs)
+    except RuntimeError as e:
+        logger.debug("Skipping notification outside UI context: %s", e)
 
 
 def format_markdown_text(text: str) -> str:

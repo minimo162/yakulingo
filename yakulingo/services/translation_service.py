@@ -467,12 +467,14 @@ class BatchTranslator:
 
     # Default values (used when settings not provided)
     DEFAULT_MAX_CHARS_PER_BATCH = 7000   # Characters per batch (fits in 8000 with ~1000 char template)
+    DEFAULT_REQUEST_TIMEOUT = 120  # Default timeout for Copilot response
 
     def __init__(
         self,
         copilot: CopilotHandler,
         prompt_builder: PromptBuilder,
         max_chars_per_batch: Optional[int] = None,
+        request_timeout: Optional[int] = None,
         enable_cache: bool = True,
     ):
         self.copilot = copilot
@@ -482,6 +484,7 @@ class BatchTranslator:
 
         # Use provided values or defaults
         self.max_chars_per_batch = max_chars_per_batch or self.DEFAULT_MAX_CHARS_PER_BATCH
+        self.request_timeout = request_timeout or self.DEFAULT_REQUEST_TIMEOUT
 
         # Translation cache for avoiding re-translation of identical text
         self._cache = TranslationCache() if enable_cache else None
@@ -695,7 +698,8 @@ class BatchTranslator:
             skip_clear_wait = (i > 0)
             try:
                 unique_translations = self.copilot.translate_sync(
-                    unique_texts, prompt, reference_files, skip_clear_wait
+                    unique_texts, prompt, reference_files, skip_clear_wait,
+                    timeout=self.request_timeout
                 )
             except TranslationCancelledError:
                 logger.info("Translation cancelled during batch %d/%d", i + 1, len(batches))
@@ -820,6 +824,7 @@ class TranslationService:
             copilot,
             self.prompt_builder,
             max_chars_per_batch=config.max_chars_per_batch if config else None,
+            request_timeout=config.request_timeout if config else None,
         )
         # Thread-safe cancellation using Event instead of bool flag
         self._cancel_event = threading.Event()

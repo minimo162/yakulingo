@@ -608,7 +608,11 @@ class TestSendMessage:
         mock_page = MagicMock()
         mock_input = MagicMock()
         mock_page.wait_for_selector.return_value = mock_input
-        mock_page.evaluate.return_value = False  # JS returns False when input is empty
+        # Method 1: input_elem.evaluate returns False
+        mock_input.evaluate.return_value = False
+        # Method 2: input_elem.fill succeeds but inner_text is empty
+        mock_input.inner_text.return_value = ""
+        # Method 3: type also fails to produce content
         handler._page = mock_page
 
         with pytest.raises(RuntimeError) as exc:

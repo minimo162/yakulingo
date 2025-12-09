@@ -1451,9 +1451,9 @@ class YakuLingoApp:
             if not text:
                 return ""
 
-            # Find start of translation (訳文: or 訳文：)
+            # Find start of translation (訳文 marker with optional colon/heading)
             import re
-            start_match = re.search(r'訳文[:：]\s*', text)
+            start_match = re.search(r'[#>*\s-]*訳文[:：]?\s*', text)
             if not start_match:
                 # No translation marker yet, show raw text
                 return text[:300] + '...' if len(text) > 300 else text
@@ -1462,8 +1462,8 @@ class YakuLingoApp:
             translation_start = start_match.end()
             remaining = text[translation_start:]
 
-            # Find end of translation (解説: or 解説：)
-            end_match = re.search(r'\n\s*解説[:：]', remaining)
+            # Find end of translation (解説 marker with optional colon/heading)
+            end_match = re.search(r'\n\s*[#>*\s-]*解説[:：]?', remaining)
             if end_match:
                 # Have both markers, extract translation part
                 translation = remaining[:end_match.start()].strip()

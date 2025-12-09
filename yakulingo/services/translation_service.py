@@ -22,8 +22,12 @@ logger = logging.getLogger(__name__)
 # Pre-compiled regex patterns for performance
 # Support both half-width (:) and full-width (：) colons, and markdown bold (**訳文:**)
 _RE_MULTI_OPTION = re.compile(r'\[(\d+)\]\s*\**訳文\**[:：]\s*(.+?)\s*\**解説\**[:：]\s*(.+?)(?=\[\d+\]|$)', re.DOTALL)
-_RE_TRANSLATION_TEXT = re.compile(r'\**訳文\**[:：]\s*(.+?)(?=\**解説\**[:：]|$)', re.DOTALL)
-_RE_EXPLANATION = re.compile(r'\**解説\**[:：]\s*(.+)', re.DOTALL)
+# Allow optional Markdown headings (###) or bullet prefixes, and optional colons after labels
+_RE_TRANSLATION_TEXT = re.compile(
+    r'[#>*\s-]*\**訳文\**[:：]?\s*(.+?)(?=[\n\s]*[#>*\s-]*\**解説\**[:：]?\s*|$)',
+    re.DOTALL,
+)
+_RE_EXPLANATION = re.compile(r'[#>*\s-]*\**解説\**[:：]?\s*(.+)', re.DOTALL)
 _RE_MARKDOWN_SEPARATOR = re.compile(r'\n?\s*[\*\-]{3,}\s*$')
 _RE_FILENAME_FORBIDDEN = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
 

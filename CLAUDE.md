@@ -954,6 +954,9 @@ Based on recent commits:
 - **PP-DocLayout-L Optimization**:
   - **Pre-initialization**: 起動時に事前初期化してPlaywright競合を回避
   - **Windows message suppression**: Windowsメッセージを抑制
+  - **Installation check**: PDF選択時に`is_layout_available()`でチェック、未インストール時にUI警告を表示
+  - **Fallback detection**: `_layout_fallback_used`フラグで状態を追跡
+  - **Memory estimation**: 大規模PDF処理時のメモリ使用量見積もりをログに出力
 - **Translation Card UI Unification**:
   - **Unified structure**: 和訳の翻訳結果カード構造を英訳と統一
   - **Card width alignment**: 翻訳結果カードの横幅を原文カードと統一
@@ -964,6 +967,11 @@ Based on recent commits:
 - **Excel COM Improvements**:
   - **Pre-cleanup**: Excel COM接続の事前クリーンアップを追加
   - **Retry logic**: COMエラー時のリトライ前にCOMリソースのクリーンアップを追加
+  - **openpyxl fallback warning**: Excel未インストール時・図形含むファイルでの警告プロパティを追加
+  - **Font cache optimization**: `_font_cache`によりapply_translations時のCOMコール削減
+  - **Thread constraint docs**: COM初期化のスレッド制約をdocstringに詳細説明
+  - **Sheet name handling**: Excel禁止文字とアンダースコア処理のドキュメント追加
+  - **Large file warning**: 10,000+ブロック時にメモリ考慮の警告ログを出力
 - **PDF Translation Improvements (PDFMathTranslate compliant)**:
   - **PP-DocLayout-L**: レイアウト解析にPP-DocLayout-Lを使用（Apache-2.0、商用利用可）
   - **ハイブリッド抽出**: pdfminerでテキスト抽出 + PP-DocLayout-Lでレイアウト解析
@@ -971,6 +979,9 @@ Based on recent commits:
   - **pdfminer.six integration**: Font type detection for correct text encoding
   - **Low-level API only**: Removed high-level API fallback for consistent rendering
   - **Font type encoding**: EMBEDDED→glyph ID, CID→4-digit hex, SIMPLE→2-digit hex
+  - **Coordinate system docs**: PDF座標系（左下原点、Y上向き）と画像座標系（左上原点、Y下向き）の変換を明文化
+  - **2D overlap detection fix**: `_merge_pdfminer_text_to_cells()`で欠けていた`block_y0 < cell_y1`条件を追加
+  - **Text merging order**: (y0, x0)でソートし読み順（上→下、左→右）を保証
 - **Font Settings Simplification**:
   - **Unified settings**: 4 font settings → 2 settings (`font_jp_to_en`, `font_en_to_jp`)
   - **PDF settings removed**: `pdf_font_ja`, `pdf_font_en` removed, now uses common settings
@@ -1037,6 +1048,12 @@ Based on recent commits:
 - **Unified Ctrl+J Hint**:
   - **Both panels**: Text and file translation panels show same Ctrl+J hint with keycap styling
   - **Consistent messaging**: "[Ctrl] + [J] : 他アプリで選択したテキストを翻訳"
+- **setup.ps1 Robustness & Reliability**:
+  - **Running process detection**: YakuLingo実行中の再インストール試行を検出してエラー表示
+  - **robocopy skip warnings**: ファイルスキップ時に警告を表示（exit code 1-7）
+  - **glossary.csv merge improved**: 末尾改行確認、正規化した値を追加
+  - **settings.json deep copy**: 浅いコピーから深いコピーに変更（ネストしたオブジェクト対応）
+  - **Progress update**: GUIモード時のユーザーデータ復元中プログレス更新（87%→89%）
 
 ## Git Workflow
 

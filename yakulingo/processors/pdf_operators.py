@@ -80,11 +80,22 @@ class PdfOperatorGenerator:
             return self._encode_with_glyph_ids(font_id, text)
         elif font_type == FontType.CID:
             # Existing CID font: use Unicode code points (4-digit hex)
+            #
+            # IMPORTANT LIMITATION (PDFMathTranslate compliant):
+            # This encoding assumes the existing CID font has Identity-H encoding
+            # or a ToUnicode CMap that maps Unicode directly.
+            # For fonts with custom CID mappings, translated text should use
+            # newly embedded fonts (EMBEDDED type) instead.
+            #
+            # In practice, YakuLingo always embeds new fonts for translated text,
+            # so this code path is primarily used for preserving original text
+            # that is not translated.
             hex_result = "".join([f'{ord(c):04X}' for c in text])
             if logger.isEnabledFor(logging.DEBUG):
                 preview = text[:50] + ('...' if len(text) > 50 else '')
                 logger.debug(
-                    "Encoding text (CID): font=%s, chars=%d, text='%s'",
+                    "Encoding text (CID): font=%s, chars=%d, text='%s' "
+                    "(Note: CID encoding assumes Identity-H or Unicode-compatible CMap)",
                     font_id, len(text), preview
                 )
             return hex_result

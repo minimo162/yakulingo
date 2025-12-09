@@ -71,6 +71,8 @@ SAME_LINE_Y_THRESHOLD = 3.0       # Characters within 3pt are on same line
 SAME_PARA_Y_THRESHOLD = 20.0      # Lines within 20pt are in same paragraph
 WORD_SPACE_X_THRESHOLD = 2.0      # Gap > 2pt between chars inserts space
 LINE_BREAK_X_THRESHOLD = 1.0      # child.x1 < xt.x0 indicates line break
+# Multi-column detection: large X jump (>100pt) suggests column change
+COLUMN_JUMP_X_THRESHOLD = 100.0
 
 
 # =============================================================================
@@ -566,10 +568,20 @@ def detect_paragraph_boundary(
             if y_diff > SAME_LINE_Y_THRESHOLD:
                 line_break = True
     else:
-        # Fallback: Y-coordinate based detection
+        # Fallback: Y-coordinate based detection with X-coordinate heuristics
+        # for multi-column layouts
         y_diff = abs(char_y0 - prev_y0)
+        x_diff = char_x0 - prev_x0  # Positive = char is to the right
+
         if y_diff > SAME_PARA_Y_THRESHOLD:
             new_paragraph = True
+        elif x_diff > COLUMN_JUMP_X_THRESHOLD:
+            # Large X jump (e.g., >100pt) suggests column change in multi-column layout
+            # Combined with Y going back up indicates new column
+            if char_y0 > prev_y0:  # char is above prev (PDF coords: higher Y = higher on page)
+                new_paragraph = True
+            else:
+                line_break = True
         elif y_diff > SAME_LINE_Y_THRESHOLD:
             line_break = True
 

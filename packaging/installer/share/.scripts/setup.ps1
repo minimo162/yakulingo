@@ -361,8 +361,24 @@ function Invoke-Setup {
             }
         }
 
+        # Safety check: Only delete if it looks like a YakuLingo installation
+        # This prevents accidental deletion of unrelated directories
+        $isYakuLingoDir = $false
+        $markerFiles = @("YakuLingo.exe", "app.py", "yakulingo\__init__.py", ".venv\pyvenv.cfg")
+        foreach ($marker in $markerFiles) {
+            if (Test-Path (Join-Path $SetupPath $marker)) {
+                $isYakuLingoDir = $true
+                break
+            }
+        }
+
+        if (-not $isYakuLingoDir) {
+            # Directory exists but doesn't look like YakuLingo - refuse to delete
+            throw "Directory exists but does not appear to be a YakuLingo installation: $SetupPath`n`nTo reinstall, please delete this directory manually first, or choose a different location."
+        }
+
         if (-not $GuiMode) {
-            Write-Host "      Removing existing files: $SetupPath" -ForegroundColor Gray
+            Write-Host "      Removing existing YakuLingo installation: $SetupPath" -ForegroundColor Gray
         }
         Write-Status -Message "Removing existing files..." -Progress -Step "Step 1/4: Preparing" -Percent 10
 

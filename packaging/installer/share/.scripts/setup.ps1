@@ -364,37 +364,65 @@ function Invoke-Setup {
         if (-not $GuiMode) {
             Write-Host "      Removing existing files: $SetupPath" -ForegroundColor Gray
         }
-        # Remove directory contents, skipping locked files (e.g., Edge's CrashpadMetrics-active.pma)
-        # These browser-related files don't affect application functionality
+        Write-Status -Message "Removing existing files..." -Progress -Step "Step 1/4: Preparing" -Percent 10
+
+        # Try fast removal first using Remove-Item -Recurse
+        # This is much faster than individual file enumeration
         $lockedFiles = @()
-        Get-ChildItem -Path $SetupPath -Recurse -Force -ErrorAction SilentlyContinue |
-            Sort-Object { $_.FullName.Length } -Descending |
-            ForEach-Object {
-                try {
-                    if ($_.PSIsContainer) {
-                        # Skip directories in first pass (will be removed after files)
-                    } else {
-                        Remove-Item -Path $_.FullName -Force -ErrorAction Stop
-                    }
-                } catch {
-                    $lockedFiles += $_.FullName
-                }
-            }
-        # Remove empty directories (bottom-up)
-        Get-ChildItem -Path $SetupPath -Directory -Recurse -Force -ErrorAction SilentlyContinue |
-            Sort-Object { $_.FullName.Length } -Descending |
-            ForEach-Object {
-                try {
-                    Remove-Item -Path $_.FullName -Force -ErrorAction Stop
-                } catch {
-                    # Directory not empty (contains locked files), skip
-                }
-            }
-        # Remove the root directory if empty
+        $fastRemoveSuccess = $false
         try {
-            Remove-Item -Path $SetupPath -Force -ErrorAction Stop
+            Remove-Item -Path $SetupPath -Recurse -Force -ErrorAction Stop
+            $fastRemoveSuccess = $true
         } catch {
-            # Root directory contains locked files, will be overwritten by robocopy
+            # Fast removal failed, likely due to locked files
+            # Fall back to individual file removal
+            $fastRemoveSuccess = $false
+        }
+
+        if (-not $fastRemoveSuccess -and (Test-Path $SetupPath)) {
+            # Remove directory contents, skipping locked files (e.g., Edge's CrashpadMetrics-active.pma)
+            # These browser-related files don't affect application functionality
+            Write-Status -Message "Cleaning up locked files..." -Progress -Step "Step 1/4: Preparing" -Percent 15
+
+            # Use cmd /c rd for faster directory removal (avoids PowerShell enumeration)
+            # This is more robust for large directories with many files
+            $rdResult = & cmd /c "rd /s /q `"$SetupPath`" 2>&1"
+
+            # If directory still exists, try individual file removal as last resort
+            if (Test-Path $SetupPath) {
+                Get-ChildItem -Path $SetupPath -Recurse -Force -ErrorAction SilentlyContinue |
+                    Sort-Object { $_.FullName.Length } -Descending |
+                    ForEach-Object {
+                        try {
+                            if (-not $_.PSIsContainer) {
+                                Remove-Item -Path $_.FullName -Force -ErrorAction Stop
+                            }
+                        } catch {
+                            $lockedFiles += $_.FullName
+                        }
+                        # Keep UI responsive during long operations
+                        if ($GuiMode) {
+                            [System.Windows.Forms.Application]::DoEvents()
+                        }
+                    }
+                # Remove empty directories (bottom-up)
+                Get-ChildItem -Path $SetupPath -Directory -Recurse -Force -ErrorAction SilentlyContinue |
+                    Sort-Object { $_.FullName.Length } -Descending |
+                    ForEach-Object {
+                        try {
+                            Remove-Item -Path $_.FullName -Force -ErrorAction Stop
+                        } catch {
+                            # Directory not empty (contains locked files), skip
+                        }
+                    }
+                # Remove the root directory if empty
+                try {
+                    Remove-Item -Path $SetupPath -Force -ErrorAction Stop
+                } catch {
+                    # Root directory contains locked files, will be overwritten by robocopy
+                }
+            }
+
             if (-not $GuiMode -and $lockedFiles.Count -gt 0) {
                 Write-Host "      Note: $($lockedFiles.Count) file(s) skipped (in use by another process)" -ForegroundColor DarkGray
             }

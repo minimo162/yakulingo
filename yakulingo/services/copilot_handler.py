@@ -1929,55 +1929,102 @@ class CopilotHandler:
                 logger.debug("Input element found, setting text via JS...")
                 fill_start = time.time()
                 fill_success = False
+                send_button_enabled = False
 
-                # Method 1: Use element.evaluate() to directly access the element reference
-                # This avoids re-querying the DOM which can fail if the element was replaced
+                # Method 1: Use execCommand for Lexical editor compatibility
+                # Lexical doesn't respond to innerText changes, but execCommand triggers
+                # the proper input handling through the browser's editing API
                 try:
                     fill_success = input_elem.evaluate('''(elem, text) => {
                         if (!elem) return false;
 
+                        // Focus and select all existing content
                         elem.focus();
-                        elem.innerText = text;
+                        const selection = window.getSelection();
+                        const range = document.createRange();
+                        range.selectNodeContents(elem);
+                        selection.removeAllRanges();
+                        selection.addRange(range);
 
-                        // Dispatch input event to notify Lexical editor of change
-                        elem.dispatchEvent(new InputEvent('input', {
-                            bubbles: true,
-                            cancelable: true,
-                            inputType: 'insertText',
-                            data: text
-                        }));
+                        // Use execCommand to insert text - this triggers Lexical's input handling
+                        // because it goes through the browser's native editing API
+                        const success = document.execCommand('insertText', false, text);
 
-                        // Verify content was set (check in same JS context)
+                        if (!success) {
+                            // Fallback: try setting innerText and dispatching events
+                            elem.innerText = text;
+                            elem.dispatchEvent(new InputEvent('input', {
+                                bubbles: true,
+                                cancelable: true,
+                                inputType: 'insertText',
+                                data: text
+                            }));
+                        }
+
+                        // Verify content was set
                         return elem.innerText.trim().length > 0;
                     }''', message)
                 except Exception as e:
-                    logger.debug("Method 1 (evaluate) failed: %s", e)
+                    logger.debug("Method 1 (execCommand) failed: %s", e)
                     fill_success = False
 
-                # Method 2: Try Playwright's fill() method if evaluate failed
+                # Check if send button became enabled (indicates Lexical recognized the input)
+                if fill_success:
+                    send_button_selector = 'button[type="submit"]:not([disabled]), .fai-SendButton:not([disabled])'
+                    for _ in range(10):  # Wait up to 1 second
+                        send_btn = self._page.query_selector(send_button_selector)
+                        if send_btn:
+                            send_button_enabled = True
+                            logger.debug("Send button is enabled")
+                            break
+                        time.sleep(0.1)
+                    if not send_button_enabled:
+                        logger.debug("Send button still disabled after Method 1, Lexical may not have recognized input")
+                        fill_success = False  # Force fallback to other methods
+
+                # Method 2: Try Playwright's fill() method if execCommand didn't work
                 if not fill_success:
-                    logger.debug("Method 1 failed, trying fill()...")
+                    logger.debug("Method 1 failed or Lexical didn't recognize, trying fill()...")
                     try:
                         input_elem.fill(message)
                         # Verify content was set
                         content = input_elem.inner_text()
                         fill_success = len(content.strip()) > 0
+                        # Check send button again
+                        if fill_success:
+                            for _ in range(10):
+                                send_btn = self._page.query_selector(send_button_selector)
+                                if send_btn:
+                                    send_button_enabled = True
+                                    break
+                                time.sleep(0.1)
+                            if not send_button_enabled:
+                                fill_success = False
                     except Exception as e:
                         logger.debug("Method 2 (fill) failed: %s", e)
                         fill_success = False
 
-                # Method 3: Try clicking and typing if fill also failed
+                # Method 3: Click and type character by character (most reliable for Lexical)
                 if not fill_success:
                     logger.debug("Method 2 failed, trying click + type...")
                     try:
                         input_elem.click()
                         # Clear any existing content
                         input_elem.press("Control+a")
-                        # Type the message (slower but more reliable for Lexical)
+                        time.sleep(0.05)
+                        # Type the message (this simulates real keyboard input)
                         input_elem.type(message, delay=0)
                         # Verify content was set
                         content = input_elem.inner_text()
                         fill_success = len(content.strip()) > 0
+                        # Wait for send button to enable
+                        if fill_success:
+                            for _ in range(10):
+                                send_btn = self._page.query_selector(send_button_selector)
+                                if send_btn:
+                                    send_button_enabled = True
+                                    break
+                                time.sleep(0.1)
                     except Exception as e:
                         logger.debug("Method 3 (type) failed: %s", e)
                         fill_success = False
@@ -1988,14 +2035,23 @@ class CopilotHandler:
                 if not fill_success:
                     logger.warning("Input field is empty after fill - Copilot may need attention")
                     raise RuntimeError("Copilotに入力できませんでした。Edgeブラウザを確認してください。")
-                logger.debug("Input verified (has content)")
+                logger.debug("Input verified (has content, send_button_enabled=%s)", send_button_enabled)
 
-                # Send via Enter key - more reliable than button click
-                # Button may stay disabled due to Lexical editor state not syncing,
-                # but Enter key works regardless
+                # Send the message
                 self._ensure_gpt5_enabled()
-                input_elem.press("Enter")
-                logger.info("Message sent via Enter key")
+                if send_button_enabled:
+                    # Click the send button if it's enabled
+                    send_btn = self._page.query_selector(send_button_selector)
+                    if send_btn:
+                        send_btn.click()
+                        logger.info("Message sent via button click")
+                    else:
+                        input_elem.press("Enter")
+                        logger.info("Message sent via Enter key (button not found)")
+                else:
+                    # Fallback to Enter key
+                    input_elem.press("Enter")
+                    logger.info("Message sent via Enter key")
             else:
                 logger.error("Input element not found!")
                 raise RuntimeError("Copilot入力欄が見つかりませんでした")

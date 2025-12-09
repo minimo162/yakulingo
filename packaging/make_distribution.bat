@@ -141,11 +141,34 @@ call :ShowProgress 1 "Copying folders..."
 echo        Copying .venv, .uv-python, .playwright-browsers, yakulingo, prompts, config...
 
 :: Copy folders using robocopy
+:: Exit codes: 0=no change, 1=copied, 2-7=warnings, 8+=errors
+set "ROBOCOPY_WARNINGS="
 for %%f in (.venv .uv-python .playwright-browsers) do (
-    if exist "%%f" robocopy "%%f" "%DIST_DIR%\%%f" /E /MT:16 /NFL /NDL /NJH /NJS /NP /R:1 /W:1 >nul
+    if exist "%%f" (
+        robocopy "%%f" "%DIST_DIR%\%%f" /E /MT:16 /NFL /NDL /NJH /NJS /NP /R:1 /W:1 >nul
+        if errorlevel 8 (
+            echo        [ERROR] Failed to copy %%f ^(exit code: !errorlevel!^)
+            pause
+            exit /b 1
+        ) else if errorlevel 1 (
+            if errorlevel 2 set "ROBOCOPY_WARNINGS=!ROBOCOPY_WARNINGS! %%f"
+        )
+    )
 )
 for %%f in (yakulingo prompts config) do (
-    if exist "%%f" robocopy "%%f" "%DIST_DIR%\%%f" /E /MT:8 /NFL /NDL /NJH /NJS /NP /R:1 /W:1 >nul
+    if exist "%%f" (
+        robocopy "%%f" "%DIST_DIR%\%%f" /E /MT:8 /NFL /NDL /NJH /NJS /NP /R:1 /W:1 >nul
+        if errorlevel 8 (
+            echo        [ERROR] Failed to copy %%f ^(exit code: !errorlevel!^)
+            pause
+            exit /b 1
+        ) else if errorlevel 1 (
+            if errorlevel 2 set "ROBOCOPY_WARNINGS=!ROBOCOPY_WARNINGS! %%f"
+        )
+    )
+)
+if defined ROBOCOPY_WARNINGS (
+    echo        [WARNING] Some files skipped in:%ROBOCOPY_WARNINGS%
 )
 
 :: ============================================================

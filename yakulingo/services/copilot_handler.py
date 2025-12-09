@@ -220,6 +220,7 @@ class PlaywrightThreadExecutor:
         self._request_queue = thread_queue.Queue()
         self._thread = None
         self._running = False
+        self._shutdown_flag = False
         self._thread_lock = threading.Lock()  # スレッド操作用の追加ロック
         self._initialized = True
 
@@ -239,6 +240,31 @@ class PlaywrightThreadExecutor:
             # Send stop signal
             self._request_queue.put((None, None, None))
             self._thread.join(timeout=5)
+
+    def shutdown(self):
+        """Force shutdown: stop thread and release all waiting operations.
+
+        This method is called during application shutdown to immediately release
+        any pending operations without waiting for them to complete.
+        """
+        self._running = False
+        self._shutdown_flag = True
+
+        # Clear the queue and release all waiting events
+        while True:
+            try:
+                item = self._request_queue.get_nowait()
+                if item[0] is not None:
+                    _, _, result_event = item
+                    result_event['error'] = TimeoutError("Executor shutdown")
+                    result_event['done'].set()
+            except thread_queue.Empty:
+                break
+
+        # Send stop signal and wait briefly
+        if self._thread is not None:
+            self._request_queue.put((None, None, None))
+            self._thread.join(timeout=2)
 
     def _worker(self):
         """Worker thread that processes Playwright operations."""
@@ -1561,6 +1587,40 @@ class CopilotHandler:
             _playwright_executor.execute(self._disconnect_impl)
         except Exception as e:
             logger.debug("Error during disconnect: %s", e)
+
+    def force_disconnect(self) -> None:
+        """Force disconnect during shutdown without waiting for pending operations.
+
+        This method is called during application shutdown to immediately terminate
+        the browser connection without going through the Playwright thread executor.
+        """
+        from contextlib import suppress
+
+        logger.info("Force disconnecting Copilot...")
+
+        # First, shutdown the executor to release any pending operations
+        _playwright_executor.shutdown()
+
+        # Mark as disconnected
+        self._connected = False
+        self._gpt5_enabled = False
+
+        # Terminate Edge browser process directly (don't wait for Playwright)
+        with suppress(Exception):
+            if self.edge_process:
+                self.edge_process.terminate()
+                try:
+                    self.edge_process.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    self.edge_process.kill()
+                logger.info("Edge browser terminated (force)")
+
+        # Clear references (Playwright cleanup may fail but that's OK during shutdown)
+        self._browser = None
+        self._context = None
+        self._page = None
+        self._playwright = None
+        self.edge_process = None
 
     def _disconnect_impl(self) -> None:
         """Implementation of disconnect that runs in the Playwright thread."""

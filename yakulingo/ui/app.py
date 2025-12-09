@@ -2599,10 +2599,11 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
             except Exception as e:
                 logger.debug("Error cancelling login wait: %s", e)
 
-        # Disconnect from Copilot (close Edge browser)
+        # Force disconnect from Copilot (close Edge browser immediately)
+        # Use force_disconnect to avoid waiting for pending Playwright operations
         if yakulingo_app._copilot is not None:
             try:
-                yakulingo_app._copilot.disconnect()
+                yakulingo_app._copilot.force_disconnect()
                 logger.info("Copilot disconnected")
             except Exception as e:
                 logger.debug("Error disconnecting Copilot: %s", e)

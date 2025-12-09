@@ -2700,6 +2700,7 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
 
         // Update CSS variables
         const root = document.documentElement;
+        root.style.setProperty('--viewport-height', window.innerHeight + 'px');
         root.style.setProperty('--base-font-size', baseFontSize + 'px');
         root.style.setProperty('--sidebar-width', sidebarWidth + 'px');
         root.style.setProperty('--input-panel-width', inputPanelWidth + 'px');

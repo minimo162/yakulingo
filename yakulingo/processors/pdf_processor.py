@@ -1260,7 +1260,7 @@ class PdfProcessor(FileProcessor):
         PDFPageInterpreter = pdfminer['PDFPageInterpreter']
         LTChar = pdfminer['LTChar']
         LTFigure = pdfminer['LTFigure']
-        PDFConverterEx = _get_pdf_converter_ex_class()
+        PDFConverterEx = get_pdf_converter_ex_class()
 
         with open(file_path, 'rb') as f:
             parser = PDFParser(f)
@@ -2092,7 +2092,7 @@ class PdfProcessor(FileProcessor):
         PDFPageInterpreter = pdfminer['PDFPageInterpreter']
         LTChar = pdfminer['LTChar']
         LTFigure = pdfminer['LTFigure']
-        PDFConverterEx = _get_pdf_converter_ex_class()
+        PDFConverterEx = get_pdf_converter_ex_class()
 
         try:
             # Open PDF with pdfminer
@@ -2546,7 +2546,7 @@ class PdfProcessor(FileProcessor):
         LTChar = pdfminer['LTChar']
         LTFigure = pdfminer['LTFigure']
 
-        PDFConverterEx = _get_pdf_converter_ex_class()
+        PDFConverterEx = get_pdf_converter_ex_class()
 
         with open(file_path, 'rb') as f:
             parser = PDFParser(f)

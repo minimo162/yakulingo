@@ -22,12 +22,28 @@ logger = logging.getLogger(__name__)
 # Pre-compiled regex patterns for performance
 # Support both half-width (:) and full-width (：) colons, and markdown bold (**訳文:**)
 _RE_MULTI_OPTION = re.compile(r'\[(\d+)\]\s*\**訳文\**[:：]\s*(.+?)\s*\**解説\**[:：]\s*(.+?)(?=\[\d+\]|$)', re.DOTALL)
-# Allow optional Markdown headings (###) or bullet prefixes, and optional colons after labels
+
+# Translation text pattern - supports multiple formats:
+# - Japanese: 訳文, 翻訳, 訳 (colon optional - Copilot often omits it)
+# - English: Translation, Translated (colon REQUIRED to avoid false matches)
+# - Formats: "訳文:", "**訳文:**", "[訳文]", "### 訳文:", "> 訳文:", "Translation:"
 _RE_TRANSLATION_TEXT = re.compile(
-    r'[#>*\s-]*\**訳文\**[:：]?\s*(.+?)(?=[\n\s]*[#>*\s-]*\**解説\**[:：]?\s*|$)',
-    re.DOTALL,
+    r'[#>*\s-]*[\[\(]?\**(?:'
+    r'(?:訳文|翻訳|訳)[:：]?'  # Japanese labels - colon optional
+    r'|(?:Translation|Translated)[:：]'  # English labels - colon REQUIRED
+    r')\**[\]\)]?\s*'
+    r'(.+?)'
+    r'(?=[\n\s]*[#>*\s-]*[\[\(]?\**(?:解説|説明|Explanation|Notes?|Commentary)\**[\]\)]?[:：]?\s*|$)',
+    re.DOTALL | re.IGNORECASE,
 )
-_RE_EXPLANATION = re.compile(r'[#>*\s-]*\**解説\**[:：]?\s*(.+)', re.DOTALL)
+
+# Explanation pattern - supports multiple formats:
+# - Japanese: 解説, 説明 (colon optional)
+# - English: Explanation, Notes, Note, Commentary (colon optional for flexibility)
+_RE_EXPLANATION = re.compile(
+    r'[#>*\s-]*[\[\(]?\**(?:解説|説明|Explanation|Notes?|Commentary)\**[\]\)]?[:：]?\s*(.+)',
+    re.DOTALL | re.IGNORECASE,
+)
 _RE_MARKDOWN_SEPARATOR = re.compile(r'\n?\s*[\*\-]{3,}\s*$')
 _RE_FILENAME_FORBIDDEN = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
 
@@ -379,22 +395,36 @@ class TranslationCache:
     moved to the end, and oldest items are evicted from the front.
 
     Thread-safe for concurrent access.
+
+    Memory management:
+        - Default max_size reduced to 1000 entries to prevent memory bloat
+        - Estimated memory per entry: ~200 bytes (average text) + ~200 bytes (translation)
+        - At max_size=1000: ~400KB memory usage
+        - For large documents, use clear() between translations to free memory
     """
 
-    def __init__(self, max_size: int = 10000):
+    # Default max size reduced from 10000 to 1000 to prevent memory issues
+    DEFAULT_MAX_SIZE = 1000
+    # Estimated average bytes per cache entry (source + translation)
+    ESTIMATED_BYTES_PER_ENTRY = 400
+
+    def __init__(self, max_size: int | None = None):
         """
         Initialize translation cache.
 
         Args:
-            max_size: Maximum number of cached entries (default: 10000)
+            max_size: Maximum number of cached entries.
+                      If None, uses DEFAULT_MAX_SIZE (1000).
+                      Set to 0 to disable caching.
         """
         from collections import OrderedDict
         import threading
         self._cache: OrderedDict[str, str] = OrderedDict()
-        self._max_size = max_size
+        self._max_size = max_size if max_size is not None else self.DEFAULT_MAX_SIZE
         self._hits = 0
         self._misses = 0
         self._lock = threading.Lock()
+        self._total_bytes = 0  # Track approximate memory usage
 
     def get(self, text: str) -> Optional[str]:
         """
@@ -428,35 +458,52 @@ class TranslationCache:
             text: Source text
             translation: Translated text
         """
+        # Skip caching if disabled (max_size=0)
+        if self._max_size <= 0:
+            return
+
+        entry_bytes = len(text.encode('utf-8')) + len(translation.encode('utf-8'))
+
         with self._lock:
             if text in self._cache:
                 # Update existing entry and move to end
+                old_translation = self._cache[text]
+                old_bytes = len(text.encode('utf-8')) + len(old_translation.encode('utf-8'))
+                self._total_bytes -= old_bytes
                 self._cache.move_to_end(text)
             elif len(self._cache) >= self._max_size:
                 # Evict oldest (least recently used) entry
-                oldest_key, _ = self._cache.popitem(last=False)
-                logger.debug("LRU eviction: removed oldest entry")
+                oldest_key, oldest_val = self._cache.popitem(last=False)
+                evicted_bytes = len(oldest_key.encode('utf-8')) + len(oldest_val.encode('utf-8'))
+                self._total_bytes -= evicted_bytes
+                logger.debug("LRU eviction: removed oldest entry (freed %d bytes)", evicted_bytes)
 
             self._cache[text] = translation
+            self._total_bytes += entry_bytes
 
     def clear(self) -> None:
-        """Clear all cached translations."""
+        """Clear all cached translations and reset statistics."""
         with self._lock:
             self._cache.clear()
             self._hits = 0
             self._misses = 0
+            self._total_bytes = 0
+            logger.debug("Translation cache cleared")
 
     @property
     def stats(self) -> dict:
-        """Get cache statistics."""
+        """Get cache statistics including memory usage."""
         with self._lock:
             total = self._hits + self._misses
             hit_rate = (self._hits / total * 100) if total > 0 else 0.0
+            memory_kb = self._total_bytes / 1024
             return {
                 "size": len(self._cache),
+                "max_size": self._max_size,
                 "hits": self._hits,
                 "misses": self._misses,
                 "hit_rate": f"{hit_rate:.1f}%",
+                "memory_kb": f"{memory_kb:.1f}",
             }
 
 
@@ -529,6 +576,10 @@ class BatchTranslator:
         Returns:
             Mapping of block_id -> translated_text
 
+        Raises:
+            TranslationCancelledError: If translation was cancelled by user.
+                Partial results are discarded to prevent incomplete translations.
+
         Note:
             For detailed results including error information, use
             translate_blocks_with_result() instead.
@@ -536,6 +587,11 @@ class BatchTranslator:
         result = self.translate_blocks_with_result(
             blocks, reference_files, on_progress, output_language, translation_style
         )
+        # Raise exception if cancelled to prevent partial results from being applied
+        if result.cancelled:
+            raise TranslationCancelledError(
+                "Translation cancelled by user. Partial results have been discarded."
+            )
         return result.translations
 
     def translate_blocks_with_result(
@@ -557,7 +613,13 @@ class BatchTranslator:
             translation_style: "standard", "concise", or "minimal" (default: "concise")
 
         Returns:
-            BatchTranslationResult with translations and error details
+            BatchTranslationResult with translations and error details.
+            Check result.cancelled to determine if translation was cancelled.
+
+        Warning:
+            If result.cancelled is True, the translations dict contains partial
+            results from completed batches only. Callers should check this flag
+            and handle accordingly (e.g., discard partial results or re-translate).
 
         Performance optimizations:
             - Translation cache: avoids re-translating identical text
@@ -709,10 +771,31 @@ class BatchTranslator:
             # Validate translation count matches unique text count
             if len(unique_translations) != len(unique_texts):
                 mismatched_batch_count += 1
+                missing_count = len(unique_texts) - len(unique_translations)
                 logger.warning(
-                    "Translation count mismatch in batch %d: expected %d unique, got %d. "
-                    "Some blocks may not be translated correctly.",
-                    i + 1, len(unique_texts), len(unique_translations)
+                    "Translation count mismatch in batch %d: expected %d unique, got %d (missing %d). "
+                    "Affected texts will use original content as fallback.",
+                    i + 1, len(unique_texts), len(unique_translations), missing_count
+                )
+                # Log which unique texts are missing translations (first 3 for brevity)
+                missing_indices = list(range(len(unique_translations), len(unique_texts)))
+                for miss_idx in missing_indices[:3]:
+                    original_text = unique_texts[miss_idx][:50] + "..." if len(unique_texts[miss_idx]) > 50 else unique_texts[miss_idx]
+                    logger.warning("  Missing translation for unique_idx %d: '%s'", miss_idx, original_text)
+                if len(missing_indices) > 3:
+                    logger.warning("  ... and %d more missing translations", len(missing_indices) - 3)
+
+            # Detect empty translations (Copilot may return empty strings for some items)
+            empty_translation_indices = [
+                idx for idx, trans in enumerate(unique_translations)
+                if not trans or not trans.strip()
+            ]
+            if empty_translation_indices:
+                logger.warning(
+                    "Batch %d: %d empty translations detected at indices %s",
+                    i + 1, len(empty_translation_indices),
+                    empty_translation_indices[:5] if len(empty_translation_indices) > 5
+                    else empty_translation_indices
                 )
 
             # Process results, expanding unique translations to all original blocks
@@ -720,10 +803,20 @@ class BatchTranslator:
                 unique_idx = original_to_unique_idx[idx]
                 if unique_idx < len(unique_translations):
                     translated_text = unique_translations[unique_idx]
+
+                    # Check for empty translation and log warning
+                    if not translated_text or not translated_text.strip():
+                        logger.warning(
+                            "Block '%s' received empty translation, using original text as fallback",
+                            block.id
+                        )
+                        translated_text = block.text
+                        untranslated_block_ids.append(block.id)
+
                     translations[block.id] = translated_text
 
-                    # Cache the translation for future use
-                    if self._cache:
+                    # Cache the translation for future use (only non-empty)
+                    if self._cache and translated_text and translated_text.strip():
                         self._cache.set(block.text, translated_text)
                 else:
                     # Mark untranslated blocks with original text
@@ -754,6 +847,18 @@ class BatchTranslator:
 
         # Clear cancel callback to avoid holding reference
         self.copilot.set_cancel_callback(None)
+
+        # Memory management: warn if cache is large and clear if exceeds threshold
+        if self._cache:
+            stats = self._cache.stats
+            memory_kb = float(stats.get("memory_kb", "0"))
+            # Warn if cache exceeds 10MB (10240 KB)
+            if memory_kb > 10240:
+                logger.warning(
+                    "Translation cache memory usage is high: %.1f MB. "
+                    "Consider calling clear_cache() after large translations.",
+                    memory_kb / 1024
+                )
 
         return result
 
@@ -1416,35 +1521,56 @@ class TranslationService:
         if explanation_match:
             explanation = explanation_match.group(1).strip()
 
-        # Fallback: split by "解説" if regex didn't capture explanation
+        # Fallback: split by explanation markers if regex didn't capture explanation
+        # Supports Japanese (解説, 説明) and English (Explanation, Notes)
         if text and not explanation:
             logger.debug("Trying fallback split for explanation...")
-            # Try splitting by various forms of "解説"
-            for delimiter in ['解説:', '解説：', '**解説:**', '**解説**:', '**解説**：']:
-                if delimiter in raw_result:
-                    parts = raw_result.split(delimiter, 1)
-                    if len(parts) > 1:
-                        explanation = parts[1].strip()
+            explanation_delimiters = [
+                '解説:', '解説：', '**解説:**', '**解説**:', '**解説**：',
+                '説明:', '説明：', '**説明:**', '**説明**:',
+                'Explanation:', '**Explanation:**',
+                'Notes:', '**Notes:**', 'Note:', '**Note:**',
+            ]
+            raw_lower = raw_result.lower()
+            for delimiter in explanation_delimiters:
+                # Case-insensitive check for English delimiters
+                if delimiter.lower() in raw_lower:
+                    # Find the actual position case-insensitively
+                    idx = raw_lower.find(delimiter.lower())
+                    if idx >= 0:
+                        explanation = raw_result[idx + len(delimiter):].strip()
                         logger.debug("Fallback split by '%s' found explanation (length: %d)", delimiter, len(explanation))
                         break
 
         # Another fallback: if no "訳文:" found, try simple split
         if not text:
             logger.debug("Text not found, trying alternative parsing...")
-            for delimiter in ['解説:', '解説：', '**解説:**', '**解説**:']:
-                if delimiter in raw_result:
-                    parts = raw_result.split(delimiter, 1)
-                    text_part = parts[0].strip()
-                    # Remove "訳文:" prefix if present
-                    for prefix in ['訳文:', '訳文：', '**訳文:**', '**訳文**:']:
-                        if text_part.startswith(prefix):
-                            text_part = text_part[len(prefix):].strip()
-                            break
-                    text = text_part
-                    if len(parts) > 1:
-                        explanation = parts[1].strip()
-                    logger.debug("Fallback split found text and explanation")
-                    break
+            explanation_delimiters = [
+                '解説:', '解説：', '**解説:**', '**解説**:',
+                '説明:', '説明：',
+                'Explanation:', 'Notes:',
+            ]
+            translation_prefixes = [
+                '訳文:', '訳文：', '**訳文:**', '**訳文**:',
+                '翻訳:', '翻訳：',
+                'Translation:', '**Translation:**',
+            ]
+            raw_lower = raw_result.lower()
+            for delimiter in explanation_delimiters:
+                if delimiter.lower() in raw_lower:
+                    idx = raw_lower.find(delimiter.lower())
+                    if idx >= 0:
+                        text_part = raw_result[:idx].strip()
+                        # Remove translation prefix if present
+                        text_part_lower = text_part.lower()
+                        for prefix in translation_prefixes:
+                            if text_part_lower.startswith(prefix.lower()):
+                                text_part = text_part[len(prefix):].strip()
+                                break
+                        text = text_part
+                        explanation = raw_result[idx + len(delimiter):].strip()
+                        logger.debug("Fallback split found text and explanation")
+                        break
 
         # Final fallback: use first line as text, rest as explanation
         if not text:

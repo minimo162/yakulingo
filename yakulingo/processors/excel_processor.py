@@ -181,6 +181,10 @@ def _create_excel_app_with_retry(xw, max_retries: int = _EXCEL_RETRY_COUNT, retr
     pywintypes = _get_pywintypes()
     last_error = None
 
+    # Pre-emptive cleanup before first attempt to avoid COM server errors
+    # caused by lingering COM objects from previous sessions
+    _cleanup_com_before_retry()
+
     for attempt in range(max_retries):
         try:
             app = xw.App(visible=False, add_book=False)

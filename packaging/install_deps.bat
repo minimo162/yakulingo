@@ -146,27 +146,6 @@ if errorlevel 1 (
     exit /b 1
 )
 
-:: Verify PaddleOCR installation
-echo [INFO] Verifying PaddleOCR installation...
-.venv\Scripts\python.exe -c "import paddle; print(f'[OK] PaddlePaddle {paddle.__version__}')" 2>nul
-if errorlevel 1 (
-    echo [WARNING] PaddlePaddle import failed. Attempting reinstall...
-    .venv\Scripts\pip.exe install --upgrade "paddlepaddle>=3.0.0"
-)
-
-.venv\Scripts\python.exe -c "from paddleocr import LayoutDetection; print('[OK] PaddleOCR LayoutDetection available')" 2>nul
-if errorlevel 1 (
-    echo [WARNING] PaddleOCR import failed. Attempting reinstall...
-    .venv\Scripts\pip.exe install --upgrade "paddleocr>=3.0.0"
-
-    :: Verify again after reinstall
-    .venv\Scripts\python.exe -c "from paddleocr import LayoutDetection; print('[OK] PaddleOCR LayoutDetection available')" 2>nul
-    if errorlevel 1 (
-        echo [WARNING] PaddleOCR still not working. PDF layout analysis will be disabled.
-        echo [INFO] You can manually install with: pip install paddleocr paddlepaddle
-    )
-)
-
 echo [DONE] Dependencies installed.
 
 :: ============================================================

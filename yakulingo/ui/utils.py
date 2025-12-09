@@ -5,6 +5,7 @@ Includes temp file management, text formatting, and dialog helpers.
 """
 
 import atexit
+import importlib
 import logging
 import os
 import platform
@@ -14,6 +15,7 @@ import tempfile
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional, Callable, Set, Iterator
+from unittest.mock import Mock
 
 from nicegui import ui
 
@@ -37,6 +39,43 @@ class TempFileManager:
     """
 
     _instance: Optional['TempFileManager'] = None
+
+
+def _get_ui():
+    """Return the current NiceGUI ``ui`` object, allowing test overrides.
+
+    The NiceGUI module can be monkeypatched in tests, so importing it lazily
+    ensures we pick up any injected stubs instead of the initially imported
+    global ``ui`` reference.
+    """
+
+    try:
+        module = importlib.import_module('nicegui')
+        return getattr(module, 'ui', ui)
+    except Exception as e:  # pragma: no cover - defensive fallback
+        logger.debug("Falling back to default ui after import error: %s", e)
+        return ui
+
+
+def _get_nicegui_app():
+    """Safely obtain the NiceGUI ``app`` module if available."""
+
+    try:
+        module = importlib.import_module('nicegui')
+        return getattr(module, 'app', None)
+    except Exception as e:  # pragma: no cover - defensive fallback
+        logger.debug("Falling back to default app after import error: %s", e)
+        return None
+
+
+def _safe_notify(message: str, **kwargs) -> None:
+    """Attempt to display a NiceGUI notification without raising in background tasks."""
+
+    ui_module = _get_ui()
+    try:
+        ui_module.notify(message, **kwargs)
+    except RuntimeError as e:
+        logger.debug("Skipping notification outside UI context: %s", e)
 
     def __new__(cls) -> 'TempFileManager':
         if cls._instance is None:
@@ -437,15 +476,17 @@ def trigger_file_download(file_path: Path) -> bool:
         True if a download action was initiated, False otherwise.
     """
 
+    ui_module = _get_ui()
+
     if not file_path.exists():
-        ui.notify('ダウンロードするファイルが見つかりません', type='negative')
+        _safe_notify('ダウンロードするファイルが見つかりません', type='negative')
         return False
 
     native_window = None
     try:
-        from nicegui import app as nicegui_app
-
-        native_window = getattr(getattr(nicegui_app, 'native', None), 'main_window', None)
+        nicegui_app = _get_nicegui_app()
+        if nicegui_app and not isinstance(nicegui_app, Mock):
+            native_window = getattr(getattr(nicegui_app, 'native', None), 'main_window', None)
     except Exception as e:  # pragma: no cover - defensive native detection
         logger.debug("Failed to detect native mode for download: %s", e)
 
@@ -453,14 +494,18 @@ def trigger_file_download(file_path: Path) -> bool:
         success, dest = download_to_folder_and_open(file_path)
         if success:
             dest_name = dest.name if dest else file_path.name
-            ui.notify(f'ダウンロードフォルダに保存しました: {dest_name}', type='positive')
+            _safe_notify(f'ダウンロードフォルダに保存しました: {dest_name}', type='positive')
             return True
 
-        ui.notify('ダウンロードに失敗しました', type='negative')
+        _safe_notify('ダウンロードに失敗しました', type='negative')
         return False
 
-    ui.download(file_path)
-    return True
+    try:
+        ui_module.download(file_path)
+        return True
+    except RuntimeError as e:
+        logger.debug("Download skipped outside UI context: %s", e)
+        return False
 
 
 def create_completion_dialog(

@@ -63,7 +63,7 @@ def mock_copilot():
             return f"""訳文: 「{text[:20]}...」の翻訳
 解説: これは標準的な翻訳です。"""
 
-    def smart_translate_batch(texts, prompt, reference_files=None, char_limit=None, skip_clear_wait=False):
+    def smart_translate_batch(texts, prompt, reference_files=None, char_limit=None, skip_clear_wait=False, timeout=None):
         """Simulate batch translation"""
         results = []
         for text in texts:
@@ -386,7 +386,7 @@ class TestE2EFileTranslation:
         fail_then_succeed = MagicMock()
         call_count = [0]
 
-        def conditional_fail(texts, prompt, ref=None, char_limit=None, skip_clear_wait=False):
+        def conditional_fail(texts, prompt, ref=None, char_limit=None, skip_clear_wait=False, timeout=None):
             call_count[0] += 1
             if call_count[0] == 1:
                 raise RuntimeError("Temporary API error")

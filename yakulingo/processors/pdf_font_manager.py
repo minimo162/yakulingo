@@ -438,6 +438,8 @@ class FontRegistry:
         self._existing_cid_font_cache: Optional[str] = None
         # Font selection cache: (first_special_char, target_lang) -> font_id
         self._font_selection_cache: dict[tuple[str, str], str] = {}
+        # Warned missing fonts (to avoid duplicate warnings)
+        self._warned_missing_fonts: set[str] = set()
 
     def register_font(self, lang: str) -> str:
         """
@@ -715,12 +717,16 @@ class FontRegistry:
 
         Uses internal cache to avoid repeated lookups.
 
+        PDFMathTranslate compliant: Logs warning when Font object is missing.
+        This helps diagnose "invisible text" issues caused by font embedding failures.
+
         Args:
             font_id: Font ID (F1, F2, ...)
             char: Single character to look up
 
         Returns:
-            Glyph index for the character (for Identity-H without CIDToGIDMap)
+            Glyph index for the character (for Identity-H without CIDToGIDMap).
+            Returns 0 (.notdef) if font object is missing or glyph not found.
         """
         # Check cache first
         cache_key = (font_id, char)
@@ -739,6 +745,16 @@ class FontRegistry:
                 # ValueError: Invalid character code
                 # TypeError: Invalid argument type
                 logger.debug("Error getting glyph index for '%s': %s", char, e)
+        else:
+            # PDFMathTranslate compliant: Warn about missing Font object
+            # This is critical - without Font object, all text renders as .notdef (invisible)
+            if font_id not in self._warned_missing_fonts:
+                self._warned_missing_fonts.add(font_id)
+                logger.warning(
+                    "Font object missing for '%s'. Text will render as .notdef (invisible). "
+                    "Check font embedding in embed_fonts() or install required fonts.",
+                    font_id
+                )
 
         # Cache the result
         self._glyph_id_cache[cache_key] = glyph_idx

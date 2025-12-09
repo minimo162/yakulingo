@@ -1930,47 +1930,49 @@ class CopilotHandler:
                 fill_start = time.time()
                 fill_success = False
                 send_button_enabled = False
+                send_button_selector = '.fai-SendButton:not([disabled]), button[type="submit"]:not([disabled]), button[data-testid="chat-input-send-button"]:not([disabled])'
 
-                # Method 1: Use execCommand for Lexical editor compatibility
-                # Lexical doesn't respond to innerText changes, but execCommand triggers
-                # the proper input handling through the browser's editing API
+                # Method 1: Use DataTransfer API to simulate paste (works with Lexical)
+                # Lexical handles paste events by reading from DataTransfer
                 try:
                     fill_success = input_elem.evaluate('''(elem, text) => {
                         if (!elem) return false;
 
-                        // Focus and select all existing content
+                        // Focus the element
                         elem.focus();
+
+                        // Select all existing content to replace
                         const selection = window.getSelection();
                         const range = document.createRange();
                         range.selectNodeContents(elem);
                         selection.removeAllRanges();
                         selection.addRange(range);
 
-                        // Use execCommand to insert text - this triggers Lexical's input handling
-                        // because it goes through the browser's native editing API
-                        const success = document.execCommand('insertText', false, text);
+                        // Create DataTransfer with the text
+                        const dataTransfer = new DataTransfer();
+                        dataTransfer.setData('text/plain', text);
 
-                        if (!success) {
-                            // Fallback: try setting innerText and dispatching events
-                            elem.innerText = text;
-                            elem.dispatchEvent(new InputEvent('input', {
-                                bubbles: true,
-                                cancelable: true,
-                                inputType: 'insertText',
-                                data: text
-                            }));
-                        }
+                        // Dispatch paste event - Lexical handles this
+                        const pasteEvent = new ClipboardEvent('paste', {
+                            bubbles: true,
+                            cancelable: true,
+                            clipboardData: dataTransfer
+                        });
+                        elem.dispatchEvent(pasteEvent);
 
-                        // Verify content was set
-                        return elem.innerText.trim().length > 0;
+                        // Wait for Lexical to process
+                        return new Promise(resolve => {
+                            setTimeout(() => {
+                                resolve(elem.innerText.trim().length > 0);
+                            }, 100);
+                        });
                     }''', message)
                 except Exception as e:
-                    logger.debug("Method 1 (execCommand) failed: %s", e)
+                    logger.debug("Method 1 (DataTransfer paste) failed: %s", e)
                     fill_success = False
 
                 # Check if send button became enabled (indicates Lexical recognized the input)
                 if fill_success:
-                    send_button_selector = 'button[type="submit"]:not([disabled]), .fai-SendButton:not([disabled])'
                     for _ in range(10):  # Wait up to 1 second
                         send_btn = self._page.query_selector(send_button_selector)
                         if send_btn:

@@ -2041,6 +2041,19 @@ class YakuLingoApp:
         client = self._client
 
         try:
+            # Check PP-DocLayout-L availability for PDF files
+            if file_path.suffix.lower() == '.pdf':
+                from yakulingo.processors import is_layout_available
+                if not is_layout_available():
+                    with client:
+                        ui.notify(
+                            'PDF翻訳: レイアウト解析(PP-DocLayout-L)が未インストールのため、'
+                            '段落検出精度が低下する可能性があります',
+                            type='warning',
+                            position='top',
+                            timeout=8000,
+                        )
+
             # Set loading state immediately for fast UI feedback
             self.state.selected_file = file_path
             self.state.file_state = FileState.SELECTED

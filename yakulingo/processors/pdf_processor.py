@@ -2037,6 +2037,7 @@ class PdfProcessor(FileProcessor):
         self._failed_pages: list[int] = []
         self._failed_page_reasons: dict[int, str] = {}
         self._output_language = "en"  # Default to JP→EN translation
+        self._layout_fallback_used = False  # True if PP-DocLayout-L was unavailable
         # Use CellTranslator for consistent language-based filtering
         from .translators import CellTranslator
         self._cell_translator = CellTranslator()
@@ -2707,6 +2708,27 @@ class PdfProcessor(FileProcessor):
         pages_processed = 0
         start_time = time_module.time()
         self._failed_pages = []
+        self._layout_fallback_used = False  # Reset for each extraction
+
+        # Check if PP-DocLayout-L is available
+        if not is_layout_available():
+            self._layout_fallback_used = True
+            logger.warning(
+                "PP-DocLayout-L is not available. "
+                "Paragraph detection accuracy may be reduced. "
+                "Install with: pip install -r requirements_pdf.txt"
+            )
+
+        # Log memory usage estimate for large PDFs
+        # A4 @ 300 DPI ≈ 2500×3500 px × 3 channels ≈ 26MB/page
+        estimated_mb_per_page = 26
+        estimated_batch_mb = estimated_mb_per_page * batch_size
+        if total_pages > 10:
+            logger.info(
+                "Processing %d pages (DPI=%d, batch_size=%d). "
+                "Estimated memory per batch: ~%dMB",
+                total_pages, dpi, batch_size, estimated_batch_mb
+            )
 
         # Get pdfminer classes
         pdfminer = _get_pdfminer()

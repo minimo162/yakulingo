@@ -1,36 +1,36 @@
 /* === M3 Design Tokens === */
 :root {
-    /* Primary - Refined purple CTA (Nani-inspired, slightly muted for focus on content) */
-    --md-sys-color-primary: #5E52B3;
+    /* Primary - Purple/Blue-purple CTA (Nani-inspired, professional) */
+    --md-sys-color-primary: #6366F1;
     --md-sys-color-on-primary: #FFFFFF;
-    --md-sys-color-primary-container: #EDEAFF;
-    --md-sys-color-on-primary-container: #1D1068;
+    --md-sys-color-primary-container: #E0E7FF;
+    --md-sys-color-on-primary-container: #312E81;
 
     /* Secondary - Cool neutral for supportive controls */
-    --md-sys-color-secondary: #5A6570;
+    --md-sys-color-secondary: #64748B;
     --md-sys-color-on-secondary: #FFFFFF;
-    --md-sys-color-secondary-container: #E8ECF0;
-    --md-sys-color-on-secondary-container: #1A2128;
+    --md-sys-color-secondary-container: #E2E8F0;
+    --md-sys-color-on-secondary-container: #1E293B;
 
     /* Tertiary - Gold accent (Nani logo highlight) */
     --md-sys-color-tertiary: #FFCF51;
     --md-sys-color-on-tertiary: #3B2A00;
-    --md-sys-color-tertiary-container: #FFF8E8;
-    --md-sys-color-on-tertiary-container: #4D3600;
+    --md-sys-color-tertiary-container: #FEF9C3;
+    --md-sys-color-on-tertiary-container: #713F12;
 
     /* Surface - Clean neutral grays (Nani-style: focus on content) */
     --md-sys-color-surface: #FFFFFF;
-    --md-sys-color-surface-dim: #E5E8EB;
+    --md-sys-color-surface-dim: #E2E8F0;
     --md-sys-color-surface-bright: #FFFFFF;
     --md-sys-color-surface-container-lowest: #FFFFFF;
-    --md-sys-color-surface-container-low: #F8F9FA;
+    --md-sys-color-surface-container-low: #F8FAFC;
     --md-sys-color-surface-container: #F4F6F8;
-    --md-sys-color-surface-container-high: #EFF1F4;
-    --md-sys-color-surface-container-highest: #EBEEF1;
-    --md-sys-color-on-surface: #1E2528;
-    --md-sys-color-on-surface-variant: #5A6872;
-    --md-sys-color-outline: #B8C0C8;
-    --md-sys-color-outline-variant: #DEE3E8;
+    --md-sys-color-surface-container-high: #F1F5F9;
+    --md-sys-color-surface-container-highest: #E2E8F0;
+    --md-sys-color-on-surface: #2C3538;
+    --md-sys-color-on-surface-variant: #64748B;
+    --md-sys-color-outline: #94A3B8;
+    --md-sys-color-outline-variant: #E2E8F0;
 
     /* Inverse (for snackbars, tooltips) */
     --md-sys-color-inverse-surface: #2E3237;
@@ -38,22 +38,22 @@
     --md-sys-color-inverse-primary: #C6CEFF;
 
     /* States (muted for professional appearance) */
-    --md-sys-color-error: #C42B2B;
+    --md-sys-color-error: #DC2626;
     --md-sys-color-on-error: #FFFFFF;
-    --md-sys-color-error-container: #FCEAE9;
-    --md-sys-color-on-error-container: #4A0F0F;
+    --md-sys-color-error-container: #FEE2E2;
+    --md-sys-color-on-error-container: #7F1D1D;
 
     /* Success (extended - muted green) */
-    --md-sys-color-success: #2E7D52;
+    --md-sys-color-success: #16A34A;
     --md-sys-color-on-success: #FFFFFF;
-    --md-sys-color-success-container: #E6F5EC;
-    --md-sys-color-on-success-container: #0F3020;
+    --md-sys-color-success-container: #DCFCE7;
+    --md-sys-color-on-success-container: #166534;
 
     /* Warning (extended - muted amber) */
-    --md-sys-color-warning: #9A6700;
+    --md-sys-color-warning: #D97706;
     --md-sys-color-on-warning: #FFFFFF;
-    --md-sys-color-warning-container: #FFF6E0;
-    --md-sys-color-on-warning-container: #332200;
+    --md-sys-color-warning-container: #FEF3C7;
+    --md-sys-color-on-warning-container: #92400E;
 
     /* Shape - M3 corner radius scale */
     --md-sys-shape-corner-full: 9999px;
@@ -97,11 +97,11 @@
     --md-sys-elevation-2: 0 2px 8px rgba(0,0,0,0.04), 0 1px 3px rgba(0,0,0,0.03);
 
     /* Expressive overlays (subtle, content-focused) */
-    --md-expressive-primary-glow: radial-gradient(circle at 18% 20%, rgba(94, 82, 179, 0.04), transparent 55%);
-    --md-expressive-secondary-glow: radial-gradient(circle at 80% 12%, rgba(255, 207, 81, 0.03), transparent 50%);
+    --md-expressive-primary-glow: radial-gradient(circle at 18% 20%, rgba(99, 102, 241, 0.03), transparent 55%);
+    --md-expressive-secondary-glow: radial-gradient(circle at 80% 12%, rgba(255, 207, 81, 0.02), transparent 50%);
     --md-expressive-surface: #F4F6F8;
-    --md-expressive-border: 1px solid color-mix(in srgb, var(--md-sys-color-outline-variant) 65%, transparent);
-    --md-expressive-outline: 1px solid color-mix(in srgb, var(--md-sys-color-outline-variant) 55%, transparent);
+    --md-expressive-border: 1px solid color-mix(in srgb, var(--md-sys-color-outline-variant) 60%, transparent);
+    --md-expressive-outline: 1px solid color-mix(in srgb, var(--md-sys-color-outline-variant) 50%, transparent);
 
     /* Sidebar, Input Panel, and Result Content widths are set dynamically via JavaScript
        based on monitor resolution. Default values as fallback. */
@@ -727,8 +727,8 @@ body {
 }
 
 .btn-outline:disabled {
-    border-color: rgba(27, 27, 31, 0.12);
-    color: rgba(27, 27, 31, 0.38);
+    border-color: color-mix(in srgb, var(--md-sys-color-on-surface) 12%, transparent);
+    color: color-mix(in srgb, var(--md-sys-color-on-surface) 38%, transparent);
     cursor: default;
 }
 
@@ -773,8 +773,8 @@ body {
 
 .btn-primary:disabled,
 .translate-btn:disabled {
-    background: rgba(27, 27, 31, 0.12);
-    color: rgba(27, 27, 31, 0.38);
+    background: color-mix(in srgb, var(--md-sys-color-on-surface) 12%, transparent);
+    color: color-mix(in srgb, var(--md-sys-color-on-surface) 38%, transparent);
     cursor: not-allowed;
     box-shadow: none;
     opacity: 0.6;
@@ -1085,9 +1085,9 @@ textarea:focus-visible {
 }
 
 .option-card:hover {
+    background: var(--md-sys-color-surface-container-low);
     border-color: var(--md-sys-color-outline);
-    box-shadow: var(--md-sys-elevation-2);
-    transform: translateY(-2px);
+    box-shadow: var(--md-sys-elevation-1);
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
 }
 
@@ -1535,7 +1535,7 @@ textarea:focus-visible {
 }
 
 .segmented-btn:hover:not(.segmented-btn-selected) {
-    background: rgba(27, 27, 31, 0.08);
+    background: var(--md-sys-color-surface-container-high);
 }
 
 .segmented-btn-selected {
@@ -1595,7 +1595,7 @@ textarea:focus-visible {
 }
 
 .lang-btn:hover:not(.lang-btn-active) {
-    background: rgba(27, 27, 31, 0.08);
+    background: var(--md-sys-color-surface-container-high);
 }
 
 .lang-btn-active {
@@ -1647,7 +1647,7 @@ textarea:focus-visible {
 }
 
 .style-btn:hover:not(.style-btn-active) {
-    background: rgba(27, 27, 31, 0.08);
+    background: var(--md-sys-color-surface-container-high);
 }
 
 .style-btn-active {
@@ -2525,8 +2525,8 @@ textarea:focus-visible {
 }
 
 .send-question-btn:disabled {
-    background: rgba(27, 27, 31, 0.12) !important;
-    color: rgba(27, 27, 31, 0.38) !important;
+    background: color-mix(in srgb, var(--md-sys-color-on-surface) 12%, transparent) !important;
+    color: color-mix(in srgb, var(--md-sys-color-on-surface) 38%, transparent) !important;
 }
 
 /* === Back-translate Button (M3 Text Button) === */

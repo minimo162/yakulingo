@@ -844,6 +844,19 @@ model = LayoutDetection(
 )
 ```
 
+**DPI設定 (`ocr_dpi`):**
+
+| 設定値 | 解像度 | メモリ使用量 | 精度 | 処理時間 |
+|--------|--------|-------------|------|----------|
+| 150 | 低 | ~15MB/page | 低 | 速い |
+| **300** | **デフォルト** | **~60MB/page** | **高** | **標準** |
+| 600 | 高 | ~240MB/page | 最高 | 遅い |
+
+- デフォルト: **300 DPI**（精度と処理時間のバランス）
+- 有効範囲: 72〜600 DPI
+- A4 @ 300 DPI ≈ 2480×3508 px × 3 channels ≈ 26MB/page（画像データ）
+- scale計算: `layout_height / page_height = (page_height_pt × dpi / 72) / page_height_pt = dpi / 72`
+
 **Line Break Handling:**
 - PDF text extraction removes line breaks: `text.replace("\n", "")`
 - Optimized for Japanese documents where line breaks within paragraphs are visual-only

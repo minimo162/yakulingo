@@ -169,28 +169,26 @@ class TestCopilotHandlerSendMessage:
     """Tests for _send_message() method"""
 
     def test_send_message_fills_and_submits(self):
-        """_send_message uses JS to set text and clicks send"""
+        """_send_message uses fill() to set text and presses Enter to send"""
         handler = CopilotHandler()
 
         mock_input = Mock()
-        mock_input.inner_text.return_value = "Test message"  # Non-empty after JS set
-        mock_input.evaluate.return_value = True  # Method 1 succeeds
-        mock_send_button = Mock()
-        mock_send_button.get_attribute.return_value = None  # Button is enabled
+        mock_input.inner_text.return_value = "Test message"  # Non-empty after fill()
         mock_page = Mock()
-        # wait_for_selector returns input element
+        # wait_for_selector returns input element for input, then for send button
         mock_page.wait_for_selector.return_value = mock_input
-        # query_selector returns None for auth dialog, then send button for button checks
-        mock_page.query_selector.side_effect = [None, mock_send_button, mock_send_button]
+        # query_selector returns None for auth dialog
+        mock_page.query_selector.return_value = None
 
         handler._page = mock_page
         handler._ensure_gpt5_enabled = Mock()  # Mock GPT-5 check
 
         handler._send_message("Test message")
 
-        # JS evaluate is used on input element for DataTransfer paste
-        mock_input.evaluate.assert_called_once()
-        mock_send_button.click.assert_called_once()
+        # Method 1: fill() is called with the message
+        mock_input.fill.assert_called_once_with("Test message")
+        # Sends via Enter key (not click)
+        mock_input.press.assert_called_with("Enter")
 
     def test_send_message_presses_enter_when_no_button(self):
         """_send_message presses Enter when send button not found"""
@@ -227,25 +225,25 @@ class TestCopilotHandlerSendMessage:
         assert "Timeout" in str(exc.value)
 
     def test_send_message_with_special_characters(self):
-        """_send_message handles special characters via JS"""
+        """_send_message handles special characters via fill()"""
         handler = CopilotHandler()
 
         mock_input = Mock()
-        mock_input.inner_text.return_value = "日本語テスト"  # Non-empty after JS set
+        mock_input.inner_text.return_value = "日本語テスト"  # Non-empty after fill()
         mock_page = Mock()
         mock_page.wait_for_selector.return_value = mock_input
         mock_page.query_selector.return_value = None  # No auth dialog
 
         handler._page = mock_page
+        handler._ensure_gpt5_enabled = Mock()  # Mock GPT-5 check
 
         special_text = "日本語テスト <script>alert('xss')</script> & special chars"
         handler._send_message(special_text)
 
-        # JS evaluate is used instead of fill for performance
-        mock_page.evaluate.assert_called_once()
-        # Verify the special text was passed to evaluate
-        call_args = mock_page.evaluate.call_args
-        assert special_text in str(call_args)
+        # fill() is used with the special characters
+        mock_input.fill.assert_called_once_with(special_text)
+        # Sends via Enter key
+        mock_input.press.assert_called_with("Enter")
 
 
 class TestCopilotHandlerGetResponse:

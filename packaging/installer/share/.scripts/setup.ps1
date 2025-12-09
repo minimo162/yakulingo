@@ -631,7 +631,7 @@ function Invoke-Setup {
         }
         # Clean up backup directory
         if (Test-Path $BackupDir) {
-            Remove-Item -Path $BackupDir -Recurse -Force -ErrorAction SilentlyContinue
+            & cmd /c "rd /s /q `"$BackupDir`" 2>nul"
         }
         if (-not $GuiMode) {
             Write-Host "[OK] User data restored" -ForegroundColor Green

@@ -1928,23 +1928,32 @@ class CopilotHandler:
             if input_elem:
                 logger.debug("Input element found, setting text via JS...")
                 fill_start = time.time()
-                # Set text via innerText - simple and reliable
-                # Lexical editor state may not sync, but Enter key works regardless
-                self._page.evaluate('''(args) => {
+                # Set text via innerText and dispatch input event for Lexical editor
+                # Lexical needs input event to sync internal state
+                # Returns True if text was successfully set, False otherwise
+                fill_success = self._page.evaluate('''(args) => {
                     const [selector, text] = args;
                     const elem = document.querySelector(selector);
-                    if (elem) {
-                        elem.focus();
-                        elem.innerText = text;
-                    }
+                    if (!elem) return false;
+
+                    elem.focus();
+                    elem.innerText = text;
+
+                    // Dispatch input event to notify Lexical editor of change
+                    elem.dispatchEvent(new InputEvent('input', {
+                        bubbles: true,
+                        cancelable: true,
+                        inputType: 'insertText',
+                        data: text
+                    }));
+
+                    // Verify content was set (check in same JS context)
+                    return elem.innerText.trim().length > 0;
                 }''', [input_selector, message])
                 logger.info("[TIMING] js_set_text: %.2fs", time.time() - fill_start)
 
-                # Verify input was successful by checking if field has content
-                # If empty after fill, something is blocking input (login, popup, etc.)
-                time.sleep(0.1)  # Brief wait for UI to update
-                input_text = input_elem.inner_text().strip()
-                if not input_text:
+                # Verify input was successful
+                if not fill_success:
                     logger.warning("Input field is empty after fill - Copilot may need attention")
                     raise RuntimeError("Copilotに入力できませんでした。Edgeブラウザを確認してください。")
                 logger.debug("Input verified (has content)")

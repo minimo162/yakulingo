@@ -607,8 +607,8 @@ class TestSendMessage:
 
         mock_page = MagicMock()
         mock_input = MagicMock()
-        mock_input.inner_text.return_value = ""  # Input is empty - something blocked it
         mock_page.wait_for_selector.return_value = mock_input
+        mock_page.evaluate.return_value = False  # JS returns False when input is empty
         handler._page = mock_page
 
         with pytest.raises(RuntimeError) as exc:

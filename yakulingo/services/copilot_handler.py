@@ -1711,14 +1711,15 @@ class CopilotHandler:
                     "Copilotから翻訳結果を取得できませんでした。Edgeブラウザの状態を確認して再試行してください。"
                 )
 
-            # Save storage_state after successful translation (session is confirmed valid)
-            self._save_storage_state()
-
-            # Minimize browser after a successful translation to avoid stealing focus
+            # Minimize browser FIRST to avoid stealing focus during storage_state save
+            # (storage_state() communicates with browser and may briefly activate window)
             try:
                 self._send_to_background_impl(self._page)
             except Exception:
                 logger.debug("Failed to return browser to background after batch")
+
+            # Save storage_state after successful translation (session is confirmed valid)
+            self._save_storage_state()
 
             # Note: We no longer call start_new_chat() here after translation completion.
             # The next translation will call start_new_chat() at the beginning anyway.
@@ -1893,14 +1894,15 @@ class CopilotHandler:
                     "Copilotから翻訳結果を取得できませんでした。Edgeブラウザの状態を確認して再試行してください。"
                 )
 
-            # Save storage_state after successful translation
-            self._save_storage_state()
-
-            # Minimize browser after a successful translation to keep it in background
+            # Minimize browser FIRST to avoid stealing focus during storage_state save
+            # (storage_state() communicates with browser and may briefly activate window)
             try:
                 self._send_to_background_impl(self._page)
             except Exception:
                 logger.debug("Failed to return browser to background after single translation")
+
+            # Save storage_state after successful translation
+            self._save_storage_state()
 
             # Note: We no longer call start_new_chat() here after translation completion.
             # The next translation will call start_new_chat() at the beginning anyway.

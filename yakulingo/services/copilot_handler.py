@@ -313,7 +313,7 @@ class CopilotHandler:
 
     # Response detection settings
     RESPONSE_STABLE_COUNT = 2  # Number of stable checks before considering response complete
-    DEFAULT_RESPONSE_TIMEOUT = 120  # Default timeout for response in seconds
+    DEFAULT_RESPONSE_TIMEOUT = 300  # Default timeout for response in seconds (5 minutes)
 
     # Copilot response selectors (fallback for DOM changes)
     RESPONSE_SELECTORS = (
@@ -1558,6 +1558,7 @@ class CopilotHandler:
         prompt: str,
         reference_files: Optional[list[Path]] = None,
         skip_clear_wait: bool = False,
+        timeout: int = 300,
     ) -> list[str]:
         """
         Synchronous version of translate for non-async contexts.
@@ -1569,14 +1570,18 @@ class CopilotHandler:
             prompt: The translation prompt to send to Copilot
             reference_files: Optional list of reference files to attach
             skip_clear_wait: Skip response clear verification (for 2nd+ batches)
+            timeout: Response timeout in seconds (default 300 = 5 minutes)
 
         Returns:
             List of translated strings parsed from Copilot's response
         """
         # Execute all Playwright operations in the dedicated thread
         # This avoids greenlet thread-switching errors when called from asyncio.to_thread
+        # Add 60 seconds margin for start_new_chat and send_message operations
+        executor_timeout = timeout + 60
         return _playwright_executor.execute(
-            self._translate_sync_impl, texts, prompt, reference_files, skip_clear_wait
+            self._translate_sync_impl, texts, prompt, reference_files, skip_clear_wait, timeout,
+            timeout=executor_timeout
         )
 
     def _translate_sync_impl(
@@ -1585,6 +1590,7 @@ class CopilotHandler:
         prompt: str,
         reference_files: Optional[list[Path]] = None,
         skip_clear_wait: bool = False,
+        timeout: int = 300,
         max_retries: int = 2,
     ) -> list[str]:
         """
@@ -1596,6 +1602,7 @@ class CopilotHandler:
         Args:
             skip_clear_wait: Skip response clear verification (for 2nd+ batches
                            where we just finished getting a response)
+            timeout: Response timeout in seconds
             max_retries: Number of retries on Copilot error responses
         """
         # Call _connect_impl directly since we're already in the Playwright thread
@@ -1644,7 +1651,7 @@ class CopilotHandler:
                 raise TranslationCancelledError("Translation cancelled by user")
 
             # Get response
-            result = self._get_response()
+            result = self._get_response(timeout=timeout)
 
             # Check for Copilot error response patterns
             if result and _is_copilot_error_response(result):

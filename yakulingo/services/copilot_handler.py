@@ -1899,7 +1899,7 @@ class CopilotHandler:
                             timeout=1000,
                             state='visible'
                         )
-                    except PlaywrightTimeoutError:
+                    except (PlaywrightTimeoutError, StopIteration):
                         try:
                             time.sleep(0.2)
                             remaining = input_elem.inner_text().strip()

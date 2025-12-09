@@ -366,66 +366,25 @@ function Invoke-Setup {
         }
         Write-Status -Message "Removing existing files..." -Progress -Step "Step 1/4: Preparing" -Percent 10
 
-        # Try fast removal first using Remove-Item -Recurse
-        # This is much faster than individual file enumeration
-        $lockedFiles = @()
-        $fastRemoveSuccess = $false
-        try {
-            Remove-Item -Path $SetupPath -Recurse -Force -ErrorAction Stop
-            $fastRemoveSuccess = $true
-        } catch {
-            # Fast removal failed, likely due to locked files
-            # Fall back to individual file removal
-            $fastRemoveSuccess = $false
-        }
+        # Use cmd /c rd for fastest directory removal (avoids PowerShell enumeration overhead)
+        # rd /s /q is native Windows command and handles large directories efficiently
+        & cmd /c "rd /s /q `"$SetupPath`" 2>nul"
 
-        if (-not $fastRemoveSuccess -and (Test-Path $SetupPath)) {
-            # Remove directory contents, skipping locked files (e.g., Edge's CrashpadMetrics-active.pma)
-            # These browser-related files don't affect application functionality
+        # If directory still exists (locked files), try robocopy to empty it
+        if (Test-Path $SetupPath) {
             Write-Status -Message "Cleaning up locked files..." -Progress -Step "Step 1/4: Preparing" -Percent 15
-
-            # Use cmd /c rd for faster directory removal (avoids PowerShell enumeration)
-            # This is more robust for large directories with many files
-            $rdResult = & cmd /c "rd /s /q `"$SetupPath`" 2>&1"
-
-            # If directory still exists, try individual file removal as last resort
-            if (Test-Path $SetupPath) {
-                Get-ChildItem -Path $SetupPath -Recurse -Force -ErrorAction SilentlyContinue |
-                    Sort-Object { $_.FullName.Length } -Descending |
-                    ForEach-Object {
-                        try {
-                            if (-not $_.PSIsContainer) {
-                                Remove-Item -Path $_.FullName -Force -ErrorAction Stop
-                            }
-                        } catch {
-                            $lockedFiles += $_.FullName
-                        }
-                        # Keep UI responsive during long operations
-                        if ($GuiMode) {
-                            [System.Windows.Forms.Application]::DoEvents()
-                        }
-                    }
-                # Remove empty directories (bottom-up)
-                Get-ChildItem -Path $SetupPath -Directory -Recurse -Force -ErrorAction SilentlyContinue |
-                    Sort-Object { $_.FullName.Length } -Descending |
-                    ForEach-Object {
-                        try {
-                            Remove-Item -Path $_.FullName -Force -ErrorAction Stop
-                        } catch {
-                            # Directory not empty (contains locked files), skip
-                        }
-                    }
-                # Remove the root directory if empty
-                try {
-                    Remove-Item -Path $SetupPath -Force -ErrorAction Stop
-                } catch {
-                    # Root directory contains locked files, will be overwritten by robocopy
-                }
+            if (-not $GuiMode) {
+                Write-Host "      Note: Some files may be in use, cleaning up..." -ForegroundColor DarkGray
             }
 
-            if (-not $GuiMode -and $lockedFiles.Count -gt 0) {
-                Write-Host "      Note: $($lockedFiles.Count) file(s) skipped (in use by another process)" -ForegroundColor DarkGray
-            }
+            # robocopy with /MIR from empty dir effectively deletes all files it can
+            $emptyDir = Join-Path $env:TEMP "YakuLingo_Empty_$(Get-Date -Format 'yyyyMMddHHmmss')"
+            New-Item -ItemType Directory -Path $emptyDir -Force | Out-Null
+            & robocopy $emptyDir $SetupPath /MIR /R:0 /W:0 /NFL /NDL /NJH /NJS /NP 2>&1 | Out-Null
+            Remove-Item -Path $emptyDir -Force -ErrorAction SilentlyContinue
+
+            # Final attempt to remove the directory
+            & cmd /c "rd /s /q `"$SetupPath`" 2>nul"
         }
     }
 

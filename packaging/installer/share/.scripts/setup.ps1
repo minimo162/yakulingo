@@ -224,10 +224,7 @@ function Prepare-TempWorkspace {
         [string]$ZipFileName
     )
 
-    Get-ChildItem -Path $env:TEMP -Directory -Filter "YakuLingo_Setup_*" -ErrorAction SilentlyContinue | ForEach-Object {
-        Remove-Item -Path $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
-    }
-
+    # Create new temp folder with timestamp (old folders are cleaned up by Windows automatically)
     $TempZipDir = Join-Path $env:TEMP "YakuLingo_Setup_$(Get-Date -Format 'yyyyMMddHHmmss')"
     New-Item -ItemType Directory -Path $TempZipDir -Force | Out-Null
 
@@ -259,7 +256,11 @@ function Cleanup-Directory {
     )
 
     if (Test-Path $Path) {
-        Remove-Item -Path $Path -Recurse -Force -ErrorAction SilentlyContinue
+        # Safety check: only delete if path is in TEMP and has YakuLingo_ prefix
+        $leafName = Split-Path -Leaf $Path
+        if ($Path.StartsWith($env:TEMP, [System.StringComparison]::OrdinalIgnoreCase) -and $leafName.StartsWith("YakuLingo_")) {
+            & cmd /c "rd /s /q `"$Path`" 2>nul"
+        }
     }
 }
 
@@ -273,7 +274,17 @@ function Update-PyVenvConfig {
         throw "pyvenv.cfg not found. The package seems to be incomplete." 
     }
 
-    $pythonExe = Get-ChildItem -Path (Join-Path $SetupPath ".uv-python") -Filter "python.exe" -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+    # Find python.exe in .uv-python (structure: .uv-python/cpython-x.x.x-*/python.exe)
+    # Only search one level deep to avoid slow recursive enumeration
+    $uvPythonDir = Join-Path $SetupPath ".uv-python"
+    $pythonExe = $null
+    Get-ChildItem -Path $uvPythonDir -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+        $candidate = Join-Path $_.FullName "python.exe"
+        if (Test-Path $candidate) {
+            $pythonExe = Get-Item $candidate
+            return  # Break out of ForEach-Object
+        }
+    }
     if (-not $pythonExe) {
         throw "python.exe not found under .uv-python. Please ensure the distribution contains the bundled Python runtime."
     }
@@ -361,43 +372,25 @@ function Invoke-Setup {
             }
         }
 
-        if (-not $GuiMode) {
-            Write-Host "      Removing existing files: $SetupPath" -ForegroundColor Gray
+        # Safety check: Only overwrite if it looks like a YakuLingo installation
+        # This prevents accidental overwriting of unrelated directories
+        # (robocopy /MIR will delete files not in source, so this check is critical)
+        $isYakuLingoDir = $false
+        $markerFiles = @("YakuLingo.exe", "app.py", "yakulingo\__init__.py", ".venv\pyvenv.cfg")
+        foreach ($marker in $markerFiles) {
+            if (Test-Path (Join-Path $SetupPath $marker)) {
+                $isYakuLingoDir = $true
+                break
+            }
         }
-        # Remove directory contents, skipping locked files (e.g., Edge's CrashpadMetrics-active.pma)
-        # These browser-related files don't affect application functionality
-        $lockedFiles = @()
-        Get-ChildItem -Path $SetupPath -Recurse -Force -ErrorAction SilentlyContinue |
-            Sort-Object { $_.FullName.Length } -Descending |
-            ForEach-Object {
-                try {
-                    if ($_.PSIsContainer) {
-                        # Skip directories in first pass (will be removed after files)
-                    } else {
-                        Remove-Item -Path $_.FullName -Force -ErrorAction Stop
-                    }
-                } catch {
-                    $lockedFiles += $_.FullName
-                }
-            }
-        # Remove empty directories (bottom-up)
-        Get-ChildItem -Path $SetupPath -Directory -Recurse -Force -ErrorAction SilentlyContinue |
-            Sort-Object { $_.FullName.Length } -Descending |
-            ForEach-Object {
-                try {
-                    Remove-Item -Path $_.FullName -Force -ErrorAction Stop
-                } catch {
-                    # Directory not empty (contains locked files), skip
-                }
-            }
-        # Remove the root directory if empty
-        try {
-            Remove-Item -Path $SetupPath -Force -ErrorAction Stop
-        } catch {
-            # Root directory contains locked files, will be overwritten by robocopy
-            if (-not $GuiMode -and $lockedFiles.Count -gt 0) {
-                Write-Host "      Note: $($lockedFiles.Count) file(s) skipped (in use by another process)" -ForegroundColor DarkGray
-            }
+
+        if (-not $isYakuLingoDir) {
+            # Directory exists but doesn't look like YakuLingo - refuse to overwrite
+            throw "Directory exists but does not appear to be a YakuLingo installation: $SetupPath`n`nTo reinstall, please delete this directory manually first, or choose a different location."
+        }
+
+        if (-not $GuiMode) {
+            Write-Host "      Found existing installation, will update in place" -ForegroundColor Gray
         }
     }
 
@@ -451,14 +444,17 @@ function Invoke-Setup {
             throw "Failed to extract ZIP file.`n`nFile: $ZipFileName"
         }
 
-        # Copy extracted folder to destination using robocopy (more robust than Move-Item)
-        $robocopyResult = & robocopy $ExtractedDir.FullName $SetupPath /E /MOVE /MT:8 /R:3 /W:1 /NFL /NDL /NJH /NJS /NP 2>&1
+        # Copy extracted folder to destination using robocopy /MIR (mirror mode)
+        # /MIR = /E + /PURGE: copies all files and removes files not in source
+        # This ensures clean updates without needing to delete the destination first
+        # /R:0 /W:0: don't retry locked files (skip them instead of hanging)
+        $robocopyResult = & robocopy $ExtractedDir.FullName $SetupPath /MIR /MT:8 /R:0 /W:0 /NFL /NDL /NJH /NJS /NP 2>&1
         # robocopy returns 0-7 for success, 8+ for errors
         if ($LASTEXITCODE -ge 8) {
             throw "Failed to copy files to destination.`n`nDestination: $SetupPath"
         }
     } finally {
-        # Clean up temp folder (robocopy /MOVE should handle most of it, but ensure cleanup)
+        # Clean up temp folder
         Cleanup-Directory -Path $TempZipDir
     }
 
@@ -636,9 +632,12 @@ function Invoke-Setup {
                 }
             }
         }
-        # Clean up backup directory
+        # Clean up backup directory (with safety check)
         if (Test-Path $BackupDir) {
-            Remove-Item -Path $BackupDir -Recurse -Force -ErrorAction SilentlyContinue
+            $backupLeafName = Split-Path -Leaf $BackupDir
+            if ($BackupDir.StartsWith($env:TEMP, [System.StringComparison]::OrdinalIgnoreCase) -and $backupLeafName.StartsWith("YakuLingo_")) {
+                & cmd /c "rd /s /q `"$BackupDir`" 2>nul"
+            }
         }
         if (-not $GuiMode) {
             Write-Host "[OK] User data restored" -ForegroundColor Green

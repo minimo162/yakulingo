@@ -139,13 +139,13 @@ if errorlevel 1 (
     exit /b 1
 )
 
-uv.exe sync --native-tls
+uv.exe sync --native-tls --extra ocr
 if errorlevel 1 (
     echo [ERROR] Failed to install dependencies.
     pause
     exit /b 1
 )
-echo [DONE] Dependencies installed.
+echo [DONE] Dependencies installed (including PaddleOCR).
 
 :: ============================================================
 :: Step 4: Install Playwright browser

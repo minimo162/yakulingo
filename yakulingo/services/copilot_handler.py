@@ -1928,28 +1928,60 @@ class CopilotHandler:
             if input_elem:
                 logger.debug("Input element found, setting text via JS...")
                 fill_start = time.time()
-                # Set text via innerText and dispatch input event for Lexical editor
-                # Lexical needs input event to sync internal state
-                # Returns True if text was successfully set, False otherwise
-                fill_success = self._page.evaluate('''(args) => {
-                    const [selector, text] = args;
-                    const elem = document.querySelector(selector);
-                    if (!elem) return false;
+                fill_success = False
 
-                    elem.focus();
-                    elem.innerText = text;
+                # Method 1: Use element.evaluate() to directly access the element reference
+                # This avoids re-querying the DOM which can fail if the element was replaced
+                try:
+                    fill_success = input_elem.evaluate('''(elem, text) => {
+                        if (!elem) return false;
 
-                    // Dispatch input event to notify Lexical editor of change
-                    elem.dispatchEvent(new InputEvent('input', {
-                        bubbles: true,
-                        cancelable: true,
-                        inputType: 'insertText',
-                        data: text
-                    }));
+                        elem.focus();
+                        elem.innerText = text;
 
-                    // Verify content was set (check in same JS context)
-                    return elem.innerText.trim().length > 0;
-                }''', [input_selector, message])
+                        // Dispatch input event to notify Lexical editor of change
+                        elem.dispatchEvent(new InputEvent('input', {
+                            bubbles: true,
+                            cancelable: true,
+                            inputType: 'insertText',
+                            data: text
+                        }));
+
+                        // Verify content was set (check in same JS context)
+                        return elem.innerText.trim().length > 0;
+                    }''', message)
+                except Exception as e:
+                    logger.debug("Method 1 (evaluate) failed: %s", e)
+                    fill_success = False
+
+                # Method 2: Try Playwright's fill() method if evaluate failed
+                if not fill_success:
+                    logger.debug("Method 1 failed, trying fill()...")
+                    try:
+                        input_elem.fill(message)
+                        # Verify content was set
+                        content = input_elem.inner_text()
+                        fill_success = len(content.strip()) > 0
+                    except Exception as e:
+                        logger.debug("Method 2 (fill) failed: %s", e)
+                        fill_success = False
+
+                # Method 3: Try clicking and typing if fill also failed
+                if not fill_success:
+                    logger.debug("Method 2 failed, trying click + type...")
+                    try:
+                        input_elem.click()
+                        # Clear any existing content
+                        input_elem.press("Control+a")
+                        # Type the message (slower but more reliable for Lexical)
+                        input_elem.type(message, delay=0)
+                        # Verify content was set
+                        content = input_elem.inner_text()
+                        fill_success = len(content.strip()) > 0
+                    except Exception as e:
+                        logger.debug("Method 3 (type) failed: %s", e)
+                        fill_success = False
+
                 logger.info("[TIMING] js_set_text: %.2fs", time.time() - fill_start)
 
                 # Verify input was successful

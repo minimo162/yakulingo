@@ -1982,9 +1982,44 @@ class CopilotHandler:
                         logger.debug("Send button still disabled after Method 1, Lexical may not have recognized input")
                         fill_success = False  # Force fallback to other methods
 
-                # Method 2: Try Playwright's fill() method if execCommand didn't work
+                # Method 2: Use clipboard paste (fast and reliable for Lexical)
                 if not fill_success:
-                    logger.debug("Method 1 failed or Lexical didn't recognize, trying fill()...")
+                    logger.debug("Method 1 failed or Lexical didn't recognize, trying clipboard paste...")
+                    try:
+                        # Focus the input element
+                        input_elem.click()
+                        time.sleep(0.05)
+                        # Clear any existing content
+                        input_elem.press("Control+a")
+                        time.sleep(0.05)
+                        # Set clipboard content via JavaScript (async)
+                        self._page.evaluate('''async (text) => {
+                            await navigator.clipboard.writeText(text);
+                        }''', message)
+                        time.sleep(0.05)
+                        # Paste from clipboard (Ctrl+V)
+                        input_elem.press("Control+v")
+                        time.sleep(0.1)
+                        # Verify content was set
+                        content = input_elem.inner_text()
+                        fill_success = len(content.strip()) > 0
+                        # Check send button
+                        if fill_success:
+                            for _ in range(10):
+                                send_btn = self._page.query_selector(send_button_selector)
+                                if send_btn:
+                                    send_button_enabled = True
+                                    break
+                                time.sleep(0.1)
+                            if not send_button_enabled:
+                                fill_success = False
+                    except Exception as e:
+                        logger.debug("Method 2 (clipboard paste) failed: %s", e)
+                        fill_success = False
+
+                # Method 3: Try Playwright's fill() method
+                if not fill_success:
+                    logger.debug("Method 2 failed, trying fill()...")
                     try:
                         input_elem.fill(message)
                         # Verify content was set
@@ -2001,12 +2036,12 @@ class CopilotHandler:
                             if not send_button_enabled:
                                 fill_success = False
                     except Exception as e:
-                        logger.debug("Method 2 (fill) failed: %s", e)
+                        logger.debug("Method 3 (fill) failed: %s", e)
                         fill_success = False
 
-                # Method 3: Click and type character by character (most reliable for Lexical)
+                # Method 4: Click and type character by character (slowest, last resort)
                 if not fill_success:
-                    logger.debug("Method 2 failed, trying click + type...")
+                    logger.debug("Method 3 failed, trying click + type...")
                     try:
                         input_elem.click()
                         # Clear any existing content
@@ -2026,7 +2061,7 @@ class CopilotHandler:
                                     break
                                 time.sleep(0.1)
                     except Exception as e:
-                        logger.debug("Method 3 (type) failed: %s", e)
+                        logger.debug("Method 4 (type) failed: %s", e)
                         fill_success = False
 
                 logger.info("[TIMING] js_set_text: %.2fs", time.time() - fill_start)

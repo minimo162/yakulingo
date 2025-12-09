@@ -98,9 +98,11 @@ YakuLingo/
 │   │   ├── word_processor.py      # .docx/.doc handling
 │   │   ├── pptx_processor.py      # .pptx/.ppt handling
 │   │   ├── pdf_processor.py       # .pdf handling
-│   │   ├── txt_processor.py       # .txt handling (plain text)
+│   │   ├── pdf_converter.py       # PDFMathTranslate compliant: Paragraph, FormulaVar, vflag
+│   │   ├── pdf_layout.py          # PP-DocLayout-L integration: LayoutArray, layout analysis
 │   │   ├── pdf_font_manager.py    # PDF font management (PDFMathTranslate compliant)
 │   │   ├── pdf_operators.py       # PDF low-level operator generation
+│   │   ├── txt_processor.py       # .txt handling (plain text)
 │   │   ├── font_manager.py        # Font detection & mapping
 │   │   └── translators.py         # Translation decision logic
 │   ├── models/                    # Data structures
@@ -175,7 +177,9 @@ YakuLingo/
 | `yakulingo/storage/history_db.py` | SQLite database for translation history | ~320 |
 | `yakulingo/processors/base.py` | Abstract base class for all file processors | ~105 |
 | `yakulingo/processors/pdf_processor.py` | PDF processing with PyMuPDF, pdfminer.six, and PP-DocLayout-L | ~3483 |
-| `yakulingo/processors/pdf_font_manager.py` | PDF font management: font registry, type detection, glyph encoding | ~917 |
+| `yakulingo/processors/pdf_converter.py` | PDFMathTranslate準拠: Paragraph, FormulaVar, vflag, 座標変換 | ~600 |
+| `yakulingo/processors/pdf_layout.py` | PP-DocLayout-L統合: LayoutArray, レイアウト解析, 領域分類 | ~500 |
+| `yakulingo/processors/pdf_font_manager.py` | PDF font management: font registry, type detection, glyph encoding | ~1140 |
 | `yakulingo/processors/pdf_operators.py` | PDF low-level operator generation for text rendering | ~731 |
 
 ## Core Data Types
@@ -834,6 +838,65 @@ PDF翻訳ではPDFMathTranslate準拠の単一パス処理を使用します：
 
 **制限:**
 - スキャンPDF（画像のみ）は翻訳不可（テキストが埋め込まれていないため）
+
+**PDFMathTranslateとの比較:**
+
+| 機能 | PDFMathTranslate | YakuLingo |
+|------|------------------|-----------|
+| レイアウト検出 | DocLayout-YOLO (ONNXモデル) | PP-DocLayout-L (Apache-2.0) |
+| テキスト抽出 | pdfminer.six | pdfminer.six |
+| 数式検出 | vflag関数 | vflag関数 (同等実装) |
+| raw_string | フォントタイプ別エンコーディング | 同等実装 |
+| 座標変換 | PDF/画像座標変換 | PdfCoord/ImageCoord型安全変換 |
+| 翻訳API | 複数サービス対応 | M365 Copilot |
+| ライセンス | AGPL-3.0 | MIT |
+
+**数式検出 vflag関数 (PDFMathTranslate converter.py準拠):**
+
+```python
+def vflag(font: str, char: str) -> bool:
+    """数式・特殊文字の判定"""
+    # 1. フォント名の前処理（"Prefix+Font" → "Font"）
+    font = font.split("+")[-1]
+
+    # 2. CID記法の検出
+    if re.match(r"\(cid:", char):
+        return True
+
+    # 3. 数式フォント名パターン
+    #    CM*, MS.M, XY, MT, BL, RM, EU, LA, RS, LINE,
+    #    TeX-, rsfs, txsy, wasy, stmary, *Mono, *Code, *Ital, *Sym, *Math
+    if re.match(DEFAULT_VFONT_PATTERN, font):
+        return True
+
+    # 4. Unicode文字カテゴリ
+    #    Lm(修飾文字), Mn(結合記号), Sk(修飾記号),
+    #    Sm(数学記号), Zl/Zp/Zs(分離子)
+    if unicodedata.category(char[0]) in FORMULA_UNICODE_CATEGORIES:
+        return True
+
+    # 5. ギリシャ文字 (U+0370～U+03FF)
+    if 0x370 <= ord(char[0]) < 0x400:
+        return True
+
+    return False
+```
+
+**段落境界検出 (PDFMathTranslate compliant):**
+
+```python
+# pdf_converter.py の定数
+SAME_LINE_Y_THRESHOLD = 3.0       # 3pt以内は同じ行
+SAME_PARA_Y_THRESHOLD = 20.0      # 20pt以内は同じ段落
+WORD_SPACE_X_THRESHOLD = 2.0      # 2pt以上の間隔でスペース挿入
+LINE_BREAK_X_THRESHOLD = 1.0      # X座標が戻ったら改行
+
+# _group_chars_into_blocks でのスタック管理
+sstk: list[str] = []           # 文字列スタック（段落テキスト）
+vstk: list = []                # 数式スタック（数式文字バッファ）
+var: list[FormulaVar] = []     # 数式格納配列
+pstk: list[Paragraph] = []     # 段落メタデータスタック
+```
 
 **PP-DocLayout-L Settings:**
 ```python

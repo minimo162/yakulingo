@@ -82,14 +82,39 @@ def _get_paddleocr():
     """Lazy import PaddleOCR (PP-DocLayout-L for layout analysis)"""
     global _paddleocr
     if _paddleocr is None:
+        # First, check if paddlepaddle (the core framework) is available
+        try:
+            import paddle
+            logger.debug("PaddlePaddle version: %s", paddle.__version__)
+        except ImportError as e:
+            logger.warning("paddlepaddle import failed: %s", e)
+            raise ImportError(
+                f"paddlepaddle is required for PDF layout analysis but failed to import: {e}. "
+                "Install with: pip install paddlepaddle>=3.0.0"
+            ) from e
+        except Exception as e:
+            logger.warning("paddlepaddle initialization error: %s", e)
+            raise ImportError(
+                f"paddlepaddle initialization failed: {e}. "
+                "This may be a compatibility issue with your system."
+            ) from e
+
+        # Then try to import paddleocr
         try:
             from paddleocr import LayoutDetection
             _paddleocr = {'LayoutDetection': LayoutDetection}
-        except ImportError:
+        except ImportError as e:
+            logger.warning("paddleocr import failed: %s", e)
             raise ImportError(
-                "paddleocr is required for PDF layout analysis. "
+                f"paddleocr is required for PDF layout analysis but failed to import: {e}. "
                 "Install with: pip install -r requirements_pdf.txt"
-            )
+            ) from e
+        except Exception as e:
+            logger.warning("paddleocr initialization error: %s", e)
+            raise ImportError(
+                f"paddleocr initialization failed: {e}. "
+                "This may be a compatibility issue with your system."
+            ) from e
     return _paddleocr
 
 
@@ -1435,11 +1460,12 @@ def analyze_layout(img, device: str = "cpu"):
 
     try:
         model = get_layout_model(device)
-    except ImportError:
+    except ImportError as e:
         if not _layout_dependency_warning_logged:
             logger.warning(
-                "paddleocr is not installed; skipping layout analysis. "
-                "Install it with: pip install -r requirements_pdf.txt",
+                "Layout analysis unavailable: %s. "
+                "Install with: pip install -r requirements_pdf.txt",
+                e,
             )
             _layout_dependency_warning_logged = True
         return {'boxes': []}
@@ -1470,11 +1496,12 @@ def analyze_layout_batch(images: list, device: str = "cpu") -> list:
 
     try:
         model = get_layout_model(device)
-    except ImportError:
+    except ImportError as e:
         if not _layout_dependency_warning_logged:
             logger.warning(
-                "paddleocr is not installed; skipping layout analysis. "
-                "Install it with: pip install -r requirements_pdf.txt",
+                "Layout analysis unavailable: %s. "
+                "Install with: pip install -r requirements_pdf.txt",
+                e,
             )
             _layout_dependency_warning_logged = True
         return [{'boxes': []} for _ in images]

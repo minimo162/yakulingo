@@ -358,7 +358,7 @@ class CopilotHandler:
     EDGE_STARTUP_CHECK_INTERVAL = 0.25  # Seconds between startup checks (total: 20 seconds)
 
     # Response detection settings
-    RESPONSE_STABLE_COUNT = 2  # Number of stable checks before considering response complete
+    RESPONSE_STABLE_COUNT = 3  # Number of stable checks before considering response complete
     DEFAULT_RESPONSE_TIMEOUT = 600  # Default timeout for response in seconds (10 minutes)
 
     # =========================================================================
@@ -371,6 +371,9 @@ class CopilotHandler:
 
     # Selector wait timeouts (milliseconds) - for Playwright wait_for_selector()
     SELECTOR_CHAT_INPUT_TIMEOUT_MS = 15000   # 15 seconds for chat input to appear
+    SELECTOR_SEND_BUTTON_TIMEOUT_MS = 5000   # 5 seconds for send button to become enabled
+    SELECTOR_RESPONSE_TIMEOUT_MS = 10000     # 10 seconds for response element to appear
+    SELECTOR_NEW_CHAT_READY_TIMEOUT_MS = 5000  # 5 seconds for new chat to be ready
     SELECTOR_LOGIN_CHECK_TIMEOUT_MS = 2000   # 2 seconds for login state checks
     SELECTOR_QUICK_CHECK_TIMEOUT_MS = 500    # 0.5 seconds for instant checks
 
@@ -412,6 +415,14 @@ class CopilotHandler:
 
     # Auth dialog selectors
     AUTH_DIALOG_TITLE_SELECTOR = '.fui-DialogTitle, [role="dialog"] h2'
+    # Auth dialog keywords (Japanese and English)
+    AUTH_DIALOG_KEYWORDS = (
+        # Japanese
+        "認証", "ログイン", "サインイン", "パスワード",
+        # English
+        "authentication", "login", "sign in", "sign-in", "password",
+        "verify", "credential",
+    )
 
     # Copilot response selectors (fallback for DOM changes)
     RESPONSE_SELECTORS = (
@@ -1079,10 +1090,10 @@ class CopilotHandler:
             page.wait_for_selector(input_selector, timeout=self.SELECTOR_CHAT_INPUT_TIMEOUT_MS, state='visible')
 
             # Check for authentication dialog that may block input
-            auth_dialog = page.query_selector('.fui-DialogTitle, [role="dialog"] h2')
+            auth_dialog = page.query_selector(self.AUTH_DIALOG_TITLE_SELECTOR)
             if auth_dialog:
-                dialog_text = auth_dialog.inner_text().strip()
-                if "認証" in dialog_text or "ログイン" in dialog_text or "サインイン" in dialog_text:
+                dialog_text = auth_dialog.inner_text().strip().lower()
+                if any(kw.lower() in dialog_text for kw in self.AUTH_DIALOG_KEYWORDS):
                     logger.warning("Authentication dialog detected during connect: %s", dialog_text)
                     self.last_connection_error = self.ERROR_LOGIN_REQUIRED
 
@@ -2274,10 +2285,11 @@ class CopilotHandler:
 
         # Check for authentication dialog that blocks input
         # This can appear even after initial login (MFA re-auth, session expiry)
-        auth_dialog = self._page.query_selector('.fui-DialogTitle, [role="dialog"] h2')
+        auth_dialog = self._page.query_selector(self.AUTH_DIALOG_TITLE_SELECTOR)
         if auth_dialog:
             dialog_text = auth_dialog.inner_text().strip()
-            if "認証" in dialog_text or "ログイン" in dialog_text or "サインイン" in dialog_text:
+            dialog_text_lower = dialog_text.lower()
+            if any(kw.lower() in dialog_text_lower for kw in self.AUTH_DIALOG_KEYWORDS):
                 logger.warning("Authentication dialog detected: %s", dialog_text)
                 raise RuntimeError(f"Edgeブラウザで認証が必要です。ダイアログを確認してください: {dialog_text}")
 
@@ -2287,7 +2299,7 @@ class CopilotHandler:
             input_selector = self.CHAT_INPUT_SELECTOR_EXTENDED
             logger.debug("Waiting for input element...")
             input_wait_start = time.time()
-            input_elem = self._page.wait_for_selector(input_selector, timeout=10000)
+            input_elem = self._page.wait_for_selector(input_selector, timeout=self.SELECTOR_CHAT_INPUT_TIMEOUT_MS)
             logger.info("[TIMING] wait_for_input_element: %.2fs", time.time() - input_wait_start)
 
             if input_elem:
@@ -2300,6 +2312,7 @@ class CopilotHandler:
                 fill_method = None  # Track which method succeeded
 
                 # Method 1: Use Playwright's fill() - handles newlines correctly for contenteditable
+                method1_error = None
                 try:
                     input_elem.fill(message)
                     time.sleep(0.1)
@@ -2307,13 +2320,23 @@ class CopilotHandler:
                     fill_success = len(content.strip()) > 0
                     if fill_success:
                         fill_method = 1
+                    else:
+                        method1_error = "fill succeeded but content is empty"
                 except Exception as e:
-                    logger.debug("Method 1 (fill) failed: %s", e)
+                    method1_error = str(e)
                     fill_success = False
 
                 # Method 2: Use execCommand('insertText') - backup for older browsers
                 if not fill_success:
-                    logger.debug("Method 1 failed, trying execCommand('insertText')...")
+                    # Log Method 1 failure with details for debugging selector issues
+                    elem_info = ""
+                    try:
+                        elem_info = input_elem.evaluate('el => ({ tag: el.tagName, id: el.id, class: el.className, editable: el.contentEditable })')
+                    except Exception:
+                        elem_info = "(could not get element info)"
+                    logger.warning("Method 1 (fill) failed: %s | Element: %s | URL: %s",
+                                   method1_error, elem_info, self._page.url[:80] if self._page else "no page")
+                    logger.info("Falling back to Method 2 (execCommand insertText)...")
                     try:
                         input_elem.evaluate('el => { el.focus(); el.click(); }')
                         time.sleep(0.05)
@@ -2328,13 +2351,13 @@ class CopilotHandler:
                             if fill_success:
                                 fill_method = 2
                     except Exception as e:
-                        logger.debug("Method 2 (execCommand insertText) failed: %s", e)
+                        logger.warning("Method 2 (execCommand insertText) failed: %s", e)
                         fill_success = False
 
                 # Method 3: Click and type line by line (slowest, last resort)
                 # Note: type() interprets \n as Enter key, so we use Shift+Enter for line breaks
                 if not fill_success:
-                    logger.debug("Method 2 failed, trying click + type...")
+                    logger.warning("Method 2 failed, falling back to Method 3 (type line by line) - this may be slow for long text")
                     try:
                         input_elem.evaluate('el => { el.focus(); el.click(); }')
                         input_elem.press("Control+a")
@@ -2372,7 +2395,7 @@ class CopilotHandler:
                 send_button_selector = self.SEND_BUTTON_SELECTOR
                 send_wait_start = time.time()
                 try:
-                    self._page.wait_for_selector(send_button_selector, timeout=5000, state='visible')
+                    self._page.wait_for_selector(send_button_selector, timeout=self.SELECTOR_SEND_BUTTON_TIMEOUT_MS, state='visible')
                     logger.info("[TIMING] wait_for_send_button: %.2fs", time.time() - send_wait_start)
                 except Exception as e:
                     logger.debug("Send button wait timed out after %.2fs (may still work): %s", time.time() - send_wait_start, e)
@@ -2456,7 +2479,7 @@ class CopilotHandler:
             wait_response_start = time.time()
             try:
                 self._page.wait_for_selector(
-                    self.RESPONSE_SELECTOR_COMBINED, timeout=10000, state='visible'
+                    self.RESPONSE_SELECTOR_COMBINED, timeout=self.SELECTOR_RESPONSE_TIMEOUT_MS, state='visible'
                 )
             except PlaywrightTimeoutError:
                 # Response may already be present or selector changed, continue polling
@@ -2475,6 +2498,8 @@ class CopilotHandler:
             has_content = False  # Track if we've seen any content
             poll_iteration = 0
             last_log_time = time.time()
+            stop_button_ever_seen = False  # Track if stop button was ever visible
+            stop_button_warning_logged = False  # Avoid repeated warnings
 
             current_url = self._page.url if self._page else "unknown"
             # Ensure current_url is a string before slicing (for test mocks)
@@ -2494,12 +2519,18 @@ class CopilotHandler:
                 stop_button = None
                 stop_button_selector = None
                 for stop_sel in self.STOP_BUTTON_SELECTORS:
-                    stop_button = self._page.query_selector(stop_sel)
-                    if stop_button:
-                        stop_button_selector = stop_sel
-                        break
+                    try:
+                        stop_button = self._page.query_selector(stop_sel)
+                        if stop_button:
+                            stop_button_selector = stop_sel
+                            break
+                    except Exception as e:
+                        logger.debug("Stop button selector failed (%s): %s", stop_sel, e)
+                        continue
+
                 stop_button_visible = stop_button and stop_button.is_visible()
                 if stop_button_visible:
+                    stop_button_ever_seen = True
                     # Still generating, reset stability counter and wait
                     stable_count = 0
                     poll_interval = self.RESPONSE_POLL_ACTIVE if has_content else self.RESPONSE_POLL_INITIAL
@@ -2511,6 +2542,12 @@ class CopilotHandler:
                     time.sleep(poll_interval)
                     max_wait -= poll_interval
                     continue
+
+                # Warn if stop button was never found (possible selector change)
+                if has_content and not stop_button_ever_seen and not stop_button_warning_logged:
+                    logger.warning("[POLLING] Stop button never detected - selectors may need update: %s",
+                                   self.STOP_BUTTON_SELECTORS)
+                    stop_button_warning_logged = True
 
                 current_text, found_response = self._get_latest_response_text()
                 text_len = len(current_text) if current_text else 0
@@ -2579,12 +2616,21 @@ class CopilotHandler:
                         logger.info("[POLLING] iter=%d no response element found (remaining=%.1fs, URL: %s)",
                                    poll_iteration, max_wait, current_url[:80] if current_url else "empty")
                         last_log_time = time.time()
+                        # Warn about potential selector issues after significant wait
+                        if poll_iteration > 20 and not has_content:
+                            logger.warning("[POLLING] Response selectors may need update: %s",
+                                          self.RESPONSE_SELECTORS[:2])  # Log first 2 selectors
 
                 time.sleep(poll_interval)
                 max_wait -= poll_interval
 
+            # Log detailed info on timeout for debugging
             logger.warning("[POLLING] Timeout reached after %d iterations, returning last_text (len=%d)",
                           poll_iteration, len(last_text))
+            if not has_content:
+                logger.error("[POLLING] No content received - possible selector issues. "
+                            "Response selectors: %s, Stop button selectors: %s",
+                            self.RESPONSE_SELECTORS, self.STOP_BUTTON_SELECTORS)
             return last_text
 
         except PlaywrightError as e:
@@ -2798,7 +2844,7 @@ class CopilotHandler:
             input_selector = self.CHAT_INPUT_SELECTOR_EXTENDED
             input_ready_start = time.time()
             try:
-                self._page.wait_for_selector(input_selector, timeout=5000, state='visible')
+                self._page.wait_for_selector(input_selector, timeout=self.SELECTOR_NEW_CHAT_READY_TIMEOUT_MS, state='visible')
             except PlaywrightTimeoutError:
                 # Fallback: wait a bit if selector doesn't appear
                 time.sleep(0.3)

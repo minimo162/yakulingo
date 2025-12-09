@@ -412,6 +412,8 @@ class FontRegistry:
         # PDFMathTranslate compliant: fontmap for existing PDF fonts
         # Maps font name -> pdfminer font object (PDFCIDFont or other)
         self.fontmap: dict[str, Any] = {}
+        # Maps font_id -> pdfminer font object (for existing fonts)
+        self._pdfminer_fonts: dict[str, Any] = {}
 
         # Performance caches
         # Glyph ID cache: (font_id, char) -> glyph_id
@@ -514,35 +516,136 @@ class FontRegistry:
         """
         Select appropriate font ID based on text content.
 
-        PDFMathTranslate compliant: prioritizes existing CID fonts from the PDF
-        before falling back to embedded fonts.
+        Analyzes the entire text to determine the dominant language and selects
+        the most appropriate font. Checks character coverage before using
+        existing CID fonts.
 
         Args:
             text: Target text
-            target_lang: Target language for kanji
+            target_lang: Target language for kanji (ja, zh-CN, etc.)
 
         Returns:
             Font ID
         """
-        # First, try to use existing CID font from the PDF
-        # CID fonts typically contain both CJK and Latin characters
+        if not text:
+            return self._get_font_id_for_lang("en")
+
+        # Analyze entire text to determine dominant language
+        dominant_lang = self._analyze_text_language(text, target_lang)
+
+        # Try existing CID font if it covers all characters
         existing_cid_font = self._get_existing_cid_font()
-        if existing_cid_font:
+        if existing_cid_font and self._check_font_coverage(existing_cid_font, text):
             return existing_cid_font
 
-        # Fall back to language-specific embedded fonts
+        # Use embedded font for the dominant language
+        return self._get_font_id_for_lang(dominant_lang)
+
+    def _analyze_text_language(self, text: str, target_lang: str = "ja") -> str:
+        """
+        Analyze text to determine the dominant language.
+
+        Counts characters by script type and returns the language with the
+        most characters. This ensures mixed-language text gets the most
+        appropriate font.
+
+        Args:
+            text: Text to analyze
+            target_lang: Target language for CJK ideographs
+
+        Returns:
+            Language code ("ja", "ko", "zh-CN", "en")
+        """
+        # Count characters by script type
+        ja_count = 0  # Hiragana + Katakana
+        ko_count = 0  # Hangul
+        cjk_count = 0  # CJK Unified Ideographs
+        latin_count = 0  # Latin characters
+
         for char in text:
-            if '\u3040' <= char <= '\u309F':  # Hiragana
-                return self._get_font_id_for_lang("ja")
-            if '\u30A0' <= char <= '\u30FF':  # Katakana
-                return self._get_font_id_for_lang("ja")
-            if '\uAC00' <= char <= '\uD7AF':  # Hangul Syllables
-                return self._get_font_id_for_lang("ko")
-            if '\u1100' <= char <= '\u11FF':  # Hangul Jamo
-                return self._get_font_id_for_lang("ko")
-            if '\u4E00' <= char <= '\u9FFF':  # CJK Unified Ideographs
-                return self._get_font_id_for_lang(target_lang)
-        return self._get_font_id_for_lang("en")
+            code = ord(char)
+            if 0x3040 <= code <= 0x309F:  # Hiragana
+                ja_count += 1
+            elif 0x30A0 <= code <= 0x30FF:  # Katakana
+                ja_count += 1
+            elif 0xAC00 <= code <= 0xD7AF:  # Hangul Syllables
+                ko_count += 1
+            elif 0x1100 <= code <= 0x11FF:  # Hangul Jamo
+                ko_count += 1
+            elif 0x4E00 <= code <= 0x9FFF:  # CJK Unified Ideographs
+                cjk_count += 1
+            elif 0x3400 <= code <= 0x4DBF:  # CJK Extension A
+                cjk_count += 1
+            elif 0x0020 <= code <= 0x007F:  # Basic Latin
+                latin_count += 1
+            elif 0x0080 <= code <= 0x00FF:  # Latin-1 Supplement
+                latin_count += 1
+
+        # Determine dominant language
+        # Japanese: Hiragana/Katakana presence is definitive
+        if ja_count > 0:
+            return "ja"
+
+        # Korean: Hangul presence is definitive
+        if ko_count > 0:
+            return "ko"
+
+        # CJK ideographs: use target language
+        if cjk_count > 0:
+            return target_lang
+
+        # Default to English
+        return "en"
+
+    def _check_font_coverage(self, font_id: str, text: str) -> bool:
+        """
+        Check if a font covers all characters in the text.
+
+        For existing CID fonts, attempts to verify character mapping.
+        Returns True if coverage cannot be determined (conservative approach).
+
+        Args:
+            font_id: Font ID to check
+            text: Text to check coverage for
+
+        Returns:
+            True if font covers all characters (or coverage cannot be determined)
+        """
+        pdfminer_font = self._pdfminer_fonts.get(font_id)
+        if not pdfminer_font:
+            # No pdfminer font info - assume coverage is OK
+            return True
+
+        # Sample check: verify a subset of characters to avoid performance hit
+        # Check up to 50 unique non-ASCII characters
+        unique_chars = set(c for c in text if ord(c) > 127)
+        sample_chars = list(unique_chars)[:50]
+
+        if not sample_chars:
+            # All ASCII - any font should cover
+            return True
+
+        uncovered_count = 0
+        for char in sample_chars:
+            try:
+                # Try to get character width - if it fails, char may not be covered
+                if hasattr(pdfminer_font, 'get_width'):
+                    width = pdfminer_font.get_width()
+                    if width == 0:
+                        uncovered_count += 1
+            except Exception:
+                # Error getting width - character may not be covered
+                uncovered_count += 1
+
+        # If more than 10% of sampled characters are uncovered, reject font
+        if uncovered_count > len(sample_chars) * 0.1:
+            logger.debug(
+                "Font %s rejected: %d/%d sampled characters may not be covered",
+                font_id, uncovered_count, len(sample_chars)
+            )
+            return False
+
+        return True
 
     def _get_existing_cid_font(self) -> Optional[str]:
         """
@@ -621,6 +724,8 @@ class FontRegistry:
         Get character width in points for the specified font and size.
 
         Uses internal cache for normalized width (scaled by font_size at runtime).
+        Supports both PyMuPDF Font objects (embedded fonts) and pdfminer font
+        objects (existing PDF fonts).
 
         Args:
             font_id: Font ID
@@ -636,6 +741,8 @@ class FontRegistry:
             return self._char_width_cache[cache_key] * font_size
 
         normalized_width = None
+
+        # Try PyMuPDF Font object first (for embedded fonts)
         font_obj = self._font_objects.get(font_id)
         if font_obj:
             try:
@@ -644,16 +751,56 @@ class FontRegistry:
                 if advance:
                     normalized_width = advance
             except Exception as e:
-                logger.debug("Error getting char width for '%s': %s", char, e)
+                logger.debug("Error getting char width from PyMuPDF for '%s': %s", char, e)
 
+        # Try pdfminer font object (for existing PDF fonts)
         if normalized_width is None:
-            # Fallback: estimate based on character properties
-            # Store estimated width normalized to 1.0
+            pdfminer_font = self._pdfminer_fonts.get(font_id)
+            if pdfminer_font:
+                normalized_width = self._get_pdfminer_char_width(pdfminer_font, char)
+
+        # Fallback: estimate based on character properties
+        if normalized_width is None:
             normalized_width = self._estimate_char_width_normalized(char)
 
         # Cache normalized width
         self._char_width_cache[cache_key] = normalized_width
         return normalized_width * font_size
+
+    def _get_pdfminer_char_width(self, pdfminer_font: Any, char: str) -> Optional[float]:
+        """
+        Get normalized character width from a pdfminer font object.
+
+        pdfminer fonts store widths in 1/1000 of text space units.
+        We normalize to 0.0-1.0 range (divide by 1000).
+
+        Args:
+            pdfminer_font: pdfminer font object
+            char: Single character
+
+        Returns:
+            Normalized width (0.0-1.0) or None if not available
+        """
+        try:
+            cid = ord(char)
+
+            # Try char_width method (available on most pdfminer fonts)
+            if hasattr(pdfminer_font, 'char_width'):
+                width = pdfminer_font.char_width(cid)
+                if width and width > 0:
+                    # pdfminer widths are in 1/1000 units, normalize to 0.0-1.0
+                    return width / 1000.0
+
+            # Try get_width for default width
+            if hasattr(pdfminer_font, 'get_width'):
+                width = pdfminer_font.get_width()
+                if width and width > 0:
+                    return width / 1000.0
+
+        except Exception as e:
+            logger.debug("Error getting char width from pdfminer for '%s': %s", char, e)
+
+        return None
 
     def _estimate_char_width_normalized(self, char: str) -> float:
         """
@@ -875,6 +1022,8 @@ class FontRegistry:
         self._font_by_id[font_id] = font_info
         # Use font_name as key since it's not a language code
         self.fonts[f"_existing_{font_name}"] = font_info
+        # Store pdfminer font object for char width lookup
+        self._pdfminer_fonts[font_id] = pdfminer_font
 
         # Invalidate CID font cache (new CID font may be available)
         if font_type == FontType.CID:

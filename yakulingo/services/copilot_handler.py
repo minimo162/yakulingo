@@ -308,8 +308,8 @@ class CopilotHandler:
 
     # Configuration constants
     DEFAULT_CDP_PORT = 9333  # Dedicated port for translator
-    EDGE_STARTUP_MAX_ATTEMPTS = 40  # Maximum iterations to wait for Edge startup
-    EDGE_STARTUP_CHECK_INTERVAL = 0.15  # Seconds between startup checks (faster detection)
+    EDGE_STARTUP_MAX_ATTEMPTS = 80  # Maximum iterations to wait for Edge startup
+    EDGE_STARTUP_CHECK_INTERVAL = 0.25  # Seconds between startup checks (total: 20 seconds)
 
     # Response detection settings
     RESPONSE_STABLE_COUNT = 2  # Number of stable checks before considering response complete

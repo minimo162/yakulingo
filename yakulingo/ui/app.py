@@ -2123,23 +2123,28 @@ class YakuLingoApp:
         self.state.output_file = None  # Clear any previous output
 
         # Progress dialog (persistent to prevent accidental close by clicking outside)
-        with ui.dialog().props('persistent') as progress_dialog, ui.card().classes('w-80'):
-            with ui.column().classes('w-full gap-4 p-5'):
-                with ui.row().classes('items-center gap-3'):
-                    ui.spinner('dots', size='md').classes('text-primary')
-                    ui.label('翻訳中...').classes('text-base font-semibold')
+        # Must use client context for UI creation in async handlers
+        with client:
+            with ui.dialog().props('persistent') as progress_dialog, ui.card().classes('w-80'):
+                with ui.column().classes('w-full gap-4 p-5'):
+                    with ui.row().classes('items-center gap-3'):
+                        ui.spinner('dots', size='md').classes('text-primary')
+                        ui.label('翻訳中...').classes('text-base font-semibold')
 
-                with ui.column().classes('w-full gap-2'):
-                    # Custom progress bar matching file_panel style
-                    with ui.element('div').classes('progress-track w-full'):
-                        progress_bar_inner = ui.element('div').classes('progress-bar').style('width: 0%')
-                    with ui.row().classes('w-full justify-between'):
-                        status_label = ui.label('開始中...').classes('text-xs text-muted')
-                        progress_label = ui.label('0%').classes('text-xs font-medium text-primary')
+                    with ui.column().classes('w-full gap-2'):
+                        # Custom progress bar matching file_panel style
+                        with ui.element('div').classes('progress-track w-full'):
+                            progress_bar_inner = ui.element('div').classes('progress-bar').style('width: 0%')
+                        with ui.row().classes('w-full justify-between'):
+                            status_label = ui.label('開始中...').classes('text-xs text-muted')
+                            progress_label = ui.label('0%').classes('text-xs font-medium text-primary')
 
-                ui.button('キャンセル', on_click=lambda: self._cancel_and_close(progress_dialog)).props('flat').classes('self-end text-muted')
+                    ui.button('キャンセル', on_click=lambda: self._cancel_and_close(progress_dialog)).props('flat').classes('self-end text-muted')
 
-        progress_dialog.open()
+            progress_dialog.open()
+
+        # Yield control to allow UI to render the dialog
+        await asyncio.sleep(0)
 
         def on_progress(p: TranslationProgress):
             self.state.translation_progress = p.percentage

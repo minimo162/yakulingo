@@ -49,6 +49,14 @@ addopts = [
     "-v",
     "--tb=short",
 ]
+filterwarnings = [
+    # TranslationCell is deprecated but kept for backward compatibility
+    # Suppress warnings in tests that still use TranslationCell
+    "ignore:TranslationCell is deprecated:DeprecationWarning",
+    # Suppress PyMuPDF/SWIG internal warnings
+    "ignore:builtin type Swig.*:DeprecationWarning",
+    "ignore:builtin type swigvarlink:DeprecationWarning",
+]
 markers = [
     "unit: Unit tests for single components (fast, isolated)",
     "integration: Integration tests for multiple components",

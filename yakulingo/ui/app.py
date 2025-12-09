@@ -1428,12 +1428,15 @@ class YakuLingoApp:
         self.state.text_result = None
         self.state.text_translation_elapsed_time = None
         self.state.streaming_text = None
+        self.state.text_partial_result = None  # Reset partial result
+        self.state.explanation_loading = False  # Reset explanation loading flag
         self._streaming_label = None  # Reset before refresh creates new label
         with client:
             self._refresh_content()  # Full refresh: input panel changes from large to compact
 
-        # Track last text to avoid redundant updates
+        # Track last text and partial result display state
         last_streaming_text: str = ""
+        partial_result_displayed = False  # Flag to track if partial result was shown
 
         def extract_translation_preview(text: str) -> str:
             """Extract translation part from streaming text for preview.
@@ -1467,12 +1470,37 @@ class YakuLingoApp:
             return translation[:500] + '...' if len(translation) > 500 else translation
 
         def update_streaming_label():
-            """Update only the streaming label text (no full UI refresh)"""
-            nonlocal last_streaming_text
-            if self._streaming_label and self.state.streaming_text != last_streaming_text:
-                preview = extract_translation_preview(self.state.streaming_text or "")
-                self._streaming_label.set_text(preview)
-                last_streaming_text = self.state.streaming_text or ""
+            """Update streaming label and show partial result when explanation starts"""
+            nonlocal last_streaming_text, partial_result_displayed
+            current_text = self.state.streaming_text or ""
+
+            if current_text != last_streaming_text:
+                last_streaming_text = current_text
+
+                # Check if explanation marker appeared (translation text is complete)
+                import re
+                has_explanation_marker = bool(re.search(r'\n\s*[#>*\s-]*解説[:：]?', current_text))
+
+                # If explanation marker appeared and partial result not yet displayed
+                if has_explanation_marker and not partial_result_displayed:
+                    partial_result_displayed = True
+                    # Extract translation text only
+                    translation_text = extract_translation_preview(current_text)
+                    if translation_text and not translation_text.endswith('...'):
+                        # Set partial result and show it
+                        from yakulingo.models.types import TranslationOption
+                        self.state.text_partial_result = TranslationOption(
+                            text=translation_text,
+                            explanation=""  # No explanation yet
+                        )
+                        self.state.explanation_loading = True
+                        # Refresh UI to show translation result immediately
+                        with client:
+                            self._refresh_result_panel()
+                elif self._streaming_label:
+                    # Normal streaming update
+                    preview = extract_translation_preview(current_text)
+                    self._streaming_label.set_text(preview)
 
         # Start streaming UI refresh timer (0.2s interval) - only updates label
         # Must be within client context to create UI elements in async task
@@ -1546,6 +1574,8 @@ class YakuLingoApp:
         self.state.streaming_text = None
         self.state.text_translating = False
         self.state.text_detected_language = None
+        self.state.text_partial_result = None  # Clear partial result after full result is ready
+        self.state.explanation_loading = False  # Clear explanation loading flag
 
         # Restore client context for UI operations after asyncio.to_thread
         with client:

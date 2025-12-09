@@ -453,6 +453,9 @@ def create_text_result_panel(
     """
     elapsed_time = state.text_translation_elapsed_time
 
+    # Check if we have a partial result (translation without explanation yet)
+    has_partial_result = state.text_partial_result is not None and state.explanation_loading
+
     with ui.column().classes('flex-1 w-full gap-4'):
         # Source text section at the top (when translating or has result)
         source_text_to_display = None
@@ -465,12 +468,20 @@ def create_text_result_panel(
             _render_source_text_section(source_text_to_display, on_copy)
 
         # Translation status section
-        if state.text_translating:
+        if state.text_translating and not has_partial_result:
+            # Still translating, no partial result yet - show streaming
             _render_translation_status(
                 state.text_detected_language,
                 translating=True,
                 streaming_text=state.streaming_text,
                 on_streaming_label_created=on_streaming_label_created,
+            )
+        elif has_partial_result:
+            # Have partial result - show translation done, explanation loading
+            _render_translation_status(
+                state.text_detected_language,
+                translating=False,
+                explanation_loading=True,  # New parameter
             )
         elif state.text_result and state.text_result.options:
             _render_translation_status(
@@ -480,7 +491,21 @@ def create_text_result_panel(
             )
 
         # Results section - language-specific UI
-        if state.text_result and state.text_result.options:
+        if has_partial_result:
+            # Show partial result (translation only, explanation loading)
+            is_to_japanese = state.text_detected_language != "日本語"
+            if is_to_japanese:
+                _render_partial_result_jp(
+                    state.text_partial_result,
+                    state.source_text,
+                    on_copy,
+                )
+            else:
+                _render_partial_result_en(
+                    state.text_partial_result,
+                    on_copy,
+                )
+        elif state.text_result and state.text_result.options:
             if state.text_result.is_to_japanese:
                 # →Japanese: Single result with detailed explanation + follow-up actions
                 _render_results_to_jp(
@@ -529,6 +554,7 @@ def _render_translation_status(
     elapsed_time: Optional[float] = None,
     streaming_text: Optional[str] = None,
     on_streaming_label_created: Optional[Callable[[ui.label], None]] = None,
+    explanation_loading: bool = False,
 ):
     """
     Render translation status section.
@@ -536,9 +562,11 @@ def _render_translation_status(
     Shows:
     - During translation: "英訳中..." or "和訳中..." with optional streaming preview
     - After translation: "✓ 英訳しました" or "✓ 和訳しました" with elapsed time
+    - With explanation_loading: "✓ 英訳しました" + "解説を読み込み中..."
 
     Args:
         on_streaming_label_created: Callback with streaming label for direct text updates
+        explanation_loading: True when explanation is being loaded (translation already shown)
     """
     # Determine translation direction
     is_to_english = detected_language == "日本語"
@@ -556,14 +584,14 @@ def _render_translation_status(
                 else:
                     ui.label('翻訳中...').classes('status-text')
             else:
-                # Completed state
+                # Completed state (translation done)
                 ui.icon('check_circle').classes('text-lg text-success')
                 if is_to_english:
                     ui.label('英訳しました').classes('status-text')
                 else:
                     ui.label('和訳しました').classes('status-text')
 
-                # Elapsed time badge
+                # Elapsed time badge (only when fully complete)
                 if elapsed_time:
                     ui.label(f'{elapsed_time:.1f}秒').classes('elapsed-time-badge')
 
@@ -583,6 +611,66 @@ def _render_empty_result_state():
     with ui.element('div').classes('empty-result-state'):
         ui.icon('translate').classes('text-4xl text-muted opacity-30')
         ui.label('翻訳結果がここに表示されます').classes('text-sm text-muted opacity-50')
+
+
+def _render_partial_result_jp(
+    option: TranslationOption,
+    source_text: str,
+    on_copy: Callable[[str], None],
+):
+    """Render partial result for →Japanese translation (translation only, explanation loading)"""
+    # Translation results container
+    with ui.element('div').classes('result-container'):
+        with ui.element('section').classes('nani-result-card'):
+            # Main translation area
+            with ui.element('div').classes('nani-result-content'):
+                # Translation text
+                ui.label(option.text).classes('nani-result-text')
+
+                # Action toolbar (copy only - no back-translate during loading)
+                with ui.element('div').classes('nani-toolbar'):
+                    ui.button(
+                        icon='content_copy',
+                        on_click=lambda: on_copy(option.text)
+                    ).props('flat dense round size=sm aria-label="コピー"').classes('nani-toolbar-btn').tooltip('コピー')
+
+            # Explanation loading section
+            with ui.element('div').classes('nani-explanation'):
+                with ui.row().classes('items-center gap-2'):
+                    ui.spinner('dots', size='sm').classes('text-primary')
+                    ui.label('解説を読み込み中...').classes('text-sm text-muted')
+
+
+def _render_partial_result_en(
+    option: TranslationOption,
+    on_copy: Callable[[str], None],
+):
+    """Render partial result for →English translation (translation only, explanation loading)"""
+    # Translation results container
+    with ui.element('div').classes('result-container'):
+        with ui.element('div').classes('result-section w-full'):
+            # Single option card
+            with ui.column().classes('w-full gap-3 p-4'):
+                with ui.card().classes('option-card w-full'):
+                    with ui.column().classes('w-full gap-2'):
+                        # Translation text with character count
+                        with ui.row().classes('w-full items-start gap-2'):
+                            ui.label(option.text).classes('option-text py-1 flex-1')
+                            ui.label(f'{len(option.text)} 文字').classes('text-xs text-muted whitespace-nowrap')
+
+                        # Actions row
+                        with ui.row().classes('w-full justify-end items-center gap-1'):
+                            # Copy button
+                            ui.button(
+                                icon='content_copy',
+                                on_click=lambda: on_copy(option.text)
+                            ).props('flat dense round size=sm aria-label="コピー"').classes('option-action').tooltip('コピー')
+
+                        # Explanation loading section
+                        with ui.element('div').classes('nani-explanation'):
+                            with ui.row().classes('items-center gap-2'):
+                                ui.spinner('dots', size='sm').classes('text-primary')
+                                ui.label('解説を読み込み中...').classes('text-sm text-muted')
 
 
 def create_text_panel(

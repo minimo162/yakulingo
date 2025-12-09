@@ -722,9 +722,32 @@ wait_time = backoff_time + jitter
 | ページ読み込み | `PAGE_GOTO_TIMEOUT_MS` | 30000ms | page.goto()のタイムアウト |
 | ネットワーク | `PAGE_NETWORK_IDLE_TIMEOUT_MS` | 5000ms | ネットワークアイドル待機 |
 | セレクタ | `SELECTOR_CHAT_INPUT_TIMEOUT_MS` | 15000ms | チャット入力欄の表示待機 |
+| セレクタ | `SELECTOR_SEND_BUTTON_TIMEOUT_MS` | 5000ms | 送信ボタン有効化待機 |
+| セレクタ | `SELECTOR_RESPONSE_TIMEOUT_MS` | 10000ms | レスポンス要素の表示待機 |
+| セレクタ | `SELECTOR_NEW_CHAT_READY_TIMEOUT_MS` | 5000ms | 新規チャット準備完了待機 |
 | セレクタ | `SELECTOR_LOGIN_CHECK_TIMEOUT_MS` | 2000ms | ログイン状態チェック |
 | ログイン | `LOGIN_WAIT_TIMEOUT_SECONDS` | 300s | ユーザーログイン待機 |
 | エグゼキュータ | `EXECUTOR_TIMEOUT_BUFFER_SECONDS` | 60s | レスポンスタイムアウトのマージン |
+
+### Response Detection Settings
+
+レスポンス完了判定の設定：
+
+| 定数名 | 値 | 説明 |
+|--------|------|------|
+| `RESPONSE_STABLE_COUNT` | 3 | 連続で同じテキストを検出した回数で完了判定 |
+| `RESPONSE_POLL_INITIAL` | 0.2s | レスポンス開始待機時のポーリング間隔 |
+| `RESPONSE_POLL_ACTIVE` | 0.2s | テキスト検出後のポーリング間隔 |
+| `RESPONSE_POLL_STABLE` | 0.1s | 安定性チェック中のポーリング間隔 |
+
+### Auth Dialog Detection
+
+認証ダイアログの検出キーワード（`AUTH_DIALOG_KEYWORDS`）：
+
+| 言語 | キーワード |
+|------|-----------|
+| 日本語 | 認証, ログイン, サインイン, パスワード |
+| 英語 | authentication, login, sign in, sign-in, password, verify, credential |
 
 ## Auto-Update System
 
@@ -1160,6 +1183,13 @@ When interacting with users in this repository, prefer Japanese for comments and
 ## Recent Development Focus
 
 Based on recent commits:
+- **Copilot Prompt Submission Reliability (2024-12)**:
+  - **Response stability**: `RESPONSE_STABLE_COUNT` increased from 2 to 3 for more reliable completion detection
+  - **Auth dialog multi-language**: `AUTH_DIALOG_KEYWORDS` constant added with Japanese and English keywords
+  - **fill() failure logging**: Enhanced logging with element info (tag, id, class, editable) and URL on Method 1 failure
+  - **Stop button tracking**: `stop_button_ever_seen` flag to detect when stop button selectors may be outdated
+  - **Selector change detection**: Warning logs when response selectors may need update (after 20+ poll iterations with no content)
+  - **Timeout constant unification**: Hardcoded timeout values replaced with centralized constants
 - **Streaming UI Thread Safety & Robustness**:
   - **Thread-safe streaming_text access**: `_streaming_text_lock` added to protect `streaming_text` reads/writes across threads
   - **Multiple marker patterns**: Support for 解説/説明/Explanation/Notes markers to handle Copilot format changes
@@ -1174,7 +1204,7 @@ Based on recent commits:
   - **PlaywrightThreadExecutor**: `_shutdown_flag` check to prevent restart after shutdown
 - **Centralized Timeout Constants**:
   - **Page navigation**: `PAGE_GOTO_TIMEOUT_MS=30000` (30s for page load)
-  - **Selector waits**: `SELECTOR_CHAT_INPUT_TIMEOUT_MS=15000`, `SELECTOR_LOGIN_CHECK_TIMEOUT_MS=2000`
+  - **Selector waits**: `SELECTOR_CHAT_INPUT_TIMEOUT_MS=15000`, `SELECTOR_SEND_BUTTON_TIMEOUT_MS=5000`, `SELECTOR_RESPONSE_TIMEOUT_MS=10000`, `SELECTOR_NEW_CHAT_READY_TIMEOUT_MS=5000`, `SELECTOR_LOGIN_CHECK_TIMEOUT_MS=2000`
   - **Login timeouts**: `LOGIN_WAIT_TIMEOUT_SECONDS=300`, `AUTO_LOGIN_TIMEOUT_SECONDS=15`
   - **Executor buffer**: `EXECUTOR_TIMEOUT_BUFFER_SECONDS=60` for response timeout margin
 - **PDF Page-Level Error Handling**:

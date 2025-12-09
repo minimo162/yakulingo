@@ -476,7 +476,7 @@ async def _translate_text(self):
 ### Translation Logic
 - **CellTranslator**: For Excel cells - skips numbers, dates, URLs, emails, codes
 - **ParagraphTranslator**: For Word/PPT paragraphs - less restrictive filtering
-- **Character limit**: Max 7,000 chars per batch (fits within Copilot Free 8,000 limit with template)
+- **Character limit**: Max 4,000 chars per batch (reduced for reliability)
 
 ### Font Mapping Rules
 ```python
@@ -509,8 +509,8 @@ async def _translate_text(self):
   "last_tab": "text",
   "window_width": 1400,
   "window_height": 850,
-  "max_chars_per_batch": 7000,
-  "request_timeout": 120,
+  "max_chars_per_batch": 4000,
+  "request_timeout": 600,
   "max_retries": 3,
   "bilingual_output": false,
   "export_glossary": false,
@@ -611,7 +611,7 @@ M365 Copilot has different input limits based on license:
 The application handles long text via file translation:
 - Text translation limited to 5,000 characters (TEXT_TRANSLATION_CHAR_LIMIT)
 - Texts exceeding limit automatically switch to file translation mode
-- File translation uses batch processing with max 7,000 chars per batch
+- File translation uses batch processing with max 4,000 chars per batch
 - This ensures compatibility with both Free and Paid Copilot users
 
 ### Browser Automation Reliability

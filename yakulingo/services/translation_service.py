@@ -1716,7 +1716,10 @@ class TranslationService:
         # Apply translations
         # Convert output_language to direction for font mapping
         direction = "jp_to_en" if output_language == "en" else "en_to_jp"
-        processor.apply_translations(input_path, output_path, translations, direction, self.config)
+        processor.apply_translations(
+            input_path, output_path, translations, direction, self.config,
+            selected_sections=selected_sections,
+        )
 
         warnings = self._collect_processor_warnings(processor)
 

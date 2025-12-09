@@ -582,21 +582,34 @@ class ExcelProcessor(FileProcessor):
                                     # Second pass: collect TextBlocks with font info
                                     # Fetch font info during extraction to avoid double cell access
                                     # in apply_translations (optimization: single COM call per cell)
+                                    # Also check for formula cells to skip them (preserve formulas)
+                                    formula_skipped = 0
                                     for row_idx, col_idx, text in translatable_cells:
                                         col_letter = get_column_letter(col_idx)
 
-                                        # Get font info from cell
+                                        # Get font info and check for formula
                                         font_name = None
                                         font_size = 11.0
+                                        is_formula = False
                                         try:
                                             cell = sheet.range(f"{col_letter}{row_idx}")
                                             font_name = cell.font.name
                                             font_size = cell.font.size or 11.0
+                                            # Check if cell contains a formula
+                                            # xlwings: formula property returns the formula string or None
+                                            cell_formula = cell.formula
+                                            if cell_formula and isinstance(cell_formula, str) and cell_formula.startswith('='):
+                                                is_formula = True
+                                                formula_skipped += 1
                                         except Exception as e:
                                             logger.debug(
-                                                "Error reading font for cell %s_%s%s: %s",
+                                                "Error reading cell %s_%s%s: %s",
                                                 sheet_name, col_letter, row_idx, e
                                             )
+
+                                        # Skip formula cells to preserve them
+                                        if is_formula:
+                                            continue
 
                                         block_id = f"{sheet_name}_{col_letter}{row_idx}"
 
@@ -617,6 +630,12 @@ class ExcelProcessor(FileProcessor):
                                                 'font_size': font_size,
                                             }
                                         ))
+
+                                    if formula_skipped > 0:
+                                        logger.info(
+                                            "Skipped %d formula cells in sheet '%s' (formulas preserved)",
+                                            formula_skipped, sheet_name
+                                        )
                         except Exception as e:
                             logger.warning("Error reading used_range in sheet '%s': %s", sheet_name, e)
 
@@ -761,7 +780,10 @@ class ExcelProcessor(FileProcessor):
     ) -> Iterator[TextBlock]:
         """Extract text using openpyxl (fallback - cells only)
 
-        Optimized with read_only=True for faster parsing.
+        Two-pass approach to handle formula cells:
+        1. First pass with data_only=False to identify formula cells
+        2. Second pass with data_only=True to get calculated values
+
         Font info is not available in read_only mode but is fetched
         during apply_translations from the original file.
 
@@ -769,6 +791,47 @@ class ExcelProcessor(FileProcessor):
             file_path: Path to the Excel file
             output_language: "en" for JP→EN, "jp" for EN→JP translation
         """
+        # First pass: identify formula cells (cells where value starts with '=')
+        # Using data_only=False returns formula strings instead of calculated values
+        formula_cells: set[tuple[str, int, int]] = set()  # (sheet_name, row, col)
+        formula_count = 0
+
+        try:
+            wb_formulas = openpyxl.load_workbook(file_path, read_only=True, data_only=False)
+            try:
+                for sheet_name in wb_formulas.sheetnames:
+                    sheet = wb_formulas[sheet_name]
+                    try:
+                        min_col, min_row, max_col, max_row = range_boundaries(sheet.calculate_dimension())
+                    except (ValueError, TypeError):
+                        continue
+
+                    for row_idx, row_values in enumerate(
+                        sheet.iter_rows(
+                            min_row=min_row,
+                            max_row=max_row,
+                            min_col=min_col,
+                            max_col=max_col,
+                            values_only=True,
+                        ),
+                        start=min_row,
+                    ):
+                        if not row_values:
+                            continue
+                        for col_idx, value in enumerate(row_values, start=min_col):
+                            # Formula cells have string values starting with '='
+                            if value and isinstance(value, str) and value.startswith('='):
+                                formula_cells.add((sheet_name, row_idx, col_idx))
+                                formula_count += 1
+            finally:
+                wb_formulas.close()
+        except Exception as e:
+            logger.warning("Error detecting formula cells: %s", e)
+
+        if formula_count > 0:
+            logger.info("Detected %d formula cells (will be preserved)", formula_count)
+
+        # Second pass: extract text blocks with calculated values
         wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
 
         # Cache column letters to avoid repeated conversions during large reads
@@ -780,7 +843,10 @@ class ExcelProcessor(FileProcessor):
 
                 # Limit iteration to the used range for the sheet to avoid scanning
                 # entire default grids (e.g., 1,048,576 rows).
-                min_col, min_row, max_col, max_row = range_boundaries(sheet.calculate_dimension())
+                try:
+                    min_col, min_row, max_col, max_row = range_boundaries(sheet.calculate_dimension())
+                except (ValueError, TypeError):
+                    continue
 
                 for row_idx, row_values in enumerate(
                     sheet.iter_rows(
@@ -796,6 +862,10 @@ class ExcelProcessor(FileProcessor):
                         continue
 
                     for col_idx, value in enumerate(row_values, start=min_col):
+                        # Skip formula cells to preserve them
+                        if (sheet_name, row_idx, col_idx) in formula_cells:
+                            continue
+
                         if value and isinstance(value, str):
                             value_str = str(value)
                             if self.cell_translator.should_translate(value_str, output_language):
@@ -917,16 +987,31 @@ class ExcelProcessor(FileProcessor):
         translations: dict[str, str],
         direction: str = "jp_to_en",
         settings=None,
+        selected_sections: Optional[list[int]] = None,
     ) -> None:
-        """Apply translations to Excel file"""
+        """Apply translations to Excel file.
+
+        Args:
+            input_path: Path to input Excel file
+            output_path: Path to save translated file
+            translations: Dict mapping block_id to translated text
+            direction: "jp_to_en" or "en_to_jp"
+            settings: AppSettings for font configuration
+            selected_sections: List of sheet indices to process (0-indexed).
+                              If None, all sheets are processed.
+        """
         xw = _get_xlwings()
 
         self._ensure_xls_supported(input_path)
 
         if HAS_XLWINGS:
-            self._apply_translations_xlwings(input_path, output_path, translations, direction, xw, settings)
+            self._apply_translations_xlwings(
+                input_path, output_path, translations, direction, xw, settings, selected_sections
+            )
         else:
-            self._apply_translations_openpyxl(input_path, output_path, translations, direction, settings)
+            self._apply_translations_openpyxl(
+                input_path, output_path, translations, direction, settings, selected_sections
+            )
 
     def _ensure_xls_supported(self, file_path: Path) -> None:
         """Validate that .xls files can be processed.
@@ -953,12 +1038,14 @@ class ExcelProcessor(FileProcessor):
         direction: str,
         xw,
         settings=None,
+        selected_sections: Optional[list[int]] = None,
     ) -> None:
         """Apply translations using xlwings
 
         Optimized:
         - Pre-groups translations by sheet to avoid O(sheets × translations) complexity
         - Disables ScreenUpdating and sets Calculation to manual for faster COM operations
+        - Only processes selected sheets when selected_sections is specified
         - Restores Excel settings after completion
 
         Note: COM initialization is required when called from worker threads.
@@ -993,7 +1080,14 @@ class ExcelProcessor(FileProcessor):
                     sheet_names = {sheet.name for sheet in wb.sheets}
                     translations_by_sheet = self._group_translations_by_sheet(translations, sheet_names)
 
-                    for sheet in wb.sheets:
+                    # Convert selected_sections to a set for O(1) lookup
+                    selected_set = set(selected_sections) if selected_sections is not None else None
+
+                    for sheet_idx, sheet in enumerate(wb.sheets):
+                        # Skip sheets not in selected_sections (if specified)
+                        if selected_set is not None and sheet_idx not in selected_set:
+                            continue
+
                         sheet_name = sheet.name
                         sheet_translations = translations_by_sheet.get(sheet_name, {})
 
@@ -1114,6 +1208,7 @@ class ExcelProcessor(FileProcessor):
         translations: dict[str, str],
         direction: str,
         settings=None,
+        selected_sections: Optional[list[int]] = None,
     ) -> None:
         """Apply translations using openpyxl (fallback - cells only)
 
@@ -1121,6 +1216,7 @@ class ExcelProcessor(FileProcessor):
         - Direct cell access instead of iterating all cells
         - Font object caching to avoid creating duplicate Font objects
         - Only accesses cells that need translation
+        - Only processes selected sheets when selected_sections is specified
         """
         wb = openpyxl.load_workbook(input_path)
         font_manager = FontManager(direction, settings)
@@ -1170,7 +1266,14 @@ class ExcelProcessor(FileProcessor):
             sheet_names = set(wb.sheetnames)
             translations_by_sheet = self._group_translations_by_sheet(translations, sheet_names)
 
-            for sheet_name in wb.sheetnames:
+            # Convert selected_sections to a set for O(1) lookup
+            selected_set = set(selected_sections) if selected_sections is not None else None
+
+            for sheet_idx, sheet_name in enumerate(wb.sheetnames):
+                # Skip sheets not in selected_sections (if specified)
+                if selected_set is not None and sheet_idx not in selected_set:
+                    continue
+
                 sheet = wb[sheet_name]
                 sheet_translations = translations_by_sheet.get(sheet_name, {})
                 cell_translations = sheet_translations.get('cells', {})
@@ -1224,6 +1327,9 @@ class ExcelProcessor(FileProcessor):
         Output format:
             Sheet1 (original), Sheet1_translated, Sheet2 (original), Sheet2_translated, ...
 
+        Uses xlwings when available to preserve shapes, charts, and images.
+        Falls back to openpyxl (cells only) when xlwings is not available.
+
         Args:
             original_path: Path to the original workbook
             translated_path: Path to the translated workbook
@@ -1231,6 +1337,167 @@ class ExcelProcessor(FileProcessor):
 
         Returns:
             dict with original_sheets, translated_sheets, total_sheets counts
+        """
+        xw = _get_xlwings()
+
+        if HAS_XLWINGS:
+            return self._create_bilingual_workbook_xlwings(
+                original_path, translated_path, output_path, xw
+            )
+        else:
+            return self._create_bilingual_workbook_openpyxl(
+                original_path, translated_path, output_path
+            )
+
+    def _create_bilingual_workbook_xlwings(
+        self,
+        original_path: Path,
+        translated_path: Path,
+        output_path: Path,
+        xw,
+    ) -> dict[str, int]:
+        """
+        Create bilingual workbook using xlwings (preserves shapes, charts, images).
+
+        Uses COM Sheet.Copy() to copy sheets with all content including:
+        - Cell values and formatting
+        - Shapes (TextBox, etc.)
+        - Charts
+        - Images
+        - Merged cells
+        """
+        with com_initialized():
+            app = _create_excel_app_with_retry(xw)
+
+            try:
+                # Open source workbooks
+                original_wb = app.books.open(str(original_path), ignore_read_only_recommended=True)
+                translated_wb = app.books.open(str(translated_path), ignore_read_only_recommended=True)
+
+                # Create new workbook for bilingual output
+                bilingual_wb = app.books.add()
+
+                # Remove default sheets from new workbook
+                while len(bilingual_wb.sheets) > 1:
+                    bilingual_wb.sheets[-1].delete()
+
+                existing_names: set[str] = set()
+                original_sheets = len(original_wb.sheets)
+                translated_sheets = len(translated_wb.sheets)
+
+                try:
+                    # Interleave sheets: original, translated, original, translated, ...
+                    for i, original_sheet in enumerate(original_wb.sheets):
+                        sheet_name = original_sheet.name
+
+                        # Copy original sheet to bilingual workbook
+                        safe_orig_name = sanitize_sheet_name(sheet_name)
+                        unique_orig_name = _ensure_unique_sheet_name(safe_orig_name, existing_names)
+
+                        # Use COM API to copy sheet (preserves all content)
+                        original_sheet.api.Copy(Before=bilingual_wb.sheets[0].api)
+                        # Rename the copied sheet (it's now at index 0)
+                        bilingual_wb.sheets[0].name = unique_orig_name
+
+                        # Copy translated sheet if exists
+                        if i < len(translated_wb.sheets):
+                            translated_sheet = translated_wb.sheets[i]
+                            trans_title = sanitize_sheet_name(f"{sheet_name}_translated")
+                            unique_trans_title = _ensure_unique_sheet_name(trans_title, existing_names)
+
+                            # Copy translated sheet after the original
+                            translated_sheet.api.Copy(After=bilingual_wb.sheets[0].api)
+                            bilingual_wb.sheets[1].name = unique_trans_title
+
+                    # Handle extra translated sheets if any
+                    if translated_sheets > original_sheets:
+                        for i in range(original_sheets, translated_sheets):
+                            translated_sheet = translated_wb.sheets[i]
+                            trans_title = sanitize_sheet_name(f"{translated_sheet.name}_translated")
+                            unique_trans_title = _ensure_unique_sheet_name(trans_title, existing_names)
+
+                            translated_sheet.api.Copy(Before=bilingual_wb.sheets[0].api)
+                            bilingual_wb.sheets[0].name = unique_trans_title
+
+                    # Remove the initial empty sheet if it still exists
+                    # The initial sheet is named "Sheet1" by default
+                    for sheet in bilingual_wb.sheets:
+                        if sheet.name.startswith("Sheet") and sheet.used_range.value is None:
+                            try:
+                                sheet.delete()
+                            except Exception:
+                                pass  # Ignore if can't delete
+                            break
+
+                    # Reorder sheets to interleave correctly
+                    # Current order might be mixed, need to sort by original index
+                    self._reorder_bilingual_sheets(bilingual_wb, original_wb.sheets, existing_names)
+
+                    # Save to output path
+                    bilingual_wb.save(str(output_path))
+
+                    return {
+                        'original_sheets': original_sheets,
+                        'translated_sheets': translated_sheets,
+                        'total_sheets': len(bilingual_wb.sheets),
+                    }
+
+                finally:
+                    original_wb.close()
+                    translated_wb.close()
+                    bilingual_wb.close()
+
+            finally:
+                app.quit()
+
+    def _reorder_bilingual_sheets(self, bilingual_wb, original_sheets, existing_names: set[str]) -> None:
+        """Reorder sheets in bilingual workbook to interleave original and translated."""
+        # Build expected order: Sheet1, Sheet1_translated, Sheet2, Sheet2_translated, ...
+        expected_order = []
+        for original_sheet in original_sheets:
+            sheet_name = original_sheet.name
+            safe_orig_name = sanitize_sheet_name(sheet_name)
+            trans_name = sanitize_sheet_name(f"{sheet_name}_translated")
+
+            # Find actual names (may have suffix like _1 for uniqueness)
+            for name in existing_names:
+                if name == safe_orig_name or name.startswith(safe_orig_name):
+                    if '_translated' not in name:
+                        expected_order.append(name)
+                        break
+
+            for name in existing_names:
+                if name == trans_name or name.startswith(trans_name.rstrip('...')):
+                    if '_translated' in name:
+                        expected_order.append(name)
+                        break
+
+        # Move sheets to correct positions
+        for i, expected_name in enumerate(expected_order):
+            for sheet in bilingual_wb.sheets:
+                if sheet.name == expected_name:
+                    if bilingual_wb.sheets.index(sheet) != i:
+                        try:
+                            # Move sheet to correct position
+                            if i == 0:
+                                sheet.api.Move(Before=bilingual_wb.sheets[0].api)
+                            else:
+                                sheet.api.Move(After=bilingual_wb.sheets[i - 1].api)
+                        except Exception as e:
+                            logger.debug("Error reordering sheet %s: %s", expected_name, e)
+                    break
+
+    def _create_bilingual_workbook_openpyxl(
+        self,
+        original_path: Path,
+        translated_path: Path,
+        output_path: Path,
+    ) -> dict[str, int]:
+        """
+        Create bilingual workbook using openpyxl (cells only, no shapes/charts).
+
+        Note: This fallback does not preserve shapes, charts, or images.
+        Use xlwings version for full content preservation.
         """
         from copy import copy
 

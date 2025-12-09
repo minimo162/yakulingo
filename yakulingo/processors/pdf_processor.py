@@ -1427,6 +1427,42 @@ def get_layout_model(device: str = "cpu"):
     return _analyzer_cache[cache_key]
 
 
+@contextmanager
+def _suppress_subprocess_output():
+    """
+    Context manager to suppress subprocess output on Windows.
+
+    PaddlePaddle's internal subprocess calls (e.g., del, where) produce
+    Japanese info messages like "情報: 与えられたパターンのファイルが見つかりませんでした。"
+    This patches subprocess.Popen to redirect stdout/stderr to DEVNULL.
+    """
+    import subprocess
+    import sys
+
+    if sys.platform != "win32":
+        yield
+        return
+
+    original_popen = subprocess.Popen
+
+    def patched_popen(*args, **kwargs):
+        # Only suppress if stdout/stderr are not explicitly set
+        if kwargs.get("stdout") is None:
+            kwargs["stdout"] = subprocess.DEVNULL
+        if kwargs.get("stderr") is None:
+            kwargs["stderr"] = subprocess.DEVNULL
+        # Add CREATE_NO_WINDOW flag to hide console window
+        if "creationflags" not in kwargs:
+            kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+        return original_popen(*args, **kwargs)
+
+    subprocess.Popen = patched_popen
+    try:
+        yield
+    finally:
+        subprocess.Popen = original_popen
+
+
 def prewarm_layout_model(device: str = "auto") -> bool:
     """
     Pre-initialize PP-DocLayout-L model with a dummy inference.
@@ -1460,13 +1496,20 @@ def prewarm_layout_model(device: str = "auto") -> bool:
     logger.info("PP-DocLayout-L をウォームアップ中 (device=%s)...", device)
 
     try:
-        # Initialize model
-        model = get_layout_model(device)
+        import warnings
 
-        # Perform dummy inference to trigger runtime initialization (oneDNN, etc.)
-        import numpy as np
-        dummy_image = np.zeros((100, 100, 3), dtype=np.uint8)
-        _ = model(dummy_image)
+        # Suppress subprocess output (Windows "情報:" messages from PaddlePaddle)
+        # and PaddlePaddle's ccache warning
+        with _suppress_subprocess_output():
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", message="No ccache found")
+                # Initialize model
+                model = get_layout_model(device)
+
+                # Perform dummy inference to trigger runtime initialization (oneDNN, etc.)
+                import numpy as np
+                dummy_image = np.zeros((100, 100, 3), dtype=np.uint8)
+                _ = model(dummy_image)
 
         logger.info("PP-DocLayout-L ウォームアップ完了")
         return True

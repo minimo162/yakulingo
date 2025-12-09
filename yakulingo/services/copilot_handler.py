@@ -722,10 +722,19 @@ class CopilotHandler:
                             self._finalize_connected_state()
                             return True
 
-                        self._bring_to_foreground_impl(self._page)
+                        # Only show browser if actually on a login page or auth dialog is visible
+                        url = self._page.url
+                        if _is_login_page(url) or self._has_auth_dialog():
+                            logger.info("Login page or auth dialog detected; showing browser")
+                            self._bring_to_foreground_impl(self._page)
+                        else:
+                            # Not on login page - treat as connection failure (slow load, etc.)
+                            logger.info("Chat UI not ready but not on login page; treating as slow load")
+                            self.last_connection_error = self.ERROR_CONNECTION_FAILED
                     except Exception:
-                        logger.debug("Failed to bring browser to front after login detection", exc_info=True)
-                    logger.info("Login required; preserving browser session for user sign-in")
+                        logger.debug("Failed to check login state", exc_info=True)
+                    if self.last_connection_error == self.ERROR_LOGIN_REQUIRED:
+                        logger.info("Login required; preserving browser session for user sign-in")
                     return False
 
                 self._cleanup_on_error()
@@ -986,6 +995,29 @@ class CopilotHandler:
                 # Bring browser to foreground so user can complete login
                 self._bring_to_foreground_impl(page)
                 return self._wait_for_login_completion(page)
+            return False
+
+    def _has_auth_dialog(self) -> bool:
+        """Check if an authentication dialog is visible on the current page.
+
+        Returns:
+            True if an authentication dialog (認証/ログイン/サインイン) is detected
+        """
+        if not self._page:
+            return False
+
+        error_types = _get_playwright_errors()
+        PlaywrightError = error_types['Error']
+
+        try:
+            auth_dialog = self._page.query_selector('.fui-DialogTitle, [role="dialog"] h2')
+            if auth_dialog:
+                dialog_text = auth_dialog.inner_text().strip()
+                if any(keyword in dialog_text for keyword in ("認証", "ログイン", "サインイン", "Sign in", "Log in")):
+                    logger.debug("Authentication dialog detected: %s", dialog_text)
+                    return True
+            return False
+        except PlaywrightError:
             return False
 
     def _bring_to_foreground_impl(self, page) -> None:

@@ -117,6 +117,9 @@
     --input-min-height: calc(9 * 1.5 * 1.125rem + 1.6rem);  /* 9 lines (line-height 1.5) + padding */
     --input-max-height: 450px;  /* Default fallback, dynamically set based on resolution */
 
+    /* Viewport height unit that adapts to native window chrome (falls back to 100vh) */
+    --viewport-height: 100vh;
+
     /* Textarea-specific sizing (Nani-style) */
     /* Font size scales with --base-font-size (set dynamically in app.py) */
     /* 1.125 ratio = 18px when base is 16px */
@@ -124,6 +127,12 @@
     --textarea-line-height: 1.5;
     --textarea-padding-block: 0.8em;  /* Nani-style vertical padding */
     --textarea-padding-inline: 0.9em;  /* Nani-style horizontal padding */
+}
+
+@supports (height: 100dvh) {
+    :root {
+        --viewport-height: 100dvh;
+    }
 }
 
 /* === Base === */
@@ -153,7 +162,7 @@ body {
     line-height: 1.6;
     margin: 0;
     padding: 0;
-    min-height: 100vh;
+    min-height: var(--viewport-height);
     min-width: 1000px;  /* Minimum width to prevent layout breaking */
     overflow-x: auto;   /* Enable horizontal scroll when window is too narrow */
     -webkit-font-smoothing: antialiased;
@@ -163,8 +172,8 @@ body {
 /* === 3-Column Layout Container === */
 .app-container {
     display: flex;
-    height: 100vh;  /* Fixed height to prevent overflow */
-    max-height: 100vh;
+    height: var(--viewport-height);  /* Match native window height */
+    max-height: var(--viewport-height);
     width: 100%;
     overflow: hidden;  /* Prevent children from overflowing */
 }
@@ -173,7 +182,7 @@ body {
 /* Nani-style: simple surface background, minimal shadow */
 .sidebar {
     width: var(--sidebar-width);
-    height: 100vh;
+    height: var(--viewport-height);
     position: fixed;
     left: 0;
     top: 0;
@@ -198,8 +207,8 @@ body {
     width: calc(100vw - var(--sidebar-width));
     max-width: calc(100vw - var(--sidebar-width));
     flex: 1;
-    height: 100vh;  /* Fixed height to match viewport */
-    max-height: 100vh;
+    height: var(--viewport-height);  /* Fixed height to match viewport */
+    max-height: var(--viewport-height);
     display: flex;
     flex-direction: row;
     overflow: hidden;  /* Prevent children from overflowing */

@@ -1144,6 +1144,9 @@ class YakuLingoApp:
                         font_size_adjustment=self.settings.font_size_adjustment_jp_to_en,
                         font_jp_to_en=self.settings.font_jp_to_en,
                         font_en_to_jp=self.settings.font_en_to_jp,
+                        use_bundled_glossary=self.settings.use_bundled_glossary,
+                        on_glossary_toggle=self._on_glossary_toggle,
+                        on_edit_glossary=self._edit_glossary,
                     )
 
         self._main_content = main_content

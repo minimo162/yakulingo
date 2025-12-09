@@ -142,6 +142,9 @@ def create_file_panel(
     font_size_adjustment: float = 0.0,
     font_jp_to_en: str = "Arial",
     font_en_to_jp: str = "MS Pゴシック",
+    use_bundled_glossary: bool = True,
+    on_glossary_toggle: Optional[Callable[[bool], None]] = None,
+    on_edit_glossary: Optional[Callable[[], None]] = None,
 ):
     """File translation panel - Nani-inspired design"""
 
@@ -171,6 +174,12 @@ def create_file_panel(
                         on_bilingual_change,
                     )
                     _export_glossary_selector(export_glossary_enabled, on_export_glossary_change)
+                    # Bundled glossary toggle
+                    _glossary_selector(
+                        use_bundled_glossary,
+                        on_glossary_toggle,
+                        on_edit_glossary,
+                    )
                     # Reference file selector
                     _reference_file_selector(
                         reference_files,
@@ -321,6 +330,33 @@ def _export_glossary_selector(enabled: bool, on_change: Optional[Callable[[bool]
             value=enabled,
             on_change=lambda e: on_change and on_change(e.value),
         ).classes('pdf-mode-checkbox').tooltip('翻訳ペアをCSV出力')
+
+
+def _glossary_selector(
+    use_bundled_glossary: bool,
+    on_toggle: Optional[Callable[[bool], None]],
+    on_edit: Optional[Callable[[], None]],
+):
+    """Bundled glossary toggle button - same style as text panel"""
+    with ui.row().classes('w-full justify-center mt-3 items-center gap-2'):
+        # Glossary toggle button
+        if on_toggle:
+            glossary_btn = ui.button(
+                '用語集',
+                icon='menu_book',
+                on_click=lambda: on_toggle(not use_bundled_glossary)
+            ).props('flat no-caps size=sm').classes(
+                f'glossary-toggle-btn {"active" if use_bundled_glossary else ""}'
+            )
+            glossary_btn.tooltip('同梱の glossary.csv を使用' if not use_bundled_glossary else '用語集を使用中')
+
+            # Edit glossary button (only shown when glossary is enabled)
+            if use_bundled_glossary and on_edit:
+                edit_btn = ui.button(
+                    icon='edit',
+                    on_click=on_edit
+                ).props('flat dense round size=sm').classes('settings-btn')
+                edit_btn.tooltip('用語集をExcelで編集')
 
 
 def _reference_file_selector(

@@ -237,8 +237,14 @@ class PlaywrightThreadExecutor:
         self._initialized = True
 
     def start(self):
-        """Start the Playwright thread."""
+        """Start the Playwright thread.
+
+        Raises:
+            RuntimeError: If the executor has been shutdown
+        """
         with self._thread_lock:
+            if self._shutdown_flag:
+                raise RuntimeError("Executor has been shutdown and cannot be restarted")
             if self._thread is not None and self._thread.is_alive():
                 return
             self._running = True
@@ -247,7 +253,8 @@ class PlaywrightThreadExecutor:
 
     def stop(self):
         """Stop the Playwright thread."""
-        self._running = False
+        with self._thread_lock:
+            self._running = False
         if self._thread is not None:
             # Send stop signal
             self._request_queue.put((None, None, None))
@@ -352,6 +359,37 @@ class CopilotHandler:
     # Response detection settings
     RESPONSE_STABLE_COUNT = 2  # Number of stable checks before considering response complete
     DEFAULT_RESPONSE_TIMEOUT = 600  # Default timeout for response in seconds (10 minutes)
+
+    # =========================================================================
+    # UI Selectors - Centralized for easier maintenance when Copilot UI changes
+    # =========================================================================
+
+    # Chat input field selectors
+    CHAT_INPUT_SELECTOR = '#m365-chat-editor-target-element, [data-lexical-editor="true"]'
+    CHAT_INPUT_SELECTOR_EXTENDED = '#m365-chat-editor-target-element, [data-lexical-editor="true"], [contenteditable="true"]'
+
+    # Send button selectors
+    SEND_BUTTON_SELECTOR = '.fai-SendButton:not([disabled]), button[type="submit"]:not([disabled])'
+    SEND_BUTTON_ANY = '.fai-SendButton, button[type="submit"]'
+
+    # Stop button selectors (for cancelling generation)
+    STOP_BUTTON_SELECTORS = (
+        '.fai-SendButton__stopBackground',
+        'button[aria-label*="Stop"]',
+        'button[aria-label*="停止"]',
+        '[data-testid="stopGeneratingButton"]',
+    )
+    STOP_BUTTON_SELECTOR_COMBINED = ", ".join(STOP_BUTTON_SELECTORS)
+
+    # New chat button selectors
+    NEW_CHAT_BUTTON_SELECTOR = '#new-chat-button, [data-testid="newChatButton"], button[aria-label="新しいチャット"]'
+
+    # File upload selectors
+    PLUS_MENU_BUTTON_SELECTOR = '[data-testid="PlusMenuButton"]'
+    FILE_INPUT_SELECTOR = '[data-testid="uploadFileDialogInput"]'
+
+    # Auth dialog selectors
+    AUTH_DIALOG_TITLE_SELECTOR = '.fui-DialogTitle, [role="dialog"] h2'
 
     # Copilot response selectors (fallback for DOM changes)
     RESPONSE_SELECTORS = (
@@ -662,7 +700,7 @@ class CopilotHandler:
 
             # Check 3: Chat input element exists (verifies login state)
             # Use query_selector for instant check (no wait/timeout)
-            input_selector = '#m365-chat-editor-target-element, [data-lexical-editor="true"]'
+            input_selector = self.CHAT_INPUT_SELECTOR
             input_elem = self._page.query_selector(input_selector)
             if input_elem:
                 return True
@@ -948,7 +986,7 @@ class CopilotHandler:
         PlaywrightError = error_types['Error']
 
         logger.info("Waiting for Copilot chat UI...")
-        input_selector = '#m365-chat-editor-target-element, [data-lexical-editor="true"]'
+        input_selector = self.CHAT_INPUT_SELECTOR
 
         # First, check if we're on a login page
         url = page.url
@@ -1186,7 +1224,7 @@ class CopilotHandler:
         while elapsed < max_wait:
             try:
                 # Check if chat UI is now available
-                input_selector = '#m365-chat-editor-target-element, [data-lexical-editor="true"]'
+                input_selector = self.CHAT_INPUT_SELECTOR
                 try:
                     self._page.wait_for_selector(input_selector, timeout=500, state='visible')
                     logger.info("Auto-login completed - chat UI is ready (%.1fs)", elapsed)
@@ -1239,7 +1277,7 @@ class CopilotHandler:
                 logger.info("Auto-login timeout - still on login page after %.1fs", max_wait)
                 return False
             # Not on login page, give one more chance to check chat UI
-            input_selector = '#m365-chat-editor-target-element, [data-lexical-editor="true"]'
+            input_selector = self.CHAT_INPUT_SELECTOR
             try:
                 self._page.wait_for_selector(input_selector, timeout=2000, state='visible')
                 logger.info("Auto-login completed at timeout - chat UI ready")
@@ -1507,7 +1545,7 @@ class CopilotHandler:
         logger.info("Waiting for login completion (timeout: %ds)...", timeout)
         logger.info("Edgeブラウザでログインしてください / Please log in to the Edge browser")
 
-        input_selector = '#m365-chat-editor-target-element, [data-lexical-editor="true"]'
+        input_selector = self.CHAT_INPUT_SELECTOR
         poll_interval = self.LOGIN_POLL_INTERVAL
         elapsed = 0.0
 
@@ -1623,7 +1661,7 @@ class CopilotHandler:
 
         try:
             # チャット入力欄の存在を確認（ログイン済みの証拠）
-            input_selector = '#m365-chat-editor-target-element, [data-lexical-editor="true"]'
+            input_selector = self.CHAT_INPUT_SELECTOR
             try:
                 self._page.wait_for_selector(
                     input_selector,
@@ -2190,7 +2228,7 @@ class CopilotHandler:
         try:
             # Find input area
             # 実際のCopilot HTML: <span role="combobox" contenteditable="true" id="m365-chat-editor-target-element" ...>
-            input_selector = '#m365-chat-editor-target-element, [data-lexical-editor="true"], [contenteditable="true"]'
+            input_selector = self.CHAT_INPUT_SELECTOR_EXTENDED
             logger.debug("Waiting for input element...")
             input_wait_start = time.time()
             input_elem = self._page.wait_for_selector(input_selector, timeout=10000)
@@ -2275,7 +2313,7 @@ class CopilotHandler:
 
                 # Wait for send button to become enabled before pressing Enter
                 # This ensures Copilot has processed the input text
-                send_button_selector = '.fai-SendButton:not([disabled]), button[type="submit"]:not([disabled])'
+                send_button_selector = self.SEND_BUTTON_SELECTOR
                 send_wait_start = time.time()
                 try:
                     self._page.wait_for_selector(send_button_selector, timeout=5000, state='visible')
@@ -2383,7 +2421,9 @@ class CopilotHandler:
             last_log_time = time.time()
 
             current_url = self._page.url if self._page else "unknown"
-            logger.info("[POLLING] Starting response polling (timeout=%.0fs, URL: %s)", max_wait, current_url[:80] if current_url else "empty")
+            # Ensure current_url is a string before slicing (for test mocks)
+            url_str = str(current_url) if current_url else "empty"
+            logger.info("[POLLING] Starting response polling (timeout=%.0fs, URL: %s)", max_wait, url_str[:80])
 
             while max_wait > 0:
                 poll_iteration += 1
@@ -2397,12 +2437,7 @@ class CopilotHandler:
                 # Try multiple selectors for stop/loading indicators
                 stop_button = None
                 stop_button_selector = None
-                for stop_sel in [
-                    '.fai-SendButton__stopBackground',
-                    'button[aria-label*="Stop"]',
-                    'button[aria-label*="停止"]',
-                    '[data-testid*="stop"]',
-                ]:
+                for stop_sel in self.STOP_BUTTON_SELECTORS:
                     stop_button = self._page.query_selector(stop_sel)
                     if stop_button:
                         stop_button_selector = stop_sel
@@ -2539,7 +2574,7 @@ class CopilotHandler:
 
             # Priority 2: Two-step menu process (selectors may change)
             # Step 1: Click the "+" button to open the menu
-            plus_btn = self._page.query_selector('[data-testid="PlusMenuButton"]')
+            plus_btn = self._page.query_selector(self.PLUS_MENU_BUTTON_SELECTOR)
             if not plus_btn:
                 plus_btn = self._page.query_selector(
                     'button[aria-label*="コンテンツ"], button[aria-label*="追加"]'
@@ -2692,9 +2727,7 @@ class CopilotHandler:
             new_chat_total_start = time.time()
             # 実際のCopilot HTML: <button id="new-chat-button" data-testid="newChatButton" aria-label="新しいチャット">
             query_start = time.time()
-            new_chat_btn = self._page.query_selector(
-                '#new-chat-button, [data-testid="newChatButton"], button[aria-label="新しいチャット"]'
-            )
+            new_chat_btn = self._page.query_selector(self.NEW_CHAT_BUTTON_SELECTOR)
             logger.info("[TIMING] new_chat: query_selector: %.2fs", time.time() - query_start)
             if new_chat_btn:
                 click_start = time.time()
@@ -2706,7 +2739,7 @@ class CopilotHandler:
                 logger.warning("New chat button not found - chat context may not be cleared")
 
             # Wait for new chat to be ready (input field becomes available)
-            input_selector = '#m365-chat-editor-target-element, [data-lexical-editor="true"], [contenteditable="true"]'
+            input_selector = self.CHAT_INPUT_SELECTOR_EXTENDED
             input_ready_start = time.time()
             try:
                 self._page.wait_for_selector(input_selector, timeout=5000, state='visible')

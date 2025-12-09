@@ -7,7 +7,6 @@
   "max_chars_per_batch": 4000,
   "request_timeout": 600,
   "max_retries": 3,
-  "copilot_char_limit": 7500,
   "bilingual_output": false,
   "export_glossary": false,
   "translation_style": "concise",
@@ -17,7 +16,7 @@
   "font_jp_to_en": "Arial",
   "font_en_to_jp": "MS Pゴシック",
   "ocr_batch_size": 5,
-  "ocr_dpi": 200,
+  "ocr_dpi": 300,
   "ocr_device": "auto",
   "auto_update_enabled": true,
   "auto_update_check_interval": 86400,
@@ -25,5 +24,5 @@
   "github_repo_name": "yakulingo",
   "last_update_check": null,
   "skipped_version": null,
-  "use_bundled_glossary": false
+  "use_bundled_glossary": true
 }

@@ -795,8 +795,17 @@ def extract_font_info_from_pdf(
 
             font_info[page_num] = page_font_info
 
-    # Store in cache (thread-safe)
+    # Store in cache (thread-safe) with LRU eviction
     with _font_info_cache_lock:
+        # Move to end if exists (LRU update)
+        if cache_key in _font_info_cache:
+            _font_info_cache.move_to_end(cache_key)
+        else:
+            # Evict oldest entry if cache is full
+            while len(_font_info_cache) >= _FONT_INFO_CACHE_MAX_SIZE:
+                oldest_key = next(iter(_font_info_cache))
+                logger.debug("Evicting font info cache entry: %s", oldest_key)
+                del _font_info_cache[oldest_key]
         _font_info_cache[cache_key] = font_info
 
     return font_info
@@ -867,8 +876,11 @@ DEFAULT_OCR_BATCH_SIZE = 5   # Pages per batch
 DEFAULT_OCR_DPI = 300        # Default DPI for precision
 
 # Font info cache (keyed by (pdf_path, dpi)) - avoids repeated PDF parsing
-_font_info_cache: dict[tuple[str, int], dict[int, list[dict]]] = {}
+# Uses OrderedDict for LRU-style eviction when max size is exceeded
+from collections import OrderedDict
+_font_info_cache: OrderedDict[tuple[str, int], dict[int, list[dict]]] = OrderedDict()
 _font_info_cache_lock = threading.Lock()
+_FONT_INFO_CACHE_MAX_SIZE = 5  # Maximum number of PDFs to cache
 
 # NOTE: _analyzer_cache, LAYOUT_TRANSLATE_LABELS, LAYOUT_SKIP_LABELS
 # are imported from pdf_layout.py

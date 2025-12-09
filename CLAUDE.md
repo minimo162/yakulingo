@@ -604,6 +604,69 @@ The `connect()` method performs these steps:
 6. Calls `window.stop()` to stop browser loading spinner
 7. Sets `_connected = True` if successful
 
+### Login Detection Process (ログイン判定プロセス)
+
+Edge起動時に手動ログインが必要かどうかを判定するプロセス：
+
+```
+connect()
+  │
+  ├─ Step 1: Copilotページを取得/作成
+  │
+  ├─ Step 2: _wait_for_chat_ready(wait_for_login=False)
+  │     ├─ ログインページURLかチェック (LOGIN_PAGE_PATTERNS)
+  │     ├─ ランディングページ処理 (/landing → /chat へリダイレクト)
+  │     └─ チャット入力欄を【15秒】待機
+  │         ├─ 見つかった → 接続成功（バックグラウンドで継続）
+  │         └─ 見つからない → Step 3へ
+  │
+  └─ Step 3: _wait_for_auto_login_impl(max_wait=15秒)
+        │  ※ Windows統合認証/SSO の完了を待機
+        │
+        ├─ ループ（1秒間隔で最大15秒）
+        │     ├─ チャット入力欄の存在確認（500ms）
+        │     │     └─ 見つかれば「自動ログイン完了」
+        │     │
+        │     └─ URL変化の監視
+        │           ├─ URL変化中 → 自動ログイン進行中（継続）
+        │           └─ URL安定（2回連続同じ）かつログインページ
+        │                 → 「手動ログイン必要」と判定
+        │
+        └─ 最終判定
+              ├─ 自動ログイン成功 → バックグラウンドで接続完了
+              └─ 手動ログイン必要 → ブラウザを前面に表示
+```
+
+**判定に使用する3つの指標:**
+
+| 指標 | 判定方法 | 説明 |
+|------|----------|------|
+| ログインページURL | `_is_login_page(url)` | `login.microsoftonline.com` 等のパターンマッチ |
+| 認証ダイアログ | `_has_auth_dialog()` | 「認証」「ログイン」「サインイン」を含むダイアログ |
+| チャット入力欄 | セレクタ `#m365-chat-editor-target-element` | ログイン完了の証拠 |
+
+**ログインページURLパターン (`LOGIN_PAGE_PATTERNS`):**
+```python
+[
+    "login.microsoftonline.com",
+    "login.live.com",
+    "login.microsoft.com",
+    "account.live.com",
+    "account.microsoft.com",
+    "signup.live.com",
+    "microsoftonline.com/oauth",
+]
+```
+
+**判定結果と動作:**
+
+| 状態 | 判定条件 | 動作 |
+|------|----------|------|
+| ログイン済み | チャット入力欄が存在 | バックグラウンドで接続完了 |
+| 自動ログイン中 | URLがリダイレクト中 | 最大15秒待機 |
+| 手動ログイン必要 | ログインページURL or 認証ダイアログ | ブラウザを前面に表示 |
+| 接続失敗 | 上記以外（タイムアウト等） | エラー状態 |
+
 ### Copilot Character Limits
 M365 Copilot has different input limits based on license:
 - **Free license**: 8,000 characters max

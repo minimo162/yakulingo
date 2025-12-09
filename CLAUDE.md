@@ -109,7 +109,7 @@ YakuLingo/
 │   │   └── history_db.py          # SQLite-based translation history
 │   └── config/                    # Configuration
 │       └── settings.py            # AppSettings with JSON persistence
-├── tests/                         # Test suite (27 test files)
+├── tests/                         # Test suite (32 test files)
 │   ├── conftest.py                # Shared fixtures and mocks
 │   └── test_*.py                  # Unit tests for each module
 ├── prompts/                       # Translation prompt templates (16 files)
@@ -404,7 +404,7 @@ dialog = create_completion_dialog(
 
 - **Framework**: pytest with pytest-asyncio
 - **Test Path**: `tests/`
-- **Test Files**: 27 test files covering all major modules
+- **Test Files**: 32 test files covering all major modules
 - **Naming**: `test_*.py` files, `Test*` classes, `test_*` functions
 - **Fixtures**: Defined in `tests/conftest.py`
 - **Async Mode**: Auto-configured via pyproject.toml
@@ -879,6 +879,27 @@ When interacting with users in this repository, prefer Japanese for comments and
 ## Recent Development Focus
 
 Based on recent commits:
+- **Copilot Input Reliability Improvements**:
+  - **fill() method**: Playwright fill()を使用して改行を正しく処理（改行がEnterキーとして解釈される問題を修正）
+  - **Enter key submission**: Copilot入力をシンプル化しEnterキー送信に統一
+  - **Input retry logic**: 入力失敗時のリトライロジックを改善
+- **Edge Browser & Login Improvements**:
+  - **Auto-login detection**: 自動ログイン検出を改善し、不要なブラウザ前面表示を防止
+  - **Startup timeout**: Edge起動タイムアウトを6秒から20秒に延長
+  - **JS click operations**: Playwrightのクリック操作をJSクリックに変更してブラウザが前面に来るのを防止
+- **PP-DocLayout-L Optimization**:
+  - **Pre-initialization**: 起動時に事前初期化してPlaywright競合を回避
+  - **Windows message suppression**: Windowsメッセージを抑制
+- **Translation Card UI Unification**:
+  - **Unified structure**: 和訳の翻訳結果カード構造を英訳と統一
+  - **Card width alignment**: 翻訳結果カードの横幅を原文カードと統一
+  - **Hover effect removal**: 翻訳結果カード全体のホバー効果を削除
+- **Batch Translation Settings**:
+  - **max_chars_per_batch**: 7000 → 4000 に縮小（信頼性向上）
+  - **request_timeout**: 120秒 → 600秒（10分）に延長（大規模翻訳対応）
+- **Excel COM Improvements**:
+  - **Pre-cleanup**: Excel COM接続の事前クリーンアップを追加
+  - **Retry logic**: COMエラー時のリトライ前にCOMリソースのクリーンアップを追加
 - **PDF Translation Improvements (PDFMathTranslate compliant)**:
   - **PP-DocLayout-L**: レイアウト解析にPP-DocLayout-Lを使用（Apache-2.0、商用利用可）
   - **ハイブリッド抽出**: pdfminerでテキスト抽出 + PP-DocLayout-Lでレイアウト解析
@@ -923,7 +944,7 @@ Based on recent commits:
 - **Back-Translate Feature**: Verify translations by translating back to original language
 - **Auto-Update System**: GitHub Releases-based updates with Windows proxy support
 - **Native Launcher**: Rust-based `YakuLingo.exe` for Windows distribution
-- **Test Coverage**: 27 test files
+- **Test Coverage**: 32 test files
 - **Language Detection**: Hybrid approach - local detection for kana/Latin/Hangul, Copilot only for CJK-only text (Chinese/Japanese ambiguity)
 - **Translation Result UI Enhancements**:
   - **Source text section**: 翻訳結果パネル上部に原文を表示（コピーボタン付き）

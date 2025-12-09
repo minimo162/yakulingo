@@ -1904,33 +1904,31 @@ class CopilotHandler:
                 logger.debug("Input verified (has content)")
 
                 # Wait for send button to be enabled (appears after text input)
-                # Copilot HTML varies by version; try multiple selectors
-                # - .fai-SendButton: 旧Copilot UI
-                # - button[type="submit"]: 汎用submit
-                # - [data-testid*="send"]: テスト用ID
-                # - aria-label系: アクセシビリティ属性
+                # 実際のCopilot HTML例:
+                # <button type="submit" aria-label="送信" class="fui-Button ... fai-SendButton fai-ChatInput__send ...">
+                # 入力がある場合のみボタンが有効化される
                 send_button_selectors = [
-                    '.fai-SendButton:not([disabled])',
-                    'button[type="submit"][aria-label="送信"]:not([disabled])',
-                    'button[type="submit"][aria-label="Send"]:not([disabled])',
-                    'button[aria-label="送信"]:not([disabled])',
-                    'button[aria-label="Send"]:not([disabled])',
-                    'button[aria-label*="送信"]:not([disabled])',
-                    'button[aria-label*="Send"]:not([disabled])',
-                    'button[data-testid*="send"]:not([disabled])',
-                    'button[data-testid*="Send"]:not([disabled])',
-                    # Fluent UI React buttons
-                    'button.fui-Button[type="submit"]:not([disabled])',
-                    # Generic submit button near input
-                    'form button[type="submit"]:not([disabled])',
+                    # 最も具体的なセレクタを優先
+                    'button.fai-ChatInput__send',
+                    'button.fai-SendButton',
+                    'button.fui-Button[type="submit"][aria-label="送信"]',
+                    'button[type="submit"][aria-label="送信"]',
+                    'button[type="submit"][aria-label="Send"]',
+                    'button[aria-label="送信"]',
+                    'button[aria-label="Send"]',
                 ]
                 send_button_selector = ', '.join(send_button_selectors)
-                logger.debug("Waiting for send button...")
+                logger.debug("Waiting for send button with selector: %s", send_button_selector[:100])
+
+                # 入力後、ボタンが有効化されるまで少し待つ
+                time.sleep(0.2)
+
                 try:
+                    # state='attached' で存在を確認（visibleは厳しすぎる場合がある）
                     send_button = self._page.wait_for_selector(
                         send_button_selector,
-                        timeout=2000,  # Increased timeout for UI stability
-                        state='visible'
+                        timeout=2000,
+                        state='attached'
                     )
                     if send_button:
                         # Ensure button is truly enabled before clicking

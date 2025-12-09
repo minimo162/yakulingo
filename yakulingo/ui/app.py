@@ -673,6 +673,9 @@ class YakuLingoApp:
                     # Save storage_state to preserve login session
                     await asyncio.to_thread(self.copilot.save_storage_state)
 
+                    # Hide Edge window once login completes
+                    await asyncio.to_thread(self.copilot.send_to_background)
+
                     if self._client and not self._shutdown_requested:
                         with self._client:
                             self._refresh_status()

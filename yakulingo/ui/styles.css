@@ -885,9 +885,9 @@ textarea:focus-visible {
 }
 
 /* === Drop Zone (Nani-inspired) === */
-/* Nani-style: subtle surface with thin dashed border */
+/* Nani-style: white card with thin border and subtle shadow for floating effect */
 .drop-zone {
-    border: 1.5px dashed var(--md-sys-color-outline-variant);
+    border: 1px solid var(--md-sys-color-outline-variant);
     border-radius: var(--md-sys-shape-corner-xl);
     /* Height matches text input panel for consistency */
     min-height: var(--input-min-height);
@@ -900,6 +900,7 @@ textarea:focus-visible {
     cursor: pointer;
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
     background: var(--md-sys-color-surface);
+    box-shadow: var(--md-sys-elevation-1);
     position: relative;
 }
 
@@ -963,19 +964,17 @@ textarea:focus-visible {
 
 /* Nani-style: subtle hover with gentle background change */
 .drop-zone:hover {
-    border-color: var(--md-sys-color-primary);
-    background: rgba(237, 234, 255, 0.4);  /* primary-container at 40% */
-    transform: scale(1.005);
+    border-color: var(--md-sys-color-outline);
+    background: var(--md-sys-color-surface-container-low);
+    box-shadow: var(--md-sys-elevation-2);
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
 }
 
 /* Active drag-over state (slightly more prominent than hover) */
 .drop-zone.drag-over {
     border-color: var(--md-sys-color-primary);
-    border-style: solid;
-    background: rgba(237, 234, 255, 0.6);  /* primary-container at 60% */
-    transform: scale(1.01);
-    box-shadow: 0 0 0 2px var(--md-sys-color-primary-container);
+    background: var(--md-sys-color-primary-container);
+    box-shadow: var(--md-sys-elevation-2), 0 0 0 2px var(--md-sys-color-primary-container);
 }
 
 .drop-zone-icon {
@@ -1391,12 +1390,32 @@ textarea:focus-visible {
     display: none;
 }
 
+.main-area.file-mode {
+    background: var(--md-sys-color-surface-container);
+}
+
 .main-area.file-mode .input-panel {
     width: 100%;
     min-width: 100%;
     max-width: none;
     border-right: none;
+    box-shadow: none;
+    background: transparent;
     justify-content: center;
+}
+
+/* File mode: Remove main-card wrapper styling (枠の重複を防ぐ) */
+.main-area.file-mode .main-card {
+    background: transparent;
+    box-shadow: none;
+    border: none;
+    padding: 0;
+}
+
+.main-area.file-mode .main-card-inner {
+    background: transparent;
+    border: none;
+    padding: 0;
 }
 
 /* === Media Queries for Resolution Fallback === */

@@ -963,12 +963,20 @@ class CopilotHandler:
                     pass
                 if any(path in url for path in ("/landing", "/landingv2")):
                     logger.debug("Still on landing page, deferring chat UI lookup")
+                    self.last_connection_error = self.ERROR_CONNECTION_FAILED
+                    if not wait_for_login:
+                        logger.info("Background connect: skipping login wait while Copilot redirects")
+                        return False
                     return self._wait_for_login_completion(page)
                 if "/chat" not in url:
                     try:
                         page.goto(self.COPILOT_URL, wait_until='domcontentloaded', timeout=30000)
                     except (PlaywrightTimeoutError, PlaywrightError) as nav_err:
                         logger.warning("Failed to navigate to chat during wait: %s", nav_err)
+                self.last_connection_error = self.ERROR_CONNECTION_FAILED
+                if not wait_for_login:
+                    logger.info("Background connect: chat UI not ready; deferring login prompt")
+                    return False
                 return self._wait_for_login_completion(page)
 
             logger.warning("Chat input not found - login may be required")

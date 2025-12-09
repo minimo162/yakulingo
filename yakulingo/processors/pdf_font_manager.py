@@ -57,7 +57,7 @@ def _get_pdfminer():
     if _pdfminer is None:
         from pdfminer.pdffont import PDFCIDFont, PDFUnicodeNotDefined
         from pdfminer.pdfpage import PDFPage
-        from pdfminer.pdfparser import PDFParser
+        from pdfminer.pdfparser import PDFParser, PDFSyntaxError
         from pdfminer.pdfdocument import PDFDocument
         from pdfminer.pdfinterp import PDFResourceManager, PDFPageInterpreter
         from pdfminer.converter import PDFConverter
@@ -69,6 +69,7 @@ def _get_pdfminer():
             'PDFPage': PDFPage,
             'PDFParser': PDFParser,
             'PDFDocument': PDFDocument,
+            'PDFSyntaxError': PDFSyntaxError,
             'PDFResourceManager': PDFResourceManager,
             'PDFPageInterpreter': PDFPageInterpreter,
             'PDFConverter': PDFConverter,
@@ -486,8 +487,16 @@ class FontRegistry:
                 # PyMuPDF 1.26+ automatically handles TTC font collections
                 self._font_objects[font_id] = pymupdf.Font(fontfile=font_path)
                 logger.debug("Created Font object for %s: %s", font_id, font_path)
-            except Exception as e:
+            except (RuntimeError, ValueError, OSError, FileNotFoundError) as e:
+                # RuntimeError: PyMuPDF internal errors
+                # ValueError: Invalid font file format
+                # OSError: File access issues
+                # FileNotFoundError: Font file not found
                 logger.warning("Failed to create Font object for %s: %s", font_id, e)
+            except Exception as e:
+                # Catch PyMuPDF-specific exceptions (mupdf.FzErrorSystem, etc.)
+                # These don't inherit from standard exception types
+                logger.warning("Failed to create Font object for %s (PyMuPDF error): %s", font_id, e)
 
         return font_id
 
@@ -633,7 +642,7 @@ class FontRegistry:
                     width = pdfminer_font.get_width()
                     if width == 0:
                         uncovered_count += 1
-            except Exception:
+            except (AttributeError, TypeError, KeyError):
                 # Error getting width - character may not be covered
                 uncovered_count += 1
 
@@ -712,7 +721,10 @@ class FontRegistry:
                 idx = font_obj.has_glyph(ord(char))
                 if idx:
                     glyph_idx = idx
-            except Exception as e:
+            except (RuntimeError, ValueError, TypeError) as e:
+                # RuntimeError: PyMuPDF internal errors
+                # ValueError: Invalid character code
+                # TypeError: Invalid argument type
                 logger.debug("Error getting glyph index for '%s': %s", char, e)
 
         # Cache the result
@@ -750,7 +762,10 @@ class FontRegistry:
                 advance = font_obj.glyph_advance(ord(char))
                 if advance:
                     normalized_width = advance
-            except Exception as e:
+            except (RuntimeError, ValueError, TypeError) as e:
+                # RuntimeError: PyMuPDF internal errors
+                # ValueError: Invalid character code
+                # TypeError: Invalid argument type
                 logger.debug("Error getting char width from PyMuPDF for '%s': %s", char, e)
 
         # Try pdfminer font object (for existing PDF fonts)
@@ -797,7 +812,11 @@ class FontRegistry:
                 if width and width > 0:
                     return width / 1000.0
 
-        except Exception as e:
+        except (AttributeError, TypeError, KeyError, ValueError) as e:
+            # AttributeError: Method not available
+            # TypeError: Invalid argument
+            # KeyError: CID not found
+            # ValueError: Invalid width value
             logger.debug("Error getting char width from pdfminer for '%s': %s", char, e)
 
         return None
@@ -910,9 +929,21 @@ class FontRegistry:
                     try:
                         self._font_objects[font_info.font_id] = pymupdf.Font(fontfile=font_path)
                         logger.debug("Created Font object in embed_fonts for %s", font_info.font_id)
-                    except Exception as e:
+                    except (RuntimeError, ValueError, OSError, FileNotFoundError) as e:
+                        # RuntimeError: PyMuPDF internal errors
+                        # ValueError: Invalid font file
+                        # OSError: File access issues
+                        # FileNotFoundError: Font file not found
                         logger.warning(
                             "Failed to create Font object for '%s': %s. "
+                            "Text rendering may fail.",
+                            font_info.font_id, e
+                        )
+                        failed_fonts.append(font_info.font_id)
+                    except Exception as e:
+                        # Catch PyMuPDF-specific exceptions (mupdf.FzErrorSystem, etc.)
+                        logger.warning(
+                            "Failed to create Font object for '%s' (PyMuPDF error): %s. "
                             "Text rendering may fail.",
                             font_info.font_id, e
                         )
@@ -947,6 +978,7 @@ class FontRegistry:
             PDFDocument = pdfminer['PDFDocument']
             PDFPage = pdfminer['PDFPage']
             PDFResourceManager = pdfminer['PDFResourceManager']
+            PDFSyntaxError = pdfminer['PDFSyntaxError']
 
             with open(pdf_path, 'rb') as f:
                 parser = PDFParser(f)
@@ -965,13 +997,28 @@ class FontRegistry:
                                         "Loaded font from PDF: %s -> %s",
                                         font_name, type(font_obj).__name__
                                     )
-                                except Exception as e:
+                                except (RuntimeError, ValueError, KeyError, TypeError) as e:
+                                    # RuntimeError: pdfminer internal errors
+                                    # ValueError: Invalid font data
+                                    # KeyError: Missing font resource
+                                    # TypeError: Invalid font reference
                                     logger.debug("Could not load font %s: %s", font_name, e)
 
             logger.debug("Loaded %d fonts from PDF fontmap", len(self.fontmap))
 
-        except Exception as e:
+        except (RuntimeError, ValueError, OSError, IOError) as e:
+            # RuntimeError: pdfminer internal errors
+            # ValueError: Invalid PDF data
+            # OSError/IOError: File access issues
             logger.warning("Failed to load fontmap from PDF: %s", e)
+        except Exception as e:
+            # Catch PDFSyntaxError and other pdfminer exceptions dynamically
+            # (cannot import at module level due to lazy loading)
+            pdfminer = _get_pdfminer()
+            if isinstance(e, pdfminer.get('PDFSyntaxError', type(None))):
+                logger.warning("Invalid PDF file (syntax error): %s", e)
+            else:
+                logger.warning("Unexpected error loading fontmap from PDF: %s", e)
 
     def register_existing_font(self, font_name: str, pdfminer_font: Any) -> str:
         """

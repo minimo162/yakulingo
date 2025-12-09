@@ -140,6 +140,30 @@ class TestCopilotHandlerConnectFlow:
 
         assert result is False
 
+    def test_wait_for_chat_ready_skips_login_wait_in_background(self):
+        """Background connect should not trigger login wait UI on slow load"""
+        handler = CopilotHandler()
+
+        class FakeTimeoutError(Exception):
+            pass
+
+        error_types = {"TimeoutError": FakeTimeoutError, "Error": Exception}
+
+        mock_page = MagicMock()
+        mock_page.url = "https://m365.cloud.microsoft.com/landing"
+        mock_page.wait_for_selector.side_effect = FakeTimeoutError("timeout")
+        mock_page.wait_for_load_state.side_effect = FakeTimeoutError("timeout")
+
+        handler._page = mock_page
+        handler._wait_for_login_completion = Mock(return_value=True)
+
+        with patch('yakulingo.services.copilot_handler._get_playwright_errors', return_value=error_types):
+            result = handler._wait_for_chat_ready(mock_page, wait_for_login=False)
+
+        assert result is False
+        handler._wait_for_login_completion.assert_not_called()
+        assert handler.last_connection_error == handler.ERROR_CONNECTION_FAILED
+
 
 class TestCopilotHandlerSendMessage:
     """Tests for _send_message() method"""

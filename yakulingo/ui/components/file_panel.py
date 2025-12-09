@@ -8,6 +8,8 @@ from nicegui import ui, events
 from typing import Any, Awaitable, Callable, List, Optional, Union
 from pathlib import Path
 import asyncio
+import json
+from types import SimpleNamespace
 
 from yakulingo.ui.state import AppState, FileState
 from yakulingo.ui.utils import temp_file_manager, trigger_file_download
@@ -87,11 +89,31 @@ def _extract_drop_payload(event: Optional[events.GenericEventArguments]) -> Opti
         return None
 
     args: Any = getattr(event, 'args', None)
+    # NiceGUI may deliver custom event arguments in different shapes depending on
+    # the browser and websocket serializer. Be lenient and try common containers.
     if isinstance(args, dict):
         detail = args.get('detail') if 'detail' in args else None
         if isinstance(detail, dict):
             return detail
         return args
+
+    if isinstance(args, (list, tuple)) and args:
+        first = args[0]
+        if isinstance(first, dict):
+            return first.get('detail', first)
+
+    if isinstance(args, SimpleNamespace):
+        detail = getattr(args, 'detail', None)
+        if isinstance(detail, dict):
+            return detail
+
+    if isinstance(args, str):
+        try:
+            parsed = json.loads(args)
+            if isinstance(parsed, dict):
+                return parsed.get('detail', parsed)
+        except json.JSONDecodeError:
+            pass
 
     return None
 
@@ -386,7 +408,7 @@ def _drop_zone(on_file_select: Callable[[Path], Union[None, Awaitable[None]]]):
                 # Prefer payload attached to the custom event to avoid races with globals
                 result = _extract_drop_payload(event)
                 if result is None:
-                    result = await ui.run_javascript('window._droppedFileData')
+                    result = await ui.run_javascript('window._droppedFileData ?? null')
                 await _process_drop_result(on_file_select, result)
             except Exception as err:
                 ui.notify(f'ファイルの読み込みに失敗しました: {err}', type='negative')

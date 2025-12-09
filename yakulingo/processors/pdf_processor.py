@@ -571,6 +571,42 @@ class FormulaManager:
 
 
 # =============================================================================
+# Coordinate System Documentation
+# =============================================================================
+#
+# YakuLingo PDF processing deals with TWO coordinate systems:
+#
+# 1. IMAGE/LAYOUT COORDINATES (used by PyMuPDF get_text, PP-DocLayout-L)
+#    - Origin: TOP-LEFT corner of the page
+#    - Y-axis: Points DOWNWARD (increases as you go down)
+#    - Box format: [x1, y1, x2, y2] where (x1, y1) is TOP-LEFT corner
+#
+#        (0,0) ─────────────────→ X
+#          │  ┌─────────────┐
+#          │  │ (x1,y1)     │
+#          │  │   TEXT BOX  │
+#          │  │     (x2,y2) │
+#          │  └─────────────┘
+#          ↓
+#          Y
+#
+# 2. PDF COORDINATES (used by PDF operators, text rendering)
+#    - Origin: BOTTOM-LEFT corner of the page
+#    - Y-axis: Points UPWARD (increases as you go up)
+#    - Box format: (x1, y1, x2, y2) where (x1, y1) is BOTTOM-LEFT corner
+#
+#          Y
+#          ↑
+#          │  ┌─────────────┐
+#          │  │     (x2,y2) │  ← top-right
+#          │  │   TEXT BOX  │
+#          │  │ (x1,y1)     │  ← bottom-left
+#          │  └─────────────┘
+#        (0,0) ─────────────────→ X
+#
+# CONVERSION: image_y → pdf_y = page_height - image_y
+#
+# =============================================================================
 # Helper Functions
 # =============================================================================
 def convert_to_pdf_coordinates(
@@ -579,27 +615,38 @@ def convert_to_pdf_coordinates(
     page_width: float = None,
 ) -> tuple[float, float, float, float]:
     """
-    Convert from image/layout model coordinates to PDF coordinates.
+    Convert from image/layout coordinates to PDF coordinates.
+
+    This is the SINGLE POINT of coordinate conversion in the codebase.
+    All coordinate transformations should go through this function.
 
     Coordinate Systems:
-    - Image/layout model: origin at top-left, Y-axis points downward
+    - Input (Image/Layout): origin at TOP-LEFT, Y-axis points DOWN
       - box format: [x1, y1, x2, y2] where (x1, y1) is top-left corner
-    - PDF: origin at bottom-left, Y-axis points upward
+    - Output (PDF): origin at BOTTOM-LEFT, Y-axis points UP
       - box format: (x1, y1, x2, y2) where (x1, y1) is bottom-left corner
 
-    Note on PyMuPDF:
-    - PyMuPDF's get_text("dict") returns bboxes in the same coordinate system
-      as images (origin top-left), so this function is also applicable.
-    - The bbox from PyMuPDF represents [x0, y0, x1, y1] where (x0, y0) is
-      top-left and (x1, y1) is bottom-right.
+    Conversion formula:
+    - X coordinates: unchanged (x_pdf = x_img)
+    - Y coordinates: inverted (y_pdf = page_height - y_img)
+
+    Sources using image coordinates (must be converted):
+    - PyMuPDF's get_text("dict") bbox
+    - PP-DocLayout-L detection results
+    - OCR coordinates
 
     Args:
-        box: [x1, y1, x2, y2] image coordinates (top-left, bottom-right)
-        page_height: Page height in PDF units (points)
+        box: [x1, y1, x2, y2] image coordinates (top-left to bottom-right)
+        page_height: Page height in PDF units (points, typically 72 per inch)
         page_width: Page width (optional, for x-coordinate clamping)
 
     Returns:
-        (x1, y1, x2, y2) PDF coordinates (bottom-left, top-right)
+        (x1, y1, x2, y2) PDF coordinates (bottom-left to top-right)
+
+    Example:
+        >>> # A4 page: 595 x 842 points
+        >>> convert_to_pdf_coordinates([100, 100, 200, 150], 842)
+        (100, 692, 200, 742)  # Y values inverted relative to page height
     """
     if len(box) != 4:
         raise ValueError(f"Invalid box format: expected 4 values, got {len(box)}")
@@ -643,7 +690,37 @@ def calculate_text_position(
     """
     Calculate text line position in PDF coordinates.
 
-    PDFMathTranslate converter.py compliant.
+    PDF text positioning uses the baseline of the text as the reference point.
+    Text is rendered from TOP to BOTTOM within the box, but coordinates
+    are in PDF space (Y increases upward).
+
+    Layout within box (PDF coordinates):
+    ```
+          y2 ┌─────────────────────────┐  ← top of box
+             │ Line 0 baseline         │  y = y2 - font_size
+             │ Line 1 baseline         │  y = y2 - font_size - (1 * font_size * line_height)
+             │ Line 2 baseline         │  y = y2 - font_size - (2 * font_size * line_height)
+          y1 └─────────────────────────┘  ← bottom of box
+            x1                        x2
+    ```
+
+    Formula: y = y2 - font_size - (line_index * font_size * line_height)
+    - y2 is the top of the box in PDF coordinates
+    - Subtract font_size to position baseline below top edge
+    - Subtract additional spacing for each subsequent line
+
+    Args:
+        box_pdf: (x1, y1, x2, y2) in PDF coordinates (bottom-left to top-right)
+        line_index: 0-based line number (0 = first line)
+        font_size: Font size in points
+        line_height: Line height multiplier (1.0 = single spaced, 1.2 = typical)
+
+    Returns:
+        (x, y) position for text baseline in PDF coordinates
+
+    Note:
+        The returned position is where the TEXT BASELINE should be placed.
+        PDF's Tm operator sets the text matrix at this position.
     """
     x1, y1, x2, y2 = box_pdf
 
@@ -788,35 +865,76 @@ def calculate_adjusted_font_size(
     """
     Calculate font size and split text into lines.
 
-    PDFMathTranslate approach: preserve original font size and use line
-    height compression only (done before this function). Font size shrinking
-    is NOT performed to maintain consistent sizes across the document.
+    Primary approach: Use the initial font size with line height compression
+    (done before this function). If text still overflows after line height
+    compression, shrink font size as a fallback to prevent text from
+    exceeding box boundaries.
 
-    Reference: PDFMathTranslate converter.py
-    - Font size is fixed per paragraph, no shrinking mechanism
-    - Line height compression only (5% steps down to 1.0)
-    - Overflow is allowed if text doesn't fit
+    Font size shrinking steps:
+    1. Try initial font size
+    2. If overflow, reduce by 5% steps until text fits or min_font_size reached
+    3. Log warning if min_font_size is used and text still overflows
 
     Args:
         text: Text to fit
         box_width: Maximum box width
-        box_height: Maximum box height (unused, kept for API compatibility)
-        initial_font_size: Font size to use (preserved)
+        box_height: Maximum box height
+        initial_font_size: Font size to start with
         font_id: Font ID for width lookup
         font_registry: FontRegistry instance
-        line_height: Line height multiplier (unused, kept for API compatibility)
-        min_font_size: Minimum allowed font size (unused)
+        line_height: Line height multiplier for height calculation
+        min_font_size: Minimum allowed font size (default: MIN_FONT_SIZE)
 
     Returns:
-        Tuple of (font_size, lines) - font_size is always initial_font_size
+        Tuple of (font_size, lines) - font_size may be reduced to fit box
     """
-    lines = split_text_into_lines_with_font(
-        text, box_width, initial_font_size, font_id, font_registry
-    )
+    if box_height <= 0 or box_width <= 0:
+        lines = split_text_into_lines_with_font(
+            text, box_width, initial_font_size, font_id, font_registry
+        )
+        return initial_font_size, lines
 
-    # PDFMathTranslate approach: no font size shrinking
-    # This ensures consistent font sizes across all blocks in the document
-    return initial_font_size, lines
+    font_size = initial_font_size
+    shrink_step = 0.05  # 5% reduction per step
+    max_iterations = 20  # Prevent infinite loop
+
+    for iteration in range(max_iterations):
+        lines = split_text_into_lines_with_font(
+            text, box_width, font_size, font_id, font_registry
+        )
+
+        # Calculate total height needed
+        total_height = len(lines) * font_size * line_height
+
+        if total_height <= box_height:
+            # Text fits within box
+            if iteration > 0:
+                logger.debug(
+                    "Font size adjusted from %.1f to %.1f after %d iterations",
+                    initial_font_size, font_size, iteration
+                )
+            return font_size, lines
+
+        # Text overflows - try smaller font size
+        new_font_size = font_size * (1.0 - shrink_step)
+
+        if new_font_size < min_font_size:
+            # Already at minimum - use it and accept overflow
+            font_size = min_font_size
+            lines = split_text_into_lines_with_font(
+                text, box_width, font_size, font_id, font_registry
+            )
+            logger.debug(
+                "Font size at minimum (%.1f) but text may overflow "
+                "(box_height=%.1f, needed=%.1f)",
+                min_font_size, box_height, len(lines) * font_size * line_height
+            )
+            return font_size, lines
+
+        font_size = new_font_size
+
+    # Should not reach here, but return current state
+    return font_size, lines
 
 
 def calculate_line_height(

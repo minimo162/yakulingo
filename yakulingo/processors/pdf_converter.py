@@ -625,3 +625,190 @@ def create_formula_var_from_chars(chars: list) -> FormulaVar:
         font_name=font_name,
         font_size=font_size,
     )
+
+
+# =============================================================================
+# Coordinate System Utilities (PDFMathTranslate compliant)
+# =============================================================================
+
+@dataclass
+class PdfCoord:
+    """
+    PDF coordinate point (origin at bottom-left, Y increases upward).
+
+    This class provides type safety for PDF coordinates to prevent
+    accidental mixing with image coordinates.
+    """
+    x: float
+    y: float
+
+
+@dataclass
+class ImageCoord:
+    """
+    Image coordinate point (origin at top-left, Y increases downward).
+
+    This class provides type safety for image coordinates used by
+    PP-DocLayout-L and other image processing libraries.
+    """
+    x: float
+    y: float
+
+
+def pdf_to_image_coord(
+    pdf_x: float,
+    pdf_y: float,
+    page_height: float,
+    scale: float = 1.0,
+) -> ImageCoord:
+    """
+    Convert PDF coordinates to image coordinates.
+
+    PDFMathTranslate compliant coordinate transformation:
+    - PDF origin: bottom-left, Y increases upward
+    - Image origin: top-left, Y increases downward
+
+    Args:
+        pdf_x: X coordinate in PDF space
+        pdf_y: Y coordinate in PDF space (typically bottom of char bbox)
+        page_height: Height of the page in PDF points
+        scale: Scale factor (e.g., layout_height / page_height for DPI conversion)
+
+    Returns:
+        ImageCoord with transformed coordinates
+    """
+    # Flip Y axis and apply scale
+    img_x = pdf_x * scale
+    img_y = (page_height - pdf_y) * scale
+    return ImageCoord(x=img_x, y=img_y)
+
+
+def image_to_pdf_coord(
+    img_x: float,
+    img_y: float,
+    page_height: float,
+    scale: float = 1.0,
+) -> PdfCoord:
+    """
+    Convert image coordinates to PDF coordinates.
+
+    Inverse of pdf_to_image_coord().
+
+    Args:
+        img_x: X coordinate in image space
+        img_y: Y coordinate in image space
+        page_height: Height of the page in PDF points
+        scale: Scale factor (layout_height / page_height)
+
+    Returns:
+        PdfCoord with transformed coordinates
+    """
+    # Reverse scale and flip Y axis
+    pdf_x = img_x / scale if scale > 0 else img_x
+    pdf_y = page_height - (img_y / scale if scale > 0 else img_y)
+    return PdfCoord(x=pdf_x, y=pdf_y)
+
+
+def pdf_bbox_to_image_bbox(
+    pdf_x0: float,
+    pdf_y0: float,
+    pdf_x1: float,
+    pdf_y1: float,
+    page_height: float,
+    scale: float = 1.0,
+) -> tuple[float, float, float, float]:
+    """
+    Convert PDF bounding box to image bounding box.
+
+    Note: PDF bbox has y0 < y1 (y0 is bottom), but image bbox
+    needs y0 < y1 (y0 is top). This function handles the swap.
+
+    Args:
+        pdf_x0: Left edge in PDF space
+        pdf_y0: Bottom edge in PDF space
+        pdf_x1: Right edge in PDF space
+        pdf_y1: Top edge in PDF space
+        page_height: Height of the page in PDF points
+        scale: Scale factor for DPI conversion
+
+    Returns:
+        Tuple of (img_x0, img_y0, img_x1, img_y1) in image space
+    """
+    # Convert corners
+    top_left = pdf_to_image_coord(pdf_x0, pdf_y1, page_height, scale)
+    bottom_right = pdf_to_image_coord(pdf_x1, pdf_y0, page_height, scale)
+
+    return (top_left.x, top_left.y, bottom_right.x, bottom_right.y)
+
+
+def image_bbox_to_pdf_bbox(
+    img_x0: float,
+    img_y0: float,
+    img_x1: float,
+    img_y1: float,
+    page_height: float,
+    scale: float = 1.0,
+) -> tuple[float, float, float, float]:
+    """
+    Convert image bounding box to PDF bounding box.
+
+    Inverse of pdf_bbox_to_image_bbox().
+
+    Args:
+        img_x0: Left edge in image space
+        img_y0: Top edge in image space
+        img_x1: Right edge in image space
+        img_y1: Bottom edge in image space
+        page_height: Height of the page in PDF points
+        scale: Scale factor
+
+    Returns:
+        Tuple of (pdf_x0, pdf_y0, pdf_x1, pdf_y1) in PDF space
+    """
+    # Convert corners (note: y0/y1 swap due to different origins)
+    bottom_left = image_to_pdf_coord(img_x0, img_y1, page_height, scale)
+    top_right = image_to_pdf_coord(img_x1, img_y0, page_height, scale)
+
+    return (bottom_left.x, bottom_left.y, top_right.x, top_right.y)
+
+
+def get_layout_class_at_pdf_coord(
+    layout_array,
+    pdf_x: float,
+    pdf_y: float,
+    page_height: float,
+    scale: float,
+    layout_width: int,
+    layout_height: int,
+) -> int:
+    """
+    Get layout class at a PDF coordinate.
+
+    Handles coordinate conversion from PDF to image space and
+    boundary checking for the layout array lookup.
+
+    Args:
+        layout_array: 2D NumPy array from LayoutArray
+        pdf_x: X coordinate in PDF space
+        pdf_y: Y coordinate in PDF space
+        page_height: Page height in PDF points
+        scale: Scale factor (layout_height / page_height)
+        layout_width: Width of layout array
+        layout_height: Height of layout array
+
+    Returns:
+        Layout class ID at the point, or 1 (BACKGROUND) if out of bounds
+    """
+    from .pdf_layout import LAYOUT_BACKGROUND
+
+    if layout_array is None:
+        return LAYOUT_BACKGROUND
+
+    # Convert to image coordinates
+    img_coord = pdf_to_image_coord(pdf_x, pdf_y, page_height, scale)
+
+    # Clamp to valid range
+    ix = int(max(0, min(img_coord.x, layout_width - 1)))
+    iy = int(max(0, min(img_coord.y, layout_height - 1)))
+
+    return int(layout_array[iy, ix])

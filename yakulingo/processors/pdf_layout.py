@@ -482,6 +482,15 @@ def create_layout_array_from_pp_doclayout(
     )
 
     if not boxes:
+        # PDFMathTranslate compliant: When PP-DocLayout-L returns no boxes,
+        # all characters will be classified as BACKGROUND (class 1).
+        # Paragraph detection will fall back to Y-coordinate based detection
+        # in detect_paragraph_boundary().
+        logger.warning(
+            "PP-DocLayout-L returned no layout boxes for page (%dx%d). "
+            "Paragraph detection will use Y-coordinate fallback.",
+            page_width, page_height
+        )
         return LayoutArray(
             array=layout,
             height=page_height,

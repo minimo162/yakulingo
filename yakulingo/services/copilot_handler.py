@@ -1645,6 +1645,12 @@ class CopilotHandler:
             # Save storage_state after successful translation (session is confirmed valid)
             self._save_storage_state()
 
+            # Minimize browser after a successful translation to avoid stealing focus
+            try:
+                self._send_to_background_impl(self._page)
+            except Exception:
+                logger.debug("Failed to return browser to background after batch")
+
             # Note: We no longer call start_new_chat() here after translation completion.
             # The next translation will call start_new_chat() at the beginning anyway.
             # Removing this prevents the browser from stealing focus after file translation.
@@ -1800,6 +1806,12 @@ class CopilotHandler:
             # Save storage_state after successful translation
             self._save_storage_state()
 
+            # Minimize browser after a successful translation to keep it in background
+            try:
+                self._send_to_background_impl(self._page)
+            except Exception:
+                logger.debug("Failed to return browser to background after single translation")
+
             # Note: We no longer call start_new_chat() here after translation completion.
             # The next translation will call start_new_chat() at the beginning anyway.
             # Removing this prevents the browser from stealing focus after translation.
@@ -1879,6 +1891,24 @@ class CopilotHandler:
                         self._ensure_gpt5_enabled()
                         input_elem.press("Enter")
                         logger.info("Message sent via Enter key (fallback)")
+
+                    # Confirm that the send action actually fired; fallback to Enter if text remains
+                    try:
+                        self._page.wait_for_selector(
+                            '.fai-SendButton__stopBackground',
+                            timeout=1000,
+                            state='visible'
+                        )
+                    except PlaywrightTimeoutError:
+                        try:
+                            time.sleep(0.2)
+                            remaining = input_elem.inner_text().strip()
+                            if remaining:
+                                logger.debug("Input still contains text after send attempt; pressing Enter as backup")
+                                input_elem.press("Enter")
+                        except PlaywrightError as check_err:
+                            logger.debug("Send confirmation check failed: %s", check_err)
+
                 except PlaywrightTimeoutError:
                     # Timeout waiting for button, try Enter key
                     logger.debug("Timeout waiting for send button, using Enter key")

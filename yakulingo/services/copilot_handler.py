@@ -2050,20 +2050,16 @@ class CopilotHandler:
                 fill_success = False
                 fill_method = None  # Track which method succeeded
 
-                # Method 1: Use Playwright's keyboard.insert_text() - fast IME-style input
+                # Method 1: Use Playwright's fill() - handles newlines correctly for contenteditable
                 try:
-                    input_elem.evaluate('el => { el.focus(); el.click(); }')
-                    time.sleep(0.05)
-                    input_elem.press("Control+a")
-                    time.sleep(0.05)
-                    self._page.keyboard.insert_text(message)
+                    input_elem.fill(message)
                     time.sleep(0.1)
                     content = input_elem.inner_text()
                     fill_success = len(content.strip()) > 0
                     if fill_success:
                         fill_method = 1
                 except Exception as e:
-                    logger.debug("Method 1 (keyboard.insert_text) failed: %s", e)
+                    logger.debug("Method 1 (fill) failed: %s", e)
                     fill_success = False
 
                 # Method 2: Use execCommand('insertText') - backup for older browsers
@@ -2110,7 +2106,7 @@ class CopilotHandler:
 
                 # Log timing and method used
                 method_names = {
-                    1: "keyboard.insert_text",
+                    1: "fill",
                     2: "execCommand insertText",
                     3: "type line by line",
                 }

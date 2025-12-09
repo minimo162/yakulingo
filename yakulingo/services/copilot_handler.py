@@ -1764,7 +1764,10 @@ class CopilotHandler:
             bool(on_chunk),
             len(reference_files) if reference_files else 0,
         )
+        total_start = time.time()
+
         # Call _connect_impl directly since we're already in the Playwright thread
+        connect_start = time.time()
         if not self._connect_impl():
             # Provide specific error message based on connection error type
             if self.last_connection_error == self.ERROR_LOGIN_REQUIRED:
@@ -1783,7 +1786,9 @@ class CopilotHandler:
                 raise TranslationCancelledError("Translation cancelled by user")
 
             # Start a new chat to clear previous context
+            new_chat_start = time.time()
             self.start_new_chat()
+            logger.info("[TIMING] start_new_chat: %.2fs", time.time() - new_chat_start)
 
             # Check for cancellation after starting new chat
             if self._is_cancelled():
@@ -1792,6 +1797,7 @@ class CopilotHandler:
 
             # Attach reference files first (before sending prompt)
             if reference_files:
+                attach_start = time.time()
                 for file_path in reference_files:
                     if file_path.exists():
                         self._attach_file(file_path)
@@ -1799,9 +1805,12 @@ class CopilotHandler:
                         if self._is_cancelled():
                             logger.info("Translation cancelled during file attachment (single)")
                             raise TranslationCancelledError("Translation cancelled by user")
+                logger.info("[TIMING] attach_files (%d files): %.2fs", len(reference_files), time.time() - attach_start)
 
             # Send the prompt
+            send_start = time.time()
             self._send_message(prompt)
+            logger.info("[TIMING] _send_message: %.2fs", time.time() - send_start)
 
             # Check for cancellation after sending message
             if self._is_cancelled():
@@ -1809,7 +1818,9 @@ class CopilotHandler:
                 raise TranslationCancelledError("Translation cancelled by user")
 
             # Get response and return raw (no parsing - preserves 訳文/解説 format)
+            response_start = time.time()
             result = self._get_response(on_chunk=on_chunk)
+            logger.info("[TIMING] _get_response: %.2fs", time.time() - response_start)
 
             logger.debug(
                 "translate_single received response (length=%d)", len(result) if result else 0
@@ -1892,6 +1903,7 @@ class CopilotHandler:
         PlaywrightTimeoutError = error_types['TimeoutError']
 
         logger.info("Sending message to Copilot (length: %d chars)", len(message))
+        send_msg_start = time.time()
 
         # Check for authentication dialog that blocks input
         # This can appear even after initial login (MFA re-auth, session expiry)
@@ -1907,12 +1919,16 @@ class CopilotHandler:
             # 実際のCopilot HTML: <span role="combobox" contenteditable="true" id="m365-chat-editor-target-element" ...>
             input_selector = '#m365-chat-editor-target-element, [data-lexical-editor="true"], [contenteditable="true"]'
             logger.debug("Waiting for input element...")
+            input_wait_start = time.time()
             input_elem = self._page.wait_for_selector(input_selector, timeout=10000)
+            logger.info("[TIMING] wait_for_input_element: %.2fs", time.time() - input_wait_start)
 
             if input_elem:
                 logger.debug("Input element found, clicking and filling...")
+                fill_start = time.time()
                 input_elem.click()
                 input_elem.fill(message)
+                logger.info("[TIMING] click_and_fill: %.2fs", time.time() - fill_start)
 
                 # Verify input was successful by checking if field has content
                 # If empty after fill, something is blocking input (login, popup, etc.)
@@ -1945,18 +1961,22 @@ class CopilotHandler:
 
                 try:
                     # state='attached' で存在を確認（visibleは厳しすぎる場合がある）
+                    btn_wait_start = time.time()
                     send_button = self._page.wait_for_selector(
                         send_button_selector,
                         timeout=2000,
                         state='attached'
                     )
+                    logger.info("[TIMING] wait_for_send_button: %.2fs", time.time() - btn_wait_start)
                     if send_button:
                         # Ensure button is truly enabled before clicking
                         is_disabled = send_button.get_attribute('disabled')
                         if is_disabled is None:
                             # 送信前にGPT-5が有効か確認し、必要なら有効化
                             # 送信ボタンが見つかった時点でUIは安定しているはず
+                            gpt5_start = time.time()
                             self._ensure_gpt5_enabled()
+                            logger.info("[TIMING] _ensure_gpt5_enabled: %.2fs", time.time() - gpt5_start)
                             logger.info("Clicking send button...")
                             # ボタンをビューポートに入れてからクリック
                             send_button.scroll_into_view_if_needed()
@@ -2095,9 +2115,12 @@ class CopilotHandler:
         PlaywrightTimeoutError = error_types['TimeoutError']
 
         streaming_logged = False  # Avoid spamming logs for every tiny delta
+        response_start_time = time.time()
+        first_content_time = None
 
         try:
             # Wait for response element to appear (instead of fixed sleep)
+            wait_response_start = time.time()
             try:
                 self._page.wait_for_selector(
                     self.RESPONSE_SELECTOR_COMBINED, timeout=10000, state='visible'
@@ -2105,6 +2128,7 @@ class CopilotHandler:
             except PlaywrightTimeoutError:
                 # Response may already be present or selector changed, continue polling
                 pass
+            logger.info("[TIMING] wait_for_response_element: %.2fs", time.time() - wait_response_start)
 
             # Check for cancellation after initial wait
             if self._is_cancelled():
@@ -2147,15 +2171,20 @@ class CopilotHandler:
                 current_text, found_response = self._get_latest_response_text()
 
                 if found_response:
-                    
+
                     # Only count stability if there's actual content
                     # Don't consider empty or whitespace-only text as stable
                     if current_text and current_text.strip():
+                        if not has_content:
+                            first_content_time = time.time()
+                            logger.info("[TIMING] first_content_received: %.2fs", first_content_time - response_start_time)
                         has_content = True
                         if current_text == last_text:
                             stable_count += 1
                             if stable_count >= self.RESPONSE_STABLE_COUNT:
-                                logger.debug("Response stabilized (length: %d chars): %s", len(current_text), current_text[:500])
+                                logger.info("[TIMING] response_stabilized: %.2fs (content generation: %.2fs)",
+                                           time.time() - response_start_time,
+                                           time.time() - first_content_time if first_content_time else 0)
                                 return current_text
                             # Use fastest interval during stability checking
                             poll_interval = self.RESPONSE_POLL_STABLE
@@ -2380,6 +2409,7 @@ class CopilotHandler:
         PlaywrightTimeoutError = error_types['TimeoutError']
 
         try:
+            new_chat_total_start = time.time()
             # 実際のCopilot HTML: <button id="new-chat-button" data-testid="newChatButton" aria-label="新しいチャット">
             new_chat_btn = self._page.query_selector(
                 '#new-chat-button, [data-testid="newChatButton"], button[aria-label="新しいチャット"]'
@@ -2392,19 +2422,26 @@ class CopilotHandler:
 
             # Wait for new chat to be ready (input field becomes available)
             input_selector = '#m365-chat-editor-target-element, [data-lexical-editor="true"], [contenteditable="true"]'
+            input_ready_start = time.time()
             try:
                 self._page.wait_for_selector(input_selector, timeout=5000, state='visible')
             except PlaywrightTimeoutError:
                 # Fallback: wait a bit if selector doesn't appear
                 time.sleep(0.3)
+            logger.info("[TIMING] new_chat: wait_for_input_ready: %.2fs", time.time() - input_ready_start)
 
             # Verify that previous responses are cleared (can be skipped for 2nd+ batches)
             if not skip_clear_wait:
+                clear_start = time.time()
                 self._wait_for_responses_cleared(timeout=1.0)
+                logger.info("[TIMING] new_chat: _wait_for_responses_cleared: %.2fs", time.time() - clear_start)
 
             # 新しいチャット開始後、GPT-5を有効化
             # （送信時にも再確認するが、UIの安定性のため先に試行）
+            gpt5_start = time.time()
             self._ensure_gpt5_enabled()
+            logger.info("[TIMING] new_chat: _ensure_gpt5_enabled: %.2fs", time.time() - gpt5_start)
+            logger.info("[TIMING] start_new_chat total: %.2fs", time.time() - new_chat_total_start)
         except (PlaywrightError, AttributeError):
             pass
 

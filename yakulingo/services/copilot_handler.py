@@ -721,18 +721,19 @@ class CopilotHandler:
                 # poll for completion while the user signs in.
                 if self.last_connection_error == self.ERROR_LOGIN_REQUIRED:
                     try:
-                        # Double-check readiness to avoid foregrounding the browser
-                        # when login isn't actually needed (e.g., slow load).
-                        if self._check_copilot_state(timeout=3) == ConnectionState.READY:
-                            logger.info("Chat became ready during verification; skipping login prompt")
+                        # Wait for auto-login (Windows integrated auth, SSO, etc.) to complete.
+                        # This monitors URL changes to detect if auto-login is in progress,
+                        # and only returns False if the login page becomes stable (no redirects).
+                        if self._wait_for_auto_login_impl(max_wait=15.0, poll_interval=1.0):
+                            logger.info("Auto-login completed successfully")
                             self._finalize_connected_state()
                             return True
 
-                        # Only show browser if actually on a login page or auth dialog is visible
+                        # Auto-login did not complete - check if manual login is needed
                         url = self._page.url
                         if _is_login_page(url) or self._has_auth_dialog():
-                            logger.info("Login page or auth dialog detected; showing browser")
-                            self._bring_to_foreground_impl(self._page, reason="connect: login page or auth dialog detected")
+                            logger.info("Manual login required; showing browser")
+                            self._bring_to_foreground_impl(self._page, reason="connect: manual login required")
                         else:
                             # Not on login page - treat as connection failure (slow load, etc.)
                             logger.info("Chat UI not ready but not on login page; treating as slow load")
@@ -1031,6 +1032,103 @@ class CopilotHandler:
                     logger.debug("Authentication dialog detected: %s", dialog_text)
                     return True
             return False
+        except PlaywrightError:
+            return False
+
+    def _wait_for_auto_login_impl(self, max_wait: float = 15.0, poll_interval: float = 1.0) -> bool:
+        """Wait for automatic login (Windows integrated auth, SSO, etc.) to complete.
+
+        This method monitors the login process and distinguishes between:
+        - Auto-login in progress: URL is changing (redirects happening)
+        - Auto-login complete: Copilot chat UI becomes available
+        - Manual login required: URL stops changing while still on login page
+
+        Args:
+            max_wait: Maximum time to wait for auto-login (seconds)
+            poll_interval: Interval between checks (seconds)
+
+        Returns:
+            True if auto-login completed successfully (chat UI is ready)
+            False if manual login appears to be required
+        """
+        if not self._page:
+            return False
+
+        error_types = _get_playwright_errors()
+        PlaywrightError = error_types['Error']
+        PlaywrightTimeoutError = error_types['TimeoutError']
+
+        elapsed = 0.0
+        last_url = None
+        stable_count = 0  # Counter for how many consecutive checks show no URL change
+        STABLE_THRESHOLD = 2  # If URL doesn't change for this many checks, consider it stable
+
+        logger.info("Waiting for auto-login to complete (max %.1fs)...", max_wait)
+
+        while elapsed < max_wait:
+            try:
+                # Check if chat UI is now available
+                input_selector = '#m365-chat-editor-target-element, [data-lexical-editor="true"]'
+                try:
+                    self._page.wait_for_selector(input_selector, timeout=500, state='visible')
+                    logger.info("Auto-login completed - chat UI is ready (%.1fs)", elapsed)
+                    return True
+                except PlaywrightTimeoutError:
+                    pass  # Chat not ready yet, continue monitoring
+
+                # Check current URL
+                current_url = self._page.url
+
+                # If we're back on a Copilot page (not login page), check chat UI again
+                if _is_copilot_url(current_url) and not _is_login_page(current_url):
+                    # Give a bit more time for chat UI to appear after redirect
+                    try:
+                        self._page.wait_for_selector(input_selector, timeout=2000, state='visible')
+                        logger.info("Auto-login completed after redirect - chat UI ready (%.1fs)", elapsed)
+                        return True
+                    except PlaywrightTimeoutError:
+                        pass  # Keep waiting
+
+                # Check if URL is changing (auto-login in progress)
+                if last_url is not None:
+                    if current_url == last_url:
+                        stable_count += 1
+                        if stable_count >= STABLE_THRESHOLD:
+                            # URL hasn't changed for a while
+                            if _is_login_page(current_url) or self._has_auth_dialog():
+                                logger.info(
+                                    "Auto-login not progressing - URL stable on login page (%.1fs)",
+                                    elapsed
+                                )
+                                return False  # Manual login required
+                    else:
+                        # URL changed - auto-login is progressing
+                        logger.debug("Auto-login progressing: %s -> %s", last_url[:50], current_url[:50])
+                        stable_count = 0
+
+                last_url = current_url
+                time.sleep(poll_interval)
+                elapsed += poll_interval
+
+            except PlaywrightError as e:
+                logger.debug("Error during auto-login wait: %s", e)
+                return False
+
+        # Timeout reached - check final state
+        try:
+            current_url = self._page.url
+            if _is_login_page(current_url) or self._has_auth_dialog():
+                logger.info("Auto-login timeout - still on login page after %.1fs", max_wait)
+                return False
+            # Not on login page, give one more chance to check chat UI
+            input_selector = '#m365-chat-editor-target-element, [data-lexical-editor="true"]'
+            try:
+                self._page.wait_for_selector(input_selector, timeout=2000, state='visible')
+                logger.info("Auto-login completed at timeout - chat UI ready")
+                return True
+            except PlaywrightTimeoutError:
+                logger.info("Auto-login timeout - chat UI not ready after %.1fs", max_wait)
+                return False
         except PlaywrightError:
             return False
 

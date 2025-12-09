@@ -912,7 +912,8 @@ class TestCopilotHandlerLoginDetection:
         with patch('yakulingo.services.copilot_handler._playwright_executor') as mock_executor:
             handler.bring_to_foreground()
 
-        mock_executor.execute.assert_called_once_with(handler._bring_to_foreground_impl, mock_page)
+        # Default reason is "external request"
+        mock_executor.execute.assert_called_once_with(handler._bring_to_foreground_impl, mock_page, "external request")
 
     def test_bring_to_foreground_no_page(self):
         """bring_to_foreground handles no page gracefully"""

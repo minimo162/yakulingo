@@ -732,7 +732,7 @@ class CopilotHandler:
                         url = self._page.url
                         if _is_login_page(url) or self._has_auth_dialog():
                             logger.info("Login page or auth dialog detected; showing browser")
-                            self._bring_to_foreground_impl(self._page)
+                            self._bring_to_foreground_impl(self._page, reason="connect: login page or auth dialog detected")
                         else:
                             # Not on login page - treat as connection failure (slow load, etc.)
                             logger.info("Chat UI not ready but not on login page; treating as slow load")
@@ -917,7 +917,7 @@ class CopilotHandler:
 
             if wait_for_login:
                 # Bring browser to foreground so user can complete login
-                self._bring_to_foreground_impl(page)
+                self._bring_to_foreground_impl(page, reason="wait_for_chat_ready: redirected to login page")
                 return self._wait_for_login_completion(page)
             return False
 
@@ -957,7 +957,7 @@ class CopilotHandler:
 
                     if wait_for_login:
                         # Bring browser to foreground so user can see the dialog
-                        self._bring_to_foreground_impl(page)
+                        self._bring_to_foreground_impl(page, reason=f"wait_for_chat_ready: auth dialog detected ({dialog_text})")
                         return self._wait_for_login_completion(page)
                     return False
 
@@ -973,7 +973,7 @@ class CopilotHandler:
 
                 if wait_for_login:
                     # Bring browser to foreground so user can complete login
-                    self._bring_to_foreground_impl(page)
+                    self._bring_to_foreground_impl(page, reason="wait_for_chat_ready: timeout + login page detected")
                     return self._wait_for_login_completion(page)
                 return False
 
@@ -1007,7 +1007,7 @@ class CopilotHandler:
 
             if wait_for_login:
                 # Bring browser to foreground so user can complete login
-                self._bring_to_foreground_impl(page)
+                self._bring_to_foreground_impl(page, reason="wait_for_chat_ready: chat input not found (timeout)")
                 return self._wait_for_login_completion(page)
             return False
 
@@ -1034,7 +1034,7 @@ class CopilotHandler:
         except PlaywrightError:
             return False
 
-    def _bring_to_foreground_impl(self, page) -> None:
+    def _bring_to_foreground_impl(self, page, reason: str = "login required") -> None:
         """Bring browser window to foreground (internal implementation).
 
         Uses multiple methods to ensure the window is brought to front:
@@ -1043,9 +1043,17 @@ class CopilotHandler:
 
         Args:
             page: The Playwright page to bring to front
+            reason: Reason for bringing window to foreground (for logging)
         """
         error_types = _get_playwright_errors()
         PlaywrightError = error_types['Error']
+
+        # Log the reason for bringing browser to foreground
+        try:
+            current_url = page.url if page else "N/A"
+        except Exception:
+            current_url = "unknown"
+        logger.info(">>> Bringing browser to foreground: reason='%s', url=%s", reason, current_url[:80] if current_url else "N/A")
 
         # Get page title for window identification
         page_title = None
@@ -1066,7 +1074,7 @@ class CopilotHandler:
         if sys.platform == "win32":
             self._bring_edge_window_to_front(page_title)
 
-        logger.info("Browser window brought to foreground for login")
+        logger.info("Browser window brought to foreground for: %s", reason)
 
     def _find_edge_window_handle(self, page_title: str = None):
         """Locate the Edge window handle using Win32 APIs."""
@@ -1425,7 +1433,7 @@ class CopilotHandler:
         """Thread-safe wrapper for _check_copilot_state."""
         return _playwright_executor.execute(self._check_copilot_state, timeout)
 
-    def bring_to_foreground(self) -> None:
+    def bring_to_foreground(self, reason: str = "external request") -> None:
         """Edgeウィンドウを前面に表示"""
         if not self._page:
             logger.debug("Skipping bring_to_foreground: no page available")
@@ -1433,7 +1441,7 @@ class CopilotHandler:
 
         try:
             # Execute in Playwright thread to avoid cross-thread access issues
-            _playwright_executor.execute(self._bring_to_foreground_impl, self._page)
+            _playwright_executor.execute(self._bring_to_foreground_impl, self._page, reason)
         except Exception as e:
             logger.debug("Failed to bring window to foreground: %s", e)
 
@@ -1680,7 +1688,7 @@ class CopilotHandler:
 
                         if needs_login:
                             # Only show browser when login is actually needed
-                            self._bring_to_foreground_impl(self._page)
+                            self._bring_to_foreground_impl(self._page, reason=f"translate_sync retry {attempt+1}: login required")
                             logger.info("Login page or auth dialog detected - browser brought to foreground")
 
                             # Wait a bit for user to see the browser
@@ -1704,7 +1712,7 @@ class CopilotHandler:
                     if self._page and page_invalid:
                         url = self._page.url
                         if _is_login_page(url) or self._has_auth_dialog():
-                            self._bring_to_foreground_impl(self._page)
+                            self._bring_to_foreground_impl(self._page, reason="translate_sync final retry: login required")
                     raise RuntimeError(
                         "Copilotがエラーを返しました。Edgeブラウザでログイン状態を確認してください。\n"
                         f"エラー内容: {result[:100]}"
@@ -1860,7 +1868,7 @@ class CopilotHandler:
 
                         if needs_login:
                             # Only show browser when login is actually needed
-                            self._bring_to_foreground_impl(self._page)
+                            self._bring_to_foreground_impl(self._page, reason=f"translate_single retry {attempt+1}: login required")
                             logger.info("Login page or auth dialog detected - browser brought to foreground")
 
                             # Wait a bit for user to see the browser and potentially complete auth
@@ -1884,7 +1892,7 @@ class CopilotHandler:
                     if self._page and page_invalid:
                         url = self._page.url
                         if _is_login_page(url) or self._has_auth_dialog():
-                            self._bring_to_foreground_impl(self._page)
+                            self._bring_to_foreground_impl(self._page, reason="translate_single final retry: login required")
                     raise RuntimeError(
                         "Copilotがエラーを返しました。Edgeブラウザでログイン状態を確認してください。\n"
                         f"エラー内容: {result[:100]}"

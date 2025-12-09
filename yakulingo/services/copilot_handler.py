@@ -1995,8 +1995,8 @@ class CopilotHandler:
                 if not fill_success:
                     logger.debug("Method 1 failed or Lexical didn't recognize, trying clipboard paste...")
                     try:
-                        # Focus the input element
-                        input_elem.click()
+                        # Focus the input element (use JS click to avoid bringing browser to front)
+                        input_elem.evaluate('el => { el.focus(); el.click(); }')
                         time.sleep(0.05)
                         # Clear any existing content
                         input_elem.press("Control+a")
@@ -2052,7 +2052,8 @@ class CopilotHandler:
                 if not fill_success:
                     logger.debug("Method 3 failed, trying click + type...")
                     try:
-                        input_elem.click()
+                        # Focus the input element (use JS click to avoid bringing browser to front)
+                        input_elem.evaluate('el => { el.focus(); el.click(); }')
                         # Clear any existing content
                         input_elem.press("Control+a")
                         time.sleep(0.05)
@@ -2084,10 +2085,10 @@ class CopilotHandler:
                 # Send the message
                 self._ensure_gpt5_enabled()
                 if send_button_enabled:
-                    # Click the send button if it's enabled
+                    # Click the send button if it's enabled (use JS click to avoid bringing browser to front)
                     send_btn = self._page.query_selector(send_button_selector)
                     if send_btn:
-                        send_btn.click()
+                        send_btn.evaluate('el => el.click()')
                         logger.info("Message sent via button click")
                     else:
                         input_elem.press("Enter")
@@ -2312,7 +2313,8 @@ class CopilotHandler:
                 )
 
             if plus_btn:
-                plus_btn.click()
+                # Use JS click to avoid bringing browser to front
+                plus_btn.evaluate('el => el.click()')
 
                 # Wait for menu to appear (instead of fixed sleep)
                 menu_selector = 'div[role="menu"], div[role="menuitem"]'
@@ -2320,19 +2322,20 @@ class CopilotHandler:
                     self._page.wait_for_selector(menu_selector, timeout=3000, state='visible')
                 except (PlaywrightTimeoutError, PlaywrightError):
                     # Menu didn't appear, retry click
-                    plus_btn.click()
+                    plus_btn.evaluate('el => el.click()')
                     self._page.wait_for_selector(menu_selector, timeout=3000, state='visible')
 
-                # Step 2: Click the upload menu item
+                # Step 2: Click the upload menu item (use JS click to avoid bringing browser to front)
                 with self._page.expect_file_chooser() as fc_info:
                     upload_item = self._page.query_selector(
                         'div[role="menuitem"]:has-text("アップロード"), '
                         'div[role="menuitem"]:has-text("Upload")'
                     )
                     if upload_item:
-                        upload_item.click()
+                        upload_item.evaluate('el => el.click()')
                     else:
-                        self._page.get_by_role("menuitem", name="画像とファイルのアップロード").click()
+                        menuitem = self._page.get_by_role("menuitem", name="画像とファイルのアップロード")
+                        menuitem.evaluate('el => el.click()')
 
                 file_chooser = fc_info.value
                 file_chooser.set_files(str(file_path))
@@ -2626,8 +2629,8 @@ class CopilotHandler:
                 self._gpt5_enabled = True
                 return True
 
-            # ボタンをクリックして有効化
-            gpt5_btn.click()
+            # ボタンをクリックして有効化 (use JS click to avoid bringing browser to front)
+            gpt5_btn.evaluate('el => el.click()')
 
             # 状態変更を確認（短いタイムアウト）
             try:

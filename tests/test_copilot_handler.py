@@ -418,7 +418,7 @@ class TestCopilotHandlerGPT5:
     """Test GPT-5 toggle button functionality"""
 
     def test_ensure_gpt5_enabled_clicks_when_button_found(self):
-        """_ensure_gpt5_enabled clicks button when found"""
+        """_ensure_gpt5_enabled clicks button when found (via JS evaluate)"""
         handler = CopilotHandler()
 
         mock_page = Mock()
@@ -430,7 +430,8 @@ class TestCopilotHandlerGPT5:
         result = handler._ensure_gpt5_enabled()
 
         assert result is True
-        mock_button.click.assert_called_once()
+        # Button is clicked via JS evaluate to avoid bringing browser to front
+        mock_button.evaluate.assert_called_once_with('el => el.click()')
 
     def test_ensure_gpt5_enabled_skips_when_already_enabled(self):
         """_ensure_gpt5_enabled returns True when already enabled"""

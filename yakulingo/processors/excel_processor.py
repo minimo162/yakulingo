@@ -6,6 +6,7 @@ Uses xlwings for full Excel functionality (shapes, charts, textboxes).
 Falls back to openpyxl if xlwings is not available (Linux or no Excel installed).
 """
 
+import gc
 import logging
 import re
 import sys
@@ -136,12 +137,35 @@ _EXCEL_RETRY_COUNT = 3
 _EXCEL_RETRY_DELAY = 1.0  # seconds
 
 
+def _cleanup_com_before_retry():
+    """
+    Clean up COM resources before retrying Excel connection.
+
+    This helps resolve CO_E_SERVER_EXEC_FAILURE errors by:
+    1. Running garbage collection to release COM objects
+    2. Pumping pending COM messages (Windows only)
+    """
+    # Force garbage collection to release any lingering COM objects
+    gc.collect()
+
+    pythoncom = _get_pythoncom()
+    if pythoncom is not None:
+        try:
+            # Pump any waiting COM messages to allow cleanup to complete
+            pythoncom.PumpWaitingMessages()
+        except Exception as e:
+            logger.debug("PumpWaitingMessages failed: %s", e)
+
+    # Additional gc pass after message pump
+    gc.collect()
+
+
 def _create_excel_app_with_retry(xw, max_retries: int = _EXCEL_RETRY_COUNT, retry_delay: float = _EXCEL_RETRY_DELAY):
     """
     Create xlwings App with retry logic.
 
     Handles COM server errors like "サーバーの実行に失敗しました" (Server execution failed)
-    by retrying with exponential backoff.
+    by retrying with exponential backoff and COM cleanup.
 
     Args:
         xw: xlwings module
@@ -191,6 +215,10 @@ def _create_excel_app_with_retry(xw, max_retries: int = _EXCEL_RETRY_COUNT, retr
                     "Excel COM error (attempt %d/%d): %s. Retrying in %.1fs...",
                     attempt + 1, max_retries, error_str, delay
                 )
+
+                # Clean up COM resources before retry
+                _cleanup_com_before_retry()
+
                 time.sleep(delay)
             else:
                 # Non-recoverable error or last attempt

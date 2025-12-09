@@ -1924,11 +1924,30 @@ class CopilotHandler:
             logger.info("[TIMING] wait_for_input_element: %.2fs", time.time() - input_wait_start)
 
             if input_elem:
-                logger.debug("Input element found, clicking and filling...")
+                logger.debug("Input element found, setting text via JS...")
                 fill_start = time.time()
-                input_elem.click()
-                input_elem.fill(message)
-                logger.info("[TIMING] click_and_fill: %.2fs", time.time() - fill_start)
+                # Use JavaScript to set text directly instead of fill()
+                # fill() is extremely slow on contenteditable/Lexical editors
+                # because it triggers complex input event processing per character
+                self._page.evaluate('''(args) => {
+                    const [selector, text] = args;
+                    const elem = document.querySelector(selector);
+                    if (elem) {
+                        elem.focus();
+                        // Clear existing content
+                        elem.innerText = '';
+                        // Set new text
+                        elem.innerText = text;
+                        // Dispatch input event to notify Lexical editor of the change
+                        elem.dispatchEvent(new InputEvent('input', {
+                            bubbles: true,
+                            cancelable: true,
+                            inputType: 'insertText',
+                            data: text
+                        }));
+                    }
+                }''', [input_selector, message])
+                logger.info("[TIMING] js_set_text: %.2fs", time.time() - fill_start)
 
                 # Verify input was successful by checking if field has content
                 # If empty after fill, something is blocking input (login, popup, etc.)
@@ -2411,12 +2430,15 @@ class CopilotHandler:
         try:
             new_chat_total_start = time.time()
             # 実際のCopilot HTML: <button id="new-chat-button" data-testid="newChatButton" aria-label="新しいチャット">
+            query_start = time.time()
             new_chat_btn = self._page.query_selector(
                 '#new-chat-button, [data-testid="newChatButton"], button[aria-label="新しいチャット"]'
             )
+            logger.info("[TIMING] new_chat: query_selector: %.2fs", time.time() - query_start)
             if new_chat_btn:
+                click_start = time.time()
                 new_chat_btn.click()
-                logger.debug("New chat button clicked")
+                logger.info("[TIMING] new_chat: click: %.2fs", time.time() - click_start)
             else:
                 logger.warning("New chat button not found - chat context may not be cleared")
 

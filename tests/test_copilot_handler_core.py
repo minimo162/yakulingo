@@ -169,11 +169,11 @@ class TestCopilotHandlerSendMessage:
     """Tests for _send_message() method"""
 
     def test_send_message_fills_and_submits(self):
-        """_send_message fills input and clicks send"""
+        """_send_message uses JS to set text and clicks send"""
         handler = CopilotHandler()
 
         mock_input = Mock()
-        mock_input.inner_text.return_value = "Test message"  # Non-empty after fill
+        mock_input.inner_text.return_value = "Test message"  # Non-empty after JS set
         mock_send_button = Mock()
         mock_send_button.get_attribute.return_value = None  # Button is enabled
         mock_page = Mock()
@@ -186,8 +186,8 @@ class TestCopilotHandlerSendMessage:
 
         handler._send_message("Test message")
 
-        mock_input.click.assert_called_once()
-        mock_input.fill.assert_called_once_with("Test message")
+        # JS evaluate is used instead of click+fill for performance
+        mock_page.evaluate.assert_called_once()
         mock_send_button.click.assert_called_once()
 
     def test_send_message_presses_enter_when_no_button(self):
@@ -222,11 +222,11 @@ class TestCopilotHandlerSendMessage:
         assert "Timeout" in str(exc.value)
 
     def test_send_message_with_special_characters(self):
-        """_send_message handles special characters"""
+        """_send_message handles special characters via JS"""
         handler = CopilotHandler()
 
         mock_input = Mock()
-        mock_input.inner_text.return_value = "日本語テスト"  # Non-empty after fill
+        mock_input.inner_text.return_value = "日本語テスト"  # Non-empty after JS set
         mock_page = Mock()
         mock_page.wait_for_selector.return_value = mock_input
         mock_page.query_selector.return_value = None  # No auth dialog
@@ -236,7 +236,11 @@ class TestCopilotHandlerSendMessage:
         special_text = "日本語テスト <script>alert('xss')</script> & special chars"
         handler._send_message(special_text)
 
-        mock_input.fill.assert_called_once_with(special_text)
+        # JS evaluate is used instead of fill for performance
+        mock_page.evaluate.assert_called_once()
+        # Verify the special text was passed to evaluate
+        call_args = mock_page.evaluate.call_args
+        assert special_text in str(call_args)
 
 
 class TestCopilotHandlerGetResponse:

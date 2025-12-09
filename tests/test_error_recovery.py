@@ -91,7 +91,7 @@ class TestNetworkErrors:
 
         call_count = [0]
 
-        def simulate_disconnect(texts, prompt, ref=None, char_limit=None, skip_clear_wait=False):
+        def simulate_disconnect(texts, prompt, ref=None, char_limit=None, skip_clear_wait=False, timeout=None):
             call_count[0] += 1
             if call_count[0] > 1:
                 raise ConnectionError("Network disconnected")
@@ -168,7 +168,7 @@ class TestPartialBatchFailures:
 
         call_count = [0]
 
-        def batch_with_first_failure(texts, prompt, ref=None, char_limit=None, skip_clear_wait=False):
+        def batch_with_first_failure(texts, prompt, ref=None, char_limit=None, skip_clear_wait=False, timeout=None):
             call_count[0] += 1
             if call_count[0] == 1:
                 raise RuntimeError("First batch API error")
@@ -535,7 +535,7 @@ class TestCancellationDuringErrors:
         call_count = [0]
         service_ref = [None]  # Will hold reference to service
 
-        def translate_then_cancel(texts, prompt, ref=None, char_limit=None, skip_clear_wait=False):
+        def translate_then_cancel(texts, prompt, ref=None, char_limit=None, skip_clear_wait=False, timeout=None):
             call_count[0] += 1
             # Cancel after first batch to ensure cancel flag is checked
             if call_count[0] >= 1 and service_ref[0]:

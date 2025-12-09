@@ -796,26 +796,32 @@ pip install -r requirements_pdf.txt
 
 ### PDF Processing Details
 
-**ハイブリッド抽出モード (PDFMathTranslate準拠):**
+**単一パス抽出 (PDFMathTranslate準拠):**
 
-PDF翻訳ではハイブリッドアプローチを使用します（PDFMathTranslate準拠）：
+PDF翻訳ではPDFMathTranslate準拠の単一パス処理を使用します：
 - **pdfminer**: テキスト抽出（正確な文字データ、フォント情報、CID値）
 - **PP-DocLayout-L**: レイアウト解析のみ（段落検出、読み順、図表/数式の識別）
+- **TextBlock**: 抽出結果を一元管理（PDF座標、フォント情報、段落情報を含む）
 - **OCRなし**: スキャンPDFはサポート対象外
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ Phase 1: ハイブリッド抽出                                     │
+│ 単一パス抽出 (PDFMathTranslate準拠)                           │
 │ ┌─────────────────────────────────────────────────────────┐ │
 │ │ 1. PP-DocLayout-L: ページ画像からレイアウト解析           │ │
-│ │    - 段落境界、読み順、テキスト/図/表の領域分類            │ │
-│ │    - OCRは実行しない（レイアウト解析のみ）                 │ │
+│ │    - LayoutArray を生成（段落境界、読み順）               │ │
 │ │                                                         │ │
 │ │ 2. pdfminer: 埋め込みテキスト抽出                        │ │
 │ │    - 正確なテキスト、フォント情報、CID値                  │ │
 │ │                                                         │ │
-│ │ 3. 統合: PP-DocLayout-Lの段落領域でpdfminerの文字をグループ化   │ │
+│ │ 3. _group_chars_into_blocks: 文字→TextBlock             │ │
+│ │    - LayoutArrayを参照して文字を段落にグループ化          │ │
+│ │    - PDF座標を保持（DPI変換不要）                        │ │
 │ └─────────────────────────────────────────────────────────┘ │
+│                                                             │
+│ 4. apply_translations: TextBlockから直接座標取得            │
+│    - text_blocksパラメータで受け取り                        │
+│    - TranslationCellは廃止（後方互換性のみ維持）             │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -824,6 +830,7 @@ PDF翻訳ではハイブリッドアプローチを使用します（PDFMathTran
 - 高精度レイアウト検出: PP-DocLayout-Lによる段落・図表の識別（23カテゴリ、90.4% mAP@0.5）
 - 高速処理: OCRを実行しないため処理時間が短縮
 - 商用利用可: Apache-2.0ライセンス
+- 単一パス処理: 二重変換を排除しコード簡素化
 
 **制限:**
 - スキャンPDF（画像のみ）は翻訳不可（テキストが埋め込まれていないため）
@@ -974,14 +981,14 @@ Based on recent commits:
   - **Large file warning**: 10,000+ブロック時にメモリ考慮の警告ログを出力
 - **PDF Translation Improvements (PDFMathTranslate compliant)**:
   - **PP-DocLayout-L**: レイアウト解析にPP-DocLayout-Lを使用（Apache-2.0、商用利用可）
-  - **ハイブリッド抽出**: pdfminerでテキスト抽出 + PP-DocLayout-Lでレイアウト解析
+  - **単一パス抽出**: pdfminer + PP-DocLayout-L → TextBlock（二重変換を排除）
+  - **TranslationCell廃止**: TextBlockベースに移行、apply_translationsにtext_blocksパラメータ追加
   - **Existing font reuse**: Detect and reuse CID/Simple fonts already embedded in PDF
   - **pdfminer.six integration**: Font type detection for correct text encoding
   - **Low-level API only**: Removed high-level API fallback for consistent rendering
   - **Font type encoding**: EMBEDDED→glyph ID, CID→4-digit hex, SIMPLE→2-digit hex
   - **Coordinate system docs**: PDF座標系（左下原点、Y上向き）と画像座標系（左上原点、Y下向き）の変換を明文化
-  - **2D overlap detection fix**: `_merge_pdfminer_text_to_cells()`で欠けていた`block_y0 < cell_y1`条件を追加
-  - **Text merging order**: (y0, x0)でソートし読み順（上→下、左→右）を保証
+  - **Text merging**: LayoutArrayを参照して文字を段落にグループ化（_group_chars_into_blocks）
 - **Font Settings Simplification**:
   - **Unified settings**: 4 font settings → 2 settings (`font_jp_to_en`, `font_en_to_jp`)
   - **PDF settings removed**: `pdf_font_ja`, `pdf_font_en` removed, now uses common settings

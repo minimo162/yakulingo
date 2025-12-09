@@ -1810,7 +1810,6 @@ class TranslationService:
             ))
 
         all_blocks = []
-        all_cells = []
         pages_processed = 0
 
         # Get settings from config (if available)
@@ -1819,7 +1818,8 @@ class TranslationService:
         device = self.config.ocr_device if self.config else "auto"
 
         # Phase 1: Extract text with streaming progress (0-40%)
-        for page_blocks, page_cells in processor.extract_text_blocks_streaming(
+        # PDFMathTranslate compliant: page_cells is always None (TranslationCell removed)
+        for page_blocks, _ in processor.extract_text_blocks_streaming(
             input_path,
             on_progress=self._make_extraction_progress_callback(on_progress, total_pages),
             device=device,
@@ -1828,8 +1828,6 @@ class TranslationService:
             output_language=output_language,
         ):
             all_blocks.extend(page_blocks)
-            if page_cells:
-                all_cells.extend(page_cells)
             pages_processed += 1
 
             # Check for cancellation between pages (thread-safe)
@@ -1839,18 +1837,11 @@ class TranslationService:
                     duration_seconds=time.time() - start_time,
                 )
 
-        # Filter blocks/cells by selected sections if specified
+        # Filter blocks by selected sections if specified
         selected_pages = None
         if selected_sections is not None:
             all_blocks = self._filter_blocks_by_section(all_blocks, selected_sections)
             selected_pages = [idx + 1 for idx in selected_sections]
-
-            if all_cells:
-                # Keep only cells on selected pages (page_num is 1-indexed)
-                all_cells = [
-                    cell for cell in all_cells
-                    if (cell.page_num - 1) in selected_sections
-                ]
 
         total_blocks = len(all_blocks)
 
@@ -1909,19 +1900,13 @@ class TranslationService:
         output_path = self._generate_output_path(input_path)
         direction = "jp_to_en" if output_language == "en" else "en_to_jp"
 
-        # Use appropriate apply method based on whether OCR was used
-        if all_cells:
-            # OCR mode: use apply_translations_with_cells for better positioning
-            processor.apply_translations_with_cells(
-                input_path, output_path, translations, all_cells, direction, self.config,
-                dpi=dpi, pages=selected_pages  # Pass DPI for coordinate scaling
-            )
-        else:
-            # Standard mode: use regular apply_translations
-            processor.apply_translations(
-                input_path, output_path, translations, direction, self.config,
-                pages=selected_pages,
-            )
+        # PDFMathTranslate compliant: Pass text_blocks directly to apply_translations
+        # TextBlock contains PDF coordinates from pdfminer extraction - no DPI scaling needed
+        processor.apply_translations(
+            input_path, output_path, translations, direction, self.config,
+            pages=selected_pages,
+            text_blocks=all_blocks,  # Pass extracted blocks for precise positioning
+        )
 
         # Create bilingual PDF if enabled
         bilingual_path = None
@@ -1957,15 +1942,8 @@ class TranslationService:
             glossary_path = output_path.parent / (
                 output_path.stem.replace('_translated', '') + '_glossary.csv'
             )
-            if all_cells:
-                # Use processor-level export to include page/address metadata
-                processor.export_glossary_csv(
-                    translations,
-                    glossary_path,
-                    cells=all_cells,
-                )
-            else:
-                self._export_glossary_csv(all_blocks, translations, glossary_path)
+            # PDFMathTranslate compliant: Use TextBlocks for glossary export
+            self._export_glossary_csv(all_blocks, translations, glossary_path)
 
         if on_progress:
             on_progress(TranslationProgress(

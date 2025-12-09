@@ -963,18 +963,23 @@ class PdfProcessor(FileProcessor):
     - pdfminer.six: テキスト抽出、フォント種別判定（PDFMathTranslate準拠）
     - PP-DocLayout-L (PaddleOCR): レイアウト解析のみ（OCRは使用しない）
 
-    ハイブリッド抽出モード（PDFMathTranslate準拠）:
+    単一パス抽出（PDFMathTranslate準拠）:
     - pdfminer: テキスト抽出（正確な文字データ、フォント情報、CID値）
-    - PP-DocLayout-L: 段落検出、読み順、図表/数式の識別
+    - PP-DocLayout-L: 段落検出、読み順、図表/数式の識別（LayoutArray生成）
+    - _group_chars_into_blocks: LayoutArrayを参照して文字を段落にグループ化
+    - TextBlock: 抽出結果を一元管理（PDF座標、フォント情報、段落情報）
     - OCRなし: スキャンPDFはサポート対象外
+
+    TranslationCell廃止（PDFMathTranslate準拠）:
+    - apply_translations: text_blocksパラメータでTextBlockを直接受け取り
+    - apply_translations_with_cells: 廃止予定（警告ログを出力、後方互換性のみ維持）
+    - DPIスケーリング不要: TextBlockはPDF座標を保持
 
     座標系の違いと変換:
     - PDF座標系: 左下原点、Y軸上向き (0,0 = 左下)
     - 画像座標系: 左上原点、Y軸下向き (0,0 = 左上)
     - 変換式: image_y = page_height - pdf_y
-    - _merge_pdfminer_text_to_cells()で2D座標オーバーラップ検出
-      条件: block_x0 < cell_x1 AND block_x1 > cell_x0 AND
-            block_y0 < cell_y1 AND block_y1 > cell_y0
+    - _group_chars_into_blocks: LayoutArrayを参照して座標変換・グループ化
     - テキスト結合順序: (y0, x0)でソートし読み順を保証（上→下、左→右）
 
     PDFMathTranslate準拠機能:
@@ -1557,6 +1562,12 @@ python -c "import time; t=time.time(); from yakulingo.ui import run_app; print(f
 - request_timeout延長（120秒→600秒）で大規模翻訳対応
 - Excel COM接続の事前クリーンアップ追加
 
+### 2.16 (2025-12)
+- PDF翻訳: TranslationCellを廃止しTextBlockベースに移行（PDFMathTranslate準拠）
+- PDF翻訳: 単一パス処理（二重変換を排除しコード簡素化）
+- PDF翻訳: apply_translationsにtext_blocksパラメータ追加
+- PDF翻訳: DPIスケーリング不要（TextBlockはPDF座標を保持）
+
 ### 2.15 (2025-12)
 - PDF翻訳: yomitokuをPP-DocLayout-Lに置き換え（Apache-2.0、商用利用可）
 - PDF翻訳: 23カテゴリのレイアウト検出（90.4% mAP@0.5）
@@ -1564,7 +1575,7 @@ python -c "import time; t=time.time(); from yakulingo.ui import run_app; print(f
 
 ### 2.14 (2025-12)
 - PDF翻訳: OCRを廃止しLayoutAnalyzerに切り替え（PDFMathTranslate準拠）
-- PDF翻訳: ハイブリッド抽出（pdfminerテキスト + PP-DocLayout-Lレイアウト）
+- PDF翻訳: pdfminerテキスト + PP-DocLayout-Lレイアウト
 - フォント設定: 4設定→2設定に簡略化（翻訳方向のみで決定）
 - フォント設定: PDF専用設定を廃止し全形式で共通設定を使用
 

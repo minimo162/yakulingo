@@ -132,6 +132,17 @@ class TranslationCell:
     """
     Single translation unit with position info.
 
+    .. deprecated:: 2.0.0
+        TranslationCell is deprecated and will be removed in a future version.
+        Use TextBlock from yakulingo.models.types instead, which provides:
+        - PDF coordinates directly (no DPI conversion needed)
+        - Font information from pdfminer
+        - Layout class from PP-DocLayout-L
+
+        Migration: Replace TranslationCell usage with TextBlock.
+        The apply_translations() method now accepts text_blocks parameter
+        which should be used instead of cells parameter.
+
     Extended for complex layout support (PDFMathTranslate compliant):
     - Confidence scores for OCR quality filtering
     - Table span information for merged cells
@@ -150,6 +161,16 @@ class TranslationCell:
     # Table cell span info
     row_span: int = 1      # Number of rows this cell spans
     col_span: int = 1      # Number of columns this cell spans
+
+    def __post_init__(self):
+        """Emit deprecation warning on instantiation."""
+        import warnings
+        warnings.warn(
+            "TranslationCell is deprecated. Use TextBlock instead. "
+            "See TextBlock in yakulingo.models.types for the replacement.",
+            DeprecationWarning,
+            stacklevel=3
+        )
 
 
 # =============================================================================
@@ -630,6 +651,30 @@ def create_formula_var_from_chars(chars: list) -> FormulaVar:
 # =============================================================================
 # Coordinate System Utilities (PDFMathTranslate compliant)
 # =============================================================================
+#
+# This module provides type-safe coordinate conversion between two systems:
+#
+# 1. PDF Coordinates (PdfCoord):
+#    - Origin: BOTTOM-LEFT corner of the page
+#    - Y-axis: Points UPWARD (increases as you go up)
+#    - Used by: pdfminer, PDF operators, text rendering
+#
+# 2. Image Coordinates (ImageCoord):
+#    - Origin: TOP-LEFT corner of the page
+#    - Y-axis: Points DOWNWARD (increases as you go down)
+#    - Used by: PP-DocLayout-L, PyMuPDF get_text("dict"), OCR
+#
+# Conversion Functions:
+# - pdf_to_image_coord(): Single point conversion with optional DPI scaling
+# - image_to_pdf_coord(): Inverse of pdf_to_image_coord()
+# - pdf_bbox_to_image_bbox(): Bounding box conversion
+# - image_bbox_to_pdf_bbox(): Inverse of pdf_bbox_to_image_bbox()
+# - get_layout_class_at_pdf_coord(): Look up layout class at PDF coordinate
+#
+# For bbox conversion without DPI scaling, see convert_to_pdf_coordinates()
+# in pdf_processor.py (uses scale=1.0 implicitly).
+#
+# =============================================================================
 
 @dataclass
 class PdfCoord:
@@ -671,12 +716,22 @@ def pdf_to_image_coord(
     Args:
         pdf_x: X coordinate in PDF space
         pdf_y: Y coordinate in PDF space (typically bottom of char bbox)
-        page_height: Height of the page in PDF points
-        scale: Scale factor (e.g., layout_height / page_height for DPI conversion)
+        page_height: Height of the page in PDF points. Must be positive.
+        scale: Scale factor (e.g., layout_height / page_height for DPI conversion).
+               Must be positive.
 
     Returns:
         ImageCoord with transformed coordinates
+
+    Raises:
+        ValueError: If page_height <= 0 or scale <= 0
     """
+    # PDFMathTranslate compliant: Validate inputs to prevent invalid conversions
+    if page_height <= 0:
+        raise ValueError(f"Invalid page_height: {page_height}. Must be positive.")
+    if scale <= 0:
+        raise ValueError(f"Invalid scale: {scale}. Must be positive.")
+
     # Flip Y axis and apply scale
     img_x = pdf_x * scale
     img_y = (page_height - pdf_y) * scale
@@ -697,15 +752,24 @@ def image_to_pdf_coord(
     Args:
         img_x: X coordinate in image space
         img_y: Y coordinate in image space
-        page_height: Height of the page in PDF points
-        scale: Scale factor (layout_height / page_height)
+        page_height: Height of the page in PDF points. Must be positive.
+        scale: Scale factor (layout_height / page_height). Must be positive.
 
     Returns:
         PdfCoord with transformed coordinates
+
+    Raises:
+        ValueError: If page_height <= 0 or scale <= 0
     """
+    # PDFMathTranslate compliant: Validate inputs to prevent invalid conversions
+    if page_height <= 0:
+        raise ValueError(f"Invalid page_height: {page_height}. Must be positive.")
+    if scale <= 0:
+        raise ValueError(f"Invalid scale: {scale}. Must be positive.")
+
     # Reverse scale and flip Y axis
-    pdf_x = img_x / scale if scale > 0 else img_x
-    pdf_y = page_height - (img_y / scale if scale > 0 else img_y)
+    pdf_x = img_x / scale
+    pdf_y = page_height - (img_y / scale)
     return PdfCoord(x=pdf_x, y=pdf_y)
 
 
@@ -728,12 +792,16 @@ def pdf_bbox_to_image_bbox(
         pdf_y0: Bottom edge in PDF space
         pdf_x1: Right edge in PDF space
         pdf_y1: Top edge in PDF space
-        page_height: Height of the page in PDF points
-        scale: Scale factor for DPI conversion
+        page_height: Height of the page in PDF points. Must be positive.
+        scale: Scale factor for DPI conversion. Must be positive.
 
     Returns:
         Tuple of (img_x0, img_y0, img_x1, img_y1) in image space
+
+    Raises:
+        ValueError: If page_height <= 0 or scale <= 0 (propagated from pdf_to_image_coord)
     """
+    # Validation is done in pdf_to_image_coord
     # Convert corners
     top_left = pdf_to_image_coord(pdf_x0, pdf_y1, page_height, scale)
     bottom_right = pdf_to_image_coord(pdf_x1, pdf_y0, page_height, scale)
@@ -759,12 +827,16 @@ def image_bbox_to_pdf_bbox(
         img_y0: Top edge in image space
         img_x1: Right edge in image space
         img_y1: Bottom edge in image space
-        page_height: Height of the page in PDF points
-        scale: Scale factor
+        page_height: Height of the page in PDF points. Must be positive.
+        scale: Scale factor. Must be positive.
 
     Returns:
         Tuple of (pdf_x0, pdf_y0, pdf_x1, pdf_y1) in PDF space
+
+    Raises:
+        ValueError: If page_height <= 0 or scale <= 0 (propagated from image_to_pdf_coord)
     """
+    # Validation is done in image_to_pdf_coord
     # Convert corners (note: y0/y1 swap due to different origins)
     bottom_left = image_to_pdf_coord(img_x0, img_y1, page_height, scale)
     top_right = image_to_pdf_coord(img_x1, img_y0, page_height, scale)
@@ -787,28 +859,44 @@ def get_layout_class_at_pdf_coord(
     Handles coordinate conversion from PDF to image space and
     boundary checking for the layout array lookup.
 
+    PDFMathTranslate compliant: Returns BACKGROUND for invalid inputs
+    instead of raising exceptions.
+
     Args:
         layout_array: 2D NumPy array from LayoutArray
         pdf_x: X coordinate in PDF space
         pdf_y: Y coordinate in PDF space
-        page_height: Page height in PDF points
-        scale: Scale factor (layout_height / page_height)
+        page_height: Page height in PDF points. Must be positive.
+        scale: Scale factor (layout_height / page_height). Must be positive.
         layout_width: Width of layout array
         layout_height: Height of layout array
 
     Returns:
-        Layout class ID at the point, or 1 (BACKGROUND) if out of bounds
+        Layout class ID at the point, or 1 (BACKGROUND) if:
+        - layout_array is None
+        - page_height or scale is invalid (<= 0)
+        - coordinates are out of bounds
     """
     from .pdf_layout import LAYOUT_BACKGROUND
 
     if layout_array is None:
         return LAYOUT_BACKGROUND
 
-    # Convert to image coordinates
-    img_coord = pdf_to_image_coord(pdf_x, pdf_y, page_height, scale)
+    # PDFMathTranslate compliant: Graceful fallback for invalid parameters
+    if page_height <= 0 or scale <= 0:
+        logger.warning(
+            "Invalid parameters for layout lookup: page_height=%s, scale=%s. "
+            "Returning BACKGROUND.",
+            page_height, scale
+        )
+        return LAYOUT_BACKGROUND
+
+    # Convert to image coordinates (validation already passed)
+    img_x = pdf_x * scale
+    img_y = (page_height - pdf_y) * scale
 
     # Clamp to valid range
-    ix = int(max(0, min(img_coord.x, layout_width - 1)))
-    iy = int(max(0, min(img_coord.y, layout_height - 1)))
+    ix = int(max(0, min(img_x, layout_width - 1)))
+    iy = int(max(0, min(img_y, layout_height - 1)))
 
     return int(layout_array[iy, ix])

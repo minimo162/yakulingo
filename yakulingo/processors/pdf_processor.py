@@ -182,6 +182,8 @@ def convert_to_pdf_coordinates(
     This is the SINGLE POINT of coordinate conversion in the codebase.
     All coordinate transformations should go through this function.
 
+    PDFMathTranslate compliant: Validates page_height to prevent invalid conversions.
+
     Coordinate Systems:
     - Input (Image/Layout): origin at TOP-LEFT, Y-axis points DOWN
       - box format: [x1, y1, x2, y2] where (x1, y1) is top-left corner
@@ -199,11 +201,15 @@ def convert_to_pdf_coordinates(
 
     Args:
         box: [x1, y1, x2, y2] image coordinates (top-left to bottom-right)
-        page_height: Page height in PDF units (points, typically 72 per inch)
+        page_height: Page height in PDF units (points, typically 72 per inch).
+                     Must be positive.
         page_width: Page width (optional, for x-coordinate clamping)
 
     Returns:
         (x1, y1, x2, y2) PDF coordinates (bottom-left to top-right)
+
+    Raises:
+        ValueError: If box format is invalid or page_height <= 0
 
     Example:
         >>> # A4 page: 595 x 842 points
@@ -212,6 +218,10 @@ def convert_to_pdf_coordinates(
     """
     if len(box) != 4:
         raise ValueError(f"Invalid box format: expected 4 values, got {len(box)}")
+
+    # PDFMathTranslate compliant: Validate page_height to prevent invalid Y conversion
+    if page_height <= 0:
+        raise ValueError(f"Invalid page_height: {page_height}. Must be positive.")
 
     x1_img, y1_img, x2_img, y2_img = box
 
@@ -1374,6 +1384,16 @@ class PdfProcessor(FileProcessor):
             # Embed fallback fonts into document
             failed_fonts = font_registry.embed_fonts(doc)
             result['failed_fonts'] = failed_fonts
+
+            # PDFMathTranslate compliant: Warn about font embedding failures
+            # Text using failed fonts may not render correctly
+            if failed_fonts:
+                logger.warning(
+                    "Font embedding failed for %d font(s): %s. "
+                    "Text using these fonts may not render correctly. "
+                    "Install the required fonts or check font settings.",
+                    len(failed_fonts), ", ".join(failed_fonts)
+                )
 
             # Create operator generator
             op_gen = PdfOperatorGenerator(font_registry)

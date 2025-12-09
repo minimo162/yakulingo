@@ -28,7 +28,7 @@ def setup_logging():
 
     # Create console handler for terminal output
     console_handler = logging.StreamHandler(sys.stderr)
-    console_handler.setLevel(logging.DEBUG)
+    console_handler.setLevel(logging.INFO)
     console_handler.setFormatter(logging.Formatter(
         '%(asctime)s [%(levelname)s] %(name)s: %(message)s',
         datefmt='%H:%M:%S'

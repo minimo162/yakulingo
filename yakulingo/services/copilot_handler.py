@@ -1922,8 +1922,18 @@ class CopilotHandler:
                             # 送信ボタンが見つかった時点でUIは安定しているはず
                             self._ensure_gpt5_enabled()
                             logger.info("Clicking send button...")
-                            send_button.click()
-                            logger.info("Message sent via button click")
+                            # ボタンをビューポートに入れてからクリック
+                            send_button.scroll_into_view_if_needed()
+                            time.sleep(0.1)  # スクロール後の安定待機
+                            try:
+                                # force=True でオーバーレイ等を無視してクリック
+                                send_button.click(force=True)
+                                logger.info("Message sent via button click")
+                            except PlaywrightError as click_err:
+                                # クリック失敗時はJavaScriptで直接クリック
+                                logger.warning("Button click failed: %s, trying JS click", click_err)
+                                self._page.evaluate("btn => btn.click()", send_button)
+                                logger.info("Message sent via JS click")
                         else:
                             # Button still disabled, try Enter key
                             logger.debug("Send button is disabled, using Enter key")

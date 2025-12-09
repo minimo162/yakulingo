@@ -280,7 +280,11 @@ class TestNativeModeDetection:
         monkeypatch.setattr(sys, 'platform', 'linux')
         monkeypatch.setenv('DISPLAY', ':0')
         monkeypatch.setenv('WAYLAND_DISPLAY', 'wayland-0')
-        monkeypatch.setitem(sys.modules, 'webview', SimpleNamespace(guilib=None))
+        monkeypatch.setitem(
+            sys.modules,
+            'webview',
+            SimpleNamespace(guilib=None, initialize=lambda: None),
+        )
 
         assert ui_app._native_mode_enabled(True) is False
 
@@ -292,7 +296,11 @@ class TestNativeModeDetection:
         monkeypatch.setattr(sys, 'platform', 'linux')
         monkeypatch.setenv('DISPLAY', ':0')
         monkeypatch.setenv('WAYLAND_DISPLAY', 'wayland-0')
-        monkeypatch.setitem(sys.modules, 'webview', SimpleNamespace(guilib=object()))
+        monkeypatch.setitem(
+            sys.modules,
+            'webview',
+            SimpleNamespace(guilib=None, initialize=lambda: object()),
+        )
 
         assert ui_app._native_mode_enabled(True) is True
 

@@ -1237,8 +1237,8 @@ class YakuLingoApp:
         with client:
             if error_message:
                 self._notify_error(error_message)
-            # Batch refresh: result panel, button state, and status in one operation
-            self._batch_refresh({'result', 'button', 'status'})
+            # Batch refresh: result panel, button state, status, and tabs in one operation
+            self._batch_refresh({'result', 'button', 'status', 'tabs'})
 
     # =========================================================================
     # Section 6: Text Translation
@@ -1433,6 +1433,7 @@ class YakuLingoApp:
         self._streaming_label = None  # Reset before refresh creates new label
         with client:
             self._refresh_content()  # Full refresh: input panel changes from large to compact
+            self._refresh_tabs()  # Update tab disabled state
 
         # Track last text and partial result display state
         last_streaming_text: str = ""
@@ -1587,6 +1588,8 @@ class YakuLingoApp:
             self._update_translate_button_state()
             # Update connection status (may have changed during translation)
             self._refresh_status()
+            # Re-enable tabs (translation finished)
+            self._refresh_tabs()
 
         self._active_translation_trace_id = None
 
@@ -1607,6 +1610,7 @@ class YakuLingoApp:
         # Only refresh result panel and button (input panel is already in compact state)
         self._refresh_result_panel()
         self._update_translate_button_state()
+        self._refresh_tabs()  # Disable tabs during translation
 
         error_message = None
         try:
@@ -1670,6 +1674,7 @@ class YakuLingoApp:
         # Only refresh result panel and button (input panel is already in compact state)
         self._refresh_result_panel()
         self._update_translate_button_state()
+        self._refresh_tabs()  # Disable tabs during translation
 
         error_message = None
         try:
@@ -1930,6 +1935,7 @@ class YakuLingoApp:
 
         self.state.text_translating = True
         self._refresh_content()
+        self._refresh_tabs()  # Disable tabs during translation
 
         error_message = None
         try:
@@ -1952,6 +1958,7 @@ class YakuLingoApp:
                 with client:
                     ui.notify(error_message, type='warning')
                     self._refresh_content()
+                    self._refresh_tabs()  # Re-enable tabs on early return
                 return
 
             # Send to Copilot (with reference files for consistent translations)
@@ -1977,6 +1984,7 @@ class YakuLingoApp:
             if error_message:
                 self._notify_error(error_message)
             self._refresh_content()
+            self._refresh_tabs()  # Re-enable tabs (translation finished)
 
     # =========================================================================
     # Section 7: File Translation
@@ -2121,6 +2129,7 @@ class YakuLingoApp:
         self.state.translation_progress = 0.0
         self.state.translation_status = 'Starting...'
         self.state.output_file = None  # Clear any previous output
+        self._refresh_tabs()  # Disable tabs during translation
 
         # Progress dialog (persistent to prevent accidental close by clicking outside)
         with ui.dialog().props('persistent') as progress_dialog, ui.card().classes('w-80'):
@@ -2215,6 +2224,7 @@ class YakuLingoApp:
                     ui.notify('失敗しました', type='negative')
 
             self._refresh_content()
+            self._refresh_tabs()  # Re-enable tabs (translation finished)
 
     def _cancel_and_close(self, dialog):
         """Cancel translation and close dialog"""
@@ -2223,6 +2233,7 @@ class YakuLingoApp:
         dialog.close()
         self.state.reset_file_state()
         self._refresh_content()
+        self._refresh_tabs()  # Re-enable tabs (translation cancelled)
 
     def _cancel(self):
         """Cancel file translation"""
@@ -2230,6 +2241,7 @@ class YakuLingoApp:
             self.translation_service.cancel()
         self.state.reset_file_state()
         self._refresh_content()
+        self._refresh_tabs()  # Re-enable tabs (translation cancelled)
 
     def _download(self):
         """Download translated file"""

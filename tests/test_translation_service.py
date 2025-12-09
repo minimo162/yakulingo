@@ -1386,6 +1386,37 @@ Some additional info"""
         options = service._parse_single_translation_result("")
         assert options == []
 
+    def test_parse_markdown_heading_without_colon(self, service):
+        """Parse responses using Markdown headings without colon after 解説"""
+        raw = """
+ご依頼の日本語テキストを、用語集（glossary.csv）を参照し、指定のスタイル・ルールに従って英訳します。
+
+***
+
+### 原文
+
+18.3兆円の補正予算案が審議入り 野党からは財政悪化に懸念も
+
+***
+
+### 訳文: English translation
+
+The 18.3 trillion yen supplementary budget proposal is under review. Opposition parties also voice concerns about worsening fiscal health.
+
+***
+
+### 解説
+
+- システムが回答冒頭に付けた説明を含むフォーマット
+"""
+
+        options = service._parse_single_translation_result(raw)
+
+        assert len(options) == 1
+        assert "English translation" in options[0].text
+        assert "concerns about worsening fiscal health" in options[0].text
+        assert "システムが回答冒頭" in options[0].explanation
+
 
 class TestParseSingleOptionResult:
     """Tests for TranslationService._parse_single_option_result()"""

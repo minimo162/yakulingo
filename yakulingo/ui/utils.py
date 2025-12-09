@@ -25,8 +25,8 @@ logger = logging.getLogger(__name__)
 # Pre-compiled regex patterns for performance
 _RE_BOLD = re.compile(r'\*\*([^*]+)\*\*')
 _RE_QUOTE = re.compile(r'"([^"]+)"')
-_RE_TRANSLATION_TEXT = re.compile(r'訳文:\s*(.+?)(?=解説:|$)', re.DOTALL)
-_RE_EXPLANATION = re.compile(r'解説:\s*(.+)', re.DOTALL)
+_RE_TRANSLATION_TEXT = re.compile(r'[#>*\s-]*訳文[:：]?\s*(.+?)(?=[\n\s]*[#>*\s-]*解説[:：]?|$)', re.DOTALL)
+_RE_EXPLANATION = re.compile(r'[#>*\s-]*解説[:：]?\s*(.+)', re.DOTALL)
 
 # Filename forbidden characters (Windows: \ / : * ? " < > |, also control chars)
 _RE_FILENAME_FORBIDDEN = re.compile(r'[\\/:*?"<>|\x00-\x1f]')

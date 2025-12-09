@@ -287,7 +287,7 @@ class FileProcessor(ABC):
 
 # Additional methods for bilingual output and glossary export:
 class ExcelProcessor:
-    def create_bilingual_workbook(original, translated, output)  # Side-by-side sheets
+    def create_bilingual_workbook(original, translated, output)  # Side-by-side sheets (xlwings: shapes/charts preserved)
     def export_glossary_csv(original, translated, output)        # Source/translation pairs
 
 class WordProcessor:
@@ -979,6 +979,9 @@ Based on recent commits:
   - **Thread constraint docs**: COM初期化のスレッド制約をdocstringに詳細説明
   - **Sheet name handling**: Excel禁止文字とアンダースコア処理のドキュメント追加
   - **Large file warning**: 10,000+ブロック時にメモリ考慮の警告ログを出力
+  - **Formula cell preservation**: 数式セルを抽出対象から除外（xlwings: `cell.formula`チェック、openpyxl: 2パス処理で数式位置を特定）
+  - **Bilingual output with xlwings**: xlwings利用時はCOM `sheet.api.Copy()`でシェイプ/チャート/画像を保持
+  - **Section selection optimization**: `apply_translations()`に`selected_sections`パラメータを追加、選択シートのみ処理
 - **PDF Translation Improvements (PDFMathTranslate compliant)**:
   - **PP-DocLayout-L**: レイアウト解析にPP-DocLayout-Lを使用（Apache-2.0、商用利用可）
   - **単一パス抽出**: pdfminer + PP-DocLayout-L → TextBlock（二重変換を排除）

@@ -968,6 +968,15 @@ class PdfProcessor(FileProcessor):
     - PP-DocLayout-L: 段落検出、読み順、図表/数式の識別
     - OCRなし: スキャンPDFはサポート対象外
 
+    座標系の違いと変換:
+    - PDF座標系: 左下原点、Y軸上向き (0,0 = 左下)
+    - 画像座標系: 左上原点、Y軸下向き (0,0 = 左上)
+    - 変換式: image_y = page_height - pdf_y
+    - _merge_pdfminer_text_to_cells()で2D座標オーバーラップ検出
+      条件: block_x0 < cell_x1 AND block_x1 > cell_x0 AND
+            block_y0 < cell_y1 AND block_y1 > cell_y0
+    - テキスト結合順序: (y0, x0)でソートし読み順を保証（上→下、左→右）
+
     PDFMathTranslate準拠機能:
     - 低レベルAPI: PDFオペレータを直接生成（高精度レイアウト制御）
     - 既存フォント再利用: PDFに埋め込まれたCID/Simpleフォントを検出・再利用

@@ -422,6 +422,47 @@ def download_to_folder_and_open(file_path: Path) -> tuple[bool, Optional[Path]]:
         return False, None
 
 
+def trigger_file_download(file_path: Path) -> bool:
+    """
+    Trigger a file download that works in both native (pywebview) and browser modes.
+
+    In native mode, NiceGUI's built-in download mechanism does not reliably prompt
+    a save dialog. Instead, copy the file to the user's Downloads folder and open
+    it directly. In browser mode, fall back to NiceGUI's standard download helper.
+
+    Args:
+        file_path: Path to the file to download
+
+    Returns:
+        True if a download action was initiated, False otherwise.
+    """
+
+    if not file_path.exists():
+        ui.notify('ダウンロードするファイルが見つかりません', type='negative')
+        return False
+
+    native_window = None
+    try:
+        from nicegui import app as nicegui_app
+
+        native_window = getattr(getattr(nicegui_app, 'native', None), 'main_window', None)
+    except Exception as e:  # pragma: no cover - defensive native detection
+        logger.debug("Failed to detect native mode for download: %s", e)
+
+    if native_window:
+        success, dest = download_to_folder_and_open(file_path)
+        if success:
+            dest_name = dest.name if dest else file_path.name
+            ui.notify(f'ダウンロードフォルダに保存しました: {dest_name}', type='positive')
+            return True
+
+        ui.notify('ダウンロードに失敗しました', type='negative')
+        return False
+
+    ui.download(file_path)
+    return True
+
+
 def create_completion_dialog(
     result: 'TranslationResult',
     duration_seconds: float,

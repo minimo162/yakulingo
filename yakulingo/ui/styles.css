@@ -92,9 +92,13 @@
     --md-sys-motion-duration-short: 200ms;
     --md-sys-motion-duration-medium: 300ms;
 
-    /* Elevation - very subtle shadows (Nani-style: minimal, refined) */
-    --md-sys-elevation-1: 0 1px 4px rgba(0,0,0,0.03), 0 1px 2px rgba(0,0,0,0.02);
-    --md-sys-elevation-2: 0 2px 8px rgba(0,0,0,0.04), 0 1px 3px rgba(0,0,0,0.03);
+    /* Elevation - very subtle shadows (Nani-style: white cards floating on gray bg) */
+    --md-sys-elevation-1: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.02);
+    --md-sys-elevation-2: 0 2px 6px rgba(0,0,0,0.05), 0 1px 3px rgba(0,0,0,0.03);
+
+    /* Card borders - very thin, subtle (Nani-style: white bg + thin border + soft shadow) */
+    --md-card-border: 1px solid rgba(0, 0, 0, 0.06);
+    --md-card-border-hover: 1px solid rgba(0, 0, 0, 0.10);
 
     /* Expressive overlays (subtle, content-focused) */
     --md-expressive-primary-glow: radial-gradient(circle at 18% 20%, rgba(99, 102, 241, 0.03), transparent 55%);
@@ -256,18 +260,18 @@ body {
 }
 
 /* === Source Text Section (Result Panel Top) === */
-/* Nani-style: outer bg-main-bg with shadow, inner bg-main-75 */
+/* Nani-style: white bg + thin border + soft shadow */
 .source-text-section {
     background-color: var(--md-sys-color-surface);
-    border-radius: calc(var(--md-sys-shape-corner-xl) + 0.25rem);
-    padding: 0.25rem;
+    border-radius: var(--md-sys-shape-corner-xl);
+    border: var(--md-card-border);
     box-shadow: var(--md-sys-elevation-1);
     width: 100%;
 }
 
 .source-text-section > .nicegui-row {
-    background-color: var(--md-sys-color-surface-container);
-    border-radius: var(--md-sys-shape-corner-xl);
+    background-color: var(--md-sys-color-surface-container-low);
+    border-radius: calc(var(--md-sys-shape-corner-xl) - 1px);
     padding: 1rem;
 }
 
@@ -613,24 +617,22 @@ body {
     50% { opacity: 0.4; }
 }
 
-/* === Main Card Container (Nani-style) === */
+/* === Main Card Container (Nani-style: white bg + thin border + soft shadow) === */
 .main-card {
-    background: var(--md-expressive-surface);
+    background: var(--md-sys-color-surface);
     border-radius: var(--md-sys-shape-corner-3xl);
     box-shadow: var(--md-sys-elevation-2);
-    padding: 0.375rem;
+    border: var(--md-card-border);
     overflow: hidden;
     animation: fadeInSpring 400ms var(--md-sys-motion-easing-spring);
-    border: 1px solid transparent;
-    background-clip: padding-box;
     position: relative;
+    transition: box-shadow var(--md-sys-motion-duration-short), border-color var(--md-sys-motion-duration-short);
 }
 
 .main-card-inner {
-    background: var(--md-sys-color-surface);
-    border-radius: calc(var(--md-sys-shape-corner-3xl) - 0.375rem);
+    background: transparent;
+    border-radius: calc(var(--md-sys-shape-corner-3xl) - 0.125rem);
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
-    border: var(--md-expressive-outline);
 }
 
 /* Focus state for main card (when textarea is focused) - Nani-style: subtle */
@@ -884,10 +886,9 @@ textarea:focus-visible {
     background: color-mix(in srgb, var(--md-sys-color-primary) 12%, transparent);
 }
 
-/* === Drop Zone (Nani-inspired) === */
-/* Nani-style: white card with thin border and subtle shadow for floating effect */
+/* === Drop Zone (Nani-style: white bg + thin border + soft shadow) === */
 .drop-zone {
-    border: 1px solid var(--md-sys-color-outline-variant);
+    border: var(--md-card-border);
     border-radius: var(--md-sys-shape-corner-xl);
     /* Height matches text input panel for consistency */
     min-height: var(--input-min-height);
@@ -898,7 +899,7 @@ textarea:focus-visible {
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+    transition: background-color var(--md-sys-motion-duration-short), border-color var(--md-sys-motion-duration-short), box-shadow var(--md-sys-motion-duration-short);
     background: var(--md-sys-color-surface);
     box-shadow: var(--md-sys-elevation-1);
     position: relative;
@@ -962,12 +963,11 @@ textarea:focus-visible {
     pointer-events: none;
 }
 
-/* Nani-style: subtle hover with gentle background change */
+/* Nani-style: subtle hover - bg changes from main-100 to main-200 equivalent */
 .drop-zone:hover {
-    border-color: var(--md-sys-color-outline);
+    border: var(--md-card-border-hover);
     background: var(--md-sys-color-surface-container-low);
     box-shadow: var(--md-sys-elevation-2);
-    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
 }
 
 /* Active drag-over state (slightly more prominent than hover) */
@@ -1010,16 +1010,20 @@ textarea:focus-visible {
     border-radius: var(--md-sys-shape-corner-small);
 }
 
-/* === M3 Card === */
+/* === M3 Card (white bg + thin border + soft shadow) === */
 .file-card {
-    background: var(--md-sys-color-surface-container);
+    background: var(--md-sys-color-surface);
+    border: var(--md-card-border);
+    box-shadow: var(--md-sys-elevation-1);
     border-radius: var(--md-sys-shape-corner-large);
     padding: 1.25rem;
     animation: fadeIn var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-standard);
+    transition: box-shadow var(--md-sys-motion-duration-short), border-color var(--md-sys-motion-duration-short);
 }
 
 .file-card.success {
     background: var(--md-sys-color-success-container);
+    border-color: color-mix(in srgb, var(--md-sys-color-success) 20%, transparent);
 }
 
 /* === M3 Progress Indicator === */
@@ -1075,20 +1079,20 @@ textarea:focus-visible {
     color: var(--md-sys-color-on-primary-container);
 }
 
-/* === Option Cards === */
+/* === Option Cards (white bg + thin border + soft shadow) === */
 .option-card {
     background: var(--md-sys-color-surface);
-    border: 1px solid var(--md-sys-color-outline-variant);
+    border: var(--md-card-border);
+    box-shadow: var(--md-sys-elevation-1);
     border-radius: var(--md-sys-shape-corner-xl);
     padding: 1.25rem;
-    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+    transition: background-color var(--md-sys-motion-duration-short), border-color var(--md-sys-motion-duration-short);
 }
 
+/* Nani-style: subtle hover - bg changes from main-100 to main-200 equivalent */
 .option-card:hover {
     background: var(--md-sys-color-surface-container-low);
-    border-color: var(--md-sys-color-outline);
-    box-shadow: var(--md-sys-elevation-1);
-    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+    border-color: var(--md-card-border-hover);
 }
 
 .option-text {
@@ -1732,18 +1736,15 @@ textarea:focus-visible {
     }
 }
 
-/* === Nani-style Result Card === */
+/* === Nani-style Result Card (white bg + thin border + soft shadow) === */
 .nani-result-card {
-    border-radius: calc(var(--md-sys-shape-corner-2xl) + 0.25rem);
-    padding: 0.25rem;
+    border-radius: var(--md-sys-shape-corner-2xl);
     position: relative;
-    background: var(--md-expressive-surface);
-    box-shadow: var(--md-sys-elevation-1);  /* Subtler shadow for cleaner look */
-    border: 1px solid transparent;
+    background: var(--md-sys-color-surface);
+    box-shadow: var(--md-sys-elevation-1);
+    border: var(--md-card-border);
     width: 100%;
-    background-image: var(--md-expressive-border), var(--md-expressive-surface);
-    background-origin: border-box;
-    background-clip: border-box, padding-box;
+    transition: box-shadow var(--md-sys-motion-duration-short), border-color var(--md-sys-motion-duration-short);
 }
 
 .nani-result-content {

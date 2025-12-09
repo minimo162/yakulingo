@@ -35,7 +35,7 @@ if not defined PROXY_USER (
 :: ============================================================
 if not exist "uv.exe" (
     echo.
-    echo [1/5] Downloading uv...
+    echo [1/6] Downloading uv...
 
     powershell -ExecutionPolicy Bypass -Command ^
         "$ProgressPreference = 'SilentlyContinue'; " ^
@@ -53,14 +53,14 @@ if not exist "uv.exe" (
     )
     echo [DONE] uv downloaded.
 ) else (
-    echo [1/5] SKIP - uv.exe already exists.
+    echo [1/6] SKIP - uv.exe already exists.
 )
 
 :: ============================================================
 :: Step 2: Install Python
 :: ============================================================
 echo.
-echo [2/5] Installing Python...
+echo [2/6] Installing Python...
 
 :: Check if Python 3.11 is already installed via uv
 uv.exe python find 3.11 >nul 2>&1
@@ -131,7 +131,7 @@ echo [DONE] Python installed.
 :: Step 3: Install dependencies
 :: ============================================================
 echo.
-echo [3/5] Installing dependencies...
+echo [3/6] Installing dependencies...
 uv.exe venv --native-tls
 if errorlevel 1 (
     echo [ERROR] Failed to create virtual environment.
@@ -152,7 +152,7 @@ echo [DONE] Dependencies installed.
 :: Step 4: Install Playwright browser
 :: ============================================================
 echo.
-echo [4/5] Installing Playwright browser...
+echo [4/6] Installing Playwright browser...
 
 uv.exe run --native-tls playwright install chromium
 if errorlevel 1 (
@@ -163,14 +163,37 @@ if errorlevel 1 (
 echo [DONE] Playwright browser installed.
 
 :: ============================================================
-:: Step 5: Pre-compile Python bytecode for faster first launch
+:: Step 5: Verify paddlepaddle installation
 :: ============================================================
 echo.
-echo [5/5] Pre-compiling Python bytecode...
+echo [5/6] Verifying paddlepaddle installation...
+.venv\Scripts\python.exe -c "import paddle; print('[OK] paddlepaddle version:', paddle.__version__)"
+if errorlevel 1 (
+    echo [WARNING] paddlepaddle is not installed correctly.
+    echo [INFO] Attempting manual installation via uv pip...
+    uv.exe pip install --native-tls paddlepaddle>=3.0.0 paddleocr>=3.0.0
+    if errorlevel 1 (
+        echo [ERROR] Failed to install paddlepaddle.
+        echo [INFO] PDF layout analysis will not be available.
+    ) else (
+        echo [OK] paddlepaddle installed successfully.
+        :: Verify again after install
+        .venv\Scripts\python.exe -c "import paddle; print('[OK] paddlepaddle version:', paddle.__version__)"
+    )
+)
+
+:: ============================================================
+:: Step 6: Pre-compile Python bytecode for faster first launch
+:: ============================================================
+echo.
+echo [6/6] Pre-compiling Python bytecode...
 .venv\Scripts\python.exe -m compileall -q yakulingo 2>nul
 .venv\Scripts\python.exe -c "import nicegui; import pywebview; from yakulingo.ui import app; from yakulingo.services import translation_service" 2>nul
 :: Pre-import paddle/paddleocr to download models and cache them (may take a while)
 .venv\Scripts\python.exe -c "import paddle; from paddleocr import LayoutDetection" 2>nul
+if errorlevel 1 (
+    echo [WARNING] paddleocr model download may have failed. PDF layout analysis may not work.
+)
 echo [DONE] Bytecode pre-compiled.
 
 echo.

@@ -663,7 +663,13 @@ function Invoke-Setup {
     $ExePath = Join-Path $SetupPath "YakuLingo.exe"
     $Shortcut.TargetPath = $ExePath
     $Shortcut.WorkingDirectory = $SetupPath
-    $Shortcut.IconLocation = "$ExePath,0"
+    # Prefer explicit ICO file for reliable desktop rendering
+    $IconPath = Join-Path $SetupPath "yakulingo\ui\yakulingo.ico"
+    if (Test-Path $IconPath) {
+        $Shortcut.IconLocation = "$IconPath,0"
+    } else {
+        $Shortcut.IconLocation = "$ExePath,0"
+    }
     $Shortcut.Description = "YakuLingo Translation Tool"
     $Shortcut.Save()
     if (-not $GuiMode) {

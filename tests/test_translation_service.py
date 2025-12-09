@@ -788,6 +788,24 @@ class TestTranslationServiceTranslateFile:
         assert glossary_path.exists()
         assert glossary_path.read_text(encoding="utf-8-sig").startswith("original,translated")
 
+    def test_processor_warning_reasons_are_surface(self):
+        """Failed page reasons should appear in user warnings."""
+        settings = AppSettings()
+        service = TranslationService(Mock(), settings)
+
+        processor = Mock()
+        processor.failed_pages = [2, 5]
+        processor.failed_page_reasons = {
+            2: "No embedded text detected",
+            5: "Layout analysis failed",
+        }
+
+        warnings = service._collect_processor_warnings(processor)
+
+        assert warnings == [
+            "Pages skipped: 2 (No embedded text detected), 5 (Layout analysis failed)"
+        ]
+
     def test_translate_file_custom_output_dir(self, mock_copilot, sample_xlsx, tmp_path):
         """Output goes to custom directory when configured"""
         output_dir = tmp_path / "custom_output"

@@ -1644,13 +1644,15 @@ class TranslationService:
         total_blocks = len(blocks)
 
         if total_blocks == 0:
+            warnings = ["No translatable text found in file"]
+            warnings.extend(self._collect_processor_warnings(processor))
             return TranslationResult(
                 status=TranslationStatus.COMPLETED,
                 output_path=input_path,
                 blocks_translated=0,
                 blocks_total=0,
                 duration_seconds=time.time() - start_time,
-                warnings=["No translatable text found in file"],
+                warnings=warnings,
             )
 
         # Check for cancellation (thread-safe)
@@ -1707,6 +1709,8 @@ class TranslationService:
         direction = "jp_to_en" if output_language == "en" else "en_to_jp"
         processor.apply_translations(input_path, output_path, translations, direction, self.config)
 
+        warnings = self._collect_processor_warnings(processor)
+
         # Create bilingual output if enabled
         bilingual_path = None
         if self.config and self.config.bilingual_output:
@@ -1758,6 +1762,7 @@ class TranslationService:
             blocks_translated=len(translations),
             blocks_total=total_blocks,
             duration_seconds=time.time() - start_time,
+            warnings=warnings if warnings else [],
         )
 
     def _translate_pdf_streaming(
@@ -1841,13 +1846,15 @@ class TranslationService:
         total_blocks = len(all_blocks)
 
         if total_blocks == 0:
+            warnings = ["No translatable text found in PDF"]
+            warnings.extend(self._collect_processor_warnings(processor))
             return TranslationResult(
                 status=TranslationStatus.COMPLETED,
                 output_path=input_path,
                 blocks_translated=0,
                 blocks_total=0,
                 duration_seconds=time.time() - start_time,
-                warnings=["No translatable text found in PDF"],
+                warnings=warnings,
             )
 
         # Phase 2: Translate blocks (40-90%)
@@ -1960,13 +1967,7 @@ class TranslationService:
             ))
 
         # Collect warnings including OCR failures
-        warnings = []
-        if hasattr(processor, 'failed_pages') and processor.failed_pages:
-            failed_pages = processor.failed_pages
-            if len(failed_pages) == 1:
-                warnings.append(f"OCR failed for page {failed_pages[0]}")
-            else:
-                warnings.append(f"OCR failed for {len(failed_pages)} pages: {failed_pages}")
+        warnings = self._collect_processor_warnings(processor)
 
         return TranslationResult(
             status=TranslationStatus.COMPLETED,
@@ -2001,6 +2002,35 @@ class TranslationService:
             ))
 
         return callback
+
+    def _collect_processor_warnings(self, processor: FileProcessor) -> list[str]:
+        """Build user-facing warnings from processor failure metadata."""
+        warnings: list[str] = []
+
+        if hasattr(processor, 'failed_pages') and processor.failed_pages:
+            failed_pages = processor.failed_pages
+            reasons = getattr(processor, 'failed_page_reasons', {}) or {}
+
+            if len(failed_pages) == 1:
+                page = failed_pages[0]
+                reason = reasons.get(page)
+                if reason:
+                    warnings.append(f"Page {page} skipped: {reason}")
+                else:
+                    warnings.append(f"OCR failed for page {page}")
+            else:
+                if reasons:
+                    details = ", ".join(
+                        f"{page} ({reasons.get(page, 'processing failed')})"
+                        for page in failed_pages
+                    )
+                    warnings.append(f"Pages skipped: {details}")
+                else:
+                    warnings.append(
+                        f"OCR failed for {len(failed_pages)} pages: {failed_pages}"
+                    )
+
+        return warnings
 
     def _export_glossary_csv(
         self,

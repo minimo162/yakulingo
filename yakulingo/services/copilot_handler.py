@@ -1654,28 +1654,38 @@ class CopilotHandler:
                 page_invalid = self._page and not self._is_page_valid()
 
                 if attempt < max_retries:
-                    # Bring browser to foreground only when login is likely needed
+                    # Check if login is actually required before showing browser
                     if self._page and page_invalid:
-                        self._bring_to_foreground_impl(self._page)
-                        logger.info("Browser brought to foreground - check if login is needed")
+                        url = self._page.url
+                        needs_login = _is_login_page(url) or self._has_auth_dialog()
 
-                        # Wait a bit for user to see the browser
-                        time.sleep(2)
+                        if needs_login:
+                            # Only show browser when login is actually needed
+                            self._bring_to_foreground_impl(self._page)
+                            logger.info("Login page or auth dialog detected - browser brought to foreground")
 
-                        # Re-check connection state
-                        if not self._is_page_valid():
-                            logger.info("Page became invalid, waiting for login...")
-                            if self._wait_for_login_completion(self._page, timeout=60):
-                                logger.info("Login completed, retrying translation")
-                                continue
-                            else:
-                                raise RuntimeError("Copilotへのログインが必要です。Edgeブラウザでログインしてください。")
+                            # Wait a bit for user to see the browser
+                            time.sleep(2)
+
+                            # Re-check connection state
+                            if not self._is_page_valid():
+                                logger.info("Page became invalid, waiting for login...")
+                                if self._wait_for_login_completion(self._page, timeout=60):
+                                    logger.info("Login completed, retrying translation")
+                                    continue
+                                else:
+                                    raise RuntimeError("Copilotへのログインが必要です。Edgeブラウザでログインしてください。")
+                        else:
+                            # Not a login issue - retry without showing browser
+                            logger.debug("Page invalid but not login page; retrying silently")
 
                     continue
                 else:
-                    # Final attempt failed - show browser and raise error when login is suspected
+                    # Final attempt failed - only show browser if login is suspected
                     if self._page and page_invalid:
-                        self._bring_to_foreground_impl(self._page)
+                        url = self._page.url
+                        if _is_login_page(url) or self._has_auth_dialog():
+                            self._bring_to_foreground_impl(self._page)
                     raise RuntimeError(
                         "Copilotがエラーを返しました。Edgeブラウザでログイン状態を確認してください。\n"
                         f"エラー内容: {result[:100]}"
@@ -1815,28 +1825,38 @@ class CopilotHandler:
                 page_invalid = self._page and not self._is_page_valid()
 
                 if attempt < max_retries:
-                    # Bring browser to foreground only when login is likely needed
+                    # Check if login is actually required before showing browser
                     if self._page and page_invalid:
-                        self._bring_to_foreground_impl(self._page)
-                        logger.info("Browser brought to foreground - check if login is needed")
+                        url = self._page.url
+                        needs_login = _is_login_page(url) or self._has_auth_dialog()
 
-                        # Wait a bit for user to see the browser and potentially complete auth
-                        time.sleep(2)
+                        if needs_login:
+                            # Only show browser when login is actually needed
+                            self._bring_to_foreground_impl(self._page)
+                            logger.info("Login page or auth dialog detected - browser brought to foreground")
 
-                        # Re-check connection state
-                        if not self._is_page_valid():
-                            logger.info("Page became invalid, waiting for login...")
-                            if self._wait_for_login_completion(self._page, timeout=60):
-                                logger.info("Login completed, retrying translation")
-                                continue
-                            else:
-                                raise RuntimeError("Copilotへのログインが必要です。Edgeブラウザでログインしてください。")
+                            # Wait a bit for user to see the browser and potentially complete auth
+                            time.sleep(2)
+
+                            # Re-check connection state
+                            if not self._is_page_valid():
+                                logger.info("Page became invalid, waiting for login...")
+                                if self._wait_for_login_completion(self._page, timeout=60):
+                                    logger.info("Login completed, retrying translation")
+                                    continue
+                                else:
+                                    raise RuntimeError("Copilotへのログインが必要です。Edgeブラウザでログインしてください。")
+                        else:
+                            # Not a login issue - retry without showing browser
+                            logger.debug("Page invalid but not login page; retrying silently")
 
                     continue
                 else:
-                    # Final attempt failed - show browser and raise error when login is suspected
+                    # Final attempt failed - only show browser if login is suspected
                     if self._page and page_invalid:
-                        self._bring_to_foreground_impl(self._page)
+                        url = self._page.url
+                        if _is_login_page(url) or self._has_auth_dialog():
+                            self._bring_to_foreground_impl(self._page)
                     raise RuntimeError(
                         "Copilotがエラーを返しました。Edgeブラウザでログイン状態を確認してください。\n"
                         f"エラー内容: {result[:100]}"

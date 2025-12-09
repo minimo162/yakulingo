@@ -164,7 +164,7 @@ YakuLingo/
 |------|---------|-------|
 | `yakulingo/ui/app.py` | Main application orchestrator, handles UI events and coordinates services | ~2864 |
 | `yakulingo/services/translation_service.py` | Coordinates file processors and batch translation | ~2235 |
-| `yakulingo/services/copilot_handler.py` | Browser automation for M365 Copilot | ~2718 |
+| `yakulingo/services/copilot_handler.py` | Browser automation for M365 Copilot | ~2973 |
 | `yakulingo/services/updater.py` | GitHub Releases-based auto-update with Windows proxy support | ~731 |
 | `yakulingo/ui/styles.py` | CSS loader (loads external styles.css) | ~28 |
 | `yakulingo/ui/styles.css` | M3 design tokens, CSS styling definitions | ~3099 |
@@ -176,7 +176,7 @@ YakuLingo/
 | `yakulingo/models/types.py` | Core data types: TextBlock, FileInfo, TranslationResult, HistoryEntry | ~297 |
 | `yakulingo/storage/history_db.py` | SQLite database for translation history | ~320 |
 | `yakulingo/processors/base.py` | Abstract base class for all file processors | ~105 |
-| `yakulingo/processors/pdf_processor.py` | PDF processing with PyMuPDF, pdfminer.six, and PP-DocLayout-L | ~3483 |
+| `yakulingo/processors/pdf_processor.py` | PDF processing with PyMuPDF, pdfminer.six, and PP-DocLayout-L | ~2819 |
 | `yakulingo/processors/pdf_converter.py` | PDFMathTranslate準拠: Paragraph, FormulaVar, vflag, 座標変換 | ~600 |
 | `yakulingo/processors/pdf_layout.py` | PP-DocLayout-L統合: LayoutArray, レイアウト解析, 領域分類 | ~500 |
 | `yakulingo/processors/pdf_font_manager.py` | PDF font management: font registry, type detection, glyph encoding | ~1140 |
@@ -690,6 +690,42 @@ The handler uses explicit waits instead of fixed delays:
 - **New chat ready**: Waits for input field to become visible
 - **GPT-5 toggle**: Checked and enabled before each message send (handles delayed rendering)
 
+### Retry Logic with Exponential Backoff
+
+Copilotエラー時のリトライはエクスポネンシャルバックオフを使用：
+
+```python
+# リトライ設定定数
+RETRY_BACKOFF_BASE = 2.0   # バックオフの底（2^attempt秒）
+RETRY_BACKOFF_MAX = 16.0   # 最大バックオフ時間（秒）
+RETRY_JITTER_MAX = 1.0     # ジッター最大値（Thundering herd回避）
+
+# バックオフ計算
+backoff_time = min(RETRY_BACKOFF_BASE ** attempt, RETRY_BACKOFF_MAX)
+jitter = random.uniform(0, RETRY_JITTER_MAX)
+wait_time = backoff_time + jitter
+```
+
+**リトライフロー:**
+1. Copilotエラー検出 (`_is_copilot_error_response`)
+2. ページ有効性チェック (`_is_page_valid`)
+3. ログインが必要な場合はブラウザを前面に表示
+4. バックオフ時間待機 (`_apply_retry_backoff`)
+5. 新しいチャットを開始してリトライ
+
+### Centralized Timeout Constants
+
+タイムアウト値はクラス定数として集中管理：
+
+| カテゴリ | 定数名 | 値 | 説明 |
+|----------|--------|------|------|
+| ページ読み込み | `PAGE_GOTO_TIMEOUT_MS` | 30000ms | page.goto()のタイムアウト |
+| ネットワーク | `PAGE_NETWORK_IDLE_TIMEOUT_MS` | 5000ms | ネットワークアイドル待機 |
+| セレクタ | `SELECTOR_CHAT_INPUT_TIMEOUT_MS` | 15000ms | チャット入力欄の表示待機 |
+| セレクタ | `SELECTOR_LOGIN_CHECK_TIMEOUT_MS` | 2000ms | ログイン状態チェック |
+| ログイン | `LOGIN_WAIT_TIMEOUT_SECONDS` | 300s | ユーザーログイン待機 |
+| エグゼキュータ | `EXECUTOR_TIMEOUT_BUFFER_SECONDS` | 60s | レスポンスタイムアウトのマージン |
+
 ## Auto-Update System
 
 The `AutoUpdater` class provides GitHub Releases-based updates:
@@ -1029,6 +1065,7 @@ def raw_string(font_id: str, text: str) -> str:
 | ページ選択 | `pages` パラメータ（1-indexed）で翻訳対象ページを指定可能 |
 | フォント埋め込み失敗検出 | `get_glyph_id()`でFont object不在時に警告ログを出力（テキスト非表示問題の診断） |
 | バッチサイズ動的調整 | `psutil`で利用可能メモリを確認し、batch_sizeを自動調整（OOM防止） |
+| ページレベルエラーハンドリング | `failed_pages`, `failed_page_reasons` プロパティで失敗ページを追跡、結果辞書に`failed_pages`を含む |
 
 ```python
 # ページ選択の使用例
@@ -1036,6 +1073,14 @@ processor.apply_translations(
     input_path, output_path, translations,
     pages=[1, 3, 5]  # 1, 3, 5ページのみ翻訳（1-indexed）
 )
+
+# ページレベルエラー確認の使用例
+result = processor.apply_translations(input_path, output_path, translations)
+if result['failed_pages']:
+    print(f"Failed pages: {result['failed_pages']}")
+    for page_num in result['failed_pages']:
+        reason = processor.failed_page_reasons.get(page_num, "Unknown")
+        print(f"  Page {page_num}: {reason}")
 ```
 
 **メモリ管理:**
@@ -1083,6 +1128,32 @@ When interacting with users in this repository, prefer Japanese for comments and
 ## Recent Development Focus
 
 Based on recent commits:
+- **Copilot Error Handling & Retry Improvements**:
+  - **Exponential backoff**: `_apply_retry_backoff()` method with jitter to avoid thundering herd
+  - **Retry constants**: `RETRY_BACKOFF_BASE=2.0`, `RETRY_BACKOFF_MAX=16.0`, `RETRY_JITTER_MAX=1.0`
+  - **Both methods**: `translate_sync` and `translate_single` apply backoff before retry
+  - **Thread safety**: `_client_lock` and `_streaming_timer_lock` for NiceGUI async handlers
+  - **PlaywrightThreadExecutor**: `_shutdown_flag` check to prevent restart after shutdown
+- **Centralized Timeout Constants**:
+  - **Page navigation**: `PAGE_GOTO_TIMEOUT_MS=30000` (30s for page load)
+  - **Selector waits**: `SELECTOR_CHAT_INPUT_TIMEOUT_MS=15000`, `SELECTOR_LOGIN_CHECK_TIMEOUT_MS=2000`
+  - **Login timeouts**: `LOGIN_WAIT_TIMEOUT_SECONDS=300`, `AUTO_LOGIN_TIMEOUT_SECONDS=15`
+  - **Executor buffer**: `EXECUTOR_TIMEOUT_BUFFER_SECONDS=60` for response timeout margin
+- **PDF Page-Level Error Handling**:
+  - **Failed pages tracking**: `failed_pages` property, `failed_page_reasons` property
+  - **Clear method**: `clear_failed_pages()` for resetting state
+  - **Expanded exceptions**: `TypeError`, `IndexError`, `KeyError` added to handlers
+  - **Content stream errors**: try/except around `set_base_stream()` and `apply_to_page()`
+  - **Result dict**: `failed_pages` included in `apply_translations()` return value
+- **UI Selector Centralization**:
+  - **Chat input**: `CHAT_INPUT_SELECTOR`, `CHAT_INPUT_SELECTOR_EXTENDED`
+  - **Buttons**: `SEND_BUTTON_SELECTOR`, `STOP_BUTTON_SELECTORS`, `NEW_CHAT_BUTTON_SELECTOR`
+  - **File upload**: `PLUS_MENU_BUTTON_SELECTOR`, `FILE_INPUT_SELECTOR`
+  - **Response**: `RESPONSE_SELECTORS`, `RESPONSE_SELECTOR_COMBINED`
+- **LRU Cache for Font Info**:
+  - **OrderedDict-based**: `_font_info_cache` with `_FONT_INFO_CACHE_MAX_SIZE=5`
+  - **Thread-safe**: `_font_info_cache_lock` for concurrent access
+  - **Automatic eviction**: Oldest entries removed when cache is full
 - **Copilot Input Reliability Improvements**:
   - **fill() method**: Playwright fill()を使用して改行を正しく処理（改行がEnterキーとして解釈される問題を修正）
   - **Enter key submission**: Copilot入力をシンプル化しEnterキー送信に統一

@@ -1218,6 +1218,15 @@ Based on recent commits:
   - **Formula cell preservation**: 数式セルを抽出対象から除外（xlwings: `cell.formula`チェック、openpyxl: 2パス処理で数式位置を特定）
   - **Bilingual output with xlwings**: xlwings利用時はCOM `sheet.api.Copy()`でシェイプ/チャート/画像を保持
   - **Section selection optimization**: `apply_translations()`に`selected_sections`パラメータを追加、選択シートのみ処理
+- **Excel Translation Robustness Improvements (2024-12)**:
+  - **used_range normalization fix**: xlwingsの単一列used_range.value（1Dリスト）を正しく2Dリストに正規化。`rows.count`/`columns.count`で単一行と単一列を判別
+  - **COM resource leak fix**: xlwings bilingual workbook作成時のワークブックを明示的にトラッキングし、例外発生時も確実にclose()を実行
+  - **Memory-efficient formula detection**: openpyxlの2パス処理を廃止、zipfile+XML解析による軽量な数式検出`_detect_formula_cells_via_zipfile()`を導入
+  - **Cell character limit**: Excelセル上限32,767文字のチェックと自動truncateを追加（`EXCEL_CELL_CHAR_LIMIT`定数）、xlwings/openpyxl両方のapply_translationsで適用
+  - **Half-width katakana support**: 半角カタカナ（U+FF65-U+FF9F）を日本語検出パターンに追加、`ｱｲｳｴｵ`や`ｺﾝﾋﾟｭｰﾀｰ`を正しく判定
+  - **Column letter cache limit**: `_COLUMN_LETTER_CACHE_SIZE=1000`で極端に広いシートでのメモリ使用量を制限
+  - **Bilingual style copy improvements**: conditional_formatting、data_validation、hyperlinks、commentsのコピーをopenpyxl bilingual出力に追加
+  - **Default sheet deletion improvement**: xlwings bilingual作成時のデフォルトシート削除に多言語対応プレフィックスと無限ループ防止を追加
 - **PDF Translation Improvements (PDFMathTranslate compliant)**:
   - **PP-DocLayout-L**: レイアウト解析にPP-DocLayout-Lを使用（Apache-2.0、商用利用可）
   - **単一パス抽出**: pdfminer + PP-DocLayout-L → TextBlock（二重変換を排除）

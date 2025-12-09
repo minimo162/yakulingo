@@ -136,6 +136,12 @@ def is_xlwings_available() -> bool:
 _EXCEL_RETRY_COUNT = 3
 _EXCEL_RETRY_DELAY = 1.0  # seconds
 
+# Excel cell character limit (32,767 characters per cell)
+EXCEL_CELL_CHAR_LIMIT = 32767
+
+# LRU cache size for column letter conversions (avoid memory bloat on wide sheets)
+_COLUMN_LETTER_CACHE_SIZE = 1000
+
 
 def _cleanup_com_before_retry():
     """
@@ -303,6 +309,129 @@ from openpyxl.utils.cell import (
     range_boundaries,
 )
 from openpyxl.styles import Font
+
+
+def _detect_formula_cells_via_zipfile(file_path: Path) -> set[tuple[str, int, int]]:
+    """
+    Detect formula cells by parsing the XLSX file directly via zipfile.
+
+    This is much more memory-efficient than loading the workbook with openpyxl,
+    as it only reads and parses the necessary XML portions.
+
+    XLSX files are ZIP archives containing XML files:
+    - xl/workbook.xml: Contains sheet definitions
+    - xl/worksheets/sheet1.xml, sheet2.xml, etc.: Contains cell data
+
+    Formula cells are identified by the presence of <f> elements within <c> (cell) elements.
+
+    Args:
+        file_path: Path to the XLSX file
+
+    Returns:
+        Set of (sheet_name, row, col) tuples for formula cells
+    """
+    formula_cells: set[tuple[str, int, int]] = set()
+
+    try:
+        with zipfile.ZipFile(file_path, 'r') as xlsx:
+            # Parse workbook.xml to get sheet name -> relationship mapping
+            sheet_names: dict[str, str] = {}  # rId -> sheet_name
+            sheet_order: list[str] = []  # Ordered list of rIds
+
+            try:
+                with xlsx.open('xl/workbook.xml') as workbook_xml:
+                    # Parse XML incrementally to reduce memory
+                    for event, elem in ET.iterparse(workbook_xml, events=['end']):
+                        # Sheet elements: <sheet name="Sheet1" sheetId="1" r:id="rId1"/>
+                        if elem.tag.endswith('}sheet') or elem.tag == 'sheet':
+                            sheet_name = elem.get('name', '')
+                            # Get r:id attribute (namespace might vary)
+                            rid = None
+                            for attr_name, attr_value in elem.attrib.items():
+                                if attr_name.endswith('}id') or attr_name == 'id':
+                                    rid = attr_value
+                                    break
+                            if rid and sheet_name:
+                                sheet_names[rid] = sheet_name
+                                sheet_order.append(rid)
+                            elem.clear()  # Free memory
+            except KeyError:
+                logger.debug("workbook.xml not found in XLSX")
+                return formula_cells
+
+            # Parse relationships to map rId to sheet file paths
+            rid_to_file: dict[str, str] = {}
+            try:
+                with xlsx.open('xl/_rels/workbook.xml.rels') as rels_xml:
+                    for event, elem in ET.iterparse(rels_xml, events=['end']):
+                        if elem.tag.endswith('}Relationship') or elem.tag == 'Relationship':
+                            rid = elem.get('Id', '')
+                            target = elem.get('Target', '')
+                            if rid and target:
+                                # Target can be:
+                                # - Relative: "worksheets/sheet1.xml"
+                                # - Absolute from xl/: "/xl/worksheets/sheet1.xml"
+                                # Normalize to full path within ZIP
+                                target = target.lstrip('/')
+                                if target.startswith('xl/'):
+                                    rid_to_file[rid] = target
+                                else:
+                                    rid_to_file[rid] = f"xl/{target}"
+                            elem.clear()
+            except KeyError:
+                logger.debug("workbook.xml.rels not found in XLSX")
+                # Fall back to sequential sheet file names
+                for i, rid in enumerate(sheet_order, 1):
+                    rid_to_file[rid] = f"xl/worksheets/sheet{i}.xml"
+
+            # Parse each sheet XML to find formula cells
+            cell_ref_pattern = re.compile(r'^([A-Z]+)(\d+)$')
+
+            for rid in sheet_order:
+                sheet_name = sheet_names.get(rid, '')
+                sheet_file = rid_to_file.get(rid, '')
+                if not sheet_name or not sheet_file:
+                    continue
+
+                try:
+                    with xlsx.open(sheet_file) as sheet_xml:
+                        current_row = 0
+                        for event, elem in ET.iterparse(sheet_xml, events=['end']):
+                            # Row element: <row r="1">
+                            if elem.tag.endswith('}row') or elem.tag == 'row':
+                                current_row = int(elem.get('r', 0))
+                                elem.clear()
+                            # Cell element: <c r="A1"><f>SUM(B1:B10)</f><v>100</v></c>
+                            elif elem.tag.endswith('}c') or elem.tag == 'c':
+                                # Check if cell has a formula child element
+                                has_formula = False
+                                for child in elem:
+                                    if child.tag.endswith('}f') or child.tag == 'f':
+                                        has_formula = True
+                                        break
+
+                                if has_formula:
+                                    cell_ref = elem.get('r', '')
+                                    match = cell_ref_pattern.match(cell_ref)
+                                    if match:
+                                        col_letter = match.group(1)
+                                        row_num = int(match.group(2))
+                                        try:
+                                            col_idx = column_index_from_string(col_letter)
+                                            formula_cells.add((sheet_name, row_num, col_idx))
+                                        except (ValueError, TypeError):
+                                            pass
+                                elem.clear()
+                except KeyError:
+                    logger.debug("Sheet file not found: %s", sheet_file)
+                    continue
+
+    except zipfile.BadZipFile:
+        logger.warning("Invalid XLSX file (not a valid ZIP): %s", file_path)
+    except Exception as e:
+        logger.warning("Error detecting formula cells via zipfile: %s", e)
+
+    return formula_cells
 
 
 class ExcelProcessor(FileProcessor):
@@ -557,11 +686,31 @@ class ExcelProcessor(FileProcessor):
                                 all_values = used_range.value
                                 if all_values is not None:
                                     # Normalize to 2D list (single cell returns scalar, single row/col returns 1D)
+                                    # xlwings returns:
+                                    #   - Single cell: scalar
+                                    #   - Single row (1 row, N cols): [v1, v2, ..., vN]
+                                    #   - Single column (N rows, 1 col): [v1, v2, ..., vN]
+                                    #   - Multiple rows/cols: [[r1c1, r1c2], [r2c1, r2c2], ...]
                                     if not isinstance(all_values, list):
+                                        # Single cell case
                                         all_values = [[all_values]]
                                     elif all_values and not isinstance(all_values[0], list):
-                                        # Single row case
-                                        all_values = [all_values]
+                                        # 1D list: need to distinguish single row vs single column
+                                        # Check used_range shape to determine orientation
+                                        try:
+                                            row_count = used_range.rows.count
+                                            col_count = used_range.columns.count
+                                        except Exception:
+                                            # Fallback: assume single row if can't determine
+                                            row_count = 1
+                                            col_count = len(all_values)
+
+                                        if row_count == 1:
+                                            # Single row: [[v1, v2, v3]]
+                                            all_values = [all_values]
+                                        else:
+                                            # Single column: [[v1], [v2], [v3]]
+                                            all_values = [[v] for v in all_values]
 
                                     # Get start position of used_range
                                     start_row = used_range.row
@@ -780,9 +929,12 @@ class ExcelProcessor(FileProcessor):
     ) -> Iterator[TextBlock]:
         """Extract text using openpyxl (fallback - cells only)
 
-        Two-pass approach to handle formula cells:
-        1. First pass with data_only=False to identify formula cells
-        2. Second pass with data_only=True to get calculated values
+        Single-pass approach with lightweight formula detection:
+        1. Detect formula cells via zipfile XML parsing (memory-efficient)
+        2. Extract text blocks with data_only=True to get calculated values
+
+        The zipfile approach is much more memory-efficient than loading
+        the workbook twice, as it only parses the necessary XML portions.
 
         Font info is not available in read_only mode but is fetched
         during apply_translations from the original file.
@@ -791,50 +943,20 @@ class ExcelProcessor(FileProcessor):
             file_path: Path to the Excel file
             output_language: "en" for JP→EN, "jp" for EN→JP translation
         """
-        # First pass: identify formula cells (cells where value starts with '=')
-        # Using data_only=False returns formula strings instead of calculated values
-        formula_cells: set[tuple[str, int, int]] = set()  # (sheet_name, row, col)
-        formula_count = 0
-
-        try:
-            wb_formulas = openpyxl.load_workbook(file_path, read_only=True, data_only=False)
-            try:
-                for sheet_name in wb_formulas.sheetnames:
-                    sheet = wb_formulas[sheet_name]
-                    try:
-                        min_col, min_row, max_col, max_row = range_boundaries(sheet.calculate_dimension())
-                    except (ValueError, TypeError):
-                        continue
-
-                    for row_idx, row_values in enumerate(
-                        sheet.iter_rows(
-                            min_row=min_row,
-                            max_row=max_row,
-                            min_col=min_col,
-                            max_col=max_col,
-                            values_only=True,
-                        ),
-                        start=min_row,
-                    ):
-                        if not row_values:
-                            continue
-                        for col_idx, value in enumerate(row_values, start=min_col):
-                            # Formula cells have string values starting with '='
-                            if value and isinstance(value, str) and value.startswith('='):
-                                formula_cells.add((sheet_name, row_idx, col_idx))
-                                formula_count += 1
-            finally:
-                wb_formulas.close()
-        except Exception as e:
-            logger.warning("Error detecting formula cells: %s", e)
+        # Detect formula cells via lightweight zipfile parsing
+        # This is much more memory-efficient than loading with data_only=False
+        formula_cells = _detect_formula_cells_via_zipfile(file_path)
+        formula_count = len(formula_cells)
 
         if formula_count > 0:
             logger.info("Detected %d formula cells (will be preserved)", formula_count)
 
-        # Second pass: extract text blocks with calculated values
+        # Extract text blocks with calculated values (data_only=True)
         wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
 
         # Cache column letters to avoid repeated conversions during large reads
+        # Limited to _COLUMN_LETTER_CACHE_SIZE entries to prevent memory bloat on very wide sheets
+        # (Excel max is 16,384 columns, but typically only a fraction are used)
         column_letter_cache: dict[int, str] = {}
 
         try:
@@ -872,7 +994,9 @@ class ExcelProcessor(FileProcessor):
                                 col_letter = column_letter_cache.get(col_idx)
                                 if col_letter is None:
                                     col_letter = get_column_letter(col_idx)
-                                    column_letter_cache[col_idx] = col_letter
+                                    # Limit cache size to prevent memory bloat
+                                    if len(column_letter_cache) < _COLUMN_LETTER_CACHE_SIZE:
+                                        column_letter_cache[col_idx] = col_letter
 
                                 # Font info not available in read_only mode
                                 # Will be fetched during apply_translations
@@ -1120,8 +1244,18 @@ class ExcelProcessor(FileProcessor):
                                     original_font_size
                                 )
 
+                                # Check and truncate if exceeds Excel cell limit
+                                final_text = translated_text
+                                if translated_text and len(translated_text) > EXCEL_CELL_CHAR_LIMIT:
+                                    final_text = translated_text[:EXCEL_CELL_CHAR_LIMIT - 3] + "..."
+                                    logger.warning(
+                                        "Translation truncated for cell %s_%s: %d -> %d chars (Excel limit: %d)",
+                                        sheet_name, cell_ref, len(translated_text),
+                                        len(final_text), EXCEL_CELL_CHAR_LIMIT
+                                    )
+
                                 # Apply translation
-                                cell.value = translated_text
+                                cell.value = final_text
 
                                 # Apply new font
                                 try:
@@ -1292,7 +1426,17 @@ class ExcelProcessor(FileProcessor):
                             original_font_size
                         )
 
-                        cell.value = translated_text
+                        # Check and truncate if exceeds Excel cell limit
+                        final_text = translated_text
+                        if translated_text and len(translated_text) > EXCEL_CELL_CHAR_LIMIT:
+                            final_text = translated_text[:EXCEL_CELL_CHAR_LIMIT - 3] + "..."
+                            logger.warning(
+                                "Translation truncated for cell %s_%s: %d -> %d chars (Excel limit: %d)",
+                                sheet_name, cell_ref, len(translated_text),
+                                len(final_text), EXCEL_CELL_CHAR_LIMIT
+                            )
+
+                        cell.value = final_text
 
                         # Use cached font object to avoid creating duplicates
                         if cell.font:
@@ -1369,86 +1513,114 @@ class ExcelProcessor(FileProcessor):
         with com_initialized():
             app = _create_excel_app_with_retry(xw)
 
+            # Track opened workbooks for proper cleanup
+            original_wb = None
+            translated_wb = None
+            bilingual_wb = None
+
             try:
-                # Open source workbooks
+                # Open source workbooks (track each for cleanup)
                 original_wb = app.books.open(str(original_path), ignore_read_only_recommended=True)
                 translated_wb = app.books.open(str(translated_path), ignore_read_only_recommended=True)
 
                 # Create new workbook for bilingual output
                 bilingual_wb = app.books.add()
 
-                # Remove default sheets from new workbook
-                while len(bilingual_wb.sheets) > 1:
-                    bilingual_wb.sheets[-1].delete()
+                # Remove default sheets from new workbook (with retry limit to prevent infinite loop)
+                max_delete_attempts = 10
+                delete_attempts = 0
+                while len(bilingual_wb.sheets) > 1 and delete_attempts < max_delete_attempts:
+                    try:
+                        bilingual_wb.sheets[-1].delete()
+                    except Exception as e:
+                        logger.debug("Error deleting default sheet: %s", e)
+                        break
+                    delete_attempts += 1
 
                 existing_names: set[str] = set()
                 original_sheets = len(original_wb.sheets)
                 translated_sheets = len(translated_wb.sheets)
 
-                try:
-                    # Interleave sheets: original, translated, original, translated, ...
-                    for i, original_sheet in enumerate(original_wb.sheets):
-                        sheet_name = original_sheet.name
+                # Interleave sheets: original, translated, original, translated, ...
+                for i, original_sheet in enumerate(original_wb.sheets):
+                    sheet_name = original_sheet.name
 
-                        # Copy original sheet to bilingual workbook
-                        safe_orig_name = sanitize_sheet_name(sheet_name)
-                        unique_orig_name = _ensure_unique_sheet_name(safe_orig_name, existing_names)
+                    # Copy original sheet to bilingual workbook
+                    safe_orig_name = sanitize_sheet_name(sheet_name)
+                    unique_orig_name = _ensure_unique_sheet_name(safe_orig_name, existing_names)
 
-                        # Use COM API to copy sheet (preserves all content)
-                        original_sheet.api.Copy(Before=bilingual_wb.sheets[0].api)
-                        # Rename the copied sheet (it's now at index 0)
-                        bilingual_wb.sheets[0].name = unique_orig_name
+                    # Use COM API to copy sheet (preserves all content)
+                    original_sheet.api.Copy(Before=bilingual_wb.sheets[0].api)
+                    # Rename the copied sheet (it's now at index 0)
+                    bilingual_wb.sheets[0].name = unique_orig_name
 
-                        # Copy translated sheet if exists
-                        if i < len(translated_wb.sheets):
-                            translated_sheet = translated_wb.sheets[i]
-                            trans_title = sanitize_sheet_name(f"{sheet_name}_translated")
-                            unique_trans_title = _ensure_unique_sheet_name(trans_title, existing_names)
+                    # Copy translated sheet if exists
+                    if i < len(translated_wb.sheets):
+                        translated_sheet = translated_wb.sheets[i]
+                        trans_title = sanitize_sheet_name(f"{sheet_name}_translated")
+                        unique_trans_title = _ensure_unique_sheet_name(trans_title, existing_names)
 
-                            # Copy translated sheet after the original
-                            translated_sheet.api.Copy(After=bilingual_wb.sheets[0].api)
-                            bilingual_wb.sheets[1].name = unique_trans_title
+                        # Copy translated sheet after the original
+                        translated_sheet.api.Copy(After=bilingual_wb.sheets[0].api)
+                        bilingual_wb.sheets[1].name = unique_trans_title
 
-                    # Handle extra translated sheets if any
-                    if translated_sheets > original_sheets:
-                        for i in range(original_sheets, translated_sheets):
-                            translated_sheet = translated_wb.sheets[i]
-                            trans_title = sanitize_sheet_name(f"{translated_sheet.name}_translated")
-                            unique_trans_title = _ensure_unique_sheet_name(trans_title, existing_names)
+                # Handle extra translated sheets if any
+                if translated_sheets > original_sheets:
+                    for i in range(original_sheets, translated_sheets):
+                        translated_sheet = translated_wb.sheets[i]
+                        trans_title = sanitize_sheet_name(f"{translated_sheet.name}_translated")
+                        unique_trans_title = _ensure_unique_sheet_name(trans_title, existing_names)
 
-                            translated_sheet.api.Copy(Before=bilingual_wb.sheets[0].api)
-                            bilingual_wb.sheets[0].name = unique_trans_title
+                        translated_sheet.api.Copy(Before=bilingual_wb.sheets[0].api)
+                        bilingual_wb.sheets[0].name = unique_trans_title
 
-                    # Remove the initial empty sheet if it still exists
-                    # The initial sheet is named "Sheet1" by default
-                    for sheet in bilingual_wb.sheets:
-                        if sheet.name.startswith("Sheet") and sheet.used_range.value is None:
-                            try:
+                # Remove the initial empty sheet if it still exists
+                # Check for default sheet names in multiple locales
+                default_sheet_prefixes = ("Sheet", "シート", "Feuil", "Hoja", "Blatt", "Foglio")
+                for sheet in bilingual_wb.sheets:
+                    is_default_name = any(sheet.name.startswith(prefix) for prefix in default_sheet_prefixes)
+                    if is_default_name:
+                        try:
+                            # Check if sheet is empty (no values and no shapes)
+                            has_content = sheet.used_range.value is not None
+                            if not has_content:
                                 sheet.delete()
-                            except Exception:
-                                pass  # Ignore if can't delete
+                                break
+                        except Exception as e:
+                            logger.debug("Error checking/deleting default sheet '%s': %s", sheet.name, e)
                             break
 
-                    # Reorder sheets to interleave correctly
-                    # Current order might be mixed, need to sort by original index
-                    self._reorder_bilingual_sheets(bilingual_wb, original_wb.sheets, existing_names)
+                # Reorder sheets to interleave correctly
+                # Current order might be mixed, need to sort by original index
+                self._reorder_bilingual_sheets(bilingual_wb, original_wb.sheets, existing_names)
 
-                    # Save to output path
-                    bilingual_wb.save(str(output_path))
+                # Save to output path
+                bilingual_wb.save(str(output_path))
 
-                    return {
-                        'original_sheets': original_sheets,
-                        'translated_sheets': translated_sheets,
-                        'total_sheets': len(bilingual_wb.sheets),
-                    }
-
-                finally:
-                    original_wb.close()
-                    translated_wb.close()
-                    bilingual_wb.close()
+                return {
+                    'original_sheets': original_sheets,
+                    'translated_sheets': translated_sheets,
+                    'total_sheets': len(bilingual_wb.sheets),
+                }
 
             finally:
-                app.quit()
+                # Close workbooks in reverse order of opening (safest)
+                for wb, name in [
+                    (bilingual_wb, "bilingual"),
+                    (translated_wb, "translated"),
+                    (original_wb, "original"),
+                ]:
+                    if wb is not None:
+                        try:
+                            wb.close()
+                        except Exception as e:
+                            logger.debug("Error closing %s workbook: %s", name, e)
+
+                # Always quit the app
+                try:
+                    app.quit()
+                except Exception as e:
+                    logger.debug("Error quitting Excel app: %s", e)
 
     def _reorder_bilingual_sheets(self, bilingual_wb, original_sheets, existing_names: set[str]) -> None:
         """Reorder sheets in bilingual workbook to interleave original and translated."""
@@ -1618,3 +1790,39 @@ class ExcelProcessor(FileProcessor):
         # Copy merged cells
         for merged_range in source_sheet.merged_cells.ranges:
             target_sheet.merge_cells(str(merged_range))
+
+        # Copy conditional formatting rules
+        try:
+            for cf_range, cf_rules in source_sheet.conditional_formatting._cf_rules.items():
+                for rule in cf_rules:
+                    target_sheet.conditional_formatting.add(cf_range, rule)
+        except (AttributeError, Exception) as e:
+            logger.debug("Error copying conditional formatting: %s", e)
+
+        # Copy data validations
+        try:
+            for dv in source_sheet.data_validations.dataValidation:
+                target_sheet.add_data_validation(dv)
+        except (AttributeError, Exception) as e:
+            logger.debug("Error copying data validations: %s", e)
+
+        # Copy hyperlinks (per-cell)
+        try:
+            for cell_coord, hyperlink in source_sheet._hyperlinks.items():
+                target_sheet[cell_coord].hyperlink = hyperlink
+        except (AttributeError, Exception) as e:
+            logger.debug("Error copying hyperlinks: %s", e)
+
+        # Copy comments (iterate cells to find comments)
+        # Note: Comments must be copied after cell iteration to avoid issues with
+        # cells that haven't been created yet in the target sheet
+        try:
+            from openpyxl.comments import Comment
+            for row in source_sheet.iter_rows():
+                for cell in row:
+                    if cell.comment:
+                        target_cell = target_sheet.cell(row=cell.row, column=cell.column)
+                        # Create a new Comment object (comments are mutable and need copying)
+                        target_cell.comment = Comment(cell.comment.text, cell.comment.author)
+        except (AttributeError, Exception) as e:
+            logger.debug("Error copying comments: %s", e)

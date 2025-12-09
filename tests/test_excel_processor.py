@@ -642,3 +642,270 @@ class TestSpecialCharacterHandling:
         for name in wb_out.sheetnames:
             for char in "\\/?*[]:":
                 assert char not in name
+
+
+# --- Tests: Bug Fixes and Improvements ---
+
+class TestExcelProcessorBugFixes:
+    """Tests for specific bug fixes and improvements"""
+
+    def test_single_column_extraction(self, processor, tmp_path):
+        """Test extraction from single column (used_range normalization fix)"""
+        file_path = tmp_path / "single_column.xlsx"
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Sheet1"
+
+        # Single column with multiple rows
+        ws["A1"] = "日本語1"
+        ws["A2"] = "日本語2"
+        ws["A3"] = "日本語3"
+
+        wb.save(file_path)
+
+        blocks = list(processor.extract_text_blocks(file_path))
+
+        # Should extract all 3 cells
+        assert len(blocks) == 3
+        ids = {b.id for b in blocks}
+        assert "Sheet1_A1" in ids
+        assert "Sheet1_A2" in ids
+        assert "Sheet1_A3" in ids
+
+    def test_single_row_extraction(self, processor, tmp_path):
+        """Test extraction from single row"""
+        file_path = tmp_path / "single_row.xlsx"
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Sheet1"
+
+        # Single row with multiple columns
+        ws["A1"] = "日本語A"
+        ws["B1"] = "日本語B"
+        ws["C1"] = "日本語C"
+
+        wb.save(file_path)
+
+        blocks = list(processor.extract_text_blocks(file_path))
+
+        # Should extract all 3 cells
+        assert len(blocks) == 3
+        ids = {b.id for b in blocks}
+        assert "Sheet1_A1" in ids
+        assert "Sheet1_B1" in ids
+        assert "Sheet1_C1" in ids
+
+    def test_cell_character_limit_truncation(self, processor, tmp_path):
+        """Test cell content truncation at Excel limit (32,767 chars)"""
+        from yakulingo.processors.excel_processor import EXCEL_CELL_CHAR_LIMIT
+
+        file_path = tmp_path / "source.xlsx"
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Sheet1"
+        ws["A1"] = "短いテキスト"  # Short text
+        wb.save(file_path)
+
+        output_path = tmp_path / "output.xlsx"
+
+        # Create translation that exceeds limit
+        long_text = "A" * (EXCEL_CELL_CHAR_LIMIT + 1000)
+        translations = {"Sheet1_A1": long_text}
+
+        processor.apply_translations(file_path, output_path, translations, "jp_to_en")
+
+        # Verify truncation
+        wb_out = openpyxl.load_workbook(output_path)
+        result_text = wb_out.active["A1"].value
+
+        assert len(result_text) == EXCEL_CELL_CHAR_LIMIT
+        assert result_text.endswith("...")
+
+    def test_formula_cells_preserved(self, processor, tmp_path):
+        """Test that formula cells are preserved (not extracted for translation)"""
+        file_path = tmp_path / "formulas.xlsx"
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Sheet1"
+
+        # Regular text cell
+        ws["A1"] = "テキスト"
+        # Formula cell
+        ws["B1"] = "=A1"
+        # Another text cell
+        ws["C1"] = "もう一つ"
+
+        wb.save(file_path)
+
+        blocks = list(processor.extract_text_blocks(file_path))
+
+        # Should only extract text cells, not formula
+        ids = [b.id for b in blocks]
+        assert "Sheet1_A1" in ids
+        assert "Sheet1_B1" not in ids  # Formula cell skipped
+        assert "Sheet1_C1" in ids
+
+    def test_zipfile_formula_detection(self, tmp_path):
+        """Test zipfile-based formula detection"""
+        from yakulingo.processors.excel_processor import _detect_formula_cells_via_zipfile
+
+        file_path = tmp_path / "formulas.xlsx"
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "TestSheet"
+
+        # Text cell
+        ws["A1"] = "Text"
+        # Formula cells
+        ws["B1"] = "=SUM(A1:A10)"
+        ws["C1"] = "=IF(A1>0,1,0)"
+
+        wb.save(file_path)
+
+        formula_cells = _detect_formula_cells_via_zipfile(file_path)
+
+        # Should detect both formula cells
+        assert ("TestSheet", 1, 2) in formula_cells  # B1
+        assert ("TestSheet", 1, 3) in formula_cells  # C1
+        assert ("TestSheet", 1, 1) not in formula_cells  # A1 is text
+
+
+class TestTranslatorPatternImprovements:
+    """Tests for translator pattern improvements"""
+
+    def test_halfwidth_katakana_detection(self):
+        """Test detection of half-width katakana"""
+        from yakulingo.processors.translators import CellTranslator
+
+        translator = CellTranslator()
+
+        # Half-width katakana should be detected as Japanese
+        assert translator._contains_japanese("ｱｲｳｴｵ")  # Half-width katakana
+        assert translator._contains_japanese("ｶﾝﾊﾞﾝ")  # Half-width katakana
+
+        # Half-width katakana only should be considered Japanese
+        # (should translate for EN→JP direction)
+        assert translator.should_translate("ｱｲｳｴｵ", "en") is True
+
+    def test_middle_dot_detection(self):
+        """Test detection of middle dot (・)"""
+        from yakulingo.processors.translators import CellTranslator
+
+        translator = CellTranslator()
+
+        # Full-width middle dot is part of katakana range
+        assert translator._contains_japanese("ハロー・ワールド")
+        assert translator.should_translate("ハロー・ワールド", "en") is True
+
+    def test_long_vowel_mark_detection(self):
+        """Test detection of long vowel mark (ー)"""
+        from yakulingo.processors.translators import CellTranslator
+
+        translator = CellTranslator()
+
+        # Long vowel mark is part of katakana range
+        assert translator._contains_japanese("コンピューター")
+        assert translator.should_translate("コンピューター", "en") is True
+
+    def test_halfwidth_long_vowel_detection(self):
+        """Test detection of half-width long vowel mark (ｰ)"""
+        from yakulingo.processors.translators import CellTranslator
+
+        translator = CellTranslator()
+
+        # Half-width long vowel mark
+        assert translator._contains_japanese("ｺﾝﾋﾟｭｰﾀｰ")
+        assert translator.should_translate("ｺﾝﾋﾟｭｰﾀｰ", "en") is True
+
+
+class TestCopySheetContentImprovements:
+    """Tests for _copy_sheet_content improvements"""
+
+    def test_copies_conditional_formatting(self, processor, tmp_path):
+        """Test that conditional formatting is copied in bilingual workbook"""
+        from openpyxl.formatting.rule import ColorScaleRule
+
+        original_path = tmp_path / "original.xlsx"
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Sheet1"
+        ws["A1"] = "テスト"
+
+        # Add conditional formatting
+        rule = ColorScaleRule(
+            start_type='min', start_color='FF0000',
+            end_type='max', end_color='00FF00'
+        )
+        ws.conditional_formatting.add('A1:A10', rule)
+        wb.save(original_path)
+
+        translated_path = tmp_path / "translated.xlsx"
+        wb_trans = openpyxl.Workbook()
+        ws_trans = wb_trans.active
+        ws_trans.title = "Sheet1"
+        ws_trans["A1"] = "Test"
+        wb_trans.save(translated_path)
+
+        output_path = tmp_path / "bilingual.xlsx"
+        processor.create_bilingual_workbook(original_path, translated_path, output_path)
+
+        wb_out = openpyxl.load_workbook(output_path)
+        # Conditional formatting should be present in original sheet
+        assert len(wb_out["Sheet1"].conditional_formatting) > 0
+
+    def test_copies_data_validation(self, processor, tmp_path):
+        """Test that data validation is copied in bilingual workbook"""
+        from openpyxl.worksheet.datavalidation import DataValidation
+
+        original_path = tmp_path / "original.xlsx"
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Sheet1"
+        ws["A1"] = "テスト"
+
+        # Add data validation (dropdown list)
+        dv = DataValidation(type="list", formula1='"Option1,Option2,Option3"')
+        ws.add_data_validation(dv)
+        dv.add(ws["B1"])
+        wb.save(original_path)
+
+        translated_path = tmp_path / "translated.xlsx"
+        wb_trans = openpyxl.Workbook()
+        ws_trans = wb_trans.active
+        ws_trans.title = "Sheet1"
+        ws_trans["A1"] = "Test"
+        wb_trans.save(translated_path)
+
+        output_path = tmp_path / "bilingual.xlsx"
+        processor.create_bilingual_workbook(original_path, translated_path, output_path)
+
+        wb_out = openpyxl.load_workbook(output_path)
+        # Data validation should be present in original sheet
+        assert len(list(wb_out["Sheet1"].data_validations.dataValidation)) > 0
+
+    def test_copies_comments(self, processor, tmp_path):
+        """Test that comments are copied in bilingual workbook"""
+        from openpyxl.comments import Comment
+
+        original_path = tmp_path / "original.xlsx"
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Sheet1"
+        ws["A1"] = "テスト"
+        ws["A1"].comment = Comment("This is a comment", "Author")
+        wb.save(original_path)
+
+        translated_path = tmp_path / "translated.xlsx"
+        wb_trans = openpyxl.Workbook()
+        ws_trans = wb_trans.active
+        ws_trans.title = "Sheet1"
+        ws_trans["A1"] = "Test"
+        wb_trans.save(translated_path)
+
+        output_path = tmp_path / "bilingual.xlsx"
+        processor.create_bilingual_workbook(original_path, translated_path, output_path)
+
+        wb_out = openpyxl.load_workbook(output_path)
+        # Comment should be present in original sheet
+        assert wb_out["Sheet1"]["A1"].comment is not None
+        assert wb_out["Sheet1"]["A1"].comment.text == "This is a comment"

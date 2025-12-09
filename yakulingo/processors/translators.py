@@ -31,13 +31,19 @@ class CellTranslator:
     _compiled_skip_regex = None
 
     # Pre-compiled regex for Japanese detection (much faster than char-by-char loop)
-    # Includes: Hiragana, Katakana, CJK Kanji, and Japanese document symbols (▲△〇※)
+    # Includes:
+    # - Hiragana (U+3040-U+309F): あ-ん, including voiced marks (U+3099-U+309C)
+    # - Katakana (U+30A0-U+30FF): ア-ン, including ・(U+30FB) and ー(U+30FC)
+    # - Half-width Katakana (U+FF65-U+FF9F): ｱ-ﾝ, including ･(U+FF65) and ｰ(U+FF70)
+    # - CJK Kanji (U+4E00-U+9FFF): 漢字
+    # - Japanese document symbols: ▲(U+25B2), △(U+25B3), 〇(U+3007), ※(U+203B)
     _japanese_pattern = re.compile(
-        r'[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF\u25B2\u25B3\u3007\u203B]'
+        r'[\u3040-\u309F\u30A0-\u30FF\uFF65-\uFF9F\u4E00-\u9FFF\u25B2\u25B3\u3007\u203B]'
     )
 
     # Pre-compiled regex for kana detection (hiragana/katakana only, excludes kanji)
-    _kana_pattern = re.compile(r'[\u3040-\u309F\u30A0-\u30FF]')
+    # Includes both full-width and half-width forms
+    _kana_pattern = re.compile(r'[\u3040-\u309F\u30A0-\u30FF\uFF65-\uFF9F]')
 
     # Pre-compiled regex for alphabetic detection (A-Z, a-z)
     _alphabetic_pattern = re.compile(r'[A-Za-z]')
@@ -162,13 +168,19 @@ class ParagraphTranslator:
     _compiled_skip_regex = None
 
     # Pre-compiled regex for Japanese detection (much faster than char-by-char loop)
-    # Includes: Hiragana, Katakana, CJK Kanji, and Japanese document symbols (▲△〇※)
+    # Includes:
+    # - Hiragana (U+3040-U+309F): あ-ん, including voiced marks (U+3099-U+309C)
+    # - Katakana (U+30A0-U+30FF): ア-ン, including ・(U+30FB) and ー(U+30FC)
+    # - Half-width Katakana (U+FF65-U+FF9F): ｱ-ﾝ, including ･(U+FF65) and ｰ(U+FF70)
+    # - CJK Kanji (U+4E00-U+9FFF): 漢字
+    # - Japanese document symbols: ▲(U+25B2), △(U+25B3), 〇(U+3007), ※(U+203B)
     _japanese_pattern = re.compile(
-        r'[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF\u25B2\u25B3\u3007\u203B]'
+        r'[\u3040-\u309F\u30A0-\u30FF\uFF65-\uFF9F\u4E00-\u9FFF\u25B2\u25B3\u3007\u203B]'
     )
 
     # Pre-compiled regex for kana detection (hiragana/katakana only, excludes kanji)
-    _kana_pattern = re.compile(r'[\u3040-\u309F\u30A0-\u30FF]')
+    # Includes both full-width and half-width forms
+    _kana_pattern = re.compile(r'[\u3040-\u309F\u30A0-\u30FF\uFF65-\uFF9F]')
 
     # Pre-compiled regex for alphabetic detection (A-Z, a-z)
     _alphabetic_pattern = re.compile(r'[A-Za-z]')

@@ -97,10 +97,10 @@
     --md-sys-elevation-2: 0 4px 12px rgba(0,0,0,0.06), 0 2px 4px rgba(0,0,0,0.04);
 
     /* Expressive overlays (inspired by M3 Expressive article) */
-    --md-expressive-primary-glow: radial-gradient(circle at 20% 20%, rgba(67, 85, 185, 0.18), transparent 55%);
-    --md-expressive-secondary-glow: radial-gradient(circle at 82% 10%, rgba(118, 84, 110, 0.16), transparent 50%);
-    --md-expressive-surface: linear-gradient(160deg, color-mix(in srgb, var(--md-sys-color-primary-container) 65%, transparent) 0%, color-mix(in srgb, var(--md-sys-color-surface-container-high) 80%, transparent) 45%, var(--md-sys-color-surface) 100%);
-    --md-expressive-border: linear-gradient(120deg, color-mix(in srgb, var(--md-sys-color-primary) 70%, transparent) 0%, color-mix(in srgb, var(--md-sys-color-tertiary) 65%, transparent) 100%);
+    --md-expressive-primary-glow: radial-gradient(circle at 20% 20%, rgba(67, 85, 185, 0.08), transparent 60%);
+    --md-expressive-secondary-glow: radial-gradient(circle at 82% 10%, rgba(118, 84, 110, 0.07), transparent 55%);
+    --md-expressive-surface: color-mix(in srgb, var(--md-sys-color-surface-container) 70%, var(--md-sys-color-surface) 30%);
+    --md-expressive-border: 1px solid color-mix(in srgb, var(--md-sys-color-outline-variant) 80%, transparent);
     --md-expressive-outline: 1px solid color-mix(in srgb, var(--md-sys-color-outline-variant) 70%, transparent);
 
     /* Sidebar, Input Panel, and Result Content widths are set dynamically via JavaScript
@@ -171,7 +171,7 @@ body {
     position: fixed;
     left: 0;
     top: 0;
-    background: linear-gradient(180deg, color-mix(in srgb, var(--md-sys-color-surface) 88%, transparent) 0%, color-mix(in srgb, var(--md-sys-color-primary-container) 55%, transparent) 100%);
+    background: var(--md-sys-color-surface-container-high);
     border-right: var(--md-expressive-outline);
     display: flex;
     flex-direction: column;
@@ -358,8 +358,7 @@ body {
     width: 2.5rem;
     height: 2.5rem;
     border-radius: var(--md-sys-shape-corner-medium);
-    /* M3 primary gradient */
-    background: linear-gradient(135deg, #5A6AC9 0%, #4355B9 50%, #3345A9 100%);
+    background: var(--md-sys-color-primary);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1031,8 +1030,7 @@ textarea:focus-visible {
 
 .progress-bar {
     height: 100%;
-    /* M3 primary gradient */
-    background: linear-gradient(90deg, #3345A9 0%, #4355B9 50%, #5A6AC9 100%);
+    background: var(--md-sys-color-primary);
     border-radius: var(--md-sys-shape-corner-full);
     transition: width var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-standard);
     position: relative;
@@ -1637,8 +1635,8 @@ textarea:focus-visible {
 
 /* === →Japanese Translation Result Card === */
 .jp-result-card {
-    background: linear-gradient(180deg, color-mix(in srgb, var(--md-sys-color-primary-container) 38%, transparent) 0%, var(--md-sys-color-surface) 100%);
-    border: 1px solid color-mix(in srgb, var(--md-sys-color-outline-variant) 75%, transparent);
+    background: var(--md-sys-color-surface-container);
+    border: 1px solid color-mix(in srgb, var(--md-sys-color-outline-variant) 70%, transparent);
     border-radius: var(--md-sys-shape-corner-xl);
     padding: 1.5rem;
     box-shadow: var(--md-sys-elevation-1);
@@ -1652,8 +1650,8 @@ textarea:focus-visible {
 
 /* === Explanation Card === */
 .explanation-card {
-    background: linear-gradient(180deg, color-mix(in srgb, var(--md-sys-color-tertiary-container) 32%, transparent) 0%, var(--md-sys-color-surface-container) 100%);
-    border: 1px solid color-mix(in srgb, var(--md-sys-color-outline-variant) 65%, transparent);
+    background: color-mix(in srgb, var(--md-sys-color-tertiary-container) 15%, var(--md-sys-color-surface-container) 85%);
+    border: 1px solid color-mix(in srgb, var(--md-sys-color-outline-variant) 60%, transparent);
     border-radius: var(--md-sys-shape-corner-large);
     padding: 1.25rem;
     box-shadow: var(--md-sys-elevation-1);

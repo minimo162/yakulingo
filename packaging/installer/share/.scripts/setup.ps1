@@ -361,8 +361,9 @@ function Invoke-Setup {
             }
         }
 
-        # Safety check: Only delete if it looks like a YakuLingo installation
-        # This prevents accidental deletion of unrelated directories
+        # Safety check: Only overwrite if it looks like a YakuLingo installation
+        # This prevents accidental overwriting of unrelated directories
+        # (robocopy /MIR will delete files not in source, so this check is critical)
         $isYakuLingoDir = $false
         $markerFiles = @("YakuLingo.exe", "app.py", "yakulingo\__init__.py", ".venv\pyvenv.cfg")
         foreach ($marker in $markerFiles) {
@@ -373,34 +374,12 @@ function Invoke-Setup {
         }
 
         if (-not $isYakuLingoDir) {
-            # Directory exists but doesn't look like YakuLingo - refuse to delete
+            # Directory exists but doesn't look like YakuLingo - refuse to overwrite
             throw "Directory exists but does not appear to be a YakuLingo installation: $SetupPath`n`nTo reinstall, please delete this directory manually first, or choose a different location."
         }
 
         if (-not $GuiMode) {
-            Write-Host "      Removing existing YakuLingo installation: $SetupPath" -ForegroundColor Gray
-        }
-        Write-Status -Message "Removing existing files..." -Progress -Step "Step 1/4: Preparing" -Percent 10
-
-        # Use cmd /c rd for fastest directory removal (avoids PowerShell enumeration overhead)
-        # rd /s /q is native Windows command and handles large directories efficiently
-        & cmd /c "rd /s /q `"$SetupPath`" 2>nul"
-
-        # If directory still exists (locked files), try robocopy to empty it
-        if (Test-Path $SetupPath) {
-            Write-Status -Message "Cleaning up locked files..." -Progress -Step "Step 1/4: Preparing" -Percent 15
-            if (-not $GuiMode) {
-                Write-Host "      Note: Some files may be in use, cleaning up..." -ForegroundColor DarkGray
-            }
-
-            # robocopy with /MIR from empty dir effectively deletes all files it can
-            $emptyDir = Join-Path $env:TEMP "YakuLingo_Empty_$(Get-Date -Format 'yyyyMMddHHmmss')"
-            New-Item -ItemType Directory -Path $emptyDir -Force | Out-Null
-            & robocopy $emptyDir $SetupPath /MIR /R:0 /W:0 /NFL /NDL /NJH /NJS /NP 2>&1 | Out-Null
-            Remove-Item -Path $emptyDir -Force -ErrorAction SilentlyContinue
-
-            # Final attempt to remove the directory
-            & cmd /c "rd /s /q `"$SetupPath`" 2>nul"
+            Write-Host "      Found existing installation, will update in place" -ForegroundColor Gray
         }
     }
 
@@ -454,14 +433,17 @@ function Invoke-Setup {
             throw "Failed to extract ZIP file.`n`nFile: $ZipFileName"
         }
 
-        # Copy extracted folder to destination using robocopy (more robust than Move-Item)
-        $robocopyResult = & robocopy $ExtractedDir.FullName $SetupPath /E /MOVE /MT:8 /R:3 /W:1 /NFL /NDL /NJH /NJS /NP 2>&1
+        # Copy extracted folder to destination using robocopy /MIR (mirror mode)
+        # /MIR = /E + /PURGE: copies all files and removes files not in source
+        # This ensures clean updates without needing to delete the destination first
+        # /R:0 /W:0: don't retry locked files (skip them instead of hanging)
+        $robocopyResult = & robocopy $ExtractedDir.FullName $SetupPath /MIR /MT:8 /R:0 /W:0 /NFL /NDL /NJH /NJS /NP 2>&1
         # robocopy returns 0-7 for success, 8+ for errors
         if ($LASTEXITCODE -ge 8) {
             throw "Failed to copy files to destination.`n`nDestination: $SetupPath"
         }
     } finally {
-        # Clean up temp folder (robocopy /MOVE should handle most of it, but ensure cleanup)
+        # Clean up temp folder
         Cleanup-Directory -Path $TempZipDir
     }
 

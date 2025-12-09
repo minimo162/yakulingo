@@ -1684,6 +1684,20 @@ def create_layout_array_from_pp_doclayout(
     This function converts PP-DocLayout-L's output into
     a 2D NumPy array where each pixel is labeled with its region class.
 
+    Coordinate System:
+    - Input (PP-DocLayout-L): Image coordinates (origin at top-left)
+      - box.coordinate: [x1, y1, x2, y2] where (x1,y1) is top-left corner
+      - x increases left to right
+      - y increases top to bottom
+    - Output (LayoutArray): Image coordinates (same as input)
+      - array[y, x] returns region class ID
+      - y is row index (0 at top)
+      - x is column index (0 at left)
+
+    Note: When using LayoutArray with PDF coordinates (pdfminer),
+    the caller must convert coordinates:
+      image_y = (page_height_pdf - pdf_y) * scale
+
     PDFMathTranslate compliant:
     - Single-pass processing with deferred skip box application
     - ±1 pixel margin for better boundary coverage
@@ -1698,11 +1712,12 @@ def create_layout_array_from_pp_doclayout(
     Args:
         results: LayoutDetection result from PP-DocLayout-L
                  Contains 'boxes' list with {label, coordinate, score}
-        page_height: Page height in pixels (at OCR DPI)
-        page_width: Page width in pixels (at OCR DPI)
+                 Coordinates are in image pixels (origin at top-left)
+        page_height: Page height in pixels (at OCR DPI, typically 200 DPI)
+        page_width: Page width in pixels (at OCR DPI, typically 200 DPI)
 
     Returns:
-        LayoutArray with labeled regions
+        LayoutArray with labeled regions (image coordinates)
     """
     np = _get_numpy()
 
@@ -3012,6 +3027,17 @@ class PdfProcessor(FileProcessor):
         Updates cells in-place with more accurate text from pdfminer
         when the positions overlap.
 
+        Coordinate Systems:
+        - blocks: bbox in PDF coordinates (origin at bottom-left, y increases upward)
+          - bbox[0]=x0, bbox[1]=y0(bottom), bbox[2]=x1, bbox[3]=y1(top)
+        - cells: box in image coordinates (origin at top-left, y increases downward)
+          - box[0]=x0, box[1]=y0(top), box[2]=x1, box[3]=y1(bottom)
+
+        Conversion formula (PDF -> Image):
+          image_x = pdf_x * scale
+          image_y0 = (page_height - pdf_y1) * scale  (top edge)
+          image_y1 = (page_height - pdf_y0) * scale  (bottom edge)
+
         Optimization: Pre-compute block coordinates to avoid repeated
         scale calculations in nested loop.
         """
@@ -3019,29 +3045,33 @@ class PdfProcessor(FileProcessor):
             return
 
         # Pre-compute scale factor once (optimization)
+        # PDF uses 72 DPI, layout uses OCR DPI (typically 200)
         scale = dpi / 72.0
 
         # Pre-convert all block bboxes to image coordinates (optimization)
         # This avoids repeated coordinate conversion in the nested loop
+        # Format: (x0, y0, x1, y1, text) where y0 < y1 in image coordinates
         converted_blocks: list[tuple[float, float, float, float, str]] = []
         for block in blocks:
             if not block.metadata or 'bbox' not in block.metadata:
                 continue
             bbox = block.metadata['bbox']
             # Convert PDF coordinates to image coordinates
+            # PDF bbox: [x0, y0(bottom), x1, y1(top)]
+            # Image coords: y0(top) < y1(bottom)
             block_x0 = bbox[0] * scale
-            block_y0 = (page_height - bbox[3]) * scale  # Flip Y
+            block_y0 = (page_height - bbox[3]) * scale  # PDF y1(top) -> image y0(top)
             block_x1 = bbox[2] * scale
-            block_y1 = (page_height - bbox[1]) * scale  # Flip Y
+            block_y1 = (page_height - bbox[1]) * scale  # PDF y0(bottom) -> image y1(bottom)
             converted_blocks.append((block_x0, block_y0, block_x1, block_y1, block.text))
 
         if not converted_blocks:
             return
 
-        # Sort blocks by y0 for potential early termination (optimization)
-        # Blocks are sorted by y0 ascending, so we can skip blocks that are
-        # definitely below the cell
-        converted_blocks.sort(key=lambda b: b[1])
+        # Sort blocks by (y0, x0) for reading order and early termination
+        # Primary: y0 ascending (top to bottom in image coordinates)
+        # Secondary: x0 ascending (left to right for same y position)
+        converted_blocks.sort(key=lambda b: (b[1], b[0]))
 
         # For each cell, find overlapping pdfminer blocks and merge text
         for cell in cells:
@@ -3051,21 +3081,26 @@ class PdfProcessor(FileProcessor):
             cell_x0, cell_y0, cell_x1, cell_y1 = cell.box
 
             # Find pdfminer blocks that overlap with this cell
-            overlapping_texts = []
+            # Store as (y0, x0, text) for proper reading order sorting
+            overlapping_blocks: list[tuple[float, float, str]] = []
             for block_x0, block_y0, block_x1, block_y1, block_text in converted_blocks:
-                # Early termination: if block is entirely below cell, skip remaining
+                # Early termination: if block top is below cell bottom, skip remaining
                 # (blocks are sorted by y0, so later blocks will also be below)
                 if block_y0 > cell_y1:
                     break
 
-                # Check overlap
+                # 2D overlap check (all 4 conditions required):
+                # X-axis: block_x0 < cell_x1 AND block_x1 > cell_x0
+                # Y-axis: block_y0 < cell_y1 AND block_y1 > cell_y0
                 if (block_x0 < cell_x1 and block_x1 > cell_x0 and
-                    block_y1 > cell_y0):
-                    overlapping_texts.append(block_text)
+                    block_y0 < cell_y1 and block_y1 > cell_y0):
+                    overlapping_blocks.append((block_y0, block_x0, block_text))
 
-            # If we found overlapping pdfminer text, use it
-            if overlapping_texts:
-                cell.text = " ".join(overlapping_texts)
+            # If we found overlapping pdfminer text, merge in reading order
+            if overlapping_blocks:
+                # Sort by (y0, x0) for proper reading order (top-to-bottom, left-to-right)
+                overlapping_blocks.sort(key=lambda b: (b[0], b[1]))
+                cell.text = " ".join(b[2] for b in overlapping_blocks)
 
     def _extract_with_pdfminer_streaming(
         self,
@@ -3157,6 +3192,23 @@ class PdfProcessor(FileProcessor):
         Group LTChar objects into TextBlock objects using PDFMathTranslate-style
         sstk/vstk stack management.
 
+        Coordinate Systems:
+        - Input (pdfminer LTChar): PDF coordinates (origin at bottom-left)
+          - char.x0, char.x1: horizontal position (left to right)
+          - char.y0: bottom edge of character (increases upward)
+          - char.y1: top edge of character (increases upward)
+        - Layout array: Image coordinates (origin at top-left)
+          - x: left to right (same as PDF)
+          - y: top to bottom (inverted from PDF)
+        - Output (TextBlock.metadata['bbox']): PDF coordinates
+          - Preserved for downstream use in _merge_pdfminer_text_to_cells
+
+        Conversion formula (PDF -> Image, for layout lookup):
+          image_x = pdf_x * (layout_height / page_height)
+          image_y = (page_height - pdf_y1) * (layout_height / page_height)
+          Note: Uses char_y1 (top edge) because we want the character's
+          position from the top of the page in image coordinates.
+
         PDFMathTranslate compliant features:
         - sstk (string stack): Text paragraphs with formula placeholders
         - vstk (variable stack): Formula character buffer
@@ -3172,14 +3224,15 @@ class PdfProcessor(FileProcessor):
         - Cache previous char coordinates
 
         Args:
-            chars: List of LTChar objects from pdfminer
+            chars: List of LTChar objects from pdfminer (PDF coordinates)
             page_idx: Page index (0-based)
             LTChar: LTChar class reference
             layout: Optional LayoutArray from PP-DocLayout-L for region-based grouping
-            page_height: Page height for coordinate conversion (required if layout is provided)
+                   (image coordinates, origin at top-left)
+            page_height: Page height in PDF points (72 DPI) for coordinate conversion
 
         Returns:
-            List of TextBlock objects with formula placeholders
+            List of TextBlock objects with bbox in PDF coordinates
         """
         if not chars:
             return []

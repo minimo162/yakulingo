@@ -1546,7 +1546,10 @@ class YakuLingoApp:
             elapsed_time = time.time() - start_time
             self.state.text_translation_elapsed_time = elapsed_time
 
-            status_value = getattr(getattr(result, "status", None), "value", "unknown")
+            if hasattr(result, 'status'):
+                status_value = result.status.value
+            else:
+                status_value = "success" if result and result.options else "failed"
             logger.info(
                 "Translation [%s] completed in %.2fs (status=%s)",
                 trace_id,

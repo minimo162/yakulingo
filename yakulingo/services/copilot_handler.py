@@ -773,6 +773,9 @@ class CopilotHandler:
         except (PlaywrightError, PlaywrightTimeoutError):
             pass
 
+        # Hide browser window when login is not required
+        self._send_to_background_impl(self._page)
+
     def _cleanup_on_error(self) -> None:
         """Clean up resources when connection fails."""
         from contextlib import suppress

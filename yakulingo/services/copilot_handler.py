@@ -1904,14 +1904,32 @@ class CopilotHandler:
                 logger.debug("Input verified (has content)")
 
                 # Wait for send button to be enabled (appears after text input)
-                # 実際のCopilot HTML: <button type="submit" aria-label="送信" class="... fai-SendButton ...">
-                # 入力がある場合のみボタンが有効化される
-                send_button_selector = '.fai-SendButton:not([disabled]), button[type="submit"][aria-label="送信"]:not([disabled]), button[aria-label*="Send"]:not([disabled]), button[aria-label*="送信"]:not([disabled])'
+                # Copilot HTML varies by version; try multiple selectors
+                # - .fai-SendButton: 旧Copilot UI
+                # - button[type="submit"]: 汎用submit
+                # - [data-testid*="send"]: テスト用ID
+                # - aria-label系: アクセシビリティ属性
+                send_button_selectors = [
+                    '.fai-SendButton:not([disabled])',
+                    'button[type="submit"][aria-label="送信"]:not([disabled])',
+                    'button[type="submit"][aria-label="Send"]:not([disabled])',
+                    'button[aria-label="送信"]:not([disabled])',
+                    'button[aria-label="Send"]:not([disabled])',
+                    'button[aria-label*="送信"]:not([disabled])',
+                    'button[aria-label*="Send"]:not([disabled])',
+                    'button[data-testid*="send"]:not([disabled])',
+                    'button[data-testid*="Send"]:not([disabled])',
+                    # Fluent UI React buttons
+                    'button.fui-Button[type="submit"]:not([disabled])',
+                    # Generic submit button near input
+                    'form button[type="submit"]:not([disabled])',
+                ]
+                send_button_selector = ', '.join(send_button_selectors)
                 logger.debug("Waiting for send button...")
                 try:
                     send_button = self._page.wait_for_selector(
                         send_button_selector,
-                        timeout=1000,  # Reduced from 2000ms (Enter key fallback handles timeouts)
+                        timeout=2000,  # Increased timeout for UI stability
                         state='visible'
                     )
                     if send_button:
@@ -1948,9 +1966,19 @@ class CopilotHandler:
                         logger.info("Message sent via Enter key (fallback)")
 
                     # Confirm that the send action actually fired; fallback to Enter if text remains
+                    # Check for stop/cancel button or loading indicator
+                    stop_selectors = ', '.join([
+                        '.fai-SendButton__stopBackground',
+                        'button[aria-label*="Stop"]',
+                        'button[aria-label*="停止"]',
+                        'button[aria-label*="Cancel"]',
+                        '[data-testid*="stop"]',
+                        '[class*="loading"]',
+                        '[class*="spinner"]',
+                    ])
                     try:
                         self._page.wait_for_selector(
-                            '.fai-SendButton__stopBackground',
+                            stop_selectors,
                             timeout=1000,
                             state='visible'
                         )
@@ -1965,7 +1993,23 @@ class CopilotHandler:
                             logger.debug("Send confirmation check failed: %s", check_err)
 
                 except PlaywrightTimeoutError:
-                    # Timeout waiting for button, try Enter key
+                    # Timeout waiting for button - log available buttons for debugging
+                    try:
+                        buttons_info = self._page.evaluate('''() => {
+                            const buttons = document.querySelectorAll('button');
+                            return Array.from(buttons).slice(-10).map(b => ({
+                                type: b.type,
+                                ariaLabel: b.getAttribute('aria-label'),
+                                className: b.className.substring(0, 100),
+                                disabled: b.disabled,
+                                testId: b.getAttribute('data-testid')
+                            }));
+                        }''')
+                        logger.debug("Available buttons (last 10): %s", buttons_info)
+                    except Exception as debug_err:
+                        logger.debug("Failed to get button info: %s", debug_err)
+
+                    # Try Enter key as fallback
                     logger.debug("Timeout waiting for send button, using Enter key")
                     self._ensure_gpt5_enabled()
                     input_elem.press("Enter")
@@ -2063,8 +2107,17 @@ class CopilotHandler:
 
                 # Check if Copilot is still generating (stop button visible)
                 # If stop button is present, response is not complete yet
-                # 実際のCopilot HTML: <div class="fai-SendButton__stopBackground ..."></div>
-                stop_button = self._page.query_selector('.fai-SendButton__stopBackground')
+                # Try multiple selectors for stop/loading indicators
+                stop_button = None
+                for stop_sel in [
+                    '.fai-SendButton__stopBackground',
+                    'button[aria-label*="Stop"]',
+                    'button[aria-label*="停止"]',
+                    '[data-testid*="stop"]',
+                ]:
+                    stop_button = self._page.query_selector(stop_sel)
+                    if stop_button:
+                        break
                 if stop_button and stop_button.is_visible():
                     # Still generating, reset stability counter and wait
                     stable_count = 0

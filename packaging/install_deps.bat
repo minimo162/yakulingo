@@ -168,7 +168,8 @@ echo [DONE] Playwright browser installed.
 :: ============================================================
 echo.
 echo [5/6] Verifying paddlepaddle installation...
-.venv\Scripts\python.exe -c "import paddle; print('[OK] paddlepaddle version:', paddle.__version__)"
+:: Use -W ignore to suppress ccache and other warnings
+.venv\Scripts\python.exe -W ignore -c "import warnings; warnings.filterwarnings('ignore'); import paddle; print('[OK] paddlepaddle version:', paddle.__version__)" 2>nul
 if errorlevel 1 (
     echo [WARNING] paddlepaddle is not installed correctly.
     echo [INFO] Attempting manual installation via uv pip...
@@ -179,7 +180,7 @@ if errorlevel 1 (
     ) else (
         echo [OK] paddlepaddle installed successfully.
         :: Verify again after install
-        .venv\Scripts\python.exe -c "import paddle; print('[OK] paddlepaddle version:', paddle.__version__)"
+        .venv\Scripts\python.exe -W ignore -c "import warnings; warnings.filterwarnings('ignore'); import paddle; print('[OK] paddlepaddle version:', paddle.__version__)" 2>nul
     )
 )
 
@@ -191,7 +192,8 @@ echo [6/6] Pre-compiling Python bytecode...
 .venv\Scripts\python.exe -m compileall -q yakulingo 2>nul
 .venv\Scripts\python.exe -c "import nicegui; import pywebview; from yakulingo.ui import app; from yakulingo.services import translation_service" 2>nul
 :: Pre-import paddle/paddleocr to download models and cache them (may take a while)
-.venv\Scripts\python.exe -c "import paddle; from paddleocr import LayoutDetection" 2>nul
+:: Suppress all warnings including ccache and CUDA-related messages
+.venv\Scripts\python.exe -W ignore -c "import warnings; warnings.filterwarnings('ignore'); import paddle; from paddleocr import LayoutDetection" 2>nul
 if errorlevel 1 (
     echo [WARNING] paddleocr model download may have failed. PDF layout analysis may not work.
 )

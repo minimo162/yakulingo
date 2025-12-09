@@ -1031,6 +1031,12 @@ class CopilotHandler:
         # Navigate with 'commit' (fastest - just wait for first response)
         logger.info("Navigating to Copilot...")
         copilot_page.goto(self.COPILOT_URL, wait_until='commit', timeout=self.PAGE_GOTO_TIMEOUT_MS)
+
+        # Immediately minimize browser after navigation to prevent it from
+        # staying in foreground during login redirect. Login redirects can
+        # cause Edge to steal focus even when started minimized.
+        self._minimize_edge_window(None)
+
         return copilot_page
 
     def _wait_for_chat_ready(self, page, wait_for_login: bool = True) -> bool:
@@ -1286,6 +1292,9 @@ class CopilotHandler:
 
         logger.info("Waiting for auto-login to complete (max %.1fs)...", max_wait)
 
+        # Minimize browser window at start - login redirects may bring it to foreground
+        self._minimize_edge_window(None)
+
         while elapsed < max_wait:
             try:
                 # Check if chat UI is now available
@@ -1293,6 +1302,8 @@ class CopilotHandler:
                 try:
                     self._page.wait_for_selector(input_selector, timeout=500, state='visible')
                     logger.info("Auto-login completed - chat UI is ready (%.1fs)", elapsed)
+                    # Ensure window is minimized before returning
+                    self._minimize_edge_window(None)
                     return True
                 except PlaywrightTimeoutError:
                     pass  # Chat not ready yet, continue monitoring
@@ -1306,6 +1317,8 @@ class CopilotHandler:
                     try:
                         self._page.wait_for_selector(input_selector, timeout=2000, state='visible')
                         logger.info("Auto-login completed after redirect - chat UI ready (%.1fs)", elapsed)
+                        # Ensure window is minimized before returning
+                        self._minimize_edge_window(None)
                         return True
                     except PlaywrightTimeoutError:
                         pass  # Keep waiting
@@ -1326,6 +1339,8 @@ class CopilotHandler:
                         # URL changed - auto-login is progressing
                         logger.debug("Auto-login progressing: %s -> %s", last_url[:50], current_url[:50])
                         stable_count = 0
+                        # Re-minimize after redirect - Edge may steal focus during redirects
+                        self._minimize_edge_window(None)
 
                 last_url = current_url
                 time.sleep(poll_interval)
@@ -1346,6 +1361,8 @@ class CopilotHandler:
             try:
                 self._page.wait_for_selector(input_selector, timeout=2000, state='visible')
                 logger.info("Auto-login completed at timeout - chat UI ready")
+                # Ensure window is minimized before returning
+                self._minimize_edge_window(None)
                 return True
             except PlaywrightTimeoutError:
                 logger.info("Auto-login timeout - chat UI not ready after %.1fs", max_wait)
@@ -1547,7 +1564,12 @@ class CopilotHandler:
             return False
 
     def _minimize_edge_window(self, page_title: str = None) -> bool:
-        """Minimize Edge window to return it to the background after login."""
+        """Minimize Edge window to return it to the background after login.
+
+        Note: We only use SW_MINIMIZE (not SW_HIDE) to keep the window in
+        the taskbar. SW_HIDE causes issues with Edge's multi-process
+        architecture where the window may be restored by another process.
+        """
         if sys.platform != "win32":
             return False
 
@@ -1556,15 +1578,19 @@ class CopilotHandler:
 
             user32 = ctypes.WinDLL('user32', use_last_error=True)
             SW_MINIMIZE = 6
-            SW_HIDE = 0
+            SW_SHOWMINNOACTIVE = 7  # Minimize without activating
 
             edge_hwnd = self._find_edge_window_handle(page_title)
             if not edge_hwnd:
                 logger.debug("Edge window not found for minimization")
                 return False
 
-            user32.ShowWindow(edge_hwnd, SW_MINIMIZE)
-            user32.ShowWindow(edge_hwnd, SW_HIDE)
+            # Use SW_SHOWMINNOACTIVE to minimize without activating/flashing
+            result = user32.ShowWindow(edge_hwnd, SW_SHOWMINNOACTIVE)
+            if not result:
+                # Window was already minimized or hidden, try SW_MINIMIZE
+                user32.ShowWindow(edge_hwnd, SW_MINIMIZE)
+
             logger.debug("Edge window minimized after login")
             return True
         except Exception as e:

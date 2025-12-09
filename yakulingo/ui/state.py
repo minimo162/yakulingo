@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Optional, TYPE_CHECKING
 from enum import Enum
 
-from yakulingo.models.types import FileInfo, TextTranslationResult, HistoryEntry, TranslationResult
+from yakulingo.models.types import FileInfo, TextTranslationResult, HistoryEntry, TranslationResult, TranslationOption
 
 # Deferred imports for faster startup
 if TYPE_CHECKING:
@@ -72,6 +72,8 @@ class AppState:
     text_result: Optional[TextTranslationResult] = None
     text_translation_elapsed_time: Optional[float] = None  # Translation time in seconds
     streaming_text: Optional[str] = None  # Partial text during streaming response
+    text_partial_result: Optional[TranslationOption] = None  # Translation text only (before explanation)
+    explanation_loading: bool = False  # True when explanation is being received
 
     # File tab state
     file_state: FileState = FileState.EMPTY
@@ -140,6 +142,8 @@ class AppState:
         self.text_result = None
         self.text_translation_elapsed_time = None
         self.streaming_text = None
+        self.text_partial_result = None
+        self.explanation_loading = False
 
     def reset_file_state(self) -> None:
         """Reset file tab state"""

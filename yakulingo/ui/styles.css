@@ -929,7 +929,6 @@ textarea:focus-visible {
     width: 100% !important;
     height: 100% !important;
     z-index: 10 !important;
-    pointer-events: none !important;
 }
 
 /* Make q-uploader completely invisible */
@@ -953,16 +952,26 @@ textarea:focus-visible {
     cursor: pointer !important;
 }
 
-/* Hide ALL Quasar uploader internal elements */
+/* Hide Quasar uploader internal elements (except dnd which handles drop) */
 .drop-zone-upload .q-uploader__header,
 .drop-zone-upload .q-uploader__list,
 .drop-zone-upload .q-uploader__file,
-.drop-zone-upload .q-uploader__dnd,
 .drop-zone-upload .q-uploader__subtitle,
 .drop-zone-upload .q-uploader__overlay,
 .drop-zone-upload .q-uploader__spinner,
 .drop-zone-upload .q-uploader__expand-btn {
     display: none !important;
+}
+
+/* Make drop zone invisible but receive drop events */
+.drop-zone-upload .q-uploader__dnd {
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    opacity: 0 !important;
+    background: transparent !important;
 }
 
 .drop-zone-icon,

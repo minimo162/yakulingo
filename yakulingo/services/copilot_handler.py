@@ -1234,22 +1234,20 @@ class CopilotHandler:
             return False
 
     def _send_to_background_impl(self, page) -> None:
-        """Hide or minimize the Edge window after login completes."""
-        error_types = _get_playwright_errors()
-        PlaywrightError = error_types['Error']
+        """Hide or minimize the Edge window after translation completes.
 
-        page_title = None
-        try:
-            page_title = page.title()
-        except PlaywrightError as e:
-            logger.debug("Failed to get page title while minimizing: %s", e)
-
+        Note: We intentionally avoid calling page.title() or any Playwright
+        methods here, as they can briefly bring the browser to the foreground
+        due to the communication with the browser process.
+        """
         if sys.platform == "win32":
-            self._minimize_edge_window(page_title)
+            # Pass None for page_title - _find_edge_window_handle will use
+            # the Edge process ID to find the window handle instead.
+            self._minimize_edge_window(None)
         else:
             logger.debug("Background minimization not implemented for this platform")
 
-        logger.info("Browser window returned to background after login")
+        logger.debug("Browser window returned to background after translation")
 
     def _wait_for_login_completion(self, page, timeout: int = 300) -> bool:
         """Wait for user to complete login in the browser.

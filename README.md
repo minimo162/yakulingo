@@ -139,8 +139,8 @@ python app.py
   "last_tab": "text",
   "window_width": 1400,
   "window_height": 850,
-  "max_chars_per_batch": 7000,
-  "request_timeout": 120,
+  "max_chars_per_batch": 4000,
+  "request_timeout": 600,
   "max_retries": 3,
   "bilingual_output": false,
   "export_glossary": false,
@@ -178,8 +178,8 @@ python app.py
 | `ocr_dpi` | PDFレイアウト解析の解像度 | 200 |
 | `auto_update_enabled` | 起動時の自動更新チェックを有効化 | true |
 | `auto_update_check_interval` | 更新チェック間隔（秒） | 86400 |
-| `max_chars_per_batch` | Copilot送信1回あたりの最大文字数（テンプレート込みで安全マージン確保） | 7000 |
-| `request_timeout` | 翻訳リクエストのタイムアウト（秒） | 120 |
+| `max_chars_per_batch` | Copilot送信1回あたりの最大文字数（信頼性向上のため縮小） | 4000 |
+| `request_timeout` | 翻訳リクエストのタイムアウト（秒、大規模翻訳対応） | 600 |
 | `output_directory` | 出力先フォルダ（nullは入力と同じ場所） | null |
 | `window_width` / `window_height` | ウィンドウ初期サイズ | 1400 / 850 |
 
@@ -273,8 +273,8 @@ YakuLingo/
 ├── packaging/                # 配布・ビルド関連
 │   ├── launcher/             # ネイティブランチャー（Rust製）
 │   └── installer/            # ネットワーク共有インストーラ
-├── tests/                    # テストスイート（33ファイル）
-├── prompts/                  # 翻訳プロンプト（17ファイル）
+├── tests/                    # テストスイート（32ファイル）
+├── prompts/                  # 翻訳プロンプト（16ファイル）
 ├── config/settings.template.json  # 設定テンプレート
 └── glossary.csv              # デフォルト参照ファイル
 ```

@@ -180,7 +180,7 @@ YakuLingo/
 │   └── config/
 │       └── settings.py             # AppSettings
 │
-├── tests/                          # テストスイート（33ファイル）
+├── tests/                          # テストスイート（32ファイル）
 │   ├── conftest.py
 │   └── test_*.py
 │
@@ -790,7 +790,7 @@ class TranslationService:
 ```python
 class BatchTranslator:
     MAX_BATCH_SIZE = 50         # ブロック数上限
-    MAX_CHARS_PER_BATCH = 7000  # 文字数上限（Copilot Free 8000制限対応）
+    MAX_CHARS_PER_BATCH = 4000  # 文字数上限（信頼性向上のため縮小）
 
     def translate_blocks(blocks, reference_files, on_progress) -> dict[str, str]:
         """
@@ -1213,8 +1213,8 @@ class AppSettings:
     window_height: int = 850
 
     # Advanced
-    max_chars_per_batch: int = 7000      # Copilot Free 8000制限対応
-    request_timeout: int = 120
+    max_chars_per_batch: int = 4000      # 信頼性向上のため縮小
+    request_timeout: int = 600           # 10分（大規模翻訳対応）
     max_retries: int = 3
 
     # File Translation Options
@@ -1537,6 +1537,16 @@ python -c "import time; t=time.time(); from yakulingo.ui import run_app; print(f
 ---
 
 ## 変更履歴
+
+### 2.16 (2025-12)
+- Copilot入力の信頼性向上（fill()メソッド、Enterキー送信に統一）
+- Edge起動タイムアウトを6秒→20秒に延長
+- 自動ログイン検出を改善し、不要なブラウザ前面表示を防止
+- PP-DocLayout-L起動時の事前初期化でPlaywright競合を回避
+- 翻訳結果カードUIを英訳・和訳で統一
+- バッチサイズ縮小（7000→4000文字）で信頼性向上
+- request_timeout延長（120秒→600秒）で大規模翻訳対応
+- Excel COM接続の事前クリーンアップ追加
 
 ### 2.15 (2025-12)
 - PDF翻訳: yomitokuをPP-DocLayout-Lに置き換え（Apache-2.0、商用利用可）

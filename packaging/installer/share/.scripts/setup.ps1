@@ -224,8 +224,9 @@ function Prepare-TempWorkspace {
         [string]$ZipFileName
     )
 
+    # Clean up old temp folders using cmd /c rd (faster, avoids PowerShell enumeration)
     Get-ChildItem -Path $env:TEMP -Directory -Filter "YakuLingo_Setup_*" -ErrorAction SilentlyContinue | ForEach-Object {
-        Remove-Item -Path $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
+        & cmd /c "rd /s /q `"$($_.FullName)`" 2>nul"
     }
 
     $TempZipDir = Join-Path $env:TEMP "YakuLingo_Setup_$(Get-Date -Format 'yyyyMMddHHmmss')"
@@ -259,7 +260,8 @@ function Cleanup-Directory {
     )
 
     if (Test-Path $Path) {
-        Remove-Item -Path $Path -Recurse -Force -ErrorAction SilentlyContinue
+        # Use cmd /c rd for faster removal (avoids PowerShell enumeration)
+        & cmd /c "rd /s /q `"$Path`" 2>nul"
     }
 }
 
@@ -273,7 +275,17 @@ function Update-PyVenvConfig {
         throw "pyvenv.cfg not found. The package seems to be incomplete." 
     }
 
-    $pythonExe = Get-ChildItem -Path (Join-Path $SetupPath ".uv-python") -Filter "python.exe" -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+    # Find python.exe in .uv-python (structure: .uv-python/cpython-x.x.x-*/python.exe)
+    # Only search one level deep to avoid slow recursive enumeration
+    $uvPythonDir = Join-Path $SetupPath ".uv-python"
+    $pythonExe = $null
+    Get-ChildItem -Path $uvPythonDir -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+        $candidate = Join-Path $_.FullName "python.exe"
+        if (Test-Path $candidate) {
+            $pythonExe = Get-Item $candidate
+            return  # Break out of ForEach-Object
+        }
+    }
     if (-not $pythonExe) {
         throw "python.exe not found under .uv-python. Please ensure the distribution contains the bundled Python runtime."
     }

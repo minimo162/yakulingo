@@ -2419,7 +2419,7 @@ textarea:focus-visible {
     padding: 0.625rem 0.875rem !important;
     font-size: var(--md-sys-typescale-size-xs) !important;
     color: var(--md-sys-color-on-surface) !important;
-    background: var(--md-sys-color-surface) !important;
+    background: var(--md-sys-color-surface-container) !important;
     border-radius: var(--md-sys-shape-corner-medium) !important;
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard) !important;
     text-align: left !important;

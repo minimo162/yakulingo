@@ -715,6 +715,13 @@ class CopilotHandler:
                 # poll for completion while the user signs in.
                 if self.last_connection_error == self.ERROR_LOGIN_REQUIRED:
                     try:
+                        # Double-check readiness to avoid foregrounding the browser
+                        # when login isn't actually needed (e.g., slow load).
+                        if self._check_copilot_state(timeout=3) == ConnectionState.READY:
+                            logger.info("Chat became ready during verification; skipping login prompt")
+                            self._finalize_connected_state()
+                            return True
+
                         self._bring_to_foreground_impl(self._page)
                     except Exception:
                         logger.debug("Failed to bring browser to front after login detection", exc_info=True)
@@ -724,18 +731,7 @@ class CopilotHandler:
                 self._cleanup_on_error()
                 return False
 
-            self._connected = True
-            self.last_connection_error = self.ERROR_NONE
-
-            # Save storage_state to preserve login session
-            self._save_storage_state()
-
-            # Stop browser loading indicator (optional)
-            try:
-                self._page.evaluate("window.stop()")
-            except (PlaywrightError, PlaywrightTimeoutError):
-                pass
-
+            self._finalize_connected_state()
             logger.info("Copilot connection established")
             return True
 
@@ -749,6 +745,24 @@ class CopilotHandler:
             self.last_connection_error = self.ERROR_NETWORK
             self._cleanup_on_error()
             return False
+
+    def _finalize_connected_state(self) -> None:
+        """Mark the connection as established and persist session state."""
+        error_types = _get_playwright_errors()
+        PlaywrightError = error_types['Error']
+        PlaywrightTimeoutError = error_types['TimeoutError']
+
+        self._connected = True
+        self.last_connection_error = self.ERROR_NONE
+
+        # Save storage_state to preserve login session
+        self._save_storage_state()
+
+        # Stop browser loading indicator (optional)
+        try:
+            self._page.evaluate("window.stop()")
+        except (PlaywrightError, PlaywrightTimeoutError):
+            pass
 
     def _cleanup_on_error(self) -> None:
         """Clean up resources when connection fails."""
@@ -1370,6 +1384,17 @@ class CopilotHandler:
             _playwright_executor.execute(self._bring_to_foreground_impl, self._page)
         except Exception as e:
             logger.debug("Failed to bring window to foreground: %s", e)
+
+    def send_to_background(self) -> None:
+        """Hide/minimize the Edge window after login is complete."""
+        if not self._page:
+            logger.debug("Skipping send_to_background: no page available")
+            return
+
+        try:
+            _playwright_executor.execute(self._send_to_background_impl, self._page)
+        except Exception as e:
+            logger.debug("Failed to send window to background: %s", e)
 
     def disconnect(self) -> None:
         """Close browser and cleanup"""

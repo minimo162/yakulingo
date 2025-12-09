@@ -10,7 +10,7 @@ from pathlib import Path
 import asyncio
 
 from yakulingo.ui.state import AppState, FileState
-from yakulingo.ui.utils import temp_file_manager
+from yakulingo.ui.utils import temp_file_manager, trigger_file_download
 from yakulingo.models.types import FileInfo, FileType, SectionDetail, TranslationResult
 
 # Paperclip/Attachment SVG icon (Material Design style)
@@ -557,10 +557,7 @@ def _output_file_row(file_path: Path, description: str):
 
 def _download_file(file_path: Path):
     """Trigger browser download for the generated file."""
-    if file_path.exists():
-        ui.download(file_path)
-    else:
-        ui.notify('ダウンロードするファイルが見つかりません', type='negative')
+    trigger_file_download(file_path)
 
 
 def _error_card(error_message: str):

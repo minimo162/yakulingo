@@ -2204,10 +2204,13 @@ class YakuLingoApp:
 
     def _download(self):
         """Download translated file"""
-        if self.state.output_file and self.state.output_file.exists():
-            ui.download(self.state.output_file)
-        else:
+        if not self.state.output_file:
             ui.notify('ダウンロードするファイルが見つかりません', type='negative')
+            return
+
+        from yakulingo.ui.utils import trigger_file_download
+
+        trigger_file_download(self.state.output_file)
 
     def _reset(self):
         """Reset file state"""

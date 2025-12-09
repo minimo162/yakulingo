@@ -774,7 +774,8 @@ class CopilotHandler:
                 return False
 
             self._finalize_connected_state()
-            logger.info("Copilot connection established")
+            current_url = self._page.url if self._page else "unknown"
+            logger.info("Copilot connection established (URL: %s)", current_url[:80] if current_url else "empty")
             return True
 
         except (PlaywrightError, PlaywrightTimeoutError) as e:
@@ -988,7 +989,8 @@ class CopilotHandler:
                         return self._wait_for_login_completion(page)
                     return False
 
-            logger.info("Copilot chat UI ready")
+            current_url = page.url
+            logger.info("Copilot chat UI ready (URL: %s)", current_url[:80] if current_url else "empty")
             time.sleep(0.2)  # Wait for session to fully initialize
             return True
         except PlaywrightTimeoutError:
@@ -2278,7 +2280,8 @@ class CopilotHandler:
             poll_iteration = 0
             last_log_time = time.time()
 
-            logger.info("[POLLING] Starting response polling (timeout=%.0fs)", max_wait)
+            current_url = self._page.url if self._page else "unknown"
+            logger.info("[POLLING] Starting response polling (timeout=%.0fs, URL: %s)", max_wait, current_url[:80] if current_url else "empty")
 
             while max_wait > 0:
                 poll_iteration += 1
@@ -2377,10 +2380,11 @@ class CopilotHandler:
                 else:
                     # No response element yet, use initial interval
                     poll_interval = self.RESPONSE_POLL_INITIAL
-                    # Log no response state
+                    # Log no response state with URL check
                     if time.time() - last_log_time >= 1.0:
-                        logger.info("[POLLING] iter=%d no response element found (remaining=%.1fs)",
-                                   poll_iteration, max_wait)
+                        current_url = self._page.url if self._page else "unknown"
+                        logger.info("[POLLING] iter=%d no response element found (remaining=%.1fs, URL: %s)",
+                                   poll_iteration, max_wait, current_url[:80] if current_url else "empty")
                         last_log_time = time.time()
 
                 time.sleep(poll_interval)

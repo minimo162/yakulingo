@@ -9,7 +9,7 @@ import shutil
 import tempfile
 import zipfile
 from pathlib import Path
-from typing import Iterator
+from typing import Iterator, Optional
 from xml.etree import ElementTree as ET
 from docx import Document
 from docx.shared import Pt
@@ -388,8 +388,13 @@ class WordProcessor(FileProcessor):
         translations: dict[str, str],
         direction: str = "jp_to_en",
         settings=None,
+        selected_sections: Optional[list[int]] = None,
     ) -> None:
-        """Apply translations while preserving formatting"""
+        """Apply translations while preserving formatting.
+
+        Note: selected_sections is accepted for API consistency but not used
+        for Word documents (Word doesn't have discrete sections like sheets/slides).
+        """
         doc = Document(input_path)
         font_manager = FontManager(direction, settings)
 

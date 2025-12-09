@@ -5,7 +5,7 @@ Processor for PowerPoint files (.pptx).
 
 import logging
 from pathlib import Path
-from typing import Iterator
+from typing import Iterator, Optional
 from pptx import Presentation
 from pptx.enum.shapes import MSO_SHAPE_TYPE
 from pptx.util import Pt
@@ -113,12 +113,25 @@ class PptxProcessor(FileProcessor):
         translations: dict[str, str],
         direction: str = "jp_to_en",
         settings=None,
+        selected_sections: Optional[list[int]] = None,
     ) -> None:
-        """Apply translations to PowerPoint"""
+        """Apply translations to PowerPoint.
+
+        Args:
+            selected_sections: List of slide indices to process (0-indexed).
+                              If None, all slides are processed.
+        """
         prs = Presentation(input_path)
         font_manager = FontManager(direction, settings)
 
+        # Convert selected_sections to a set for O(1) lookup
+        selected_set = set(selected_sections) if selected_sections is not None else None
+
         for slide_idx, slide in enumerate(prs.slides):
+            # Skip slides not in selected_sections (if specified)
+            if selected_set is not None and slide_idx not in selected_set:
+                continue
+
             counters = {'shape': 0, 'table': 0}
 
             for shape in slide.shapes:

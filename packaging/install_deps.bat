@@ -170,14 +170,14 @@ echo [5/6] Verifying paddlepaddle installation...
 .venv\Scripts\python.exe -c "import paddle; print('[OK] paddlepaddle version:', paddle.__version__)"
 if errorlevel 1 (
     echo [WARNING] paddlepaddle is not installed correctly.
-    echo [INFO] Attempting manual installation via pip...
-    .venv\Scripts\pip.exe install --proxy "http://!PROXY_USER!:!PROXY_PASS!@!PROXY_SERVER!" paddlepaddle>=3.0.0 paddleocr>=3.0.0
+    echo [INFO] Attempting manual installation via uv pip...
+    uv.exe pip install --native-tls paddlepaddle>=3.0.0 paddleocr>=3.0.0
     if errorlevel 1 (
         echo [ERROR] Failed to install paddlepaddle.
         echo [INFO] PDF layout analysis will not be available.
     ) else (
         echo [OK] paddlepaddle installed successfully.
-        :: Verify again after pip install
+        :: Verify again after install
         .venv\Scripts\python.exe -c "import paddle; print('[OK] paddlepaddle version:', paddle.__version__)"
     )
 )

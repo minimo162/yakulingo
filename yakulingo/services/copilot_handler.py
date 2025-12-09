@@ -2054,7 +2054,9 @@ class CopilotHandler:
                         logger.debug("Method 3 (fill) failed: %s", e)
                         fill_success = False
 
-                # Method 4: Click and type character by character (slowest, last resort)
+                # Method 4: Click and type line by line (slowest, last resort)
+                # Note: type() interprets \n as Enter key which sends the message in Copilot.
+                # We split by newlines and use Shift+Enter for line breaks.
                 if not fill_success:
                     logger.debug("Method 3 failed, trying click + type...")
                     try:
@@ -2063,8 +2065,14 @@ class CopilotHandler:
                         # Clear any existing content
                         input_elem.press("Control+a")
                         time.sleep(0.05)
-                        # Type the message (this simulates real keyboard input)
-                        input_elem.type(message, delay=0)
+                        # Type the message line by line, using Shift+Enter for newlines
+                        # This prevents Enter from triggering send
+                        lines = message.split('\n')
+                        for i, line in enumerate(lines):
+                            if line:  # Only type non-empty lines
+                                input_elem.type(line, delay=0)
+                            if i < len(lines) - 1:  # Add newline except after last line
+                                input_elem.press("Shift+Enter")
                         # Verify content was set
                         content = input_elem.inner_text()
                         fill_success = len(content.strip()) > 0

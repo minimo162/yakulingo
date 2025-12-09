@@ -1,59 +1,59 @@
 /* === M3 Design Tokens === */
 :root {
-    /* Primary - Purple/blue CTA inspired by Nani's action buttons */
-    --md-sys-color-primary: #6758D1;
+    /* Primary - Refined purple CTA (Nani-inspired, slightly muted for focus on content) */
+    --md-sys-color-primary: #5E52B3;
     --md-sys-color-on-primary: #FFFFFF;
-    --md-sys-color-primary-container: #E8E6FF;
-    --md-sys-color-on-primary-container: #24186F;
+    --md-sys-color-primary-container: #EDEAFF;
+    --md-sys-color-on-primary-container: #1D1068;
 
     /* Secondary - Cool neutral for supportive controls */
-    --md-sys-color-secondary: #56606C;
+    --md-sys-color-secondary: #5A6570;
     --md-sys-color-on-secondary: #FFFFFF;
-    --md-sys-color-secondary-container: #E2E6ED;
-    --md-sys-color-on-secondary-container: #1E242C;
+    --md-sys-color-secondary-container: #E8ECF0;
+    --md-sys-color-on-secondary-container: #1A2128;
 
-    /* Tertiary - Gold accent reminiscent of Nani logo highlights */
+    /* Tertiary - Gold accent (Nani logo highlight) */
     --md-sys-color-tertiary: #FFCF51;
     --md-sys-color-on-tertiary: #3B2A00;
-    --md-sys-color-tertiary-container: #FFF4D8;
+    --md-sys-color-tertiary-container: #FFF8E8;
     --md-sys-color-on-tertiary-container: #4D3600;
 
-    /* Surface - Neutral light grays to keep focus on content */
+    /* Surface - Clean neutral grays (Nani-style: focus on content) */
     --md-sys-color-surface: #FFFFFF;
-    --md-sys-color-surface-dim: #E8EBEF;
+    --md-sys-color-surface-dim: #E5E8EB;
     --md-sys-color-surface-bright: #FFFFFF;
     --md-sys-color-surface-container-lowest: #FFFFFF;
-    --md-sys-color-surface-container-low: #F6F8FA;
-    --md-sys-color-surface-container: #F2F4F7;
-    --md-sys-color-surface-container-high: #EEF1F5;
-    --md-sys-color-surface-container-highest: #EAEFF3;
-    --md-sys-color-on-surface: #2C3538;
-    --md-sys-color-on-surface-variant: #4E5962;
-    --md-sys-color-outline: #C2C9D2;
-    --md-sys-color-outline-variant: #DDE2E8;
+    --md-sys-color-surface-container-low: #F8F9FA;
+    --md-sys-color-surface-container: #F4F6F8;
+    --md-sys-color-surface-container-high: #EFF1F4;
+    --md-sys-color-surface-container-highest: #EBEEF1;
+    --md-sys-color-on-surface: #1E2528;
+    --md-sys-color-on-surface-variant: #5A6872;
+    --md-sys-color-outline: #B8C0C8;
+    --md-sys-color-outline-variant: #DEE3E8;
 
     /* Inverse (for snackbars, tooltips) */
     --md-sys-color-inverse-surface: #2E3237;
     --md-sys-color-inverse-on-surface: #F5F7FA;
     --md-sys-color-inverse-primary: #C6CEFF;
 
-    /* States */
-    --md-sys-color-error: #BA1A1A;
+    /* States (muted for professional appearance) */
+    --md-sys-color-error: #C42B2B;
     --md-sys-color-on-error: #FFFFFF;
-    --md-sys-color-error-container: #FFDAD6;
-    --md-sys-color-on-error-container: #410002;
+    --md-sys-color-error-container: #FCEAE9;
+    --md-sys-color-on-error-container: #4A0F0F;
 
-    /* Success (extended) */
-    --md-sys-color-success: #1B6B3D;
+    /* Success (extended - muted green) */
+    --md-sys-color-success: #2E7D52;
     --md-sys-color-on-success: #FFFFFF;
-    --md-sys-color-success-container: #A3F5B8;
-    --md-sys-color-on-success-container: #00210D;
+    --md-sys-color-success-container: #E6F5EC;
+    --md-sys-color-on-success-container: #0F3020;
 
-    /* Warning (extended) */
-    --md-sys-color-warning: #7D5700;
+    /* Warning (extended - muted amber) */
+    --md-sys-color-warning: #9A6700;
     --md-sys-color-on-warning: #FFFFFF;
-    --md-sys-color-warning-container: #FFDEA6;
-    --md-sys-color-on-warning-container: #271900;
+    --md-sys-color-warning-container: #FFF6E0;
+    --md-sys-color-on-warning-container: #332200;
 
     /* Shape - M3 corner radius scale */
     --md-sys-shape-corner-full: 9999px;
@@ -92,16 +92,16 @@
     --md-sys-motion-duration-short: 200ms;
     --md-sys-motion-duration-medium: 300ms;
 
-    /* Elevation - softer, more subtle shadows */
-    --md-sys-elevation-1: 0 2px 8px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.03);
-    --md-sys-elevation-2: 0 4px 12px rgba(0,0,0,0.06), 0 2px 4px rgba(0,0,0,0.04);
+    /* Elevation - very subtle shadows (Nani-style: minimal, refined) */
+    --md-sys-elevation-1: 0 1px 4px rgba(0,0,0,0.03), 0 1px 2px rgba(0,0,0,0.02);
+    --md-sys-elevation-2: 0 2px 8px rgba(0,0,0,0.04), 0 1px 3px rgba(0,0,0,0.03);
 
-    /* Expressive overlays (inspired by M3 Expressive article) */
-    --md-expressive-primary-glow: radial-gradient(circle at 18% 20%, rgba(103, 88, 209, 0.07), transparent 58%);
-    --md-expressive-secondary-glow: radial-gradient(circle at 80% 12%, rgba(255, 207, 81, 0.05), transparent 55%);
+    /* Expressive overlays (subtle, content-focused) */
+    --md-expressive-primary-glow: radial-gradient(circle at 18% 20%, rgba(94, 82, 179, 0.04), transparent 55%);
+    --md-expressive-secondary-glow: radial-gradient(circle at 80% 12%, rgba(255, 207, 81, 0.03), transparent 50%);
     --md-expressive-surface: #F4F6F8;
-    --md-expressive-border: 1px solid color-mix(in srgb, var(--md-sys-color-outline-variant) 70%, transparent);
-    --md-expressive-outline: 1px solid color-mix(in srgb, var(--md-sys-color-outline-variant) 60%, transparent);
+    --md-expressive-border: 1px solid color-mix(in srgb, var(--md-sys-color-outline-variant) 65%, transparent);
+    --md-expressive-outline: 1px solid color-mix(in srgb, var(--md-sys-color-outline-variant) 55%, transparent);
 
     /* Sidebar, Input Panel, and Result Content widths are set dynamically via JavaScript
        based on monitor resolution. Default values as fallback. */
@@ -135,14 +135,14 @@ body {
     /* Yu Gothic UI: Windows 8.1+用、UI最適化版 */
     /* Hiragino Sans: macOS用 */
     font-family: 'BIZ UDPGothic', 'Yu Gothic UI', 'Hiragino Sans', 'Segoe UI', -apple-system, sans-serif;
-    /* Light gray canvas with subtle dot texture inspired by Nani */
+    /* Light gray canvas with subtle dot texture (Nani-style: clean, minimal) */
     background-color: var(--md-expressive-surface);
     background-image:
-        radial-gradient(circle at 1px 1px, rgba(0, 0, 0, 0.035) 1px, transparent 0),
-        radial-gradient(circle at 1px 1px, rgba(0, 0, 0, 0.02) 1px, transparent 0),
+        radial-gradient(circle at 1px 1px, rgba(0, 0, 0, 0.025) 1px, transparent 0),
+        radial-gradient(circle at 1px 1px, rgba(0, 0, 0, 0.015) 1px, transparent 0),
         var(--md-expressive-primary-glow),
         var(--md-expressive-secondary-glow);
-    background-size: 22px 22px, 44px 44px, 100% 100%, 100% 100%;
+    background-size: 24px 24px, 48px 48px, 100% 100%, 100% 100%;
     background-attachment: fixed;
     color: var(--md-sys-color-on-surface);
     font-size: 1rem;  /* 16px - comfortable reading size */
@@ -166,7 +166,7 @@ body {
 }
 
 /* === Sidebar Layout === */
-/* Nani-style: simple surface background, no gradient */
+/* Nani-style: simple surface background, minimal shadow */
 .sidebar {
     width: var(--sidebar-width);
     height: 100vh;
@@ -180,7 +180,7 @@ body {
     padding: 1rem;
     gap: 0.75rem;
     z-index: 100;
-    box-shadow: 6px 0 24px rgba(0, 0, 0, 0.05);
+    box-shadow: 2px 0 8px rgba(0, 0, 0, 0.03);
     backdrop-filter: blur(4px);
 }
 
@@ -200,7 +200,7 @@ body {
 }
 
 /* Input Panel (Middle Column - Sticky) */
-/* Nani-style: clean surface with subtle shadow instead of border */
+/* Nani-style: clean surface with minimal shadow */
 .input-panel {
     width: var(--input-panel-width);
     min-width: var(--input-panel-width);
@@ -211,7 +211,7 @@ body {
     display: flex;
     flex-direction: column;
     background: var(--md-sys-color-surface);
-    box-shadow: 1px 0 3px rgba(0, 0, 0, 0.05);
+    box-shadow: 1px 0 2px rgba(0, 0, 0, 0.03);
     overflow-y: auto;
 }
 
@@ -409,9 +409,9 @@ body {
 .nav-item:nth-child(2) { animation-delay: 100ms; }
 .nav-item:nth-child(3) { animation-delay: 150ms; }
 
-/* M3 hover state layer */
+/* M3 hover state layer (Nani-style: subtle) */
 .nav-item:hover {
-    background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
+    background: color-mix(in srgb, var(--md-sys-color-on-surface) 5%, transparent);
     color: var(--md-sys-color-on-surface);
 }
 
@@ -558,7 +558,7 @@ body {
     background: var(--md-sys-color-surface-container);
     color: var(--md-sys-color-on-surface-variant);
     margin-left: 0.5rem;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.05);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.03);
 }
 
 .status-indicator.connected {
@@ -625,17 +625,17 @@ body {
 }
 
 .main-card-inner {
-    background: linear-gradient(180deg, color-mix(in srgb, var(--md-sys-color-surface) 90%, transparent) 0%, color-mix(in srgb, var(--md-sys-color-surface-container-high) 90%, transparent) 100%);
+    background: linear-gradient(180deg, var(--md-sys-color-surface) 0%, var(--md-sys-color-surface-container-low) 100%);
     border-radius: calc(var(--md-sys-shape-corner-3xl) - 0.375rem);
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
     border: var(--md-expressive-outline);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3);
 }
 
-/* Focus state for main card (when textarea is focused) */
+/* Focus state for main card (when textarea is focused) - Nani-style: subtle */
 .main-card-inner:focus-within {
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--md-sys-color-primary) 12%, transparent);
-    transform: scale(1.005);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--md-sys-color-primary) 10%, transparent);
+    transform: none;
 }
 
 /* === M3 Text Field Container === */
@@ -847,7 +847,7 @@ textarea:focus-visible {
 }
 
 .btn-tonal:hover {
-    background: linear-gradient(rgba(0,0,0,0.08), rgba(0,0,0,0.08)), var(--md-sys-color-secondary-container);
+    background: linear-gradient(rgba(0,0,0,0.05), rgba(0,0,0,0.05)), var(--md-sys-color-secondary-container);
     box-shadow: var(--md-sys-elevation-1);
 }
 
@@ -960,20 +960,20 @@ textarea:focus-visible {
     pointer-events: none;
 }
 
-/* Nani-style: subtle hover with softer background */
+/* Nani-style: subtle hover with gentle background change */
 .drop-zone:hover {
     border-color: var(--md-sys-color-primary);
-    background: rgba(222, 224, 255, 0.3);  /* primary-container at 30% */
-    transform: scale(1.01);
-    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-spring);
+    background: rgba(237, 234, 255, 0.4);  /* primary-container at 40% */
+    transform: scale(1.005);
+    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
 }
 
-/* Active drag-over state (more prominent than hover) */
+/* Active drag-over state (slightly more prominent than hover) */
 .drop-zone.drag-over {
     border-color: var(--md-sys-color-primary);
     border-style: solid;
-    background: rgba(222, 224, 255, 0.5);  /* primary-container at 50% */
-    transform: scale(1.02);
+    background: rgba(237, 234, 255, 0.6);  /* primary-container at 60% */
+    transform: scale(1.01);
     box-shadow: 0 0 0 2px var(--md-sys-color-primary-container);
 }
 
@@ -1087,8 +1087,8 @@ textarea:focus-visible {
 .option-card:hover {
     border-color: var(--md-sys-color-outline);
     box-shadow: var(--md-sys-elevation-2);
-    transform: translateY(-3px) scale(1.01);
-    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-spring);
+    transform: translateY(-2px);
+    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
 }
 
 .option-text {
@@ -1718,7 +1718,7 @@ textarea:focus-visible {
     padding: 0.25rem;
     position: relative;
     background: var(--md-expressive-surface);
-    box-shadow: var(--md-sys-elevation-2);
+    box-shadow: var(--md-sys-elevation-1);  /* Subtler shadow for cleaner look */
     border: 1px solid transparent;
     width: 100%;
     background-image: var(--md-expressive-border), var(--md-expressive-surface);
@@ -1759,10 +1759,10 @@ textarea:focus-visible {
 /* === Nani-style Explanation === */
 /* Nani-style: bg-primary-bg-lighter - softer primary background */
 .nani-explanation {
-    background: rgba(222, 224, 255, 0.5);  /* primary-container at 50% - matches Nani's bg-primary-bg-lighter */
+    background: rgba(237, 234, 255, 0.5);  /* primary-container at 50% - clean, muted purple */
     padding: 0.875rem;  /* 14px - matches Nani's p-3.5 */
     margin-top: 0.25rem;
-    color: rgba(27, 27, 31, 0.8);  /* on-surface at 80% opacity - matches Nani's text-main-body/80 */
+    color: rgba(30, 37, 40, 0.8);  /* on-surface at 80% opacity */
     border-radius: 1rem;
     font-size: var(--md-sys-typescale-size-sm);  /* 14px - matches Nani's text-sm */
     line-height: 1.85;  /* matches Nani's --html-base-line-height */

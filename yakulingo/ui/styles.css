@@ -1102,28 +1102,12 @@ textarea:focus-visible {
     box-shadow: var(--md-sys-elevation-1);
     border-radius: var(--md-sys-shape-corner-xl);
     padding: 1.25rem;
-    transition: background-color var(--md-sys-motion-duration-short), border-color var(--md-sys-motion-duration-short);
-}
-
-/* Nani-style: subtle hover - bg changes from main-100 to main-200 equivalent */
-.option-card:hover {
-    background: var(--md-sys-color-surface-container-low);
-    border-color: var(--md-card-border-hover);
 }
 
 .option-text {
     line-height: 1.4;
     word-break: break-word;
     font-size: var(--md-sys-typescale-size-md);
-}
-
-.option-action {
-    opacity: 0.5;
-    transition: opacity var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
-}
-
-.option-card:hover .option-action {
-    opacity: 1;
 }
 
 /* === Result Section === */

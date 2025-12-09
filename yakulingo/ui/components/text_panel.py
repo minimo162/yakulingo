@@ -619,26 +619,30 @@ def _render_partial_result_jp(
     on_copy: Callable[[str], None],
 ):
     """Render partial result for →Japanese translation (translation only, explanation loading)"""
-    # Translation results container
+    # Translation results container (same structure as English)
     with ui.element('div').classes('result-container'):
-        with ui.element('section').classes('nani-result-card'):
-            # Main translation area
-            with ui.element('div').classes('nani-result-content'):
-                # Translation text
-                ui.label(option.text).classes('nani-result-text')
+        with ui.element('div').classes('result-section w-full'):
+            # Single option card
+            with ui.card().classes('option-card w-full'):
+                with ui.column().classes('w-full gap-2'):
+                    # Translation text with character count
+                    with ui.row().classes('w-full items-start gap-2'):
+                        ui.label(option.text).classes('option-text py-1 flex-1')
+                        ui.label(f'{len(option.text)} 文字').classes('text-xs text-muted whitespace-nowrap')
 
-                # Action toolbar (copy only - no back-translate during loading)
-                with ui.element('div').classes('nani-toolbar'):
-                    ui.button(
-                        icon='content_copy',
-                        on_click=lambda: on_copy(option.text)
-                    ).props('flat dense round size=sm aria-label="コピー"').classes('nani-toolbar-btn').tooltip('コピー')
+                    # Actions row
+                    with ui.row().classes('w-full justify-end items-center gap-1'):
+                        # Copy button
+                        ui.button(
+                            icon='content_copy',
+                            on_click=lambda: on_copy(option.text)
+                        ).props('flat dense round size=sm aria-label="コピー"').classes('option-action').tooltip('コピー')
 
-            # Explanation loading section
-            with ui.element('div').classes('nani-explanation'):
-                with ui.row().classes('items-center gap-2'):
-                    ui.spinner('dots', size='sm').classes('text-primary')
-                    ui.label('解説を読み込み中...').classes('text-sm text-muted')
+                    # Explanation loading section
+                    with ui.element('div').classes('nani-explanation'):
+                        with ui.row().classes('items-center gap-2'):
+                            ui.spinner('dots', size='sm').classes('text-primary')
+                            ui.label('解説を読み込み中...').classes('text-sm text-muted')
 
 
 def _render_partial_result_en(
@@ -650,27 +654,26 @@ def _render_partial_result_en(
     with ui.element('div').classes('result-container'):
         with ui.element('div').classes('result-section w-full'):
             # Single option card
-            with ui.column().classes('w-full gap-3 p-4'):
-                with ui.card().classes('option-card w-full'):
-                    with ui.column().classes('w-full gap-2'):
-                        # Translation text with character count
-                        with ui.row().classes('w-full items-start gap-2'):
-                            ui.label(option.text).classes('option-text py-1 flex-1')
-                            ui.label(f'{len(option.text)} 文字').classes('text-xs text-muted whitespace-nowrap')
+            with ui.card().classes('option-card w-full'):
+                with ui.column().classes('w-full gap-2'):
+                    # Translation text with character count
+                    with ui.row().classes('w-full items-start gap-2'):
+                        ui.label(option.text).classes('option-text py-1 flex-1')
+                        ui.label(f'{len(option.text)} 文字').classes('text-xs text-muted whitespace-nowrap')
 
-                        # Actions row
-                        with ui.row().classes('w-full justify-end items-center gap-1'):
-                            # Copy button
-                            ui.button(
-                                icon='content_copy',
-                                on_click=lambda: on_copy(option.text)
-                            ).props('flat dense round size=sm aria-label="コピー"').classes('option-action').tooltip('コピー')
+                    # Actions row
+                    with ui.row().classes('w-full justify-end items-center gap-1'):
+                        # Copy button
+                        ui.button(
+                            icon='content_copy',
+                            on_click=lambda: on_copy(option.text)
+                        ).props('flat dense round size=sm aria-label="コピー"').classes('option-action').tooltip('コピー')
 
-                        # Explanation loading section
-                        with ui.element('div').classes('nani-explanation'):
-                            with ui.row().classes('items-center gap-2'):
-                                ui.spinner('dots', size='sm').classes('text-primary')
-                                ui.label('解説を読み込み中...').classes('text-sm text-muted')
+                    # Explanation loading section
+                    with ui.element('div').classes('nani-explanation'):
+                        with ui.row().classes('items-center gap-2'):
+                            ui.spinner('dots', size='sm').classes('text-primary')
+                            ui.label('解説を読み込み中...').classes('text-sm text-muted')
 
 
 def create_text_panel(
@@ -859,7 +862,7 @@ def _render_results_to_en(
     with ui.element('div').classes('result-container'):
         with ui.element('div').classes('result-section w-full'):
             # Options list
-            with ui.column().classes('w-full gap-3 p-4'):
+            with ui.column().classes('w-full gap-3'):
                 for i, option in enumerate(result.options):
                     _render_option_en(
                         option,
@@ -897,33 +900,36 @@ def _render_results_to_jp(
 
     option = result.options[-1]  # Use latest option (may have adjustments)
 
-    # Translation results container
+    # Translation results container (same structure as English)
     with ui.element('div').classes('result-container'):
-        with ui.element('section').classes('nani-result-card'):
-            # Main translation area
-            with ui.element('div').classes('nani-result-content'):
-                # Translation text
-                ui.label(option.text).classes('nani-result-text')
+        with ui.element('div').classes('result-section w-full'):
+            with ui.card().classes('option-card w-full'):
+                with ui.column().classes('w-full gap-2'):
+                    # Translation text with character count (same as English)
+                    with ui.row().classes('w-full items-start gap-2'):
+                        ui.label(option.text).classes('option-text py-1 flex-1')
+                        ui.label(f'{len(option.text)} 文字').classes('text-xs text-muted whitespace-nowrap')
 
-                # Action toolbar (copy and back-translate)
-                with ui.element('div').classes('nani-toolbar'):
-                    ui.button(
-                        icon='content_copy',
-                        on_click=lambda: on_copy(option.text)
-                    ).props('flat dense round size=sm aria-label="コピー"').classes('nani-toolbar-btn').tooltip('コピー')
-
-                    # Back-translate button
-                    if on_back_translate:
+                    # Actions row (same as English)
+                    with ui.row().classes('w-full justify-end items-center gap-1'):
+                        # Copy button
                         ui.button(
-                            '戻し訳',
-                            icon='g_translate',
-                            on_click=lambda o=option: on_back_translate(o.text)
-                        ).props('flat no-caps size=sm').classes('back-translate-btn').tooltip('精度チェック')
+                            icon='content_copy',
+                            on_click=lambda: on_copy(option.text)
+                        ).props('flat dense round size=sm aria-label="コピー"').classes('option-action').tooltip('コピー')
 
-            # Detailed explanation section
-            if option.explanation:
-                with ui.element('div').classes('nani-explanation'):
-                    _render_explanation(option.explanation)
+                        # Back-translate button
+                        if on_back_translate:
+                            ui.button(
+                                '戻し訳',
+                                icon='g_translate',
+                                on_click=lambda o=option: on_back_translate(o.text)
+                            ).props('flat no-caps size=sm').classes('back-translate-btn').tooltip('精度チェック')
+
+                    # Detailed explanation section (same as English)
+                    if option.explanation:
+                        with ui.element('div').classes('nani-explanation'):
+                            _render_explanation(option.explanation)
 
         # Inline adjustment section (same structure as English translation)
         with ui.element('div').classes('inline-adjust-section'):

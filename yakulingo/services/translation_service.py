@@ -2016,6 +2016,12 @@ class TranslationService:
         """Build user-facing warnings from processor failure metadata."""
         warnings: list[str] = []
 
+        # Check for processor-level warnings (ExcelProcessor, etc.)
+        # Use getattr with default to handle mock objects in tests
+        processor_warnings = getattr(processor, 'warnings', None)
+        if processor_warnings and isinstance(processor_warnings, list):
+            warnings.extend(processor_warnings)
+
         # Check for PP-DocLayout-L fallback (PDF processor only)
         if getattr(processor, '_layout_fallback_used', False):
             warnings.append(

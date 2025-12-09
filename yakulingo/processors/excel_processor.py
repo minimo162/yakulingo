@@ -331,6 +331,27 @@ class ExcelProcessor(FileProcessor):
 
     def __init__(self):
         self.cell_translator = CellTranslator()
+        # Warning messages for user feedback
+        self._warnings: list[str] = []
+        # Flag to indicate openpyxl fallback mode
+        self._using_openpyxl_fallback = False
+        # Font info cache: block_id -> (font_name, font_size)
+        # Populated during extract, used during apply to avoid double COM calls
+        self._font_cache: dict[str, tuple[Optional[str], float]] = {}
+
+    def clear_warnings(self) -> None:
+        """Clear accumulated warnings."""
+        self._warnings.clear()
+        self._using_openpyxl_fallback = False
+
+    def clear_font_cache(self) -> None:
+        """Clear font info cache."""
+        self._font_cache.clear()
+
+    @property
+    def warnings(self) -> list[str]:
+        """Get accumulated warnings."""
+        return self._warnings.copy()
 
     @property
     def file_type(self) -> FileType:
@@ -450,13 +471,29 @@ class ExcelProcessor(FileProcessor):
             file_path: Path to the Excel file
             output_language: "en" for JP→EN, "jp" for EN→JP translation
         """
+        # Clear warnings and font cache at start of extraction
+        self.clear_warnings()
+        self.clear_font_cache()
+
         xw = _get_xlwings()
 
         self._ensure_xls_supported(file_path)
 
         if HAS_XLWINGS:
+            self._using_openpyxl_fallback = False
             yield from self._extract_text_blocks_xlwings(file_path, xw, output_language)
         else:
+            # Add warning for openpyxl fallback mode
+            self._using_openpyxl_fallback = True
+            self._warnings.append(
+                "xlwingsが利用できないため、シェイプ（テキストボックス等）と"
+                "グラフのタイトル/ラベルは翻訳対象外です。"
+                "フル機能を使用するにはMicrosoft Excelをインストールしてください。"
+            )
+            logger.warning(
+                "xlwings not available, falling back to openpyxl. "
+                "Shapes and charts will not be translated."
+            )
             yield from self._extract_text_blocks_openpyxl(file_path, output_language)
 
     def _extract_text_blocks_xlwings(
@@ -466,16 +503,40 @@ class ExcelProcessor(FileProcessor):
 
         Optimized for performance:
         - Bulk read all cell values at once via used_range.value
-        - Only fetch font info for cells that will be translated
+        - Fetch font info for cells during extraction (cached for apply_translations)
 
         Args:
             file_path: Path to the Excel file
             xw: xlwings module
             output_language: "en" for JP→EN, "jp" for EN→JP translation
 
-        Note: COM initialization is required when called from worker threads.
-        Blocks are collected into a list before yielding to ensure COM operations
-        complete within the com_initialized() context.
+        Thread Safety / COM Constraints:
+            COM initialization is required when called from worker threads
+            (e.g., asyncio.to_thread). The com_initialized() context manager
+            handles CoInitialize/CoUninitialize for the current thread.
+
+            IMPORTANT: All COM operations MUST complete within the com_initialized()
+            context. This is why blocks are collected into a list before yielding,
+            rather than yielding directly from within the context.
+
+            If you modify this method to yield blocks directly, the generator may
+            be consumed in a different thread context, causing COM errors like:
+            - "CoInitialize has not been called"
+            - "The application called an interface that was marshalled for a different thread"
+
+            DO NOT change to `yield TextBlock(...)` inside the com_initialized() block.
+
+        Memory Considerations:
+            All blocks are collected into a list before yielding due to COM constraints.
+            For very large files (10,000+ translatable cells), this may consume
+            significant memory. Unlike PDF processing which supports streaming,
+            Excel COM operations require all work to complete within the same
+            thread context, making true streaming impractical.
+
+            If memory becomes an issue for extremely large files, consider:
+            1. Processing sheets individually (already somewhat optimized)
+            2. Splitting the file into smaller chunks before processing
+            3. Using openpyxl fallback which has better streaming support for reads
         """
         blocks: list[TextBlock] = []
 
@@ -518,13 +579,32 @@ class ExcelProcessor(FileProcessor):
                                                     col_idx = start_col + col_offset
                                                     translatable_cells.append((row_idx, col_idx, str(value)))
 
-                                    # Second pass: collect TextBlocks for translatable cells
-                                    # Note: Font info is fetched during apply_translations, not here
-                                    # This avoids redundant COM calls and improves performance
+                                    # Second pass: collect TextBlocks with font info
+                                    # Fetch font info during extraction to avoid double cell access
+                                    # in apply_translations (optimization: single COM call per cell)
                                     for row_idx, col_idx, text in translatable_cells:
                                         col_letter = get_column_letter(col_idx)
+
+                                        # Get font info from cell
+                                        font_name = None
+                                        font_size = 11.0
+                                        try:
+                                            cell = sheet.range(f"{col_letter}{row_idx}")
+                                            font_name = cell.font.name
+                                            font_size = cell.font.size or 11.0
+                                        except Exception as e:
+                                            logger.debug(
+                                                "Error reading font for cell %s_%s%s: %s",
+                                                sheet_name, col_letter, row_idx, e
+                                            )
+
+                                        block_id = f"{sheet_name}_{col_letter}{row_idx}"
+
+                                        # Cache font info for use in apply_translations
+                                        self._font_cache[block_id] = (font_name, font_size)
+
                                         blocks.append(TextBlock(
-                                            id=f"{sheet_name}_{col_letter}{row_idx}",
+                                            id=block_id,
                                             text=text,
                                             location=f"{sheet_name}, {col_letter}{row_idx}",
                                             metadata={
@@ -533,8 +613,8 @@ class ExcelProcessor(FileProcessor):
                                                 'row': row_idx,
                                                 'col': col_idx,
                                                 'type': 'cell',
-                                                'font_name': None,  # Fetched in apply_translations
-                                                'font_size': 11.0,  # Default, actual fetched in apply_translations
+                                                'font_name': font_name,
+                                                'font_size': font_size,
                                             }
                                         ))
                         except Exception as e:
@@ -659,6 +739,20 @@ class ExcelProcessor(FileProcessor):
             finally:
                 app.quit()
 
+        # Log warning for very large files
+        block_count = len(blocks)
+        if block_count > 10000:
+            logger.warning(
+                "Large Excel file: %d translatable blocks collected. "
+                "This may consume significant memory during translation.",
+                block_count
+            )
+        elif block_count > 5000:
+            logger.info(
+                "Processing %d translatable blocks from Excel file.",
+                block_count
+            )
+
         # Yield blocks after COM operations complete
         yield from blocks
 
@@ -752,6 +846,14 @@ class ExcelProcessor(FileProcessor):
             - Cells: "SheetName_A1", "SheetName_AA100"
             - Shapes: "SheetName_shape_0", "SheetName_shape_1"
             - Charts: "SheetName_chart_0_title", "SheetName_chart_0_axis_category"
+
+        Note on sheet names:
+            Excel prohibits certain characters in sheet names (\\/?*[]:), so we don't
+            need to sanitize them here. The block_id uses the exact sheet name from
+            the workbook, ensuring consistent matching between extract and apply.
+
+            Sheet names containing underscores are handled by sorting names by length
+            (longest first) to avoid prefix collision during matching.
         """
         result: dict[str, dict] = {}
 
@@ -900,15 +1002,23 @@ class ExcelProcessor(FileProcessor):
                         for cell_ref, translated_text in cell_translations.items():
                             try:
                                 cell = sheet.range(cell_ref)
+                                block_id = f"{sheet_name}_{cell_ref}"
 
-                                # Get original font info
-                                original_font_name = None
-                                original_font_size = 11.0
-                                try:
-                                    original_font_name = cell.font.name
-                                    original_font_size = cell.font.size or 11.0
-                                except Exception as e:
-                                    logger.debug("Error reading font for cell %s_%s: %s", sheet_name, cell_ref, e)
+                                # Try to get font info from cache (populated during extract)
+                                # This avoids redundant COM calls for font info
+                                cached_font = self._font_cache.get(block_id)
+                                if cached_font:
+                                    original_font_name, original_font_size = cached_font
+                                else:
+                                    # Fallback: get font info from cell (for cases where
+                                    # extract was not called or cache was cleared)
+                                    original_font_name = None
+                                    original_font_size = 11.0
+                                    try:
+                                        original_font_name = cell.font.name
+                                        original_font_size = cell.font.size or 11.0
+                                    except Exception as e:
+                                        logger.debug("Error reading font for cell %s_%s: %s", sheet_name, cell_ref, e)
 
                                 # Get new font settings
                                 new_font_name, new_font_size = font_manager.select_font(

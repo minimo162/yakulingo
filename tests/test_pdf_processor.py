@@ -109,7 +109,7 @@ def mock_doc():
 
 @pytest.fixture
 def sample_translation_cell():
-    """Sample TranslationCell for testing"""
+    """Sample TranslationCell for testing (deprecated, kept for backward compatibility)"""
     return TranslationCell(
         address="P1_0",
         text="テストテキスト",
@@ -156,7 +156,7 @@ class TestFontInfo:
 
 
 class TestTranslationCell:
-    """Tests for TranslationCell dataclass"""
+    """Tests for TranslationCell dataclass (deprecated, kept for backward compatibility)"""
 
     def test_create_translation_cell(self, sample_translation_cell):
         cell = sample_translation_cell
@@ -1228,7 +1228,7 @@ class TestDetermineTextSeparator:
 
 
 class TestMergePdfminerTextToCells:
-    """Tests for PdfProcessor._merge_pdfminer_text_to_cells"""
+    """Tests for PdfProcessor._merge_pdfminer_text_to_cells (uses deprecated TranslationCell)"""
 
     def test_merge_empty_blocks(self, processor):
         """Empty blocks should not modify cells"""
@@ -1984,7 +1984,7 @@ class TestCreateBilingualPdf:
 # =============================================================================
 
 class TestExportGlossaryCsv:
-    """Tests for PdfProcessor.export_glossary_csv method"""
+    """Tests for PdfProcessor.export_glossary_csv method (uses deprecated TranslationCell)"""
 
     def test_export_glossary_csv_basic(self, processor, tmp_path):
         """Test basic glossary export without cells"""
@@ -2779,10 +2779,10 @@ class TestLayoutClassFunctions:
 
 
 # =============================================================================
-# Tests for TranslationCell Extended Fields
+# Tests for TranslationCell Extended Fields (deprecated, kept for backward compatibility)
 # =============================================================================
 class TestTranslationCellExtendedFields:
-    """Tests for TranslationCell extended fields (PDFMathTranslate compliant)"""
+    """Tests for TranslationCell extended fields (deprecated, kept for backward compatibility)"""
 
     def test_translation_cell_with_order(self):
         """TranslationCell should have order field"""
@@ -2854,10 +2854,10 @@ class TestTranslationCellExtendedFields:
 
 
 # =============================================================================
-# Tests for prepare_translation_cells (PP-DocLayout-L)
+# Tests for prepare_translation_cells (PP-DocLayout-L, uses deprecated TranslationCell)
 # =============================================================================
 class TestPrepareTranslationCells:
-    """Tests for prepare_translation_cells function (PP-DocLayout-L based)"""
+    """Tests for prepare_translation_cells function (uses deprecated TranslationCell)"""
 
     def _create_mock_box(self, label, coordinate, score=0.95):
         """Helper to create mock PP-DocLayout-L box"""

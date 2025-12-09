@@ -152,6 +152,12 @@ class LayoutArray:
     - 1000+: Table cell index
 
     Also stores metadata about each region for reference.
+
+    Attributes:
+        fallback_used: True if PP-DocLayout-L returned no results and
+                       Y-coordinate based paragraph detection will be used.
+                       This helps downstream code decide whether to trust
+                       layout boundaries or use simpler heuristics.
     """
     array: Any  # NumPy array (height, width)
     height: int
@@ -159,6 +165,7 @@ class LayoutArray:
     paragraphs: dict = field(default_factory=dict)  # index -> region info
     tables: dict = field(default_factory=dict)      # index -> region info
     figures: list = field(default_factory=list)     # list of figure boxes
+    fallback_used: bool = False  # True if layout detection failed/returned no results
 
 
 # =============================================================================
@@ -337,12 +344,41 @@ def prewarm_layout_model(device: str = "auto") -> bool:
 
 def clear_analyzer_cache():
     """
-    Clear the LayoutDetection cache to free GPU memory.
+    Clear the LayoutDetection cache to free GPU/CPU memory.
 
     Thread-safe: uses a lock to prevent race conditions.
+
+    This should be called when:
+    - PDF translation is complete and resources should be freed
+    - Memory pressure is detected
+    - Switching between GPU/CPU modes
     """
     with _analyzer_cache_lock:
+        if not _analyzer_cache:
+            logger.debug("Analyzer cache is already empty")
+            return
+
+        cache_keys = list(_analyzer_cache.keys())
         _analyzer_cache.clear()
+        logger.info("Cleared LayoutDetection cache: %s", cache_keys)
+
+    # Try to free GPU memory if PaddlePaddle is available
+    try:
+        import paddle
+        # Clear CUDA cache if using GPU
+        if paddle.device.is_compiled_with_cuda():
+            try:
+                paddle.device.cuda.empty_cache()
+                logger.debug("PaddlePaddle CUDA cache cleared")
+            except (RuntimeError, AttributeError) as e:
+                logger.debug("Could not clear CUDA cache: %s", e)
+    except ImportError:
+        pass  # PaddlePaddle not installed
+
+    # Also try to trigger Python garbage collection
+    import gc
+    gc.collect()
+    logger.debug("Garbage collection triggered after cache clear")
 
 
 # =============================================================================
@@ -488,7 +524,8 @@ def create_layout_array_from_pp_doclayout(
         # in detect_paragraph_boundary().
         logger.warning(
             "PP-DocLayout-L returned no layout boxes for page (%dx%d). "
-            "Paragraph detection will use Y-coordinate fallback.",
+            "Paragraph detection will use Y-coordinate fallback. "
+            "This may cause issues with multi-column layouts.",
             page_width, page_height
         )
         return LayoutArray(
@@ -498,6 +535,7 @@ def create_layout_array_from_pp_doclayout(
             paragraphs=paragraphs_info,
             tables=tables_info,
             figures=figures_list,
+            fallback_used=True,  # Mark as fallback for downstream processing
         )
 
     # Pre-compute clipping bounds

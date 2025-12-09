@@ -123,9 +123,87 @@ FONT_SIZE_HEIGHT_RATIO = 0.8       # Max font size as ratio of box height
 FONT_SIZE_LINE_HEIGHT_ESTIMATE = 14.0  # Estimated line height for chars_per_line calculation
 FONT_SIZE_WIDTH_FACTOR = 1.8      # Width-based font size adjustment factor
 
+# Memory estimation constants for high-DPI processing
+# A4 at 300 DPI ≈ 2480x3508 px × 3 channels ≈ 26MB per page
+MEMORY_BASE_MB_PER_PAGE_300DPI = 26.0
+MEMORY_AVAILABLE_RATIO = 0.5  # Use at most 50% of available memory
+MEMORY_WARNING_THRESHOLD_MB = 1024  # Warn if estimated usage exceeds 1GB
+
 # Pre-compiled regex patterns for performance (local patterns)
 _RE_PARAGRAPH_ADDRESS = re.compile(r"P(\d+)_")
 _RE_TABLE_ADDRESS = re.compile(r"T(\d+)_")
+
+
+def estimate_memory_usage_mb(page_count: int, dpi: int = 300) -> float:
+    """
+    Estimate memory usage for PDF page rendering.
+
+    Based on A4 page dimensions at 300 DPI as baseline:
+    - 2480 x 3508 pixels × 3 channels (RGB) × 1 byte = ~26 MB per page
+    - Memory scales quadratically with DPI: (dpi/300)²
+
+    Args:
+        page_count: Number of pages to process
+        dpi: DPI setting for rendering
+
+    Returns:
+        Estimated memory usage in MB
+    """
+    dpi_scale = (dpi / 300.0) ** 2
+    return page_count * MEMORY_BASE_MB_PER_PAGE_300DPI * dpi_scale
+
+
+def check_memory_for_pdf_processing(
+    page_count: int,
+    dpi: int = 300,
+    warn_only: bool = True,
+) -> tuple[bool, float, float]:
+    """
+    Check if sufficient memory is available for PDF processing.
+
+    Args:
+        page_count: Number of pages to process
+        dpi: DPI setting for rendering
+        warn_only: If True, only log warnings; if False, raise MemoryError
+
+    Returns:
+        Tuple of (is_safe, estimated_mb, available_mb)
+
+    Raises:
+        MemoryError: If warn_only=False and insufficient memory
+    """
+    estimated_mb = estimate_memory_usage_mb(page_count, dpi)
+
+    # Try to get available memory using psutil
+    available_mb = None
+    try:
+        import psutil
+        mem = psutil.virtual_memory()
+        available_mb = mem.available / (1024 * 1024)
+    except ImportError:
+        logger.debug("psutil not installed, skipping memory check")
+        return (True, estimated_mb, -1)
+
+    is_safe = estimated_mb < available_mb * MEMORY_AVAILABLE_RATIO
+
+    if not is_safe:
+        msg = (
+            f"PDF processing may require ~{estimated_mb:.0f}MB but only "
+            f"{available_mb:.0f}MB available (using {MEMORY_AVAILABLE_RATIO*100:.0f}% threshold). "
+            f"Consider reducing DPI from {dpi} or processing fewer pages."
+        )
+        if warn_only:
+            logger.warning(msg)
+        else:
+            raise MemoryError(msg)
+    elif estimated_mb > MEMORY_WARNING_THRESHOLD_MB:
+        logger.info(
+            "PDF processing will use ~%.0fMB (%.0fMB available). "
+            "Consider reducing DPI=%d for large PDFs.",
+            estimated_mb, available_mb, dpi
+        )
+
+    return (is_safe, estimated_mb, available_mb)
 
 
 # NOTE: Paragraph, FormulaVar, TranslationCell, vflag, restore_formula_placeholders,
@@ -1639,9 +1717,58 @@ class PdfProcessor(FileProcessor):
 
                         result['success'] += 1
 
-                    except (RuntimeError, ValueError, TypeError, IndexError, KeyError, AttributeError, OSError) as e:
+                    except RuntimeError as e:
+                        # PyMuPDF internal errors (e.g., corrupted page, invalid font)
                         logger.warning(
-                            "Failed to process block '%s' with low-level API: %s",
+                            "Block '%s' failed (RuntimeError - PyMuPDF internal): %s",
+                            block_id, e
+                        )
+                        result['failed'].append(block_id)
+                        continue
+                    except ValueError as e:
+                        # Invalid values (e.g., bad coordinates, invalid font size)
+                        logger.warning(
+                            "Block '%s' failed (ValueError - invalid data): %s",
+                            block_id, e
+                        )
+                        result['failed'].append(block_id)
+                        continue
+                    except TypeError as e:
+                        # Type mismatches (e.g., None where string expected)
+                        logger.warning(
+                            "Block '%s' failed (TypeError - type mismatch): %s",
+                            block_id, e
+                        )
+                        result['failed'].append(block_id)
+                        continue
+                    except KeyError as e:
+                        # Missing keys (e.g., font_id not in registry)
+                        logger.warning(
+                            "Block '%s' failed (KeyError - missing key): %s",
+                            block_id, e
+                        )
+                        result['failed'].append(block_id)
+                        continue
+                    except IndexError as e:
+                        # Index out of bounds (e.g., invalid block reference)
+                        logger.warning(
+                            "Block '%s' failed (IndexError - out of bounds): %s",
+                            block_id, e
+                        )
+                        result['failed'].append(block_id)
+                        continue
+                    except AttributeError as e:
+                        # Missing attributes (e.g., TextBlock missing expected field)
+                        logger.warning(
+                            "Block '%s' failed (AttributeError - missing attribute): %s",
+                            block_id, e
+                        )
+                        result['failed'].append(block_id)
+                        continue
+                    except OSError as e:
+                        # File/font access errors
+                        logger.warning(
+                            "Block '%s' failed (OSError - file/font access): %s",
                             block_id, e
                         )
                         result['failed'].append(block_id)
@@ -1771,6 +1898,17 @@ class PdfProcessor(FileProcessor):
         start_time = time_module.time()
         self._failed_pages = []
         self._layout_fallback_used = False  # Reset for each extraction
+
+        # Pre-processing memory check for entire PDF
+        is_safe, estimated_mb, available_mb = check_memory_for_pdf_processing(
+            total_pages, dpi, warn_only=True
+        )
+        if not is_safe:
+            logger.warning(
+                "High memory usage expected for %d pages at %d DPI. "
+                "Processing will continue but may be slow.",
+                total_pages, dpi
+            )
 
         # Check if PP-DocLayout-L is available
         if not is_layout_available():
@@ -2050,6 +2188,14 @@ class PdfProcessor(FileProcessor):
                     else pdfminer_page.mediabox
                 )
                 page_height = abs(y1 - y0)
+
+                # Safety check: skip pages with invalid dimensions
+                if page_height <= 0:
+                    logger.warning(
+                        "Page %d has invalid height (%s), skipping",
+                        page_idx, page_height
+                    )
+                    continue
 
                 # Process page with pdfminer
                 interpreter.process_page(pdfminer_page)

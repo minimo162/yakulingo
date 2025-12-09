@@ -653,11 +653,14 @@ class FontRegistry:
         for char in sample_chars:
             try:
                 # Try to get character width - if it fails, char may not be covered
+                # pdfminer get_width() takes CID (or Unicode code point for simple fonts)
                 if hasattr(pdfminer_font, 'get_width'):
-                    width = pdfminer_font.get_width()
+                    # Use Unicode code point as CID (works for Identity-H encoded fonts)
+                    cid = ord(char)
+                    width = pdfminer_font.get_width(cid)
                     if width == 0:
                         uncovered_count += 1
-            except (AttributeError, TypeError, KeyError):
+            except (AttributeError, TypeError, KeyError, ValueError):
                 # Error getting width - character may not be covered
                 uncovered_count += 1
 
@@ -738,7 +741,11 @@ class FontRegistry:
         if font_obj:
             try:
                 idx = font_obj.has_glyph(ord(char))
-                if idx:
+                # PyMuPDF has_glyph() returns:
+                # - Glyph ID (>0) if character has a glyph
+                # - 0 if character not in font (0 = .notdef glyph in TrueType/OpenType)
+                # Note: Using explicit comparison instead of `if idx:` for clarity
+                if idx is not None and idx != 0:
                     glyph_idx = idx
             except (RuntimeError, ValueError, TypeError) as e:
                 # RuntimeError: PyMuPDF internal errors
@@ -936,12 +943,42 @@ class FontRegistry:
 
             font_path = self.get_font_path(font_info.font_id)
             if not font_path:
-                logger.warning(
-                    "No font path available for '%s' (lang=%s)",
-                    font_info.font_id, lang
-                )
-                failed_fonts.append(font_info.font_id)
-                continue
+                # Try fallback: first try language-specific fallback, then English
+                fallback_path = None
+                fallback_tried = []
+
+                # Determine language from FontInfo
+                font_lang = "en"  # Default
+                if font_info.family:
+                    family_lower = font_info.family.lower()
+                    if any(jp in family_lower for jp in ["ms p", "gothic", "mincho", "noto"]):
+                        font_lang = "ja"
+
+                # Try language-specific fallback
+                fallback_path = get_font_path_for_lang(font_lang)
+                fallback_tried.append(font_lang)
+
+                # If still not found, try English as last resort
+                if not fallback_path and font_lang != "en":
+                    fallback_path = get_font_path_for_lang("en")
+                    fallback_tried.append("en")
+
+                if fallback_path:
+                    logger.warning(
+                        "Font '%s' not found, using fallback: %s (tried: %s)",
+                        font_info.font_id, fallback_path, fallback_tried
+                    )
+                    font_path = fallback_path
+                    # Update FontInfo with fallback path
+                    font_info.path = fallback_path
+                else:
+                    logger.warning(
+                        "No font path available for '%s' (lang=%s, fallback tried: %s). "
+                        "Text rendering will likely fail.",
+                        font_info.font_id, lang, fallback_tried
+                    )
+                    failed_fonts.append(font_info.font_id)
+                    continue
 
             try:
                 # PyMuPDF 1.26+ automatically handles TTC font collections

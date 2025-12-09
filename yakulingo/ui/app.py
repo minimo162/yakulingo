@@ -201,6 +201,10 @@ class YakuLingoApp:
         self._active_streaming_timer: Optional[ui.timer] = None
         self._streaming_timer_lock = threading.Lock()
 
+        # Streaming text lock (protects streaming_text access across threads)
+        # on_chunk callback is called from Playwright thread, update_streaming_label runs on main thread
+        self._streaming_text_lock = threading.Lock()
+
         # Panel sizes (sidebar_width, input_panel_width, result_content_width, input_panel_max_width) in pixels
         # Set by run_app() based on monitor detection
         self._panel_sizes: tuple[int, int, int, int] = (260, 420, 800, 900)
@@ -1441,7 +1445,9 @@ class YakuLingoApp:
         self.state.text_detected_language = None
         self.state.text_result = None
         self.state.text_translation_elapsed_time = None
-        self.state.streaming_text = None
+        # Reset streaming text with lock protection
+        with self._streaming_text_lock:
+            self.state.streaming_text = None
         self.state.text_partial_result = None  # Reset partial result
         self.state.explanation_loading = False  # Reset explanation loading flag
         self._streaming_label = None  # Reset before refresh creates new label
@@ -1456,14 +1462,24 @@ class YakuLingoApp:
         def extract_translation_preview(text: str) -> str:
             """Extract translation part from streaming text for preview.
 
-            Extracts text between '訳文:' and '解説:' to match final result layout.
+            Extracts text between '訳文:' and explanation markers to match final result layout.
+            Supports multiple marker patterns for robustness against Copilot format changes.
             """
             if not text:
                 return ""
 
-            # Find start of translation (訳文 marker with optional colon/heading)
+            # Find start of translation (訳文/Translation marker with optional colon/heading)
             import re
-            start_match = re.search(r'[#>*\s-]*訳文[:：]?\s*', text)
+            START_MARKERS = [
+                r'[#>*\s-]*訳文[:：]?\s*',       # Japanese: 訳文
+                r'[#>*\s-]*Translation[:：]?\s*',  # English
+            ]
+            start_match = None
+            for pattern in START_MARKERS:
+                start_match = re.search(pattern, text, re.IGNORECASE)
+                if start_match:
+                    break
+
             if not start_match:
                 # No translation marker yet, show raw text
                 return text[:300] + '...' if len(text) > 300 else text
@@ -1472,8 +1488,19 @@ class YakuLingoApp:
             translation_start = start_match.end()
             remaining = text[translation_start:]
 
-            # Find end of translation (解説 marker with optional colon/heading)
-            end_match = re.search(r'\n\s*[#>*\s-]*解説[:：]?', remaining)
+            # Find end of translation (explanation markers with optional colon/heading)
+            END_MARKERS = [
+                r'\n\s*[#>*\s-]*解説[:：]?',      # Japanese: 解説
+                r'\n\s*[#>*\s-]*説明[:：]?',      # Japanese: 説明
+                r'\n\s*[#>*\s-]*Explanation[:：]?',  # English
+                r'\n\s*[#>*\s-]*Notes?[:：]?',    # English: Note/Notes
+            ]
+            end_match = None
+            for pattern in END_MARKERS:
+                end_match = re.search(pattern, remaining, re.IGNORECASE)
+                if end_match:
+                    break
+
             if end_match:
                 # Have both markers, extract translation part
                 translation = remaining[:end_match.start()].strip()
@@ -1487,17 +1514,39 @@ class YakuLingoApp:
         def update_streaming_label():
             """Update streaming label and show partial result when explanation starts"""
             nonlocal last_streaming_text, partial_result_displayed
-            current_text = self.state.streaming_text or ""
+            # Protected by _streaming_text_lock to prevent race conditions with on_chunk
+            with self._streaming_text_lock:
+                current_text = self.state.streaming_text or ""
 
             if current_text != last_streaming_text:
                 last_streaming_text = current_text
 
                 # Check if explanation marker appeared (translation text is complete)
+                # Support multiple marker patterns for robustness against Copilot format changes
                 import re
-                has_explanation_marker = bool(re.search(r'\n\s*[#>*\s-]*解説[:：]?', current_text))
+                EXPLANATION_MARKERS = [
+                    r'\n\s*[#>*\s-]*解説[:：]?',      # Japanese: 解説
+                    r'\n\s*[#>*\s-]*説明[:：]?',      # Japanese: 説明
+                    r'\n\s*[#>*\s-]*Explanation[:：]?',  # English
+                    r'\n\s*[#>*\s-]*Notes?[:：]?',    # English: Note/Notes
+                ]
+                has_explanation_marker = any(
+                    re.search(pattern, current_text, re.IGNORECASE)
+                    for pattern in EXPLANATION_MARKERS
+                )
 
-                # If explanation marker appeared and partial result not yet displayed
-                if has_explanation_marker and not partial_result_displayed:
+                # Fallback: Show partial result if text is long enough (likely complete translation)
+                # This handles cases where Copilot doesn't use expected markers
+                MIN_TEXT_LENGTH_FOR_FALLBACK = 200  # chars
+                text_length_fallback = (
+                    len(current_text) >= MIN_TEXT_LENGTH_FOR_FALLBACK
+                    and '訳文' in current_text
+                    and not has_explanation_marker
+                )
+
+                # If explanation marker appeared OR fallback triggered, and not yet displayed
+                should_show_partial = (has_explanation_marker or text_length_fallback) and not partial_result_displayed
+                if should_show_partial:
                     partial_result_displayed = True
                     # Extract translation text only
                     translation_text = extract_translation_preview(current_text)
@@ -1512,14 +1561,18 @@ class YakuLingoApp:
                         # Refresh UI to show translation result immediately
                         with client:
                             self._refresh_result_panel()
+                        if text_length_fallback:
+                            logger.debug("Partial result shown via length fallback (no marker detected)")
                 elif self._streaming_label:
                     # Normal streaming update
                     preview = extract_translation_preview(current_text)
                     self._streaming_label.set_text(preview)
 
-        # Start streaming UI refresh timer (0.2s interval) - only updates label
+        # Start streaming UI refresh timer (0.1s interval) - only updates label
+        # Reduced from 0.2s to 0.1s for more responsive UI updates
         # Must be within client context to create UI elements in async task
         # Protected by _streaming_timer_lock to prevent orphaned timers on concurrent translations
+        STREAMING_UI_TIMER_INTERVAL = 0.1  # seconds
         with self._streaming_timer_lock:
             # Cancel any existing timer before creating new one
             if self._active_streaming_timer:
@@ -1528,12 +1581,14 @@ class YakuLingoApp:
                 except Exception:
                     pass  # Timer may already be cancelled
             with client:
-                streaming_timer = ui.timer(0.2, update_streaming_label)
+                streaming_timer = ui.timer(STREAMING_UI_TIMER_INTERVAL, update_streaming_label)
             self._active_streaming_timer = streaming_timer
 
         # Streaming callback - updates state from Playwright thread
+        # Protected by _streaming_text_lock to prevent race conditions with update_streaming_label
         def on_chunk(text: str):
-            self.state.streaming_text = text
+            with self._streaming_text_lock:
+                self.state.streaming_text = text
             logger.debug("Streaming text updated (length=%d)", len(text) if text else 0)
 
         error_message = None
@@ -1608,7 +1663,9 @@ class YakuLingoApp:
                     streaming_timer.cancel()
                 except Exception:
                     pass
-        self.state.streaming_text = None
+        # Clear streaming text with lock protection
+        with self._streaming_text_lock:
+            self.state.streaming_text = None
         self.state.text_translating = False
         self.state.text_detected_language = None
         self.state.text_partial_result = None  # Clear partial result after full result is ready

@@ -1482,27 +1482,28 @@ def prewarm_layout_model(device: str = "auto") -> bool:
     Returns:
         True if pre-warming succeeded, False if paddleocr is not available
     """
-    try:
-        # Check if paddleocr is available
-        _get_paddleocr()
-    except ImportError:
-        logger.debug("paddleocr not available, skipping PP-DocLayout-L prewarm")
-        return False
+    import warnings
 
-    # Determine device
-    if device == "auto":
-        device = _determine_ocr_device()
+    # Suppress subprocess output (Windows "情報:" messages from PaddlePaddle)
+    # and PaddlePaddle's ccache warning during import and initialization
+    with _suppress_subprocess_output():
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message="No ccache found")
 
-    logger.info("PP-DocLayout-L をウォームアップ中 (device=%s)...", device)
+            try:
+                # Check if paddleocr is available
+                _get_paddleocr()
+            except ImportError:
+                logger.debug("paddleocr not available, skipping PP-DocLayout-L prewarm")
+                return False
 
-    try:
-        import warnings
+            # Determine device
+            if device == "auto":
+                device = _determine_ocr_device()
 
-        # Suppress subprocess output (Windows "情報:" messages from PaddlePaddle)
-        # and PaddlePaddle's ccache warning
-        with _suppress_subprocess_output():
-            with warnings.catch_warnings():
-                warnings.filterwarnings("ignore", message="No ccache found")
+            logger.info("PP-DocLayout-L をウォームアップ中 (device=%s)...", device)
+
+            try:
                 # Initialize model
                 model = get_layout_model(device)
 
@@ -1511,11 +1512,11 @@ def prewarm_layout_model(device: str = "auto") -> bool:
                 dummy_image = np.zeros((100, 100, 3), dtype=np.uint8)
                 _ = model(dummy_image)
 
-        logger.info("PP-DocLayout-L ウォームアップ完了")
-        return True
-    except Exception as e:
-        logger.warning("PP-DocLayout-L ウォームアップ失敗: %s", e)
-        return False
+                logger.info("PP-DocLayout-L ウォームアップ完了")
+                return True
+            except Exception as e:
+                logger.warning("PP-DocLayout-L ウォームアップ失敗: %s", e)
+                return False
 
 
 def clear_analyzer_cache():

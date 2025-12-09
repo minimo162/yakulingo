@@ -522,7 +522,7 @@ async def _translate_text(self):
   "font_jp_to_en": "Arial",
   "font_en_to_jp": "MS Pゴシック",
   "ocr_batch_size": 5,
-  "ocr_dpi": 200,
+  "ocr_dpi": 300,
   "ocr_device": "auto",
   "auto_update_enabled": true,
   "auto_update_check_interval": 86400,

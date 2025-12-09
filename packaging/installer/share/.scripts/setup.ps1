@@ -256,8 +256,11 @@ function Cleanup-Directory {
     )
 
     if (Test-Path $Path) {
-        # Use cmd /c rd for faster removal (avoids PowerShell enumeration)
-        & cmd /c "rd /s /q `"$Path`" 2>nul"
+        # Safety check: only delete if path is in TEMP and has YakuLingo_ prefix
+        $leafName = Split-Path -Leaf $Path
+        if ($Path.StartsWith($env:TEMP, [System.StringComparison]::OrdinalIgnoreCase) -and $leafName.StartsWith("YakuLingo_")) {
+            & cmd /c "rd /s /q `"$Path`" 2>nul"
+        }
     }
 }
 
@@ -629,9 +632,12 @@ function Invoke-Setup {
                 }
             }
         }
-        # Clean up backup directory
+        # Clean up backup directory (with safety check)
         if (Test-Path $BackupDir) {
-            & cmd /c "rd /s /q `"$BackupDir`" 2>nul"
+            $backupLeafName = Split-Path -Leaf $BackupDir
+            if ($BackupDir.StartsWith($env:TEMP, [System.StringComparison]::OrdinalIgnoreCase) -and $backupLeafName.StartsWith("YakuLingo_")) {
+                & cmd /c "rd /s /q `"$BackupDir`" 2>nul"
+            }
         }
         if (-not $GuiMode) {
             Write-Host "[OK] User data restored" -ForegroundColor Green

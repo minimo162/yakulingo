@@ -865,76 +865,38 @@ def calculate_adjusted_font_size(
     """
     Calculate font size and split text into lines.
 
-    Primary approach: Use the initial font size with line height compression
-    (done before this function). If text still overflows after line height
-    compression, shrink font size as a fallback to prevent text from
-    exceeding box boundaries.
+    PDFMathTranslate compliant: Font size is FIXED (no shrinking).
+    Line height compression is handled separately by calculate_line_height_with_font().
+    Overflow is allowed if text still doesn't fit after line height compression.
 
-    Font size shrinking steps:
-    1. Try initial font size
-    2. If overflow, reduce by 5% steps until text fits or min_font_size reached
-    3. Log warning if min_font_size is used and text still overflows
+    This approach maintains consistent font sizes across the document,
+    which is important for readability and professional appearance.
+
+    Reference: PDFMathTranslate converter.py
+    - Font size is fixed per paragraph
+    - Line height compression only (0.05 steps down to 1.0)
+    - Overflow is allowed if text doesn't fit
 
     Args:
         text: Text to fit
         box_width: Maximum box width
-        box_height: Maximum box height
-        initial_font_size: Font size to start with
+        box_height: Maximum box height (unused, kept for API compatibility)
+        initial_font_size: Font size to use (preserved, not reduced)
         font_id: Font ID for width lookup
         font_registry: FontRegistry instance
-        line_height: Line height multiplier for height calculation
-        min_font_size: Minimum allowed font size (default: MIN_FONT_SIZE)
+        line_height: Line height multiplier (unused, kept for API compatibility)
+        min_font_size: Minimum allowed font size (unused)
 
     Returns:
-        Tuple of (font_size, lines) - font_size may be reduced to fit box
+        Tuple of (font_size, lines) - font_size is always initial_font_size
     """
-    if box_height <= 0 or box_width <= 0:
-        lines = split_text_into_lines_with_font(
-            text, box_width, initial_font_size, font_id, font_registry
-        )
-        return initial_font_size, lines
+    lines = split_text_into_lines_with_font(
+        text, box_width, initial_font_size, font_id, font_registry
+    )
 
-    font_size = initial_font_size
-    shrink_step = 0.05  # 5% reduction per step
-    max_iterations = 20  # Prevent infinite loop
-
-    for iteration in range(max_iterations):
-        lines = split_text_into_lines_with_font(
-            text, box_width, font_size, font_id, font_registry
-        )
-
-        # Calculate total height needed
-        total_height = len(lines) * font_size * line_height
-
-        if total_height <= box_height:
-            # Text fits within box
-            if iteration > 0:
-                logger.debug(
-                    "Font size adjusted from %.1f to %.1f after %d iterations",
-                    initial_font_size, font_size, iteration
-                )
-            return font_size, lines
-
-        # Text overflows - try smaller font size
-        new_font_size = font_size * (1.0 - shrink_step)
-
-        if new_font_size < min_font_size:
-            # Already at minimum - use it and accept overflow
-            font_size = min_font_size
-            lines = split_text_into_lines_with_font(
-                text, box_width, font_size, font_id, font_registry
-            )
-            logger.debug(
-                "Font size at minimum (%.1f) but text may overflow "
-                "(box_height=%.1f, needed=%.1f)",
-                min_font_size, box_height, len(lines) * font_size * line_height
-            )
-            return font_size, lines
-
-        font_size = new_font_size
-
-    # Should not reach here, but return current state
-    return font_size, lines
+    # PDFMathTranslate approach: no font size shrinking
+    # This ensures consistent font sizes across all blocks in the document
+    return initial_font_size, lines
 
 
 def calculate_line_height(

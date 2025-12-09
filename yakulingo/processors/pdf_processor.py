@@ -52,6 +52,7 @@ _pypdfium2 = None
 _paddleocr = None
 _torch = None
 _np = None
+_layout_dependency_warning_logged = False
 
 
 def _get_numpy():
@@ -1414,7 +1415,19 @@ def analyze_layout(img, device: str = "cpu"):
         - score: Detection confidence (0-1)
         Boxes are sorted in reading order.
     """
-    model = get_layout_model(device)
+    global _layout_dependency_warning_logged
+
+    try:
+        model = get_layout_model(device)
+    except ImportError:
+        if not _layout_dependency_warning_logged:
+            logger.warning(
+                "paddleocr is not installed; skipping layout analysis. "
+                "Install it with: pip install -r requirements_pdf.txt",
+            )
+            _layout_dependency_warning_logged = True
+        return {'boxes': []}
+
     results = model.predict(img)
     return results
 
@@ -1437,7 +1450,18 @@ def analyze_layout_batch(images: list, device: str = "cpu") -> list:
     if not images:
         return []
 
-    model = get_layout_model(device)
+    global _layout_dependency_warning_logged
+
+    try:
+        model = get_layout_model(device)
+    except ImportError:
+        if not _layout_dependency_warning_logged:
+            logger.warning(
+                "paddleocr is not installed; skipping layout analysis. "
+                "Install it with: pip install -r requirements_pdf.txt",
+            )
+            _layout_dependency_warning_logged = True
+        return [{'boxes': []} for _ in images]
 
     # PaddleOCR's LayoutDetection.predict() accepts a list of images
     # and returns results for each image

@@ -1170,6 +1170,144 @@ class TestPdfProcessorApplyTranslations:
             mock_doc.close.assert_called()  # May be called multiple times due to fallback
 
 
+class TestDetermineTextSeparator:
+    """Tests for PdfProcessor._determine_text_separator"""
+
+    def test_japanese_text_no_separator(self, processor):
+        """Japanese text should use empty separator"""
+        texts = ["これはテスト", "日本語です"]
+        separator = processor._determine_text_separator(texts)
+        assert separator == ""
+
+    def test_chinese_text_no_separator(self, processor):
+        """Chinese text should use empty separator"""
+        texts = ["这是测试", "中文文本"]
+        separator = processor._determine_text_separator(texts)
+        assert separator == ""
+
+    def test_english_text_space_separator(self, processor):
+        """English text should use space separator"""
+        texts = ["This is a test", "English text"]
+        separator = processor._determine_text_separator(texts)
+        assert separator == " "
+
+    def test_mixed_cjk_majority_no_separator(self, processor):
+        """Mixed text with CJK majority should use empty separator"""
+        texts = ["日本語テキストです", "漢字と平仮名"]  # More CJK than Latin
+        separator = processor._determine_text_separator(texts)
+        assert separator == ""
+
+    def test_mixed_latin_majority_space_separator(self, processor):
+        """Mixed text with Latin majority should use space separator"""
+        texts = ["This is English with 漢字", "More English text"]
+        separator = processor._determine_text_separator(texts)
+        assert separator == " "
+
+    def test_empty_list_returns_space(self, processor):
+        """Empty list should return space (default)"""
+        separator = processor._determine_text_separator([])
+        assert separator == " "
+
+    def test_hiragana_only(self, processor):
+        """Hiragana-only text should use empty separator"""
+        texts = ["ひらがな", "てすと"]
+        separator = processor._determine_text_separator(texts)
+        assert separator == ""
+
+    def test_katakana_only(self, processor):
+        """Katakana-only text should use empty separator"""
+        texts = ["カタカナ", "テスト"]
+        separator = processor._determine_text_separator(texts)
+        assert separator == ""
+
+    def test_fullwidth_forms(self, processor):
+        """Fullwidth Latin forms should be counted as CJK"""
+        texts = ["ＡＢＣＤ", "１２３４"]  # Fullwidth
+        separator = processor._determine_text_separator(texts)
+        assert separator == ""
+
+
+class TestMergePdfminerTextToCells:
+    """Tests for PdfProcessor._merge_pdfminer_text_to_cells"""
+
+    def test_merge_empty_blocks(self, processor):
+        """Empty blocks should not modify cells"""
+        cells = [TranslationCell(address="P1_0", text="", box=[0, 0, 100, 50])]
+        blocks = []
+        processor._merge_pdfminer_text_to_cells(blocks, cells, None, 800, 200)
+        assert cells[0].text == ""
+
+    def test_merge_empty_cells(self, processor):
+        """Empty cells should not cause errors"""
+        from yakulingo.models.types import TextBlock
+        blocks = [TextBlock(
+            id="1", text="test", location="Page 1",
+            metadata={'bbox': [0, 750, 100, 800]}
+        )]
+        cells = []
+        processor._merge_pdfminer_text_to_cells(blocks, cells, None, 800, 200)
+        # Should not raise
+
+    def test_merge_with_margin(self, processor):
+        """Blocks slightly outside cell should still merge with margin"""
+        from yakulingo.models.types import TextBlock
+        # Block at PDF coords (0, 750, 100, 800) -> image coords (0, 0, ~278, ~139) at 200 DPI
+        # scale = 200/72 ≈ 2.78
+        # image_y0 = (800 - 800) * 2.78 = 0
+        # image_y1 = (800 - 750) * 2.78 = 139
+        blocks = [TextBlock(
+            id="1",
+            text="テスト",
+            location="Page 1",
+            metadata={'bbox': [0, 750, 100, 800]}  # PDF coordinates
+        )]
+        # Cell slightly offset but within margin (5px)
+        cells = [TranslationCell(
+            address="P1_0",
+            text="",
+            box=[3, 3, 275, 136]  # Image coordinates, slightly offset
+        )]
+        processor._merge_pdfminer_text_to_cells(blocks, cells, None, 800, 200)
+        assert cells[0].text == "テスト"
+
+    def test_merge_japanese_text_no_space(self, processor):
+        """Japanese blocks should merge without space"""
+        from yakulingo.models.types import TextBlock
+        # Two blocks that overlap with same cell
+        blocks = [
+            TextBlock(
+                id="1", text="日本語", location="Page 1",
+                metadata={'bbox': [0, 750, 50, 800]}
+            ),
+            TextBlock(
+                id="2", text="テスト", location="Page 1",
+                metadata={'bbox': [50, 750, 100, 800]}
+            ),
+        ]
+        cells = [TranslationCell(address="P1_0", text="", box=[0, 0, 280, 140])]
+        processor._merge_pdfminer_text_to_cells(blocks, cells, None, 800, 200)
+        # Japanese text merged without space
+        assert cells[0].text == "日本語テスト"
+
+    def test_merge_english_text_with_space(self, processor):
+        """English blocks should merge with space"""
+        from yakulingo.models.types import TextBlock
+        blocks = [
+            TextBlock(
+                id="1", text="Hello", location="Page 1",
+                metadata={'bbox': [0, 750, 50, 800]}
+            ),
+            TextBlock(
+                id="2", text="World", location="Page 1",
+                metadata={'bbox': [50, 750, 100, 800]}
+            ),
+        ]
+        cells = [TranslationCell(address="P1_0", text="", box=[0, 0, 280, 140])]
+        processor._merge_pdfminer_text_to_cells(blocks, cells, None, 800, 200)
+        # English text merged with space
+        assert cells[0].text == "Hello World"
+
+
 # =============================================================================
 # Tests: Constants
 # =============================================================================

@@ -2886,6 +2886,14 @@ class PdfProcessor(FileProcessor):
                                                 }
                                             ))
 
+                                # Step 7: Filter out empty cells (no text after merge)
+                                # This removes PP-DocLayout-L detected regions that had no
+                                # corresponding pdfminer text (e.g., images, decorative elements)
+                                cells = [
+                                    cell for cell in cells
+                                    if cell.text and cell.text.strip()
+                                ]
+
                                 yield blocks, cells
 
                             except (RuntimeError, ValueError, OSError, MemoryError) as e:
@@ -3020,6 +3028,7 @@ class PdfProcessor(FileProcessor):
         layout_array: LayoutArray,
         page_height: float,
         dpi: int,
+        overlap_margin: float = 5.0,
     ) -> None:
         """
         Merge pdfminer-extracted text into PP-DocLayout-L TranslationCells.
@@ -3038,8 +3047,19 @@ class PdfProcessor(FileProcessor):
           image_y0 = (page_height - pdf_y1) * scale  (top edge)
           image_y1 = (page_height - pdf_y0) * scale  (bottom edge)
 
+        Args:
+            blocks: TextBlocks from pdfminer extraction
+            cells: TranslationCells from PP-DocLayout-L detection
+            layout_array: LayoutArray for region information
+            page_height: Page height in PDF coordinates (72 DPI)
+            dpi: DPI used for layout analysis (typically 200)
+            overlap_margin: Margin in pixels for overlap detection (default: 5.0)
+                           Accounts for slight misalignment between pdfminer and
+                           PP-DocLayout-L coordinates (90.4% mAP@0.5)
+
         Optimization: Pre-compute block coordinates to avoid repeated
-        scale calculations in nested loop.
+        scale calculations in nested loop. Sort cells by y-coordinate
+        for effective early termination.
         """
         if not blocks or not cells:
             return
@@ -3068,13 +3088,27 @@ class PdfProcessor(FileProcessor):
         if not converted_blocks:
             return
 
-        # Sort blocks by (y0, x0) for reading order and early termination
+        # Sort blocks by (y0, x0) for reading order
         # Primary: y0 ascending (top to bottom in image coordinates)
         # Secondary: x0 ascending (left to right for same y position)
         converted_blocks.sort(key=lambda b: (b[1], b[0]))
 
-        # For each cell, find overlapping pdfminer blocks and merge text
-        for cell in cells:
+        # Create cell indices sorted by y0 for early termination optimization
+        # This preserves original cell order while enabling efficient traversal
+        cell_indices_by_y = sorted(
+            range(len(cells)),
+            key=lambda i: cells[i].box[1] if cells[i].box else float('inf')
+        )
+
+        # Track the maximum cell y1 seen so far for smarter early termination
+        max_cell_y1 = max(
+            (c.box[3] for c in cells if c.box),
+            default=0.0
+        )
+
+        # For each cell (in y-sorted order for optimization), find overlapping blocks
+        for cell_idx in cell_indices_by_y:
+            cell = cells[cell_idx]
             if not cell.box:
                 continue
 
@@ -3084,23 +3118,76 @@ class PdfProcessor(FileProcessor):
             # Store as (y0, x0, text) for proper reading order sorting
             overlapping_blocks: list[tuple[float, float, str]] = []
             for block_x0, block_y0, block_x1, block_y1, block_text in converted_blocks:
-                # Early termination: if block top is below cell bottom, skip remaining
+                # Early termination: if block top is below all cells, stop
                 # (blocks are sorted by y0, so later blocks will also be below)
-                if block_y0 > cell_y1:
+                if block_y0 > max_cell_y1 + overlap_margin:
                     break
 
-                # 2D overlap check (all 4 conditions required):
-                # X-axis: block_x0 < cell_x1 AND block_x1 > cell_x0
-                # Y-axis: block_y0 < cell_y1 AND block_y1 > cell_y0
-                if (block_x0 < cell_x1 and block_x1 > cell_x0 and
-                    block_y0 < cell_y1 and block_y1 > cell_y0):
+                # Skip blocks that are clearly above or below this cell
+                # (with margin to account for detection accuracy)
+                if block_y1 < cell_y0 - overlap_margin:
+                    continue
+                if block_y0 > cell_y1 + overlap_margin:
+                    continue
+
+                # 2D overlap check with margin (all 4 conditions required):
+                # X-axis: block_x0 < cell_x1 + margin AND block_x1 > cell_x0 - margin
+                # Y-axis: block_y0 < cell_y1 + margin AND block_y1 > cell_y0 - margin
+                if (block_x0 < cell_x1 + overlap_margin and
+                    block_x1 > cell_x0 - overlap_margin and
+                    block_y0 < cell_y1 + overlap_margin and
+                    block_y1 > cell_y0 - overlap_margin):
                     overlapping_blocks.append((block_y0, block_x0, block_text))
 
             # If we found overlapping pdfminer text, merge in reading order
             if overlapping_blocks:
                 # Sort by (y0, x0) for proper reading order (top-to-bottom, left-to-right)
                 overlapping_blocks.sort(key=lambda b: (b[0], b[1]))
-                cell.text = " ".join(b[2] for b in overlapping_blocks)
+
+                # Determine separator based on text content
+                # Japanese/Chinese text: no space between blocks
+                # Latin/other text: space between blocks
+                merged_texts = [b[2] for b in overlapping_blocks]
+                separator = self._determine_text_separator(merged_texts)
+                cell.text = separator.join(merged_texts)
+
+    def _determine_text_separator(self, texts: list[str]) -> str:
+        """
+        Determine appropriate separator for merging text blocks.
+
+        Japanese and Chinese text typically don't use spaces between words,
+        while Latin-based languages do.
+
+        Args:
+            texts: List of text strings to be merged
+
+        Returns:
+            "" for CJK text, " " for Latin/other text
+        """
+        if not texts:
+            return " "
+
+        # Count CJK characters vs Latin characters
+        cjk_count = 0
+        latin_count = 0
+
+        for text in texts:
+            for char in text:
+                code = ord(char)
+                # CJK ranges: Hiragana, Katakana, CJK Unified Ideographs, etc.
+                if (0x3040 <= code <= 0x309F or  # Hiragana
+                    0x30A0 <= code <= 0x30FF or  # Katakana
+                    0x4E00 <= code <= 0x9FFF or  # CJK Unified Ideographs
+                    0x3400 <= code <= 0x4DBF or  # CJK Extension A
+                    0xF900 <= code <= 0xFAFF or  # CJK Compatibility Ideographs
+                    0xFF00 <= code <= 0xFFEF):   # Halfwidth/Fullwidth Forms
+                    cjk_count += 1
+                elif char.isalpha():
+                    latin_count += 1
+
+        # If majority is CJK, use no separator
+        # Otherwise use space
+        return "" if cjk_count > latin_count else " "
 
     def _extract_with_pdfminer_streaming(
         self,

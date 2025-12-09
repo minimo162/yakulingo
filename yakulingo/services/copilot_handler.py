@@ -2142,6 +2142,7 @@ class CopilotHandler:
         """Return the latest Copilot response text and whether an element was found."""
 
         if not self._page:
+            logger.debug("[RESPONSE_TEXT] No page available")
             return "", False
 
         error_types = _get_playwright_errors()
@@ -2151,21 +2152,25 @@ class CopilotHandler:
             try:
                 elements = self._page.query_selector_all(selector)
             except PlaywrightError as e:
-                logger.debug("Response selector failed (%s): %s", selector, e)
+                logger.debug("[RESPONSE_TEXT] Selector failed (%s): %s", selector, e)
                 continue
 
             if not elements:
+                logger.debug("[RESPONSE_TEXT] No elements for selector: %s", selector)
                 continue
 
+            logger.debug("[RESPONSE_TEXT] Found %d elements for selector: %s", len(elements), selector)
             for element in reversed(elements):
                 try:
                     text = element.inner_text()
                 except PlaywrightError as e:
-                    logger.debug("Failed to read response element (%s): %s", selector, e)
+                    logger.debug("[RESPONSE_TEXT] Failed to read element (%s): %s", selector, e)
                     continue
 
+                logger.debug("[RESPONSE_TEXT] Got text (len=%d) from selector: %s", len(text) if text else 0, selector)
                 return text or "", True
 
+        logger.debug("[RESPONSE_TEXT] No response found from any selector")
         return "", False
 
     def _get_response(self, timeout: int = 120, on_chunk: "Callable[[str], None] | None" = None) -> str:
@@ -2210,8 +2215,13 @@ class CopilotHandler:
             last_text = ""
             stable_count = 0
             has_content = False  # Track if we've seen any content
+            poll_iteration = 0
+            last_log_time = time.time()
+
+            logger.info("[POLLING] Starting response polling (timeout=%.0fs)", max_wait)
 
             while max_wait > 0:
+                poll_iteration += 1
                 # Check for cancellation at the start of each polling iteration
                 if self._is_cancelled():
                     logger.info("Translation cancelled during response polling")
@@ -2221,6 +2231,7 @@ class CopilotHandler:
                 # If stop button is present, response is not complete yet
                 # Try multiple selectors for stop/loading indicators
                 stop_button = None
+                stop_button_selector = None
                 for stop_sel in [
                     '.fai-SendButton__stopBackground',
                     'button[aria-label*="Stop"]',
@@ -2229,16 +2240,25 @@ class CopilotHandler:
                 ]:
                     stop_button = self._page.query_selector(stop_sel)
                     if stop_button:
+                        stop_button_selector = stop_sel
                         break
-                if stop_button and stop_button.is_visible():
+                stop_button_visible = stop_button and stop_button.is_visible()
+                if stop_button_visible:
                     # Still generating, reset stability counter and wait
                     stable_count = 0
                     poll_interval = self.RESPONSE_POLL_ACTIVE if has_content else self.RESPONSE_POLL_INITIAL
+                    # Log every 1 second
+                    if time.time() - last_log_time >= 1.0:
+                        logger.info("[POLLING] iter=%d stop_button visible (%s), waiting... (remaining=%.1fs)",
+                                   poll_iteration, stop_button_selector, max_wait)
+                        last_log_time = time.time()
                     time.sleep(poll_interval)
                     max_wait -= poll_interval
                     continue
 
                 current_text, found_response = self._get_latest_response_text()
+                text_len = len(current_text) if current_text else 0
+                text_preview = (current_text[:50] + "...") if current_text and len(current_text) > 50 else current_text
 
                 if found_response:
 
@@ -2258,11 +2278,21 @@ class CopilotHandler:
                                 return current_text
                             # Use fastest interval during stability checking
                             poll_interval = self.RESPONSE_POLL_STABLE
+                            # Log stability check progress
+                            if time.time() - last_log_time >= 1.0:
+                                logger.info("[POLLING] iter=%d stable_count=%d/%d, text_len=%d (remaining=%.1fs)",
+                                           poll_iteration, stable_count, self.RESPONSE_STABLE_COUNT, text_len, max_wait)
+                                last_log_time = time.time()
                         else:
                             stable_count = 0
                             last_text = current_text
                             # Content is still growing, use active interval
                             poll_interval = self.RESPONSE_POLL_ACTIVE
+                            # Log content growth every 1 second
+                            if time.time() - last_log_time >= 1.0:
+                                logger.info("[POLLING] iter=%d content growing, text_len=%d, preview='%s' (remaining=%.1fs)",
+                                           poll_iteration, text_len, text_preview, max_wait)
+                                last_log_time = time.time()
                             # Notify streaming callback with partial text
                             if on_chunk:
                                 try:
@@ -2279,13 +2309,25 @@ class CopilotHandler:
                         # Reset stability counter if text is empty
                         stable_count = 0
                         poll_interval = self.RESPONSE_POLL_INITIAL
+                        # Log empty response state
+                        if time.time() - last_log_time >= 1.0:
+                            logger.info("[POLLING] iter=%d found_response=True but text empty (remaining=%.1fs)",
+                                       poll_iteration, max_wait)
+                            last_log_time = time.time()
                 else:
                     # No response element yet, use initial interval
                     poll_interval = self.RESPONSE_POLL_INITIAL
+                    # Log no response state
+                    if time.time() - last_log_time >= 1.0:
+                        logger.info("[POLLING] iter=%d no response element found (remaining=%.1fs)",
+                                   poll_iteration, max_wait)
+                        last_log_time = time.time()
 
                 time.sleep(poll_interval)
                 max_wait -= poll_interval
 
+            logger.warning("[POLLING] Timeout reached after %d iterations, returning last_text (len=%d)",
+                          poll_iteration, len(last_text))
             return last_text
 
         except PlaywrightError as e:

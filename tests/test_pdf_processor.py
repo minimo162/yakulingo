@@ -3119,3 +3119,146 @@ class TestLayoutLabelCategories:
         """Should have no overlap between translate and skip labels"""
         overlap = LAYOUT_TRANSLATE_LABELS & LAYOUT_SKIP_LABELS
         assert len(overlap) == 0
+
+
+# =============================================================================
+# Tests for Coordinate Conversion Utilities (PDFMathTranslate compliant)
+# =============================================================================
+class TestCoordinateConversion:
+    """Tests for coordinate conversion utilities in pdf_converter.py"""
+
+    def test_pdf_to_image_coord_basic(self):
+        """Test basic PDF to image coordinate conversion"""
+        from yakulingo.processors.pdf_converter import pdf_to_image_coord, ImageCoord
+
+        # PDF coordinate: (100, 700) on an 842pt (A4) page
+        # Image coordinate should flip Y: (100, 842-700) = (100, 142)
+        result = pdf_to_image_coord(100, 700, page_height=842, scale=1.0)
+
+        assert isinstance(result, ImageCoord)
+        assert result.x == 100.0
+        assert result.y == 142.0
+
+    def test_pdf_to_image_coord_with_scale(self):
+        """Test PDF to image coordinate conversion with DPI scaling"""
+        from yakulingo.processors.pdf_converter import pdf_to_image_coord
+
+        # PDF coordinate: (100, 700) on 842pt page, scaled by 2.78 (200 DPI / 72 DPI)
+        scale = 200 / 72  # ≈ 2.78
+        result = pdf_to_image_coord(100, 700, page_height=842, scale=scale)
+
+        assert result.x == pytest.approx(100 * scale, rel=0.01)
+        assert result.y == pytest.approx((842 - 700) * scale, rel=0.01)
+
+    def test_image_to_pdf_coord_basic(self):
+        """Test basic image to PDF coordinate conversion"""
+        from yakulingo.processors.pdf_converter import image_to_pdf_coord, PdfCoord
+
+        # Image coordinate: (100, 142) should convert back to PDF (100, 700)
+        result = image_to_pdf_coord(100, 142, page_height=842, scale=1.0)
+
+        assert isinstance(result, PdfCoord)
+        assert result.x == 100.0
+        assert result.y == 700.0
+
+    def test_pdf_to_image_roundtrip(self):
+        """Test that PDF→Image→PDF conversion is reversible"""
+        from yakulingo.processors.pdf_converter import (
+            pdf_to_image_coord, image_to_pdf_coord
+        )
+
+        # Original PDF coordinates
+        pdf_x, pdf_y = 150.5, 600.0
+        page_height = 842.0
+        scale = 2.78
+
+        # Convert to image and back
+        img = pdf_to_image_coord(pdf_x, pdf_y, page_height, scale)
+        result = image_to_pdf_coord(img.x, img.y, page_height, scale)
+
+        assert result.x == pytest.approx(pdf_x, rel=0.001)
+        assert result.y == pytest.approx(pdf_y, rel=0.001)
+
+    def test_pdf_bbox_to_image_bbox(self):
+        """Test PDF bounding box to image bounding box conversion"""
+        from yakulingo.processors.pdf_converter import pdf_bbox_to_image_bbox
+
+        # PDF bbox: left=50, bottom=700, right=200, top=750 (on 842pt page)
+        # Image bbox should be: left=50, top=(842-750)=92, right=200, bottom=(842-700)=142
+        result = pdf_bbox_to_image_bbox(50, 700, 200, 750, page_height=842, scale=1.0)
+
+        assert result == (50.0, 92.0, 200.0, 142.0)
+
+    def test_image_bbox_to_pdf_bbox(self):
+        """Test image bounding box to PDF bounding box conversion"""
+        from yakulingo.processors.pdf_converter import image_bbox_to_pdf_bbox
+
+        # Image bbox: left=50, top=92, right=200, bottom=142 (on 842pt page)
+        # PDF bbox should be: left=50, bottom=700, right=200, top=750
+        result = image_bbox_to_pdf_bbox(50, 92, 200, 142, page_height=842, scale=1.0)
+
+        assert result == (50.0, 700.0, 200.0, 750.0)
+
+    def test_get_layout_class_at_pdf_coord_none_array(self):
+        """Test that None layout array returns BACKGROUND"""
+        from yakulingo.processors.pdf_converter import get_layout_class_at_pdf_coord
+        from yakulingo.processors.pdf_layout import LAYOUT_BACKGROUND
+
+        result = get_layout_class_at_pdf_coord(
+            layout_array=None,
+            pdf_x=100,
+            pdf_y=700,
+            page_height=842,
+            scale=1.0,
+            layout_width=595,
+            layout_height=842,
+        )
+
+        assert result == LAYOUT_BACKGROUND
+
+    def test_get_layout_class_at_pdf_coord_valid(self):
+        """Test layout class lookup with valid coordinates"""
+        import numpy as np
+        from yakulingo.processors.pdf_converter import get_layout_class_at_pdf_coord
+        from yakulingo.processors.pdf_layout import LAYOUT_PARAGRAPH_BASE
+
+        # Create a simple layout array with a paragraph region
+        layout_array = np.ones((842, 595), dtype=np.uint16)
+        # Mark a region as paragraph (class 2)
+        layout_array[90:150, 40:210] = LAYOUT_PARAGRAPH_BASE
+
+        # PDF coordinate (100, 700) -> Image (100, 142) with scale=1
+        # Should be inside the paragraph region (y=90:150, x=40:210)
+        result = get_layout_class_at_pdf_coord(
+            layout_array=layout_array,
+            pdf_x=100,  # x is in range [40, 210]
+            pdf_y=700,  # y=842-700=142, in range [90, 150]
+            page_height=842,
+            scale=1.0,
+            layout_width=595,
+            layout_height=842,
+        )
+
+        assert result == LAYOUT_PARAGRAPH_BASE
+
+    def test_get_layout_class_at_pdf_coord_boundary_clipping(self):
+        """Test that coordinates outside bounds are clipped"""
+        import numpy as np
+        from yakulingo.processors.pdf_converter import get_layout_class_at_pdf_coord
+        from yakulingo.processors.pdf_layout import LAYOUT_BACKGROUND
+
+        layout_array = np.ones((100, 100), dtype=np.uint16)
+
+        # Coordinates outside the layout bounds
+        result = get_layout_class_at_pdf_coord(
+            layout_array=layout_array,
+            pdf_x=1000,  # Way outside
+            pdf_y=-500,  # Way outside
+            page_height=100,
+            scale=1.0,
+            layout_width=100,
+            layout_height=100,
+        )
+
+        # Should return BACKGROUND (clipped to valid range)
+        assert result == LAYOUT_BACKGROUND

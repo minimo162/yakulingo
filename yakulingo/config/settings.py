@@ -59,7 +59,7 @@ class AppSettings:
 
     # PDF Layout Options (PP-DocLayout-L)
     ocr_batch_size: int = 5             # ページ/バッチ（メモリ使用量とのトレードオフ）
-    ocr_dpi: int = 200                  # レイアウト解析解像度（高いほど精度向上、処理時間増加）
+    ocr_dpi: int = 300                  # レイアウト解析解像度（高いほど精度向上、処理時間増加）
     ocr_device: str = "auto"            # "auto", "cpu", "cuda"
 
     # Auto Update
@@ -144,8 +144,8 @@ class AppSettings:
         if self.ocr_batch_size < 1:
             self.ocr_batch_size = 5
         if self.ocr_dpi < 72 or self.ocr_dpi > 600:
-            logger.warning("ocr_dpi out of range (%d), resetting to 200", self.ocr_dpi)
-            self.ocr_dpi = 200
+            logger.warning("ocr_dpi out of range (%d), resetting to 300", self.ocr_dpi)
+            self.ocr_dpi = 300
 
     def save(self, path: Path) -> None:
         """Save settings to JSON file"""

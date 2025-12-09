@@ -522,7 +522,7 @@ async def _translate_text(self):
   "font_jp_to_en": "Arial",
   "font_en_to_jp": "MS Pゴシック",
   "ocr_batch_size": 5,
-  "ocr_dpi": 200,
+  "ocr_dpi": 300,
   "ocr_device": "auto",
   "auto_update_enabled": true,
   "auto_update_check_interval": 86400,
@@ -844,9 +844,67 @@ model = LayoutDetection(
 )
 ```
 
+**DPI設定 (`ocr_dpi`):**
+
+| 設定値 | 解像度 | メモリ使用量 | 精度 | 処理時間 |
+|--------|--------|-------------|------|----------|
+| 150 | 低 | ~15MB/page | 低 | 速い |
+| **300** | **デフォルト** | **~60MB/page** | **高** | **標準** |
+| 600 | 高 | ~240MB/page | 最高 | 遅い |
+
+- デフォルト: **300 DPI**（精度と処理時間のバランス）
+- 有効範囲: 72〜600 DPI
+- A4 @ 300 DPI ≈ 2480×3508 px × 3 channels ≈ 26MB/page（画像データ）
+- scale計算: `layout_height / page_height = (page_height_pt × dpi / 72) / page_height_pt = dpi / 72`
+
 **Line Break Handling:**
 - PDF text extraction removes line breaks: `text.replace("\n", "")`
 - Optimized for Japanese documents where line breaks within paragraphs are visual-only
+
+**Coordinate System Utilities (PDFMathTranslate compliant):**
+
+PDF処理では2つの座標系を扱います。座標変換ユーティリティ（`pdf_converter.py`）で型安全な変換を提供します：
+
+| 座標系 | 原点 | Y軸方向 | 使用場面 |
+|--------|------|---------|----------|
+| **PDF座標 (`PdfCoord`)** | 左下 | 上向き | pdfminer、TextBlock、翻訳適用 |
+| **画像座標 (`ImageCoord`)** | 左上 | 下向き | PP-DocLayout-L、LayoutArray |
+
+```python
+# 型安全な座標クラス
+from yakulingo.processors.pdf_converter import PdfCoord, ImageCoord
+
+# 座標変換関数
+from yakulingo.processors.pdf_converter import (
+    pdf_to_image_coord,      # PDF→画像座標変換
+    image_to_pdf_coord,      # 画像→PDF座標変換
+    pdf_bbox_to_image_bbox,  # PDF bbox→画像bbox変換
+    image_bbox_to_pdf_bbox,  # 画像bbox→PDF bbox変換
+    get_layout_class_at_pdf_coord,  # PDF座標からLayoutArrayクラス取得
+)
+
+# 使用例: PDF座標からLayoutArrayのクラスを取得
+char_cls = get_layout_class_at_pdf_coord(
+    layout_array,      # NumPy array from LayoutArray
+    pdf_x=char.x0,     # PDF X coordinate
+    pdf_y=char.y1,     # PDF Y coordinate (top of char)
+    page_height=842,   # Page height in PDF points
+    scale=2.78,        # layout_height / page_height
+    layout_width=1654,
+    layout_height=2339,
+)
+```
+
+**変換公式:**
+```
+# PDF→画像座標
+img_x = pdf_x * scale
+img_y = (page_height - pdf_y) * scale
+
+# 画像→PDF座標
+pdf_x = img_x / scale
+pdf_y = page_height - (img_y / scale)
+```
 
 **PDF Text Rendering (Low-level API):**
 
@@ -990,7 +1048,8 @@ Based on recent commits:
   - **pdfminer.six integration**: Font type detection for correct text encoding
   - **Low-level API only**: Removed high-level API fallback for consistent rendering
   - **Font type encoding**: EMBEDDED→glyph ID, CID→4-digit hex, SIMPLE→2-digit hex
-  - **Coordinate system docs**: PDF座標系（左下原点、Y上向き）と画像座標系（左上原点、Y下向き）の変換を明文化
+  - **Coordinate system utilities**: 型安全な座標変換ユーティリティを追加（`PdfCoord`, `ImageCoord`, `pdf_to_image_coord`, `get_layout_class_at_pdf_coord`）
+  - **Empty LayoutArray fallback**: PP-DocLayout-Lが検出結果を返さない場合のY座標フォールバックを改善・ログ追加
   - **Text merging**: LayoutArrayを参照して文字を段落にグループ化（_group_chars_into_blocks）
 - **Font Settings Simplification**:
   - **Unified settings**: 4 font settings → 2 settings (`font_jp_to_en`, `font_en_to_jp`)

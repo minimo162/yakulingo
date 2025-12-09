@@ -52,6 +52,7 @@ from .pdf_operators import (
 from .pdf_converter import (
     # Data classes
     Paragraph, FormulaVar, TranslationCell,
+    PdfCoord, ImageCoord,  # Coordinate type safety
     # Constants
     LANG_LINEHEIGHT_MAP, DEFAULT_LINE_HEIGHT,
     DEFAULT_FONT_SIZE, MIN_FONT_SIZE, MAX_FONT_SIZE,
@@ -66,6 +67,10 @@ from .pdf_converter import (
     is_subscript_superscript, detect_text_style,
     detect_paragraph_boundary, classify_char_type,
     create_paragraph_from_char, create_formula_var_from_chars,
+    # Coordinate conversion utilities (PDFMathTranslate compliant)
+    pdf_to_image_coord, image_to_pdf_coord,
+    pdf_bbox_to_image_bbox, image_bbox_to_pdf_bbox,
+    get_layout_class_at_pdf_coord,
     # Classes
     FormulaManager,
     # Regex patterns (for internal use)
@@ -2219,27 +2224,40 @@ class PdfProcessor(FileProcessor):
         """
         Get layout class for a character from the layout array.
 
-        Converts PDF coordinates to image coordinates and looks up the class.
+        PDFMathTranslate compliant coordinate conversion:
+        - PDF coordinates: origin at bottom-left, Y increases upward
+        - Image/Layout coordinates: origin at top-left, Y increases downward
+
+        The conversion formula is:
+            img_x = pdf_x * scale
+            img_y = (page_height - pdf_y) * scale
 
         Args:
-            char_x0: Character X coordinate (PDF)
-            char_y1: Character top Y coordinate (PDF)
-            page_height: Page height in PDF points
-            layout_array: NumPy array from LayoutArray
+            char_x0: Character X coordinate (PDF space, left edge)
+            char_y1: Character top Y coordinate (PDF space)
+            page_height: Page height in PDF points (72 DPI)
+            layout_array: NumPy array from LayoutArray (image coordinates)
             coord_scale: Pre-calculated scale factor (layout_height / page_height)
-            layout_width: Layout array width
-            layout_height: Layout array height
+            layout_width: Layout array width in pixels
+            layout_height: Layout array height in pixels
 
         Returns:
-            Layout class ID (LAYOUT_ABANDON, LAYOUT_BACKGROUND, or region ID)
+            Layout class ID:
+            - LAYOUT_ABANDON (0): Figures, headers, footers - skip translation
+            - LAYOUT_BACKGROUND (1): Default background
+            - LAYOUT_PARAGRAPH_BASE + idx (2+): Paragraph regions
+            - LAYOUT_TABLE_BASE + idx (1000+): Table regions
         """
-        if layout_array is None:
-            return LAYOUT_BACKGROUND
-
-        # Convert PDF coordinates to image coordinates
-        img_x = int(max(0, min(char_x0 * coord_scale, layout_width - 1)))
-        img_y = int(max(0, min((page_height - char_y1) * coord_scale, layout_height - 1)))
-        return int(layout_array[img_y, img_x])
+        # Delegate to centralized coordinate conversion utility
+        return get_layout_class_at_pdf_coord(
+            layout_array,
+            char_x0,
+            char_y1,
+            page_height,
+            coord_scale,
+            layout_width,
+            layout_height,
+        )
 
     def _convert_stacks_to_text_blocks(
         self,

@@ -1817,7 +1817,7 @@ class TranslationService:
 
         # Get settings from config (if available)
         batch_size = self.config.ocr_batch_size if self.config else 5
-        dpi = self.config.ocr_dpi if self.config else 200
+        dpi = self.config.ocr_dpi if self.config else 300
         device = self.config.ocr_device if self.config else "auto"
 
         # Phase 1: Extract text with streaming progress (0-40%)

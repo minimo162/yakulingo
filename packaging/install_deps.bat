@@ -145,7 +145,29 @@ if errorlevel 1 (
     pause
     exit /b 1
 )
-echo [DONE] Dependencies installed (including PaddleOCR).
+
+:: Verify PaddleOCR installation
+echo [INFO] Verifying PaddleOCR installation...
+.venv\Scripts\python.exe -c "import paddle; print(f'[OK] PaddlePaddle {paddle.__version__}')" 2>nul
+if errorlevel 1 (
+    echo [WARNING] PaddlePaddle import failed. Attempting reinstall...
+    .venv\Scripts\pip.exe install --upgrade paddlepaddle>=3.0.0
+)
+
+.venv\Scripts\python.exe -c "from paddleocr import LayoutDetection; print('[OK] PaddleOCR LayoutDetection available')" 2>nul
+if errorlevel 1 (
+    echo [WARNING] PaddleOCR import failed. Attempting reinstall...
+    .venv\Scripts\pip.exe install --upgrade paddleocr>=3.0.0
+
+    :: Verify again after reinstall
+    .venv\Scripts\python.exe -c "from paddleocr import LayoutDetection; print('[OK] PaddleOCR LayoutDetection available')" 2>nul
+    if errorlevel 1 (
+        echo [WARNING] PaddleOCR still not working. PDF layout analysis will be disabled.
+        echo [INFO] You can manually install with: pip install paddleocr paddlepaddle
+    )
+)
+
+echo [DONE] Dependencies installed.
 
 :: ============================================================
 :: Step 4: Install Playwright browser
@@ -168,6 +190,8 @@ echo.
 echo [5/5] Pre-compiling Python bytecode...
 .venv\Scripts\python.exe -m compileall -q yakulingo 2>nul
 .venv\Scripts\python.exe -c "import nicegui; import pywebview; from yakulingo.ui import app; from yakulingo.services import translation_service" 2>nul
+:: Pre-import paddle/paddleocr to download models and cache them (may take a while)
+.venv\Scripts\python.exe -c "import paddle; from paddleocr import LayoutDetection" 2>nul
 echo [DONE] Bytecode pre-compiled.
 
 echo.

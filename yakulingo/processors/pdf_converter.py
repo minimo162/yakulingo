@@ -67,12 +67,20 @@ _RE_CID_NOTATION = re.compile(r"\(cid:")
 _RE_FORMULA_PLACEHOLDER = re.compile(r"\{\s*v([\d\s]+)\}", re.IGNORECASE)
 
 # Paragraph boundary detection thresholds (PDFMathTranslate compliant)
+# NOTE: These are DEFAULT values. Use calculate_dynamic_thresholds() for
+# page-size and font-size adaptive thresholds.
 SAME_LINE_Y_THRESHOLD = 3.0       # Characters within 3pt are on same line
 SAME_PARA_Y_THRESHOLD = 20.0      # Lines within 20pt are in same paragraph
 WORD_SPACE_X_THRESHOLD = 2.0      # Gap > 2pt between chars inserts space
 LINE_BREAK_X_THRESHOLD = 1.0      # child.x1 < xt.x0 indicates line break
 # Multi-column detection: large X jump (>100pt) suggests column change
 COLUMN_JUMP_X_THRESHOLD = 100.0
+
+# Dynamic threshold calculation constants
+# For multi-column detection, threshold as fraction of page width
+COLUMN_THRESHOLD_RATIO = 0.2      # 20% of page width
+# Minimum column threshold to handle very narrow pages
+MIN_COLUMN_THRESHOLD = 50.0       # 50pt minimum
 
 
 # =============================================================================
@@ -519,6 +527,59 @@ class FormulaManager:
 # Paragraph Grouping Functions (PDFMathTranslate compliant)
 # =============================================================================
 
+def calculate_dynamic_thresholds(
+    page_width: float,
+    page_height: float,
+    avg_font_size: Optional[float] = None,
+) -> dict:
+    """
+    Calculate adaptive thresholds based on page dimensions and font size.
+
+    This improves paragraph detection accuracy for:
+    - Non-standard page sizes (B5, B6, Letter vs A4)
+    - Small font sizes (6-8pt) common in academic papers
+    - Multi-column layouts where fixed thresholds fail
+
+    Args:
+        page_width: Page width in PDF points
+        page_height: Page height in PDF points
+        avg_font_size: Average font size in points (optional, uses default if None)
+
+    Returns:
+        Dictionary with threshold values:
+        - y_line: Same line threshold
+        - y_para: Same paragraph threshold
+        - x_column: Column jump threshold
+        - font_size: Font size used for calculation
+
+    Example:
+        thresholds = calculate_dynamic_thresholds(595, 842, 10.0)
+        # A4 page with 10pt font
+        # y_para = 10.0 * 1.8 = 18.0pt
+        # x_column = max(50, 595 * 0.2) = 119pt
+    """
+    font_size = avg_font_size or DEFAULT_FONT_SIZE
+
+    # Y thresholds: scale with font size
+    # Same line: ~30% of font size (accounts for baseline variations)
+    y_line = max(font_size * 0.3, SAME_LINE_Y_THRESHOLD)
+    # Same paragraph: ~1.8x line height (typical paragraph spacing)
+    y_para = max(font_size * 1.8, SAME_PARA_Y_THRESHOLD)
+
+    # X threshold for column detection: scale with page width
+    # Use 20% of page width, minimum 50pt
+    x_column = max(
+        MIN_COLUMN_THRESHOLD,
+        page_width * COLUMN_THRESHOLD_RATIO
+    )
+
+    return {
+        'y_line': y_line,
+        'y_para': y_para,
+        'x_column': x_column,
+        'font_size': font_size,
+    }
+
 def detect_paragraph_boundary(
     char_x0: float,
     char_y0: float,
@@ -527,6 +588,7 @@ def detect_paragraph_boundary(
     char_cls: int,
     prev_cls: int,
     use_layout: bool,
+    thresholds: Optional[dict] = None,
 ) -> tuple[bool, bool]:
     """
     Detect if a new paragraph or line break should start.
@@ -542,12 +604,19 @@ def detect_paragraph_boundary(
         char_cls: Current character's layout class
         prev_cls: Previous character's layout class
         use_layout: Whether layout information is available
+        thresholds: Optional dictionary from calculate_dynamic_thresholds()
+                   containing y_line, y_para, x_column. If None, uses defaults.
 
     Returns:
         Tuple of (new_paragraph, line_break) booleans
     """
     new_paragraph = False
     line_break = False
+
+    # Use dynamic thresholds if provided, otherwise use defaults
+    y_line_thresh = thresholds['y_line'] if thresholds else SAME_LINE_Y_THRESHOLD
+    y_para_thresh = thresholds['y_para'] if thresholds else SAME_PARA_Y_THRESHOLD
+    x_column_thresh = thresholds['x_column'] if thresholds else COLUMN_JUMP_X_THRESHOLD
 
     if use_layout and prev_cls is not None:
         # Layout-based detection
@@ -558,14 +627,14 @@ def detect_paragraph_boundary(
             else:
                 # One or both are BACKGROUND -> use Y-coordinate
                 y_diff = abs(char_y0 - prev_y0)
-                if y_diff > SAME_PARA_Y_THRESHOLD:
+                if y_diff > y_para_thresh:
                     new_paragraph = True
-                elif y_diff > SAME_LINE_Y_THRESHOLD:
+                elif y_diff > y_line_thresh:
                     line_break = True
         else:
             # Same region - check Y distance
             y_diff = abs(char_y0 - prev_y0)
-            if y_diff > SAME_LINE_Y_THRESHOLD:
+            if y_diff > y_line_thresh:
                 line_break = True
     else:
         # Fallback: Y-coordinate based detection with X-coordinate heuristics
@@ -573,16 +642,18 @@ def detect_paragraph_boundary(
         y_diff = abs(char_y0 - prev_y0)
         x_diff = char_x0 - prev_x0  # Positive = char is to the right
 
-        if y_diff > SAME_PARA_Y_THRESHOLD:
+        if y_diff > y_para_thresh:
             new_paragraph = True
-        elif x_diff > COLUMN_JUMP_X_THRESHOLD:
-            # Large X jump (e.g., >100pt) suggests column change in multi-column layout
+        elif x_diff > x_column_thresh:
+            # Large X jump suggests column change in multi-column layout
             # Combined with Y going back up indicates new column
             if char_y0 > prev_y0:  # char is above prev (PDF coords: higher Y = higher on page)
                 new_paragraph = True
             else:
+                # X jump but Y continues downward - might be indent or table
+                # Check if it's a significant jump relative to page structure
                 line_break = True
-        elif y_diff > SAME_LINE_Y_THRESHOLD:
+        elif y_diff > y_line_thresh:
             line_break = True
 
     return new_paragraph, line_break
@@ -664,6 +735,12 @@ def create_formula_var_from_chars(chars: list) -> FormulaVar:
 # Coordinate System Utilities (PDFMathTranslate compliant)
 # =============================================================================
 #
+# Default page dimensions for fallback when invalid values are provided
+# A4 portrait: 595 x 842 pt (8.27 x 11.69 inches at 72 DPI)
+DEFAULT_PAGE_WIDTH = 595.0
+DEFAULT_PAGE_HEIGHT = 842.0
+MIN_PAGE_DIMENSION = 1.0  # Minimum valid page dimension
+
 # This module provides type-safe coordinate conversion between two systems:
 #
 # 1. PDF Coordinates (PdfCoord):
@@ -783,6 +860,60 @@ def image_to_pdf_coord(
     pdf_x = img_x / scale
     pdf_y = page_height - (img_y / scale)
     return PdfCoord(x=pdf_x, y=pdf_y)
+
+
+def safe_page_height(page_height: float) -> float:
+    """
+    Ensure page height is valid, returning fallback if not.
+
+    This function provides a safe way to handle potentially invalid page heights
+    without raising exceptions. Use when continuing with degraded functionality
+    is preferable to failing completely.
+
+    Args:
+        page_height: Page height to validate (in PDF points)
+
+    Returns:
+        Original value if valid (> MIN_PAGE_DIMENSION), otherwise DEFAULT_PAGE_HEIGHT
+
+    Example:
+        # Safe conversion with fallback
+        height = safe_page_height(page.rect.height)
+        coord = pdf_to_image_coord(x, y, height, scale)
+    """
+    if page_height > MIN_PAGE_DIMENSION:
+        return page_height
+
+    logger.warning(
+        "Invalid page_height: %.2f (< %.1f). Using default A4 height: %.1f",
+        page_height, MIN_PAGE_DIMENSION, DEFAULT_PAGE_HEIGHT
+    )
+    return DEFAULT_PAGE_HEIGHT
+
+
+def safe_scale(scale: float) -> float:
+    """
+    Ensure scale factor is valid, returning fallback if not.
+
+    Args:
+        scale: Scale factor to validate (must be positive)
+
+    Returns:
+        Original value if valid (> 0), otherwise 1.0
+
+    Example:
+        # Safe conversion with fallback
+        s = safe_scale(layout_height / page_height)
+        coord = pdf_to_image_coord(x, y, height, s)
+    """
+    if scale > 0:
+        return scale
+
+    logger.warning(
+        "Invalid scale: %.2f (must be positive). Using default scale: 1.0",
+        scale
+    )
+    return 1.0
 
 
 def pdf_bbox_to_image_bbox(

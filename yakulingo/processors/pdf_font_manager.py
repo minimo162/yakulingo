@@ -736,7 +736,7 @@ class FontRegistry:
         if cache_key in self._glyph_id_cache:
             return self._glyph_id_cache[cache_key]
 
-        glyph_idx = 0  # Default: .notdef glyph
+        glyph_idx = 0  # Default: .notdef glyph (invisible in PDF renderers)
         font_obj = self._font_objects.get(font_id)
         if font_obj:
             try:
@@ -744,9 +744,26 @@ class FontRegistry:
                 # PyMuPDF has_glyph() returns:
                 # - Glyph ID (>0) if character has a glyph
                 # - 0 if character not in font (0 = .notdef glyph in TrueType/OpenType)
-                # Note: Using explicit comparison instead of `if idx:` for clarity
+                #
+                # IMPORTANT: Glyph ID 0 is ALWAYS .notdef in TrueType/OpenType fonts.
+                # This is mandated by the OpenType specification.
+                # While some symbol fonts might appear to use glyph 0 for valid content,
+                # this is non-standard and PDF renderers treat glyph 0 as invisible.
+                #
+                # Using explicit comparison `idx != 0` instead of `if idx:` because:
+                # - Clearer intent: we specifically exclude .notdef
+                # - Avoids falsy evaluation issues (though 0 is the only falsy case here)
+                # - Matches PDFMathTranslate behavior
                 if idx is not None and idx != 0:
                     glyph_idx = idx
+                elif idx == 0 and char not in ('\0', '\x00', ' ', '\t', '\n', '\r'):
+                    # Character mapped to .notdef - this will be invisible!
+                    # Don't log for control characters/whitespace
+                    logger.debug(
+                        "Character '%s' (U+%04X) mapped to .notdef glyph in font '%s'. "
+                        "This character will be invisible in the PDF.",
+                        char, ord(char), font_id
+                    )
             except (RuntimeError, ValueError, TypeError) as e:
                 # RuntimeError: PyMuPDF internal errors
                 # ValueError: Invalid character code
@@ -1064,27 +1081,62 @@ class FontRegistry:
                                         font_name, type(font_obj).__name__
                                     )
                                 except (RuntimeError, ValueError, KeyError, TypeError) as e:
-                                    # RuntimeError: pdfminer internal errors
-                                    # ValueError: Invalid font data
-                                    # KeyError: Missing font resource
-                                    # TypeError: Invalid font reference
-                                    logger.debug("Could not load font %s: %s", font_name, e)
+                                    # Detailed logging for font loading failures
+                                    # This helps diagnose issues with specific fonts
+                                    logger.warning(
+                                        "Font load failed for '%s': %s (type=%s). "
+                                        "This font may not be usable for text embedding. "
+                                        "PDF may still be readable with fallback fonts.",
+                                        font_name, e, type(e).__name__
+                                    )
+                                    # Store None to indicate font is unavailable but was referenced
+                                    self.fontmap[font_name] = None
 
-            logger.debug("Loaded %d fonts from PDF fontmap", len(self.fontmap))
+            # Summary of loaded fonts
+            loaded_count = sum(1 for f in self.fontmap.values() if f is not None)
+            failed_count = sum(1 for f in self.fontmap.values() if f is None)
+            if failed_count > 0:
+                logger.info(
+                    "Loaded %d fonts from PDF fontmap (%d failed to load)",
+                    loaded_count, failed_count
+                )
+            else:
+                logger.debug("Loaded %d fonts from PDF fontmap", loaded_count)
 
-        except (RuntimeError, ValueError, OSError, IOError) as e:
-            # RuntimeError: pdfminer internal errors
-            # ValueError: Invalid PDF data
-            # OSError/IOError: File access issues
-            logger.warning("Failed to load fontmap from PDF: %s", e)
+        except RuntimeError as e:
+            logger.warning(
+                "pdfminer RuntimeError while loading fontmap: %s. "
+                "This may indicate a malformed PDF or incompatible font format.",
+                e
+            )
+        except ValueError as e:
+            logger.warning(
+                "pdfminer ValueError while loading fontmap: %s. "
+                "The PDF may contain invalid font data.",
+                e
+            )
+        except (OSError, IOError) as e:
+            logger.warning(
+                "File access error while loading fontmap: %s. "
+                "Check if the file exists and is readable.",
+                e
+            )
         except Exception as e:
             # Catch PDFSyntaxError and other pdfminer exceptions dynamically
             # (cannot import at module level due to lazy loading)
             pdfminer = _get_pdfminer()
             if isinstance(e, pdfminer.get('PDFSyntaxError', type(None))):
-                logger.warning("Invalid PDF file (syntax error): %s", e)
+                logger.warning(
+                    "Invalid PDF file (syntax error): %s. "
+                    "The PDF may be corrupted or use unsupported features.",
+                    e
+                )
             else:
-                logger.warning("Unexpected error loading fontmap from PDF: %s", e)
+                logger.warning(
+                    "Unexpected error loading fontmap from PDF: %s (type=%s). "
+                    "Please report this issue with a sample PDF.",
+                    e, type(e).__name__
+                )
 
     def register_existing_font(self, font_name: str, pdfminer_font: Any) -> str:
         """

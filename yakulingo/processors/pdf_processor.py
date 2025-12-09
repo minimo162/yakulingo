@@ -129,6 +129,10 @@ MEMORY_BASE_MB_PER_PAGE_300DPI = 26.0
 MEMORY_AVAILABLE_RATIO = 0.5  # Use at most 50% of available memory
 MEMORY_WARNING_THRESHOLD_MB = 1024  # Warn if estimated usage exceeds 1GB
 
+# Layout analysis defaults (used before class definition and in dynamic batch calculation)
+DEFAULT_OCR_BATCH_SIZE = 5   # Pages per batch
+DEFAULT_OCR_DPI = 300        # Default DPI for precision
+
 # Pre-compiled regex patterns for performance (local patterns)
 _RE_PARAGRAPH_ADDRESS = re.compile(r"P(\d+)_")
 _RE_TABLE_ADDRESS = re.compile(r"T(\d+)_")
@@ -204,6 +208,65 @@ def check_memory_for_pdf_processing(
         )
 
     return (is_safe, estimated_mb, available_mb)
+
+
+def calculate_optimal_batch_size(
+    page_count: int,
+    dpi: int = 300,
+    default_batch_size: int = DEFAULT_OCR_BATCH_SIZE,
+    safety_margin: float = MEMORY_AVAILABLE_RATIO,
+) -> int:
+    """
+    Calculate optimal batch size for PP-DocLayout-L based on available memory.
+
+    This dynamically adjusts batch size to prevent OOM errors on systems
+    with limited memory, while maximizing throughput on systems with more memory.
+
+    Args:
+        page_count: Total number of pages to process
+        dpi: DPI setting for rendering
+        default_batch_size: Default batch size if memory check is unavailable
+        safety_margin: Fraction of available memory to use (default: 0.5)
+
+    Returns:
+        Optimal batch size (1 to min(default_batch_size * 2, page_count))
+
+    Example:
+        batch_size = calculate_optimal_batch_size(100, dpi=300, default_batch_size=5)
+        # On 8GB system: might return 5 (default)
+        # On 2GB system: might return 2 (reduced)
+        # On 32GB system: might return 10 (increased)
+    """
+    # Estimate memory per page at given DPI
+    estimated_mb_per_page = estimate_memory_usage_mb(1, dpi)
+
+    # Try to get available memory
+    try:
+        import psutil
+        available_mb = psutil.virtual_memory().available / (1024 * 1024)
+    except ImportError:
+        logger.debug("psutil not available, using default batch size")
+        return default_batch_size
+
+    # Calculate safe batch size based on available memory
+    safe_memory_mb = available_mb * safety_margin
+    if estimated_mb_per_page > 0:
+        calculated_batch_size = int(safe_memory_mb / estimated_mb_per_page)
+    else:
+        calculated_batch_size = default_batch_size
+
+    # Clamp to reasonable range: 1 to 2x default (max 10 pages)
+    max_batch_size = min(default_batch_size * 2, 10, page_count)
+    optimal_batch_size = max(1, min(calculated_batch_size, max_batch_size))
+
+    if optimal_batch_size != default_batch_size:
+        logger.info(
+            "Dynamic batch size: %d (default: %d, available memory: %.0fMB, "
+            "estimated per page: %.1fMB)",
+            optimal_batch_size, default_batch_size, available_mb, estimated_mb_per_page
+        )
+
+    return optimal_batch_size
 
 
 # NOTE: Paragraph, FormulaVar, TranslationCell, vflag, restore_formula_placeholders,
@@ -949,9 +1012,8 @@ class ScannedPdfError(Exception):
 # =============================================================================
 # Layout Analysis Constants (model/functions imported from pdf_layout.py)
 # =============================================================================
-# Default constants for layout analysis (can be overridden via AppSettings)
-DEFAULT_OCR_BATCH_SIZE = 5   # Pages per batch
-DEFAULT_OCR_DPI = 300        # Default DPI for precision
+# NOTE: DEFAULT_OCR_BATCH_SIZE, DEFAULT_OCR_DPI are defined at module top
+# to allow use in calculate_optimal_batch_size() before class definition
 
 # Font info cache (keyed by (pdf_path, dpi)) - avoids repeated PDF parsing
 # Uses OrderedDict for LRU-style eviction when max size is exceeded
@@ -1503,13 +1565,23 @@ class PdfProcessor(FileProcessor):
             result['failed_fonts'] = failed_fonts
 
             # PDFMathTranslate compliant: Warn about font embedding failures
-            # Text using failed fonts may not render correctly
+            # Text using failed fonts will render as .notdef (invisible)
             if failed_fonts:
-                logger.warning(
-                    "Font embedding failed for %d font(s): %s. "
-                    "Text using these fonts may not render correctly. "
-                    "Install the required fonts or check font settings.",
+                logger.error(
+                    "CRITICAL: Font embedding failed for %d font(s): %s. "
+                    "Translated text using these fonts will be INVISIBLE (.notdef glyphs). "
+                    "Install the required fonts or check font path settings. "
+                    "Common solutions: "
+                    "1) Install MS fonts on Linux: apt install fonts-noto-cjk "
+                    "2) Check font_jp_to_en/font_en_to_jp settings "
+                    "3) Ensure font files exist at configured paths",
                     len(failed_fonts), ", ".join(failed_fonts)
+                )
+                # Store detailed failure info for UI display
+                result['font_embedding_critical'] = True
+                result['font_embedding_message'] = (
+                    f"フォント埋め込みに失敗しました: {', '.join(failed_fonts)}。"
+                    f"翻訳テキストが表示されない可能性があります。"
                 )
 
             # Create operator generator
@@ -1537,7 +1609,25 @@ class PdfProcessor(FileProcessor):
                 replacer = ContentStreamReplacer(doc, font_registry, preserve_graphics=True)
                 try:
                     replacer.set_base_stream(page)
-                except (RuntimeError, ValueError, TypeError, KeyError, MemoryError) as e:
+                except MemoryError as e:
+                    # CRITICAL: Memory exhausted - abort processing immediately
+                    # Continuing would likely cause more OOM errors or crash
+                    logger.critical(
+                        "CRITICAL: Out of memory while parsing page %d content stream. "
+                        "Aborting PDF translation to prevent data loss.",
+                        page_num
+                    )
+                    self._record_failed_page(page_num, f"MemoryError: {e}")
+                    # Clean up and re-raise to let caller handle gracefully
+                    try:
+                        doc.close()
+                    except Exception:
+                        pass
+                    raise MemoryError(
+                        f"Insufficient memory to process PDF (failed at page {page_num}). "
+                        f"Try reducing DPI or processing fewer pages."
+                    ) from e
+                except (RuntimeError, ValueError, TypeError, KeyError) as e:
                     logger.error("Failed to parse page %d content stream: %s", page_num, e)
                     self._record_failed_page(page_num, f"Content stream parse error: {e}")
                     continue
@@ -1609,8 +1699,29 @@ class PdfProcessor(FileProcessor):
                         # TextBlock bbox: PDF coordinates (y0=bottom, y1=top)
                         # PyMuPDF bbox: page coordinates (y0=top, y1=bottom)
                         if text_blocks:
-                            # TextBlock: already in PDF coordinates, use directly
+                            # TextBlock: should be in PDF coordinates, verify and use directly
                             # bbox = (x0, y0, x1, y1) where y0 < y1 (bottom < top)
+
+                            # COORDINATE SYSTEM VALIDATION:
+                            # PDF coordinates have y0 < y1 (y0 is bottom, y1 is top)
+                            # Image coordinates have y0 > y1 (y0 is top, y1 is bottom)
+                            # If we detect image coordinates, log warning and convert
+                            if y1 >= y2:
+                                # Suspicious: y1 >= y2 suggests image coordinates (top < bottom)
+                                # This should not happen if TextBlock is correctly in PDF coordinates
+                                logger.warning(
+                                    "TextBlock %s has suspicious coordinates: y0=%.1f, y1=%.1f "
+                                    "(expected y0 < y1 for PDF coordinates). "
+                                    "This may indicate a coordinate system mismatch. "
+                                    "Converting from image coordinates to PDF coordinates.",
+                                    block_id, y1, y2
+                                )
+                                # Convert from image coordinates (y increases downward)
+                                # to PDF coordinates (y increases upward)
+                                y1_pdf = page_height - y2  # bottom in PDF
+                                y2_pdf = page_height - y1  # top in PDF
+                                y1, y2 = y1_pdf, y2_pdf
+
                             pdf_x1, pdf_y0, pdf_x2, pdf_y1 = x1, y1, x2, y2
                             box_width = pdf_x2 - pdf_x1
                             box_height = pdf_y1 - pdf_y0  # y1 (top) - y0 (bottom)
@@ -1781,7 +1892,23 @@ class PdfProcessor(FileProcessor):
                 if replacer.operators:
                     try:
                         replacer.apply_to_page(page)
-                    except (RuntimeError, ValueError, TypeError, KeyError, MemoryError) as e:
+                    except MemoryError as e:
+                        # CRITICAL: Memory exhausted during apply - abort immediately
+                        logger.critical(
+                            "CRITICAL: Out of memory while applying translations to page %d. "
+                            "Aborting PDF translation.",
+                            page_num
+                        )
+                        self._record_failed_page(page_num, f"MemoryError: {e}")
+                        try:
+                            doc.close()
+                        except Exception:
+                            pass
+                        raise MemoryError(
+                            f"Insufficient memory to apply translations (failed at page {page_num}). "
+                            f"Try reducing DPI or processing fewer pages."
+                        ) from e
+                    except (RuntimeError, ValueError, TypeError, KeyError) as e:
                         logger.error("Failed to apply translations to page %d: %s", page_num, e)
                         self._record_failed_page(page_num, f"Apply error: {e}")
 
@@ -2091,10 +2218,24 @@ class PdfProcessor(FileProcessor):
             if self._failed_pages:
                 logger.warning("Hybrid extraction completed with %d failed pages: %s",
                               len(self._failed_pages), self._failed_pages)
-        except Exception:
-            # Only clear cache on unexpected errors to free resources
+        except MemoryError:
+            # CRITICAL: Memory exhausted - clear cache and re-raise
+            logger.critical(
+                "CRITICAL: Out of memory during hybrid extraction. "
+                "Clearing PP-DocLayout-L cache and aborting."
+            )
             clear_analyzer_cache()
             raise
+        except Exception:
+            # Clear cache on unexpected errors to free resources
+            clear_analyzer_cache()
+            raise
+        finally:
+            # ALWAYS clear PP-DocLayout-L cache after extraction completes
+            # This prevents memory leaks when processing multiple PDFs
+            # PDFMathTranslate compliant: ensure resources are freed
+            clear_analyzer_cache()
+            logger.debug("PP-DocLayout-L cache cleared after extraction")
 
     def _batch_pdfminer_pages(
         self,

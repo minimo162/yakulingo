@@ -1243,6 +1243,18 @@ Based on recent commits:
   - **Page height validation**: `page_height <= 0`チェックで無効ページをスキップ
   - **Memory pre-check**: `check_memory_for_pdf_processing()`で処理前に警告出力
   - **CID encoding docs**: CIDフォントエンコーディングの制限事項をドキュメント化、`get_width(cid)`引数修正
+- **PDF Translation Robustness Improvements (2024-12)**:
+  - **MemoryError handling**: MemoryErrorを分離してcriticalログ出力＋早期終了（OOM時の連鎖エラーを防止）
+  - **PP-DocLayout-L memory leak fix**: try-finallyで`clear_analyzer_cache()`を確実に呼び出し
+  - **Font embedding critical warning**: フォント埋め込み失敗時にエラーレベルログ＋UI表示用メッセージを追加
+  - **PP-DocLayout-L initialization timing**: docstringに初期化順序を明記（PP-DocLayout-L → Playwright）
+  - **Coordinate system validation**: TextBlock座標がPDF座標系か検証、image座標の場合は自動変換
+  - **Dynamic paragraph thresholds**: `calculate_dynamic_thresholds()`でページサイズ・フォントサイズに応じた閾値計算
+  - **Glyph ID 0 documentation**: OpenType仕様に基づく.notdefの説明を追加、不可視文字の警告ログ
+  - **Safe coordinate functions**: `safe_page_height()`, `safe_scale()`でゼロ除算時のフォールバック
+  - **Dynamic batch size**: `calculate_optimal_batch_size()`でメモリに応じたバッチサイズ自動計算
+  - **CID font CMap validation**: `_validate_cid_font_encoding()`でIdentity-H互換性をチェック
+  - **pdfminer detailed logging**: フォント読み込み失敗時の詳細ログ（例外タイプ別のメッセージ）
 - **Font Settings Simplification**:
   - **Unified settings**: 4 font settings → 2 settings (`font_jp_to_en`, `font_en_to_jp`)
   - **PDF settings removed**: `pdf_font_ja`, `pdf_font_en` removed, now uses common settings

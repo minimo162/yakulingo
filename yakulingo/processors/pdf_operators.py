@@ -90,6 +90,11 @@ class PdfOperatorGenerator:
             # In practice, YakuLingo always embeds new fonts for translated text,
             # so this code path is primarily used for preserving original text
             # that is not translated.
+            #
+            # CMap validation: Check if the font might have a custom CMap
+            # that could cause encoding issues. Log warning if detected.
+            self._validate_cid_font_encoding(font_id, text)
+
             hex_result = "".join([f'{ord(c):04X}' for c in text])
             if logger.isEnabledFor(logging.DEBUG):
                 preview = text[:50] + ('...' if len(text) > 50 else '')
@@ -153,6 +158,59 @@ class PdfOperatorGenerator:
                 )
 
         return hex_result
+
+    def _validate_cid_font_encoding(self, font_id: str, text: str) -> None:
+        """
+        Validate CID font encoding and warn about potential issues.
+
+        Checks if the CID font might have a non-Identity-H CMap that could
+        cause text encoding issues. This is a best-effort check since we
+        cannot always determine the exact CMap used.
+
+        Args:
+            font_id: Font ID to validate
+            text: Text being encoded (for logging)
+        """
+        # Check if we've already warned about this font
+        if not hasattr(self, '_warned_cid_fonts'):
+            self._warned_cid_fonts = set()
+
+        if font_id in self._warned_cid_fonts:
+            return
+
+        # Try to get pdfminer font object for CMap analysis
+        pdfminer_font = self.font_registry._pdfminer_fonts.get(font_id)
+        if not pdfminer_font:
+            return
+
+        # Check CMap type if available
+        cmap_name = None
+        if hasattr(pdfminer_font, 'cmap'):
+            cmap = pdfminer_font.cmap
+            if hasattr(cmap, 'cmap_name'):
+                cmap_name = cmap.cmap_name
+            elif hasattr(cmap, 'cmapname'):
+                cmap_name = cmap.cmapname
+
+        # List of known Identity-H compatible CMaps
+        # These map Unicode directly to CID values
+        identity_compatible_cmaps = {
+            'Identity-H', 'Identity-V',
+            'UniJIS-UTF16-H', 'UniJIS-UTF16-V',
+            'UniCNS-UTF16-H', 'UniCNS-UTF16-V',
+            'UniGB-UTF16-H', 'UniGB-UTF16-V',
+            'UniKS-UTF16-H', 'UniKS-UTF16-V',
+        }
+
+        if cmap_name and cmap_name not in identity_compatible_cmaps:
+            # Non-Identity CMap detected - warn user
+            self._warned_cid_fonts.add(font_id)
+            logger.warning(
+                "CID font '%s' uses CMap '%s' which may not be Identity-H compatible. "
+                "Text encoding might be incorrect. If text appears garbled, "
+                "try converting the PDF with embedded fonts.",
+                font_id, cmap_name
+            )
 
     def calculate_text_width(self, font_id: str, text: str, font_size: float) -> float:
         """

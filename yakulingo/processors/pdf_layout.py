@@ -295,15 +295,42 @@ def prewarm_layout_model(device: str = "auto") -> bool:
     """
     Pre-initialize PP-DocLayout-L model with a dummy inference.
 
-    This function should be called on the main thread during application startup,
-    BEFORE any Playwright connection is established. PaddlePaddle's subprocess
-    initialization can interfere with Playwright's Node.js pipe communication.
+    CRITICAL INITIALIZATION ORDER:
+    =============================
+    This function MUST be called on the main thread during application startup,
+    BEFORE any Playwright connection is established.
+
+    Correct order:
+        1. prewarm_layout_model()  # PP-DocLayout-L initialization
+        2. copilot_handler.connect()  # Playwright connection
+
+    Incorrect order (WILL CAUSE HANGS):
+        1. copilot_handler.connect()  # Playwright starts first
+        2. prewarm_layout_model()  # PaddlePaddle conflicts with Playwright
+
+    Technical reason:
+    PaddlePaddle's subprocess initialization uses low-level process spawning
+    that can interfere with Playwright's Node.js pipe communication. When
+    initialized after Playwright, this can cause:
+    - Process hangs
+    - Broken pipe errors
+    - Playwright connection failures
 
     Args:
         device: "cpu", "gpu", or "auto" (default: auto-detect)
 
     Returns:
         True if pre-warming succeeded, False if paddleocr is not available
+
+    Example:
+        # In app startup:
+        if is_layout_available():
+            success = prewarm_layout_model(device="auto")
+            if not success:
+                logger.warning("PP-DocLayout-L unavailable, PDF layout detection disabled")
+
+        # Then connect to Copilot
+        await copilot_handler.connect()
     """
     import warnings
 

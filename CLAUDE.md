@@ -964,6 +964,8 @@ def raw_string(font_id: str, text: str) -> str:
 | PDF圧縮 | `garbage=3, deflate=True, use_objstms=1` で最大限の圧縮 |
 | 上付き/下付き検出 | `SUBSCRIPT_SUPERSCRIPT_THRESHOLD = 0.79` でベースサイズの79%以下を検出 |
 | ページ選択 | `pages` パラメータ（1-indexed）で翻訳対象ページを指定可能 |
+| フォント埋め込み失敗検出 | `get_glyph_id()`でFont object不在時に警告ログを出力（テキスト非表示問題の診断） |
+| バッチサイズ動的調整 | `psutil`で利用可能メモリを確認し、batch_sizeを自動調整（OOM防止） |
 
 ```python
 # ページ選択の使用例
@@ -972,6 +974,11 @@ processor.apply_translations(
     pages=[1, 3, 5]  # 1, 3, 5ページのみ翻訳（1-indexed）
 )
 ```
+
+**メモリ管理:**
+- DPIに応じたメモリ使用量推定: `estimated_mb = 26 * (dpi / 300)²`
+- 利用可能メモリの50%を上限としてbatch_sizeを自動調整
+- psutil未インストール時はデフォルトbatch_sizeを使用
 
 ### Optional Dependencies
 - `[ocr]`: paddleocr for layout analysis support (PP-DocLayout-L, OCR is not used)
@@ -1058,6 +1065,8 @@ Based on recent commits:
   - **Font availability check**: FontInfoに`is_available`プロパティを追加。フォント埋め込み失敗時の警告ログを強化
   - **Empty LayoutArray fallback**: PP-DocLayout-Lが検出結果を返さない場合のY座標フォールバックを改善・ログ追加
   - **Text merging**: LayoutArrayを参照して文字を段落にグループ化（_group_chars_into_blocks）
+  - **Font object missing detection**: `get_glyph_id()`でFont object不在時に警告ログを出力、テキスト非表示問題の診断を容易化
+  - **Dynamic batch_size adjustment**: psutilで利用可能メモリを確認し、batch_sizeを自動調整（OOM防止）。DPIに応じてメモリ使用量を推定（`26 * (dpi/300)²` MB/page）
 - **Font Settings Simplification**:
   - **Unified settings**: 4 font settings → 2 settings (`font_jp_to_en`, `font_en_to_jp`)
   - **PDF settings removed**: `pdf_font_ja`, `pdf_font_en` removed, now uses common settings

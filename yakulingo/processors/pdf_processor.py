@@ -1725,10 +1725,36 @@ class PdfProcessor(FileProcessor):
                 "Install with: pip install -r requirements_pdf.txt"
             )
 
-        # Log memory usage estimate for large PDFs
+        # PDFMathTranslate compliant: Dynamic batch size adjustment based on memory
         # A4 @ 300 DPI ≈ 2500×3500 px × 3 channels ≈ 26MB/page
-        estimated_mb_per_page = 26
+        # Scale with DPI squared (double DPI = 4x memory)
+        estimated_mb_per_page = int(26 * (dpi / 300) ** 2)
         estimated_batch_mb = estimated_mb_per_page * batch_size
+
+        # Try to get available memory for dynamic adjustment
+        try:
+            import psutil
+            available_mb = psutil.virtual_memory().available // (1024 * 1024)
+            # Use at most 50% of available memory for safety
+            max_batch_mb = available_mb // 2
+
+            if estimated_batch_mb > max_batch_mb and max_batch_mb > estimated_mb_per_page:
+                # Reduce batch size to fit in available memory
+                adjusted_batch_size = max(1, max_batch_mb // estimated_mb_per_page)
+                if adjusted_batch_size < batch_size:
+                    logger.info(
+                        "PDFMathTranslate: Adjusting batch_size %d -> %d based on available memory (%dMB)",
+                        batch_size, adjusted_batch_size, available_mb
+                    )
+                    batch_size = adjusted_batch_size
+                    estimated_batch_mb = estimated_mb_per_page * batch_size
+        except ImportError:
+            # psutil not available - use default batch size
+            pass
+        except (RuntimeError, OSError) as e:
+            # Memory check failed - use default batch size
+            logger.debug("Could not check available memory: %s", e)
+
         if total_pages > 10:
             logger.info(
                 "Processing %d pages (DPI=%d, batch_size=%d). "

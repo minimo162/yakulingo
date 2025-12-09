@@ -3083,3 +3083,35 @@ a:hover {
 .main-area:not(.has-results) .input-panel .glossary-toggle-btn .q-icon {
     font-size: 1.25rem !important;  /* 20px icon */
 }
+
+/* === File Panel Settings Panel (Expansion) === */
+.section-selector {
+    background-color: var(--md-sys-color-surface);
+    border-radius: var(--md-sys-shape-corner-large);
+    border: 1px solid var(--md-sys-color-outline-variant);
+    overflow: hidden;
+}
+
+.section-selector .q-expansion-item__container {
+    background-color: var(--md-sys-color-surface);
+}
+
+.section-selector .q-item {
+    background-color: var(--md-sys-color-surface);
+    color: var(--md-sys-color-on-surface);
+    min-height: 44px;
+}
+
+.section-selector .q-item__label {
+    color: var(--md-sys-color-on-surface);
+    font-size: 0.875rem;
+}
+
+.section-selector .q-expansion-item__content {
+    background-color: var(--md-sys-color-surface);
+    padding: 0.5rem 1rem 1rem;
+}
+
+.section-selector .section-item {
+    padding: 0.25rem 0;
+}

@@ -1928,25 +1928,14 @@ class CopilotHandler:
             if input_elem:
                 logger.debug("Input element found, setting text via JS...")
                 fill_start = time.time()
-                # Use JavaScript to set text directly instead of fill()
-                # fill() is extremely slow on contenteditable/Lexical editors
-                # because it triggers complex input event processing per character
+                # Set text via innerText - simple and reliable
+                # Lexical editor state may not sync, but Enter key works regardless
                 self._page.evaluate('''(args) => {
                     const [selector, text] = args;
                     const elem = document.querySelector(selector);
                     if (elem) {
                         elem.focus();
-                        // Clear existing content
-                        elem.innerText = '';
-                        // Set new text
                         elem.innerText = text;
-                        // Dispatch input event to notify Lexical editor of the change
-                        elem.dispatchEvent(new InputEvent('input', {
-                            bubbles: true,
-                            cancelable: true,
-                            inputType: 'insertText',
-                            data: text
-                        }));
                     }
                 }''', [input_selector, message])
                 logger.info("[TIMING] js_set_text: %.2fs", time.time() - fill_start)
@@ -1960,119 +1949,12 @@ class CopilotHandler:
                     raise RuntimeError("Copilotに入力できませんでした。Edgeブラウザを確認してください。")
                 logger.debug("Input verified (has content)")
 
-                # Wait for send button to be enabled (appears after text input)
-                # 実際のCopilot HTML例:
-                # <button type="submit" aria-label="送信" class="fui-Button ... fai-SendButton fai-ChatInput__send ...">
-                # 入力がある場合のみボタンが有効化される
-                send_button_selectors = [
-                    # 最も具体的なセレクタを優先
-                    'button.fai-ChatInput__send',
-                    'button.fai-SendButton',
-                    'button.fui-Button[type="submit"][aria-label="送信"]',
-                    'button[type="submit"][aria-label="送信"]',
-                    'button[type="submit"][aria-label="Send"]',
-                    'button[aria-label="送信"]',
-                    'button[aria-label="Send"]',
-                ]
-                send_button_selector = ', '.join(send_button_selectors)
-                logger.debug("Waiting for send button with selector: %s", send_button_selector[:100])
-
-                # 入力後、ボタンが有効化されるまで少し待つ
-                time.sleep(0.2)
-
-                try:
-                    # state='attached' で存在を確認（visibleは厳しすぎる場合がある）
-                    btn_wait_start = time.time()
-                    send_button = self._page.wait_for_selector(
-                        send_button_selector,
-                        timeout=2000,
-                        state='attached'
-                    )
-                    logger.info("[TIMING] wait_for_send_button: %.2fs", time.time() - btn_wait_start)
-                    if send_button:
-                        # Ensure button is truly enabled before clicking
-                        is_disabled = send_button.get_attribute('disabled')
-                        if is_disabled is None:
-                            # 送信前にGPT-5が有効か確認し、必要なら有効化
-                            # 送信ボタンが見つかった時点でUIは安定しているはず
-                            gpt5_start = time.time()
-                            self._ensure_gpt5_enabled()
-                            logger.info("[TIMING] _ensure_gpt5_enabled: %.2fs", time.time() - gpt5_start)
-                            logger.info("Clicking send button...")
-                            # ボタンをビューポートに入れてからクリック
-                            send_button.scroll_into_view_if_needed()
-                            time.sleep(0.1)  # スクロール後の安定待機
-                            try:
-                                # force=True でオーバーレイ等を無視してクリック
-                                send_button.click(force=True)
-                                logger.info("Message sent via button click")
-                            except PlaywrightError as click_err:
-                                # クリック失敗時はJavaScriptで直接クリック
-                                logger.warning("Button click failed: %s, trying JS click", click_err)
-                                self._page.evaluate("btn => btn.click()", send_button)
-                                logger.info("Message sent via JS click")
-                        else:
-                            # Button still disabled, try Enter key
-                            logger.debug("Send button is disabled, using Enter key")
-                            self._ensure_gpt5_enabled()
-                            input_elem.press("Enter")
-                            logger.info("Message sent via Enter key (button disabled)")
-                    else:
-                        # Fallback to Enter key
-                        logger.debug("Send button not found, using Enter key")
-                        self._ensure_gpt5_enabled()
-                        input_elem.press("Enter")
-                        logger.info("Message sent via Enter key (fallback)")
-
-                    # Confirm that the send action actually fired; fallback to Enter if text remains
-                    # Check for stop/cancel button or loading indicator
-                    stop_selectors = ', '.join([
-                        '.fai-SendButton__stopBackground',
-                        'button[aria-label*="Stop"]',
-                        'button[aria-label*="停止"]',
-                        'button[aria-label*="Cancel"]',
-                        '[data-testid*="stop"]',
-                        '[class*="loading"]',
-                        '[class*="spinner"]',
-                    ])
-                    try:
-                        self._page.wait_for_selector(
-                            stop_selectors,
-                            timeout=1000,
-                            state='visible'
-                        )
-                    except (PlaywrightTimeoutError, StopIteration):
-                        try:
-                            time.sleep(0.2)
-                            remaining = input_elem.inner_text().strip()
-                            if remaining:
-                                logger.debug("Input still contains text after send attempt; pressing Enter as backup")
-                                input_elem.press("Enter")
-                        except PlaywrightError as check_err:
-                            logger.debug("Send confirmation check failed: %s", check_err)
-
-                except PlaywrightTimeoutError:
-                    # Timeout waiting for button - log available buttons for debugging
-                    try:
-                        buttons_info = self._page.evaluate('''() => {
-                            const buttons = document.querySelectorAll('button');
-                            return Array.from(buttons).slice(-10).map(b => ({
-                                type: b.type,
-                                ariaLabel: b.getAttribute('aria-label'),
-                                className: b.className.substring(0, 100),
-                                disabled: b.disabled,
-                                testId: b.getAttribute('data-testid')
-                            }));
-                        }''')
-                        logger.debug("Available buttons (last 10): %s", buttons_info)
-                    except Exception as debug_err:
-                        logger.debug("Failed to get button info: %s", debug_err)
-
-                    # Try Enter key as fallback
-                    logger.debug("Timeout waiting for send button, using Enter key")
-                    self._ensure_gpt5_enabled()
-                    input_elem.press("Enter")
-                    logger.info("Message sent via Enter key (timeout)")
+                # Send via Enter key - more reliable than button click
+                # Button may stay disabled due to Lexical editor state not syncing,
+                # but Enter key works regardless
+                self._ensure_gpt5_enabled()
+                input_elem.press("Enter")
+                logger.info("Message sent via Enter key")
             else:
                 logger.error("Input element not found!")
                 raise RuntimeError("Copilot入力欄が見つかりませんでした")

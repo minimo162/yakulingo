@@ -1135,7 +1135,13 @@ Based on recent commits:
   - **Consistent messaging**: "[Ctrl] + [J] : 他アプリで選択したテキストを翻訳"
 - **setup.ps1 Robustness & Reliability**:
   - **Running process detection**: YakuLingo実行中の再インストール試行を検出してエラー表示
+  - **Python process detection**: YakuLingoインストールディレクトリで実行中のPythonプロセスも検出
+  - **7-Zip optional**: 7-Zipが未インストールの場合、Expand-Archiveにフォールバック（速度は遅いが動作）
   - **robocopy skip warnings**: ファイルスキップ時に警告を表示（exit code 1-7）
+  - **robocopy verbose logging**: スキップ/失敗したファイル一覧を最大10件まで表示
+  - **Network copy retry**: ネットワークコピー失敗時に指数バックオフで最大4回リトライ（2s, 4s, 8s, 16s）
+  - **JSON merge failure backup**: settings.jsonマージ失敗時に`config\settings.backup.json`として旧設定を保存
+  - **Improved error messages**: pyvenv.cfg/python.exe検出失敗時に詳細な場所情報を表示
   - **glossary.csv merge improved**: 末尾改行確認、正規化した値を追加
   - **settings.json deep copy**: 浅いコピーから深いコピーに変更（ネストしたオブジェクト対応）
   - **Progress update**: GUIモード時のユーザーデータ復元中プログレス更新（87%→89%）

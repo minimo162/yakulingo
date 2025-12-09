@@ -30,8 +30,9 @@ trap {
 # Script directory (must be resolved at top-level, not inside functions)
 $script:ScriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Definition }
 $script:ShareDir = Split-Path -Parent $script:ScriptDir
+$script:AppName = "YakuLingo"
 
-# Find 7-Zip (required for fast extraction)
+# Find 7-Zip (optional, falls back to Expand-Archive if not found)
 $script:SevenZip = @(
     "$env:ProgramFiles\7-Zip\7z.exe",
     "${env:ProgramFiles(x86)}\7-Zip\7z.exe"
@@ -40,6 +41,9 @@ $script:SevenZip = @(
 if (-not $script:SevenZip) {
     $script:SevenZip = (Get-Command "7z.exe" -ErrorAction SilentlyContinue).Source
 }
+
+# Flag to track extraction method
+$script:Use7Zip = [bool]$script:SevenZip
 
 # ============================================================
 # GUI Helper Functions (for silent setup via VBS)
@@ -235,19 +239,42 @@ function Copy-FileBuffered {
     param(
         [string]$Source,
         [string]$Destination,
-        [int]$BufferSize = 1MB
+        [int]$BufferSize = 1MB,
+        [int]$MaxRetries = 4
     )
 
-    $sourceStream = $null
-    $destStream = $null
-    try {
-        $sourceStream = [System.IO.File]::Open($Source, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read)
-        $destStream = [System.IO.File]::Create($Destination, $BufferSize)
-        $sourceStream.CopyTo($destStream, $BufferSize)
-    } finally {
-        if ($destStream) { $destStream.Dispose() }
-        if ($sourceStream) { $sourceStream.Dispose() }
+    $retryDelays = @(2, 4, 8, 16)  # Exponential backoff in seconds
+    $lastError = $null
+
+    for ($attempt = 0; $attempt -le $MaxRetries; $attempt++) {
+        $sourceStream = $null
+        $destStream = $null
+        try {
+            $sourceStream = [System.IO.File]::Open($Source, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read)
+            $destStream = [System.IO.File]::Create($Destination, $BufferSize)
+            $sourceStream.CopyTo($destStream, $BufferSize)
+            return  # Success
+        } catch {
+            $lastError = $_
+            if ($attempt -lt $MaxRetries) {
+                $delay = $retryDelays[$attempt]
+                if (-not $script:GuiMode) {
+                    Write-Host "      Network error, retrying in ${delay}s... (attempt $($attempt + 1)/$MaxRetries)" -ForegroundColor Yellow
+                }
+                Start-Sleep -Seconds $delay
+                # Clean up partial destination file
+                if (Test-Path $Destination) {
+                    Remove-Item -Path $Destination -Force -ErrorAction SilentlyContinue
+                }
+            }
+        } finally {
+            if ($destStream) { $destStream.Dispose() }
+            if ($sourceStream) { $sourceStream.Dispose() }
+        }
     }
+
+    # All retries failed
+    throw "Failed to copy file after $MaxRetries retries.`n`nSource: $Source`nError: $($lastError.Exception.Message)"
 }
 
 function Cleanup-Directory {
@@ -271,14 +298,20 @@ function Update-PyVenvConfig {
 
     $pyvenvPath = Join-Path $SetupPath ".venv\\pyvenv.cfg"
     if (-not (Test-Path $pyvenvPath)) {
-        throw "pyvenv.cfg not found. The package seems to be incomplete." 
+        throw "pyvenv.cfg not found.`n`nExpected location: $pyvenvPath`n`nThe ZIP package may be corrupted or incomplete. Please re-download from the network share."
     }
 
     # Find python.exe in .uv-python (structure: .uv-python/cpython-x.x.x-*/python.exe)
     # Only search one level deep to avoid slow recursive enumeration
     $uvPythonDir = Join-Path $SetupPath ".uv-python"
+    if (-not (Test-Path $uvPythonDir)) {
+        throw "Python runtime directory not found.`n`nExpected location: $uvPythonDir`n`nThe ZIP package may be corrupted or incomplete. Please re-download from the network share."
+    }
+
     $pythonExe = $null
+    $searchedDirs = @()
     Get-ChildItem -Path $uvPythonDir -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+        $searchedDirs += $_.Name
         $candidate = Join-Path $_.FullName "python.exe"
         if (Test-Path $candidate) {
             $pythonExe = Get-Item $candidate
@@ -286,7 +319,8 @@ function Update-PyVenvConfig {
         }
     }
     if (-not $pythonExe) {
-        throw "python.exe not found under .uv-python. Please ensure the distribution contains the bundled Python runtime."
+        $searchedInfo = if ($searchedDirs.Count -gt 0) { "Searched in: $($searchedDirs -join ', ')" } else { "No subdirectories found in .uv-python" }
+        throw "python.exe not found in bundled Python runtime.`n`nLocation: $uvPythonDir`n$searchedInfo`n`nThe ZIP package may be corrupted or incomplete. Please re-download from the network share."
     }
 
     $pythonHome = Split-Path -Parent $pythonExe.FullName
@@ -320,18 +354,37 @@ function Invoke-Setup {
         throw "YakuLingo is currently running.`n`nPlease close YakuLingo and try again."
     }
 
+    # Also check for Python processes running from the YakuLingo install directory
+    # This catches cases where YakuLingo.exe has exited but Python is still running
+    $expectedSetupPath = if ([string]::IsNullOrEmpty($SetupPath)) { Join-Path $env:LOCALAPPDATA $script:AppName } else { $SetupPath }
+    if (Test-Path $expectedSetupPath) {
+        $pythonProcesses = Get-Process -Name "python*" -ErrorAction SilentlyContinue | Where-Object {
+            try {
+                $processPath = $_.Path
+                if ($processPath) {
+                    $processPath.StartsWith($expectedSetupPath, [System.StringComparison]::OrdinalIgnoreCase)
+                } else {
+                    $false
+                }
+            } catch {
+                $false
+            }
+        }
+        if ($pythonProcesses) {
+            throw "YakuLingo's Python process is still running.`n`nPlease close YakuLingo completely and try again."
+        }
+    }
+
     # ============================================================
     # Check requirements
     # ============================================================
-    if (-not $script:SevenZip) {
-        throw "7-Zip not found.`n`nPlease install 7-Zip from https://7-zip.org/"
-    }
+    # 7-Zip is optional; Expand-Archive is used as fallback (slower but always available)
 
     # ============================================================
     # Configuration
     # ============================================================
-    $AppName = "YakuLingo"
     # Use script-scope variables defined at top-level
+    $AppName = $script:AppName
     $ScriptDir = $script:ScriptDir
     $ShareDir = $script:ShareDir
 
@@ -436,14 +489,23 @@ function Invoke-Setup {
     if (-not $GuiMode) {
         Write-Host ""
         Write-Host "[3/4] Extracting files locally..." -ForegroundColor Yellow
-        Write-Host "      Extracting with 7-Zip..." -ForegroundColor Gray
     }
 
     try {
         # Extract to temp folder first
-        & $script:SevenZip x "$TempZipFile" "-o$TempZipDir" -y -bso0 -bsp0 | Out-Null
-        if ($LASTEXITCODE -ne 0) {
-            throw "Failed to extract ZIP file.`n`nFile: $ZipFileName"
+        if ($script:Use7Zip) {
+            if (-not $GuiMode) {
+                Write-Host "      Extracting with 7-Zip..." -ForegroundColor Gray
+            }
+            & $script:SevenZip x "$TempZipFile" "-o$TempZipDir" -y -bso0 -bsp0 | Out-Null
+            if ($LASTEXITCODE -ne 0) {
+                throw "Failed to extract ZIP file.`n`nFile: $ZipFileName"
+            }
+        } else {
+            if (-not $GuiMode) {
+                Write-Host "      Extracting with Expand-Archive (7-Zip not found, this may take longer)..." -ForegroundColor Gray
+            }
+            Expand-Archive -Path $TempZipFile -DestinationPath $TempZipDir -Force
         }
 
         # Find extracted folder
@@ -456,7 +518,8 @@ function Invoke-Setup {
         # /MIR = /E + /PURGE: copies all files and removes files not in source
         # This ensures clean updates without needing to delete the destination first
         # /R:0 /W:0: don't retry locked files (skip them instead of hanging)
-        $robocopyResult = & robocopy $ExtractedDir.FullName $SetupPath /MIR /MT:8 /R:0 /W:0 /NFL /NDL /NJH /NJS /NP 2>&1
+        # /V: verbose output to capture skipped files
+        $robocopyOutput = & robocopy $ExtractedDir.FullName $SetupPath /MIR /MT:8 /R:0 /W:0 /V /NJH /NJS /NP 2>&1
         $robocopyExitCode = $LASTEXITCODE
         # robocopy returns 0-7 for success, 8+ for errors
         if ($robocopyExitCode -ge 8) {
@@ -466,6 +529,19 @@ function Invoke-Setup {
         if ($robocopyExitCode -gt 0 -and $robocopyExitCode -lt 8) {
             if (-not $GuiMode) {
                 Write-Host "      Warning: Some files may have been skipped (exit code: $robocopyExitCode)" -ForegroundColor Yellow
+                # Parse robocopy output for skipped/failed files
+                $skippedFiles = $robocopyOutput | Where-Object {
+                    $_ -match "^\s*(FAILED|Skipped)\s+" -or $_ -match "ERROR\s+\d+"
+                } | Select-Object -First 10
+                if ($skippedFiles) {
+                    Write-Host "      Skipped/Failed files:" -ForegroundColor Yellow
+                    foreach ($line in $skippedFiles) {
+                        Write-Host "        $($line.Trim())" -ForegroundColor Gray
+                    }
+                    if (($robocopyOutput | Where-Object { $_ -match "^\s*(FAILED|Skipped)\s+" }).Count -gt 10) {
+                        Write-Host "        ... and more (showing first 10)" -ForegroundColor Gray
+                    }
+                }
             }
         }
     } finally {
@@ -636,9 +712,18 @@ function Invoke-Setup {
                                 }
                             }
                         } catch {
-                            # マージに失敗した場合は新しい設定を使用
+                            # マージに失敗した場合はバックアップを保存して新しい設定を使用
+                            # ユーザーが後で確認できるように SetupPath/config/ に保存
+                            $failedBackupPath = Join-Path $SetupPath "config\settings.backup.json"
+                            try {
+                                Copy-Item -Path $backupPath -Destination $failedBackupPath -Force
+                            } catch {
+                                # バックアップ保存に失敗しても続行
+                            }
                             if (-not $GuiMode) {
-                                Write-Host "      Using new settings: $file (merge failed)" -ForegroundColor Gray
+                                Write-Host "      Warning: Failed to merge settings (JSON parse error)" -ForegroundColor Yellow
+                                Write-Host "      Old settings saved to: config\settings.backup.json" -ForegroundColor Gray
+                                Write-Host "      Using new settings: $file" -ForegroundColor Gray
                             }
                         }
                     } else {

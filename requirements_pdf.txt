@@ -5,8 +5,8 @@
 # - Requires PaddlePaddle framework.
 # - GPU recommended, CPU supported (slower).
 # See: https://www.paddlepaddle.org.cn/install/quick
+paddlepaddle>=3.0.0  # Must be installed before paddleocr
 paddleocr>=3.0.0
-paddlepaddle>=3.0.0
 
 # PDF text/image handling (core translation stack)
 fonttools>=4.53.0      # Required for PyMuPDF font subsetting

@@ -531,8 +531,8 @@ class YakuLingoApp:
                 self.state.copilot_ready = True
                 self._refresh_status()
                 logger.info("Edge connection ready (parallel startup)")
-                # Bring app window to front and notify user
-                await self._on_browser_ready()
+                # Notify user without changing window z-order to avoid flicker
+                await self._on_browser_ready(bring_to_front=False)
             else:
                 # Connection failed - refresh status to show error
                 self._refresh_status()
@@ -577,8 +577,8 @@ class YakuLingoApp:
             if success:
                 self.state.copilot_ready = True
                 self._refresh_status()
-                # Bring app window to front and notify user
-                await self._on_browser_ready()
+                # Notify user without changing window z-order to avoid flicker
+                await self._on_browser_ready(bring_to_front=False)
             else:
                 # Connection failed - refresh status to show error
                 self._refresh_status()
@@ -598,23 +598,24 @@ class YakuLingoApp:
             if not self._login_polling_active:
                 self._login_polling_task = asyncio.create_task(self._wait_for_login_completion())
 
-    async def _on_browser_ready(self):
-        """Called when browser connection is ready. Brings app to front and notifies user."""
+    async def _on_browser_ready(self, bring_to_front: bool = False):
+        """Called when browser connection is ready. Optionally brings app to front."""
         # Small delay to ensure Edge window operations are complete
         await asyncio.sleep(0.3)
 
-        # Bring app window to front using pywebview (native mode)
-        try:
-            from nicegui import app as nicegui_app
-            if hasattr(nicegui_app, 'native') and nicegui_app.native.main_window:
-                # pywebview window methods
-                window = nicegui_app.native.main_window
-                # Activate window (bring to front)
-                window.on_top = True
-                await asyncio.sleep(0.1)
-                window.on_top = False  # Reset so it doesn't stay always on top
-        except (ImportError, AttributeError, RuntimeError) as e:
-            logger.debug("Failed to bring window to front: %s", e)
+        if bring_to_front:
+            # Bring app window to front using pywebview (native mode)
+            try:
+                from nicegui import app as nicegui_app
+                if hasattr(nicegui_app, 'native') and nicegui_app.native.main_window:
+                    # pywebview window methods
+                    window = nicegui_app.native.main_window
+                    # Activate window (bring to front)
+                    window.on_top = True
+                    await asyncio.sleep(0.1)
+                    window.on_top = False  # Reset so it doesn't stay always on top
+            except (ImportError, AttributeError, RuntimeError) as e:
+                logger.debug("Failed to bring window to front: %s", e)
 
         # Show ready notification (need client context for UI operations in async task)
         # Use English to avoid encoding issues on Windows
@@ -681,7 +682,7 @@ class YakuLingoApp:
                             self._refresh_status()
 
                     if not self._shutdown_requested:
-                        await self._on_browser_ready()
+                        await self._on_browser_ready(bring_to_front=True)
                     return
 
             # タイムアウト（翻訳ボタン押下時に再試行される）
@@ -716,7 +717,7 @@ class YakuLingoApp:
                 if self._client:
                     with self._client:
                         self._refresh_status()
-                await self._on_browser_ready()
+                await self._on_browser_ready(bring_to_front=False)
             else:
                 if self._client:
                     with self._client:

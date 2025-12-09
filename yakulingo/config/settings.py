@@ -129,8 +129,8 @@ class AppSettings:
 
         # Batch size constraints
         if self.max_chars_per_batch < 100:
-            logger.warning("max_chars_per_batch too small (%d), resetting to 7000", self.max_chars_per_batch)
-            self.max_chars_per_batch = 7000
+            logger.warning("max_chars_per_batch too small (%d), resetting to 4000", self.max_chars_per_batch)
+            self.max_chars_per_batch = 4000
 
         # Timeout constraints
         if self.request_timeout < 10:

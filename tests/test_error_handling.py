@@ -335,8 +335,8 @@ class TestSettingsErrors:
         settings = AppSettings.load(settings_path)
 
         # Should use defaults
-        assert settings.max_chars_per_batch == 7000
-        assert settings.request_timeout == 300
+        assert settings.max_chars_per_batch == 4000
+        assert settings.request_timeout == 600
 
     def test_settings_load_invalid_json(self, tmp_path):
         """Loading settings from invalid JSON uses defaults"""

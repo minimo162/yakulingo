@@ -733,7 +733,7 @@ class CopilotHandler:
 - Paid ライセンス: 128,000文字
 
 **動的プロンプト切り替え:**
-プロンプトが`max_chars_per_batch`（デフォルト: 7,000文字）を超える場合、自動的にファイル添付モードに切り替え：
+プロンプトが`max_chars_per_batch`（デフォルト: 4,000文字）を超える場合、自動的にファイル添付モードに切り替え：
 1. プロンプトを一時ファイルとして保存
 2. Copilotにファイルを添付
 3. トリガーメッセージを送信: "Please follow the instructions in the attached file and translate accordingly."

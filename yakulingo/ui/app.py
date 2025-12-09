@@ -2442,8 +2442,20 @@ def _native_mode_enabled(native_requested: bool) -> bool:
         )
         return False
 
-    # pywebview sets a resolved backend in `guilib`; if it is None, no GUI toolkit is present
-    if getattr(webview, 'guilib', None) is None:
+    # pywebview resolves the available GUI backend lazily when `initialize()` is called.
+    # Triggering the initialization here prevents false negatives where `webview.guilib`
+    # remains ``None`` prior to the first window creation (notably on Windows).
+    try:
+        backend = getattr(webview, 'guilib', None) or webview.initialize()
+    except Exception as e:  # pragma: no cover - defensive import guard
+        logger.warning(
+            "Native mode requested but pywebview could not initialize a GUI backend: %s; "
+            "starting in browser mode instead.",
+            e,
+        )
+        return False
+
+    if backend is None:
         logger.warning(
             "Native mode requested but no GUI backend was found for pywebview; "
             "starting in browser mode instead."

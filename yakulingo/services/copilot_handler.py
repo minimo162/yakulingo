@@ -8,6 +8,7 @@ Refactored from translate.py with method name changes:
 
 import logging
 import os
+import random
 import re
 import sys
 import time
@@ -361,6 +362,27 @@ class CopilotHandler:
     DEFAULT_RESPONSE_TIMEOUT = 600  # Default timeout for response in seconds (10 minutes)
 
     # =========================================================================
+    # Timeout Settings - Centralized for consistency across operations
+    # =========================================================================
+    # Page navigation timeouts (milliseconds) - for Playwright page.goto()
+    PAGE_GOTO_TIMEOUT_MS = 30000        # 30 seconds for initial page load
+    PAGE_LOAD_STATE_TIMEOUT_MS = 10000  # 10 seconds for load state checks
+    PAGE_NETWORK_IDLE_TIMEOUT_MS = 5000 # 5 seconds for network idle checks
+
+    # Selector wait timeouts (milliseconds) - for Playwright wait_for_selector()
+    SELECTOR_CHAT_INPUT_TIMEOUT_MS = 15000   # 15 seconds for chat input to appear
+    SELECTOR_LOGIN_CHECK_TIMEOUT_MS = 2000   # 2 seconds for login state checks
+    SELECTOR_QUICK_CHECK_TIMEOUT_MS = 500    # 0.5 seconds for instant checks
+
+    # Login/connection timeouts (seconds)
+    LOGIN_WAIT_TIMEOUT_SECONDS = 300     # 5 minutes to wait for user login
+    AUTO_LOGIN_TIMEOUT_SECONDS = 15      # 15 seconds for auto-login to complete
+
+    # Thread/IPC timeouts (seconds)
+    THREAD_JOIN_TIMEOUT_SECONDS = 5      # 5 seconds for thread cleanup
+    EXECUTOR_TIMEOUT_BUFFER_SECONDS = 60 # Extra time for executor vs response timeout
+
+    # =========================================================================
     # UI Selectors - Centralized for easier maintenance when Copilot UI changes
     # =========================================================================
 
@@ -426,6 +448,13 @@ class CopilotHandler:
     ERROR_LOGIN_REQUIRED = "login_required"
     ERROR_CONNECTION_FAILED = "connection_failed"
     ERROR_NETWORK = "network_error"
+    ERROR_RATE_LIMITED = "rate_limited"
+    ERROR_SESSION_EXPIRED = "session_expired"
+
+    # Rate limiting / retry settings
+    RETRY_BACKOFF_BASE = 2.0  # Base for exponential backoff (2^attempt seconds)
+    RETRY_BACKOFF_MAX = 16.0  # Maximum backoff time in seconds
+    RETRY_JITTER_MAX = 1.0    # Random jitter to avoid thundering herd
 
     def __init__(self):
         self._playwright = None
@@ -456,6 +485,29 @@ class CopilotHandler:
         Use _is_page_valid() within Playwright thread for actual validation.
         """
         return self._connected
+
+    def _apply_retry_backoff(self, attempt: int, max_retries: int) -> None:
+        """Apply exponential backoff before retry.
+
+        Calculates backoff time using exponential formula with jitter
+        to avoid thundering herd problem when multiple clients retry simultaneously.
+
+        Args:
+            attempt: Current attempt number (0-indexed)
+            max_retries: Maximum number of retries for logging
+        """
+        backoff_time = min(
+            self.RETRY_BACKOFF_BASE ** attempt,
+            self.RETRY_BACKOFF_MAX
+        )
+        # Add jitter to avoid thundering herd
+        jitter = random.uniform(0, self.RETRY_JITTER_MAX)
+        wait_time = backoff_time + jitter
+        logger.info(
+            "Retrying in %.1f seconds (attempt %d/%d, backoff=%.1f, jitter=%.2f)",
+            wait_time, attempt + 1, max_retries + 1, backoff_time, jitter
+        )
+        time.sleep(wait_time)
 
     def cancel_login_wait(self) -> None:
         """Cancel the login wait loop.
@@ -965,7 +1017,7 @@ class CopilotHandler:
 
         # Navigate with 'commit' (fastest - just wait for first response)
         logger.info("Navigating to Copilot...")
-        copilot_page.goto(self.COPILOT_URL, wait_until='commit', timeout=30000)
+        copilot_page.goto(self.COPILOT_URL, wait_until='commit', timeout=self.PAGE_GOTO_TIMEOUT_MS)
         return copilot_page
 
     def _wait_for_chat_ready(self, page, wait_for_login: bool = True) -> bool:
@@ -1024,7 +1076,7 @@ class CopilotHandler:
                 logger.warning("Navigation to chat failed: %s", nav_err)
 
         try:
-            page.wait_for_selector(input_selector, timeout=15000, state='visible')
+            page.wait_for_selector(input_selector, timeout=self.SELECTOR_CHAT_INPUT_TIMEOUT_MS, state='visible')
 
             # Check for authentication dialog that may block input
             auth_dialog = page.query_selector('.fui-DialogTitle, [role="dialog"] h2')
@@ -1883,8 +1935,8 @@ class CopilotHandler:
         """
         # Execute all Playwright operations in the dedicated thread
         # This avoids greenlet thread-switching errors when called from asyncio.to_thread
-        # Add 60 seconds margin for start_new_chat and send_message operations
-        executor_timeout = timeout + 60
+        # Add buffer for start_new_chat and send_message operations
+        executor_timeout = timeout + self.EXECUTOR_TIMEOUT_BUFFER_SECONDS
         return _playwright_executor.execute(
             self._translate_sync_impl, texts, prompt, reference_files, skip_clear_wait, timeout,
             timeout=executor_timeout
@@ -1994,6 +2046,8 @@ class CopilotHandler:
                             # Not a login issue - retry without showing browser
                             logger.debug("Page invalid but not login page; retrying silently")
 
+                    # Apply exponential backoff before retry
+                    self._apply_retry_backoff(attempt, max_retries)
                     continue
                 else:
                     # Final attempt failed - only show browser if login is suspected
@@ -2174,6 +2228,8 @@ class CopilotHandler:
                             # Not a login issue - retry without showing browser
                             logger.debug("Page invalid but not login page; retrying silently")
 
+                    # Apply exponential backoff before retry
+                    self._apply_retry_backoff(attempt, max_retries)
                     continue
                 else:
                     # Final attempt failed - only show browser if login is suspected

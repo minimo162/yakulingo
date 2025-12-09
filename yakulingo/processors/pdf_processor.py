@@ -1068,6 +1068,29 @@ class PdfProcessor(FileProcessor):
         """
         return self._cell_translator.should_translate(text, self._output_language)
 
+    @property
+    def failed_pages(self) -> list[int]:
+        """Get list of page numbers that failed during extraction or translation.
+
+        Returns:
+            List of 1-indexed page numbers that encountered errors.
+        """
+        return list(self._failed_pages)
+
+    @property
+    def failed_page_reasons(self) -> dict[int, str]:
+        """Get reasons for page failures.
+
+        Returns:
+            Dictionary mapping page numbers to error reasons.
+        """
+        return dict(self._failed_page_reasons)
+
+    def clear_failed_pages(self) -> None:
+        """Clear the failed pages list. Call before starting a new extraction."""
+        self._failed_pages.clear()
+        self._failed_page_reasons.clear()
+
     def _record_failed_page(self, page_num: int, reason: str | None = None) -> None:
         """Track pages that could not be processed and optional reasons."""
         if page_num not in self._failed_pages:
@@ -1365,7 +1388,11 @@ class PdfProcessor(FileProcessor):
             'success': 0,
             'failed': [],
             'failed_fonts': [],
+            'failed_pages': [],
         }
+
+        # Clear failed pages from previous runs
+        self.clear_failed_pages()
 
         try:
             target_lang = "en" if direction == "jp_to_en" else "ja"
@@ -1430,7 +1457,12 @@ class PdfProcessor(FileProcessor):
                 # preserve_graphics=True: parse and filter original content stream
                 # to remove text while keeping graphics/images
                 replacer = ContentStreamReplacer(doc, font_registry, preserve_graphics=True)
-                replacer.set_base_stream(page)
+                try:
+                    replacer.set_base_stream(page)
+                except (RuntimeError, ValueError, TypeError, KeyError, MemoryError) as e:
+                    logger.error("Failed to parse page %d content stream: %s", page_num, e)
+                    self._record_failed_page(page_num, f"Content stream parse error: {e}")
+                    continue
 
                 # Fallback: Get block info using PyMuPDF (if no text_blocks provided)
                 pymupdf_blocks_dict = {}
@@ -1607,7 +1639,7 @@ class PdfProcessor(FileProcessor):
 
                         result['success'] += 1
 
-                    except (RuntimeError, ValueError, KeyError, AttributeError) as e:
+                    except (RuntimeError, ValueError, TypeError, IndexError, KeyError, AttributeError, OSError) as e:
                         logger.warning(
                             "Failed to process block '%s' with low-level API: %s",
                             block_id, e
@@ -1620,7 +1652,11 @@ class PdfProcessor(FileProcessor):
                 # matching translations would have their original text removed
                 # because the filtered base stream strips text operators.
                 if replacer.operators:
-                    replacer.apply_to_page(page)
+                    try:
+                        replacer.apply_to_page(page)
+                    except (RuntimeError, ValueError, TypeError, KeyError, MemoryError) as e:
+                        logger.error("Failed to apply translations to page %d: %s", page_num, e)
+                        self._record_failed_page(page_num, f"Apply error: {e}")
 
             # Font subsetting and save document (PDFMathTranslate compliant)
             doc.subset_fonts(fallback=True)
@@ -1630,6 +1666,14 @@ class PdfProcessor(FileProcessor):
                 logger.warning(
                     "Low-level PDF translation completed with %d/%d blocks failed",
                     len(result['failed']), result['total']
+                )
+
+            # Include page-level failures in result
+            result['failed_pages'] = self.failed_pages
+            if result['failed_pages']:
+                logger.warning(
+                    "Low-level PDF translation had %d pages with errors: %s",
+                    len(result['failed_pages']), result['failed_pages']
                 )
 
         finally:
@@ -1898,10 +1942,10 @@ class PdfProcessor(FileProcessor):
                                 # TranslationCell is no longer needed (cells=None)
                                 yield blocks, None
 
-                            except (RuntimeError, ValueError, OSError, MemoryError) as e:
+                            except (RuntimeError, ValueError, TypeError, IndexError, KeyError, OSError, MemoryError) as e:
                                 logger.error("Hybrid extraction failed for page %d: %s", page_num, e)
                                 self._record_failed_page(page_num, str(e))
-                                yield [], []
+                                yield [], None
 
                         # Clear batch for next iteration
                         batch_data = []

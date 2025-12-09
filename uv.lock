@@ -3331,7 +3331,7 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "nicegui", specifier = ">=1.4.0" },
+    { name = "nicegui", specifier = ">=3.3.1" },
     { name = "numpy", specifier = ">=1.24.0" },
     { name = "openpyxl", specifier = ">=3.1.0" },
     { name = "paddleocr", marker = "extra == 'ocr'", specifier = ">=3.0.0" },

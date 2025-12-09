@@ -1926,30 +1926,66 @@ class CopilotHandler:
             logger.info("[TIMING] wait_for_input_element: %.2fs", time.time() - input_wait_start)
 
             if input_elem:
-                logger.debug("Input element found, setting text via JS...")
+                logger.debug("Input element found, setting text...")
                 fill_start = time.time()
-                # Use JavaScript to set text directly instead of fill()
-                # fill() is extremely slow on contenteditable/Lexical editors
-                # because it triggers complex input event processing per character
-                self._page.evaluate('''(args) => {
+                # Try multiple methods to set text in Lexical editor
+                # Lexical editor doesn't update internal state with simple DOM manipulation
+
+                # Method 1: Focus, select all, paste via execCommand
+                input_success = self._page.evaluate('''(args) => {
                     const [selector, text] = args;
                     const elem = document.querySelector(selector);
-                    if (elem) {
-                        elem.focus();
-                        // Clear existing content
-                        elem.innerText = '';
-                        // Set new text
-                        elem.innerText = text;
-                        // Dispatch input event to notify Lexical editor of the change
-                        elem.dispatchEvent(new InputEvent('input', {
+                    if (!elem) return false;
+
+                    elem.focus();
+
+                    // Clear existing content and select all
+                    elem.innerText = '';
+                    document.execCommand('selectAll', false, null);
+
+                    // Try execCommand insertText (works with many rich text editors)
+                    const success = document.execCommand('insertText', false, text);
+                    if (success && elem.innerText.trim()) {
+                        return true;
+                    }
+
+                    // Method 2: Simulate paste event with clipboard data
+                    try {
+                        const dataTransfer = new DataTransfer();
+                        dataTransfer.setData('text/plain', text);
+                        const pasteEvent = new ClipboardEvent('paste', {
                             bubbles: true,
                             cancelable: true,
-                            inputType: 'insertText',
-                            data: text
-                        }));
+                            clipboardData: dataTransfer
+                        });
+                        elem.dispatchEvent(pasteEvent);
+                        if (elem.innerText.trim()) {
+                            return true;
+                        }
+                    } catch (e) {
+                        // ClipboardEvent may not be supported
                     }
+
+                    // Method 3: Set innerText and dispatch input event
+                    elem.innerText = text;
+                    elem.dispatchEvent(new InputEvent('input', {
+                        bubbles: true,
+                        cancelable: true,
+                        inputType: 'insertText',
+                        data: text
+                    }));
+
+                    // Also dispatch beforeinput for Lexical
+                    elem.dispatchEvent(new InputEvent('beforeinput', {
+                        bubbles: true,
+                        cancelable: true,
+                        inputType: 'insertText',
+                        data: text
+                    }));
+
+                    return !!elem.innerText.trim();
                 }''', [input_selector, message])
-                logger.info("[TIMING] js_set_text: %.2fs", time.time() - fill_start)
+                logger.info("[TIMING] js_set_text: %.2fs (success=%s)", time.time() - fill_start, input_success)
 
                 # Verify input was successful by checking if field has content
                 # If empty after fill, something is blocking input (login, popup, etc.)
@@ -1991,8 +2027,22 @@ class CopilotHandler:
                     logger.info("[TIMING] wait_for_send_button: %.2fs", time.time() - btn_wait_start)
                     if send_button:
                         # Ensure button is truly enabled before clicking
+                        # Retry up to 5 times with short waits for button to become enabled
                         is_disabled = send_button.get_attribute('disabled')
-                        if is_disabled is None:
+                        retry_count = 0
+                        max_retries = 5
+                        while is_disabled is not None and retry_count < max_retries:
+                            retry_count += 1
+                            logger.debug("Send button disabled, retry %d/%d", retry_count, max_retries)
+                            time.sleep(0.3)
+                            # Re-query the button in case it was replaced
+                            send_button = self._page.query_selector(send_button_selector)
+                            if send_button:
+                                is_disabled = send_button.get_attribute('disabled')
+                            else:
+                                break
+
+                        if is_disabled is None and send_button:
                             # 送信前にGPT-5が有効か確認し、必要なら有効化
                             # 送信ボタンが見つかった時点でUIは安定しているはず
                             gpt5_start = time.time()
@@ -2012,8 +2062,8 @@ class CopilotHandler:
                                 self._page.evaluate("btn => btn.click()", send_button)
                                 logger.info("Message sent via JS click")
                         else:
-                            # Button still disabled, try Enter key
-                            logger.debug("Send button is disabled, using Enter key")
+                            # Button still disabled after retries, try Enter key
+                            logger.warning("Send button still disabled after %d retries, using Enter key", max_retries)
                             self._ensure_gpt5_enabled()
                             input_elem.press("Enter")
                             logger.info("Message sent via Enter key (button disabled)")
@@ -2035,19 +2085,50 @@ class CopilotHandler:
                         '[class*="loading"]',
                         '[class*="spinner"]',
                     ])
+                    send_confirmed = False
                     try:
                         self._page.wait_for_selector(
                             stop_selectors,
-                            timeout=1000,
+                            timeout=1500,
                             state='visible'
                         )
+                        send_confirmed = True
+                        logger.debug("Send confirmed - stop/loading indicator appeared")
                     except (PlaywrightTimeoutError, StopIteration):
+                        # No stop button/loading indicator - check if input was cleared
                         try:
-                            time.sleep(0.2)
+                            time.sleep(0.3)
                             remaining = input_elem.inner_text().strip()
                             if remaining:
-                                logger.debug("Input still contains text after send attempt; pressing Enter as backup")
-                                input_elem.press("Enter")
+                                logger.warning("Input still contains text after send attempt")
+                                # Try clicking the send button directly via JS as last resort
+                                try:
+                                    clicked = self._page.evaluate('''() => {
+                                        const selectors = [
+                                            'button.fai-ChatInput__send',
+                                            'button.fai-SendButton',
+                                            'button[aria-label="送信"]',
+                                            'button[aria-label="Send"]'
+                                        ];
+                                        for (const sel of selectors) {
+                                            const btn = document.querySelector(sel);
+                                            if (btn && !btn.disabled) {
+                                                btn.click();
+                                                return true;
+                                            }
+                                        }
+                                        return false;
+                                    }''')
+                                    if clicked:
+                                        logger.info("Message sent via JS click fallback")
+                                    else:
+                                        logger.debug("No enabled button found, pressing Enter as backup")
+                                        input_elem.press("Enter")
+                                except PlaywrightError:
+                                    input_elem.press("Enter")
+                            else:
+                                send_confirmed = True
+                                logger.debug("Send confirmed - input was cleared")
                         except PlaywrightError as check_err:
                             logger.debug("Send confirmation check failed: %s", check_err)
 

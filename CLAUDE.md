@@ -1160,11 +1160,17 @@ When interacting with users in this repository, prefer Japanese for comments and
 ## Recent Development Focus
 
 Based on recent commits:
+- **Streaming UI Thread Safety & Robustness**:
+  - **Thread-safe streaming_text access**: `_streaming_text_lock` added to protect `streaming_text` reads/writes across threads
+  - **Multiple marker patterns**: Support for 解説/説明/Explanation/Notes markers to handle Copilot format changes
+  - **Length-based fallback**: Show partial result if text exceeds 200 chars with '訳文' marker (no explanation marker needed)
+  - **Reduced UI timer interval**: 0.2s → 0.1s for more responsive streaming display
+  - **Lock coverage**: on_chunk callback (write), update_streaming_label (read), and cleanup (clear) all protected
 - **Copilot Error Handling & Retry Improvements**:
   - **Exponential backoff**: `_apply_retry_backoff()` method with jitter to avoid thundering herd
   - **Retry constants**: `RETRY_BACKOFF_BASE=2.0`, `RETRY_BACKOFF_MAX=16.0`, `RETRY_JITTER_MAX=1.0`
   - **Both methods**: `translate_sync` and `translate_single` apply backoff before retry
-  - **Thread safety**: `_client_lock` and `_streaming_timer_lock` for NiceGUI async handlers
+  - **Thread safety**: `_client_lock`, `_streaming_timer_lock`, and `_streaming_text_lock` for NiceGUI async handlers
   - **PlaywrightThreadExecutor**: `_shutdown_flag` check to prevent restart after shutdown
 - **Centralized Timeout Constants**:
   - **Page navigation**: `PAGE_GOTO_TIMEOUT_MS=30000` (30s for page load)

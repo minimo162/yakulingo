@@ -1471,6 +1471,24 @@ def analyze_layout_batch(images: list, device: str = "cpu") -> list:
     if not isinstance(results_list, list):
         results_list = [results_list]
 
+    # DEBUG: Log layout detection results
+    for idx, result in enumerate(results_list):
+        boxes = []
+        if hasattr(result, 'boxes'):
+            boxes = result.boxes
+        elif isinstance(result, dict) and 'boxes' in result:
+            boxes = result['boxes']
+        logger.info(
+            "[DEBUG] PP-DocLayout-L page %d: %d boxes detected, result type=%s",
+            idx + 1, len(boxes), type(result).__name__
+        )
+        if boxes:
+            for box in boxes[:3]:  # Show first 3 boxes
+                if isinstance(box, dict):
+                    logger.info("  [DEBUG] box: label=%s, score=%.2f", box.get('label'), box.get('score', 0))
+                else:
+                    logger.info("  [DEBUG] box: label=%s, score=%.2f", getattr(box, 'label', '?'), getattr(box, 'score', 0))
+
     return results_list
 
 
@@ -1562,6 +1580,12 @@ def create_layout_array_from_pp_doclayout(
                 boxes = first_result.boxes
             elif isinstance(first_result, dict) and 'boxes' in first_result:
                 boxes = first_result['boxes']
+
+    # DEBUG: Log boxes extraction
+    logger.info(
+        "[DEBUG] create_layout_array: results type=%s, boxes count=%d",
+        type(results).__name__, len(boxes)
+    )
 
     if not boxes:
         return LayoutArray(
@@ -2862,6 +2886,10 @@ class PdfProcessor(FileProcessor):
             layout_width = 0
             layout_height = 0
 
+        # DEBUG: Track layout class distribution
+        debug_cls_counts: dict[int, int] = {}
+        debug_new_para_count = 0
+
         for char in chars:
             # Cache char coordinates locally (optimization: avoid repeated attribute access)
             char_x0 = char.x0
@@ -2879,6 +2907,9 @@ class PdfProcessor(FileProcessor):
                 char_cls = int(layout_array[img_y, img_x])
             else:
                 char_cls = LAYOUT_BACKGROUND
+
+            # DEBUG: Count layout classes
+            debug_cls_counts[char_cls] = debug_cls_counts.get(char_cls, 0) + 1
 
             # Skip abandoned regions (figures, headers, footers)
             if char_cls == LAYOUT_ABANDON:
@@ -3000,6 +3031,17 @@ class PdfProcessor(FileProcessor):
             prev_x1 = char_x1
             prev_y0 = char_y0
             has_prev = True
+
+        # DEBUG: Log layout class distribution
+        logger.info(
+            "[DEBUG] _group_chars_into_blocks page %d: chars=%d, paragraphs=%d, use_layout=%s",
+            page_idx + 1, len(chars), len(sstk), use_layout
+        )
+        # Sort by count descending for readability
+        sorted_cls = sorted(debug_cls_counts.items(), key=lambda x: -x[1])
+        for cls_id, count in sorted_cls[:5]:  # Top 5 classes
+            cls_name = "ABANDON" if cls_id == 0 else "BACKGROUND" if cls_id == 1 else f"PARA_{cls_id-2}" if cls_id < 1000 else f"TABLE_{cls_id-1000}"
+            logger.info("  [DEBUG] class %s (%d): %d chars", cls_name, cls_id, count)
 
         # Handle remaining formula at end
         if in_formula and vstk:

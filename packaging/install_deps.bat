@@ -154,7 +154,8 @@ echo [DONE] Dependencies installed.
 echo.
 echo [4/6] Installing Playwright browser...
 
-uv.exe run --native-tls playwright install chromium
+:: Use .venv Python directly to avoid uv run recreating the venv
+.venv\Scripts\python.exe -m playwright install chromium
 if errorlevel 1 (
     echo [ERROR] Failed to install Playwright browser.
     pause

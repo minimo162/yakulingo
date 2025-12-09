@@ -1939,17 +1939,20 @@ class PdfProcessor(FileProcessor):
         """
         Extract text blocks from PDF.
 
-        Delegates to _extract_with_pdfminer_streaming for PDFMathTranslate compliance.
+        Uses hybrid approach: pdfminer for text extraction + PP-DocLayout-L for layout.
+        This provides accurate paragraph grouping instead of character-level extraction.
         This method exists for FileProcessor interface compliance.
 
         Args:
             file_path: Path to the PDF file
             output_language: "en" for JP→EN, "jp" for EN→JP translation
         """
-        self._output_language = output_language
-        total_pages = self.get_page_count(file_path)
-        for blocks, _ in self._extract_with_pdfminer_streaming(
-            file_path, total_pages, on_progress=None
+        # Use extract_text_blocks_streaming which implements hybrid approach
+        # (pdfminer text + PP-DocLayout-L layout) for accurate paragraph detection
+        for blocks, _ in self.extract_text_blocks_streaming(
+            file_path,
+            on_progress=None,
+            output_language=output_language,
         ):
             yield from blocks
 

@@ -2016,6 +2016,12 @@ class TranslationService:
         """Build user-facing warnings from processor failure metadata."""
         warnings: list[str] = []
 
+        # Check for PP-DocLayout-L fallback (PDF processor only)
+        if getattr(processor, '_layout_fallback_used', False):
+            warnings.append(
+                "レイアウト解析(PP-DocLayout-L)が未インストールのため、段落検出精度が低下している可能性があります"
+            )
+
         if hasattr(processor, 'failed_pages') and processor.failed_pages:
             failed_pages = processor.failed_pages
             reasons = getattr(processor, 'failed_page_reasons', {}) or {}

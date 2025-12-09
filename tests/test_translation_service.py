@@ -799,12 +799,29 @@ class TestTranslationServiceTranslateFile:
             2: "No embedded text detected",
             5: "Layout analysis failed",
         }
+        # Ensure _layout_fallback_used is False to test only failed pages warning
+        processor._layout_fallback_used = False
 
         warnings = service._collect_processor_warnings(processor)
 
         assert warnings == [
             "Pages skipped: 2 (No embedded text detected), 5 (Layout analysis failed)"
         ]
+
+    def test_processor_warning_layout_fallback(self):
+        """Layout fallback warning should appear when PP-DocLayout-L is unavailable."""
+        settings = AppSettings()
+        service = TranslationService(Mock(), settings)
+
+        processor = Mock()
+        processor.failed_pages = []
+        processor._layout_fallback_used = True
+
+        warnings = service._collect_processor_warnings(processor)
+
+        assert len(warnings) == 1
+        assert "PP-DocLayout-L" in warnings[0]
+        assert "レイアウト解析" in warnings[0]
 
     def test_translate_file_custom_output_dir(self, mock_copilot, sample_xlsx, tmp_path):
         """Output goes to custom directory when configured"""

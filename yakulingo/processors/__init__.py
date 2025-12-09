@@ -20,6 +20,7 @@ _LAZY_IMPORTS = {
     'PdfProcessor': 'pdf_processor',
     'TxtProcessor': 'txt_processor',
     'ScannedPdfError': 'pdf_processor',
+    'is_layout_available': 'pdf_processor',
 }
 
 # Submodules that can be accessed via __getattr__ (for patching support)
@@ -52,4 +53,5 @@ __all__ = [
     'PdfProcessor',
     'TxtProcessor',
     'ScannedPdfError',
+    'is_layout_available',
 ]

@@ -503,14 +503,18 @@ class ContentStreamParser:
                 if stream:
                     filtered = self.parse_and_filter(stream)
                     filtered_parts.append(filtered)
-            except Exception as e:
+            except (RuntimeError, ValueError, KeyError, OSError) as e:
+                # RuntimeError: PyMuPDF internal errors
+                # ValueError: invalid stream data
+                # KeyError: missing xref entry
+                # OSError: file access issues
                 logger.warning("Failed to filter content stream xref %d: %s", xref, e)
                 # On error, try to get original stream
                 try:
                     stream = doc.xref_stream(xref)
                     if stream:
                         filtered_parts.append(stream)
-                except Exception:
+                except (RuntimeError, ValueError, KeyError, OSError):
                     pass
 
         return b" ".join(filtered_parts)

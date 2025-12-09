@@ -1193,11 +1193,26 @@ def find_matching_font_size(
 
 
 # =============================================================================
+# Scanned PDF Detection
+# =============================================================================
+# Number of pages to check for embedded text (表紙が画像の場合に対応)
+SCAN_CHECK_PAGES = 3
+
+
+class ScannedPdfError(Exception):
+    """Exception raised when a scanned PDF (no embedded text) is detected."""
+
+    def __init__(self, message: str = "スキャンPDFは翻訳できません（テキストが埋め込まれていません）"):
+        self.message = message
+        super().__init__(self.message)
+
+
+# =============================================================================
 # Layout Analysis (PP-DocLayout-L integration)
 # =============================================================================
 # Default constants for layout analysis (can be overridden via AppSettings)
 DEFAULT_OCR_BATCH_SIZE = 5   # Pages per batch
-DEFAULT_OCR_DPI = 200        # Default DPI for precision
+DEFAULT_OCR_DPI = 300        # Default DPI for precision (higher = better layout detection)
 
 # LayoutDetection model cache (for GPU memory efficiency) with thread safety
 _analyzer_cache: dict[str, object] = {}
@@ -2046,6 +2061,89 @@ class PdfProcessor(FileProcessor):
         if reason:
             self._failed_page_reasons[page_num] = reason
 
+    def _check_scanned_pdf(self, file_path: Path) -> None:
+        """
+        Check if PDF is a scanned document (no embedded text).
+
+        Checks the first SCAN_CHECK_PAGES pages. If ALL checked pages have no
+        embedded text, raises ScannedPdfError. This handles cases where the
+        cover page is an image but subsequent pages have text.
+
+        Args:
+            file_path: Path to PDF file
+
+        Raises:
+            ScannedPdfError: If PDF appears to be scanned (no embedded text)
+        """
+        pdfminer = _get_pdfminer()
+        PDFPage = pdfminer['PDFPage']
+        PDFParser = pdfminer['PDFParser']
+        PDFDocument = pdfminer['PDFDocument']
+        PDFResourceManager = pdfminer['PDFResourceManager']
+        PDFPageInterpreter = pdfminer['PDFPageInterpreter']
+        LTChar = pdfminer['LTChar']
+        LTFigure = pdfminer['LTFigure']
+        PDFConverterEx = _get_pdf_converter_ex_class()
+
+        with open(file_path, 'rb') as f:
+            parser = PDFParser(f)
+            document = PDFDocument(parser)
+            rsrcmgr = PDFResourceManager()
+            converter = PDFConverterEx(rsrcmgr)
+            interpreter = PDFPageInterpreter(rsrcmgr, converter)
+
+            pages_without_text = 0
+            pages_checked = 0
+
+            for page_idx, page in enumerate(PDFPage.create_pages(document)):
+                if page_idx >= SCAN_CHECK_PAGES:
+                    break
+
+                pages_checked += 1
+                interpreter.process_page(page)
+                ltpage = converter.pages[-1] if converter.pages else None
+
+                # Count characters on this page
+                char_count = 0
+
+                def count_chars(obj):
+                    nonlocal char_count
+                    if isinstance(obj, LTChar):
+                        char_count += 1
+                    elif isinstance(obj, LTFigure):
+                        for child in obj:
+                            count_chars(child)
+                    elif hasattr(obj, '__iter__'):
+                        for child in obj:
+                            count_chars(child)
+
+                if ltpage:
+                    count_chars(ltpage)
+
+                if char_count == 0:
+                    pages_without_text += 1
+                    logger.debug(
+                        "Scanned PDF check: page %d has no embedded text",
+                        page_idx + 1
+                    )
+                else:
+                    # Found a page with text - not a scanned PDF
+                    logger.debug(
+                        "Scanned PDF check: page %d has %d characters - PDF has embedded text",
+                        page_idx + 1, char_count
+                    )
+                    return
+
+                converter.pages.clear()
+
+            # All checked pages have no text
+            if pages_checked > 0 and pages_without_text == pages_checked:
+                logger.warning(
+                    "Scanned PDF detected: first %d pages have no embedded text",
+                    pages_checked
+                )
+                raise ScannedPdfError()
+
     def cancel(self) -> None:
         """Request cancellation of OCR processing."""
         self._cancel_requested = True
@@ -2563,8 +2661,15 @@ class PdfProcessor(FileProcessor):
                 if page_cells:
                     all_cells.extend(page_cells)
             ```
+
+        Raises:
+            ScannedPdfError: If PDF is scanned (no embedded text in first pages)
         """
         self._output_language = output_language
+
+        # Early detection of scanned PDFs (check first few pages)
+        self._check_scanned_pdf(file_path)
+
         with _open_pymupdf_document(file_path) as doc:
             total_pages = len(doc)
 
@@ -2593,6 +2698,7 @@ class PdfProcessor(FileProcessor):
         - Precise layout detection from PP-DocLayout-L
         - Best of both worlds
 
+        Uses unified iterator to ensure pypdfium2 and pdfminer stay synchronized.
         Yields one page at a time with progress updates.
         """
         import time as time_module
@@ -2622,132 +2728,136 @@ class PdfProcessor(FileProcessor):
                 converter = PDFConverterEx(rsrcmgr)
                 interpreter = PDFPageInterpreter(rsrcmgr, converter)
 
-                # Iterate through pages with PP-DocLayout-L layout analysis
-                for (batch_start, batch_images), pdfminer_pages in zip(
-                    iterate_pdf_pages(str(file_path), batch_size, dpi),
-                    self._batch_pdfminer_pages(document, PDFPage, interpreter, converter, batch_size)
+                # Collect pages into batches for PP-DocLayout-L batch processing
+                batch_data: list[tuple[int, Any, Any, float]] = []
+
+                for page_idx, img, ltpage, page_height in self._iterate_pages_unified(
+                    file_path, document, PDFPage, interpreter, converter, dpi
                 ):
-                    # Check for cancellation before processing batch
+                    # Check for cancellation
                     if self._cancel_requested:
-                        logger.info("Hybrid extraction cancelled at batch starting page %d",
-                                   batch_start + 1)
+                        logger.info("Hybrid extraction cancelled at page %d/%d",
+                                   page_idx + 1, total_pages)
                         return
 
-                    # Step 1: Batch analyze layout with PP-DocLayout-L (optimization)
-                    # Process all images in the batch at once for better GPU utilization
-                    batch_layout_results = analyze_layout_batch(batch_images, actual_device)
+                    batch_data.append((page_idx, img, ltpage, page_height))
 
-                    for img_idx, (img, (page_idx, ltpage, page_height)) in enumerate(
-                        zip(batch_images, pdfminer_pages)
-                    ):
-                        # Check for cancellation
-                        if self._cancel_requested:
-                            logger.info("Hybrid extraction cancelled at page %d/%d",
-                                       pages_processed + 1, total_pages)
-                            return
+                    # Process batch when full or at end
+                    if len(batch_data) >= batch_size or page_idx == total_pages - 1:
+                        # Step 1: Batch analyze layout with PP-DocLayout-L
+                        batch_images = [data[1] for data in batch_data]
+                        batch_layout_results = analyze_layout_batch(batch_images, actual_device)
 
-                        page_num = batch_start + img_idx + 1
-                        pages_processed += 1
+                        # Process each page in the batch
+                        for batch_idx, (p_idx, img, ltpage, p_height) in enumerate(batch_data):
+                            page_num = p_idx + 1
+                            pages_processed += 1
 
-                        # Calculate estimated remaining time
-                        elapsed = time_module.time() - start_time
-                        if pages_processed > 1:
-                            actual_time_per_page = elapsed / (pages_processed - 1)
-                            remaining_pages = total_pages - pages_processed + 1
-                            estimated_remaining = int(actual_time_per_page * remaining_pages)
-                        else:
-                            estimated_remaining = int(10 * total_pages)  # Rough estimate
-
-                        # Report progress
-                        if on_progress:
-                            on_progress(TranslationProgress(
-                                current=pages_processed,
-                                total=total_pages,
-                                status=f"Analyzing layout page {page_num}/{total_pages}...",
-                                phase=TranslationPhase.EXTRACTING,
-                                phase_detail=f"Page {page_num}/{total_pages}",
-                                estimated_remaining=estimated_remaining if estimated_remaining > 0 else None,
-                            ))
-
-                        try:
-                            # Get pre-computed layout results for this page
-                            results = batch_layout_results[img_idx] if img_idx < len(batch_layout_results) else []
-
-                            # Step 2: Create LayoutArray from PP-DocLayout-L results
-                            img_height, img_width = img.shape[:2]
-                            layout_array = create_layout_array_from_pp_doclayout(
-                                results, img_height, img_width
-                            )
-
-                            # Step 3: Extract characters from pdfminer
-                            chars = []
-                            def collect_chars(obj):
-                                if isinstance(obj, LTChar):
-                                    chars.append(obj)
-                                elif isinstance(obj, LTFigure):
-                                    for child in obj:
-                                        collect_chars(child)
-                                elif hasattr(obj, '__iter__'):
-                                    for child in obj:
-                                        collect_chars(child)
-
-                            if ltpage:
-                                collect_chars(ltpage)
-
-                            if not chars:
-                                reason = (
-                                    "No embedded text detected (scanned PDFs are not supported)"
-                                )
-                                logger.warning(
-                                    "Hybrid extraction skipped page %d: %s",
-                                    page_num,
-                                    reason,
-                                )
-                                self._record_failed_page(page_num, reason)
-
-                            # Step 4: Group characters using PP-DocLayout-L layout
-                            if chars:
-                                blocks = self._group_chars_into_blocks(
-                                    chars, page_idx, LTChar,
-                                    layout=layout_array,
-                                    page_height=page_height
-                                )
+                            # Calculate estimated remaining time
+                            elapsed = time_module.time() - start_time
+                            if pages_processed > 1:
+                                actual_time_per_page = elapsed / (pages_processed - 1)
+                                remaining_pages = total_pages - pages_processed + 1
+                                estimated_remaining = int(actual_time_per_page * remaining_pages)
                             else:
-                                # No embedded text - scanned PDF not supported
-                                blocks = []
+                                estimated_remaining = int(10 * total_pages)
 
-                            # Step 5: Create TranslationCells from PP-DocLayout-L results
-                            cells = prepare_translation_cells(results, page_num)
+                            # Report progress
+                            if on_progress:
+                                on_progress(TranslationProgress(
+                                    current=pages_processed,
+                                    total=total_pages,
+                                    status=f"Analyzing layout page {page_num}/{total_pages}...",
+                                    phase=TranslationPhase.EXTRACTING,
+                                    phase_detail=f"Page {page_num}/{total_pages}",
+                                    estimated_remaining=estimated_remaining if estimated_remaining > 0 else None,
+                                ))
 
-                            # Step 6: If pdfminer got text, update cells with it
-                            if blocks:
-                                # Map pdfminer blocks to PP-DocLayout-L cells by position
-                                self._merge_pdfminer_text_to_cells(blocks, cells, layout_array, page_height, dpi)
+                            try:
+                                # Get pre-computed layout results for this page
+                                results = (
+                                    batch_layout_results[batch_idx]
+                                    if batch_idx < len(batch_layout_results)
+                                    else []
+                                )
 
-                            # Convert cells to TextBlocks if no pdfminer blocks
-                            if not blocks:
-                                for cell in cells:
-                                    if cell.text and self.should_translate(cell.text):
-                                        blocks.append(TextBlock(
-                                            id=cell.address,
-                                            text=cell.text,
-                                            location=f"Page {page_num}",
-                                            metadata={
-                                                'type': 'ocr_cell',
-                                                'page_idx': page_num - 1,
-                                                'address': cell.address,
-                                                'bbox': cell.box,
-                                                'direction': cell.direction,
-                                                'role': cell.role,
-                                            }
-                                        ))
+                                # Step 2: Create LayoutArray from PP-DocLayout-L results
+                                img_height, img_width = img.shape[:2]
+                                layout_array = create_layout_array_from_pp_doclayout(
+                                    results, img_height, img_width
+                                )
 
-                            yield blocks, cells
+                                # Step 3: Extract characters from pdfminer
+                                chars = []
 
-                        except (RuntimeError, ValueError, OSError, MemoryError) as e:
-                            logger.error("Hybrid extraction failed for page %d: %s", page_num, e)
-                            self._record_failed_page(page_num, str(e))
-                            yield [], []
+                                def collect_chars(obj):
+                                    if isinstance(obj, LTChar):
+                                        chars.append(obj)
+                                    elif isinstance(obj, LTFigure):
+                                        for child in obj:
+                                            collect_chars(child)
+                                    elif hasattr(obj, '__iter__'):
+                                        for child in obj:
+                                            collect_chars(child)
+
+                                if ltpage:
+                                    collect_chars(ltpage)
+
+                                if not chars:
+                                    reason = "No embedded text detected (scanned PDFs are not supported)"
+                                    logger.warning(
+                                        "Hybrid extraction skipped page %d: %s",
+                                        page_num,
+                                        reason,
+                                    )
+                                    self._record_failed_page(page_num, reason)
+
+                                # Step 4: Group characters using PP-DocLayout-L layout
+                                if chars:
+                                    blocks = self._group_chars_into_blocks(
+                                        chars, p_idx, LTChar,
+                                        layout=layout_array,
+                                        page_height=p_height
+                                    )
+                                else:
+                                    blocks = []
+
+                                # Step 5: Create TranslationCells from PP-DocLayout-L results
+                                cells = prepare_translation_cells(results, page_num)
+
+                                # Step 6: If pdfminer got text, update cells with it
+                                if blocks:
+                                    self._merge_pdfminer_text_to_cells(
+                                        blocks, cells, layout_array, p_height, dpi
+                                    )
+
+                                # Convert cells to TextBlocks if no pdfminer blocks
+                                if not blocks:
+                                    for cell in cells:
+                                        if cell.text and self.should_translate(cell.text):
+                                            blocks.append(TextBlock(
+                                                id=cell.address,
+                                                text=cell.text,
+                                                location=f"Page {page_num}",
+                                                metadata={
+                                                    'type': 'ocr_cell',
+                                                    'page_idx': page_num - 1,
+                                                    'address': cell.address,
+                                                    'bbox': cell.box,
+                                                    'direction': cell.direction,
+                                                    'role': cell.role,
+                                                }
+                                            ))
+
+                                yield blocks, cells
+
+                            except (RuntimeError, ValueError, OSError, MemoryError) as e:
+                                logger.error("Hybrid extraction failed for page %d: %s", page_num, e)
+                                self._record_failed_page(page_num, str(e))
+                                yield [], []
+
+                        # Clear batch for next iteration
+                        batch_data = []
 
             if self._failed_pages:
                 logger.warning("Hybrid extraction completed with %d failed pages: %s",
@@ -2797,6 +2907,74 @@ class PdfProcessor(FileProcessor):
         if batch:
             yield batch
             converter.pages.clear()
+
+    def _iterate_pages_unified(
+        self,
+        file_path: Path,
+        document,
+        PDFPage,
+        interpreter,
+        converter,
+        dpi: int,
+    ) -> Iterator[tuple[int, Any, Any, float]]:
+        """
+        Unified iterator for PDF pages - synchronizes pypdfium2 images and pdfminer data.
+
+        This replaces the previous approach of using zip() on two independent iterators,
+        which could cause synchronization issues if either iterator ended early.
+
+        Args:
+            file_path: Path to PDF file
+            document: pdfminer PDFDocument
+            PDFPage: pdfminer PDFPage class
+            interpreter: pdfminer PDFPageInterpreter
+            converter: pdfminer PDFConverterEx
+            dpi: Resolution for image rendering
+
+        Yields:
+            (page_idx, image, ltpage, page_height) for each page
+            - page_idx: 0-indexed page number
+            - image: BGR numpy array from pypdfium2
+            - ltpage: pdfminer LTPage object
+            - page_height: Page height in PDF points
+        """
+        np = _get_numpy()
+
+        with _open_pdf_document(str(file_path)) as pdf:
+            pdf_page_count = len(pdf)
+
+            for page_idx, pdfminer_page in enumerate(PDFPage.create_pages(document)):
+                # Safety check: ensure page index is within pypdfium2 document bounds
+                if page_idx >= pdf_page_count:
+                    logger.warning(
+                        "Page index %d exceeds pypdfium2 page count %d, stopping iteration",
+                        page_idx, pdf_page_count
+                    )
+                    break
+
+                # Get page dimensions from pdfminer
+                x0, y0, x1, y1 = (
+                    pdfminer_page.cropbox
+                    if hasattr(pdfminer_page, 'cropbox')
+                    else pdfminer_page.mediabox
+                )
+                page_height = abs(y1 - y0)
+
+                # Process page with pdfminer
+                interpreter.process_page(pdfminer_page)
+                ltpage = converter.pages[-1] if converter.pages else None
+
+                # Render page image with pypdfium2
+                pdf_page = pdf[page_idx]
+                bitmap = pdf_page.render(scale=dpi / 72)
+                img = bitmap.to_numpy()
+                # RGB to BGR (OpenCV compatible)
+                img = img[:, :, ::-1].copy()
+
+                yield (page_idx, img, ltpage, page_height)
+
+                # Clear converter.pages to free memory
+                converter.pages.clear()
 
     def _merge_pdfminer_text_to_cells(
         self,

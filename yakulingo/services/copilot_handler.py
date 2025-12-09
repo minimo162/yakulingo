@@ -1460,6 +1460,11 @@ class CopilotHandler:
         """Implementation of disconnect that runs in the Playwright thread."""
         from contextlib import suppress
 
+        # Save storage_state before closing browser (moved from translation methods
+        # to avoid window activation during translation completion)
+        with suppress(Exception):
+            self._save_storage_state()
+
         self._connected = False
         self._gpt5_enabled = False  # 再接続時に再チェックするためリセット
 
@@ -1711,10 +1716,8 @@ class CopilotHandler:
                     "Copilotから翻訳結果を取得できませんでした。Edgeブラウザの状態を確認して再試行してください。"
                 )
 
-            # Save storage_state after successful translation (session is confirmed valid)
-            self._save_storage_state()
-
             # Minimize browser after a successful translation to avoid stealing focus
+            # Note: storage_state is saved on disconnect() to avoid window activation
             try:
                 self._send_to_background_impl(self._page)
             except Exception:
@@ -1893,10 +1896,8 @@ class CopilotHandler:
                     "Copilotから翻訳結果を取得できませんでした。Edgeブラウザの状態を確認して再試行してください。"
                 )
 
-            # Save storage_state after successful translation
-            self._save_storage_state()
-
             # Minimize browser after a successful translation to keep it in background
+            # Note: storage_state is saved on disconnect() to avoid window activation
             try:
                 self._send_to_background_impl(self._page)
             except Exception:

@@ -2898,9 +2898,20 @@ class PdfProcessor(FileProcessor):
             else:
                 # PDFMathTranslate compliant: Use layout class for paragraph detection
                 if use_layout and xt_cls is not None:
-                    # If layout class changes, it's a new paragraph
-                    if char_cls != xt_cls or char_cls == LAYOUT_BACKGROUND:
-                        new_paragraph = True
+                    # If layout class changes, check if new paragraph
+                    if char_cls != xt_cls:
+                        # Both are in detected regions (not BACKGROUND) -> new paragraph
+                        if char_cls != LAYOUT_BACKGROUND and xt_cls != LAYOUT_BACKGROUND:
+                            new_paragraph = True
+                        else:
+                            # One or both are BACKGROUND -> use Y-coordinate based detection
+                            y_diff = abs(char_y0 - prev_y0)
+                            if y_diff > SAME_PARA_Y_THRESHOLD:
+                                new_paragraph = True
+                            elif y_diff > SAME_LINE_Y_THRESHOLD:
+                                line_break = True
+                            elif char_x1 < prev_x0 - LINE_BREAK_X_THRESHOLD:
+                                line_break = True
                     else:
                         # Same region - check for line break
                         if char_x1 < prev_x0 - LINE_BREAK_X_THRESHOLD:

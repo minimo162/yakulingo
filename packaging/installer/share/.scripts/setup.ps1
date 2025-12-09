@@ -224,11 +224,7 @@ function Prepare-TempWorkspace {
         [string]$ZipFileName
     )
 
-    # Clean up old temp folders using cmd /c rd (faster, avoids PowerShell enumeration)
-    Get-ChildItem -Path $env:TEMP -Directory -Filter "YakuLingo_Setup_*" -ErrorAction SilentlyContinue | ForEach-Object {
-        & cmd /c "rd /s /q `"$($_.FullName)`" 2>nul"
-    }
-
+    # Create new temp folder with timestamp (old folders are cleaned up by Windows automatically)
     $TempZipDir = Join-Path $env:TEMP "YakuLingo_Setup_$(Get-Date -Format 'yyyyMMddHHmmss')"
     New-Item -ItemType Directory -Path $TempZipDir -Force | Out-Null
 

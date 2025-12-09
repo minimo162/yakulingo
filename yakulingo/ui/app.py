@@ -623,9 +623,6 @@ class YakuLingoApp:
             with self._client:
                 ui.notify('Ready', type='positive', position='bottom-right', timeout=2000)
 
-        # Start hotkey manager for quick translation (Ctrl+J)
-        self.start_hotkey_manager()
-
     async def _wait_for_login_completion(self):
         """ログイン完了をバックグラウンドでポーリング待機。
 
@@ -2824,6 +2821,9 @@ document.fonts.ready.then(function() {
         _t_ui = _time_module.perf_counter()
         yakulingo_app.create_ui()
         logger.info("[TIMING] create_ui(): %.2fs", _time_module.perf_counter() - _t_ui)
+
+        # Start hotkey manager immediately after UI is displayed (doesn't need connection)
+        yakulingo_app.start_hotkey_manager()
 
         # Start Edge connection AFTER UI is displayed
         asyncio.create_task(yakulingo_app.start_edge_and_connect())

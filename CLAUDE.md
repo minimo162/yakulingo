@@ -821,7 +821,7 @@ PDF翻訳ではPDFMathTranslate準拠の単一パス処理を使用します：
 │                                                             │
 │ 4. apply_translations: TextBlockから直接座標取得            │
 │    - text_blocksパラメータで受け取り                        │
-│    - TranslationCellは廃止（後方互換性のみ維持）             │
+│    - TranslationCellは廃止予定（DeprecationWarning発生）     │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -888,8 +888,8 @@ char_cls = get_layout_class_at_pdf_coord(
     layout_array,      # NumPy array from LayoutArray
     pdf_x=char.x0,     # PDF X coordinate
     pdf_y=char.y1,     # PDF Y coordinate (top of char)
-    page_height=842,   # Page height in PDF points
-    scale=2.78,        # layout_height / page_height
+    page_height=842,   # Page height in PDF points (must be > 0)
+    scale=2.78,        # layout_height / page_height (must be > 0)
     layout_width=1654,
     layout_height=2339,
 )
@@ -905,6 +905,11 @@ img_y = (page_height - pdf_y) * scale
 pdf_x = img_x / scale
 pdf_y = page_height - (img_y / scale)
 ```
+
+**入力バリデーション (PDFMathTranslate準拠):**
+- `page_height > 0`: 必須。0以下の場合は`ValueError`を発生
+- `scale > 0`: 必須。0以下の場合は`ValueError`を発生
+- `get_layout_class_at_pdf_coord()`: 無効なパラメータの場合、例外ではなく`LAYOUT_BACKGROUND`を返す（グレースフルフォールバック）
 
 **PDF Text Rendering (Low-level API):**
 
@@ -1043,12 +1048,14 @@ Based on recent commits:
 - **PDF Translation Improvements (PDFMathTranslate compliant)**:
   - **PP-DocLayout-L**: レイアウト解析にPP-DocLayout-Lを使用（Apache-2.0、商用利用可）
   - **単一パス抽出**: pdfminer + PP-DocLayout-L → TextBlock（二重変換を排除）
-  - **TranslationCell廃止**: TextBlockベースに移行、apply_translationsにtext_blocksパラメータ追加
+  - **TranslationCell廃止予定**: TextBlockベースに移行、apply_translationsにtext_blocksパラメータ追加。TranslationCell使用時はDeprecationWarning発生
   - **Existing font reuse**: Detect and reuse CID/Simple fonts already embedded in PDF
   - **pdfminer.six integration**: Font type detection for correct text encoding
   - **Low-level API only**: Removed high-level API fallback for consistent rendering
   - **Font type encoding**: EMBEDDED→glyph ID, CID→4-digit hex, SIMPLE→2-digit hex
-  - **Coordinate system utilities**: 型安全な座標変換ユーティリティを追加（`PdfCoord`, `ImageCoord`, `pdf_to_image_coord`, `get_layout_class_at_pdf_coord`）
+  - **Coordinate system utilities**: 型安全な座標変換ユーティリティを追加（`PdfCoord`, `ImageCoord`, `pdf_to_image_coord`, `get_layout_class_at_pdf_coord`）。page_height/scaleのゼロ除算チェック追加
+  - **Input validation**: 座標変換関数にpage_height > 0、scale > 0のバリデーション追加。無効な場合はValueError発生（get_layout_class_at_pdf_coordは例外的にLAYOUT_BACKGROUNDを返す）
+  - **Font availability check**: FontInfoに`is_available`プロパティを追加。フォント埋め込み失敗時の警告ログを強化
   - **Empty LayoutArray fallback**: PP-DocLayout-Lが検出結果を返さない場合のY座標フォールバックを改善・ログ追加
   - **Text merging**: LayoutArrayを参照して文字を段落にグループ化（_group_chars_into_blocks）
 - **Font Settings Simplification**:

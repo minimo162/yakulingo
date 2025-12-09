@@ -370,6 +370,19 @@ class FontInfo:
     is_cjk: bool           # Is CJK font
     font_type: FontType = FontType.EMBEDDED  # Font type for encoding selection
 
+    @property
+    def is_available(self) -> bool:
+        """
+        Check if font is available for use.
+
+        PDFMathTranslate compliant: A font is available if it has a valid path.
+        Fonts without paths cannot be embedded and will cause rendering failures.
+
+        Returns:
+            True if font has a valid path, False otherwise
+        """
+        return self.path is not None
+
 
 # =============================================================================
 # Font Registry (PDFMathTranslate compliant)

@@ -3262,3 +3262,79 @@ class TestCoordinateConversion:
 
         # Should return BACKGROUND (clipped to valid range)
         assert result == LAYOUT_BACKGROUND
+
+    def test_pdf_to_image_coord_invalid_page_height(self):
+        """Test that invalid page_height raises ValueError"""
+        from yakulingo.processors.pdf_converter import pdf_to_image_coord
+
+        with pytest.raises(ValueError, match="Invalid page_height"):
+            pdf_to_image_coord(100, 700, page_height=0, scale=1.0)
+
+        with pytest.raises(ValueError, match="Invalid page_height"):
+            pdf_to_image_coord(100, 700, page_height=-100, scale=1.0)
+
+    def test_pdf_to_image_coord_invalid_scale(self):
+        """Test that invalid scale raises ValueError"""
+        from yakulingo.processors.pdf_converter import pdf_to_image_coord
+
+        with pytest.raises(ValueError, match="Invalid scale"):
+            pdf_to_image_coord(100, 700, page_height=842, scale=0)
+
+        with pytest.raises(ValueError, match="Invalid scale"):
+            pdf_to_image_coord(100, 700, page_height=842, scale=-1.0)
+
+    def test_image_to_pdf_coord_invalid_page_height(self):
+        """Test that invalid page_height raises ValueError"""
+        from yakulingo.processors.pdf_converter import image_to_pdf_coord
+
+        with pytest.raises(ValueError, match="Invalid page_height"):
+            image_to_pdf_coord(100, 142, page_height=0, scale=1.0)
+
+    def test_image_to_pdf_coord_invalid_scale(self):
+        """Test that invalid scale raises ValueError"""
+        from yakulingo.processors.pdf_converter import image_to_pdf_coord
+
+        with pytest.raises(ValueError, match="Invalid scale"):
+            image_to_pdf_coord(100, 142, page_height=842, scale=0)
+
+    def test_get_layout_class_at_pdf_coord_invalid_params(self):
+        """Test that invalid params return BACKGROUND instead of raising"""
+        import numpy as np
+        from yakulingo.processors.pdf_converter import get_layout_class_at_pdf_coord
+        from yakulingo.processors.pdf_layout import LAYOUT_BACKGROUND
+
+        layout_array = np.ones((100, 100), dtype=np.uint16)
+
+        # Invalid page_height should return BACKGROUND (graceful fallback)
+        result = get_layout_class_at_pdf_coord(
+            layout_array=layout_array,
+            pdf_x=50,
+            pdf_y=50,
+            page_height=0,  # Invalid
+            scale=1.0,
+            layout_width=100,
+            layout_height=100,
+        )
+        assert result == LAYOUT_BACKGROUND
+
+        # Invalid scale should return BACKGROUND (graceful fallback)
+        result = get_layout_class_at_pdf_coord(
+            layout_array=layout_array,
+            pdf_x=50,
+            pdf_y=50,
+            page_height=100,
+            scale=0,  # Invalid
+            layout_width=100,
+            layout_height=100,
+        )
+        assert result == LAYOUT_BACKGROUND
+
+    def test_convert_to_pdf_coordinates_invalid_page_height(self):
+        """Test that invalid page_height raises ValueError in convert_to_pdf_coordinates"""
+        from yakulingo.processors.pdf_processor import convert_to_pdf_coordinates
+
+        with pytest.raises(ValueError, match="Invalid page_height"):
+            convert_to_pdf_coordinates([100, 100, 200, 150], page_height=0)
+
+        with pytest.raises(ValueError, match="Invalid page_height"):
+            convert_to_pdf_coordinates([100, 100, 200, 150], page_height=-100)

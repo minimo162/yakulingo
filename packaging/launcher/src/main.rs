@@ -47,8 +47,13 @@ fn run() -> Result<(), String> {
 
     // Check if already running
     if is_app_running(APP_PORT) {
-        log_event(&log_path, "Application already running - aborting launch");
-        show_info("YakuLingo is already running.");
+        log_event(
+            &log_path,
+            "Application already running - focusing existing window",
+        );
+        if !bring_window_to_front() {
+            show_info("YakuLingo is already running.");
+        }
         return Ok(());
     }
 
@@ -81,6 +86,78 @@ fn run() -> Result<(), String> {
     log_event(&log_path, "Launch command issued successfully");
 
     Ok(())
+}
+
+/// Attempt to bring existing YakuLingo window to the foreground when already running.
+#[cfg(windows)]
+fn bring_window_to_front() -> bool {
+    use std::ffi::OsString;
+    use std::os::windows::ffi::OsStringExt;
+    use winapi::shared::minwindef::{BOOL, LPARAM};
+    use winapi::shared::windef::HWND;
+    use winapi::um::winuser::{
+        EnumWindows, GetForegroundWindow, GetWindowTextLengthW, GetWindowTextW, IsIconic,
+        SetForegroundWindow, ShowWindow, SW_RESTORE, SW_SHOW,
+    };
+
+    #[derive(Default)]
+    struct WindowSearch {
+        handle: Option<HWND>,
+    }
+
+    unsafe extern "system" fn enum_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
+        let search = &mut *(lparam as *mut WindowSearch);
+
+        // Skip invisible windows
+        if GetWindowTextLengthW(hwnd) == 0 {
+            return 1; // TRUE to continue
+        }
+
+        let length = GetWindowTextLengthW(hwnd) as usize;
+        let mut buffer = vec![0u16; length + 1];
+        let read_len = GetWindowTextW(hwnd, buffer.as_mut_ptr(), buffer.len() as i32);
+        if read_len <= 0 {
+            return 1;
+        }
+
+        buffer.truncate(read_len as usize);
+        let title = OsString::from_wide(&buffer).to_string_lossy().to_string();
+
+        if title.contains("YakuLingo") {
+            search.handle = Some(hwnd);
+            return 0; // FALSE to stop enumeration
+        }
+
+        1
+    }
+
+    let mut search = WindowSearch::default();
+    let search_ptr: *mut WindowSearch = &mut search;
+
+    unsafe {
+        EnumWindows(Some(enum_proc), search_ptr as LPARAM);
+
+        if let Some(hwnd) = search.handle {
+            if IsIconic(hwnd) != 0 {
+                ShowWindow(hwnd, SW_RESTORE);
+            } else {
+                ShowWindow(hwnd, SW_SHOW);
+            }
+
+            if GetForegroundWindow() != hwnd {
+                SetForegroundWindow(hwnd);
+            }
+
+            return true;
+        }
+    }
+
+    false
+}
+
+#[cfg(not(windows))]
+fn bring_window_to_front() -> bool {
+    false
 }
 
 fn init_log_path(base_dir: &PathBuf) -> Option<PathBuf> {

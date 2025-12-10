@@ -24,12 +24,13 @@ logger = logging.getLogger(__name__)
 _RE_MULTI_OPTION = re.compile(r'\[(\d+)\]\s*\**訳文\**[:：]\s*(.+?)\s*\**解説\**[:：]\s*(.+?)(?=\[\d+\]|$)', re.DOTALL)
 
 # Translation text pattern - supports multiple formats:
-# - Japanese: 訳文, 翻訳, 訳 (colon optional - Copilot often omits it)
+# - Japanese: 訳文, 翻訳 (colon optional - Copilot often omits it)
+#   NOTE: 「訳」単体は「英訳」「和訳」等にマッチしてしまうため除外
 # - English: Translation, Translated (colon REQUIRED to avoid false matches)
 # - Formats: "訳文:", "**訳文:**", "[訳文]", "### 訳文:", "> 訳文:", "Translation:"
 _RE_TRANSLATION_TEXT = re.compile(
     r'[#>*\s-]*[\[\(]?\**(?:'
-    r'(?:訳文|翻訳|訳)[:：]?'  # Japanese labels - colon optional
+    r'(?:訳文|翻訳)[:：]?'  # Japanese labels - colon optional (訳 removed to avoid 英訳/和訳 match)
     r'|(?:Translation|Translated)[:：]'  # English labels - colon REQUIRED
     r')\**[\]\)]?\s*'
     r'(.+?)'

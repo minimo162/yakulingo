@@ -1425,6 +1425,31 @@ The 18.3 trillion yen supplementary budget proposal is under review. Opposition 
         assert "concerns about worsening fiscal health" in options[0].text
         assert "システムが回答冒頭" in options[0].explanation
 
+    def test_parse_avoids_english_translation_metadata_leak(self, service):
+        """Ensure 英訳/和訳 in preamble doesn't cause metadata to leak into translation.
+
+        Regression test for bug where "の英訳（簡潔・略語活用...）" in Copilot's
+        preamble would match the old 「訳」 pattern, causing metadata to leak.
+        """
+        raw = """ユーザーの依頼内容：「グーグルの『Gemini 3 Pro』、高度な視覚・空間認識で18世紀の帳簿もデータ化」の英訳（簡潔・略語活用・記号変換・段落保持・用語集参照）
+
+訳文: Google's Gemini 3 Pro digitizes even 18th-century ledgers using advanced visual and spatial recognition.
+
+解説:
+
+この表現を選んだ理由：原文の要点（製品名・技術・対象物）を簡潔にまとめ、冗長な説明を省略しました。"""
+
+        options = service._parse_single_translation_result(raw)
+
+        assert len(options) == 1
+        # Translation should NOT contain metadata from preamble
+        assert "簡潔" not in options[0].text
+        assert "略語活用" not in options[0].text
+        assert "記号変換" not in options[0].text
+        # Translation should start with the actual content
+        assert options[0].text.startswith("Google's Gemini 3 Pro")
+        assert "この表現を選んだ理由" in options[0].explanation
+
 
 class TestParseSingleOptionResult:
     """Tests for TranslationService._parse_single_option_result()"""

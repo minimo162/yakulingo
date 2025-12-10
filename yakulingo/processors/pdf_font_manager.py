@@ -24,6 +24,20 @@ logger = logging.getLogger(__name__)
 
 
 # =============================================================================
+# PyMuPDF Built-in Fonts (Fallback)
+# =============================================================================
+# These fonts are embedded in PyMuPDF and always available (no file needed)
+# Used as last resort when system fonts are not found
+# Note: These are Base-14 fonts and do NOT support CJK characters
+PYMUPDF_BUILTIN_FONTS = {
+    "en": "helv",   # Helvetica - for English text
+    "ja": "helv",   # No CJK support, but better than invisible text
+    "zh-CN": "helv",
+    "ko": "helv",
+}
+
+
+# =============================================================================
 # Font Path Cache (module-level for performance)
 # =============================================================================
 # Cache for font file path lookups (font_name -> path or None)
@@ -200,24 +214,26 @@ def _find_font_file(font_names: list[str]) -> Optional[str]:
 # Display name to font file mapping (for UI font selection)
 FONT_NAME_TO_FILES = {
     # Japanese fonts
-    "MS P明朝": ["mspmincho.ttc", "MS PMincho.ttf"],
+    # Note: MS P明朝/MS Pゴシック are included in msmincho.ttc/msgothic.ttc
+    # (there is no separate mspmincho.ttc/mspgothic.ttc file)
+    "MS P明朝": ["msmincho.ttc", "MS Mincho.ttf"],
     "MS 明朝": ["msmincho.ttc", "MS Mincho.ttf"],
-    "MS Pゴシック": ["mspgothic.ttc", "MS PGothic.ttf"],
+    "MS Pゴシック": ["msgothic.ttc", "MS Gothic.ttf"],
     "MS ゴシック": ["msgothic.ttc", "MS Gothic.ttf"],
-    "Meiryo UI": ["meiryoui.ttf", "Meiryo UI.ttf"],
+    "Meiryo UI": ["meiryoui.ttc", "MeiryoUI-Regular.ttf"],
     "メイリオ": ["meiryo.ttc", "Meiryo.ttf"],
-    "Yu Gothic UI": ["YuGothUI.ttc", "Yu Gothic UI.ttf"],
-    "游ゴシック": ["YuGothic.ttc", "Yu Gothic.ttf"],
+    "Yu Gothic UI": ["YuGothB.ttc", "YuGothM.ttc", "YuGothR.ttc"],
+    "游ゴシック": ["YuGothB.ttc", "YuGothM.ttc", "YuGothR.ttc"],
     "游明朝": ["YuMincho.ttc", "Yu Mincho.ttf"],
-    "IPA明朝": ["ipam.ttf", "IPAMincho.ttf"],
-    "IPAゴシック": ["ipag.ttf", "IPAGothic.ttf"],
+    "IPA明朝": ["ipam.ttf", "IPAMincho.ttf", "ipaexm.ttf"],
+    "IPAゴシック": ["ipag.ttf", "IPAGothic.ttf", "ipaexg.ttf"],
     # English fonts
-    "Arial": ["arial.ttf", "Arial.ttf"],
-    "Calibri": ["calibri.ttf", "Calibri.ttf"],
-    "Times New Roman": ["times.ttf", "Times.ttf", "timesbd.ttf"],
-    "Segoe UI": ["segoeui.ttf", "Segoe UI.ttf"],
-    "Verdana": ["verdana.ttf", "Verdana.ttf"],
-    "Tahoma": ["tahoma.ttf", "Tahoma.ttf"],
+    "Arial": ["arial.ttf", "Arial.ttf", "ARIAL.TTF"],
+    "Calibri": ["calibri.ttf", "Calibri.ttf", "CALIBRI.TTF"],
+    "Times New Roman": ["times.ttf", "Times.ttf", "TIMES.TTF", "timesbd.ttf"],
+    "Segoe UI": ["segoeui.ttf", "Segoe UI.ttf", "SEGOEUI.TTF"],
+    "Verdana": ["verdana.ttf", "Verdana.ttf", "VERDANA.TTF"],
+    "Tahoma": ["tahoma.ttf", "Tahoma.ttf", "TAHOMA.TTF"],
 }
 
 
@@ -240,20 +256,22 @@ def get_font_path_by_name(font_name: str) -> Optional[str]:
 
 
 # Font file names by language (cross-platform)
-# Default: Japanese = MS P明朝, English = Arial
+# Default: Japanese = MS Pゴシック/MS P明朝, English = Arial
 # Priority order: Windows fonts first, then Linux/cross-platform fonts
+# Note: MS Pゴシック/MS P明朝 are included in msgothic.ttc/msmincho.ttc
+# (there are no separate mspgothic.ttc/mspmincho.ttc files)
 FONT_FILES = {
     "ja": {
         "primary": [
-            # Windows fonts
-            "mspmincho.ttc", "MS PMincho.ttf",  # MS P明朝 (default Windows)
-            "msmincho.ttc", "MS Mincho.ttf",
-            "mspgothic.ttc", "MS PGothic.ttf",
-            "msgothic.ttc", "MS Gothic.ttf",
+            # Windows fonts (correct file names)
+            "msgothic.ttc", "MSGOTHIC.TTC",  # Contains MS ゴシック, MS Pゴシック, MS UI Gothic
+            "msmincho.ttc", "MSMINCHO.TTC",  # Contains MS 明朝, MS P明朝
+            "meiryo.ttc", "MEIRYO.TTC",      # メイリオ
+            "YuGothM.ttc", "YuGothR.ttc",    # 游ゴシック
             # Linux/cross-platform fonts (IPA fonts)
-            "ipag.ttf", "IPAGothic.ttf",  # IPAゴシック (common on Linux)
+            "ipag.ttf", "IPAGothic.ttf", "ipaexg.ttf",  # IPAゴシック
             "ipagp.ttf", "IPAPGothic.ttf",  # IPAPゴシック
-            "ipam.ttf", "IPAMincho.ttf",  # IPA明朝
+            "ipam.ttf", "IPAMincho.ttf", "ipaexm.ttf",  # IPA明朝
             "fonts-japanese-gothic.ttf",  # Debian/Ubuntu symlink
             # Noto fonts (cross-platform)
             "NotoSansJP-Regular.ttf", "NotoSerifJP-Regular.ttf",
@@ -267,10 +285,10 @@ FONT_FILES = {
     },
     "en": {
         "primary": [
-            # Windows fonts
-            "arial.ttf", "Arial.ttf",  # Arial (default Windows)
-            "calibri.ttf", "Calibri.ttf",
-            "segoeui.ttf", "Segoe UI.ttf",
+            # Windows fonts (include uppercase variants for case-sensitive systems)
+            "arial.ttf", "Arial.ttf", "ARIAL.TTF",  # Arial
+            "calibri.ttf", "Calibri.ttf", "CALIBRI.TTF",
+            "segoeui.ttf", "Segoe UI.ttf", "SEGOEUI.TTF",
             # Linux/cross-platform fonts
             "DejaVuSans.ttf",  # Common on Linux
             "LiberationSans-Regular.ttf",  # Free alternative to Arial
@@ -279,7 +297,7 @@ FONT_FILES = {
             "NotoSans-Regular.ttf",
         ],
         "fallback": [
-            "times.ttf", "Times.ttf", "Times New Roman.ttf",
+            "times.ttf", "Times.ttf", "TIMES.TTF", "Times New Roman.ttf",
             "DejaVuSerif.ttf",
             "LiberationSerif-Regular.ttf",
             "FreeSerif.ttf",
@@ -472,21 +490,25 @@ class FontRegistry:
             if font_path:
                 logger.debug("Using system font for %s: %s", lang, font_path)
 
+        # Determine fallback font (used if font_path is None)
+        builtin_fallback = None
         if not font_path:
+            builtin_fallback = PYMUPDF_BUILTIN_FONTS.get(lang, "helv")
             if lang not in self._missing_fonts:
                 self._missing_fonts.add(lang)
                 logger.warning(
                     "No font found for language '%s'. "
-                    "PDF text may not render correctly. "
-                    "Install a font for this language or check font settings.",
-                    lang
+                    "Using PyMuPDF built-in font '%s'. "
+                    "Note: Built-in fonts do NOT support CJK characters. "
+                    "Install a font for this language for proper rendering.",
+                    lang, builtin_fallback
                 )
 
         font_info = FontInfo(
             font_id=font_id,
             family=config["family"],
             path=font_path,
-            fallback=None,
+            fallback=builtin_fallback,
             encoding=config["encoding"],
             is_cjk=config["is_cjk"],
             font_type=FontType.EMBEDDED,  # Newly embedded font
@@ -496,22 +518,27 @@ class FontRegistry:
         self._font_by_id[font_id] = font_info
 
         # Create PyMuPDF Font object for glyph lookup (character width calculation)
-        if font_path:
-            try:
-                pymupdf = _get_pymupdf()
+        # This is critical - without Font object, all text renders as .notdef (invisible)
+        try:
+            pymupdf = _get_pymupdf()
+            if font_path:
                 # PyMuPDF 1.26+ automatically handles TTC font collections
                 self._font_objects[font_id] = pymupdf.Font(fontfile=font_path)
                 logger.debug("Created Font object for %s: %s", font_id, font_path)
-            except (RuntimeError, ValueError, OSError, FileNotFoundError) as e:
-                # RuntimeError: PyMuPDF internal errors
-                # ValueError: Invalid font file format
-                # OSError: File access issues
-                # FileNotFoundError: Font file not found
-                logger.warning("Failed to create Font object for %s: %s", font_id, e)
-            except Exception as e:
-                # Catch PyMuPDF-specific exceptions (mupdf.FzErrorSystem, etc.)
-                # These don't inherit from standard exception types
-                logger.warning("Failed to create Font object for %s (PyMuPDF error): %s", font_id, e)
+            else:
+                # Use built-in font as fallback
+                self._font_objects[font_id] = pymupdf.Font(builtin_fallback)
+                logger.debug("Created Font object for %s using built-in: %s", font_id, builtin_fallback)
+        except (RuntimeError, ValueError, OSError, FileNotFoundError) as e:
+            # RuntimeError: PyMuPDF internal errors
+            # ValueError: Invalid font file format
+            # OSError: File access issues
+            # FileNotFoundError: Font file not found
+            logger.warning("Failed to create Font object for %s: %s", font_id, e)
+        except Exception as e:
+            # Catch PyMuPDF-specific exceptions (mupdf.FzErrorSystem, etc.)
+            # These don't inherit from standard exception types
+            logger.warning("Failed to create Font object for %s (PyMuPDF error): %s", font_id, e)
 
         return font_id
 
@@ -964,12 +991,9 @@ class FontRegistry:
                 fallback_path = None
                 fallback_tried = []
 
-                # Determine language from FontInfo
-                font_lang = "en"  # Default
-                if font_info.family:
-                    family_lower = font_info.family.lower()
-                    if any(jp in family_lower for jp in ["ms p", "gothic", "mincho", "noto"]):
-                        font_lang = "ja"
+                # Determine language from lang key (e.g., "ja", "en", "zh-CN")
+                # Use the lang key directly since it's the registered language
+                font_lang = lang if lang in self.FONT_CONFIG else "en"
 
                 # Try language-specific fallback
                 fallback_path = get_font_path_for_lang(font_lang)
@@ -989,20 +1013,35 @@ class FontRegistry:
                     # Update FontInfo with fallback path
                     font_info.path = fallback_path
                 else:
+                    # Last resort: use PyMuPDF built-in font
+                    # These fonts don't support CJK but are always available
+                    builtin_font = PYMUPDF_BUILTIN_FONTS.get(lang, "helv")
                     logger.warning(
-                        "No font path available for '%s' (lang=%s, fallback tried: %s). "
-                        "Text rendering will likely fail.",
-                        font_info.font_id, lang, fallback_tried
+                        "No system font available for '%s' (lang=%s, tried: %s). "
+                        "Using PyMuPDF built-in font '%s'. "
+                        "Note: Built-in fonts do NOT support CJK characters.",
+                        font_info.font_id, lang, fallback_tried, builtin_font
                     )
-                    failed_fonts.append(font_info.font_id)
-                    continue
+                    # Use built-in font (no font_path needed)
+                    font_path = None
+                    font_info.path = None
+                    font_info.fallback = builtin_font
 
             try:
-                # PyMuPDF 1.26+ automatically handles TTC font collections
-                xref = first_page.insert_font(
-                    fontname=font_info.font_id,
-                    fontfile=font_path,
-                )
+                # Embed font into PDF
+                if font_path:
+                    # PyMuPDF 1.26+ automatically handles TTC font collections
+                    xref = first_page.insert_font(
+                        fontname=font_info.font_id,
+                        fontfile=font_path,
+                    )
+                else:
+                    # Use PyMuPDF built-in font (no file needed)
+                    builtin_font = font_info.fallback or PYMUPDF_BUILTIN_FONTS.get(lang, "helv")
+                    xref = first_page.insert_font(
+                        fontname=font_info.font_id,
+                        fontbuffer=pymupdf.Font(builtin_font).buffer,
+                    )
                 self._font_xrefs[font_info.font_id] = xref
 
                 # Ensure Font object exists for glyph ID lookup
@@ -1010,7 +1049,12 @@ class FontRegistry:
                 # will render as .notdef (invisible)
                 if font_info.font_id not in self._font_objects:
                     try:
-                        self._font_objects[font_info.font_id] = pymupdf.Font(fontfile=font_path)
+                        if font_path:
+                            self._font_objects[font_info.font_id] = pymupdf.Font(fontfile=font_path)
+                        else:
+                            # Use built-in font
+                            builtin_font = font_info.fallback or PYMUPDF_BUILTIN_FONTS.get(lang, "helv")
+                            self._font_objects[font_info.font_id] = pymupdf.Font(builtin_font)
                         logger.debug("Created Font object in embed_fonts for %s", font_info.font_id)
                     except (RuntimeError, ValueError, OSError, FileNotFoundError) as e:
                         # RuntimeError: PyMuPDF internal errors

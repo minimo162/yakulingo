@@ -44,6 +44,10 @@ goto :no_proxy
 :: Use proxy
 set USE_PROXY=1
 echo.
+echo Enter proxy server address (press Enter for default):
+set /p PROXY_INPUT="Proxy server [!PROXY_SERVER!]: "
+if defined PROXY_INPUT set PROXY_SERVER=!PROXY_INPUT!
+echo.
 echo [INFO] Proxy server: !PROXY_SERVER!
 echo.
 call :prompt_proxy_credentials

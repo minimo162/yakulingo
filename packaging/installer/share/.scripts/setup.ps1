@@ -275,6 +275,14 @@ function Resolve-SetupPath {
         # Path does not exist yet; keep original
     }
 
+    # Debug: Log the resolved path
+    try {
+        "Resolve-SetupPath: InputPath='$InputPath' AppName='$AppName'" | Out-File -FilePath $debugLog -Append -Encoding UTF8
+        "Resolve-SetupPath: targetPath='$targetPath'" | Out-File -FilePath $debugLog -Append -Encoding UTF8
+        "Resolve-SetupPath: resolvedPath='$resolvedPath'" | Out-File -FilePath $debugLog -Append -Encoding UTF8
+        "Resolve-SetupPath: LOCALAPPDATA='$env:LOCALAPPDATA'" | Out-File -FilePath $debugLog -Append -Encoding UTF8
+    } catch { }
+
     $driveRoot = [System.IO.Path]::GetPathRoot($resolvedPath)
     if ($resolvedPath -eq $driveRoot) {
         throw "SetupPath points to a drive root. Please specify a subdirectory (e.g., $($env:LOCALAPPDATA)\\$AppName)."

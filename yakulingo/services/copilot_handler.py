@@ -2565,6 +2565,11 @@ class CopilotHandler:
                 send_success = False
 
                 for send_attempt in range(MAX_SEND_RETRIES):
+                    # Ensure input element has focus before pressing Enter
+                    try:
+                        input_elem.focus()
+                    except Exception:
+                        pass
                     input_elem.press("Enter")
                     time.sleep(SEND_RETRY_WAIT)
 

@@ -354,12 +354,16 @@ def prewarm_layout_model(device: str = "auto") -> bool:
                 model = get_layout_model(device)
 
                 # Perform dummy inference to trigger runtime initialization
-                # Note: LayoutDetection uses predict() method, not __call__
-                np = _get_numpy()
-                dummy_image = np.zeros((100, 100, 3), dtype=np.uint8)
-                _ = model.predict(dummy_image)
+                # Model initialization is the primary goal; predict() is optional
+                try:
+                    np = _get_numpy()
+                    dummy_image = np.zeros((100, 100, 3), dtype=np.uint8)
+                    _ = model.predict(dummy_image)
+                    logger.info("PP-DocLayout-L ウォームアップ完了")
+                except Exception as pred_err:
+                    # predict() may fail in some PaddleOCR versions, but model is initialized
+                    logger.debug("PP-DocLayout-L predict() failed (model still initialized): %s", pred_err)
 
-                logger.info("PP-DocLayout-L ウォームアップ完了")
                 return True
             except (RuntimeError, OSError, ValueError, MemoryError, TypeError) as e:
                 # RuntimeError: model/inference issues
@@ -367,6 +371,10 @@ def prewarm_layout_model(device: str = "auto") -> bool:
                 # ValueError: invalid image format
                 # MemoryError: insufficient GPU/CPU memory
                 logger.warning("PP-DocLayout-L ウォームアップ失敗: %s", e)
+                return False
+            except Exception as e:
+                # Catch any other exceptions from PaddleOCR internals
+                logger.warning("PP-DocLayout-L ウォームアップ失敗 (unexpected): %s", e)
                 return False
 
 

@@ -53,20 +53,23 @@ class PptxProcessor(FileProcessor):
     def get_file_info(self, file_path: Path) -> FileInfo:
         """Get PowerPoint file info (fast: slide count only, no text scanning)"""
         prs = Presentation(file_path)
+        try:
+            slide_count = len(prs.slides)
+            section_details = [
+                SectionDetail(index=idx, name=f"スライド {idx + 1}")
+                for idx in range(slide_count)
+            ]
 
-        slide_count = len(prs.slides)
-        section_details = [
-            SectionDetail(index=idx, name=f"スライド {idx + 1}")
-            for idx in range(slide_count)
-        ]
-
-        return FileInfo(
-            path=file_path,
-            file_type=FileType.POWERPOINT,
-            size_bytes=file_path.stat().st_size,
-            slide_count=slide_count,
-            section_details=section_details,
-        )
+            return FileInfo(
+                path=file_path,
+                file_type=FileType.POWERPOINT,
+                size_bytes=file_path.stat().st_size,
+                slide_count=slide_count,
+                section_details=section_details,
+            )
+        finally:
+            # python-pptx doesn't have close(), but we can help GC by deleting the reference
+            del prs
 
     def extract_text_blocks(
         self, file_path: Path, output_language: str = "en"
@@ -78,33 +81,36 @@ class PptxProcessor(FileProcessor):
             output_language: "en" for JP→EN, "jp" for EN→JP translation
         """
         prs = Presentation(file_path)
+        try:
+            for slide_idx, slide in enumerate(prs.slides):
+                counters = {'shape': 0, 'table': 0}
 
-        for slide_idx, slide in enumerate(prs.slides):
-            counters = {'shape': 0, 'table': 0}
+                for shape in slide.shapes:
+                    yield from self._extract_shape_text_blocks(
+                        shape,
+                        slide_idx,
+                        counters,
+                        output_language,
+                    )
 
-            for shape in slide.shapes:
-                yield from self._extract_shape_text_blocks(
-                    shape,
-                    slide_idx,
-                    counters,
-                    output_language,
-                )
-
-            # === Speaker Notes ===
-            if slide.has_notes_slide and slide.notes_slide.notes_text_frame:
-                notes_frame = slide.notes_slide.notes_text_frame
-                for para_idx, para in enumerate(notes_frame.paragraphs):
-                    if para.text and self.para_translator.should_translate(para.text, output_language):
-                        yield TextBlock(
-                            id=f"s{slide_idx}_notes_{para_idx}",
-                            text=para.text,
-                            location=f"Slide {slide_idx + 1}, Notes",
-                            metadata={
-                                'type': 'notes',
-                                'slide_idx': slide_idx,
-                                'para': para_idx,
-                            }
-                        )
+                # === Speaker Notes ===
+                if slide.has_notes_slide and slide.notes_slide.notes_text_frame:
+                    notes_frame = slide.notes_slide.notes_text_frame
+                    for para_idx, para in enumerate(notes_frame.paragraphs):
+                        if para.text and self.para_translator.should_translate(para.text, output_language):
+                            yield TextBlock(
+                                id=f"s{slide_idx}_notes_{para_idx}",
+                                text=para.text,
+                                location=f"Slide {slide_idx + 1}, Notes",
+                                metadata={
+                                    'type': 'notes',
+                                    'slide_idx': slide_idx,
+                                    'para': para_idx,
+                                }
+                            )
+        finally:
+            # python-pptx doesn't have close(), but we can help GC by deleting the reference
+            del prs
 
     def apply_translations(
         self,
@@ -122,36 +128,40 @@ class PptxProcessor(FileProcessor):
                               If None, all slides are processed.
         """
         prs = Presentation(input_path)
-        font_manager = FontManager(direction, settings)
+        try:
+            font_manager = FontManager(direction, settings)
 
-        # Convert selected_sections to a set for O(1) lookup
-        selected_set = set(selected_sections) if selected_sections is not None else None
+            # Convert selected_sections to a set for O(1) lookup
+            selected_set = set(selected_sections) if selected_sections is not None else None
 
-        for slide_idx, slide in enumerate(prs.slides):
-            # Skip slides not in selected_sections (if specified)
-            if selected_set is not None and slide_idx not in selected_set:
-                continue
+            for slide_idx, slide in enumerate(prs.slides):
+                # Skip slides not in selected_sections (if specified)
+                if selected_set is not None and slide_idx not in selected_set:
+                    continue
 
-            counters = {'shape': 0, 'table': 0}
+                counters = {'shape': 0, 'table': 0}
 
-            for shape in slide.shapes:
-                self._apply_translations_to_shape(
-                    shape,
-                    slide_idx,
-                    counters,
-                    translations,
-                    font_manager,
-                )
+                for shape in slide.shapes:
+                    self._apply_translations_to_shape(
+                        shape,
+                        slide_idx,
+                        counters,
+                        translations,
+                        font_manager,
+                    )
 
-            # === Apply to speaker notes ===
-            if slide.has_notes_slide and slide.notes_slide.notes_text_frame:
-                notes_frame = slide.notes_slide.notes_text_frame
-                for para_idx, para in enumerate(notes_frame.paragraphs):
-                    block_id = f"s{slide_idx}_notes_{para_idx}"
-                    if block_id in translations:
-                        self._apply_to_paragraph(para, translations[block_id], font_manager)
+                # === Apply to speaker notes ===
+                if slide.has_notes_slide and slide.notes_slide.notes_text_frame:
+                    notes_frame = slide.notes_slide.notes_text_frame
+                    for para_idx, para in enumerate(notes_frame.paragraphs):
+                        block_id = f"s{slide_idx}_notes_{para_idx}"
+                        if block_id in translations:
+                            self._apply_to_paragraph(para, translations[block_id], font_manager)
 
-        prs.save(output_path)
+            prs.save(output_path)
+        finally:
+            # python-pptx doesn't have close(), but we can help GC by deleting the reference
+            del prs
 
     def _extract_shape_text_blocks(
         self,
@@ -364,12 +374,15 @@ class PptxProcessor(FileProcessor):
         # Copy original file to output
         shutil.copy2(original_path, output_path)
 
-        # Count slides
+        # Count slides - ensure Presentation objects are cleaned up
         original_prs = Presentation(original_path)
         translated_prs = Presentation(translated_path)
-
-        original_slides = len(original_prs.slides)
-        translated_slides = len(translated_prs.slides)
+        try:
+            original_slides = len(original_prs.slides)
+            translated_slides = len(translated_prs.slides)
+        finally:
+            del original_prs
+            del translated_prs
 
         # For a proper interleaved approach, we'd need to manipulate the XML directly
         # For now, append translated slides after original slides with a separator
@@ -384,9 +397,12 @@ class PptxProcessor(FileProcessor):
             # Fallback: Just return the original file
             pass
 
-        # Recount after merge
+        # Recount after merge - ensure Presentation object is cleaned up
         result_prs = Presentation(output_path)
-        total_slides = len(result_prs.slides)
+        try:
+            total_slides = len(result_prs.slides)
+        finally:
+            del result_prs
 
         return {
             'original_slides': original_slides,

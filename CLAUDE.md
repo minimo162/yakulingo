@@ -1183,6 +1183,14 @@ When interacting with users in this repository, prefer Japanese for comments and
 ## Recent Development Focus
 
 Based on recent commits:
+- **English Check Feature Improvement (2024-12)**:
+  - **Japanese explanation output**: 英文チェック機能の解説を日本語で出力するよう修正（`text_check_my_english.txt`プロンプト更新）
+- **Copilot Login Detection Improvements (2024-12)**:
+  - **Early login page detection**: ログインページURLを早期検出してユーザーにログインを促す
+  - **Send button wait simplified**: 送信ボタン待機を短い固定遅延に置き換え（安定性向上）
+  - **Translation result parsing fix**: 翻訳結果パース時のCopilot出力混入を修正
+- **Text Translation UI Improvements (2024-12)**:
+  - **Text selection enabled**: 翻訳結果画面でテキスト選択を有効にする（コピペ可能に）
 - **NiceGUI 3.3 Compatibility (2024-12)**:
   - **LargeFileUpload support**: NiceGUI 3.3のファイルアップロード属性変更に対応（`content`プロパティ使用）
   - **File drop handling**: ドロップペイロードの型チェックを追加（string/LargeFileUpload両対応）

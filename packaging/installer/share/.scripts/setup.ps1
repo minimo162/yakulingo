@@ -33,11 +33,58 @@ $script:ShareDir = Split-Path -Parent $script:ScriptDir
 $script:AppName = "YakuLingo"
 
 # Find 7-Zip (optional, falls back to Expand-Archive if not found)
-$script:SevenZip = @(
-    "$env:ProgramFiles\7-Zip\7z.exe",
-    "${env:ProgramFiles(x86)}\7-Zip\7z.exe"
-) | Where-Object { Test-Path $_ } | Select-Object -First 1
+# Check multiple locations including registry for reliable detection
+$script:SevenZip = $null
 
+# Method 1: Check standard installation paths
+$standardPaths = @(
+    "$env:ProgramFiles\7-Zip\7z.exe",
+    "$env:ProgramW6432\7-Zip\7z.exe",
+    "${env:ProgramFiles(x86)}\7-Zip\7z.exe"
+)
+# Also check with explicit path construction for reliability
+$standardPaths += @(
+    [System.IO.Path]::Combine($env:ProgramFiles, "7-Zip", "7z.exe")
+)
+if ($env:ProgramW6432) {
+    $standardPaths += [System.IO.Path]::Combine($env:ProgramW6432, "7-Zip", "7z.exe")
+}
+$x86Path = [Environment]::GetFolderPath("ProgramFilesX86")
+if ($x86Path) {
+    $standardPaths += [System.IO.Path]::Combine($x86Path, "7-Zip", "7z.exe")
+}
+
+foreach ($path in $standardPaths | Select-Object -Unique) {
+    if ($path -and (Test-Path $path)) {
+        $script:SevenZip = $path
+        break
+    }
+}
+
+# Method 2: Check registry for installation path
+if (-not $script:SevenZip) {
+    $regPaths = @(
+        "HKLM:\SOFTWARE\7-Zip",
+        "HKLM:\SOFTWARE\WOW6432Node\7-Zip",
+        "HKCU:\SOFTWARE\7-Zip"
+    )
+    foreach ($regPath in $regPaths) {
+        try {
+            $installPath = (Get-ItemProperty -Path $regPath -Name "Path" -ErrorAction SilentlyContinue).Path
+            if ($installPath) {
+                $candidate = Join-Path $installPath "7z.exe"
+                if (Test-Path $candidate) {
+                    $script:SevenZip = $candidate
+                    break
+                }
+            }
+        } catch {
+            # Ignore registry access errors
+        }
+    }
+}
+
+# Method 3: Check PATH
 if (-not $script:SevenZip) {
     $script:SevenZip = (Get-Command "7z.exe" -ErrorAction SilentlyContinue).Source
 }
@@ -240,7 +287,8 @@ function Copy-FileBuffered {
         [string]$Source,
         [string]$Destination,
         [int]$BufferSize = 1MB,
-        [int]$MaxRetries = 4
+        [int]$MaxRetries = 4,
+        [scriptblock]$OnProgress = $null
     )
 
     $retryDelays = @(2, 4, 8, 16)  # Exponential backoff in seconds
@@ -252,7 +300,35 @@ function Copy-FileBuffered {
         try {
             $sourceStream = [System.IO.File]::Open($Source, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read)
             $destStream = [System.IO.File]::Create($Destination, $BufferSize)
-            $sourceStream.CopyTo($destStream, $BufferSize)
+            $totalBytes = $sourceStream.Length
+            $copiedBytes = 0
+            $buffer = New-Object byte[] $BufferSize
+            $lastProgressUpdate = [DateTime]::Now
+
+            while ($true) {
+                $bytesRead = $sourceStream.Read($buffer, 0, $BufferSize)
+                if ($bytesRead -eq 0) { break }
+                $destStream.Write($buffer, 0, $bytesRead)
+                $copiedBytes += $bytesRead
+
+                # Update progress every 200ms to avoid GUI overhead
+                $now = [DateTime]::Now
+                if (($now - $lastProgressUpdate).TotalMilliseconds -ge 200) {
+                    $lastProgressUpdate = $now
+                    if ($OnProgress) {
+                        & $OnProgress -CopiedBytes $copiedBytes -TotalBytes $totalBytes
+                    }
+                    # Keep GUI responsive
+                    if ($GuiMode) {
+                        [System.Windows.Forms.Application]::DoEvents()
+                    }
+                }
+            }
+
+            # Final progress update
+            if ($OnProgress) {
+                & $OnProgress -CopiedBytes $copiedBytes -TotalBytes $totalBytes
+            }
             return  # Success
         } catch {
             $lastError = $_
@@ -475,7 +551,21 @@ function Invoke-Setup {
 
     # Use .NET FileStream with large buffer for fast network file copy
     # 1MB buffer matches Explorer's copy performance better than robocopy for single large files
-    Copy-FileBuffered -Source $ZipFile -Destination $TempZipFile
+    # Progress callback updates GUI to prevent "Not Responding" state
+    $copyProgress = {
+        param([long]$CopiedBytes, [long]$TotalBytes)
+        if ($TotalBytes -gt 0) {
+            $percentComplete = [int](($CopiedBytes / $TotalBytes) * 100)
+            $copiedMB = [math]::Round($CopiedBytes / 1MB, 1)
+            $totalMB = [math]::Round($TotalBytes / 1MB, 1)
+            # Map to 30-50% of overall progress
+            $overallPercent = 30 + [int]($percentComplete * 0.2)
+            if ($GuiMode) {
+                Show-Progress -Title "YakuLingo Setup" -Status "Copying: ${copiedMB}MB / ${totalMB}MB" -Step "Step 2/4: Copying" -Percent $overallPercent
+            }
+        }
+    }
+    Copy-FileBuffered -Source $ZipFile -Destination $TempZipFile -OnProgress $copyProgress
 
     if (-not $GuiMode) {
         Write-Host "[OK] ZIP copied to temp folder" -ForegroundColor Green
@@ -485,27 +575,97 @@ function Invoke-Setup {
     # ============================================================
     # Step 3: Extract ZIP locally (much faster than over network)
     # ============================================================
-    Write-Status -Message "Extracting files..." -Progress -Step "Step 3/4: Extracting" -Percent 60
+    # Show extraction method in progress (helps diagnose slow extraction)
+    $extractMethod = if ($script:Use7Zip) { "7-Zip" } else { "Windows built-in (slower)" }
+    Write-Status -Message "Extracting files..." -Progress -Step "Step 3/4: Extracting ($extractMethod)" -Percent 55
     if (-not $GuiMode) {
         Write-Host ""
         Write-Host "[3/4] Extracting files locally..." -ForegroundColor Yellow
+        if (-not $script:Use7Zip) {
+            Write-Host "      [WARNING] 7-Zip not found - using Windows built-in extractor (5-10x slower)" -ForegroundColor Yellow
+        }
     }
 
     try {
         # Extract to temp folder first
         if ($script:Use7Zip) {
             if (-not $GuiMode) {
-                Write-Host "      Extracting with 7-Zip..." -ForegroundColor Gray
+                Write-Host "      Extracting with 7-Zip: $($script:SevenZip)" -ForegroundColor Gray
             }
-            & $script:SevenZip x "$TempZipFile" "-o$TempZipDir" -y -bso0 -bsp0 | Out-Null
-            if ($LASTEXITCODE -ne 0) {
-                throw "Failed to extract ZIP file.`n`nFile: $ZipFileName"
+            # Use 7-Zip with progress output (bsp1 = show progress)
+            # Run in background job to keep GUI responsive
+            if ($GuiMode) {
+                $extractJob = Start-Job -ScriptBlock {
+                    param($SevenZip, $TempZipFile, $TempZipDir)
+                    & $SevenZip x "$TempZipFile" "-o$TempZipDir" -y -bso0 -bsp0 2>&1
+                    return $LASTEXITCODE
+                } -ArgumentList $script:SevenZip, $TempZipFile, $TempZipDir
+
+                # Poll job status while keeping GUI responsive
+                $dotCount = 0
+                while ($extractJob.State -eq 'Running') {
+                    Start-Sleep -Milliseconds 300
+                    [System.Windows.Forms.Application]::DoEvents()
+                    $dotCount = ($dotCount + 1) % 4
+                    $dots = "." * ($dotCount + 1)
+                    Show-Progress -Title "YakuLingo Setup" -Status "Extracting files$dots" -Step "Step 3/4: Extracting" -Percent 60
+                }
+
+                $jobResult = Receive-Job -Job $extractJob
+                Remove-Job -Job $extractJob
+                if ($jobResult -ne 0) {
+                    throw "Failed to extract ZIP file.`n`nFile: $ZipFileName"
+                }
+            } else {
+                & $script:SevenZip x "$TempZipFile" "-o$TempZipDir" -y -bso0 -bsp0 | Out-Null
+                if ($LASTEXITCODE -ne 0) {
+                    throw "Failed to extract ZIP file.`n`nFile: $ZipFileName"
+                }
             }
         } else {
             if (-not $GuiMode) {
                 Write-Host "      Extracting with Expand-Archive (7-Zip not found, this may take longer)..." -ForegroundColor Gray
             }
-            Expand-Archive -Path $TempZipFile -DestinationPath $TempZipDir -Force
+            # Expand-Archive is slow and blocking; run in background job to keep GUI responsive
+            if ($GuiMode) {
+                $extractJob = Start-Job -ScriptBlock {
+                    param($TempZipFile, $TempZipDir)
+                    try {
+                        Expand-Archive -Path $TempZipFile -DestinationPath $TempZipDir -Force
+                        return $true
+                    } catch {
+                        return $false
+                    }
+                } -ArgumentList $TempZipFile, $TempZipDir
+
+                # Poll job status while keeping GUI responsive
+                # Expand-Archive is typically 5-10x slower than 7-Zip
+                $dotCount = 0
+                $elapsedSeconds = 0
+                while ($extractJob.State -eq 'Running') {
+                    Start-Sleep -Milliseconds 500
+                    [System.Windows.Forms.Application]::DoEvents()
+                    $elapsedSeconds += 0.5
+                    $dotCount = ($dotCount + 1) % 4
+                    $dots = "." * ($dotCount + 1)
+                    $elapsedMinutes = [math]::Floor($elapsedSeconds / 60)
+                    $elapsedSec = [int]($elapsedSeconds % 60)
+                    if ($elapsedMinutes -gt 0) {
+                        $timeInfo = " (${elapsedMinutes}m ${elapsedSec}s)"
+                    } else {
+                        $timeInfo = " (${elapsedSec}s)"
+                    }
+                    Show-Progress -Title "YakuLingo Setup" -Status "Extracting files$dots$timeInfo" -Step "Step 3/4: Extracting (this may take a few minutes)" -Percent 60
+                }
+
+                $jobResult = Receive-Job -Job $extractJob
+                Remove-Job -Job $extractJob
+                if (-not $jobResult) {
+                    throw "Failed to extract ZIP file.`n`nFile: $ZipFileName"
+                }
+            } else {
+                Expand-Archive -Path $TempZipFile -DestinationPath $TempZipDir -Force
+            }
         }
 
         # Find extracted folder
@@ -514,13 +674,42 @@ function Invoke-Setup {
             throw "Failed to extract ZIP file.`n`nFile: $ZipFileName"
         }
 
+        # Update progress before robocopy
+        Write-Status -Message "Installing files..." -Progress -Step "Step 3/4: Installing" -Percent 70
+        if ($GuiMode) {
+            [System.Windows.Forms.Application]::DoEvents()
+        }
+
         # Copy extracted folder to destination using robocopy /MIR (mirror mode)
         # /MIR = /E + /PURGE: copies all files and removes files not in source
         # This ensures clean updates without needing to delete the destination first
         # /R:0 /W:0: don't retry locked files (skip them instead of hanging)
         # /V: verbose output to capture skipped files
-        $robocopyOutput = & robocopy $ExtractedDir.FullName $SetupPath /MIR /MT:8 /R:0 /W:0 /V /NJH /NJS /NP 2>&1
-        $robocopyExitCode = $LASTEXITCODE
+        # Run robocopy in background job to keep GUI responsive
+        if ($GuiMode) {
+            $robocopyJob = Start-Job -ScriptBlock {
+                param($SourceDir, $DestDir)
+                $output = & robocopy $SourceDir $DestDir /MIR /MT:8 /R:0 /W:0 /V /NJH /NJS /NP 2>&1
+                return @{ ExitCode = $LASTEXITCODE; Output = $output }
+            } -ArgumentList $ExtractedDir.FullName, $SetupPath
+
+            $dotCount = 0
+            while ($robocopyJob.State -eq 'Running') {
+                Start-Sleep -Milliseconds 300
+                [System.Windows.Forms.Application]::DoEvents()
+                $dotCount = ($dotCount + 1) % 4
+                $dots = "." * ($dotCount + 1)
+                Show-Progress -Title "YakuLingo Setup" -Status "Installing files$dots" -Step "Step 3/4: Installing" -Percent 75
+            }
+
+            $robocopyResult = Receive-Job -Job $robocopyJob
+            Remove-Job -Job $robocopyJob
+            $robocopyOutput = $robocopyResult.Output
+            $robocopyExitCode = $robocopyResult.ExitCode
+        } else {
+            $robocopyOutput = & robocopy $ExtractedDir.FullName $SetupPath /MIR /MT:8 /R:0 /W:0 /V /NJH /NJS /NP 2>&1
+            $robocopyExitCode = $LASTEXITCODE
+        }
         # robocopy returns 0-7 for success, 8+ for errors
         if ($robocopyExitCode -ge 8) {
             throw "Failed to copy files to destination.`n`nDestination: $SetupPath"

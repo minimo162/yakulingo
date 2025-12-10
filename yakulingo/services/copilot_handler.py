@@ -375,7 +375,7 @@ class CopilotHandler:
     SELECTOR_CHAT_INPUT_TIMEOUT_MS = 15000   # 15 seconds for chat input to appear
     SELECTOR_CHAT_INPUT_STEP_TIMEOUT_MS = 3000  # 3 seconds per step for early login detection
     SELECTOR_CHAT_INPUT_MAX_STEPS = 5        # Max steps (3s * 5 = 15s total)
-    # SELECTOR_SEND_BUTTON_TIMEOUT_MS removed - no longer wait for send button before Enter
+    SELECTOR_SEND_BUTTON_TIMEOUT_MS = 5000   # 5 seconds for send button to become enabled
     SELECTOR_RESPONSE_TIMEOUT_MS = 10000     # 10 seconds for response element to appear
     SELECTOR_NEW_CHAT_READY_TIMEOUT_MS = 5000  # 5 seconds for new chat to be ready
     SELECTOR_LOGIN_CHECK_TIMEOUT_MS = 2000   # 2 seconds for login state checks
@@ -2545,13 +2545,30 @@ class CopilotHandler:
                     logger.warning("Input field is empty after fill - Copilot may need attention")
                     raise RuntimeError("Copilotに入力できませんでした。Edgeブラウザを確認してください。")
 
-                # Brief pause to let Copilot process the input before sending
-                # This replaces the previous send button wait which was too strict
-                time.sleep(0.15)
+                # Wait for send button to become enabled before sending
+                # This ensures Copilot has processed the input and is ready to accept
+                send_button_ready = False
+                try:
+                    send_button_wait_start = time.time()
+                    send_button = self._page.wait_for_selector(
+                        self.SEND_BUTTON_SELECTOR,
+                        timeout=self.SELECTOR_SEND_BUTTON_TIMEOUT_MS,
+                        state='visible'
+                    )
+                    if send_button:
+                        send_button_ready = True
+                        logger.info("[TIMING] wait_for_send_button: %.2fs", time.time() - send_button_wait_start)
+                except Exception as e:
+                    # Log warning but continue - Enter key might still work
+                    logger.warning("Send button not found/enabled within timeout: %s. Proceeding with Enter key.", e)
+
+                if not send_button_ready:
+                    # Brief fallback pause if send button wait failed
+                    time.sleep(0.15)
 
                 # Send via Enter key
                 input_elem.press("Enter")
-                logger.info("Message sent via Enter key")
+                logger.info("Message sent via Enter key (send_button_ready=%s)", send_button_ready)
             else:
                 logger.error("Input element not found!")
                 raise RuntimeError("Copilot入力欄が見つかりませんでした")

@@ -77,6 +77,9 @@ def _get_pdfminer():
         from pdfminer.converter import PDFConverter
         from pdfminer.layout import LTChar, LTPage, LTFigure, LAParams
         from pdfminer.utils import apply_matrix_pt
+        from pdfminer.psparser import PSLiteral
+        from pdfminer.pdfparser import PDFObjRef
+        from pdfminer.pdftypes import resolve1
         _pdfminer = {
             'PDFCIDFont': PDFCIDFont,
             'PDFUnicodeNotDefined': PDFUnicodeNotDefined,
@@ -92,6 +95,9 @@ def _get_pdfminer():
             'LTFigure': LTFigure,
             'LAParams': LAParams,
             'apply_matrix_pt': apply_matrix_pt,
+            'PSLiteral': PSLiteral,
+            'PDFObjRef': PDFObjRef,
+            'resolve1': resolve1,
         }
     return _pdfminer
 
@@ -587,10 +593,19 @@ class FontRegistry:
         # Try existing CID font if it covers all characters
         existing_cid_font = self._get_existing_cid_font()
         if existing_cid_font and self._check_font_coverage(existing_cid_font, text):
+            logger.debug(
+                "Font selection: using existing CID font '%s' for text (len=%d)",
+                existing_cid_font, len(text)
+            )
             return existing_cid_font
 
         # Use embedded font for the dominant language
-        return self._get_font_id_for_lang(dominant_lang)
+        font_id = self._get_font_id_for_lang(dominant_lang)
+        logger.debug(
+            "Font selection: lang='%s' -> font_id='%s' for text (len=%d, preview='%s')",
+            dominant_lang, font_id, len(text), text[:50] + '...' if len(text) > 50 else text
+        )
+        return font_id
 
     def _analyze_text_language(self, text: str, target_lang: str = "ja") -> str:
         """
@@ -599,6 +614,9 @@ class FontRegistry:
         Counts characters by script type and returns the language with the
         most characters. This ensures mixed-language text gets the most
         appropriate font.
+
+        Special handling for enclosed alphanumerics (①②③④ etc.) that are
+        not available in Latin fonts like Arial - these require a CJK font.
 
         Args:
             text: Text to analyze
@@ -612,6 +630,7 @@ class FontRegistry:
         ko_count = 0  # Hangul
         cjk_count = 0  # CJK Unified Ideographs
         latin_count = 0  # Latin characters
+        special_count = 0  # Enclosed alphanumerics, symbols not in Latin fonts
 
         for char in text:
             code = ord(char)
@@ -631,6 +650,14 @@ class FontRegistry:
                 latin_count += 1
             elif 0x0080 <= code <= 0x00FF:  # Latin-1 Supplement
                 latin_count += 1
+            # Enclosed alphanumerics: ①②③④⑤... Ⓐ Ⓑ Ⓒ...
+            # These are NOT available in Arial/most Latin fonts
+            elif 0x2460 <= code <= 0x24FF:  # Enclosed Alphanumerics (①-⑳, Ⓐ-Ⓩ, etc.)
+                special_count += 1
+            elif 0x3200 <= code <= 0x32FF:  # Enclosed CJK Letters and Months (㈱㈲㈳ etc.)
+                special_count += 1
+            elif 0x3000 <= code <= 0x303F:  # CJK Symbols and Punctuation (・、。etc.)
+                special_count += 1
 
         # Determine dominant language
         # Japanese: Hiragana/Katakana presence is definitive
@@ -644,6 +671,11 @@ class FontRegistry:
         # CJK ideographs: use target language
         if cjk_count > 0:
             return target_lang
+
+        # Special characters (①②③④ etc.) require CJK font
+        # Arial and other Latin fonts do not have these glyphs
+        if special_count > 0:
+            return "ja"  # Use Japanese font for enclosed alphanumerics
 
         # Default to English
         return "en"
@@ -1111,11 +1143,15 @@ class FontRegistry:
                 parser = PDFParser(f)
                 document = PDFDocument(parser)
                 rsrcmgr = PDFResourceManager()
+                resolve1 = pdfminer['resolve1']
 
                 for page in PDFPage.create_pages(document):
                     if page.resources and 'Font' in page.resources:
                         fonts = page.resources['Font']
-                        if fonts:
+                        # Resolve indirect reference if needed (PDFObjRef -> dict)
+                        # This is required when Font resource is an indirect object
+                        fonts = resolve1(fonts)
+                        if fonts and isinstance(fonts, dict):
                             for font_name, font_ref in fonts.items():
                                 try:
                                     font_obj = rsrcmgr.get_font(font_ref, page.resources)

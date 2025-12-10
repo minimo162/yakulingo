@@ -274,6 +274,8 @@ body {
     border: var(--md-card-border);
     box-shadow: var(--md-sys-elevation-1);
     width: 100%;
+    -webkit-user-select: text !important;
+    user-select: text !important;
 }
 
 .source-text-section > .nicegui-row {
@@ -288,8 +290,8 @@ body {
     color: var(--md-sys-color-on-surface);
     word-break: break-word;
     white-space: pre-wrap;
-    -webkit-user-select: text;
-    user-select: text;
+    -webkit-user-select: text !important;
+    user-select: text !important;
     cursor: text;
 }
 
@@ -343,8 +345,8 @@ body {
     line-height: 1.4;
     white-space: pre-wrap;
     word-break: break-word;
-    -webkit-user-select: text;
-    user-select: text;
+    -webkit-user-select: text !important;
+    user-select: text !important;
     cursor: text;
 }
 
@@ -1108,14 +1110,16 @@ textarea:focus-visible {
     box-shadow: var(--md-sys-elevation-1);
     border-radius: var(--md-sys-shape-corner-xl);
     padding: 1.25rem;
+    -webkit-user-select: text !important;
+    user-select: text !important;
 }
 
 .option-text {
     line-height: 1.4;
     word-break: break-word;
     font-size: var(--md-sys-typescale-size-md);
-    -webkit-user-select: text;
-    user-select: text;
+    -webkit-user-select: text !important;
+    user-select: text !important;
     cursor: text;
 }
 
@@ -1793,8 +1797,8 @@ textarea:focus-visible {
     border-radius: 1rem;
     font-size: var(--md-sys-typescale-size-sm);  /* 14px - matches Nani's text-sm */
     line-height: 1.85;  /* matches Nani's --html-base-line-height */
-    -webkit-user-select: text;
-    user-select: text;
+    -webkit-user-select: text !important;
+    user-select: text !important;
     cursor: text;
 }
 

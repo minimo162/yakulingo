@@ -1042,3 +1042,72 @@ class TestLoginPageDetection:
 
         assert _is_login_page("") is False
         assert _is_login_page(None) is False
+
+
+class TestPollingPageValidityCheck:
+    """Test page validity check during response polling"""
+
+    @pytest.fixture
+    def handler(self):
+        return CopilotHandler()
+
+    def test_page_validity_check_interval_constant(self, handler):
+        """PAGE_VALIDITY_CHECK_INTERVAL constant is defined"""
+        assert hasattr(handler, 'PAGE_VALIDITY_CHECK_INTERVAL')
+        assert handler.PAGE_VALIDITY_CHECK_INTERVAL == 5.0
+
+    def test_get_response_returns_empty_when_page_invalid(self, handler):
+        """_get_response returns empty string when page becomes invalid"""
+        # Create mock page that becomes invalid
+        mock_page = MagicMock()
+        mock_page.url = "https://login.microsoftonline.com/signin"  # Login page URL
+        mock_page.query_selector.return_value = None
+
+        handler._page = mock_page
+
+        # _get_response should detect invalid page and return empty
+        with patch.object(handler, '_is_page_valid', return_value=False):
+            with patch.object(handler, '_bring_to_foreground_impl'):
+                result = handler._get_response(timeout=10)
+
+        assert result == ""
+
+    def test_get_response_brings_browser_to_foreground_when_page_invalid(self, handler):
+        """_get_response brings browser to foreground when login expires"""
+        mock_page = MagicMock()
+        mock_page.url = "https://m365.cloud.microsoft/chat/?auth=2"
+        handler._page = mock_page
+
+        # Make _is_page_valid return False to simulate login expiration
+        with patch.object(handler, '_is_page_valid', return_value=False):
+            mock_foreground = MagicMock()
+            with patch.object(handler, '_bring_to_foreground_impl', mock_foreground):
+                handler._get_response(timeout=10)
+
+        # Should have called _bring_to_foreground_impl
+        mock_foreground.assert_called_once()
+        call_args = mock_foreground.call_args
+        assert "login session expired" in call_args.kwargs.get('reason', '')
+
+    def test_is_page_valid_returns_false_when_page_none(self, handler):
+        """_is_page_valid returns False when _page is None"""
+        handler._page = None
+        assert handler._is_page_valid() is False
+
+    def test_is_page_valid_returns_false_on_login_page(self, handler):
+        """_is_page_valid returns False when on login page"""
+        mock_page = MagicMock()
+        mock_page.url = "https://login.microsoftonline.com/common/oauth2"
+        handler._page = mock_page
+
+        assert handler._is_page_valid() is False
+
+    def test_is_page_valid_returns_true_on_copilot_page_with_chat_input(self, handler):
+        """_is_page_valid returns True when on Copilot page with chat input"""
+        mock_page = MagicMock()
+        mock_page.url = "https://m365.cloud.microsoft/chat/?auth=2"
+        mock_input = MagicMock()
+        mock_page.query_selector.return_value = mock_input
+        handler._page = mock_page
+
+        assert handler._is_page_valid() is True

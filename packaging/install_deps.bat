@@ -57,6 +57,11 @@ goto :proxy_done
 :no_proxy_insecure
 :: Direct connection with insecure SSL
 set SKIP_SSL=1
+:: Disable SSL verification for Python requests/urllib
+set PYTHONHTTPSVERIFY=0
+set REQUESTS_CA_BUNDLE=
+set CURL_CA_BUNDLE=
+set SSL_CERT_FILE=
 echo.
 echo [INFO] Using direct connection (SSL verification disabled).
 echo.

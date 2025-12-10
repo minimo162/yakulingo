@@ -30,8 +30,14 @@ echo   [1] Yes - Use proxy (corporate network)
 echo   [2] No  - Direct connection
 echo.
 set /p PROXY_CHOICE="Enter choice (1 or 2): "
-if not "!PROXY_CHOICE!"=="1" goto :no_proxy
 
+:: Debug: show what was entered
+echo [DEBUG] PROXY_CHOICE=[!PROXY_CHOICE!]
+
+if "!PROXY_CHOICE!"=="1" goto :use_proxy
+goto :no_proxy
+
+:use_proxy
 :: Use proxy
 set USE_PROXY=1
 echo.
@@ -51,6 +57,7 @@ echo [INFO] Using direct connection (no proxy).
 echo.
 
 :proxy_done
+echo [DEBUG] Proxy config done, USE_PROXY=[!USE_PROXY!]
 
 :: ============================================================
 :: Step 1: Download uv

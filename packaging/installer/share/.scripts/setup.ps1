@@ -11,6 +11,16 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# Debug log for troubleshooting (write to TEMP)
+$debugLog = Join-Path $env:TEMP "YakuLingo_setup_debug.log"
+try {
+    "=== Setup started: $(Get-Date) ===" | Out-File -FilePath $debugLog -Encoding UTF8
+    "PSScriptRoot: $PSScriptRoot" | Out-File -FilePath $debugLog -Append -Encoding UTF8
+    "YAKULINGO_SHARE_DIR env: $env:YAKULINGO_SHARE_DIR" | Out-File -FilePath $debugLog -Append -Encoding UTF8
+} catch {
+    # Ignore logging errors
+}
+
 # Global error handler - writes error to stderr for VBS to capture
 function Write-ErrorLog {
     param(
@@ -41,6 +51,13 @@ if (-not [string]::IsNullOrEmpty($envShareDir)) {
     $script:ShareDir = Split-Path -Parent $script:ScriptDir
 }
 $script:AppName = "YakuLingo"
+
+# Debug: Log resolved paths
+try {
+    "ScriptDir: $($script:ScriptDir)" | Out-File -FilePath $debugLog -Append -Encoding UTF8
+    "ShareDir: $($script:ShareDir)" | Out-File -FilePath $debugLog -Append -Encoding UTF8
+    "ShareDir exists: $(Test-Path $script:ShareDir)" | Out-File -FilePath $debugLog -Append -Encoding UTF8
+} catch { }
 
 # Find 7-Zip (optional, falls back to Expand-Archive if not found)
 # Check multiple locations including registry for reliable detection

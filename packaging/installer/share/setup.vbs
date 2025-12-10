@@ -72,19 +72,7 @@ Else
 End If
 
 ' Run PowerShell script with GUI mode (hidden console)
-Dim command, exitCode, errorLog, wshShellEnv
-Set wshShellEnv = objShell.Environment("Process")
-' Use local TEMP for error log (network share may be read-only)
-errorLog = wshShellEnv("TEMP") & "\YakuLingo_setup_error.log"
-
-' Delete previous error log if exists (ignore errors - may be on read-only share)
-On Error Resume Next
-If objFSO.FileExists(errorLog) Then
-    objFSO.DeleteFile errorLog, True
-End If
-On Error GoTo 0
-
-' Run PowerShell with error output redirected to log file (UTF-8)
+Dim command, exitCode
 ' If script was copied to TEMP, write original ShareDir to file (Unicode safe)
 If needsCopy Then
     ' Write ShareDir to file using UTF-16 LE (native Windows Unicode, no BOM issues)
@@ -95,38 +83,18 @@ If needsCopy Then
     shareDirTS.Close
     Set shareDirTS = Nothing
 End If
-' Use cmd.exe /k to keep window open after command finishes
-command = "cmd.exe /k powershell.exe -ExecutionPolicy Bypass -File """ & psScriptToRun & """ -GuiMode"
+' Run PowerShell via cmd.exe (stderr redirect removed - debug log captures errors)
+command = "cmd.exe /c powershell.exe -ExecutionPolicy Bypass -File """ & psScriptToRun & """ -GuiMode"
 
-' Run and wait for completion (1 = show window for debugging, True = wait)
-exitCode = objShell.Run(command, 1, True)
+' Run and wait for completion (0 = hidden, True = wait)
+exitCode = objShell.Run(command, 0, True)
 
 If exitCode <> 0 Then
-    Dim errorMessage
-    errorMessage = "Setup failed." & vbCrLf & vbCrLf & "Error code: " & exitCode
-
-    ' Try to read error log for more details (UTF-8)
-    On Error Resume Next
-    If objFSO.FileExists(errorLog) Then
-        ' Check file size first (empty file causes ADODB.Stream errors)
-        If objFSO.GetFile(errorLog).Size > 0 Then
-            Dim objStream, errorContent
-            Set objStream = CreateObject("ADODB.Stream")
-            objStream.Type = 2 ' adTypeText
-            objStream.Charset = "UTF-8"
-            objStream.Open
-            objStream.LoadFromFile errorLog
-            If Err.Number = 0 Then
-                errorContent = objStream.ReadText()
-                If Len(errorContent) > 0 Then
-                    errorMessage = errorMessage & vbCrLf & vbCrLf & "Details:" & vbCrLf & errorContent
-                End If
-            End If
-            objStream.Close
-            Set objStream = Nothing
-        End If
-    End If
-    On Error GoTo 0
+    Dim errorMessage, debugLogPath
+    debugLogPath = objShell.Environment("Process")("TEMP") & "\YakuLingo_setup_debug.log"
+    errorMessage = "Setup failed." & vbCrLf & vbCrLf & _
+                   "Error code: " & exitCode & vbCrLf & vbCrLf & _
+                   "Details: " & debugLogPath
 
     MsgBox errorMessage, vbCritical, "YakuLingo Setup - Error"
     WScript.Quit exitCode

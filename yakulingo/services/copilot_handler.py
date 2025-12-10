@@ -1710,7 +1710,7 @@ class CopilotHandler:
             logger.debug("Failed to bring Edge window to foreground via Windows API: %s", e)
             return False
 
-    def _minimize_edge_window(self, page_title: str = None, max_retries: int = 3) -> bool:
+    def _minimize_edge_window(self, page_title: str = None, max_retries: int = 5) -> bool:
         """Minimize Edge window to return it to the background after login.
 
         Note: We only use SW_MINIMIZE (not SW_HIDE) to keep the window in
@@ -1719,7 +1719,7 @@ class CopilotHandler:
 
         Args:
             page_title: The current page title for exact matching
-            max_retries: Maximum number of retry attempts (default: 3)
+            max_retries: Maximum number of retry attempts (default: 5)
 
         Returns:
             True if window was successfully minimized
@@ -1734,15 +1734,18 @@ class CopilotHandler:
             SW_MINIMIZE = 6
             SW_SHOWMINNOACTIVE = 7  # Minimize without activating
 
-            # Retry logic: Edge window may not be ready immediately
+            # Retry logic with exponential backoff: Edge window may not be ready immediately
+            # Wait times: 0.3s, 0.6s, 1.2s, 2.4s (total ~4.5s max wait)
+            edge_hwnd = None
             for attempt in range(max_retries):
                 edge_hwnd = self._find_edge_window_handle(page_title)
                 if edge_hwnd:
                     break
                 if attempt < max_retries - 1:
-                    logger.debug("Edge window not found (attempt %d/%d), retrying...",
-                                 attempt + 1, max_retries)
-                    time.sleep(0.3)
+                    wait_time = 0.3 * (2 ** attempt)  # Exponential backoff
+                    logger.debug("Edge window not found (attempt %d/%d), retrying in %.1fs...",
+                                 attempt + 1, max_retries, wait_time)
+                    time.sleep(wait_time)
 
             if not edge_hwnd:
                 logger.warning("Edge window not found for minimization after %d attempts", max_retries)
@@ -2693,22 +2696,22 @@ class CopilotHandler:
                 # Pause to let Copilot process the input before sending
                 # This is critical - if we press Enter too quickly, Copilot may not
                 # have processed the input yet and the send will fail.
-                time.sleep(0.5)
+                time.sleep(0.8)
 
                 # Re-focus input element after fill() to ensure Enter key is received
                 # fill() can cause focus loss, so we need to explicitly restore it
                 # using both click and focus for maximum reliability
                 try:
                     input_elem.evaluate('el => { el.click(); el.focus(); }')
-                    time.sleep(0.1)
+                    time.sleep(0.15)
                 except Exception as e:
                     logger.debug("Re-focus after fill failed: %s", e)
 
                 # Send via Enter key with retry on failure
-                # After Enter, check if input field is cleared (indicates successful send)
-                # If text remains, retry Enter key up to MAX_SEND_RETRIES times
+                # After Enter, check if input field is cleared OR stop button appears
+                # Either indicates successful send
                 MAX_SEND_RETRIES = 3
-                SEND_RETRY_WAIT = 0.5  # seconds between retries
+                SEND_RETRY_WAIT = 0.8  # seconds between retries (increased for reliability)
                 send_success = False
 
                 for send_attempt in range(MAX_SEND_RETRIES):
@@ -2716,22 +2719,32 @@ class CopilotHandler:
                     # Use JS click + focus for more reliable focus setting
                     try:
                         input_elem.evaluate('el => { el.click(); el.focus(); }')
-                        time.sleep(0.05)
+                        time.sleep(0.1)
                     except Exception:
                         pass
                     input_elem.press("Enter")
                     time.sleep(SEND_RETRY_WAIT)
 
-                    # Re-fetch input element after send (DOM may be recreated)
-                    # The selector is the same but the actual DOM element may be new
+                    # Check for successful send indicators:
+                    # 1. Input field is cleared (text removed)
+                    # 2. Stop button appeared (Copilot started generating)
                     try:
                         current_input = self._page.query_selector(input_selector)
                         remaining_text = current_input.inner_text().strip() if current_input else ""
                     except Exception:
                         remaining_text = ""
 
-                    if not remaining_text:
-                        logger.info("Message sent via Enter key (attempt %d)", send_attempt + 1)
+                    # Check if stop button is visible (indicates Copilot is processing)
+                    stop_button_visible = False
+                    try:
+                        stop_button = self._page.query_selector(self.STOP_BUTTON_SELECTOR_COMBINED)
+                        stop_button_visible = stop_button is not None and stop_button.is_visible()
+                    except Exception:
+                        pass
+
+                    if not remaining_text or stop_button_visible:
+                        reason = "input cleared" if not remaining_text else "stop button visible"
+                        logger.info("Message sent via Enter key (attempt %d, %s)", send_attempt + 1, reason)
                         send_success = True
                         break
                     else:

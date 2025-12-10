@@ -290,96 +290,99 @@ class WordProcessor(FileProcessor):
             output_language: "en" for JP→EN, "jp" for EN→JP translation
         """
         doc = Document(file_path)
+        try:
+            # === Body Paragraphs ===
+            for idx, para in enumerate(doc.paragraphs):
+                if para.text and self.para_translator.should_translate(para.text, output_language):
+                    # Get font info from first run
+                    font_name = None
+                    font_size = 11.0
+                    if para.runs:
+                        first_run = para.runs[0]
+                        if first_run.font.name:
+                            font_name = first_run.font.name
+                        if first_run.font.size:
+                            font_size = first_run.font.size.pt
 
-        # === Body Paragraphs ===
-        for idx, para in enumerate(doc.paragraphs):
-            if para.text and self.para_translator.should_translate(para.text, output_language):
-                # Get font info from first run
-                font_name = None
-                font_size = 11.0
-                if para.runs:
-                    first_run = para.runs[0]
-                    if first_run.font.name:
-                        font_name = first_run.font.name
-                    if first_run.font.size:
-                        font_size = first_run.font.size.pt
+                    # Get font from first valid run if multiple runs
+                    if len(para.runs) > 1:
+                        font_names = [r.font.name for r in para.runs if r.font.name]
+                        if font_names:
+                            font_name = font_names[0]
 
-                # Get font from first valid run if multiple runs
-                if len(para.runs) > 1:
-                    font_names = [r.font.name for r in para.runs if r.font.name]
-                    if font_names:
-                        font_name = font_names[0]
-
-                yield TextBlock(
-                    id=f"para_{idx}",
-                    text=para.text,
-                    location=f"Paragraph {idx + 1}",
-                    metadata={
-                        'type': 'paragraph',
-                        'index': idx,
-                        'style': para.style.name if para.style else None,
-                        'font_name': font_name,
-                        'font_size': font_size,
-                    }
-                )
-
-        # === Tables (Excel-compatible) ===
-        # Track processed cells to avoid extracting merged cells multiple times
-        for table_idx, table in enumerate(doc.tables):
-            processed_cells = set()
-            for row_idx, row in enumerate(table.rows):
-                for cell_idx, cell in enumerate(row.cells):
-                    # Use the underlying tc element to deduplicate merged cells
-                    cell_key = cell._tc
-                    if cell_key in processed_cells:
-                        continue
-                    processed_cells.add(cell_key)
-
-                    cell_text = cell.text
-                    if cell_text and self.cell_translator.should_translate(cell_text, output_language):
-                        # Get font info from first paragraph's first run
-                        font_name = None
-                        font_size = 11.0
-                        if cell.paragraphs and cell.paragraphs[0].runs:
-                            first_run = cell.paragraphs[0].runs[0]
-                            if first_run.font.name:
-                                font_name = first_run.font.name
-                            if first_run.font.size:
-                                font_size = first_run.font.size.pt
-
-                        yield TextBlock(
-                            id=f"table_{table_idx}_r{row_idx}_c{cell_idx}",
-                            text=cell_text,
-                            location=f"Table {table_idx + 1}, Row {row_idx + 1}, Cell {cell_idx + 1}",
-                            metadata={
-                                'type': 'table_cell',
-                                'table': table_idx,
-                                'row': row_idx,
-                                'col': cell_idx,
-                                'font_name': font_name,
-                                'font_size': font_size,
-                            }
-                        )
-
-        # Note: Headers/Footers are excluded from translation
-
-        # === TextBoxes (via XML parsing, docx only) ===
-        if str(file_path).lower().endswith('.docx'):
-            textboxes = _extract_textboxes_from_docx(file_path)
-            for tb in textboxes:
-                text = tb['text']
-                tb_idx = tb['textbox_index']
-
-                if self.para_translator.should_translate(text, output_language):
                     yield TextBlock(
-                        id=f"textbox_{tb_idx}",
-                        text=text,
-                        location=f"TextBox {tb_idx + 1}",
+                        id=f"para_{idx}",
+                        text=para.text,
+                        location=f"Paragraph {idx + 1}",
                         metadata={
-                            'type': 'textbox',
-                            'textbox': tb_idx,
+                            'type': 'paragraph',
+                            'index': idx,
+                            'style': para.style.name if para.style else None,
+                            'font_name': font_name,
+                            'font_size': font_size,
                         }
                     )
+
+            # === Tables (Excel-compatible) ===
+            # Track processed cells to avoid extracting merged cells multiple times
+            for table_idx, table in enumerate(doc.tables):
+                processed_cells = set()
+                for row_idx, row in enumerate(table.rows):
+                    for cell_idx, cell in enumerate(row.cells):
+                        # Use the underlying tc element to deduplicate merged cells
+                        cell_key = cell._tc
+                        if cell_key in processed_cells:
+                            continue
+                        processed_cells.add(cell_key)
+
+                        cell_text = cell.text
+                        if cell_text and self.cell_translator.should_translate(cell_text, output_language):
+                            # Get font info from first paragraph's first run
+                            font_name = None
+                            font_size = 11.0
+                            if cell.paragraphs and cell.paragraphs[0].runs:
+                                first_run = cell.paragraphs[0].runs[0]
+                                if first_run.font.name:
+                                    font_name = first_run.font.name
+                                if first_run.font.size:
+                                    font_size = first_run.font.size.pt
+
+                            yield TextBlock(
+                                id=f"table_{table_idx}_r{row_idx}_c{cell_idx}",
+                                text=cell_text,
+                                location=f"Table {table_idx + 1}, Row {row_idx + 1}, Cell {cell_idx + 1}",
+                                metadata={
+                                    'type': 'table_cell',
+                                    'table': table_idx,
+                                    'row': row_idx,
+                                    'col': cell_idx,
+                                    'font_name': font_name,
+                                    'font_size': font_size,
+                                }
+                            )
+
+            # Note: Headers/Footers are excluded from translation
+
+            # === TextBoxes (via XML parsing, docx only) ===
+            if str(file_path).lower().endswith('.docx'):
+                textboxes = _extract_textboxes_from_docx(file_path)
+                for tb in textboxes:
+                    text = tb['text']
+                    tb_idx = tb['textbox_index']
+
+                    if self.para_translator.should_translate(text, output_language):
+                        yield TextBlock(
+                            id=f"textbox_{tb_idx}",
+                            text=text,
+                            location=f"TextBox {tb_idx + 1}",
+                            metadata={
+                                'type': 'textbox',
+                                'textbox': tb_idx,
+                            }
+                        )
+        finally:
+            # python-docx doesn't have close(), but we can help GC by deleting the reference
+            del doc
 
     def apply_translations(
         self,
@@ -396,42 +399,46 @@ class WordProcessor(FileProcessor):
         for Word documents (Word doesn't have discrete sections like sheets/slides).
         """
         doc = Document(input_path)
-        font_manager = FontManager(direction, settings)
+        try:
+            font_manager = FontManager(direction, settings)
 
-        # === Apply to paragraphs ===
-        for idx, para in enumerate(doc.paragraphs):
-            block_id = f"para_{idx}"
-            if block_id in translations:
-                self._apply_to_paragraph(para, translations[block_id], font_manager)
+            # === Apply to paragraphs ===
+            for idx, para in enumerate(doc.paragraphs):
+                block_id = f"para_{idx}"
+                if block_id in translations:
+                    self._apply_to_paragraph(para, translations[block_id], font_manager)
 
-        # === Apply to tables ===
-        # Track processed cells to avoid applying to merged cells multiple times
-        for table_idx, table in enumerate(doc.tables):
-            processed_cells = set()
-            for row_idx, row in enumerate(table.rows):
-                for cell_idx, cell in enumerate(row.cells):
-                    cell_key = cell._tc
-                    if cell_key in processed_cells:
-                        continue
-                    processed_cells.add(cell_key)
+            # === Apply to tables ===
+            # Track processed cells to avoid applying to merged cells multiple times
+            for table_idx, table in enumerate(doc.tables):
+                processed_cells = set()
+                for row_idx, row in enumerate(table.rows):
+                    for cell_idx, cell in enumerate(row.cells):
+                        cell_key = cell._tc
+                        if cell_key in processed_cells:
+                            continue
+                        processed_cells.add(cell_key)
 
-                    block_id = f"table_{table_idx}_r{row_idx}_c{cell_idx}"
-                    if block_id in translations:
-                        # Apply to first paragraph of cell
-                        if cell.paragraphs:
-                            self._apply_to_paragraph(
-                                cell.paragraphs[0],
-                                translations[block_id],
-                                font_manager
-                            )
-                            # Clear remaining paragraphs if any
-                            for para in cell.paragraphs[1:]:
-                                for run in para.runs:
-                                    run.text = ""
+                        block_id = f"table_{table_idx}_r{row_idx}_c{cell_idx}"
+                        if block_id in translations:
+                            # Apply to first paragraph of cell
+                            if cell.paragraphs:
+                                self._apply_to_paragraph(
+                                    cell.paragraphs[0],
+                                    translations[block_id],
+                                    font_manager
+                                )
+                                # Clear remaining paragraphs if any
+                                for para in cell.paragraphs[1:]:
+                                    for run in para.runs:
+                                        run.text = ""
 
-        # Note: Headers/Footers are excluded from translation
+            # Note: Headers/Footers are excluded from translation
 
-        doc.save(output_path)
+            doc.save(output_path)
+        finally:
+            # python-docx doesn't have close(), but we can help GC by deleting the reference
+            del doc
 
         # Apply TextBox translations via XML manipulation (python-docx doesn't support this)
         # Only for .docx files
@@ -502,66 +509,70 @@ class WordProcessor(FileProcessor):
 
         original_doc = Document(original_path)
         translated_doc = Document(translated_path)
+        try:
+            # Count paragraphs
+            original_count = len(original_doc.paragraphs)
+            translated_count = len(translated_doc.paragraphs)
 
-        # Count paragraphs
-        original_count = len(original_doc.paragraphs)
-        translated_count = len(translated_doc.paragraphs)
+            # Add separator heading before translated content
+            separator_para = original_doc.add_paragraph()
+            separator_para.add_run("─" * 40)
+            separator_para.alignment = 1  # Center
 
-        # Add separator heading before translated content
-        separator_para = original_doc.add_paragraph()
-        separator_para.add_run("─" * 40)
-        separator_para.alignment = 1  # Center
+            # Add page break
+            page_break_para = original_doc.add_paragraph()
+            run = page_break_para.add_run()
+            run._r.append(OxmlElement('w:br', {qn('w:type'): 'page'}))
 
-        # Add page break
-        page_break_para = original_doc.add_paragraph()
-        run = page_break_para.add_run()
-        run._r.append(OxmlElement('w:br', {qn('w:type'): 'page'}))
+            # Add translation header
+            header_para = original_doc.add_paragraph()
+            header_run = header_para.add_run("【翻訳】")
+            header_run.bold = True
 
-        # Add translation header
-        header_para = original_doc.add_paragraph()
-        header_run = header_para.add_run("【翻訳】")
-        header_run.bold = True
+            # Copy translated paragraphs
+            for para in translated_doc.paragraphs:
+                new_para = original_doc.add_paragraph()
+                # Copy style
+                new_para.style = para.style
+                new_para.alignment = para.alignment
+                # Copy runs
+                for run in para.runs:
+                    new_run = new_para.add_run(run.text)
+                    if run.font.bold:
+                        new_run.font.bold = run.font.bold
+                    if run.font.italic:
+                        new_run.font.italic = run.font.italic
+                    if run.font.name:
+                        new_run.font.name = run.font.name
+                    if run.font.size:
+                        new_run.font.size = run.font.size
 
-        # Copy translated paragraphs
-        for para in translated_doc.paragraphs:
-            new_para = original_doc.add_paragraph()
-            # Copy style
-            new_para.style = para.style
-            new_para.alignment = para.alignment
-            # Copy runs
-            for run in para.runs:
-                new_run = new_para.add_run(run.text)
-                if run.font.bold:
-                    new_run.font.bold = run.font.bold
-                if run.font.italic:
-                    new_run.font.italic = run.font.italic
-                if run.font.name:
-                    new_run.font.name = run.font.name
-                if run.font.size:
-                    new_run.font.size = run.font.size
+            # Copy translated tables
+            for table in translated_doc.tables:
+                # Add table to original doc
+                new_table = original_doc.add_table(rows=len(table.rows), cols=len(table.columns))
+                new_table.style = table.style
 
-        # Copy translated tables
-        for table in translated_doc.tables:
-            # Add table to original doc
-            new_table = original_doc.add_table(rows=len(table.rows), cols=len(table.columns))
-            new_table.style = table.style
+                for row_idx, row in enumerate(table.rows):
+                    for col_idx, cell in enumerate(row.cells):
+                        new_cell = new_table.cell(row_idx, col_idx)
+                        # Copy cell content
+                        for para_idx, para in enumerate(cell.paragraphs):
+                            if para_idx == 0:
+                                target_para = new_cell.paragraphs[0]
+                            else:
+                                target_para = new_cell.add_paragraph()
+                            for run in para.runs:
+                                target_para.add_run(run.text)
 
-            for row_idx, row in enumerate(table.rows):
-                for col_idx, cell in enumerate(row.cells):
-                    new_cell = new_table.cell(row_idx, col_idx)
-                    # Copy cell content
-                    for para_idx, para in enumerate(cell.paragraphs):
-                        if para_idx == 0:
-                            target_para = new_cell.paragraphs[0]
-                        else:
-                            target_para = new_cell.add_paragraph()
-                        for run in para.runs:
-                            target_para.add_run(run.text)
+            original_doc.save(output_path)
 
-        original_doc.save(output_path)
-
-        return {
-            'original_paragraphs': original_count,
-            'translated_paragraphs': translated_count,
-            'total_paragraphs': original_count + translated_count,
-        }
+            return {
+                'original_paragraphs': original_count,
+                'translated_paragraphs': translated_count,
+                'total_paragraphs': original_count + translated_count,
+            }
+        finally:
+            # python-docx doesn't have close(), but we can help GC by deleting the references
+            del original_doc
+            del translated_doc

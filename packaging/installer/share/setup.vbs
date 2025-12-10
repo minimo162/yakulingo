@@ -93,7 +93,8 @@ If needsCopy Then
     shareDirTS.Close
     Set shareDirTS = Nothing
 End If
-command = "powershell.exe -ExecutionPolicy Bypass -File """ & psScriptToRun & """ -GuiMode 2>""" & errorLog & """"
+' Use cmd.exe to handle stderr redirection (PowerShell -File interprets 2> as argument)
+command = "cmd.exe /c powershell.exe -ExecutionPolicy Bypass -File """ & psScriptToRun & """ -GuiMode 2>""" & errorLog & """"
 
 ' Run and wait for completion (1 = normal window for debugging, True = wait)
 exitCode = objShell.Run(command, 1, True)

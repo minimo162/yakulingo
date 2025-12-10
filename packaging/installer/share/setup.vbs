@@ -98,8 +98,8 @@ End If
 ' Use cmd.exe to handle stderr redirection (PowerShell -File interprets 2> as argument)
 command = "cmd.exe /c powershell.exe -ExecutionPolicy Bypass -File """ & psScriptToRun & """ -GuiMode 2>""" & errorLog & """"
 
-' Run and wait for completion (0 = hidden, True = wait)
-exitCode = objShell.Run(command, 0, True)
+' Run and wait for completion (1 = show window for debugging, True = wait)
+exitCode = objShell.Run(command, 1, True)
 
 If exitCode <> 0 Then
     Dim errorMessage

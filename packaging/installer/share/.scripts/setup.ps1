@@ -592,10 +592,9 @@ function Invoke-Setup {
             if (-not $GuiMode) {
                 Write-Host "      Extracting with 7-Zip: $($script:SevenZip)" -ForegroundColor Gray
             }
-            # Use Start-Process for non-blocking execution (keeps GUI responsive)
-            # This avoids Start-Job overhead while still allowing DoEvents()
-            $processArgs = "x `"$TempZipFile`" -o`"$TempZipDir`" -y -bso0 -bsp0"
-            $process = Start-Process -FilePath $script:SevenZip -ArgumentList $processArgs -NoNewWindow -PassThru -Wait:$false
+            # Use cmd /c to ensure proper argument handling (same as make_distribution.bat)
+            $cmdArgs = "/c `"`"$($script:SevenZip)`" x `"$TempZipFile`" -o`"$TempZipDir`" -y -bso0 -bsp0`""
+            $process = Start-Process -FilePath "cmd.exe" -ArgumentList $cmdArgs -WindowStyle Hidden -PassThru
 
             if ($GuiMode) {
                 while (-not $process.HasExited) {
@@ -672,9 +671,9 @@ function Invoke-Setup {
         # This ensures clean updates without needing to delete the destination first
         # /R:0 /W:0: don't retry locked files (skip them instead of hanging)
         # /MT:8: multi-threaded copy for speed
-        # Use Start-Process for non-blocking execution (keeps GUI responsive)
-        $robocopyArgs = "`"$($ExtractedDir.FullName)`" `"$SetupPath`" /MIR /MT:8 /R:0 /W:0 /NJH /NJS /NP"
-        $robocopyProcess = Start-Process -FilePath "robocopy" -ArgumentList $robocopyArgs -NoNewWindow -PassThru -Wait:$false
+        # Use cmd /c for consistent argument handling
+        $robocopyCmd = "/c robocopy `"$($ExtractedDir.FullName)`" `"$SetupPath`" /MIR /MT:8 /R:0 /W:0 /NJH /NJS /NP"
+        $robocopyProcess = Start-Process -FilePath "cmd.exe" -ArgumentList $robocopyCmd -WindowStyle Hidden -PassThru
 
         if ($GuiMode) {
             while (-not $robocopyProcess.HasExited) {

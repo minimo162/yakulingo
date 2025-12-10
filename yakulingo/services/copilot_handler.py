@@ -373,6 +373,8 @@ class CopilotHandler:
 
     # Selector wait timeouts (milliseconds) - for Playwright wait_for_selector()
     SELECTOR_CHAT_INPUT_TIMEOUT_MS = 15000   # 15 seconds for chat input to appear
+    SELECTOR_CHAT_INPUT_STEP_TIMEOUT_MS = 3000  # 3 seconds per step for early login detection
+    SELECTOR_CHAT_INPUT_MAX_STEPS = 5        # Max steps (3s * 5 = 15s total)
     # SELECTOR_SEND_BUTTON_TIMEOUT_MS removed - no longer wait for send button before Enter
     SELECTOR_RESPONSE_TIMEOUT_MS = 10000     # 10 seconds for response element to appear
     SELECTOR_NEW_CHAT_READY_TIMEOUT_MS = 5000  # 5 seconds for new chat to be ready
@@ -1103,9 +1105,41 @@ class CopilotHandler:
             except (PlaywrightTimeoutError, PlaywrightError) as nav_err:
                 logger.warning("Navigation to chat failed: %s", nav_err)
 
-        try:
-            page.wait_for_selector(input_selector, timeout=self.SELECTOR_CHAT_INPUT_TIMEOUT_MS, state='visible')
+        # Use stepped waiting with early login detection
+        # Instead of waiting 15 seconds then checking, check every 3 seconds
+        chat_input_found = False
+        for step in range(self.SELECTOR_CHAT_INPUT_MAX_STEPS):
+            try:
+                page.wait_for_selector(
+                    input_selector,
+                    timeout=self.SELECTOR_CHAT_INPUT_STEP_TIMEOUT_MS,
+                    state='visible'
+                )
+                chat_input_found = True
+                break
+            except PlaywrightTimeoutError:
+                # Early login detection: check if we're on a login page
+                current_url = page.url
+                if _is_login_page(current_url):
+                    logger.info("Early login detection: login page detected at step %d", step + 1)
+                    self.last_connection_error = self.ERROR_LOGIN_REQUIRED
+                    if wait_for_login:
+                        self._bring_to_foreground_impl(page, reason="wait_for_chat_ready: early login detection")
+                        return self._wait_for_login_completion(page)
+                    return False
 
+                # Check for authentication dialog
+                if self._has_auth_dialog():
+                    logger.info("Early login detection: auth dialog detected at step %d", step + 1)
+                    self.last_connection_error = self.ERROR_LOGIN_REQUIRED
+                    if wait_for_login:
+                        self._bring_to_foreground_impl(page, reason="wait_for_chat_ready: early auth dialog detection")
+                        return self._wait_for_login_completion(page)
+                    return False
+
+                logger.debug("Chat input not found at step %d/%d, continuing...", step + 1, self.SELECTOR_CHAT_INPUT_MAX_STEPS)
+
+        if chat_input_found:
             # Check for authentication dialog that may block input
             auth_dialog = page.query_selector(self.AUTH_DIALOG_TITLE_SELECTOR)
             if auth_dialog:
@@ -1124,52 +1158,53 @@ class CopilotHandler:
             logger.info("Copilot chat UI ready (URL: %s)", current_url[:80] if current_url else "empty")
             time.sleep(0.2)  # Wait for session to fully initialize
             return True
-        except PlaywrightTimeoutError:
-            # Check if we got redirected to login page during wait
-            url = page.url
-            if _is_login_page(url):
-                logger.warning("Redirected to login page during wait: %s", url[:50])
-                self.last_connection_error = self.ERROR_LOGIN_REQUIRED
 
-                if wait_for_login:
-                    # Bring browser to foreground so user can complete login
-                    self._bring_to_foreground_impl(page, reason="wait_for_chat_ready: timeout + login page detected")
-                    return self._wait_for_login_completion(page)
-                return False
-
-            # On Copilot domain but not yet on chat page, wait for proper navigation
-            if _is_copilot_url(url):
-                logger.info("Copilot page still loading, waiting for /chat before continuing...")
-                try:
-                    page.wait_for_load_state('networkidle', timeout=5000)
-                except PlaywrightTimeoutError:
-                    pass
-                if any(path in url for path in ("/landing", "/landingv2")):
-                    logger.debug("Still on landing page, deferring chat UI lookup")
-                    self.last_connection_error = self.ERROR_CONNECTION_FAILED
-                    if not wait_for_login:
-                        logger.info("Background connect: skipping login wait while Copilot redirects")
-                        return False
-                    return self._wait_for_login_completion(page)
-                if "/chat" not in url:
-                    try:
-                        page.goto(self.COPILOT_URL, wait_until='domcontentloaded', timeout=30000)
-                    except (PlaywrightTimeoutError, PlaywrightError) as nav_err:
-                        logger.warning("Failed to navigate to chat during wait: %s", nav_err)
-                self.last_connection_error = self.ERROR_CONNECTION_FAILED
-                if not wait_for_login:
-                    logger.info("Background connect: chat UI not ready; deferring login prompt")
-                    return False
-                return self._wait_for_login_completion(page)
-
-            logger.warning("Chat input not found - login may be required")
+        # Chat input not found after all steps - handle timeout
+        # Check if we got redirected to login page during wait
+        url = page.url
+        if _is_login_page(url):
+            logger.warning("Redirected to login page during wait: %s", url[:50])
             self.last_connection_error = self.ERROR_LOGIN_REQUIRED
 
             if wait_for_login:
                 # Bring browser to foreground so user can complete login
-                self._bring_to_foreground_impl(page, reason="wait_for_chat_ready: chat input not found (timeout)")
+                self._bring_to_foreground_impl(page, reason="wait_for_chat_ready: timeout + login page detected")
                 return self._wait_for_login_completion(page)
             return False
+
+        # On Copilot domain but not yet on chat page, wait for proper navigation
+        if _is_copilot_url(url):
+            logger.info("Copilot page still loading, waiting for /chat before continuing...")
+            try:
+                page.wait_for_load_state('networkidle', timeout=5000)
+            except PlaywrightTimeoutError:
+                pass
+            if any(path in url for path in ("/landing", "/landingv2")):
+                logger.debug("Still on landing page, deferring chat UI lookup")
+                self.last_connection_error = self.ERROR_CONNECTION_FAILED
+                if not wait_for_login:
+                    logger.info("Background connect: skipping login wait while Copilot redirects")
+                    return False
+                return self._wait_for_login_completion(page)
+            if "/chat" not in url:
+                try:
+                    page.goto(self.COPILOT_URL, wait_until='domcontentloaded', timeout=30000)
+                except (PlaywrightTimeoutError, PlaywrightError) as nav_err:
+                    logger.warning("Failed to navigate to chat during wait: %s", nav_err)
+            self.last_connection_error = self.ERROR_CONNECTION_FAILED
+            if not wait_for_login:
+                logger.info("Background connect: chat UI not ready; deferring login prompt")
+                return False
+            return self._wait_for_login_completion(page)
+
+        logger.warning("Chat input not found - login may be required")
+        self.last_connection_error = self.ERROR_LOGIN_REQUIRED
+
+        if wait_for_login:
+            # Bring browser to foreground so user can complete login
+            self._bring_to_foreground_impl(page, reason="wait_for_chat_ready: chat input not found (timeout)")
+            return self._wait_for_login_completion(page)
+        return False
 
     # Authentication keywords for multi-language support
     AUTH_KEYWORDS = (

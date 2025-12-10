@@ -483,8 +483,6 @@ class CopilotHandler:
         self.edge_process = None
         # Connection error for detailed user feedback
         self.last_connection_error: str = self.ERROR_NONE
-        # GPT-5 toggle optimization: skip check after first successful enable
-        self._gpt5_enabled = False
         # Login wait cancellation flag (set by cancel_login_wait to interrupt login wait loop)
         self._login_cancelled = False
         # Translation cancellation callback (returns True if cancelled)
@@ -934,7 +932,6 @@ class CopilotHandler:
         from contextlib import suppress
 
         self._connected = False
-        self._gpt5_enabled = False  # 再接続時に再チェックするためリセット
 
         # Minimize Edge window before cleanup to prevent it from staying in foreground
         # This handles cases where timeout errors or other failures leave the window visible
@@ -1827,7 +1824,6 @@ class CopilotHandler:
 
         # Mark as disconnected
         self._connected = False
-        self._gpt5_enabled = False
 
         # Terminate Edge browser process directly (don't wait for Playwright)
         with suppress(Exception):
@@ -1856,7 +1852,6 @@ class CopilotHandler:
             self._save_storage_state()
 
         self._connected = False
-        self._gpt5_enabled = False  # 再接続時に再チェックするためリセット
 
         # Use suppress for cleanup - we want to continue even if errors occur
         # Catch all exceptions during cleanup to ensure resources are released
@@ -2370,9 +2365,6 @@ class CopilotHandler:
             logger.info("[TIMING] wait_for_input_element: %.2fs", time.time() - input_wait_start)
 
             if input_elem:
-                # GPT-5を有効化（fillの前に行う。fill後だとフォーカスが外れる可能性がある）
-                self._ensure_gpt5_enabled()
-
                 logger.debug("Input element found, setting text via JS...")
                 fill_start = time.time()
                 fill_success = False
@@ -2984,11 +2976,6 @@ class CopilotHandler:
                 self._wait_for_responses_cleared(timeout=1.0)
                 logger.info("[TIMING] new_chat: _wait_for_responses_cleared: %.2fs", time.time() - clear_start)
 
-            # 新しいチャット開始後、GPT-5を有効化
-            # （送信時にも再確認するが、UIの安定性のため先に試行）
-            gpt5_start = time.time()
-            self._ensure_gpt5_enabled()
-            logger.info("[TIMING] new_chat: _ensure_gpt5_enabled: %.2fs", time.time() - gpt5_start)
             logger.info("[TIMING] start_new_chat total: %.2fs", time.time() - new_chat_total_start)
         except (PlaywrightError, AttributeError):
             pass
@@ -3032,116 +3019,3 @@ class CopilotHandler:
             return False
 
         return True
-
-    def _ensure_gpt5_enabled(self, max_wait: float = 0.5) -> bool:
-        """
-        GPT-5トグルボタンが有効でなければ有効化する。
-        送信直前に呼び出すことで、ボタンの遅延描画にも対応。
-
-        注意: ボタンのテキストやクラス名は頻繁に変更される可能性があり、
-        将来的にGPT-5がデフォルトになりボタン自体がなくなる可能性もある。
-        そのため、複数の検出方法を用意し、見つからない場合は静かにスキップする。
-
-        実際のCopilot HTML（2024年時点）:
-        - 押されていない: <button aria-pressed="false" class="... fui-ToggleButton ...">Try GPT-5</button>
-        - 押されている: <button aria-pressed="true" class="... fui-ToggleButton ...">GPT-5 On</button>
-
-        Args:
-            max_wait: ボタンの遅延描画を待つ最大時間（秒）
-
-        Returns:
-            True if GPT-5 is enabled (or button not found), False if failed to enable
-        """
-        # Skip check if already enabled in this session (optimization)
-        if self._gpt5_enabled:
-            return True
-
-        if not self._page:
-            return True
-
-        error_types = _get_playwright_errors()
-        PlaywrightError = error_types['Error']
-        PlaywrightTimeoutError = error_types['TimeoutError']
-
-        try:
-            # まず、既に有効化されているか確認
-            enabled_btn = self._page.query_selector(
-                'button.fui-ToggleButton[aria-pressed="true"]'
-            )
-            if enabled_btn:
-                self._gpt5_enabled = True
-                return True  # 既に有効
-
-            # 無効なボタンを探す（遅延描画対応のため複数回試行）
-            start_time = time.time()
-            gpt5_btn = None
-
-            while time.time() - start_time < max_wait:
-                # 方法1: aria-pressed="false"のトグルボタンを直接検索
-                gpt5_btn = self._page.query_selector(
-                    'button.fui-ToggleButton[aria-pressed="false"]'
-                )
-                if gpt5_btn:
-                    break
-
-                # 方法2: 新しいチャットボタンの近くにあるトグルボタンをJSで検索
-                handle = self._page.evaluate_handle('''() => {
-                    // 新しいチャットボタンを基準に探す
-                    const newChatBtn = document.querySelector('#new-chat-button, [data-testid="newChatButton"]');
-                    if (newChatBtn) {
-                        let parent = newChatBtn.parentElement;
-                        for (let i = 0; i < 4 && parent; i++) {
-                            const toggleBtn = parent.querySelector('button[aria-pressed="false"]');
-                            if (toggleBtn && toggleBtn !== newChatBtn) {
-                                return toggleBtn;
-                            }
-                            parent = parent.parentElement;
-                        }
-                    }
-                    // 送信ボタンの近くにあるトグルボタンを探す
-                    const sendBtn = document.querySelector('.fai-SendButton, button[type="submit"]');
-                    if (sendBtn) {
-                        let parent = sendBtn.parentElement;
-                        for (let i = 0; i < 5 && parent; i++) {
-                            const toggleBtn = parent.querySelector('button[aria-pressed="false"]');
-                            if (toggleBtn && toggleBtn !== sendBtn) {
-                                return toggleBtn;
-                            }
-                            parent = parent.parentElement;
-                        }
-                    }
-                    return null;
-                }''')
-                # JSHandleをElementHandleに変換（nullの場合はNoneが返る）
-                gpt5_btn = handle.as_element() if handle else None
-
-                if gpt5_btn:
-                    break
-
-                time.sleep(0.1)  # 短い間隔でリトライ
-
-            if not gpt5_btn:
-                # ボタンが見つからない = 既に有効か、ボタンが存在しない
-                self._gpt5_enabled = True
-                return True
-
-            # ボタンをクリックして有効化 (use JS click to avoid bringing browser to front)
-            gpt5_btn.evaluate('el => el.click()')
-
-            # 状態変更を確認（短いタイムアウト）
-            try:
-                self._page.wait_for_selector(
-                    'button.fui-ToggleButton[aria-pressed="true"], button[aria-pressed="true"]',
-                    timeout=1500,
-                    state='attached'
-                )
-                self._gpt5_enabled = True
-                return True
-            except PlaywrightTimeoutError:
-                # 状態変更が確認できなくても、クリックは成功したかもしれない
-                self._gpt5_enabled = True
-                return True
-
-        except (PlaywrightError, PlaywrightTimeoutError, AttributeError):
-            # エラーが発生しても翻訳処理は続行（フラグは設定しない、次回再試行）
-            return True

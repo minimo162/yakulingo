@@ -181,7 +181,6 @@ class TestCopilotHandlerSendMessage:
         mock_page.query_selector.return_value = None
 
         handler._page = mock_page
-        handler._ensure_gpt5_enabled = Mock()  # Mock GPT-5 check
 
         handler._send_message("Test message")
 
@@ -202,7 +201,6 @@ class TestCopilotHandlerSendMessage:
         mock_page.query_selector.return_value = None  # No auth dialog / No send button
 
         handler._page = mock_page
-        handler._ensure_gpt5_enabled = Mock()
 
         handler._send_message("Test message")
 
@@ -235,7 +233,6 @@ class TestCopilotHandlerSendMessage:
         mock_page.query_selector.return_value = None  # No auth dialog
 
         handler._page = mock_page
-        handler._ensure_gpt5_enabled = Mock()  # Mock GPT-5 check
 
         special_text = "日本語テスト <script>alert('xss')</script> & special chars"
         handler._send_message(special_text)
@@ -533,6 +530,7 @@ class TestCopilotHandlerTranslateSingle:
         handler = CopilotHandler()
         handler._connected = False
         mock_page = Mock()
+        mock_page.url = "https://m365.cloud.microsoft/chat"  # Valid Copilot URL
         mock_page.query_selector_all.return_value = []
         mock_page.query_selector.return_value = None  # No auth dialog
         handler._page = mock_page
@@ -588,7 +586,7 @@ class TestCopilotHandlerParseBatchResult:
         return CopilotHandler()
 
     def test_parse_mixed_numbered_and_unnumbered(self, handler):
-        """Parse result with mixed numbering - unnumbered lines belong to previous numbered item"""
+        """Parse result with mixed numbering - missing numbers get empty strings at correct index"""
         result = """1. First item
 Second item without number
 3. Third item"""
@@ -598,10 +596,10 @@ Second item without number
         # Unnumbered line is included in item 1 (multiline support)
         assert "First item" in parsed[0]
         assert "Second item without number" in parsed[0]
-        # Item 3 follows item 1 (sorted by number, but sequential in output)
-        assert parsed[1] == "Third item"
-        # Padding for missing items
-        assert parsed[2] == ""
+        # Item 2 is missing, so empty string is inserted at index 1
+        assert parsed[1] == ""
+        # Item 3 is at index 2 (index = number - 1)
+        assert parsed[2] == "Third item"
 
     def test_parse_with_multiline_items(self, handler):
         """Handle items that could span multiple lines"""

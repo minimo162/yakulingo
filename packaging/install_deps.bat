@@ -179,9 +179,20 @@ echo [DONE] Playwright browser installed.
 :: ============================================================
 echo.
 echo [5/6] Verifying paddlepaddle installation...
+
+:: Check if venv python exists
+if not exist ".venv\Scripts\python.exe" (
+    echo [ERROR] .venv\Scripts\python.exe not found.
+    echo [INFO] Virtual environment may not have been created properly.
+    echo [INFO] Please check the output of step 3.
+    pause
+    exit /b 1
+)
+
 echo [INFO] This may take a moment...
-:: Use -W ignore to suppress ccache and other warnings, but show errors
-.venv\Scripts\python.exe -W ignore -c "import warnings; warnings.filterwarnings('ignore'); import paddle; print('[OK] paddlepaddle version:', paddle.__version__)"
+:: Use -W ignore to suppress ccache and other warnings
+:: Redirect stderr to nul to suppress Windows file search messages
+.venv\Scripts\python.exe -W ignore -c "import warnings; warnings.filterwarnings('ignore'); import paddle; print('[OK] paddlepaddle version:', paddle.__version__)" 2>nul
 if errorlevel 1 (
     echo [WARNING] paddlepaddle is not installed correctly.
     echo [INFO] Attempting manual installation via uv pip...
@@ -193,7 +204,7 @@ if errorlevel 1 (
     ) else (
         echo [OK] paddlepaddle installed successfully.
         :: Verify again after install
-        .venv\Scripts\python.exe -W ignore -c "import warnings; warnings.filterwarnings('ignore'); import paddle; print('[OK] paddlepaddle version:', paddle.__version__)"
+        .venv\Scripts\python.exe -W ignore -c "import warnings; warnings.filterwarnings('ignore'); import paddle; print('[OK] paddlepaddle version:', paddle.__version__)" 2>nul
     )
 )
 
@@ -202,20 +213,20 @@ if errorlevel 1 (
 :: ============================================================
 echo.
 echo [6/6] Pre-compiling Python bytecode...
-.venv\Scripts\python.exe -m compileall -q yakulingo
+.venv\Scripts\python.exe -m compileall -q yakulingo 2>nul
 if errorlevel 1 (
     echo [WARNING] Some bytecode compilation failed, but this is not critical.
 )
 
 echo [INFO] Pre-importing modules for faster startup...
-.venv\Scripts\python.exe -c "import nicegui; import pywebview; from yakulingo.ui import app; from yakulingo.services import translation_service"
+.venv\Scripts\python.exe -c "import nicegui; import pywebview; from yakulingo.ui import app; from yakulingo.services import translation_service" 2>nul
 if errorlevel 1 (
     echo [WARNING] Some module imports failed. Check the error above.
 )
 
 :: Pre-import paddle/paddleocr to download models and cache them (may take a while)
 echo [INFO] Downloading paddleocr models (this may take a few minutes on first run)...
-.venv\Scripts\python.exe -W ignore -c "import warnings; warnings.filterwarnings('ignore'); import paddle; from paddleocr import LayoutDetection; print('[OK] paddleocr models ready.')"
+.venv\Scripts\python.exe -W ignore -c "import warnings; warnings.filterwarnings('ignore'); import paddle; from paddleocr import LayoutDetection; print('[OK] paddleocr models ready.')" 2>nul
 if errorlevel 1 (
     echo [WARNING] paddleocr model download may have failed. PDF layout analysis may not work.
     echo [INFO] You can try running YakuLingo anyway - models will be downloaded on first PDF translation.

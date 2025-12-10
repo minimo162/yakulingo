@@ -189,23 +189,13 @@ if not exist ".venv\Scripts\python.exe" (
     exit /b 1
 )
 
-:: First test that Python itself works
-echo [DEBUG] Testing basic Python...
-.venv\Scripts\python.exe -c "print('Python OK')"
-if errorlevel 1 (
-    echo [ERROR] Basic Python test failed.
-    pause
-    exit /b 1
-)
-
 echo [INFO] This may take a moment...
-:: Use PowerShell to create and run paddle check script (avoids batch quoting issues)
+:: Use PowerShell to run paddle check (avoids batch quoting issues)
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
     "$script = 'import warnings; warnings.filterwarnings(''ignore''); import paddle; print(''[OK] paddlepaddle version:'', paddle.__version__)';" ^
     "& '.venv\Scripts\python.exe' -W ignore -c $script 2>$null;" ^
     "exit $LASTEXITCODE"
 set PADDLE_ERROR=!errorlevel!
-echo [DEBUG] Python exit code: !PADDLE_ERROR!
 if !PADDLE_ERROR! neq 0 (
     echo [WARNING] paddlepaddle verification failed or not installed.
     echo [INFO] PDF layout analysis may not be available.
@@ -223,9 +213,14 @@ if errorlevel 1 (
 )
 
 echo [INFO] Pre-importing modules for faster startup...
-.venv\Scripts\python.exe -c "import nicegui; import pywebview; from yakulingo.ui import app; from yakulingo.services import translation_service"
-if errorlevel 1 (
-    echo [WARNING] Some module imports failed. Check the error above.
+:: Use PowerShell to run module imports (avoids batch quoting issues)
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+    "$script = 'import nicegui; import pywebview; from yakulingo.ui import app; from yakulingo.services import translation_service; print(''[OK] Core modules imported.'')';" ^
+    "& '.venv\Scripts\python.exe' -c $script 2>$null;" ^
+    "exit $LASTEXITCODE"
+set IMPORT_ERROR=!errorlevel!
+if !IMPORT_ERROR! neq 0 (
+    echo [WARNING] Some module imports failed. This is usually not critical.
 )
 
 :: Pre-import paddle/paddleocr to download models and cache them (may take a while)

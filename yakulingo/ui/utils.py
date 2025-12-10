@@ -25,8 +25,19 @@ logger = logging.getLogger(__name__)
 # Pre-compiled regex patterns for performance
 _RE_BOLD = re.compile(r'\*\*([^*]+)\*\*')
 _RE_QUOTE = re.compile(r'"([^"]+)"')
-_RE_TRANSLATION_TEXT = re.compile(r'[#>*\s-]*訳文[:：]?\s*(.+?)(?=[\n\s]*[#>*\s-]*解説[:：]?|$)', re.DOTALL)
-_RE_EXPLANATION = re.compile(r'[#>*\s-]*解説[:：]?\s*(.+)', re.DOTALL)
+
+# Translation result parsing patterns
+# Note: Colon is REQUIRED ([:：]) to avoid matching "訳文" in other contexts (e.g., "訳文の形式:")
+# Supports multiple explanation markers for robustness against Copilot format changes
+_EXPLANATION_MARKERS = r'(?:解説|説明|Explanation|Notes?)[:：]?'
+_RE_TRANSLATION_TEXT = re.compile(
+    r'[#>*\s-]*訳文[:：]\s*(.+?)(?=[\n\s]*[#>*\s-]*' + _EXPLANATION_MARKERS + r'|$)',
+    re.DOTALL | re.IGNORECASE
+)
+_RE_EXPLANATION = re.compile(
+    r'[#>*\s-]*' + _EXPLANATION_MARKERS + r'\s*(.+)',
+    re.DOTALL | re.IGNORECASE
+)
 
 # Filename forbidden characters (Windows: \ / : * ? " < > |, also control chars)
 _RE_FILENAME_FORBIDDEN = re.compile(r'[\\/:*?"<>|\x00-\x1f]')

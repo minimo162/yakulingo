@@ -1477,11 +1477,12 @@ class YakuLingoApp:
             if not text:
                 return ""
 
-            # Find start of translation (訳文/Translation marker with optional colon/heading)
+            # Find start of translation (訳文/Translation marker with REQUIRED colon)
+            # Note: Colon is required to avoid matching "訳文" in other contexts (e.g., "訳文の形式:")
             import re
             START_MARKERS = [
-                r'[#>*\s-]*訳文[:：]?\s*',       # Japanese: 訳文
-                r'[#>*\s-]*Translation[:：]?\s*',  # English
+                r'[#>*\s-]*訳文[:：]\s*',       # Japanese: 訳文: or 訳文：
+                r'[#>*\s-]*Translation[:：]\s*',  # English: Translation: or Translation：
             ]
             start_match = None
             for pattern in START_MARKERS:

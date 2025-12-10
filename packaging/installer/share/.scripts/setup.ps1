@@ -41,10 +41,13 @@ trap {
 # Script directory (must be resolved at top-level, not inside functions)
 $script:ScriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Definition }
 # Use provided ShareDir if available (when script is copied to TEMP due to non-ASCII path)
-# Priority: 1. Environment variable (Unicode safe), 2. Parameter, 3. Derive from script location
-$envShareDir = $env:YAKULINGO_SHARE_DIR
-if (-not [string]::IsNullOrEmpty($envShareDir)) {
-    $script:ShareDir = $envShareDir
+# Priority: 1. File (Unicode safe), 2. Environment variable, 3. Parameter, 4. Derive from script location
+$shareDirFile = Join-Path $script:ScriptDir "share_dir.txt"
+if (Test-Path $shareDirFile) {
+    # Read UTF-8 file with BOM handling
+    $script:ShareDir = [System.IO.File]::ReadAllText($shareDirFile, [System.Text.Encoding]::UTF8).Trim()
+} elseif (-not [string]::IsNullOrEmpty($env:YAKULINGO_SHARE_DIR)) {
+    $script:ShareDir = $env:YAKULINGO_SHARE_DIR
 } elseif (-not [string]::IsNullOrEmpty($ShareDir)) {
     $script:ShareDir = $ShareDir
 } else {

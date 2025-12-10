@@ -200,11 +200,11 @@ if errorlevel 1 (
 
 echo [INFO] This may take a moment...
 :: Use -W ignore to suppress ccache and other warnings
-:: First try to import paddle and capture any errors
-.venv\Scripts\python.exe -W ignore -c "import warnings; warnings.filterwarnings('ignore'); import paddle; print('[OK] paddlepaddle version:', paddle.__version__)"
-set PADDLE_ERROR=%errorlevel%
-echo [DEBUG] Python exit code: %PADDLE_ERROR%
-if %PADDLE_ERROR% neq 0 (
+:: Use cmd /c to run in isolated subprocess (prevents PaddlePaddle from affecting batch)
+cmd /c ".venv\Scripts\python.exe -W ignore -c "import warnings; warnings.filterwarnings('ignore'); import paddle; print('[OK] paddlepaddle version:', paddle.__version__)"" 2>nul
+set PADDLE_ERROR=!errorlevel!
+echo [DEBUG] Python exit code: !PADDLE_ERROR!
+if !PADDLE_ERROR! neq 0 (
     echo [WARNING] paddlepaddle is not installed correctly.
     echo [INFO] Attempting manual installation via uv pip...
     echo [INFO] paddlepaddle is large (~500MB-1GB), this may take several minutes...
@@ -215,7 +215,7 @@ if %PADDLE_ERROR% neq 0 (
     ) else (
         echo [OK] paddlepaddle installed successfully.
         :: Verify again after install
-        .venv\Scripts\python.exe -W ignore -c "import warnings; warnings.filterwarnings('ignore'); import paddle; print('[OK] paddlepaddle version:', paddle.__version__)" 2>nul
+        cmd /c ".venv\Scripts\python.exe -W ignore -c "import warnings; warnings.filterwarnings('ignore'); import paddle; print('[OK] paddlepaddle version:', paddle.__version__)"" 2>nul
     )
 )
 
@@ -237,7 +237,7 @@ if errorlevel 1 (
 
 :: Pre-import paddle/paddleocr to download models and cache them (may take a while)
 echo [INFO] Downloading paddleocr models (this may take a few minutes on first run)...
-.venv\Scripts\python.exe -W ignore -c "import warnings; warnings.filterwarnings('ignore'); import paddle; from paddleocr import LayoutDetection; print('[OK] paddleocr models ready.')"
+cmd /c ".venv\Scripts\python.exe -W ignore -c "import warnings; warnings.filterwarnings('ignore'); import paddle; from paddleocr import LayoutDetection; print('[OK] paddleocr models ready.')"" 2>nul
 if errorlevel 1 (
     echo [WARNING] paddleocr model download may have failed. PDF layout analysis may not work.
     echo [INFO] You can try running YakuLingo anyway - models will be downloaded on first PDF translation.

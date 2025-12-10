@@ -1965,6 +1965,14 @@ class PdfProcessor(FileProcessor):
                             line_height,
                         )
 
+                        # DEBUG: Log block processing details
+                        logger.debug(
+                            "Processing block %s: box_pdf=%s, font_size=%.1f, "
+                            "line_height=%.2f, lines=%d, page_height=%.1f",
+                            block_id, box_pdf, font_size, line_height,
+                            len(lines), page_height
+                        )
+
                         # Generate text operators for each line
                         for line_idx, line_text in enumerate(lines):
                             if not line_text.strip():
@@ -1974,6 +1982,14 @@ class PdfProcessor(FileProcessor):
                             x, y = calculate_text_position(
                                 box_pdf, line_idx, font_size, line_height
                             )
+
+                            # DEBUG: Log position calculation
+                            if line_idx == 0:  # Only log first line to avoid spam
+                                logger.debug(
+                                    "Line position: block=%s, line=%d, x=%.1f, y=%.1f, "
+                                    "text_len=%d",
+                                    block_id, line_idx, x, y, len(line_text)
+                                )
 
                             # Encode text to hex using Unicode code points (Identity-H encoding)
                             hex_text = op_gen.raw_string(font_id, line_text)

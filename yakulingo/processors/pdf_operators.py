@@ -564,14 +564,22 @@ class ContentStreamParser:
         # Get content stream xrefs
         contents = page.get_contents()
         if not contents:
+            logger.debug("filter_page_contents: no content streams for page %d", page.number)
             return b""
+
+        total_original_size = 0
+        total_filtered_size = 0
 
         for xref in contents:
             try:
                 stream = doc.xref_stream(xref)
                 if stream:
+                    original_size = len(stream)
                     filtered = self.parse_and_filter(stream)
+                    filtered_size = len(filtered)
                     filtered_parts.append(filtered)
+                    total_original_size += original_size
+                    total_filtered_size += filtered_size
             except (RuntimeError, ValueError, KeyError, OSError) as e:
                 # RuntimeError: PyMuPDF internal errors
                 # ValueError: invalid stream data
@@ -586,7 +594,14 @@ class ContentStreamParser:
                 except (RuntimeError, ValueError, KeyError, OSError):
                     pass
 
-        return b" ".join(filtered_parts)
+        result = b" ".join(filtered_parts)
+        logger.debug(
+            "filter_page_contents: page=%d, streams=%d, original_size=%d, "
+            "filtered_size=%d, result_size=%d",
+            page.number, len(contents), total_original_size,
+            total_filtered_size, len(result)
+        )
+        return result
 
 
 # =============================================================================

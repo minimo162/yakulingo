@@ -691,6 +691,12 @@ class ContentStreamReplacer:
         """
         new_text = self.build()
 
+        logger.debug(
+            "build_combined: new_text_len=%d, filtered_base_len=%d, new_text_preview='%s'",
+            len(new_text), len(self._filtered_base_stream) if self._filtered_base_stream else 0,
+            new_text[:200].decode('latin-1', errors='replace') if new_text else ''
+        )
+
         if self._filtered_base_stream:
             # Combine: filtered base (graphics) + new text
             # Wrap in q/Q to isolate graphics state
@@ -710,7 +716,16 @@ class ContentStreamReplacer:
         # Build combined stream (filtered base + new text)
         stream_bytes = self.build_combined()
 
+        logger.debug(
+            "apply_to_page: page=%d, stream_bytes_len=%d, operators=%d, used_fonts=%s, "
+            "filtered_base_len=%d",
+            page.number, len(stream_bytes) if stream_bytes else 0,
+            len(self.operators), list(self._used_fonts),
+            len(self._filtered_base_stream) if self._filtered_base_stream else 0
+        )
+
         if not stream_bytes.strip():
+            logger.warning("apply_to_page: stream_bytes is empty, skipping page %d", page.number)
             return
 
         # Create new stream object
@@ -766,10 +781,20 @@ class ContentStreamReplacer:
         font_entries = []
         for font_id in self._used_fonts:
             font_xref = self.font_registry._font_xrefs.get(font_id)
+            logger.debug(
+                "_update_font_resources: font_id=%s, font_xref=%s, available_xrefs=%s",
+                font_id, font_xref, list(self.font_registry._font_xrefs.keys())
+            )
             if font_xref:
                 font_entries.append(f"/{font_id} {font_xref} 0 R")
 
+        logger.debug(
+            "_update_font_resources: font_entries=%s, font_dict_info=%s",
+            font_entries, font_dict_info
+        )
+
         if not font_entries:
+            logger.warning("_update_font_resources: no font entries to add")
             return
 
         if font_dict_info[0] == "dict":

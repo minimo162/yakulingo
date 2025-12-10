@@ -239,16 +239,19 @@ def _language_selector(state: AppState, on_change: Optional[Callable[[str], None
     detected = state.file_detected_language
 
     with ui.column().classes('w-full items-center mt-4 gap-2'):
-        # Show detected language info
+        # Show detected language info or detecting status
         if detected:
             output_label = '英訳' if state.file_output_language == 'en' else '和訳'
             ui.label(f'{detected}を検出 → {output_label}します').classes('text-xs text-muted')
+        else:
+            ui.label('言語を検出中...').classes('text-xs text-muted')
 
         # Language toggle buttons
+        # Only show active state after detection is complete
         with ui.element('div').classes('language-selector'):
             # Translate to English option
             en_classes = 'lang-btn lang-btn-left'
-            if state.file_output_language == 'en':
+            if detected and state.file_output_language == 'en':
                 en_classes += ' lang-btn-active'
             with ui.button(on_click=lambda: on_change and on_change('en')).classes(en_classes).props('flat no-caps'):
                 ui.icon('arrow_forward').classes('text-sm mr-1')
@@ -257,7 +260,7 @@ def _language_selector(state: AppState, on_change: Optional[Callable[[str], None
 
             # Translate to Japanese option
             jp_classes = 'lang-btn lang-btn-right'
-            if state.file_output_language == 'jp':
+            if detected and state.file_output_language == 'jp':
                 jp_classes += ' lang-btn-active'
             with ui.button(on_click=lambda: on_change and on_change('jp')).classes(jp_classes).props('flat no-caps'):
                 ui.icon('arrow_forward').classes('text-sm mr-1')

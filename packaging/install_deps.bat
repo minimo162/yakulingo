@@ -45,11 +45,17 @@ if not exist "uv.exe" (
         "$secPwd = ConvertTo-SecureString $env:PROXY_PASS -AsPlainText -Force; " ^
         "$cred = New-Object System.Management.Automation.PSCredential ($env:PROXY_USER, $secPwd); " ^
         "Invoke-WebRequest -Uri 'https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-pc-windows-msvc.zip' -OutFile 'uv.zip' -Proxy $proxy -ProxyCredential $cred -UseBasicParsing -TimeoutSec 60; " ^
-        "Expand-Archive -Path 'uv.zip' -DestinationPath '.' -Force; " ^
-        "Remove-Item 'uv.zip'"
+        "Expand-Archive -Path 'uv.zip' -DestinationPath 'uv-temp' -Force; " ^
+        "$uvExe = Get-ChildItem -Path 'uv-temp' -Filter 'uv.exe' -Recurse | Select-Object -First 1; " ^
+        "if ($uvExe) { Copy-Item $uvExe.FullName -Destination '.' -Force }; " ^
+        "$uvxExe = Get-ChildItem -Path 'uv-temp' -Filter 'uvx.exe' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1; " ^
+        "if ($uvxExe) { Copy-Item $uvxExe.FullName -Destination '.' -Force }; " ^
+        "Remove-Item 'uv-temp' -Recurse -Force -ErrorAction SilentlyContinue; " ^
+        "Remove-Item 'uv.zip' -ErrorAction SilentlyContinue"
 
     if not exist "uv.exe" (
         echo [ERROR] Failed to download uv.
+        echo [INFO] Please check your network connection and proxy settings.
         pause
         exit /b 1
     )
@@ -239,10 +245,15 @@ if not defined PROXY_USER exit /b 0
 
 :: Use PowerShell to securely input password (masked)
 echo Password (input will be hidden):
-for /f "delims=" %%p in ('powershell -Command "$p = Read-Host -AsSecureString; [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($p))"') do set PROXY_PASS=%%p
+for /f "usebackq delims=" %%p in (`powershell -NoProfile -Command "$p = Read-Host -AsSecureString; if ($p.Length -gt 0) { [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($p)) } else { 'EMPTY_PASSWORD' }"`) do set PROXY_PASS=%%p
 
 if not defined PROXY_PASS (
+    echo [ERROR] Password input failed.
+    exit /b 0
+)
+if "!PROXY_PASS!"=="EMPTY_PASSWORD" (
     echo [ERROR] Password is required.
+    set PROXY_PASS=
     exit /b 0
 )
 

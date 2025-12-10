@@ -300,7 +300,7 @@ class PlaywrightThreadExecutor:
         # Send stop signal and wait for worker to finish
         if self._thread is not None and self._thread.is_alive():
             self._request_queue.put((None, None, None))
-            self._thread.join(timeout=3)
+            self._thread.join(timeout=5)
             if self._thread.is_alive():
                 logger.warning("Playwright worker thread did not terminate within timeout")
 
@@ -1994,6 +1994,11 @@ class CopilotHandler:
                         self.edge_process.wait(timeout=2)
                     except subprocess.TimeoutExpired:
                         self.edge_process.kill()
+                        # Wait for kill to complete (ensures process is fully terminated)
+                        try:
+                            self.edge_process.wait(timeout=1)
+                        except subprocess.TimeoutExpired:
+                            logger.warning("Edge process did not terminate after kill")
                     logger.info("Edge browser terminated (force via process)")
                     browser_terminated = True
 

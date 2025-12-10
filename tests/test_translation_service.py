@@ -1504,6 +1504,36 @@ The 18.3 trillion yen supplementary budget proposal is under review. Opposition 
         assert options[0].text.startswith("Google's Gemini 3 Pro")
         assert "この表現を選んだ理由" in options[0].explanation
 
+    def test_parse_avoids_honyaku_shite_kudasai_match(self, service):
+        """Ensure 「翻訳してください」 in preamble doesn't match as translation label.
+
+        Regression test for bug where "を自然な日本語に翻訳してください" would match
+        the old 「翻訳」 pattern (with optional colon), causing metadata to leak.
+        Now 「翻訳」 requires a colon to avoid this false match.
+        """
+        raw = """ユーザーのご依頼：「hello」を自然な日本語に翻訳してください。参考用語集（glossary.csv）も確認しましたが、「hello」に該当する専門用語はありませんでしたので、一般的な訳語を使用します。
+
+訳文:
+こんにちは
+
+解説:
+
+挨拶表現として「hello」は日本語で「こんにちは」と訳されます。
+重要語句：「hello」＝「こんにちは」
+日常的な挨拶やメール・会話の冒頭など、幅広い場面で使われる自然な表現です。"""
+
+        options = service._parse_single_translation_result(raw)
+
+        assert len(options) == 1
+        # Translation should be just "こんにちは", NOT including preamble
+        assert "してください" not in options[0].text
+        assert "参考用語集" not in options[0].text
+        assert "glossary.csv" not in options[0].text
+        # Translation should be the actual content
+        assert options[0].text == "こんにちは"
+        # Explanation should contain the explanation text
+        assert "こんにちは" in options[0].explanation or "挨拶" in options[0].explanation
+
 
 class TestParseSingleOptionResult:
     """Tests for TranslationService._parse_single_option_result()"""

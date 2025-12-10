@@ -96,6 +96,9 @@ End If
 ' Use cmd.exe to handle stderr redirection (PowerShell -File interprets 2> as argument)
 command = "cmd.exe /c powershell.exe -ExecutionPolicy Bypass -File """ & psScriptToRun & """ -GuiMode 2>""" & errorLog & """"
 
+' Debug: Show command being executed
+MsgBox "Command:" & vbCrLf & vbCrLf & command, vbInformation, "YakuLingo Setup - Debug"
+
 ' Run and wait for completion (1 = normal window for debugging, True = wait)
 exitCode = objShell.Run(command, 1, True)
 

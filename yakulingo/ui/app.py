@@ -2302,12 +2302,32 @@ class YakuLingoApp:
         # Yield control to allow UI to render the dialog
         await asyncio.sleep(0)
 
+        # Thread-safe progress state (updated from background thread, read by UI timer)
+        progress_lock = threading.Lock()
+        progress_state = {'percentage': 0.0, 'status': '開始中...'}
+
         def on_progress(p: TranslationProgress):
+            # Only update state - UI will be updated by timer on main thread
+            # This avoids WebSocket connection issues from direct UI updates in background thread
+            with progress_lock:
+                progress_state['percentage'] = p.percentage
+                progress_state['status'] = p.status
             self.state.translation_progress = p.percentage
             self.state.translation_status = p.status
-            progress_bar_inner.style(f'width: {int(p.percentage * 100)}%')
-            progress_label.set_text(f'{int(p.percentage * 100)}%')
-            status_label.set_text(p.status or '翻訳中...')
+
+        def update_progress_ui():
+            # Read progress state and update UI elements (runs on main thread via timer)
+            with progress_lock:
+                pct = progress_state['percentage']
+                status = progress_state['status']
+            progress_bar_inner.style(f'width: {int(pct * 100)}%')
+            progress_label.set_text(f'{int(pct * 100)}%')
+            status_label.set_text(status or '翻訳中...')
+
+        # Start UI update timer (0.1s interval) - updates progress UI on main thread
+        PROGRESS_UI_TIMER_INTERVAL = 0.1  # seconds
+        with client:
+            progress_timer = ui.timer(PROGRESS_UI_TIMER_INTERVAL, update_progress_ui)
 
         error_message = None
         result = None
@@ -2342,6 +2362,12 @@ class YakuLingoApp:
 
         # Restore client context for UI operations
         with client:
+            # Cancel progress timer to stop UI updates
+            try:
+                progress_timer.cancel()
+            except Exception as e:
+                logger.debug("Failed to cancel progress timer: %s", e)
+
             # Close progress dialog
             try:
                 progress_dialog.close()

@@ -33,11 +33,58 @@ $script:ShareDir = Split-Path -Parent $script:ScriptDir
 $script:AppName = "YakuLingo"
 
 # Find 7-Zip (optional, falls back to Expand-Archive if not found)
-$script:SevenZip = @(
-    "$env:ProgramFiles\7-Zip\7z.exe",
-    "${env:ProgramFiles(x86)}\7-Zip\7z.exe"
-) | Where-Object { Test-Path $_ } | Select-Object -First 1
+# Check multiple locations including registry for reliable detection
+$script:SevenZip = $null
 
+# Method 1: Check standard installation paths
+$standardPaths = @(
+    "$env:ProgramFiles\7-Zip\7z.exe",
+    "$env:ProgramW6432\7-Zip\7z.exe",
+    "${env:ProgramFiles(x86)}\7-Zip\7z.exe"
+)
+# Also check with explicit path construction for reliability
+$standardPaths += @(
+    [System.IO.Path]::Combine($env:ProgramFiles, "7-Zip", "7z.exe")
+)
+if ($env:ProgramW6432) {
+    $standardPaths += [System.IO.Path]::Combine($env:ProgramW6432, "7-Zip", "7z.exe")
+}
+$x86Path = [Environment]::GetFolderPath("ProgramFilesX86")
+if ($x86Path) {
+    $standardPaths += [System.IO.Path]::Combine($x86Path, "7-Zip", "7z.exe")
+}
+
+foreach ($path in $standardPaths | Select-Object -Unique) {
+    if ($path -and (Test-Path $path)) {
+        $script:SevenZip = $path
+        break
+    }
+}
+
+# Method 2: Check registry for installation path
+if (-not $script:SevenZip) {
+    $regPaths = @(
+        "HKLM:\SOFTWARE\7-Zip",
+        "HKLM:\SOFTWARE\WOW6432Node\7-Zip",
+        "HKCU:\SOFTWARE\7-Zip"
+    )
+    foreach ($regPath in $regPaths) {
+        try {
+            $installPath = (Get-ItemProperty -Path $regPath -Name "Path" -ErrorAction SilentlyContinue).Path
+            if ($installPath) {
+                $candidate = Join-Path $installPath "7z.exe"
+                if (Test-Path $candidate) {
+                    $script:SevenZip = $candidate
+                    break
+                }
+            }
+        } catch {
+            # Ignore registry access errors
+        }
+    }
+}
+
+# Method 3: Check PATH
 if (-not $script:SevenZip) {
     $script:SevenZip = (Get-Command "7z.exe" -ErrorAction SilentlyContinue).Source
 }
@@ -528,17 +575,22 @@ function Invoke-Setup {
     # ============================================================
     # Step 3: Extract ZIP locally (much faster than over network)
     # ============================================================
-    Write-Status -Message "Extracting files..." -Progress -Step "Step 3/4: Extracting" -Percent 55
+    # Show extraction method in progress (helps diagnose slow extraction)
+    $extractMethod = if ($script:Use7Zip) { "7-Zip" } else { "Windows built-in (slower)" }
+    Write-Status -Message "Extracting files..." -Progress -Step "Step 3/4: Extracting ($extractMethod)" -Percent 55
     if (-not $GuiMode) {
         Write-Host ""
         Write-Host "[3/4] Extracting files locally..." -ForegroundColor Yellow
+        if (-not $script:Use7Zip) {
+            Write-Host "      [WARNING] 7-Zip not found - using Windows built-in extractor (5-10x slower)" -ForegroundColor Yellow
+        }
     }
 
     try {
         # Extract to temp folder first
         if ($script:Use7Zip) {
             if (-not $GuiMode) {
-                Write-Host "      Extracting with 7-Zip..." -ForegroundColor Gray
+                Write-Host "      Extracting with 7-Zip: $($script:SevenZip)" -ForegroundColor Gray
             }
             # Use 7-Zip with progress output (bsp1 = show progress)
             # Run in background job to keep GUI responsive

@@ -10,9 +10,10 @@ echo.
 cd /d "%~dp0\.."
 
 :: ============================================================
-:: Proxy Settings
+:: Proxy Settings (optional)
 :: ============================================================
 set PROXY_SERVER=136.131.63.233:8082
+set USE_PROXY=0
 
 set UV_CACHE_DIR=.uv-cache
 set UV_PYTHON_INSTALL_DIR=.uv-python
@@ -21,15 +22,29 @@ set PLAYWRIGHT_BROWSERS_PATH=.playwright-browsers
 set UV_HTTP_TIMEOUT=600
 
 :: ============================================================
-:: Proxy Authentication (required)
+:: Proxy Configuration (optional)
 :: ============================================================
-echo [INFO] Proxy server: !PROXY_SERVER!
+echo Do you need to use a proxy server?
 echo.
-call :prompt_proxy_credentials
-if not defined PROXY_USER (
-    echo [ERROR] Proxy credentials are required.
-    pause
-    exit /b 1
+echo   [1] Yes - Use proxy (corporate network)
+echo   [2] No  - Direct connection
+echo.
+set /p PROXY_CHOICE="Enter choice (1 or 2): "
+if "!PROXY_CHOICE!"=="1" (
+    set USE_PROXY=1
+    echo.
+    echo [INFO] Proxy server: !PROXY_SERVER!
+    echo.
+    call :prompt_proxy_credentials
+    if not defined PROXY_USER (
+        echo [ERROR] Proxy credentials are required when using proxy.
+        pause
+        exit /b 1
+    )
+) else (
+    echo.
+    echo [INFO] Using direct connection (no proxy).
+    echo.
 )
 
 :: ============================================================
@@ -39,23 +54,36 @@ if not exist "uv.exe" (
     echo.
     echo [1/6] Downloading uv...
 
-    powershell -ExecutionPolicy Bypass -Command ^
-        "$ProgressPreference = 'SilentlyContinue'; " ^
-        "$proxy = 'http://!PROXY_SERVER!'; " ^
-        "$secPwd = ConvertTo-SecureString $env:PROXY_PASS -AsPlainText -Force; " ^
-        "$cred = New-Object System.Management.Automation.PSCredential ($env:PROXY_USER, $secPwd); " ^
-        "Invoke-WebRequest -Uri 'https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-pc-windows-msvc.zip' -OutFile 'uv.zip' -Proxy $proxy -ProxyCredential $cred -UseBasicParsing -TimeoutSec 60; " ^
-        "Expand-Archive -Path 'uv.zip' -DestinationPath 'uv-temp' -Force; " ^
-        "$uvExe = Get-ChildItem -Path 'uv-temp' -Filter 'uv.exe' -Recurse | Select-Object -First 1; " ^
-        "if ($uvExe) { Copy-Item $uvExe.FullName -Destination '.' -Force }; " ^
-        "$uvxExe = Get-ChildItem -Path 'uv-temp' -Filter 'uvx.exe' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1; " ^
-        "if ($uvxExe) { Copy-Item $uvxExe.FullName -Destination '.' -Force }; " ^
-        "Remove-Item 'uv-temp' -Recurse -Force -ErrorAction SilentlyContinue; " ^
-        "Remove-Item 'uv.zip' -ErrorAction SilentlyContinue"
+    if "!USE_PROXY!"=="1" (
+        powershell -ExecutionPolicy Bypass -Command ^
+            "$ProgressPreference = 'SilentlyContinue'; " ^
+            "$proxy = 'http://!PROXY_SERVER!'; " ^
+            "$secPwd = ConvertTo-SecureString $env:PROXY_PASS -AsPlainText -Force; " ^
+            "$cred = New-Object System.Management.Automation.PSCredential ($env:PROXY_USER, $secPwd); " ^
+            "Invoke-WebRequest -Uri 'https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-pc-windows-msvc.zip' -OutFile 'uv.zip' -Proxy $proxy -ProxyCredential $cred -UseBasicParsing -TimeoutSec 60; " ^
+            "Expand-Archive -Path 'uv.zip' -DestinationPath 'uv-temp' -Force; " ^
+            "$uvExe = Get-ChildItem -Path 'uv-temp' -Filter 'uv.exe' -Recurse | Select-Object -First 1; " ^
+            "if ($uvExe) { Copy-Item $uvExe.FullName -Destination '.' -Force }; " ^
+            "$uvxExe = Get-ChildItem -Path 'uv-temp' -Filter 'uvx.exe' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1; " ^
+            "if ($uvxExe) { Copy-Item $uvxExe.FullName -Destination '.' -Force }; " ^
+            "Remove-Item 'uv-temp' -Recurse -Force -ErrorAction SilentlyContinue; " ^
+            "Remove-Item 'uv.zip' -ErrorAction SilentlyContinue"
+    ) else (
+        powershell -ExecutionPolicy Bypass -Command ^
+            "$ProgressPreference = 'SilentlyContinue'; " ^
+            "Invoke-WebRequest -Uri 'https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-pc-windows-msvc.zip' -OutFile 'uv.zip' -UseBasicParsing -TimeoutSec 60; " ^
+            "Expand-Archive -Path 'uv.zip' -DestinationPath 'uv-temp' -Force; " ^
+            "$uvExe = Get-ChildItem -Path 'uv-temp' -Filter 'uv.exe' -Recurse | Select-Object -First 1; " ^
+            "if ($uvExe) { Copy-Item $uvExe.FullName -Destination '.' -Force }; " ^
+            "$uvxExe = Get-ChildItem -Path 'uv-temp' -Filter 'uvx.exe' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1; " ^
+            "if ($uvxExe) { Copy-Item $uvxExe.FullName -Destination '.' -Force }; " ^
+            "Remove-Item 'uv-temp' -Recurse -Force -ErrorAction SilentlyContinue; " ^
+            "Remove-Item 'uv.zip' -ErrorAction SilentlyContinue"
+    )
 
     if not exist "uv.exe" (
         echo [ERROR] Failed to download uv.
-        echo [INFO] Please check your network connection and proxy settings.
+        echo [INFO] Please check your network connection.
         pause
         exit /b 1
     )
@@ -96,20 +124,34 @@ set PYTHON_INSTALL_DIR=!UV_PYTHON_INSTALL_DIR!\cpython-!PYTHON_VERSION!-windows-
 if not exist "!UV_PYTHON_INSTALL_DIR!" mkdir "!UV_PYTHON_INSTALL_DIR!"
 
 :: Download Python using PowerShell
-powershell -ExecutionPolicy Bypass -Command ^
-    "$ProgressPreference = 'SilentlyContinue'; " ^
-    "$url = '!PYTHON_URL!'; " ^
-    "$proxy = 'http://!PROXY_SERVER!'; " ^
-    "$secPwd = ConvertTo-SecureString $env:PROXY_PASS -AsPlainText -Force; " ^
-    "$cred = New-Object System.Management.Automation.PSCredential ($env:PROXY_USER, $secPwd); " ^
-    "Write-Host '[INFO] Downloading Python from GitHub...'; " ^
-    "try { " ^
-    "    Invoke-WebRequest -Uri $url -OutFile '!PYTHON_ARCHIVE!' -Proxy $proxy -ProxyCredential $cred -UseBasicParsing -TimeoutSec 120; " ^
-    "    Write-Host '[OK] Download complete.'; " ^
-    "} catch { " ^
-    "    Write-Host \"[ERROR] Download failed: $_\"; " ^
-    "    exit 1; " ^
-    "}"
+if "!USE_PROXY!"=="1" (
+    powershell -ExecutionPolicy Bypass -Command ^
+        "$ProgressPreference = 'SilentlyContinue'; " ^
+        "$url = '!PYTHON_URL!'; " ^
+        "$proxy = 'http://!PROXY_SERVER!'; " ^
+        "$secPwd = ConvertTo-SecureString $env:PROXY_PASS -AsPlainText -Force; " ^
+        "$cred = New-Object System.Management.Automation.PSCredential ($env:PROXY_USER, $secPwd); " ^
+        "Write-Host '[INFO] Downloading Python from GitHub...'; " ^
+        "try { " ^
+        "    Invoke-WebRequest -Uri $url -OutFile '!PYTHON_ARCHIVE!' -Proxy $proxy -ProxyCredential $cred -UseBasicParsing -TimeoutSec 120; " ^
+        "    Write-Host '[OK] Download complete.'; " ^
+        "} catch { " ^
+        "    Write-Host \"[ERROR] Download failed: $_\"; " ^
+        "    exit 1; " ^
+        "}"
+) else (
+    powershell -ExecutionPolicy Bypass -Command ^
+        "$ProgressPreference = 'SilentlyContinue'; " ^
+        "$url = '!PYTHON_URL!'; " ^
+        "Write-Host '[INFO] Downloading Python from GitHub...'; " ^
+        "try { " ^
+        "    Invoke-WebRequest -Uri $url -OutFile '!PYTHON_ARCHIVE!' -UseBasicParsing -TimeoutSec 120; " ^
+        "    Write-Host '[OK] Download complete.'; " ^
+        "} catch { " ^
+        "    Write-Host \"[ERROR] Download failed: $_\"; " ^
+        "    exit 1; " ^
+        "}"
+)
 
 if not exist "!PYTHON_ARCHIVE!" (
     echo [ERROR] Failed to download Python.

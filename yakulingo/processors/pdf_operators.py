@@ -11,6 +11,7 @@ Features:
 """
 
 import logging
+import re
 from typing import Optional
 
 from .pdf_font_manager import FontRegistry, FontType
@@ -634,6 +635,7 @@ class ContentStreamReplacer:
         Capture and filter the original content stream for this page.
 
         This removes text operators while preserving graphics/images.
+        Also filters text from Form XObjects referenced by this page.
         Must be called before adding new text operators.
 
         Args:
@@ -645,8 +647,101 @@ class ContentStreamReplacer:
         if not self._preserve_graphics or not self._parser:
             return self
 
+        # Filter Form XObjects first (they contain embedded text)
+        self._filter_form_xobjects(page)
+
         self._filtered_base_stream = self._parser.filter_page_contents(self.doc, page)
         return self
+
+    def _filter_form_xobjects(self, page) -> None:
+        """
+        Filter text from Form XObjects referenced by this page.
+
+        Form XObjects (also called XForms) can contain text that is rendered
+        via the 'Do' operator. This method filters text operators from all
+        Form XObjects in the page's XObject resources.
+
+        Args:
+            page: PyMuPDF page object
+        """
+        try:
+            # Get page xref
+            page_xref = page.xref
+
+            # Get Resources dictionary
+            resources_str = self.doc.xref_get_key(page_xref, "Resources")
+            if resources_str[0] != "dict":
+                # Try to get indirect reference
+                if resources_str[0] == "xref":
+                    resources_xref = int(resources_str[1].split()[0])
+                    resources_str = ("dict", self.doc.xref_object(resources_xref))
+                else:
+                    return
+
+            # Parse Resources to find XObject dictionary
+            resources_dict = resources_str[1]
+
+            # Look for /XObject in resources
+            xobject_match = re.search(r'/XObject\s*(\d+\s+\d+\s+R|<<[^>]*>>)', resources_dict)
+            if not xobject_match:
+                return
+
+            xobject_ref = xobject_match.group(1)
+
+            # Get XObject dictionary xref
+            if xobject_ref.endswith('R'):
+                # Indirect reference: "123 0 R"
+                xobject_xref = int(xobject_ref.split()[0])
+                xobject_dict_str = self.doc.xref_object(xobject_xref)
+            else:
+                # Inline dictionary
+                xobject_dict_str = xobject_ref
+
+            # Find all Form XObject references in the dictionary
+            # Pattern: /Name N 0 R
+            form_refs = re.findall(r'/(\w+)\s+(\d+)\s+\d+\s+R', xobject_dict_str)
+
+            filtered_count = 0
+            for name, xref_str in form_refs:
+                xref = int(xref_str)
+                try:
+                    # Check if this is a Form XObject (Subtype = Form)
+                    obj_str = self.doc.xref_object(xref)
+                    if '/Subtype /Form' not in obj_str and '/Subtype/Form' not in obj_str:
+                        continue
+
+                    # Get the stream content
+                    stream = self.doc.xref_stream(xref)
+                    if not stream:
+                        continue
+
+                    # Filter text operators from the stream
+                    original_size = len(stream)
+                    filtered_stream = self._parser.parse_and_filter(stream)
+                    filtered_size = len(filtered_stream)
+
+                    # Only update if we actually removed something
+                    if filtered_size < original_size:
+                        self.doc.update_stream(xref, filtered_stream)
+                        filtered_count += 1
+                        logger.debug(
+                            "Filtered Form XObject /%s (xref=%d): %d -> %d bytes",
+                            name, xref, original_size, filtered_size
+                        )
+
+                except (RuntimeError, ValueError, KeyError, OSError) as e:
+                    logger.debug("Could not filter Form XObject /%s: %s", name, e)
+                    continue
+
+            if filtered_count > 0:
+                logger.debug(
+                    "Filtered %d Form XObjects on page %d",
+                    filtered_count, page.number
+                )
+
+        except (RuntimeError, ValueError, KeyError, AttributeError, OSError) as e:
+            # Non-critical error - page may not have XObjects
+            logger.debug("Form XObject filtering skipped for page %d: %s", page.number, e)
 
     def begin_text(self) -> 'ContentStreamReplacer':
         """Begin text block."""

@@ -383,6 +383,38 @@ def extract_formula_vars_from_metadata(metadata: dict) -> list[FormulaVar]:
     return metadata.get('formula_vars', [])
 
 
+def extract_formula_vars_for_block(text: str, var: list[FormulaVar]) -> list[FormulaVar]:
+    """
+    Extract FormulaVar objects referenced by placeholders in text.
+
+    This function finds all formula placeholders (e.g., {v0}, {v1}) in the text
+    and returns the corresponding FormulaVar objects from the var list.
+
+    Args:
+        text: Text containing formula placeholders like {v0}, {v1}, etc.
+        var: List of all FormulaVar objects (indexed by placeholder number)
+
+    Returns:
+        List of FormulaVar objects referenced by placeholders in text
+    """
+    if not var:
+        return []
+
+    block_vars = []
+    for match in _RE_FORMULA_PLACEHOLDER.finditer(text):
+        # Extract the index from the placeholder (e.g., "0" from "{v0}")
+        idx_str = match.group(1).strip()
+        try:
+            idx = int(idx_str)
+            if 0 <= idx < len(var):
+                block_vars.append(var[idx])
+        except ValueError:
+            # Invalid index format, skip
+            continue
+
+    return block_vars
+
+
 # =============================================================================
 # Text Style Detection (PDFMathTranslate compliant)
 # =============================================================================

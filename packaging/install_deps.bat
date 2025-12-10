@@ -14,6 +14,7 @@ cd /d "%~dp0\.."
 :: ============================================================
 set PROXY_SERVER=136.131.63.233:8082
 set USE_PROXY=0
+set SKIP_SSL=0
 
 set UV_CACHE_DIR=.uv-cache
 set UV_PYTHON_INSTALL_DIR=.uv-python
@@ -28,13 +29,15 @@ echo Do you need to use a proxy server?
 echo.
 echo   [1] Yes - Use proxy (corporate network)
 echo   [2] No  - Direct connection
+echo   [3] No  - Direct connection (skip SSL verification)
 echo.
-set /p PROXY_CHOICE="Enter choice (1 or 2): "
+set /p PROXY_CHOICE="Enter choice (1, 2, or 3): "
 
 :: Debug: show what was entered
 echo [DEBUG] PROXY_CHOICE=[!PROXY_CHOICE!]
 
 if "!PROXY_CHOICE!"=="1" goto :use_proxy
+if "!PROXY_CHOICE!"=="3" goto :no_proxy_insecure
 goto :no_proxy
 
 :use_proxy
@@ -51,13 +54,21 @@ if not defined PROXY_USER (
 )
 goto :proxy_done
 
+:no_proxy_insecure
+:: Direct connection with insecure SSL
+set SKIP_SSL=1
+echo.
+echo [INFO] Using direct connection (SSL verification disabled).
+echo.
+goto :proxy_done
+
 :no_proxy
 echo.
 echo [INFO] Using direct connection (no proxy).
 echo.
 
 :proxy_done
-echo [DEBUG] Proxy config done, USE_PROXY=[!USE_PROXY!]
+echo [DEBUG] Proxy config done, USE_PROXY=[!USE_PROXY!], SKIP_SSL=[!SKIP_SSL!]
 
 :: ============================================================
 :: Step 1: Download uv
@@ -217,7 +228,14 @@ if errorlevel 1 (
 
 echo [INFO] Installing packages (including paddlepaddle ~500MB-1GB)...
 echo [INFO] This may take 5-15 minutes depending on network speed...
-uv.exe sync --native-tls --extra ocr
+
+:: Build uv sync command based on SSL settings
+if "!SKIP_SSL!"=="1" (
+    echo [INFO] SSL verification disabled for pypi.org and files.pythonhosted.org
+    uv.exe sync --native-tls --extra ocr --allow-insecure-host pypi.org --allow-insecure-host files.pythonhosted.org
+) else (
+    uv.exe sync --native-tls --extra ocr
+)
 if errorlevel 1 (
     echo [ERROR] Failed to install dependencies.
     echo [INFO] If this was a timeout, try running the script again.

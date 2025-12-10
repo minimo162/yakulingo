@@ -16,7 +16,12 @@ $debugLog = Join-Path $env:TEMP "YakuLingo_setup_debug.log"
 try {
     "=== Setup started: $(Get-Date) ===" | Out-File -FilePath $debugLog -Encoding UTF8
     "PSScriptRoot: $PSScriptRoot" | Out-File -FilePath $debugLog -Append -Encoding UTF8
+    "MyInvocation.MyCommand.Definition: $($MyInvocation.MyCommand.Definition)" | Out-File -FilePath $debugLog -Append -Encoding UTF8
+    "SetupPath param: $SetupPath" | Out-File -FilePath $debugLog -Append -Encoding UTF8
+    "GuiMode param: $GuiMode" | Out-File -FilePath $debugLog -Append -Encoding UTF8
+    "ShareDir param: $ShareDir" | Out-File -FilePath $debugLog -Append -Encoding UTF8
     "YAKULINGO_SHARE_DIR env: $env:YAKULINGO_SHARE_DIR" | Out-File -FilePath $debugLog -Append -Encoding UTF8
+    "TEMP: $env:TEMP" | Out-File -FilePath $debugLog -Append -Encoding UTF8
 } catch {
     # Ignore logging errors
 }
@@ -34,24 +39,51 @@ function Write-ErrorLog {
 }
 
 trap {
+    # Write error to debug log (more reliable than stderr capture)
+    try {
+        "=== ERROR: $(Get-Date) ===" | Out-File -FilePath $debugLog -Append -Encoding UTF8
+        "Exception: $($_.Exception.Message)" | Out-File -FilePath $debugLog -Append -Encoding UTF8
+        "ScriptStackTrace: $($_.ScriptStackTrace)" | Out-File -FilePath $debugLog -Append -Encoding UTF8
+        "InvocationInfo: $($_.InvocationInfo.PositionMessage)" | Out-File -FilePath $debugLog -Append -Encoding UTF8
+    } catch { }
     Write-ErrorLog -ErrorRecord $_
     exit 1
 }
 
 # Script directory (must be resolved at top-level, not inside functions)
 $script:ScriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Definition }
+
+# Debug: Log script directory resolution
+try {
+    "ScriptDir resolved: $($script:ScriptDir)" | Out-File -FilePath $debugLog -Append -Encoding UTF8
+} catch { }
+
 # Use provided ShareDir if available (when script is copied to TEMP due to non-ASCII path)
 # Priority: 1. File (Unicode safe), 2. Environment variable, 3. Parameter, 4. Derive from script location
 $shareDirFile = Join-Path $script:ScriptDir "share_dir.txt"
+try {
+    "shareDirFile path: $shareDirFile" | Out-File -FilePath $debugLog -Append -Encoding UTF8
+    "shareDirFile exists: $(Test-Path $shareDirFile)" | Out-File -FilePath $debugLog -Append -Encoding UTF8
+} catch { }
+
 if (Test-Path $shareDirFile) {
     # Read UTF-16 LE file (written by VBS CreateTextFile with Unicode flag)
+    try {
+        "Reading share_dir.txt as UTF-16 LE..." | Out-File -FilePath $debugLog -Append -Encoding UTF8
+    } catch { }
     $script:ShareDir = [System.IO.File]::ReadAllText($shareDirFile, [System.Text.Encoding]::Unicode).Trim()
+    try {
+        "ShareDir from file: $($script:ShareDir)" | Out-File -FilePath $debugLog -Append -Encoding UTF8
+    } catch { }
 } elseif (-not [string]::IsNullOrEmpty($env:YAKULINGO_SHARE_DIR)) {
     $script:ShareDir = $env:YAKULINGO_SHARE_DIR
+    try { "ShareDir from env: $($script:ShareDir)" | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
 } elseif (-not [string]::IsNullOrEmpty($ShareDir)) {
     $script:ShareDir = $ShareDir
+    try { "ShareDir from param: $($script:ShareDir)" | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
 } else {
     $script:ShareDir = Split-Path -Parent $script:ScriptDir
+    try { "ShareDir from parent: $($script:ShareDir)" | Out-File -FilePath $debugLog -Append -Encoding UTF8 } catch { }
 }
 $script:AppName = "YakuLingo"
 

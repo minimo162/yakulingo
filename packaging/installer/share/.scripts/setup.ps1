@@ -592,10 +592,21 @@ function Invoke-Setup {
             if (-not $GuiMode) {
                 Write-Host "      Extracting with 7-Zip: $($script:SevenZip)" -ForegroundColor Gray
             }
-            # 7-Zip is fast enough to run directly without background job
-            # (Start-Job has significant startup overhead that makes it slower)
-            & $script:SevenZip x "$TempZipFile" "-o$TempZipDir" -y -bso0 -bsp0 | Out-Null
-            if ($LASTEXITCODE -ne 0) {
+            # Use Start-Process for non-blocking execution (keeps GUI responsive)
+            # This avoids Start-Job overhead while still allowing DoEvents()
+            $processArgs = @("x", "`"$TempZipFile`"", "-o`"$TempZipDir`"", "-y", "-bso0", "-bsp0")
+            $process = Start-Process -FilePath $script:SevenZip -ArgumentList $processArgs -NoNewWindow -PassThru
+
+            if ($GuiMode) {
+                while (-not $process.HasExited) {
+                    Start-Sleep -Milliseconds 200
+                    [System.Windows.Forms.Application]::DoEvents()
+                }
+            } else {
+                $process.WaitForExit()
+            }
+
+            if ($process.ExitCode -ne 0) {
                 throw "Failed to extract ZIP file.`n`nFile: $ZipFileName"
             }
         } else {
@@ -661,9 +672,20 @@ function Invoke-Setup {
         # This ensures clean updates without needing to delete the destination first
         # /R:0 /W:0: don't retry locked files (skip them instead of hanging)
         # /MT:8: multi-threaded copy for speed
-        # robocopy is fast enough to run directly (Start-Job has too much overhead)
-        $robocopyOutput = & robocopy $ExtractedDir.FullName $SetupPath /MIR /MT:8 /R:0 /W:0 /NJH /NJS /NP 2>&1
-        $robocopyExitCode = $LASTEXITCODE
+        # Use Start-Process for non-blocking execution (keeps GUI responsive)
+        $robocopyArgs = @($ExtractedDir.FullName, $SetupPath, "/MIR", "/MT:8", "/R:0", "/W:0", "/NJH", "/NJS", "/NP")
+        $robocopyProcess = Start-Process -FilePath "robocopy" -ArgumentList $robocopyArgs -NoNewWindow -PassThru
+
+        if ($GuiMode) {
+            while (-not $robocopyProcess.HasExited) {
+                Start-Sleep -Milliseconds 200
+                [System.Windows.Forms.Application]::DoEvents()
+            }
+        } else {
+            $robocopyProcess.WaitForExit()
+        }
+
+        $robocopyExitCode = $robocopyProcess.ExitCode
         # robocopy returns 0-7 for success, 8+ for errors
         if ($robocopyExitCode -ge 8) {
             throw "Failed to copy files to destination.`n`nDestination: $SetupPath"
@@ -671,20 +693,7 @@ function Invoke-Setup {
         # Warn if some files were skipped (exit code 1-7 indicates partial success)
         if ($robocopyExitCode -gt 0 -and $robocopyExitCode -lt 8) {
             if (-not $GuiMode) {
-                Write-Host "      Warning: Some files may have been skipped (exit code: $robocopyExitCode)" -ForegroundColor Yellow
-                # Parse robocopy output for skipped/failed files
-                $skippedFiles = $robocopyOutput | Where-Object {
-                    $_ -match "^\s*(FAILED|Skipped)\s+" -or $_ -match "ERROR\s+\d+"
-                } | Select-Object -First 10
-                if ($skippedFiles) {
-                    Write-Host "      Skipped/Failed files:" -ForegroundColor Yellow
-                    foreach ($line in $skippedFiles) {
-                        Write-Host "        $($line.Trim())" -ForegroundColor Gray
-                    }
-                    if (($robocopyOutput | Where-Object { $_ -match "^\s*(FAILED|Skipped)\s+" }).Count -gt 10) {
-                        Write-Host "        ... and more (showing first 10)" -ForegroundColor Gray
-                    }
-                }
+                Write-Host "      Note: Some files were updated (exit code: $robocopyExitCode)" -ForegroundColor Gray
             }
         }
     } finally {

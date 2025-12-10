@@ -487,6 +487,9 @@ class CopilotHandler:
         self._login_cancelled = False
         # Translation cancellation callback (returns True if cancelled)
         self._cancel_callback: Optional[Callable[[], bool]] = None
+        # Flag to track if we started the browser (for cleanup purposes)
+        # This remains True even if edge_process becomes None after cleanup
+        self._browser_started_by_us = False
 
     @property
     def is_connected(self) -> bool:
@@ -719,6 +722,8 @@ class CopilotHandler:
                 time.sleep(self.EDGE_STARTUP_CHECK_INTERVAL)
                 if self._is_port_in_use():
                     logger.info("Edge started successfully")
+                    # Mark that we started this browser (for cleanup on app exit)
+                    self._browser_started_by_us = True
                     # Minimize window immediately to prevent visual flash
                     # Give Edge a moment to create its window, then minimize
                     time.sleep(0.3)
@@ -1814,6 +1819,8 @@ class CopilotHandler:
 
         This method is called during application shutdown to immediately terminate
         the browser connection without going through the Playwright thread executor.
+
+        Only terminates Edge if we started it (_browser_started_by_us flag).
         """
         from contextlib import suppress
 
@@ -1826,14 +1833,26 @@ class CopilotHandler:
         self._connected = False
 
         # Terminate Edge browser process directly (don't wait for Playwright)
-        with suppress(Exception):
-            if self.edge_process:
-                self.edge_process.terminate()
-                try:
-                    self.edge_process.wait(timeout=2)
-                except subprocess.TimeoutExpired:
-                    self.edge_process.kill()
-                logger.info("Edge browser terminated (force)")
+        # Only if we started the browser in this session
+        if self._browser_started_by_us:
+            browser_terminated = False
+
+            # Try to terminate via edge_process first
+            with suppress(Exception):
+                if self.edge_process:
+                    self.edge_process.terminate()
+                    try:
+                        self.edge_process.wait(timeout=2)
+                    except subprocess.TimeoutExpired:
+                        self.edge_process.kill()
+                    logger.info("Edge browser terminated (force via process)")
+                    browser_terminated = True
+
+            # If edge_process was None (lost after cleanup_on_error), kill by port
+            if not browser_terminated and self._is_port_in_use():
+                with suppress(Exception):
+                    self._kill_existing_translator_edge()
+                    logger.info("Edge browser terminated (force via port)")
 
         # Clear references (Playwright cleanup may fail but that's OK during shutdown)
         self._browser = None
@@ -1841,9 +1860,13 @@ class CopilotHandler:
         self._page = None
         self._playwright = None
         self.edge_process = None
+        self._browser_started_by_us = False
 
     def _disconnect_impl(self) -> None:
-        """Implementation of disconnect that runs in the Playwright thread."""
+        """Implementation of disconnect that runs in the Playwright thread.
+
+        Only terminates Edge if we started it (_browser_started_by_us flag).
+        """
         from contextlib import suppress
 
         # Save storage_state before closing browser (moved from translation methods
@@ -1864,22 +1887,34 @@ class CopilotHandler:
                 self._playwright.stop()
 
         # Terminate Edge browser process that we started
-        with suppress(Exception):
-            if self.edge_process:
-                self.edge_process.terminate()
-                # Wait briefly for graceful shutdown
-                try:
-                    self.edge_process.wait(timeout=2)
-                except subprocess.TimeoutExpired:
-                    # Force kill if it doesn't terminate gracefully
-                    self.edge_process.kill()
-                logger.info("Edge browser terminated")
+        # Only if we started the browser in this session
+        if self._browser_started_by_us:
+            browser_terminated = False
+
+            with suppress(Exception):
+                if self.edge_process:
+                    self.edge_process.terminate()
+                    # Wait briefly for graceful shutdown
+                    try:
+                        self.edge_process.wait(timeout=2)
+                    except subprocess.TimeoutExpired:
+                        # Force kill if it doesn't terminate gracefully
+                        self.edge_process.kill()
+                    logger.info("Edge browser terminated")
+                    browser_terminated = True
+
+            # If edge_process was None (lost after cleanup_on_error), kill by port
+            if not browser_terminated and self._is_port_in_use():
+                with suppress(Exception):
+                    self._kill_existing_translator_edge()
+                    logger.info("Edge browser terminated (via port)")
 
         self._browser = None
         self._context = None
         self._page = None
         self._playwright = None
         self.edge_process = None
+        self._browser_started_by_us = False
 
     def _save_storage_state(self) -> bool:
         """

@@ -46,20 +46,27 @@ If exitCode <> 0 Then
     errorMessage = "Setup failed." & vbCrLf & vbCrLf & "Error code: " & exitCode
 
     ' Try to read error log for more details (UTF-8)
+    On Error Resume Next
     If objFSO.FileExists(errorLog) Then
-        Dim objStream, errorContent
-        Set objStream = CreateObject("ADODB.Stream")
-        objStream.Type = 2 ' adTypeText
-        objStream.Charset = "UTF-8"
-        objStream.Open
-        objStream.LoadFromFile errorLog
-        errorContent = objStream.ReadText()
-        objStream.Close
-        Set objStream = Nothing
-        If Len(errorContent) > 0 Then
-            errorMessage = errorMessage & vbCrLf & vbCrLf & "Details:" & vbCrLf & errorContent
+        ' Check file size first (empty file causes ADODB.Stream errors)
+        If objFSO.GetFile(errorLog).Size > 0 Then
+            Dim objStream, errorContent
+            Set objStream = CreateObject("ADODB.Stream")
+            objStream.Type = 2 ' adTypeText
+            objStream.Charset = "UTF-8"
+            objStream.Open
+            objStream.LoadFromFile errorLog
+            If Err.Number = 0 Then
+                errorContent = objStream.ReadText()
+                If Len(errorContent) > 0 Then
+                    errorMessage = errorMessage & vbCrLf & vbCrLf & "Details:" & vbCrLf & errorContent
+                End If
+            End If
+            objStream.Close
+            Set objStream = Nothing
         End If
     End If
+    On Error GoTo 0
 
     MsgBox errorMessage, vbCritical, "YakuLingo Setup - Error"
     WScript.Quit exitCode

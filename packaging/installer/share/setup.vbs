@@ -23,13 +23,17 @@ If Not objFSO.FileExists(psScript) Then
 End If
 
 ' Run PowerShell script with GUI mode (hidden console)
-Dim command, exitCode, errorLog
-errorLog = scriptDir & "\.scripts\setup_error.log"
+Dim command, exitCode, errorLog, wshShellEnv
+Set wshShellEnv = objShell.Environment("Process")
+' Use local TEMP for error log (network share may be read-only)
+errorLog = wshShellEnv("TEMP") & "\YakuLingo_setup_error.log"
 
-' Delete previous error log if exists
+' Delete previous error log if exists (ignore errors - may be on read-only share)
+On Error Resume Next
 If objFSO.FileExists(errorLog) Then
     objFSO.DeleteFile errorLog, True
 End If
+On Error GoTo 0
 
 ' Run PowerShell with error output redirected to log file (UTF-8)
 command = "cmd.exe /c chcp 65001 >nul && powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden -File """ & psScript & """ -GuiMode 2>""" & errorLog & """"

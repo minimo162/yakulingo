@@ -1183,6 +1183,37 @@ When interacting with users in this repository, prefer Japanese for comments and
 ## Recent Development Focus
 
 Based on recent commits:
+- **NiceGUI 3.3 Compatibility (2024-12)**:
+  - **LargeFileUpload support**: NiceGUI 3.3のファイルアップロード属性変更に対応（`content`プロパティ使用）
+  - **File drop handling**: ドロップペイロードの型チェックを追加（string/LargeFileUpload両対応）
+- **Copilot Browser Control Improvements (2024-12)**:
+  - **Browser minimize fix**: Copilot接続後にブラウザが最小化されない問題を修正
+  - **Login expiration detection**: レスポンスポーリング中のログイン期限切れを検出してフリーズを防止
+  - **GPT-5 button removal**: GPT-5ボタントグルロジックを削除（不要になったため）
+- **Setup Script Performance & Reliability (2024-12)**:
+  - **Japanese path fix**: UTF-16 LEでShareDirファイルを書き込み・読み込み（日本語パス対応）
+  - **Async extraction**: 7-Zip/robocopyを非同期実行してGUI応答性を維持
+  - **Flat ZIP structure**: ZIPをフラット構造に変更して直接展開を可能に（TEMP経由不要）
+  - **Freeze fix**: 既存ディレクトリ削除時のフリーズを修正（`cmd /c rd`使用）
+  - **Out-Null optimization**: パイプラインオーバーヘッドを削減
+- **install_deps.bat Improvements (2024-12)**:
+  - **uv download fix**: uvダウンロードとパスワード入力を修正
+  - **PaddlePaddle validation**: Python検証コマンドのエラー抑制を改善
+  - **PowerShell isolation**: PowerShellでPython実行を完全に分離（クォート問題回避）
+  - **Pre-import modules**: モジュール事前インポートもPowerShellで実行
+- **PDF Translation Improvements (2024-12)**:
+  - **Word splitting fix**: 英単語が途中で分割される問題を修正
+  - **Language detection speedup**: PP-DocLayout-Lをスキップして言語検出を高速化
+- **File Processor Improvements (2024-12)**:
+  - **File handle leak fix**: PPTXとWordプロセッサのファイルハンドルリークを修正（with文使用）
+  - **Excel RPC retry**: RPCサーバーエラー時のリトライロジックを追加
+- **WebSocket Connection Stability (2024-12)**:
+  - **Connection loss prevention**: ファイル翻訳時のWebSocket接続ロスを防止
+  - **Timer management**: ファイル翻訳時のタイマー管理を改善しコネクション安定性を向上
+- **Translation Result Parsing (2024-12)**:
+  - **Metadata leak fix**: 翻訳結果パース時のメタデータ混入を修正
+- **Browser Close Behavior (2024-12)**:
+  - **App exit cleanup**: アプリ終了時のブラウザ終了を確実にする
 - **Copilot Prompt Submission Reliability (2024-12)**:
   - **Response stability**: `RESPONSE_STABLE_COUNT` increased from 2 to 3 for more reliable completion detection
   - **Auth dialog multi-language**: `AUTH_DIALOG_KEYWORDS` constant added with Japanese and English keywords

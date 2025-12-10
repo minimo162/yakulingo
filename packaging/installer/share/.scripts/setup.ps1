@@ -577,37 +577,71 @@ function Invoke-Setup {
     Write-Status -Message "Files copied" -Progress -Step "Step 2/4: Copying" -Percent 50
 
     # ============================================================
-    # Step 3: Extract ZIP locally (much faster than over network)
+    # Step 3: Extract ZIP directly to destination (skip TEMP to avoid double file creation)
     # ============================================================
-    # Show extraction method in progress (helps diagnose slow extraction)
+    # Note: Extracting directly to SetupPath avoids antivirus scanning files twice
+    # (once in TEMP, once in SetupPath via robocopy)
     $extractMethod = if ($script:Use7Zip) { "7-Zip" } else { "Windows built-in (slower)" }
-    Write-Status -Message "Extracting files..." -Progress -Step "Step 3/4: Extracting ($extractMethod)" -Percent 55
+    Write-Status -Message "Extracting files..." -Progress -Step "Step 3/4: Installing ($extractMethod)" -Percent 55
     if (-not $GuiMode) {
         Write-Host ""
-        Write-Host "[3/4] Extracting files locally..." -ForegroundColor Yellow
+        Write-Host "[3/4] Installing files..." -ForegroundColor Yellow
         if (-not $script:Use7Zip) {
             Write-Host "      [WARNING] 7-Zip not found - using Windows built-in extractor (5-10x slower)" -ForegroundColor Yellow
         }
     }
 
+    # Create parent directory of SetupPath to extract into
+    $SetupParent = Split-Path -Parent $SetupPath
+    if (-not (Test-Path $SetupParent)) {
+        New-Item -ItemType Directory -Path $SetupParent -Force | Out-Null
+    }
+
     try {
-        # Extract to temp folder first
+        # Extract directly to SetupPath's parent, then rename
+        # ZIP contains YakuLingo_YYYYMMDD folder, so we extract to parent and rename
         if ($script:Use7Zip) {
             if (-not $GuiMode) {
                 Write-Host "      Extracting with 7-Zip: $($script:SevenZip)" -ForegroundColor Gray
             }
-            # Direct execution - 7-Zip is fast enough that brief GUI freeze is acceptable
-            # Using & operator for reliable argument handling with Japanese/special characters
-            # Note: -bso0 -bsp0 suppress output, so no need for Out-Null (which can slow down)
-            & $script:SevenZip x $TempZipFile "-o$TempZipDir" -y -bso0 -bsp0
+            # Extract to a temp folder name first to handle the rename
+            $ExtractTarget = Join-Path $SetupParent "YakuLingo_Installing"
+            if (Test-Path $ExtractTarget) {
+                Remove-Item -Path $ExtractTarget -Recurse -Force
+            }
+            & $script:SevenZip x $TempZipFile "-o$ExtractTarget" -y -bso0 -bsp0
             if ($LASTEXITCODE -ne 0) {
                 throw "Failed to extract ZIP file.`n`nFile: $ZipFileName"
+            }
+
+            # Find extracted folder (YakuLingo_YYYYMMDD)
+            $ExtractedDir = Get-ChildItem -Path $ExtractTarget -Directory | Where-Object { $_.Name -like "YakuLingo*" } | Select-Object -First 1
+            if (-not $ExtractedDir) {
+                throw "Failed to extract ZIP file.`n`nFile: $ZipFileName"
+            }
+
+            # Move contents to SetupPath (overwrite existing)
+            Write-Status -Message "Installing files..." -Progress -Step "Step 3/4: Installing" -Percent 70
+            if ($GuiMode) {
+                [System.Windows.Forms.Application]::DoEvents()
+            }
+
+            # Use robocopy to move files (handles overwrites and preserves what we need)
+            & robocopy $ExtractedDir.FullName $SetupPath /MIR /MT:8 /R:0 /W:0 /NJH /NJS /NP /MOVE 2>&1 | Out-Null
+            $robocopyExitCode = $LASTEXITCODE
+            if ($robocopyExitCode -ge 8) {
+                throw "Failed to install files.`n`nDestination: $SetupPath"
+            }
+
+            # Clean up temp extract folder
+            if (Test-Path $ExtractTarget) {
+                Remove-Item -Path $ExtractTarget -Recurse -Force -ErrorAction SilentlyContinue
             }
         } else {
             if (-not $GuiMode) {
                 Write-Host "      Extracting with Expand-Archive (7-Zip not found, this may take longer)..." -ForegroundColor Gray
             }
-            # Expand-Archive is slow and blocking; run in background job to keep GUI responsive
+            # For Expand-Archive, extract to temp then move
             if ($GuiMode) {
                 $extractJob = Start-Job -ScriptBlock {
                     param($TempZipFile, $TempZipDir)
@@ -619,8 +653,6 @@ function Invoke-Setup {
                     }
                 } -ArgumentList $TempZipFile, $TempZipDir
 
-                # Poll job status while keeping GUI responsive
-                # Expand-Archive is typically 5-10x slower than 7-Zip
                 $dotCount = 0
                 $elapsedSeconds = 0
                 while ($extractJob.State -eq 'Running') {
@@ -647,37 +679,18 @@ function Invoke-Setup {
             } else {
                 Expand-Archive -Path $TempZipFile -DestinationPath $TempZipDir -Force
             }
-        }
 
-        # Find extracted folder
-        $ExtractedDir = Get-ChildItem -Path $TempZipDir -Directory | Where-Object { $_.Name -like "YakuLingo*" } | Select-Object -First 1
-        if (-not $ExtractedDir) {
-            throw "Failed to extract ZIP file.`n`nFile: $ZipFileName"
-        }
+            # Find extracted folder and move to SetupPath
+            $ExtractedDir = Get-ChildItem -Path $TempZipDir -Directory | Where-Object { $_.Name -like "YakuLingo*" } | Select-Object -First 1
+            if (-not $ExtractedDir) {
+                throw "Failed to extract ZIP file.`n`nFile: $ZipFileName"
+            }
 
-        # Update progress before robocopy
-        Write-Status -Message "Installing files..." -Progress -Step "Step 3/4: Installing" -Percent 70
-        if ($GuiMode) {
-            [System.Windows.Forms.Application]::DoEvents()
-        }
-
-        # Copy extracted folder to destination using robocopy /MIR (mirror mode)
-        # /MIR = /E + /PURGE: copies all files and removes files not in source
-        # This ensures clean updates without needing to delete the destination first
-        # /R:0 /W:0: don't retry locked files (skip them instead of hanging)
-        # /MT:8: multi-threaded copy for speed
-        # Direct execution for reliable argument handling
-        # Note: /NJH /NJS /NP suppress most output
-        & robocopy $ExtractedDir.FullName $SetupPath /MIR /MT:8 /R:0 /W:0 /NJH /NJS /NP 2>&1 | Out-Null
-        $robocopyExitCode = $LASTEXITCODE
-        # robocopy returns 0-7 for success, 8+ for errors
-        if ($robocopyExitCode -ge 8) {
-            throw "Failed to copy files to destination.`n`nDestination: $SetupPath"
-        }
-        # Warn if some files were skipped (exit code 1-7 indicates partial success)
-        if ($robocopyExitCode -gt 0 -and $robocopyExitCode -lt 8) {
-            if (-not $GuiMode) {
-                Write-Host "      Note: Some files were updated (exit code: $robocopyExitCode)" -ForegroundColor Gray
+            Write-Status -Message "Installing files..." -Progress -Step "Step 3/4: Installing" -Percent 70
+            & robocopy $ExtractedDir.FullName $SetupPath /MIR /MT:8 /R:0 /W:0 /NJH /NJS /NP 2>&1 | Out-Null
+            $robocopyExitCode = $LASTEXITCODE
+            if ($robocopyExitCode -ge 8) {
+                throw "Failed to install files.`n`nDestination: $SetupPath"
             }
         }
     } finally {

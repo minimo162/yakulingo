@@ -1253,7 +1253,7 @@ class CopilotHandler:
         "認証", "ログイン", "サインイン", "パスワード", "資格情報",
         # English
         "Sign in", "Log in", "Login", "Password", "Credentials", "Authentication",
-        "Enter your", "Verify your identity", "Approve sign in",
+        "Enter your password", "Enter your email", "Verify your identity", "Approve sign in",
         # Chinese (Simplified & Traditional)
         "登录", "登錄", "密码", "密碼", "验证", "驗證", "身份验证", "身份驗證",
         # Korean
@@ -1271,12 +1271,11 @@ class CopilotHandler:
     )
 
     # Extended selectors for authentication dialogs and forms
+    # NOTE: Selectors must be specific to login pages to avoid false positives on Copilot UI
     AUTH_DIALOG_SELECTORS = [
-        # Fluent UI dialogs
+        # Fluent UI dialogs - only check title element (checked with keywords)
         '.fui-DialogTitle',
-        '[role="dialog"] h2',
-        '[role="dialog"] h1',
-        # Microsoft login page elements
+        # Microsoft login page elements (specific to login.microsoftonline.com)
         '.login-paginated-page',
         '#loginHeader',
         '.login-title',
@@ -1284,12 +1283,11 @@ class CopilotHandler:
         # ADFS and custom IdP
         '#userNameInput',
         '#passwordInput',
-        '.submit-button',
         # MFA screens
         '.mfa-notice',
         '#idDiv_SAOTCC_Title',
         '.verificationCodeInput',
-        # Generic auth forms
+        # Generic auth forms - only match explicit login/auth actions
         'form[action*="login"]',
         'form[action*="auth"]',
         'input[type="password"]',
@@ -1315,6 +1313,14 @@ class CopilotHandler:
         PlaywrightError = error_types['Error']
 
         try:
+            # Skip auth dialog check on Copilot pages - if auth is needed, user will be
+            # redirected to login page (detected by _is_login_page). This prevents
+            # false positives from Copilot UI elements matching auth selectors.
+            current_url = self._page.url
+            if _is_copilot_url(current_url) and not _is_login_page(current_url):
+                logger.debug("Skipping auth dialog check on Copilot page: %s", current_url[:50])
+                return False
+
             # Check dialog/form elements with extended selectors
             for selector in self.AUTH_DIALOG_SELECTORS:
                 element = self._page.query_selector(selector)

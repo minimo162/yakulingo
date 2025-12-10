@@ -181,7 +181,6 @@ class TestCopilotHandlerSendMessage:
         mock_page.query_selector.return_value = None
 
         handler._page = mock_page
-        handler._ensure_gpt5_enabled = Mock()  # Mock GPT-5 check
 
         handler._send_message("Test message")
 
@@ -202,7 +201,6 @@ class TestCopilotHandlerSendMessage:
         mock_page.query_selector.return_value = None  # No auth dialog / No send button
 
         handler._page = mock_page
-        handler._ensure_gpt5_enabled = Mock()
 
         handler._send_message("Test message")
 
@@ -235,7 +233,6 @@ class TestCopilotHandlerSendMessage:
         mock_page.query_selector.return_value = None  # No auth dialog
 
         handler._page = mock_page
-        handler._ensure_gpt5_enabled = Mock()  # Mock GPT-5 check
 
         special_text = "日本語テスト <script>alert('xss')</script> & special chars"
         handler._send_message(special_text)

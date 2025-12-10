@@ -331,20 +331,18 @@ class TestCopilotHandlerNewChat:
         handler.start_new_chat()
 
     def test_start_new_chat_clicks_button(self):
-        """start_new_chat attempts to click new chat button and enable GPT-5"""
+        """start_new_chat attempts to click new chat button"""
         handler = CopilotHandler()
 
         mock_page = Mock()
         mock_new_chat_btn = Mock()
-        mock_gpt5_btn = Mock()
         mock_page.query_selector.return_value = mock_new_chat_btn
         mock_page.query_selector_all.return_value = []  # No responses (cleared)
-        mock_page.evaluate_handle.return_value = mock_gpt5_btn
         handler._page = mock_page
 
         handler.start_new_chat()
 
-        # query_selectorは複数回呼ばれる（新しいチャットボタン、GPT-5状態確認）
+        # query_selector is called for new chat button
         assert mock_page.query_selector.call_count >= 1
         # JavaScript click to avoid Playwright's actionability checks
         mock_new_chat_btn.evaluate.assert_called_with('el => el.click()')
@@ -412,113 +410,6 @@ class TestCopilotHandlerNewChat:
         result = handler._wait_for_responses_cleared(timeout=1.0)
 
         assert result is True
-
-
-class TestCopilotHandlerGPT5:
-    """Test GPT-5 toggle button functionality"""
-
-    def test_ensure_gpt5_enabled_clicks_when_button_found(self):
-        """_ensure_gpt5_enabled clicks button when found (via JS evaluate)"""
-        handler = CopilotHandler()
-
-        mock_page = Mock()
-        mock_button = Mock()
-        # First query returns None (not already enabled), second returns button
-        mock_page.query_selector.side_effect = [None, mock_button]
-        handler._page = mock_page
-
-        result = handler._ensure_gpt5_enabled()
-
-        assert result is True
-        # Button is clicked via JS evaluate to avoid bringing browser to front
-        mock_button.evaluate.assert_called_once_with('el => el.click()')
-
-    def test_ensure_gpt5_enabled_skips_when_already_enabled(self):
-        """_ensure_gpt5_enabled returns True when already enabled"""
-        handler = CopilotHandler()
-
-        mock_page = Mock()
-        mock_enabled_btn = Mock()
-        # First query returns enabled button
-        mock_page.query_selector.return_value = mock_enabled_btn
-        handler._page = mock_page
-
-        result = handler._ensure_gpt5_enabled()
-
-        assert result is True
-
-    def test_ensure_gpt5_enabled_no_page(self):
-        """_ensure_gpt5_enabled returns True when no page"""
-        handler = CopilotHandler()
-        handler._page = None
-
-        # Should not raise and return True
-        result = handler._ensure_gpt5_enabled()
-        assert result is True
-
-    def test_ensure_gpt5_enabled_handles_exception(self):
-        """_ensure_gpt5_enabled handles exceptions gracefully"""
-        handler = CopilotHandler()
-
-        mock_page = Mock()
-        # Use AttributeError which is caught by _ensure_gpt5_enabled
-        mock_page.query_selector.side_effect = AttributeError("Test error")
-        handler._page = mock_page
-
-        # Should not raise and return True (AttributeError is caught)
-        result = handler._ensure_gpt5_enabled()
-        assert result is True
-
-    def test_ensure_gpt5_enabled_skips_when_flag_set(self):
-        """_ensure_gpt5_enabled skips check when _gpt5_enabled flag is True"""
-        handler = CopilotHandler()
-
-        mock_page = Mock()
-        handler._page = mock_page
-        handler._gpt5_enabled = True  # Set flag to True
-
-        result = handler._ensure_gpt5_enabled()
-
-        assert result is True
-        # query_selector should NOT be called because flag skips check
-        mock_page.query_selector.assert_not_called()
-
-    def test_ensure_gpt5_enabled_sets_flag_after_success(self):
-        """_ensure_gpt5_enabled sets _gpt5_enabled flag after successful enable"""
-        handler = CopilotHandler()
-
-        mock_page = Mock()
-        mock_enabled_btn = Mock()
-        mock_page.query_selector.return_value = mock_enabled_btn
-        handler._page = mock_page
-
-        assert handler._gpt5_enabled is False  # Initially False
-        handler._ensure_gpt5_enabled()
-        assert handler._gpt5_enabled is True  # Should be set to True
-
-    def test_gpt5_flag_reset_on_disconnect(self):
-        """_gpt5_enabled flag is reset when disconnect() is called"""
-        handler = CopilotHandler()
-        handler._connected = True
-        handler._gpt5_enabled = True
-        handler._browser = Mock()
-        handler._playwright = Mock()
-
-        handler.disconnect()
-
-        assert handler._gpt5_enabled is False
-
-    def test_gpt5_flag_reset_on_cleanup(self):
-        """_gpt5_enabled flag is reset when _cleanup_on_error() is called"""
-        handler = CopilotHandler()
-        handler._connected = True
-        handler._gpt5_enabled = True
-        handler._browser = Mock()
-        handler._playwright = Mock()
-
-        handler._cleanup_on_error()
-
-        assert handler._gpt5_enabled is False
 
 
 class TestCopilotHandlerMockedConnect:

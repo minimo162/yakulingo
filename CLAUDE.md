@@ -1210,6 +1210,9 @@ Based on recent commits:
   - **PowerShell isolation**: PowerShellでPython実行を完全に分離（クォート問題回避）
   - **Pre-import modules**: モジュール事前インポートもPowerShellで実行
 - **PDF Translation Improvements (2024-12)**:
+  - **Blank output fix**: PDF翻訳出力が白紙になる問題を修正（PyMuPDFビルトインフォントHelveticaを最終フォールバックとして追加）
+  - **Font path fix**: Windowsフォントファイル名を修正（msgothic.ttc、msmincho.ttc等）
+  - **Fallback language detection**: フォント埋め込みフォールバック言語判定を修正（font_info.familyではなくlangキーを使用）
   - **Word splitting fix**: 英単語が途中で分割される問題を修正
   - **Language detection speedup**: PP-DocLayout-Lをスキップして言語検出を高速化
 - **File Processor Improvements (2024-12)**:

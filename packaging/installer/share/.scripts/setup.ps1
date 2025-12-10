@@ -31,11 +31,14 @@ trap {
 # Script directory (must be resolved at top-level, not inside functions)
 $script:ScriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Definition }
 # Use provided ShareDir if available (when script is copied to TEMP due to non-ASCII path)
-# Otherwise, derive from script location
-if ([string]::IsNullOrEmpty($ShareDir)) {
-    $script:ShareDir = Split-Path -Parent $script:ScriptDir
-} else {
+# Priority: 1. Environment variable (Unicode safe), 2. Parameter, 3. Derive from script location
+$envShareDir = $env:YAKULINGO_SHARE_DIR
+if (-not [string]::IsNullOrEmpty($envShareDir)) {
+    $script:ShareDir = $envShareDir
+} elseif (-not [string]::IsNullOrEmpty($ShareDir)) {
     $script:ShareDir = $ShareDir
+} else {
+    $script:ShareDir = Split-Path -Parent $script:ScriptDir
 }
 $script:AppName = "YakuLingo"
 

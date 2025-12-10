@@ -83,9 +83,10 @@ End If
 On Error GoTo 0
 
 ' Run PowerShell with error output redirected to log file (UTF-8)
-' If script was copied to TEMP, pass original ShareDir as parameter
+' If script was copied to TEMP, pass original ShareDir via environment variable (supports Unicode)
 If needsCopy Then
-    command = "cmd.exe /c chcp 65001 >nul && powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden -File """ & psScriptToRun & """ -GuiMode -ShareDir """ & scriptDir & """ 2>""" & errorLog & """"
+    wshShellEnv("YAKULINGO_SHARE_DIR") = scriptDir
+    command = "cmd.exe /c chcp 65001 >nul && powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden -File """ & psScriptToRun & """ -GuiMode 2>""" & errorLog & """"
 Else
     command = "cmd.exe /c chcp 65001 >nul && powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden -File """ & psScriptToRun & """ -GuiMode 2>""" & errorLog & """"
 End If

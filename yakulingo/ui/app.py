@@ -882,7 +882,7 @@ class YakuLingoApp:
     # =========================================================================
 
     def create_ui(self):
-        """Create the UI - Nani-inspired 3-column layout"""
+        """Create the UI - Nani-inspired 2-column layout"""
         # Lazy load CSS (2837 lines) - deferred until UI creation
         from yakulingo.ui.styles import COMPLETE_CSS
 
@@ -890,7 +890,7 @@ class YakuLingoApp:
         ui.add_head_html('<meta name="viewport" content="width=device-width, initial-scale=1.0">')
         ui.add_head_html(f'<style>{COMPLETE_CSS}</style>')
 
-        # Layout container: 3-column (sidebar + input + result)
+        # Layout container: 2-column (sidebar + main content)
         with ui.element('div').classes('app-container'):
             # Left Sidebar (tabs + history)
             with ui.column().classes('sidebar'):
@@ -1102,8 +1102,8 @@ class YakuLingoApp:
         @ui.refreshable
         def main_content():
             if self.state.current_tab == Tab.TEXT:
-                # Dynamic 2/3-column layout for text translation
-                # Input panel (left column - width varies based on results)
+                # 2-column layout for text translation
+                # Input panel (shown in INPUT state, hidden in RESULT state via CSS)
                 with ui.column().classes('input-panel'):
                     create_text_input_panel(
                         state=self.state,

@@ -182,29 +182,15 @@ def create_text_input_panel(
     on_edit_glossary: Optional[Callable[[], None]] = None,
 ):
     """
-    Text input panel for 3-column layout.
-    - INPUT state: Large textarea for initial input (spans 2 columns)
-    - RESULT/TRANSLATING state: Compact textarea for new translations (middle column only)
+    Text input panel for 2-column layout.
+    Only shown in INPUT state (hidden via CSS in RESULT/TRANSLATING state).
     """
-    # Show compact panel during translation or after translation (RESULT state)
-    is_input_mode = state.text_view_state == TextViewState.INPUT and not state.text_translating
-
-    if is_input_mode:
-        # INPUT state: Large input area spanning full width
-        _create_large_input_panel(
-            state, on_translate, on_source_change, on_clear,
-            on_attach_reference_file, on_remove_reference_file,
-            on_settings, on_translate_button_created,
-            use_bundled_glossary, on_glossary_toggle, on_edit_glossary
-        )
-    else:
-        # RESULT/TRANSLATING state: Compact input for new translations
-        _create_compact_input_panel(
-            state, on_translate, on_source_change, on_clear,
-            on_attach_reference_file, on_remove_reference_file,
-            on_settings, on_translate_button_created,
-            use_bundled_glossary, on_glossary_toggle, on_edit_glossary
-        )
+    _create_large_input_panel(
+        state, on_translate, on_source_change, on_clear,
+        on_attach_reference_file, on_remove_reference_file,
+        on_settings, on_translate_button_created,
+        use_bundled_glossary, on_glossary_toggle, on_edit_glossary
+    )
 
 
 def _create_large_input_panel(
@@ -330,125 +316,6 @@ def _create_large_input_panel(
                 ui.label(': 他のアプリで選択中の文章を取り込んで翻訳').classes('text-muted ml-1')
 
 
-def _create_compact_input_panel(
-    state: AppState,
-    on_translate: Callable[[], None],
-    on_source_change: Callable[[str], None],
-    on_clear: Callable[[], None],
-    on_attach_reference_file: Optional[Callable[[], None]] = None,
-    on_remove_reference_file: Optional[Callable[[int], None]] = None,
-    on_settings: Optional[Callable[[], None]] = None,
-    on_translate_button_created: Optional[Callable[[ui.button], None]] = None,
-    use_bundled_glossary: bool = False,
-    on_glossary_toggle: Optional[Callable[[bool], None]] = None,
-    on_edit_glossary: Optional[Callable[[], None]] = None,
-):
-    """Compact input panel for RESULT/TRANSLATING state - fills available vertical space"""
-    # During translation, show empty textarea (same as post-translation state)
-    textarea_value = "" if state.text_translating else state.source_text
-
-    with ui.column().classes('flex-1 w-full gap-4'):
-        # Card container - fills available space via CSS flex
-        with ui.element('div').classes('main-card w-full'):
-            with ui.element('div').classes('main-card-inner'):
-                # Textarea - fills available space (controlled by CSS flex: 1)
-                _create_textarea_with_keyhandler(
-                    state=state,
-                    on_source_change=on_source_change,
-                    on_translate=on_translate,
-                    placeholder='新しいテキストを入力…',
-                    value=textarea_value,
-                    extra_classes='compact-textarea',
-                    autogrow=True,
-                )
-
-                # Bottom controls - same layout as large panel
-                with ui.row().classes('p-3 justify-between items-center'):
-                    # Left side: character count and attached files
-                    with ui.row().classes('items-center gap-2 flex-1'):
-                        # Character count (use textarea_value to match displayed content)
-                        if textarea_value:
-                            ui.label(f'{len(textarea_value)} 文字').classes('text-xs text-muted')
-
-                        # Attached reference files indicator (hide during translation)
-                        if state.reference_files and not state.text_translating:
-                            for i, ref_file in enumerate(state.reference_files):
-                                with ui.element('div').classes('attach-file-indicator'):
-                                    ui.label(ref_file.name).classes('file-name')
-                                    if on_remove_reference_file:
-                                        ui.button(
-                                            icon='close',
-                                            on_click=lambda idx=i: on_remove_reference_file(idx)
-                                        ).props('flat dense round size=xs').classes('remove-btn')
-
-                    with ui.row().classes('items-center gap-2'):
-                        # Bundled glossary toggle chip (hide during translation)
-                        if on_glossary_toggle and not state.text_translating:
-                            glossary_btn = ui.button(
-                                '用語集',
-                                icon='menu_book',
-                                on_click=lambda: on_glossary_toggle(not use_bundled_glossary)
-                            ).props('flat no-caps size=sm').classes(
-                                f'glossary-toggle-btn {"active" if use_bundled_glossary else ""}'
-                            )
-                            glossary_btn.tooltip('同梱の glossary.csv を使用' if not use_bundled_glossary else '用語集を使用中')
-
-                            # Edit glossary button (only shown when glossary is enabled)
-                            if use_bundled_glossary and on_edit_glossary:
-                                edit_btn = ui.button(
-                                    icon='edit',
-                                    on_click=on_edit_glossary
-                                ).props('flat dense round size=sm').classes('settings-btn')
-                                edit_btn.tooltip('用語集をExcelで編集')
-
-                        # Settings button (hide during translation)
-                        if on_settings and not state.text_translating:
-                            settings_btn = ui.button(
-                                icon='tune',
-                                on_click=on_settings
-                            ).props('flat dense round size=sm').classes('settings-btn')
-                            settings_btn.tooltip('翻訳の設定')
-
-                        # Reference file attachment button (hide during translation)
-                        if on_attach_reference_file and not state.text_translating:
-                            has_files = bool(state.reference_files)
-                            attach_btn = ui.button(
-                                on_click=on_attach_reference_file
-                            ).classes(f'attach-btn {"has-file" if has_files else ""}').props('flat')
-                            with attach_btn:
-                                ui.html(ATTACH_SVG, sanitize=False)
-                            attach_btn.tooltip('その他の参照ファイルを添付' if not has_files else '参照ファイルを追加')
-
-                        # Clear button (use textarea_value to match displayed content)
-                        if textarea_value:
-                            ui.button(icon='close', on_click=on_clear).props(
-                                'flat dense round size=sm aria-label="クリア"'
-                            ).classes('text-muted')
-
-                        # Translate button with keycap-style shortcut
-                        def handle_translate_click():
-                            logger.info("Translate button clicked")
-                            asyncio.create_task(on_translate())
-
-                        with ui.button(on_click=handle_translate_click).classes('translate-btn').props('no-caps') as btn:
-                            ui.label('翻訳する')
-                            with ui.row().classes('shortcut-keys ml-2'):
-                                with ui.element('span').classes('keycap'):
-                                    ui.label('Ctrl / ⌘')
-                                with ui.element('span').classes('keycap-plus'):
-                                    ui.label('+')
-                                with ui.element('span').classes('keycap'):
-                                    ui.label('Enter')
-                        # Disable button during translation or when no text
-                        # No spinner here - result panel shows translation status
-                        if state.text_translating or not state.can_translate():
-                            btn.props('disable')
-
-                        # Provide button reference for dynamic state updates
-                        if on_translate_button_created:
-                            on_translate_button_created(btn)
-
-
 def create_text_result_panel(
     state: AppState,
     on_copy: Callable[[str], None],
@@ -459,8 +326,8 @@ def create_text_result_panel(
     on_streaming_label_created: Optional[Callable[[ui.label], None]] = None,
 ):
     """
-    Text result panel for 3-column layout.
-    Contains translation results with language-specific UI.
+    Text result panel for 2-column layout.
+    Shown in RESULT/TRANSLATING state. Contains translation results with language-specific UI.
 
     Args:
         on_streaming_label_created: Callback with streaming label for direct text updates (avoids flickering)

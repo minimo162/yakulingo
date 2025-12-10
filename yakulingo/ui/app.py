@@ -1270,22 +1270,23 @@ class YakuLingoApp:
 
                 async def handle_upload(e):
                     try:
-                        # NiceGUI 3.0+ uses e.file with data attribute
-                        # Older versions use e.content and e.name directly
+                        # NiceGUI 3.3+ uses e.file with FileUpload object
                         if hasattr(e, 'file'):
-                            # NiceGUI 3.x: SmallFileUpload has data/name, LargeFileUpload has path/name
+                            # NiceGUI 3.x: SmallFileUpload has _data, LargeFileUpload has _path
                             file_obj = e.file
                             name = file_obj.name
-                            if hasattr(file_obj, 'path'):
-                                # LargeFileUpload: file is saved to temp directory, use path directly
-                                with open(file_obj.path, 'rb') as f:
+                            if hasattr(file_obj, '_path'):
+                                # LargeFileUpload: file is saved to temp directory
+                                with open(file_obj._path, 'rb') as f:
                                     content = f.read()
-                            elif hasattr(file_obj, 'data'):
-                                content = file_obj.data
                             elif hasattr(file_obj, '_data'):
+                                # SmallFileUpload: data is in memory
                                 content = file_obj._data
+                            elif hasattr(file_obj, 'read'):
+                                # Fallback: use async read() method
+                                content = await file_obj.read()
                             else:
-                                content = file_obj.content.read()
+                                raise AttributeError(f"Unknown file upload type: {type(file_obj)}")
                         else:
                             # Older NiceGUI: direct content and name attributes
                             if not e.content:

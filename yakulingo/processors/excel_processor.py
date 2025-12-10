@@ -1128,17 +1128,27 @@ class ExcelProcessor(FileProcessor):
         """
         result: dict[str, dict] = {}
 
-        # Sort sheet names by length (longest first) to avoid prefix collision
+        # Sort sheet names by length (longest first, then alphabetically for stability)
+        # This ensures consistent matching even when sheet_names comes from a set.
         # e.g., "my_sheet" should match before "my" for block_id "my_sheet_A1"
-        sorted_sheet_names = sorted(sheet_names, key=len, reverse=True)
+        sorted_sheet_names = sorted(sheet_names, key=lambda x: (-len(x), x))
+
+        # Pre-compile regex for valid cell reference pattern (A1, AA100, etc.)
+        cell_ref_pattern = re.compile(r'^[A-Z]+\d+$')
 
         for block_id, translated_text in translations.items():
             # Find matching sheet name (handles sheet names with underscores)
+            # Validates that suffix is a valid block type to avoid false matches
             sheet_name = None
             for name in sorted_sheet_names:
                 if block_id.startswith(f"{name}_"):
-                    sheet_name = name
-                    break
+                    suffix = block_id[len(name) + 1:]
+                    # Validate suffix is a valid block type
+                    if (cell_ref_pattern.match(suffix) or
+                        suffix.startswith("shape_") or
+                        suffix.startswith("chart_")):
+                        sheet_name = name
+                        break
 
             if sheet_name is None:
                 continue
@@ -1429,8 +1439,8 @@ class ExcelProcessor(FileProcessor):
         - Only accesses cells that need translation
         - Only processes selected sheets when selected_sections is specified
         """
-        wb = openpyxl.load_workbook(input_path)
         font_manager = FontManager(direction, settings)
+        wb = openpyxl.load_workbook(input_path)
 
         # Cache parsed coordinates to avoid repeatedly converting A1 notation
         @lru_cache(maxsize=2048)

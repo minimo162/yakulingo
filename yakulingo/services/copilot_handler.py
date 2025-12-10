@@ -266,11 +266,23 @@ class PlaywrightThreadExecutor:
 
         This method is called during application shutdown to immediately release
         any pending operations without waiting for them to complete.
+
+        Thread Safety:
+            Uses _thread_lock to prevent race conditions between shutdown and
+            worker thread operations. The shutdown sequence is:
+            1. Acquire lock and set flags
+            2. Clear pending queue items and release waiters
+            3. Send stop signal to worker
+            4. Wait for worker to finish (with timeout)
         """
-        self._running = False
-        self._shutdown_flag = True
+        with self._thread_lock:
+            self._running = False
+            self._shutdown_flag = True
 
         # Clear the queue and release all waiting events
+        # This must happen after setting _running = False to prevent
+        # new items from being processed during cleanup
+        cleared_count = 0
         while True:
             try:
                 item = self._request_queue.get_nowait()
@@ -278,21 +290,41 @@ class PlaywrightThreadExecutor:
                     _, _, result_event = item
                     result_event['error'] = TimeoutError("Executor shutdown")
                     result_event['done'].set()
+                    cleared_count += 1
             except thread_queue.Empty:
                 break
 
-        # Send stop signal and wait briefly
-        if self._thread is not None:
+        if cleared_count > 0:
+            logger.debug("Cleared %d pending items during shutdown", cleared_count)
+
+        # Send stop signal and wait for worker to finish
+        if self._thread is not None and self._thread.is_alive():
             self._request_queue.put((None, None, None))
-            self._thread.join(timeout=2)
+            self._thread.join(timeout=3)
+            if self._thread.is_alive():
+                logger.warning("Playwright worker thread did not terminate within timeout")
 
     def _worker(self):
-        """Worker thread that processes Playwright operations."""
-        while self._running:
+        """Worker thread that processes Playwright operations.
+
+        Thread Safety:
+            Checks both _running and _shutdown_flag to ensure clean shutdown.
+            The _shutdown_flag is checked after getting an item from the queue
+            to handle the case where shutdown() is called while waiting.
+        """
+        while self._running and not self._shutdown_flag:
             try:
                 item = self._request_queue.get(timeout=1)
                 if item[0] is None:  # Stop signal
                     break
+
+                # Check shutdown flag after getting item (may have been set while waiting)
+                if self._shutdown_flag:
+                    _, _, result_event = item
+                    result_event['error'] = TimeoutError("Executor shutdown during processing")
+                    result_event['done'].set()
+                    break
+
                 func, args, result_event = item
                 try:
                     result = func(*args)
@@ -319,9 +351,14 @@ class PlaywrightThreadExecutor:
             The result of the function call
 
         Raises:
+            RuntimeError: If the executor is shutting down
             Exception from the function if it raised
             TimeoutError if the operation times out
         """
+        # Check shutdown flag before starting
+        if self._shutdown_flag:
+            raise RuntimeError("Executor is shutting down")
+
         self.start()  # Ensure thread is running
 
         result_event = {
@@ -329,6 +366,10 @@ class PlaywrightThreadExecutor:
             'result': None,
             'error': None,
         }
+
+        # Double-check after starting (shutdown may have occurred)
+        if self._shutdown_flag:
+            raise RuntimeError("Executor is shutting down")
 
         self._request_queue.put((func, args, result_event))
 
@@ -1389,10 +1430,28 @@ class CopilotHandler:
                 last_url = current_url
                 time.sleep(poll_interval)
                 elapsed += poll_interval
+                # Reset error count on successful iteration
+                consecutive_errors = 0
 
             except PlaywrightError as e:
-                logger.debug("Error during auto-login wait: %s", e)
-                return False
+                # Temporary errors during page transitions are common
+                # Only fail after multiple consecutive errors
+                consecutive_errors = getattr(self, '_auto_login_error_count', 0) + 1
+                self._auto_login_error_count = consecutive_errors
+                logger.debug("Error during auto-login wait (attempt %d): %s", consecutive_errors, e)
+
+                if consecutive_errors >= 3:
+                    logger.warning("Auto-login failed after %d consecutive errors", consecutive_errors)
+                    self._auto_login_error_count = 0
+                    return False
+
+                # Wait before retry
+                time.sleep(poll_interval)
+                elapsed += poll_interval
+                continue
+
+        # Reset error counter
+        self._auto_login_error_count = 0
 
         # Timeout reached - check final state
         try:
@@ -1701,10 +1760,25 @@ class CopilotHandler:
 
         logger.info("Waiting for login completion (timeout: %ds)...", timeout)
         logger.info("Edgeブラウザでログインしてください / Please log in to the Edge browser")
+        logger.info("(キャンセルするにはアプリを閉じてください / Close the app to cancel)")
 
         input_selector = self.CHAT_INPUT_SELECTOR
         poll_interval = self.LOGIN_POLL_INTERVAL
         elapsed = 0.0
+
+        def interruptible_sleep(duration: float) -> bool:
+            """Sleep in small increments, checking for cancellation.
+
+            Returns True if sleep completed normally, False if cancelled.
+            """
+            increment = 0.1  # Check cancellation every 100ms
+            slept = 0.0
+            while slept < duration:
+                if self._login_cancelled:
+                    return False
+                time.sleep(min(increment, duration - slept))
+                slept += increment
+            return True
 
         while elapsed < timeout:
             # Check for cancellation (allows graceful shutdown)
@@ -1725,7 +1799,9 @@ class CopilotHandler:
 
                 if _is_login_page(url):
                     # Still on login page, wait and retry
-                    time.sleep(poll_interval)
+                    if not interruptible_sleep(poll_interval):
+                        logger.info("Login wait cancelled during poll")
+                        return False
                     elapsed += poll_interval
                     continue
 
@@ -1743,7 +1819,9 @@ class CopilotHandler:
                         except PlaywrightTimeoutError:
                             pass  # Continue even if timeout
                         # Brief wait for JS redirect to occur
-                        time.sleep(self.LOGIN_REDIRECT_WAIT)
+                        if not interruptible_sleep(self.LOGIN_REDIRECT_WAIT):
+                            logger.info("Login wait cancelled during redirect wait")
+                            return False
                         # Check if URL changed (auto-redirect happened)
                         new_url = page.url
                         if "/landing" in new_url:
@@ -1752,7 +1830,9 @@ class CopilotHandler:
                             logger.info("Login wait: auto-redirect didn't occur, navigating to chat manually...")
                             try:
                                 page.goto(self.COPILOT_URL, wait_until='commit', timeout=30000)
-                                time.sleep(self.LOGIN_REDIRECT_WAIT)
+                                if not interruptible_sleep(self.LOGIN_REDIRECT_WAIT):
+                                    logger.info("Login wait cancelled during navigation")
+                                    return False
                             except (PlaywrightTimeoutError, PlaywrightError) as nav_err:
                                 logger.warning("Failed to navigate to chat: %s", nav_err)
                         continue  # Re-check URL and chat input
@@ -1762,10 +1842,14 @@ class CopilotHandler:
                         logger.debug("Login wait: Copilot domain but not /chat, navigating...")
                         try:
                             page.goto(self.COPILOT_URL, wait_until='domcontentloaded', timeout=30000)
-                            time.sleep(self.LOGIN_REDIRECT_WAIT)
+                            if not interruptible_sleep(self.LOGIN_REDIRECT_WAIT):
+                                logger.info("Login wait cancelled during chat navigation")
+                                return False
                         except (PlaywrightTimeoutError, PlaywrightError) as nav_err:
                             logger.warning("Failed to navigate to chat: %s", nav_err)
-                        time.sleep(poll_interval)
+                        if not interruptible_sleep(poll_interval):
+                            logger.info("Login wait cancelled during poll")
+                            return False
                         elapsed += poll_interval
                         continue
 
@@ -1783,12 +1867,16 @@ class CopilotHandler:
                 else:
                     logger.debug("Login wait: URL is not login page nor m365 domain")
 
-                time.sleep(poll_interval)
+                if not interruptible_sleep(poll_interval):
+                    logger.info("Login wait cancelled during poll")
+                    return False
                 elapsed += poll_interval
 
             except PlaywrightError as e:
                 logger.debug("Error during login wait: %s", e)
-                time.sleep(poll_interval)
+                if not interruptible_sleep(poll_interval):
+                    logger.info("Login wait cancelled during error recovery")
+                    return False
                 elapsed += poll_interval
 
         logger.warning("Login timeout - user did not complete login within %ds", timeout)
@@ -2240,6 +2328,7 @@ class CopilotHandler:
         prompt: str,
         reference_files: Optional[list[Path]] = None,
         on_chunk: "Callable[[str], None] | None" = None,
+        timeout: int = None,
     ) -> str:
         """Translate a single text (sync).
 
@@ -2252,9 +2341,15 @@ class CopilotHandler:
             prompt: The prompt to send to Copilot
             reference_files: Optional files to attach
             on_chunk: Optional callback called with partial text during streaming
+            timeout: Response timeout in seconds (default: DEFAULT_RESPONSE_TIMEOUT)
         """
+        if timeout is None:
+            timeout = self.DEFAULT_RESPONSE_TIMEOUT
+        # Add buffer for operations within translate_single_impl
+        executor_timeout = timeout + self.EXECUTOR_TIMEOUT_BUFFER_SECONDS
         return _playwright_executor.execute(
-            self._translate_single_impl, text, prompt, reference_files, on_chunk
+            self._translate_single_impl, text, prompt, reference_files, on_chunk,
+            timeout=executor_timeout
         )
 
     def _translate_single_impl(

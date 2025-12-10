@@ -1742,6 +1742,23 @@ class TranslationService:
                 selected_sections,
             )
 
+        except MemoryError as e:
+            # CRITICAL: Memory exhausted - provide clear error message
+            logger.critical(
+                "CRITICAL: Out of memory during file translation. "
+                "For PDF files, try reducing DPI or processing fewer pages. "
+                "For large files, consider splitting into smaller chunks."
+            )
+            return TranslationResult(
+                status=TranslationStatus.FAILED,
+                error_message=(
+                    "メモリ不足エラーが発生しました。"
+                    "PDFファイルの場合はDPIを下げるか、ページ数を減らしてください。"
+                    "大きなファイルは分割して処理することをお勧めします。"
+                ),
+                duration_seconds=time.time() - start_time,
+            )
+
         except (
             OSError,
             RuntimeError,

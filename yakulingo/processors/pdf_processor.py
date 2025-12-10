@@ -507,6 +507,88 @@ def split_text_into_lines(
     return lines
 
 
+def _is_cjk_char(char: str) -> bool:
+    """Check if a character is CJK (Chinese/Japanese/Korean)."""
+    if not char:
+        return False
+    code = ord(char[0])
+    # CJK Unified Ideographs and extensions
+    return (
+        (0x4E00 <= code <= 0x9FFF) or  # CJK Unified Ideographs
+        (0x3400 <= code <= 0x4DBF) or  # CJK Unified Ideographs Extension A
+        (0x3040 <= code <= 0x309F) or  # Hiragana
+        (0x30A0 <= code <= 0x30FF) or  # Katakana
+        (0xFF65 <= code <= 0xFF9F) or  # Half-width Katakana
+        (0xAC00 <= code <= 0xD7AF)     # Hangul Syllables
+    )
+
+
+def _tokenize_for_line_wrap(text: str) -> list[str]:
+    """
+    Tokenize text for line wrapping.
+
+    For Latin text, splits by spaces preserving the space with the preceding word.
+    For CJK text, each character is a separate token.
+
+    Examples:
+        "Hello world" -> ["Hello ", "world"]
+        "日本語テスト" -> ["日", "本", "語", "テ", "ス", "ト"]
+        "Hello 世界" -> ["Hello ", "世", "界"]
+    """
+    if not text:
+        return []
+
+    tokens = []
+    current_token = []
+
+    i = 0
+    while i < len(text):
+        char = text[i]
+
+        if char == '\n':
+            # Newline is always a separate token
+            if current_token:
+                tokens.append(''.join(current_token))
+                current_token = []
+            tokens.append('\n')
+            i += 1
+        elif _is_cjk_char(char):
+            # CJK characters are individual tokens
+            if current_token:
+                tokens.append(''.join(current_token))
+                current_token = []
+            tokens.append(char)
+            i += 1
+        elif char == ' ':
+            # Space belongs to the preceding word (for proper line breaks)
+            current_token.append(char)
+            tokens.append(''.join(current_token))
+            current_token = []
+            i += 1
+        else:
+            # Latin characters accumulate into words
+            current_token.append(char)
+            i += 1
+
+    if current_token:
+        tokens.append(''.join(current_token))
+
+    return tokens
+
+
+def _get_token_width(
+    token: str,
+    font_id: str,
+    font_size: float,
+    font_registry: 'FontRegistry',
+) -> float:
+    """Calculate the width of a token."""
+    width = 0.0
+    for char in token:
+        width += font_registry.get_char_width(font_id, char, font_size)
+    return width
+
+
 def split_text_into_lines_with_font(
     text: str,
     box_width: float,
@@ -517,8 +599,8 @@ def split_text_into_lines_with_font(
     """
     Split text into lines using actual font metrics.
 
-    Uses FontRegistry.get_char_width() for accurate width calculation
-    instead of the simpler CJK-based estimation.
+    Uses word-aware wrapping for Latin text to avoid breaking words mid-character.
+    CJK text is wrapped character-by-character (as is standard for CJK typography).
 
     Args:
         text: Text to split
@@ -538,30 +620,58 @@ def split_text_into_lines_with_font(
     if font_size <= 0:
         font_size = DEFAULT_FONT_SIZE
 
+    # Tokenize text (words for Latin, characters for CJK)
+    tokens = _tokenize_for_line_wrap(text)
+    if not tokens:
+        return []
+
     lines = []
-    current_line_chars: list[str] = []
+    current_line_tokens: list[str] = []
     current_width = 0.0
 
-    for char in text:
-        if char == '\n':
-            lines.append(''.join(current_line_chars))
-            current_line_chars = []
+    for token in tokens:
+        if token == '\n':
+            # Explicit newline
+            lines.append(''.join(current_line_tokens))
+            current_line_tokens = []
             current_width = 0.0
             continue
 
-        # Use actual font metrics for width calculation
-        char_width = font_registry.get_char_width(font_id, char, font_size)
+        token_width = _get_token_width(token, font_id, font_size, font_registry)
 
-        if current_width + char_width > box_width and current_line_chars:
-            lines.append(''.join(current_line_chars))
-            current_line_chars = [char]
-            current_width = char_width
+        # Check if token fits on current line
+        if current_width + token_width <= box_width:
+            # Token fits, add to current line
+            current_line_tokens.append(token)
+            current_width += token_width
+        elif not current_line_tokens:
+            # Token doesn't fit but line is empty - must break the token
+            # This handles very long words that exceed box_width
+            chars_added = []
+            char_width_sum = 0.0
+            for char in token:
+                char_width = font_registry.get_char_width(font_id, char, font_size)
+                if char_width_sum + char_width > box_width and chars_added:
+                    lines.append(''.join(chars_added))
+                    chars_added = [char]
+                    char_width_sum = char_width
+                else:
+                    chars_added.append(char)
+                    char_width_sum += char_width
+            if chars_added:
+                current_line_tokens = chars_added
+                current_width = char_width_sum
         else:
-            current_line_chars.append(char)
-            current_width += char_width
+            # Token doesn't fit - start new line
+            line_text = ''.join(current_line_tokens).rstrip(' ')  # Remove trailing space
+            lines.append(line_text)
+            # Start new line with current token (strip leading space if any)
+            token_stripped = token.lstrip(' ')
+            current_line_tokens = [token_stripped] if token_stripped else []
+            current_width = _get_token_width(token_stripped, font_id, font_size, font_registry) if token_stripped else 0.0
 
-    if current_line_chars:
-        lines.append(''.join(current_line_chars))
+    if current_line_tokens:
+        lines.append(''.join(current_line_tokens))
 
     return lines
 

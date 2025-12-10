@@ -2467,9 +2467,16 @@ class CopilotHandler:
                 fill_method = None  # Track which method succeeded
 
                 # Method 1: Use Playwright's fill() - handles newlines correctly for contenteditable
+                # After fill(), dispatch input event to notify the app of the text change.
+                # This is required for React/Vue apps that don't detect direct DOM changes.
                 method1_error = None
                 try:
                     input_elem.fill(message)
+                    # Dispatch input event to trigger framework reactivity
+                    input_elem.evaluate('''el => {
+                        el.dispatchEvent(new Event('input', { bubbles: true }));
+                        el.dispatchEvent(new Event('change', { bubbles: true }));
+                    }''')
                     time.sleep(0.1)
                     content = input_elem.inner_text()
                     fill_success = len(content.strip()) > 0
@@ -2545,17 +2552,17 @@ class CopilotHandler:
                     logger.warning("Input field is empty after fill - Copilot may need attention")
                     raise RuntimeError("Copilotに入力できませんでした。Edgeブラウザを確認してください。")
 
-                # Brief pause to let Copilot process the input before sending
-                # Note: We intentionally do NOT wait for send button to be enabled here.
-                # Previous implementation tried waiting for send button, but it sometimes
-                # never became enabled, causing infinite waits. See CLAUDE.md for details.
-                time.sleep(0.15)
+                # Pause to let Copilot process the input before sending
+                # This is critical - if we press Enter too quickly, Copilot may not
+                # have processed the input yet and the send will fail.
+                time.sleep(0.5)
 
                 # Send via Enter key with retry on failure
                 # After Enter, check if input field is cleared (indicates successful send)
                 # If text remains, retry Enter key up to MAX_SEND_RETRIES times
                 MAX_SEND_RETRIES = 3
-                SEND_RETRY_WAIT = 0.3  # seconds between retries
+                SEND_RETRY_WAIT = 0.5  # seconds between retries
+                send_success = False
 
                 for send_attempt in range(MAX_SEND_RETRIES):
                     input_elem.press("Enter")
@@ -2571,6 +2578,7 @@ class CopilotHandler:
 
                     if not remaining_text:
                         logger.info("Message sent via Enter key (attempt %d)", send_attempt + 1)
+                        send_success = True
                         break
                     else:
                         # Update input_elem for next retry attempt

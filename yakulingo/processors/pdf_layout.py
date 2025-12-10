@@ -354,13 +354,14 @@ def prewarm_layout_model(device: str = "auto") -> bool:
                 model = get_layout_model(device)
 
                 # Perform dummy inference to trigger runtime initialization
+                # Note: LayoutDetection uses predict() method, not __call__
                 np = _get_numpy()
                 dummy_image = np.zeros((100, 100, 3), dtype=np.uint8)
-                _ = model(dummy_image)
+                _ = model.predict(dummy_image)
 
                 logger.info("PP-DocLayout-L ウォームアップ完了")
                 return True
-            except (RuntimeError, OSError, ValueError, MemoryError) as e:
+            except (RuntimeError, OSError, ValueError, MemoryError, TypeError) as e:
                 # RuntimeError: model/inference issues
                 # OSError: device access issues
                 # ValueError: invalid image format

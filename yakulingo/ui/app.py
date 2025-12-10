@@ -659,6 +659,9 @@ class YakuLingoApp:
         try:
             from yakulingo.services.copilot_handler import ConnectionState as CopilotConnectionState
 
+            consecutive_errors = 0
+            max_consecutive_errors = 3  # 連続エラー3回でポーリング終了
+
             while elapsed < max_wait_time and not self._shutdown_requested:
                 await asyncio.sleep(polling_interval)
                 elapsed += polling_interval
@@ -672,6 +675,19 @@ class YakuLingoApp:
                 state = await asyncio.to_thread(
                     self.copilot.check_copilot_state, 3  # 3秒タイムアウト
                 )
+
+                # ブラウザ/ページがクローズされた場合は早期終了
+                if state == CopilotConnectionState.ERROR:
+                    consecutive_errors += 1
+                    if consecutive_errors >= max_consecutive_errors:
+                        logger.info(
+                            "Login polling stopped: browser/page closed "
+                            "(%d consecutive errors)",
+                            consecutive_errors
+                        )
+                        return
+                else:
+                    consecutive_errors = 0  # エラー以外の状態でリセット
 
                 if state == CopilotConnectionState.READY:
                     # ログイン完了 → 接続状態を更新

@@ -1260,6 +1260,60 @@ class TestExtractDetectionSample:
         assert sample is not None
         assert "Hello world" in sample
 
+    def test_pdf_uses_fast_extraction_path(self, tmp_path):
+        """PDF files use fast extraction without PP-DocLayout-L."""
+        from unittest.mock import patch, MagicMock
+
+        pdf_path = tmp_path / "test.pdf"
+        pdf_path.write_bytes(b"%PDF-1.4 dummy")
+
+        service = TranslationService(Mock(), AppSettings())
+
+        # Mock the PDF processor's fast extraction method
+        mock_processor = MagicMock()
+        mock_processor.file_type = FileType.PDF
+        mock_processor.extract_sample_text_fast.return_value = "テスト日本語テキスト"
+
+        with patch.object(service, '_get_processor', return_value=mock_processor):
+            sample = service.extract_detection_sample(pdf_path)
+
+        # Verify fast extraction was called
+        mock_processor.extract_sample_text_fast.assert_called_once_with(pdf_path)
+        # Verify standard extraction was NOT called
+        mock_processor.extract_text_blocks.assert_not_called()
+
+        assert sample is not None
+        assert "テスト日本語テキスト" in sample
+
+    def test_pdf_falls_back_to_standard_extraction(self, tmp_path):
+        """PDF falls back to standard extraction if fast path returns None."""
+        from unittest.mock import patch, MagicMock
+        from yakulingo.models.types import TextBlock
+
+        pdf_path = tmp_path / "test.pdf"
+        pdf_path.write_bytes(b"%PDF-1.4 dummy")
+
+        service = TranslationService(Mock(), AppSettings())
+
+        # Mock the PDF processor - fast extraction returns None
+        mock_processor = MagicMock()
+        mock_processor.file_type = FileType.PDF
+        mock_processor.extract_sample_text_fast.return_value = None
+
+        # Standard extraction returns blocks
+        mock_block = TextBlock(id="1", text="Fallback text", location="Page 1", metadata={})
+        mock_processor.extract_text_blocks.return_value = iter([mock_block])
+
+        with patch.object(service, '_get_processor', return_value=mock_processor):
+            sample = service.extract_detection_sample(pdf_path)
+
+        # Verify both methods were called
+        mock_processor.extract_sample_text_fast.assert_called_once()
+        mock_processor.extract_text_blocks.assert_called()
+
+        assert sample is not None
+        assert "Fallback text" in sample
+
 
 # --- Tests: adjust_translation() ---
 

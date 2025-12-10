@@ -1083,6 +1083,84 @@ class TestPdfProcessorGetFileInfo:
             mock_doc.close.assert_called_once()
 
 
+class TestPdfProcessorExtractSampleTextFast:
+    """Tests for PdfProcessor.extract_sample_text_fast (fast language detection)"""
+
+    def test_extract_sample_text_fast_returns_text(self, processor, tmp_path):
+        """Test fast text extraction returns text from PDF"""
+        # Mock PyMuPDF document
+        mock_page = Mock()
+        mock_page.get_text.return_value = "テストテキスト Hello World"
+
+        mock_doc = MagicMock()
+        mock_doc.__len__.return_value = 1
+        mock_doc.__getitem__.return_value = mock_page
+        mock_doc.__enter__.return_value = mock_doc
+        mock_doc.__exit__.return_value = None
+
+        pdf_path = tmp_path / "test.pdf"
+        pdf_path.write_bytes(b"%PDF-1.4 dummy")
+
+        with patch('yakulingo.processors.pdf_processor._open_pymupdf_document', return_value=mock_doc):
+            result = processor.extract_sample_text_fast(pdf_path)
+
+        assert result is not None
+        assert "テストテキスト" in result
+        assert "Hello World" in result
+        mock_page.get_text.assert_called_once_with("text")
+
+    def test_extract_sample_text_fast_respects_max_chars(self, processor, tmp_path):
+        """Test fast extraction respects max_chars limit"""
+        long_text = "A" * 2000
+
+        mock_page = Mock()
+        mock_page.get_text.return_value = long_text
+
+        mock_doc = MagicMock()
+        mock_doc.__len__.return_value = 1
+        mock_doc.__getitem__.return_value = mock_page
+        mock_doc.__enter__.return_value = mock_doc
+        mock_doc.__exit__.return_value = None
+
+        pdf_path = tmp_path / "test.pdf"
+        pdf_path.write_bytes(b"%PDF-1.4 dummy")
+
+        with patch('yakulingo.processors.pdf_processor._open_pymupdf_document', return_value=mock_doc):
+            result = processor.extract_sample_text_fast(pdf_path, max_chars=500)
+
+        assert result is not None
+        assert len(result) <= 500
+
+    def test_extract_sample_text_fast_returns_none_for_empty_pdf(self, processor, tmp_path):
+        """Test fast extraction returns None for PDF with no text"""
+        mock_page = Mock()
+        mock_page.get_text.return_value = "   "  # Only whitespace
+
+        mock_doc = MagicMock()
+        mock_doc.__len__.return_value = 1
+        mock_doc.__getitem__.return_value = mock_page
+        mock_doc.__enter__.return_value = mock_doc
+        mock_doc.__exit__.return_value = None
+
+        pdf_path = tmp_path / "test.pdf"
+        pdf_path.write_bytes(b"%PDF-1.4 dummy")
+
+        with patch('yakulingo.processors.pdf_processor._open_pymupdf_document', return_value=mock_doc):
+            result = processor.extract_sample_text_fast(pdf_path)
+
+        assert result is None
+
+    def test_extract_sample_text_fast_handles_exception(self, processor, tmp_path):
+        """Test fast extraction handles exceptions gracefully"""
+        pdf_path = tmp_path / "test.pdf"
+        pdf_path.write_bytes(b"%PDF-1.4 dummy")
+
+        with patch('yakulingo.processors.pdf_processor._open_pymupdf_document', side_effect=Exception("Test error")):
+            result = processor.extract_sample_text_fast(pdf_path)
+
+        assert result is None
+
+
 class TestPdfProcessorExtractTextBlocks:
     """Tests for PdfProcessor.extract_text_blocks"""
 

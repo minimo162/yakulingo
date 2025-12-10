@@ -343,6 +343,7 @@ from yakulingo.models.types import (
     TextTranslationResult,
     TranslationOption,
     FileInfo,
+    FileType,
     TextBlock,
     ProgressCallback,
 )
@@ -1265,11 +1266,8 @@ class TranslationService:
     def extract_detection_sample(self, file_path: Path, max_blocks: int = 5) -> Optional[str]:
         """Extract a lightweight text sample for language detection.
 
-        The standard extraction path filters blocks based on translation
-        direction (JP→EN vs EN→JP). That filter can produce no blocks for
-        English-only or Chinese-only files when using the default JP→EN
-        path. To avoid missing content, this method retries extraction with
-        the opposite direction if the first pass returns no blocks.
+        For PDF files, uses fast PyMuPDF extraction without PP-DocLayout-L.
+        For other files, uses standard extraction with direction fallback.
 
         Args:
             file_path: File to inspect.
@@ -1281,6 +1279,18 @@ class TranslationService:
         """
         processor = self._get_processor(file_path)
 
+        # PDF: Use fast extraction path (no PP-DocLayout-L)
+        if processor.file_type == FileType.PDF:
+            # PdfProcessor has extract_sample_text_fast() method
+            if hasattr(processor, 'extract_sample_text_fast'):
+                sample = processor.extract_sample_text_fast(file_path)
+                if sample:
+                    logger.debug("PDF language detection: fast extraction returned %d chars", len(sample))
+                    return sample
+            # Fallback to standard extraction if fast path fails
+            logger.debug("PDF language detection: falling back to standard extraction")
+
+        # Standard extraction for non-PDF files (or PDF fallback)
         # First pass: JP→EN extraction (default)
         blocks = list(processor.extract_text_blocks(file_path, output_language="en"))
 

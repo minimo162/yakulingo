@@ -199,10 +199,19 @@ if errorlevel 1 (
 )
 
 echo [INFO] This may take a moment...
-:: Use -W ignore to suppress ccache and other warnings
-:: Use cmd /c to run in isolated subprocess (prevents PaddlePaddle from affecting batch)
-cmd /c ".venv\Scripts\python.exe -W ignore -c "import warnings; warnings.filterwarnings('ignore'); import paddle; print('[OK] paddlepaddle version:', paddle.__version__)"" 2>nul
+:: Create temporary Python script to avoid quoting issues
+echo import warnings > _check_paddle.py
+echo warnings.filterwarnings('ignore') >> _check_paddle.py
+echo import paddle >> _check_paddle.py
+echo print('[OK] paddlepaddle version:', paddle.__version__) >> _check_paddle.py
+
+:: Run the script
+.venv\Scripts\python.exe -W ignore _check_paddle.py
 set PADDLE_ERROR=!errorlevel!
+
+:: Clean up
+del _check_paddle.py 2>nul
+
 echo [DEBUG] Python exit code: !PADDLE_ERROR!
 if !PADDLE_ERROR! neq 0 (
     echo [WARNING] paddlepaddle is not installed correctly.
@@ -214,8 +223,6 @@ if !PADDLE_ERROR! neq 0 (
         echo [INFO] PDF layout analysis will not be available.
     ) else (
         echo [OK] paddlepaddle installed successfully.
-        :: Verify again after install
-        cmd /c ".venv\Scripts\python.exe -W ignore -c "import warnings; warnings.filterwarnings('ignore'); import paddle; print('[OK] paddlepaddle version:', paddle.__version__)"" 2>nul
     )
 )
 
@@ -237,8 +244,18 @@ if errorlevel 1 (
 
 :: Pre-import paddle/paddleocr to download models and cache them (may take a while)
 echo [INFO] Downloading paddleocr models (this may take a few minutes on first run)...
-cmd /c ".venv\Scripts\python.exe -W ignore -c "import warnings; warnings.filterwarnings('ignore'); import paddle; from paddleocr import LayoutDetection; print('[OK] paddleocr models ready.')"" 2>nul
-if errorlevel 1 (
+:: Create temporary Python script
+echo import warnings > _check_paddleocr.py
+echo warnings.filterwarnings('ignore') >> _check_paddleocr.py
+echo import paddle >> _check_paddleocr.py
+echo from paddleocr import LayoutDetection >> _check_paddleocr.py
+echo print('[OK] paddleocr models ready.') >> _check_paddleocr.py
+
+.venv\Scripts\python.exe -W ignore _check_paddleocr.py
+set OCR_ERROR=!errorlevel!
+del _check_paddleocr.py 2>nul
+
+if !OCR_ERROR! neq 0 (
     echo [WARNING] paddleocr model download may have failed. PDF layout analysis may not work.
     echo [INFO] You can try running YakuLingo anyway - models will be downloaded on first PDF translation.
 )

@@ -372,7 +372,8 @@ class CopilotHandler:
     PAGE_NETWORK_IDLE_TIMEOUT_MS = 5000 # 5 seconds for network idle checks
 
     # Selector wait timeouts (milliseconds) - for Playwright wait_for_selector()
-    SELECTOR_CHAT_INPUT_TIMEOUT_MS = 15000   # 15 seconds for chat input to appear
+    SELECTOR_CHAT_INPUT_TIMEOUT_MS = 5000    # 5 seconds for initial chat input check
+    SELECTOR_CHAT_INPUT_EXTENDED_TIMEOUT_MS = 15000  # 15 seconds for extended wait after redirects
     # SELECTOR_SEND_BUTTON_TIMEOUT_MS removed - no longer wait for send button before Enter
     SELECTOR_RESPONSE_TIMEOUT_MS = 10000     # 10 seconds for response element to appear
     SELECTOR_NEW_CHAT_READY_TIMEOUT_MS = 5000  # 5 seconds for new chat to be ready
@@ -871,8 +872,8 @@ class CopilotHandler:
                         # Wait for auto-login (Windows integrated auth, SSO, MFA, etc.) to complete.
                         # This monitors URL changes to detect if auto-login is in progress,
                         # and only returns False if the login page becomes stable (no redirects).
-                        # 60 seconds allows time for MFA approval on mobile devices.
-                        if self._wait_for_auto_login_impl(max_wait=60.0, poll_interval=1.0):
+                        # Uses AUTO_LOGIN_TIMEOUT_SECONDS for consistent timeout management.
+                        if self._wait_for_auto_login_impl(max_wait=self.AUTO_LOGIN_TIMEOUT_SECONDS, poll_interval=0.5):
                             logger.info("Auto-login completed successfully")
                             self._finalize_connected_state()
                             return True
@@ -1296,8 +1297,8 @@ class CopilotHandler:
         elapsed = 0.0
         last_url = None
         stable_count = 0  # Counter for how many consecutive checks show no URL change
-        # Increased from 2 to 4 to avoid false positives during network delays
-        STABLE_THRESHOLD = 4  # If URL doesn't change for this many checks (4s), consider it stable
+        # With poll_interval=0.5s, 2 checks = 1 second of stability
+        STABLE_THRESHOLD = 2  # If URL doesn't change for this many checks, consider it stable
 
         logger.info("Waiting for auto-login to complete (max %.1fs)...", max_wait)
 

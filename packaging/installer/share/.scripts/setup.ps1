@@ -609,10 +609,31 @@ function Invoke-Setup {
             if (Test-Path $ExtractTarget) {
                 Remove-Item -Path $ExtractTarget -Recurse -Force
             }
-            & $script:SevenZip x $TempZipFile "-o$ExtractTarget" -y -bso0 -bsp0
-            if ($LASTEXITCODE -ne 0) {
-                throw "Failed to extract ZIP file.`n`nFile: $ZipFileName"
+            # Run 7-Zip asynchronously to keep GUI responsive
+            $psi = New-Object System.Diagnostics.ProcessStartInfo
+            $psi.FileName = $script:SevenZip
+            $psi.Arguments = "x `"$TempZipFile`" `"-o$ExtractTarget`" -y -mmt=on -bso0 -bsp0"
+            $psi.UseShellExecute = $false
+            $psi.CreateNoWindow = $true
+            $psi.RedirectStandardOutput = $true
+            $psi.RedirectStandardError = $true
+
+            $proc = [System.Diagnostics.Process]::Start($psi)
+
+            # Wait for completion with DoEvents for GUI responsiveness
+            while (-not $proc.HasExited) {
+                if ($GuiMode) {
+                    [System.Windows.Forms.Application]::DoEvents()
+                }
+                Start-Sleep -Milliseconds 100
             }
+
+            $proc.WaitForExit()
+            if ($proc.ExitCode -ne 0) {
+                $errorOutput = $proc.StandardError.ReadToEnd()
+                throw "Failed to extract ZIP file.`n`nFile: $ZipFileName`n$errorOutput"
+            }
+            $proc.Dispose()
 
             # Find extracted folder (YakuLingo_YYYYMMDD)
             $ExtractedDir = Get-ChildItem -Path $ExtractTarget -Directory | Where-Object { $_.Name -like "YakuLingo*" } | Select-Object -First 1
@@ -626,9 +647,28 @@ function Invoke-Setup {
                 [System.Windows.Forms.Application]::DoEvents()
             }
 
-            # Use robocopy to move files (handles overwrites and preserves what we need)
-            & robocopy $ExtractedDir.FullName $SetupPath /MIR /MT:8 /R:0 /W:0 /NJH /NJS /NP /MOVE 2>&1 | Out-Null
-            $robocopyExitCode = $LASTEXITCODE
+            # Use robocopy to move files asynchronously for GUI responsiveness
+            $roboPsi = New-Object System.Diagnostics.ProcessStartInfo
+            $roboPsi.FileName = "robocopy"
+            $roboPsi.Arguments = "`"$($ExtractedDir.FullName)`" `"$SetupPath`" /MIR /MT:8 /R:0 /W:0 /NJH /NJS /NP /MOVE"
+            $roboPsi.UseShellExecute = $false
+            $roboPsi.CreateNoWindow = $true
+            $roboPsi.RedirectStandardOutput = $true
+            $roboPsi.RedirectStandardError = $true
+
+            $roboProc = [System.Diagnostics.Process]::Start($roboPsi)
+
+            while (-not $roboProc.HasExited) {
+                if ($GuiMode) {
+                    [System.Windows.Forms.Application]::DoEvents()
+                }
+                Start-Sleep -Milliseconds 100
+            }
+
+            $roboProc.WaitForExit()
+            $robocopyExitCode = $roboProc.ExitCode
+            $roboProc.Dispose()
+
             if ($robocopyExitCode -ge 8) {
                 throw "Failed to install files.`n`nDestination: $SetupPath"
             }

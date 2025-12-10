@@ -909,3 +909,52 @@ class TestCopySheetContentImprovements:
         # Comment should be present in original sheet
         assert wb_out["Sheet1"]["A1"].comment is not None
         assert wb_out["Sheet1"]["A1"].comment.text == "This is a comment"
+
+
+class TestRecoverableComError:
+    """Tests for _is_recoverable_com_error function."""
+
+    def test_rpc_server_error_english(self):
+        """Test detection of English RPC server error."""
+        error = Exception("RPC server is unavailable")
+        assert excel_processor._is_recoverable_com_error(error) is True
+
+    def test_rpc_server_error_japanese(self):
+        """Test detection of Japanese RPC server error."""
+        error = Exception("RPC サーバーを使用できません")
+        assert excel_processor._is_recoverable_com_error(error) is True
+
+    def test_server_execution_failed_japanese(self):
+        """Test detection of Japanese server execution failed error."""
+        error = Exception("サーバーの実行に失敗しました")
+        assert excel_processor._is_recoverable_com_error(error) is True
+
+    def test_call_rejected_error(self):
+        """Test detection of call rejected error."""
+        error = Exception("Call was rejected by callee")
+        assert excel_processor._is_recoverable_com_error(error) is True
+
+    def test_automation_error_japanese(self):
+        """Test detection of Japanese automation error."""
+        error = Exception("オートメーションエラー")
+        assert excel_processor._is_recoverable_com_error(error) is True
+
+    def test_error_code_rpc_call_rejected(self):
+        """Test detection of RPC_E_CALL_REJECTED error code."""
+        error = Exception("COM error -2147418111")
+        assert excel_processor._is_recoverable_com_error(error) is True
+
+    def test_error_code_server_exec_failure(self):
+        """Test detection of CO_E_SERVER_EXEC_FAILURE error code."""
+        error = Exception("COM error -2146959355")
+        assert excel_processor._is_recoverable_com_error(error) is True
+
+    def test_non_recoverable_error(self):
+        """Test that non-COM errors are not marked as recoverable."""
+        error = Exception("File not found")
+        assert excel_processor._is_recoverable_com_error(error) is False
+
+    def test_value_error_not_recoverable(self):
+        """Test that ValueError is not marked as recoverable."""
+        error = ValueError("Invalid value")
+        assert excel_processor._is_recoverable_com_error(error) is False

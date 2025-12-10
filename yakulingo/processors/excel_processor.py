@@ -166,6 +166,103 @@ def _cleanup_com_before_retry():
     gc.collect()
 
 
+# COM error messages that indicate recoverable errors
+_RECOVERABLE_COM_ERROR_MESSAGES = [
+    "サーバーの実行に失敗しました",  # Server execution failed
+    "RPC server",
+    "RPC サーバー",
+    "オートメーション",  # Automation error
+    "Call was rejected",  # COM call rejected
+    "-2147418111",  # RPC_E_CALL_REJECTED
+    "-2146959355",  # CO_E_SERVER_EXEC_FAILURE
+]
+
+
+def _is_recoverable_com_error(e: Exception) -> bool:
+    """
+    Check if an exception is a recoverable COM error.
+
+    Args:
+        e: The exception to check
+
+    Returns:
+        True if the error is a COM error that might be recoverable with retry
+    """
+    pywintypes = _get_pywintypes()
+    error_str = str(e)
+
+    # Check if this is a pywintypes.com_error
+    is_com_error = False
+    if pywintypes is not None:
+        is_com_error = isinstance(e, pywintypes.com_error)
+
+    # Also check for common COM error messages (works on Japanese/English Windows)
+    return is_com_error or any(
+        err_msg in error_str for err_msg in _RECOVERABLE_COM_ERROR_MESSAGES
+    )
+
+
+def _copy_sheet_with_retry(
+    source_sheet,
+    target_wb,
+    position: str,
+    ref_sheet_index: int,
+    new_name: str,
+    max_retries: int = _EXCEL_RETRY_COUNT,
+    retry_delay: float = _EXCEL_RETRY_DELAY,
+) -> None:
+    """
+    Copy a sheet to target workbook with retry logic for RPC errors.
+
+    Args:
+        source_sheet: The xlwings sheet to copy
+        target_wb: The target xlwings workbook
+        position: "Before" or "After" the reference sheet
+        ref_sheet_index: Index of the reference sheet in target_wb
+        new_name: Name to give the copied sheet
+        max_retries: Maximum retry attempts
+        retry_delay: Initial retry delay (exponential backoff)
+
+    Raises:
+        Exception: If all retries fail
+    """
+    last_error = None
+
+    for attempt in range(max_retries):
+        try:
+            ref_sheet = target_wb.sheets[ref_sheet_index]
+            if position == "Before":
+                source_sheet.api.Copy(Before=ref_sheet.api)
+                # Copied sheet is inserted at ref_sheet_index
+                target_wb.sheets[ref_sheet_index].name = new_name
+            else:  # "After"
+                source_sheet.api.Copy(After=ref_sheet.api)
+                # Copied sheet is inserted at ref_sheet_index + 1
+                target_wb.sheets[ref_sheet_index + 1].name = new_name
+            return  # Success
+        except Exception as e:
+            last_error = e
+            error_str = str(e)
+
+            if _is_recoverable_com_error(e) and attempt < max_retries - 1:
+                delay = retry_delay * (2 ** attempt)
+                logger.warning(
+                    "Sheet copy RPC error (attempt %d/%d) for '%s': %s. Retrying in %.1fs...",
+                    attempt + 1, max_retries, new_name, error_str, delay
+                )
+                _cleanup_com_before_retry()
+                time.sleep(delay)
+            else:
+                logger.error(
+                    "Sheet copy failed (attempt %d/%d) for '%s': %s",
+                    attempt + 1, max_retries, new_name, error_str
+                )
+                raise
+
+    if last_error:
+        raise last_error
+
+
 def _create_excel_app_with_retry(xw, max_retries: int = _EXCEL_RETRY_COUNT, retry_delay: float = _EXCEL_RETRY_DELAY):
     """
     Create xlwings App with retry logic.
@@ -199,27 +296,7 @@ def _create_excel_app_with_retry(xw, max_retries: int = _EXCEL_RETRY_COUNT, retr
             last_error = e
             error_str = str(e)
 
-            # Check if this is a COM server error that might be recoverable
-            is_com_error = False
-            if pywintypes is not None:
-                is_com_error = isinstance(e, pywintypes.com_error)
-
-            # Also check for common COM error messages (Japanese Windows)
-            recoverable_errors = [
-                "サーバーの実行に失敗しました",  # Server execution failed
-                "RPC server",
-                "RPC サーバー",
-                "オートメーション",  # Automation error
-                "Call was rejected",  # COM call rejected
-                "-2147418111",  # RPC_E_CALL_REJECTED
-                "-2146959355",  # CO_E_SERVER_EXEC_FAILURE
-            ]
-
-            is_recoverable = is_com_error or any(
-                err_msg in error_str for err_msg in recoverable_errors
-            )
-
-            if is_recoverable and attempt < max_retries - 1:
+            if _is_recoverable_com_error(e) and attempt < max_retries - 1:
                 delay = retry_delay * (2 ** attempt)  # Exponential backoff
                 logger.warning(
                     "Excel COM error (attempt %d/%d): %s. Retrying in %.1fs...",
@@ -1549,10 +1626,14 @@ class ExcelProcessor(FileProcessor):
                     safe_orig_name = sanitize_sheet_name(sheet_name)
                     unique_orig_name = _ensure_unique_sheet_name(safe_orig_name, existing_names)
 
-                    # Use COM API to copy sheet (preserves all content)
-                    original_sheet.api.Copy(Before=bilingual_wb.sheets[0].api)
-                    # Rename the copied sheet (it's now at index 0)
-                    bilingual_wb.sheets[0].name = unique_orig_name
+                    # Use COM API to copy sheet (preserves all content) with retry for RPC errors
+                    _copy_sheet_with_retry(
+                        source_sheet=original_sheet,
+                        target_wb=bilingual_wb,
+                        position="Before",
+                        ref_sheet_index=0,
+                        new_name=unique_orig_name,
+                    )
 
                     # Copy translated sheet if exists
                     if i < len(translated_wb.sheets):
@@ -1560,9 +1641,14 @@ class ExcelProcessor(FileProcessor):
                         trans_title = sanitize_sheet_name(f"{sheet_name}_translated")
                         unique_trans_title = _ensure_unique_sheet_name(trans_title, existing_names)
 
-                        # Copy translated sheet after the original
-                        translated_sheet.api.Copy(After=bilingual_wb.sheets[0].api)
-                        bilingual_wb.sheets[1].name = unique_trans_title
+                        # Copy translated sheet after the original with retry for RPC errors
+                        _copy_sheet_with_retry(
+                            source_sheet=translated_sheet,
+                            target_wb=bilingual_wb,
+                            position="After",
+                            ref_sheet_index=0,
+                            new_name=unique_trans_title,
+                        )
 
                 # Handle extra translated sheets if any
                 if translated_sheets > original_sheets:
@@ -1571,8 +1657,13 @@ class ExcelProcessor(FileProcessor):
                         trans_title = sanitize_sheet_name(f"{translated_sheet.name}_translated")
                         unique_trans_title = _ensure_unique_sheet_name(trans_title, existing_names)
 
-                        translated_sheet.api.Copy(Before=bilingual_wb.sheets[0].api)
-                        bilingual_wb.sheets[0].name = unique_trans_title
+                        _copy_sheet_with_retry(
+                            source_sheet=translated_sheet,
+                            target_wb=bilingual_wb,
+                            position="Before",
+                            ref_sheet_index=0,
+                            new_name=unique_trans_title,
+                        )
 
                 # Remove the initial empty sheet if it still exists
                 # Check for default sheet names in multiple locales

@@ -214,8 +214,6 @@ def create_file_panel(
 
                 elif state.file_state == FileState.COMPLETE:
                     _complete_card(translation_result)
-                    with ui.row().classes('gap-3 mt-4 justify-center'):
-                        ui.button('新しいファイルを翻訳', on_click=on_reset).classes('btn-outline')
 
                 elif state.file_state == FileState.ERROR:
                     _error_card(state.error_message)

@@ -205,6 +205,10 @@ class YakuLingoApp:
         # on_chunk callback is called from Playwright thread, update_streaming_label runs on main thread
         self._streaming_text_lock = threading.Lock()
 
+        # File translation progress timer management (prevents orphaned timers)
+        # Uses same lock as streaming timer since text and file translation don't run concurrently
+        self._active_progress_timer: Optional[ui.timer] = None
+
         # Panel sizes (sidebar_width, input_panel_width, result_content_width, input_panel_max_width) in pixels
         # Set by run_app() based on monitor detection
         self._panel_sizes: tuple[int, int, int, int] = (260, 420, 800, 900)
@@ -2317,17 +2321,30 @@ class YakuLingoApp:
 
         def update_progress_ui():
             # Read progress state and update UI elements (runs on main thread via timer)
-            with progress_lock:
-                pct = progress_state['percentage']
-                status = progress_state['status']
-            progress_bar_inner.style(f'width: {int(pct * 100)}%')
-            progress_label.set_text(f'{int(pct * 100)}%')
-            status_label.set_text(status or '翻訳中...')
+            # Wrapped in try-except to prevent timer exceptions from destabilizing NiceGUI
+            try:
+                with progress_lock:
+                    pct = progress_state['percentage']
+                    status = progress_state['status']
+                progress_bar_inner.style(f'width: {int(pct * 100)}%')
+                progress_label.set_text(f'{int(pct * 100)}%')
+                status_label.set_text(status or '翻訳中...')
+            except Exception as e:
+                logger.debug("Progress UI update error (non-fatal): %s", e)
 
         # Start UI update timer (0.1s interval) - updates progress UI on main thread
+        # Protected by _streaming_timer_lock to prevent orphaned timers on concurrent translations
         PROGRESS_UI_TIMER_INTERVAL = 0.1  # seconds
-        with client:
-            progress_timer = ui.timer(PROGRESS_UI_TIMER_INTERVAL, update_progress_ui)
+        with self._streaming_timer_lock:
+            # Cancel any existing progress timer before creating new one
+            if self._active_progress_timer:
+                try:
+                    self._active_progress_timer.cancel()
+                except Exception:
+                    pass  # Timer may already be cancelled
+            with client:
+                progress_timer = ui.timer(PROGRESS_UI_TIMER_INTERVAL, update_progress_ui)
+            self._active_progress_timer = progress_timer
 
         error_message = None
         result = None
@@ -2360,14 +2377,23 @@ class YakuLingoApp:
             self.state.output_file = None
             error_message = str(e)
 
+        # Cancel progress timer with lock protection (same pattern as text translation)
+        with self._streaming_timer_lock:
+            if self._active_progress_timer is progress_timer:
+                try:
+                    progress_timer.cancel()
+                except Exception:
+                    pass
+                self._active_progress_timer = None
+            elif progress_timer:
+                # Timer was replaced by concurrent translation, still cancel our local reference
+                try:
+                    progress_timer.cancel()
+                except Exception:
+                    pass
+
         # Restore client context for UI operations
         with client:
-            # Cancel progress timer to stop UI updates
-            try:
-                progress_timer.cancel()
-            except Exception as e:
-                logger.debug("Failed to cancel progress timer: %s", e)
-
             # Close progress dialog
             try:
                 progress_dialog.close()

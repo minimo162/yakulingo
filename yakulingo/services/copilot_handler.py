@@ -373,7 +373,7 @@ class CopilotHandler:
 
     # Selector wait timeouts (milliseconds) - for Playwright wait_for_selector()
     SELECTOR_CHAT_INPUT_TIMEOUT_MS = 15000   # 15 seconds for chat input to appear
-    SELECTOR_SEND_BUTTON_TIMEOUT_MS = 5000   # 5 seconds for send button to become enabled
+    # SELECTOR_SEND_BUTTON_TIMEOUT_MS removed - no longer wait for send button before Enter
     SELECTOR_RESPONSE_TIMEOUT_MS = 10000     # 10 seconds for response element to appear
     SELECTOR_NEW_CHAT_READY_TIMEOUT_MS = 5000  # 5 seconds for new chat to be ready
     SELECTOR_LOGIN_CHECK_TIMEOUT_MS = 2000   # 2 seconds for login state checks
@@ -2510,17 +2510,11 @@ class CopilotHandler:
                     logger.warning("Input field is empty after fill - Copilot may need attention")
                     raise RuntimeError("Copilotに入力できませんでした。Edgeブラウザを確認してください。")
 
-                # Wait for send button to become enabled before pressing Enter
-                # This ensures Copilot has processed the input text
-                send_button_selector = self.SEND_BUTTON_SELECTOR
-                send_wait_start = time.time()
-                try:
-                    self._page.wait_for_selector(send_button_selector, timeout=self.SELECTOR_SEND_BUTTON_TIMEOUT_MS, state='visible')
-                    logger.info("[TIMING] wait_for_send_button: %.2fs", time.time() - send_wait_start)
-                except Exception as e:
-                    logger.debug("Send button wait timed out after %.2fs (may still work): %s", time.time() - send_wait_start, e)
+                # Brief pause to let Copilot process the input before sending
+                # This replaces the previous send button wait which was too strict
+                time.sleep(0.15)
 
-                # Send the message via Enter key (most reliable)
+                # Send via Enter key
                 input_elem.press("Enter")
                 logger.info("Message sent via Enter key")
             else:

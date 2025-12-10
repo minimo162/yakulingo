@@ -199,31 +199,17 @@ if errorlevel 1 (
 )
 
 echo [INFO] This may take a moment...
-:: Create temporary Python script to avoid quoting issues
-echo import warnings > _check_paddle.py
-echo warnings.filterwarnings('ignore') >> _check_paddle.py
-echo import paddle >> _check_paddle.py
-echo print('[OK] paddlepaddle version:', paddle.__version__) >> _check_paddle.py
-
-:: Run the script
-.venv\Scripts\python.exe -W ignore _check_paddle.py
+:: Use PowerShell to create and run paddle check script (avoids batch quoting issues)
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+    "$script = 'import warnings; warnings.filterwarnings(''ignore''); import paddle; print(''[OK] paddlepaddle version:'', paddle.__version__)';" ^
+    "& '.venv\Scripts\python.exe' -W ignore -c $script 2>$null;" ^
+    "exit $LASTEXITCODE"
 set PADDLE_ERROR=!errorlevel!
-
-:: Clean up
-del _check_paddle.py 2>nul
-
 echo [DEBUG] Python exit code: !PADDLE_ERROR!
 if !PADDLE_ERROR! neq 0 (
-    echo [WARNING] paddlepaddle is not installed correctly.
-    echo [INFO] Attempting manual installation via uv pip...
-    echo [INFO] paddlepaddle is large (~500MB-1GB), this may take several minutes...
-    uv.exe pip install --native-tls paddlepaddle>=3.0.0 paddleocr>=3.0.0
-    if errorlevel 1 (
-        echo [ERROR] Failed to install paddlepaddle.
-        echo [INFO] PDF layout analysis will not be available.
-    ) else (
-        echo [OK] paddlepaddle installed successfully.
-    )
+    echo [WARNING] paddlepaddle verification failed or not installed.
+    echo [INFO] PDF layout analysis may not be available.
+    echo [INFO] You can still try running YakuLingo - it will work for non-PDF files.
 )
 
 :: ============================================================
@@ -244,17 +230,12 @@ if errorlevel 1 (
 
 :: Pre-import paddle/paddleocr to download models and cache them (may take a while)
 echo [INFO] Downloading paddleocr models (this may take a few minutes on first run)...
-:: Create temporary Python script
-echo import warnings > _check_paddleocr.py
-echo warnings.filterwarnings('ignore') >> _check_paddleocr.py
-echo import paddle >> _check_paddleocr.py
-echo from paddleocr import LayoutDetection >> _check_paddleocr.py
-echo print('[OK] paddleocr models ready.') >> _check_paddleocr.py
-
-.venv\Scripts\python.exe -W ignore _check_paddleocr.py
+:: Use PowerShell to run paddleocr check (avoids batch quoting issues)
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+    "$script = 'import warnings; warnings.filterwarnings(''ignore''); import paddle; from paddleocr import LayoutDetection; print(''[OK] paddleocr models ready.'')';" ^
+    "& '.venv\Scripts\python.exe' -W ignore -c $script 2>$null;" ^
+    "exit $LASTEXITCODE"
 set OCR_ERROR=!errorlevel!
-del _check_paddleocr.py 2>nul
-
 if !OCR_ERROR! neq 0 (
     echo [WARNING] paddleocr model download may have failed. PDF layout analysis may not work.
     echo [INFO] You can try running YakuLingo anyway - models will be downloaded on first PDF translation.

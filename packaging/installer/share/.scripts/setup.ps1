@@ -44,10 +44,8 @@ $script:ScriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Pare
 # Priority: 1. File (Unicode safe), 2. Environment variable, 3. Parameter, 4. Derive from script location
 $shareDirFile = Join-Path $script:ScriptDir "share_dir.txt"
 if (Test-Path $shareDirFile) {
-    # Read UTF-8 file and remove BOM if present
-    $content = [System.IO.File]::ReadAllText($shareDirFile, [System.Text.Encoding]::UTF8)
-    # Remove UTF-8 BOM (U+FEFF) if present
-    $script:ShareDir = $content.TrimStart([char]0xFEFF).Trim()
+    # Read UTF-16 LE file (written by VBS CreateTextFile with Unicode flag)
+    $script:ShareDir = [System.IO.File]::ReadAllText($shareDirFile, [System.Text.Encoding]::Unicode).Trim()
 } elseif (-not [string]::IsNullOrEmpty($env:YAKULINGO_SHARE_DIR)) {
     $script:ShareDir = $env:YAKULINGO_SHARE_DIR
 } elseif (-not [string]::IsNullOrEmpty($ShareDir)) {

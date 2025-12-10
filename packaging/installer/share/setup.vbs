@@ -85,16 +85,13 @@ On Error GoTo 0
 ' Run PowerShell with error output redirected to log file (UTF-8)
 ' If script was copied to TEMP, write original ShareDir to file (Unicode safe)
 If needsCopy Then
-    Dim shareDirFile, shareDirStream
+    ' Write ShareDir to file using UTF-16 LE (native Windows Unicode, no BOM issues)
+    Dim shareDirFile, shareDirTS
     shareDirFile = tempDir & "\share_dir.txt"
-    Set shareDirStream = CreateObject("ADODB.Stream")
-    shareDirStream.Type = 2 ' adTypeText
-    shareDirStream.Charset = "UTF-8"
-    shareDirStream.Open
-    shareDirStream.WriteText scriptDir
-    shareDirStream.SaveToFile shareDirFile, 2 ' adSaveCreateOverWrite
-    shareDirStream.Close
-    Set shareDirStream = Nothing
+    Set shareDirTS = objFSO.CreateTextFile(shareDirFile, True, True) ' True = Unicode (UTF-16 LE)
+    shareDirTS.Write scriptDir
+    shareDirTS.Close
+    Set shareDirTS = Nothing
 End If
 command = "powershell.exe -ExecutionPolicy Bypass -File """ & psScriptToRun & """ -GuiMode 2>""" & errorLog & """"
 

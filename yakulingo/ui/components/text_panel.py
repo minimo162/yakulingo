@@ -23,13 +23,15 @@ logger = logging.getLogger(__name__)
 def _extract_translation_preview(text: str) -> str:
     """Extract translation part from streaming text for preview.
 
-    Extracts text between '訳文:' and '解説:' to match final result layout.
+    Extracts text between '訳文:' and explanation markers to match final result layout.
+    Supports multiple marker patterns for robustness against Copilot format changes.
     This provides a smoother transition from streaming to final display.
     """
     if not text:
         return ""
 
     # Find start of translation (訳文: or 訳文：)
+    # Note: Colon is required to avoid matching "訳文" in other contexts
     start_match = re.search(r'訳文[:：]\s*', text)
     if not start_match:
         # No translation marker yet, show raw text (truncated)
@@ -39,8 +41,20 @@ def _extract_translation_preview(text: str) -> str:
     translation_start = start_match.end()
     remaining = text[translation_start:]
 
-    # Find end of translation (解説: or 解説：)
-    end_match = re.search(r'\n\s*解説[:：]', remaining)
+    # Find end of translation (multiple explanation markers)
+    # Supports: 解説、説明、Explanation、Note/Notes
+    END_MARKERS = [
+        r'\n\s*[#>*\s-]*解説[:：]?',      # Japanese: 解説
+        r'\n\s*[#>*\s-]*説明[:：]?',      # Japanese: 説明
+        r'\n\s*[#>*\s-]*Explanation[:：]?',  # English
+        r'\n\s*[#>*\s-]*Notes?[:：]?',    # English: Note/Notes
+    ]
+    end_match = None
+    for pattern in END_MARKERS:
+        end_match = re.search(pattern, remaining, re.IGNORECASE)
+        if end_match:
+            break
+
     if end_match:
         # Have both markers, extract translation part
         translation = remaining[:end_match.start()].strip()

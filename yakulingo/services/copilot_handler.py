@@ -2016,11 +2016,22 @@ class CopilotHandler:
 
         logger.info("Force disconnecting Copilot...")
 
+        # Mark as disconnected first
+        self._connected = False
+
         # First, shutdown the executor to release any pending operations
         _playwright_executor.shutdown()
 
-        # Mark as disconnected
-        self._connected = False
+        # Stop Playwright to close WebSocket/pipe connections before killing Edge
+        # This prevents EPIPE errors when Node.js tries to write to terminated process
+        with suppress(Exception):
+            if self._playwright is not None:
+                try:
+                    self._playwright.stop()
+                    logger.debug("Playwright stopped cleanly")
+                except Exception as e:
+                    logger.debug("Error stopping Playwright: %s", e)
+                self._playwright = None
 
         # Terminate Edge browser process directly (don't wait for Playwright)
         # Only if we started the browser in this session

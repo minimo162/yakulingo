@@ -214,24 +214,26 @@ def _find_font_file(font_names: list[str]) -> Optional[str]:
 # Display name to font file mapping (for UI font selection)
 FONT_NAME_TO_FILES = {
     # Japanese fonts
-    "MS P明朝": ["mspmincho.ttc", "MS PMincho.ttf"],
+    # Note: MS P明朝/MS Pゴシック are included in msmincho.ttc/msgothic.ttc
+    # (there is no separate mspmincho.ttc/mspgothic.ttc file)
+    "MS P明朝": ["msmincho.ttc", "MS Mincho.ttf"],
     "MS 明朝": ["msmincho.ttc", "MS Mincho.ttf"],
-    "MS Pゴシック": ["mspgothic.ttc", "MS PGothic.ttf"],
+    "MS Pゴシック": ["msgothic.ttc", "MS Gothic.ttf"],
     "MS ゴシック": ["msgothic.ttc", "MS Gothic.ttf"],
-    "Meiryo UI": ["meiryoui.ttf", "Meiryo UI.ttf"],
+    "Meiryo UI": ["meiryoui.ttc", "MeiryoUI-Regular.ttf"],
     "メイリオ": ["meiryo.ttc", "Meiryo.ttf"],
-    "Yu Gothic UI": ["YuGothUI.ttc", "Yu Gothic UI.ttf"],
-    "游ゴシック": ["YuGothic.ttc", "Yu Gothic.ttf"],
+    "Yu Gothic UI": ["YuGothB.ttc", "YuGothM.ttc", "YuGothR.ttc"],
+    "游ゴシック": ["YuGothB.ttc", "YuGothM.ttc", "YuGothR.ttc"],
     "游明朝": ["YuMincho.ttc", "Yu Mincho.ttf"],
-    "IPA明朝": ["ipam.ttf", "IPAMincho.ttf"],
-    "IPAゴシック": ["ipag.ttf", "IPAGothic.ttf"],
+    "IPA明朝": ["ipam.ttf", "IPAMincho.ttf", "ipaexm.ttf"],
+    "IPAゴシック": ["ipag.ttf", "IPAGothic.ttf", "ipaexg.ttf"],
     # English fonts
-    "Arial": ["arial.ttf", "Arial.ttf"],
-    "Calibri": ["calibri.ttf", "Calibri.ttf"],
-    "Times New Roman": ["times.ttf", "Times.ttf", "timesbd.ttf"],
-    "Segoe UI": ["segoeui.ttf", "Segoe UI.ttf"],
-    "Verdana": ["verdana.ttf", "Verdana.ttf"],
-    "Tahoma": ["tahoma.ttf", "Tahoma.ttf"],
+    "Arial": ["arial.ttf", "Arial.ttf", "ARIAL.TTF"],
+    "Calibri": ["calibri.ttf", "Calibri.ttf", "CALIBRI.TTF"],
+    "Times New Roman": ["times.ttf", "Times.ttf", "TIMES.TTF", "timesbd.ttf"],
+    "Segoe UI": ["segoeui.ttf", "Segoe UI.ttf", "SEGOEUI.TTF"],
+    "Verdana": ["verdana.ttf", "Verdana.ttf", "VERDANA.TTF"],
+    "Tahoma": ["tahoma.ttf", "Tahoma.ttf", "TAHOMA.TTF"],
 }
 
 
@@ -254,20 +256,22 @@ def get_font_path_by_name(font_name: str) -> Optional[str]:
 
 
 # Font file names by language (cross-platform)
-# Default: Japanese = MS P明朝, English = Arial
+# Default: Japanese = MS Pゴシック/MS P明朝, English = Arial
 # Priority order: Windows fonts first, then Linux/cross-platform fonts
+# Note: MS Pゴシック/MS P明朝 are included in msgothic.ttc/msmincho.ttc
+# (there are no separate mspgothic.ttc/mspmincho.ttc files)
 FONT_FILES = {
     "ja": {
         "primary": [
-            # Windows fonts
-            "mspmincho.ttc", "MS PMincho.ttf",  # MS P明朝 (default Windows)
-            "msmincho.ttc", "MS Mincho.ttf",
-            "mspgothic.ttc", "MS PGothic.ttf",
-            "msgothic.ttc", "MS Gothic.ttf",
+            # Windows fonts (correct file names)
+            "msgothic.ttc", "MSGOTHIC.TTC",  # Contains MS ゴシック, MS Pゴシック, MS UI Gothic
+            "msmincho.ttc", "MSMINCHO.TTC",  # Contains MS 明朝, MS P明朝
+            "meiryo.ttc", "MEIRYO.TTC",      # メイリオ
+            "YuGothM.ttc", "YuGothR.ttc",    # 游ゴシック
             # Linux/cross-platform fonts (IPA fonts)
-            "ipag.ttf", "IPAGothic.ttf",  # IPAゴシック (common on Linux)
+            "ipag.ttf", "IPAGothic.ttf", "ipaexg.ttf",  # IPAゴシック
             "ipagp.ttf", "IPAPGothic.ttf",  # IPAPゴシック
-            "ipam.ttf", "IPAMincho.ttf",  # IPA明朝
+            "ipam.ttf", "IPAMincho.ttf", "ipaexm.ttf",  # IPA明朝
             "fonts-japanese-gothic.ttf",  # Debian/Ubuntu symlink
             # Noto fonts (cross-platform)
             "NotoSansJP-Regular.ttf", "NotoSerifJP-Regular.ttf",
@@ -281,10 +285,10 @@ FONT_FILES = {
     },
     "en": {
         "primary": [
-            # Windows fonts
-            "arial.ttf", "Arial.ttf",  # Arial (default Windows)
-            "calibri.ttf", "Calibri.ttf",
-            "segoeui.ttf", "Segoe UI.ttf",
+            # Windows fonts (include uppercase variants for case-sensitive systems)
+            "arial.ttf", "Arial.ttf", "ARIAL.TTF",  # Arial
+            "calibri.ttf", "Calibri.ttf", "CALIBRI.TTF",
+            "segoeui.ttf", "Segoe UI.ttf", "SEGOEUI.TTF",
             # Linux/cross-platform fonts
             "DejaVuSans.ttf",  # Common on Linux
             "LiberationSans-Regular.ttf",  # Free alternative to Arial
@@ -293,7 +297,7 @@ FONT_FILES = {
             "NotoSans-Regular.ttf",
         ],
         "fallback": [
-            "times.ttf", "Times.ttf", "Times New Roman.ttf",
+            "times.ttf", "Times.ttf", "TIMES.TTF", "Times New Roman.ttf",
             "DejaVuSerif.ttf",
             "LiberationSerif-Regular.ttf",
             "FreeSerif.ttf",

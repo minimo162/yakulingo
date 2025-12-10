@@ -1183,6 +1183,36 @@ When interacting with users in this repository, prefer Japanese for comments and
 ## Recent Development Focus
 
 Based on recent commits:
+- **Code Review Fixes (2024-12)**:
+  - **PlaywrightThreadExecutor shutdown race fix**: `_thread_lock`でフラグ設定を保護、workerスレッドでshutdownフラグを追加チェック
+  - **translate_single timeout fix**: `DEFAULT_RESPONSE_TIMEOUT + EXECUTOR_TIMEOUT_BUFFER`を使用
+  - **Auto-login detection retry**: 一時例外時に3回連続エラーまでリトライするよう変更
+  - **Interruptible login wait**: `interruptible_sleep`関数で100msごとにキャンセルチェック、キャンセル可能であることをユーザーに通知
+  - **PDF MemoryError handling**: `translate_file`で明確な日本語エラーメッセージを返却
+  - **Excel sheet name underscore fix**: 安定したソート（長さ降順+アルファベット順）、suffixが有効なパターンか検証
+  - **openpyxl resource leak fix**: FontManager初期化をwbオープン前に移動
+- **Dependency Management (2024-12)**:
+  - **clr-loader SSL fix**: pythonnetをpywebview依存から除外するdependency-metadataをuv.tomlに追加
+  - **Enterprise network support**: 企業ネットワーク環境でのclr-loaderダウンロード時のSSL証明書エラー（UnknownIssuer）を回避
+- **install_deps.bat Improvements (2024-12)**:
+  - **Optional proxy**: プロキシなしの環境でも使えるように、起動時にプロキシ使用の有無を選択可能に
+  - **goto-based flow**: if-else構文をgotoに変更して構文エラーを回避
+  - **Debug output**: デバッグ出力を追加
+- **Translation Result UI Simplification (2024-12)**:
+  - **2-column layout**: 3カラム（サイドバー+入力パネル+結果パネル）から2カラム（サイドバー+結果パネル）に簡素化
+  - **CSS visibility toggle**: 翻訳結果表示時は入力パネルをCSSで非表示にし、結果パネルを中央配置
+  - **Tab-based navigation**: 新しい翻訳は「テキスト翻訳」タブをクリックしてINPUT状態に戻す
+- **Ctrl+J Hint Styling (2024-12)**:
+  - **Larger font size**: Ctrl+Jヒントのフォントサイズを拡大して視認性向上
+- **File Panel UI (2024-12)**:
+  - **Simplified completion**: ファイル翻訳完了画面から「新しいファイルを翻訳」ボタンを削除
+- **Copilot Submission Reliability (2024-12)**:
+  - **Focus before Enter**: Enter送信前にフォーカスを再設定して確実に送信
+  - **Post-send verification retry**: 送信後に入力欄がクリアされたかを確認し、残っていればリトライ
+- **File Translation Button States (2024-12)**:
+  - **Disabled until detection**: 言語検出完了までボタンを非アクティブにして誤操作を防止
+- **Follow-up Translation Fix (2024-12)**:
+  - **Source text preservation**: 再翻訳後にフォローアップで原文が渡されない問題を修正
 - **English Check Feature Improvement (2024-12)**:
   - **Japanese explanation output**: 英文チェック機能の解説を日本語で出力するよう修正（`text_check_my_english.txt`プロンプト更新）
 - **Copilot Login Detection Improvements (2024-12)**:

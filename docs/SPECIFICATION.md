@@ -1552,6 +1552,33 @@ python -c "import time; t=time.time(); from yakulingo.ui import run_app; print(f
 
 ## 変更履歴
 
+### 2.18 (2025-12)
+- コードレビュー修正
+  - PlaywrightThreadExecutorシャットダウン競合を修正（`_thread_lock`でフラグ設定を保護）
+  - translate_singleのタイムアウト不足を修正（`DEFAULT_RESPONSE_TIMEOUT + EXECUTOR_TIMEOUT_BUFFER`）
+  - 自動ログイン検出の一時例外処理を改善（3回連続エラーまでリトライ）
+  - ログイン待機のキャンセル機能を強化（`interruptible_sleep`関数）
+  - PDF処理のMemoryErrorハンドリングを追加（明確な日本語エラーメッセージ）
+  - Excelシート名アンダースコア解析問題を修正（安定したソート）
+  - openpyxlリソースリーク可能性の軽減（FontManager初期化をwbオープン前に移動）
+- 依存関係管理
+  - clr-loaderのSSL証明書エラーを解決（pythonnetをpywebview依存から除外）
+  - uv.tomlにdependency-metadataを追加
+- install_deps.bat改善
+  - プロキシなし環境でも使えるようにオプション化
+  - if-else構文をgotoに変更して構文エラーを回避
+- 翻訳結果UIの2カラム化
+  - 3カラム（サイドバー+入力パネル+結果パネル）→2カラム（サイドバー+結果パネル）に簡素化
+  - 翻訳結果表示時は入力パネルをCSSで非表示にし、結果パネルを中央配置
+  - 新しい翻訳は「テキスト翻訳」タブをクリックしてINPUT状態に戻す
+- Ctrl+Jヒントのフォントサイズを拡大
+- ファイル翻訳完了画面から「新しいファイルを翻訳」ボタンを削除
+- Copilot送信の信頼性向上
+  - Enter送信前にフォーカスを再設定
+  - 送信後に入力欄クリアを確認してリトライ
+- ファイル翻訳ボタンを言語検出完了まで非アクティブ化
+- 再翻訳後のフォローアップで原文が渡されない問題を修正
+
 ### 2.17 (2025-12)
 - 英文チェック機能の解説を日本語で出力するよう修正
 - ログインページの早期検出を実装（ユーザーにログインを促す）

@@ -96,10 +96,10 @@ If needsCopy Then
     shareDirStream.Close
     Set shareDirStream = Nothing
 End If
-command = "cmd.exe /c chcp 65001 >nul && powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden -File """ & psScriptToRun & """ -GuiMode 2>""" & errorLog & """"
+command = "powershell.exe -ExecutionPolicy Bypass -File """ & psScriptToRun & """ -GuiMode 2>""" & errorLog & """"
 
-' Run and wait for completion (0 = hidden window, True = wait)
-exitCode = objShell.Run(command, 0, True)
+' Run and wait for completion (1 = normal window for debugging, True = wait)
+exitCode = objShell.Run(command, 1, True)
 
 If exitCode <> 0 Then
     Dim errorMessage

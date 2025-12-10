@@ -592,35 +592,11 @@ function Invoke-Setup {
             if (-not $GuiMode) {
                 Write-Host "      Extracting with 7-Zip: $($script:SevenZip)" -ForegroundColor Gray
             }
-            # Use 7-Zip with progress output (bsp1 = show progress)
-            # Run in background job to keep GUI responsive
-            if ($GuiMode) {
-                $extractJob = Start-Job -ScriptBlock {
-                    param($SevenZip, $TempZipFile, $TempZipDir)
-                    & $SevenZip x "$TempZipFile" "-o$TempZipDir" -y -bso0 -bsp0 2>&1
-                    return $LASTEXITCODE
-                } -ArgumentList $script:SevenZip, $TempZipFile, $TempZipDir
-
-                # Poll job status while keeping GUI responsive
-                $dotCount = 0
-                while ($extractJob.State -eq 'Running') {
-                    Start-Sleep -Milliseconds 300
-                    [System.Windows.Forms.Application]::DoEvents()
-                    $dotCount = ($dotCount + 1) % 4
-                    $dots = "." * ($dotCount + 1)
-                    Show-Progress -Title "YakuLingo Setup" -Status "Extracting files$dots" -Step "Step 3/4: Extracting" -Percent 60
-                }
-
-                $jobResult = Receive-Job -Job $extractJob
-                Remove-Job -Job $extractJob
-                if ($jobResult -ne 0) {
-                    throw "Failed to extract ZIP file.`n`nFile: $ZipFileName"
-                }
-            } else {
-                & $script:SevenZip x "$TempZipFile" "-o$TempZipDir" -y -bso0 -bsp0 | Out-Null
-                if ($LASTEXITCODE -ne 0) {
-                    throw "Failed to extract ZIP file.`n`nFile: $ZipFileName"
-                }
+            # 7-Zip is fast enough to run directly without background job
+            # (Start-Job has significant startup overhead that makes it slower)
+            & $script:SevenZip x "$TempZipFile" "-o$TempZipDir" -y -bso0 -bsp0 | Out-Null
+            if ($LASTEXITCODE -ne 0) {
+                throw "Failed to extract ZIP file.`n`nFile: $ZipFileName"
             }
         } else {
             if (-not $GuiMode) {
@@ -684,32 +660,10 @@ function Invoke-Setup {
         # /MIR = /E + /PURGE: copies all files and removes files not in source
         # This ensures clean updates without needing to delete the destination first
         # /R:0 /W:0: don't retry locked files (skip them instead of hanging)
-        # /V: verbose output to capture skipped files
-        # Run robocopy in background job to keep GUI responsive
-        if ($GuiMode) {
-            $robocopyJob = Start-Job -ScriptBlock {
-                param($SourceDir, $DestDir)
-                $output = & robocopy $SourceDir $DestDir /MIR /MT:8 /R:0 /W:0 /V /NJH /NJS /NP 2>&1
-                return @{ ExitCode = $LASTEXITCODE; Output = $output }
-            } -ArgumentList $ExtractedDir.FullName, $SetupPath
-
-            $dotCount = 0
-            while ($robocopyJob.State -eq 'Running') {
-                Start-Sleep -Milliseconds 300
-                [System.Windows.Forms.Application]::DoEvents()
-                $dotCount = ($dotCount + 1) % 4
-                $dots = "." * ($dotCount + 1)
-                Show-Progress -Title "YakuLingo Setup" -Status "Installing files$dots" -Step "Step 3/4: Installing" -Percent 75
-            }
-
-            $robocopyResult = Receive-Job -Job $robocopyJob
-            Remove-Job -Job $robocopyJob
-            $robocopyOutput = $robocopyResult.Output
-            $robocopyExitCode = $robocopyResult.ExitCode
-        } else {
-            $robocopyOutput = & robocopy $ExtractedDir.FullName $SetupPath /MIR /MT:8 /R:0 /W:0 /V /NJH /NJS /NP 2>&1
-            $robocopyExitCode = $LASTEXITCODE
-        }
+        # /MT:8: multi-threaded copy for speed
+        # robocopy is fast enough to run directly (Start-Job has too much overhead)
+        $robocopyOutput = & robocopy $ExtractedDir.FullName $SetupPath /MIR /MT:8 /R:0 /W:0 /NJH /NJS /NP 2>&1
+        $robocopyExitCode = $LASTEXITCODE
         # robocopy returns 0-7 for success, 8+ for errors
         if ($robocopyExitCode -ge 8) {
             throw "Failed to copy files to destination.`n`nDestination: $SetupPath"

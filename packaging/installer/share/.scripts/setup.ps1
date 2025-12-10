@@ -5,7 +5,8 @@
 
 param(
     [string]$SetupPath = "",
-    [switch]$GuiMode = $false
+    [switch]$GuiMode = $false,
+    [string]$ShareDir = ""  # Original share directory (passed when script is copied to TEMP due to non-ASCII path)
 )
 
 $ErrorActionPreference = "Stop"
@@ -29,7 +30,13 @@ trap {
 
 # Script directory (must be resolved at top-level, not inside functions)
 $script:ScriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Definition }
-$script:ShareDir = Split-Path -Parent $script:ScriptDir
+# Use provided ShareDir if available (when script is copied to TEMP due to non-ASCII path)
+# Otherwise, derive from script location
+if ([string]::IsNullOrEmpty($ShareDir)) {
+    $script:ShareDir = Split-Path -Parent $script:ScriptDir
+} else {
+    $script:ShareDir = $ShareDir
+}
 $script:AppName = "YakuLingo"
 
 # Find 7-Zip (optional, falls back to Expand-Archive if not found)

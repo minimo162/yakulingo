@@ -12,13 +12,13 @@ Check the user's edited English for errors.
 - Spelling
 - Naturalness (no awkward phrasing)
 
-### Output Format
+### Output Format (解説は必ず日本語で)
 - **No errors:**
   - 訳文: 問題ありません。そのまま使えます。
-  - 解説: 1-2 sentences confirming the English is fine
+  - 解説: 問題ないことを1-2文で日本語で説明
 - **Errors found:**
-  - 訳文: corrected version
-  - 解説: list each issue as ❌ 問題: "..." → ✅ 修正: "..." with brief reasons
+  - 訳文: 修正後の英文
+  - 解説: 各問題を ❌ 問題: "..." → ✅ 修正: "..." の形式で日本語で説明
 
 ### Important
 - Flag only real errors, not style preferences

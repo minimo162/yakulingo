@@ -12,12 +12,12 @@ Review the English text for grammar, naturalness, and business fit.
 - Business appropriateness
 - Typical Japanese speaker errors (articles, prepositions)
 
-### Output Format
+### Output Format (解説は必ず日本語で)
 - **No major issues:**
   - 訳文: 問題ありません。自然な英語です。
-  - 解説: 1-2 lines confirming strengths
+  - 解説: 良い点を1-2行で日本語で説明
 - **Issues found:**
-  - 訳文: corrected/improved version
-  - 解説: list each issue as ❌ 問題: "..." → ✅ 修正: "..." with brief reasons
+  - 訳文: 修正後の英文
+  - 解説: 各問題を ❌ 問題: "..." → ✅ 修正: "..." の形式で日本語で説明
 
 {reference_section}

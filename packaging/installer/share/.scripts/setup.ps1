@@ -594,8 +594,8 @@ function Invoke-Setup {
             }
             # Use Start-Process for non-blocking execution (keeps GUI responsive)
             # This avoids Start-Job overhead while still allowing DoEvents()
-            $processArgs = @("x", "`"$TempZipFile`"", "-o`"$TempZipDir`"", "-y", "-bso0", "-bsp0")
-            $process = Start-Process -FilePath $script:SevenZip -ArgumentList $processArgs -NoNewWindow -PassThru
+            $processArgs = "x `"$TempZipFile`" -o`"$TempZipDir`" -y -bso0 -bsp0"
+            $process = Start-Process -FilePath $script:SevenZip -ArgumentList $processArgs -NoNewWindow -PassThru -Wait:$false
 
             if ($GuiMode) {
                 while (-not $process.HasExited) {
@@ -673,8 +673,8 @@ function Invoke-Setup {
         # /R:0 /W:0: don't retry locked files (skip them instead of hanging)
         # /MT:8: multi-threaded copy for speed
         # Use Start-Process for non-blocking execution (keeps GUI responsive)
-        $robocopyArgs = @($ExtractedDir.FullName, $SetupPath, "/MIR", "/MT:8", "/R:0", "/W:0", "/NJH", "/NJS", "/NP")
-        $robocopyProcess = Start-Process -FilePath "robocopy" -ArgumentList $robocopyArgs -NoNewWindow -PassThru
+        $robocopyArgs = "`"$($ExtractedDir.FullName)`" `"$SetupPath`" /MIR /MT:8 /R:0 /W:0 /NJH /NJS /NP"
+        $robocopyProcess = Start-Process -FilePath "robocopy" -ArgumentList $robocopyArgs -NoNewWindow -PassThru -Wait:$false
 
         if ($GuiMode) {
             while (-not $robocopyProcess.HasExited) {

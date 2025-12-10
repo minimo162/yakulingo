@@ -549,6 +549,10 @@ function Invoke-Setup {
     $TempZipDir = $workspace.TempZipDir
     $TempZipFile = $workspace.TempZipFile
 
+    if (-not $GuiMode) {
+        Write-Host "      TEMP folder: $TempZipDir" -ForegroundColor Gray
+    }
+
     # Use .NET FileStream with large buffer for fast network file copy
     # 1MB buffer matches Explorer's copy performance better than robocopy for single large files
     # Progress callback updates GUI to prevent "Not Responding" state
@@ -594,7 +598,8 @@ function Invoke-Setup {
             }
             # Direct execution - 7-Zip is fast enough that brief GUI freeze is acceptable
             # Using & operator for reliable argument handling with Japanese/special characters
-            & $script:SevenZip x $TempZipFile "-o$TempZipDir" -y -bso0 -bsp0 | Out-Null
+            # Note: -bso0 -bsp0 suppress output, so no need for Out-Null (which can slow down)
+            & $script:SevenZip x $TempZipFile "-o$TempZipDir" -y -bso0 -bsp0
             if ($LASTEXITCODE -ne 0) {
                 throw "Failed to extract ZIP file.`n`nFile: $ZipFileName"
             }
@@ -662,7 +667,8 @@ function Invoke-Setup {
         # /R:0 /W:0: don't retry locked files (skip them instead of hanging)
         # /MT:8: multi-threaded copy for speed
         # Direct execution for reliable argument handling
-        & robocopy $ExtractedDir.FullName $SetupPath /MIR /MT:8 /R:0 /W:0 /NJH /NJS /NP | Out-Null
+        # Note: /NJH /NJS /NP suppress most output
+        & robocopy $ExtractedDir.FullName $SetupPath /MIR /MT:8 /R:0 /W:0 /NJH /NJS /NP 2>&1 | Out-Null
         $robocopyExitCode = $LASTEXITCODE
         # robocopy returns 0-7 for success, 8+ for errors
         if ($robocopyExitCode -ge 8) {

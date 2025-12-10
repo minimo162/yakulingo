@@ -991,12 +991,9 @@ class FontRegistry:
                 fallback_path = None
                 fallback_tried = []
 
-                # Determine language from FontInfo
-                font_lang = "en"  # Default
-                if font_info.family:
-                    family_lower = font_info.family.lower()
-                    if any(jp in family_lower for jp in ["ms p", "gothic", "mincho", "noto"]):
-                        font_lang = "ja"
+                # Determine language from lang key (e.g., "ja", "en", "zh-CN")
+                # Use the lang key directly since it's the registered language
+                font_lang = lang if lang in self.FONT_CONFIG else "en"
 
                 # Try language-specific fallback
                 fallback_path = get_font_path_for_lang(font_lang)

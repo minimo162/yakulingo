@@ -929,6 +929,10 @@ class CopilotHandler:
         except (PlaywrightError, PlaywrightTimeoutError):
             pass
 
+        # Wait briefly for any pending window focus changes to complete
+        # before minimizing (Playwright operations can trigger focus changes)
+        time.sleep(0.2)
+
         # Hide browser window when login is not required
         self._send_to_background_impl(self._page)
 
@@ -1462,13 +1466,19 @@ class CopilotHandler:
                     if window_pid.value == target_pid and fallback_hwnd is None:
                         fallback_hwnd = hwnd
 
+                # Match Copilot and related URLs/titles
+                # Note: "microsoft 365" (with space) covers "Microsoft 365 Copilot" title
                 if ("copilot" in window_title_lower or
                     "m365" in window_title_lower or
+                    "microsoft 365" in window_title_lower or
                     "sign in" in window_title_lower or
                     "サインイン" in window_title_lower or
                     "ログイン" in window_title_lower or
-                    "アカウント" in window_title_lower):
+                    "アカウント" in window_title_lower or
+                    # Edge window titles containing our Copilot URL patterns
+                    "m365.cloud.microsoft" in window_title_lower):
                     if fallback_hwnd is None:
+                        logger.debug("Found Edge window by title pattern: %s", window_title[:60])
                         fallback_hwnd = hwnd
 
                 return True
@@ -1568,12 +1578,19 @@ class CopilotHandler:
             logger.debug("Failed to bring Edge window to foreground via Windows API: %s", e)
             return False
 
-    def _minimize_edge_window(self, page_title: str = None) -> bool:
+    def _minimize_edge_window(self, page_title: str = None, max_retries: int = 3) -> bool:
         """Minimize Edge window to return it to the background after login.
 
         Note: We only use SW_MINIMIZE (not SW_HIDE) to keep the window in
         the taskbar. SW_HIDE causes issues with Edge's multi-process
         architecture where the window may be restored by another process.
+
+        Args:
+            page_title: The current page title for exact matching
+            max_retries: Maximum number of retry attempts (default: 3)
+
+        Returns:
+            True if window was successfully minimized
         """
         if sys.platform != "win32":
             return False
@@ -1585,9 +1602,18 @@ class CopilotHandler:
             SW_MINIMIZE = 6
             SW_SHOWMINNOACTIVE = 7  # Minimize without activating
 
-            edge_hwnd = self._find_edge_window_handle(page_title)
+            # Retry logic: Edge window may not be ready immediately
+            for attempt in range(max_retries):
+                edge_hwnd = self._find_edge_window_handle(page_title)
+                if edge_hwnd:
+                    break
+                if attempt < max_retries - 1:
+                    logger.debug("Edge window not found (attempt %d/%d), retrying...",
+                                 attempt + 1, max_retries)
+                    time.sleep(0.3)
+
             if not edge_hwnd:
-                logger.debug("Edge window not found for minimization")
+                logger.warning("Edge window not found for minimization after %d attempts", max_retries)
                 return False
 
             # Use SW_SHOWMINNOACTIVE to minimize without activating/flashing
@@ -1596,10 +1622,10 @@ class CopilotHandler:
                 # Window was already minimized or hidden, try SW_MINIMIZE
                 user32.ShowWindow(edge_hwnd, SW_MINIMIZE)
 
-            logger.debug("Edge window minimized after login")
+            logger.info("Edge window minimized successfully")
             return True
         except Exception as e:
-            logger.debug("Failed to minimize Edge window: %s", e)
+            logger.warning("Failed to minimize Edge window: %s", e)
             return False
 
     def _send_to_background_impl(self, page) -> None:

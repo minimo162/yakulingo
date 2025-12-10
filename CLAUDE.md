@@ -1205,6 +1205,9 @@ Based on recent commits:
   - **Freeze fix**: 既存ディレクトリ削除時のフリーズを修正（`cmd /c rd`使用）
   - **Out-Null optimization**: パイプラインオーバーヘッドを削減
 - **install_deps.bat Improvements (2024-12)**:
+  - **Optional proxy**: プロキシ設定をオプション化（起動時に選択可能）
+  - **SSL skip option**: SSL検証スキップオプションを追加（VPS等での証明書エラー対応）
+  - **Three connection modes**: [1] プロキシ使用、[2] 直接接続、[3] 直接接続（SSL検証スキップ）
   - **uv download fix**: uvダウンロードとパスワード入力を修正
   - **PaddlePaddle validation**: Python検証コマンドのエラー抑制を改善
   - **PowerShell isolation**: PowerShellでPython実行を完全に分離（クォート問題回避）

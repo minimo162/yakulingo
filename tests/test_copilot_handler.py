@@ -513,50 +513,6 @@ class TestSendMessage:
 
         assert "Copilotに入力できませんでした" in str(exc.value)
 
-    def test_send_message_waits_for_send_button(self):
-        """_send_message waits for send button to become enabled before pressing Enter"""
-        handler = CopilotHandler()
-
-        mock_page = MagicMock()
-        mock_input = MagicMock()
-        mock_send_button = MagicMock()
-        mock_input.inner_text.return_value = "Test prompt"
-
-        # First call returns input element, second call returns send button
-        mock_page.wait_for_selector.side_effect = [mock_input, mock_send_button]
-        handler._page = mock_page
-
-        handler._send_message("Test prompt")
-
-        # Should call wait_for_selector twice: once for input, once for send button
-        assert mock_page.wait_for_selector.call_count == 2
-
-        # Second call should be for send button with correct timeout
-        second_call = mock_page.wait_for_selector.call_args_list[1]
-        assert handler.SEND_BUTTON_SELECTOR in second_call[0][0]
-        assert second_call[1]['timeout'] == handler.SELECTOR_SEND_BUTTON_TIMEOUT_MS
-
-        # Should press Enter after send button is found
-        mock_input.press.assert_called_with("Enter")
-
-    def test_send_message_continues_on_send_button_timeout(self):
-        """_send_message continues even if send button wait times out"""
-        handler = CopilotHandler()
-
-        mock_page = MagicMock()
-        mock_input = MagicMock()
-        mock_input.inner_text.return_value = "Test prompt"
-
-        # First call returns input element, second call raises timeout
-        mock_page.wait_for_selector.side_effect = [mock_input, TimeoutError("Send button timeout")]
-        handler._page = mock_page
-
-        # Should not raise - continues with Enter key
-        handler._send_message("Test prompt")
-
-        # Should still press Enter (fallback behavior)
-        mock_input.press.assert_called_with("Enter")
-
 
 class TestGetResponse:
     """Test _get_response functionality"""

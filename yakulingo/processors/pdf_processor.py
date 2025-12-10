@@ -1367,6 +1367,51 @@ class PdfProcessor(FileProcessor):
             section_details=section_details,
         )
 
+    def extract_sample_text_fast(
+        self, file_path: Path, max_pages: int = 3, max_chars: int = 1000
+    ) -> Optional[str]:
+        """
+        Extract sample text from PDF for language detection (fast path).
+
+        Uses PyMuPDF's get_text() directly without PP-DocLayout-L layout analysis.
+        This is much faster than full extraction and sufficient for language detection.
+
+        Args:
+            file_path: Path to PDF file
+            max_pages: Maximum number of pages to sample (default: 3)
+            max_chars: Maximum characters to return (default: 1000)
+
+        Returns:
+            Sample text string or None if no text found
+        """
+        try:
+            with _open_pymupdf_document(file_path) as doc:
+                texts = []
+                total_chars = 0
+
+                for page_idx in range(min(len(doc), max_pages)):
+                    page = doc[page_idx]
+                    # Use "text" mode for simple text extraction (fastest)
+                    page_text = page.get_text("text").strip()
+
+                    if page_text:
+                        texts.append(page_text)
+                        total_chars += len(page_text)
+
+                        # Early exit if we have enough text
+                        if total_chars >= max_chars:
+                            break
+
+                if not texts:
+                    return None
+
+                result = " ".join(texts)
+                return result[:max_chars] if len(result) > max_chars else result
+
+        except Exception as e:
+            logger.warning("Fast text extraction failed: %s", e)
+            return None
+
     def extract_text_blocks(
         self, file_path: Path, output_language: str = "en"
     ) -> Iterator[TextBlock]:

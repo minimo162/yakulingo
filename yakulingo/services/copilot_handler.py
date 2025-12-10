@@ -441,6 +441,9 @@ class CopilotHandler:
     RESPONSE_POLL_ACTIVE = 0.2  # Interval after text is detected
     RESPONSE_POLL_STABLE = 0.1  # Interval during stability checking
 
+    # Page validity check during polling (detect login expiration)
+    PAGE_VALIDITY_CHECK_INTERVAL = 5.0  # Check page validity every 5 seconds
+
     # Login handling settings
     LOGIN_POLL_INTERVAL = 0.5  # Interval for checking login completion
     LOGIN_REDIRECT_WAIT = 0.5  # Wait time for landing page auto-redirect
@@ -2564,6 +2567,8 @@ class CopilotHandler:
             last_log_time = time.time()
             stop_button_ever_seen = False  # Track if stop button was ever visible
             stop_button_warning_logged = False  # Avoid repeated warnings
+            # Initialize to past time so first iteration always checks page validity
+            last_page_validity_check = time.time() - self.PAGE_VALIDITY_CHECK_INTERVAL
 
             current_url = self._page.url if self._page else "unknown"
             # Ensure current_url is a string before slicing (for test mocks)
@@ -2576,6 +2581,24 @@ class CopilotHandler:
                 if self._is_cancelled():
                     logger.info("Translation cancelled during response polling")
                     raise TranslationCancelledError("Translation cancelled by user")
+
+                # Periodically check if page is still valid (detect login expiration)
+                # This prevents 120-second freeze when login session expires
+                current_time = time.time()
+                if current_time - last_page_validity_check >= self.PAGE_VALIDITY_CHECK_INTERVAL:
+                    last_page_validity_check = current_time
+                    if not self._is_page_valid():
+                        logger.warning(
+                            "[POLLING] Page is no longer valid (login may have expired). "
+                            "Bringing browser to foreground for user login."
+                        )
+                        # Bring browser to foreground so user can complete login
+                        if self._page:
+                            self._bring_to_foreground_impl(
+                                self._page, reason="polling: login session expired"
+                            )
+                        # Return empty to trigger retry logic in caller
+                        return ""
 
                 # Check if Copilot is still generating (stop button visible)
                 # If stop button is present, response is not complete yet

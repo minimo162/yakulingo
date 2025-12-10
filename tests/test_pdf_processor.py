@@ -18,6 +18,10 @@ from yakulingo.processors.pdf_processor import (
     calculate_text_position,
     calculate_char_width,
     split_text_into_lines,
+    split_text_into_lines_with_font,
+    _is_cjk_char,
+    _tokenize_for_line_wrap,
+    _get_token_width,
     calculate_line_height,
     estimate_font_size,
     estimate_font_size_from_box_height,
@@ -3464,3 +3468,166 @@ class TestCoordinateConversion:
 
         with pytest.raises(ValueError, match="Invalid page_height"):
             convert_to_pdf_coordinates([100, 100, 200, 150], page_height=-100)
+
+
+class TestIsCjkChar:
+    """Tests for _is_cjk_char function"""
+
+    def test_hiragana(self):
+        assert _is_cjk_char("あ") is True
+        assert _is_cjk_char("ん") is True
+
+    def test_katakana(self):
+        assert _is_cjk_char("ア") is True
+        assert _is_cjk_char("ン") is True
+
+    def test_half_width_katakana(self):
+        assert _is_cjk_char("ｱ") is True
+        assert _is_cjk_char("ﾝ") is True
+
+    def test_kanji(self):
+        assert _is_cjk_char("日") is True
+        assert _is_cjk_char("本") is True
+
+    def test_hangul(self):
+        assert _is_cjk_char("한") is True
+        assert _is_cjk_char("글") is True
+
+    def test_latin(self):
+        assert _is_cjk_char("a") is False
+        assert _is_cjk_char("Z") is False
+
+    def test_space(self):
+        assert _is_cjk_char(" ") is False
+
+    def test_empty_string(self):
+        assert _is_cjk_char("") is False
+
+
+class TestTokenizeForLineWrap:
+    """Tests for _tokenize_for_line_wrap function"""
+
+    def test_english_words(self):
+        tokens = _tokenize_for_line_wrap("Hello world")
+        assert tokens == ["Hello ", "world"]
+
+    def test_english_multiple_words(self):
+        tokens = _tokenize_for_line_wrap("The quick brown fox")
+        assert tokens == ["The ", "quick ", "brown ", "fox"]
+
+    def test_japanese_text(self):
+        tokens = _tokenize_for_line_wrap("日本語")
+        assert tokens == ["日", "本", "語"]
+
+    def test_mixed_text(self):
+        tokens = _tokenize_for_line_wrap("Hello 世界")
+        assert tokens == ["Hello ", "世", "界"]
+
+    def test_newline_handling(self):
+        tokens = _tokenize_for_line_wrap("Hello\nworld")
+        assert tokens == ["Hello", "\n", "world"]
+
+    def test_empty_string(self):
+        tokens = _tokenize_for_line_wrap("")
+        assert tokens == []
+
+    def test_multiple_spaces(self):
+        tokens = _tokenize_for_line_wrap("a  b")
+        # Each space attaches to preceding word, but consecutive spaces
+        # result in "a ", " ", "b"
+        assert tokens == ["a ", " ", "b"]
+
+
+class TestSplitTextIntoLinesWithFont:
+    """Tests for split_text_into_lines_with_font function with word-aware wrapping"""
+
+    @pytest.fixture
+    def mock_font_registry(self):
+        """Mock FontRegistry that returns consistent char widths"""
+        registry = Mock()
+        # Return 10pt per character for simplicity
+        registry.get_char_width.return_value = 10.0
+        return registry
+
+    def test_short_text_single_line(self, mock_font_registry):
+        """Short text should fit on one line"""
+        lines = split_text_into_lines_with_font(
+            "Hello", 100, 12.0, "F1", mock_font_registry
+        )
+        assert len(lines) == 1
+        assert lines[0] == "Hello"
+
+    def test_word_wrap_at_word_boundary(self, mock_font_registry):
+        """Words should not be split mid-character"""
+        # Each char = 10pt, "Hello " = 60pt, "world" = 50pt
+        # Box width = 70pt -> "Hello" fits, "world" goes to next line
+        lines = split_text_into_lines_with_font(
+            "Hello world", 70, 12.0, "F1", mock_font_registry
+        )
+        assert len(lines) == 2
+        assert lines[0] == "Hello"
+        assert lines[1] == "world"
+
+    def test_no_mid_word_break(self, mock_font_registry):
+        """Verify words are not broken in the middle"""
+        # "yesterday's meeting" should NOT become "yesterday's m" + "eeting"
+        # Each char = 10pt, box_width = 130pt
+        # "yesterday's " = 120pt (fits)
+        # "m" = 10pt -> 130pt (fits)
+        # But if box is 125pt, "yesterday's " (120pt) fits, "meeting" goes to next line
+        lines = split_text_into_lines_with_font(
+            "yesterday's meeting", 125, 12.0, "F1", mock_font_registry
+        )
+        assert len(lines) == 2
+        assert lines[0] == "yesterday's"
+        assert lines[1] == "meeting"
+        # Key assertion: no partial word like "m" or "mee" at end of line
+        assert not lines[0].endswith("m")
+        assert not lines[0].endswith("me")
+        assert not lines[0].endswith("mee")
+
+    def test_cjk_character_wrap(self, mock_font_registry):
+        """CJK characters should wrap at character boundaries"""
+        # Each char = 10pt, box_width = 25pt -> 2 chars per line
+        lines = split_text_into_lines_with_font(
+            "日本語テスト", 25, 12.0, "F1", mock_font_registry
+        )
+        assert len(lines) == 3
+        assert lines[0] == "日本"
+        assert lines[1] == "語テ"
+        assert lines[2] == "スト"
+
+    def test_very_long_word_breaks_chars(self, mock_font_registry):
+        """Very long words that don't fit should break at char boundary"""
+        # Word "supercalifragilistic" = 200pt, box_width = 50pt
+        lines = split_text_into_lines_with_font(
+            "supercalifragilistic", 50, 12.0, "F1", mock_font_registry
+        )
+        assert len(lines) == 4
+        assert lines[0] == "super"
+        assert lines[1] == "calif"
+        assert lines[2] == "ragil"
+        assert lines[3] == "istic"
+
+    def test_empty_text(self, mock_font_registry):
+        """Empty text should return empty list"""
+        lines = split_text_into_lines_with_font(
+            "", 100, 12.0, "F1", mock_font_registry
+        )
+        assert lines == []
+
+    def test_explicit_newline(self, mock_font_registry):
+        """Explicit newlines should be preserved"""
+        lines = split_text_into_lines_with_font(
+            "Line1\nLine2", 1000, 12.0, "F1", mock_font_registry
+        )
+        assert len(lines) == 2
+        assert lines[0] == "Line1"
+        assert lines[1] == "Line2"
+
+    def test_zero_box_width(self, mock_font_registry):
+        """Zero box width should return text as-is"""
+        lines = split_text_into_lines_with_font(
+            "Test", 0, 12.0, "F1", mock_font_registry
+        )
+        assert lines == ["Test"]

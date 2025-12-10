@@ -1615,6 +1615,7 @@ class CopilotHandler:
 
             SW_SHOW = 5
             SW_RESTORE = 9
+            SW_SHOWNORMAL = 1
             HWND_TOPMOST = -1
             HWND_NOTOPMOST = -2
             SWP_NOMOVE = 0x0002
@@ -1623,28 +1624,59 @@ class CopilotHandler:
 
             # Workaround for Windows foreground restrictions:
             # Windows prevents apps from stealing focus unless they have input
-            # We use a combination of techniques to work around this
+            # We use AttachThreadInput to attach to the foreground thread
 
-            # 1. Show window if hidden, then restore if minimized
-            user32.ShowWindow(edge_hwnd, SW_SHOW)
-            user32.ShowWindow(edge_hwnd, SW_RESTORE)
+            # Get current foreground window's thread
+            foreground_hwnd = user32.GetForegroundWindow()
+            foreground_thread_id = user32.GetWindowThreadProcessId(foreground_hwnd, None)
+            current_thread_id = ctypes.windll.kernel32.GetCurrentThreadId()
 
-            # 2. Use SetWindowPos with HWND_TOPMOST to bring to front
-            user32.SetWindowPos(
-                edge_hwnd, HWND_TOPMOST,
-                0, 0, 0, 0,
-                SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW
-            )
+            # Attach to the foreground thread to gain focus permission
+            attached = False
+            if foreground_thread_id != current_thread_id:
+                attached = user32.AttachThreadInput(current_thread_id, foreground_thread_id, True)
+                if attached:
+                    logger.debug("Attached to foreground thread %d", foreground_thread_id)
 
-            # 3. Remove topmost flag to allow other windows on top later
-            user32.SetWindowPos(
-                edge_hwnd, HWND_NOTOPMOST,
-                0, 0, 0, 0,
-                SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW
-            )
+            try:
+                # 1. Check if window is minimized
+                is_minimized = user32.IsIconic(edge_hwnd)
+                if is_minimized:
+                    logger.debug("Window is minimized, restoring...")
 
-            # 4. Set foreground window
-            user32.SetForegroundWindow(edge_hwnd)
+                # 2. Show and restore window
+                user32.ShowWindow(edge_hwnd, SW_RESTORE if is_minimized else SW_SHOW)
+                user32.ShowWindow(edge_hwnd, SW_SHOWNORMAL)
+
+                # 3. Bring window to top
+                user32.BringWindowToTop(edge_hwnd)
+
+                # 4. Use SetWindowPos with HWND_TOPMOST to bring to front
+                user32.SetWindowPos(
+                    edge_hwnd, HWND_TOPMOST,
+                    0, 0, 0, 0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW
+                )
+
+                # 5. Remove topmost flag to allow other windows on top later
+                user32.SetWindowPos(
+                    edge_hwnd, HWND_NOTOPMOST,
+                    0, 0, 0, 0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW
+                )
+
+                # 6. Set foreground window
+                user32.SetForegroundWindow(edge_hwnd)
+
+                # 7. Also try AllowSetForegroundWindow to allow our process
+                user32.AllowSetForegroundWindow(wintypes.DWORD(-1))  # ASFW_ANY
+                user32.SetForegroundWindow(edge_hwnd)
+
+            finally:
+                # Detach from the foreground thread
+                if attached:
+                    user32.AttachThreadInput(current_thread_id, foreground_thread_id, False)
+                    logger.debug("Detached from foreground thread")
 
             # 5. Flash taskbar icon to get user attention
             # FLASHW_ALL = 3, FLASHW_TIMERNOFG = 12

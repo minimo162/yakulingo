@@ -598,21 +598,20 @@ function Invoke-Setup {
     }
 
     try {
-        # Extract directly to SetupPath's parent, then rename
-        # ZIP contains YakuLingo_YYYYMMDD folder, so we extract to parent and rename
+        # Extract directly to SetupPath (ZIP has flat structure, no parent folder)
         if ($script:Use7Zip) {
             if (-not $GuiMode) {
                 Write-Host "      Extracting with 7-Zip: $($script:SevenZip)" -ForegroundColor Gray
             }
-            # Extract to a temp folder name first to handle the rename
-            $ExtractTarget = Join-Path $SetupParent "YakuLingo_Installing"
-            if (Test-Path $ExtractTarget) {
-                Remove-Item -Path $ExtractTarget -Recurse -Force
+            # Create SetupPath if not exists
+            if (-not (Test-Path $SetupPath)) {
+                New-Item -ItemType Directory -Path $SetupPath -Force | Out-Null
             }
             # Run 7-Zip asynchronously to keep GUI responsive
+            # -aoa: Overwrite all existing files without prompt
             $psi = New-Object System.Diagnostics.ProcessStartInfo
             $psi.FileName = $script:SevenZip
-            $psi.Arguments = "x `"$TempZipFile`" `"-o$ExtractTarget`" -y -mmt=on -bso0 -bsp0"
+            $psi.Arguments = "x `"$TempZipFile`" `"-o$SetupPath`" -y -mmt=on -aoa -bso0 -bsp0"
             $psi.UseShellExecute = $false
             $psi.CreateNoWindow = $true
             $psi.RedirectStandardOutput = $true
@@ -634,64 +633,25 @@ function Invoke-Setup {
                 throw "Failed to extract ZIP file.`n`nFile: $ZipFileName`n$errorOutput"
             }
             $proc.Dispose()
-
-            # Find extracted folder (YakuLingo_YYYYMMDD)
-            $ExtractedDir = Get-ChildItem -Path $ExtractTarget -Directory | Where-Object { $_.Name -like "YakuLingo*" } | Select-Object -First 1
-            if (-not $ExtractedDir) {
-                throw "Failed to extract ZIP file.`n`nFile: $ZipFileName"
-            }
-
-            # Move contents to SetupPath (overwrite existing)
-            Write-Status -Message "Installing files..." -Progress -Step "Step 3/4: Installing" -Percent 70
-            if ($GuiMode) {
-                [System.Windows.Forms.Application]::DoEvents()
-            }
-
-            # Use robocopy to move files asynchronously for GUI responsiveness
-            $roboPsi = New-Object System.Diagnostics.ProcessStartInfo
-            $roboPsi.FileName = "robocopy"
-            $roboPsi.Arguments = "`"$($ExtractedDir.FullName)`" `"$SetupPath`" /MIR /MT:8 /R:0 /W:0 /NJH /NJS /NP /MOVE"
-            $roboPsi.UseShellExecute = $false
-            $roboPsi.CreateNoWindow = $true
-            $roboPsi.RedirectStandardOutput = $true
-            $roboPsi.RedirectStandardError = $true
-
-            $roboProc = [System.Diagnostics.Process]::Start($roboPsi)
-
-            while (-not $roboProc.HasExited) {
-                if ($GuiMode) {
-                    [System.Windows.Forms.Application]::DoEvents()
-                }
-                Start-Sleep -Milliseconds 100
-            }
-
-            $roboProc.WaitForExit()
-            $robocopyExitCode = $roboProc.ExitCode
-            $roboProc.Dispose()
-
-            if ($robocopyExitCode -ge 8) {
-                throw "Failed to install files.`n`nDestination: $SetupPath"
-            }
-
-            # Clean up temp extract folder
-            if (Test-Path $ExtractTarget) {
-                Remove-Item -Path $ExtractTarget -Recurse -Force -ErrorAction SilentlyContinue
-            }
         } else {
             if (-not $GuiMode) {
                 Write-Host "      Extracting with Expand-Archive (7-Zip not found, this may take longer)..." -ForegroundColor Gray
             }
-            # For Expand-Archive, extract to temp then move
+            # Create SetupPath if not exists
+            if (-not (Test-Path $SetupPath)) {
+                New-Item -ItemType Directory -Path $SetupPath -Force | Out-Null
+            }
+            # Extract directly to SetupPath (ZIP has flat structure)
             if ($GuiMode) {
                 $extractJob = Start-Job -ScriptBlock {
-                    param($TempZipFile, $TempZipDir)
+                    param($TempZipFile, $SetupPath)
                     try {
-                        Expand-Archive -Path $TempZipFile -DestinationPath $TempZipDir -Force
+                        Expand-Archive -Path $TempZipFile -DestinationPath $SetupPath -Force
                         return $true
                     } catch {
                         return $false
                     }
-                } -ArgumentList $TempZipFile, $TempZipDir
+                } -ArgumentList $TempZipFile, $SetupPath
 
                 $dotCount = 0
                 $elapsedSeconds = 0
@@ -717,20 +677,7 @@ function Invoke-Setup {
                     throw "Failed to extract ZIP file.`n`nFile: $ZipFileName"
                 }
             } else {
-                Expand-Archive -Path $TempZipFile -DestinationPath $TempZipDir -Force
-            }
-
-            # Find extracted folder and move to SetupPath
-            $ExtractedDir = Get-ChildItem -Path $TempZipDir -Directory | Where-Object { $_.Name -like "YakuLingo*" } | Select-Object -First 1
-            if (-not $ExtractedDir) {
-                throw "Failed to extract ZIP file.`n`nFile: $ZipFileName"
-            }
-
-            Write-Status -Message "Installing files..." -Progress -Step "Step 3/4: Installing" -Percent 70
-            & robocopy $ExtractedDir.FullName $SetupPath /MIR /MT:8 /R:0 /W:0 /NJH /NJS /NP 2>&1 | Out-Null
-            $robocopyExitCode = $LASTEXITCODE
-            if ($robocopyExitCode -ge 8) {
-                throw "Failed to install files.`n`nDestination: $SetupPath"
+                Expand-Archive -Path $TempZipFile -DestinationPath $SetupPath -Force
             }
         }
     } finally {

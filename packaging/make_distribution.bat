@@ -176,10 +176,10 @@ if defined ROBOCOPY_WARNINGS (
 :: ============================================================
 call :ShowProgress 2 "Creating ZIP and finalizing..."
 
-:: Create ZIP archive
+:: Create ZIP archive (flat structure - no parent folder)
 echo        Creating ZIP archive...
-pushd dist_temp
-"%SEVENZIP%" a -tzip -mx=1 -mmt=on -bsp1 "..\%SHARE_DIR%\%DIST_ZIP%" YakuLingo >nul
+pushd dist_temp\YakuLingo
+"%SEVENZIP%" a -tzip -mx=1 -mmt=on -bsp1 "..\..\%SHARE_DIR%\%DIST_ZIP%" * >nul
 popd
 
 :: Copy installer files and cleanup in parallel

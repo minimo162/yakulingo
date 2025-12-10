@@ -5,7 +5,12 @@
 
 Option Explicit
 
+On Error Resume Next
+
 Dim objShell, objFSO, scriptDir, psScript, psScriptToRun
+
+' Debug: Show startup
+MsgBox "VBS started", vbInformation, "Debug 1"
 
 Set objShell = CreateObject("WScript.Shell")
 Set objFSO = CreateObject("Scripting.FileSystemObject")

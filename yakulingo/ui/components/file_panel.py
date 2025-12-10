@@ -398,15 +398,19 @@ def _drop_zone(on_file_select: Callable[[Path], Union[None, Awaitable[None]]]):
             # NiceGUI 3.0+ uses e.file with data attribute
             # Older versions use e.content and e.name directly
             if hasattr(e, 'file'):
-                # NiceGUI 3.x: SmallFileUpload has data (bytes) and name
+                # NiceGUI 3.x: SmallFileUpload has data/name, LargeFileUpload has path/name
                 file_obj = e.file
-                if hasattr(file_obj, 'data'):
+                name = file_obj.name
+                if hasattr(file_obj, 'path'):
+                    # LargeFileUpload: file is saved to temp directory, use path directly
+                    with open(file_obj.path, 'rb') as f:
+                        content = f.read()
+                elif hasattr(file_obj, 'data'):
                     content = file_obj.data
                 elif hasattr(file_obj, '_data'):
                     content = file_obj._data
                 else:
                     content = file_obj.content.read()
-                name = file_obj.name
             else:
                 # Older NiceGUI: direct content and name attributes
                 content = e.content.read()

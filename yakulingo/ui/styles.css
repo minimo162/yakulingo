@@ -1228,9 +1228,9 @@ textarea:focus-visible {
 /* === Responsive Design (Nani-inspired breakpoints) === */
 
 /* ========================================
-   Desktop (1200px+): Dynamic 2/3 column
-   - Default: 2-column (sidebar + wide input)
-   - With results: 3-column (sidebar + input + results)
+   Desktop (1200px+): 2-column layout
+   - INPUT state: sidebar + centered input panel
+   - RESULT state: sidebar + centered result panel
    ======================================== */
 
 /* Default 2-column mode (no results) - input centered across full width */
@@ -1334,69 +1334,23 @@ textarea:focus-visible {
     overflow: hidden;
 }
 
-/* 3-column mode when has results */
+/* Result mode (has-results): 2-column layout (sidebar + result panel centered)
+   Input panel is hidden - user clicks "テキスト翻訳" tab to start new translation */
+
+/* Hide input panel in result mode */
 .main-area.has-results .input-panel {
-    width: var(--input-panel-width);
-    min-width: var(--input-panel-width);
-    border-right: 1px solid var(--md-sys-color-outline-variant);
+    display: none !important;
+    visibility: hidden;
+    width: 0;
+    height: 0;
+    overflow: hidden;
 }
 
-/* Ensure main-card fills the input panel properly (full height) */
-.main-area.has-results .input-panel .main-card {
-    width: 100%;
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-}
-
-.main-area.has-results .input-panel .main-card-inner {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-}
-
-/* Make textarea and its NiceGUI wrapper fill available space in 3-column mode */
-.main-area.has-results .input-panel .main-card-inner > .nicegui-input,
-.main-area.has-results .input-panel .main-card-inner > .nicegui-textarea {
-    flex: 1 !important;
-    display: flex !important;
-    flex-direction: column !important;
-}
-
-.main-area.has-results .input-panel .main-card-inner .q-field__inner,
-.main-area.has-results .input-panel .main-card-inner .q-field__control {
-    flex: 1 !important;
-    display: flex !important;
-    flex-direction: column !important;
-}
-
-.main-area.has-results .input-panel .main-card-inner textarea,
-.main-area.has-results .input-panel .compact-textarea {
-    flex: 1 !important;
-    min-height: 150px;
-    height: auto !important;  /* Allow flex to control height */
-    /* Nani-style textarea sizing */
-    font-size: var(--textarea-font-size) !important;
-    line-height: var(--textarea-line-height) !important;
-    padding: var(--textarea-padding-block) var(--textarea-padding-inline) !important;
-}
-
-/* Bottom controls row should not grow, stay at bottom in 3-column mode */
-.main-area.has-results .input-panel .main-card-inner > .nicegui-row {
-    flex-shrink: 0 !important;
-    margin-top: auto;  /* Push to bottom */
-}
-
-/* Ensure the nicegui-column also fills space */
-.main-area.has-results .input-panel > .nicegui-column {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;  /* Stretch children to full width */
-}
-
+/* Result panel takes full width and centers content */
 .main-area.has-results .result-panel {
     display: flex;
+    flex: 1;
+    justify-content: center;  /* Center content horizontally */
 }
 
 /* File panel always 2-column (centered) */

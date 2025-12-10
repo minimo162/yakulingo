@@ -1,3 +1,24 @@
 native-tls = true
 python-preference = "only-managed"
 cache-dir = "./.uv-cache"
+
+# Exclude pythonnet from pywebview's dependencies on Windows
+# pythonnet is only needed for mshtml backend, but YakuLingo uses edgechromium
+# This also avoids SSL certificate issues with clr-loader in corporate environments
+[[dependency-metadata]]
+name = "pywebview"
+version = "6.1"
+# Override requires-dist to exclude pythonnet (not needed for edgechromium backend)
+requires-dist = [
+    "bottle",
+    "proxy-tools",
+    "typing-extensions",
+    "pyobjc-core; sys_platform == 'darwin'",
+    "pyobjc-framework-cocoa; sys_platform == 'darwin'",
+    "pyobjc-framework-quartz; sys_platform == 'darwin'",
+    "pyobjc-framework-security; sys_platform == 'darwin'",
+    "pyobjc-framework-uniformtypeidentifiers; sys_platform == 'darwin'",
+    "pyobjc-framework-webkit; sys_platform == 'darwin'",
+    "qtpy; sys_platform == 'openbsd6'",
+    # pythonnet excluded - not needed for edgechromium backend
+]

@@ -2557,6 +2557,15 @@ class CopilotHandler:
                 # have processed the input yet and the send will fail.
                 time.sleep(0.5)
 
+                # Re-focus input element after fill() to ensure Enter key is received
+                # fill() can cause focus loss, so we need to explicitly restore it
+                # using both click and focus for maximum reliability
+                try:
+                    input_elem.evaluate('el => { el.click(); el.focus(); }')
+                    time.sleep(0.1)
+                except Exception as e:
+                    logger.debug("Re-focus after fill failed: %s", e)
+
                 # Send via Enter key with retry on failure
                 # After Enter, check if input field is cleared (indicates successful send)
                 # If text remains, retry Enter key up to MAX_SEND_RETRIES times
@@ -2566,8 +2575,10 @@ class CopilotHandler:
 
                 for send_attempt in range(MAX_SEND_RETRIES):
                     # Ensure input element has focus before pressing Enter
+                    # Use JS click + focus for more reliable focus setting
                     try:
-                        input_elem.focus()
+                        input_elem.evaluate('el => { el.click(); el.focus(); }')
+                        time.sleep(0.05)
                     except Exception:
                         pass
                     input_elem.press("Enter")

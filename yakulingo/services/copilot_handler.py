@@ -2546,12 +2546,49 @@ class CopilotHandler:
                     raise RuntimeError("Copilotに入力できませんでした。Edgeブラウザを確認してください。")
 
                 # Brief pause to let Copilot process the input before sending
-                # This replaces the previous send button wait which was too strict
+                # Note: We intentionally do NOT wait for send button to be enabled here.
+                # Previous implementation tried waiting for send button, but it sometimes
+                # never became enabled, causing infinite waits. See CLAUDE.md for details.
                 time.sleep(0.15)
 
-                # Send via Enter key
-                input_elem.press("Enter")
-                logger.info("Message sent via Enter key")
+                # Send via Enter key with retry on failure
+                # After Enter, check if input field is cleared (indicates successful send)
+                # If text remains, retry Enter key up to MAX_SEND_RETRIES times
+                MAX_SEND_RETRIES = 3
+                SEND_RETRY_WAIT = 0.3  # seconds between retries
+
+                for send_attempt in range(MAX_SEND_RETRIES):
+                    input_elem.press("Enter")
+                    time.sleep(SEND_RETRY_WAIT)
+
+                    # Re-fetch input element after send (DOM may be recreated)
+                    # The selector is the same but the actual DOM element may be new
+                    try:
+                        current_input = self._page.query_selector(input_selector)
+                        remaining_text = current_input.inner_text().strip() if current_input else ""
+                    except Exception:
+                        remaining_text = ""
+
+                    if not remaining_text:
+                        logger.info("Message sent via Enter key (attempt %d)", send_attempt + 1)
+                        break
+                    else:
+                        # Update input_elem for next retry attempt
+                        if current_input:
+                            input_elem = current_input
+                        if send_attempt < MAX_SEND_RETRIES - 1:
+                            logger.warning(
+                                "Input not cleared after Enter (attempt %d/%d), retrying...",
+                                send_attempt + 1, MAX_SEND_RETRIES
+                            )
+                        else:
+                            # Final attempt - log warning but continue
+                            # Response polling will handle actual failure detection
+                            logger.warning(
+                                "Input still has text after %d Enter attempts. "
+                                "Proceeding anyway - response polling will detect if send failed.",
+                                MAX_SEND_RETRIES
+                            )
             else:
                 logger.error("Input element not found!")
                 raise RuntimeError("Copilot入力欄が見つかりませんでした")

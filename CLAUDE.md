@@ -1235,9 +1235,10 @@ Based on recent commits:
   - **PlaywrightThreadExecutor**: `_shutdown_flag` check to prevent restart after shutdown
 - **Centralized Timeout Constants**:
   - **Page navigation**: `PAGE_GOTO_TIMEOUT_MS=30000` (30s for page load)
-  - **Selector waits**: `SELECTOR_CHAT_INPUT_TIMEOUT_MS=15000`, `SELECTOR_SEND_BUTTON_TIMEOUT_MS=5000`, `SELECTOR_RESPONSE_TIMEOUT_MS=10000`, `SELECTOR_NEW_CHAT_READY_TIMEOUT_MS=5000`, `SELECTOR_LOGIN_CHECK_TIMEOUT_MS=2000`
+  - **Selector waits**: `SELECTOR_CHAT_INPUT_TIMEOUT_MS=15000`, `SELECTOR_RESPONSE_TIMEOUT_MS=10000`, `SELECTOR_NEW_CHAT_READY_TIMEOUT_MS=5000`, `SELECTOR_LOGIN_CHECK_TIMEOUT_MS=2000`
   - **Login timeouts**: `LOGIN_WAIT_TIMEOUT_SECONDS=300`, `AUTO_LOGIN_TIMEOUT_SECONDS=15`
   - **Executor buffer**: `EXECUTOR_TIMEOUT_BUFFER_SECONDS=60` for response timeout margin
+  - **Send retry**: `MAX_SEND_RETRIES=3`, `SEND_RETRY_WAIT=0.3s` (post-send verification)
 - **PDF Page-Level Error Handling**:
   - **Failed pages tracking**: `failed_pages` property, `failed_page_reasons` property
   - **Clear method**: `clear_failed_pages()` for resetting state
@@ -1256,7 +1257,9 @@ Based on recent commits:
 - **Copilot Input Reliability Improvements**:
   - **fill() method**: Playwright fill()を使用して改行を正しく処理（改行がEnterキーとして解釈される問題を修正）
   - **Enter key submission**: Copilot入力をシンプル化しEnterキー送信に統一
-  - **Input retry logic**: 入力失敗時のリトライロジックを改善
+  - **Post-send verification**: 送信後に入力欄がクリアされたかを確認し、残っていればリトライ（最大3回）
+  - **DOM re-fetch after send**: 送信後は`query_selector`で入力欄を再取得（CopilotがDOM要素を再生成する可能性があるためstale element回避）
+  - **Why not wait for send button**: 送信ボタンの有効化を待機する方式は、ボタンが有効にならないケースがあり無限待機の原因となるため不採用。代わりに送信後の確認方式を採用
 - **Edge Browser & Login Improvements**:
   - **Auto-login detection**: 自動ログイン検出を改善し、不要なブラウザ前面表示を防止
   - **Startup timeout**: Edge起動タイムアウトを6秒から20秒に延長

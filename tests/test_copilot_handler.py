@@ -513,6 +513,77 @@ class TestSendMessage:
 
         assert "Copilotに入力できませんでした" in str(exc.value)
 
+    def test_send_message_retries_on_input_not_cleared(self):
+        """_send_message retries Enter key if input field is not cleared after first attempt"""
+        handler = CopilotHandler()
+
+        mock_page = MagicMock()
+        mock_input = MagicMock()
+        mock_refetched_input = MagicMock()
+        mock_page.wait_for_selector.return_value = mock_input
+
+        # fill() check returns text (fill success)
+        mock_input.inner_text.return_value = "Test prompt"
+
+        # After send, query_selector re-fetches the input element
+        # 1st query: still has text, 2nd query: cleared
+        mock_refetched_input.inner_text.side_effect = ["Test prompt", ""]
+        mock_page.query_selector.return_value = mock_refetched_input
+        handler._page = mock_page
+
+        handler._send_message("Test prompt")
+
+        # Should press Enter twice (retry once) - first on mock_input, then on mock_refetched_input
+        assert mock_page.query_selector.call_count == 2
+
+    def test_send_message_succeeds_on_first_attempt(self):
+        """_send_message succeeds immediately when input is cleared after first Enter"""
+        handler = CopilotHandler()
+
+        mock_page = MagicMock()
+        mock_input = MagicMock()
+        mock_refetched_input = MagicMock()
+        mock_page.wait_for_selector.return_value = mock_input
+
+        # fill() check returns text (fill success)
+        mock_input.inner_text.return_value = "Test prompt"
+
+        # After send, query_selector re-fetches and finds empty (send success)
+        mock_refetched_input.inner_text.return_value = ""
+        mock_page.query_selector.return_value = mock_refetched_input
+        handler._page = mock_page
+
+        handler._send_message("Test prompt")
+
+        # Should press Enter only once (immediate success on first attempt)
+        assert mock_input.press.call_count == 1
+        mock_input.press.assert_called_with("Enter")
+
+    def test_send_message_continues_after_max_retries(self):
+        """_send_message continues even if input never clears after max retries"""
+        handler = CopilotHandler()
+
+        mock_page = MagicMock()
+        mock_input = MagicMock()
+        mock_refetched_input = MagicMock()
+        mock_page.wait_for_selector.return_value = mock_input
+
+        # fill() check returns text (fill success)
+        mock_input.inner_text.return_value = "Test prompt"
+
+        # After send, query_selector always returns element with text (never clears)
+        mock_refetched_input.inner_text.return_value = "Test prompt"
+        mock_page.query_selector.return_value = mock_refetched_input
+        handler._page = mock_page
+
+        # Should not raise - continues anyway (response polling will detect failure)
+        handler._send_message("Test prompt")
+
+        # Should press Enter 3 times (max retries)
+        # Note: First Enter is on mock_input, subsequent retries are on mock_refetched_input
+        total_enter_presses = mock_input.press.call_count + mock_refetched_input.press.call_count
+        assert total_enter_presses == 3
+
 
 class TestGetResponse:
     """Test _get_response functionality"""

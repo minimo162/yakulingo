@@ -2984,6 +2984,20 @@ class PdfProcessor(FileProcessor):
             # Check if character is formula (use imported function)
             is_formula_char = vflag(fontname, char_text)
 
+            # DEBUG: Log first few characters to understand formula detection
+            if not has_prev and logger.isEnabledFor(logging.DEBUG):
+                sample_chars = chars[:5]
+                for idx, sc in enumerate(sample_chars):
+                    sc_text = sc.get_text()
+                    sc_font = getattr(sc, 'fontname', "")
+                    sc_is_formula = vflag(sc_font, sc_text)
+                    logger.debug(
+                        "  page %d char[%d]: font='%s', text='%s' (ord=%s), is_formula=%s",
+                        page_idx + 1, idx, sc_font, repr(sc_text),
+                        [ord(c) for c in sc_text] if sc_text else [],
+                        sc_is_formula
+                    )
+
             # Determine if this is a new paragraph or line break
             if not has_prev:
                 # First character - start new paragraph

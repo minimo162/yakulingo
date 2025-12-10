@@ -1323,6 +1323,10 @@ class YakuLingoApp:
 
     async def _retry_translation(self):
         """Retry the current translation (re-translate with same source text)"""
+        # Restore source text from current result before clearing
+        # (source_text is cleared after translation completes, see line ~1671)
+        if self.state.text_result and self.state.text_result.source_text:
+            self.state.source_text = self.state.text_result.source_text
         # Clear previous result and re-translate
         self.state.text_result = None
         self.state.text_translation_elapsed_time = None

@@ -255,8 +255,8 @@ class TestCopilotHandlerTranslateSingle:
         # Track if execute was called
         execute_calls = []
 
-        def mock_execute(func, *args):
-            execute_calls.append((func, args))
+        def mock_execute(func, *args, **kwargs):
+            execute_calls.append((func, args, kwargs))
             return "訳文: Hello\n\n解説: This is explanation"
 
         monkeypatch.setattr(copilot_handler._playwright_executor, 'execute', mock_execute)
@@ -277,7 +277,7 @@ class TestCopilotHandlerTranslateSingle:
         handler = CopilotHandler()
 
         # Run the real implementation through execute to hit the empty-response guard
-        def mock_execute(func, *args):
+        def mock_execute(func, *args, **kwargs):
             return func(*args)
 
         handler._connect_impl = lambda: True
@@ -520,21 +520,39 @@ class TestSendMessage:
         mock_page = MagicMock()
         mock_input = MagicMock()
         mock_refetched_input = MagicMock()
+        mock_stop_button = MagicMock()
+        mock_stop_button.is_visible.return_value = False  # Stop button not visible
         mock_page.wait_for_selector.return_value = mock_input
 
         # fill() check returns text (fill success)
         mock_input.inner_text.return_value = "Test prompt"
 
-        # After send, query_selector re-fetches the input element
-        # 1st query: still has text, 2nd query: cleared
-        mock_refetched_input.inner_text.side_effect = ["Test prompt", ""]
-        mock_page.query_selector.return_value = mock_refetched_input
+        # After send, query_selector re-fetches the input element and checks stop button
+        # 1st attempt: input still has text, stop button not visible → retry
+        # 2nd attempt: input cleared, stop button not visible → success
+        # Note: On success (input cleared), stop button check is still performed
+
+        # Track inner_text calls
+        inner_text_results = iter(["Test prompt", "Test prompt", ""])
+
+        def inner_text_side_effect():
+            return next(inner_text_results)
+
+        mock_refetched_input.inner_text.side_effect = inner_text_side_effect
+
+        def query_selector_side_effect(selector):
+            if "stop" in selector.lower() or "Stop" in selector:
+                return mock_stop_button
+            return mock_refetched_input
+
+        mock_page.query_selector.side_effect = query_selector_side_effect
         handler._page = mock_page
 
         handler._send_message("Test prompt")
 
-        # Should press Enter twice (retry once) - first on mock_input, then on mock_refetched_input
-        assert mock_page.query_selector.call_count == 2
+        # Should press Enter twice (retry once)
+        assert mock_input.press.call_count == 1  # First attempt on original input
+        assert mock_refetched_input.press.call_count == 1  # Second attempt on refetched input
 
     def test_send_message_succeeds_on_first_attempt(self):
         """_send_message succeeds immediately when input is cleared after first Enter"""
@@ -566,6 +584,8 @@ class TestSendMessage:
         mock_page = MagicMock()
         mock_input = MagicMock()
         mock_refetched_input = MagicMock()
+        mock_stop_button = MagicMock()
+        mock_stop_button.is_visible.return_value = False  # Stop button never visible
         mock_page.wait_for_selector.return_value = mock_input
 
         # fill() check returns text (fill success)
@@ -573,7 +593,13 @@ class TestSendMessage:
 
         # After send, query_selector always returns element with text (never clears)
         mock_refetched_input.inner_text.return_value = "Test prompt"
-        mock_page.query_selector.return_value = mock_refetched_input
+
+        def query_selector_side_effect(selector):
+            if "stop" in selector.lower() or "Stop" in selector:
+                return mock_stop_button
+            return mock_refetched_input
+
+        mock_page.query_selector.side_effect = query_selector_side_effect
         handler._page = mock_page
 
         # Should not raise - continues anyway (response polling will detect failure)

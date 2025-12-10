@@ -2773,6 +2773,23 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
         # Set shutdown flag FIRST to prevent new tasks from starting
         yakulingo_app._shutdown_requested = True
 
+        # Cancel any active UI timers (prevents NiceGUI threads from blocking shutdown)
+        if yakulingo_app._active_streaming_timer is not None:
+            try:
+                yakulingo_app._active_streaming_timer.cancel()
+                yakulingo_app._active_streaming_timer = None
+                logger.debug("Streaming timer cancelled")
+            except Exception as e:
+                logger.debug("Error cancelling streaming timer: %s", e)
+
+        if yakulingo_app._active_progress_timer is not None:
+            try:
+                yakulingo_app._active_progress_timer.cancel()
+                yakulingo_app._active_progress_timer = None
+                logger.debug("Progress timer cancelled")
+            except Exception as e:
+                logger.debug("Error cancelling progress timer: %s", e)
+
         # Stop hotkey manager
         yakulingo_app.stop_hotkey_manager()
 

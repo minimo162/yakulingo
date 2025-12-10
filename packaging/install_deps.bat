@@ -189,11 +189,22 @@ if not exist ".venv\Scripts\python.exe" (
     exit /b 1
 )
 
+:: First test that Python itself works
+echo [DEBUG] Testing basic Python...
+.venv\Scripts\python.exe -c "print('Python OK')"
+if errorlevel 1 (
+    echo [ERROR] Basic Python test failed.
+    pause
+    exit /b 1
+)
+
 echo [INFO] This may take a moment...
 :: Use -W ignore to suppress ccache and other warnings
-:: Redirect stderr to nul to suppress Windows file search messages
-.venv\Scripts\python.exe -W ignore -c "import warnings; warnings.filterwarnings('ignore'); import paddle; print('[OK] paddlepaddle version:', paddle.__version__)" 2>nul
-if errorlevel 1 (
+:: First try to import paddle and capture any errors
+.venv\Scripts\python.exe -W ignore -c "import warnings; warnings.filterwarnings('ignore'); import paddle; print('[OK] paddlepaddle version:', paddle.__version__)"
+set PADDLE_ERROR=%errorlevel%
+echo [DEBUG] Python exit code: %PADDLE_ERROR%
+if %PADDLE_ERROR% neq 0 (
     echo [WARNING] paddlepaddle is not installed correctly.
     echo [INFO] Attempting manual installation via uv pip...
     echo [INFO] paddlepaddle is large (~500MB-1GB), this may take several minutes...
@@ -213,20 +224,20 @@ if errorlevel 1 (
 :: ============================================================
 echo.
 echo [6/6] Pre-compiling Python bytecode...
-.venv\Scripts\python.exe -m compileall -q yakulingo 2>nul
+.venv\Scripts\python.exe -m compileall -q yakulingo
 if errorlevel 1 (
     echo [WARNING] Some bytecode compilation failed, but this is not critical.
 )
 
 echo [INFO] Pre-importing modules for faster startup...
-.venv\Scripts\python.exe -c "import nicegui; import pywebview; from yakulingo.ui import app; from yakulingo.services import translation_service" 2>nul
+.venv\Scripts\python.exe -c "import nicegui; import pywebview; from yakulingo.ui import app; from yakulingo.services import translation_service"
 if errorlevel 1 (
     echo [WARNING] Some module imports failed. Check the error above.
 )
 
 :: Pre-import paddle/paddleocr to download models and cache them (may take a while)
 echo [INFO] Downloading paddleocr models (this may take a few minutes on first run)...
-.venv\Scripts\python.exe -W ignore -c "import warnings; warnings.filterwarnings('ignore'); import paddle; from paddleocr import LayoutDetection; print('[OK] paddleocr models ready.')" 2>nul
+.venv\Scripts\python.exe -W ignore -c "import warnings; warnings.filterwarnings('ignore'); import paddle; from paddleocr import LayoutDetection; print('[OK] paddleocr models ready.')"
 if errorlevel 1 (
     echo [WARNING] paddleocr model download may have failed. PDF layout analysis may not work.
     echo [INFO] You can try running YakuLingo anyway - models will be downloaded on first PDF translation.

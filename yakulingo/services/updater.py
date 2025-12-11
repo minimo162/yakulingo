@@ -629,163 +629,445 @@ class AutoUpdater:
             return False
 
     def _install_windows(self, source_dir: Path, app_dir: Path) -> bool:
-        """Windowsでのインストール処理（ソースコードのみ更新）"""
-        # アップデートバッチファイルを作成
-        batch_path = self.cache_dir / "update.bat"
+        """Windowsでのインストール処理（ソースコードのみ更新、GUI表示）"""
+        # VBS + PowerShell スクリプトを作成
+        scripts_dir = self.cache_dir / ".scripts"
+        scripts_dir.mkdir(parents=True, exist_ok=True)
+
+        vbs_path = self.cache_dir / "update.vbs"
+        ps1_path = scripts_dir / "update.ps1"
 
         # 更新対象のディレクトリとファイルをリスト化
-        dirs_to_update = " ".join(self.SOURCE_DIRS)
-        files_to_update = " ".join(self.SOURCE_FILES)
+        dirs_to_update_ps = ", ".join([f'"{d}"' for d in self.SOURCE_DIRS])
+        files_to_update_ps = ", ".join([f'"{f}"' for f in self.SOURCE_FILES])
 
-        # Note: All messages in English to avoid encoding issues
-        batch_content = f'''@echo off
-echo.
-echo ============================================================
-echo YakuLingo Update in progress...
-echo ============================================================
-echo.
+        # VBSスクリプト（PowerShellを起動するラッパー）
+        vbs_content = f'''' ============================================================
+' YakuLingo Update Script (GUI Version)
+' ============================================================
 
-REM Wait for application to exit
-echo Waiting for application to exit...
-timeout /t 3 /nobreak >nul
+Option Explicit
 
-REM Change to app directory with verification
-cd /d "{app_dir}"
-if errorlevel 1 (
-    echo ERROR: Failed to change to app directory
-    echo Directory: {app_dir}
-    pause
-    exit /b 1
-)
+On Error Resume Next
 
-REM Verify we are in the correct directory (YakuLingo.exe should exist)
-if not exist "YakuLingo.exe" (
-    if not exist "app.py" (
-        echo ERROR: Not in YakuLingo directory - aborting for safety
-        echo Current directory: %CD%
-        pause
-        exit /b 1
-    )
-)
+Dim objShell, objFSO, scriptDir, psScript
 
-REM Backup user settings
-set "SETTINGS_BACKUP=%TEMP%\\yakulingo_settings_backup.json"
-if exist "config\\settings.json" (
-    echo Backing up user settings...
-    copy /y "config\\settings.json" "%SETTINGS_BACKUP%" >nul
-)
+Set objShell = CreateObject("WScript.Shell")
+Set objFSO = CreateObject("Scripting.FileSystemObject")
 
-REM Delete source code directories (keep environment files)
-echo Updating source code...
-for %%d in ({dirs_to_update}) do (
-    if exist "%%d" (
-        echo   Removing: %%d
-        rmdir /s /q "%%d"
-    )
-)
+' Get script directory
+scriptDir = objFSO.GetParentFolderName(WScript.ScriptFullName)
+psScript = scriptDir & "\\.scripts\\update.ps1"
 
-REM Copy source code directories
-set "COPY_SUCCESS=0"
-for %%d in ({dirs_to_update}) do (
-    if exist "{source_dir}\\%%d" (
-        echo   Copying: %%d
-        xcopy /e /y /i /q "{source_dir}\\%%d" "{app_dir}\\%%d\\" >nul
-        if not errorlevel 1 set "COPY_SUCCESS=1"
-    ) else (
-        echo   [WARNING] Source not found: {source_dir}\\%%d
-    )
-)
+' Check if PowerShell script exists
+If Not objFSO.FileExists(psScript) Then
+    MsgBox "Update script not found." & vbCrLf & vbCrLf & _
+           "Expected: " & psScript, _
+           vbCritical, "YakuLingo Update - Error"
+    WScript.Quit 1
+End If
 
-REM Check if at least one directory was copied
-if "%COPY_SUCCESS%"=="0" (
-    echo.
-    echo ERROR: No source directories were copied!
-    echo Source directory: {source_dir}
-    echo.
-    echo Please check if the update package is valid.
-    echo Attempting to restore from backup...
-    if exist "%SETTINGS_BACKUP%" (
-        if not exist "config" mkdir "config"
-        copy /y "%SETTINGS_BACKUP%" "config\\settings.json" >nul
-    )
-    pause
-    exit /b 1
-)
+' Run PowerShell script with GUI mode (hidden console)
+Dim command, exitCode
+command = "cmd.exe /c powershell.exe -ExecutionPolicy Bypass -File """ & psScript & """"
 
-REM Copy source code files
-for %%f in ({files_to_update}) do (
-    if exist "{source_dir}\\%%f" (
-        echo   Copying: %%f
-        copy /y "{source_dir}\\%%f" "{app_dir}\\%%f" >nul
-    )
-)
+' Run and wait for completion (0 = hidden, True = wait)
+exitCode = objShell.Run(command, 0, True)
 
-REM Restore user settings (create config directory if needed)
-if exist "%SETTINGS_BACKUP%" (
-    echo Restoring user settings...
-    if not exist "config" mkdir "config"
-    copy /y "%SETTINGS_BACKUP%" "config\\settings.json" >nul
-    del "%SETTINGS_BACKUP%" >nul 2>&1
-)
+If exitCode <> 0 Then
+    Dim errorMessage, debugLogPath
+    debugLogPath = objShell.Environment("Process")("TEMP") & "\\YakuLingo_update_debug.log"
+    errorMessage = "Update failed." & vbCrLf & vbCrLf & _
+                   "Error code: " & exitCode & vbCrLf & vbCrLf & _
+                   "Details: " & debugLogPath
 
-REM Merge settings (add new items only) - run AFTER copying new source
-REM Only run if yakulingo directory exists (copy was successful)
-echo Merging settings...
-if not exist "yakulingo" (
-    echo   [SKIP] yakulingo directory not found - copy may have failed
-    goto :skip_merge
-)
-if exist "{app_dir}\\.venv\\Scripts\\python.exe" (
-    "{app_dir}\\.venv\\Scripts\\python.exe" -c "from pathlib import Path; import sys; sys.path.insert(0, str(Path(r'{app_dir}'))); from yakulingo.services.updater import merge_settings; added = merge_settings(Path(r'{app_dir}'), Path(r'{source_dir}')); print(f'  Added: {{added}} new settings' if added > 0 else '  No new settings' if added == 0 else '  Created new settings file')"
-)
-:skip_merge
+    MsgBox errorMessage, vbCritical, "YakuLingo Update - Error"
+    WScript.Quit exitCode
+End If
 
-REM Merge glossary (add new terms only)
-REM Only run if yakulingo directory exists (copy was successful)
-echo.
-echo Updating glossary...
-if not exist "yakulingo" (
-    echo   [SKIP] yakulingo directory not found
-    goto :skip_glossary
-)
-if exist "{source_dir}\\glossary.csv" (
-    if exist "{app_dir}\\.venv\\Scripts\\python.exe" (
-        "{app_dir}\\.venv\\Scripts\\python.exe" -c "from pathlib import Path; import sys; sys.path.insert(0, str(Path(r'{app_dir}'))); from yakulingo.services.updater import merge_glossary; added = merge_glossary(Path(r'{app_dir}'), Path(r'{source_dir}')); print(f'  Added: {{added}} new terms' if added > 0 else '  No new terms' if added == 0 else '  Created new glossary file')"
-    ) else (
-        echo   [SKIP] Python environment not found
-    )
-)
-:skip_glossary
-
-echo.
-echo ============================================================
-echo Update complete!
-echo ============================================================
-echo.
-echo Please restart the application.
-echo.
-pause
-
-REM Cleanup: Delete update source directory
-if exist "{source_dir}" (
-    rmdir /s /q "{source_dir}"
-)
-
-REM Delete self
-del "%~f0"
+WScript.Quit 0
 '''
 
-        with open(batch_path, "w", encoding="utf-8") as f:
-            f.write(batch_content)
+        # PowerShellスクリプト（GUI付きアップデート処理）
+        ps1_content = f'''# ============================================================
+# YakuLingo Update Script (GUI Version)
+# ============================================================
 
-        # バッチファイルを実行（新しいウィンドウで）
+$ErrorActionPreference = "Stop"
+
+# Debug log for troubleshooting
+$debugLog = Join-Path $env:TEMP "YakuLingo_update_debug.log"
+try {{
+    "=== Update started: $(Get-Date) ===" | Out-File -FilePath $debugLog -Encoding UTF8
+}} catch {{}}
+
+# Configuration
+$script:AppDir = "{app_dir}"
+$script:SourceDir = "{source_dir}"
+$script:DirsToUpdate = @({dirs_to_update_ps})
+$script:FilesToUpdate = @({files_to_update_ps})
+
+# ============================================================
+# GUI Helper Functions
+# ============================================================
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+
+$script:progressForm = $null
+$script:progressBar = $null
+$script:progressLabel = $null
+$script:stepLabel = $null
+$script:debugTextBox = $null
+
+function Show-Progress {{
+    param([string]$Title, [string]$Status, [int]$Percent = -1, [string]$Step = "")
+
+    if ($script:progressForm -eq $null) {{
+        $script:progressForm = New-Object System.Windows.Forms.Form
+        $script:progressForm.Text = $Title
+        $script:progressForm.Size = New-Object System.Drawing.Size(500, 200)
+        $script:progressForm.StartPosition = "CenterScreen"
+        $script:progressForm.FormBorderStyle = "FixedDialog"
+        $script:progressForm.MaximizeBox = $false
+        $script:progressForm.MinimizeBox = $false
+        $script:progressForm.TopMost = $true
+
+        # Step label
+        $script:stepLabel = New-Object System.Windows.Forms.Label
+        $script:stepLabel.Location = New-Object System.Drawing.Point(20, 15)
+        $script:stepLabel.Size = New-Object System.Drawing.Size(440, 20)
+        $script:stepLabel.Text = $Step
+        $script:stepLabel.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+        $script:progressForm.Controls.Add($script:stepLabel)
+
+        # Status label
+        $script:progressLabel = New-Object System.Windows.Forms.Label
+        $script:progressLabel.Location = New-Object System.Drawing.Point(20, 40)
+        $script:progressLabel.Size = New-Object System.Drawing.Size(440, 25)
+        $script:progressLabel.Text = $Status
+        $script:progressForm.Controls.Add($script:progressLabel)
+
+        # Progress bar
+        $script:progressBar = New-Object System.Windows.Forms.ProgressBar
+        $script:progressBar.Location = New-Object System.Drawing.Point(20, 75)
+        $script:progressBar.Size = New-Object System.Drawing.Size(440, 30)
+        $script:progressBar.Minimum = 0
+        $script:progressBar.Maximum = 100
+        if ($Percent -lt 0) {{
+            $script:progressBar.Style = "Marquee"
+            $script:progressBar.MarqueeAnimationSpeed = 30
+        }} else {{
+            $script:progressBar.Style = "Continuous"
+            $script:progressBar.Value = $Percent
+        }}
+        $script:progressForm.Controls.Add($script:progressBar)
+
+        $script:progressForm.Show()
+        $script:progressForm.Refresh()
+    }} else {{
+        if ($Step -ne "") {{
+            $script:stepLabel.Text = $Step
+        }}
+        $script:progressLabel.Text = $Status
+        if ($Percent -ge 0) {{
+            if ($script:progressBar.Style -ne "Continuous") {{
+                $script:progressBar.Style = "Continuous"
+            }}
+            $script:progressBar.Value = [Math]::Min($Percent, 100)
+        }}
+        $script:progressForm.Refresh()
+    }}
+    [System.Windows.Forms.Application]::DoEvents()
+}}
+
+function Close-Progress {{
+    if ($script:progressForm -ne $null) {{
+        $script:progressForm.Close()
+        $script:progressForm.Dispose()
+        $script:progressForm = $null
+    }}
+}}
+
+function Show-Error {{
+    param([string]$Message, [string]$DebugInfo = "")
+    Close-Progress
+
+    # Show error with debug info
+    $form = New-Object System.Windows.Forms.Form
+    $form.Text = "YakuLingo Update - Error"
+    $form.Size = New-Object System.Drawing.Size(550, 400)
+    $form.StartPosition = "CenterScreen"
+    $form.FormBorderStyle = "FixedDialog"
+    $form.MaximizeBox = $false
+
+    # Error icon and message
+    $iconLabel = New-Object System.Windows.Forms.Label
+    $iconLabel.Location = New-Object System.Drawing.Point(20, 20)
+    $iconLabel.Size = New-Object System.Drawing.Size(40, 40)
+    $iconLabel.Text = [char]0x26A0  # Warning sign
+    $iconLabel.Font = New-Object System.Drawing.Font("Segoe UI", 24)
+    $iconLabel.ForeColor = [System.Drawing.Color]::Red
+    $form.Controls.Add($iconLabel)
+
+    $msgLabel = New-Object System.Windows.Forms.Label
+    $msgLabel.Location = New-Object System.Drawing.Point(70, 20)
+    $msgLabel.Size = New-Object System.Drawing.Size(450, 60)
+    $msgLabel.Text = $Message
+    $msgLabel.Font = New-Object System.Drawing.Font("Segoe UI", 10)
+    $form.Controls.Add($msgLabel)
+
+    # Debug info text box
+    if ($DebugInfo -ne "") {{
+        $debugLabel = New-Object System.Windows.Forms.Label
+        $debugLabel.Location = New-Object System.Drawing.Point(20, 90)
+        $debugLabel.Size = New-Object System.Drawing.Size(100, 20)
+        $debugLabel.Text = "Debug Info:"
+        $debugLabel.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+        $form.Controls.Add($debugLabel)
+
+        $debugBox = New-Object System.Windows.Forms.TextBox
+        $debugBox.Location = New-Object System.Drawing.Point(20, 115)
+        $debugBox.Size = New-Object System.Drawing.Size(490, 180)
+        $debugBox.Multiline = $true
+        $debugBox.ScrollBars = "Vertical"
+        $debugBox.ReadOnly = $true
+        $debugBox.Font = New-Object System.Drawing.Font("Consolas", 9)
+        $debugBox.Text = $DebugInfo
+        $form.Controls.Add($debugBox)
+    }}
+
+    # OK button
+    $okButton = New-Object System.Windows.Forms.Button
+    $okButton.Location = New-Object System.Drawing.Point(220, 310)
+    $okButton.Size = New-Object System.Drawing.Size(100, 35)
+    $okButton.Text = "OK"
+    $okButton.DialogResult = [System.Windows.Forms.DialogResult]::OK
+    $form.Controls.Add($okButton)
+    $form.AcceptButton = $okButton
+
+    $form.ShowDialog() | Out-Null
+    $form.Dispose()
+}}
+
+function Show-Success {{
+    param([string]$Message)
+    Close-Progress
+    [System.Windows.Forms.MessageBox]::Show(
+        $Message,
+        "YakuLingo Update",
+        [System.Windows.Forms.MessageBoxButtons]::OK,
+        [System.Windows.Forms.MessageBoxIcon]::Information
+    ) | Out-Null
+}}
+
+function Write-DebugLog {{
+    param([string]$Message)
+    try {{
+        "$(Get-Date -Format 'HH:mm:ss') $Message" | Out-File -FilePath $debugLog -Append -Encoding UTF8
+    }} catch {{}}
+}}
+
+# ============================================================
+# Main Update Logic
+# ============================================================
+function Invoke-Update {{
+    $debugInfo = @()
+
+    # Step 1: Wait for application to exit
+    Show-Progress -Title "YakuLingo Update" -Status "Waiting for application to exit..." -Step "Step 1/5: Preparing" -Percent 5
+    Write-DebugLog "Waiting for application to exit..."
+    Start-Sleep -Seconds 3
+
+    # Change to app directory
+    Write-DebugLog "AppDir: $($script:AppDir)"
+    Write-DebugLog "SourceDir: $($script:SourceDir)"
+    $debugInfo += "AppDir: $($script:AppDir)"
+    $debugInfo += "SourceDir: $($script:SourceDir)"
+
+    if (-not (Test-Path $script:AppDir)) {{
+        throw "App directory not found: $($script:AppDir)"
+    }}
+    Set-Location $script:AppDir
+
+    # Verify we are in the correct directory
+    if (-not (Test-Path "YakuLingo.exe") -and -not (Test-Path "app.py")) {{
+        throw "Not in YakuLingo directory - aborting for safety`nCurrent directory: $(Get-Location)"
+    }}
+
+    # Step 2: Backup user settings
+    Show-Progress -Title "YakuLingo Update" -Status "Backing up user settings..." -Step "Step 2/5: Backup" -Percent 15
+    Write-DebugLog "Backing up user settings..."
+
+    $settingsBackup = Join-Path $env:TEMP "yakulingo_settings_backup.json"
+    if (Test-Path "config\\settings.json") {{
+        Copy-Item -Path "config\\settings.json" -Destination $settingsBackup -Force
+        Write-DebugLog "Settings backed up to: $settingsBackup"
+    }}
+
+    # Step 3: Delete and copy source code directories
+    Show-Progress -Title "YakuLingo Update" -Status "Updating source code..." -Step "Step 3/5: Updating" -Percent 25
+    Write-DebugLog "Updating source code..."
+
+    # Check source directory contents
+    $sourceContents = Get-ChildItem -Path $script:SourceDir -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name
+    $debugInfo += "Source contents: $($sourceContents -join ', ')"
+    Write-DebugLog "Source contents: $($sourceContents -join ', ')"
+
+    $copySuccess = $false
+    $totalDirs = $script:DirsToUpdate.Count
+    $currentDir = 0
+
+    foreach ($dir in $script:DirsToUpdate) {{
+        $currentDir++
+        $percent = 25 + [int](($currentDir / $totalDirs) * 30)
+        Show-Progress -Title "YakuLingo Update" -Status "Updating: $dir" -Step "Step 3/5: Updating" -Percent $percent
+
+        # Remove existing directory
+        if (Test-Path $dir) {{
+            Write-DebugLog "Removing: $dir"
+            Remove-Item -Path $dir -Recurse -Force -ErrorAction SilentlyContinue
+        }}
+
+        # Copy from source
+        $sourcePath = Join-Path $script:SourceDir $dir
+        if (Test-Path $sourcePath) {{
+            Write-DebugLog "Copying: $sourcePath -> $dir"
+            try {{
+                Copy-Item -Path $sourcePath -Destination $dir -Recurse -Force
+                if (Test-Path $dir) {{
+                    $copySuccess = $true
+                    Write-DebugLog "[OK] $dir copied successfully"
+                    $debugInfo += "[OK] $dir copied"
+                }} else {{
+                    Write-DebugLog "[ERROR] $dir not created after copy"
+                    $debugInfo += "[ERROR] $dir not created"
+                }}
+            }} catch {{
+                Write-DebugLog "[ERROR] Failed to copy $dir : $($_.Exception.Message)"
+                $debugInfo += "[ERROR] $dir : $($_.Exception.Message)"
+            }}
+        }} else {{
+            Write-DebugLog "[WARNING] Source not found: $sourcePath"
+            $debugInfo += "[WARNING] Source not found: $dir"
+        }}
+    }}
+
+    if (-not $copySuccess) {{
+        # Restore backup if copy failed
+        if (Test-Path $settingsBackup) {{
+            if (-not (Test-Path "config")) {{ New-Item -ItemType Directory -Path "config" -Force | Out-Null }}
+            Copy-Item -Path $settingsBackup -Destination "config\\settings.json" -Force
+        }}
+        throw "No source directories were copied!`n`nPlease check if the update package is valid."
+    }}
+
+    # Copy source files
+    Show-Progress -Title "YakuLingo Update" -Status "Copying files..." -Step "Step 3/5: Updating" -Percent 55
+    foreach ($file in $script:FilesToUpdate) {{
+        $sourceFile = Join-Path $script:SourceDir $file
+        if (Test-Path $sourceFile) {{
+            Write-DebugLog "Copying file: $file"
+            Copy-Item -Path $sourceFile -Destination $file -Force -ErrorAction SilentlyContinue
+        }}
+    }}
+
+    # Step 4: Restore user settings
+    Show-Progress -Title "YakuLingo Update" -Status "Restoring user settings..." -Step "Step 4/5: Restoring" -Percent 65
+    Write-DebugLog "Restoring user settings..."
+
+    if (Test-Path $settingsBackup) {{
+        if (-not (Test-Path "config")) {{ New-Item -ItemType Directory -Path "config" -Force | Out-Null }}
+        Copy-Item -Path $settingsBackup -Destination "config\\settings.json" -Force
+        Remove-Item -Path $settingsBackup -Force -ErrorAction SilentlyContinue
+    }}
+
+    # Step 5: Merge settings and glossary
+    Show-Progress -Title "YakuLingo Update" -Status "Merging settings..." -Step "Step 5/5: Merging" -Percent 75
+    Write-DebugLog "Merging settings..."
+
+    # Check if yakulingo module exists
+    if (Test-Path "yakulingo\\__init__.py") {{
+        $pythonExe = Join-Path $script:AppDir ".venv\\Scripts\\python.exe"
+        if (Test-Path $pythonExe) {{
+            # Merge settings
+            try {{
+                $mergeSettingsCmd = "from pathlib import Path; import sys; sys.path.insert(0, str(Path(r'$($script:AppDir)'))); from yakulingo.services.updater import merge_settings; added = merge_settings(Path(r'$($script:AppDir)'), Path(r'$($script:SourceDir)'))"
+                $result = & $pythonExe -c $mergeSettingsCmd 2>&1
+                Write-DebugLog "Settings merge result: $result"
+            }} catch {{
+                Write-DebugLog "Settings merge error: $($_.Exception.Message)"
+            }}
+
+            # Merge glossary
+            Show-Progress -Title "YakuLingo Update" -Status "Merging glossary..." -Step "Step 5/5: Merging" -Percent 85
+            Write-DebugLog "Merging glossary..."
+            $sourceGlossary = Join-Path $script:SourceDir "glossary.csv"
+            if (Test-Path $sourceGlossary) {{
+                try {{
+                    $mergeGlossaryCmd = "from pathlib import Path; import sys; sys.path.insert(0, str(Path(r'$($script:AppDir)'))); from yakulingo.services.updater import merge_glossary; added = merge_glossary(Path(r'$($script:AppDir)'), Path(r'$($script:SourceDir)'))"
+                    $result = & $pythonExe -c $mergeGlossaryCmd 2>&1
+                    Write-DebugLog "Glossary merge result: $result"
+                }} catch {{
+                    Write-DebugLog "Glossary merge error: $($_.Exception.Message)"
+                }}
+            }}
+        }} else {{
+            Write-DebugLog "[SKIP] Python not found: $pythonExe"
+            $debugInfo += "[SKIP] Python not found"
+        }}
+    }} else {{
+        Write-DebugLog "[SKIP] yakulingo module not found"
+        $debugInfo += "[SKIP] yakulingo/__init__.py not found"
+    }}
+
+    # Cleanup
+    Show-Progress -Title "YakuLingo Update" -Status "Cleaning up..." -Step "Step 5/5: Merging" -Percent 95
+    Write-DebugLog "Cleaning up..."
+    if (Test-Path $script:SourceDir) {{
+        Remove-Item -Path $script:SourceDir -Recurse -Force -ErrorAction SilentlyContinue
+    }}
+
+    Write-DebugLog "Update completed successfully"
+    return $debugInfo
+}}
+
+# ============================================================
+# Execute update with error handling
+# ============================================================
+try {{
+    $debugInfo = Invoke-Update
+    Show-Success "Update completed!`n`nPlease restart the application."
+    exit 0
+}} catch {{
+    $errorMsg = $_.Exception.Message
+    Write-DebugLog "ERROR: $errorMsg"
+    Write-DebugLog "Stack: $($_.ScriptStackTrace)"
+
+    # Build debug info string
+    $debugStr = "Error: $errorMsg`n`n"
+    $debugStr += "Stack Trace:`n$($_.ScriptStackTrace)`n`n"
+    $debugStr += "Log file: $debugLog"
+
+    Show-Error -Message "Update failed.`n`n$errorMsg" -DebugInfo $debugStr
+    exit 1
+}}
+'''
+
+        # スクリプトを保存
+        with open(vbs_path, "w", encoding="utf-8") as f:
+            f.write(vbs_content)
+
+        with open(ps1_path, "w", encoding="utf-8") as f:
+            f.write(ps1_content)
+
+        # VBSスクリプトを実行（GUIモード、コンソール非表示）
         try:
             subprocess.Popen(
-                ["cmd", "/c", "start", "", str(batch_path)],
-                creationflags=subprocess.CREATE_NEW_CONSOLE,
+                ["wscript.exe", str(vbs_path)],
+                creationflags=subprocess.CREATE_NO_WINDOW,
             )
         except OSError as e:
-            logger.error("Failed to launch update batch file: %s", e)
+            logger.error("Failed to launch update script: %s", e)
             return False
 
         return True
@@ -885,20 +1167,33 @@ if [ -f "$SETTINGS_BACKUP" ]; then
 fi
 
 # 設定ファイルのマージ（新規項目のみ追加）
-# yakulingoディレクトリが存在する場合のみ実行
+# yakulingoモジュールが存在する場合のみ実行（ディレクトリだけでなく実際のモジュールファイル）
 echo "設定を更新しています..."
-if [ ! -d "yakulingo" ]; then
-    echo "  [SKIP] yakulingoディレクトリが見つかりません - コピーが失敗した可能性があります"
+if [ ! -f "yakulingo/__init__.py" ]; then
+    echo "  [SKIP] yakulingoモジュールが見つかりません - コピーが失敗した可能性があります"
+    if [ -d "yakulingo" ]; then
+        echo "  Debug: ディレクトリは存在しますが__init__.pyがありません"
+        ls -la "yakulingo" 2>/dev/null
+    else
+        echo "  Debug: ディレクトリが存在しません"
+    fi
+    if [ -f "{source_dir}/yakulingo/__init__.py" ]; then
+        echo "  Debug: ソースモジュールは存在します: {source_dir}/yakulingo/__init__.py"
+    else
+        echo "  Debug: ソースモジュールが見つかりません"
+        echo "  Debug: ソースディレクトリの内容:"
+        ls -la "{source_dir}" 2>/dev/null
+    fi
 elif [ -f "{app_dir}/.venv/bin/python" ]; then
     "{app_dir}/.venv/bin/python" -c "from pathlib import Path; import sys; sys.path.insert(0, str(Path(r'{app_dir}'))); from yakulingo.services.updater import merge_settings; added = merge_settings(Path(r'{app_dir}'), Path(r'{source_dir}')); print(f'  追加: {{added}} 件の新規設定' if added > 0 else '  新規設定はありません' if added == 0 else '  設定ファイルを新規作成しました')"
 fi
 
 # 用語集のマージ（新規用語のみ追加）
-# yakulingoディレクトリが存在する場合のみ実行
+# yakulingoモジュールが存在する場合のみ実行
 echo ""
 echo "用語集を更新しています..."
-if [ ! -d "yakulingo" ]; then
-    echo "  [SKIP] yakulingoディレクトリが見つかりません"
+if [ ! -f "yakulingo/__init__.py" ]; then
+    echo "  [SKIP] yakulingoモジュールが見つかりません"
 elif [ -f "{source_dir}/glossary.csv" ]; then
     if [ -f "{app_dir}/.venv/bin/python" ]; then
         "{app_dir}/.venv/bin/python" -c "from pathlib import Path; import sys; sys.path.insert(0, str(Path(r'{app_dir}'))); from yakulingo.services.updater import merge_glossary; added = merge_glossary(Path(r'{app_dir}'), Path(r'{source_dir}')); print(f'  追加: {{added}} 件の新規用語' if added > 0 else '  新規用語はありません' if added == 0 else '  用語集を新規作成しました')"

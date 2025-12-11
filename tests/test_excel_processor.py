@@ -1118,3 +1118,165 @@ class TestTextBlocksPositioning:
         assert ws_out["B1"].value == "Test 2"
         assert ws_out["C1"].value == "Test 3"
         assert ws_out["D1"].value == "Test 4"
+
+
+class TestExportGlossaryCsv:
+    """Tests for export_glossary_csv method."""
+
+    def test_exports_translations_to_csv(self, processor, tmp_path):
+        """Exports source/translation pairs to CSV."""
+        from yakulingo.models.types import TextBlock
+
+        text_blocks = [
+            TextBlock(
+                id="Sheet1_A1",
+                text="こんにちは",
+                location="Sheet1, A1",
+                metadata={'sheet': 'Sheet1', 'row': 1, 'col': 1, 'type': 'cell'}
+            ),
+            TextBlock(
+                id="Sheet1_A2",
+                text="世界",
+                location="Sheet1, A2",
+                metadata={'sheet': 'Sheet1', 'row': 2, 'col': 1, 'type': 'cell'}
+            ),
+        ]
+
+        translations = {
+            "Sheet1_A1": "Hello",
+            "Sheet1_A2": "World",
+        }
+
+        output_path = tmp_path / "glossary.csv"
+        stats = processor.export_glossary_csv(translations, text_blocks, output_path)
+
+        assert output_path.exists()
+        assert stats['total'] == 2
+        assert stats['exported'] == 2
+        assert stats['skipped'] == 0
+
+        # Verify CSV content
+        import csv
+        with output_path.open('r', encoding='utf-8-sig') as f:
+            reader = csv.reader(f)
+            rows = list(reader)
+
+        assert rows[0] == ['原文', '訳文', 'シート', 'セル']
+        assert rows[1] == ['こんにちは', 'Hello', 'Sheet1', 'A1']
+        assert rows[2] == ['世界', 'World', 'Sheet1', 'A2']
+
+    def test_skips_empty_translations(self, processor, tmp_path):
+        """Skips empty translations."""
+        from yakulingo.models.types import TextBlock
+
+        text_blocks = [
+            TextBlock(
+                id="Sheet1_A1",
+                text="テスト",
+                location="Sheet1, A1",
+                metadata={'sheet': 'Sheet1', 'row': 1, 'col': 1, 'type': 'cell'}
+            ),
+        ]
+
+        translations = {"Sheet1_A1": ""}
+
+        output_path = tmp_path / "glossary.csv"
+        stats = processor.export_glossary_csv(translations, text_blocks, output_path)
+
+        assert stats['total'] == 1
+        assert stats['exported'] == 0
+        assert stats['skipped'] == 1
+
+    def test_skips_missing_block_ids(self, processor, tmp_path):
+        """Skips translations without matching text blocks."""
+        from yakulingo.models.types import TextBlock
+
+        text_blocks = [
+            TextBlock(
+                id="Sheet1_A1",
+                text="テスト",
+                location="Sheet1, A1",
+                metadata={'sheet': 'Sheet1', 'row': 1, 'col': 1, 'type': 'cell'}
+            ),
+        ]
+
+        translations = {
+            "Sheet1_A1": "Test",
+            "Sheet1_B1": "Unknown",  # No matching text block
+        }
+
+        output_path = tmp_path / "glossary.csv"
+        stats = processor.export_glossary_csv(translations, text_blocks, output_path)
+
+        assert stats['total'] == 2
+        assert stats['exported'] == 1
+        assert stats['skipped'] == 1
+
+    def test_handles_shape_and_chart_blocks(self, processor, tmp_path):
+        """Handles shape and chart block types correctly."""
+        from yakulingo.models.types import TextBlock
+
+        text_blocks = [
+            TextBlock(
+                id="Sheet1_shape_0",
+                text="シェイプテキスト",
+                location="Sheet1, Shape 'TextBox1'",
+                metadata={'sheet': 'Sheet1', 'shape': 0, 'shape_name': 'TextBox1', 'type': 'shape'}
+            ),
+            TextBlock(
+                id="Sheet1_chart_0_title",
+                text="チャートタイトル",
+                location="Sheet1, Chart 1 Title",
+                metadata={'sheet': 'Sheet1', 'chart': 0, 'type': 'chart_title'}
+            ),
+        ]
+
+        translations = {
+            "Sheet1_shape_0": "Shape Text",
+            "Sheet1_chart_0_title": "Chart Title",
+        }
+
+        output_path = tmp_path / "glossary.csv"
+        stats = processor.export_glossary_csv(translations, text_blocks, output_path)
+
+        assert stats['exported'] == 2
+
+        import csv
+        with output_path.open('r', encoding='utf-8-sig') as f:
+            reader = csv.reader(f)
+            rows = list(reader)
+
+        # Verify shape and chart refs
+        assert 'Shape:TextBox1' in [row[3] for row in rows[1:]]
+        assert 'Chart:0' in [row[3] for row in rows[1:]]
+
+
+class TestCopiesHyperlinks:
+    """Tests for hyperlink copying in bilingual workbook."""
+
+    def test_copies_hyperlinks_to_bilingual_workbook(self, processor, tmp_path):
+        """Copies hyperlinks correctly in bilingual output."""
+        from openpyxl.worksheet.hyperlink import Hyperlink
+
+        original_path = tmp_path / "original.xlsx"
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Sheet1"
+        ws["A1"] = "Link Text"
+        ws["A1"].hyperlink = "https://example.com"
+        wb.save(original_path)
+
+        translated_path = tmp_path / "translated.xlsx"
+        wb_trans = openpyxl.Workbook()
+        ws_trans = wb_trans.active
+        ws_trans.title = "Sheet1"
+        ws_trans["A1"] = "Translated Link"
+        wb_trans.save(translated_path)
+
+        output_path = tmp_path / "bilingual.xlsx"
+        processor.create_bilingual_workbook(original_path, translated_path, output_path)
+
+        wb_out = openpyxl.load_workbook(output_path)
+        # Original sheet should have hyperlink preserved
+        assert wb_out["Sheet1"]["A1"].hyperlink is not None
+        assert "example.com" in wb_out["Sheet1"]["A1"].hyperlink.target

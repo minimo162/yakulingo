@@ -1947,17 +1947,26 @@ class ExcelProcessor(FileProcessor):
             trans_name = sanitize_sheet_name(f"{sheet_name}_translated")
 
             # Find actual names (may have suffix like _1 for uniqueness)
+            # Original sheet: must NOT contain '_translated'
             for name in existing_names:
-                if name == safe_orig_name or name.startswith(safe_orig_name):
-                    if '_translated' not in name:
-                        expected_order.append(name)
-                        break
+                if '_translated' in name:
+                    continue
+                # Match exact name or name with uniqueness suffix (_1, _2, etc.)
+                if name == safe_orig_name or name.startswith(f"{safe_orig_name}_"):
+                    expected_order.append(name)
+                    break
 
+            # Translated sheet: must contain '_translated'
+            # Handle truncated names: "VeryLong..._translated" may become "VeryLong..."
+            # Use removesuffix for proper suffix removal (not rstrip which removes char set)
+            trans_base = trans_name[:-3] if trans_name.endswith('...') else trans_name
             for name in existing_names:
-                if name == trans_name or name.startswith(trans_name.rstrip('...')):
-                    if '_translated' in name:
-                        expected_order.append(name)
-                        break
+                if '_translated' not in name:
+                    continue
+                # Match exact name or name with uniqueness suffix or truncated base
+                if name == trans_name or name.startswith(f"{trans_name}_") or name.startswith(trans_base):
+                    expected_order.append(name)
+                    break
 
         # Move sheets to correct positions
         for i, expected_name in enumerate(expected_order):
@@ -2122,9 +2131,22 @@ class ExcelProcessor(FileProcessor):
             logger.debug("Error copying data validations: %s", e)
 
         # Copy hyperlinks (per-cell)
+        # Note: Hyperlinks must be accessed through cells, not via private _hyperlinks dict
+        # because _hyperlinks is an internal API that may change between openpyxl versions
         try:
-            for cell_coord, hyperlink in source_sheet._hyperlinks.items():
-                target_sheet[cell_coord].hyperlink = hyperlink
+            for row in source_sheet.iter_rows():
+                for cell in row:
+                    if cell.hyperlink:
+                        target_cell = target_sheet.cell(row=cell.row, column=cell.column)
+                        # Copy hyperlink properties (target, tooltip, etc.)
+                        from openpyxl.worksheet.hyperlink import Hyperlink
+                        target_cell.hyperlink = Hyperlink(
+                            ref=target_cell.coordinate,
+                            target=cell.hyperlink.target,
+                            tooltip=cell.hyperlink.tooltip,
+                            display=cell.hyperlink.display,
+                            location=cell.hyperlink.location,
+                        )
         except (AttributeError, Exception) as e:
             logger.debug("Error copying hyperlinks: %s", e)
 
@@ -2141,3 +2163,81 @@ class ExcelProcessor(FileProcessor):
                         target_cell.comment = Comment(cell.comment.text, cell.comment.author)
         except (AttributeError, Exception) as e:
             logger.debug("Error copying comments: %s", e)
+
+    def export_glossary_csv(
+        self,
+        translations: dict[str, str],
+        text_blocks: list[TextBlock],
+        output_path: Path,
+    ) -> dict[str, int]:
+        """
+        Export source/translation pairs as glossary CSV.
+
+        This method exports original text and translated text pairs in CSV format,
+        suitable for use as a reference file in future translations.
+
+        Format:
+            原文,訳文,シート,セル
+            日本語テキスト,English text,Sheet1,A1
+            ...
+
+        Args:
+            translations: Mapping of block_id to translated text
+            text_blocks: List of TextBlock objects containing original texts
+            output_path: Output CSV file path
+
+        Returns:
+            Dictionary with export statistics:
+            - 'total': Total translation pairs
+            - 'exported': Successfully exported pairs
+            - 'skipped': Pairs skipped (empty or not found)
+        """
+        import csv
+
+        # Build lookup from block_id to original text and metadata
+        block_lookup: dict[str, tuple[str, str, str]] = {}
+        for block in text_blocks:
+            sheet_name = block.metadata.get('sheet', '')
+            cell_ref = ''
+            if block.metadata.get('type') == 'cell':
+                row = block.metadata.get('row', 0)
+                col = block.metadata.get('col', 0)
+                if row and col:
+                    cell_ref = f"{get_column_letter(col)}{row}"
+            elif block.metadata.get('type') == 'shape':
+                shape_name = block.metadata.get('shape_name', '')
+                cell_ref = f"Shape:{shape_name}"
+            elif block.metadata.get('type') in ('chart_title', 'chart_axis_title'):
+                chart_idx = block.metadata.get('chart', 0)
+                cell_ref = f"Chart:{chart_idx}"
+            block_lookup[block.id] = (block.text, sheet_name, cell_ref)
+
+        stats = {'total': 0, 'exported': 0, 'skipped': 0}
+
+        with output_path.open('w', encoding='utf-8-sig', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(['原文', '訳文', 'シート', 'セル'])
+
+            for block_id, translated_text in translations.items():
+                stats['total'] += 1
+
+                if block_id not in block_lookup:
+                    stats['skipped'] += 1
+                    continue
+
+                original_text, sheet_name, cell_ref = block_lookup[block_id]
+
+                # Skip empty translations
+                if not translated_text or not translated_text.strip():
+                    stats['skipped'] += 1
+                    continue
+
+                writer.writerow([original_text, translated_text, sheet_name, cell_ref])
+                stats['exported'] += 1
+
+        logger.info(
+            "Glossary CSV exported: %s (total=%d, exported=%d, skipped=%d)",
+            output_path, stats['total'], stats['exported'], stats['skipped']
+        )
+
+        return stats

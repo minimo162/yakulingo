@@ -399,19 +399,22 @@ class TestSourceCodeOnlyUpdate:
         assert ".playwright-browsers" not in AutoUpdater.SOURCE_DIRS
 
     def test_source_files_defined(self):
-        """Test that SOURCE_FILES are properly defined"""
+        """Test that SOURCE_FILES are properly defined (matches make_distribution.bat)"""
         # Core application files
         assert "app.py" in AutoUpdater.SOURCE_FILES
         assert "pyproject.toml" in AutoUpdater.SOURCE_FILES
+        assert "uv.lock" in AutoUpdater.SOURCE_FILES
         assert "uv.toml" in AutoUpdater.SOURCE_FILES
         # Scripts
         assert "YakuLingo.exe" in AutoUpdater.SOURCE_FILES
         # Documentation
         assert "README.md" in AutoUpdater.SOURCE_FILES
-        # Files NOT in distribution
+        # Files NOT in distribution (handled by merge functions or not included)
         assert "setup.vbs" not in AutoUpdater.SOURCE_FILES
         assert "setup.ps1" not in AutoUpdater.SOURCE_FILES
-        assert "requirements.txt" not in AutoUpdater.SOURCE_FILES
+        assert "requirements.txt" not in AutoUpdater.SOURCE_FILES  # Not in make_distribution.bat
+        assert "requirements_pdf.txt" not in AutoUpdater.SOURCE_FILES  # Not in make_distribution.bat
+        assert "glossary.csv" not in AutoUpdater.SOURCE_FILES  # Handled by merge_glossary()
 
 # --- Tests: download_update() ---
 

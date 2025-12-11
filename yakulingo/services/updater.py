@@ -566,9 +566,9 @@ class AutoUpdater:
         "uv.toml",          # UV設定
         "YakuLingo.exe",    # 起動ランチャー
         "README.md",        # ドキュメント
-        # Note: glossary.csv はユーザー編集可能なため、アップデートで上書きしない
+        # Note: glossary.csv はマージ処理で対応（merge_glossary()）
+        # Note: config/settings.json はマージ処理で対応（merge_settings()）
     ]
-    # Note: config/settings.json は config/ フォルダごと上書きされる
 
     def install_update(self, zip_path: Path) -> bool:
         """

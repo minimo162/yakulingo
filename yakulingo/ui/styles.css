@@ -2309,6 +2309,7 @@ textarea:focus-visible {
     border-radius: var(--md-sys-shape-corner-full);
     font-size: var(--md-sys-typescale-size-xs);
     color: var(--md-sys-color-on-primary-container);
+    flex-shrink: 0;  /* 解像度が低くても縮小しない */
 }
 
 .attach-file-indicator .file-name {

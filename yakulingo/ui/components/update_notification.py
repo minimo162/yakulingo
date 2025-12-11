@@ -258,6 +258,7 @@ class UpdateNotification:
                 progress_label = ui.label('0%').classes('text-xs text-muted text-center w-full')
 
         progress_dialog.open()
+        await asyncio.sleep(0.1)  # UIを更新する時間を確保
 
         def on_progress(downloaded: int, total: int):
             if total > 0:
@@ -272,6 +273,7 @@ class UpdateNotification:
             )
 
             progress_dialog.close()
+            await asyncio.sleep(0.1)  # UIを更新する時間を確保
 
             # インストール確認
             await self._confirm_install(zip_path)

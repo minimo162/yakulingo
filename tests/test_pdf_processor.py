@@ -285,9 +285,22 @@ class TestVflag:
     """Tests for vflag function (formula detection)"""
 
     def test_vflag_cid_notation(self):
-        """CID notation should be detected as formula"""
-        assert vflag("Arial", "(cid:123)") is True
-        assert vflag("Arial", "(cid:0)") is True
+        """CID notation should only be detected as formula for formula fonts.
+
+        CID notation from normal text fonts (Arial, MS-Gothic) indicates encoding
+        issues, not actual formula content. Only CID from formula fonts should be
+        treated as formula.
+        """
+        # CID notation from formula fonts → True
+        assert vflag("CMMI10", "(cid:123)") is True
+        assert vflag("Symbol", "(cid:0)") is True
+        assert vflag("MathFont", "(cid:456)") is True
+
+        # CID notation from normal text fonts → False
+        assert vflag("Arial", "(cid:123)") is False
+        assert vflag("MS-Gothic", "(cid:0)") is False
+        assert vflag("MS-PGothic", "(cid:789)") is False
+        assert vflag("TimesNewRoman", "(cid:100)") is False
 
     def test_vflag_math_font(self):
         """Math fonts should be detected"""

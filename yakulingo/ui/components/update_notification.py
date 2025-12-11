@@ -221,9 +221,12 @@ class UpdateNotification:
                         on_click=lambda: self._skip_version(info.version, dialog),
                     ).props('flat').classes('text-muted')
 
+                    async def on_download():
+                        await self._start_download(info, dialog)
+
                     ui.button(
                         'ダウンロード',
-                        on_click=lambda: self._start_download(info, dialog),
+                        on_click=on_download,
                     ).classes('btn-primary')
 
         dialog.open()

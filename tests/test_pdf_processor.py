@@ -325,6 +325,27 @@ class TestVflag:
         assert vflag("IPAMincho", "日本語") is False
         assert vflag("Noto Sans", "テスト") is False
 
+    def test_vflag_japanese_modifier_letters(self):
+        """Japanese modifier letters (長音符・踊り字) should NOT be detected as formula.
+
+        These characters have Unicode category 'Lm' (Letter, modifier) but are
+        common Japanese text characters, not formula elements.
+        """
+        # 長音符 (prolonged sound mark) - very common in Japanese
+        assert vflag("MS-Gothic", "ー") is False  # U+30FC
+        assert vflag("MS-PGothic", "コンピューター") is False
+
+        # 踊り字 (iteration marks) - used for repeating sounds/characters
+        assert vflag("MS-Gothic", "々") is False  # U+3005 (ideographic, e.g., 時々)
+        assert vflag("MS-Gothic", "ゝ") is False  # U+309D (hiragana)
+        assert vflag("MS-Gothic", "ゞ") is False  # U+309E (hiragana voiced)
+        assert vflag("MS-Gothic", "ヽ") is False  # U+30FD (katakana)
+        assert vflag("MS-Gothic", "ヾ") is False  # U+30FE (katakana voiced)
+
+        # Words containing these characters should not be formulas
+        assert vflag("MS-Gothic", "ルール") is False  # rule
+        assert vflag("MS-Gothic", "時々") is False  # sometimes
+
     def test_vflag_unicode_category(self):
         """Mathematical symbols should be detected"""
         assert vflag("Arial", "∑") is True  # Math symbol (Sm)

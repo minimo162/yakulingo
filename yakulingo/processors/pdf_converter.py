@@ -330,10 +330,18 @@ def vflag(font: str, char: str, vfont: str = None, vchar: str = None) -> bool:
     else:
         # Check Unicode category and Greek letters
         if char != " ":
+            char_code = ord(char[0])
+
+            # Exclude Japanese modifier letters (長音符・踊り字) from formula detection
+            # These have category 'Lm' but are common text characters, not formulas:
+            # U+3005 (々), U+309D-309E (ゝゞ), U+30FC-30FE (ーヽヾ)
+            if char_code == 0x3005 or 0x309D <= char_code <= 0x309E or 0x30FC <= char_code <= 0x30FE:
+                return False
+
             if unicodedata.category(char[0]) in FORMULA_UNICODE_CATEGORIES:
                 return True
             # Greek letters (U+0370 to U+03FF)
-            if 0x370 <= ord(char[0]) < 0x400:
+            if 0x370 <= char_code < 0x400:
                 return True
 
     return False

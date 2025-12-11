@@ -758,7 +758,21 @@ echo ""
 
 sleep 3
 
-cd "{app_dir}"
+# Change to app directory with verification
+cd "{app_dir}" || {{
+    echo "ERROR: Failed to change to app directory"
+    echo "Directory: {app_dir}"
+    read -p "Press Enter to exit..."
+    exit 1
+}}
+
+# Verify we are in the correct directory
+if [ ! -f "app.py" ] && [ ! -f "YakuLingo.exe" ]; then
+    echo "ERROR: Not in YakuLingo directory - aborting for safety"
+    echo "Current directory: $(pwd)"
+    read -p "Press Enter to exit..."
+    exit 1
+fi
 
 # ユーザーデータをバックアップ（設定ファイル）
 SETTINGS_BACKUP="/tmp/yakulingo_settings_backup.json"

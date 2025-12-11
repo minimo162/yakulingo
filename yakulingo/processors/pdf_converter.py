@@ -301,15 +301,24 @@ def vflag(font: str, char: str, vfont: str = None, vchar: str = None) -> bool:
     if not font and not char:
         return False
 
-    # Rule 1: CID notation
-    if char and _RE_CID_NOTATION.match(char):
-        return True
-
-    # Rule 2: Font-based detection
+    # Rule 1: Font-based detection (check first to determine if CID should be treated as formula)
+    font_is_formula_type = False
     if font:
         font_pattern = vfont if vfont else DEFAULT_VFONT_PATTERN
         if re.match(font_pattern, font):
-            return True
+            font_is_formula_type = True
+
+    # Rule 2: CID notation - only treat as formula if font is a formula font
+    # CID notation from normal text fonts (like MS-Gothic, MS-PGothic) indicates
+    # encoding issues, not actual formula content
+    if char and _RE_CID_NOTATION.match(char):
+        # If font is a formula font, treat CID as formula
+        # If font is unknown or normal text font, don't treat as formula
+        return font_is_formula_type
+
+    # If font matches formula pattern, it's a formula
+    if font_is_formula_type:
+        return True
 
     # Rule 3: Character class detection
     if not char:

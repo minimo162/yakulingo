@@ -3023,6 +3023,10 @@ class PdfProcessor(FileProcessor):
 
         # DEBUG: Track layout class distribution
         debug_cls_counts: dict[int, int] = {}
+        # DEBUG: Track formula detection for non-ABANDON chars
+        debug_formula_true_count = 0
+        debug_formula_false_count = 0
+        debug_first_processed_chars: list[tuple[str, str, int, bool]] = []  # (font, text, cls, is_formula)
 
         for char in chars:
             # Cache char coordinates locally
@@ -3049,19 +3053,14 @@ class PdfProcessor(FileProcessor):
             # Check if character is formula (use imported function)
             is_formula_char = vflag(fontname, char_text)
 
-            # DEBUG: Log first few characters to understand formula detection
-            if not has_prev and logger.isEnabledFor(logging.DEBUG):
-                sample_chars = chars[:5]
-                for idx, sc in enumerate(sample_chars):
-                    sc_text = sc.get_text()
-                    sc_font = getattr(sc, 'fontname', "")
-                    sc_is_formula = vflag(sc_font, sc_text)
-                    logger.debug(
-                        "  page %d char[%d]: font='%s', text='%s' (ord=%s), is_formula=%s",
-                        page_idx + 1, idx, sc_font, repr(sc_text),
-                        [ord(c) for c in sc_text] if sc_text else [],
-                        sc_is_formula
-                    )
+            # DEBUG: Track formula detection for non-ABANDON chars
+            if is_formula_char:
+                debug_formula_true_count += 1
+            else:
+                debug_formula_false_count += 1
+            # Collect first 10 processed chars for debug
+            if len(debug_first_processed_chars) < 10:
+                debug_first_processed_chars.append((fontname, char_text, char_cls, is_formula_char))
 
             # Determine if this is a new paragraph or line break
             if not has_prev:
@@ -3148,14 +3147,32 @@ class PdfProcessor(FileProcessor):
 
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(
-                "_group_chars_into_blocks page %d: chars=%d, paragraphs=%d, use_layout=%s",
-                page_idx + 1, len(chars), len(sstk), use_layout
+                "_group_chars_into_blocks page %d: chars=%d, paragraphs=%d, use_layout=%s, "
+                "sstk_total_chars=%d, formula_true=%d, formula_false=%d",
+                page_idx + 1, len(chars), len(sstk), use_layout,
+                sum(len(s) for s in sstk), debug_formula_true_count, debug_formula_false_count
             )
             # Sort by count descending for readability
             sorted_cls = sorted(debug_cls_counts.items(), key=lambda x: -x[1])
             for cls_id, count in sorted_cls[:5]:  # Top 5 classes
                 cls_name = "ABANDON" if cls_id == 0 else "BACKGROUND" if cls_id == 1 else f"PARA_{cls_id-2}" if cls_id < 1000 else f"TABLE_{cls_id-1000}"
                 logger.debug("  class %s (%d): %d chars", cls_name, cls_id, count)
+            # Log first 10 processed (non-ABANDON) chars
+            if debug_first_processed_chars:
+                logger.debug("  First processed chars (non-ABANDON):")
+                for idx, (font, text, cls, is_form) in enumerate(debug_first_processed_chars):
+                    logger.debug("    [%d] font='%s', text='%s', cls=%d, is_formula=%s",
+                                 idx, font, repr(text), cls, is_form)
+
+        # Warning for unusual case: all processed chars are formula
+        if debug_formula_true_count > 0 and debug_formula_false_count == 0 and not sstk:
+            logger.warning(
+                "Page %d: All %d processed chars detected as formula. "
+                "This may indicate CID encoding issue or font detection problem. "
+                "First chars: %s",
+                page_idx + 1, debug_formula_true_count,
+                [(font, repr(text)) for font, text, cls, is_form in debug_first_processed_chars[:5]]
+            )
 
         # Handle remaining formula at end
         if in_formula and vstk:

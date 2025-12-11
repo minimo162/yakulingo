@@ -1757,7 +1757,22 @@ class PdfProcessor(FileProcessor):
                     logger.debug("Skipping page %d (not in selection)", page_num)
                     continue
 
+                # Validate page geometry (PDFMathTranslate compliant)
+                if not page.rect:
+                    logger.warning(
+                        "Page %d has no rect attribute, skipping",
+                        page_num
+                    )
+                    self._record_failed_page(page_num, "Page has no rect attribute")
+                    continue
                 page_height = page.rect.height
+                if page_height <= 0:
+                    logger.warning(
+                        "Page %d has invalid height: %.2f, skipping",
+                        page_num, page_height
+                    )
+                    self._record_failed_page(page_num, f"Invalid page height: {page_height}")
+                    continue
 
                 # Create content stream replacer for this page
                 # preserve_graphics=True: parse and filter original content stream
@@ -1816,17 +1831,25 @@ class PdfProcessor(FileProcessor):
                         text_block = block_map.get(block_id)
                         if not text_block:
                             continue
+                        # Validate metadata exists
+                        if not text_block.metadata:
+                            logger.warning("TextBlock %s has no metadata, skipping", block_id)
+                            continue
                         # TextBlock bbox is already in PDF coordinates (origin at bottom-left)
                         # Format: (x0, y0, x1, y1) where y0 < y1
                         bbox = text_block.metadata.get('bbox')
-                        if not bbox:
+                        if not bbox or len(bbox) < 4:
+                            logger.warning(
+                                "TextBlock %s has invalid bbox: %s, skipping",
+                                block_id, bbox
+                            )
                             continue
                         # PDF coordinates: x0=left, y0=bottom, x1=right, y1=top
                         x1, y1, x2, y2 = bbox[0], bbox[1], bbox[2], bbox[3]
                         original_text = text_block.text
-                        # Get font size from Paragraph metadata
+                        # Get font size from Paragraph metadata (with safe attribute access)
                         paragraph = text_block.metadata.get('paragraph')
-                        stored_font_size = paragraph.size if paragraph else None
+                        stored_font_size = getattr(paragraph, 'size', None) if paragraph else None
                     else:
                         # Fallback: PyMuPDF block extraction
                         block = pymupdf_blocks_dict.get(block_id)
@@ -2379,8 +2402,8 @@ class PdfProcessor(FileProcessor):
                                 # TranslationCell is no longer needed (cells=None)
                                 yield blocks, None
 
-                            except (RuntimeError, ValueError, TypeError, IndexError, KeyError, OSError, MemoryError) as e:
-                                logger.error("Hybrid extraction failed for page %d: %s", page_num, e)
+                            except (RuntimeError, ValueError, TypeError, IndexError, KeyError, OSError, MemoryError, AttributeError, UnicodeDecodeError) as e:
+                                logger.error("Hybrid extraction failed for page %d: %s (%s)", page_num, e, type(e).__name__)
                                 self._record_failed_page(page_num, str(e))
                                 yield [], None
 
@@ -2841,6 +2864,16 @@ class PdfProcessor(FileProcessor):
         """
         blocks = []
         page_num = page_idx + 1
+
+        # Validate stack lengths match (PDFMathTranslate compliant)
+        # sstk and pstk must be synchronized - if not, log warning and use shorter length
+        if len(sstk) != len(pstk):
+            logger.warning(
+                "Stack length mismatch on page %d: sstk=%d, pstk=%d. "
+                "Some text blocks may be missing position information. "
+                "Using shorter length (%d) to prevent IndexError.",
+                page_num, len(sstk), len(pstk), min(len(sstk), len(pstk))
+            )
 
         for block_idx, (text, para) in enumerate(zip(sstk, pstk)):
             text = text.strip()

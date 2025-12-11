@@ -799,6 +799,7 @@ function Show-Error {{
     $form.StartPosition = "CenterScreen"
     $form.FormBorderStyle = "FixedDialog"
     $form.MaximizeBox = $false
+    $form.TopMost = $true
 
     # Error icon and message
     $iconLabel = New-Object System.Windows.Forms.Label
@@ -852,12 +853,28 @@ function Show-Error {{
 function Show-Success {{
     param([string]$Message)
     Close-Progress
+
+    # 前面表示用の親フォームを作成
+    $ownerForm = New-Object System.Windows.Forms.Form
+    $ownerForm.TopMost = $true
+    $ownerForm.StartPosition = "CenterScreen"
+    $ownerForm.Width = 0
+    $ownerForm.Height = 0
+    $ownerForm.FormBorderStyle = "None"
+    $ownerForm.ShowInTaskbar = $false
+    $ownerForm.Show()
+    $ownerForm.Activate()
+
     [System.Windows.Forms.MessageBox]::Show(
+        $ownerForm,
         $Message,
         "YakuLingo Update",
         [System.Windows.Forms.MessageBoxButtons]::OK,
         [System.Windows.Forms.MessageBoxIcon]::Information
     ) | Out-Null
+
+    $ownerForm.Close()
+    $ownerForm.Dispose()
 }}
 
 function Write-DebugLog {{

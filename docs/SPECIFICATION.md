@@ -1,7 +1,7 @@
 # YakuLingo - 技術仕様書
 
-> **Version**: 20251127 (2.0.0)
-> **Date**: 2025-11-27
+> **Version**: 0.0.1
+> **Date**: 2025-12-11
 > **App Name**: YakuLingo (訳リンゴ)
 
 ---

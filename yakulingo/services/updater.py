@@ -625,85 +625,86 @@ class AutoUpdater:
         dirs_to_update = " ".join(self.SOURCE_DIRS)
         files_to_update = " ".join(self.SOURCE_FILES)
 
+        # Note: All messages in English to avoid encoding issues
         batch_content = f'''@echo off
-chcp 65001 >nul
 echo.
 echo ============================================================
-echo YakuLingo アップデート中...
+echo YakuLingo Update in progress...
 echo ============================================================
 echo.
 
-REM アプリケーションの終了を待機
-echo アプリケーションの終了を待機しています...
+REM Wait for application to exit
+echo Waiting for application to exit...
 timeout /t 3 /nobreak >nul
 
 cd /d "{app_dir}"
 
-REM ユーザーデータをバックアップ（設定ファイル）
+REM Backup user settings
 set "SETTINGS_BACKUP=%TEMP%\\yakulingo_settings_backup.json"
 if exist "config\\settings.json" (
-    echo ユーザー設定をバックアップしています...
+    echo Backing up user settings...
     copy /y "config\\settings.json" "%SETTINGS_BACKUP%" >nul
 )
 
-REM ソースコードディレクトリを削除（環境ファイルは残す）
-echo ソースコードを更新しています...
+REM Delete source code directories (keep environment files)
+echo Updating source code...
 for %%d in ({dirs_to_update}) do (
     if exist "%%d" (
-        echo   削除: %%d
+        echo   Removing: %%d
         rmdir /s /q "%%d"
     )
 )
 
-REM ソースコードディレクトリをコピー
+REM Copy source code directories
 for %%d in ({dirs_to_update}) do (
     if exist "{source_dir}\\%%d" (
-        echo   コピー: %%d
+        echo   Copying: %%d
         xcopy /e /y /i /q "{source_dir}\\%%d" "{app_dir}\\%%d\\" >nul
     )
 )
 
-REM ユーザー設定を復元してマージ
-if exist "%SETTINGS_BACKUP%" (
-    echo ユーザー設定を復元しています...
-    copy /y "%SETTINGS_BACKUP%" "config\\settings.json" >nul
-    del "%SETTINGS_BACKUP%" >nul 2>&1
-)
-REM 設定ファイルのマージ（新規項目のみ追加）
-echo 設定を更新しています...
-if exist "{app_dir}\\.venv\\Scripts\\python.exe" (
-    "{app_dir}\\.venv\\Scripts\\python.exe" -c "from pathlib import Path; import sys; sys.path.insert(0, str(Path(r'{app_dir}'))); from yakulingo.services.updater import merge_settings; added = merge_settings(Path(r'{app_dir}'), Path(r'{source_dir}')); print(f'  追加: {{added}} 件の新規設定' if added > 0 else '  新規設定はありません' if added == 0 else '  設定ファイルを新規作成しました')"
-)
-
-REM ソースコードファイルをコピー
+REM Copy source code files
 for %%f in ({files_to_update}) do (
     if exist "{source_dir}\\%%f" (
-        echo   コピー: %%f
+        echo   Copying: %%f
         copy /y "{source_dir}\\%%f" "{app_dir}\\%%f" >nul
     )
 )
 
-REM 用語集のマージ（新規用語のみ追加）
+REM Restore user settings
+if exist "%SETTINGS_BACKUP%" (
+    echo Restoring user settings...
+    copy /y "%SETTINGS_BACKUP%" "config\\settings.json" >nul
+    del "%SETTINGS_BACKUP%" >nul 2>&1
+)
+
+REM Merge settings (add new items only) - run AFTER copying new source
+echo Merging settings...
+if exist "{app_dir}\\.venv\\Scripts\\python.exe" (
+    "{app_dir}\\.venv\\Scripts\\python.exe" -c "from pathlib import Path; import sys; sys.path.insert(0, str(Path(r'{app_dir}'))); from yakulingo.services.updater import merge_settings; added = merge_settings(Path(r'{app_dir}'), Path(r'{source_dir}')); print(f'  Added: {{added}} new settings' if added > 0 else '  No new settings' if added == 0 else '  Created new settings file')"
+)
+
+REM Merge glossary (add new terms only)
 echo.
-echo 用語集を更新しています...
+echo Updating glossary...
 if exist "{source_dir}\\glossary.csv" (
     if exist "{app_dir}\\.venv\\Scripts\\python.exe" (
-        "{app_dir}\\.venv\\Scripts\\python.exe" -c "from pathlib import Path; import sys; sys.path.insert(0, str(Path(r'{app_dir}'))); from yakulingo.services.updater import merge_glossary; added = merge_glossary(Path(r'{app_dir}'), Path(r'{source_dir}')); print(f'  追加: {{added}} 件の新規用語' if added > 0 else '  新規用語はありません' if added == 0 else '  用語集を新規作成しました')"
+        "{app_dir}\\.venv\\Scripts\\python.exe" -c "from pathlib import Path; import sys; sys.path.insert(0, str(Path(r'{app_dir}'))); from yakulingo.services.updater import merge_glossary; added = merge_glossary(Path(r'{app_dir}'), Path(r'{source_dir}')); print(f'  Added: {{added}} new terms' if added > 0 else '  No new terms' if added == 0 else '  Created new glossary file')"
     ) else (
-        echo   [SKIP] Python環境が見つかりません
+        echo   [SKIP] Python environment not found
     )
 )
 
 echo.
 echo ============================================================
-echo アップデート完了！
+echo Update complete!
 echo ============================================================
 echo.
-echo アプリケーションを再起動してください。
+echo Please restart the application.
 echo.
 pause
 
-REM 自身を削除
+REM Delete self
 del "%~f0"
 '''
 

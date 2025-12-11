@@ -2656,9 +2656,11 @@ def _detect_display_settings() -> tuple[tuple[int, int], tuple[int, int, int, in
     MIN_WINDOW_HEIGHT = 850
     MIN_SIDEBAR_WIDTH = 260
     MIN_INPUT_PANEL_WIDTH = 380  # Reduced from 420 for 1920x1200 compatibility
-    # Fixed content width - padding adjusts dynamically to absorb window size changes
-    FIXED_RESULT_CONTENT_WIDTH = 800
-    MIN_RESULT_PANEL_PADDING = 8
+    # Content width scales with window size, minimum 800px
+    # Reference: 1900px window → 1640px main area → 800px content (ratio = 0.488)
+    REFERENCE_MAIN_AREA_WIDTH = 1900 - 260  # 1640px
+    CONTENT_RATIO = 800 / REFERENCE_MAIN_AREA_WIDTH  # 0.488
+    MIN_RESULT_CONTENT_WIDTH = 800
 
     def calculate_sizes(screen_width: int, screen_height: int) -> tuple[tuple[int, int], tuple[int, int, int, int]]:
         """Calculate window size and panel widths from screen resolution.
@@ -2688,12 +2690,12 @@ def _detect_display_settings() -> tuple[tuple[int, int], tuple[int, int, int, in
             sidebar_width = max(int(window_width * SIDEBAR_RATIO), MIN_SIDEBAR_WIDTH)
             input_panel_width = max(int(window_width * INPUT_PANEL_RATIO), MIN_INPUT_PANEL_WIDTH)
 
-        # Fixed content width - padding adjusts to absorb window size changes
-        result_content_width = FIXED_RESULT_CONTENT_WIDTH
-
         # Calculate max-width for input panel in 2-column mode (centered layout)
         # Main area = window - sidebar, use 50% of available width for balanced layout
         main_area_width = window_width - sidebar_width
+
+        # Content width scales with main area, minimum 800px for small screens
+        result_content_width = max(int(main_area_width * CONTENT_RATIO), MIN_RESULT_CONTENT_WIDTH)
         input_panel_max_width = int((main_area_width - 60) * 0.5)
 
         return ((window_width, window_height), (sidebar_width, input_panel_width, result_content_width, input_panel_max_width))
@@ -3009,8 +3011,11 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
     const INPUT_PANEL_RATIO = 420 / 1900;
     const MIN_SIDEBAR_WIDTH = 260;
     const MIN_INPUT_PANEL_WIDTH = 380;
-    // Fixed content width - padding adjusts instead of content shrinking
-    const FIXED_RESULT_CONTENT_WIDTH = 800;
+    // Content width scales with window size, minimum 800px
+    // Reference: 1900px window → 1640px main area → 800px content (ratio = 0.488)
+    const REFERENCE_MAIN_AREA_WIDTH = 1900 - 260;  // 1640px
+    const CONTENT_RATIO = 800 / REFERENCE_MAIN_AREA_WIDTH;  // 0.488
+    const MIN_RESULT_CONTENT_WIDTH = 800;
     const MIN_RESULT_PANEL_PADDING = 8;
     const TEXTAREA_LINES = 7;
     const TEXTAREA_LINE_HEIGHT = 1.5;
@@ -3032,10 +3037,14 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
         // Calculate max-width for input panel in 2-column mode
         const mainAreaWidth = windowWidth - sidebarWidth;
 
-        // Fixed content width with dynamic padding - content stays same size, padding absorbs window changes
-        const resultContentWidth = FIXED_RESULT_CONTENT_WIDTH;
+        // Content width scales with main area, minimum 800px for small screens
+        // Large screens get proportionally larger content, small screens keep 800px with reduced padding
+        const resultContentWidth = Math.max(
+            Math.round(mainAreaWidth * CONTENT_RATIO),
+            MIN_RESULT_CONTENT_WIDTH
+        );
         const resultPanelPaddingX = Math.max(
-            Math.floor((mainAreaWidth - FIXED_RESULT_CONTENT_WIDTH) / 2),
+            Math.floor((mainAreaWidth - resultContentWidth) / 2),
             MIN_RESULT_PANEL_PADDING
         );
         const inputPanelMaxWidth = Math.round((mainAreaWidth - 60) * 0.5);

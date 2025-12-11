@@ -706,6 +706,10 @@ class FontRegistry:
                 special_count += 1
             elif 0x3000 <= code <= 0x303F:  # CJK Symbols and Punctuation (・、。etc.)
                 special_count += 1
+            # Fullwidth Forms: ！＂＃...０１２...Ａ-Ｚ、ａ-ｚ、：；etc.
+            # These are commonly used in Japanese text and not available in Latin fonts
+            elif 0xFF00 <= code <= 0xFFEF:  # Halfwidth and Fullwidth Forms
+                special_count += 1
 
         # Determine dominant language
         # Japanese: Hiragana/Katakana presence is definitive
@@ -716,9 +720,12 @@ class FontRegistry:
         if ko_count > 0:
             return "ko"
 
-        # CJK ideographs: use target language
+        # CJK ideographs only (kanji without kana): default to Japanese
+        # This handles translation fallback cases where original Japanese text
+        # (e.g., "検査", "申込", "単位") is rendered with the target language font.
+        # Since this app is Japanese/English focused, Japanese font is safer.
         if cjk_count > 0:
-            return target_lang
+            return "ja"
 
         # Special characters (①②③④ etc.) require CJK font
         # Arial and other Latin fonts do not have these glyphs

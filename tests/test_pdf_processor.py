@@ -593,12 +593,29 @@ class TestFontRegistry:
         font_id = font_registry.select_font_for_text("Hello World")
         assert font_id == font_registry.fonts["en"].font_id
 
-    def test_select_font_for_kanji_uses_target_lang(self, font_registry):
+    def test_select_font_for_kanji_defaults_to_japanese(self, font_registry):
         font_registry.register_font("ja")
         font_registry.register_font("zh-CN")
-        # Kanji should use target_lang parameter
+        # Kanji-only text defaults to Japanese font for fallback safety
+        # (handles translation failure cases where original Japanese text is rendered)
         font_id = font_registry.select_font_for_text("漢字", target_lang="zh-CN")
-        assert font_id == font_registry.fonts["zh-CN"].font_id
+        assert font_id == font_registry.fonts["ja"].font_id
+
+    def test_select_font_for_fullwidth_colon_uses_japanese(self, font_registry):
+        font_registry.register_font("ja")
+        font_registry.register_font("en")
+        # Fullwidth colon (U+FF1A) and kanji - common in Japanese text
+        # This was a regression case where "(単位：億円)" was rendered with English font
+        font_id = font_registry.select_font_for_text("(単位：億円)", target_lang="en")
+        assert font_id == font_registry.fonts["ja"].font_id
+
+    def test_select_font_for_fullwidth_forms_uses_japanese(self, font_registry):
+        font_registry.register_font("ja")
+        font_registry.register_font("en")
+        # Fullwidth forms (U+FF00-U+FFEF) should use Japanese font
+        # Includes: ：；！？（）「」etc.
+        font_id = font_registry.select_font_for_text("Ａ：Ｂ", target_lang="en")
+        assert font_id == font_registry.fonts["ja"].font_id
 
     def test_get_font_path_registered(self, font_registry):
         with patch('yakulingo.processors.pdf_font_manager.get_font_path_for_lang') as mock_get:

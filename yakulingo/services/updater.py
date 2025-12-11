@@ -637,7 +637,24 @@ REM Wait for application to exit
 echo Waiting for application to exit...
 timeout /t 3 /nobreak >nul
 
+REM Change to app directory with verification
 cd /d "{app_dir}"
+if errorlevel 1 (
+    echo ERROR: Failed to change to app directory
+    echo Directory: {app_dir}
+    pause
+    exit /b 1
+)
+
+REM Verify we are in the correct directory (YakuLingo.exe should exist)
+if not exist "YakuLingo.exe" (
+    if not exist "app.py" (
+        echo ERROR: Not in YakuLingo directory - aborting for safety
+        echo Current directory: %CD%
+        pause
+        exit /b 1
+    )
+)
 
 REM Backup user settings
 set "SETTINGS_BACKUP=%TEMP%\\yakulingo_settings_backup.json"

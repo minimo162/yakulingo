@@ -1950,21 +1950,20 @@ class CopilotHandler:
 
     def _check_copilot_state(self, timeout: int = 5) -> str:
         """
-        Copilotの状態を確認
+        Copilotの状態をURLベースで確認（セレクタに依存しない安定した判定）
 
-        チャット入力欄が存在するかどうかでログイン状態を判定。
-        ログインページや読み込み中の場合はログインが必要と判断。
-
-        重要: ログインページにいる場合はセレクタ検索をスキップして
-        LOGIN_REQUIREDを返す。これにより、ログインプロセス中の
-        ページ操作を防ぎ、サインインを妨害しないようにする。
+        判定ロジック:
+        1. ログインページURL → LOGIN_REQUIRED
+        2. Copilotドメイン + /chat パス → READY
+        3. Copilotドメイン + /landing等 → LOGIN_REQUIRED（リダイレクト待ち）
+        4. その他 → LOGIN_REQUIRED
 
         Args:
-            timeout: セレクタ待機のタイムアウト（秒）
+            timeout: 未使用（後方互換性のため残す）
 
         Returns:
-            ConnectionState.READY - チャットUIが表示されている
-            ConnectionState.LOGIN_REQUIRED - ログインが必要
+            ConnectionState.READY - Copilotチャットページにいる
+            ConnectionState.LOGIN_REQUIRED - ログインが必要またはリダイレクト中
             ConnectionState.ERROR - ページが存在しない
         """
         if not self._page:
@@ -1972,46 +1971,31 @@ class CopilotHandler:
 
         error_types = _get_playwright_errors()
         PlaywrightError = error_types['Error']
-        PlaywrightTimeoutError = error_types['TimeoutError']
 
         try:
             # 現在のURLを確認
             current_url = self._page.url
             logger.info("Checking Copilot state: URL=%s", current_url[:80])
 
-            # ログインページにいる場合はセレクタ検索をスキップ
-            # これにより、サインインプロセスを妨害しない
+            # ログインページにいる場合
             if _is_login_page(current_url):
-                logger.info("On login page, skipping selector search")
+                logger.info("On login page - login required")
                 return ConnectionState.LOGIN_REQUIRED
 
-            # Copilotドメインでない場合もスキップ
-            # （リダイレクト中の可能性）
+            # Copilotドメインでない場合（リダイレクト中の可能性）
             if not _is_copilot_url(current_url):
-                logger.info("Not on Copilot domain, skipping selector search")
+                logger.info("Not on Copilot domain - login required")
                 return ConnectionState.LOGIN_REQUIRED
 
-            # ページがロードされるまで待機
-            try:
-                self._page.wait_for_load_state('domcontentloaded', timeout=3000)
-            except PlaywrightTimeoutError:
-                logger.debug("Page load state timeout, continuing...")
-
-            # チャット入力欄の存在を確認（ログイン済みの証拠）
-            # 拡張セレクタを使用してより多くのパターンをカバー
-            input_selector = self.CHAT_INPUT_SELECTOR_EXTENDED
-            try:
-                self._page.wait_for_selector(
-                    input_selector,
-                    timeout=timeout * 1000,
-                    state='visible'
-                )
-                logger.info("Chat input found - Copilot is ready")
+            # Copilotドメインにいて、かつ /chat パスにいる場合 → ログイン完了
+            # URL例: https://m365.cloud.microsoft/chat/?auth=2
+            if "/chat" in current_url:
+                logger.info("On Copilot chat page - ready")
                 return ConnectionState.READY
-            except PlaywrightTimeoutError:
-                # 入力欄が見つからない = ログインが必要
-                logger.info("Chat input not found with selector: %s", input_selector)
-                return ConnectionState.LOGIN_REQUIRED
+
+            # Copilotドメインだが /chat 以外（/landing, /home 等）→ まだリダイレクト中
+            logger.info("On Copilot domain but not /chat path - waiting for redirect")
+            return ConnectionState.LOGIN_REQUIRED
 
         except PlaywrightError as e:
             logger.info("Error checking Copilot state: %s", e)

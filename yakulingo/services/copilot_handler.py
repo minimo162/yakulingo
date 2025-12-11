@@ -1438,6 +1438,19 @@ class CopilotHandler:
                                     elapsed
                                 )
                                 return False  # Manual login required
+                            elif not _is_copilot_url(current_url):
+                                # Not on Copilot domain and not on login page
+                                # (e.g., Edge home page like edge://newtab, msn.com, etc.)
+                                # Navigate to Copilot to get things moving
+                                logger.info(
+                                    "URL stable on non-Copilot page (%s), navigating to Copilot...",
+                                    current_url[:60]
+                                )
+                                try:
+                                    self._page.goto(self.COPILOT_URL, wait_until='commit', timeout=30000)
+                                    stable_count = 0  # Reset counter after navigation
+                                except (PlaywrightTimeoutError, PlaywrightError) as nav_err:
+                                    logger.debug("Failed to navigate to Copilot: %s", nav_err)
                     else:
                         # URL changed - auto-login is progressing
                         logger.debug("Auto-login progressing: %s -> %s", last_url[:50], current_url[:50])

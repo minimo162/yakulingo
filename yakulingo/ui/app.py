@@ -772,7 +772,11 @@ class YakuLingoApp:
             notification = await check_updates_on_startup(self.settings)
             if notification:
                 self._update_notification = notification
-                notification.create_update_banner()
+
+                # UI要素を作成するにはclientコンテキストが必要
+                if self._client:
+                    with self._client:
+                        notification.create_update_banner()
 
                 # 設定を保存（最終チェック日時を更新）
                 self.settings.save(get_default_settings_path())

@@ -1098,6 +1098,7 @@ class ExcelProcessor(FileProcessor):
         self,
         translations: dict[str, str],
         sheet_names: set[str],
+        text_blocks: Optional[list[TextBlock]] = None,
     ) -> dict[str, dict]:
         """
         Group translations by sheet name for efficient batch processing.
@@ -1105,10 +1106,12 @@ class ExcelProcessor(FileProcessor):
         Args:
             translations: dict mapping block_id to translated text
             sheet_names: set of valid sheet names in the workbook
+            text_blocks: Optional list of TextBlock objects with metadata (row/col info)
+                        When provided, uses metadata for precise positioning.
 
         Returns:
             dict mapping sheet_name to {
-                'cells': {cell_ref: translated_text},
+                'cells': {(row, col): (translated_text, cell_ref)},
                 'shapes': {shape_idx: translated_text},
                 'charts': {chart_idx: {'title': text, 'category': text, 'value': text}}
             }
@@ -1128,6 +1131,12 @@ class ExcelProcessor(FileProcessor):
         """
         result: dict[str, dict] = {}
 
+        # Build a lookup from block_id to TextBlock metadata for precise positioning
+        block_metadata: dict[str, dict] = {}
+        if text_blocks:
+            for block in text_blocks:
+                block_metadata[block.id] = block.metadata
+
         # Sort sheet names by length (longest first, then alphabetically for stability)
         # This ensures consistent matching even when sheet_names comes from a set.
         # e.g., "my_sheet" should match before "my" for block_id "my_sheet_A1"
@@ -1137,6 +1146,21 @@ class ExcelProcessor(FileProcessor):
         cell_ref_pattern = re.compile(r'^[A-Z]+\d+$')
 
         for block_id, translated_text in translations.items():
+            # First, try to use metadata for precise positioning (most reliable)
+            metadata = block_metadata.get(block_id, {})
+            if metadata and metadata.get('type') == 'cell':
+                sheet_name = metadata.get('sheet')
+                row = metadata.get('row')
+                col = metadata.get('col')
+                if sheet_name and row and col and sheet_name in sheet_names:
+                    if sheet_name not in result:
+                        result[sheet_name] = {'cells': {}, 'shapes': {}, 'charts': {}}
+                    # Store as (row, col) tuple for direct access
+                    cell_ref = get_column_letter(col) + str(row)
+                    result[sheet_name]['cells'][(row, col)] = (translated_text, cell_ref)
+                    continue
+
+            # Fallback: parse block_id (for backward compatibility or missing metadata)
             # Find matching sheet name (handles sheet names with underscores)
             # Validates that suffix is a valid block type to avoid false matches
             sheet_name = None
@@ -1151,6 +1175,7 @@ class ExcelProcessor(FileProcessor):
                         break
 
             if sheet_name is None:
+                logger.warning("Could not determine sheet for block_id: %s", block_id)
                 continue
 
             # Initialize sheet entry if needed
@@ -1187,7 +1212,14 @@ class ExcelProcessor(FileProcessor):
 
             else:
                 # Cell reference: "A1", "AA100", etc.
-                result[sheet_name]['cells'][suffix] = translated_text
+                # Parse to (row, col) for consistent storage
+                try:
+                    col_letters, row_str = coordinate_from_string(suffix)
+                    row = int(row_str)
+                    col = column_index_from_string(col_letters)
+                    result[sheet_name]['cells'][(row, col)] = (translated_text, suffix)
+                except (ValueError, TypeError) as e:
+                    logger.warning("Invalid cell reference in block_id %s: %s", block_id, e)
 
         return result
 
@@ -1199,6 +1231,7 @@ class ExcelProcessor(FileProcessor):
         direction: str = "jp_to_en",
         settings=None,
         selected_sections: Optional[list[int]] = None,
+        text_blocks: Optional[list[TextBlock]] = None,
     ) -> None:
         """Apply translations to Excel file.
 
@@ -1210,6 +1243,9 @@ class ExcelProcessor(FileProcessor):
             settings: AppSettings for font configuration
             selected_sections: List of sheet indices to process (0-indexed).
                               If None, all sheets are processed.
+            text_blocks: Optional list of TextBlock objects with metadata.
+                        When provided, enables precise cell positioning using
+                        row/col from metadata instead of parsing block_id.
         """
         xw = _get_xlwings()
 
@@ -1217,11 +1253,13 @@ class ExcelProcessor(FileProcessor):
 
         if HAS_XLWINGS:
             self._apply_translations_xlwings(
-                input_path, output_path, translations, direction, xw, settings, selected_sections
+                input_path, output_path, translations, direction, xw, settings,
+                selected_sections, text_blocks
             )
         else:
             self._apply_translations_openpyxl(
-                input_path, output_path, translations, direction, settings, selected_sections
+                input_path, output_path, translations, direction, settings,
+                selected_sections, text_blocks
             )
 
     def _ensure_xls_supported(self, file_path: Path) -> None:
@@ -1250,11 +1288,14 @@ class ExcelProcessor(FileProcessor):
         xw,
         settings=None,
         selected_sections: Optional[list[int]] = None,
+        text_blocks: Optional[list[TextBlock]] = None,
     ) -> None:
         """Apply translations using xlwings
 
         Optimized:
         - Pre-groups translations by sheet to avoid O(sheets × translations) complexity
+        - Uses metadata from text_blocks for precise cell positioning
+        - Batch writes contiguous row ranges to minimize COM calls
         - Disables ScreenUpdating and sets Calculation to manual for faster COM operations
         - Only processes selected sheets when selected_sections is specified
         - Restores Excel settings after completion
@@ -1269,6 +1310,7 @@ class ExcelProcessor(FileProcessor):
             # Store original Excel settings for restoration
             original_screen_updating = None
             original_calculation = None
+            original_enable_events = None
 
             try:
                 # Optimize Excel settings for batch operations
@@ -1280,16 +1322,23 @@ class ExcelProcessor(FileProcessor):
 
                 try:
                     original_calculation = app.calculation
-                    # xlCalculationManual = -4135 (Excel constant)
                     app.calculation = 'manual'
                 except Exception as e:
                     logger.debug("Could not set manual calculation: %s", e)
 
+                try:
+                    original_enable_events = app.api.EnableEvents
+                    app.api.EnableEvents = False
+                except Exception as e:
+                    logger.debug("Could not disable events: %s", e)
+
                 wb = app.books.open(str(input_path), ignore_read_only_recommended=True)
                 try:
-                    # Pre-group translations by sheet name for O(translations) instead of O(sheets × translations)
+                    # Pre-group translations by sheet name using metadata when available
                     sheet_names = {sheet.name for sheet in wb.sheets}
-                    translations_by_sheet = self._group_translations_by_sheet(translations, sheet_names)
+                    translations_by_sheet = self._group_translations_by_sheet(
+                        translations, sheet_names, text_blocks
+                    )
 
                     # Convert selected_sections to a set for O(1) lookup
                     selected_set = set(selected_sections) if selected_sections is not None else None
@@ -1302,57 +1351,12 @@ class ExcelProcessor(FileProcessor):
                         sheet_name = sheet.name
                         sheet_translations = translations_by_sheet.get(sheet_name, {})
 
-                        # === Apply to cells ===
+                        # === Apply to cells with batch optimization ===
                         cell_translations = sheet_translations.get('cells', {})
-                        for cell_ref, translated_text in cell_translations.items():
-                            try:
-                                cell = sheet.range(cell_ref)
-                                block_id = f"{sheet_name}_{cell_ref}"
-
-                                # Try to get font info from cache (populated during extract)
-                                # This avoids redundant COM calls for font info
-                                cached_font = self._font_cache.get(block_id)
-                                if cached_font:
-                                    original_font_name, original_font_size = cached_font
-                                else:
-                                    # Fallback: get font info from cell (for cases where
-                                    # extract was not called or cache was cleared)
-                                    original_font_name = None
-                                    original_font_size = 11.0
-                                    try:
-                                        original_font_name = cell.font.name
-                                        original_font_size = cell.font.size or 11.0
-                                    except Exception as e:
-                                        logger.debug("Error reading font for cell %s_%s: %s", sheet_name, cell_ref, e)
-
-                                # Get new font settings
-                                new_font_name, new_font_size = font_manager.select_font(
-                                    original_font_name,
-                                    original_font_size
-                                )
-
-                                # Check and truncate if exceeds Excel cell limit
-                                final_text = translated_text
-                                if translated_text and len(translated_text) > EXCEL_CELL_CHAR_LIMIT:
-                                    final_text = translated_text[:EXCEL_CELL_CHAR_LIMIT - 3] + "..."
-                                    logger.warning(
-                                        "Translation truncated for cell %s_%s: %d -> %d chars (Excel limit: %d)",
-                                        sheet_name, cell_ref, len(translated_text),
-                                        len(final_text), EXCEL_CELL_CHAR_LIMIT
-                                    )
-
-                                # Apply translation
-                                cell.value = final_text
-
-                                # Apply new font
-                                try:
-                                    cell.font.name = new_font_name
-                                    cell.font.size = new_font_size
-                                except Exception as e:
-                                    logger.debug("Error applying font to cell %s_%s: %s", sheet_name, cell_ref, e)
-
-                            except Exception as e:
-                                logger.warning("Error applying translation to cell %s_%s: %s", sheet_name, cell_ref, e)
+                        if cell_translations:
+                            self._apply_cell_translations_xlwings_batch(
+                                sheet, sheet_name, cell_translations, font_manager
+                            )
 
                         # === Apply to shapes ===
                         shape_translations = sheet_translations.get('shapes', {})
@@ -1409,6 +1413,12 @@ class ExcelProcessor(FileProcessor):
             finally:
                 # Restore Excel settings before quitting
                 try:
+                    if original_enable_events is not None:
+                        app.api.EnableEvents = original_enable_events
+                except Exception as e:
+                    logger.debug("Could not restore EnableEvents: %s", e)
+
+                try:
                     if original_calculation is not None:
                         app.calculation = original_calculation
                 except Exception as e:
@@ -1422,6 +1432,213 @@ class ExcelProcessor(FileProcessor):
 
                 app.quit()
 
+    def _apply_cell_translations_xlwings_batch(
+        self,
+        sheet,
+        sheet_name: str,
+        cell_translations: dict[tuple[int, int], tuple[str, str]],
+        font_manager: FontManager,
+    ) -> None:
+        """Apply cell translations with batch optimization for xlwings.
+
+        Groups cells by row and writes contiguous ranges in batches to reduce
+        COM call overhead. For each row, if cells are contiguous (e.g., A1, B1, C1),
+        writes them in a single Range.value assignment.
+
+        Args:
+            sheet: xlwings Sheet object
+            sheet_name: Name of the sheet (for logging/cache lookup)
+            cell_translations: Dict mapping (row, col) to (translated_text, cell_ref)
+            font_manager: FontManager for determining output fonts
+        """
+        if not cell_translations:
+            return
+
+        # Group translations by row for batch processing
+        rows_data: dict[int, list[tuple[int, str, str]]] = {}  # row -> [(col, text, cell_ref), ...]
+        for (row, col), (translated_text, cell_ref) in cell_translations.items():
+            if row not in rows_data:
+                rows_data[row] = []
+            rows_data[row].append((col, translated_text, cell_ref))
+
+        # Sort cells within each row by column
+        for row in rows_data:
+            rows_data[row].sort(key=lambda x: x[0])
+
+        # Process each row
+        for row, cells in rows_data.items():
+            # Find contiguous column ranges within this row
+            ranges = self._find_contiguous_ranges(cells)
+
+            for start_col, end_col, range_cells in ranges:
+                if len(range_cells) == 1:
+                    # Single cell - direct write
+                    col, text, cell_ref = range_cells[0]
+                    self._apply_single_cell_xlwings(
+                        sheet, sheet_name, row, col, text, cell_ref, font_manager
+                    )
+                else:
+                    # Contiguous range - batch write
+                    self._apply_range_batch_xlwings(
+                        sheet, sheet_name, row, start_col, end_col, range_cells, font_manager
+                    )
+
+    def _find_contiguous_ranges(
+        self, cells: list[tuple[int, str, str]]
+    ) -> list[tuple[int, int, list[tuple[int, str, str]]]]:
+        """Find contiguous column ranges in a sorted list of cells.
+
+        Args:
+            cells: List of (col, text, cell_ref) sorted by col
+
+        Returns:
+            List of (start_col, end_col, cells_in_range)
+        """
+        if not cells:
+            return []
+
+        ranges = []
+        current_range = [cells[0]]
+        current_start = cells[0][0]
+
+        for i in range(1, len(cells)):
+            col = cells[i][0]
+            prev_col = cells[i - 1][0]
+
+            if col == prev_col + 1:
+                # Contiguous
+                current_range.append(cells[i])
+            else:
+                # Gap - save current range and start new one
+                ranges.append((current_start, cells[i - 1][0], current_range))
+                current_range = [cells[i]]
+                current_start = col
+
+        # Don't forget the last range
+        ranges.append((current_start, cells[-1][0], current_range))
+        return ranges
+
+    def _apply_single_cell_xlwings(
+        self,
+        sheet,
+        sheet_name: str,
+        row: int,
+        col: int,
+        translated_text: str,
+        cell_ref: str,
+        font_manager: FontManager,
+    ) -> None:
+        """Apply translation to a single cell."""
+        try:
+            cell = sheet.range(row, col)
+            block_id = f"{sheet_name}_{cell_ref}"
+
+            # Try to get font info from cache
+            cached_font = self._font_cache.get(block_id)
+            if cached_font:
+                original_font_name, original_font_size = cached_font
+            else:
+                original_font_name = None
+                original_font_size = 11.0
+                try:
+                    original_font_name = cell.font.name
+                    original_font_size = cell.font.size or 11.0
+                except Exception as e:
+                    logger.debug("Error reading font for cell %s: %s", block_id, e)
+
+            new_font_name, new_font_size = font_manager.select_font(
+                original_font_name, original_font_size
+            )
+
+            # Truncate if needed
+            final_text = translated_text
+            if translated_text and len(translated_text) > EXCEL_CELL_CHAR_LIMIT:
+                final_text = translated_text[:EXCEL_CELL_CHAR_LIMIT - 3] + "..."
+                logger.warning(
+                    "Translation truncated for cell %s: %d -> %d chars",
+                    block_id, len(translated_text), len(final_text)
+                )
+
+            cell.value = final_text
+
+            try:
+                cell.font.name = new_font_name
+                cell.font.size = new_font_size
+            except Exception as e:
+                logger.debug("Error applying font to cell %s: %s", block_id, e)
+
+        except Exception as e:
+            logger.warning("Error applying translation to cell %s_%s: %s", sheet_name, cell_ref, e)
+
+    def _apply_range_batch_xlwings(
+        self,
+        sheet,
+        sheet_name: str,
+        row: int,
+        start_col: int,
+        end_col: int,
+        cells: list[tuple[int, str, str]],
+        font_manager: FontManager,
+    ) -> None:
+        """Apply translations to a contiguous range of cells in one batch.
+
+        This reduces COM calls by writing multiple values at once.
+        """
+        try:
+            # Build the value list for the range
+            values = []
+            font_info_list = []  # To track font changes needed
+
+            for col, text, cell_ref in cells:
+                block_id = f"{sheet_name}_{cell_ref}"
+
+                # Truncate if needed
+                final_text = text
+                if text and len(text) > EXCEL_CELL_CHAR_LIMIT:
+                    final_text = text[:EXCEL_CELL_CHAR_LIMIT - 3] + "..."
+                    logger.warning(
+                        "Translation truncated for cell %s: %d -> %d chars",
+                        block_id, len(text), len(final_text)
+                    )
+                values.append(final_text)
+
+                # Get font info
+                cached_font = self._font_cache.get(block_id)
+                if cached_font:
+                    original_font_name, original_font_size = cached_font
+                else:
+                    original_font_name = None
+                    original_font_size = 11.0
+                font_info_list.append((original_font_name, original_font_size))
+
+            # Write values in batch (single COM call for all values)
+            rng = sheet.range((row, start_col), (row, end_col))
+            rng.value = values
+
+            # Apply fonts (still need individual font settings, but value write is batched)
+            # Get the new font once (same for all cells in batch)
+            # Note: font may vary by original font, so we apply individually
+            for i, (col, _, cell_ref) in enumerate(cells):
+                try:
+                    cell = sheet.range(row, col)
+                    orig_name, orig_size = font_info_list[i]
+                    new_name, new_size = font_manager.select_font(orig_name, orig_size)
+                    cell.font.name = new_name
+                    cell.font.size = new_size
+                except Exception as e:
+                    logger.debug("Error applying font to cell %s_%s: %s", sheet_name, cell_ref, e)
+
+        except Exception as e:
+            logger.warning(
+                "Error applying batch translation to row %d cols %d-%d in '%s': %s",
+                row, start_col, end_col, sheet_name, e
+            )
+            # Fallback to individual cell writes
+            for col, text, cell_ref in cells:
+                self._apply_single_cell_xlwings(
+                    sheet, sheet_name, row, col, text, cell_ref, font_manager
+                )
+
     def _apply_translations_openpyxl(
         self,
         input_path: Path,
@@ -1430,23 +1647,19 @@ class ExcelProcessor(FileProcessor):
         direction: str,
         settings=None,
         selected_sections: Optional[list[int]] = None,
+        text_blocks: Optional[list[TextBlock]] = None,
     ) -> None:
         """Apply translations using openpyxl (fallback - cells only)
 
         Optimized:
-        - Direct cell access instead of iterating all cells
+        - Uses metadata from text_blocks for precise cell positioning
+        - Direct cell access using (row, col) tuples instead of string parsing
         - Font object caching to avoid creating duplicate Font objects
         - Only accesses cells that need translation
         - Only processes selected sheets when selected_sections is specified
         """
         font_manager = FontManager(direction, settings)
         wb = openpyxl.load_workbook(input_path)
-
-        # Cache parsed coordinates to avoid repeatedly converting A1 notation
-        @lru_cache(maxsize=2048)
-        def _cell_ref_to_row_col(cell_ref: str) -> tuple[int, int]:
-            column_letters, row_idx = coordinate_from_string(cell_ref)
-            return row_idx, column_index_from_string(column_letters)
 
         # Font object cache: (name, size, bold, italic, underline, strike, color_rgb) -> Font
         # openpyxl Font objects are immutable, so we can safely reuse them
@@ -1483,9 +1696,11 @@ class ExcelProcessor(FileProcessor):
             return font_cache[cache_key]
 
         try:
-            # Pre-group translations by sheet for efficient processing
+            # Pre-group translations by sheet using metadata when available
             sheet_names = set(wb.sheetnames)
-            translations_by_sheet = self._group_translations_by_sheet(translations, sheet_names)
+            translations_by_sheet = self._group_translations_by_sheet(
+                translations, sheet_names, text_blocks
+            )
 
             # Convert selected_sections to a set for O(1) lookup
             selected_set = set(selected_sections) if selected_sections is not None else None
@@ -1499,10 +1714,9 @@ class ExcelProcessor(FileProcessor):
                 sheet_translations = translations_by_sheet.get(sheet_name, {})
                 cell_translations = sheet_translations.get('cells', {})
 
-                # Direct cell access - only touch cells that need translation
-                for cell_ref, translated_text in cell_translations.items():
+                # Direct cell access using (row, col) tuples
+                for (row_idx, col_idx), (translated_text, cell_ref) in cell_translations.items():
                     try:
-                        row_idx, col_idx = _cell_ref_to_row_col(cell_ref)
                         cell = sheet.cell(row=row_idx, column=col_idx)
 
                         original_font_name = cell.font.name if cell.font else None

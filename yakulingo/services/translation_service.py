@@ -1874,6 +1874,7 @@ class TranslationService:
         processor.apply_translations(
             input_path, output_path, translations, direction, self.config,
             selected_sections=selected_sections,
+            text_blocks=blocks,  # Pass extracted blocks for precise positioning
         )
 
         warnings = self._collect_processor_warnings(processor)

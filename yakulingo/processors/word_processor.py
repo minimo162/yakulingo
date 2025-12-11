@@ -392,11 +392,12 @@ class WordProcessor(FileProcessor):
         direction: str = "jp_to_en",
         settings=None,
         selected_sections: Optional[list[int]] = None,
+        text_blocks=None,  # Accept but unused (for API compatibility)
     ) -> None:
         """Apply translations while preserving formatting.
 
-        Note: selected_sections is accepted for API consistency but not used
-        for Word documents (Word doesn't have discrete sections like sheets/slides).
+        Note: selected_sections and text_blocks are accepted for API consistency
+        but not used for Word documents (Word doesn't have the same positioning issues).
         """
         doc = Document(input_path)
         try:

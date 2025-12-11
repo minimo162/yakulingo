@@ -1930,6 +1930,10 @@ class CopilotHandler:
         チャット入力欄が存在するかどうかでログイン状態を判定。
         ログインページや読み込み中の場合はログインが必要と判断。
 
+        重要: ログインページにいる場合はセレクタ検索をスキップして
+        LOGIN_REQUIREDを返す。これにより、ログインプロセス中の
+        ページ操作を防ぎ、サインインを妨害しないようにする。
+
         Args:
             timeout: セレクタ待機のタイムアウト（秒）
 
@@ -1946,6 +1950,21 @@ class CopilotHandler:
         PlaywrightTimeoutError = error_types['TimeoutError']
 
         try:
+            # 現在のURLを確認
+            current_url = self._page.url
+
+            # ログインページにいる場合はセレクタ検索をスキップ
+            # これにより、サインインプロセスを妨害しない
+            if _is_login_page(current_url):
+                logger.debug("On login page, skipping selector search: %s", current_url[:80])
+                return ConnectionState.LOGIN_REQUIRED
+
+            # Copilotドメインでない場合もスキップ
+            # （リダイレクト中の可能性）
+            if not _is_copilot_url(current_url):
+                logger.debug("Not on Copilot domain, skipping selector search: %s", current_url[:80])
+                return ConnectionState.LOGIN_REQUIRED
+
             # チャット入力欄の存在を確認（ログイン済みの証拠）
             input_selector = self.CHAT_INPUT_SELECTOR
             try:

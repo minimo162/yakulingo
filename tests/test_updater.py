@@ -404,6 +404,9 @@ class TestSourceCodeOnlyUpdate:
         assert "app.py" in AutoUpdater.SOURCE_FILES
         assert "pyproject.toml" in AutoUpdater.SOURCE_FILES
         assert "uv.toml" in AutoUpdater.SOURCE_FILES
+        # Dependency files
+        assert "requirements.txt" in AutoUpdater.SOURCE_FILES
+        assert "requirements_pdf.txt" in AutoUpdater.SOURCE_FILES
         # Scripts
         assert "YakuLingo.exe" in AutoUpdater.SOURCE_FILES
         # Documentation
@@ -411,7 +414,6 @@ class TestSourceCodeOnlyUpdate:
         # Files NOT in distribution
         assert "setup.vbs" not in AutoUpdater.SOURCE_FILES
         assert "setup.ps1" not in AutoUpdater.SOURCE_FILES
-        assert "requirements.txt" not in AutoUpdater.SOURCE_FILES
 
 # --- Tests: download_update() ---
 

@@ -560,12 +560,14 @@ class AutoUpdater:
     # 配布ZIPに含まれるファイルと一致させる（make_distribution.bat 参照）
     SOURCE_DIRS = ["yakulingo", "prompts", "config"]
     SOURCE_FILES = [
-        "app.py",           # エントリーポイント
-        "pyproject.toml",   # プロジェクト設定
-        "uv.lock",          # 依存関係ロックファイル
-        "uv.toml",          # UV設定
-        "YakuLingo.exe",    # 起動ランチャー
-        "README.md",        # ドキュメント
+        "app.py",               # エントリーポイント
+        "pyproject.toml",       # プロジェクト設定
+        "uv.lock",              # 依存関係ロックファイル
+        "uv.toml",              # UV設定
+        "requirements.txt",     # pip用依存関係ファイル
+        "requirements_pdf.txt", # PDF翻訳用依存関係ファイル
+        "YakuLingo.exe",        # 起動ランチャー
+        "README.md",            # ドキュメント
         # Note: glossary.csv はユーザー編集可能なため、アップデートで上書きしない
     ]
     # Note: config/settings.json は config/ フォルダごと上書きされる

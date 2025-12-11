@@ -1585,25 +1585,12 @@ class CopilotHandler:
                     exact_match_hwnd = hwnd
                     return False
 
+                # Only match by process ID to avoid interfering with user's Edge windows
                 if target_pid:
                     window_pid = wintypes.DWORD()
                     user32.GetWindowThreadProcessId(hwnd, ctypes.byref(window_pid))
                     if window_pid.value == target_pid and fallback_hwnd is None:
-                        fallback_hwnd = hwnd
-
-                # Match Copilot and related URLs/titles
-                # Note: "microsoft 365" (with space) covers "Microsoft 365 Copilot" title
-                if ("copilot" in window_title_lower or
-                    "m365" in window_title_lower or
-                    "microsoft 365" in window_title_lower or
-                    "sign in" in window_title_lower or
-                    "サインイン" in window_title_lower or
-                    "ログイン" in window_title_lower or
-                    "アカウント" in window_title_lower or
-                    # Edge window titles containing our Copilot URL patterns
-                    "m365.cloud.microsoft" in window_title_lower):
-                    if fallback_hwnd is None:
-                        logger.debug("Found Edge window by title pattern: %s", window_title[:60])
+                        logger.debug("Found Edge window by process ID: %s", window_title[:60])
                         fallback_hwnd = hwnd
 
                 return True
@@ -1619,9 +1606,11 @@ class CopilotHandler:
 
         Uses multiple approaches to ensure window activation:
         1. Find Edge window by exact page title match (most reliable when we know the title)
-        2. Find Edge window by process ID
-        3. Find Edge window by class name and generic title patterns (fallback)
-        4. Use SetForegroundWindow with workarounds for Windows restrictions
+        2. Find Edge window by process ID (only matches the Edge instance we started)
+        3. Use SetForegroundWindow with workarounds for Windows restrictions
+
+        Note: We intentionally avoid title pattern matching (e.g., "microsoft 365",
+        "sign in") to prevent interfering with user's other Edge windows.
 
         Args:
             page_title: The current page title from Playwright (for exact matching)

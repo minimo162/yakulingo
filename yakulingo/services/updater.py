@@ -686,11 +686,25 @@ for %%d in ({dirs_to_update}) do (
 
 REM Copy source code directories
 set "COPY_SUCCESS=0"
+echo   Debug: Source directory is {source_dir}
+echo   Debug: Listing source directory...
+dir "{source_dir}" 2^>nul | findstr /v "^$"
+echo.
 for %%d in ({dirs_to_update}) do (
     if exist "{source_dir}\\%%d" (
         echo   Copying: %%d
-        xcopy /e /y /i /q "{source_dir}\\%%d" "{app_dir}\\%%d\\" >nul
-        if not errorlevel 1 set "COPY_SUCCESS=1"
+        xcopy /e /y /i "{source_dir}\\%%d" "{app_dir}\\%%d\\" >nul
+        if errorlevel 1 (
+            echo   [ERROR] xcopy failed for %%d with errorlevel %ERRORLEVEL%
+        ) else (
+            REM Verify the copy was successful by checking for key files
+            if exist "{app_dir}\\%%d" (
+                set "COPY_SUCCESS=1"
+                echo   [OK] %%d copied successfully
+            ) else (
+                echo   [ERROR] %%d directory not created after xcopy
+            )
+        )
     ) else (
         echo   [WARNING] Source not found: {source_dir}\\%%d
     )
@@ -729,10 +743,25 @@ if exist "%SETTINGS_BACKUP%" (
 )
 
 REM Merge settings (add new items only) - run AFTER copying new source
-REM Only run if yakulingo directory exists (copy was successful)
+REM Only run if yakulingo module exists (not just directory, but actual module files)
 echo Merging settings...
-if not exist "yakulingo" (
-    echo   [SKIP] yakulingo directory not found - copy may have failed
+if not exist "yakulingo\__init__.py" (
+    echo   [SKIP] yakulingo module not found - copy may have failed
+    echo   Debug: Checking if yakulingo directory exists...
+    if exist "yakulingo" (
+        echo   Debug: Directory exists but __init__.py is missing
+        dir "yakulingo" 2^>nul
+    ) else (
+        echo   Debug: Directory does not exist
+    )
+    echo   Debug: Checking source directory...
+    if exist "{source_dir}\yakulingo\__init__.py" (
+        echo   Debug: Source module exists at {source_dir}\yakulingo\__init__.py
+    ) else (
+        echo   Debug: Source module NOT found at {source_dir}\yakulingo\__init__.py
+        echo   Debug: Listing source directory contents...
+        dir "{source_dir}" 2^>nul
+    )
     goto :skip_merge
 )
 if exist "{app_dir}\\.venv\\Scripts\\python.exe" (
@@ -741,11 +770,11 @@ if exist "{app_dir}\\.venv\\Scripts\\python.exe" (
 :skip_merge
 
 REM Merge glossary (add new terms only)
-REM Only run if yakulingo directory exists (copy was successful)
+REM Only run if yakulingo module exists (copy was successful)
 echo.
 echo Updating glossary...
-if not exist "yakulingo" (
-    echo   [SKIP] yakulingo directory not found
+if not exist "yakulingo\__init__.py" (
+    echo   [SKIP] yakulingo module not found
     goto :skip_glossary
 )
 if exist "{source_dir}\\glossary.csv" (
@@ -885,20 +914,33 @@ if [ -f "$SETTINGS_BACKUP" ]; then
 fi
 
 # 設定ファイルのマージ（新規項目のみ追加）
-# yakulingoディレクトリが存在する場合のみ実行
+# yakulingoモジュールが存在する場合のみ実行（ディレクトリだけでなく実際のモジュールファイル）
 echo "設定を更新しています..."
-if [ ! -d "yakulingo" ]; then
-    echo "  [SKIP] yakulingoディレクトリが見つかりません - コピーが失敗した可能性があります"
+if [ ! -f "yakulingo/__init__.py" ]; then
+    echo "  [SKIP] yakulingoモジュールが見つかりません - コピーが失敗した可能性があります"
+    if [ -d "yakulingo" ]; then
+        echo "  Debug: ディレクトリは存在しますが__init__.pyがありません"
+        ls -la "yakulingo" 2>/dev/null
+    else
+        echo "  Debug: ディレクトリが存在しません"
+    fi
+    if [ -f "{source_dir}/yakulingo/__init__.py" ]; then
+        echo "  Debug: ソースモジュールは存在します: {source_dir}/yakulingo/__init__.py"
+    else
+        echo "  Debug: ソースモジュールが見つかりません"
+        echo "  Debug: ソースディレクトリの内容:"
+        ls -la "{source_dir}" 2>/dev/null
+    fi
 elif [ -f "{app_dir}/.venv/bin/python" ]; then
     "{app_dir}/.venv/bin/python" -c "from pathlib import Path; import sys; sys.path.insert(0, str(Path(r'{app_dir}'))); from yakulingo.services.updater import merge_settings; added = merge_settings(Path(r'{app_dir}'), Path(r'{source_dir}')); print(f'  追加: {{added}} 件の新規設定' if added > 0 else '  新規設定はありません' if added == 0 else '  設定ファイルを新規作成しました')"
 fi
 
 # 用語集のマージ（新規用語のみ追加）
-# yakulingoディレクトリが存在する場合のみ実行
+# yakulingoモジュールが存在する場合のみ実行
 echo ""
 echo "用語集を更新しています..."
-if [ ! -d "yakulingo" ]; then
-    echo "  [SKIP] yakulingoディレクトリが見つかりません"
+if [ ! -f "yakulingo/__init__.py" ]; then
+    echo "  [SKIP] yakulingoモジュールが見つかりません"
 elif [ -f "{source_dir}/glossary.csv" ]; then
     if [ -f "{app_dir}/.venv/bin/python" ]; then
         "{app_dir}/.venv/bin/python" -c "from pathlib import Path; import sys; sys.path.insert(0, str(Path(r'{app_dir}'))); from yakulingo.services.updater import merge_glossary; added = merge_glossary(Path(r'{app_dir}'), Path(r'{source_dir}')); print(f'  追加: {{added}} 件の新規用語' if added > 0 else '  新規用語はありません' if added == 0 else '  用語集を新規作成しました')"

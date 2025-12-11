@@ -230,9 +230,9 @@ def _create_large_input_panel(
                 )
 
                 # Bottom controls
-                with ui.row().classes('p-3 justify-between items-center'):
+                with ui.row().classes('p-3 justify-between items-center flex-wrap gap-y-2'):
                     # Left side: character count and attached files
-                    with ui.row().classes('items-center gap-2 flex-1'):
+                    with ui.row().classes('items-center gap-2 flex-1 min-w-0 flex-wrap'):
                         # Character count
                         if state.source_text:
                             ui.label(f'{len(state.source_text)} 文字').classes('text-xs text-muted')
@@ -608,9 +608,9 @@ def create_text_panel(
                 )
 
                 # Bottom controls
-                with ui.row().classes('p-3 justify-between items-center'):
+                with ui.row().classes('p-3 justify-between items-center flex-wrap gap-y-2'):
                     # Left side: character count and attached files
-                    with ui.row().classes('items-center gap-2 flex-1'):
+                    with ui.row().classes('items-center gap-2 flex-1 min-w-0 flex-wrap'):
                         # Character count
                         if state.source_text:
                             ui.label(f'{len(state.source_text)} 文字').classes('text-xs text-muted')

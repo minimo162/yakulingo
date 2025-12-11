@@ -1798,6 +1798,7 @@ class PdfProcessor(FileProcessor):
                     self._record_failed_page(page_num, "Page has no rect attribute")
                     continue
                 page_height = page.rect.height
+                page_width = page.rect.width
                 if page_height <= 0:
                     logger.warning(
                         "Page %d has invalid height: %.2f, skipping",
@@ -1983,6 +1984,41 @@ class PdfProcessor(FileProcessor):
                                     box_width, estimated_width, block_id, original_line_count
                                 )
                                 box_width = estimated_width
+
+                        # Also handle single-line blocks that would fragment excessively
+                        # Japanese → English translation often doubles text length, causing
+                        # a single-line original to become 5+ lines if box_width isn't expanded.
+                        elif original_line_count == 1 and box_width > 0:
+                            # Estimate font size from box_height (single line)
+                            estimated_font_size = box_height / DEFAULT_LINE_HEIGHT
+                            estimated_font_size = max(MIN_FONT_SIZE, min(estimated_font_size, MAX_FONT_SIZE))
+                            # Check if text is mostly CJK
+                            cjk_chars = sum(1 for c in translated if ord(c) > 0x2E7F)
+                            avg_char_width = estimated_font_size if cjk_chars > len(translated) / 2 else estimated_font_size * 0.5
+                            # Estimate how many lines translated text would need
+                            chars_per_line = box_width / avg_char_width if avg_char_width > 0 else 1
+                            estimated_output_lines = len(translated) / max(1, chars_per_line)
+
+                            # If translated text would need more than 2 lines, expand box_width
+                            # to fit in approximately 2 lines (reasonable for single-line original)
+                            if estimated_output_lines > 2:
+                                target_lines = max(2, int(estimated_output_lines / 3))  # Reduce lines by ~3x
+                                avg_chars_per_line = len(translated) / target_lines
+                                estimated_width = avg_chars_per_line * avg_char_width
+
+                                # Cap at page width minus margins (assume ~50pt margin on each side)
+                                page_margin = 50.0
+                                max_width = page_width - 2 * page_margin if page_width > 0 else 500.0
+                                estimated_width = min(estimated_width, max_width)
+
+                                if estimated_width > box_width:
+                                    logger.debug(
+                                        "Expanding box_width from %.1f to %.1f for single-line block %s "
+                                        "(text_len=%d would need ~%.1f lines, targeting %d lines)",
+                                        box_width, estimated_width, block_id,
+                                        len(translated), estimated_output_lines, target_lines
+                                    )
+                                    box_width = estimated_width
 
                         # Note: No white rectangle needed anymore.
                         # ContentStreamReplacer.set_base_stream() already filtered out

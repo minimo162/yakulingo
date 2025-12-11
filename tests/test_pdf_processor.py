@@ -321,9 +321,21 @@ class TestVflag:
         """Normal text with normal fonts should not be flagged"""
         assert vflag("Arial", "Hello") is False
         assert vflag("Times New Roman", "World") is False
-        # Note: "MS Mincho" matches MS.M pattern, so use different font
         assert vflag("IPAMincho", "日本語") is False
         assert vflag("Noto Sans", "テスト") is False
+        # MS-Mincho/MS-Gothic are common Japanese fonts (NOT math fonts)
+        assert vflag("MS-Mincho", "日本語") is False
+        assert vflag("MS Mincho", "テスト") is False
+        assert vflag("ARDTDE+MS-Mincho", "添付資料") is False  # Subset font
+
+    def test_vflag_ams_math_fonts(self):
+        """AMS math fonts (MSAM/MSBM) should be detected as formula fonts"""
+        # MSAM - AMS Math Symbols
+        assert vflag("MSAM10", "x") is True
+        assert vflag("MSAM5", "∀") is True
+        # MSBM - AMS Bold Math
+        assert vflag("MSBM10", "y") is True
+        assert vflag("SUBSET+MSBM10", "z") is True  # With subset prefix
 
     def test_vflag_japanese_modifier_letters(self):
         """Japanese modifier letters (長音符・踊り字) should NOT be detected as formula.

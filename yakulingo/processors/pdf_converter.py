@@ -54,8 +54,9 @@ MIN_LINE_HEIGHT = 1.0
 LINE_HEIGHT_COMPRESSION_STEP = 0.05
 
 # Formula font pattern (PDFMathTranslate reference)
+# Note: MS[AB]M matches MSAM/MSBM (AMS Math fonts) but NOT MS-Mincho/MS-Gothic
 DEFAULT_VFONT_PATTERN = (
-    r"(CM[^R]|MS.M|XY|MT|BL|RM|EU|LA|RS|LINE|LCIRCLE|"
+    r"(CM[^R]|MS[AB]M|XY|MT|BL|RM|EU|LA|RS|LINE|LCIRCLE|"
     r"TeX-|rsfs|txsy|wasy|stmary|"
     r".*Mono|.*Code|.*Ital|.*Sym|.*Math)"
 )

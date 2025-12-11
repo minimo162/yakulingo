@@ -2285,11 +2285,24 @@ class YakuLingoApp:
             self.state.file_output_language = "en" if is_japanese else "jp"
 
             # Refresh UI to show detected language
-            with client:
-                self._refresh_content()
+            # Re-acquire client reference to ensure it's still valid
+            with self._client_lock:
+                client = self._client
+            if client:
+                try:
+                    with client:
+                        self._refresh_content()
+                except RuntimeError as e:
+                    logger.warning(
+                        "Failed to refresh UI after language detection: %s", e
+                    )
+            else:
+                logger.debug(
+                    "Client no longer available after language detection"
+                )
 
         except Exception as e:
-            logger.debug("Language detection failed: %s", e)
+            logger.warning("Language detection failed: %s", e)
             # Keep default (no auto-detection, user must choose)
 
     async def _translate_file(self):

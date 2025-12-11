@@ -313,9 +313,12 @@ class YakuLingoApp:
             logger.debug("Hotkey triggered but no text provided")
             return
 
-        # Skip if already translating
+        # Skip if already translating (text or file)
         if self.state.text_translating:
-            logger.debug("Hotkey ignored - translation in progress")
+            logger.debug("Hotkey ignored - text translation in progress")
+            return
+        if self.state.file_state == FileState.TRANSLATING:
+            logger.debug("Hotkey ignored - file translation in progress")
             return
 
         # Skip if client not ready
@@ -340,7 +343,10 @@ class YakuLingoApp:
         """
         # Double-check: Skip if translation started while we were waiting
         if self.state.text_translating:
-            logger.debug("Hotkey handler skipped - translation already in progress")
+            logger.debug("Hotkey handler skipped - text translation already in progress")
+            return
+        if self.state.file_state == FileState.TRANSLATING:
+            logger.debug("Hotkey handler skipped - file translation already in progress")
             return
 
         trace_id = f"hotkey-{uuid.uuid4().hex[:8]}"

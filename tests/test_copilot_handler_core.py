@@ -257,9 +257,14 @@ class TestCopilotHandlerGetResponse:
         mock_stop_button = Mock()
         mock_stop_button.is_visible.return_value = False
 
+        # Mock chat input element for _is_page_valid check
+        mock_chat_input = Mock()
+
         def mock_query_selector(selector):
             if 'stopBackground' in selector:
                 return mock_stop_button
+            if 'm365-chat-editor-target-element' in selector:
+                return mock_chat_input  # Page is valid
             return None
 
         def mock_query_selector_all(selector):
@@ -273,6 +278,8 @@ class TestCopilotHandlerGetResponse:
         mock_page.query_selector.side_effect = mock_query_selector
         mock_page.query_selector_all.side_effect = mock_query_selector_all
         mock_page.wait_for_selector.return_value = None
+        # Set Copilot URL for _is_page_valid check
+        mock_page.url = "https://m365.cloud.microsoft/chat/"
 
         handler._page = mock_page
 
@@ -302,9 +309,14 @@ class TestCopilotHandlerGetResponse:
         mock_stop_button = Mock()
         mock_stop_button.is_visible.return_value = False
 
+        # Mock chat input element for _is_page_valid check
+        mock_chat_input = Mock()
+
         def mock_query_selector(selector):
             if 'stopBackground' in selector:
                 return mock_stop_button
+            if 'm365-chat-editor-target-element' in selector:
+                return mock_chat_input  # Page is valid
             return None
 
         def mock_query_selector_all(selector):
@@ -318,6 +330,8 @@ class TestCopilotHandlerGetResponse:
         mock_page.query_selector.side_effect = mock_query_selector
         mock_page.query_selector_all.side_effect = mock_query_selector_all
         mock_page.wait_for_selector.return_value = None
+        # Set Copilot URL for _is_page_valid check
+        mock_page.url = "https://m365.cloud.microsoft/chat/"
 
         handler._page = mock_page
 
@@ -379,9 +393,14 @@ class TestCopilotHandlerGetResponse:
         mock_stop_button = Mock()
         mock_stop_button.is_visible.return_value = False
 
+        # Mock chat input element for _is_page_valid check
+        mock_chat_input = Mock()
+
         def mock_query_selector(selector):
             if 'stopBackground' in selector:
                 return mock_stop_button
+            if 'm365-chat-editor-target-element' in selector:
+                return mock_chat_input  # Page is valid
             return None
 
         def mock_query_selector_all(selector):
@@ -398,6 +417,8 @@ class TestCopilotHandlerGetResponse:
         mock_page.query_selector.side_effect = mock_query_selector
         mock_page.query_selector_all.side_effect = mock_query_selector_all
         mock_page.wait_for_selector.return_value = None
+        # Set Copilot URL for _is_page_valid check
+        mock_page.url = "https://m365.cloud.microsoft/chat/"
 
         handler._page = mock_page
 

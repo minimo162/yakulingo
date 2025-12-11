@@ -1404,6 +1404,18 @@ class CopilotHandler:
 
                 # If we're back on a Copilot page (not login page), check chat UI again
                 if _is_copilot_url(current_url) and not _is_login_page(current_url):
+                    # If on Copilot domain but not on /chat path (e.g., /home, /landing),
+                    # navigate to chat page to avoid getting stuck
+                    if "/chat" not in current_url:
+                        logger.debug("Auto-login: on Copilot domain but not /chat (%s), navigating...", current_url[:60])
+                        try:
+                            self._page.goto(self.COPILOT_URL, wait_until='commit', timeout=30000)
+                            time.sleep(1.0)  # Brief wait for page load
+                            # Re-check URL after navigation
+                            current_url = self._page.url
+                        except (PlaywrightTimeoutError, PlaywrightError) as nav_err:
+                            logger.debug("Failed to navigate to chat: %s", nav_err)
+
                     # Give a bit more time for chat UI to appear after redirect
                     try:
                         self._page.wait_for_selector(input_selector, timeout=2000, state='visible')
@@ -1426,6 +1438,19 @@ class CopilotHandler:
                                     elapsed
                                 )
                                 return False  # Manual login required
+                            elif not _is_copilot_url(current_url):
+                                # Not on Copilot domain and not on login page
+                                # (e.g., Edge home page like edge://newtab, msn.com, etc.)
+                                # Navigate to Copilot to get things moving
+                                logger.info(
+                                    "URL stable on non-Copilot page (%s), navigating to Copilot...",
+                                    current_url[:60]
+                                )
+                                try:
+                                    self._page.goto(self.COPILOT_URL, wait_until='commit', timeout=30000)
+                                    stable_count = 0  # Reset counter after navigation
+                                except (PlaywrightTimeoutError, PlaywrightError) as nav_err:
+                                    logger.debug("Failed to navigate to Copilot: %s", nav_err)
                     else:
                         # URL changed - auto-login is progressing
                         logger.debug("Auto-login progressing: %s -> %s", last_url[:50], current_url[:50])
@@ -1930,6 +1955,10 @@ class CopilotHandler:
         チャット入力欄が存在するかどうかでログイン状態を判定。
         ログインページや読み込み中の場合はログインが必要と判断。
 
+        重要: ログインページにいる場合はセレクタ検索をスキップして
+        LOGIN_REQUIREDを返す。これにより、ログインプロセス中の
+        ページ操作を防ぎ、サインインを妨害しないようにする。
+
         Args:
             timeout: セレクタ待機のタイムアウト（秒）
 
@@ -1946,6 +1975,21 @@ class CopilotHandler:
         PlaywrightTimeoutError = error_types['TimeoutError']
 
         try:
+            # 現在のURLを確認
+            current_url = self._page.url
+
+            # ログインページにいる場合はセレクタ検索をスキップ
+            # これにより、サインインプロセスを妨害しない
+            if _is_login_page(current_url):
+                logger.debug("On login page, skipping selector search: %s", current_url[:80])
+                return ConnectionState.LOGIN_REQUIRED
+
+            # Copilotドメインでない場合もスキップ
+            # （リダイレクト中の可能性）
+            if not _is_copilot_url(current_url):
+                logger.debug("Not on Copilot domain, skipping selector search: %s", current_url[:80])
+                return ConnectionState.LOGIN_REQUIRED
+
             # チャット入力欄の存在を確認（ログイン済みの証拠）
             input_selector = self.CHAT_INPUT_SELECTOR
             try:

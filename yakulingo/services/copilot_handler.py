@@ -2739,7 +2739,7 @@ class CopilotHandler:
                 # using both click and focus for maximum reliability
                 try:
                     input_elem.evaluate('el => { el.click(); el.focus(); }')
-                    time.sleep(0.15)
+                    time.sleep(0.3)  # Increased from 0.15s - first send often fails with shorter wait
                 except Exception as e:
                     logger.debug("Re-focus after fill failed: %s", e)
 
@@ -2755,7 +2755,7 @@ class CopilotHandler:
                     # Use JS click + focus for more reliable focus setting
                     try:
                         input_elem.evaluate('el => { el.click(); el.focus(); }')
-                        time.sleep(0.1)
+                        time.sleep(0.2)  # Increased from 0.1s for more reliable first send
                     except Exception:
                         pass
                     input_elem.press("Enter")

@@ -586,7 +586,16 @@ class AutoUpdater:
             # アプリケーションディレクトリを取得
             app_dir = self._get_app_dir()
 
-            # 一時ディレクトリに展開
+            # キャッシュディレクトリにソースをコピー（バッチファイル実行時まで保持）
+            # Note: tempfile.TemporaryDirectory()は with ブロックを抜けると削除されるため、
+            # バッチファイルが実行される前にソースが消えてしまう問題があった
+            persistent_source_dir = self.cache_dir / "update_source"
+
+            # 既存のソースディレクトリを削除
+            if persistent_source_dir.exists():
+                shutil.rmtree(persistent_source_dir)
+
+            # 一時ディレクトリに展開してからコピー
             with tempfile.TemporaryDirectory() as temp_dir:
                 temp_path = Path(temp_dir)
 
@@ -606,11 +615,14 @@ class AutoUpdater:
                 if internal_dir.exists() and internal_dir.is_dir():
                     source_dir = internal_dir
 
-                # Windowsの場合、バッチファイルでアップデートを実行
-                if platform.system() == "Windows":
-                    return self._install_windows(source_dir, app_dir)
-                else:
-                    return self._install_unix(source_dir, app_dir)
+                # キャッシュディレクトリにコピー（バッチファイル実行時まで保持）
+                shutil.copytree(source_dir, persistent_source_dir)
+
+            # Windowsの場合、バッチファイルでアップデートを実行
+            if platform.system() == "Windows":
+                return self._install_windows(persistent_source_dir, app_dir)
+            else:
+                return self._install_unix(persistent_source_dir, app_dir)
 
         except (OSError, zipfile.BadZipFile, shutil.Error, ValueError) as e:
             logger.error("インストールに失敗: %s", e)
@@ -673,11 +685,31 @@ for %%d in ({dirs_to_update}) do (
 )
 
 REM Copy source code directories
+set "COPY_SUCCESS=0"
 for %%d in ({dirs_to_update}) do (
     if exist "{source_dir}\\%%d" (
         echo   Copying: %%d
         xcopy /e /y /i /q "{source_dir}\\%%d" "{app_dir}\\%%d\\" >nul
+        if not errorlevel 1 set "COPY_SUCCESS=1"
+    ) else (
+        echo   [WARNING] Source not found: {source_dir}\\%%d
     )
+)
+
+REM Check if at least one directory was copied
+if "%COPY_SUCCESS%"=="0" (
+    echo.
+    echo ERROR: No source directories were copied!
+    echo Source directory: {source_dir}
+    echo.
+    echo Please check if the update package is valid.
+    echo Attempting to restore from backup...
+    if exist "%SETTINGS_BACKUP%" (
+        if not exist "config" mkdir "config"
+        copy /y "%SETTINGS_BACKUP%" "config\\settings.json" >nul
+    )
+    pause
+    exit /b 1
 )
 
 REM Copy source code files
@@ -688,22 +720,34 @@ for %%f in ({files_to_update}) do (
     )
 )
 
-REM Restore user settings
+REM Restore user settings (create config directory if needed)
 if exist "%SETTINGS_BACKUP%" (
     echo Restoring user settings...
+    if not exist "config" mkdir "config"
     copy /y "%SETTINGS_BACKUP%" "config\\settings.json" >nul
     del "%SETTINGS_BACKUP%" >nul 2>&1
 )
 
 REM Merge settings (add new items only) - run AFTER copying new source
+REM Only run if yakulingo directory exists (copy was successful)
 echo Merging settings...
+if not exist "yakulingo" (
+    echo   [SKIP] yakulingo directory not found - copy may have failed
+    goto :skip_merge
+)
 if exist "{app_dir}\\.venv\\Scripts\\python.exe" (
     "{app_dir}\\.venv\\Scripts\\python.exe" -c "from pathlib import Path; import sys; sys.path.insert(0, str(Path(r'{app_dir}'))); from yakulingo.services.updater import merge_settings; added = merge_settings(Path(r'{app_dir}'), Path(r'{source_dir}')); print(f'  Added: {{added}} new settings' if added > 0 else '  No new settings' if added == 0 else '  Created new settings file')"
 )
+:skip_merge
 
 REM Merge glossary (add new terms only)
+REM Only run if yakulingo directory exists (copy was successful)
 echo.
 echo Updating glossary...
+if not exist "yakulingo" (
+    echo   [SKIP] yakulingo directory not found
+    goto :skip_glossary
+)
 if exist "{source_dir}\\glossary.csv" (
     if exist "{app_dir}\\.venv\\Scripts\\python.exe" (
         "{app_dir}\\.venv\\Scripts\\python.exe" -c "from pathlib import Path; import sys; sys.path.insert(0, str(Path(r'{app_dir}'))); from yakulingo.services.updater import merge_glossary; added = merge_glossary(Path(r'{app_dir}'), Path(r'{source_dir}')); print(f'  Added: {{added}} new terms' if added > 0 else '  No new terms' if added == 0 else '  Created new glossary file')"
@@ -711,6 +755,7 @@ if exist "{source_dir}\\glossary.csv" (
         echo   [SKIP] Python environment not found
     )
 )
+:skip_glossary
 
 echo.
 echo ============================================================
@@ -720,6 +765,11 @@ echo.
 echo Please restart the application.
 echo.
 pause
+
+REM Cleanup: Delete update source directory
+if exist "{source_dir}" (
+    rmdir /s /q "{source_dir}"
+)
 
 REM Delete self
 del "%~f0"
@@ -791,23 +841,31 @@ for dir in {dirs_to_update}; do
 done
 
 # ソースコードディレクトリをコピー
+COPY_SUCCESS=0
 for dir in {dirs_to_update}; do
     if [ -d "{source_dir}/$dir" ]; then
         echo "  コピー: $dir"
         cp -r "{source_dir}/$dir" "{app_dir}/$dir"
+        COPY_SUCCESS=1
+    else
+        echo "  [警告] ソースが見つかりません: {source_dir}/$dir"
     fi
 done
 
-# ユーザー設定を復元してマージ
-if [ -f "$SETTINGS_BACKUP" ]; then
-    echo "ユーザー設定を復元しています..."
-    cp "$SETTINGS_BACKUP" "config/settings.json"
-    rm -f "$SETTINGS_BACKUP"
-fi
-# 設定ファイルのマージ（新規項目のみ追加）
-echo "設定を更新しています..."
-if [ -f "{app_dir}/.venv/bin/python" ]; then
-    "{app_dir}/.venv/bin/python" -c "from pathlib import Path; import sys; sys.path.insert(0, str(Path(r'{app_dir}'))); from yakulingo.services.updater import merge_settings; added = merge_settings(Path(r'{app_dir}'), Path(r'{source_dir}')); print(f'  追加: {{added}} 件の新規設定' if added > 0 else '  新規設定はありません' if added == 0 else '  設定ファイルを新規作成しました')"
+# コピー成功確認
+if [ "$COPY_SUCCESS" -eq 0 ]; then
+    echo ""
+    echo "エラー: ソースディレクトリがコピーされませんでした！"
+    echo "ソースディレクトリ: {source_dir}"
+    echo ""
+    echo "アップデートパッケージが正しいか確認してください。"
+    echo "バックアップから復元を試みます..."
+    if [ -f "$SETTINGS_BACKUP" ]; then
+        mkdir -p "config"
+        cp "$SETTINGS_BACKUP" "config/settings.json"
+    fi
+    read -p "Press Enter to exit..."
+    exit 1
 fi
 
 # ソースコードファイルをコピー
@@ -818,10 +876,30 @@ for file in {files_to_update}; do
     fi
 done
 
+# ユーザー設定を復元してマージ（configディレクトリがなければ作成）
+if [ -f "$SETTINGS_BACKUP" ]; then
+    echo "ユーザー設定を復元しています..."
+    mkdir -p "config"
+    cp "$SETTINGS_BACKUP" "config/settings.json"
+    rm -f "$SETTINGS_BACKUP"
+fi
+
+# 設定ファイルのマージ（新規項目のみ追加）
+# yakulingoディレクトリが存在する場合のみ実行
+echo "設定を更新しています..."
+if [ ! -d "yakulingo" ]; then
+    echo "  [SKIP] yakulingoディレクトリが見つかりません - コピーが失敗した可能性があります"
+elif [ -f "{app_dir}/.venv/bin/python" ]; then
+    "{app_dir}/.venv/bin/python" -c "from pathlib import Path; import sys; sys.path.insert(0, str(Path(r'{app_dir}'))); from yakulingo.services.updater import merge_settings; added = merge_settings(Path(r'{app_dir}'), Path(r'{source_dir}')); print(f'  追加: {{added}} 件の新規設定' if added > 0 else '  新規設定はありません' if added == 0 else '  設定ファイルを新規作成しました')"
+fi
+
 # 用語集のマージ（新規用語のみ追加）
+# yakulingoディレクトリが存在する場合のみ実行
 echo ""
 echo "用語集を更新しています..."
-if [ -f "{source_dir}/glossary.csv" ]; then
+if [ ! -d "yakulingo" ]; then
+    echo "  [SKIP] yakulingoディレクトリが見つかりません"
+elif [ -f "{source_dir}/glossary.csv" ]; then
     if [ -f "{app_dir}/.venv/bin/python" ]; then
         "{app_dir}/.venv/bin/python" -c "from pathlib import Path; import sys; sys.path.insert(0, str(Path(r'{app_dir}'))); from yakulingo.services.updater import merge_glossary; added = merge_glossary(Path(r'{app_dir}'), Path(r'{source_dir}')); print(f'  追加: {{added}} 件の新規用語' if added > 0 else '  新規用語はありません' if added == 0 else '  用語集を新規作成しました')"
     else
@@ -835,6 +913,11 @@ echo "アップデート完了！"
 echo "============================================================"
 echo ""
 echo "アプリケーションを再起動してください。"
+
+# Cleanup: Delete update source directory
+if [ -d "{source_dir}" ]; then
+    rm -rf "{source_dir}"
+fi
 
 # 自身を削除
 rm "$0"

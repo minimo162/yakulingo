@@ -113,15 +113,15 @@
     --md-expressive-border: 1px solid color-mix(in srgb, var(--md-sys-color-outline-variant) 60%, transparent);
     --md-expressive-outline: 1px solid color-mix(in srgb, var(--md-sys-color-outline-variant) 50%, transparent);
 
-    /* Sidebar, Input Panel, and Result Content widths are set dynamically via JavaScript
-       based on monitor resolution. Default values as fallback. */
+    /* Panel widths are calculated dynamically by JavaScript based on window.innerWidth.
+       These defaults are only visible until JS executes (typically < 100ms). */
     --sidebar-width: 260px;
-    --input-panel-width: 420px;
-    --result-content-width: 800px;
+    --input-panel-width: 400px;
+    --result-content-width: 720px;
     --input-panel-width-wide: 100%;  /* Full width input for 2-column mode */
-    --input-panel-max-width: 880px;  /* Larger max width for input card */
+    --input-panel-max-width: 800px;
     --input-min-height: calc(9 * 1.5 * 1.125rem + 1.6rem);  /* 9 lines (line-height 1.5) + padding */
-    --input-max-height: 450px;  /* Default fallback, dynamically set based on resolution */
+    --input-max-height: 450px;  /* Dynamically set based on resolution */
 
     /* Viewport height unit that adapts to native window chrome (falls back to 100vh) */
     --viewport-height: 100vh;
@@ -1506,62 +1506,28 @@ textarea:focus-visible {
     padding: 0;
 }
 
-/* === Media Queries for Resolution Fallback === */
-/* These provide CSS-only fallback when JavaScript hasn't updated CSS variables yet */
+/* === Media Queries for Font Size Scaling === */
+/* Panel sizes are calculated dynamically by JavaScript to avoid layout shift.
+   Only font size uses media queries as a CSS-only fallback. */
 
-/* Small screens (< 1400px) - compact layout */
 @media (max-width: 1399px) {
-    :root {
-        --sidebar-width: 220px;
-        --input-panel-width: 340px;
-        --result-content-width: 580px;
-        --input-panel-max-width: 640px;  /* Larger input card */
-        --base-font-size: 14px;
-    }
+    :root { --base-font-size: 14px; }
 }
 
-/* Medium screens (1400px - 1599px) - standard layout */
 @media (min-width: 1400px) and (max-width: 1599px) {
-    :root {
-        --sidebar-width: 260px;
-        --input-panel-width: 380px;
-        --result-content-width: 680px;
-        --input-panel-max-width: 720px;  /* Larger input card */
-        --base-font-size: 15px;
-    }
+    :root { --base-font-size: 15px; }
 }
 
-/* Large screens (1600px - 1899px) - expanded layout */
 @media (min-width: 1600px) and (max-width: 1899px) {
-    :root {
-        --sidebar-width: 260px;
-        --input-panel-width: 400px;
-        --result-content-width: 720px;
-        --input-panel-max-width: 800px;  /* Larger input card */
-        --base-font-size: 15.5px;
-    }
+    :root { --base-font-size: 15.5px; }
 }
 
-/* Extra large screens (1900px+) - full layout */
-@media (min-width: 1900px) {
-    :root {
-        --sidebar-width: 260px;
-        --input-panel-width: 420px;
-        --result-content-width: 800px;
-        --input-panel-max-width: 880px;  /* Larger input card */
-        --base-font-size: 16px;
-    }
+@media (min-width: 1900px) and (max-width: 2199px) {
+    :root { --base-font-size: 16px; }
 }
 
-/* Very large screens (2200px+) - scaled up layout */
 @media (min-width: 2200px) {
-    :root {
-        --sidebar-width: 300px;
-        --input-panel-width: 480px;
-        --result-content-width: 920px;
-        --input-panel-max-width: 1000px;  /* Larger input card */
-        --base-font-size: 17px;
-    }
+    :root { --base-font-size: 17px; }
 }
 
 /* === Dialog === */

@@ -86,11 +86,17 @@
     --md-sys-typescale-weight-semibold: 600;  /* Section headers */
     --md-sys-typescale-weight-bold: 700;      /* Headlines, brand */
 
-    /* Motion - M3 standard easing */
-    --md-sys-motion-easing-standard: cubic-bezier(0.2, 0, 0, 1);
-    --md-sys-motion-easing-spring: cubic-bezier(0.175, 0.885, 0.32, 1.275);
-    --md-sys-motion-duration-short: 200ms;
-    --md-sys-motion-duration-medium: 300ms;
+    /* Motion - Smooth fluid easing (ヌメヌメとした流れるような動き) */
+    --md-sys-motion-easing-standard: cubic-bezier(0.4, 0, 0.2, 1);      /* M3標準、柔らかい減速 */
+    --md-sys-motion-easing-spring: cubic-bezier(0.175, 0.885, 0.32, 1.275);  /* バウンス効果 */
+    --md-sys-motion-easing-fluid: cubic-bezier(0.22, 0.61, 0.36, 1);    /* 流体的な動き */
+    --md-sys-motion-easing-smooth: cubic-bezier(0.25, 0.1, 0.25, 1);    /* なめらかな加減速 */
+    --md-sys-motion-easing-organic: cubic-bezier(0.4, 0, 0, 1);         /* 自然な動き */
+    --md-sys-motion-duration-instant: 100ms;   /* 瞬時のフィードバック */
+    --md-sys-motion-duration-short: 250ms;     /* 短い遷移 */
+    --md-sys-motion-duration-medium: 400ms;    /* 標準遷移 */
+    --md-sys-motion-duration-long: 600ms;      /* 長い遷移 */
+    --md-sys-motion-duration-emphasis: 800ms;  /* 強調遷移 */
 
     /* Elevation - very subtle shadows (Nani-style: white cards floating on gray bg) */
     --md-sys-elevation-1: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.02);
@@ -419,10 +425,12 @@ body {
     background: transparent;
     /* Vertical indicator line on left (thicker) */
     border-left: 4px solid transparent;
-    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
-    animation: fadeIn var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-standard) backwards;
+    /* ヌメヌメとした滑らかな遷移 */
+    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-fluid);
+    animation: slideInFromLeft var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-fluid) backwards;
     position: relative;
     cursor: pointer;
+    transform: translateX(0);
 }
 
 /* Staggered nav item animations */
@@ -434,6 +442,8 @@ body {
 .nav-item:hover {
     background: color-mix(in srgb, var(--md-sys-color-on-surface) 5%, transparent);
     color: var(--md-sys-color-on-surface);
+    /* 微細な浮遊感 */
+    transform: translateX(4px);
 }
 
 /* M3 focus state */
@@ -515,12 +525,25 @@ body {
     padding-right: 1.75rem;  /* Space for menu button */
     border-radius: var(--md-sys-shape-corner-medium);
     cursor: pointer;
-    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+    /* ヌメヌメとした滑らかな遷移 */
+    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-fluid);
     position: relative;
-    animation: fadeIn var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-standard) backwards;
+    animation: slideInFromLeft var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-fluid) backwards;
     width: 100%;
     max-width: 100%;
     box-sizing: border-box;
+    transform: translateX(0);
+}
+
+@keyframes slideInFromLeft {
+    from {
+        opacity: 0;
+        transform: translateX(-12px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
 }
 
 /* History item text container - ensure text is visible and fills available space */
@@ -563,6 +586,8 @@ body {
 
 .history-item:hover {
     background: var(--md-sys-color-surface-container);
+    /* 微細な浮遊感 */
+    transform: translateX(4px);
 }
 
 /* Note: .history-menu-btn is defined below in the Nani-inspired enhancements section */
@@ -639,21 +664,46 @@ body {
     box-shadow: var(--md-sys-elevation-2);
     border: var(--md-card-border);
     overflow: hidden;
-    animation: fadeInSpring 400ms var(--md-sys-motion-easing-spring);
+    animation: cardFloatIn var(--md-sys-motion-duration-long) var(--md-sys-motion-easing-fluid);
     position: relative;
-    transition: box-shadow var(--md-sys-motion-duration-short), border-color var(--md-sys-motion-duration-short);
+    /* ヌメヌメとした滑らかな遷移 */
+    transition: all var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-fluid);
+    transform: translateY(0);
+}
+
+/* カードホバー時の浮遊感 */
+.main-card:hover {
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08), 0 4px 8px rgba(0, 0, 0, 0.04);
+    transform: translateY(-2px);
 }
 
 .main-card-inner {
     background: transparent;
     border-radius: calc(var(--md-sys-shape-corner-3xl) - 0.125rem);
-    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+    /* ヌメヌメとした滑らかな遷移 */
+    transition: all var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-fluid);
 }
 
 /* Focus state for main card (when textarea is focused) - Nani-style: subtle */
 .main-card-inner:focus-within {
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--md-sys-color-primary) 10%, transparent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--md-sys-color-primary) 15%, transparent);
     transform: none;
+}
+
+/* カードの浮遊登場アニメーション */
+@keyframes cardFloatIn {
+    0% {
+        opacity: 0;
+        transform: translateY(16px) scale(0.98);
+    }
+    60% {
+        opacity: 1;
+        transform: translateY(-4px) scale(1.01);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
 }
 
 /* === M3 Text Field Container === */
@@ -662,12 +712,17 @@ body {
     border: 1px solid var(--md-sys-color-outline-variant);
     border-radius: var(--md-sys-shape-corner-3xl);
     overflow: hidden;
-    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+    /* ヌメヌメとした滑らかな遷移 */
+    transition: all var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-fluid);
+    transform: scale(1);
 }
 
 .text-box:focus-within {
     border-color: var(--md-sys-color-primary);
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--md-sys-color-primary) 15%, transparent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--md-sys-color-primary) 12%, transparent),
+                0 8px 24px rgba(99, 102, 241, 0.08);
+    /* フォーカス時の微細な拡大 */
+    transform: scale(1.005);
 }
 
 /* === Translate Button (alias for btn-primary) === */
@@ -731,16 +786,24 @@ body {
     font-weight: 500;
     letter-spacing: 0.01em;
     cursor: pointer;
-    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+    /* ヌメヌメとした滑らかな遷移 */
+    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-fluid);
+    transform: translateY(0) scale(1);
 }
 
 .btn-outline:hover {
     background: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent);
-    border-color: var(--md-sys-color-outline);
+    border-color: var(--md-sys-color-primary);
+    /* スムーズな浮遊感 */
+    transform: translateY(-2px) scale(1.02);
+    box-shadow: var(--md-sys-elevation-1);
 }
 
 .btn-outline:active {
     background: color-mix(in srgb, var(--md-sys-color-primary) 12%, transparent);
+    /* クリック時の押し込み感 */
+    transform: translateY(0) scale(0.98);
+    transition-duration: var(--md-sys-motion-duration-instant);
 }
 
 .btn-outline:disabled {
@@ -768,7 +831,9 @@ body {
     letter-spacing: 0.01em;
     border: none;
     cursor: pointer;
-    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+    /* ヌメヌメとした滑らかな遷移 */
+    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-fluid);
+    transform: translateY(0) scale(1);
     /* M3 elevation level 0 for filled buttons */
     box-shadow: none;
 }
@@ -779,6 +844,8 @@ body {
     background: linear-gradient(rgba(255,255,255,0.08), rgba(255,255,255,0.08)), var(--md-sys-color-primary);
     /* M3: Elevation level 1 on hover */
     box-shadow: var(--md-sys-elevation-1);
+    /* スムーズな浮遊感 */
+    transform: translateY(-2px) scale(1.02);
 }
 
 .btn-primary:active:not(:disabled),
@@ -786,6 +853,9 @@ body {
     /* M3: State layer overlay on press (12% opacity) */
     background: linear-gradient(rgba(255,255,255,0.12), rgba(255,255,255,0.12)), var(--md-sys-color-primary);
     box-shadow: none;
+    /* クリック時の押し込み感 */
+    transform: translateY(0) scale(0.98);
+    transition-duration: var(--md-sys-motion-duration-instant);
 }
 
 .btn-primary:disabled,
@@ -861,16 +931,23 @@ textarea:focus-visible {
     letter-spacing: 0.01em;
     border: none;
     cursor: pointer;
-    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+    /* ヌメヌメとした滑らかな遷移 */
+    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-fluid);
+    transform: translateY(0) scale(1);
 }
 
 .btn-tonal:hover {
     background: linear-gradient(rgba(0,0,0,0.05), rgba(0,0,0,0.05)), var(--md-sys-color-secondary-container);
     box-shadow: var(--md-sys-elevation-1);
+    /* スムーズな浮遊感 */
+    transform: translateY(-2px) scale(1.02);
 }
 
 .btn-tonal:active {
     background: linear-gradient(rgba(0,0,0,0.12), rgba(0,0,0,0.12)), var(--md-sys-color-secondary-container);
+    /* クリック時の押し込み感 */
+    transform: translateY(0) scale(0.98);
+    transition-duration: var(--md-sys-motion-duration-instant);
 }
 
 /* === M3 Text Button === */
@@ -890,11 +967,15 @@ textarea:focus-visible {
     letter-spacing: 0.01em;
     border: none;
     cursor: pointer;
-    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+    /* ヌメヌメとした滑らかな遷移 */
+    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-fluid);
+    transform: translateY(0) scale(1);
 }
 
 .btn-text:hover {
     background: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent);
+    /* 微細な浮遊感 */
+    transform: translateY(-1px) scale(1.01);
 }
 
 .btn-text:active {
@@ -914,10 +995,12 @@ textarea:focus-visible {
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    transition: background-color var(--md-sys-motion-duration-short), border-color var(--md-sys-motion-duration-short), box-shadow var(--md-sys-motion-duration-short);
+    /* ヌメヌメとした滑らかな遷移 */
+    transition: all var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-fluid);
     background: var(--md-sys-color-surface);
     box-shadow: var(--md-sys-elevation-1);
     position: relative;
+    transform: translateY(0) scale(1);
 }
 
 /* Visual content layer - positioned for display, clicks pass through */
@@ -991,14 +1074,28 @@ textarea:focus-visible {
 .drop-zone:hover {
     border: var(--md-card-border-hover);
     background: var(--md-sys-color-surface-container-low);
-    box-shadow: var(--md-sys-elevation-2);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06), 0 4px 8px rgba(0, 0, 0, 0.03);
+    /* スムーズな浮遊感 */
+    transform: translateY(-3px) scale(1.01);
 }
 
 /* Active drag-over state (slightly more prominent than hover) */
 .drop-zone.drag-over {
     border-color: var(--md-sys-color-primary);
     background: var(--md-sys-color-primary-container);
-    box-shadow: var(--md-sys-elevation-2), 0 0 0 2px var(--md-sys-color-primary-container);
+    box-shadow: 0 12px 32px rgba(99, 102, 241, 0.15), 0 4px 12px rgba(0, 0, 0, 0.06);
+    /* ドラッグ時の浮遊アニメーション */
+    transform: translateY(-6px) scale(1.02);
+    animation: dropZonePulse 1.5s var(--md-sys-motion-easing-smooth) infinite;
+}
+
+@keyframes dropZonePulse {
+    0%, 100% {
+        box-shadow: 0 12px 32px rgba(99, 102, 241, 0.15), 0 4px 12px rgba(0, 0, 0, 0.06);
+    }
+    50% {
+        box-shadow: 0 16px 40px rgba(99, 102, 241, 0.2), 0 6px 16px rgba(0, 0, 0, 0.08);
+    }
 }
 
 .drop-zone-icon {
@@ -1216,13 +1313,36 @@ textarea:focus-visible {
 }
 
 @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(4px); }
-    to { opacity: 1; transform: translateY(0); }
+    0% {
+        opacity: 0;
+        transform: translateY(8px) scale(0.98);
+    }
+    60% {
+        opacity: 1;
+        transform: translateY(-2px) scale(1.005);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
 }
 
 @keyframes fadeInSpring {
-    from { opacity: 0; transform: translateY(8px) scale(0.98); }
-    to { opacity: 1; transform: translateY(0) scale(1); }
+    0% {
+        opacity: 0;
+        transform: translateY(12px) scale(0.96);
+    }
+    50% {
+        opacity: 1;
+        transform: translateY(-4px) scale(1.02);
+    }
+    75% {
+        transform: translateY(2px) scale(0.995);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
 }
 
 /* === Responsive Design (Nani-inspired breakpoints) === */
@@ -1964,13 +2084,17 @@ textarea:focus-visible {
 .option-card:nth-child(4) { animation-delay: 240ms; }
 
 @keyframes slideUp {
-    from {
+    0% {
         opacity: 0;
-        transform: translateY(12px);
+        transform: translateY(16px) scale(0.98);
     }
-    to {
+    60% {
         opacity: 1;
-        transform: translateY(0);
+        transform: translateY(-3px) scale(1.01);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
     }
 }
 
@@ -2793,27 +2917,27 @@ a:hover {
     text-decoration: underline;
 }
 
-/* === Smooth Page Transitions === */
+/* === Smooth Page Transitions (ヌメヌメとした流れるような遷移) === */
 .page-transition-enter {
     opacity: 0;
-    transform: translateX(20px);
+    transform: translateX(20px) scale(0.98);
 }
 
 .page-transition-enter-active {
     opacity: 1;
-    transform: translateX(0);
-    transition: all 300ms var(--md-sys-motion-easing-standard);
+    transform: translateX(0) scale(1);
+    transition: all var(--md-sys-motion-duration-long) var(--md-sys-motion-easing-fluid);
 }
 
 .page-transition-leave {
     opacity: 1;
-    transform: translateX(0);
+    transform: translateX(0) scale(1);
 }
 
 .page-transition-leave-active {
     opacity: 0;
-    transform: translateX(-20px);
-    transition: all 300ms var(--md-sys-motion-easing-standard);
+    transform: translateX(-20px) scale(0.98);
+    transition: all var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-fluid);
 }
 
 /* === M3 Warning Color Utilities === */
@@ -3066,4 +3190,180 @@ a:hover {
 
 .section-selector .section-item {
     padding: 0.25rem 0;
+}
+
+
+/* === Smooth Scrollbar (ヌメヌメとしたスクロール) === */
+* {
+    scroll-behavior: smooth;
+}
+
+/* カスタムスクロールバー */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--md-sys-color-on-surface) 20%, transparent);
+    border-radius: 4px;
+    transition: background var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-fluid);
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in srgb, var(--md-sys-color-on-surface) 35%, transparent);
+}
+
+::-webkit-scrollbar-thumb:active {
+    background: color-mix(in srgb, var(--md-sys-color-on-surface) 45%, transparent);
+}
+
+/* Firefox スクロールバー */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--md-sys-color-on-surface) 20%, transparent) transparent;
+}
+
+/* スクロールエリアのスムーズなスクロール */
+.result-panel,
+.history-scroll,
+.input-panel {
+    scroll-behavior: smooth;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* === Global Smooth Transitions (ヌメヌメとした全体遷移) === */
+/* 全てのインタラクティブ要素にスムーズなトランジションを適用 */
+a,
+button,
+input,
+textarea,
+select,
+[role="button"],
+.clickable {
+    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-fluid);
+}
+
+/* アイコンのホバーアニメーション */
+.q-icon {
+    transition: transform var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-fluid),
+                color var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-fluid);
+}
+
+button:hover .q-icon,
+.btn-primary:hover .q-icon,
+.btn-outline:hover .q-icon,
+.btn-tonal:hover .q-icon,
+.btn-text:hover .q-icon {
+    transform: scale(1.1);
+}
+
+/* === Ripple Effect (波紋エフェクト) === */
+.ripple-container {
+    position: relative;
+    overflow: hidden;
+}
+
+.ripple-container::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 0;
+    height: 0;
+    background: radial-gradient(circle, rgba(255,255,255,0.3) 0%, transparent 70%);
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    opacity: 0;
+    pointer-events: none;
+}
+
+.ripple-container:active::after {
+    width: 200%;
+    padding-bottom: 200%;
+    opacity: 1;
+    transition: width 0.4s var(--md-sys-motion-easing-fluid),
+                padding-bottom 0.4s var(--md-sys-motion-easing-fluid),
+                opacity 0.4s var(--md-sys-motion-easing-fluid);
+}
+
+/* === Content Fade Mask (コンテンツフェードマスク) === */
+.fade-top {
+    mask-image: linear-gradient(to bottom, transparent 0%, black 16px);
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 16px);
+}
+
+.fade-bottom {
+    mask-image: linear-gradient(to top, transparent 0%, black 16px);
+    -webkit-mask-image: linear-gradient(to top, transparent 0%, black 16px);
+}
+
+/* === Smooth Visibility Toggle === */
+.smooth-show {
+    animation: smoothReveal var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-fluid);
+}
+
+.smooth-hide {
+    animation: smoothHide var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-fluid);
+}
+
+@keyframes smoothReveal {
+    0% {
+        opacity: 0;
+        transform: translateY(8px) scale(0.98);
+        filter: blur(4px);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+        filter: blur(0);
+    }
+}
+
+@keyframes smoothHide {
+    0% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+        filter: blur(0);
+    }
+    100% {
+        opacity: 0;
+        transform: translateY(-8px) scale(0.98);
+        filter: blur(4px);
+    }
+}
+
+/* === Floating Animation (浮遊アニメーション) === */
+.float-gentle {
+    animation: floatGentle 4s var(--md-sys-motion-easing-smooth) infinite;
+}
+
+@keyframes floatGentle {
+    0%, 100% {
+        transform: translateY(0);
+    }
+    50% {
+        transform: translateY(-6px);
+    }
+}
+
+/* === Subtle Breathing (微細な呼吸アニメーション) === */
+.breathe {
+    animation: breathe 3s var(--md-sys-motion-easing-smooth) infinite;
+}
+
+@keyframes breathe {
+    0%, 100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+    50% {
+        transform: scale(1.02);
+        opacity: 0.95;
+    }
 }

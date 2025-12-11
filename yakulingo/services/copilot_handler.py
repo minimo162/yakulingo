@@ -431,6 +431,13 @@ class CopilotHandler:
     EXECUTOR_TIMEOUT_BUFFER_SECONDS = 60 # Extra time for executor vs response timeout
 
     # =========================================================================
+    # Edge Window Settings - Minimum size when bringing window to foreground
+    # =========================================================================
+    # Some environments show Edge in very small windows; ensure usable size
+    MIN_EDGE_WINDOW_WIDTH = 1024   # Minimum width in pixels
+    MIN_EDGE_WINDOW_HEIGHT = 768   # Minimum height in pixels
+
+    # =========================================================================
     # UI Selectors - Centralized for easier maintenance when Copilot UI changes
     # =========================================================================
 
@@ -1698,7 +1705,44 @@ class CopilotHandler:
                     user32.AttachThreadInput(current_thread_id, foreground_thread_id, False)
                     logger.debug("Detached from foreground thread")
 
-            # 5. Flash taskbar icon to get user attention
+            # 8. Check and adjust window size if too small
+            # Some environments show Edge in very small windows
+            try:
+                rect = wintypes.RECT()
+                if user32.GetWindowRect(edge_hwnd, ctypes.byref(rect)):
+                    current_width = rect.right - rect.left
+                    current_height = rect.bottom - rect.top
+                    logger.debug("Current Edge window size: %dx%d", current_width, current_height)
+
+                    # Only resize if window is smaller than minimum
+                    if current_width < self.MIN_EDGE_WINDOW_WIDTH or current_height < self.MIN_EDGE_WINDOW_HEIGHT:
+                        new_width = max(current_width, self.MIN_EDGE_WINDOW_WIDTH)
+                        new_height = max(current_height, self.MIN_EDGE_WINDOW_HEIGHT)
+
+                        # Get screen dimensions to center the window
+                        screen_width = user32.GetSystemMetrics(0)  # SM_CXSCREEN
+                        screen_height = user32.GetSystemMetrics(1)  # SM_CYSCREEN
+
+                        # Center the window on screen
+                        new_x = (screen_width - new_width) // 2
+                        new_y = (screen_height - new_height) // 2
+
+                        # Ensure window stays within screen bounds
+                        new_x = max(0, min(new_x, screen_width - new_width))
+                        new_y = max(0, min(new_y, screen_height - new_height))
+
+                        # Resize and reposition window
+                        user32.SetWindowPos(
+                            edge_hwnd, 0,
+                            new_x, new_y, new_width, new_height,
+                            SWP_SHOWWINDOW
+                        )
+                        logger.info("Adjusted Edge window size from %dx%d to %dx%d",
+                                    current_width, current_height, new_width, new_height)
+            except Exception as size_error:
+                logger.debug("Failed to check/adjust window size: %s", size_error)
+
+            # 9. Flash taskbar icon to get user attention
             # FLASHW_ALL = 3, FLASHW_TIMERNOFG = 12
             class FLASHWINFO(ctypes.Structure):
                 _fields_ = [

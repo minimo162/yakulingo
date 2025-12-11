@@ -3194,42 +3194,51 @@ a:hover {
 
 
 /* === Smooth Scrollbar (ヌメヌメとしたスクロール) === */
-* {
-    scroll-behavior: smooth;
-}
+/* NiceGUI/Quasar整合性: グローバル * セレクタは避け、特定の要素に適用 */
 
-/* カスタムスクロールバー */
-::-webkit-scrollbar {
+/* カスタムスクロールバー - アプリ固有のスクロール領域のみ */
+.result-panel::-webkit-scrollbar,
+.history-scroll::-webkit-scrollbar,
+.input-panel::-webkit-scrollbar,
+.sidebar::-webkit-scrollbar {
     width: 8px;
     height: 8px;
 }
 
-::-webkit-scrollbar-track {
+.result-panel::-webkit-scrollbar-track,
+.history-scroll::-webkit-scrollbar-track,
+.input-panel::-webkit-scrollbar-track,
+.sidebar::-webkit-scrollbar-track {
     background: transparent;
     border-radius: 4px;
 }
 
-::-webkit-scrollbar-thumb {
+.result-panel::-webkit-scrollbar-thumb,
+.history-scroll::-webkit-scrollbar-thumb,
+.input-panel::-webkit-scrollbar-thumb,
+.sidebar::-webkit-scrollbar-thumb {
     background: color-mix(in srgb, var(--md-sys-color-on-surface) 20%, transparent);
     border-radius: 4px;
-    transition: background var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-fluid);
 }
 
-::-webkit-scrollbar-thumb:hover {
+.result-panel::-webkit-scrollbar-thumb:hover,
+.history-scroll::-webkit-scrollbar-thumb:hover,
+.input-panel::-webkit-scrollbar-thumb:hover,
+.sidebar::-webkit-scrollbar-thumb:hover {
     background: color-mix(in srgb, var(--md-sys-color-on-surface) 35%, transparent);
 }
 
-::-webkit-scrollbar-thumb:active {
-    background: color-mix(in srgb, var(--md-sys-color-on-surface) 45%, transparent);
-}
-
-/* Firefox スクロールバー */
-* {
+/* Firefox スクロールバー - アプリ固有のスクロール領域のみ */
+.result-panel,
+.history-scroll,
+.input-panel,
+.sidebar {
     scrollbar-width: thin;
     scrollbar-color: color-mix(in srgb, var(--md-sys-color-on-surface) 20%, transparent) transparent;
 }
 
 /* スクロールエリアのスムーズなスクロール */
+/* 注: Quasar VirtualScroll等は除外（自前のスクロール管理がある） */
 .result-panel,
 .history-scroll,
 .input-panel {
@@ -3238,28 +3247,38 @@ a:hover {
 }
 
 /* === Global Smooth Transitions (ヌメヌメとした全体遷移) === */
-/* 全てのインタラクティブ要素にスムーズなトランジションを適用 */
-a,
-button,
-input,
-textarea,
-select,
-[role="button"],
+/* NiceGUI/Quasar整合性: グローバルな button/input は避け、アプリ固有クラスに適用 */
+/* Quasarの q-btn, q-input 等は独自のトランジションを持つため除外 */
+a:not(.q-btn):not(.q-item),
 .clickable {
     transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-fluid);
 }
 
+/* アプリ固有ボタンのスムーズなトランジション */
+.btn-primary,
+.btn-outline,
+.btn-tonal,
+.btn-text,
+.translate-btn,
+.attach-btn,
+.nav-item,
+.history-item {
+    transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-fluid);
+}
+
 /* アイコンのホバーアニメーション */
-.q-icon {
+/* NiceGUI/Quasar整合性: ローディングスピナー等は除外 */
+.q-icon:not(.q-spinner):not(.q-circular-progress__svg) {
     transition: transform var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-fluid),
                 color var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-fluid);
 }
 
-button:hover .q-icon,
-.btn-primary:hover .q-icon,
-.btn-outline:hover .q-icon,
-.btn-tonal:hover .q-icon,
-.btn-text:hover .q-icon {
+/* アプリ固有ボタン内のアイコンホバー */
+.btn-primary:hover .q-icon:not(.q-spinner),
+.btn-outline:hover .q-icon:not(.q-spinner),
+.btn-tonal:hover .q-icon:not(.q-spinner),
+.btn-text:hover .q-icon:not(.q-spinner),
+.translate-btn:hover .q-icon:not(.q-spinner) {
     transform: scale(1.1);
 }
 

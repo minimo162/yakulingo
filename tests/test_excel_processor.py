@@ -602,12 +602,13 @@ class TestSpecialCharacterHandling:
         result = processor._group_translations_by_sheet(translations, sheet_names)
 
         # Each translation should go to the correct sheet (longest match first)
+        # New format: cells dict maps (row, col) -> (translated_text, cell_ref)
         assert "my_sheet_data" in result
-        assert result["my_sheet_data"]["cells"]["A1"] == "Translated 1"
+        assert result["my_sheet_data"]["cells"][(1, 1)] == ("Translated 1", "A1")
         assert "my_sheet" in result
-        assert result["my_sheet"]["cells"]["A1"] == "Translated 2"
+        assert result["my_sheet"]["cells"][(1, 1)] == ("Translated 2", "A1")
         assert "my" in result
-        assert result["my"]["cells"]["A1"] == "Translated 3"
+        assert result["my"]["cells"][(1, 1)] == ("Translated 3", "A1")
 
     def test_bilingual_workbook_with_forbidden_chars(self, processor, tmp_path):
         """Creates bilingual workbook when original sheet has forbidden chars"""
@@ -958,3 +959,162 @@ class TestRecoverableComError:
         """Test that ValueError is not marked as recoverable."""
         error = ValueError("Invalid value")
         assert excel_processor._is_recoverable_com_error(error) is False
+
+
+class TestTextBlocksPositioning:
+    """Tests for precise positioning using text_blocks metadata."""
+
+    def test_group_translations_with_text_blocks_metadata(self, processor):
+        """Uses text_blocks metadata for precise positioning when available."""
+        from yakulingo.models.types import TextBlock
+
+        translations = {
+            "Sheet1_A1": "Translation A1",
+            "Sheet1_B2": "Translation B2",
+        }
+
+        # Create TextBlocks with metadata
+        text_blocks = [
+            TextBlock(
+                id="Sheet1_A1",
+                text="Original A1",
+                location="Sheet1, A1",
+                metadata={
+                    'sheet': 'Sheet1',
+                    'row': 1,
+                    'col': 1,
+                    'type': 'cell',
+                }
+            ),
+            TextBlock(
+                id="Sheet1_B2",
+                text="Original B2",
+                location="Sheet1, B2",
+                metadata={
+                    'sheet': 'Sheet1',
+                    'row': 2,
+                    'col': 2,
+                    'type': 'cell',
+                }
+            ),
+        ]
+
+        sheet_names = {"Sheet1"}
+
+        result = processor._group_translations_by_sheet(translations, sheet_names, text_blocks)
+
+        # Should use metadata for precise positioning
+        assert "Sheet1" in result
+        assert (1, 1) in result["Sheet1"]["cells"]
+        assert result["Sheet1"]["cells"][(1, 1)] == ("Translation A1", "A1")
+        assert (2, 2) in result["Sheet1"]["cells"]
+        assert result["Sheet1"]["cells"][(2, 2)] == ("Translation B2", "B2")
+
+    def test_group_translations_falls_back_without_metadata(self, processor):
+        """Falls back to block_id parsing when text_blocks is None."""
+        translations = {
+            "Sheet1_A1": "Translation A1",
+            "Sheet1_B2": "Translation B2",
+        }
+
+        sheet_names = {"Sheet1"}
+
+        result = processor._group_translations_by_sheet(translations, sheet_names, None)
+
+        # Should parse block_id for positioning
+        assert "Sheet1" in result
+        assert (1, 1) in result["Sheet1"]["cells"]
+        assert result["Sheet1"]["cells"][(1, 1)] == ("Translation A1", "A1")
+        assert (2, 2) in result["Sheet1"]["cells"]
+        assert result["Sheet1"]["cells"][(2, 2)] == ("Translation B2", "B2")
+
+    def test_apply_translations_with_text_blocks(self, processor, sample_xlsx, tmp_path):
+        """Applies translations correctly using text_blocks for positioning."""
+        from yakulingo.models.types import TextBlock
+
+        output_path = tmp_path / "output.xlsx"
+
+        # Create text_blocks matching the extracted blocks
+        text_blocks = [
+            TextBlock(
+                id="Sheet1_A1",
+                text="こんにちは",
+                location="Sheet1, A1",
+                metadata={
+                    'sheet': 'Sheet1',
+                    'row': 1,
+                    'col': 1,
+                    'type': 'cell',
+                }
+            ),
+            TextBlock(
+                id="Sheet1_A2",
+                text="世界",
+                location="Sheet1, A2",
+                metadata={
+                    'sheet': 'Sheet1',
+                    'row': 2,
+                    'col': 1,
+                    'type': 'cell',
+                }
+            ),
+        ]
+
+        translations = {
+            "Sheet1_A1": "Hello",
+            "Sheet1_A2": "World",
+        }
+
+        processor.apply_translations(
+            sample_xlsx, output_path, translations, "jp_to_en",
+            text_blocks=text_blocks
+        )
+
+        # Verify output
+        wb = openpyxl.load_workbook(output_path)
+        ws = wb.active
+
+        assert ws["A1"].value == "Hello"
+        assert ws["A2"].value == "World"
+
+    def test_contiguous_batch_optimization(self, processor, tmp_path):
+        """Tests batch optimization for contiguous cells in the same row."""
+        # Create file with contiguous cells
+        file_path = tmp_path / "contiguous.xlsx"
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Sheet1"
+
+        ws["A1"] = "テスト1"
+        ws["B1"] = "テスト2"
+        ws["C1"] = "テスト3"
+        ws["D1"] = "テスト4"
+
+        wb.save(file_path)
+
+        # Extract blocks
+        blocks = list(processor.extract_text_blocks(file_path))
+        assert len(blocks) == 4
+
+        # Create translations
+        translations = {
+            "Sheet1_A1": "Test 1",
+            "Sheet1_B1": "Test 2",
+            "Sheet1_C1": "Test 3",
+            "Sheet1_D1": "Test 4",
+        }
+
+        output_path = tmp_path / "output.xlsx"
+        processor.apply_translations(
+            file_path, output_path, translations, "jp_to_en",
+            text_blocks=blocks
+        )
+
+        # Verify output
+        wb_out = openpyxl.load_workbook(output_path)
+        ws_out = wb_out.active
+
+        assert ws_out["A1"].value == "Test 1"
+        assert ws_out["B1"].value == "Test 2"
+        assert ws_out["C1"].value == "Test 3"
+        assert ws_out["D1"].value == "Test 4"

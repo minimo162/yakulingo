@@ -141,14 +141,15 @@ class TxtProcessor(FileProcessor):
         direction: str = "jp_to_en",
         settings=None,
         selected_sections: Optional[list[int]] = None,
+        text_blocks=None,  # Accept but unused (for API compatibility)
     ) -> Optional[dict[str, Any]]:
         """
         Apply translations to text file.
 
         Reconstructs the document with translated text.
 
-        Note: selected_sections is accepted for API consistency but not used
-        for text files (plain text doesn't have sections).
+        Note: selected_sections and text_blocks are accepted for API consistency
+        but not used for text files (plain text doesn't have sections).
         """
         content = input_path.read_text(encoding='utf-8')
         paragraphs = [p.strip() for p in content.split('\n\n') if p.strip()]

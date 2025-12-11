@@ -120,12 +120,14 @@ class PptxProcessor(FileProcessor):
         direction: str = "jp_to_en",
         settings=None,
         selected_sections: Optional[list[int]] = None,
+        text_blocks=None,  # Accept but unused (for API compatibility)
     ) -> None:
         """Apply translations to PowerPoint.
 
         Args:
             selected_sections: List of slide indices to process (0-indexed).
                               If None, all slides are processed.
+            text_blocks: Accepted for API compatibility but not used.
         """
         prs = Presentation(input_path)
         try:

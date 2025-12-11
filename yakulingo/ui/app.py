@@ -650,11 +650,11 @@ class YakuLingoApp:
             return
 
         self._login_polling_active = True
-        polling_interval = 5  # 秒
+        polling_interval = 2  # 秒（より迅速に状態変化を検出）
         max_wait_time = 300   # 5分
         elapsed = 0
 
-        logger.info("Starting login completion polling (max %ds)", max_wait_time)
+        logger.info("Starting login completion polling (interval %ds, max %ds)", polling_interval, max_wait_time)
 
         try:
             from yakulingo.services.copilot_handler import ConnectionState as CopilotConnectionState
@@ -671,9 +671,9 @@ class YakuLingoApp:
                     logger.debug("Login polling cancelled by shutdown")
                     return
 
-                # 短いタイムアウトで状態確認
+                # 状態確認（タイムアウト5秒でセレクタを検索）
                 state = await asyncio.to_thread(
-                    self.copilot.check_copilot_state, 3  # 3秒タイムアウト
+                    self.copilot.check_copilot_state, 5  # 5秒タイムアウト
                 )
 
                 # ブラウザ/ページがクローズされた場合は早期終了
@@ -688,6 +688,8 @@ class YakuLingoApp:
                         return
                 else:
                     consecutive_errors = 0  # エラー以外の状態でリセット
+
+                logger.info("Login polling: state=%s, elapsed=%.0fs", state, elapsed)
 
                 if state == CopilotConnectionState.READY:
                     # ログイン完了 → 接続状態を更新

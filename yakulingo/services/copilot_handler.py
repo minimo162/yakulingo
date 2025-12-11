@@ -1977,36 +1977,44 @@ class CopilotHandler:
         try:
             # 現在のURLを確認
             current_url = self._page.url
+            logger.info("Checking Copilot state: URL=%s", current_url[:80])
 
             # ログインページにいる場合はセレクタ検索をスキップ
             # これにより、サインインプロセスを妨害しない
             if _is_login_page(current_url):
-                logger.debug("On login page, skipping selector search: %s", current_url[:80])
+                logger.info("On login page, skipping selector search")
                 return ConnectionState.LOGIN_REQUIRED
 
             # Copilotドメインでない場合もスキップ
             # （リダイレクト中の可能性）
             if not _is_copilot_url(current_url):
-                logger.debug("Not on Copilot domain, skipping selector search: %s", current_url[:80])
+                logger.info("Not on Copilot domain, skipping selector search")
                 return ConnectionState.LOGIN_REQUIRED
 
+            # ページがロードされるまで待機
+            try:
+                self._page.wait_for_load_state('domcontentloaded', timeout=3000)
+            except PlaywrightTimeoutError:
+                logger.debug("Page load state timeout, continuing...")
+
             # チャット入力欄の存在を確認（ログイン済みの証拠）
-            input_selector = self.CHAT_INPUT_SELECTOR
+            # 拡張セレクタを使用してより多くのパターンをカバー
+            input_selector = self.CHAT_INPUT_SELECTOR_EXTENDED
             try:
                 self._page.wait_for_selector(
                     input_selector,
                     timeout=timeout * 1000,
                     state='visible'
                 )
-                logger.debug("Chat input found - Copilot is ready")
+                logger.info("Chat input found - Copilot is ready")
                 return ConnectionState.READY
             except PlaywrightTimeoutError:
                 # 入力欄が見つからない = ログインが必要
-                logger.debug("Chat input not found - login may be required")
+                logger.info("Chat input not found with selector: %s", input_selector)
                 return ConnectionState.LOGIN_REQUIRED
 
         except PlaywrightError as e:
-            logger.debug("Error checking Copilot state: %s", e)
+            logger.info("Error checking Copilot state: %s", e)
             return ConnectionState.ERROR
 
     def save_storage_state(self) -> bool:

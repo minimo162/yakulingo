@@ -846,18 +846,15 @@ class TestCopilotHandlerLoginDetection:
         result = handler._check_copilot_state()
         assert result == ConnectionState.ERROR
 
-    def test_check_copilot_state_login_redirect(self):
-        """_check_copilot_state returns LOGIN_REQUIRED when chat input not found"""
+    def test_check_copilot_state_on_landing_page(self):
+        """_check_copilot_state returns LOGIN_REQUIRED on landing page (not /chat)"""
         from yakulingo.services.copilot_handler import ConnectionState
-        from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
         handler = CopilotHandler()
 
         mock_page = MagicMock()
-        # Simulate login redirect by timing out on selector wait
-        mock_page.wait_for_selector.side_effect = PlaywrightTimeoutError("Element not found")
-        # Set Copilot URL so URL check passes
-        mock_page.url = "https://m365.cloud.microsoft/chat/"
+        # On Copilot domain but not /chat path (landing page after login redirect)
+        mock_page.url = "https://m365.cloud.microsoft/landing"
         handler._page = mock_page
 
         result = handler._check_copilot_state(timeout=1)
@@ -895,34 +892,29 @@ class TestCopilotHandlerLoginDetection:
         # Verify wait_for_selector was NOT called (skipped due to non-Copilot domain)
         mock_page.wait_for_selector.assert_not_called()
 
-    def test_check_copilot_state_ready_with_chat_ui(self):
-        """_check_copilot_state returns READY when chat UI exists"""
+    def test_check_copilot_state_ready_on_chat_page(self):
+        """_check_copilot_state returns READY when on /chat page (URL-based check)"""
         from yakulingo.services.copilot_handler import ConnectionState
 
         handler = CopilotHandler()
 
         mock_page = MagicMock()
-        mock_element = MagicMock()
-        mock_page.wait_for_selector.return_value = mock_element
-        # Set Copilot URL so URL check passes
+        # On Copilot chat page - should return READY based on URL
         mock_page.url = "https://m365.cloud.microsoft/chat/"
         handler._page = mock_page
 
         result = handler._check_copilot_state(timeout=1)
         assert result == ConnectionState.READY
 
-    def test_check_copilot_state_login_required_no_chat_ui(self):
-        """_check_copilot_state returns LOGIN_REQUIRED when chat UI not found"""
+    def test_check_copilot_state_on_home_page(self):
+        """_check_copilot_state returns LOGIN_REQUIRED on home page (not /chat)"""
         from yakulingo.services.copilot_handler import ConnectionState
-        from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
         handler = CopilotHandler()
 
         mock_page = MagicMock()
-        # All selectors fail to find elements
-        mock_page.wait_for_selector.side_effect = PlaywrightTimeoutError("Element not found")
-        # Set Copilot URL so URL check passes (test is about chat UI not found)
-        mock_page.url = "https://m365.cloud.microsoft/chat/"
+        # On Copilot domain but not /chat path (home page)
+        mock_page.url = "https://m365.cloud.microsoft/home"
         handler._page = mock_page
 
         result = handler._check_copilot_state(timeout=1)

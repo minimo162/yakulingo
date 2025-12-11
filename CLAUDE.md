@@ -7,7 +7,7 @@ This document provides essential context for AI assistants working with the Yaku
 **YakuLingo** (訳リンゴ) is a bidirectional Japanese/English translation application that leverages M365 Copilot as its translation engine. It supports both text and file translation (Excel, Word, PowerPoint, PDF, TXT) while preserving document formatting and layout.
 
 - **Package Name**: `yakulingo`
-- **Version**: 20251127 (2.0.0)
+- **Version**: 0.0.1
 - **Python Version**: 3.11+
 - **License**: MIT
 

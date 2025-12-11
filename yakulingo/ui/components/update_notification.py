@@ -240,46 +240,25 @@ class UpdateNotification:
 
     async def _start_download(self, info: VersionInfo, dialog: ui.dialog):
         """ダウンロードを開始"""
+        ui.notify('ダウンロード開始...', type='info')  # デバッグ
         dialog.close()
 
         if not self.updater:
+            ui.notify('updaterがありません', type='warning')  # デバッグ
             return
-
-        # プログレスダイアログを表示
-        with ui.dialog() as progress_dialog, ui.card().classes('w-80'):
-            with ui.column().classes('w-full gap-4 p-4'):
-                with ui.row().classes('items-center gap-3'):
-                    ui.spinner('dots', size='md').classes('text-primary')
-                    ui.label('ダウンロード中...').classes('text-base font-semibold')
-
-                # Custom progress bar matching file_panel style
-                with ui.element('div').classes('progress-track w-full'):
-                    progress_bar_inner = ui.element('div').classes('progress-bar').style('width: 0%')
-                progress_label = ui.label('0%').classes('text-xs text-muted text-center w-full')
-
-        progress_dialog.open()
-        await asyncio.sleep(0.1)  # UIを更新する時間を確保
-
-        def on_progress(downloaded: int, total: int):
-            if total > 0:
-                pct = downloaded / total
-                progress_bar_inner.style(f'width: {int(pct * 100)}%')
-                progress_label.set_text(f'{int(pct * 100)}% ({downloaded // 1024} KB / {total // 1024} KB)')
 
         try:
             # ダウンロード実行
+            ui.notify('ダウンロード中...', type='info')  # デバッグ
             zip_path = await asyncio.to_thread(
-                lambda: self.updater.download_update(info, on_progress)
+                lambda: self.updater.download_update(info, None)
             )
+            ui.notify(f'ダウンロード完了: {zip_path}', type='positive')  # デバッグ
 
-            progress_dialog.close()
-            await asyncio.sleep(0.1)  # UIを更新する時間を確保
-
-            # インストール確認
+            # インストール確認ダイアログ
             await self._confirm_install(zip_path)
 
         except (OSError, ValueError, RuntimeError) as e:
-            progress_dialog.close()
             ui.notify(f'ダウンロードに失敗: {e}', type='negative')
 
     async def _confirm_install(self, zip_path):

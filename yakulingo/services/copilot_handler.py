@@ -1404,6 +1404,18 @@ class CopilotHandler:
 
                 # If we're back on a Copilot page (not login page), check chat UI again
                 if _is_copilot_url(current_url) and not _is_login_page(current_url):
+                    # If on Copilot domain but not on /chat path (e.g., /home, /landing),
+                    # navigate to chat page to avoid getting stuck
+                    if "/chat" not in current_url:
+                        logger.debug("Auto-login: on Copilot domain but not /chat (%s), navigating...", current_url[:60])
+                        try:
+                            self._page.goto(self.COPILOT_URL, wait_until='commit', timeout=30000)
+                            time.sleep(1.0)  # Brief wait for page load
+                            # Re-check URL after navigation
+                            current_url = self._page.url
+                        except (PlaywrightTimeoutError, PlaywrightError) as nav_err:
+                            logger.debug("Failed to navigate to chat: %s", nav_err)
+
                     # Give a bit more time for chat UI to appear after redirect
                     try:
                         self._page.wait_for_selector(input_selector, timeout=2000, state='visible')

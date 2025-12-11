@@ -1936,8 +1936,21 @@ class PdfProcessor(FileProcessor):
                             pdf_x1, pdf_y0, pdf_x2, pdf_y1 = x1, y1, x2, y2
                             box_width = pdf_x2 - pdf_x1
                             box_height = pdf_y1 - pdf_y0  # y1 (top) - y0 (bottom)
-                            # Estimate line count from text (since we removed line breaks)
-                            original_line_count = max(1, original_text.count('\n') + 1)
+
+                            # Get original_line_count from TextBlock metadata (calculated during extraction)
+                            # This is critical for proper box_width expansion to prevent layout breakage
+                            original_line_count = text_block.metadata.get('original_line_count', 1)
+
+                            # Fallback: If metadata doesn't have it, estimate from box_height and font_size
+                            if original_line_count <= 1 and stored_font_size and stored_font_size > 0:
+                                estimated_lines = box_height / (stored_font_size * DEFAULT_LINE_HEIGHT)
+                                original_line_count = max(1, round(estimated_lines))
+                                if original_line_count > 1:
+                                    logger.debug(
+                                        "Estimated original_line_count=%d for block %s "
+                                        "(box_height=%.1f, font_size=%.1f)",
+                                        original_line_count, block_id, box_height, stored_font_size
+                                    )
                         else:
                             # PyMuPDF: convert to PDF coordinates (y-axis inversion)
                             box_pdf = convert_to_pdf_coordinates(
@@ -2020,13 +2033,27 @@ class PdfProcessor(FileProcessor):
                             line_height,
                         )
 
-                        # DEBUG: Log block processing details
+                        # DEBUG: Log block processing details with layout info
                         logger.debug(
-                            "Processing block %s: box_pdf=%s, font_size=%.1f, "
-                            "line_height=%.2f, lines=%d, page_height=%.1f",
-                            block_id, box_pdf, font_size, line_height,
-                            len(lines), page_height
+                            "[Layout] Processing block %s: "
+                            "box_pdf=[%.1f, %.1f, %.1f, %.1f], "
+                            "box_width=%.1f, box_height=%.1f, "
+                            "initial_font=%.1f, final_font=%.1f, "
+                            "line_height=%.2f, original_lines=%d, output_lines=%d",
+                            block_id,
+                            box_pdf[0], box_pdf[1], box_pdf[2], box_pdf[3],
+                            box_width, box_height,
+                            initial_font_size, font_size,
+                            line_height, original_line_count, len(lines)
                         )
+
+                        # Warn if output lines significantly exceed original
+                        if len(lines) > original_line_count * 2 and original_line_count > 1:
+                            logger.warning(
+                                "[Layout] Block %s: output_lines(%d) >> original_lines(%d), "
+                                "may cause layout issues. Consider increasing box_width or font_size.",
+                                block_id, len(lines), original_line_count
+                            )
 
                         # Generate text operators for each line
                         for line_idx, line_text in enumerate(lines):
@@ -2929,6 +2956,26 @@ class PdfProcessor(FileProcessor):
             # Extract formula vars for this block
             block_vars = extract_formula_vars_for_block(text, var)
 
+            # Calculate original_line_count from paragraph height and font size
+            # This is critical for box_width expansion in apply_translations
+            para_height = para.y1 - para.y0
+            font_size = para.size if para.size > 0 else 10.0  # Fallback to 10pt
+            # Estimate line count: height / (font_size * line_spacing)
+            # Use DEFAULT_LINE_HEIGHT (1.1) as the assumed line spacing
+            estimated_line_count = para_height / (font_size * DEFAULT_LINE_HEIGHT) if font_size > 0 else 1
+            original_line_count = max(1, round(estimated_line_count))
+
+            # Layout debugging: log block extraction details
+            logger.debug(
+                "[Layout] Extracted block page_%d_block_%d: "
+                "bbox=(%.1f, %.1f, %.1f, %.1f), para_height=%.1f, font_size=%.1f, "
+                "original_line_count=%d (estimated=%.2f), text_len=%d",
+                page_idx, block_idx,
+                para.x0, para.y0, para.x1, para.y1,
+                para_height, font_size,
+                original_line_count, estimated_line_count, len(text)
+            )
+
             blocks.append(TextBlock(
                 id=f"page_{page_idx}_block_{block_idx}",
                 text=text,
@@ -2941,7 +2988,7 @@ class PdfProcessor(FileProcessor):
                     'font_name': None,  # Font name not available from Paragraph
                     'font_size': para.size,
                     'is_formula': False,
-                    'original_line_count': 1,
+                    'original_line_count': original_line_count,
                     'paragraph': para,
                     'formula_vars': block_vars,
                     'has_formulas': bool(block_vars),

@@ -449,7 +449,30 @@ def analyze_layout(img, device: str = "cpu"):
             _layout_dependency_warning_logged = True
         return {'boxes': []}
 
-    results = model.predict(img)
+    try:
+        results = model.predict(img)
+    except MemoryError as e:
+        logger.error(
+            "Out of memory during layout analysis: %s. "
+            "Try reducing image DPI.",
+            e
+        )
+        return {'boxes': []}
+    except (RuntimeError, ValueError, TypeError) as e:
+        logger.warning(
+            "Layout analysis failed: %s. "
+            "Falling back to Y-coordinate based paragraph detection.",
+            e
+        )
+        return {'boxes': []}
+    except Exception as e:
+        logger.warning(
+            "Unexpected error during layout analysis: %s. "
+            "Falling back to Y-coordinate based paragraph detection.",
+            e
+        )
+        return {'boxes': []}
+
     return results
 
 
@@ -483,7 +506,34 @@ def analyze_layout_batch(images: list, device: str = "cpu") -> list:
             _layout_dependency_warning_logged = True
         return [{'boxes': []} for _ in images]
 
-    results_list = model.predict(images)
+    try:
+        results_list = model.predict(images)
+    except MemoryError as e:
+        # Critical: OOM during batch prediction
+        logger.error(
+            "Out of memory during layout analysis (batch size=%d): %s. "
+            "Try reducing batch size or image DPI.",
+            len(images), e
+        )
+        return [{'boxes': []} for _ in images]
+    except (RuntimeError, ValueError, TypeError) as e:
+        # RuntimeError: Model internal errors
+        # ValueError: Invalid image format
+        # TypeError: Invalid argument type
+        logger.warning(
+            "Layout analysis failed for batch (size=%d): %s. "
+            "Falling back to Y-coordinate based paragraph detection.",
+            len(images), e
+        )
+        return [{'boxes': []} for _ in images]
+    except Exception as e:
+        # Catch any other unexpected errors from PaddleOCR
+        logger.warning(
+            "Unexpected error during layout analysis (batch size=%d): %s. "
+            "Falling back to Y-coordinate based paragraph detection.",
+            len(images), e
+        )
+        return [{'boxes': []} for _ in images]
 
     if not isinstance(results_list, list):
         results_list = [results_list]

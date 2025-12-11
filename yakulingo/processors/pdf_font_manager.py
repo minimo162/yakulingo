@@ -435,6 +435,8 @@ class FontRegistry:
             font_ja: Preferred Japanese font name (e.g., "MS Pゴシック")
             font_en: Preferred English font name (e.g., "Arial")
         """
+        import threading
+
         self.fonts: dict[str, FontInfo] = {}
         self._font_xrefs: dict[str, int] = {}
         self._font_by_id: dict[str, FontInfo] = {}
@@ -464,6 +466,8 @@ class FontRegistry:
         self._font_selection_cache: dict[tuple[str, str], str] = {}
         # Warned missing fonts (to avoid duplicate warnings)
         self._warned_missing_fonts: set[str] = set()
+        # Thread-safety lock for warning sets (avoid duplicate warnings in concurrent access)
+        self._warning_lock = threading.Lock()
 
     def register_font(self, lang: str) -> str:
         """
@@ -500,8 +504,13 @@ class FontRegistry:
         builtin_fallback = None
         if not font_path:
             builtin_fallback = PYMUPDF_BUILTIN_FONTS.get(lang, "helv")
-            if lang not in self._missing_fonts:
-                self._missing_fonts.add(lang)
+            # Thread-safe check-and-warn pattern
+            should_warn = False
+            with self._warning_lock:
+                if lang not in self._missing_fonts:
+                    self._missing_fonts.add(lang)
+                    should_warn = True
+            if should_warn:
                 logger.warning(
                     "No font found for language '%s'. "
                     "Using PyMuPDF built-in font '%s'. "
@@ -831,8 +840,13 @@ class FontRegistry:
         else:
             # PDFMathTranslate compliant: Warn about missing Font object
             # This is critical - without Font object, all text renders as .notdef (invisible)
-            if font_id not in self._warned_missing_fonts:
-                self._warned_missing_fonts.add(font_id)
+            # Thread-safe check-and-warn pattern
+            should_warn = False
+            with self._warning_lock:
+                if font_id not in self._warned_missing_fonts:
+                    self._warned_missing_fonts.add(font_id)
+                    should_warn = True
+            if should_warn:
                 logger.warning(
                     "Font object missing for '%s'. Text will render as .notdef (invisible). "
                     "Check font embedding in embed_fonts() or install required fonts.",

@@ -1373,64 +1373,96 @@ class PdfProcessor(FileProcessor):
         LTFigure = pdfminer['LTFigure']
         PDFConverterEx = get_pdf_converter_ex_class()
 
-        with open(file_path, 'rb') as f:
-            parser = PDFParser(f)
-            document = PDFDocument(parser)
-            rsrcmgr = PDFResourceManager()
-            converter = PDFConverterEx(rsrcmgr)
-            interpreter = PDFPageInterpreter(rsrcmgr, converter)
-
-            pages_without_text = 0
-            pages_checked = 0
-
-            for page_idx, page in enumerate(PDFPage.create_pages(document)):
-                if page_idx >= SCAN_CHECK_PAGES:
-                    break
-
-                pages_checked += 1
-                interpreter.process_page(page)
-                ltpage = converter.pages[-1] if converter.pages else None
-
-                # Count characters on this page
-                char_count = 0
-
-                def count_chars(obj):
-                    nonlocal char_count
-                    if isinstance(obj, LTChar):
-                        char_count += 1
-                    elif isinstance(obj, LTFigure):
-                        for child in obj:
-                            count_chars(child)
-                    elif hasattr(obj, '__iter__'):
-                        for child in obj:
-                            count_chars(child)
-
-                if ltpage:
-                    count_chars(ltpage)
-
-                if char_count == 0:
-                    pages_without_text += 1
-                    logger.debug(
-                        "Scanned PDF check: page %d has no embedded text",
-                        page_idx + 1
+        try:
+            with open(file_path, 'rb') as f:
+                parser = PDFParser(f)
+                try:
+                    document = PDFDocument(parser)
+                except Exception as e:
+                    # PDFDocument initialization may fail for:
+                    # - Corrupted PDF files
+                    # - Password-protected PDFs (without decryption)
+                    # - Invalid PDF structure
+                    logger.warning(
+                        "Failed to parse PDF document for scan check: %s. "
+                        "Assuming PDF has embedded text.",
+                        e
                     )
-                else:
-                    # Found a page with text - not a scanned PDF
-                    logger.debug(
-                        "Scanned PDF check: page %d has %d characters - PDF has embedded text",
-                        page_idx + 1, char_count
+                    return  # Assume not scanned if we can't check
+
+                rsrcmgr = PDFResourceManager()
+                converter = PDFConverterEx(rsrcmgr)
+                interpreter = PDFPageInterpreter(rsrcmgr, converter)
+
+                pages_without_text = 0
+                pages_checked = 0
+
+                for page_idx, page in enumerate(PDFPage.create_pages(document)):
+                    if page_idx >= SCAN_CHECK_PAGES:
+                        break
+
+                    pages_checked += 1
+                    try:
+                        interpreter.process_page(page)
+                    except Exception as e:
+                        # Page processing may fail for corrupted pages
+                        logger.debug(
+                            "Scanned PDF check: page %d processing failed: %s",
+                            page_idx + 1, e
+                        )
+                        continue
+
+                    ltpage = converter.pages[-1] if converter.pages else None
+
+                    # Count characters on this page
+                    char_count = 0
+
+                    def count_chars(obj):
+                        nonlocal char_count
+                        if isinstance(obj, LTChar):
+                            char_count += 1
+                        elif isinstance(obj, LTFigure):
+                            for child in obj:
+                                count_chars(child)
+                        elif hasattr(obj, '__iter__'):
+                            for child in obj:
+                                count_chars(child)
+
+                    if ltpage:
+                        count_chars(ltpage)
+
+                    if char_count == 0:
+                        pages_without_text += 1
+                        logger.debug(
+                            "Scanned PDF check: page %d has no embedded text",
+                            page_idx + 1
+                        )
+                    else:
+                        # Found a page with text - not a scanned PDF
+                        logger.debug(
+                            "Scanned PDF check: page %d has %d characters - PDF has embedded text",
+                            page_idx + 1, char_count
+                        )
+                        return
+
+                    converter.pages.clear()
+
+                # All checked pages have no text
+                if pages_checked > 0 and pages_without_text == pages_checked:
+                    logger.warning(
+                        "Scanned PDF detected: first %d pages have no embedded text",
+                        pages_checked
                     )
-                    return
+                    raise ScannedPdfError()
 
-                converter.pages.clear()
-
-            # All checked pages have no text
-            if pages_checked > 0 and pages_without_text == pages_checked:
-                logger.warning(
-                    "Scanned PDF detected: first %d pages have no embedded text",
-                    pages_checked
-                )
-                raise ScannedPdfError()
+        except OSError as e:
+            # File access errors (permission denied, file not found, etc.)
+            logger.warning(
+                "Failed to open PDF file for scan check: %s. "
+                "Assuming PDF has embedded text.",
+                e
+            )
+            return
 
     def cancel(self) -> None:
         """Request cancellation of OCR processing."""

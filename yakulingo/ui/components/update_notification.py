@@ -263,6 +263,8 @@ class UpdateNotification:
 
     async def _confirm_install(self, zip_path):
         """インストール確認ダイアログ"""
+        ui.notify('インストール確認ダイアログを表示します', type='info')  # デバッグ
+
         with ui.dialog() as dialog, ui.card().classes('w-80'):
             with ui.column().classes('w-full gap-4 p-4'):
                 ui.icon('check_circle').classes('text-4xl text-positive self-center')
@@ -278,6 +280,7 @@ class UpdateNotification:
                         on_click=lambda: self._do_install(zip_path, dialog),
                     ).classes('btn-primary')
 
+        ui.notify('dialog.open()を呼びます', type='info')  # デバッグ
         dialog.open()
 
     def _do_install(self, zip_path, dialog: ui.dialog):

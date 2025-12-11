@@ -117,7 +117,8 @@
        These defaults are only visible until JS executes (typically < 100ms). */
     --sidebar-width: 260px;
     --input-panel-width: 400px;
-    --result-content-width: 720px;
+    --result-content-width: 800px;  /* Fixed width - padding absorbs window size changes */
+    --result-panel-padding-x: 2rem;  /* Dynamic padding calculated by JS */
     --input-panel-width-wide: 100%;  /* Full width input for 2-column mode */
     --input-panel-max-width: 800px;
     --input-min-height: calc(9 * 1.5 * 1.125rem + 1.6rem);  /* 9 lines (line-height 1.5) + padding */
@@ -238,7 +239,8 @@ body {
 .result-panel {
     flex: 1;
     height: 100%;  /* Use 100% to respect parent's height constraint */
-    padding: 1.5rem 2rem;
+    /* Horizontal padding adjusts dynamically to keep content width fixed */
+    padding: 1.5rem var(--result-panel-padding-x, 2rem);
     overflow-y: auto;
     display: flex;
     flex-direction: column;

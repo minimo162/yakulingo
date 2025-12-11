@@ -2649,15 +2649,16 @@ def _detect_display_settings() -> tuple[tuple[int, int], tuple[int, int, int, in
     # Panel ratios based on 1900px window width
     SIDEBAR_RATIO = 260 / 1900  # 0.137
     INPUT_PANEL_RATIO = 420 / 1900  # 0.221
-    RESULT_CONTENT_RATIO = 800 / 1900  # 0.421 (result panel inner content width)
 
     # Minimum sizes to prevent layout breaking on smaller screens (e.g., 1920x1200)
-    # 1920x1200 → 1424px window needs: sidebar(260) + input(380) + result(680) = 1320px
+    # 1920x1200 → 1424px window needs: sidebar(260) + input(380) + result(800) = 1300px
     MIN_WINDOW_WIDTH = 1400
     MIN_WINDOW_HEIGHT = 850
     MIN_SIDEBAR_WIDTH = 260
     MIN_INPUT_PANEL_WIDTH = 380  # Reduced from 420 for 1920x1200 compatibility
-    MIN_RESULT_CONTENT_WIDTH = 680  # Reduced from 800 for 1920x1200 compatibility
+    # Fixed content width - padding adjusts dynamically to absorb window size changes
+    FIXED_RESULT_CONTENT_WIDTH = 800
+    MIN_RESULT_PANEL_PADDING = 8
 
     def calculate_sizes(screen_width: int, screen_height: int) -> tuple[tuple[int, int], tuple[int, int, int, int]]:
         """Calculate window size and panel widths from screen resolution.
@@ -2682,12 +2683,13 @@ def _detect_display_settings() -> tuple[tuple[int, int], tuple[int, int, int, in
             # Small screen: use pure ratio-based sizes
             sidebar_width = int(window_width * SIDEBAR_RATIO)
             input_panel_width = int(window_width * INPUT_PANEL_RATIO)
-            result_content_width = int(window_width * RESULT_CONTENT_RATIO)
         else:
             # Normal screen: apply minimums
             sidebar_width = max(int(window_width * SIDEBAR_RATIO), MIN_SIDEBAR_WIDTH)
             input_panel_width = max(int(window_width * INPUT_PANEL_RATIO), MIN_INPUT_PANEL_WIDTH)
-            result_content_width = max(int(window_width * RESULT_CONTENT_RATIO), MIN_RESULT_CONTENT_WIDTH)
+
+        # Fixed content width - padding adjusts to absorb window size changes
+        result_content_width = FIXED_RESULT_CONTENT_WIDTH
 
         # Calculate max-width for input panel in 2-column mode (centered layout)
         # Main area = window - sidebar, use 50% of available width for balanced layout
@@ -3005,10 +3007,11 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
     const REFERENCE_FONT_SIZE = 16;
     const SIDEBAR_RATIO = 260 / 1900;
     const INPUT_PANEL_RATIO = 420 / 1900;
-    const RESULT_CONTENT_RATIO = 800 / 1900;
     const MIN_SIDEBAR_WIDTH = 260;
     const MIN_INPUT_PANEL_WIDTH = 380;
-    const MIN_RESULT_CONTENT_WIDTH = 680;
+    // Fixed content width - padding adjusts instead of content shrinking
+    const FIXED_RESULT_CONTENT_WIDTH = 800;
+    const MIN_RESULT_PANEL_PADDING = 8;
     const TEXTAREA_LINES = 7;
     const TEXTAREA_LINE_HEIGHT = 1.5;
     const TEXTAREA_FONT_RATIO = 1.125;
@@ -3025,10 +3028,16 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
         // Calculate panel widths
         const sidebarWidth = Math.max(Math.round(windowWidth * SIDEBAR_RATIO), MIN_SIDEBAR_WIDTH);
         const inputPanelWidth = Math.max(Math.round(windowWidth * INPUT_PANEL_RATIO), MIN_INPUT_PANEL_WIDTH);
-        const resultContentWidth = Math.max(Math.round(windowWidth * RESULT_CONTENT_RATIO), MIN_RESULT_CONTENT_WIDTH);
 
         // Calculate max-width for input panel in 2-column mode
         const mainAreaWidth = windowWidth - sidebarWidth;
+
+        // Fixed content width with dynamic padding - content stays same size, padding absorbs window changes
+        const resultContentWidth = FIXED_RESULT_CONTENT_WIDTH;
+        const resultPanelPaddingX = Math.max(
+            Math.floor((mainAreaWidth - FIXED_RESULT_CONTENT_WIDTH) / 2),
+            MIN_RESULT_PANEL_PADDING
+        );
         const inputPanelMaxWidth = Math.round((mainAreaWidth - 60) * 0.5);
 
         // Calculate input min/max height
@@ -3046,6 +3055,7 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
         root.style.setProperty('--sidebar-width', sidebarWidth + 'px');
         root.style.setProperty('--input-panel-width', inputPanelWidth + 'px');
         root.style.setProperty('--result-content-width', resultContentWidth + 'px');
+        root.style.setProperty('--result-panel-padding-x', resultPanelPaddingX + 'px');
         root.style.setProperty('--input-panel-max-width', inputPanelMaxWidth + 'px');
         root.style.setProperty('--input-min-height', inputMinHeight + 'px');
         root.style.setProperty('--input-max-height', inputMaxHeight + 'px');

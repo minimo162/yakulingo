@@ -556,6 +556,32 @@ History is stored locally in SQLite:
 ~/.yakulingo/history.db
 ```
 
+### Logging
+Application logs are stored in:
+```
+~/.yakulingo/logs/startup.log
+```
+
+**ログファイル設定:**
+| 項目 | 値 |
+|------|------|
+| 場所 | `~/.yakulingo/logs/startup.log` |
+| 最大サイズ | 1MB |
+| バックアップ数 | 3 (`startup.log.1`, `.2`, `.3`) |
+| エンコーディング | UTF-8 |
+| コンソールレベル | INFO |
+| ファイルレベル | DEBUG |
+
+**その他のログファイル:**
+| ファイル | 場所 | 用途 |
+|----------|------|------|
+| アップデートログ | `%TEMP%\YakuLingo_update_debug.log` | アップデート時のデバッグ情報 |
+
+**ログファイルが生成されない場合の確認:**
+1. `~/.yakulingo/logs/` ディレクトリの作成権限
+2. ログファイルが別プロセスでロックされていないか
+3. コンソール出力に `[WARNING] Failed to create log directory/file` が出ていないか
+
 ## M365 Copilot Integration
 
 The `CopilotHandler` class automates Microsoft Edge browser:

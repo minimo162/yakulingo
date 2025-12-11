@@ -17,16 +17,19 @@ sys.path.insert(0, str(project_root))
 
 
 def setup_logging():
-    """Configure logging to console for debugging"""
-    logs_dir = Path.home() / ".yakulingo" / "logs"
-    try:
-        logs_dir.mkdir(parents=True, exist_ok=True)
-    except OSError as e:
-        # Fall back to console-only logging if log directory cannot be created
-        logging.getLogger(__name__).warning("Failed to create log directory: %s", e)
-        logs_dir = None
+    """Configure logging to console and file for debugging.
 
-    # Create console handler for terminal output
+    Log file location: ~/.yakulingo/logs/startup.log
+    - RotatingFileHandler: max 1MB, 3 backups
+    - Encoding: UTF-8
+
+    Returns:
+        tuple: (console_handler, file_handler) to keep references alive
+    """
+    logs_dir = Path.home() / ".yakulingo" / "logs"
+    log_file_path = logs_dir / "startup.log"
+
+    # Create console handler first (always works)
     console_handler = logging.StreamHandler(sys.stderr)
     console_handler.setLevel(logging.INFO)
     console_handler.setFormatter(logging.Formatter(
@@ -34,11 +37,20 @@ def setup_logging():
         datefmt='%H:%M:%S'
     ))
 
+    # Try to create log directory
     file_handler = None
+    try:
+        logs_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        # Fall back to console-only logging if log directory cannot be created
+        print(f"[WARNING] Failed to create log directory {logs_dir}: {e}", file=sys.stderr)
+        logs_dir = None
+
+    # Try to create file handler
     if logs_dir is not None:
         try:
             file_handler = RotatingFileHandler(
-                logs_dir / "startup.log",
+                log_file_path,
                 maxBytes=1_000_000,
                 backupCount=3,
                 encoding='utf-8'
@@ -49,7 +61,7 @@ def setup_logging():
                 datefmt='%Y-%m-%d %H:%M:%S'
             ))
         except OSError as e:
-            logging.getLogger(__name__).warning("Failed to set up file logging: %s", e)
+            print(f"[WARNING] Failed to create log file {log_file_path}: {e}", file=sys.stderr)
             file_handler = None
 
     # Configure root logger
@@ -80,11 +92,18 @@ def setup_logging():
     logger.info("CWD: %s", Path.cwd())
     logger.debug("sys.argv: %s", sys.argv)
 
-    return console_handler  # Return handler to keep reference
+    # Log file location information
+    if file_handler:
+        logger.info("Log file: %s", log_file_path)
+    else:
+        logger.warning("File logging disabled - console only")
+
+    return (console_handler, file_handler)  # Return both handlers to keep references
 
 
-# Global reference to keep log handler alive
-_global_log_handler = None
+# Global reference to keep log handlers alive (prevents garbage collection)
+# Tuple of (console_handler, file_handler)
+_global_log_handlers = None
 
 
 def main():
@@ -110,8 +129,8 @@ def main():
     # See: https://pywebview.flowrl.com/guide/web_engine.html
     os.environ.setdefault('PYWEBVIEW_GUI', 'edgechromium')
 
-    global _global_log_handler
-    _global_log_handler = setup_logging()  # Keep reference to prevent garbage collection
+    global _global_log_handlers
+    _global_log_handlers = setup_logging()  # Keep reference to prevent garbage collection
 
     logger = logging.getLogger(__name__)
     logger.info("[TIMING] main() setup: %.2fs", time.perf_counter() - _t_start)

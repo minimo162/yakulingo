@@ -14,6 +14,7 @@ Features:
 import logging
 import os
 import platform
+from collections import OrderedDict
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -389,23 +390,53 @@ class FontInfo:
     font_id: str           # PDF internal ID (F1, F2, ...)
     family: str            # Font family name (display)
     path: Optional[str]    # Font file path
-    fallback: Optional[str]  # Fallback path
+    fallback: Optional[str]  # Fallback path (PyMuPDF built-in font name)
     encoding: str          # "cid" or "simple"
     is_cjk: bool           # Is CJK font
     font_type: FontType = FontType.EMBEDDED  # Font type for encoding selection
+    # Cache for file existence check (avoids repeated filesystem lookups)
+    _file_exists_cache: Optional[bool] = None
 
     @property
     def is_available(self) -> bool:
         """
         Check if font is available for use.
 
-        PDFMathTranslate compliant: A font is available if it has a valid path.
-        Fonts without paths cannot be embedded and will cause rendering failures.
+        PDFMathTranslate compliant: A font is available if:
+        1. It has a valid path AND the file exists on disk, OR
+        2. It's an existing PDF font (path is None, font_type is CID/SIMPLE), OR
+        3. It has a fallback PyMuPDF built-in font
+
+        Fonts without valid paths or fallbacks cannot be embedded and will
+        cause rendering failures.
+
+        Uses internal cache to avoid repeated filesystem checks.
 
         Returns:
-            True if font has a valid path, False otherwise
+            True if font is available for use, False otherwise
         """
-        return self.path is not None
+        # Existing PDF fonts (no file needed - already in PDF)
+        if self.path is None and self.font_type in (FontType.CID, FontType.SIMPLE):
+            return True
+
+        # Check if fallback is available (PyMuPDF built-in fonts)
+        if self.fallback is not None:
+            return True
+
+        # No path means no font file
+        if self.path is None:
+            return False
+
+        # Check file existence (with caching)
+        if self._file_exists_cache is None:
+            try:
+                object.__setattr__(self, '_file_exists_cache', os.path.isfile(self.path))
+            except (OSError, TypeError):
+                # OSError: permission denied, path too long, etc.
+                # TypeError: path is not a valid string
+                object.__setattr__(self, '_file_exists_cache', False)
+
+        return self._file_exists_cache
 
 
 # =============================================================================
@@ -426,6 +457,12 @@ class FontRegistry:
         "zh-CN": {"family": "Chinese", "encoding": "cid", "is_cjk": True},
         "ko": {"family": "Korean", "encoding": "cid", "is_cjk": True},
     }
+
+    # Cache size limits to prevent unbounded memory growth
+    # These limits are per-FontRegistry instance
+    _GLYPH_ID_CACHE_MAX_SIZE = 50000  # ~50K entries, ~4MB for typical usage
+    _CHAR_WIDTH_CACHE_MAX_SIZE = 50000  # ~50K entries, ~4MB for typical usage
+    _FONT_SELECTION_CACHE_MAX_SIZE = 1000  # ~1K entries for text analysis
 
     def __init__(self, font_ja: Optional[str] = None, font_en: Optional[str] = None):
         """
@@ -455,19 +492,21 @@ class FontRegistry:
         # Maps font_id -> pdfminer font object (for existing fonts)
         self._pdfminer_fonts: dict[str, Any] = {}
 
-        # Performance caches
+        # Performance caches with LRU eviction (OrderedDict for O(1) LRU)
         # Glyph ID cache: (font_id, char) -> glyph_id
-        self._glyph_id_cache: dict[tuple[str, str], int] = {}
+        self._glyph_id_cache: OrderedDict[tuple[str, str], int] = OrderedDict()
         # Character width cache: (font_id, char) -> normalized_width (multiply by font_size)
-        self._char_width_cache: dict[tuple[str, str], float] = {}
+        self._char_width_cache: OrderedDict[tuple[str, str], float] = OrderedDict()
+        # Font selection cache: (first_special_char, target_lang) -> font_id
+        self._font_selection_cache: OrderedDict[tuple[str, str], str] = OrderedDict()
         # Existing CID font cache (None = not yet checked, "" = no CID font found)
         self._existing_cid_font_cache: Optional[str] = None
-        # Font selection cache: (first_special_char, target_lang) -> font_id
-        self._font_selection_cache: dict[tuple[str, str], str] = {}
         # Warned missing fonts (to avoid duplicate warnings)
         self._warned_missing_fonts: set[str] = set()
         # Thread-safety lock for warning sets (avoid duplicate warnings in concurrent access)
         self._warning_lock = threading.Lock()
+        # Thread-safety lock for caches (LRU operations need to be atomic)
+        self._cache_lock = threading.Lock()
 
     def register_font(self, lang: str) -> str:
         """
@@ -786,7 +825,8 @@ class FontRegistry:
         Therefore, we must use the actual glyph index from has_glyph(),
         not the Unicode code point.
 
-        Uses internal cache to avoid repeated lookups.
+        Uses internal LRU cache to avoid repeated lookups while preventing
+        unbounded memory growth.
 
         PDFMathTranslate compliant: Logs warning when Font object is missing.
         This helps diagnose "invisible text" issues caused by font embedding failures.
@@ -799,10 +839,13 @@ class FontRegistry:
             Glyph index for the character (for Identity-H without CIDToGIDMap).
             Returns 0 (.notdef) if font object is missing or glyph not found.
         """
-        # Check cache first
+        # Check cache first (thread-safe LRU access)
         cache_key = (font_id, char)
-        if cache_key in self._glyph_id_cache:
-            return self._glyph_id_cache[cache_key]
+        with self._cache_lock:
+            if cache_key in self._glyph_id_cache:
+                # Move to end (most recently used)
+                self._glyph_id_cache.move_to_end(cache_key)
+                return self._glyph_id_cache[cache_key]
 
         glyph_idx = 0  # Default: .notdef glyph (invisible in PDF renderers)
         font_obj = self._font_objects.get(font_id)
@@ -853,15 +896,20 @@ class FontRegistry:
                     font_id
                 )
 
-        # Cache the result
-        self._glyph_id_cache[cache_key] = glyph_idx
+        # Cache the result with LRU eviction (thread-safe)
+        with self._cache_lock:
+            self._glyph_id_cache[cache_key] = glyph_idx
+            # Evict oldest entries if cache is full
+            while len(self._glyph_id_cache) > self._GLYPH_ID_CACHE_MAX_SIZE:
+                self._glyph_id_cache.popitem(last=False)
+
         return glyph_idx
 
     def get_char_width(self, font_id: str, char: str, font_size: float) -> float:
         """
         Get character width in points for the specified font and size.
 
-        Uses internal cache for normalized width (scaled by font_size at runtime).
+        Uses internal LRU cache for normalized width (scaled by font_size at runtime).
         Supports both PyMuPDF Font objects (embedded fonts) and pdfminer font
         objects (existing PDF fonts).
 
@@ -874,9 +922,13 @@ class FontRegistry:
             Character width in points
         """
         # Check cache first (stores normalized width, multiply by font_size)
+        # Thread-safe LRU access
         cache_key = (font_id, char)
-        if cache_key in self._char_width_cache:
-            return self._char_width_cache[cache_key] * font_size
+        with self._cache_lock:
+            if cache_key in self._char_width_cache:
+                # Move to end (most recently used)
+                self._char_width_cache.move_to_end(cache_key)
+                return self._char_width_cache[cache_key] * font_size
 
         normalized_width = None
 
@@ -904,8 +956,13 @@ class FontRegistry:
         if normalized_width is None:
             normalized_width = self._estimate_char_width_normalized(char)
 
-        # Cache normalized width
-        self._char_width_cache[cache_key] = normalized_width
+        # Cache normalized width with LRU eviction (thread-safe)
+        with self._cache_lock:
+            self._char_width_cache[cache_key] = normalized_width
+            # Evict oldest entries if cache is full
+            while len(self._char_width_cache) > self._CHAR_WIDTH_CACHE_MAX_SIZE:
+                self._char_width_cache.popitem(last=False)
+
         return normalized_width * font_size
 
     def _get_pdfminer_char_width(self, pdfminer_font: Any, char: str) -> Optional[float]:
@@ -1232,7 +1289,7 @@ class FontRegistry:
                     e, type(e).__name__
                 )
 
-    def register_existing_font(self, font_name: str, pdfminer_font: Any) -> str:
+    def register_existing_font(self, font_name: str, pdfminer_font: Any) -> Optional[str]:
         """
         Register an existing PDF font (from fontmap).
 
@@ -1240,11 +1297,20 @@ class FontRegistry:
 
         Args:
             font_name: Font name from PDF
-            pdfminer_font: pdfminer font object
+            pdfminer_font: pdfminer font object (can be None if font failed to load)
 
         Returns:
-            Font ID (F1, F2, ...)
+            Font ID (F1, F2, ...) or None if font is invalid
         """
+        # Validate input: pdfminer_font can be None if font failed to load
+        if pdfminer_font is None:
+            logger.warning(
+                "Cannot register font '%s': pdfminer font object is None. "
+                "This font was likely corrupted or uses an unsupported format.",
+                font_name
+            )
+            return None
+
         # Check if already registered
         for lang, font_info in self.fonts.items():
             if font_info.family == font_name:

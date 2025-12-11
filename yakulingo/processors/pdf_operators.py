@@ -31,7 +31,12 @@ class PdfOperatorGenerator:
     """
 
     def __init__(self, font_registry: FontRegistry):
+        import threading
+
         self.font_registry = font_registry
+        # Thread-safe set for tracking warned CID fonts (avoid duplicate warnings)
+        self._warned_cid_fonts: set[str] = set()
+        self._warned_cid_fonts_lock = threading.Lock()
 
     def gen_op_txt(
         self,
@@ -172,12 +177,10 @@ class PdfOperatorGenerator:
             font_id: Font ID to validate
             text: Text being encoded (for logging)
         """
-        # Check if we've already warned about this font
-        if not hasattr(self, '_warned_cid_fonts'):
-            self._warned_cid_fonts = set()
-
-        if font_id in self._warned_cid_fonts:
-            return
+        # Thread-safe check if we've already warned about this font
+        with self._warned_cid_fonts_lock:
+            if font_id in self._warned_cid_fonts:
+                return
 
         # Try to get pdfminer font object for CMap analysis
         pdfminer_font = self.font_registry._pdfminer_fonts.get(font_id)
@@ -204,14 +207,16 @@ class PdfOperatorGenerator:
         }
 
         if cmap_name and cmap_name not in identity_compatible_cmaps:
-            # Non-Identity CMap detected - warn user
-            self._warned_cid_fonts.add(font_id)
-            logger.warning(
-                "CID font '%s' uses CMap '%s' which may not be Identity-H compatible. "
-                "Text encoding might be incorrect. If text appears garbled, "
-                "try converting the PDF with embedded fonts.",
-                font_id, cmap_name
-            )
+            # Non-Identity CMap detected - warn user (thread-safe)
+            with self._warned_cid_fonts_lock:
+                if font_id not in self._warned_cid_fonts:
+                    self._warned_cid_fonts.add(font_id)
+                    logger.warning(
+                        "CID font '%s' uses CMap '%s' which may not be Identity-H compatible. "
+                        "Text encoding might be incorrect. If text appears garbled, "
+                        "try converting the PDF with embedded fonts.",
+                        font_id, cmap_name
+                    )
 
     def calculate_text_width(self, font_id: str, text: str, font_size: float) -> float:
         """

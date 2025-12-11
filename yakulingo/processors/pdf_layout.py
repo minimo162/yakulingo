@@ -608,6 +608,16 @@ def create_layout_array_from_pp_doclayout(
         x1 = max(0, min(int(coord[2]) + 1, max_x))
         y1 = max(0, min(int(coord[3]) + 1, max_y))
 
+        # Validate that clipping didn't invert coordinates
+        # This can happen when margin adjustment crosses boundaries
+        if x0 >= x1 or y0 >= y1:
+            logger.debug(
+                "Skipping box with invalid clipped coordinates: "
+                "x0=%d, y0=%d, x1=%d, y1=%d (original: %s)",
+                x0, y0, x1, y1, coord[:4]
+            )
+            continue
+
         # Defer skip labels
         if label in LAYOUT_SKIP_LABELS:
             skip_boxes.append((x0, y0, x1, y1))

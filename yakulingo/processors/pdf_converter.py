@@ -15,6 +15,7 @@ Based on PDFMathTranslate: https://github.com/PDFMathTranslate/PDFMathTranslate
 """
 
 import logging
+import math
 import re
 import unicodedata
 from dataclasses import dataclass, field
@@ -848,6 +849,11 @@ def pdf_to_image_coord(
         ValueError: If page_height <= 0 or scale <= 0
     """
     # PDFMathTranslate compliant: Validate inputs to prevent invalid conversions
+    # Check for NaN/infinity before numeric comparisons (NaN comparisons always False)
+    if math.isnan(page_height) or math.isinf(page_height):
+        raise ValueError(f"Invalid page_height: {page_height}. Must be a finite number.")
+    if math.isnan(scale) or math.isinf(scale):
+        raise ValueError(f"Invalid scale: {scale}. Must be a finite number.")
     if page_height <= 0:
         raise ValueError(f"Invalid page_height: {page_height}. Must be positive.")
     if scale <= 0:
@@ -883,6 +889,11 @@ def image_to_pdf_coord(
         ValueError: If page_height <= 0 or scale <= 0
     """
     # PDFMathTranslate compliant: Validate inputs to prevent invalid conversions
+    # Check for NaN/infinity before numeric comparisons (NaN comparisons always False)
+    if math.isnan(page_height) or math.isinf(page_height):
+        raise ValueError(f"Invalid page_height: {page_height}. Must be a finite number.")
+    if math.isnan(scale) or math.isinf(scale):
+        raise ValueError(f"Invalid scale: {scale}. Must be a finite number.")
     if page_height <= 0:
         raise ValueError(f"Invalid page_height: {page_height}. Must be positive.")
     if scale <= 0:

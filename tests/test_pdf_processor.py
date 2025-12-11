@@ -3413,6 +3413,44 @@ class TestCoordinateConversion:
         with pytest.raises(ValueError, match="Invalid scale"):
             pdf_to_image_coord(100, 700, page_height=842, scale=-1.0)
 
+    def test_pdf_to_image_coord_nan_infinity(self):
+        """Test that NaN/infinity values raise ValueError"""
+        import math
+        from yakulingo.processors.pdf_converter import pdf_to_image_coord
+
+        # Test NaN page_height
+        with pytest.raises(ValueError, match="Must be a finite number"):
+            pdf_to_image_coord(100, 700, page_height=float('nan'), scale=1.0)
+
+        # Test infinity page_height
+        with pytest.raises(ValueError, match="Must be a finite number"):
+            pdf_to_image_coord(100, 700, page_height=float('inf'), scale=1.0)
+
+        # Test negative infinity page_height
+        with pytest.raises(ValueError, match="Must be a finite number"):
+            pdf_to_image_coord(100, 700, page_height=float('-inf'), scale=1.0)
+
+        # Test NaN scale
+        with pytest.raises(ValueError, match="Must be a finite number"):
+            pdf_to_image_coord(100, 700, page_height=842, scale=float('nan'))
+
+        # Test infinity scale
+        with pytest.raises(ValueError, match="Must be a finite number"):
+            pdf_to_image_coord(100, 700, page_height=842, scale=float('inf'))
+
+    def test_image_to_pdf_coord_nan_infinity(self):
+        """Test that NaN/infinity values raise ValueError in image_to_pdf_coord"""
+        import math
+        from yakulingo.processors.pdf_converter import image_to_pdf_coord
+
+        # Test NaN page_height
+        with pytest.raises(ValueError, match="Must be a finite number"):
+            image_to_pdf_coord(100, 142, page_height=float('nan'), scale=1.0)
+
+        # Test infinity scale
+        with pytest.raises(ValueError, match="Must be a finite number"):
+            image_to_pdf_coord(100, 142, page_height=842, scale=float('inf'))
+
     def test_image_to_pdf_coord_invalid_page_height(self):
         """Test that invalid page_height raises ValueError"""
         from yakulingo.processors.pdf_converter import image_to_pdf_coord

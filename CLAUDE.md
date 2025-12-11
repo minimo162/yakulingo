@@ -690,6 +690,44 @@ The handler uses explicit waits instead of fixed delays:
 - **New chat ready**: Waits for input field to become visible
 - **GPT-5 toggle**: Checked and enabled before each message send (handles delayed rendering)
 
+### User's Edge Browser Isolation (重要)
+
+**設計原則: ユーザーが通常使用するEdgeブラウザには一切干渉しない**
+
+アプリが操作するEdgeウィンドウの特定方法：
+
+| 方法 | 説明 | 安全性 |
+|------|------|--------|
+| ページタイトル完全一致 | Playwrightから取得したタイトルで検索 | ✅ 安全 |
+| プロセスID | `self.edge_process.pid` で起動したEdgeのみ対象 | ✅ 安全 |
+
+**禁止事項（絶対に実装しないこと）:**
+- ❌ タイトルパターンマッチによるウィンドウ検索（例: "microsoft 365", "copilot", "sign in", "ログイン" 等を含むタイトル）
+- ❌ クラス名のみによるEdgeウィンドウ検索（"Chrome_WidgetWin_1"）
+- ❌ プロセスIDなしでのウィンドウ操作
+
+**理由:**
+ユーザーが通常のEdgeでMicrosoft 365（Outlook, Teams, OneDrive等）やログインページを開いている場合、
+タイトルパターンマッチを使うとそれらのウィンドウが誤って最小化・前面化される可能性がある。
+
+**`_find_edge_window_handle` の実装ルール:**
+1. `page_title` による完全一致を優先
+2. `self.edge_process.pid` によるプロセスIDマッチのみをフォールバックとして使用
+3. タイトルの部分一致検索は使用禁止
+
+```python
+# ✅ 正しい実装
+if target_pid:
+    window_pid = wintypes.DWORD()
+    user32.GetWindowThreadProcessId(hwnd, ctypes.byref(window_pid))
+    if window_pid.value == target_pid:
+        return hwnd  # アプリが起動したEdgeのみ
+
+# ❌ 禁止: タイトルパターンマッチ
+if "microsoft 365" in window_title.lower():  # 絶対に使わない
+    return hwnd
+```
+
 ### Retry Logic with Exponential Backoff
 
 Copilotエラー時のリトライはエクスポネンシャルバックオフを使用：

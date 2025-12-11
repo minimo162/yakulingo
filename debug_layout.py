@@ -28,18 +28,16 @@ def main():
     from yakulingo.ui.app import _detect_display_settings
 
     # ディスプレイ設定を検出
-    window_size, display_mode, panel_sizes = _detect_display_settings()
-    sidebar_width, input_panel_width, result_content_width, input_panel_max_width = panel_sizes
+    window_size, panel_sizes = _detect_display_settings()
+    sidebar_width, input_panel_width, content_width = panel_sizes
 
     print("=" * 60)
     print("YakuLingo レイアウト診断")
     print("=" * 60)
-    print(f"検出されたディスプレイモード: {display_mode}")
     print(f"ウィンドウサイズ: {window_size[0]} x {window_size[1]}")
     print(f"サイドバー幅: {sidebar_width}px")
     print(f"入力パネル幅: {input_panel_width}px")
-    print(f"結果コンテンツ幅: {result_content_width}px")
-    print(f"入力パネル最大幅: {input_panel_max_width}px")
+    print(f"コンテンツ幅: {content_width}px")
     print("=" * 60)
 
     @ui.page('/')
@@ -52,15 +50,13 @@ def main():
             :root {{
                 --sidebar-width: {sidebar_width}px;
                 --input-panel-width: {input_panel_width}px;
-                --result-content-width: {result_content_width}px;
-                --input-panel-width-wide: 100%;
-                --input-panel-max-width: {input_panel_max_width}px;
+                --content-width: {content_width}px;
                 --input-min-height: 200px;
             }}
         </style>''')
 
         # 2カラムレイアウトを再現（実際のアプリと同じ構造）
-        with ui.element('div').classes(f'app-container {display_mode}-mode').style('position: absolute; top: 0; left: 0; right: 0; bottom: 0;') as app_container:
+        with ui.element('div').classes('app-container').style('position: absolute; top: 0; left: 0; right: 0; bottom: 0;') as app_container:
             # サイドバー
             with ui.element('div').classes('sidebar'):
                 with ui.element('div').classes('sidebar-header'):
@@ -142,8 +138,7 @@ def main():
                 results.cssVariables = {
                     sidebarWidth: rootStyle.getPropertyValue('--sidebar-width'),
                     inputPanelWidth: rootStyle.getPropertyValue('--input-panel-width'),
-                    inputPanelWidthWide: rootStyle.getPropertyValue('--input-panel-width-wide'),
-                    inputPanelMaxWidth: rootStyle.getPropertyValue('--input-panel-max-width'),
+                    contentWidth: rootStyle.getPropertyValue('--content-width'),
                     inputMinHeight: rootStyle.getPropertyValue('--input-min-height')
                 };
 

@@ -209,9 +209,10 @@ class YakuLingoApp:
         # Uses same lock as streaming timer since text and file translation don't run concurrently
         self._active_progress_timer: Optional[ui.timer] = None
 
-        # Panel sizes (sidebar_width, input_panel_width, result_content_width, input_panel_max_width) in pixels
+        # Panel sizes (sidebar_width, input_panel_width, content_width) in pixels
         # Set by run_app() based on monitor detection
-        self._panel_sizes: tuple[int, int, int, int] = (260, 420, 800, 900)
+        # content_width is unified for both input and result panels (600-900px)
+        self._panel_sizes: tuple[int, int, int] = (260, 420, 800)
 
         # Window size (width, height) in pixels
         # Set by run_app() based on monitor detection
@@ -2629,7 +2630,7 @@ def create_app() -> YakuLingoApp:
     return YakuLingoApp()
 
 
-def _detect_display_settings() -> tuple[tuple[int, int], tuple[int, int, int, int]]:
+def _detect_display_settings() -> tuple[tuple[int, int], tuple[int, int, int]]:
     """Detect connected monitors and determine window size and panel widths.
 
     Uses pywebview's screens API to detect multiple monitors BEFORE ui.run().
@@ -2640,7 +2641,8 @@ def _detect_display_settings() -> tuple[tuple[int, int], tuple[int, int, int, in
     Reference: 1920x1200 monitor → 1424x916 window, sidebar 260px, input panel 380px.
 
     Returns:
-        Tuple of ((window_width, window_height), (sidebar_width, input_panel_width, result_content_width, input_panel_max_width))
+        Tuple of ((window_width, window_height), (sidebar_width, input_panel_width, content_width))
+        - content_width: Unified width for both input and result panel content (600-900px)
     """
     # Reference ratios based on 2560x1440 → 1900x1100
     WIDTH_RATIO = 1900 / 2560  # 0.742
@@ -2651,18 +2653,19 @@ def _detect_display_settings() -> tuple[tuple[int, int], tuple[int, int, int, in
     INPUT_PANEL_RATIO = 420 / 1900  # 0.221
 
     # Minimum sizes to prevent layout breaking on smaller screens (e.g., 1920x1200)
-    # 1920x1200 → 1424px window needs: sidebar(260) + input(380) + result(800) = 1300px
     MIN_WINDOW_WIDTH = 1400
     MIN_WINDOW_HEIGHT = 850
     MIN_SIDEBAR_WIDTH = 260
     MIN_INPUT_PANEL_WIDTH = 380  # Reduced from 420 for 1920x1200 compatibility
-    # Content width scales with window size, minimum 800px
-    # Reference: 1900px window → 1640px main area → 800px content (ratio = 0.488)
-    REFERENCE_MAIN_AREA_WIDTH = 1900 - 260  # 1640px
-    CONTENT_RATIO = 800 / REFERENCE_MAIN_AREA_WIDTH  # 0.488
-    MIN_RESULT_CONTENT_WIDTH = 800
 
-    def calculate_sizes(screen_width: int, screen_height: int) -> tuple[tuple[int, int], tuple[int, int, int, int]]:
+    # Unified content width for both input and result panels
+    # Uses mainAreaWidth * 0.55, clamped to 600-900px range
+    # This ensures consistent panel proportions across all resolutions
+    CONTENT_RATIO = 0.55
+    MIN_CONTENT_WIDTH = 600
+    MAX_CONTENT_WIDTH = 900
+
+    def calculate_sizes(screen_width: int, screen_height: int) -> tuple[tuple[int, int], tuple[int, int, int]]:
         """Calculate window size and panel widths from screen resolution.
 
         Applies minimum values for larger screens, but respects screen bounds for smaller screens.
@@ -2670,7 +2673,7 @@ def _detect_display_settings() -> tuple[tuple[int, int], tuple[int, int, int, in
 
         Returns:
             Tuple of ((window_width, window_height),
-                      (sidebar_width, input_panel_width, result_content_width, input_panel_max_width))
+                      (sidebar_width, input_panel_width, content_width))
         """
         # Calculate window size based on ratio, but never exceed screen bounds
         max_window_width = int(screen_width * 0.95)  # Leave 5% margin
@@ -2690,15 +2693,15 @@ def _detect_display_settings() -> tuple[tuple[int, int], tuple[int, int, int, in
             sidebar_width = max(int(window_width * SIDEBAR_RATIO), MIN_SIDEBAR_WIDTH)
             input_panel_width = max(int(window_width * INPUT_PANEL_RATIO), MIN_INPUT_PANEL_WIDTH)
 
-        # Calculate max-width for input panel in 2-column mode (centered layout)
-        # Main area = window - sidebar, use 50% of available width for balanced layout
+        # Calculate unified content width for both input and result panels
+        # Main area = window - sidebar
         main_area_width = window_width - sidebar_width
 
-        # Content width scales with main area, minimum 800px for small screens
-        result_content_width = max(int(main_area_width * CONTENT_RATIO), MIN_RESULT_CONTENT_WIDTH)
-        input_panel_max_width = int((main_area_width - 60) * 0.5)
+        # Content width: mainAreaWidth * 0.55, clamped to 600-900px
+        # This ensures consistent proportions across all resolutions
+        content_width = min(max(int(main_area_width * CONTENT_RATIO), MIN_CONTENT_WIDTH), MAX_CONTENT_WIDTH)
 
-        return ((window_width, window_height), (sidebar_width, input_panel_width, result_content_width, input_panel_max_width))
+        return ((window_width, window_height), (sidebar_width, input_panel_width, content_width))
 
     # Default based on 1920x1080 screen
     default_window, default_panels = calculate_sizes(1920, 1080)
@@ -2735,9 +2738,9 @@ def _detect_display_settings() -> tuple[tuple[int, int], tuple[int, int, int, in
         window_size, panel_sizes = calculate_sizes(logical_width, logical_height)
 
         logger.info(
-            "Window %dx%d, sidebar %dpx, input panel %dpx, result content %dpx, input max %dpx",
+            "Window %dx%d, sidebar %dpx, input panel %dpx, content %dpx",
             window_size[0], window_size[1],
-            panel_sizes[0], panel_sizes[1], panel_sizes[2], panel_sizes[3]
+            panel_sizes[0], panel_sizes[1], panel_sizes[2]
         )
         return (window_size, panel_sizes)
 
@@ -2819,12 +2822,12 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
     logger.info("Native mode enabled: %s", native)
     if native:
         window_size, panel_sizes = _detect_display_settings()
-        yakulingo_app._panel_sizes = panel_sizes  # (sidebar_width, input_panel_width, result_content_width, input_panel_max_width)
+        yakulingo_app._panel_sizes = panel_sizes  # (sidebar_width, input_panel_width, content_width)
         yakulingo_app._window_size = window_size
         run_window_size = window_size
     else:
         window_size = (1900, 1100)  # Default size for browser mode
-        yakulingo_app._panel_sizes = (260, 420, 800, 900)  # Default panel sizes
+        yakulingo_app._panel_sizes = (260, 420, 800)  # Default panel sizes (sidebar, input, content)
         yakulingo_app._window_size = window_size
         run_window_size = None  # Passing a size would re-enable native mode inside NiceGUI
     logger.info("[TIMING] _detect_display_settings: %.2fs", time.perf_counter() - _t2)
@@ -2957,7 +2960,7 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
         yakulingo_app.settings
 
         # Set dynamic panel sizes as CSS variables (calculated from monitor resolution)
-        sidebar_width, input_panel_width, result_content_width, input_panel_max_width = yakulingo_app._panel_sizes
+        sidebar_width, input_panel_width, content_width = yakulingo_app._panel_sizes
         window_width, window_height = yakulingo_app._window_size
 
         # Calculate base font size with gentle scaling (needed for other calculations)
@@ -2984,17 +2987,16 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
             TEXTAREA_PADDING_RATIO * textarea_font_size
         )
 
-        # Calculate input max-height based on input max-width to maintain consistent aspect ratio
+        # Calculate input max-height based on content width to maintain consistent aspect ratio
         # Aspect ratio 4:3 (height = width * 0.75) for balanced appearance across resolutions
-        input_max_height = int(input_panel_max_width * 0.75)
+        input_max_height = int(content_width * 0.75)
 
         ui.add_head_html(f'''<style>
 :root {{
     --base-font-size: {base_font_size}px;
     --sidebar-width: {sidebar_width}px;
     --input-panel-width: {input_panel_width}px;
-    --result-content-width: {result_content_width}px;
-    --input-panel-max-width: {input_panel_max_width}px;
+    --content-width: {content_width}px;
     --input-min-height: {input_min_height}px;
     --input-max-height: {input_max_height}px;
 }}
@@ -3011,12 +3013,11 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
     const INPUT_PANEL_RATIO = 420 / 1900;
     const MIN_SIDEBAR_WIDTH = 260;
     const MIN_INPUT_PANEL_WIDTH = 380;
-    // Content width scales with window size, minimum 800px
-    // Reference: 1900px window → 1640px main area → 800px content (ratio = 0.488)
-    const REFERENCE_MAIN_AREA_WIDTH = 1900 - 260;  // 1640px
-    const CONTENT_RATIO = 800 / REFERENCE_MAIN_AREA_WIDTH;  // 0.488
-    const MIN_RESULT_CONTENT_WIDTH = 800;
-    const MIN_RESULT_PANEL_PADDING = 8;
+    // Unified content width for both input and result panels
+    // Uses mainAreaWidth * 0.55, clamped to 600-900px
+    const CONTENT_RATIO = 0.55;
+    const MIN_CONTENT_WIDTH = 600;
+    const MAX_CONTENT_WIDTH = 900;
     const TEXTAREA_LINES = 7;
     const TEXTAREA_LINE_HEIGHT = 1.5;
     const TEXTAREA_FONT_RATIO = 1.125;
@@ -3034,20 +3035,15 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
         const sidebarWidth = Math.max(Math.round(windowWidth * SIDEBAR_RATIO), MIN_SIDEBAR_WIDTH);
         const inputPanelWidth = Math.max(Math.round(windowWidth * INPUT_PANEL_RATIO), MIN_INPUT_PANEL_WIDTH);
 
-        // Calculate max-width for input panel in 2-column mode
+        // Calculate unified content width for both input and result panels
         const mainAreaWidth = windowWidth - sidebarWidth;
 
-        // Content width scales with main area, minimum 800px for small screens
-        // Large screens get proportionally larger content, small screens keep 800px with reduced padding
-        const resultContentWidth = Math.max(
-            Math.round(mainAreaWidth * CONTENT_RATIO),
-            MIN_RESULT_CONTENT_WIDTH
+        // Content width: mainAreaWidth * 0.55, clamped to 600-900px
+        // This ensures consistent proportions across all resolutions
+        const contentWidth = Math.min(
+            Math.max(Math.round(mainAreaWidth * CONTENT_RATIO), MIN_CONTENT_WIDTH),
+            MAX_CONTENT_WIDTH
         );
-        const resultPanelPaddingX = Math.max(
-            Math.floor((mainAreaWidth - resultContentWidth) / 2),
-            MIN_RESULT_PANEL_PADDING
-        );
-        const inputPanelMaxWidth = Math.round((mainAreaWidth - 60) * 0.5);
 
         // Calculate input min/max height
         const textareaFontSize = baseFontSize * TEXTAREA_FONT_RATIO;
@@ -3055,7 +3051,7 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
             TEXTAREA_LINES * TEXTAREA_LINE_HEIGHT * textareaFontSize +
             TEXTAREA_PADDING_RATIO * textareaFontSize
         );
-        const inputMaxHeight = Math.round(inputPanelMaxWidth * 0.75);
+        const inputMaxHeight = Math.round(contentWidth * 0.75);
 
         // Update CSS variables
         const root = document.documentElement;
@@ -3063,9 +3059,7 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
         root.style.setProperty('--base-font-size', baseFontSize + 'px');
         root.style.setProperty('--sidebar-width', sidebarWidth + 'px');
         root.style.setProperty('--input-panel-width', inputPanelWidth + 'px');
-        root.style.setProperty('--result-content-width', resultContentWidth + 'px');
-        root.style.setProperty('--result-panel-padding-x', resultPanelPaddingX + 'px');
-        root.style.setProperty('--input-panel-max-width', inputPanelMaxWidth + 'px');
+        root.style.setProperty('--content-width', contentWidth + 'px');
         root.style.setProperty('--input-min-height', inputMinHeight + 'px');
         root.style.setProperty('--input-max-height', inputMaxHeight + 'px');
     }

@@ -5,9 +5,9 @@
 
 import asyncio
 from datetime import datetime
-from typing import Optional, Callable
+from typing import Optional, Callable, TYPE_CHECKING
 
-from nicegui import ui
+from nicegui import ui, Client
 
 from yakulingo.services.updater import (
     AutoUpdater,
@@ -21,12 +21,17 @@ from yakulingo.config.settings import AppSettings
 class UpdateNotification:
     """アップデート通知を管理するコンポーネント"""
 
-    def __init__(self, settings: AppSettings):
+    def __init__(self, settings: AppSettings, client: Optional[Client] = None):
         self.settings = settings
         self.updater: Optional[AutoUpdater] = None
         self.update_result: Optional[UpdateResult] = None
         self._notification_banner: Optional[ui.element] = None
         self._dialog: Optional[ui.dialog] = None
+        self._client: Optional[Client] = client
+
+    def set_client(self, client: Client):
+        """クライアント参照を設定"""
+        self._client = client
 
     def should_check_updates(self) -> bool:
         """アップデートチェックを実行すべきかどうか"""
@@ -240,64 +245,51 @@ class UpdateNotification:
 
     async def _start_download(self, info: VersionInfo, dialog: ui.dialog):
         """ダウンロードを開始"""
+        ui.notify('ダウンロード開始...', type='info')  # デバッグ
         dialog.close()
 
         if not self.updater:
+            ui.notify('updaterがありません', type='warning')  # デバッグ
             return
-
-        # プログレスダイアログを表示
-        with ui.dialog() as progress_dialog, ui.card().classes('w-80'):
-            with ui.column().classes('w-full gap-4 p-4'):
-                with ui.row().classes('items-center gap-3'):
-                    ui.spinner('dots', size='md').classes('text-primary')
-                    ui.label('ダウンロード中...').classes('text-base font-semibold')
-
-                # Custom progress bar matching file_panel style
-                with ui.element('div').classes('progress-track w-full'):
-                    progress_bar_inner = ui.element('div').classes('progress-bar').style('width: 0%')
-                progress_label = ui.label('0%').classes('text-xs text-muted text-center w-full')
-
-        progress_dialog.open()
-
-        def on_progress(downloaded: int, total: int):
-            if total > 0:
-                pct = downloaded / total
-                progress_bar_inner.style(f'width: {int(pct * 100)}%')
-                progress_label.set_text(f'{int(pct * 100)}% ({downloaded // 1024} KB / {total // 1024} KB)')
 
         try:
             # ダウンロード実行
+            ui.notify('ダウンロード中...', type='info')  # デバッグ
             zip_path = await asyncio.to_thread(
-                lambda: self.updater.download_update(info, on_progress)
+                lambda: self.updater.download_update(info, None)
             )
+            ui.notify(f'ダウンロード完了: {zip_path}', type='positive')  # デバッグ
 
-            progress_dialog.close()
-
-            # インストール確認
+            # インストール確認ダイアログ
             await self._confirm_install(zip_path)
 
         except (OSError, ValueError, RuntimeError) as e:
-            progress_dialog.close()
             ui.notify(f'ダウンロードに失敗: {e}', type='negative')
 
     async def _confirm_install(self, zip_path):
         """インストール確認ダイアログ"""
-        with ui.dialog() as dialog, ui.card().classes('w-80'):
-            with ui.column().classes('w-full gap-4 p-4'):
-                ui.icon('check_circle').classes('text-4xl text-positive self-center')
-                ui.label('ダウンロード完了').classes('text-lg font-semibold text-center')
-                ui.label(
-                    'アプリケーションを終了してアップデートをインストールしますか？'
-                ).classes('text-sm text-center text-muted')
+        # asyncio.to_thread後はclientコンテキストが必要
+        if not self._client:
+            ui.notify('クライアント参照がありません', type='warning')
+            return
 
-                with ui.row().classes('w-full justify-end gap-2 mt-2'):
-                    ui.button('後で', on_click=dialog.close).props('flat').classes('text-muted')
-                    ui.button(
-                        'インストール',
-                        on_click=lambda: self._do_install(zip_path, dialog),
-                    ).classes('btn-primary')
+        with self._client:
+            with ui.dialog() as dialog, ui.card().classes('w-80'):
+                with ui.column().classes('w-full gap-4 p-4'):
+                    ui.icon('check_circle').classes('text-4xl text-positive self-center')
+                    ui.label('ダウンロード完了').classes('text-lg font-semibold text-center')
+                    ui.label(
+                        'アプリケーションを終了してアップデートをインストールしますか？'
+                    ).classes('text-sm text-center text-muted')
 
-        dialog.open()
+                    with ui.row().classes('w-full justify-end gap-2 mt-2'):
+                        ui.button('後で', on_click=dialog.close).props('flat').classes('text-muted')
+                        ui.button(
+                            'インストール',
+                            on_click=lambda: self._do_install(zip_path, dialog),
+                        ).classes('btn-primary')
+
+            dialog.open()
 
     def _do_install(self, zip_path, dialog: ui.dialog):
         """インストールを実行"""
@@ -323,17 +315,21 @@ class UpdateNotification:
             ui.notify(f'インストールエラー: {e}', type='negative')
 
 
-async def check_updates_on_startup(settings: AppSettings) -> Optional[UpdateNotification]:
+async def check_updates_on_startup(
+    settings: AppSettings,
+    client: Optional[Client] = None
+) -> Optional[UpdateNotification]:
     """
     起動時にアップデートをチェック
 
     Args:
         settings: アプリケーション設定
+        client: NiceGUIクライアント参照（asyncコンテキストでのUI操作に必要）
 
     Returns:
         アップデートが利用可能な場合は UpdateNotification インスタンス
     """
-    notification = UpdateNotification(settings)
+    notification = UpdateNotification(settings, client)
 
     if not notification.should_check_updates():
         return None

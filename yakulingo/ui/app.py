@@ -769,7 +769,8 @@ class YakuLingoApp:
             # Lazy import for faster startup
             from yakulingo.ui.components.update_notification import check_updates_on_startup
 
-            notification = await check_updates_on_startup(self.settings)
+            # clientを渡してasyncコンテキストでのUI操作を可能にする
+            notification = await check_updates_on_startup(self.settings, self._client)
             if notification:
                 self._update_notification = notification
 

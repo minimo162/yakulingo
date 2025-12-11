@@ -64,7 +64,7 @@ class AppSettings:
 
     # Auto Update
     auto_update_enabled: bool = True            # 起動時に自動チェック
-    auto_update_check_interval: int = 86400     # チェック間隔（秒）: 24時間
+    auto_update_check_interval: int = 0         # チェック間隔（秒）: 0 = 起動毎
     github_repo_owner: str = "minimo162"        # GitHubリポジトリオーナー
     github_repo_name: str = "yakulingo"         # GitHubリポジトリ名
     last_update_check: Optional[str] = None     # 最後のチェック日時（ISO形式）

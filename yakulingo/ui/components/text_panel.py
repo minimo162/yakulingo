@@ -75,6 +75,7 @@ def _create_textarea_with_keyhandler(
     extra_classes: str = '',
     autogrow: bool = False,
     style: Optional[str] = None,
+    on_textarea_created: Optional[Callable[[ui.textarea], None]] = None,
 ) -> ui.textarea:
     """Create a textarea with Ctrl/Cmd+Enter handler for translation.
 
@@ -89,6 +90,7 @@ def _create_textarea_with_keyhandler(
         extra_classes: Additional CSS classes
         autogrow: Whether textarea should auto-grow
         style: Optional inline style
+        on_textarea_created: Callback with textarea reference for focus management
 
     Returns:
         The created textarea element
@@ -131,6 +133,10 @@ def _create_textarea_with_keyhandler(
             }
         }'''
     )
+
+    # Provide textarea reference for focus management
+    if on_textarea_created:
+        on_textarea_created(textarea)
 
     return textarea
 
@@ -180,6 +186,7 @@ def create_text_input_panel(
     use_bundled_glossary: bool = False,
     on_glossary_toggle: Optional[Callable[[bool], None]] = None,
     on_edit_glossary: Optional[Callable[[], None]] = None,
+    on_textarea_created: Optional[Callable[[ui.textarea], None]] = None,
 ):
     """
     Text input panel for 2-column layout.
@@ -189,7 +196,8 @@ def create_text_input_panel(
         state, on_translate, on_source_change, on_clear,
         on_attach_reference_file, on_remove_reference_file,
         on_settings, on_translate_button_created,
-        use_bundled_glossary, on_glossary_toggle, on_edit_glossary
+        use_bundled_glossary, on_glossary_toggle, on_edit_glossary,
+        on_textarea_created,
     )
 
 
@@ -205,6 +213,7 @@ def _create_large_input_panel(
     use_bundled_glossary: bool = False,
     on_glossary_toggle: Optional[Callable[[bool], None]] = None,
     on_edit_glossary: Optional[Callable[[], None]] = None,
+    on_textarea_created: Optional[Callable[[ui.textarea], None]] = None,
 ):
     """Large input panel for INPUT state - spans 2 columns"""
     with ui.column().classes('flex-1 w-full gap-4'):
@@ -217,6 +226,7 @@ def _create_large_input_panel(
                     state=state,
                     on_source_change=on_source_change,
                     on_translate=on_translate,
+                    on_textarea_created=on_textarea_created,
                 )
 
                 # Bottom controls

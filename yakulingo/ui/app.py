@@ -225,6 +225,9 @@ class YakuLingoApp:
         # Hotkey manager for quick translation (Ctrl+J)
         self._hotkey_manager = None
 
+        # Text input textarea reference for auto-focus
+        self._text_input_textarea: Optional[ui.textarea] = None
+
     @property
     def copilot(self) -> "CopilotHandler":
         """Lazy-load CopilotHandler for faster startup."""
@@ -887,6 +890,26 @@ class YakuLingoApp:
         """Store reference to translate button for dynamic state updates"""
         self._translate_button = button
 
+    def _on_textarea_created(self, textarea: ui.textarea):
+        """Store reference to text input textarea and set initial focus.
+
+        Called when the text input textarea is created. Stores the reference
+        for later use (e.g., restoring focus after dialogs) and sets initial
+        focus so the user can start typing immediately.
+        """
+        self._text_input_textarea = textarea
+        # Set initial focus after UI is ready
+        textarea.run_method('focus')
+
+    def _focus_text_input(self):
+        """Set focus to the text input textarea.
+
+        Used to restore focus after dialogs are closed or when returning
+        to the text translation panel.
+        """
+        if self._text_input_textarea is not None:
+            self._text_input_textarea.run_method('focus')
+
     def _on_streaming_label_created(self, label: ui.label):
         """Store reference to streaming label for direct text updates (avoids flickering)"""
         self._streaming_label = label
@@ -1146,6 +1169,7 @@ class YakuLingoApp:
                         use_bundled_glossary=self.settings.use_bundled_glossary,
                         on_glossary_toggle=self._on_glossary_toggle,
                         on_edit_glossary=self._edit_glossary,
+                        on_textarea_created=self._on_textarea_created,
                     )
 
                 # Result panel (right column - shown when has results)
@@ -1289,6 +1313,9 @@ class YakuLingoApp:
         """Open file picker to attach a reference file (glossary, style guide, etc.)"""
         # Use NiceGUI's native file upload approach
         with ui.dialog() as dialog, ui.card().classes('w-96'):
+            # Restore focus to text input when dialog closes
+            dialog.on('close', lambda: self._focus_text_input())
+
             with ui.column().classes('w-full gap-4 p-4'):
                 # Header
                 with ui.row().classes('w-full justify-between items-center'):
@@ -2547,6 +2574,9 @@ class YakuLingoApp:
     def _show_settings_dialog(self):
         """Show translation settings dialog (Nani-inspired quick settings)"""
         with ui.dialog() as dialog, ui.card().classes('w-80 settings-dialog'):
+            # Restore focus to text input when dialog closes
+            dialog.on('close', lambda: self._focus_text_input())
+
             with ui.column().classes('w-full gap-4 p-4'):
                 # Header
                 with ui.row().classes('w-full justify-between items-center'):

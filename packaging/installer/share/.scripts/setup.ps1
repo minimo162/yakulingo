@@ -161,24 +161,39 @@ if ($GuiMode) {
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -AssemblyName System.Drawing
 
+    # Cancellation flag
+    $script:cancelled = $false
+
     # Create progress form
     $script:progressForm = $null
     $script:progressBar = $null
     $script:progressLabel = $null
     $script:stepLabel = $null
+    $script:cancelButton = $null
 
     function Show-Progress {
         param([string]$Title, [string]$Status, [int]$Percent = -1, [string]$Step = "")
 
+        # If cancelled, do nothing
+        if ($script:cancelled) { return }
+
         if ($script:progressForm -eq $null) {
             $script:progressForm = New-Object System.Windows.Forms.Form
             $script:progressForm.Text = $Title
-            $script:progressForm.Size = New-Object System.Drawing.Size(420, 170)
+            $script:progressForm.Size = New-Object System.Drawing.Size(420, 200)
             $script:progressForm.StartPosition = "CenterScreen"
             $script:progressForm.FormBorderStyle = "FixedDialog"
             $script:progressForm.MaximizeBox = $false
             $script:progressForm.MinimizeBox = $false
             $script:progressForm.TopMost = $true
+
+            # Handle form closing (X button) as cancel
+            $script:progressForm.add_FormClosing({
+                param($sender, $e)
+                if (-not $script:cancelled) {
+                    $script:cancelled = $true
+                }
+            })
 
             # Step label (e.g., "Step 2/3")
             $script:stepLabel = New-Object System.Windows.Forms.Label
@@ -210,6 +225,20 @@ if ($GuiMode) {
             }
             $script:progressForm.Controls.Add($script:progressBar)
 
+            # Cancel button
+            $script:cancelButton = New-Object System.Windows.Forms.Button
+            $script:cancelButton.Location = New-Object System.Drawing.Point(160, 120)
+            $script:cancelButton.Size = New-Object System.Drawing.Size(100, 30)
+            $script:cancelButton.Text = "キャンセル"
+            $script:cancelButton.add_Click({
+                $script:cancelled = $true
+                $script:cancelButton.Enabled = $false
+                $script:cancelButton.Text = "中止中..."
+                $script:progressLabel.Text = "キャンセル中..."
+                $script:progressForm.Refresh()
+            })
+            $script:progressForm.Controls.Add($script:cancelButton)
+
             $script:progressForm.Show()
             $script:progressForm.Refresh()
         } else {
@@ -233,6 +262,14 @@ if ($GuiMode) {
             $script:progressForm.Close()
             $script:progressForm.Dispose()
             $script:progressForm = $null
+        }
+    }
+
+    # Check if cancelled and throw if so
+    function Test-Cancelled {
+        [System.Windows.Forms.Application]::DoEvents()
+        if ($script:cancelled) {
+            throw "セットアップがキャンセルされました。"
         }
     }
 
@@ -388,9 +425,12 @@ function Copy-FileBuffered {
                     if ($OnProgress) {
                         & $OnProgress -CopiedBytes $copiedBytes -TotalBytes $totalBytes
                     }
-                    # Keep GUI responsive
+                    # Keep GUI responsive and check for cancellation
                     if ($GuiMode) {
                         [System.Windows.Forms.Application]::DoEvents()
+                        if ($script:cancelled) {
+                            throw "セットアップがキャンセルされました。"
+                        }
                     }
                 }
             }
@@ -693,6 +733,15 @@ function Invoke-Setup {
             while (-not $proc.HasExited) {
                 if ($GuiMode) {
                     [System.Windows.Forms.Application]::DoEvents()
+                    # Check for cancellation
+                    if ($script:cancelled) {
+                        try {
+                            $proc.Kill()
+                            $proc.WaitForExit(3000)
+                        } catch { }
+                        $proc.Dispose()
+                        throw "セットアップがキャンセルされました。"
+                    }
                 }
                 Start-Sleep -Milliseconds 100
             }
@@ -728,6 +777,16 @@ function Invoke-Setup {
                 while ($extractJob.State -eq 'Running') {
                     Start-Sleep -Milliseconds 500
                     [System.Windows.Forms.Application]::DoEvents()
+
+                    # Check for cancellation
+                    if ($script:cancelled) {
+                        try {
+                            Stop-Job -Job $extractJob -ErrorAction SilentlyContinue
+                            Remove-Job -Job $extractJob -Force -ErrorAction SilentlyContinue
+                        } catch { }
+                        throw "セットアップがキャンセルされました。"
+                    }
+
                     $elapsedSeconds += 0.5
                     $dotCount = ($dotCount + 1) % 4
                     $dots = "." * ($dotCount + 1)
@@ -770,6 +829,11 @@ function Invoke-Setup {
     # ============================================================
     # Restore/Merge backed up user data files
     # ============================================================
+    # Check for cancellation before starting user data restore
+    if ($GuiMode -and $script:cancelled) {
+        throw "セットアップがキャンセルされました。"
+    }
+
     if ($BackupFiles.Count -gt 0) {
         Write-Status -Message "Restoring user data..." -Progress -Step "Step 3/4: Extracting" -Percent 87
         if (-not $GuiMode) {
@@ -964,6 +1028,11 @@ function Invoke-Setup {
     # ============================================================
     # Finalize: Create shortcuts
     # ============================================================
+    # Check for cancellation before creating shortcuts
+    if ($GuiMode -and $script:cancelled) {
+        throw "セットアップがキャンセルされました。"
+    }
+
     Write-Status -Message "Creating shortcuts..." -Progress -Step "Step 4/4: Finalizing" -Percent 90
     if (-not $GuiMode) {
         Write-Host ""
@@ -997,6 +1066,10 @@ function Invoke-Setup {
     # Done
     # ============================================================
     if ($GuiMode) {
+        # Final cancellation check before showing success dialog
+        if ($script:cancelled) {
+            throw "セットアップがキャンセルされました。"
+        }
         Write-Status -Message "Setup completed!" -Progress -Step "Step 4/4: Finalizing" -Percent 100
         Show-Success "Setup completed!`n`nPlease launch YakuLingo from the desktop shortcut."
     } else {
@@ -1019,6 +1092,14 @@ if ($GuiMode) {
         Invoke-Setup
         exit 0
     } catch {
+        # Close progress dialog first
+        Close-Progress
+
+        # Don't show error dialog if cancelled by user
+        if ($script:cancelled) {
+            exit 2  # Exit code 2 = cancelled
+        }
+
         Write-ErrorLog -ErrorRecord $_
         Show-Error $_.Exception.Message
         exit 1

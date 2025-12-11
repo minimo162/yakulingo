@@ -437,7 +437,9 @@ function Copy-FileBuffered {
         $sourceStream = $null
         $destStream = $null
         try {
-            $sourceStream = [System.IO.File]::Open($Source, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read)
+            # Use ReadWrite + Delete sharing to allow other processes to delete/modify the file
+            # This prevents SMB file locks from persisting on the server when script is interrupted
+            $sourceStream = [System.IO.File]::Open($Source, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, ([System.IO.FileShare]::ReadWrite -bor [System.IO.FileShare]::Delete))
             $destStream = [System.IO.File]::Create($Destination, $BufferSize)
             $totalBytes = $sourceStream.Length
             $copiedBytes = 0

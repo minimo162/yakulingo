@@ -591,6 +591,21 @@ def calculate_dynamic_thresholds(
         # y_para = 10.0 * 1.8 = 18.0pt
         # x_column = max(50, 595 * 0.2) = 119pt
     """
+    # Input validation: ensure positive dimensions
+    # Invalid dimensions would produce meaningless thresholds
+    if page_width <= 0 or page_height <= 0:
+        logger.warning(
+            "Invalid page dimensions (width=%.1f, height=%.1f). "
+            "Using default thresholds.",
+            page_width, page_height
+        )
+        return {
+            'y_line': SAME_LINE_Y_THRESHOLD,
+            'y_para': SAME_PARA_Y_THRESHOLD,
+            'x_column': MIN_COLUMN_THRESHOLD,
+            'font_size': DEFAULT_FONT_SIZE,
+        }
+
     font_size = avg_font_size or DEFAULT_FONT_SIZE
 
     # Y thresholds: scale with font size

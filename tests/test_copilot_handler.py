@@ -888,6 +888,7 @@ class TestCopilotHandlerLoginDetection:
         mock_page = MagicMock()
         # On Copilot domain but not /chat path (landing page after login redirect)
         mock_page.url = "https://m365.cloud.microsoft/landing"
+        mock_page.is_closed.return_value = False
         handler._page = mock_page
 
         result = handler._check_copilot_state(timeout=1)
@@ -902,6 +903,7 @@ class TestCopilotHandlerLoginDetection:
         mock_page = MagicMock()
         # On Microsoft login page - should skip selector search
         mock_page.url = "https://login.microsoftonline.com/common/oauth2/authorize"
+        mock_page.is_closed.return_value = False
         handler._page = mock_page
 
         result = handler._check_copilot_state(timeout=1)
@@ -918,6 +920,7 @@ class TestCopilotHandlerLoginDetection:
         mock_page = MagicMock()
         # On some other domain (e.g., during SSO redirect)
         mock_page.url = "https://example.com/callback"
+        mock_page.is_closed.return_value = False
         handler._page = mock_page
 
         result = handler._check_copilot_state(timeout=1)
@@ -934,6 +937,7 @@ class TestCopilotHandlerLoginDetection:
         mock_page = MagicMock()
         # On Copilot chat page - should return READY based on URL
         mock_page.url = "https://m365.cloud.microsoft/chat/"
+        mock_page.is_closed.return_value = False
         handler._page = mock_page
 
         result = handler._check_copilot_state(timeout=1)
@@ -948,6 +952,7 @@ class TestCopilotHandlerLoginDetection:
         mock_page = MagicMock()
         # On Copilot domain but not /chat path (home page)
         mock_page.url = "https://m365.cloud.microsoft/home"
+        mock_page.is_closed.return_value = False
         handler._page = mock_page
 
         result = handler._check_copilot_state(timeout=1)

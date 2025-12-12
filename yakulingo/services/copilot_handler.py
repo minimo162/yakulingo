@@ -1995,6 +1995,10 @@ class CopilotHandler:
         3. Copilotドメイン + /landing等 → LOGIN_REQUIRED（リダイレクト待ち）
         4. その他 → LOGIN_REQUIRED
 
+        Note:
+            チャット入力欄のセレクタ検出は不安定なため、URLパスのみで判定する。
+            /chat パスにいれば、チャットUIが使用可能と判断する。
+
         Args:
             timeout: 未使用（後方互換性のため残す）
 
@@ -2003,15 +2007,35 @@ class CopilotHandler:
             ConnectionState.LOGIN_REQUIRED - ログインが必要またはリダイレクト中
             ConnectionState.ERROR - ページが存在しない
         """
-        if not self._page:
-            return ConnectionState.ERROR
-
         error_types = _get_playwright_errors()
         PlaywrightError = error_types['Error']
 
+        # ページの有効性を確認し、必要に応じて再取得
+        page = self._page
+        if not page:
+            # コンテキストから最新のページを取得
+            page = self._get_active_copilot_page()
+            if page:
+                self._page = page
+                logger.info("Retrieved active Copilot page from context")
+            else:
+                logger.info("No active page available")
+                return ConnectionState.ERROR
+
         try:
+            # ページが有効か確認（is_closed()で判定）
+            if page.is_closed():
+                logger.info("Page is closed, attempting to get active page from context")
+                page = self._get_active_copilot_page()
+                if page:
+                    self._page = page
+                    logger.info("Retrieved new active Copilot page")
+                else:
+                    logger.info("No active page available after page closed")
+                    return ConnectionState.ERROR
+
             # 現在のURLを確認
-            current_url = self._page.url
+            current_url = page.url
             logger.info("Checking Copilot state: URL=%s", current_url[:80])
 
             # ログインページにいる場合
@@ -2036,7 +2060,56 @@ class CopilotHandler:
 
         except PlaywrightError as e:
             logger.info("Error checking Copilot state: %s", e)
+            # エラー発生時、ページを再取得して再試行
+            page = self._get_active_copilot_page()
+            if page:
+                self._page = page
+                try:
+                    current_url = page.url
+                    logger.info("Retry with new page: URL=%s", current_url[:80])
+                    if "/chat" in current_url and _is_copilot_url(current_url):
+                        return ConnectionState.READY
+                except PlaywrightError:
+                    pass
             return ConnectionState.ERROR
+
+    def _get_active_copilot_page(self):
+        """コンテキストからアクティブなCopilotページを取得する。
+
+        ログイン後にページがリロードされた場合など、self._page が無効になった
+        場合に、コンテキストから最新のCopilotページを再取得する。
+
+        Returns:
+            アクティブなCopilotページ、または None
+        """
+        if not self._context:
+            return None
+
+        error_types = _get_playwright_errors()
+        PlaywrightError = error_types['Error']
+
+        try:
+            pages = self._context.pages
+            for page in pages:
+                try:
+                    if page.is_closed():
+                        continue
+                    url = page.url
+                    if _is_copilot_url(url) or _is_login_page(url):
+                        return page
+                except PlaywrightError:
+                    continue
+            # Copilotページが見つからない場合、最初の有効なページを返す
+            for page in pages:
+                try:
+                    if not page.is_closed():
+                        return page
+                except PlaywrightError:
+                    continue
+        except PlaywrightError as e:
+            logger.debug("Error getting pages from context: %s", e)
+
+        return None
 
     def save_storage_state(self) -> bool:
         """Thread-safe wrapper to persist the current login session."""

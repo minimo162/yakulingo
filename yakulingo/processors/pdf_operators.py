@@ -966,10 +966,28 @@ class ContentStreamReplacer:
         # Resolve resources xref
         if resources_info[0] == "xref":
             resources_xref = int(resources_info[1].split()[0])
+        elif resources_info[0] == "dict":
+            # Resources is inline dict - convert to reference for proper Font handling
+            # This is necessary because we cannot add nested keys (Resources/Font)
+            # directly to an inline dictionary through xref_set_key.
+            # Create a new xref for Resources and move the inline dict there.
+            existing_resources = resources_info[1]
+            resources_xref = self.doc.get_new_xref()
+            self.doc.update_object(resources_xref, existing_resources)
+            self.doc.xref_set_key(page_xref, "Resources", f"{resources_xref} 0 R")
+            logger.debug(
+                "_update_font_resources: converted inline Resources to xref=%d",
+                resources_xref
+            )
         else:
-            # Resources is inline dict - need to get its xref differently
-            # For inline dicts, we'll add fonts directly to page resources
-            resources_xref = page_xref
+            # Unexpected type - create new Resources
+            logger.warning(
+                "_update_font_resources: unexpected Resources type '%s', creating new",
+                resources_info[0]
+            )
+            resources_xref = self.doc.get_new_xref()
+            self.doc.update_object(resources_xref, "<< >>")
+            self.doc.xref_set_key(page_xref, "Resources", f"{resources_xref} 0 R")
 
         # Get existing Font dictionary
         font_dict_info = self.doc.xref_get_key(resources_xref, "Font")

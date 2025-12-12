@@ -2154,6 +2154,59 @@ class CopilotHandler:
 
         return None
 
+    def _wait_for_page_load_impl(self, wait_seconds: float = 3.0) -> bool:
+        """ページの読み込み完了を待機する（内部実装）。
+
+        ログイン完了後、ページが操作可能になるまで待機する。
+        Copilotは常時WebSocket接続等で通信しているため、networkidleは
+        使用せず、domcontentloaded後に固定時間待機する。
+
+        Args:
+            wait_seconds: 追加の待機時間（秒）
+
+        Returns:
+            True: 待機完了
+            False: エラー発生
+        """
+        error_types = _get_playwright_errors()
+        PlaywrightTimeoutError = error_types['TimeoutError']
+        PlaywrightError = error_types['Error']
+
+        page = self._page
+        if not page:
+            page = self._get_active_copilot_page()
+            if page:
+                self._page = page
+            else:
+                logger.warning("wait_for_page_load: no page available")
+                return False
+
+        try:
+            if page.is_closed():
+                page = self._get_active_copilot_page()
+                if page:
+                    self._page = page
+                else:
+                    logger.warning("wait_for_page_load: page closed and no replacement found")
+                    return False
+
+            # DOMの読み込み完了を待機
+            logger.info("Waiting for DOM content loaded...")
+            try:
+                page.wait_for_load_state('domcontentloaded', timeout=5000)
+            except PlaywrightTimeoutError:
+                pass  # タイムアウトしても続行
+
+            # 追加の固定時間待機（ページの初期化処理が完了するのを待つ）
+            logger.info("Waiting %.1f seconds for page initialization...", wait_seconds)
+            time.sleep(wait_seconds)
+            logger.info("Page load wait completed")
+            return True
+
+        except PlaywrightError as e:
+            logger.warning("wait_for_page_load: error - %s", e)
+            return False
+
     def save_storage_state(self) -> bool:
         """Thread-safe wrapper to persist the current login session."""
         return _playwright_executor.execute(self._save_storage_state)
@@ -2161,6 +2214,22 @@ class CopilotHandler:
     def check_copilot_state(self, timeout: int = 5) -> str:
         """Thread-safe wrapper for _check_copilot_state."""
         return _playwright_executor.execute(self._check_copilot_state, timeout)
+
+    def wait_for_page_load(self, wait_seconds: float = 3.0) -> bool:
+        """ページの読み込み完了を待機する（スレッドセーフ）。
+
+        ログイン完了検出後、ページが操作可能になるまで待機する。
+        Copilotは常時WebSocket接続等で通信しているため、networkidleは
+        使用せず、domcontentloaded後に固定時間待機する。
+
+        Args:
+            wait_seconds: 追加の待機時間（秒）。デフォルト3秒。
+
+        Returns:
+            True: 待機完了
+            False: エラー発生
+        """
+        return _playwright_executor.execute(self._wait_for_page_load_impl, wait_seconds)
 
     def bring_to_foreground(self, reason: str = "external request") -> None:
         """Edgeウィンドウを前面に表示"""

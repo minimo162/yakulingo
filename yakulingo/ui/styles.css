@@ -1836,6 +1836,7 @@ textarea:focus-visible {
     border-radius: 1rem;
     font-size: var(--md-sys-typescale-size-sm);  /* 14px - matches Nani's text-sm */
     line-height: 1.85;  /* matches Nani's --html-base-line-height */
+    width: 100%;  /* 親要素の幅いっぱいに広げる（NiceGUI column の flex-start 対策） */
     -webkit-user-select: text !important;
     user-select: text !important;
     cursor: text;

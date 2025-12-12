@@ -762,6 +762,9 @@ class CopilotHandler:
                 "--proxy-bypass-list=localhost;127.0.0.1",
                 # Start minimized to avoid visual flash when login is not required
                 "--start-minimized",
+                # Disable browser sync to avoid Edge profile sign-in prompts
+                # (YakuLingo uses isolated profile, sync is not needed)
+                "--disable-sync",
             ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                cwd=local_cwd if sys.platform == "win32" else None,
                startupinfo=startupinfo,

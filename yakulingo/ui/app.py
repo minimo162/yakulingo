@@ -702,7 +702,14 @@ class YakuLingoApp:
                 logger.info("Login polling: state=%s, elapsed=%.0fs", state, elapsed)
 
                 if state == CopilotConnectionState.READY:
-                    # ログイン完了 → 接続状態を更新
+                    # ログインURL検出 → ページ読み込み完了を待機
+                    # URLが /chat になってもページ読み込みが完了していない可能性があるため
+                    logger.info("Login URL detected, waiting for page load...")
+
+                    # ページの読み込み完了を待機（3秒）
+                    await asyncio.to_thread(self.copilot.wait_for_page_load)
+
+                    # ページ読み込み待機完了 → 接続状態を更新
                     logger.info("Login completed, updating connection state")
                     self.copilot._connected = True
                     from yakulingo.services.copilot_handler import CopilotHandler

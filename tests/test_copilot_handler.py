@@ -181,6 +181,39 @@ with explanation"""
         assert parsed[3] == "翻訳4"
         assert parsed[4] == "翻訳5"
 
+    def test_parse_nested_numbered_list(self, handler):
+        """Nested numbered lists are not incorrectly parsed as separate items"""
+        # This tests that translations containing nested numbered lists
+        # are correctly parsed as 2 items, not 4
+        # Note: Nested items are filtered out, so they don't appear in content.
+        # This is correct for Excel translation where each numbered item
+        # maps to a cell, and we want the top-level structure preserved.
+        result = """1. Follow these steps:
+   1. Open the file
+   2. Save it
+2. Next item"""
+        parsed = handler._parse_batch_result(result, 2)
+
+        assert len(parsed) == 2
+        # First item content (nested list items are filtered out, not merged)
+        assert "Follow these steps" in parsed[0]
+        # Second item
+        assert parsed[1] == "Next item"
+
+    def test_parse_nested_numbered_list_starting_from_1(self, handler):
+        """Nested numbered lists that restart from 1 don't cause mismatch"""
+        # Regression test: nested lists that restart from 1 should not
+        # overwrite the first top-level translation
+        result = """1. First translation:
+   1. Sub-item A
+   2. Sub-item B
+2. Second translation"""
+        parsed = handler._parse_batch_result(result, 2)
+
+        assert len(parsed) == 2
+        assert "First translation" in parsed[0]
+        assert parsed[1] == "Second translation"
+
 
 class TestCopilotHandlerConnection:
     """Test CopilotHandler connection state management"""

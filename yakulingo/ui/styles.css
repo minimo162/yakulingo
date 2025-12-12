@@ -1496,7 +1496,9 @@ textarea:focus-visible {
     background: transparent;
     box-shadow: none;
     border: none;
+    border-radius: 0;  /* 角丸を無効化（ガラス効果を防ぐ） */
     padding: 0;
+    animation: none;
 }
 
 .main-area.file-mode .main-card:hover {
@@ -1507,7 +1509,12 @@ textarea:focus-visible {
 .main-area.file-mode .main-card-inner {
     background: transparent;
     border: none;
+    border-radius: 0;
     padding: 0;
+}
+
+.main-area.file-mode .main-card-inner:focus-within {
+    box-shadow: none;
 }
 
 /* === Media Queries for Font Size Scaling === */

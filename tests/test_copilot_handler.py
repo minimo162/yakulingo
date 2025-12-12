@@ -885,9 +885,11 @@ class TestCopilotHandlerLoginDetection:
 
         handler = CopilotHandler()
 
+        landing_url = "https://m365.cloud.microsoft/landing"
         mock_page = MagicMock()
         # On Copilot domain but not /chat path (landing page after login redirect)
-        mock_page.url = "https://m365.cloud.microsoft/landing"
+        mock_page.url = landing_url
+        mock_page.evaluate.return_value = landing_url
         mock_page.is_closed.return_value = False
         handler._page = mock_page
 
@@ -900,9 +902,11 @@ class TestCopilotHandlerLoginDetection:
 
         handler = CopilotHandler()
 
+        login_url = "https://login.microsoftonline.com/common/oauth2/authorize"
         mock_page = MagicMock()
         # On Microsoft login page - should skip selector search
-        mock_page.url = "https://login.microsoftonline.com/common/oauth2/authorize"
+        mock_page.url = login_url
+        mock_page.evaluate.return_value = login_url
         mock_page.is_closed.return_value = False
         handler._page = mock_page
 
@@ -917,9 +921,11 @@ class TestCopilotHandlerLoginDetection:
 
         handler = CopilotHandler()
 
+        callback_url = "https://example.com/callback"
         mock_page = MagicMock()
         # On some other domain (e.g., during SSO redirect)
-        mock_page.url = "https://example.com/callback"
+        mock_page.url = callback_url
+        mock_page.evaluate.return_value = callback_url
         mock_page.is_closed.return_value = False
         handler._page = mock_page
 
@@ -936,7 +942,9 @@ class TestCopilotHandlerLoginDetection:
 
         mock_page = MagicMock()
         # On Copilot chat page - should return READY based on URL
-        mock_page.url = "https://m365.cloud.microsoft/chat/"
+        chat_url = "https://m365.cloud.microsoft/chat/"
+        mock_page.url = chat_url
+        mock_page.evaluate.return_value = chat_url  # JavaScriptからのURL取得
         mock_page.is_closed.return_value = False
         handler._page = mock_page
 
@@ -949,9 +957,11 @@ class TestCopilotHandlerLoginDetection:
 
         handler = CopilotHandler()
 
+        home_url = "https://m365.cloud.microsoft/home"
         mock_page = MagicMock()
         # On Copilot domain but not /chat path (home page)
-        mock_page.url = "https://m365.cloud.microsoft/home"
+        mock_page.url = home_url
+        mock_page.evaluate.return_value = home_url
         mock_page.is_closed.return_value = False
         handler._page = mock_page
 
@@ -965,14 +975,18 @@ class TestCopilotHandlerLoginDetection:
         handler = CopilotHandler()
 
         # 現在のページはログインページ（古い参照）
+        login_url = "https://login.microsoftonline.com/common/oauth2"
         mock_login_page = MagicMock()
-        mock_login_page.url = "https://login.microsoftonline.com/common/oauth2"
+        mock_login_page.url = login_url
+        mock_login_page.evaluate.return_value = login_url
         mock_login_page.is_closed.return_value = False
         handler._page = mock_login_page
 
         # 別タブでCopilot /chatが開かれている
+        chat_url = "https://m365.cloud.microsoft/chat/?auth=2"
         mock_chat_page = MagicMock()
-        mock_chat_page.url = "https://m365.cloud.microsoft/chat/?auth=2"
+        mock_chat_page.url = chat_url
+        mock_chat_page.evaluate.return_value = chat_url
         mock_chat_page.is_closed.return_value = False
 
         # コンテキストに両方のページがある
@@ -993,8 +1007,10 @@ class TestCopilotHandlerLoginDetection:
         handler = CopilotHandler()
 
         # 現在のページはログインページ
+        login_url = "https://login.microsoftonline.com/common/oauth2"
         mock_login_page = MagicMock()
-        mock_login_page.url = "https://login.microsoftonline.com/common/oauth2"
+        mock_login_page.url = login_url
+        mock_login_page.evaluate.return_value = login_url
         mock_login_page.is_closed.return_value = False
         handler._page = mock_login_page
 

@@ -712,86 +712,59 @@ class ContentStreamReplacer:
 
         Form XObjects (also called XForms) can contain text that is rendered
         via the 'Do' operator. This method filters text operators from all
-        Form XObjects in the page's XObject resources.
+        Form XObjects referenced by this page, including inherited ones.
+
+        Uses PyMuPDF's get_xobjects() for reliable detection of all XObjects,
+        including those defined in parent Resources or referenced indirectly.
 
         Args:
             page: PyMuPDF page object
         """
         try:
-            # Get page xref
-            page_xref = page.xref
-
-            # Get Resources dictionary
-            resources_str = self.doc.xref_get_key(page_xref, "Resources")
+            # Use PyMuPDF's get_xobjects() for reliable XObject detection
+            # This handles inherited resources and complex PDF structures
+            xobjects = page.get_xobjects()
             logger.info(
-                "_filter_form_xobjects: page=%d, resources_type=%s, resources_preview='%s'",
-                page.number, resources_str[0], resources_str[1][:200] if resources_str[1] else ''
+                "_filter_form_xobjects: page=%d, get_xobjects() returned %d items: %s",
+                page.number, len(xobjects),
+                [(x[0], x[1]) for x in xobjects[:10]]  # (xref, name) for first 10
             )
-            if resources_str[0] != "dict":
-                # Try to get indirect reference
-                if resources_str[0] == "xref":
-                    resources_xref = int(resources_str[1].split()[0])
-                    resources_str = ("dict", self.doc.xref_object(resources_xref))
-                    logger.info(
-                        "_filter_form_xobjects: resolved resources_xref=%d, dict_preview='%s'",
-                        resources_xref, resources_str[1][:200] if resources_str[1] else ''
-                    )
-                else:
-                    logger.info("_filter_form_xobjects: no resources dict, returning")
-                    return
 
-            # Parse Resources to find XObject dictionary
-            resources_dict = resources_str[1]
-
-            # Look for /XObject in resources
-            xobject_match = re.search(r'/XObject\s*(\d+\s+\d+\s+R|<<[^>]*>>)', resources_dict)
-            if not xobject_match:
-                logger.info("_filter_form_xobjects: no /XObject found in resources")
+            if not xobjects:
+                logger.info("_filter_form_xobjects: no XObjects on page %d", page.number)
                 return
 
-            xobject_ref = xobject_match.group(1)
-            logger.info("_filter_form_xobjects: xobject_ref='%s'", xobject_ref)
-
-            # Get XObject dictionary xref
-            if xobject_ref.endswith('R'):
-                # Indirect reference: "123 0 R"
-                xobject_xref = int(xobject_ref.split()[0])
-                xobject_dict_str = self.doc.xref_object(xobject_xref)
-            else:
-                # Inline dictionary
-                xobject_dict_str = xobject_ref
-
-            logger.info(
-                "_filter_form_xobjects: xobject_dict_str='%s'",
-                xobject_dict_str[:300] if xobject_dict_str else ''
-            )
-
-            # Find all Form XObject references in the dictionary
-            # Pattern: /Name N 0 R
-            form_refs = re.findall(r'/(\w+)\s+(\d+)\s+\d+\s+R', xobject_dict_str)
-            logger.info("_filter_form_xobjects: found %d XObject refs: %s", len(form_refs), form_refs[:10])
-
             filtered_count = 0
-            checked_count = 0
-            for name, xref_str in form_refs:
-                xref = int(xref_str)
+            processed_xrefs = set()  # Track processed xrefs to avoid duplicates
+
+            for xobj_info in xobjects:
+                # get_xobjects() returns tuple: (xref, name, gen_or_ref, bbox)
+                # where gen_or_ref is 0 for direct or xref of referencing XObject
+                xref = xobj_info[0]
+                name = xobj_info[1]
+
+                # Skip if already processed (avoid nested duplicates)
+                if xref in processed_xrefs:
+                    continue
+                processed_xrefs.add(xref)
+
                 try:
-                    # Check if this is a Form XObject (Subtype = Form)
+                    # Get object definition to check type
                     obj_str = self.doc.xref_object(xref)
-                    checked_count += 1
-                    if '/Subtype /Form' not in obj_str and '/Subtype/Form' not in obj_str:
-                        # Log what type of XObject this is (Image, etc.)
-                        if checked_count <= 5:  # Limit logging
-                            logger.debug(
-                                "_filter_form_xobjects: /%s is not Form, obj_preview='%s'",
-                                name, obj_str[:100]
-                            )
+
+                    # Check if this is a Form XObject
+                    is_form = '/Subtype /Form' in obj_str or '/Subtype/Form' in obj_str
+                    if not is_form:
+                        logger.debug(
+                            "_filter_form_xobjects: /%s (xref=%d) is not Form: %s",
+                            name, xref, obj_str[:80]
+                        )
                         continue
 
                     # Get the stream content
                     stream = self.doc.xref_stream(xref)
                     if not stream:
-                        logger.debug("_filter_form_xobjects: /%s has no stream", name)
+                        logger.debug("_filter_form_xobjects: /%s (xref=%d) has no stream", name, xref)
                         continue
 
                     # Filter text operators from the stream
@@ -814,14 +787,13 @@ class ContentStreamReplacer:
                         )
 
                 except (RuntimeError, ValueError, KeyError, OSError) as e:
-                    logger.debug("Could not filter Form XObject /%s: %s", name, e)
+                    logger.debug("Could not filter Form XObject /%s (xref=%d): %s", name, xref, e)
                     continue
 
-            if filtered_count > 0:
-                logger.debug(
-                    "Filtered %d Form XObjects on page %d",
-                    filtered_count, page.number
-                )
+            logger.info(
+                "_filter_form_xobjects: page=%d, filtered %d Form XObjects",
+                page.number, filtered_count
+            )
 
         except (RuntimeError, ValueError, KeyError, AttributeError, OSError) as e:
             # Non-critical error - page may not have XObjects

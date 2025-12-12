@@ -57,7 +57,7 @@ from .pdf_converter import (
     LANG_LINEHEIGHT_MAP, DEFAULT_LINE_HEIGHT,
     DEFAULT_FONT_SIZE, MIN_FONT_SIZE, MAX_FONT_SIZE,
     SUBSCRIPT_SUPERSCRIPT_THRESHOLD,
-    MIN_LINE_HEIGHT, LINE_HEIGHT_COMPRESSION_STEP,
+    MIN_LINE_HEIGHT, LINE_HEIGHT_COMPRESSION_STEP, MAX_LINES_FOR_SINGLE_LINE_BLOCK,
     DEFAULT_VFONT_PATTERN, FORMULA_UNICODE_CATEGORIES,
     SAME_LINE_Y_THRESHOLD, SAME_PARA_Y_THRESHOLD,
     WORD_SPACE_X_THRESHOLD, LINE_BREAK_X_THRESHOLD,
@@ -2068,6 +2068,44 @@ class PdfProcessor(FileProcessor):
                             font_registry,
                             line_height,
                         )
+
+                        # Fix for single-line blocks that expand to too many lines
+                        # Unlike PDFMathTranslate's fixed font size approach, we reduce
+                        # font size for single-line blocks to prevent severe layout overflow
+                        if (
+                            original_line_count == 1
+                            and len(lines) > MAX_LINES_FOR_SINGLE_LINE_BLOCK
+                        ):
+                            # Calculate reduced font size to fit in target lines
+                            # reduction_factor < 1 means smaller font
+                            reduction_factor = MAX_LINES_FOR_SINGLE_LINE_BLOCK / len(lines)
+                            reduced_font_size = max(
+                                MIN_FONT_SIZE,
+                                font_size * reduction_factor
+                            )
+
+                            # Recalculate with reduced font size
+                            if reduced_font_size < font_size:
+                                font_size, lines = calculate_adjusted_font_size(
+                                    translated,
+                                    box_width,
+                                    box_height,
+                                    reduced_font_size,
+                                    font_id,
+                                    font_registry,
+                                    line_height,
+                                )
+                                # Recalculate line height for new font size
+                                line_height = calculate_line_height_with_font(
+                                    translated, box_pdf,
+                                    font_size, font_id, font_registry, target_lang
+                                )
+                                logger.info(
+                                    "[Layout] Single-line block %s: reduced font_size "
+                                    "from %.1f to %.1f to fit %d lines (was ~%d lines)",
+                                    block_id, initial_font_size, font_size,
+                                    len(lines), int(1 / reduction_factor * MAX_LINES_FOR_SINGLE_LINE_BLOCK)
+                                )
 
                         # DEBUG: Log block processing details with layout info
                         logger.debug(

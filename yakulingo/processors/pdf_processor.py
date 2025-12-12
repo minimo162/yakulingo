@@ -1987,6 +1987,11 @@ class PdfProcessor(FileProcessor):
                             # This is critical for proper box_width expansion to prevent layout breakage
                             original_line_count = text_block.metadata.get('original_line_count', 1)
 
+                            # Get layout_class for table detection (PDFMathTranslate compliant)
+                            # Table cells (layout_class >= 1000) should NOT expand box_width
+                            layout_class = text_block.metadata.get('layout_class', LAYOUT_BACKGROUND)
+                            is_table_cell = layout_class >= LAYOUT_TABLE_BASE
+
                             # Fallback: If metadata doesn't have it, estimate from box_height and font_size
                             if original_line_count <= 1 and stored_font_size and stored_font_size > 0:
                                 estimated_lines = box_height / (stored_font_size * DEFAULT_LINE_HEIGHT)
@@ -2005,13 +2010,29 @@ class PdfProcessor(FileProcessor):
                             pdf_x1, pdf_y0, pdf_x2, pdf_y1 = box_pdf
                             box_width = pdf_x2 - pdf_x1
                             box_height = pdf_y1 - pdf_y0
+                            # PyMuPDF fallback: no layout information available
+                            is_table_cell = False
+
+                        # Store original box_width for table cells (don't expand)
+                        original_box_width = box_width
 
                         # Adjust box_width for multi-line blocks to prevent excessive fragmentation
+                        # IMPORTANT: Skip expansion for table cells - use font size reduction instead
                         # When original text was wrapped into N lines in a narrow box, the box_width
                         # is narrow. If we split translated text with this narrow width, it may
                         # result in many more lines than the original.
                         # Solution: Expand box_width to maintain similar line count as original.
-                        if original_line_count > 1:
+                        #
+                        # PDFMathTranslate compliant: Table cells must NOT expand box_width
+                        # Table cells have fixed boundaries - expanding would overlap adjacent cells
+                        if is_table_cell:
+                            # For table cells, keep original box_width and rely on font size reduction
+                            logger.debug(
+                                "[Table] Block %s is in table cell (layout_class=%d), "
+                                "skipping box_width expansion (keeping %.1f)",
+                                block_id, layout_class, original_box_width
+                            )
+                        elif original_line_count > 1:
                             # Estimate required width based on translated text length and original line count
                             # Average chars per line in translated text should be similar to original
                             avg_chars_per_line = len(translated) / original_line_count
@@ -2152,18 +2173,58 @@ class PdfProcessor(FileProcessor):
                                     len(lines), int(1 / reduction_factor * MAX_LINES_FOR_SINGLE_LINE_BLOCK)
                                 )
 
+                        # PDFMathTranslate compliant: Aggressive font reduction for table cells
+                        # Table cells have fixed boundaries - we must fit text within the cell
+                        # by reducing font size, not by expanding the box
+                        if is_table_cell and len(lines) > original_line_count:
+                            # Target: fit translated text in same number of lines as original
+                            target_lines = max(1, original_line_count)
+                            if len(lines) > target_lines:
+                                # Calculate reduction factor to fit in target lines
+                                # Use sqrt for more gradual reduction (text width scales with font size)
+                                reduction_factor = (target_lines / len(lines)) ** 0.7
+                                reduced_font_size = max(
+                                    MIN_FONT_SIZE,
+                                    font_size * reduction_factor
+                                )
+
+                                if reduced_font_size < font_size:
+                                    prev_lines_count = len(lines)
+                                    font_size, lines = calculate_adjusted_font_size(
+                                        translated,
+                                        box_width,
+                                        box_height,
+                                        reduced_font_size,
+                                        font_id,
+                                        font_registry,
+                                        line_height,
+                                    )
+                                    # Recalculate line height for new font size
+                                    line_height = calculate_line_height_with_font(
+                                        translated, box_pdf,
+                                        font_size, font_id, font_registry, target_lang
+                                    )
+                                    logger.info(
+                                        "[Table] Block %s: reduced font_size from %.1f to %.1f "
+                                        "to fit table cell (target %d lines, was %d, now %d)",
+                                        block_id, initial_font_size, font_size,
+                                        target_lines, prev_lines_count, len(lines)
+                                    )
+
                         # DEBUG: Log block processing details with layout info
                         logger.debug(
                             "[Layout] Processing block %s: "
                             "box_pdf=[%.1f, %.1f, %.1f, %.1f], "
                             "box_width=%.1f, box_height=%.1f, "
                             "initial_font=%.1f, final_font=%.1f, "
-                            "line_height=%.2f, original_lines=%d, output_lines=%d",
+                            "line_height=%.2f, original_lines=%d, output_lines=%d, "
+                            "is_table=%s",
                             block_id,
                             box_pdf[0], box_pdf[1], box_pdf[2], box_pdf[3],
                             box_width, box_height,
                             initial_font_size, font_size,
-                            line_height, original_line_count, len(lines)
+                            line_height, original_line_count, len(lines),
+                            is_table_cell
                         )
 
                         # Warn if output lines significantly exceed original
@@ -3136,6 +3197,7 @@ class PdfProcessor(FileProcessor):
                     'paragraph': para,
                     'formula_vars': block_vars,
                     'has_formulas': bool(block_vars),
+                    'layout_class': para.layout_class,  # For table detection
                 }
             ))
 
@@ -3300,7 +3362,7 @@ class PdfProcessor(FileProcessor):
                             sstk[-1] += placeholder
                         else:
                             sstk.append(placeholder)
-                            pstk.append(create_paragraph_from_char(char, line_break))
+                            pstk.append(create_paragraph_from_char(char, line_break, char_cls))
 
                     in_formula = False
                     vstk = []
@@ -3310,11 +3372,11 @@ class PdfProcessor(FileProcessor):
                 if new_paragraph:
                     # Start new paragraph
                     sstk.append("")
-                    pstk.append(create_paragraph_from_char(char, line_break))
+                    pstk.append(create_paragraph_from_char(char, line_break, char_cls))
 
                 if not sstk:
                     sstk.append("")
-                    pstk.append(create_paragraph_from_char(char, line_break))
+                    pstk.append(create_paragraph_from_char(char, line_break, char_cls))
 
                 # Add space between words if gap is significant
                 if has_prev and char_x0 > prev_x1 + WORD_SPACE_X_THRESHOLD:
@@ -3329,6 +3391,11 @@ class PdfProcessor(FileProcessor):
                     last_para.x1 = max(last_para.x1, char_x1)
                     last_para.y0 = min(last_para.y0, char_y0)
                     last_para.y1 = max(last_para.y1, char_y1)
+
+                    # Update layout_class to the maximum (table takes priority)
+                    # If any char in paragraph is in table (>=1000), treat whole para as table
+                    if char_cls > last_para.layout_class:
+                        last_para.layout_class = char_cls
 
                     # PDFMathTranslate compliant: Adjust y for mixed font sizes
                     # When a larger character appears, adjust the paragraph's y-origin

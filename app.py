@@ -51,6 +51,7 @@ def setup_logging():
         try:
             file_handler = RotatingFileHandler(
                 log_file_path,
+                mode='w',  # Overwrite on each startup (clear previous logs)
                 maxBytes=1_000_000,
                 backupCount=3,
                 encoding='utf-8'

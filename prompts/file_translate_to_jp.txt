@@ -11,9 +11,12 @@ Translate the following text to Japanese. Output only the translation, no explan
 - k → 千/000 (12k → 12,000)
 - () → ▲ ((50) → ▲50)
 
-### Output
-- If input is numbered (1., 2., 3., ...), output translations with matching numbers.
-- Translation only, no markdown, preserve line breaks within each item.
+### Output Format (CRITICAL)
+- Input is a numbered list (1., 2., 3., ...)
+- Output MUST be a numbered list with the SAME numbers
+- Each translated item MUST start with its number (e.g., "1. こんにちは")
+- Do NOT skip or merge numbers
+- Translation only, no markdown or extra text
 
 {reference_section}
 

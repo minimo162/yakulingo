@@ -20,9 +20,12 @@ Translate the text to English. Output only the translation.
 - Negative values: ▲50 or -50 → (50)
 - Use YoY, QoQ, CAGR as appropriate
 
-### Output
-- Preserve numbering if provided (1., 2., 3., ...)
-- Translation only, no markdown; keep line breaks within each item
+### Output Format (CRITICAL)
+- Input is a numbered list (1., 2., 3., ...)
+- Output MUST be a numbered list with the SAME numbers
+- Each translated item MUST start with its number (e.g., "1. Hello")
+- Do NOT skip or merge numbers
+- Translation only, no markdown or extra text
 
 {reference_section}
 

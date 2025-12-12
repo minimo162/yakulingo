@@ -958,6 +958,55 @@ class TestCopilotHandlerLoginDetection:
         result = handler._check_copilot_state(timeout=1)
         assert result == ConnectionState.LOGIN_REQUIRED
 
+    def test_check_copilot_state_finds_chat_page_in_another_tab(self):
+        """_check_copilot_state finds Copilot /chat page in another tab after login"""
+        from yakulingo.services.copilot_handler import ConnectionState
+
+        handler = CopilotHandler()
+
+        # 現在のページはログインページ（古い参照）
+        mock_login_page = MagicMock()
+        mock_login_page.url = "https://login.microsoftonline.com/common/oauth2"
+        mock_login_page.is_closed.return_value = False
+        handler._page = mock_login_page
+
+        # 別タブでCopilot /chatが開かれている
+        mock_chat_page = MagicMock()
+        mock_chat_page.url = "https://m365.cloud.microsoft/chat/?auth=2"
+        mock_chat_page.is_closed.return_value = False
+
+        # コンテキストに両方のページがある
+        mock_context = MagicMock()
+        mock_context.pages = [mock_login_page, mock_chat_page]
+        handler._context = mock_context
+
+        result = handler._check_copilot_state(timeout=1)
+        # 別タブの /chat ページを見つけてREADYを返すべき
+        assert result == ConnectionState.READY
+        # handler._page が /chat ページに更新されているべき
+        assert handler._page == mock_chat_page
+
+    def test_check_copilot_state_no_chat_page_in_other_tabs(self):
+        """_check_copilot_state returns LOGIN_REQUIRED when no /chat page in any tab"""
+        from yakulingo.services.copilot_handler import ConnectionState
+
+        handler = CopilotHandler()
+
+        # 現在のページはログインページ
+        mock_login_page = MagicMock()
+        mock_login_page.url = "https://login.microsoftonline.com/common/oauth2"
+        mock_login_page.is_closed.return_value = False
+        handler._page = mock_login_page
+
+        # コンテキストにはログインページのみ（他にCopilotページなし）
+        mock_context = MagicMock()
+        mock_context.pages = [mock_login_page]
+        handler._context = mock_context
+
+        result = handler._check_copilot_state(timeout=1)
+        # /chat ページが見つからないのでLOGIN_REQUIREDを返すべき
+        assert result == ConnectionState.LOGIN_REQUIRED
+
     def test_bring_to_foreground_with_page(self):
         """bring_to_foreground delegates to Playwright thread executor"""
         handler = CopilotHandler()

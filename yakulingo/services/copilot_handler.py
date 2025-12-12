@@ -1998,6 +1998,8 @@ class CopilotHandler:
         Note:
             チャット入力欄のセレクタ検出は不安定なため、URLパスのみで判定する。
             /chat パスにいれば、チャットUIが使用可能と判断する。
+            ログイン後に別タブでCopilotが開かれる場合があるため、現在のページが
+            /chat でない場合は他のページも確認する。
 
         Args:
             timeout: 未使用（後方互換性のため残す）
@@ -2038,6 +2040,20 @@ class CopilotHandler:
             current_url = page.url
             logger.info("Checking Copilot state: URL=%s", current_url[:80])
 
+            # Copilotドメインにいて、かつ /chat パスにいる場合 → ログイン完了
+            # URL例: https://m365.cloud.microsoft/chat/?auth=2
+            if "/chat" in current_url and _is_copilot_url(current_url):
+                logger.info("On Copilot chat page - ready")
+                return ConnectionState.READY
+
+            # 現在のページが /chat でない場合、他のページも確認
+            # ログイン後に別タブでCopilotが開かれることがある
+            chat_page = self._find_copilot_chat_page()
+            if chat_page:
+                self._page = chat_page
+                logger.info("Found Copilot chat page in another tab")
+                return ConnectionState.READY
+
             # ログインページにいる場合
             if _is_login_page(current_url):
                 logger.info("On login page - login required")
@@ -2047,12 +2063,6 @@ class CopilotHandler:
             if not _is_copilot_url(current_url):
                 logger.info("Not on Copilot domain - login required")
                 return ConnectionState.LOGIN_REQUIRED
-
-            # Copilotドメインにいて、かつ /chat パスにいる場合 → ログイン完了
-            # URL例: https://m365.cloud.microsoft/chat/?auth=2
-            if "/chat" in current_url:
-                logger.info("On Copilot chat page - ready")
-                return ConnectionState.READY
 
             # Copilotドメインだが /chat 以外（/landing, /home 等）→ まだリダイレクト中
             logger.info("On Copilot domain but not /chat path - waiting for redirect")
@@ -2072,6 +2082,39 @@ class CopilotHandler:
                 except PlaywrightError:
                     pass
             return ConnectionState.ERROR
+
+    def _find_copilot_chat_page(self):
+        """コンテキストからCopilot /chat ページを探す。
+
+        ログイン後に別タブでCopilotが開かれる場合があるため、
+        全てのページを確認して /chat パスを持つページを返す。
+
+        Returns:
+            Copilot /chat ページ、または None
+        """
+        if not self._context:
+            return None
+
+        error_types = _get_playwright_errors()
+        PlaywrightError = error_types['Error']
+
+        try:
+            pages = self._context.pages
+            for page in pages:
+                try:
+                    if page.is_closed():
+                        continue
+                    url = page.url
+                    # Copilotドメインかつ /chat パス
+                    if _is_copilot_url(url) and "/chat" in url:
+                        logger.info("Found Copilot chat page: URL=%s", url[:80])
+                        return page
+                except PlaywrightError:
+                    continue
+        except PlaywrightError as e:
+            logger.debug("Error searching for Copilot chat page: %s", e)
+
+        return None
 
     def _get_active_copilot_page(self):
         """コンテキストからアクティブなCopilotページを取得する。

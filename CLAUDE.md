@@ -512,8 +512,6 @@ async def _translate_text(self):
   "reference_files": ["glossary.csv"],
   "output_directory": null,
   "last_tab": "text",
-  "window_width": 1400,
-  "window_height": 850,
   "max_chars_per_batch": 4000,
   "request_timeout": 600,
   "max_retries": 3,
@@ -851,8 +849,10 @@ The `AutoUpdater` class provides GitHub Releases-based updates:
 - `auto_update_check_interval` - 更新チェック間隔
 - `github_repo_owner`, `github_repo_name` - リポジトリ情報
 - `reference_files`, `output_directory` - UIで保存されない
-- `window_width`, `window_height` - 固定値
 - `auto_update_enabled`, `last_update_check` - 読み取り専用
+
+**廃止された設定（使用されない）:**
+- `window_width`, `window_height` - 動的計算に移行（`_detect_display_settings()`で論理解像度から計算）
 
 ## Common Tasks for AI Assistants
 
@@ -1485,9 +1485,15 @@ Based on recent commits:
   - **Source text section**: 翻訳結果パネル上部に原文を表示（コピーボタン付き）
   - **Translation status display**: 「英訳中...」「和訳中...」→「✓ 英訳しました」「✓ 和訳しました」+ 経過時間
   - **Full-height input area**: 翻訳中・翻訳後の入力欄を縦幅いっぱいに拡張
-- **Window Sizing**:
-  - **Fixed window size**: 1400×850 pixels (designed for 1920×1200 laptop resolution)
-  - **No dynamic scaling**: Window size is fixed; external monitor scaling handled by OS DPI settings
+- **Window Sizing (Dynamic Scaling)**:
+  - **Dynamic calculation**: `_detect_display_settings()` calculates window size from logical screen resolution
+  - **DPI-aware**: pywebview returns logical pixels (after DPI scaling), so window maintains ~74% width ratio
+  - **Reference**: 2560x1440 logical → 1900x1100 window (74.2% width, 76.4% height)
+  - **Minimum sizes**: 1100x650 pixels (lowered from 1400x850 to maintain ratio on smaller screens)
+  - **Examples by DPI scaling**:
+    - 1920x1200 at 100% → 論理1920x1200 → window 1424x916 (74%)
+    - 1920x1200 at 125% → 論理1536x960 → window 1140x733 (74%)
+    - 2560x1440 at 150% → 論理1706x960 → window 1266x733 (74%)
   - **Panel layout**: Translation result panel elements aligned to 2/3 width with center alignment
 - **Global Hotkey (Ctrl+J)**:
   - **Quick translation**: Select text in any app, press Ctrl+J to translate

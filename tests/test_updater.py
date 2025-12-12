@@ -968,5 +968,4 @@ class TestUserProtectedSettings:
         assert "github_repo_owner" not in USER_PROTECTED_SETTINGS
         assert "github_repo_name" not in USER_PROTECTED_SETTINGS
         assert "auto_update_check_interval" not in USER_PROTECTED_SETTINGS
-        assert "window_width" not in USER_PROTECTED_SETTINGS
-        assert "window_height" not in USER_PROTECTED_SETTINGS
+        # NOTE: window_width/window_height are deprecated (dynamically calculated)

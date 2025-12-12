@@ -31,8 +31,8 @@ class AppSettings:
 
     # UI
     last_tab: str = "text"
-    window_width: int = 1400  # 3カラムレイアウト対応
-    window_height: int = 850
+    # NOTE: window_width/window_height は廃止。ウィンドウサイズは
+    # _detect_display_settings() で論理解像度から動的に計算される。
 
     # Advanced
     max_chars_per_batch: int = 4000     # Max characters per batch (reduced for reliability)
@@ -79,6 +79,8 @@ class AppSettings:
                     data = json.load(f)
                     # Remove deprecated fields
                     data.pop('last_direction', None)
+                    data.pop('window_width', None)
+                    data.pop('window_height', None)
                     # Migrate old PDF-only options to common options
                     if 'pdf_bilingual_output' in data and 'bilingual_output' not in data:
                         data['bilingual_output'] = data.pop('pdf_bilingual_output')
@@ -154,8 +156,7 @@ class AppSettings:
             "reference_files": self.reference_files,
             "output_directory": self.output_directory,
             "last_tab": self.last_tab,
-            "window_width": self.window_width,
-            "window_height": self.window_height,
+            # NOTE: window_width/window_height は廃止（動的計算に移行）
             "max_chars_per_batch": self.max_chars_per_batch,
             "request_timeout": self.request_timeout,
             "max_retries": self.max_retries,

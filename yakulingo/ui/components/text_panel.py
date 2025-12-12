@@ -358,6 +358,13 @@ def create_text_result_panel(
         if source_text_to_display:
             _render_source_text_section(source_text_to_display, on_copy)
 
+        # Attached reference files indicator (read-only display in result panel)
+        if state.reference_files:
+            with ui.row().classes('items-center gap-2 flex-wrap'):
+                for ref_file in state.reference_files:
+                    with ui.element('div').classes('attach-file-indicator'):
+                        ui.label(ref_file.name).classes('file-name')
+
         # Translation status section
         if state.text_translating and not has_partial_result:
             # Still translating, no partial result yet - show streaming

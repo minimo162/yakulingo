@@ -53,6 +53,11 @@ SUBSCRIPT_SUPERSCRIPT_THRESHOLD = 0.79
 MIN_LINE_HEIGHT = 1.0
 LINE_HEIGHT_COMPRESSION_STEP = 0.05
 
+# Single-line block expansion limit
+# When a single-line block would expand to more than this many lines,
+# reduce font size to fit within this limit instead of allowing overflow
+MAX_LINES_FOR_SINGLE_LINE_BLOCK = 3
+
 # Formula font pattern (PDFMathTranslate reference)
 # Note: MS[AB]M matches MSAM/MSBM (AMS Math fonts) but NOT MS-Mincho/MS-Gothic
 DEFAULT_VFONT_PATTERN = (

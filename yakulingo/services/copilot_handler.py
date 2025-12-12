@@ -1281,11 +1281,20 @@ class CopilotHandler:
         "Accedi", "Password",
     )
 
-    # Extended selectors for authentication dialogs and forms
-    # NOTE: Selectors must be specific to login pages to avoid false positives on Copilot UI
-    AUTH_DIALOG_SELECTORS = [
-        # Fluent UI dialogs - only check title element (checked with keywords)
+    # Overlay dialog selectors - checked even on Copilot pages
+    # These detect authentication dialogs that appear as overlays on any page
+    AUTH_OVERLAY_DIALOG_SELECTORS = [
+        # Fluent UI dialogs
         '.fui-DialogTitle',
+        '.fui-DialogBody',
+        '[role="dialog"] h2',
+        '[role="dialog"][aria-modal="true"]',
+        '[role="alertdialog"]',
+    ]
+
+    # Extended selectors for authentication dialogs and forms
+    # NOTE: These are only checked on login pages to avoid false positives on Copilot UI
+    AUTH_DIALOG_SELECTORS = [
         # Microsoft login page elements (specific to login.microsoftonline.com)
         '.login-paginated-page',
         '#loginHeader',
@@ -1308,7 +1317,7 @@ class CopilotHandler:
         """Check if an authentication dialog or login form is visible on the current page.
 
         Supports multiple languages and various authentication UI patterns including:
-        - Fluent UI dialogs
+        - Fluent UI dialogs (overlay dialogs on any page including Copilot)
         - Microsoft login pages
         - ADFS/SAML login forms
         - MFA verification screens
@@ -1324,15 +1333,27 @@ class CopilotHandler:
         PlaywrightError = error_types['Error']
 
         try:
-            # Skip auth dialog check on Copilot pages - if auth is needed, user will be
-            # redirected to login page (detected by _is_login_page). This prevents
-            # false positives from Copilot UI elements matching auth selectors.
             current_url = self._page.url
-            if _is_copilot_url(current_url) and not _is_login_page(current_url):
-                logger.debug("Skipping auth dialog check on Copilot page: %s", current_url[:50])
+            is_on_copilot = _is_copilot_url(current_url) and not _is_login_page(current_url)
+
+            # Always check for overlay dialogs (authentication dialogs can appear on any page)
+            for selector in self.AUTH_OVERLAY_DIALOG_SELECTORS:
+                element = self._page.query_selector(selector)
+                if element:
+                    try:
+                        element_text = element.inner_text().strip()
+                        if element_text and any(keyword.lower() in element_text.lower() for keyword in self.AUTH_KEYWORDS):
+                            logger.info("Authentication overlay dialog detected: selector=%s, text=%s", selector, element_text[:50])
+                            return True
+                    except Exception:
+                        pass  # Element may not support inner_text
+
+            # Skip login page selectors on Copilot pages to avoid false positives
+            if is_on_copilot:
+                logger.debug("Skipping login page selectors on Copilot page: %s", current_url[:50])
                 return False
 
-            # Check dialog/form elements with extended selectors
+            # Check login page elements with extended selectors (only on non-Copilot pages)
             for selector in self.AUTH_DIALOG_SELECTORS:
                 element = self._page.query_selector(selector)
                 if element:

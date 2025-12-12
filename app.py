@@ -7,7 +7,6 @@ Entry point for the NiceGUI-based translation application.
 """
 
 import logging
-from logging.handlers import RotatingFileHandler
 import sys
 from pathlib import Path
 
@@ -20,7 +19,7 @@ def setup_logging():
     """Configure logging to console and file for debugging.
 
     Log file location: ~/.yakulingo/logs/startup.log
-    - RotatingFileHandler: max 1MB, 3 backups
+    - Overwritten on each startup (no rotation)
     - Encoding: UTF-8
 
     Returns:
@@ -49,11 +48,9 @@ def setup_logging():
     # Try to create file handler
     if logs_dir is not None:
         try:
-            file_handler = RotatingFileHandler(
+            file_handler = logging.FileHandler(
                 log_file_path,
-                mode='w',  # Overwrite on each startup (clear previous logs)
-                maxBytes=1_000_000,
-                backupCount=3,
+                mode='w',  # Overwrite on each startup
                 encoding='utf-8'
             )
             file_handler.setLevel(logging.DEBUG)

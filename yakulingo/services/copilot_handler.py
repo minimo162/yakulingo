@@ -259,7 +259,7 @@ class PlaywrightThreadExecutor:
         if self._thread is not None:
             # Send stop signal
             self._request_queue.put((None, None, None))
-            self._thread.join(timeout=5)
+            self._thread.join(timeout=10)
 
     def shutdown(self):
         """Force shutdown: stop thread and release all waiting operations.
@@ -298,9 +298,10 @@ class PlaywrightThreadExecutor:
             logger.debug("Cleared %d pending items during shutdown", cleared_count)
 
         # Send stop signal and wait for worker to finish
+        # Use 10 second timeout to allow Playwright greenlets to complete I/O operations
         if self._thread is not None and self._thread.is_alive():
             self._request_queue.put((None, None, None))
-            self._thread.join(timeout=5)
+            self._thread.join(timeout=10)
             if self._thread.is_alive():
                 logger.warning("Playwright worker thread did not terminate within timeout")
 
@@ -2115,21 +2116,34 @@ class CopilotHandler:
                 if self.edge_process:
                     self.edge_process.terminate()
                     try:
-                        self.edge_process.wait(timeout=2)
+                        self.edge_process.wait(timeout=3)
+                        browser_terminated = True
                     except subprocess.TimeoutExpired:
                         self.edge_process.kill()
                         # Wait for kill to complete (ensures process is fully terminated)
                         try:
-                            self.edge_process.wait(timeout=1)
+                            self.edge_process.wait(timeout=2)
+                            browser_terminated = True
                         except subprocess.TimeoutExpired:
                             logger.warning("Edge process did not terminate after kill")
-                    logger.info("Edge browser terminated (force via process)")
-                    browser_terminated = True
+                    if browser_terminated:
+                        logger.info("Edge browser terminated (force via process)")
+
+            # Verify process is truly terminated by checking poll()
+            if browser_terminated and self.edge_process:
+                with suppress(Exception):
+                    if self.edge_process.poll() is None:
+                        # Process still running, try kill again
+                        logger.warning("Edge process still running after termination, forcing kill")
+                        self.edge_process.kill()
+                        self.edge_process.wait(timeout=2)
 
             # If edge_process was None (lost after cleanup_on_error), kill by port
             if not browser_terminated and self._is_port_in_use():
                 with suppress(Exception):
                     self._kill_existing_translator_edge()
+                    # Wait a bit for port to be released
+                    time.sleep(0.5)
                     logger.info("Edge browser terminated (force via port)")
 
         # Clear references (Playwright cleanup may fail but that's OK during shutdown)

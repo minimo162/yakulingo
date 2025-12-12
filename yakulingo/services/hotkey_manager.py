@@ -182,9 +182,19 @@ else:
                 self._running = False
 
             if self._thread:
-                self._thread.join(timeout=2.0)
+                # Use longer timeout to allow message loop to process WM_QUIT
+                self._thread.join(timeout=5.0)
                 if self._thread.is_alive():
                     logger.warning("HotkeyManager thread did not stop in time")
+                    # Fallback: manually unregister hotkey if thread didn't clean up
+                    # This ensures the global hotkey is released even if thread is stuck
+                    if self._registered:
+                        try:
+                            _user32.UnregisterHotKey(None, self.HOTKEY_ID)
+                            self._registered = False
+                            logger.info("Manually unregistered hotkey after timeout")
+                        except Exception as e:
+                            logger.debug("Failed to manually unregister hotkey: %s", e)
                 self._thread = None
             logger.info("HotkeyManager stopped")
 

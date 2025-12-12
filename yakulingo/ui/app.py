@@ -2872,6 +2872,18 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
         # Set shutdown flag FIRST to prevent new tasks from starting
         yakulingo_app._shutdown_requested = True
 
+        # Clear PP-DocLayout-L cache FIRST to release GPU/CPU memory and file handles
+        # This must happen before Playwright cleanup because PaddlePaddle may hold
+        # file handles that prevent folder deletion
+        try:
+            from yakulingo.processors.pdf_layout import clear_analyzer_cache
+            clear_analyzer_cache()
+            logger.debug("PP-DocLayout-L cache cleared")
+        except ImportError:
+            pass  # PDF dependencies not installed
+        except Exception as e:
+            logger.debug("Error clearing PP-DocLayout-L cache: %s", e)
+
         # Cancel any active UI timers (prevents NiceGUI threads from blocking shutdown)
         if yakulingo_app._active_streaming_timer is not None:
             try:

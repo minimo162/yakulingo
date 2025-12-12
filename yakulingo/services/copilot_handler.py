@@ -26,11 +26,11 @@ logger = logging.getLogger(__name__)
 
 # Pre-compiled regex pattern for batch result parsing
 # Pattern to match numbered items with multiline content (e.g., "1. text\nmore text")
-# Captures: number and content until next number or end of string
+# Captures: indentation (group 1), number (group 2), and content (group 3) until next number or end
 # Uses \Z (end of string) instead of $ (end of line in MULTILINE mode)
-# Allows optional leading whitespace on lines (^\s*)
 # Note: lookahead does NOT require space after period (handles "1.text" format from Copilot)
-_RE_BATCH_ITEM = re.compile(r'^\s*(\d+)\.\s*(.*?)(?=\n\s*\d+\.|\Z)', re.MULTILINE | re.DOTALL)
+# The indentation group is used by _parse_batch_result to filter out nested numbered lists
+_RE_BATCH_ITEM = re.compile(r'^(\s*)(\d+)\.\s*(.*?)(?=\n\s*\d+\.|\Z)', re.MULTILINE | re.DOTALL)
 
 # Known Copilot error response patterns that indicate we should retry with a new chat
 # These are system messages that don't represent actual translation results
@@ -3263,16 +3263,73 @@ class CopilotHandler:
 
         Validates number completeness and inserts empty strings for missing numbers
         to maintain correct index mapping.
+
+        Important: Only processes numbered items at the minimum indentation level.
+        This prevents nested numbered lists within translations from being incorrectly
+        parsed as separate items. For example:
+            1. Follow these steps:
+               1. Open file
+               2. Save it
+            2. Next item
+        Would correctly parse as 2 items, not 4, because "   1." and "   2." are
+        at a deeper indentation level than "1." and "2.".
         """
-        result_text = result.strip()
+        # Normalize indentation: remove common leading whitespace from all lines
+        # This handles cases where Copilot returns responses with uniform indentation
+        # (e.g., "   1. Hello\n   2. World" becomes "1. Hello\n2. World")
+        # Important: Split BEFORE strip() to preserve relative indentation
+        lines = result.split('\n')
+
+        # Remove empty lines at start and end, but preserve internal empty lines
+        while lines and not lines[0].strip():
+            lines.pop(0)
+        while lines and not lines[-1].strip():
+            lines.pop()
+
+        if lines:
+            # Find minimum indentation (only spaces/tabs, not empty lines)
+            min_leading = float('inf')
+            for line in lines:
+                stripped = line.lstrip()
+                if stripped:  # Skip empty lines
+                    leading = len(line) - len(stripped)
+                    min_leading = min(min_leading, leading)
+            if min_leading == float('inf'):
+                min_leading = 0
+            # Remove common indentation from each line
+            lines = [line[min_leading:] if len(line) >= min_leading else line.lstrip() for line in lines]
+        result_text = '\n'.join(lines)
         translations: list[str] = []
 
         # Find all numbered items with their content (including multiline)
+        # Each match is (indentation, number, content)
         matches = _RE_BATCH_ITEM.findall(result_text)
 
         if matches:
+            # Calculate effective indentation (only spaces/tabs, not newlines)
+            # This handles cases where empty lines before a numbered item
+            # cause the regex to capture newlines as part of the "indent" group
+            def effective_indent(indent: str) -> int:
+                # Count only actual indentation characters (spaces and tabs)
+                # Strip newlines and other control characters
+                return len(indent.replace('\n', '').replace('\r', ''))
+
+            # Use the first item's indentation as the baseline
+            # Filter out items with MORE indentation (nested lists)
+            # This handles both cases:
+            # 1. Inconsistent whitespace: "  1. Hello\n2. World" - both items kept
+            # 2. Nested lists: "1. Steps:\n   1. Open\n2. Next" - "   1. Open" filtered
+            first_indent = effective_indent(matches[0][0])
+
+            # Filter to only keep items at or below the first item's indentation level
+            # This excludes nested numbered lists within translations
+            filtered_matches = [
+                (num, content) for indent, num, content in matches
+                if effective_indent(indent) <= first_indent
+            ]
+
             # Sort by number to ensure correct order
-            numbered_items = [(int(num), content.strip()) for num, content in matches]
+            numbered_items = [(int(num), content.strip()) for num, content in filtered_matches]
             numbered_items.sort(key=lambda x: x[0])
 
             # Validate number completeness and build result with correct indices

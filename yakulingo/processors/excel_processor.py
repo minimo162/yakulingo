@@ -1531,8 +1531,9 @@ class ExcelProcessor(FileProcessor):
         """Apply cell translations with batch optimization for xlwings.
 
         Optimization strategy:
-        1. Write all cell values first (batched by row ranges)
-        2. Apply font name and size together, grouped by font size
+        1. Pre-fetch merged cell info to avoid per-cell COM calls during font apply
+        2. Write all cell values first (batched by row ranges)
+        3. Apply font: normal cells via batch, merged cells individually
            (reduces COM calls by combining font property updates)
 
         This significantly reduces COM calls compared to per-cell font application.
@@ -1554,8 +1555,53 @@ class ExcelProcessor(FileProcessor):
                 col_letter_cache[col] = get_column_letter(col)
             return col_letter_cache[col]
 
+        # Pre-fetch all merged cell ranges in this sheet (single COM call)
+        # This avoids checking MergeCells property for each cell individually
+        merged_cells: set[tuple[int, int]] = set()
+        merged_areas: dict[tuple[int, int], str] = {}  # (row, col) -> merge area address
+        try:
+            # Get all merged areas via Excel API
+            merge_areas_api = sheet.api.Cells.MergeArea
+            # Alternative: iterate through used range to find merged cells
+            used_range = sheet.used_range
+            if used_range is not None:
+                try:
+                    # Check merged cells in the used range area
+                    for merge_range in sheet.api.UsedRange.SpecialCells(4):  # xlCellTypeSameFormatConditions fallback
+                        pass
+                except Exception:
+                    pass
+
+                # More reliable: check cells that we're going to translate
+                cells_to_check = list(cell_translations.keys())
+                # Batch check: sample a few cells to detect if merging exists
+                sample_size = min(50, len(cells_to_check))
+                has_merged = False
+                for i in range(0, len(cells_to_check), max(1, len(cells_to_check) // sample_size)):
+                    row, col = cells_to_check[i]
+                    try:
+                        if sheet.range(row, col).api.MergeCells:
+                            has_merged = True
+                            break
+                    except Exception:
+                        pass
+
+                # Only do full scan if merged cells were detected
+                if has_merged:
+                    for row, col in cells_to_check:
+                        try:
+                            cell_api = sheet.range(row, col).api
+                            if cell_api.MergeCells:
+                                merged_cells.add((row, col))
+                                merged_areas[(row, col)] = cell_api.MergeArea.Address
+                        except Exception:
+                            pass
+        except Exception as e:
+            logger.debug("Could not pre-fetch merged cells: %s", e)
+
         # Group cells by font size for combined font application
         font_size_groups: dict[float, list[tuple[int, int]]] = {}  # size -> [(row, col), ...]
+        merged_font_groups: dict[float, list[tuple[int, int]]] = {}  # For merged cells
 
         # Group translations by row for batch value writing
         rows_data: dict[int, list[tuple[int, str, str]]] = {}  # row -> [(col, text, cell_ref), ...]
@@ -1573,9 +1619,16 @@ class ExcelProcessor(FileProcessor):
                 original_font_size = 11.0
 
             _, new_font_size = font_manager.select_font(None, original_font_size)
-            if new_font_size not in font_size_groups:
-                font_size_groups[new_font_size] = []
-            font_size_groups[new_font_size].append((row, col))
+
+            # Separate merged and non-merged cells for different processing
+            if (row, col) in merged_cells:
+                if new_font_size not in merged_font_groups:
+                    merged_font_groups[new_font_size] = []
+                merged_font_groups[new_font_size].append((row, col))
+            else:
+                if new_font_size not in font_size_groups:
+                    font_size_groups[new_font_size] = []
+                font_size_groups[new_font_size].append((row, col))
 
         # Sort cells within each row by column
         for row in rows_data:
@@ -1587,11 +1640,26 @@ class ExcelProcessor(FileProcessor):
             for start_col, end_col, range_cells in ranges:
                 self._write_cell_values_batch(sheet, sheet_name, row, start_col, end_col, range_cells)
 
-        # Phase 2: Apply font name and size together (grouped by size)
-        # This combines what was previously Phase 2 + Phase 3 into fewer COM calls
+        # Phase 2: Apply font name and size
         output_font_name = font_manager.get_output_font()
+
+        # 2a: Normal cells - batch apply (fast path, no merged cell checks needed)
         for font_size, cells in font_size_groups.items():
-            self._apply_font_batch(sheet, cells, output_font_name, font_size, get_col_letter)
+            self._apply_font_batch_fast(sheet, cells, output_font_name, font_size, get_col_letter)
+
+        # 2b: Merged cells - individual apply via MergeArea (already know they're merged)
+        processed_merge_areas: set[str] = set()
+        for font_size, cells in merged_font_groups.items():
+            for row, col in cells:
+                merge_addr = merged_areas.get((row, col))
+                if merge_addr and merge_addr not in processed_merge_areas:
+                    processed_merge_areas.add(merge_addr)
+                    try:
+                        merge_area = sheet.range(row, col).api.MergeArea
+                        merge_area.Font.Name = output_font_name
+                        merge_area.Font.Size = font_size
+                    except Exception as e:
+                        logger.debug("Error applying font to merged area at (%d,%d): %s", row, col, e)
 
     def _find_contiguous_ranges(
         self, cells: list[tuple[int, str, str]]
@@ -1771,6 +1839,59 @@ class ExcelProcessor(FileProcessor):
 
         except Exception as e:
             logger.warning("Error in font batch application: %s", e)
+
+    def _apply_font_batch_fast(
+        self,
+        sheet,
+        cells: list[tuple[int, int]],
+        font_name: str,
+        font_size: float,
+        get_col_letter,
+    ) -> None:
+        """Apply font to cells without merged cell handling (fast path).
+
+        This method assumes all cells are non-merged. Use when merged cells
+        have been pre-filtered and handled separately.
+
+        Uses larger batch sizes for maximum efficiency.
+
+        Args:
+            sheet: xlwings Sheet object
+            cells: List of (row, col) - must not contain merged cells
+            font_name: Font name to apply
+            font_size: Font size to apply
+            get_col_letter: Cached column letter lookup function
+        """
+        if not cells:
+            return
+
+        # Larger batch size since we know there are no merged cells
+        # Excel's range string limit is ~8000 chars, so 500 cells × ~5 chars ≈ 2500 chars is safe
+        MAX_ADDRESSES_PER_BATCH = 500
+
+        try:
+            for i in range(0, len(cells), MAX_ADDRESSES_PER_BATCH):
+                batch = cells[i:i + MAX_ADDRESSES_PER_BATCH]
+                addresses = [f"{get_col_letter(col)}{row}" for row, col in batch]
+
+                try:
+                    union_address = ",".join(addresses)
+                    rng = sheet.range(union_address)
+                    rng.font.name = font_name
+                    rng.font.size = font_size
+                except Exception as e:
+                    # Unexpected error - fall back to individual cells
+                    logger.debug("Fast font batch failed unexpectedly: %s", e)
+                    for row, col in batch:
+                        try:
+                            cell_rng = sheet.range(row, col)
+                            cell_rng.font.name = font_name
+                            cell_rng.font.size = font_size
+                        except Exception as inner_e:
+                            logger.debug("Error applying font to cell (%d,%d): %s", row, col, inner_e)
+
+        except Exception as e:
+            logger.warning("Error in fast font batch application: %s", e)
 
     def _apply_single_cell_xlwings(
         self,

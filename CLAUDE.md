@@ -691,6 +691,53 @@ connect()
 | 手動ログイン必要 | ログインページURL or 認証ダイアログ | ブラウザを前面に表示 |
 | 接続失敗 | 上記以外（タイムアウト等） | エラー状態 |
 
+### Login Completion Polling (ログイン完了ポーリング)
+
+手動ログイン後、UIがバックグラウンドでログイン完了を検知するプロセス：
+
+```
+connect() が False を返した後
+  │
+  └─ _wait_for_login_completion() でポーリング開始
+        │  ※ 2秒間隔で最大300秒（5分）
+        │
+        ├─ check_copilot_state() を呼び出し
+        │     ├─ READY → ログイン完了、アプリを前面に表示
+        │     ├─ LOGIN_REQUIRED → 継続待機
+        │     └─ ERROR → 連続3回でポーリング停止
+        │
+        └─ 状態に応じた処理
+              ├─ READY: _connected=True, storage_state保存, Edge最小化
+              └─ タイムアウト: 翻訳ボタン押下時に再試行
+```
+
+**`_check_copilot_state` の判定ロジック（URLベース）:**
+
+チャット入力欄のセレクタ検出は不安定なため、**URLパスのみで判定**する：
+
+| 条件 | 結果 |
+|------|------|
+| ログインページURL | `LOGIN_REQUIRED` |
+| Copilotドメイン外 | `LOGIN_REQUIRED` |
+| Copilotドメイン + `/chat` パス | `READY` |
+| Copilotドメイン + `/chat` 以外 | `LOGIN_REQUIRED` |
+| PlaywrightError発生 | `ERROR`（ページ再取得を試行） |
+
+**ページの有効性確認と再取得:**
+
+ログイン後にページがリロードされた場合、`self._page` が無効になることがある。
+`_check_copilot_state` では以下の対策を実装：
+
+1. `page.is_closed()` でページの有効性を確認
+2. 無効な場合は `_get_active_copilot_page()` でコンテキストから再取得
+3. PlaywrightError発生時も再取得を試行
+
+```python
+# _get_active_copilot_page() の優先順位
+1. CopilotドメインまたはログインページのURL → そのページを返す
+2. 上記が見つからない場合 → 最初の有効なページを返す
+```
+
 ### Copilot Character Limits
 M365 Copilot has different input limits based on license:
 - **Free license**: 8,000 characters max

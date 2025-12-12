@@ -881,42 +881,73 @@ class ExcelProcessor(FileProcessor):
                                                     col_idx = start_col + col_offset
                                                     translatable_cells.append((row_idx, col_idx, str(value)))
 
-                                    # Second pass: collect TextBlocks with font info
-                                    # Fetch font info during extraction to avoid double cell access
-                                    # in apply_translations (optimization: single COM call per cell)
-                                    # Also check for formula cells to skip them (preserve formulas)
+                                    # Skip if no translatable cells found
+                                    if not translatable_cells:
+                                        continue
+
+                                    # Batch optimization: Get formula cells in one COM call
+                                    # Uses SpecialCells(xlCellTypeFormulas) which is much faster
+                                    # than checking each cell individually
+                                    formula_cells: set[tuple[int, int]] = set()
+                                    try:
+                                        # xlCellTypeFormulas = -4123
+                                        formula_range = used_range.api.SpecialCells(-4123)
+                                        # Parse addresses to get formula cell coordinates
+                                        # Address can be like "A1,B2:C3,D4" (comma-separated areas)
+                                        for area in formula_range.Areas:
+                                            addr = area.Address.replace('$', '')
+                                            # Handle range like "A1:B3" or single cell "A1"
+                                            if ':' in addr:
+                                                parts = addr.split(':')
+                                                start_cell = parts[0]
+                                                end_cell = parts[1]
+                                                # Parse start/end
+                                                start_match = re.match(r'([A-Z]+)(\d+)', start_cell)
+                                                end_match = re.match(r'([A-Z]+)(\d+)', end_cell)
+                                                if start_match and end_match:
+                                                    start_c = column_index_from_string(start_match.group(1))
+                                                    start_r = int(start_match.group(2))
+                                                    end_c = column_index_from_string(end_match.group(1))
+                                                    end_r = int(end_match.group(2))
+                                                    for r in range(start_r, end_r + 1):
+                                                        for c in range(start_c, end_c + 1):
+                                                            formula_cells.add((r, c))
+                                            else:
+                                                match = re.match(r'([A-Z]+)(\d+)', addr)
+                                                if match:
+                                                    c = column_index_from_string(match.group(1))
+                                                    r = int(match.group(2))
+                                                    formula_cells.add((r, c))
+                                    except Exception:
+                                        # No formula cells or SpecialCells not supported
+                                        # This is expected if sheet has no formulas
+                                        pass
+
+                                    # Get sheet's default font size (single COM call)
+                                    # Font name is not needed as it's determined by translation direction
+                                    default_font_size = 11.0
+                                    try:
+                                        # Try to get from first cell of used range
+                                        first_cell_size = used_range.api.Cells(1, 1).Font.Size
+                                        if first_cell_size:
+                                            default_font_size = float(first_cell_size)
+                                    except Exception:
+                                        pass
+
+                                    # Second pass: collect TextBlocks (optimized - no per-cell COM calls)
                                     formula_skipped = 0
                                     for row_idx, col_idx, text in translatable_cells:
-                                        col_letter = get_column_letter(col_idx)
-
-                                        # Get font info and check for formula
-                                        font_name = None
-                                        font_size = 11.0
-                                        is_formula = False
-                                        try:
-                                            cell = sheet.range(f"{col_letter}{row_idx}")
-                                            font_name = cell.font.name
-                                            font_size = cell.font.size or 11.0
-                                            # Check if cell contains a formula
-                                            # xlwings: formula property returns the formula string or None
-                                            cell_formula = cell.formula
-                                            if cell_formula and isinstance(cell_formula, str) and cell_formula.startswith('='):
-                                                is_formula = True
-                                                formula_skipped += 1
-                                        except Exception as e:
-                                            logger.debug(
-                                                "Error reading cell %s_%s%s: %s",
-                                                sheet_name, col_letter, row_idx, e
-                                            )
-
-                                        # Skip formula cells to preserve them
-                                        if is_formula:
+                                        # Skip formula cells (already identified in batch)
+                                        if (row_idx, col_idx) in formula_cells:
+                                            formula_skipped += 1
                                             continue
 
+                                        col_letter = get_column_letter(col_idx)
                                         block_id = f"{sheet_name}_{col_letter}{row_idx}"
 
+                                        # Use default font size (font name not needed - determined by direction)
                                         # Cache font info for use in apply_translations
-                                        self._font_cache[block_id] = (font_name, font_size)
+                                        self._font_cache[block_id] = (None, default_font_size)
 
                                         blocks.append(TextBlock(
                                             id=block_id,
@@ -928,8 +959,8 @@ class ExcelProcessor(FileProcessor):
                                                 'row': row_idx,
                                                 'col': col_idx,
                                                 'type': 'cell',
-                                                'font_name': font_name,
-                                                'font_size': font_size,
+                                                'font_name': None,
+                                                'font_size': default_font_size,
                                             }
                                         ))
 

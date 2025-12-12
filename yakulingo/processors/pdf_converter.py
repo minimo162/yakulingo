@@ -111,6 +111,11 @@ class Paragraph:
         y1: Top boundary
         size: Font size
         brk: Line break flag (True if paragraph starts on new line)
+        layout_class: Layout class from PP-DocLayout-L (used for table detection)
+            - 0: LAYOUT_ABANDON (figures, headers, footers)
+            - 1: LAYOUT_BACKGROUND
+            - 2+: Paragraph index
+            - 1000+: Table cell index (LAYOUT_TABLE_BASE)
     """
     y: float
     x: float
@@ -120,6 +125,7 @@ class Paragraph:
     y1: float
     size: float
     brk: bool = False
+    layout_class: int = 1  # Default to LAYOUT_BACKGROUND
 
 
 @dataclass
@@ -746,13 +752,18 @@ def classify_char_type(fontname: str, char_text: str) -> bool:
     return vflag(fontname, char_text)
 
 
-def create_paragraph_from_char(char, brk: bool) -> Paragraph:
+def create_paragraph_from_char(char, brk: bool, layout_class: int = 1) -> Paragraph:
     """
     Create Paragraph metadata from a character.
 
     Args:
         char: LTChar object from pdfminer
         brk: Line break flag
+        layout_class: Layout class from PP-DocLayout-L (default: LAYOUT_BACKGROUND=1)
+            - 1000+: Table cell (LAYOUT_TABLE_BASE)
+            - 2+: Paragraph
+            - 1: Background
+            - 0: Abandon (figures, headers)
 
     Returns:
         Paragraph with initial bounds from character
@@ -767,6 +778,7 @@ def create_paragraph_from_char(char, brk: bool) -> Paragraph:
         y1=char.y1,
         size=char_size,
         brk=brk,
+        layout_class=layout_class,
     )
 
 

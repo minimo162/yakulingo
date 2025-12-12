@@ -18,7 +18,7 @@ class AppSettings:
     """Application settings"""
 
     # Reference Files (用語集、参考資料など)
-    # Default is empty; bundled abbreviations can be enabled via use_bundled_glossary
+    # Default is empty; bundled glossary can be enabled via use_bundled_glossary
     reference_files: list[str] = field(default_factory=list)
 
     # Cache for resolved reference file paths (not persisted)

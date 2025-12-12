@@ -1497,6 +1497,7 @@ textarea:focus-visible {
     box-shadow: none;
     border: none;
     padding: 0;
+    animation: none;  /* 外枠のアニメーションを無効化 */
 }
 
 .main-area.file-mode .main-card:hover {
@@ -1508,6 +1509,10 @@ textarea:focus-visible {
     background: transparent;
     border: none;
     padding: 0;
+}
+
+.main-area.file-mode .main-card-inner:focus-within {
+    box-shadow: none;  /* フォーカス時のエフェクトを無効化 */
 }
 
 /* === Media Queries for Font Size Scaling === */

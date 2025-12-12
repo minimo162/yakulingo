@@ -529,7 +529,7 @@ class TestYakuLingoAppFileTranslation:
     async def test_translate_file_uses_effective_reference_files(
         self, app_with_service, mock_translation_service
     ):
-        """File translation should include bundled glossary when enabled"""
+        """File translation should include bundled abbreviations when enabled"""
 
         app = app_with_service
         app.settings.use_bundled_glossary = True
@@ -550,7 +550,7 @@ class TestYakuLingoAppFileTranslation:
         await app._translate_file()
 
         reference_files = mock_translation_service.translate_file.call_args.args[1]
-        assert app._glossary_path in reference_files
+        assert app._abbreviations_path in reference_files
 
 
 # =============================================================================

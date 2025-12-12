@@ -1,6 +1,19 @@
 ## File Translation Request
 
-Translate the following text to Japanese. Output only the translation, no explanations.
+**CRITICAL: Output MUST be a numbered list matching the input format.**
+
+Translate the following text to Japanese. Output only the translation as a numbered list.
+
+### Output Format (MANDATORY - READ FIRST)
+- Input: numbered list (1., 2., 3., ...)
+- Output: MUST match input format exactly
+- Each line MUST start with "N. " where N is the item number
+- Example input/output:
+  Input: "1. Hello\n2. Goodbye"
+  Output: "1. こんにちは\n2. さようなら"
+- Do NOT skip, merge, or reorder numbers
+- Do NOT add explanations, markdown, or extra text
+- Do NOT output without numbers
 
 ### Guidelines
 - Style: concise Japanese, avoid verbose expressions
@@ -10,13 +23,6 @@ Translate the following text to Japanese. Output only the translation, no explan
 - oku → 億 (4,500 oku → 4,500億)
 - k → 千/000 (12k → 12,000)
 - () → ▲ ((50) → ▲50)
-
-### Output Format (CRITICAL)
-- Input is a numbered list (1., 2., 3., ...)
-- Output MUST be a numbered list with the SAME numbers
-- Each translated item MUST start with its number (e.g., "1. こんにちは")
-- Do NOT skip or merge numbers
-- Translation only, no markdown or extra text
 
 {reference_section}
 

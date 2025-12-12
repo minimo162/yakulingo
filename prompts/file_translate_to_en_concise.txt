@@ -1,6 +1,19 @@
 ## File Translation Request (Concise)
 
-Translate the text to English. Output only the translation.
+**CRITICAL: Output MUST be a numbered list matching the input format.**
+
+Translate the text to English. Output only the translation as a numbered list.
+
+### Output Format (MANDATORY - READ FIRST)
+- Input: numbered list (1., 2., 3., ...)
+- Output: MUST match input format exactly
+- Each line MUST start with "N. " where N is the item number
+- Example input/output:
+  Input: "1. こんにちは\n2. さようなら"
+  Output: "1. Hello\n2. Goodbye"
+- Do NOT skip, merge, or reorder numbers
+- Do NOT add explanations, markdown, or extra text
+- Do NOT output without numbers
 
 ### Style
 - Concise, avoid redundancy
@@ -19,13 +32,6 @@ Translate the text to English. Output only the translation.
 - Thousands → k (12,000 → 12k)
 - Negative values: ▲50 or -50 → (50)
 - Use YoY, QoQ, CAGR as appropriate
-
-### Output Format (CRITICAL)
-- Input is a numbered list (1., 2., 3., ...)
-- Output MUST be a numbered list with the SAME numbers
-- Each translated item MUST start with its number (e.g., "1. Hello")
-- Do NOT skip or merge numbers
-- Translation only, no markdown or extra text
 
 {reference_section}
 

@@ -2292,6 +2292,8 @@ class YakuLingoApp:
                 logger.warning("File language detection aborted: no client connected")
                 return
 
+        detected_language = "日本語"  # Default fallback
+
         try:
             # Extract sample text from file (in thread to avoid blocking)
             sample_text = await asyncio.to_thread(
@@ -2299,48 +2301,50 @@ class YakuLingoApp:
                 file_path,
             )
 
-            if not sample_text or not sample_text.strip():
-                return
-
             # Check if file selection changed during extraction
             if self.state.selected_file != file_path:
                 return  # User selected different file, discard result
 
-            # Detect language
-            detected_language = await asyncio.to_thread(
-                self.translation_service.detect_language,
-                sample_text,
-            )
+            if sample_text and sample_text.strip():
+                # Detect language
+                detected_language = await asyncio.to_thread(
+                    self.translation_service.detect_language,
+                    sample_text,
+                )
 
-            # Check again if file selection changed during detection
-            if self.state.selected_file != file_path:
-                return  # User selected different file, discard result
-
-            # Update state based on detection
-            self.state.file_detected_language = detected_language
-            is_japanese = detected_language == "日本語"
-            self.state.file_output_language = "en" if is_japanese else "jp"
-
-            # Refresh UI to show detected language
-            # Re-acquire client reference to ensure it's still valid
-            with self._client_lock:
-                client = self._client
-            if client:
-                try:
-                    with client:
-                        self._refresh_content()
-                except RuntimeError as e:
-                    logger.warning(
-                        "Failed to refresh UI after language detection: %s", e
-                    )
+                # Check again if file selection changed during detection
+                if self.state.selected_file != file_path:
+                    return  # User selected different file, discard result
             else:
-                logger.debug(
-                    "Client no longer available after language detection"
+                logger.info(
+                    "No sample text extracted from file, using default language: %s",
+                    detected_language,
                 )
 
         except Exception as e:
-            logger.warning("Language detection failed: %s", e)
-            # Keep default (no auto-detection, user must choose)
+            logger.warning("Language detection failed: %s, using default: %s", e, detected_language)
+
+        # Update state based on detection (or default)
+        self.state.file_detected_language = detected_language
+        is_japanese = detected_language == "日本語"
+        self.state.file_output_language = "en" if is_japanese else "jp"
+
+        # Refresh UI to show detected language
+        # Re-acquire client reference to ensure it's still valid
+        with self._client_lock:
+            client = self._client
+        if client:
+            try:
+                with client:
+                    self._refresh_content()
+            except RuntimeError as e:
+                logger.warning(
+                    "Failed to refresh UI after language detection: %s", e
+                )
+        else:
+            logger.debug(
+                "Client no longer available after language detection"
+            )
 
     async def _translate_file(self):
         """Translate file with progress dialog"""

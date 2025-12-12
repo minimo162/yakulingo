@@ -2037,7 +2037,12 @@ class CopilotHandler:
                     return ConnectionState.ERROR
 
             # 現在のURLを確認
-            current_url = page.url
+            # page.urlはキャッシュされた値を返すことがあるため、
+            # JavaScriptから直接取得して確実に最新のURLを得る
+            try:
+                current_url = page.evaluate("window.location.href")
+            except Exception:
+                current_url = page.url
             logger.info("Checking Copilot state: URL=%s", current_url[:80])
 
             # Copilotドメインにいて、かつ /chat パスにいる場合 → ログイン完了
@@ -2075,7 +2080,11 @@ class CopilotHandler:
             if page:
                 self._page = page
                 try:
-                    current_url = page.url
+                    # JavaScriptから直接URLを取得
+                    try:
+                        current_url = page.evaluate("window.location.href")
+                    except Exception:
+                        current_url = page.url
                     logger.info("Retry with new page: URL=%s", current_url[:80])
                     if "/chat" in current_url and _is_copilot_url(current_url):
                         return ConnectionState.READY
@@ -2104,7 +2113,11 @@ class CopilotHandler:
                 try:
                     if page.is_closed():
                         continue
-                    url = page.url
+                    # JavaScriptから直接URLを取得（キャッシュ回避）
+                    try:
+                        url = page.evaluate("window.location.href")
+                    except Exception:
+                        url = page.url
                     # Copilotドメインかつ /chat パス
                     if _is_copilot_url(url) and "/chat" in url:
                         logger.info("Found Copilot chat page: URL=%s", url[:80])
@@ -2137,7 +2150,11 @@ class CopilotHandler:
                 try:
                     if page.is_closed():
                         continue
-                    url = page.url
+                    # JavaScriptから直接URLを取得（キャッシュ回避）
+                    try:
+                        url = page.evaluate("window.location.href")
+                    except Exception:
+                        url = page.url
                     if _is_copilot_url(url) or _is_login_page(url):
                         return page
                 except PlaywrightError:

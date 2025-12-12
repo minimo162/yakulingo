@@ -1515,6 +1515,12 @@ class ExcelProcessor(FileProcessor):
                             except Exception as e:
                                 logger.warning("Error iterating charts in sheet '%s': %s", sheet_name, e)
 
+                    # Clear read_only_recommended to prevent Excel dialog on open
+                    try:
+                        wb.api.ReadOnlyRecommended = False
+                    except Exception as e:
+                        logger.debug("Could not clear ReadOnlyRecommended: %s", e)
+
                     # Save to output path
                     try:
                         wb.save(str(output_path))
@@ -2177,6 +2183,10 @@ class ExcelProcessor(FileProcessor):
                     except Exception as e:
                         logger.warning("Error applying translation to cell %s_%s: %s", sheet_name, cell_ref, e)
 
+            # Clear read_only_recommended to prevent Excel dialog on open
+            if hasattr(wb, 'properties') and wb.properties is not None:
+                wb.properties.read_only_recommended = False
+
             wb.save(output_path)
         finally:
             wb.close()
@@ -2330,6 +2340,12 @@ class ExcelProcessor(FileProcessor):
                 # Current order might be mixed, need to sort by original index
                 self._reorder_bilingual_sheets(bilingual_wb, original_wb.sheets, existing_names)
 
+                # Clear read_only_recommended to prevent Excel dialog on open
+                try:
+                    bilingual_wb.api.ReadOnlyRecommended = False
+                except Exception as e:
+                    logger.debug("Could not clear ReadOnlyRecommended: %s", e)
+
                 # Save to output path
                 bilingual_wb.save(str(output_path))
 
@@ -2461,6 +2477,10 @@ class ExcelProcessor(FileProcessor):
                     unique_trans_title = _ensure_unique_sheet_name(trans_title, existing_names)
                     trans_copy = bilingual_wb.create_sheet(title=unique_trans_title)
                     self._copy_sheet_content(translated_sheet, trans_copy)
+
+            # Clear read_only_recommended to prevent Excel dialog on open
+            if hasattr(bilingual_wb, 'properties') and bilingual_wb.properties is not None:
+                bilingual_wb.properties.read_only_recommended = False
 
             bilingual_wb.save(output_path)
 

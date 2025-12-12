@@ -1314,8 +1314,11 @@ class YakuLingoApp:
         """Open file picker to attach a reference file (glossary, style guide, etc.)"""
         # Use NiceGUI's native file upload approach
         with ui.dialog() as dialog, ui.card().classes('w-96'):
-            # Restore focus to text input when dialog closes
-            dialog.on('close', lambda: self._focus_text_input())
+            # Refresh content and restore focus when dialog closes
+            def on_dialog_close():
+                self._refresh_content()
+                self._focus_text_input()
+            dialog.on('close', on_dialog_close)
 
             with ui.column().classes('w-full gap-4 p-4'):
                 # Header
@@ -1353,9 +1356,9 @@ class YakuLingoApp:
                         # Use temp file manager for automatic cleanup
                         from yakulingo.ui.utils import temp_file_manager
                         uploaded_path = temp_file_manager.create_temp_file(content, name)
-                        # Add to reference files and refresh UI before closing dialog
+                        # Add to reference files (UI refresh happens in on_dialog_close)
                         self.state.reference_files.append(uploaded_path)
-                        self._refresh_content()
+                        logger.info("Reference file added: %s, total: %d", name, len(self.state.reference_files))
                         ui.notify(f'アップロードしました: {name}', type='positive')
                         dialog.close()
                     except (OSError, AttributeError) as err:

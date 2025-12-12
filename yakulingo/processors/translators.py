@@ -24,7 +24,7 @@ class CellTranslator:
         r'^[A-Z]{2,5}[-_]?\d+$',              # コード (ABC-123)
         r'^[\d\s%]+$',                        # パーセント付き数値
         r'^[¥$€£]\s*[\d,\.]+$',               # 通貨記号付き数値
-        r'^\d+[年月日時分秒]',                  # 日本語日時
+        r'^\d+[年月日時分秒]$',                 # 日本語日時（完全マッチのみ）
     ]
 
     # Class-level compiled regex patterns (shared across all instances)

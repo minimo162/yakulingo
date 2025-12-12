@@ -18,7 +18,7 @@ class AppSettings:
     """Application settings"""
 
     # Reference Files (用語集、参考資料など)
-    # Default is empty; bundled glossary can be enabled via use_bundled_glossary
+    # Default is empty; bundled abbreviations can be enabled via use_bundled_glossary
     reference_files: list[str] = field(default_factory=list)
 
     # Cache for resolved reference file paths (not persisted)
@@ -46,7 +46,7 @@ class AppSettings:
 
     # Text Translation Options
     text_translation_style: str = "concise"  # テキスト翻訳の英訳スタイル: "standard", "concise", "minimal"
-    use_bundled_glossary: bool = True        # 同梱の glossary.csv を使用するか（デフォルトでオン）
+    use_bundled_glossary: bool = True        # 同梱の abbreviations.csv を使用するか（デフォルトでオン）
 
     # Font Settings (ファイル翻訳用 - 全形式共通)
     # フォントサイズ調整（JP→EN時）: 0で調整なし、負値で縮小

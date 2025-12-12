@@ -249,24 +249,24 @@ def _create_large_input_panel(
                                         ).props('flat dense round size=xs').classes('remove-btn')
 
                     with ui.row().classes('items-center gap-2'):
-                        # Bundled glossary toggle chip
+                        # Bundled abbreviations toggle chip
                         if on_glossary_toggle:
                             glossary_btn = ui.button(
-                                '用語集',
-                                icon='menu_book',
+                                '略語',
+                                icon='short_text',
                                 on_click=lambda: on_glossary_toggle(not use_bundled_glossary)
                             ).props('flat no-caps size=sm').classes(
                                 f'glossary-toggle-btn {"active" if use_bundled_glossary else ""}'
                             )
-                            glossary_btn.tooltip('同梱の glossary.csv を使用' if not use_bundled_glossary else '用語集を使用中')
+                            glossary_btn.tooltip('同梱の abbreviations.csv を使用' if not use_bundled_glossary else '略語リストを使用中')
 
-                            # Edit glossary button (only shown when glossary is enabled)
+                            # Edit abbreviations button (only shown when enabled)
                             if use_bundled_glossary and on_edit_glossary:
                                 edit_btn = ui.button(
                                     icon='edit',
                                     on_click=on_edit_glossary
                                 ).props('flat dense round size=sm').classes('settings-btn')
-                                edit_btn.tooltip('用語集をExcelで編集')
+                                edit_btn.tooltip('略語リストをExcelで編集')
 
                         # Settings button
                         if on_settings:

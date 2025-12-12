@@ -168,9 +168,9 @@ class YakuLingoApp:
         self._copilot: Optional["CopilotHandler"] = None
         self.translation_service: Optional["TranslationService"] = None
 
-        # Cache base directory and glossary path (avoid recalculation)
+        # Cache base directory and abbreviations path (avoid recalculation)
         self._base_dir = Path(__file__).parent.parent.parent
-        self._glossary_path = self._base_dir / 'glossary.csv'
+        self._abbreviations_path = self._base_dir / 'abbreviations.csv'
 
         # UI references for refresh
         self._header_status = None
@@ -1230,18 +1230,18 @@ class YakuLingoApp:
         self._refresh_content()
 
     async def _edit_glossary(self):
-        """Open glossary.csv in Excel/default editor with cooldown to prevent double-open"""
+        """Open abbreviations.csv in Excel/default editor with cooldown to prevent double-open"""
         from yakulingo.ui.utils import open_file
 
-        # Check if glossary file exists
-        if not self._glossary_path.exists():
-            ui.notify('用語集ファイルが見つかりません', type='warning')
+        # Check if abbreviations file exists
+        if not self._abbreviations_path.exists():
+            ui.notify('略語リストが見つかりません', type='warning')
             return
 
         # Open the file
-        open_file(self._glossary_path)
+        open_file(self._abbreviations_path)
         ui.notify(
-            '用語集を開きました。編集後は保存してから翻訳してください',
+            '略語リストを開きました。編集後は保存してから翻訳してください',
             type='info',
             timeout=5000
         )
@@ -1251,16 +1251,16 @@ class YakuLingoApp:
         await asyncio.sleep(3)
 
     def _get_effective_reference_files(self) -> list[Path] | None:
-        """Get reference files including bundled glossary if enabled.
+        """Get reference files including bundled abbreviations if enabled.
 
-        Uses cached glossary path to avoid repeated path calculations.
+        Uses cached abbreviations path to avoid repeated path calculations.
         """
         files = list(self.state.reference_files) if self.state.reference_files else []
 
-        # Add bundled glossary if enabled (uses cached path)
+        # Add bundled abbreviations if enabled (uses cached path)
         if self.settings.use_bundled_glossary:
-            if self._glossary_path.exists() and self._glossary_path not in files:
-                files.insert(0, self._glossary_path)
+            if self._abbreviations_path.exists() and self._abbreviations_path not in files:
+                files.insert(0, self._abbreviations_path)
 
         return files if files else None
 

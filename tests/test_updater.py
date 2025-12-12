@@ -18,6 +18,7 @@ from yakulingo.services.updater import (
     ProxyConfig,
     merge_settings,
     merge_glossary,
+    backup_and_update_glossary,
     USER_PROTECTED_SETTINGS,
 )
 
@@ -790,12 +791,12 @@ class TestMergeSettings:
         assert result == 0
 
 
-# --- Tests: merge_glossary() ---
+# --- Tests: backup_and_update_glossary() ---
 
-class TestMergeGlossary:
-    """Test merge_glossary function"""
+class TestBackupAndUpdateGlossary:
+    """Test backup_and_update_glossary function"""
 
-    def test_merge_glossary_new_file_created(self, tmp_path):
+    def test_new_file_created(self, tmp_path):
         """When user glossary doesn't exist, copy new glossary"""
         app_dir = tmp_path / "app"
         source_dir = tmp_path / "source"
@@ -805,76 +806,14 @@ class TestMergeGlossary:
         glossary_content = "日本,Japan\n英語,English\n"
         (source_dir / "glossary.csv").write_text(glossary_content, encoding="utf-8")
 
-        result = merge_glossary(app_dir, source_dir)
+        result = backup_and_update_glossary(app_dir, source_dir)
 
-        assert result == -1  # New file created
+        assert result is None  # No backup needed for new install
         assert (app_dir / "glossary.csv").exists()
         assert (app_dir / "glossary.csv").read_text(encoding="utf-8") == glossary_content
 
-    def test_merge_glossary_adds_new_terms(self, tmp_path):
-        """New terms are added to user glossary"""
-        app_dir = tmp_path / "app"
-        source_dir = tmp_path / "source"
-        app_dir.mkdir()
-        source_dir.mkdir()
-
-        # Create user glossary
-        (app_dir / "glossary.csv").write_text("日本,Japan\n", encoding="utf-8")
-
-        # Create source glossary with additional term
-        (source_dir / "glossary.csv").write_text("日本,Japan\n英語,English\n", encoding="utf-8")
-
-        result = merge_glossary(app_dir, source_dir)
-
-        assert result == 1  # 1 new term added
-        content = (app_dir / "glossary.csv").read_text(encoding="utf-8")
-        assert "日本,Japan" in content
-        assert "英語,English" in content
-
-    def test_merge_glossary_pair_based_dedup(self, tmp_path):
-        """Same source with different translation is added"""
-        app_dir = tmp_path / "app"
-        source_dir = tmp_path / "source"
-        app_dir.mkdir()
-        source_dir.mkdir()
-
-        # Create user glossary with one translation
-        (app_dir / "glossary.csv").write_text("日本,Japan\n", encoding="utf-8")
-
-        # Create source glossary with different translation for same source
-        (source_dir / "glossary.csv").write_text("日本,Japan\n日本,JPN\n", encoding="utf-8")
-
-        result = merge_glossary(app_dir, source_dir)
-
-        assert result == 1  # "日本,JPN" is added (different pair)
-        content = (app_dir / "glossary.csv").read_text(encoding="utf-8")
-        assert "日本,Japan" in content
-        assert "日本,JPN" in content
-
-    def test_merge_glossary_skips_comments(self, tmp_path):
-        """Comment lines are not added as terms"""
-        app_dir = tmp_path / "app"
-        source_dir = tmp_path / "source"
-        app_dir.mkdir()
-        source_dir.mkdir()
-
-        # Create user glossary
-        (app_dir / "glossary.csv").write_text("# Comment\n日本,Japan\n", encoding="utf-8")
-
-        # Create source glossary with comments
-        (source_dir / "glossary.csv").write_text("# Header\n日本,Japan\n英語,English\n", encoding="utf-8")
-
-        result = merge_glossary(app_dir, source_dir)
-
-        assert result == 1  # Only "英語,English" is added
-        content = (app_dir / "glossary.csv").read_text(encoding="utf-8")
-        # Original comment is preserved
-        assert "# Comment" in content
-        # New comment is NOT added (comments are skipped)
-        assert content.count("# Header") == 0
-
-    def test_merge_glossary_no_new_terms(self, tmp_path):
-        """Returns 0 when all terms already exist"""
+    def test_unchanged_glossary_returns_none(self, tmp_path):
+        """Returns None when glossary is unchanged"""
         app_dir = tmp_path / "app"
         source_dir = tmp_path / "source"
         app_dir.mkdir()
@@ -885,58 +824,118 @@ class TestMergeGlossary:
         (app_dir / "glossary.csv").write_text(content, encoding="utf-8")
         (source_dir / "glossary.csv").write_text(content, encoding="utf-8")
 
-        result = merge_glossary(app_dir, source_dir)
+        result = backup_and_update_glossary(app_dir, source_dir)
 
-        assert result == 0
+        assert result is None
 
-    def test_merge_glossary_no_source_file(self, tmp_path):
-        """Returns 0 when source glossary doesn't exist"""
+    def test_changed_glossary_creates_backup(self, tmp_path, monkeypatch):
+        """Creates backup on Desktop when glossary is changed"""
         app_dir = tmp_path / "app"
         source_dir = tmp_path / "source"
-        source_dir.mkdir()
-
-        result = merge_glossary(app_dir, source_dir)
-        assert result == 0
-
-    def test_merge_glossary_handles_empty_lines(self, tmp_path):
-        """Empty lines are ignored in deduplication"""
-        app_dir = tmp_path / "app"
-        source_dir = tmp_path / "source"
+        desktop_dir = tmp_path / "Desktop"
         app_dir.mkdir()
         source_dir.mkdir()
+        desktop_dir.mkdir()
 
-        # Create user glossary with empty lines
-        (app_dir / "glossary.csv").write_text("日本,Japan\n\n英語,English\n", encoding="utf-8")
-
-        # Create source glossary with empty lines and new term
-        (source_dir / "glossary.csv").write_text("\n日本,Japan\n\n中国,China\n", encoding="utf-8")
-
-        result = merge_glossary(app_dir, source_dir)
-
-        assert result == 1  # Only "中国,China" is added
-        content = (app_dir / "glossary.csv").read_text(encoding="utf-8")
-        assert "中国,China" in content
-
-    def test_merge_glossary_handles_whitespace(self, tmp_path):
-        """Whitespace-only differences are handled correctly"""
-        app_dir = tmp_path / "app"
-        source_dir = tmp_path / "source"
-        app_dir.mkdir()
-        source_dir.mkdir()
+        # Mock Path.home() to return our temp path
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
 
         # Create user glossary
         (app_dir / "glossary.csv").write_text("日本,Japan\n", encoding="utf-8")
 
-        # Create source glossary with same content but trailing whitespace
-        (source_dir / "glossary.csv").write_text("日本,Japan  \n新規,New\n", encoding="utf-8")
+        # Create source glossary with different content
+        new_content = "英語,English\n中国,China\n"
+        (source_dir / "glossary.csv").write_text(new_content, encoding="utf-8")
+
+        result = backup_and_update_glossary(app_dir, source_dir)
+
+        # Check backup was created
+        assert result is not None
+        assert result.startswith("glossary_backup_")
+        assert result.endswith(".csv")
+        assert (desktop_dir / result).exists()
+        assert (desktop_dir / result).read_text(encoding="utf-8") == "日本,Japan\n"
+
+        # Check original was overwritten
+        assert (app_dir / "glossary.csv").read_text(encoding="utf-8") == new_content
+
+    def test_no_source_file_returns_none(self, tmp_path):
+        """Returns None when source glossary doesn't exist"""
+        app_dir = tmp_path / "app"
+        source_dir = tmp_path / "source"
+        source_dir.mkdir()
+
+        result = backup_and_update_glossary(app_dir, source_dir)
+        assert result is None
+
+    def test_backup_counter_avoids_overwrite(self, tmp_path, monkeypatch):
+        """Adds counter to backup filename if file already exists"""
+        app_dir = tmp_path / "app"
+        source_dir = tmp_path / "source"
+        desktop_dir = tmp_path / "Desktop"
+        app_dir.mkdir()
+        source_dir.mkdir()
+        desktop_dir.mkdir()
+
+        # Mock Path.home() to return our temp path
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+        # Create user glossary
+        (app_dir / "glossary.csv").write_text("日本,Japan\n", encoding="utf-8")
+
+        # Create source glossary with different content
+        (source_dir / "glossary.csv").write_text("英語,English\n", encoding="utf-8")
+
+        # Create existing backup file
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y%m%d")
+        existing_backup = desktop_dir / f"glossary_backup_{timestamp}.csv"
+        existing_backup.write_text("existing backup", encoding="utf-8")
+
+        result = backup_and_update_glossary(app_dir, source_dir)
+
+        # Should have counter suffix
+        assert result is not None
+        assert f"glossary_backup_{timestamp}_1.csv" in result
+
+
+# --- Tests: merge_glossary() backward compatibility ---
+
+class TestMergeGlossaryBackwardCompat:
+    """Test merge_glossary backward compatibility wrapper"""
+
+    def test_merge_glossary_returns_1_when_changed(self, tmp_path, monkeypatch):
+        """Returns 1 when glossary was updated"""
+        app_dir = tmp_path / "app"
+        source_dir = tmp_path / "source"
+        desktop_dir = tmp_path / "Desktop"
+        app_dir.mkdir()
+        source_dir.mkdir()
+        desktop_dir.mkdir()
+
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+        (app_dir / "glossary.csv").write_text("日本,Japan\n", encoding="utf-8")
+        (source_dir / "glossary.csv").write_text("英語,English\n", encoding="utf-8")
 
         result = merge_glossary(app_dir, source_dir)
 
-        # "日本,Japan  " (with trailing spaces) should NOT be added because
-        # we compare trimmed lines. Only "新規,New" should be added.
         assert result == 1
-        content = (app_dir / "glossary.csv").read_text(encoding="utf-8")
-        assert "新規,New" in content
+
+    def test_merge_glossary_returns_0_when_unchanged(self, tmp_path):
+        """Returns 0 when glossary was not changed"""
+        app_dir = tmp_path / "app"
+        source_dir = tmp_path / "source"
+        app_dir.mkdir()
+        source_dir.mkdir()
+
+        content = "日本,Japan\n"
+        (app_dir / "glossary.csv").write_text(content, encoding="utf-8")
+        (source_dir / "glossary.csv").write_text(content, encoding="utf-8")
+
+        result = merge_glossary(app_dir, source_dir)
+
+        assert result == 0
 
 
 # --- Tests: USER_PROTECTED_SETTINGS ---

@@ -1015,17 +1015,18 @@ function Invoke-Update {{
                 Write-DebugLog "Settings merge error: $($_.Exception.Message)"
             }}
 
-            # Merge glossary
-            Show-Progress -Title "YakuLingo Update" -Status "Merging glossary..." -Step "Step 5/5: Merging" -Percent 85
-            Write-DebugLog "Merging glossary..."
+            # Update glossary (compare, backup to Desktop if changed, then overwrite)
+            Show-Progress -Title "YakuLingo Update" -Status "Checking glossary..." -Step "Step 5/5: Merging" -Percent 85
+            Write-DebugLog "Checking glossary..."
             $sourceGlossary = Join-Path $script:SourceDir "glossary.csv"
             if (Test-Path $sourceGlossary) {{
                 try {{
-                    $mergeGlossaryCmd = "from pathlib import Path; import sys; sys.path.insert(0, str(Path(r'$($script:AppDir)'))); from yakulingo.services.updater import merge_glossary; added = merge_glossary(Path(r'$($script:AppDir)'), Path(r'$($script:SourceDir)'))"
-                    $result = & $pythonExe -c $mergeGlossaryCmd 2>&1
-                    Write-DebugLog "Glossary merge result: $result"
+                    $updateGlossaryCmd = "from pathlib import Path; import sys; sys.path.insert(0, str(Path(r'$($script:AppDir)'))); from yakulingo.services.updater import backup_and_update_glossary; result = backup_and_update_glossary(Path(r'$($script:AppDir)'), Path(r'$($script:SourceDir)')); print(result if result else '')"
+                    $result = & $pythonExe -c $updateGlossaryCmd 2>&1
+                    $script:GlossaryBackupName = ($result | Out-String).Trim()
+                    Write-DebugLog "Glossary update result: $($script:GlossaryBackupName)"
                 }} catch {{
-                    Write-DebugLog "Glossary merge error: $($_.Exception.Message)"
+                    Write-DebugLog "Glossary update error: $($_.Exception.Message)"
                 }}
             }}
         }} else {{
@@ -1053,7 +1054,11 @@ function Invoke-Update {{
 # ============================================================
 try {{
     $debugInfo = Invoke-Update
-    Show-Success "Update completed!`n`nPlease restart the application."
+    $successMsg = "アップデートが完了しました。`n`nアプリケーションを再起動してください。"
+    if ($script:GlossaryBackupName) {{
+        $successMsg += "`n`n用語集が更新されました。`n以前の用語集はデスクトップに保存しました:`n  $($script:GlossaryBackupName)"
+    }}
+    Show-Success $successMsg
     exit 0
 }} catch {{
     $errorMsg = $_.Exception.Message
@@ -1372,82 +1377,111 @@ def merge_settings(app_dir: Path, source_dir: Path) -> int:
     return len(added_keys)
 
 
-def merge_glossary(app_dir: Path, source_dir: Path) -> int:
+def backup_and_update_glossary(app_dir: Path, source_dir: Path) -> Optional[str]:
     """
-    用語集をマージ（新規用語のみ追加）
+    用語集を比較し、変更があればバックアップして上書き
 
-    ユーザーの用語集（glossary.csv）に、バンドル版の新規用語を追加します。
-    重複判定は「ソース用語,翻訳結果」のペア全体で行います。
-    例: 「日本,Japan」が存在しても「日本,JPN」は別の用語として追加されます。
+    ユーザーの用語集（glossary.csv）と新しい用語集を比較し、
+    異なる場合はユーザーの用語集をデスクトップにバックアップしてから上書きします。
 
     Args:
         app_dir: アプリケーションディレクトリ（ユーザーのglossary.csvがある場所）
         source_dir: ソースディレクトリ（新しいglossary.csvがある場所）
 
     Returns:
-        int: 追加された用語数
+        Optional[str]: バックアップファイル名（変更があった場合）、None（変更なしまたはエラー）
     """
+    import hashlib
+    from datetime import datetime
+
     user_glossary = app_dir / "glossary.csv"
     new_glossary = source_dir / "glossary.csv"
 
     if not new_glossary.exists():
         logger.info("新しい用語集が見つかりません: %s", new_glossary)
-        return 0
+        return None
 
     # ユーザーの用語集が存在しない場合は新しい用語集をコピー
     if not user_glossary.exists():
         user_glossary.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(new_glossary, user_glossary)
         logger.info("用語集をコピーしました: %s", user_glossary)
-        return -1  # 新規作成を示す
+        return None  # 新規インストールなのでバックアップ不要
 
-    # 既存の用語ペア（ソース,翻訳）を収集
-    existing_pairs: set[str] = set()
+    # ファイルハッシュで比較
+    def file_hash(path: Path) -> str:
+        with open(path, "rb") as f:
+            return hashlib.md5(f.read()).hexdigest()
 
-    with open(user_glossary, "r", encoding="utf-8-sig") as f:
-        for line in f:
-            stripped = line.strip()
-            # コメント行と空行はスキップ
-            if stripped and not stripped.startswith("#"):
-                # ペア全体（ソース,翻訳）をキーとして保存
-                existing_pairs.add(stripped)
+    user_hash = file_hash(user_glossary)
+    new_hash = file_hash(new_glossary)
 
-    # 新しい用語集から、既存にないペアを収集
-    new_terms: list[str] = []
-    with open(new_glossary, "r", encoding="utf-8-sig") as f:
-        for line in f:
-            stripped = line.strip()
-            # コメント行と空行はスキップ
-            if stripped and not stripped.startswith("#"):
-                # ペア全体で重複判定
-                if stripped not in existing_pairs:
-                    new_terms.append(line if line.endswith("\n") else line + "\n")
+    if user_hash == new_hash:
+        logger.info("用語集は変更されていません")
+        return None
 
-    # 新規用語があれば追加
-    # Note: 追記モードでは utf-8 を使用（utf-8-sig は追記時に余分な BOM を追加してしまう）
-    if new_terms:
-        with open(user_glossary, "a", encoding="utf-8") as f:
-            f.writelines(new_terms)
-        logger.info("用語集に %d 件の新規用語を追加しました", len(new_terms))
+    # 異なる場合はデスクトップにバックアップ
+    desktop = Path.home() / "Desktop"
+    if not desktop.exists():
+        # デスクトップが見つからない場合はホームディレクトリを使用
+        desktop = Path.home()
 
-    return len(new_terms)
+    timestamp = datetime.now().strftime("%Y%m%d")
+    backup_name = f"glossary_backup_{timestamp}.csv"
+    backup_path = desktop / backup_name
+
+    # 同名ファイルが存在する場合は連番を付加
+    counter = 1
+    while backup_path.exists():
+        backup_name = f"glossary_backup_{timestamp}_{counter}.csv"
+        backup_path = desktop / backup_name
+        counter += 1
+
+    shutil.copy2(user_glossary, backup_path)
+    logger.info("用語集をバックアップしました: %s", backup_path)
+
+    # 新しい用語集で上書き
+    shutil.copy2(new_glossary, user_glossary)
+    logger.info("用語集を更新しました: %s", user_glossary)
+
+    return backup_name
+
+
+# 後方互換性のため merge_glossary を維持（deprecated）
+def merge_glossary(app_dir: Path, source_dir: Path) -> int:
+    """
+    [DEPRECATED] backup_and_update_glossary() を使用してください。
+
+    後方互換性のために維持。内部で backup_and_update_glossary() を呼び出します。
+    """
+    result = backup_and_update_glossary(app_dir, source_dir)
+    if result:
+        return 1  # 更新があった
+    return 0  # 更新なし
 
 
 # コマンドライン実行用（アップデートスクリプトから呼び出される）
 if __name__ == "__main__":
     import sys
 
-    if len(sys.argv) >= 4 and sys.argv[1] == "merge":
-        # python -m yakulingo.services.updater merge <app_dir> <source_dir>
+    if len(sys.argv) >= 4 and sys.argv[1] == "glossary":
+        # python -m yakulingo.services.updater glossary <app_dir> <source_dir>
+        app_dir = Path(sys.argv[2])
+        source_dir = Path(sys.argv[3])
+        backup_name = backup_and_update_glossary(app_dir, source_dir)
+        if backup_name:
+            print(f"  用語集を更新しました（バックアップ: {backup_name}）")
+        else:
+            print("  用語集は変更されていません")
+    elif len(sys.argv) >= 4 and sys.argv[1] == "merge":
+        # [DEPRECATED] 後方互換性のために維持
         app_dir = Path(sys.argv[2])
         source_dir = Path(sys.argv[3])
         added = merge_glossary(app_dir, source_dir)
         if added > 0:
-            print(f"  追加: {added} 件の新規用語")
-        elif added == -1:
-            print("  用語集を新規作成しました")
+            print("  用語集を更新しました")
         else:
-            print("  新規用語はありません")
+            print("  用語集は変更されていません")
     else:
-        print("Usage: python -m yakulingo.services.updater merge <app_dir> <source_dir>")
+        print("Usage: python -m yakulingo.services.updater glossary <app_dir> <source_dir>")
         sys.exit(1)

@@ -629,8 +629,10 @@ function Invoke-Setup {
     }
 
     # Backup user data files before removing the directory
+    # Note: glossary.csv is handled separately (compare & backup to Desktop if changed)
     $BackupFiles = @()
-    $UserDataFiles = @("glossary.csv", "config\settings.json")
+    $UserDataFiles = @("config\settings.json")
+    $script:GlossaryBackupPath = $null  # Will be set if glossary was backed up
     $BackupDir = Join-Path $env:TEMP "YakuLingo_Backup_$(Get-Date -Format 'yyyyMMddHHmmss')"
 
     if (Test-Path $SetupPath) {
@@ -650,6 +652,19 @@ function Invoke-Setup {
                 if (-not $GuiMode) {
                     Write-Host "      Backed up: $file" -ForegroundColor Gray
                 }
+            }
+        }
+
+        # Also backup glossary.csv separately for comparison later
+        $glossaryPath = Join-Path $SetupPath "glossary.csv"
+        if (Test-Path $glossaryPath) {
+            if (-not (Test-Path $BackupDir)) {
+                New-Item -ItemType Directory -Path $BackupDir -Force | Out-Null
+            }
+            $glossaryBackupPath = Join-Path $BackupDir "glossary.csv"
+            Copy-Item -Path $glossaryPath -Destination $glossaryBackupPath -Force
+            if (-not $GuiMode) {
+                Write-Host "      Backed up: glossary.csv" -ForegroundColor Gray
             }
         }
 
@@ -883,64 +898,7 @@ function Invoke-Setup {
                     New-Item -ItemType Directory -Path $restoreParent -Force | Out-Null
                 }
 
-                if ($file -eq "glossary.csv") {
-                    # 用語集はマージ（新規用語ペアのみ追加）
-                    # 重複判定は「ソース,翻訳」のペア全体で行う（同じソースでも翻訳が違えば追加）
-                    $newGlossaryPath = $restorePath
-                    if (Test-Path $newGlossaryPath) {
-                        # 新しい用語集を一時保存
-                        $tempNewGlossary = Join-Path $BackupDir "glossary_new.csv"
-                        Copy-Item -Path $newGlossaryPath -Destination $tempNewGlossary -Force
-
-                        # 既存の用語ペア（ソース,翻訳の組み合わせ）を収集
-                        # Trimして正規化した値をキーとして使用
-                        $existingPairs = @{}
-                        Get-Content -Path $backupPath -Encoding UTF8 | ForEach-Object {
-                            $line = $_.Trim()
-                            if ($line -and -not $line.StartsWith("#")) {
-                                # ペア全体をキーとして保存（正規化済み）
-                                $existingPairs[$line] = $true
-                            }
-                        }
-
-                        # バックアップを復元（ユーザーの用語集を戻す）
-                        Copy-Item -Path $backupPath -Destination $restorePath -Force
-
-                        # ファイル末尾に改行があるか確認し、なければ追加
-                        $content = [System.IO.File]::ReadAllText($restorePath)
-                        if ($content.Length -gt 0 -and -not $content.EndsWith("`n")) {
-                            Add-Content -Path $restorePath -Value "" -Encoding UTF8
-                        }
-
-                        # 新しい用語集から、既存にないペアを追加
-                        $addedCount = 0
-                        Get-Content -Path $tempNewGlossary -Encoding UTF8 | ForEach-Object {
-                            $line = $_.Trim()
-                            if ($line -and -not $line.StartsWith("#")) {
-                                # ペア全体で重複判定（正規化済みの値で比較）
-                                if (-not $existingPairs.ContainsKey($line)) {
-                                    # 正規化した値を追加（末尾スペース等を除去）
-                                    Add-Content -Path $restorePath -Value $line -Encoding UTF8
-                                    $addedCount++
-                                }
-                            }
-                        }
-
-                        if (-not $GuiMode) {
-                            if ($addedCount -gt 0) {
-                                Write-Host "      Merged: $file (+$addedCount new terms)" -ForegroundColor Gray
-                            } else {
-                                Write-Host "      Restored: $file (no new terms)" -ForegroundColor Gray
-                            }
-                        }
-                    } else {
-                        # 新しい用語集がなければバックアップを復元
-                        Copy-Item -Path $backupPath -Destination $restorePath -Force
-                        if (-not $GuiMode) {
-                            Write-Host "      Restored: $file" -ForegroundColor Gray
-                        }
-                    }
-                } elseif ($file -eq "config\settings.json") {
+                if ($file -eq "config\settings.json") {
                     # 設定ファイルはマージ（ユーザー保護対象の設定のみ保持）
                     # 新しい設定をベースとし、ユーザー設定の一部のみ上書き
                     $newSettingsPath = $restorePath
@@ -1060,6 +1018,52 @@ function Invoke-Setup {
     }
 
     # ============================================================
+    # Handle glossary.csv: Compare and backup to Desktop if changed
+    # ============================================================
+    $userGlossaryPath = Join-Path $SetupPath "glossary.csv"
+    $newGlossaryInBackup = Join-Path $BackupDir "glossary_user.csv"
+
+    # Check if user had a glossary.csv before extraction
+    if (Test-Path $BackupDir) {
+        $userGlossaryBackup = Get-ChildItem -Path $BackupDir -Filter "glossary.csv" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+    }
+
+    # If user's glossary existed and new glossary exists, compare them
+    if ($userGlossaryBackup -and (Test-Path $userGlossaryPath)) {
+        Write-Status -Message "Checking glossary updates..." -Progress -Step "Step 3/4: Extracting" -Percent 88
+
+        # Compare file hashes
+        $userHash = (Get-FileHash -Path $userGlossaryBackup.FullName -Algorithm MD5).Hash
+        $newHash = (Get-FileHash -Path $userGlossaryPath -Algorithm MD5).Hash
+
+        if ($userHash -ne $newHash) {
+            # Files are different - backup user's glossary to Desktop
+            $desktopPath = [Environment]::GetFolderPath("Desktop")
+            $timestamp = Get-Date -Format "yyyyMMdd"
+            $backupFileName = "glossary_backup_$timestamp.csv"
+            $script:GlossaryBackupPath = Join-Path $desktopPath $backupFileName
+
+            # Avoid overwriting existing backup
+            $counter = 1
+            while (Test-Path $script:GlossaryBackupPath) {
+                $backupFileName = "glossary_backup_${timestamp}_$counter.csv"
+                $script:GlossaryBackupPath = Join-Path $desktopPath $backupFileName
+                $counter++
+            }
+
+            Copy-Item -Path $userGlossaryBackup.FullName -Destination $script:GlossaryBackupPath -Force
+
+            if (-not $GuiMode) {
+                Write-Host "      Glossary updated - backup saved to Desktop: $backupFileName" -ForegroundColor Cyan
+            }
+        } else {
+            if (-not $GuiMode) {
+                Write-Host "      Glossary unchanged" -ForegroundColor Gray
+            }
+        }
+    }
+
+    # ============================================================
     # Finalize: Create shortcuts
     # ============================================================
     # Check for cancellation before creating shortcuts
@@ -1105,7 +1109,12 @@ function Invoke-Setup {
             throw "セットアップがキャンセルされました。"
         }
         Write-Status -Message "Setup completed!" -Progress -Step "Step 4/4: Finalizing" -Percent 100
-        Show-Success "Setup completed!`n`nPlease launch YakuLingo from the desktop shortcut."
+        $successMsg = "セットアップが完了しました。`n`nデスクトップのショートカットからYakuLingoを起動してください。"
+        if ($script:GlossaryBackupPath) {
+            $backupFileName = Split-Path -Leaf $script:GlossaryBackupPath
+            $successMsg += "`n`n用語集が更新されました。`n以前の用語集はデスクトップに保存しました:`n  $backupFileName"
+        }
+        Show-Success $successMsg
     } else {
         Write-Host ""
         Write-Host "============================================================" -ForegroundColor Green
@@ -1114,6 +1123,12 @@ function Invoke-Setup {
         Write-Host ""
         Write-Host " Location: $SetupPath" -ForegroundColor White
         Write-Host " Please launch YakuLingo from the desktop shortcut." -ForegroundColor Cyan
+        if ($script:GlossaryBackupPath) {
+            Write-Host ""
+            $backupFileName = Split-Path -Leaf $script:GlossaryBackupPath
+            Write-Host " Glossary updated. Previous version backed up to Desktop:" -ForegroundColor Yellow
+            Write-Host "   $backupFileName" -ForegroundColor Yellow
+        }
         Write-Host ""
     }
 }

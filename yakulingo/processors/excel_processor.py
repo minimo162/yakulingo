@@ -668,6 +668,82 @@ class ExcelProcessor(FileProcessor):
 
         return section_details if section_details else None
 
+    def extract_sample_text_fast(
+        self, file_path: Path, max_chars: int = 500
+    ) -> Optional[str]:
+        """Extract a text sample for language detection without full workbook load.
+
+        This method parses the sharedStrings.xml directly from the xlsx archive,
+        avoiding the overhead of loading the entire workbook with openpyxl or xlwings.
+
+        Args:
+            file_path: Path to the Excel file
+            max_chars: Maximum characters to extract (default 500)
+
+        Returns:
+            Sample text string or None if extraction fails
+        """
+        if file_path.suffix.lower() != ".xlsx":
+            # Fall back to None for .xls files (require full load)
+            return None
+
+        try:
+            texts = []
+            total_chars = 0
+
+            with zipfile.ZipFile(file_path, 'r') as zf:
+                # sharedStrings.xml contains all unique text strings in the workbook
+                if 'xl/sharedStrings.xml' not in zf.namelist():
+                    logger.debug("No sharedStrings.xml found in xlsx")
+                    return None
+
+                xml_content = zf.read('xl/sharedStrings.xml')
+                root = ET.fromstring(xml_content)
+
+                # Excel namespace
+                ns = {'ns': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
+
+                # Extract text from <t> elements within <si> (string items)
+                for si in root.findall('ns:si', ns):
+                    # Simple string: <si><t>text</t></si>
+                    t_elem = si.find('ns:t', ns)
+                    if t_elem is not None and t_elem.text:
+                        text = t_elem.text.strip()
+                        if text and len(text) > 1:  # Skip single chars
+                            texts.append(text)
+                            total_chars += len(text)
+                            if total_chars >= max_chars:
+                                break
+                        continue
+
+                    # Rich text: <si><r><t>part1</t></r><r><t>part2</t></r></si>
+                    parts = []
+                    for r in si.findall('ns:r', ns):
+                        t_elem = r.find('ns:t', ns)
+                        if t_elem is not None and t_elem.text:
+                            parts.append(t_elem.text)
+                    if parts:
+                        text = ''.join(parts).strip()
+                        if text and len(text) > 1:
+                            texts.append(text)
+                            total_chars += len(text)
+                            if total_chars >= max_chars:
+                                break
+
+            if texts:
+                result = ' '.join(texts)[:max_chars]
+                logger.debug(
+                    "Excel fast sample extraction: %d chars from %d strings",
+                    len(result), len(texts)
+                )
+                return result
+
+            return None
+
+        except (zipfile.BadZipFile, ET.ParseError, KeyError) as e:
+            logger.debug("Excel fast sample extraction failed: %s", e)
+            return None
+
     def extract_text_blocks(
         self, file_path: Path, output_language: str = "en"
     ) -> Iterator[TextBlock]:

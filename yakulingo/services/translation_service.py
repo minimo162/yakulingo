@@ -1274,31 +1274,35 @@ class TranslationService:
     def extract_detection_sample(self, file_path: Path, max_blocks: int = 5) -> Optional[str]:
         """Extract a lightweight text sample for language detection.
 
-        For PDF files, uses fast PyMuPDF extraction without PP-DocLayout-L.
-        For other files, uses standard extraction with direction fallback.
+        Uses fast extraction methods that parse XML/binary directly from archives,
+        avoiding the overhead of loading full documents with openpyxl/python-docx/etc.
 
         Args:
             file_path: File to inspect.
-            max_blocks: Maximum number of text blocks to sample.
+            max_blocks: Maximum number of text blocks to sample (used for fallback).
 
         Returns:
-            Concatenated sample text (up to 1000 chars) or None if nothing
+            Concatenated sample text (up to 500 chars) or None if nothing
             is readable.
         """
         processor = self._get_processor(file_path)
 
-        # PDF: Use fast extraction path (no PP-DocLayout-L)
-        if processor.file_type == FileType.PDF:
-            # PdfProcessor has extract_sample_text_fast() method
-            if hasattr(processor, 'extract_sample_text_fast'):
-                sample = processor.extract_sample_text_fast(file_path)
-                if sample:
-                    logger.debug("PDF language detection: fast extraction returned %d chars", len(sample))
-                    return sample
+        # Try fast extraction path for all file types
+        if hasattr(processor, 'extract_sample_text_fast'):
+            sample = processor.extract_sample_text_fast(file_path)
+            if sample:
+                logger.debug(
+                    "%s language detection: fast extraction returned %d chars",
+                    processor.file_type.value, len(sample)
+                )
+                return sample
             # Fallback to standard extraction if fast path fails
-            logger.debug("PDF language detection: falling back to standard extraction")
+            logger.debug(
+                "%s language detection: fast path returned None, falling back to standard extraction",
+                processor.file_type.value
+            )
 
-        # Standard extraction for non-PDF files (or PDF fallback)
+        # Standard extraction fallback (for .xls, .doc, .ppt legacy formats or when fast path fails)
         # First pass: JP→EN extraction (default)
         blocks = list(processor.extract_text_blocks(file_path, output_language="en"))
 
@@ -1309,7 +1313,7 @@ class TranslationService:
         if not blocks:
             return None
 
-        return " ".join(block.text for block in blocks[:max_blocks])[:1000]
+        return " ".join(block.text for block in blocks[:max_blocks])[:500]
 
     def adjust_translation(
         self,

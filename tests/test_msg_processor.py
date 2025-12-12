@@ -6,6 +6,7 @@ Since creating actual .msg files is complex, we mock the extract-msg library.
 """
 
 import pytest
+import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -317,3 +318,108 @@ class TestMsgProcessorChunking:
         content = output_path.read_text(encoding='utf-8')
         assert "B" * 50 in content
         assert "C" * 50 in content
+
+
+class TestMsgProcessorOutlookIntegration:
+    """Test Outlook COM integration for .msg output."""
+
+    def test_outlook_available_returns_false_on_non_windows(self, mock_extract_msg, monkeypatch):
+        """Test that outlook_available returns False on non-Windows."""
+        monkeypatch.setattr(sys, 'platform', 'linux')
+
+        from yakulingo.processors.msg_processor import MsgProcessor
+        processor = MsgProcessor()
+
+        assert processor.outlook_available is False
+
+    def test_outlook_available_cached(self, mock_extract_msg, monkeypatch):
+        """Test that outlook_available result is cached."""
+        monkeypatch.setattr(sys, 'platform', 'linux')
+
+        from yakulingo.processors.msg_processor import MsgProcessor
+        processor = MsgProcessor()
+
+        # First call
+        result1 = processor.outlook_available
+        # Second call should use cached value
+        result2 = processor.outlook_available
+
+        assert result1 == result2 == False
+
+    def test_falls_back_to_txt_when_outlook_unavailable(self, processor, tmp_path, mock_extract_msg):
+        """Test that processor falls back to .txt when Outlook is not available."""
+        msg_path = tmp_path / "test.msg"
+        msg_path.write_bytes(b"dummy content")
+        output_path = tmp_path / "output.msg"
+
+        mock_extract_msg.Message = lambda path: MockMessage(
+            subject="Test Subject",
+            body="Test body."
+        )
+
+        # Force Outlook unavailable
+        processor._outlook_available = False
+
+        processor.apply_translations(msg_path, output_path, {})
+
+        # Should create .txt file
+        txt_path = tmp_path / "output.txt"
+        assert txt_path.exists()
+        assert not output_path.exists()  # .msg should not exist
+
+    @pytest.mark.skipif(sys.platform != 'win32', reason="Windows-only test")
+    def test_creates_msg_when_outlook_available(self, processor, tmp_path, mock_extract_msg, monkeypatch):
+        """Test that processor creates .msg when Outlook is available."""
+        msg_path = tmp_path / "test.msg"
+        msg_path.write_bytes(b"dummy content")
+        output_path = tmp_path / "output.msg"
+
+        mock_extract_msg.Message = lambda path: MockMessage(
+            subject="Test Subject",
+            body="Test body."
+        )
+
+        # Mock Outlook COM
+        mock_mail = MagicMock()
+        mock_outlook = MagicMock()
+        mock_outlook.CreateItem.return_value = mock_mail
+
+        # Force Outlook available and mock the COM call
+        processor._outlook_available = True
+
+        with patch('win32com.client.Dispatch', return_value=mock_outlook):
+            processor.apply_translations(msg_path, output_path, {
+                "msg_subject": "Translated Subject",
+                "msg_body_0": "Translated body."
+            })
+
+        # Verify Outlook COM was called correctly
+        mock_outlook.CreateItem.assert_called_once_with(0)
+        mock_mail.SaveAs.assert_called_once()
+        assert mock_mail.Subject == "Translated Subject"
+        assert mock_mail.Body == "Translated body."
+
+    def test_bilingual_reads_msg_file(self, processor, tmp_path, mock_extract_msg):
+        """Test bilingual document can read from translated .msg file."""
+        original_path = tmp_path / "original.msg"
+        original_path.write_bytes(b"dummy content")
+        translated_path = tmp_path / "translated.msg"
+        translated_path.write_bytes(b"dummy content")
+        output_path = tmp_path / "bilingual.txt"
+
+        # Track which file is being opened
+        call_count = [0]
+        def message_factory(path):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return MockMessage(subject="Original", body="Original body.")
+            else:
+                return MockMessage(subject="Translated", body="Translated body.")
+
+        mock_extract_msg.Message = message_factory
+
+        processor.create_bilingual_document(original_path, translated_path, output_path)
+
+        content = output_path.read_text(encoding='utf-8')
+        assert "Original" in content
+        assert "Translated" in content

@@ -3,10 +3,12 @@
 Outlook MSG file processor for email translation.
 
 Uses extract-msg library to read .msg files (Outlook email format).
-Output is saved as .txt since MSG format doesn't support easy modification.
+On Windows with Outlook installed, creates new .msg file with translated content.
+Falls back to .txt output on other platforms.
 """
 
 import logging
+import sys
 from pathlib import Path
 from typing import Any, Iterator, Optional
 
@@ -31,13 +33,37 @@ def _lazy_import_extract_msg():
         )
 
 
+def _is_outlook_available() -> bool:
+    """Check if Outlook COM is available (Windows with Outlook installed)."""
+    if sys.platform != 'win32':
+        return False
+    try:
+        import win32com.client
+        # Try to create Outlook application object
+        outlook = win32com.client.Dispatch("Outlook.Application")
+        return outlook is not None
+    except Exception:
+        return False
+
+
 class MsgProcessor(FileProcessor):
     """
     Processor for Outlook MSG files (.msg).
 
     Extracts subject and body text for translation.
-    Output is saved as .txt file since MSG format modification is complex.
+    On Windows with Outlook, creates new .msg file with translated content.
+    Falls back to .txt output on other platforms.
     """
+
+    def __init__(self):
+        self._outlook_available: Optional[bool] = None
+
+    @property
+    def outlook_available(self) -> bool:
+        """Check if Outlook COM is available (cached)."""
+        if self._outlook_available is None:
+            self._outlook_available = _is_outlook_available()
+        return self._outlook_available
 
     @property
     def file_type(self) -> FileType:
@@ -177,21 +203,16 @@ class MsgProcessor(FileProcessor):
 
         return chunks
 
-    def apply_translations(
+    def _build_translated_content(
         self,
         input_path: Path,
-        output_path: Path,
         translations: dict[str, str],
-        direction: str = "jp_to_en",
-        settings=None,
-        selected_sections: Optional[list[int]] = None,
-        text_blocks=None,
-    ) -> Optional[dict[str, Any]]:
+    ) -> tuple[str, str]:
         """
-        Apply translations and save as .txt file.
+        Build translated subject and body from translations dict.
 
-        Since MSG format is complex to modify, output is saved as plain text
-        with clear structure (Subject + Body).
+        Returns:
+            Tuple of (translated_subject, translated_body)
         """
         extract_msg = _lazy_import_extract_msg()
 
@@ -234,21 +255,87 @@ class MsgProcessor(FileProcessor):
                     else:
                         translated_paragraphs.append(paragraph)
 
-            # Build output content
-            output_lines = []
-            output_lines.append(f"Subject: {translated_subject}")
-            output_lines.append("")
-            output_lines.append('\n\n'.join(translated_paragraphs))
-
-            # Ensure output has .txt extension
-            if output_path.suffix.lower() != '.txt':
-                output_path = output_path.with_suffix('.txt')
-
-            output_path.write_text('\n'.join(output_lines), encoding='utf-8')
-            logger.info("MSG translation applied: %s -> %s", input_path, output_path)
+            translated_body = '\n\n'.join(translated_paragraphs)
+            return translated_subject, translated_body
 
         finally:
             msg.close()
+
+    def _create_msg_via_outlook(
+        self,
+        output_path: Path,
+        subject: str,
+        body: str,
+    ) -> bool:
+        """
+        Create a new .msg file using Outlook COM.
+
+        Args:
+            output_path: Path for the output .msg file
+            subject: Email subject
+            body: Email body text
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            import win32com.client
+
+            outlook = win32com.client.Dispatch("Outlook.Application")
+            mail = outlook.CreateItem(0)  # 0 = olMailItem
+
+            mail.Subject = subject
+            mail.Body = body
+
+            # Save as .msg file
+            # 3 = olMSG format
+            mail.SaveAs(str(output_path), 3)
+
+            logger.info("MSG file created via Outlook: %s", output_path)
+            return True
+
+        except Exception as e:
+            logger.warning("Failed to create MSG via Outlook: %s", e)
+            return False
+
+    def apply_translations(
+        self,
+        input_path: Path,
+        output_path: Path,
+        translations: dict[str, str],
+        direction: str = "jp_to_en",
+        settings=None,
+        selected_sections: Optional[list[int]] = None,
+        text_blocks=None,
+    ) -> Optional[dict[str, Any]]:
+        """
+        Apply translations and save output file.
+
+        On Windows with Outlook installed, creates a new .msg file.
+        Otherwise, falls back to .txt output.
+        """
+        translated_subject, translated_body = self._build_translated_content(
+            input_path, translations
+        )
+
+        # Try to create .msg file via Outlook COM (Windows only)
+        if self.outlook_available:
+            # Ensure output has .msg extension
+            msg_output_path = output_path.with_suffix('.msg')
+            if self._create_msg_via_outlook(msg_output_path, translated_subject, translated_body):
+                return None
+
+        # Fallback: save as .txt
+        logger.info("Outlook not available, saving as .txt")
+        txt_output_path = output_path.with_suffix('.txt')
+
+        output_lines = []
+        output_lines.append(f"Subject: {translated_subject}")
+        output_lines.append("")
+        output_lines.append(translated_body)
+
+        txt_output_path.write_text('\n'.join(output_lines), encoding='utf-8')
+        logger.info("MSG translation applied (as txt): %s -> %s", input_path, txt_output_path)
 
         return None
 
@@ -274,16 +361,26 @@ class MsgProcessor(FileProcessor):
         finally:
             msg.close()
 
-        # Read translated text
-        translated_content = translated_path.read_text(encoding='utf-8')
-        translated_lines = translated_content.split('\n')
+        # Read translated content (could be .msg or .txt)
+        if translated_path.suffix.lower() == '.msg':
+            # Read from .msg file
+            msg = extract_msg.Message(str(translated_path))
+            try:
+                translated_subject = msg.subject or ""
+                translated_body = msg.body or ""
+                translated_body = translated_body.replace('\r\n', '\n').replace('\r', '\n')
+            finally:
+                msg.close()
+        else:
+            # Read from .txt file
+            translated_content = translated_path.read_text(encoding='utf-8')
+            translated_lines = translated_content.split('\n')
 
-        # Parse translated content
-        translated_subject = ""
-        translated_body = ""
-        if translated_lines and translated_lines[0].startswith("Subject: "):
-            translated_subject = translated_lines[0][9:]  # Remove "Subject: " prefix
-            translated_body = '\n'.join(translated_lines[2:])  # Skip empty line
+            translated_subject = ""
+            translated_body = ""
+            if translated_lines and translated_lines[0].startswith("Subject: "):
+                translated_subject = translated_lines[0][9:]  # Remove "Subject: " prefix
+                translated_body = '\n'.join(translated_lines[2:])  # Skip empty line
 
         # Build bilingual output
         separator = '─' * 50
@@ -314,12 +411,10 @@ class MsgProcessor(FileProcessor):
         output_parts.append("【本文 - 訳文】")
         output_parts.append(translated_body)
 
-        # Ensure output has .txt extension
-        if output_path.suffix.lower() != '.txt':
-            output_path = output_path.with_suffix('.txt')
-
-        output_path.write_text('\n'.join(output_parts), encoding='utf-8')
-        logger.info("Bilingual MSG document created: %s", output_path)
+        # Bilingual output is always .txt
+        txt_output_path = output_path.with_suffix('.txt')
+        txt_output_path.write_text('\n'.join(output_parts), encoding='utf-8')
+        logger.info("Bilingual MSG document created: %s", txt_output_path)
 
     def export_glossary_csv(
         self,

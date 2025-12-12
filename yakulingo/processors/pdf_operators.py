@@ -947,6 +947,10 @@ class ContentStreamReplacer:
 
         PDFMathTranslate high_level.py compliant.
         Adds font references to /Resources/Font dictionary.
+
+        IMPORTANT: Handles inherited Resources correctly. When a page inherits
+        Resources from its parent, we must copy the inherited Resources to the
+        page before modifying, to preserve XObject and other resource references.
         """
         if not self._used_fonts:
             return
@@ -957,11 +961,25 @@ class ContentStreamReplacer:
         resources_info = self.doc.xref_get_key(page_xref, "Resources")
 
         if resources_info[0] == "null" or resources_info[1] == "null":
-            # No resources yet, create new
-            resources_xref = self.doc.get_new_xref()
-            self.doc.update_object(resources_xref, "<< >>")
-            self.doc.xref_set_key(page_xref, "Resources", f"{resources_xref} 0 R")
-            resources_info = ("xref", f"{resources_xref} 0 R")
+            # Resources might be inherited from parent - need to copy it first
+            # Try to get resolved Resources using page object method
+            inherited_resources = self._get_inherited_resources(page)
+            if inherited_resources:
+                # Copy inherited Resources to this page
+                resources_xref = self.doc.get_new_xref()
+                self.doc.update_object(resources_xref, inherited_resources)
+                self.doc.xref_set_key(page_xref, "Resources", f"{resources_xref} 0 R")
+                resources_info = ("xref", f"{resources_xref} 0 R")
+                logger.debug(
+                    "_update_font_resources: copied inherited Resources to page %d (xref=%d)",
+                    page.number, resources_xref
+                )
+            else:
+                # No inherited resources found, create new
+                resources_xref = self.doc.get_new_xref()
+                self.doc.update_object(resources_xref, "<< >>")
+                self.doc.xref_set_key(page_xref, "Resources", f"{resources_xref} 0 R")
+                resources_info = ("xref", f"{resources_xref} 0 R")
 
         # Resolve resources xref
         if resources_info[0] == "xref":
@@ -1014,28 +1032,104 @@ class ContentStreamReplacer:
 
         if font_dict_info[0] == "dict":
             # Inline font dictionary - append to it
-            existing = font_dict_info[1]
+            existing = font_dict_info[1].strip()  # Strip whitespace to fix endswith check
             # Remove closing ">>" and add new entries
             if existing.endswith(">>"):
                 new_dict = existing[:-2] + " " + " ".join(font_entries) + " >>"
             else:
-                new_dict = "<< " + " ".join(font_entries) + " >>"
+                # Malformed dict - try to parse and preserve existing entries
+                logger.warning(
+                    "_update_font_resources: Font dict doesn't end with '>>', "
+                    "attempting to preserve existing entries: %s",
+                    existing[:100]
+                )
+                # Extract existing font entries using regex
+                import re
+                existing_entries = re.findall(r'/\w+\s+\d+\s+\d+\s+R', existing)
+                all_entries = existing_entries + font_entries
+                new_dict = "<< " + " ".join(all_entries) + " >>"
             self.doc.xref_set_key(resources_xref, "Font", new_dict)
 
         elif font_dict_info[0] == "xref":
             # Font dict is a reference - update that object
-            font_xref = int(font_dict_info[1].split()[0])
-            existing_obj = self.doc.xref_object(font_xref)
+            font_xref_num = int(font_dict_info[1].split()[0])
+            existing_obj = self.doc.xref_object(font_xref_num).strip()  # Strip whitespace
             if existing_obj.endswith(">>"):
                 new_obj = existing_obj[:-2] + " " + " ".join(font_entries) + " >>"
             else:
-                new_obj = "<< " + " ".join(font_entries) + " >>"
-            self.doc.update_object(font_xref, new_obj)
+                # Malformed dict - try to parse and preserve existing entries
+                logger.warning(
+                    "_update_font_resources: Font xref object doesn't end with '>>', "
+                    "attempting to preserve existing entries: %s",
+                    existing_obj[:100]
+                )
+                import re
+                existing_entries = re.findall(r'/\w+\s+\d+\s+\d+\s+R', existing_obj)
+                all_entries = existing_entries + font_entries
+                new_obj = "<< " + " ".join(all_entries) + " >>"
+            self.doc.update_object(font_xref_num, new_obj)
 
         else:
             # No font dict yet - create new one
             new_dict = "<< " + " ".join(font_entries) + " >>"
             self.doc.xref_set_key(resources_xref, "Font", new_dict)
+
+    def _get_inherited_resources(self, page) -> Optional[str]:
+        """
+        Get inherited Resources dictionary from page's parent.
+
+        When a page doesn't have its own Resources, it inherits from parent.
+        This method traces the parent chain to find the inherited Resources.
+
+        Args:
+            page: PyMuPDF page object
+
+        Returns:
+            Resources dictionary string if found, None otherwise
+        """
+        try:
+            # Try to get parent reference from page object
+            parent_info = self.doc.xref_get_key(page.xref, "Parent")
+            if parent_info[0] != "xref":
+                return None
+
+            parent_xref = int(parent_info[1].split()[0])
+
+            # Check parent for Resources (may need to recurse up the tree)
+            # Limit recursion to prevent infinite loops
+            max_depth = 10
+            for _ in range(max_depth):
+                parent_resources = self.doc.xref_get_key(parent_xref, "Resources")
+
+                if parent_resources[0] == "dict":
+                    logger.debug(
+                        "_get_inherited_resources: found inline Resources in parent xref=%d",
+                        parent_xref
+                    )
+                    return parent_resources[1]
+
+                elif parent_resources[0] == "xref":
+                    # Resources is a reference - get the actual object
+                    res_xref = int(parent_resources[1].split()[0])
+                    res_obj = self.doc.xref_object(res_xref)
+                    logger.debug(
+                        "_get_inherited_resources: found Resources xref=%d in parent xref=%d",
+                        res_xref, parent_xref
+                    )
+                    return res_obj
+
+                # Resources not found at this level, try grandparent
+                grandparent_info = self.doc.xref_get_key(parent_xref, "Parent")
+                if grandparent_info[0] != "xref":
+                    break
+                parent_xref = int(grandparent_info[1].split()[0])
+
+            logger.debug("_get_inherited_resources: no inherited Resources found")
+            return None
+
+        except (ValueError, KeyError, RuntimeError) as e:
+            logger.debug("_get_inherited_resources: error tracing parent chain: %s", e)
+            return None
 
     def clear(self) -> None:
         """Clear operator list."""

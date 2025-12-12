@@ -2636,9 +2636,19 @@ def _detect_display_settings() -> tuple[tuple[int, int], tuple[int, int, int]]:
     Uses pywebview's screens API to detect multiple monitors BEFORE ui.run().
     This allows setting the correct window size from the start (no resize flicker).
 
-    Window and panel sizes are calculated based on monitor resolution.
-    Reference: 2560x1440 monitor → 1900x1100 window, sidebar 260px, input panel 420px.
-    Reference: 1920x1200 monitor → 1424x916 window, sidebar 260px, input panel 380px.
+    **重要: DPIスケーリングの影響**
+
+    pywebviewはWindows上で**論理ピクセル**を返す（DPIスケーリング適用後）。
+    そのため、同じ物理解像度でもDPIスケーリング設定により異なるウィンドウサイズになる。
+
+    例:
+    - 1920x1200 at 100% → 論理1920x1200 → ウィンドウ1424x916 (画面の74%)
+    - 1920x1200 at 125% → 論理1536x960 → ウィンドウ1140x733 (画面の74%)
+    - 2560x1440 at 100% → 論理2560x1440 → ウィンドウ1900x1100 (画面の74%)
+    - 2560x1440 at 150% → 論理1706x960 → ウィンドウ1266x733 (画面の74%)
+
+    Window and panel sizes are calculated based on **logical** screen resolution.
+    Reference: 2560x1440 logical → 1900x1100 window (74.2% width, 76.4% height).
 
     Returns:
         Tuple of ((window_width, window_height), (sidebar_width, input_panel_width, content_width))
@@ -2652,17 +2662,20 @@ def _detect_display_settings() -> tuple[tuple[int, int], tuple[int, int, int]]:
     SIDEBAR_RATIO = 260 / 1900  # 0.137
     INPUT_PANEL_RATIO = 420 / 1900  # 0.221
 
-    # Minimum sizes to prevent layout breaking on smaller screens (e.g., 1920x1200)
-    MIN_WINDOW_WIDTH = 1400
-    MIN_WINDOW_HEIGHT = 850
-    MIN_SIDEBAR_WIDTH = 260
-    MIN_INPUT_PANEL_WIDTH = 380  # Reduced from 420 for 1920x1200 compatibility
+    # Minimum sizes to prevent layout breaking on smaller screens
+    # These are absolute minimums - below this, UI elements may overlap
+    # Note: These values are in logical pixels, not physical pixels
+    # Example: 1366x768 at 125% = 1092x614 logical → window ~810x469 (74% ratio)
+    MIN_WINDOW_WIDTH = 1100   # Lowered from 1400 to maintain ~74% ratio on smaller screens
+    MIN_WINDOW_HEIGHT = 650   # Lowered from 850 to maintain ~76% ratio on smaller screens
+    MIN_SIDEBAR_WIDTH = 220   # Lowered from 260 for smaller screens
+    MIN_INPUT_PANEL_WIDTH = 320  # Lowered from 380 for smaller screens
 
     # Unified content width for both input and result panels
-    # Uses mainAreaWidth * 0.55, clamped to 600-900px range
+    # Uses mainAreaWidth * 0.55, clamped to min-max range
     # This ensures consistent panel proportions across all resolutions
     CONTENT_RATIO = 0.55
-    MIN_CONTENT_WIDTH = 600
+    MIN_CONTENT_WIDTH = 500  # Lowered from 600 for smaller screens
     MAX_CONTENT_WIDTH = 900
 
     def calculate_sizes(screen_width: int, screen_height: int) -> tuple[tuple[int, int], tuple[int, int, int]]:
@@ -3011,12 +3024,12 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
     const REFERENCE_FONT_SIZE = 16;
     const SIDEBAR_RATIO = 260 / 1900;
     const INPUT_PANEL_RATIO = 420 / 1900;
-    const MIN_SIDEBAR_WIDTH = 260;
-    const MIN_INPUT_PANEL_WIDTH = 380;
+    const MIN_SIDEBAR_WIDTH = 220;  // Lowered for smaller screens
+    const MIN_INPUT_PANEL_WIDTH = 320;  // Lowered for smaller screens
     // Unified content width for both input and result panels
-    // Uses mainAreaWidth * 0.55, clamped to 600-900px
+    // Uses mainAreaWidth * 0.55, clamped to min-max range
     const CONTENT_RATIO = 0.55;
-    const MIN_CONTENT_WIDTH = 600;
+    const MIN_CONTENT_WIDTH = 500;  // Lowered for smaller screens
     const MAX_CONTENT_WIDTH = 900;
     const TEXTAREA_LINES = 7;
     const TEXTAREA_LINE_HEIGHT = 1.5;

@@ -145,15 +145,8 @@ class TestAppSettings:
         assert settings.last_update_check == "2025-01-01T00:00:00"
         assert settings.skipped_version == "2.0.0"
 
-    def test_window_size_settings(self):
-        """Test window size settings"""
-        settings = AppSettings(
-            window_width=1200,
-            window_height=800,
-        )
-
-        assert settings.window_width == 1200
-        assert settings.window_height == 800
+    # NOTE: window_width/window_height tests removed - these settings are deprecated
+    # Window size is now calculated dynamically in _detect_display_settings()
 
     def test_save_and_load_preserves_all_fields(self):
         """Test that all fields are preserved through save/load cycle"""
@@ -164,8 +157,7 @@ class TestAppSettings:
                 reference_files=["a.csv", "b.xlsx"],
                 output_directory="/out",
                 last_tab="file",
-                window_width=1000,
-                window_height=600,
+                # NOTE: window_width/window_height removed - now dynamically calculated
                 max_chars_per_batch=5000,
                 request_timeout=60,
                 max_retries=5,
@@ -183,8 +175,6 @@ class TestAppSettings:
             assert loaded.reference_files == original.reference_files
             assert loaded.output_directory == original.output_directory
             assert loaded.last_tab == original.last_tab
-            assert loaded.window_width == original.window_width
-            assert loaded.window_height == original.window_height
             assert loaded.max_chars_per_batch == original.max_chars_per_batch
             assert loaded.request_timeout == original.request_timeout
             assert loaded.max_retries == original.max_retries
@@ -375,23 +365,19 @@ class TestSettingsEdgeCases:
             max_chars_per_batch=100,  # Minimum reasonable value
             request_timeout=1,
             max_retries=0,
-            window_width=100,
-            window_height=100,
+            # NOTE: window_width/window_height removed - now dynamically calculated
         )
 
         assert settings.max_chars_per_batch == 100
         assert settings.request_timeout == 1
         assert settings.max_retries == 0
-        assert settings.window_width == 100
-        assert settings.window_height == 100
 
     def test_very_large_numeric_values(self):
         """Test very large numeric values"""
         settings = AppSettings(
             max_chars_per_batch=1000000,
             request_timeout=86400,  # 24 hours
-            window_width=10000,
-            window_height=10000,
+            # NOTE: window_width/window_height removed - now dynamically calculated
         )
 
         assert settings.max_chars_per_batch == 1000000
@@ -464,15 +450,17 @@ class TestSettingsMigration:
                 "last_direction": "jp_to_en",
                 "last_tab": "text",
                 "window_width": 900,
-                "window_height": 700
+                "window_height": 700,
+                "max_chars_per_batch": 5000
             }
             ''')
 
             settings = AppSettings.load(settings_path)
 
-            # Should load successfully, ignoring deprecated field
+            # Should load successfully, ignoring deprecated fields
+            # last_direction, window_width, window_height are all deprecated
             assert settings.last_tab == "text"
-            assert settings.window_width == 900
+            assert settings.max_chars_per_batch == 5000
 
     def test_handle_future_version_settings(self):
         """Handle settings from a future version with new fields"""

@@ -1353,11 +1353,11 @@ class YakuLingoApp:
                         # Use temp file manager for automatic cleanup
                         from yakulingo.ui.utils import temp_file_manager
                         uploaded_path = temp_file_manager.create_temp_file(content, name)
-                        ui.notify(f'アップロードしました: {name}', type='positive')
-                        dialog.close()
-                        # Add to reference files
+                        # Add to reference files and refresh UI before closing dialog
                         self.state.reference_files.append(uploaded_path)
                         self._refresh_content()
+                        ui.notify(f'アップロードしました: {name}', type='positive')
+                        dialog.close()
                     except (OSError, AttributeError) as err:
                         ui.notify(f'ファイルの読み込みに失敗しました: {err}', type='negative')
 

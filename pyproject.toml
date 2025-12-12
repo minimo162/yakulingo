@@ -21,6 +21,8 @@ dependencies = [
     # Web UI
     "nicegui>=3.3.1",
     "pywebview>=5.0.0",  # Native window mode (no browser needed)
+    # Email file processing
+    "extract-msg>=0.48.0",  # Outlook MSG file support
     # Windows NTLM proxy authentication support (for auto-update)
     "pywin32>=306; sys_platform == 'win32'",
 ]

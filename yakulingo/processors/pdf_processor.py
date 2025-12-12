@@ -3322,13 +3322,23 @@ class PdfProcessor(FileProcessor):
 
                 sstk[-1] += char_text
 
-                # Update paragraph bounds
+                # Update paragraph bounds and font size
                 if pstk:
                     last_para = pstk[-1]
                     last_para.x0 = min(last_para.x0, char_x0)
                     last_para.x1 = max(last_para.x1, char_x1)
                     last_para.y0 = min(last_para.y0, char_y0)
                     last_para.y1 = max(last_para.y1, char_y1)
+
+                    # PDFMathTranslate compliant: Adjust y for mixed font sizes
+                    # When a larger character appears, adjust the paragraph's y-origin
+                    # to align the top edges of different-sized characters.
+                    # This is critical for accurate baseline positioning.
+                    char_size = char.size if hasattr(char, 'size') else DEFAULT_FONT_SIZE
+                    if char_size > last_para.size and char_text != " ":
+                        # Shift y down by the size difference
+                        last_para.y -= char_size - last_para.size
+                        last_para.size = char_size
 
             # Update previous char state
             prev_x0 = char_x0

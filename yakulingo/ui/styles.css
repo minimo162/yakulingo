@@ -1499,6 +1499,11 @@ textarea:focus-visible {
     padding: 0;
 }
 
+.main-area.file-mode .main-card:hover {
+    box-shadow: none;
+    transform: none;
+}
+
 .main-area.file-mode .main-card-inner {
     background: transparent;
     border: none;

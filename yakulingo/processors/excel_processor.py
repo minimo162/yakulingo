@@ -1700,6 +1700,11 @@ class ExcelProcessor(FileProcessor):
         Uses Excel's ability to set font properties on a union of ranges.
         Combines font name and size application into a single pass to reduce COM calls.
 
+        Handles merged cells by:
+        1. First attempting batch application (fast path)
+        2. On error, falling back to individual cells
+        3. For merged cells, applying font to the merge area's top-left cell
+
         Args:
             sheet: xlwings Sheet object
             cells: List of (row, col)
@@ -1728,14 +1733,40 @@ class ExcelProcessor(FileProcessor):
                     rng.font.name = font_name
                     rng.font.size = font_size
                 except Exception as e:
-                    logger.debug("Error applying font to batch: %s, falling back", e)
-                    # Fallback: apply to each cell individually
+                    # Batch failed - likely due to merged cells in the batch
+                    # Fall back to individual cell processing with merged cell handling
+                    logger.debug("Batch font apply failed (likely merged cells), using fallback: %s", e)
+                    processed_merge_areas: set[str] = set()
+
                     for row, col in batch:
                         try:
                             cell_rng = sheet.range(row, col)
-                            cell_rng.font.name = font_name
-                            cell_rng.font.size = font_size
+
+                            # Check if this cell is part of a merged range
+                            try:
+                                is_merged = cell_rng.api.MergeCells
+                            except Exception:
+                                is_merged = False
+
+                            if is_merged:
+                                # Get the merge area and apply font to the top-left cell only
+                                try:
+                                    merge_area = cell_rng.api.MergeArea
+                                    merge_address = merge_area.Address
+                                    if merge_address not in processed_merge_areas:
+                                        processed_merge_areas.add(merge_address)
+                                        # Apply font via the merge area's Font property
+                                        merge_area.Font.Name = font_name
+                                        merge_area.Font.Size = font_size
+                                except Exception as merge_e:
+                                    logger.debug("Error applying font to merged cell at (%d,%d): %s", row, col, merge_e)
+                            else:
+                                # Normal cell - apply font directly
+                                cell_rng.font.name = font_name
+                                cell_rng.font.size = font_size
+
                         except Exception as inner_e:
+                            # Skip cells that fail even with fallback (e.g., protected cells)
                             logger.debug("Error applying font to cell (%d,%d): %s", row, col, inner_e)
 
         except Exception as e:
@@ -1785,8 +1816,23 @@ class ExcelProcessor(FileProcessor):
             cell.value = final_text
 
             try:
-                cell.font.name = new_font_name
-                cell.font.size = new_font_size
+                # Check if cell is part of a merged range
+                try:
+                    is_merged = cell.api.MergeCells
+                except Exception:
+                    is_merged = False
+
+                if is_merged:
+                    # Apply font to the entire merge area
+                    try:
+                        merge_area = cell.api.MergeArea
+                        merge_area.Font.Name = new_font_name
+                        merge_area.Font.Size = new_font_size
+                    except Exception as merge_e:
+                        logger.debug("Error applying font to merged cell %s: %s", block_id, merge_e)
+                else:
+                    cell.font.name = new_font_name
+                    cell.font.size = new_font_size
             except Exception as e:
                 logger.debug("Error applying font to cell %s: %s", block_id, e)
 

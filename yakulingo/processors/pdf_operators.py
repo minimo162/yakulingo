@@ -761,22 +761,37 @@ class ContentStreamReplacer:
                 # Inline dictionary
                 xobject_dict_str = xobject_ref
 
+            logger.info(
+                "_filter_form_xobjects: xobject_dict_str='%s'",
+                xobject_dict_str[:300] if xobject_dict_str else ''
+            )
+
             # Find all Form XObject references in the dictionary
             # Pattern: /Name N 0 R
             form_refs = re.findall(r'/(\w+)\s+(\d+)\s+\d+\s+R', xobject_dict_str)
+            logger.info("_filter_form_xobjects: found %d XObject refs: %s", len(form_refs), form_refs[:10])
 
             filtered_count = 0
+            checked_count = 0
             for name, xref_str in form_refs:
                 xref = int(xref_str)
                 try:
                     # Check if this is a Form XObject (Subtype = Form)
                     obj_str = self.doc.xref_object(xref)
+                    checked_count += 1
                     if '/Subtype /Form' not in obj_str and '/Subtype/Form' not in obj_str:
+                        # Log what type of XObject this is (Image, etc.)
+                        if checked_count <= 5:  # Limit logging
+                            logger.debug(
+                                "_filter_form_xobjects: /%s is not Form, obj_preview='%s'",
+                                name, obj_str[:100]
+                            )
                         continue
 
                     # Get the stream content
                     stream = self.doc.xref_stream(xref)
                     if not stream:
+                        logger.debug("_filter_form_xobjects: /%s has no stream", name)
                         continue
 
                     # Filter text operators from the stream
@@ -784,12 +799,17 @@ class ContentStreamReplacer:
                     filtered_stream = self._parser.parse_and_filter(stream)
                     filtered_size = len(filtered_stream)
 
+                    logger.info(
+                        "_filter_form_xobjects: Form /%s xref=%d, original=%d, filtered=%d",
+                        name, xref, original_size, filtered_size
+                    )
+
                     # Only update if we actually removed something
                     if filtered_size < original_size:
                         self.doc.update_stream(xref, filtered_stream)
                         filtered_count += 1
-                        logger.debug(
-                            "Filtered Form XObject /%s (xref=%d): %d -> %d bytes",
+                        logger.info(
+                            "_filter_form_xobjects: FILTERED Form XObject /%s (xref=%d): %d -> %d bytes",
                             name, xref, original_size, filtered_size
                         )
 

@@ -214,6 +214,31 @@ with explanation"""
         assert "First translation" in parsed[0]
         assert parsed[1] == "Second translation"
 
+    def test_parse_filters_out_number_zero(self, handler):
+        """Number 0 is filtered out (invalid for translation numbering)"""
+        # Regression test: "0.5%" or other decimal patterns starting with 0
+        # should not be incorrectly matched as item 0
+        result = """Translation with 0.5% growth
+1. Hello
+2. World"""
+        parsed = handler._parse_batch_result(result, 2)
+
+        assert len(parsed) == 2
+        assert parsed[0] == "Hello"
+        assert parsed[1] == "World"
+
+    def test_parse_only_number_zero_uses_fallback(self, handler):
+        """When only number 0 is found, fallback to line-split"""
+        # If Copilot returns text without proper numbering but contains "0.xxx"
+        result = """Revenue grew 0.5% YoY
+Operating margin improved"""
+        parsed = handler._parse_batch_result(result, 2)
+
+        # Should use line-split fallback
+        assert len(parsed) == 2
+        assert "Revenue grew 0.5% YoY" in parsed[0]
+        assert "Operating margin improved" in parsed[1]
+
 
 class TestCopilotHandlerConnection:
     """Test CopilotHandler connection state management"""

@@ -3516,6 +3516,7 @@ class CopilotHandler:
             lines = [line[min_leading:] if len(line) >= min_leading else line.lstrip() for line in lines]
         result_text = '\n'.join(lines)
         translations: list[str] = []
+        numbered_items: list[tuple[int, str]] = []
 
         # Find all numbered items with their content (including multiline)
         # Each match is (indentation, number, content)
@@ -3545,9 +3546,25 @@ class CopilotHandler:
             ]
 
             # Sort by number to ensure correct order
-            numbered_items = [(int(num), content.strip()) for num, content in filtered_matches]
+            # Filter out number 0 (invalid for translation numbering which starts from 1)
+            # This prevents false positives like "0.5%" being matched as item 0
+            numbered_items = [
+                (int(num), content.strip()) for num, content in filtered_matches
+                if int(num) >= 1
+            ]
             numbered_items.sort(key=lambda x: x[0])
 
+            # If no valid items found after filtering, fall through to fallback
+            if not numbered_items:
+                logger.warning(
+                    "No valid numbered items (1+) found after filtering. "
+                    "Response preview (first 300 chars): %s",
+                    result_text[:300].replace('\n', '\\n'),
+                )
+                matches = None  # Force fallback
+
+        # Re-check matches after potential invalidation
+        if matches and numbered_items:
             # Validate number completeness and build result with correct indices
             # Expected numbers: 1, 2, 3, ..., expected_count
             found_numbers = {num for num, _ in numbered_items}
@@ -3562,6 +3579,12 @@ class CopilotHandler:
                     expected_count,
                     sorted(found_numbers),
                 )
+                # Log response preview for debugging when many numbers are missing
+                if len(missing_numbers) > expected_count * 0.5:
+                    logger.warning(
+                        "Many missing numbers. Response preview (first 500 chars): %s",
+                        result_text[:500].replace('\n', '\\n'),
+                    )
 
             # Build translations list with correct index mapping
             # Create a dict for O(1) lookup

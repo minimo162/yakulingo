@@ -401,6 +401,8 @@ def calculate_text_position(
     font_size: float,
     line_height: float,
     initial_y: Optional[float] = None,
+    initial_x: Optional[float] = None,
+    left_margin_x: Optional[float] = None,
 ) -> tuple[float, float]:
     """
     Calculate text line position in PDF coordinates.
@@ -408,23 +410,28 @@ def calculate_text_position(
     PDFMathTranslate compliant:
     - When initial_y is provided (from Paragraph.y), use it as the baseline
       for the first line, and offset subsequent lines downward
-    - When initial_y is None, fall back to box-based calculation
+    - When initial_x is provided (from Paragraph.x), use it for the first line
+      and use left_margin_x (Paragraph.x0) for subsequent lines
+    - When initial values are None, fall back to box-based calculation
 
     PDF text positioning uses the baseline of the text as the reference point.
     Text is rendered from TOP to BOTTOM within the box, but coordinates
     are in PDF space (Y increases upward).
 
-    PDFMathTranslate approach (when initial_y is provided):
+    PDFMathTranslate approach (when initial values are provided):
     ```
-    Line 0 baseline: y = initial_y
-    Line 1 baseline: y = initial_y - (1 * font_size * line_height)
-    Line 2 baseline: y = initial_y - (2 * font_size * line_height)
+    Line 0: x = initial_x (original position, may be indented)
+            y = initial_y
+    Line 1: x = left_margin_x (left margin for wrapped lines)
+            y = initial_y - font_size * line_height
+    Line 2: x = left_margin_x
+            y = initial_y - 2 * font_size * line_height
     ```
 
     This preserves the original text position from the source PDF,
-    ensuring accurate layout preservation.
+    ensuring accurate layout preservation including indentation.
 
-    Fallback approach (when initial_y is None):
+    Fallback approach (when initial values are None):
     ```
           y2 ┌─────────────────────────┐  ← top of box
              │ Line 0 baseline         │  y = y2 - font_size
@@ -440,6 +447,10 @@ def calculate_text_position(
         line_height: Line height multiplier (1.0 = single spaced, 1.2 = typical)
         initial_y: Optional initial Y coordinate from Paragraph.y (PDFMathTranslate compliant)
                    This is the baseline position of the first character in the paragraph.
+        initial_x: Optional initial X coordinate from Paragraph.x (PDFMathTranslate compliant)
+                   This is the X position of the first character (may be indented).
+        left_margin_x: Optional left margin X coordinate from Paragraph.x0
+                       Used for subsequent lines after wrap (defaults to box x1).
 
     Returns:
         (x, y) position for text baseline in PDF coordinates
@@ -455,10 +466,19 @@ def calculate_text_position(
     if line_height <= 0:
         line_height = DEFAULT_LINE_HEIGHT
 
-    x = x1
+    # X position: PDFMathTranslate compliant
+    # - First line: use initial_x (original paragraph start, may be indented)
+    # - Subsequent lines: use left_margin_x (left margin for wrapped text)
+    if line_index == 0 and initial_x is not None:
+        x = initial_x
+    elif left_margin_x is not None:
+        x = left_margin_x
+    else:
+        x = x1
 
+    # Y position: PDFMathTranslate compliant
     if initial_y is not None:
-        # PDFMathTranslate compliant: Use original position as baseline
+        # Use original position as baseline
         # Formula: y = initial_y - (line_index * font_size * line_height)
         # - Line 0: y = initial_y (original position)
         # - Line 1: y = initial_y - font_size * line_height
@@ -2154,15 +2174,25 @@ class PdfProcessor(FileProcessor):
                                 block_id, len(lines), original_line_count
                             )
 
-                        # PDFMathTranslate compliant: Get initial_y from Paragraph.y
-                        # This is the baseline position of the first character in the paragraph
+                        # PDFMathTranslate compliant: Get initial position from Paragraph
+                        # - initial_y (Paragraph.y): baseline position of first character
+                        # - initial_x (Paragraph.x): x position of first character (may be indented)
+                        # - left_margin_x (Paragraph.x0): left boundary for wrapped lines
                         initial_y = None
+                        initial_x = None
+                        left_margin_x = None
                         if paragraph is not None:
                             initial_y = getattr(paragraph, 'y', None)
-                            if initial_y is not None:
+                            initial_x = getattr(paragraph, 'x', None)
+                            left_margin_x = getattr(paragraph, 'x0', None)
+                            if initial_y is not None or initial_x is not None:
                                 logger.debug(
-                                    "[Layout] Using Paragraph.y=%.1f as initial_y for block %s",
-                                    initial_y, block_id
+                                    "[Layout] Using Paragraph position for block %s: "
+                                    "x=%.1f, y=%.1f, x0=%.1f",
+                                    block_id,
+                                    initial_x if initial_x is not None else 0,
+                                    initial_y if initial_y is not None else 0,
+                                    left_margin_x if left_margin_x is not None else 0
                                 )
 
                         # Generate text operators for each line
@@ -2172,16 +2202,19 @@ class PdfProcessor(FileProcessor):
 
                             # Calculate line position (PDFMathTranslate compliant)
                             x, y = calculate_text_position(
-                                box_pdf, line_idx, font_size, line_height, initial_y
+                                box_pdf, line_idx, font_size, line_height,
+                                initial_y, initial_x, left_margin_x
                             )
 
                             # DEBUG: Log position calculation
                             if line_idx == 0:  # Only log first line to avoid spam
                                 logger.debug(
                                     "Line position: block=%s, line=%d, x=%.1f, y=%.1f, "
-                                    "initial_y=%s, text_len=%d",
+                                    "initial_x=%s, initial_y=%s, text_len=%d",
                                     block_id, line_idx, x, y,
-                                    f"{initial_y:.1f}" if initial_y else "None", len(line_text)
+                                    f"{initial_x:.1f}" if initial_x else "None",
+                                    f"{initial_y:.1f}" if initial_y else "None",
+                                    len(line_text)
                                 )
 
                             # Encode text to hex using Unicode code points (Identity-H encoding)

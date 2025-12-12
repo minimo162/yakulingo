@@ -945,6 +945,73 @@ class TestCalculateTextPosition:
         # Fallback: y2 - font_size
         assert y == 400 - 12.0
 
+    def test_with_initial_x_first_line(self):
+        """PDFMathTranslate compliant: first line uses initial_x position."""
+        box_pdf = (100, 200, 300, 400)
+        initial_x = 150.0  # Indented first line
+        x, y = calculate_text_position(
+            box_pdf, 0, 12.0, 1.2, None, initial_x, None
+        )
+
+        assert x == 150.0  # Uses initial_x
+        # y still uses fallback (y2 - font_size)
+        assert y == 400 - 12.0
+
+    def test_with_left_margin_x_subsequent_lines(self):
+        """PDFMathTranslate compliant: subsequent lines use left_margin_x."""
+        box_pdf = (100, 200, 300, 400)
+        left_margin_x = 50.0  # Different from box left edge
+        x, y = calculate_text_position(
+            box_pdf, 1, 12.0, 1.2, None, None, left_margin_x
+        )
+
+        assert x == 50.0  # Uses left_margin_x for subsequent lines
+
+    def test_initial_x_only_affects_first_line(self):
+        """initial_x only applies to line_index=0, others use left_margin_x or box edge."""
+        box_pdf = (100, 200, 300, 400)
+        initial_x = 150.0
+        left_margin_x = 80.0
+
+        # First line uses initial_x
+        x0, _ = calculate_text_position(
+            box_pdf, 0, 12.0, 1.2, None, initial_x, left_margin_x
+        )
+        assert x0 == 150.0
+
+        # Second line uses left_margin_x
+        x1, _ = calculate_text_position(
+            box_pdf, 1, 12.0, 1.2, None, initial_x, left_margin_x
+        )
+        assert x1 == 80.0
+
+        # Third line also uses left_margin_x
+        x2, _ = calculate_text_position(
+            box_pdf, 2, 12.0, 1.2, None, initial_x, left_margin_x
+        )
+        assert x2 == 80.0
+
+    def test_full_pdfmathtranslate_compliant_position(self):
+        """Complete PDFMathTranslate compliant positioning with all parameters."""
+        box_pdf = (50, 100, 300, 400)
+        initial_y = 380.0  # Original baseline
+        initial_x = 120.0  # Indented start (e.g., bullet point)
+        left_margin_x = 50.0  # Left margin for wrapped lines
+
+        # First line: uses initial_x and initial_y
+        x0, y0 = calculate_text_position(
+            box_pdf, 0, 12.0, 1.2, initial_y, initial_x, left_margin_x
+        )
+        assert x0 == 120.0  # Indented
+        assert y0 == 380.0  # Original baseline
+
+        # Second line: uses left_margin_x, y offset from initial_y
+        x1, y1 = calculate_text_position(
+            box_pdf, 1, 12.0, 1.2, initial_y, initial_x, left_margin_x
+        )
+        assert x1 == 50.0  # Full width (left margin)
+        assert y1 == 380.0 - (1 * 12.0 * 1.2)
+
 
 class TestCalculateCharWidth:
     """Tests for calculate_char_width function"""

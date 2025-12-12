@@ -41,6 +41,12 @@ class CellTranslator:
         r'[\u3040-\u309F\u30A0-\u30FF\uFF65-\uFF9F\u4E00-\u9FFF\u25B2\u25B3\u3007\u203B]'
     )
 
+    # Pre-compiled regex for CID notation detection
+    # CID notation (e.g., "(cid:12345)") is used by pdfminer when font encoding
+    # cannot be resolved. This typically indicates Japanese PDF content with
+    # embedded fonts that don't have Unicode mappings.
+    _cid_pattern = re.compile(r'\(cid:\d+\)')
+
     # Pre-compiled regex for kana detection (hiragana/katakana only, excludes kanji)
     # Includes both full-width and half-width forms
     _kana_pattern = re.compile(r'[\u3040-\u309F\u30A0-\u30FF\uFF65-\uFF9F]')
@@ -117,10 +123,21 @@ class CellTranslator:
           - △ (U+25B3): White up-pointing triangle
           - 〇 (U+3007): Ideographic number zero
           - ※ (U+203B): Reference mark
+        - CID notation (cid:xxxxx): Indicates Japanese PDF content with embedded fonts
 
         Uses pre-compiled regex for better performance than char-by-char loop.
         """
-        return bool(self._japanese_pattern.search(text))
+        # Check for standard Japanese characters
+        if self._japanese_pattern.search(text):
+            return True
+
+        # Check for CID notation (indicates Japanese PDF content)
+        # CID notation appears when pdfminer cannot resolve font encoding,
+        # which typically happens with Japanese PDFs using embedded fonts
+        if self._cid_pattern.search(text):
+            return True
+
+        return False
 
     def _is_japanese_only(self, text: str) -> bool:
         """
@@ -177,6 +194,12 @@ class ParagraphTranslator:
     _japanese_pattern = re.compile(
         r'[\u3040-\u309F\u30A0-\u30FF\uFF65-\uFF9F\u4E00-\u9FFF\u25B2\u25B3\u3007\u203B]'
     )
+
+    # Pre-compiled regex for CID notation detection
+    # CID notation (e.g., "(cid:12345)") is used by pdfminer when font encoding
+    # cannot be resolved. This typically indicates Japanese PDF content with
+    # embedded fonts that don't have Unicode mappings.
+    _cid_pattern = re.compile(r'\(cid:\d+\)')
 
     # Pre-compiled regex for kana detection (hiragana/katakana only, excludes kanji)
     # Includes both full-width and half-width forms
@@ -250,10 +273,21 @@ class ParagraphTranslator:
           - △ (U+25B3): White up-pointing triangle
           - 〇 (U+3007): Ideographic number zero
           - ※ (U+203B): Reference mark
+        - CID notation (cid:xxxxx): Indicates Japanese PDF content with embedded fonts
 
         Uses pre-compiled regex for better performance than char-by-char loop.
         """
-        return bool(self._japanese_pattern.search(text))
+        # Check for standard Japanese characters
+        if self._japanese_pattern.search(text):
+            return True
+
+        # Check for CID notation (indicates Japanese PDF content)
+        # CID notation appears when pdfminer cannot resolve font encoding,
+        # which typically happens with Japanese PDFs using embedded fonts
+        if self._cid_pattern.search(text):
+            return True
+
+        return False
 
     def _is_japanese_only(self, text: str) -> bool:
         """

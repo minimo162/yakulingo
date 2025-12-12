@@ -1823,6 +1823,20 @@ class PdfProcessor(FileProcessor):
             # No DPI scaling needed - coordinates are already in PDF points
             block_map = {block.id: block for block in text_blocks} if text_blocks else {}
 
+            # DEBUG: Log block_map and translations info for troubleshooting
+            logger.info(
+                "PDF apply_translations: text_blocks=%d, block_map_keys=%d, translations=%d",
+                len(text_blocks) if text_blocks else 0,
+                len(block_map),
+                len(translations),
+            )
+            if block_map:
+                sample_keys = list(block_map.keys())[:3]
+                logger.info("block_map sample keys: %s", sample_keys)
+            if translations:
+                sample_trans_keys = list(translations.keys())[:3]
+                logger.info("translations sample keys: %s", sample_trans_keys)
+
             # Process each page
             for page_idx, page in enumerate(doc):
                 page_num = page_idx + 1
@@ -2348,6 +2362,10 @@ class PdfProcessor(FileProcessor):
                 # we actually added replacement text. Otherwise, pages without
                 # matching translations would have their original text removed
                 # because the filtered base stream strips text operators.
+                logger.info(
+                    "Page %d: operators=%d, will apply: %s",
+                    page_num, len(replacer.operators), bool(replacer.operators)
+                )
                 if replacer.operators:
                     try:
                         replacer.apply_to_page(page)
@@ -3139,10 +3157,15 @@ class PdfProcessor(FileProcessor):
                 page_num, len(sstk), len(pstk), min(len(sstk), len(pstk))
             )
 
+        skipped_empty = 0
+        skipped_formula = 0
+        skipped_no_translate = 0
+
         for block_idx, (text, para) in enumerate(zip(sstk, pstk)):
             text = text.strip()
 
             if not text:
+                skipped_empty += 1
                 continue
 
             # Check if block is purely formula placeholders
@@ -3151,9 +3174,17 @@ class PdfProcessor(FileProcessor):
 
             if is_pure_formula:
                 # Skip pure formula blocks (will be preserved as-is)
+                skipped_formula += 1
                 continue
 
             if not self.should_translate(text_without_placeholders):
+                skipped_no_translate += 1
+                # DEBUG: Log skipped text for troubleshooting
+                preview = text_without_placeholders[:100].replace('\n', ' ')
+                logger.info(
+                    "Page %d: Skipped text (should_translate=False): '%s...' (len=%d)",
+                    page_num, preview, len(text_without_placeholders)
+                )
                 continue
 
             bbox = (para.x0, para.y0, para.x1, para.y1)
@@ -3200,6 +3231,14 @@ class PdfProcessor(FileProcessor):
                     'layout_class': para.layout_class,  # For table detection
                 }
             ))
+
+        # DEBUG: Log conversion summary
+        logger.info(
+            "Page %d: sstk=%d, pstk=%d, skipped_empty=%d, skipped_formula=%d, "
+            "skipped_no_translate=%d, output_blocks=%d",
+            page_num, len(sstk), len(pstk),
+            skipped_empty, skipped_formula, skipped_no_translate, len(blocks)
+        )
 
         return blocks
 

@@ -280,6 +280,63 @@ class WordProcessor(FileProcessor):
             section_details=section_details,
         )
 
+    def extract_sample_text_fast(
+        self, file_path: Path, max_chars: int = 500
+    ) -> Optional[str]:
+        """Extract a text sample for language detection without full document load.
+
+        This method parses document.xml directly from the docx archive,
+        avoiding the overhead of loading the entire document with python-docx.
+
+        Args:
+            file_path: Path to the Word file
+            max_chars: Maximum characters to extract (default 500)
+
+        Returns:
+            Sample text string or None if extraction fails
+        """
+        if file_path.suffix.lower() != ".docx":
+            return None
+
+        try:
+            texts = []
+            total_chars = 0
+
+            with zipfile.ZipFile(file_path, 'r') as zf:
+                if 'word/document.xml' not in zf.namelist():
+                    logger.debug("No document.xml found in docx")
+                    return None
+
+                xml_content = zf.read('word/document.xml')
+                root = ET.fromstring(xml_content)
+
+                # Word namespace
+                ns = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
+
+                # Extract text from all <w:t> elements (text runs)
+                for t_elem in root.findall('.//w:t', ns):
+                    if t_elem.text:
+                        text = t_elem.text.strip()
+                        if text and len(text) > 1:  # Skip single chars
+                            texts.append(text)
+                            total_chars += len(text)
+                            if total_chars >= max_chars:
+                                break
+
+            if texts:
+                result = ' '.join(texts)[:max_chars]
+                logger.debug(
+                    "Word fast sample extraction: %d chars from %d text runs",
+                    len(result), len(texts)
+                )
+                return result
+
+            return None
+
+        except (zipfile.BadZipFile, ET.ParseError, KeyError) as e:
+            logger.debug("Word fast sample extraction failed: %s", e)
+            return None
+
     def extract_text_blocks(
         self, file_path: Path, output_language: str = "en"
     ) -> Iterator[TextBlock]:

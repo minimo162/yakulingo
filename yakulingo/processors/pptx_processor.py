@@ -71,6 +71,76 @@ class PptxProcessor(FileProcessor):
             # python-pptx doesn't have close(), but we can help GC by deleting the reference
             del prs
 
+    def extract_sample_text_fast(
+        self, file_path: Path, max_chars: int = 500, max_slides: int = 3
+    ) -> Optional[str]:
+        """Extract a text sample for language detection without full presentation load.
+
+        This method parses slide XML files directly from the pptx archive,
+        avoiding the overhead of loading the entire presentation with python-pptx.
+
+        Args:
+            file_path: Path to the PowerPoint file
+            max_chars: Maximum characters to extract (default 500)
+            max_slides: Maximum number of slides to scan (default 3)
+
+        Returns:
+            Sample text string or None if extraction fails
+        """
+        if file_path.suffix.lower() != ".pptx":
+            return None
+
+        try:
+            import zipfile
+            from xml.etree import ElementTree as ET
+
+            texts = []
+            total_chars = 0
+
+            # PowerPoint namespaces
+            ns = {
+                'a': 'http://schemas.openxmlformats.org/drawingml/2006/main',
+                'p': 'http://schemas.openxmlformats.org/presentationml/2006/main',
+            }
+
+            with zipfile.ZipFile(file_path, 'r') as zf:
+                # Get list of slide files
+                slide_files = sorted([
+                    name for name in zf.namelist()
+                    if name.startswith('ppt/slides/slide') and name.endswith('.xml')
+                ])
+
+                for slide_file in slide_files[:max_slides]:
+                    if total_chars >= max_chars:
+                        break
+
+                    xml_content = zf.read(slide_file)
+                    root = ET.fromstring(xml_content)
+
+                    # Extract text from <a:t> elements (text runs in shapes)
+                    for t_elem in root.findall('.//a:t', ns):
+                        if t_elem.text:
+                            text = t_elem.text.strip()
+                            if text and len(text) > 1:  # Skip single chars
+                                texts.append(text)
+                                total_chars += len(text)
+                                if total_chars >= max_chars:
+                                    break
+
+            if texts:
+                result = ' '.join(texts)[:max_chars]
+                logger.debug(
+                    "PPTX fast sample extraction: %d chars from %d text runs",
+                    len(result), len(texts)
+                )
+                return result
+
+            return None
+
+        except (zipfile.BadZipFile, ET.ParseError, KeyError) as e:
+            logger.debug("PPTX fast sample extraction failed: %s", e)
+            return None
+
     def extract_text_blocks(
         self, file_path: Path, output_language: str = "en"
     ) -> Iterator[TextBlock]:

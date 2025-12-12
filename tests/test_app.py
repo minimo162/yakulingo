@@ -550,7 +550,7 @@ class TestYakuLingoAppFileTranslation:
         await app._translate_file()
 
         reference_files = mock_translation_service.translate_file.call_args.args[1]
-        assert app._abbreviations_path in reference_files
+        assert app._glossary_path in reference_files
 
 
 # =============================================================================

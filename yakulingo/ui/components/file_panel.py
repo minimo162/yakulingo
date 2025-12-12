@@ -353,7 +353,7 @@ def _glossary_selector(
             ).props('flat no-caps size=sm').classes(
                 f'glossary-toggle-btn {"active" if use_bundled_glossary else ""}'
             )
-            glossary_btn.tooltip('同梱の abbreviations.csv を使用' if not use_bundled_glossary else '略語リストを使用中')
+            glossary_btn.tooltip('同梱の glossary.csv を使用' if not use_bundled_glossary else '用語集を使用中')
 
             # Edit abbreviations button (only shown when enabled)
             if use_bundled_glossary and on_edit:

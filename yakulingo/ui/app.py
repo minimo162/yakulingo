@@ -168,9 +168,9 @@ class YakuLingoApp:
         self._copilot: Optional["CopilotHandler"] = None
         self.translation_service: Optional["TranslationService"] = None
 
-        # Cache base directory and abbreviations path (avoid recalculation)
+        # Cache base directory and glossary path (avoid recalculation)
         self._base_dir = Path(__file__).parent.parent.parent
-        self._abbreviations_path = self._base_dir / 'abbreviations.csv'
+        self._glossary_path = self._base_dir / 'glossary.csv'
 
         # UI references for refresh
         self._header_status = None
@@ -1237,16 +1237,16 @@ class YakuLingoApp:
         self._refresh_content()
 
     async def _edit_glossary(self):
-        """Open abbreviations.csv in Excel/default editor with cooldown to prevent double-open"""
+        """Open glossary.csv in Excel/default editor with cooldown to prevent double-open"""
         from yakulingo.ui.utils import open_file
 
-        # Check if abbreviations file exists
-        if not self._abbreviations_path.exists():
-            ui.notify('略語リストが見つかりません', type='warning')
+        # Check if glossary file exists
+        if not self._glossary_path.exists():
+            ui.notify('用語集が見つかりません', type='warning')
             return
 
         # Open the file
-        open_file(self._abbreviations_path)
+        open_file(self._glossary_path)
         ui.notify(
             '略語リストを開きました。編集後は保存してから翻訳してください',
             type='info',
@@ -1264,10 +1264,10 @@ class YakuLingoApp:
         """
         files = list(self.state.reference_files) if self.state.reference_files else []
 
-        # Add bundled abbreviations if enabled (uses cached path)
+        # Add bundled glossary if enabled (uses cached path)
         if self.settings.use_bundled_glossary:
-            if self._abbreviations_path.exists() and self._abbreviations_path not in files:
-                files.insert(0, self._abbreviations_path)
+            if self._glossary_path.exists() and self._glossary_path not in files:
+                files.insert(0, self._glossary_path)
 
         return files if files else None
 

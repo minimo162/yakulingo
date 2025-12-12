@@ -400,34 +400,46 @@ def calculate_text_position(
     line_index: int,
     font_size: float,
     line_height: float,
+    initial_y: Optional[float] = None,
 ) -> tuple[float, float]:
     """
     Calculate text line position in PDF coordinates.
+
+    PDFMathTranslate compliant:
+    - When initial_y is provided (from Paragraph.y), use it as the baseline
+      for the first line, and offset subsequent lines downward
+    - When initial_y is None, fall back to box-based calculation
 
     PDF text positioning uses the baseline of the text as the reference point.
     Text is rendered from TOP to BOTTOM within the box, but coordinates
     are in PDF space (Y increases upward).
 
-    Layout within box (PDF coordinates):
+    PDFMathTranslate approach (when initial_y is provided):
+    ```
+    Line 0 baseline: y = initial_y
+    Line 1 baseline: y = initial_y - (1 * font_size * line_height)
+    Line 2 baseline: y = initial_y - (2 * font_size * line_height)
+    ```
+
+    This preserves the original text position from the source PDF,
+    ensuring accurate layout preservation.
+
+    Fallback approach (when initial_y is None):
     ```
           y2 ┌─────────────────────────┐  ← top of box
              │ Line 0 baseline         │  y = y2 - font_size
              │ Line 1 baseline         │  y = y2 - font_size - (1 * font_size * line_height)
-             │ Line 2 baseline         │  y = y2 - font_size - (2 * font_size * line_height)
           y1 └─────────────────────────┘  ← bottom of box
             x1                        x2
     ```
-
-    Formula: y = y2 - font_size - (line_index * font_size * line_height)
-    - y2 is the top of the box in PDF coordinates
-    - Subtract font_size to position baseline below top edge
-    - Subtract additional spacing for each subsequent line
 
     Args:
         box_pdf: (x1, y1, x2, y2) in PDF coordinates (bottom-left to top-right)
         line_index: 0-based line number (0 = first line)
         font_size: Font size in points
         line_height: Line height multiplier (1.0 = single spaced, 1.2 = typical)
+        initial_y: Optional initial Y coordinate from Paragraph.y (PDFMathTranslate compliant)
+                   This is the baseline position of the first character in the paragraph.
 
     Returns:
         (x, y) position for text baseline in PDF coordinates
@@ -444,7 +456,18 @@ def calculate_text_position(
         line_height = DEFAULT_LINE_HEIGHT
 
     x = x1
-    y = y2 - font_size - (line_index * font_size * line_height)
+
+    if initial_y is not None:
+        # PDFMathTranslate compliant: Use original position as baseline
+        # Formula: y = initial_y - (line_index * font_size * line_height)
+        # - Line 0: y = initial_y (original position)
+        # - Line 1: y = initial_y - font_size * line_height
+        # - Line 2: y = initial_y - 2 * font_size * line_height
+        y = initial_y - (line_index * font_size * line_height)
+    else:
+        # Fallback: Box-based calculation
+        # Formula: y = y2 - font_size - (line_index * font_size * line_height)
+        y = y2 - font_size - (line_index * font_size * line_height)
 
     return x, y
 
@@ -1894,6 +1917,8 @@ class PdfProcessor(FileProcessor):
                         # PyMuPDF bbox is in page coordinates (origin at top-left)
                         x1, y1, x2, y2 = bbox
                         original_text = ""
+                        # PyMuPDF fallback doesn't have Paragraph metadata
+                        paragraph = None
                         stored_font_size = None
                         original_line_count = 0
                         for line in block.get("lines", []):
@@ -2129,22 +2154,34 @@ class PdfProcessor(FileProcessor):
                                 block_id, len(lines), original_line_count
                             )
 
+                        # PDFMathTranslate compliant: Get initial_y from Paragraph.y
+                        # This is the baseline position of the first character in the paragraph
+                        initial_y = None
+                        if paragraph is not None:
+                            initial_y = getattr(paragraph, 'y', None)
+                            if initial_y is not None:
+                                logger.debug(
+                                    "[Layout] Using Paragraph.y=%.1f as initial_y for block %s",
+                                    initial_y, block_id
+                                )
+
                         # Generate text operators for each line
                         for line_idx, line_text in enumerate(lines):
                             if not line_text.strip():
                                 continue
 
-                            # Calculate line position
+                            # Calculate line position (PDFMathTranslate compliant)
                             x, y = calculate_text_position(
-                                box_pdf, line_idx, font_size, line_height
+                                box_pdf, line_idx, font_size, line_height, initial_y
                             )
 
                             # DEBUG: Log position calculation
                             if line_idx == 0:  # Only log first line to avoid spam
                                 logger.debug(
                                     "Line position: block=%s, line=%d, x=%.1f, y=%.1f, "
-                                    "text_len=%d",
-                                    block_id, line_idx, x, y, len(line_text)
+                                    "initial_y=%s, text_len=%d",
+                                    block_id, line_idx, x, y,
+                                    f"{initial_y:.1f}" if initial_y else "None", len(line_text)
                                 )
 
                             # Encode text to hex using Unicode code points (Identity-H encoding)

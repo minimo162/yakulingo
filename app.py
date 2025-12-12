@@ -19,12 +19,14 @@ def setup_logging():
     """Configure logging to console and file for debugging.
 
     Log file location: ~/.yakulingo/logs/startup.log
-    - Overwritten on each startup (no rotation)
+    - Cleared on first startup, then append mode (for multiprocess compatibility)
     - Encoding: UTF-8
 
     Returns:
         tuple: (console_handler, file_handler) to keep references alive
     """
+    import os
+
     logs_dir = Path.home() / ".yakulingo" / "logs"
     log_file_path = logs_dir / "startup.log"
 
@@ -48,9 +50,18 @@ def setup_logging():
     # Try to create file handler
     if logs_dir is not None:
         try:
+            # Clear log file only in main process (not in pywebview subprocess)
+            # Use environment variable to track if we've already cleared
+            if not os.environ.get('YAKULINGO_LOG_INITIALIZED'):
+                os.environ['YAKULINGO_LOG_INITIALIZED'] = '1'
+                # Truncate file on startup
+                with open(log_file_path, 'w', encoding='utf-8'):
+                    pass
+
+            # Use append mode for multiprocess compatibility
             file_handler = logging.FileHandler(
                 log_file_path,
-                mode='w',  # Overwrite on each startup
+                mode='a',
                 encoding='utf-8'
             )
             file_handler.setLevel(logging.DEBUG)

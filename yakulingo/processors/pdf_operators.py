@@ -318,9 +318,38 @@ class ContentStreamParser:
             logger.warning("Failed to decode content stream, returning original")
             return stream
 
+        # Debug: count BT/ET in original
+        bt_count = content.count('BT')
+        et_count = content.count('ET')
+        logger.info(
+            "parse_and_filter: original_len=%d, BT_count=%d, ET_count=%d, preview='%s'",
+            len(content), bt_count, et_count,
+            content[:300].replace('\n', '\\n').replace('\r', '\\r')
+        )
+
         tokens = self._tokenize(content)
+
+        # Debug: count token types
+        operator_tokens = [t for t in tokens if t[0] == 'operator']
+        bt_tokens = sum(1 for t in operator_tokens if t[1] == 'BT')
+        et_tokens = sum(1 for t in operator_tokens if t[1] == 'ET')
+        logger.info(
+            "parse_and_filter: total_tokens=%d, operators=%d, BT_tokens=%d, ET_tokens=%d",
+            len(tokens), len(operator_tokens), bt_tokens, et_tokens
+        )
+
         filtered = self._filter_tokens(tokens)
         result = self._reconstruct(filtered)
+
+        # Debug: compare sizes and check for remaining BT/ET
+        result_bt = result.count('BT')
+        result_et = result.count('ET')
+        logger.info(
+            "parse_and_filter: result_len=%d (reduction=%d%%), BT_in_result=%d, ET_in_result=%d",
+            len(result),
+            int((1 - len(result) / len(content)) * 100) if content else 0,
+            result_bt, result_et
+        )
 
         return result.encode('latin-1')
 
@@ -486,6 +515,11 @@ class ContentStreamParser:
         in_text_block = False
         operand_stack = []
 
+        # Debug counters
+        text_block_count = 0
+        filtered_tokens_count = 0
+        filtered_strings = []  # Sample of filtered string content
+
         while i < n:
             token_type, token_value = tokens[i]
 
@@ -499,6 +533,7 @@ class ContentStreamParser:
                 if token_value == 'BT':
                     # Enter text block - start filtering
                     in_text_block = True
+                    text_block_count += 1
                     operand_stack = []
                     i += 1
                     continue
@@ -512,6 +547,7 @@ class ContentStreamParser:
 
                 if in_text_block:
                     # Inside text block - skip all operators
+                    filtered_tokens_count += 1
                     operand_stack = []
                     i += 1
                     continue
@@ -526,6 +562,10 @@ class ContentStreamParser:
             # Operand (number, name, string, array, dict)
             if in_text_block:
                 # Skip operands inside text block
+                filtered_tokens_count += 1
+                # Collect sample of filtered strings for debugging
+                if token_type == 'string' and len(filtered_strings) < 5:
+                    filtered_strings.append(token_value[:100])
                 i += 1
                 continue
 
@@ -535,6 +575,14 @@ class ContentStreamParser:
 
         # Add any remaining operands (shouldn't happen in valid PDF)
         result.extend(operand_stack)
+
+        # Debug output
+        logger.info(
+            "_filter_tokens: text_blocks=%d, filtered_tokens=%d, result_tokens=%d, "
+            "sample_filtered_strings=%s",
+            text_block_count, filtered_tokens_count, len(result),
+            filtered_strings
+        )
 
         return result
 
@@ -675,12 +723,21 @@ class ContentStreamReplacer:
 
             # Get Resources dictionary
             resources_str = self.doc.xref_get_key(page_xref, "Resources")
+            logger.info(
+                "_filter_form_xobjects: page=%d, resources_type=%s, resources_preview='%s'",
+                page.number, resources_str[0], resources_str[1][:200] if resources_str[1] else ''
+            )
             if resources_str[0] != "dict":
                 # Try to get indirect reference
                 if resources_str[0] == "xref":
                     resources_xref = int(resources_str[1].split()[0])
                     resources_str = ("dict", self.doc.xref_object(resources_xref))
+                    logger.info(
+                        "_filter_form_xobjects: resolved resources_xref=%d, dict_preview='%s'",
+                        resources_xref, resources_str[1][:200] if resources_str[1] else ''
+                    )
                 else:
+                    logger.info("_filter_form_xobjects: no resources dict, returning")
                     return
 
             # Parse Resources to find XObject dictionary
@@ -689,9 +746,11 @@ class ContentStreamReplacer:
             # Look for /XObject in resources
             xobject_match = re.search(r'/XObject\s*(\d+\s+\d+\s+R|<<[^>]*>>)', resources_dict)
             if not xobject_match:
+                logger.info("_filter_form_xobjects: no /XObject found in resources")
                 return
 
             xobject_ref = xobject_match.group(1)
+            logger.info("_filter_form_xobjects: xobject_ref='%s'", xobject_ref)
 
             # Get XObject dictionary xref
             if xobject_ref.endswith('R'):
@@ -816,6 +875,23 @@ class ContentStreamReplacer:
             # Combine: filtered base (graphics) + new text
             # Wrap in q/Q to isolate graphics state
             combined = b"q " + self._filtered_base_stream + b" Q " + new_text
+
+            # Debug: Check if filtered base still contains BT/ET
+            filtered_str = self._filtered_base_stream.decode('latin-1', errors='replace')
+            bt_in_filtered = filtered_str.count('BT')
+            et_in_filtered = filtered_str.count('ET')
+            logger.info(
+                "build_combined: filtered_base has BT=%d, ET=%d, combined_len=%d, "
+                "filtered_preview='%s'",
+                bt_in_filtered, et_in_filtered, len(combined),
+                filtered_str[:300].replace('\n', '\\n').replace('\r', '\\r')
+            )
+            if bt_in_filtered > 0 or et_in_filtered > 0:
+                logger.warning(
+                    "build_combined: WARNING - filtered_base still contains text blocks! "
+                    "Original text may not be removed."
+                )
+
             return combined
         else:
             return new_text
@@ -843,6 +919,14 @@ class ContentStreamReplacer:
             logger.warning("apply_to_page: stream_bytes is empty, skipping page %d", page.number)
             return
 
+        # Debug: Show original Contents before replacement
+        page_xref = page.xref
+        original_contents = self.doc.xref_get_key(page_xref, "Contents")
+        logger.info(
+            "apply_to_page: page=%d, original_contents=%s",
+            page.number, original_contents
+        )
+
         # Create new stream object
         new_xref = self.doc.get_new_xref()
         # Initialize xref as PDF dict before updating stream
@@ -852,8 +936,14 @@ class ContentStreamReplacer:
 
         # REPLACE page Contents (not append)
         # This ensures original text is removed
-        page_xref = page.xref
         self.doc.xref_set_key(page_xref, "Contents", f"{new_xref} 0 R")
+
+        # Debug: Verify replacement
+        new_contents = self.doc.xref_get_key(page_xref, "Contents")
+        logger.info(
+            "apply_to_page: page=%d, new_contents=%s, new_xref=%d, stream_len=%d",
+            page.number, new_contents, new_xref, len(stream_bytes)
+        )
 
         # Update font resources dictionary for used fonts
         # This is critical for PDF viewers to recognize the embedded fonts

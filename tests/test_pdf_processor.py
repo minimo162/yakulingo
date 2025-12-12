@@ -903,6 +903,47 @@ class TestCalculateTextPosition:
         box_pdf = (0, 0, 100, 100)
         x, y = calculate_text_position(box_pdf, 1, 12.0, 0)
         # Should use default line_height of 1.1
+        expected_y = 100 - 12.0 - (1 * 12.0 * 1.1)
+        assert y == expected_y
+
+    def test_with_initial_y_first_line(self):
+        """PDFMathTranslate compliant: first line at initial_y position."""
+        box_pdf = (100, 200, 300, 400)
+        initial_y = 350.0  # Baseline of first character
+        x, y = calculate_text_position(box_pdf, 0, 12.0, 1.2, initial_y)
+
+        assert x == 100  # Left edge
+        assert y == 350.0  # Exactly at initial_y
+
+    def test_with_initial_y_second_line(self):
+        """PDFMathTranslate compliant: subsequent lines offset from initial_y."""
+        box_pdf = (100, 200, 300, 400)
+        initial_y = 350.0
+        x, y = calculate_text_position(box_pdf, 1, 12.0, 1.2, initial_y)
+
+        assert x == 100
+        # Second line: initial_y - (1 * font_size * line_height)
+        expected_y = 350.0 - (1 * 12.0 * 1.2)
+        assert y == expected_y
+
+    def test_with_initial_y_third_line(self):
+        """PDFMathTranslate compliant: third line further offset."""
+        box_pdf = (100, 200, 300, 400)
+        initial_y = 350.0
+        x, y = calculate_text_position(box_pdf, 2, 12.0, 1.2, initial_y)
+
+        assert x == 100
+        expected_y = 350.0 - (2 * 12.0 * 1.2)
+        assert y == expected_y
+
+    def test_initial_y_none_uses_fallback(self):
+        """When initial_y is None, falls back to box-based calculation."""
+        box_pdf = (100, 200, 300, 400)
+        x, y = calculate_text_position(box_pdf, 0, 12.0, 1.2, None)
+
+        assert x == 100
+        # Fallback: y2 - font_size
+        assert y == 400 - 12.0
 
 
 class TestCalculateCharWidth:

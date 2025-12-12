@@ -1311,6 +1311,7 @@ class ExcelProcessor(FileProcessor):
             original_screen_updating = None
             original_calculation = None
             original_enable_events = None
+            original_display_alerts = None
 
             try:
                 # Optimize Excel settings for batch operations
@@ -1331,6 +1332,12 @@ class ExcelProcessor(FileProcessor):
                     app.api.EnableEvents = False
                 except Exception as e:
                     logger.debug("Could not disable events: %s", e)
+
+                try:
+                    original_display_alerts = app.api.DisplayAlerts
+                    app.api.DisplayAlerts = False
+                except Exception as e:
+                    logger.debug("Could not disable display alerts: %s", e)
 
                 wb = app.books.open(str(input_path), ignore_read_only_recommended=True)
                 try:
@@ -1413,6 +1420,12 @@ class ExcelProcessor(FileProcessor):
             finally:
                 # Restore Excel settings before quitting
                 try:
+                    if original_display_alerts is not None:
+                        app.api.DisplayAlerts = original_display_alerts
+                except Exception as e:
+                    logger.debug("Could not restore DisplayAlerts: %s", e)
+
+                try:
                     if original_enable_events is not None:
                         app.api.EnableEvents = original_enable_events
                 except Exception as e:
@@ -1441,9 +1454,12 @@ class ExcelProcessor(FileProcessor):
     ) -> None:
         """Apply cell translations with batch optimization for xlwings.
 
-        Groups cells by row and writes contiguous ranges in batches to reduce
-        COM call overhead. For each row, if cells are contiguous (e.g., A1, B1, C1),
-        writes them in a single Range.value assignment.
+        Optimization strategy:
+        1. Write all cell values first (batched by row ranges)
+        2. Apply font name to ALL cells at once (single COM call per sheet)
+        3. Group cells by font size and apply sizes in batches
+
+        This significantly reduces COM calls compared to per-cell font application.
 
         Args:
             sheet: xlwings Sheet object
@@ -1454,34 +1470,49 @@ class ExcelProcessor(FileProcessor):
         if not cell_translations:
             return
 
-        # Group translations by row for batch processing
+        # Collect all cells for batch font application
+        all_cells: list[tuple[int, int, str]] = []  # (row, col, cell_ref)
+        font_size_groups: dict[float, list[tuple[int, int]]] = {}  # size -> [(row, col), ...]
+
+        # Group translations by row for batch value writing
         rows_data: dict[int, list[tuple[int, str, str]]] = {}  # row -> [(col, text, cell_ref), ...]
         for (row, col), (translated_text, cell_ref) in cell_translations.items():
             if row not in rows_data:
                 rows_data[row] = []
             rows_data[row].append((col, translated_text, cell_ref))
+            all_cells.append((row, col, cell_ref))
+
+            # Determine font size for grouping
+            block_id = f"{sheet_name}_{cell_ref}"
+            cached_font = self._font_cache.get(block_id)
+            if cached_font:
+                _, original_font_size = cached_font
+            else:
+                original_font_size = 11.0
+
+            _, new_font_size = font_manager.select_font(None, original_font_size)
+            if new_font_size not in font_size_groups:
+                font_size_groups[new_font_size] = []
+            font_size_groups[new_font_size].append((row, col))
 
         # Sort cells within each row by column
         for row in rows_data:
             rows_data[row].sort(key=lambda x: x[0])
 
-        # Process each row
+        # Phase 1: Write all cell values (batched by contiguous ranges)
         for row, cells in rows_data.items():
-            # Find contiguous column ranges within this row
             ranges = self._find_contiguous_ranges(cells)
-
             for start_col, end_col, range_cells in ranges:
-                if len(range_cells) == 1:
-                    # Single cell - direct write
-                    col, text, cell_ref = range_cells[0]
-                    self._apply_single_cell_xlwings(
-                        sheet, sheet_name, row, col, text, cell_ref, font_manager
-                    )
-                else:
-                    # Contiguous range - batch write
-                    self._apply_range_batch_xlwings(
-                        sheet, sheet_name, row, start_col, end_col, range_cells, font_manager
-                    )
+                self._write_cell_values_batch(sheet, sheet_name, row, start_col, end_col, range_cells)
+
+        # Phase 2: Apply font name to all cells at once (single COM call)
+        if all_cells:
+            output_font_name = font_manager.get_output_font()
+            self._apply_font_name_batch(sheet, all_cells, output_font_name)
+
+        # Phase 3: Apply font sizes by group (one COM call per unique size)
+        for font_size, cells in font_size_groups.items():
+            self._apply_font_size_batch(sheet, cells, font_size)
 
     def _find_contiguous_ranges(
         self, cells: list[tuple[int, str, str]]
@@ -1517,6 +1548,151 @@ class ExcelProcessor(FileProcessor):
         # Don't forget the last range
         ranges.append((current_start, cells[-1][0], current_range))
         return ranges
+
+    def _write_cell_values_batch(
+        self,
+        sheet,
+        sheet_name: str,
+        row: int,
+        start_col: int,
+        end_col: int,
+        cells: list[tuple[int, str, str]],
+    ) -> None:
+        """Write cell values in batch (values only, no font).
+
+        Args:
+            sheet: xlwings Sheet object
+            sheet_name: Name of the sheet (for logging)
+            row: Row number
+            start_col: Starting column
+            end_col: Ending column
+            cells: List of (col, text, cell_ref) sorted by col
+        """
+        try:
+            if len(cells) == 1:
+                # Single cell
+                col, text, cell_ref = cells[0]
+                final_text = text
+                if text and len(text) > EXCEL_CELL_CHAR_LIMIT:
+                    final_text = text[:EXCEL_CELL_CHAR_LIMIT - 3] + "..."
+                    logger.warning(
+                        "Translation truncated for cell %s_%s: %d -> %d chars",
+                        sheet_name, cell_ref, len(text), len(final_text)
+                    )
+                sheet.range(row, col).value = final_text
+            else:
+                # Multiple contiguous cells - batch write
+                values = []
+                for col, text, cell_ref in cells:
+                    final_text = text
+                    if text and len(text) > EXCEL_CELL_CHAR_LIMIT:
+                        final_text = text[:EXCEL_CELL_CHAR_LIMIT - 3] + "..."
+                        logger.warning(
+                            "Translation truncated for cell %s_%s: %d -> %d chars",
+                            sheet_name, cell_ref, len(text), len(final_text)
+                        )
+                    values.append(final_text)
+                sheet.range((row, start_col), (row, end_col)).value = values
+        except Exception as e:
+            logger.warning(
+                "Error writing values to row %d cols %d-%d in '%s': %s",
+                row, start_col, end_col, sheet_name, e
+            )
+            # Fallback to individual writes
+            for col, text, cell_ref in cells:
+                try:
+                    final_text = text
+                    if text and len(text) > EXCEL_CELL_CHAR_LIMIT:
+                        final_text = text[:EXCEL_CELL_CHAR_LIMIT - 3] + "..."
+                    sheet.range(row, col).value = final_text
+                except Exception as inner_e:
+                    logger.debug("Error writing cell %s_%s: %s", sheet_name, cell_ref, inner_e)
+
+    def _apply_font_name_batch(
+        self,
+        sheet,
+        cells: list[tuple[int, int, str]],
+        font_name: str,
+    ) -> None:
+        """Apply font name to multiple cells efficiently.
+
+        Uses Excel's ability to set font properties on a union of ranges.
+
+        Args:
+            sheet: xlwings Sheet object
+            cells: List of (row, col, cell_ref)
+            font_name: Font name to apply
+        """
+        if not cells:
+            return
+
+        try:
+            # Build range addresses for union (e.g., "A1,B2,C3")
+            # Excel has a limit on range string length, so batch in chunks
+            MAX_ADDRESSES_PER_BATCH = 100  # Tunable based on performance
+
+            for i in range(0, len(cells), MAX_ADDRESSES_PER_BATCH):
+                batch = cells[i:i + MAX_ADDRESSES_PER_BATCH]
+                addresses = [f"{get_column_letter(col)}{row}" for row, col, _ in batch]
+
+                try:
+                    # Create union range and apply font name
+                    union_address = ",".join(addresses)
+                    rng = sheet.range(union_address)
+                    rng.font.name = font_name
+                except Exception as e:
+                    logger.debug("Error applying font name to batch: %s, falling back", e)
+                    # Fallback: apply to each cell individually
+                    for row, col, cell_ref in batch:
+                        try:
+                            sheet.range(row, col).font.name = font_name
+                        except Exception as inner_e:
+                            logger.debug("Error applying font name to cell (%d,%d): %s", row, col, inner_e)
+
+        except Exception as e:
+            logger.warning("Error in font name batch application: %s", e)
+
+    def _apply_font_size_batch(
+        self,
+        sheet,
+        cells: list[tuple[int, int]],
+        font_size: float,
+    ) -> None:
+        """Apply font size to multiple cells efficiently.
+
+        Uses Excel's ability to set font properties on a union of ranges.
+
+        Args:
+            sheet: xlwings Sheet object
+            cells: List of (row, col)
+            font_size: Font size to apply
+        """
+        if not cells:
+            return
+
+        try:
+            # Build range addresses for union
+            MAX_ADDRESSES_PER_BATCH = 100
+
+            for i in range(0, len(cells), MAX_ADDRESSES_PER_BATCH):
+                batch = cells[i:i + MAX_ADDRESSES_PER_BATCH]
+                addresses = [f"{get_column_letter(col)}{row}" for row, col in batch]
+
+                try:
+                    union_address = ",".join(addresses)
+                    rng = sheet.range(union_address)
+                    rng.font.size = font_size
+                except Exception as e:
+                    logger.debug("Error applying font size to batch: %s, falling back", e)
+                    # Fallback: apply to each cell individually
+                    for row, col in batch:
+                        try:
+                            sheet.range(row, col).font.size = font_size
+                        except Exception as inner_e:
+                            logger.debug("Error applying font size to cell (%d,%d): %s", row, col, inner_e)
+
+        except Exception as e:
+            logger.warning("Error in font size batch application: %s", e)
 
     def _apply_single_cell_xlwings(
         self,

@@ -3015,6 +3015,11 @@ a:hover {
     color: #555555;
 }
 
+.file-icon-email {
+    background-color: rgba(0, 120, 212, 0.08);
+    color: #0078D4;
+}
+
 .file-icon-default {
     background-color: rgba(102, 102, 102, 0.08);
     color: #666666;

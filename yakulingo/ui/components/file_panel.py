@@ -24,7 +24,7 @@ ATTACH_SVG: str = '''
 '''
 
 
-SUPPORTED_FORMATS = ".xlsx,.xls,.docx,.pptx,.pdf,.txt"
+SUPPORTED_FORMATS = ".xlsx,.xls,.docx,.pptx,.pdf,.txt,.msg"
 SUPPORTED_EXTENSIONS = {ext.strip() for ext in SUPPORTED_FORMATS.split(',')}
 
 # File type icons (Material Icons)
@@ -34,6 +34,7 @@ FILE_TYPE_ICONS = {
     FileType.POWERPOINT: 'slideshow',
     FileType.PDF: 'picture_as_pdf',
     FileType.TEXT: 'article',
+    FileType.EMAIL: 'mail',
 }
 
 # File type CSS classes (defined in styles.py)
@@ -43,6 +44,7 @@ FILE_TYPE_CLASSES = {
     FileType.POWERPOINT: 'file-icon-powerpoint',
     FileType.PDF: 'file-icon-pdf',
     FileType.TEXT: 'file-icon-text',
+    FileType.EMAIL: 'file-icon-email',
 }
 
 

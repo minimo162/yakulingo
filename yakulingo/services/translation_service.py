@@ -961,6 +961,7 @@ class TranslationService:
                     from yakulingo.processors.pptx_processor import PptxProcessor
                     from yakulingo.processors.pdf_processor import PdfProcessor
                     from yakulingo.processors.txt_processor import TxtProcessor
+                    from yakulingo.processors.msg_processor import MsgProcessor
 
                     # Note: Legacy formats (.doc, .ppt) are not supported
                     # Only Office Open XML formats are supported for Word/PowerPoint
@@ -971,6 +972,7 @@ class TranslationService:
                         '.pptx': PptxProcessor(),
                         '.pdf': PdfProcessor(),
                         '.txt': TxtProcessor(),
+                        '.msg': MsgProcessor(),
                     }
         return self._processors
 

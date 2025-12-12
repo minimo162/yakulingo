@@ -342,12 +342,12 @@ def _glossary_selector(
     on_toggle: Optional[Callable[[bool], None]],
     on_edit: Optional[Callable[[], None]],
 ):
-    """Bundled abbreviations toggle button - same style as text panel"""
+    """Bundled glossary toggle button - same style as text panel"""
     with ui.row().classes('w-full justify-center mt-3 items-center gap-2'):
-        # Abbreviations toggle button
+        # Glossary toggle button
         if on_toggle:
             glossary_btn = ui.button(
-                '略語',
+                '用語集',
                 icon='short_text',
                 on_click=lambda: on_toggle(not use_bundled_glossary)
             ).props('flat no-caps size=sm').classes(
@@ -355,13 +355,13 @@ def _glossary_selector(
             )
             glossary_btn.tooltip('同梱の glossary.csv を使用' if not use_bundled_glossary else '用語集を使用中')
 
-            # Edit abbreviations button (only shown when enabled)
+            # Edit glossary button (only shown when enabled)
             if use_bundled_glossary and on_edit:
                 edit_btn = ui.button(
                     icon='edit',
                     on_click=on_edit
                 ).props('flat dense round size=sm').classes('settings-btn')
-                edit_btn.tooltip('略語リストをExcelで編集')
+                edit_btn.tooltip('用語集をExcelで編集')
 
 
 def _reference_file_selector(

@@ -1248,7 +1248,7 @@ class YakuLingoApp:
         # Open the file
         open_file(self._glossary_path)
         ui.notify(
-            '略語リストを開きました。編集後は保存してから翻訳してください',
+            '用語集を開きました。編集後は保存してから翻訳してください',
             type='info',
             timeout=5000
         )
@@ -1258,9 +1258,9 @@ class YakuLingoApp:
         await asyncio.sleep(3)
 
     def _get_effective_reference_files(self) -> list[Path] | None:
-        """Get reference files including bundled abbreviations if enabled.
+        """Get reference files including bundled glossary if enabled.
 
-        Uses cached abbreviations path to avoid repeated path calculations.
+        Uses cached glossary path to avoid repeated path calculations.
         """
         files = list(self.state.reference_files) if self.state.reference_files else []
 

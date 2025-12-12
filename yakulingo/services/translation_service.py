@@ -234,7 +234,7 @@ class LanguageDetector:
 
         return (japanese_count / total_chars) >= threshold
 
-    def detect_local(self, text: str) -> Optional[str]:
+    def detect_local(self, text: str) -> str:
         """
         Detect language locally without Copilot.
 
@@ -242,17 +242,21 @@ class LanguageDetector:
         1. Hiragana/Katakana present → "日本語" (definite Japanese)
         2. Hangul present → "韓国語" (definite Korean)
         3. Latin alphabet dominant → "英語" (assume English for speed)
-        4. CJK only (no kana) → None (need Copilot to distinguish Chinese/Japanese)
-        5. Other/mixed → None (need Copilot)
+        4. CJK only (no kana) → "日本語" (assume Japanese for target users)
+        5. Other/mixed → "日本語" (default fallback)
+
+        Note: This method always returns a language name (never None) to avoid
+        slow Copilot calls for language detection. Target users are Japanese,
+        so Japanese is used as the default fallback.
 
         Args:
             text: Text to analyze
 
         Returns:
-            Detected language name or None if Copilot needed
+            Detected language name (always returns a value)
         """
         if not text:
-            return None
+            return "日本語"  # Default for empty text
 
         # Sample text for analysis
         sample = text[:self.MAX_ANALYSIS_LENGTH]
@@ -291,22 +295,20 @@ class LanguageDetector:
                 return "韓国語"
 
         if total_meaningful == 0:
-            return None
+            return "日本語"  # Default for no meaningful characters
 
         # If mostly Latin characters, assume English
         latin_ratio = latin_count / total_meaningful
         if latin_ratio > 0.5:
             return "英語"
 
-        # CJK only without kana → check for Japanese-specific punctuation
+        # CJK only without kana → assume Japanese (target users are Japanese)
+        # This avoids slow Copilot calls for language detection
         if has_cjk:
-            if self.has_japanese_punctuation(sample):
-                return "日本語"
-            # Could be Chinese or Japanese, need Copilot
-            return None
+            return "日本語"
 
-        # Other cases → need Copilot
-        return None
+        # Other cases → assume Japanese as default
+        return "日本語"
 
 
 # Singleton instance for convenient access
@@ -1053,19 +1055,23 @@ class TranslationService:
 
     def detect_language(self, text: str) -> str:
         """
-        Detect the language of the input text using hybrid approach.
+        Detect the language of the input text using local detection.
 
         Priority:
-        1. Local detection (fast): Hiragana/Katakana → Japanese, Latin → English, Hangul → Korean
-        2. Copilot detection (slow): Only for CJK-only text (Chinese/Japanese ambiguity)
+        1. Hiragana/Katakana present → "日本語"
+        2. Hangul present → "韓国語"
+        3. Latin alphabet dominant → "英語"
+        4. CJK only or other → "日本語" (default for Japanese users)
 
-        Falls back to local is_japanese() if Copilot returns an error.
+        Note: Copilot is no longer used for language detection to ensure
+        fast response times. Japanese is used as the default fallback
+        since target users are Japanese.
 
         Args:
             text: Text to analyze
 
         Returns:
-            Detected language name (e.g., "日本語", "英語", "中国語")
+            Detected language name (e.g., "日本語", "英語", "韓国語")
         """
         # Try local detection first (fast path)
         local_result = language_detector.detect_local(text)

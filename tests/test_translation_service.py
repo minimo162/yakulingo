@@ -1134,19 +1134,19 @@ class TestDetectLanguageLocal:
         from yakulingo.services.translation_service import detect_language_local
         assert detect_language_local("안녕하세요") == "韓国語"
 
-    def test_cjk_only_returns_none(self):
-        """CJK-only text (no kana) returns None for Copilot detection"""
+    def test_cjk_only_returns_japanese(self):
+        """CJK-only text (no kana) returns Japanese as default for target users"""
         from yakulingo.services.translation_service import detect_language_local
-        # These could be Chinese or Japanese, need Copilot
-        assert detect_language_local("東京") is None
-        assert detect_language_local("中国") is None
-        assert detect_language_local("日本人") is None
+        # CJK-only defaults to Japanese (target users are Japanese)
+        assert detect_language_local("東京") == "日本語"
+        assert detect_language_local("中国") == "日本語"
+        assert detect_language_local("日本人") == "日本語"
 
-    def test_empty_text_returns_none(self):
-        """Empty text returns None"""
+    def test_empty_text_returns_japanese(self):
+        """Empty text returns Japanese as default"""
         from yakulingo.services.translation_service import detect_language_local
-        assert detect_language_local("") is None
-        assert detect_language_local("   ") is None
+        assert detect_language_local("") == "日本語"
+        assert detect_language_local("   ") == "日本語"
 
 
 # --- Tests: detect_language() (hybrid) ---
@@ -1188,16 +1188,15 @@ class TestDetectLanguage:
         # Copilot should NOT be called (local detection)
         mock_copilot.translate_single.assert_not_called()
 
-    def test_detect_language_cjk_uses_copilot(self, mock_copilot):
-        """CJK-only text (ambiguous) uses Copilot for detection"""
-        mock_copilot.translate_single.return_value = "中国語"
+    def test_detect_language_cjk_returns_japanese_without_copilot(self, mock_copilot):
+        """CJK-only text returns Japanese locally without Copilot (target users are Japanese)"""
         service = TranslationService(mock_copilot, AppSettings())
 
         result = service.detect_language("东京")  # Simplified Chinese chars
 
-        assert result == "中国語"
-        # Copilot SHOULD be called (CJK-only is ambiguous)
-        mock_copilot.translate_single.assert_called_once()
+        assert result == "日本語"
+        # Copilot should NOT be called (local detection defaults to Japanese)
+        mock_copilot.translate_single.assert_not_called()
 
     def test_detect_language_normalizes_english_variations(self, mock_copilot):
         """detect_language normalizes English language names to Japanese"""

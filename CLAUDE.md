@@ -115,7 +115,7 @@ YakuLingo/
 │   ├── conftest.py                # Shared fixtures and mocks
 │   └── test_*.py                  # Unit tests for each module
 ├── prompts/                       # Translation prompt templates (17 files)
-│   ├── detect_language.txt        # Language detection via Copilot
+│   ├── detect_language.txt        # Language detection (currently unused, local detection preferred)
 │   ├── copilot_injection_review.md # Prompt injection risk review
 │   ├── file_translate_to_en_{standard|concise|minimal}.txt  # File translation (JP→EN)
 │   ├── file_translate_to_jp.txt   # File translation (EN→JP)
@@ -223,22 +223,18 @@ VersionInfo(version, release_date, download_url, release_notes, requires_reinsta
 
 ## Auto-Detected Translation Direction
 
-The application uses **hybrid language detection** via `detect_language()`:
+The application uses **local-only language detection** via `detect_language()`:
 
-1. **Local detection (fast)** - `detect_language_local()`:
-   - Hiragana/Katakana present → "日本語" (definite Japanese)
-   - Hangul present → "韓国語" (definite Korean)
-   - Latin alphabet dominant → "英語" (assume English for speed)
-   - CJK only (no kana) → None (need Copilot)
+**Detection priority** (all local, no Copilot calls):
+1. Hiragana/Katakana present → "日本語" (definite Japanese)
+2. Hangul present → "韓国語" (definite Korean)
+3. Latin alphabet dominant → "英語" (assume English for speed)
+4. CJK only (no kana) → "日本語" (assume Japanese for target users)
+5. Other/mixed → "日本語" (default fallback)
 
-2. **Copilot detection (slow)** - Only for CJK-only text:
-   - Sends text to Copilot with `detect_language.txt` prompt
-   - Returns language name (e.g., "日本語", "中国語")
-   - Fallback: Local `is_japanese_text()` function
-
-**Why hybrid approach?**
-- **Speed**: 90%+ of texts can be detected locally without Copilot roundtrip
-- **中国語問題**: CJK-only text (漢字のみ) needs Copilot to distinguish Chinese/Japanese
+**Design rationale:**
+- **Speed**: All detection is local, no Copilot roundtrip required
+- **Target users**: Japanese users, so Japanese is the safe default
 - **Simple UI**: 「英訳中...」「和訳中...」 display without complex language names
 
 Translation direction based on detection:
@@ -1480,7 +1476,7 @@ Based on recent commits:
 - **Auto-Update System**: GitHub Releases-based updates with Windows proxy support
 - **Native Launcher**: Rust-based `YakuLingo.exe` for Windows distribution
 - **Test Coverage**: 32 test files
-- **Language Detection**: Hybrid approach - local detection for kana/Latin/Hangul, Copilot only for CJK-only text (Chinese/Japanese ambiguity)
+- **Language Detection**: Local-only detection for fast response - kana/Latin/Hangul detection with Japanese as default fallback for CJK-only text
 - **Translation Result UI Enhancements**:
   - **Source text section**: 翻訳結果パネル上部に原文を表示（コピーボタン付き）
   - **Translation status display**: 「英訳中...」「和訳中...」→「✓ 英訳しました」「✓ 和訳しました」+ 経過時間

@@ -83,6 +83,12 @@ LINE_BREAK_X_THRESHOLD = 1.0      # child.x1 < xt.x0 indicates line break
 # Multi-column detection: large X jump (>100pt) suggests column change
 COLUMN_JUMP_X_THRESHOLD = 100.0
 
+# Table cell detection thresholds
+# X gap between table cells - smaller than column threshold but significant
+TABLE_CELL_X_THRESHOLD = 15.0   # Gap > 15pt between chars suggests new cell
+# Y gap for table row detection - more sensitive than paragraph threshold
+TABLE_ROW_Y_THRESHOLD = 5.0     # Y diff > 5pt in table suggests new row
+
 # Dynamic threshold calculation constants
 # For multi-column detection, threshold as fraction of page width
 COLUMN_THRESHOLD_RATIO = 0.2      # 20% of page width
@@ -666,6 +672,7 @@ def detect_paragraph_boundary(
     prev_cls: int,
     use_layout: bool,
     thresholds: Optional[dict] = None,
+    prev_x1: Optional[float] = None,
 ) -> tuple[bool, bool]:
     """
     Detect if a new paragraph or line break should start.
@@ -683,10 +690,15 @@ def detect_paragraph_boundary(
         use_layout: Whether layout information is available
         thresholds: Optional dictionary from calculate_dynamic_thresholds()
                    containing y_line, y_para, x_column. If None, uses defaults.
+        prev_x1: Previous character X1 coordinate (right edge) for X gap detection
 
     Returns:
         Tuple of (new_paragraph, line_break) booleans
     """
+    # Table layout class base constant (imported locally to avoid circular import)
+    # LAYOUT_TABLE_BASE = 1000, table regions have IDs >= 1000
+    LAYOUT_TABLE_BASE = 1000
+
     new_paragraph = False
     line_break = False
 
@@ -694,6 +706,12 @@ def detect_paragraph_boundary(
     y_line_thresh = thresholds['y_line'] if thresholds else SAME_LINE_Y_THRESHOLD
     y_para_thresh = thresholds['y_para'] if thresholds else SAME_PARA_Y_THRESHOLD
     x_column_thresh = thresholds['x_column'] if thresholds else COLUMN_JUMP_X_THRESHOLD
+
+    # Check if both characters are in table region
+    is_table_region = (
+        char_cls is not None and prev_cls is not None and
+        char_cls >= LAYOUT_TABLE_BASE and prev_cls >= LAYOUT_TABLE_BASE
+    )
 
     if use_layout and prev_cls is not None:
         # Layout-based detection
@@ -709,10 +727,32 @@ def detect_paragraph_boundary(
                 elif y_diff > y_line_thresh:
                     line_break = True
         else:
-            # Same region - check Y distance
+            # Same region - special handling for table regions
             y_diff = abs(char_y0 - prev_y0)
-            if y_diff > y_line_thresh:
-                line_break = True
+
+            if is_table_region:
+                # Table region: use more sensitive thresholds
+                # Check X gap for cell boundary detection
+                if prev_x1 is not None:
+                    x_gap = char_x0 - prev_x1
+                    if x_gap > TABLE_CELL_X_THRESHOLD:
+                        # Large X gap in table = new cell = new paragraph
+                        new_paragraph = True
+                    elif y_diff > TABLE_ROW_Y_THRESHOLD:
+                        # Y movement in table = new row = new paragraph
+                        new_paragraph = True
+                    elif y_diff > y_line_thresh:
+                        line_break = True
+                else:
+                    # No prev_x1, fall back to Y-based detection with table threshold
+                    if y_diff > TABLE_ROW_Y_THRESHOLD:
+                        new_paragraph = True
+                    elif y_diff > y_line_thresh:
+                        line_break = True
+            else:
+                # Non-table region: standard Y-based detection
+                if y_diff > y_line_thresh:
+                    line_break = True
     else:
         # Fallback: Y-coordinate based detection with X-coordinate heuristics
         # for multi-column layouts

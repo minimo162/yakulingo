@@ -3323,9 +3323,11 @@ class PdfProcessor(FileProcessor):
                 prev_cls = char_cls
             else:
                 # Use detect_paragraph_boundary from pdf_converter.py
+                # Pass prev_x1 for table cell boundary detection
                 new_paragraph, line_break = detect_paragraph_boundary(
                     char_x0, char_y0, prev_x0, prev_y0,
-                    char_cls, prev_cls, use_layout
+                    char_cls, prev_cls, use_layout,
+                    prev_x1=prev_x1
                 )
                 # Also check X position for line break
                 if not new_paragraph and char_x1 < prev_x0 - LINE_BREAK_X_THRESHOLD:

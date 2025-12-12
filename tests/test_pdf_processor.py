@@ -2973,6 +2973,86 @@ class TestParagraphBoundaryConstants:
 
 
 # =============================================================================
+# Tests for table cell boundary detection
+# =============================================================================
+class TestTableCellBoundaryDetection:
+    """Tests for table cell boundary detection in detect_paragraph_boundary"""
+
+    def test_table_cell_x_gap_triggers_new_paragraph(self):
+        """Large X gap in table region should trigger new paragraph (new cell)"""
+        from yakulingo.processors.pdf_converter import (
+            detect_paragraph_boundary,
+            TABLE_CELL_X_THRESHOLD,
+        )
+        # X gap = 100 - 80 = 20pt > TABLE_CELL_X_THRESHOLD (15pt)
+        new_para, line_break = detect_paragraph_boundary(
+            char_x0=100, char_y0=500,
+            prev_x0=50, prev_y0=500,
+            char_cls=1000, prev_cls=1000,  # Table region
+            use_layout=True,
+            prev_x1=80,
+        )
+        assert new_para is True
+        assert line_break is False
+
+    def test_table_cell_small_x_gap_same_cell(self):
+        """Small X gap in table region should stay in same cell"""
+        from yakulingo.processors.pdf_converter import (
+            detect_paragraph_boundary,
+            TABLE_CELL_X_THRESHOLD,
+        )
+        # X gap = 100 - 95 = 5pt < TABLE_CELL_X_THRESHOLD (15pt)
+        new_para, line_break = detect_paragraph_boundary(
+            char_x0=100, char_y0=500,
+            prev_x0=90, prev_y0=500,
+            char_cls=1000, prev_cls=1000,
+            use_layout=True,
+            prev_x1=95,
+        )
+        assert new_para is False
+        assert line_break is False
+
+    def test_table_row_y_diff_triggers_new_paragraph(self):
+        """Y movement in table region should trigger new paragraph (new row)"""
+        from yakulingo.processors.pdf_converter import (
+            detect_paragraph_boundary,
+            TABLE_ROW_Y_THRESHOLD,
+        )
+        # Y diff = |490 - 500| = 10pt > TABLE_ROW_Y_THRESHOLD (5pt)
+        new_para, line_break = detect_paragraph_boundary(
+            char_x0=50, char_y0=490,
+            prev_x0=50, prev_y0=500,
+            char_cls=1000, prev_cls=1000,
+            use_layout=True,
+            prev_x1=200,
+        )
+        assert new_para is True
+        assert line_break is False
+
+    def test_non_table_region_ignores_x_gap(self):
+        """Non-table region should ignore X gap for paragraph detection"""
+        from yakulingo.processors.pdf_converter import detect_paragraph_boundary
+        # Same X gap but in non-table region (cls=2)
+        new_para, line_break = detect_paragraph_boundary(
+            char_x0=100, char_y0=500,
+            prev_x0=50, prev_y0=500,
+            char_cls=2, prev_cls=2,  # Normal paragraph region
+            use_layout=True,
+            prev_x1=80,
+        )
+        assert new_para is False  # X gap ignored in non-table region
+
+    def test_table_constants_values(self):
+        """Table detection constants should have expected values"""
+        from yakulingo.processors.pdf_converter import (
+            TABLE_CELL_X_THRESHOLD,
+            TABLE_ROW_Y_THRESHOLD,
+        )
+        assert TABLE_CELL_X_THRESHOLD == 15.0
+        assert TABLE_ROW_Y_THRESHOLD == 5.0
+
+
+# =============================================================================
 # Tests for LayoutArray class (PDFMathTranslate compliant, PP-DocLayout-L based)
 # =============================================================================
 class TestLayoutArrayConstants:

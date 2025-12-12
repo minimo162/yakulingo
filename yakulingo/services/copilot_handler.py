@@ -68,6 +68,22 @@ LOGIN_PAGE_PATTERNS = [
     "entra.microsoft.com",
 ]
 
+# Authentication flow intermediate page patterns
+# These pages appear during OAuth/OIDC token exchange and should not be interrupted
+AUTH_FLOW_PATTERNS = [
+    "/auth",
+    "/oauth",
+    "/consent",
+    "/authorize",
+    "/token",
+    "?auth=",
+    "&auth=",
+    "/kmsi",  # Keep Me Signed In page
+    "/reprocess",
+    "/resume",
+    "/proofup",  # MFA setup page
+]
+
 
 class TranslationCancelledError(Exception):
     """Raised when translation is cancelled by user."""
@@ -187,6 +203,28 @@ def _is_login_page(url: str) -> bool:
     if not url:
         return False
     for pattern in LOGIN_PAGE_PATTERNS:
+        if pattern in url:
+            return True
+    return False
+
+
+def _is_auth_flow_page(url: str) -> bool:
+    """Check if the URL is an authentication flow intermediate page.
+
+    These pages appear during OAuth/OIDC token exchange and should not be
+    interrupted by navigation. Interrupting these pages can cause authentication
+    to fail with "認証が必要です" dialogs.
+
+    Args:
+        url: The current page URL
+
+    Returns:
+        True if URL appears to be an auth flow intermediate page
+    """
+    if not url:
+        return False
+    # Check for auth flow patterns in URL
+    for pattern in AUTH_FLOW_PATTERNS:
         if pattern in url:
             return True
     return False
@@ -1150,12 +1188,21 @@ class CopilotHandler:
                 except (PlaywrightTimeoutError, PlaywrightError) as nav_err:
                     logger.warning("Failed to navigate to chat from landing: %s", nav_err)
         elif _is_copilot_url(url) and "/chat" not in url:
-            logger.info("On Copilot domain but not /chat, navigating...")
-            try:
-                page.goto(self.COPILOT_URL, wait_until='domcontentloaded', timeout=30000)
-                page.wait_for_load_state('domcontentloaded', timeout=10000)
-            except (PlaywrightTimeoutError, PlaywrightError) as nav_err:
-                logger.warning("Navigation to chat failed: %s", nav_err)
+            # Check if we're on an auth flow intermediate page - do NOT navigate
+            if _is_auth_flow_page(url):
+                logger.info("On auth flow page (%s), waiting for auth to complete...", url[:60])
+                # Wait for auth flow to complete naturally
+                try:
+                    page.wait_for_load_state('networkidle', timeout=10000)
+                except PlaywrightTimeoutError:
+                    pass
+            else:
+                logger.info("On Copilot domain but not /chat, navigating...")
+                try:
+                    page.goto(self.COPILOT_URL, wait_until='domcontentloaded', timeout=30000)
+                    page.wait_for_load_state('domcontentloaded', timeout=10000)
+                except (PlaywrightTimeoutError, PlaywrightError) as nav_err:
+                    logger.warning("Navigation to chat failed: %s", nav_err)
 
         # Use stepped waiting with early login detection
         # Instead of waiting 15 seconds then checking, check every 3 seconds
@@ -1281,11 +1328,20 @@ class CopilotHandler:
         "Accedi", "Password",
     )
 
-    # Extended selectors for authentication dialogs and forms
-    # NOTE: Selectors must be specific to login pages to avoid false positives on Copilot UI
-    AUTH_DIALOG_SELECTORS = [
-        # Fluent UI dialogs - only check title element (checked with keywords)
+    # Overlay dialog selectors - checked even on Copilot pages
+    # These detect authentication dialogs that appear as overlays on any page
+    AUTH_OVERLAY_DIALOG_SELECTORS = [
+        # Fluent UI dialogs
         '.fui-DialogTitle',
+        '.fui-DialogBody',
+        '[role="dialog"] h2',
+        '[role="dialog"][aria-modal="true"]',
+        '[role="alertdialog"]',
+    ]
+
+    # Extended selectors for authentication dialogs and forms
+    # NOTE: These are only checked on login pages to avoid false positives on Copilot UI
+    AUTH_DIALOG_SELECTORS = [
         # Microsoft login page elements (specific to login.microsoftonline.com)
         '.login-paginated-page',
         '#loginHeader',
@@ -1308,7 +1364,7 @@ class CopilotHandler:
         """Check if an authentication dialog or login form is visible on the current page.
 
         Supports multiple languages and various authentication UI patterns including:
-        - Fluent UI dialogs
+        - Fluent UI dialogs (overlay dialogs on any page including Copilot)
         - Microsoft login pages
         - ADFS/SAML login forms
         - MFA verification screens
@@ -1324,15 +1380,27 @@ class CopilotHandler:
         PlaywrightError = error_types['Error']
 
         try:
-            # Skip auth dialog check on Copilot pages - if auth is needed, user will be
-            # redirected to login page (detected by _is_login_page). This prevents
-            # false positives from Copilot UI elements matching auth selectors.
             current_url = self._page.url
-            if _is_copilot_url(current_url) and not _is_login_page(current_url):
-                logger.debug("Skipping auth dialog check on Copilot page: %s", current_url[:50])
+            is_on_copilot = _is_copilot_url(current_url) and not _is_login_page(current_url)
+
+            # Always check for overlay dialogs (authentication dialogs can appear on any page)
+            for selector in self.AUTH_OVERLAY_DIALOG_SELECTORS:
+                element = self._page.query_selector(selector)
+                if element:
+                    try:
+                        element_text = element.inner_text().strip()
+                        if element_text and any(keyword.lower() in element_text.lower() for keyword in self.AUTH_KEYWORDS):
+                            logger.info("Authentication overlay dialog detected: selector=%s, text=%s", selector, element_text[:50])
+                            return True
+                    except Exception:
+                        pass  # Element may not support inner_text
+
+            # Skip login page selectors on Copilot pages to avoid false positives
+            if is_on_copilot:
+                logger.debug("Skipping login page selectors on Copilot page: %s", current_url[:50])
                 return False
 
-            # Check dialog/form elements with extended selectors
+            # Check login page elements with extended selectors (only on non-Copilot pages)
             for selector in self.AUTH_DIALOG_SELECTORS:
                 element = self._page.query_selector(selector)
                 if element:
@@ -1415,17 +1483,42 @@ class CopilotHandler:
 
                 # If we're back on a Copilot page (not login page), check chat UI again
                 if _is_copilot_url(current_url) and not _is_login_page(current_url):
+                    # Check if we're on an auth flow intermediate page (e.g., /auth, ?auth=)
+                    # Do NOT navigate during auth flow - it will interrupt token exchange
+                    if _is_auth_flow_page(current_url):
+                        logger.debug(
+                            "Auto-login: on auth flow page (%s), waiting for completion...",
+                            current_url[:60]
+                        )
+                        # Don't navigate, just wait for auth to complete
+                        time.sleep(poll_interval)
+                        elapsed += poll_interval
+                        continue
+
                     # If on Copilot domain but not on /chat path (e.g., /home, /landing),
-                    # navigate to chat page to avoid getting stuck
+                    # only navigate if URL has been stable (not actively redirecting)
+                    # This prevents interrupting auth redirects
                     if "/chat" not in current_url:
-                        logger.debug("Auto-login: on Copilot domain but not /chat (%s), navigating...", current_url[:60])
-                        try:
-                            self._page.goto(self.COPILOT_URL, wait_until='commit', timeout=30000)
-                            time.sleep(1.0)  # Brief wait for page load
-                            # Re-check URL after navigation
-                            current_url = self._page.url
-                        except (PlaywrightTimeoutError, PlaywrightError) as nav_err:
-                            logger.debug("Failed to navigate to chat: %s", nav_err)
+                        # Only navigate if URL has been stable for at least 2 checks
+                        # This ensures we're not interrupting an ongoing redirect
+                        if stable_count >= 2:
+                            logger.debug(
+                                "Auto-login: on Copilot domain but not /chat (%s), URL stable, navigating...",
+                                current_url[:60]
+                            )
+                            try:
+                                self._page.goto(self.COPILOT_URL, wait_until='commit', timeout=30000)
+                                time.sleep(1.0)  # Brief wait for page load
+                                # Re-check URL after navigation
+                                current_url = self._page.url
+                                stable_count = 0  # Reset after navigation
+                            except (PlaywrightTimeoutError, PlaywrightError) as nav_err:
+                                logger.debug("Failed to navigate to chat: %s", nav_err)
+                        else:
+                            logger.debug(
+                                "Auto-login: on Copilot domain but not /chat (%s), waiting for redirect to complete...",
+                                current_url[:60]
+                            )
 
                     # Give a bit more time for chat UI to appear after redirect
                     try:

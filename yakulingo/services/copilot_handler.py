@@ -1872,6 +1872,9 @@ class CopilotHandler:
         the taskbar. SW_HIDE causes issues with Edge's multi-process
         architecture where the window may be restored by another process.
 
+        We save the window placement before minimizing to ensure proper
+        restoration when the user clicks the taskbar icon.
+
         Args:
             page_title: The current page title for exact matching
             max_retries: Maximum number of retry attempts (default: 5)
@@ -1884,10 +1887,22 @@ class CopilotHandler:
 
         try:
             import ctypes
+            from ctypes import wintypes
 
             user32 = ctypes.WinDLL('user32', use_last_error=True)
             SW_MINIMIZE = 6
-            SW_SHOWMINNOACTIVE = 7  # Minimize without activating
+            SW_SHOWNORMAL = 1
+
+            # WINDOWPLACEMENT structure for saving/restoring window position
+            class WINDOWPLACEMENT(ctypes.Structure):
+                _fields_ = [
+                    ("length", wintypes.UINT),
+                    ("flags", wintypes.UINT),
+                    ("showCmd", wintypes.UINT),
+                    ("ptMinPosition", wintypes.POINT),
+                    ("ptMaxPosition", wintypes.POINT),
+                    ("rcNormalPosition", wintypes.RECT),
+                ]
 
             # Retry logic with exponential backoff: Edge window may not be ready immediately
             # Wait times: 0.3s, 0.6s, 1.2s, 2.4s (total ~4.5s max wait)
@@ -1906,11 +1921,27 @@ class CopilotHandler:
                 logger.warning("Edge window not found for minimization after %d attempts", max_retries)
                 return False
 
-            # Use SW_SHOWMINNOACTIVE to minimize without activating/flashing
-            result = user32.ShowWindow(edge_hwnd, SW_SHOWMINNOACTIVE)
-            if not result:
-                # Window was already minimized or hidden, try SW_MINIMIZE
-                user32.ShowWindow(edge_hwnd, SW_MINIMIZE)
+            # Save window placement before minimizing to ensure proper restoration
+            # This fixes issues where taskbar click doesn't restore the window
+            wp = WINDOWPLACEMENT()
+            wp.length = ctypes.sizeof(WINDOWPLACEMENT)
+            if user32.GetWindowPlacement(edge_hwnd, ctypes.byref(wp)):
+                # Store the current show state for restoration
+                original_show_cmd = wp.showCmd
+                logger.debug("Saved window placement: showCmd=%d, rcNormalPosition=(%d,%d,%d,%d)",
+                             original_show_cmd,
+                             wp.rcNormalPosition.left, wp.rcNormalPosition.top,
+                             wp.rcNormalPosition.right, wp.rcNormalPosition.bottom)
+
+                # Set showCmd to SW_SHOWNORMAL before minimizing
+                # This ensures Windows remembers the restored state correctly
+                if original_show_cmd not in (SW_SHOWNORMAL, SW_MINIMIZE):
+                    wp.showCmd = SW_SHOWNORMAL
+                    user32.SetWindowPlacement(edge_hwnd, ctypes.byref(wp))
+
+            # Use SW_MINIMIZE to minimize the window
+            # Note: SW_SHOWMINNOACTIVE can cause restoration issues in some environments
+            user32.ShowWindow(edge_hwnd, SW_MINIMIZE)
 
             logger.info("Edge window minimized successfully")
             return True

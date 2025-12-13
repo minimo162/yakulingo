@@ -237,11 +237,16 @@ body {
 .result-panel {
     flex: 1;
     height: 100%;  /* Use 100% to respect parent's height constraint */
-    padding: 1.5rem 2rem;
+    /* Note: padding moved to child elements to prevent "frame" flash during DOM refresh */
     overflow-y: auto;
     display: flex;
     flex-direction: column;
     align-items: center;  /* Center child elements horizontally */
+}
+
+/* Apply padding to result panel's direct child to prevent flickering */
+.result-panel > .nicegui-column {
+    padding: 1.5rem 2rem;
 }
 
 /* Result panel inner content - dynamic width based on monitor resolution, centered */

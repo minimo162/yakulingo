@@ -2912,6 +2912,9 @@ class CopilotHandler:
             # Start a new chat to clear previous context (prevents using old responses)
             self.start_new_chat(skip_clear_wait=skip_clear_wait if attempt == 0 else True)
 
+            # Minimize browser after start_new_chat to prevent window flash
+            self._send_to_background_impl(self._page)
+
             # Check for cancellation after starting new chat
             if self._is_cancelled():
                 logger.info("Translation cancelled after starting new chat")
@@ -2929,6 +2932,9 @@ class CopilotHandler:
 
             # Send the prompt
             self._send_message(prompt)
+
+            # Minimize browser after _send_message to prevent window flash
+            self._send_to_background_impl(self._page)
 
             # Check for cancellation after sending message (before waiting for response)
             if self._is_cancelled():
@@ -3109,6 +3115,9 @@ class CopilotHandler:
             self.start_new_chat()
             logger.info("[TIMING] start_new_chat: %.2fs", time.time() - new_chat_start)
 
+            # Minimize browser after start_new_chat to prevent window flash
+            self._send_to_background_impl(self._page)
+
             # Check for cancellation after starting new chat
             if self._is_cancelled():
                 logger.info("Translation cancelled after starting new chat (single)")
@@ -3130,6 +3139,9 @@ class CopilotHandler:
             send_start = time.time()
             self._send_message(prompt)
             logger.info("[TIMING] _send_message: %.2fs", time.time() - send_start)
+
+            # Minimize browser after _send_message to prevent window flash
+            self._send_to_background_impl(self._page)
 
             # Check for cancellation after sending message
             if self._is_cancelled():

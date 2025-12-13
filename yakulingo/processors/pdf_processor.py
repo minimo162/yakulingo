@@ -2177,81 +2177,23 @@ class PdfProcessor(FileProcessor):
                             line_height,
                         )
 
-                        # Fix for single-line blocks that expand to too many lines
-                        # Unlike PDFMathTranslate's fixed font size approach, we reduce
-                        # font size for single-line blocks to prevent severe layout overflow
-                        if (
-                            original_line_count == 1
-                            and len(lines) > MAX_LINES_FOR_SINGLE_LINE_BLOCK
-                        ):
-                            # Calculate reduced font size to fit in target lines
-                            # reduction_factor < 1 means smaller font
-                            reduction_factor = MAX_LINES_FOR_SINGLE_LINE_BLOCK / len(lines)
-                            reduced_font_size = max(
-                                MIN_FONT_SIZE,
-                                font_size * reduction_factor
+                        # PDFMathTranslate compliant: Font size is FIXED
+                        # Unlike previous approach that reduced font size for overflow,
+                        # we now preserve the original font size and only adjust line height.
+                        # This ensures consistent, readable text across the document.
+                        #
+                        # If text overflows the box, it will extend beyond the original
+                        # bounding box, which is the same behavior as PDFMathTranslate.
+                        # The line_height was already compressed in calculate_line_height_with_font().
+                        #
+                        # For table cells, we also preserve font size. The text may overflow
+                        # the cell boundary, but this is acceptable to maintain readability.
+                        if len(lines) > original_line_count * 2 and original_line_count >= 1:
+                            logger.info(
+                                "[Layout] Block %s: text expanded from %d to %d lines. "
+                                "Font size preserved at %.1fpt (PDFMathTranslate compliant).",
+                                block_id, original_line_count, len(lines), font_size
                             )
-
-                            # Recalculate with reduced font size
-                            if reduced_font_size < font_size:
-                                font_size, lines = calculate_adjusted_font_size(
-                                    translated,
-                                    box_width,
-                                    box_height,
-                                    reduced_font_size,
-                                    font_id,
-                                    font_registry,
-                                    line_height,
-                                )
-                                # Recalculate line height for new font size
-                                line_height = calculate_line_height_with_font(
-                                    translated, box_pdf,
-                                    font_size, font_id, font_registry, target_lang
-                                )
-                                logger.info(
-                                    "[Layout] Single-line block %s: reduced font_size "
-                                    "from %.1f to %.1f to fit %d lines (was ~%d lines)",
-                                    block_id, initial_font_size, font_size,
-                                    len(lines), int(1 / reduction_factor * MAX_LINES_FOR_SINGLE_LINE_BLOCK)
-                                )
-
-                        # PDFMathTranslate compliant: Aggressive font reduction for table cells
-                        # Table cells have fixed boundaries - we must fit text within the cell
-                        # by reducing font size, not by expanding the box
-                        if is_table_cell and len(lines) > original_line_count:
-                            # Target: fit translated text in same number of lines as original
-                            target_lines = max(1, original_line_count)
-                            if len(lines) > target_lines:
-                                # Calculate reduction factor to fit in target lines
-                                # Use sqrt for more gradual reduction (text width scales with font size)
-                                reduction_factor = (target_lines / len(lines)) ** 0.7
-                                reduced_font_size = max(
-                                    MIN_FONT_SIZE,
-                                    font_size * reduction_factor
-                                )
-
-                                if reduced_font_size < font_size:
-                                    prev_lines_count = len(lines)
-                                    font_size, lines = calculate_adjusted_font_size(
-                                        translated,
-                                        box_width,
-                                        box_height,
-                                        reduced_font_size,
-                                        font_id,
-                                        font_registry,
-                                        line_height,
-                                    )
-                                    # Recalculate line height for new font size
-                                    line_height = calculate_line_height_with_font(
-                                        translated, box_pdf,
-                                        font_size, font_id, font_registry, target_lang
-                                    )
-                                    logger.info(
-                                        "[Table] Block %s: reduced font_size from %.1f to %.1f "
-                                        "to fit table cell (target %d lines, was %d, now %d)",
-                                        block_id, initial_font_size, font_size,
-                                        target_lines, prev_lines_count, len(lines)
-                                    )
 
                         # DEBUG: Log block processing details with layout info
                         logger.debug(

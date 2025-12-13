@@ -49,13 +49,14 @@ MAX_FONT_SIZE = 72.0  # Allow large font sizes
 # Characters with font size <= base_size * threshold are considered sub/superscript
 SUBSCRIPT_SUPERSCRIPT_THRESHOLD = 0.79
 
-# Line height compression constants
-MIN_LINE_HEIGHT = 1.0
+# Line height compression constants (PDFMathTranslate compliant)
+# PDFMathTranslate uses line_height >= 0.95 as the minimum (allowing 0.95-1.0 range)
+# This preserves font size while compressing line spacing to fit text
+MIN_LINE_HEIGHT = 0.95
 LINE_HEIGHT_COMPRESSION_STEP = 0.05
 
-# Single-line block expansion limit
-# When a single-line block would expand to more than this many lines,
-# reduce font size to fit within this limit instead of allowing overflow
+# Single-line block expansion limit (legacy - no longer used for font size reduction)
+# PDFMathTranslate approach: font size is FIXED, only line height is adjusted
 MAX_LINES_FOR_SINGLE_LINE_BLOCK = 3
 
 # Formula font pattern (PDFMathTranslate reference)

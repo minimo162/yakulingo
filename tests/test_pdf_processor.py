@@ -1094,7 +1094,7 @@ class TestCalculateLineHeight:
         # Long text in small box should compress line height
         long_text = "A" * 100
         height = calculate_line_height(long_text, [0, 0, 50, 30], 12.0, "en")
-        assert height == 1.0  # Minimum
+        assert height == 0.95  # Minimum (PDFMathTranslate compliant)
 
     def test_unknown_language_uses_default(self):
         height = calculate_line_height("Test", [0, 0, 100, 100], 12.0, "unknown")
@@ -1596,7 +1596,8 @@ class TestConstants:
 
     def test_line_height_constants(self):
         """Test line height constants are properly defined"""
-        assert MIN_LINE_HEIGHT == 1.0
+        # PDFMathTranslate compliant: MIN_LINE_HEIGHT is 0.95
+        assert MIN_LINE_HEIGHT == 0.95
         assert LINE_HEIGHT_COMPRESSION_STEP == 0.05
         assert LINE_HEIGHT_COMPRESSION_STEP > 0
 

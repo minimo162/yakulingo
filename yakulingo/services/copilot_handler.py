@@ -3281,12 +3281,61 @@ class CopilotHandler:
 
                 for send_attempt in range(MAX_SEND_RETRIES):
                     # Ensure input element has focus before pressing Enter
-                    # Use JS click + focus for more reliable focus setting
+                    # Check if focus is already on the input, if not, set it
                     try:
-                        input_elem.evaluate('el => { el.click(); el.focus(); }')
-                        time.sleep(0.2)  # Increased from 0.1s for more reliable first send
-                    except Exception:
-                        pass
+                        has_focus = input_elem.evaluate(
+                            'el => document.activeElement === el || el.contains(document.activeElement)'
+                        )
+                        if not has_focus:
+                            logger.debug("Input lost focus, attempting to restore (attempt %d)", send_attempt + 1)
+                            # Try multiple methods to restore focus
+                            # Method 1: click + focus
+                            input_elem.evaluate('el => { el.click(); el.focus(); }')
+                            time.sleep(0.1)
+
+                            # Verify focus was set
+                            has_focus = input_elem.evaluate(
+                                'el => document.activeElement === el || el.contains(document.activeElement)'
+                            )
+                            if not has_focus:
+                                # Method 2: scrollIntoView + focus
+                                logger.debug("Method 1 failed, trying scrollIntoView + focus")
+                                input_elem.evaluate('el => { el.scrollIntoView({block: "center"}); el.focus(); }')
+                                time.sleep(0.1)
+
+                                has_focus = input_elem.evaluate(
+                                    'el => document.activeElement === el || el.contains(document.activeElement)'
+                                )
+                                if not has_focus:
+                                    # Method 3: dispatchEvent focus
+                                    logger.debug("Method 2 failed, trying dispatchEvent")
+                                    input_elem.evaluate('''el => {
+                                        el.dispatchEvent(new FocusEvent('focus', { bubbles: true }));
+                                        el.focus();
+                                    }''')
+                                    time.sleep(0.1)
+
+                            # Final focus check
+                            has_focus = input_elem.evaluate(
+                                'el => document.activeElement === el || el.contains(document.activeElement)'
+                            )
+                            if has_focus:
+                                logger.debug("Focus successfully restored")
+                            else:
+                                logger.warning("Could not restore focus to input element (attempt %d)", send_attempt + 1)
+                        else:
+                            logger.debug("Input element already has focus")
+
+                        time.sleep(0.15)  # Brief pause after focus handling
+                    except Exception as focus_err:
+                        logger.debug("Focus check/restore failed: %s", focus_err)
+                        # Fallback: just try click + focus
+                        try:
+                            input_elem.evaluate('el => { el.click(); el.focus(); }')
+                            time.sleep(0.2)
+                        except Exception:
+                            pass
+
                     input_elem.press("Enter")
                     time.sleep(SEND_RETRY_WAIT)
 

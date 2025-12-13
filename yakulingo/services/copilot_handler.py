@@ -811,6 +811,10 @@ class CopilotHandler:
                 # Disable browser sync to avoid Edge profile sign-in prompts
                 # (YakuLingo uses isolated profile, sync is not needed)
                 "--disable-sync",
+                # Disable Edge sign-in prompts and Microsoft account features
+                # This prevents "認証が必要です" dialogs from Edge itself
+                "--disable-features=msSignIn,msAADSignIn,msAccountSignIn,EdgeCollections",
+                "--suppress-message-center-popups",
             ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                cwd=local_cwd if sys.platform == "win32" else None,
                startupinfo=startupinfo,

@@ -1884,10 +1884,12 @@ class PdfProcessor(FileProcessor):
                     continue
 
                 # Build list of blocks to process for this page
-                # PDFMathTranslate compliant: Remove ALL text and re-draw ALL blocks
-                # This ensures no text overlap issues from coordinate mismatches
+                # Layout-preserving mode (PDFMathTranslate-inspired):
+                # - Remove ONLY the original text for translated blocks
+                # - Keep all other content intact (prevents global layout drift)
                 page_prefix = f"page_{page_idx}_"
-                blocks_to_process = []
+                blocks_to_process: list[tuple[str, str, bool]] = []
+                target_bboxes: list[tuple[float, float, float, float]] = []
 
                 # Fallback: Get block info using PyMuPDF (if no text_blocks provided)
                 pymupdf_blocks_dict = {}
@@ -1898,32 +1900,85 @@ class PdfProcessor(FileProcessor):
                             block_id = f"page_{page_idx}_block_{block_idx}"
                             pymupdf_blocks_dict[block_id] = block
 
-                # Create content stream replacer for this page
-                # PDFMathTranslate compliant: Remove ALL text from content stream
-                # All blocks (translated and non-translated) will be re-drawn
+                # Build blocks_to_process and target_bboxes for this page
+                if text_blocks:
+                    # Select only translated blocks on this page
+                    for block_id, translated in translations.items():
+                        if not block_id.startswith(page_prefix):
+                            continue
+
+                        text_block = block_map.get(block_id)
+                        if not text_block or not text_block.metadata:
+                            continue
+                        bbox = text_block.metadata.get('bbox')
+                        if not bbox or len(bbox) < 4:
+                            continue
+
+                        # bbox is expected in PDF coordinates (x0, y0, x1, y1)
+                        x0, y0, x1, y1 = bbox[0], bbox[1], bbox[2], bbox[3]
+                        if y0 >= y1:
+                            # Defensive: handle unexpected image-like coordinates
+                            y0_pdf = page_height - y1
+                            y1_pdf = page_height - y0
+                            y0, y1 = y0_pdf, y1_pdf
+
+                        target_bboxes.append((x0, y0, x1, y1))
+
+                        if formula_vars_map and block_id in formula_vars_map:
+                            translated = restore_formula_placeholders(
+                                translated, formula_vars_map[block_id]
+                            )
+                        blocks_to_process.append((block_id, translated, False))
+                else:
+                    # Fallback: translated blocks only (PyMuPDF IDs)
+                    for block_id, translated in translations.items():
+                        if not block_id.startswith(page_prefix):
+                            continue
+
+                        block = pymupdf_blocks_dict.get(block_id)
+                        bbox_img = block.get("bbox") if block else None
+                        if not (bbox_img and len(bbox_img) == 4):
+                            continue
+
+                        try:
+                            x0, y0, x1, y1 = convert_to_pdf_coordinates(
+                                [bbox_img[0], bbox_img[1], bbox_img[2], bbox_img[3]],
+                                page_height,
+                            )
+                        except Exception:
+                            continue
+
+                        target_bboxes.append((x0, y0, x1, y1))
+
+                        if formula_vars_map and block_id in formula_vars_map:
+                            translated = restore_formula_placeholders(
+                                translated, formula_vars_map[block_id]
+                            )
+                        blocks_to_process.append((block_id, translated, False))
+
+                # No translations on this page -> keep page unchanged
+                if not blocks_to_process:
+                    continue
+
+                # Create content stream replacer for this page (selective removal)
                 replacer = ContentStreamReplacer(doc, font_registry, preserve_graphics=True)
                 try:
-                    # Pass target_bboxes=None to remove ALL text (PDFMathTranslate approach)
-                    # This eliminates coordinate matching issues with selective filtering
                     replacer.set_base_stream(
                         page,
-                        target_bboxes=None,  # Remove ALL text
-                        tolerance=5.0,
+                        target_bboxes=target_bboxes,  # Remove only translated text
+                        tolerance=3.0,
                     )
                     logger.info(
-                        "Page %d: removing ALL text (PDFMathTranslate compliant)",
-                        page_num
+                        "Page %d: removing translated text only (targets=%d)",
+                        page_num, len(target_bboxes)
                     )
                 except MemoryError as e:
-                    # CRITICAL: Memory exhausted - abort processing immediately
-                    # Continuing would likely cause more OOM errors or crash
                     logger.critical(
                         "CRITICAL: Out of memory while parsing page %d content stream. "
-                        "Aborting PDF translation to prevent data loss.",
+                        "Aborting PDF translation.",
                         page_num
                     )
                     self._record_failed_page(page_num, f"MemoryError: {e}")
-                    # Clean up and re-raise to let caller handle gracefully
                     try:
                         doc.close()
                     except Exception:
@@ -1936,49 +1991,6 @@ class PdfProcessor(FileProcessor):
                     logger.error("Failed to parse page %d content stream: %s", page_num, e)
                     self._record_failed_page(page_num, f"Content stream parse error: {e}")
                     continue
-
-                if text_blocks:
-                    # Build blocks_to_process list
-                    # PDFMathTranslate compliant: ALL blocks must be re-drawn
-                    # (since we removed ALL text from content stream)
-                    for text_block in text_blocks:
-                        if not text_block.id.startswith(page_prefix):
-                            continue
-                        block_id = text_block.id
-                        skip_translation = text_block.metadata.get('skip_translation', False)
-
-                        if block_id in translations:
-                            # Translated block - use translated text
-                            translated = translations[block_id]
-                            # Restore formula placeholders if formula_vars_map provided
-                            if formula_vars_map and block_id in formula_vars_map:
-                                translated = restore_formula_placeholders(
-                                    translated, formula_vars_map[block_id]
-                                )
-                            blocks_to_process.append((block_id, translated, False))
-                        else:
-                            # Non-translated block (skip_translation or not in translations)
-                            # PDFMathTranslate compliant: Re-draw with ORIGINAL text
-                            # This is necessary because we removed ALL text from content stream
-                            original_text = text_block.text
-                            if original_text and original_text.strip():
-                                blocks_to_process.append((block_id, original_text, True))
-                                if skip_translation:
-                                    result['preserved'] += 1
-                                    logger.debug(
-                                        "Re-drawing original text for non-translated block: %s",
-                                        block_id
-                                    )
-                else:
-                    # Fallback: only process translated blocks
-                    for block_id, translated in translations.items():
-                        if not block_id.startswith(page_prefix):
-                            continue
-                        if formula_vars_map and block_id in formula_vars_map:
-                            translated = restore_formula_placeholders(
-                                translated, formula_vars_map[block_id]
-                            )
-                        blocks_to_process.append((block_id, translated, False))
 
                 # Process all blocks for this page
                 for block_id, text_to_render, is_preserved_original in blocks_to_process:

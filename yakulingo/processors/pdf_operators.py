@@ -1105,10 +1105,17 @@ class ContentStreamReplacer:
         if not self._preserve_graphics or not self._parser:
             return self
 
-        # Filter Form XObjects first (they contain embedded text)
-        # Note: Form XObjects are filtered completely for now
-        # (selective filtering of XObjects is more complex)
-        self._filter_form_xobjects(page)
+        # Filter Form XObjects first (they can contain embedded text).
+        #
+        # IMPORTANT:
+        # - In "remove all text" mode (target_bboxes is None), we filter XObjects too,
+        #   because we'll redraw all text anyway.
+        # - In selective mode, do NOT filter XObjects. Filtering them entirely would
+        #   delete unrelated text and break layout when we are only redrawing a subset.
+        if target_bboxes is None:
+            # Note: Form XObjects are filtered completely for now
+            # (selective filtering of XObjects is more complex)
+            self._filter_form_xobjects(page)
 
         if target_bboxes is not None:
             # Selective filtering: only remove text at target positions

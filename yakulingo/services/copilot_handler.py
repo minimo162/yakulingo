@@ -816,8 +816,7 @@ class CopilotHandler:
             self.edge_process = subprocess.Popen([
                 edge_exe,
                 f"--remote-debugging-port={self.cdp_port}",
-                # Use the default Edge profile (user's logged-in session)
-                # This avoids repeated M365 authentication prompts that occur with isolated profiles
+                f"--user-data-dir={self.profile_dir}",
                 "--remote-allow-origins=*",
                 "--no-first-run",
                 "--no-default-browser-check",
@@ -825,6 +824,9 @@ class CopilotHandler:
                 "--proxy-bypass-list=localhost;127.0.0.1",
                 # Start minimized to avoid visual flash when login is not required
                 "--start-minimized",
+                # Disable browser sync to avoid Edge profile sign-in prompts
+                # (YakuLingo uses isolated profile, sync is not needed)
+                "--disable-sync",
                 # Disable popup blocking to allow M365 auth flow to open auth windows
                 # (Without this, clicking "Continue" on auth dialogs leads to about:blank)
                 "--disable-popup-blocking",

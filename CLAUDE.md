@@ -1177,6 +1177,29 @@ pdf_y = page_height - (img_y / scale)
 PDF翻訳では**低レベルAPI（PDFMathTranslate準拠）のみ**を使用します。
 低レベルAPIはPDFオペレータを直接生成し、より精密なレイアウト制御が可能です。
 
+**白背景描画の禁止（PDFMathTranslate準拠）:**
+
+⚠️ **重要: 白背景矩形の描画は禁止です**
+
+PDFMathTranslateは元テキストを隠すために白い矩形を描画しません。
+代わりに`ContentStreamReplacer.set_base_stream()`を使用して、
+元のテキストオペレータを削除しつつグラフィックス（表の背景色、罫線等）を保持します。
+
+**禁止理由:**
+- 白背景を描画すると表のセル色分けが消える
+- 罫線や図形などの視覚要素が隠れる
+- PDFMathTranslateの設計思想に反する
+
+```python
+# ❌ 禁止: 白背景の描画
+page.draw_rect(rect, color=WHITE, fill=WHITE)
+
+# ✅ 正しい方法: ContentStreamReplacerでテキストのみ置換
+replacer = ContentStreamReplacer()
+replacer.set_base_stream(xref, original_stream)  # グラフィックスを保持
+replacer.apply_to_page(page)
+```
+
 **フォント種別に応じたテキストエンコーディング（PDFMathTranslate converter.py準拠）:**
 
 ```python

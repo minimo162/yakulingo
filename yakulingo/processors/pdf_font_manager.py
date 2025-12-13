@@ -160,6 +160,21 @@ def _find_font_file(font_names: list[str]) -> Optional[str]:
     font_dirs = _get_system_font_dirs()
     result = None
 
+    def _isfile_any(path: str) -> Optional[str]:
+        """
+        Check file existence with tolerant path separators.
+
+        Some callers (and tests) may provide POSIX-style paths on Windows; and
+        Windows generally accepts forward slashes as path separators. Try both
+        variants to make lookups robust across platforms.
+        """
+        if os.path.isfile(path):
+            return path
+        alt = path.replace("\\", "/")
+        if alt != path and os.path.isfile(alt):
+            return alt
+        return None
+
     for font_name in font_names:
         # Skip if already known to not exist
         if font_name in _font_path_cache and _font_path_cache[font_name] is None:
@@ -170,8 +185,9 @@ def _find_font_file(font_names: list[str]) -> Optional[str]:
                 continue
             # Direct path
             direct_path = os.path.join(font_dir, font_name)
-            if os.path.isfile(direct_path):
-                result = direct_path
+            direct_hit = _isfile_any(direct_path)
+            if direct_hit:
+                result = direct_hit
                 break
             # Recursive search (2 levels deep for Linux font structure)
             # Linux fonts are often in subdirectories like:
@@ -183,8 +199,9 @@ def _find_font_file(font_names: list[str]) -> Optional[str]:
                     if os.path.isdir(subdir_path):
                         # Level 1 subdirectory
                         font_path = os.path.join(subdir_path, font_name)
-                        if os.path.isfile(font_path):
-                            result = font_path
+                        font_hit = _isfile_any(font_path)
+                        if font_hit:
+                            result = font_hit
                             break
                         # Level 2 subdirectory (for Linux font structure)
                         try:
@@ -192,8 +209,9 @@ def _find_font_file(font_names: list[str]) -> Optional[str]:
                                 subsubdir_path = os.path.join(subdir_path, subsubdir)
                                 if os.path.isdir(subsubdir_path):
                                     font_path = os.path.join(subsubdir_path, font_name)
-                                    if os.path.isfile(font_path):
-                                        result = font_path
+                                    font_hit = _isfile_any(font_path)
+                                    if font_hit:
+                                        result = font_hit
                                         break
                         except PermissionError:
                             continue

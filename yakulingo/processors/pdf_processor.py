@@ -730,6 +730,8 @@ def calculate_adjusted_font_size(
     font_registry: 'FontRegistry',
     line_height: float = 1.2,
     min_font_size: float = MIN_FONT_SIZE,
+    *,
+    allow_wrap: bool = True,
 ) -> tuple[float, list[str]]:
     """
     Calculate font size and split text into lines.
@@ -759,9 +761,13 @@ def calculate_adjusted_font_size(
     Returns:
         Tuple of (font_size, lines) - font_size is always initial_font_size
     """
-    lines = split_text_into_lines_with_font(
-        text, box_width, initial_font_size, font_id, font_registry
-    )
+    if allow_wrap:
+        lines = split_text_into_lines_with_font(
+            text, box_width, initial_font_size, font_id, font_registry
+        )
+    else:
+        # Preserve explicit newlines but do not auto-wrap (PDFMathTranslate brk=False behavior)
+        lines = text.split('\n') if text else []
 
     # PDFMathTranslate approach: no font size shrinking
     # This ensures consistent font sizes across all blocks in the document
@@ -806,12 +812,15 @@ def calculate_line_height(
 
 def calculate_line_height_with_font(
     translated_text: str,
-    box: list[float],
+    box_width: float,
+    box_height: float,
     font_size: float,
     font_id: str,
     font_registry: 'FontRegistry',
     lang_out: str,
     is_table_cell: bool = False,
+    *,
+    allow_wrap: bool = True,
 ) -> float:
     """
     Calculate line height with dynamic compression using actual font metrics.
@@ -833,19 +842,19 @@ def calculate_line_height_with_font(
     Returns:
         Optimized line height multiplier
     """
-    x1, y1, x2, y2 = box
-    box_width = x2 - x1
-    box_height = y2 - y1
-
     if box_height <= 0 or box_width <= 0:
         return LANG_LINEHEIGHT_MAP.get(lang_out.lower(), DEFAULT_LINE_HEIGHT)
 
     line_height = LANG_LINEHEIGHT_MAP.get(lang_out.lower(), DEFAULT_LINE_HEIGHT)
 
     # Use actual font metrics to calculate lines needed
-    lines = split_text_into_lines_with_font(
-        translated_text, box_width, font_size, font_id, font_registry
-    )
+    if allow_wrap:
+        lines = split_text_into_lines_with_font(
+            translated_text, box_width, font_size, font_id, font_registry
+        )
+    else:
+        # Preserve explicit newlines but do not auto-wrap (PDFMathTranslate brk=False behavior)
+        lines = translated_text.split('\n') if translated_text else []
     lines_needed = len(lines)
 
     # Use tighter minimum line height for table cells
@@ -2065,8 +2074,19 @@ class PdfProcessor(FileProcessor):
                             layout_class = text_block.metadata.get('layout_class', LAYOUT_BACKGROUND)
                             is_table_cell = layout_class >= LAYOUT_TABLE_BASE
 
-                            # Fallback: If metadata doesn't have it, estimate from box_height and font_size
-                            if original_line_count <= 1 and stored_font_size and stored_font_size > 0:
+                            # Fallback: Estimate from box_height and font_size only when needed.
+                            # Avoid overriding single-line paragraphs (brk=False), because tall bboxes
+                            # in forms can otherwise force wrapping and break layout.
+                            if (
+                                original_line_count <= 1
+                                and stored_font_size
+                                and stored_font_size > 0
+                                and (
+                                    is_table_cell
+                                    or paragraph is None
+                                    or bool(getattr(paragraph, 'brk', False))
+                                )
+                            ):
                                 estimated_lines = box_height / (stored_font_size * DEFAULT_LINE_HEIGHT)
                                 original_line_count = max(1, round(estimated_lines))
                                 if original_line_count > 1:
@@ -2186,6 +2206,7 @@ class PdfProcessor(FileProcessor):
                         # PDFMathTranslate compliant: Get font size from extraction metadata
                         # TextBlock stores font size from pdfminer extraction (paragraph.size)
                         initial_font_size = None
+                        paragraph_brk = bool(paragraph is not None and getattr(paragraph, 'brk', False))
 
                         # Method 1: Use stored font size from TextBlock (most accurate)
                         if stored_font_size is not None:
@@ -2203,6 +2224,70 @@ class PdfProcessor(FileProcessor):
 
                         initial_font_size = max(MIN_FONT_SIZE, min(initial_font_size, MAX_FONT_SIZE))
 
+                        # Apply optional global font size adjustment (JP->EN tends to expand).
+                        # Keep consistent with FontSizeAdjuster semantics:
+                        # - Never increase above original size
+                        # - Respect user-configured minimum
+                        if settings and direction == "jp_to_en":
+                            try:
+                                size_adjust = float(getattr(settings, 'font_size_adjustment_jp_to_en', 0.0) or 0.0)
+                                min_setting = float(getattr(settings, 'font_size_min', 6.0) or 6.0)
+                                min_setting = max(MIN_FONT_SIZE, min_setting)
+                                adjusted = initial_font_size + size_adjust
+                                initial_font_size = min(initial_font_size, max(adjusted, min_setting))
+                            except (TypeError, ValueError):
+                                pass
+
+                        # PDFMathTranslate compliant wrapping rule:
+                        # - Table cells always wrap (fixed boundaries)
+                        # - Non-table blocks wrap only if the original paragraph wrapped (brk=True)
+                        #   or we know the original had multiple lines.
+                        allow_wrap = bool(is_table_cell or paragraph_brk or (original_line_count > 1))
+
+                        # For non-wrapping blocks, prefer keeping a single line by shrinking
+                        # within the layout-aware expandable width (prevents vertical overlap).
+                        if not allow_wrap and box_width > 0:
+                            x_start = getattr(paragraph, 'x', None) if paragraph is not None else None
+                            if x_start is None:
+                                x_start = pdf_x1
+
+                            right_boundary = pdf_x1 + (expandable_width if expandable_width > 0 else box_width)
+                            available_width = right_boundary - x_start
+
+                            if available_width > 0:
+                                candidate_lines = translated.split('\n') if translated else []
+                                max_line_width = 0.0
+                                for ln in candidate_lines:
+                                    ln = ln.rstrip(' ')
+                                    if not ln:
+                                        continue
+                                    max_line_width = max(
+                                        max_line_width,
+                                        op_gen.calculate_text_width(font_id, ln, initial_font_size),
+                                    )
+
+                                if max_line_width > available_width + 0.1:
+                                    scale = available_width / max_line_width if max_line_width > 0 else 1.0
+                                    fitted = initial_font_size * scale
+                                    min_setting = MIN_FONT_SIZE
+                                    if settings:
+                                        try:
+                                            min_setting = float(
+                                                getattr(settings, 'font_size_min', MIN_FONT_SIZE) or MIN_FONT_SIZE
+                                            )
+                                        except (TypeError, ValueError):
+                                            min_setting = MIN_FONT_SIZE
+                                    min_setting = max(MIN_FONT_SIZE, min_setting)
+                                    fitted = max(min_setting, min(initial_font_size, fitted))
+                                    if fitted < initial_font_size:
+                                        logger.debug(
+                                            "[Layout] Block %s: single-line fit width %.1f->%.1f "
+                                            "(avail=%.1f, text=%.1f, brk=%s)",
+                                            block_id, initial_font_size, fitted,
+                                            available_width, max_line_width, paragraph_brk
+                                        )
+                                        initial_font_size = fitted
+
                         # Unified box_pdf for both modes (PDF coordinates)
                         # Format: [x1, y0, x2, y1] where y0 < y1 (bottom < top)
                         box_pdf = [pdf_x1, pdf_y0, pdf_x2, pdf_y1]
@@ -2210,9 +2295,15 @@ class PdfProcessor(FileProcessor):
                         # Calculate line height with dynamic compression using font metrics
                         # Pass is_table_cell for more aggressive compression in tables
                         line_height = calculate_line_height_with_font(
-                            translated, box_pdf,
-                            initial_font_size, font_id, font_registry, target_lang,
-                            is_table_cell=is_table_cell
+                            translated,
+                            box_width,
+                            box_height,
+                            initial_font_size,
+                            font_id,
+                            font_registry,
+                            target_lang,
+                            is_table_cell=is_table_cell,
+                            allow_wrap=allow_wrap,
                         )
 
                         # Calculate adjusted font size using actual font metrics
@@ -2225,6 +2316,7 @@ class PdfProcessor(FileProcessor):
                             font_id,
                             font_registry,
                             line_height,
+                            allow_wrap=allow_wrap,
                         )
 
                         # For table cells: allow font size reduction if text overflows
@@ -2322,9 +2414,16 @@ class PdfProcessor(FileProcessor):
                             bg_y0 = pdf_y0
                             bg_y1 = pdf_y1
 
-                        # Use expanded box_width for background (layout-aware)
+                        # Keep background within the ORIGINAL bbox to avoid covering
+                        # adjacent graphics (e.g., table borders).
                         bg_x0 = pdf_x1
-                        bg_x1 = pdf_x1 + box_width
+                        bg_x1 = pdf_x1 + original_box_width
+
+                        # Clamp Y range to bbox
+                        bg_y0 = max(pdf_y0, bg_y0)
+                        bg_y1 = min(pdf_y1, bg_y1)
+                        if bg_y1 < bg_y0:
+                            bg_y0, bg_y1 = pdf_y0, pdf_y1
 
                         replacer.add_white_background(bg_x0, bg_y0, bg_x1, bg_y1, margin=2.0)
 
@@ -3271,17 +3370,30 @@ class PdfProcessor(FileProcessor):
             # Extract formula vars for this block
             block_vars = extract_formula_vars_for_block(text, var)
 
-            # Calculate original_line_count from paragraph height and font size
-            # This is critical for box_width expansion in apply_translations
-            para_height = para.y1 - para.y0
-            font_size = para.size if para.size > 0 else 10.0  # Fallback to 10pt
-            # Estimate line count: height / (font_size * line_spacing)
-            # Use DEFAULT_LINE_HEIGHT (1.1) as the assumed line spacing
-            estimated_line_count = para_height / (font_size * DEFAULT_LINE_HEIGHT) if font_size > 0 else 1
-            original_line_count = max(1, round(estimated_line_count))
-
             # Check if this is a table cell (table cells cannot expand)
             is_table_cell = para.layout_class >= LAYOUT_TABLE_BASE
+
+            # Calculate original_line_count from paragraph height and font size.
+            #
+            # PDFMathTranslate compliant:
+            # - Paragraph.brk=True indicates the original text wrapped across lines.
+            # - For non-table blocks with brk=False, treat as single-line to avoid
+            #   introducing new wraps (which often causes vertical overlap in forms).
+            para_height = para.y1 - para.y0
+            font_size = para.size if para.size > 0 else 10.0  # Fallback to 10pt
+            estimated_line_count = (
+                para_height / (font_size * DEFAULT_LINE_HEIGHT) if font_size > 0 else 1
+            )
+            estimated_line_count_int = max(1, round(estimated_line_count))
+
+            if is_table_cell:
+                original_line_count = estimated_line_count_int
+            else:
+                original_line_count = (
+                    max(2, estimated_line_count_int)
+                    if getattr(para, 'brk', False)
+                    else 1
+                )
 
             # Calculate expandable width using layout info
             # This allows text to expand horizontally when there's space on the right
@@ -3503,7 +3615,10 @@ class PdfProcessor(FileProcessor):
                             sstk[-1] += placeholder
                         else:
                             sstk.append(placeholder)
-                            pstk.append(create_paragraph_from_char(char, line_break, char_cls))
+                            # PDFMathTranslate compliant: paragraphs start with brk=False.
+                            # brk is set to True only when we detect an actual line break
+                            # within the paragraph.
+                            pstk.append(create_paragraph_from_char(char, False, char_cls))
 
                     in_formula = False
                     vstk = []
@@ -3513,11 +3628,20 @@ class PdfProcessor(FileProcessor):
                 if new_paragraph:
                     # Start new paragraph
                     sstk.append("")
-                    pstk.append(create_paragraph_from_char(char, line_break, char_cls))
+                    pstk.append(create_paragraph_from_char(char, False, char_cls))
 
                 if not sstk:
                     sstk.append("")
-                    pstk.append(create_paragraph_from_char(char, line_break, char_cls))
+                    pstk.append(create_paragraph_from_char(char, False, char_cls))
+
+                # PDFMathTranslate compliant:
+                # When we detect an in-paragraph line break, record it on the paragraph
+                # and insert a separating space so words don't concatenate across lines.
+                if line_break and not new_paragraph:
+                    if sstk[-1] and not sstk[-1].endswith(" "):
+                        sstk[-1] += " "
+                    if pstk:
+                        pstk[-1].brk = True
 
                 # Add space between words if gap is significant
                 if has_prev and char_x0 > prev_x1 + WORD_SPACE_X_THRESHOLD:

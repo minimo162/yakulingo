@@ -1276,6 +1276,11 @@ class CopilotHandler:
                         return self._wait_for_login_completion(page)
                     return False
 
+                # Ensure Edge is minimized if it came to foreground during wait
+                # This prevents Edge from staying visible when login is not required
+                if not wait_for_login:
+                    self._ensure_edge_minimized()
+
                 logger.debug("Chat input not found at step %d/%d, continuing...", step + 1, self.SELECTOR_CHAT_INPUT_MAX_STEPS)
 
         if chat_input_found:
@@ -1632,6 +1637,11 @@ class CopilotHandler:
                         self._minimize_edge_window(None)
 
                 last_url = current_url
+
+                # Check if Edge came to foreground unexpectedly and minimize if needed
+                # This handles cases where Edge steals focus during auth redirects
+                self._ensure_edge_minimized()
+
                 time.sleep(poll_interval)
                 elapsed += poll_interval
                 # Reset error count on successful iteration
@@ -1885,17 +1895,20 @@ class CopilotHandler:
                         new_width = max(current_width, self.MIN_EDGE_WINDOW_WIDTH)
                         new_height = max(current_height, self.MIN_EDGE_WINDOW_HEIGHT)
 
-                        # Get screen dimensions to center the window
-                        screen_width = user32.GetSystemMetrics(0)  # SM_CXSCREEN
-                        screen_height = user32.GetSystemMetrics(1)  # SM_CYSCREEN
+                        # Get screen work area (excludes taskbar) for proper positioning
+                        work_area = wintypes.RECT()
+                        SPI_GETWORKAREA = 0x0030
+                        user32.SystemParametersInfoW(SPI_GETWORKAREA, 0, ctypes.byref(work_area), 0)
+                        screen_width = work_area.right - work_area.left
+                        screen_height = work_area.bottom - work_area.top
 
-                        # Center the window on screen
-                        new_x = (screen_width - new_width) // 2
-                        new_y = (screen_height - new_height) // 2
+                        # Center the window on screen work area
+                        new_x = work_area.left + (screen_width - new_width) // 2
+                        new_y = work_area.top + (screen_height - new_height) // 2
 
                         # Ensure window stays within screen bounds
-                        new_x = max(0, min(new_x, screen_width - new_width))
-                        new_y = max(0, min(new_y, screen_height - new_height))
+                        new_x = max(work_area.left, min(new_x, work_area.right - new_width))
+                        new_y = max(work_area.top, min(new_y, work_area.bottom - new_height))
 
                         # Resize and reposition window
                         user32.SetWindowPos(
@@ -2002,10 +2015,49 @@ class CopilotHandler:
                              wp.rcNormalPosition.left, wp.rcNormalPosition.top,
                              wp.rcNormalPosition.right, wp.rcNormalPosition.bottom)
 
+                # Check if rcNormalPosition is too small and fix it before minimizing
+                # This ensures proper size when window is restored from taskbar
+                rc = wp.rcNormalPosition
+                saved_width = rc.right - rc.left
+                saved_height = rc.bottom - rc.top
+                placement_modified = False
+
+                if saved_width < self.MIN_EDGE_WINDOW_WIDTH or saved_height < self.MIN_EDGE_WINDOW_HEIGHT:
+                    # Get screen work area (excludes taskbar) for centering
+                    work_area = wintypes.RECT()
+                    SPI_GETWORKAREA = 0x0030
+                    user32.SystemParametersInfoW(SPI_GETWORKAREA, 0, ctypes.byref(work_area), 0)
+                    screen_width = work_area.right - work_area.left
+                    screen_height = work_area.bottom - work_area.top
+
+                    # Calculate new size
+                    new_width = max(saved_width, self.MIN_EDGE_WINDOW_WIDTH)
+                    new_height = max(saved_height, self.MIN_EDGE_WINDOW_HEIGHT)
+
+                    # Center on screen
+                    new_x = work_area.left + (screen_width - new_width) // 2
+                    new_y = work_area.top + (screen_height - new_height) // 2
+
+                    # Ensure within screen bounds
+                    new_x = max(work_area.left, min(new_x, work_area.right - new_width))
+                    new_y = max(work_area.top, min(new_y, work_area.bottom - new_height))
+
+                    rc.left = new_x
+                    rc.top = new_y
+                    rc.right = new_x + new_width
+                    rc.bottom = new_y + new_height
+                    placement_modified = True
+
+                    logger.info("Fixed small rcNormalPosition: %dx%d -> %dx%d",
+                                saved_width, saved_height, new_width, new_height)
+
                 # Set showCmd to SW_SHOWNORMAL before minimizing
                 # This ensures Windows remembers the restored state correctly
                 if original_show_cmd not in (SW_SHOWNORMAL, SW_MINIMIZE):
                     wp.showCmd = SW_SHOWNORMAL
+                    placement_modified = True
+
+                if placement_modified:
                     user32.SetWindowPlacement(edge_hwnd, ctypes.byref(wp))
 
             # Use SW_MINIMIZE to minimize the window
@@ -2033,6 +2085,49 @@ class CopilotHandler:
             logger.debug("Background minimization not implemented for this platform")
 
         logger.debug("Browser window returned to background after translation")
+
+    def _is_edge_in_foreground(self) -> bool:
+        """Check if Edge window is in foreground.
+
+        Returns:
+            True if Edge window is in foreground, False otherwise
+        """
+        if sys.platform != "win32":
+            return False
+
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            user32 = ctypes.WinDLL('user32', use_last_error=True)
+
+            # Get foreground window
+            foreground_hwnd = user32.GetForegroundWindow()
+            if not foreground_hwnd:
+                return False
+
+            # Get process ID of foreground window
+            fg_pid = wintypes.DWORD()
+            user32.GetWindowThreadProcessId(foreground_hwnd, ctypes.byref(fg_pid))
+
+            # Check if it's our Edge process
+            target_pid = self.edge_process.pid if self.edge_process else None
+            if target_pid and fg_pid.value == target_pid:
+                return True
+
+            return False
+        except Exception:
+            return False
+
+    def _ensure_edge_minimized(self) -> None:
+        """Ensure Edge window is minimized if it came to foreground unexpectedly.
+
+        This is called during auto-login wait to prevent Edge from staying
+        in foreground when login is not yet required.
+        """
+        if self._is_edge_in_foreground():
+            logger.debug("Edge came to foreground unexpectedly, minimizing...")
+            self._minimize_edge_window(None)
 
     def _wait_for_login_completion(self, page, timeout: int = 300) -> bool:
         """Wait for user to complete login in the browser.

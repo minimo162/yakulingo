@@ -2244,49 +2244,17 @@ class PdfProcessor(FileProcessor):
                         #   or we know the original had multiple lines.
                         allow_wrap = bool(is_table_cell or paragraph_brk or (original_line_count > 1))
 
-                        # For non-wrapping blocks, prefer keeping a single line by shrinking
-                        # within the layout-aware expandable width (prevents vertical overlap).
-                        if not allow_wrap and box_width > 0:
-                            x_start = getattr(paragraph, 'x', None) if paragraph is not None else None
-                            if x_start is None:
-                                x_start = pdf_x1
-
-                            right_boundary = pdf_x1 + (expandable_width if expandable_width > 0 else box_width)
-                            available_width = right_boundary - x_start
-
-                            if available_width > 0:
-                                candidate_lines = translated.split('\n') if translated else []
-                                max_line_width = 0.0
-                                for ln in candidate_lines:
-                                    ln = ln.rstrip(' ')
-                                    if not ln:
-                                        continue
-                                    max_line_width = max(
-                                        max_line_width,
-                                        op_gen.calculate_text_width(font_id, ln, initial_font_size),
-                                    )
-
-                                if max_line_width > available_width + 0.1:
-                                    scale = available_width / max_line_width if max_line_width > 0 else 1.0
-                                    fitted = initial_font_size * scale
-                                    min_setting = MIN_FONT_SIZE
-                                    if settings:
-                                        try:
-                                            min_setting = float(
-                                                getattr(settings, 'font_size_min', MIN_FONT_SIZE) or MIN_FONT_SIZE
-                                            )
-                                        except (TypeError, ValueError):
-                                            min_setting = MIN_FONT_SIZE
-                                    min_setting = max(MIN_FONT_SIZE, min_setting)
-                                    fitted = max(min_setting, min(initial_font_size, fitted))
-                                    if fitted < initial_font_size:
-                                        logger.debug(
-                                            "[Layout] Block %s: single-line fit width %.1f->%.1f "
-                                            "(avail=%.1f, text=%.1f, brk=%s)",
-                                            block_id, initial_font_size, fitted,
-                                            available_width, max_line_width, paragraph_brk
-                                        )
-                                        initial_font_size = fitted
+                        # PDFMathTranslate compliant: Font size is FIXED
+                        # Do NOT shrink font size to fit text horizontally.
+                        # If text extends beyond the original bounding box, let it overflow.
+                        # This preserves readability, which is the primary goal.
+                        #
+                        # Previous implementation reduced font size for single-line blocks
+                        # to prevent horizontal overflow, but this caused text to become
+                        # too small to read (especially for longer translations).
+                        #
+                        # Reference: PDFMathTranslate converter.py only adjusts line_height,
+                        # never the font size itself.
 
                         # Unified box_pdf for both modes (PDF coordinates)
                         # Format: [x1, y0, x2, y1] where y0 < y1 (bottom < top)
@@ -2319,20 +2287,29 @@ class PdfProcessor(FileProcessor):
                             allow_wrap=allow_wrap,
                         )
 
-                        # For table cells: allow font size reduction if text overflows
-                        # Tables have fixed cell boundaries, so we must fit the text
+                        # For table cells: allow MINIMAL font size reduction if text overflows
+                        # Tables have fixed cell boundaries, but readability takes priority.
+                        #
+                        # PDFMathTranslate compliant approach:
+                        # - Never reduce font size below 60% of original (preserve readability)
+                        # - Use a minimum of 5pt (smaller text is unreadable in most contexts)
+                        # - If text still doesn't fit, let it overflow (same as PDFMathTranslate)
+                        TABLE_FONT_MIN_READABLE = 5.0  # Minimum readable font size in points
+                        TABLE_FONT_MIN_RATIO = 0.6    # Never reduce below 60% of original size
+
                         if is_table_cell and len(lines) > 1:
                             text_height = len(lines) * font_size * line_height
                             if text_height > box_height * 1.1:  # Allow 10% overflow
                                 # Calculate minimum font size to fit
                                 min_required_font = box_height / (len(lines) * line_height)
-                                # Apply reduction but keep minimum readable size
-                                table_min_font = max(MIN_FONT_SIZE, min_required_font * 0.9)
+                                # Apply strict limits to prevent unreadable text
+                                absolute_min = max(TABLE_FONT_MIN_READABLE, font_size * TABLE_FONT_MIN_RATIO)
+                                table_min_font = max(absolute_min, min_required_font * 0.9)
                                 if table_min_font < font_size:
                                     logger.debug(
                                         "[Table] Block %s: reducing font size from %.1f to %.1f "
-                                        "to fit %d lines in height %.1f",
-                                        block_id, font_size, table_min_font, len(lines), box_height
+                                        "to fit %d lines in height %.1f (min allowed: %.1f)",
+                                        block_id, font_size, table_min_font, len(lines), box_height, absolute_min
                                     )
                                     font_size = table_min_font
                                     # Recalculate lines with new font size

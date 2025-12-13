@@ -1901,10 +1901,11 @@ class PdfProcessor(FileProcessor):
                 replacer = ContentStreamReplacer(doc, font_registry, preserve_graphics=True)
                 try:
                     # Pass target_bboxes to selectively remove only translation targets
-                    # If no targets, this behaves like before (remove all text)
+                    # Empty list = no targets to remove = preserve all text (correct behavior)
+                    # None = remove all text (legacy behavior, not used)
                     replacer.set_base_stream(
                         page,
-                        target_bboxes=target_bboxes if target_bboxes else None,
+                        target_bboxes=target_bboxes,
                         tolerance=5.0,
                     )
                     logger.info(

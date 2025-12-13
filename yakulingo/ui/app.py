@@ -1512,7 +1512,9 @@ class YakuLingoApp:
         self.state.text_result = None
         self.state.text_translation_elapsed_time = None
         with client:
-            self._refresh_content()  # Full refresh: input panel changes from large to compact
+            # Only refresh result panel to minimize DOM updates and prevent flickering
+            # Layout classes update will show result panel and hide input panel via CSS
+            self._refresh_result_panel()
             self._refresh_tabs()  # Update tab disabled state
 
         error_message = None

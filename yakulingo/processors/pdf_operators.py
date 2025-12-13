@@ -1251,11 +1251,59 @@ class ContentStreamReplacer:
 
         return self
 
-    # NOTE: add_redaction() was removed.
-    # Previous implementation drew white rectangles to cover text,
-    # but this also hid graphics/images underneath.
-    # New approach: set_base_stream() filters out text operators from
-    # original content stream, preserving graphics/images intact.
+    def add_white_background(
+        self,
+        x0: float,
+        y0: float,
+        x1: float,
+        y1: float,
+        margin: float = 1.0,
+    ) -> 'ContentStreamReplacer':
+        """
+        Add white background rectangle to cover original text.
+
+        PDFMathTranslate compliant: Draws a white rectangle before text
+        to ensure original text is completely hidden. This provides a
+        fallback when content stream filtering is incomplete.
+
+        Args:
+            x0: Left edge in PDF coordinates
+            y0: Bottom edge in PDF coordinates
+            x1: Right edge in PDF coordinates
+            y1: Top edge in PDF coordinates
+            margin: Extra margin around the rectangle (default 1.0pt)
+
+        Returns:
+            self for chaining
+        """
+        # Close any open text block before drawing graphics
+        if self._in_text_block:
+            self.end_text()
+
+        # Apply margin
+        x0 = x0 - margin
+        y0 = y0 - margin
+        x1 = x1 + margin
+        y1 = y1 + margin
+
+        width = x1 - x0
+        height = y1 - y0
+
+        # Draw white filled rectangle
+        # q: save graphics state
+        # 1 1 1 rg: set fill color to white (RGB)
+        # x y w h re: draw rectangle
+        # f: fill
+        # Q: restore graphics state
+        op = f"q 1 1 1 rg {x0:f} {y0:f} {width:f} {height:f} re f Q "
+        self.operators.append(op)
+
+        logger.debug(
+            "add_white_background: x0=%.1f, y0=%.1f, x1=%.1f, y1=%.1f",
+            x0, y0, x1, y1
+        )
+
+        return self
 
     def build(self) -> bytes:
         """Build content stream as bytes (new text operators only)."""

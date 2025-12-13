@@ -50,10 +50,15 @@ MAX_FONT_SIZE = 72.0  # Allow large font sizes
 SUBSCRIPT_SUPERSCRIPT_THRESHOLD = 0.79
 
 # Line height compression constants (PDFMathTranslate compliant)
-# PDFMathTranslate uses line_height >= 0.95 as the minimum (allowing 0.95-1.0 range)
+# PDFMathTranslate uses line_height >= 1.0 as the minimum
+# We use 0.85 to allow more aggressive compression for CJK text
 # This preserves font size while compressing line spacing to fit text
-MIN_LINE_HEIGHT = 0.95
+MIN_LINE_HEIGHT = 0.85
 LINE_HEIGHT_COMPRESSION_STEP = 0.05
+
+# Table cell-specific line height minimum (more aggressive)
+# Tables often have dense text that needs tighter line spacing
+TABLE_MIN_LINE_HEIGHT = 0.75
 
 # Single-line block expansion limit (legacy - no longer used for font size reduction)
 # PDFMathTranslate approach: font size is FIXED, only line height is adjusted

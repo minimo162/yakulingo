@@ -1196,7 +1196,7 @@ class TestCalculateLineHeight:
         # Long text in small box should compress line height
         long_text = "A" * 100
         height = calculate_line_height(long_text, [0, 0, 50, 30], 12.0, "en")
-        assert height == 0.95  # Minimum (PDFMathTranslate compliant)
+        assert height == 0.85  # Minimum (more aggressive compression for CJK)
 
     def test_unknown_language_uses_default(self):
         height = calculate_line_height("Test", [0, 0, 100, 100], 12.0, "unknown")
@@ -1698,10 +1698,17 @@ class TestConstants:
 
     def test_line_height_constants(self):
         """Test line height constants are properly defined"""
-        # PDFMathTranslate compliant: MIN_LINE_HEIGHT is 0.95
-        assert MIN_LINE_HEIGHT == 0.95
+        # More aggressive compression for CJK: MIN_LINE_HEIGHT is 0.85
+        assert MIN_LINE_HEIGHT == 0.85
         assert LINE_HEIGHT_COMPRESSION_STEP == 0.05
         assert LINE_HEIGHT_COMPRESSION_STEP > 0
+
+    def test_table_min_line_height_constant(self):
+        """Test TABLE_MIN_LINE_HEIGHT constant for table cells"""
+        from yakulingo.processors.pdf_converter import TABLE_MIN_LINE_HEIGHT
+        # Table cells use even more aggressive compression
+        assert TABLE_MIN_LINE_HEIGHT == 0.75
+        assert TABLE_MIN_LINE_HEIGHT < MIN_LINE_HEIGHT
 
 
 class TestVflagEmptyInputs:

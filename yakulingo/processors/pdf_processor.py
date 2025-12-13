@@ -58,6 +58,7 @@ from .pdf_converter import (
     DEFAULT_FONT_SIZE, MIN_FONT_SIZE, MAX_FONT_SIZE,
     SUBSCRIPT_SUPERSCRIPT_THRESHOLD,
     MIN_LINE_HEIGHT, LINE_HEIGHT_COMPRESSION_STEP, MAX_LINES_FOR_SINGLE_LINE_BLOCK,
+    TABLE_MIN_LINE_HEIGHT,  # More aggressive compression for table cells
     DEFAULT_VFONT_PATTERN, FORMULA_UNICODE_CATEGORIES,
     SAME_LINE_Y_THRESHOLD, SAME_PARA_Y_THRESHOLD,
     WORD_SPACE_X_THRESHOLD, LINE_BREAK_X_THRESHOLD,
@@ -810,12 +811,15 @@ def calculate_line_height_with_font(
     font_id: str,
     font_registry: 'FontRegistry',
     lang_out: str,
+    is_table_cell: bool = False,
 ) -> float:
     """
     Calculate line height with dynamic compression using actual font metrics.
 
     Uses FontRegistry for accurate line count estimation based on actual
     character widths instead of simple estimation.
+
+    For table cells, uses more aggressive compression (TABLE_MIN_LINE_HEIGHT).
 
     Args:
         translated_text: Text to be rendered
@@ -824,6 +828,7 @@ def calculate_line_height_with_font(
         font_id: Font ID for width lookup
         font_registry: FontRegistry instance
         lang_out: Output language for default line height
+        is_table_cell: Whether this is a table cell (uses tighter line spacing)
 
     Returns:
         Optimized line height multiplier
@@ -843,13 +848,16 @@ def calculate_line_height_with_font(
     )
     lines_needed = len(lines)
 
+    # Use tighter minimum line height for table cells
+    min_line_height = TABLE_MIN_LINE_HEIGHT if is_table_cell else MIN_LINE_HEIGHT
+
     # Dynamic compression until text fits
-    max_iterations = int((line_height - MIN_LINE_HEIGHT) / LINE_HEIGHT_COMPRESSION_STEP) + 1
+    max_iterations = int((line_height - min_line_height) / LINE_HEIGHT_COMPRESSION_STEP) + 1
     iteration = 0
 
     while (
         lines_needed * font_size * line_height > box_height
-        and line_height > MIN_LINE_HEIGHT
+        and line_height > min_line_height
         and iteration < max_iterations
     ):
         line_height -= LINE_HEIGHT_COMPRESSION_STEP
@@ -857,11 +865,11 @@ def calculate_line_height_with_font(
 
     if iteration > 0:
         logger.debug(
-            "Line height compressed to %.2f after %d iterations for %d lines",
-            line_height, iteration, lines_needed
+            "Line height compressed to %.2f after %d iterations for %d lines (table_cell=%s)",
+            line_height, iteration, lines_needed, is_table_cell
         )
 
-    return max(line_height, MIN_LINE_HEIGHT)
+    return max(line_height, min_line_height)
 
 
 def estimate_font_size(box: list[float], text: str) -> float:
@@ -2200,9 +2208,11 @@ class PdfProcessor(FileProcessor):
                         box_pdf = [pdf_x1, pdf_y0, pdf_x2, pdf_y1]
 
                         # Calculate line height with dynamic compression using font metrics
+                        # Pass is_table_cell for more aggressive compression in tables
                         line_height = calculate_line_height_with_font(
                             translated, box_pdf,
-                            initial_font_size, font_id, font_registry, target_lang
+                            initial_font_size, font_id, font_registry, target_lang,
+                            is_table_cell=is_table_cell
                         )
 
                         # Calculate adjusted font size using actual font metrics
@@ -2217,17 +2227,36 @@ class PdfProcessor(FileProcessor):
                             line_height,
                         )
 
-                        # PDFMathTranslate compliant: Font size is FIXED
-                        # Unlike previous approach that reduced font size for overflow,
-                        # we now preserve the original font size and only adjust line height.
+                        # For table cells: allow font size reduction if text overflows
+                        # Tables have fixed cell boundaries, so we must fit the text
+                        if is_table_cell and len(lines) > 1:
+                            text_height = len(lines) * font_size * line_height
+                            if text_height > box_height * 1.1:  # Allow 10% overflow
+                                # Calculate minimum font size to fit
+                                min_required_font = box_height / (len(lines) * line_height)
+                                # Apply reduction but keep minimum readable size
+                                table_min_font = max(MIN_FONT_SIZE, min_required_font * 0.9)
+                                if table_min_font < font_size:
+                                    logger.debug(
+                                        "[Table] Block %s: reducing font size from %.1f to %.1f "
+                                        "to fit %d lines in height %.1f",
+                                        block_id, font_size, table_min_font, len(lines), box_height
+                                    )
+                                    font_size = table_min_font
+                                    # Recalculate lines with new font size
+                                    lines = split_text_into_lines_with_font(
+                                        translated, box_width, font_size, font_id, font_registry
+                                    )
+
+                        # PDFMathTranslate compliant: Font size is generally FIXED
+                        # We preserve the original font size and only adjust line height.
                         # This ensures consistent, readable text across the document.
                         #
-                        # If text overflows the box, it will extend beyond the original
-                        # bounding box, which is the same behavior as PDFMathTranslate.
-                        # The line_height was already compressed in calculate_line_height_with_font().
+                        # Exception: Table cells may have reduced font size (see above)
+                        # to prevent overflow into adjacent cells.
                         #
-                        # For table cells, we also preserve font size. The text may overflow
-                        # the cell boundary, but this is acceptable to maintain readability.
+                        # If text still overflows the box, it will extend beyond the original
+                        # bounding box, which is the same behavior as PDFMathTranslate.
                         if len(lines) > original_line_count * 2 and original_line_count >= 1:
                             logger.info(
                                 "[Layout] Block %s: text expanded from %d to %d lines. "

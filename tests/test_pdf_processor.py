@@ -3105,18 +3105,36 @@ class TestTableCellBoundaryDetection:
         assert new_para is True
         assert line_break is False
 
-    def test_non_table_region_ignores_x_gap(self):
-        """Non-table region should ignore X gap for paragraph detection"""
-        from yakulingo.processors.pdf_converter import detect_paragraph_boundary
-        # Same X gap but in non-table region (cls=2)
+    def test_non_table_region_detects_x_gap(self):
+        """Non-table region should detect X gap for form fields/multi-column layouts"""
+        from yakulingo.processors.pdf_converter import (
+            detect_paragraph_boundary, TABLE_CELL_X_THRESHOLD
+        )
+        # Large X gap in non-table region (cls=2) - should be detected
+        # This is important for form-like layouts (e.g., "上場会社名" and "マツダ株式会社")
         new_para, line_break = detect_paragraph_boundary(
             char_x0=100, char_y0=500,
             prev_x0=50, prev_y0=500,
             char_cls=2, prev_cls=2,  # Normal paragraph region
             use_layout=True,
-            prev_x1=80,
+            prev_x1=80,  # X gap = 100 - 80 = 20pt > TABLE_CELL_X_THRESHOLD (15pt)
         )
-        assert new_para is False  # X gap ignored in non-table region
+        assert new_para is True  # Large X gap detected as new paragraph
+
+    def test_non_table_region_small_x_gap_same_paragraph(self):
+        """Non-table region with small X gap should remain in same paragraph"""
+        from yakulingo.processors.pdf_converter import (
+            detect_paragraph_boundary, TABLE_CELL_X_THRESHOLD
+        )
+        # Small X gap in non-table region - should not create new paragraph
+        new_para, line_break = detect_paragraph_boundary(
+            char_x0=95, char_y0=500,
+            prev_x0=50, prev_y0=500,
+            char_cls=2, prev_cls=2,  # Normal paragraph region
+            use_layout=True,
+            prev_x1=90,  # X gap = 95 - 90 = 5pt < TABLE_CELL_X_THRESHOLD (15pt)
+        )
+        assert new_para is False  # Small X gap, same paragraph
 
     def test_table_constants_values(self):
         """Table detection constants should have expected values"""

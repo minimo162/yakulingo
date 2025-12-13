@@ -1,7 +1,7 @@
 # YakuLingo - 技術仕様書
 
 > **Version**: 0.0.1
-> **Date**: 2025-12-11
+> **Date**: 2025-12-13
 > **App Name**: YakuLingo (訳リンゴ)
 
 ---
@@ -66,6 +66,7 @@ M365 Copilotを翻訳エンジンとして使用し、テキストとドキュ�
 | PowerPoint | `.pptx` `.ppt` | python-pptx |
 | PDF | `.pdf` | PyMuPDF, pdfminer.six, PP-DocLayout-L (PaddleOCR) |
 | Text | `.txt` | Built-in (plain text) |
+| Outlook | `.msg` | win32com (Windows + Outlook環境のみ) |
 
 ### 1.5 技術スタック
 
@@ -180,7 +181,7 @@ YakuLingo/
 │   └── config/
 │       └── settings.py             # AppSettings
 │
-├── tests/                          # テストスイート（32ファイル）
+├── tests/                          # テストスイート（33ファイル）
 │   ├── conftest.py
 │   └── test_*.py
 │
@@ -1551,6 +1552,38 @@ python -c "import time; t=time.time(); from yakulingo.ui import run_app; print(f
 ---
 
 ## 変更履歴
+
+### 2.19 (2025-12)
+- PDF翻訳バグ修正
+  - 非翻訳対象テキスト消失を修正
+  - 番号パース失敗を修正
+  - CID記法を日本語コンテンツとして認識
+  - 日本語日時パターンの正規表現を修正
+  - テーブルセル境界検出を改善
+- 認証フロー改善
+  - Copilotページ上の認証ダイアログを検出
+  - 認証フロー中の強制ナビゲーションを防止
+- UI改善
+  - 「略語」表記を「用語集」に修正
+  - main-cardのborder-radiusを無効化
+  - ファイル翻訳パネルのホバーエフェクトを削除
+- ログ出力改善
+  - マルチプロセス対応でログ出力を修正
+  - ログファイルのローテーションを廃止
+  - ログファイルを起動ごとにクリア
+- 用語集処理変更
+  - abbreviations.csvをglossary.csvに統合
+  - マージ方式からバックアップ＆上書き方式に変更
+- Outlook MSG対応
+  - Windows + Outlook環境でMSGファイル翻訳サポートを追加
+- Excel翻訳最適化
+  - セル読み取り効率化
+  - 書き込み効率化
+  - apply_translations最適化
+  - 保存時にread_only_recommendedをクリア
+- 言語検出高速化
+  - Copilot呼び出しを廃止してローカル検出のみに
+  - ファイル言語検出の高速化
 
 ### 2.18 (2025-12)
 - コードレビュー修正

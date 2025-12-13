@@ -673,21 +673,41 @@ class ContentStreamReplacer:
     - New: Parses content stream, removes text operators, keeps graphics
     """
 
-    def __init__(self, doc, font_registry: FontRegistry, preserve_graphics: bool = True):
+    def __init__(
+        self,
+        doc,
+        font_registry: FontRegistry,
+        preserve_graphics: bool = True,
+        preserve_original_text: bool = False,
+    ):
+        """
+        Initialize ContentStreamReplacer.
+
+        Args:
+            doc: PyMuPDF document
+            font_registry: Font registry for font management
+            preserve_graphics: If True, preserve graphics when removing text
+            preserve_original_text: If True, keep original text and use overlay mode
+                                   (white rectangles + new text on top of original)
+        """
         self.doc = doc
         self.font_registry = font_registry
         self.operators: list[str] = []
         self._in_text_block = False
         self._used_fonts: set[str] = set()
         self._preserve_graphics = preserve_graphics
+        self._preserve_original_text = preserve_original_text
         self._filtered_base_stream: Optional[bytes] = None
+        self._original_base_stream: Optional[bytes] = None  # For overlay mode
         self._parser = ContentStreamParser() if preserve_graphics else None
+        self._white_rects: list[str] = []  # White rectangles for overlay mode
 
     def set_base_stream(self, page) -> 'ContentStreamReplacer':
         """
         Capture and filter the original content stream for this page.
 
-        This removes text operators while preserving graphics/images.
+        This removes text operators while preserving graphics/images,
+        unless preserve_original_text is True (overlay mode).
         Also filters text from Form XObjects referenced by this page.
         Must be called before adding new text operators.
 
@@ -700,11 +720,47 @@ class ContentStreamReplacer:
         if not self._preserve_graphics or not self._parser:
             return self
 
+        # Overlay mode: keep original text, don't filter
+        if self._preserve_original_text:
+            # Just capture original content stream without filtering
+            self._original_base_stream = self._get_original_stream(page)
+            logger.info(
+                "set_base_stream: overlay mode, keeping original text, stream_len=%d",
+                len(self._original_base_stream) if self._original_base_stream else 0
+            )
+            return self
+
+        # Normal mode: filter out text operators
         # Filter Form XObjects first (they contain embedded text)
         self._filter_form_xobjects(page)
 
         self._filtered_base_stream = self._parser.filter_page_contents(self.doc, page)
         return self
+
+    def _get_original_stream(self, page) -> bytes:
+        """
+        Get original content stream without filtering.
+
+        Args:
+            page: PyMuPDF page object
+
+        Returns:
+            Combined original content stream
+        """
+        parts = []
+        contents = page.get_contents()
+        if not contents:
+            return b""
+
+        for xref in contents:
+            try:
+                stream = self.doc.xref_stream(xref)
+                if stream:
+                    parts.append(stream)
+            except (RuntimeError, ValueError, KeyError, OSError) as e:
+                logger.warning("Failed to get content stream xref %d: %s", xref, e)
+
+        return b" ".join(parts)
 
     def _filter_form_xobjects(self, page) -> None:
         """
@@ -832,11 +888,61 @@ class ContentStreamReplacer:
 
         return self
 
-    # NOTE: add_redaction() was removed.
+    # NOTE: add_redaction() was removed for normal mode.
     # Previous implementation drew white rectangles to cover text,
     # but this also hid graphics/images underneath.
     # New approach: set_base_stream() filters out text operators from
     # original content stream, preserving graphics/images intact.
+    #
+    # However, for overlay mode (preserve_original_text=True), we use
+    # add_white_rect() to cover only translation target text, keeping
+    # non-translatable text visible.
+
+    def add_white_rect(
+        self,
+        x: float,
+        y: float,
+        width: float,
+        height: float,
+        margin: float = 1.0,
+    ) -> 'ContentStreamReplacer':
+        """
+        Add a white rectangle to cover text (for overlay mode).
+
+        Used when preserve_original_text=True to cover only translation
+        target text while keeping non-translatable text visible.
+
+        Args:
+            x: Left X coordinate (PDF coordinates)
+            y: Bottom Y coordinate (PDF coordinates)
+            width: Rectangle width
+            height: Rectangle height
+            margin: Extra margin around the rectangle (default 1.0pt)
+
+        Returns:
+            self for chaining
+        """
+        # Apply margin
+        x -= margin
+        y -= margin
+        width += margin * 2
+        height += margin * 2
+
+        # Create white filled rectangle
+        # q = save graphics state
+        # 1 1 1 rg = set fill color to white (RGB)
+        # x y width height re = rectangle path
+        # f = fill path
+        # Q = restore graphics state
+        rect_op = f"q 1 1 1 rg {x:.2f} {y:.2f} {width:.2f} {height:.2f} re f Q "
+        self._white_rects.append(rect_op)
+
+        logger.debug(
+            "add_white_rect: x=%.1f, y=%.1f, w=%.1f, h=%.1f (with margin=%.1f)",
+            x + margin, y + margin, width - margin * 2, height - margin * 2, margin
+        )
+
+        return self
 
     def build(self) -> bytes:
         """Build content stream as bytes (new text operators only)."""
@@ -848,15 +954,42 @@ class ContentStreamReplacer:
 
     def build_combined(self) -> bytes:
         """
-        Build combined content stream: filtered base + new text.
+        Build combined content stream.
 
-        PDFMathTranslate approach:
-        - Base stream has text removed, graphics preserved
-        - New text operators are appended
-        - Result: graphics intact, text replaced
+        Two modes:
+        1. Normal mode (preserve_original_text=False):
+           - Base stream has text removed, graphics preserved
+           - New text operators are appended
+           - Result: graphics intact, all text replaced
+
+        2. Overlay mode (preserve_original_text=True):
+           - Original stream kept intact (including text)
+           - White rectangles cover translation target text only
+           - New translated text drawn on top
+           - Result: non-translatable text preserved, translated text replaced
         """
         new_text = self.build()
 
+        # Overlay mode: original + white rects + new text
+        if self._preserve_original_text and self._original_base_stream:
+            # Build white rectangles stream
+            white_rects_stream = "".join(self._white_rects).encode("latin-1")
+
+            logger.info(
+                "build_combined (overlay mode): original_len=%d, white_rects=%d, new_text_len=%d",
+                len(self._original_base_stream), len(self._white_rects), len(new_text)
+            )
+
+            # Combine: original (with text) + white rects + new text
+            # Order is important: white rects cover original text, new text on top
+            combined = (
+                b"q " + self._original_base_stream + b" Q "  # Original content
+                + white_rects_stream                         # White rectangles
+                + new_text                                   # New translated text
+            )
+            return combined
+
+        # Normal mode: filtered base + new text
         logger.debug(
             "build_combined: new_text_len=%d, filtered_base_len=%d, new_text_preview='%s'",
             len(new_text), len(self._filtered_base_stream) if self._filtered_base_stream else 0,

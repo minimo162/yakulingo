@@ -823,6 +823,87 @@ class TestContentStreamReplacer:
         )
         assert result is replacer
 
+    def test_preserve_original_text_default_false(self, replacer):
+        """Test that preserve_original_text is False by default."""
+        assert replacer._preserve_original_text is False
+        assert replacer._original_base_stream is None
+        assert replacer._white_rects == []
+
+    def test_preserve_original_text_enabled(self, mock_doc, font_registry):
+        """Test that preserve_original_text=True enables overlay mode."""
+        from yakulingo.processors.pdf_processor import ContentStreamReplacer
+        replacer = ContentStreamReplacer(
+            mock_doc, font_registry,
+            preserve_graphics=True,
+            preserve_original_text=True,
+        )
+        assert replacer._preserve_original_text is True
+        assert replacer._white_rects == []
+
+    def test_add_white_rect(self, mock_doc, font_registry):
+        """Test add_white_rect generates correct PDF operator."""
+        from yakulingo.processors.pdf_processor import ContentStreamReplacer
+        replacer = ContentStreamReplacer(
+            mock_doc, font_registry,
+            preserve_graphics=True,
+            preserve_original_text=True,
+        )
+        replacer.add_white_rect(x=100.0, y=200.0, width=150.0, height=50.0, margin=1.0)
+
+        # Should have one white rectangle
+        assert len(replacer._white_rects) == 1
+        rect_op = replacer._white_rects[0]
+
+        # Check PDF operator format: q 1 1 1 rg x y w h re f Q
+        assert "q " in rect_op
+        assert "1 1 1 rg" in rect_op  # White fill color
+        assert "re f Q" in rect_op  # Rectangle and fill
+
+    def test_add_white_rect_with_margin(self, mock_doc, font_registry):
+        """Test that white rect includes margin."""
+        from yakulingo.processors.pdf_processor import ContentStreamReplacer
+        replacer = ContentStreamReplacer(
+            mock_doc, font_registry,
+            preserve_graphics=True,
+            preserve_original_text=True,
+        )
+        # x=100, y=200, w=150, h=50, margin=2.0
+        # Expected: x=98, y=198, w=154, h=54
+        replacer.add_white_rect(x=100.0, y=200.0, width=150.0, height=50.0, margin=2.0)
+
+        rect_op = replacer._white_rects[0]
+        # Check that margin is applied (x-margin, y-margin, w+2*margin, h+2*margin)
+        assert "98.00" in rect_op  # x - margin
+        assert "198.00" in rect_op  # y - margin
+        assert "154.00" in rect_op  # w + 2*margin
+        assert "54.00" in rect_op  # h + 2*margin
+
+    def test_build_combined_overlay_mode(self, mock_doc, font_registry):
+        """Test build_combined in overlay mode includes original + white rects + new text."""
+        from yakulingo.processors.pdf_processor import ContentStreamReplacer
+        replacer = ContentStreamReplacer(
+            mock_doc, font_registry,
+            preserve_graphics=True,
+            preserve_original_text=True,
+        )
+        # Set original stream
+        replacer._original_base_stream = b"BT /F1 12 Tf (Hello) Tj ET"
+
+        # Add white rectangle
+        replacer.add_white_rect(x=100.0, y=200.0, width=150.0, height=50.0)
+
+        # Add new text
+        replacer.add_text_operator("/F2 14 Tf (World) Tj")
+
+        result = replacer.build_combined()
+
+        # Should have: q + original + Q + white_rects + new_text
+        assert b"q " in result  # Graphics state save
+        assert b"BT /F1 12 Tf (Hello) Tj ET" in result  # Original text preserved
+        assert b" Q " in result  # Graphics state restore
+        assert b"1 1 1 rg" in result  # White rectangle
+        assert b"/F2 14 Tf (World) Tj" in result  # New text
+
 
 # =============================================================================
 # Tests: Coordinate Conversion

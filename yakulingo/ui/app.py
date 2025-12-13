@@ -1535,9 +1535,8 @@ class YakuLingoApp:
             self._refresh_content()  # Full refresh: input panel changes from large to compact
             self._refresh_tabs()  # Update tab disabled state
 
-        # Track last text and partial result display state
+        # Track last text for streaming UI update
         last_streaming_text: str = ""
-        partial_result_displayed = False  # Flag to track if partial result was shown
 
         def extract_translation_preview(text: str) -> str:
             """Extract translation part from streaming text for preview.
@@ -1593,17 +1592,12 @@ class YakuLingoApp:
             return translation[:500] + '...' if len(translation) > 500 else translation
 
         def update_streaming_label():
-            """Update streaming label and show partial result when explanation starts.
+            """Update streaming label with translation preview.
 
             Note on thread safety:
             - streaming_text is read under lock protection
-            - Subsequent state changes (text_partial_result, explanation_loading) are done
-              outside the lock to avoid blocking the on_chunk callback
-            - This creates a theoretical TOCTOU window, but the impact is minimal:
-              at worst, the partial result may show slightly stale text, which will be
-              corrected on the next timer tick (0.1s) or when final result arrives
             """
-            nonlocal last_streaming_text, partial_result_displayed
+            nonlocal last_streaming_text
             # Protected by _streaming_text_lock to prevent race conditions with on_chunk
             with self._streaming_text_lock:
                 current_text = self.state.streaming_text or ""
@@ -1611,56 +1605,7 @@ class YakuLingoApp:
             if current_text != last_streaming_text:
                 last_streaming_text = current_text
 
-                # Check if explanation marker appeared (translation text is complete)
-                # Support multiple marker patterns for robustness against Copilot format changes
-                import re
-                EXPLANATION_MARKERS = [
-                    r'\n\s*[#>*\s-]*解説[:：]?',      # Japanese: 解説
-                    r'\n\s*[#>*\s-]*説明[:：]?',      # Japanese: 説明
-                    r'\n\s*[#>*\s-]*Explanation[:：]?',  # English
-                    r'\n\s*[#>*\s-]*Notes?[:：]?',    # English: Note/Notes
-                ]
-                has_explanation_marker = any(
-                    re.search(pattern, current_text, re.IGNORECASE)
-                    for pattern in EXPLANATION_MARKERS
-                )
-
-                # Fallback: Show partial result if text is long enough (likely complete translation)
-                # This handles cases where Copilot doesn't use expected markers
-                # Reduced from 200 to 50 chars to support short translations
-                MIN_TEXT_LENGTH_FOR_FALLBACK = 50  # chars
-                # Check for translation markers (Japanese or English)
-                has_translation_marker = any(
-                    marker in current_text.lower()
-                    for marker in ['訳文', '翻訳', 'translation']
-                )
-                text_length_fallback = (
-                    len(current_text) >= MIN_TEXT_LENGTH_FOR_FALLBACK
-                    and has_translation_marker
-                    and not has_explanation_marker
-                )
-
-                # If explanation marker appeared OR fallback triggered, and not yet displayed
-                should_show_partial = (has_explanation_marker or text_length_fallback) and not partial_result_displayed
-                if should_show_partial:
-                    partial_result_displayed = True
-                    # Extract translation text only
-                    translation_text = extract_translation_preview(current_text)
-                    if translation_text and not translation_text.endswith('...'):
-                        # Set partial result and show it
-                        from yakulingo.models.types import TranslationOption
-                        self.state.text_partial_result = TranslationOption(
-                            text=translation_text,
-                            explanation=""  # No explanation yet
-                        )
-                        self.state.explanation_loading = True
-                        # Refresh UI to show translation result immediately
-                        with client:
-                            self._refresh_result_panel()
-                        if text_length_fallback:
-                            logger.debug("Partial result shown via length fallback (no marker detected)")
-                elif self._streaming_label:
-                    # Normal streaming update
+                if self._streaming_label:
                     preview = extract_translation_preview(current_text)
                     self._streaming_label.set_text(preview)
 

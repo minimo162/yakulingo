@@ -286,12 +286,21 @@ class TestCopilotHandlerConnection:
 class TestCopilotHandlerTranslateSync:
     """Test CopilotHandler.translate_sync() with mocks"""
 
-    def test_translate_sync_not_connected_raises(self):
+    def test_translate_sync_not_connected_raises(self, monkeypatch):
         """translate_sync tries to auto-connect and raises appropriate error"""
+        from yakulingo.services import copilot_handler as copilot_handler_module
         handler = CopilotHandler()
 
-        # Mock connect to fail
-        handler.connect = Mock(return_value=False)
+        # Avoid starting a real Playwright thread / Edge browser in tests
+        monkeypatch.setattr(
+            copilot_handler_module._playwright_executor,
+            'execute',
+            lambda func, *args, **kwargs: func(*args),
+        )
+
+        # Mock internal connect to fail (translate_sync calls _connect_impl inside the executor thread)
+        handler._connect_impl = Mock(return_value=False)
+        handler.last_connection_error = CopilotHandler.ERROR_CONNECTION_FAILED
 
         with pytest.raises(RuntimeError) as exc:
             handler.translate_sync(["test"], "prompt")

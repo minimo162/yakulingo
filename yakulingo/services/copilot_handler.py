@@ -76,12 +76,16 @@ AUTH_FLOW_PATTERNS = [
     "/consent",
     "/authorize",
     "/token",
-    "?auth=",
-    "&auth=",
     "/kmsi",  # Keep Me Signed In page
     "/reprocess",
     "/resume",
     "/proofup",  # MFA setup page
+    # Common Microsoft redirect/callback endpoints
+    "/signin-oidc",
+    "/signin-callback",
+    "/sign-in-callback",
+    "/authredirect",
+    "/authRedirect",
 ]
 
 
@@ -222,6 +226,9 @@ def _is_auth_flow_page(url: str) -> bool:
         True if URL appears to be an auth flow intermediate page
     """
     if not url:
+        return False
+    # Copilot itself uses `?auth=2` on the chat URL; never treat the actual chat page as an auth intermediate page.
+    if _is_copilot_url(url) and "/chat" in url:
         return False
     # Check for auth flow patterns in URL
     for pattern in AUTH_FLOW_PATTERNS:
@@ -914,9 +921,14 @@ class CopilotHandler:
         os.environ.setdefault('NO_PROXY', 'localhost,127.0.0.1')
         os.environ.setdefault('no_proxy', 'localhost,127.0.0.1')
 
-        error_types = _get_playwright_errors()
-        PlaywrightError = error_types['Error']
-        PlaywrightTimeoutError = error_types['TimeoutError']
+        try:
+            error_types = _get_playwright_errors()
+            PlaywrightError = error_types['Error']
+            PlaywrightTimeoutError = error_types['TimeoutError']
+        except (ImportError, ModuleNotFoundError) as e:
+            logger.error("Playwright is not available: %s", e)
+            self.last_connection_error = self.ERROR_CONNECTION_FAILED
+            return False
 
         try:
             # Step 1: Start Edge if needed
@@ -994,6 +1006,11 @@ class CopilotHandler:
 
         except (PlaywrightError, PlaywrightTimeoutError) as e:
             logger.error("Browser connection failed: %s", e)
+            self.last_connection_error = self.ERROR_CONNECTION_FAILED
+            self._cleanup_on_error()
+            return False
+        except (ImportError, ModuleNotFoundError) as e:
+            logger.error("Playwright is not available: %s", e)
             self.last_connection_error = self.ERROR_CONNECTION_FAILED
             self._cleanup_on_error()
             return False
@@ -1286,6 +1303,13 @@ class CopilotHandler:
                     return False
                 return self._wait_for_login_completion(page)
             if "/chat" not in url:
+                # Do not interrupt auth redirects/callbacks by forcing navigation.
+                if _is_auth_flow_page(url):
+                    logger.info("Auth flow page detected (%s); skipping forced navigation to /chat", url[:80])
+                    self.last_connection_error = self.ERROR_LOGIN_REQUIRED
+                    if not wait_for_login:
+                        return False
+                    return self._wait_for_login_completion(page)
                 try:
                     page.goto(self.COPILOT_URL, wait_until='domcontentloaded', timeout=30000)
                 except (PlaywrightTimeoutError, PlaywrightError) as nav_err:
@@ -2066,6 +2090,18 @@ class CopilotHandler:
 
                     # On Copilot domain but not yet on chat path - ensure navigation completes
                     if "/chat" not in url:
+                        # Avoid interrupting auth redirects/callbacks that temporarily live on the Copilot domain.
+                        if _is_auth_flow_page(url):
+                            logger.debug("Login wait: on auth flow page, waiting for redirect to complete...")
+                            try:
+                                page.wait_for_load_state('networkidle', timeout=10000)
+                            except PlaywrightTimeoutError:
+                                pass
+                            if not interruptible_sleep(poll_interval):
+                                logger.info("Login wait cancelled during poll")
+                                return False
+                            elapsed += poll_interval
+                            continue
                         logger.debug("Login wait: Copilot domain but not /chat, navigating...")
                         try:
                             page.goto(self.COPILOT_URL, wait_until='domcontentloaded', timeout=30000)
@@ -2172,8 +2208,15 @@ class CopilotHandler:
             # Copilotドメインにいて、かつ /chat パスにいる場合 → ログイン完了
             # URL例: https://m365.cloud.microsoft/chat/?auth=2
             if "/chat" in current_url and _is_copilot_url(current_url):
-                logger.info("On Copilot chat page - ready")
-                return ConnectionState.READY
+                # Be conservative: URL alone can be true during redirect; require the chat input to be present.
+                try:
+                    if page.query_selector(self.CHAT_INPUT_SELECTOR):
+                        logger.info("On Copilot chat page - ready")
+                        return ConnectionState.READY
+                except Exception:
+                    pass
+                logger.info("On Copilot /chat but UI not ready yet - loading")
+                return ConnectionState.LOADING
 
             # 現在のページが /chat でない場合、他のページも確認
             # ログイン後に別タブでCopilotが開かれることがある
@@ -2331,12 +2374,24 @@ class CopilotHandler:
                     logger.warning("wait_for_page_load: page closed and no replacement found")
                     return False
 
+            # Do not report success while still on a login or auth flow page.
+            url = page.url
+            if _is_login_page(url) or _is_auth_flow_page(url):
+                logger.info("wait_for_page_load: still in login/auth flow (URL=%s)", url[:80] if url else "empty")
+                return False
+
             # DOMの読み込み完了を待機
             logger.info("Waiting for DOM content loaded...")
             try:
                 page.wait_for_load_state('domcontentloaded', timeout=5000)
             except PlaywrightTimeoutError:
                 pass  # タイムアウトしても続行
+
+            # Wait for the chat input to become available; fixed sleep alone is flaky right after login.
+            try:
+                page.wait_for_selector(self.CHAT_INPUT_SELECTOR, timeout=30000, state='visible')
+            except PlaywrightTimeoutError:
+                logger.info("wait_for_page_load: chat input not visible yet, continuing with fixed wait")
 
             # 追加の固定時間待機（ページの初期化処理が完了するのを待つ）
             logger.info("Waiting %.1f seconds for page initialization...", wait_seconds)

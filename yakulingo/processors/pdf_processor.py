@@ -1900,35 +1900,38 @@ class PdfProcessor(FileProcessor):
                             block_id = f"page_{page_idx}_block_{block_idx}"
                             pymupdf_blocks_dict[block_id] = block
 
-                # Build blocks_to_process and target_bboxes for this page
+                # Build blocks_to_process for this page
+                # PDFMathTranslate compliant: Process ALL text blocks on the page
+                # because we remove all text and redraw everything
                 if text_blocks:
-                    # Select only translated blocks on this page
-                    for block_id, translated in translations.items():
-                        if not block_id.startswith(page_prefix):
+                    # Process all blocks on this page (translated + preserved)
+                    for text_block in text_blocks:
+                        if not text_block.id.startswith(page_prefix):
                             continue
 
-                        text_block = block_map.get(block_id)
-                        if not text_block or not text_block.metadata:
+                        if not text_block.metadata:
                             continue
                         bbox = text_block.metadata.get('bbox')
                         if not bbox or len(bbox) < 4:
                             continue
 
-                        # bbox is expected in PDF coordinates (x0, y0, x1, y1)
-                        x0, y0, x1, y1 = bbox[0], bbox[1], bbox[2], bbox[3]
-                        if y0 >= y1:
-                            # Defensive: handle unexpected image-like coordinates
-                            y0_pdf = page_height - y1
-                            y1_pdf = page_height - y0
-                            y0, y1 = y0_pdf, y1_pdf
+                        # Determine text to render: translation or original
+                        block_id = text_block.id
+                        if block_id in translations:
+                            text_to_render = translations[block_id]
+                            is_preserved = False
+                        else:
+                            # Block not in translations (skip_translation, etc.)
+                            # Preserve original text
+                            text_to_render = text_block.text
+                            is_preserved = True
 
-                        target_bboxes.append((x0, y0, x1, y1))
-
+                        # Restore formula placeholders if applicable
                         if formula_vars_map and block_id in formula_vars_map:
-                            translated = restore_formula_placeholders(
-                                translated, formula_vars_map[block_id]
+                            text_to_render = restore_formula_placeholders(
+                                text_to_render, formula_vars_map[block_id]
                             )
-                        blocks_to_process.append((block_id, translated, False))
+                        blocks_to_process.append((block_id, text_to_render, is_preserved))
                 else:
                     # Fallback: translated blocks only (PyMuPDF IDs)
                     for block_id, translated in translations.items():
@@ -1960,17 +1963,19 @@ class PdfProcessor(FileProcessor):
                 if not blocks_to_process:
                     continue
 
-                # Create content stream replacer for this page (selective removal)
+                # Create content stream replacer for this page
+                # PDFMathTranslate compliant: Remove ALL text from page
+                # Selective mode (target_bboxes) doesn't filter Form XObjects,
+                # causing original text inside tables/graphics to remain visible.
                 replacer = ContentStreamReplacer(doc, font_registry, preserve_graphics=True)
                 try:
                     replacer.set_base_stream(
                         page,
-                        target_bboxes=target_bboxes,  # Remove only translated text
-                        tolerance=3.0,
+                        target_bboxes=None,  # Remove all text (PDFMathTranslate compliant)
                     )
                     logger.info(
-                        "Page %d: removing translated text only (targets=%d)",
-                        page_num, len(target_bboxes)
+                        "Page %d: removing all text for translation (blocks=%d)",
+                        page_num, len(blocks_to_process)
                     )
                 except MemoryError as e:
                     logger.critical(

@@ -1222,7 +1222,7 @@ textarea:focus-visible {
 /* === Result Section === */
 .result-section {
     /* Layout container only - no card styling to avoid nested card appearance */
-    animation: fadeInSpring 400ms var(--md-sys-motion-easing-spring);
+    /* Note: Animation removed to prevent flickering during DOM refresh */
 }
 
 .result-header {
@@ -1782,8 +1782,7 @@ textarea:focus-visible {
     gap: 0.875rem;
     margin-top: 0.625rem;
     width: 100%;
-    /* Smooth fade-in from streaming preview */
-    animation: resultFadeIn 0.25s ease-out;
+    /* Note: Animation removed to prevent flickering during DOM refresh */
 }
 
 @keyframes resultFadeIn {
@@ -2052,28 +2051,10 @@ textarea:focus-visible {
 }
 
 /* Translation result stagger animation */
+/* Note: Animation disabled to prevent flickering during DOM refresh.
+   Original animation started with opacity: 0 which caused visible "frame" flash. */
 .option-card {
-    animation: slideUp var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-standard) backwards;
-}
-
-.option-card:nth-child(1) { animation-delay: 0ms; }
-.option-card:nth-child(2) { animation-delay: 80ms; }
-.option-card:nth-child(3) { animation-delay: 160ms; }
-.option-card:nth-child(4) { animation-delay: 240ms; }
-
-@keyframes slideUp {
-    0% {
-        opacity: 0;
-        transform: translateY(16px) scale(0.98);
-    }
-    60% {
-        opacity: 1;
-        transform: translateY(-3px) scale(1.01);
-    }
-    100% {
-        opacity: 1;
-        transform: translateY(0) scale(1);
-    }
+    /* animation: slideUp var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-standard) backwards; */
 }
 
 /* Loading state with character */

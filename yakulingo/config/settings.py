@@ -51,7 +51,7 @@ class AppSettings:
     # Font Settings (ファイル翻訳用 - 全形式共通)
     # フォントサイズ調整（JP→EN時）: 0で調整なし、負値で縮小
     font_size_adjustment_jp_to_en: float = 0.0  # pt
-    font_size_min: float = 6.0  # pt (最小フォントサイズ)
+    font_size_min: float = 8.0  # pt (最小フォントサイズ)
 
     # 出力フォント（言語方向のみで決定、元フォント種別は無視）
     font_jp_to_en: str = "Arial"           # 英訳時の出力フォント
@@ -123,11 +123,11 @@ class AppSettings:
         """
         # Font size constraints
         if self.font_size_min < 1.0:
-            logger.warning("font_size_min too small (%.1f), resetting to 6.0", self.font_size_min)
-            self.font_size_min = 6.0
+            logger.warning("font_size_min too small (%.1f), resetting to 8.0", self.font_size_min)
+            self.font_size_min = 8.0
         elif self.font_size_min > 72.0:
-            logger.warning("font_size_min too large (%.1f), resetting to 6.0", self.font_size_min)
-            self.font_size_min = 6.0
+            logger.warning("font_size_min too large (%.1f), resetting to 8.0", self.font_size_min)
+            self.font_size_min = 8.0
 
         # Batch size constraints
         if self.max_chars_per_batch < 100:

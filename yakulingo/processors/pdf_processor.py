@@ -2287,31 +2287,49 @@ class PdfProcessor(FileProcessor):
                             allow_wrap=allow_wrap,
                         )
 
-                        # For table cells: allow MINIMAL font size reduction if text overflows
+                        # For table cells: allow LIMITED font size reduction if text overflows.
                         # Tables have fixed cell boundaries, but readability takes priority.
                         #
                         # PDFMathTranslate compliant approach:
-                        # - Never reduce font size below 60% of original (preserve readability)
-                        # - Use a minimum of 5pt (smaller text is unreadable in most contexts)
-                        # - If text still doesn't fit, let it overflow (same as PDFMathTranslate)
-                        TABLE_FONT_MIN_READABLE = 5.0  # Minimum readable font size in points
-                        TABLE_FONT_MIN_RATIO = 0.6    # Never reduce below 60% of original size
+                        # - Prefer fixed font size + line-height compression
+                        # - If still too tall, reduce font size but keep it readable
+                        # - If text still doesn't fit, allow overflow (better than unreadably small text)
+                        TABLE_FONT_MIN_READABLE = 7.0  # Hard readability floor (never increases above original)
+                        TABLE_FONT_MIN_RATIO = 0.8     # Never reduce below 80% of original size
 
                         if is_table_cell and len(lines) > 1:
                             text_height = len(lines) * font_size * line_height
                             if text_height > box_height * 1.1:  # Allow 10% overflow
-                                # Calculate minimum font size to fit
+                                # Calculate minimum font size to fit exactly (no extra downscaling)
                                 min_required_font = box_height / (len(lines) * line_height)
-                                # Apply strict limits to prevent unreadable text
-                                absolute_min = max(TABLE_FONT_MIN_READABLE, font_size * TABLE_FONT_MIN_RATIO)
-                                table_min_font = max(absolute_min, min_required_font * 0.9)
-                                if table_min_font < font_size:
+
+                                # Respect user-configured minimum, but never increase above original.
+                                min_setting = MIN_FONT_SIZE
+                                if settings:
+                                    try:
+                                        min_setting = float(getattr(settings, 'font_size_min', MIN_FONT_SIZE) or MIN_FONT_SIZE)
+                                    except (TypeError, ValueError):
+                                        min_setting = MIN_FONT_SIZE
+                                min_setting = max(MIN_FONT_SIZE, min_setting)
+                                min_setting_no_increase = min(font_size, min_setting)
+
+                                # Apply strict limits to prevent unreadable text (also never increases above original)
+                                readable_floor_no_increase = min(font_size, TABLE_FONT_MIN_READABLE)
+                                absolute_min = max(
+                                    readable_floor_no_increase,
+                                    font_size * TABLE_FONT_MIN_RATIO,
+                                    min_setting_no_increase,
+                                )
+
+                                # Reduce only as much as needed, but not below our readability limits.
+                                table_target_font = max(absolute_min, min_required_font)
+                                if table_target_font < font_size:
                                     logger.debug(
                                         "[Table] Block %s: reducing font size from %.1f to %.1f "
                                         "to fit %d lines in height %.1f (min allowed: %.1f)",
-                                        block_id, font_size, table_min_font, len(lines), box_height, absolute_min
+                                        block_id, font_size, table_target_font, len(lines), box_height, absolute_min
                                     )
-                                    font_size = table_min_font
+                                    font_size = table_target_font
                                     # Recalculate lines with new font size
                                     lines = split_text_into_lines_with_font(
                                         translated, box_width, font_size, font_id, font_registry

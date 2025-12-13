@@ -24,7 +24,7 @@ class FontSizeAdjuster:
 
     # デフォルト値（AppSettingsと一致）
     DEFAULT_JP_TO_EN_ADJUSTMENT = 0.0  # pt (調整なし)
-    DEFAULT_MIN_SIZE = 6.0  # pt
+    DEFAULT_MIN_SIZE = 8.0  # pt
 
     def __init__(
         self,

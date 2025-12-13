@@ -1868,15 +1868,8 @@ class PdfProcessor(FileProcessor):
 
                 # Create content stream replacer for this page
                 # preserve_graphics=True: parse and filter original content stream
-                # preserve_original_text=True: keep non-translatable text intact (overlay mode)
-                #   - Only translation target text is covered with white rectangles
-                #   - Non-translatable text (numbers, URLs, etc.) remains visible
-                replacer = ContentStreamReplacer(
-                    doc,
-                    font_registry,
-                    preserve_graphics=True,
-                    preserve_original_text=True,  # Keep non-translatable text visible
-                )
+                # to remove text while keeping graphics/images
+                replacer = ContentStreamReplacer(doc, font_registry, preserve_graphics=True)
                 try:
                     replacer.set_base_stream(page)
                 except MemoryError as e:
@@ -1917,10 +1910,7 @@ class PdfProcessor(FileProcessor):
                 blocks_to_process = []
 
                 if text_blocks:
-                    # Process only translated blocks on this page from text_blocks
-                    # In overlay mode (preserve_original_text=True), non-translatable text
-                    # remains visible in the original PDF stream, so we only need to process
-                    # blocks that have translations (cover with white rect + draw new text)
+                    # Process all blocks on this page from text_blocks
                     for text_block in text_blocks:
                         if not text_block.id.startswith(page_prefix):
                             continue
@@ -1928,7 +1918,7 @@ class PdfProcessor(FileProcessor):
                         skip_translation = text_block.metadata.get('skip_translation', False)
 
                         if block_id in translations:
-                            # Translated block - will be covered with white rect and replaced
+                            # Translated block
                             translated = translations[block_id]
                             # Restore formula placeholders if formula_vars_map provided
                             if formula_vars_map and block_id in formula_vars_map:
@@ -1937,14 +1927,9 @@ class PdfProcessor(FileProcessor):
                                 )
                             blocks_to_process.append((block_id, translated, False))
                         elif skip_translation:
-                            # Non-translatable block - skip processing entirely
-                            # Original text is preserved in overlay mode (no white rect needed)
-                            result['preserved'] += 1
-                            logger.debug(
-                                "Preserving original text for non-translatable block %s: '%s...'",
-                                block_id, text_block.text[:50].replace('\n', ' ')
-                            )
-                        # else: block not in translations and not marked - skip
+                            # Non-translatable block - preserve original text
+                            blocks_to_process.append((block_id, text_block.text, True))
+                        # else: block not in translations and not marked for preservation - skip
                 else:
                     # Fallback: only process translated blocks
                     for block_id, translated in translations.items():
@@ -2161,18 +2146,9 @@ class PdfProcessor(FileProcessor):
                                     )
                                     box_width = estimated_width
 
-                        # Add white rectangle to cover original text (overlay mode)
-                        # This is needed because preserve_original_text=True keeps
-                        # original text visible, so we must cover translation targets
-                        # with white rectangles before drawing new text on top.
-                        # Non-translatable text is NOT processed, so it remains visible.
-                        replacer.add_white_rect(
-                            x=pdf_x1,
-                            y=pdf_y0,
-                            width=box_width,
-                            height=box_height,
-                            margin=1.0,  # Small margin to fully cover original text
-                        )
+                        # Note: No white rectangle needed anymore.
+                        # ContentStreamReplacer.set_base_stream() already filtered out
+                        # text operators from original content stream, preserving graphics.
 
                         # Select font based on text content
                         font_id = font_registry.select_font_for_text(translated, target_lang)
@@ -2311,10 +2287,15 @@ class PdfProcessor(FileProcessor):
                             op = op_gen.gen_op_txt(font_id, font_size, x, y, hex_text)
                             replacer.add_text_operator(op, font_id)
 
-                        # Track success count
-                        # In overlay mode, all blocks in this loop are translation targets
-                        # (non-translatable blocks are skipped and counted in 'preserved' earlier)
-                        result['success'] += 1
+                        # Track success/preserved counts separately
+                        if is_preserved_original:
+                            result['preserved'] += 1
+                            logger.debug(
+                                "Preserved original text for block %s: '%s...'",
+                                block_id, translated[:50] if len(translated) > 50 else translated
+                            )
+                        else:
+                            result['success'] += 1
 
                     except RuntimeError as e:
                         # PyMuPDF internal errors (e.g., corrupted page, invalid font)

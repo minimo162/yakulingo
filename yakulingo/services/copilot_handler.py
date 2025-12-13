@@ -1051,15 +1051,12 @@ class CopilotHandler:
         # Save storage_state to preserve login session
         self._save_storage_state()
 
-        # Stop browser loading indicator (optional)
-        try:
-            self._page.evaluate("window.stop()")
-        except (PlaywrightError, PlaywrightTimeoutError):
-            pass
+        # Note: Do NOT call window.stop() here as it interrupts M365 background
+        # authentication/session establishment, causing auth dialogs to appear.
 
-        # Wait briefly for any pending window focus changes to complete
-        # before minimizing (Playwright operations can trigger focus changes)
-        time.sleep(0.2)
+        # Wait for M365 background initialization to complete
+        # This prevents auth dialogs that appear when operations start too early
+        time.sleep(1.0)
 
         # Hide browser window when login is not required
         self._send_to_background_impl(self._page)

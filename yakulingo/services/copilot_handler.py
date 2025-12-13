@@ -2019,8 +2019,21 @@ class CopilotHandler:
                 logger.warning("Edge window not found for minimization after %d attempts", max_retries)
                 return False
 
-            # Save window placement before minimizing to ensure proper restoration
-            # This fixes issues where taskbar click doesn't restore the window
+            # Check if already minimized - skip all processing if so
+            # This prevents unnecessary window operations that could cause flicker
+            if user32.IsIconic(edge_hwnd):
+                logger.debug("Edge window is already minimized, skipping")
+                return True
+
+            # FIRST: Minimize the window IMMEDIATELY to hide it
+            # This must happen before any SetWindowPlacement calls, which could
+            # move the window from off-screen (-32000,-32000) to visible position
+            # and cause a momentary flash.
+            # Note: SW_SHOWMINNOACTIVE can cause restoration issues in some environments
+            user32.ShowWindow(edge_hwnd, SW_MINIMIZE)
+
+            # THEN: Update window placement for proper restoration from taskbar
+            # Since the window is already minimized, these changes won't be visible
             wp = WINDOWPLACEMENT()
             wp.length = ctypes.sizeof(WINDOWPLACEMENT)
             if user32.GetWindowPlacement(edge_hwnd, ctypes.byref(wp)):
@@ -2031,14 +2044,17 @@ class CopilotHandler:
                              wp.rcNormalPosition.left, wp.rcNormalPosition.top,
                              wp.rcNormalPosition.right, wp.rcNormalPosition.bottom)
 
-                # Check if rcNormalPosition is too small and fix it before minimizing
-                # This ensures proper size when window is restored from taskbar
+                # Check if rcNormalPosition is too small or off-screen and fix it
+                # This ensures proper size/position when window is restored from taskbar
                 rc = wp.rcNormalPosition
                 saved_width = rc.right - rc.left
                 saved_height = rc.bottom - rc.top
                 placement_modified = False
 
-                if saved_width < self.MIN_EDGE_WINDOW_WIDTH or saved_height < self.MIN_EDGE_WINDOW_HEIGHT:
+                # Check for off-screen position (Edge starts at -32000,-32000)
+                is_offscreen = rc.left < -10000 or rc.top < -10000
+
+                if saved_width < self.MIN_EDGE_WINDOW_WIDTH or saved_height < self.MIN_EDGE_WINDOW_HEIGHT or is_offscreen:
                     # Get screen work area (excludes taskbar) for centering
                     work_area = wintypes.RECT()
                     SPI_GETWORKAREA = 0x0030
@@ -2064,10 +2080,14 @@ class CopilotHandler:
                     rc.bottom = new_y + new_height
                     placement_modified = True
 
-                    logger.info("Fixed small rcNormalPosition: %dx%d -> %dx%d",
-                                saved_width, saved_height, new_width, new_height)
+                    if is_offscreen:
+                        logger.debug("Fixed off-screen position: (%d,%d) -> (%d,%d)",
+                                     wp.rcNormalPosition.left, wp.rcNormalPosition.top, new_x, new_y)
+                    else:
+                        logger.info("Fixed small rcNormalPosition: %dx%d -> %dx%d",
+                                    saved_width, saved_height, new_width, new_height)
 
-                # Set showCmd to SW_SHOWNORMAL before minimizing
+                # Set showCmd to SW_SHOWNORMAL for proper restoration
                 # This ensures Windows remembers the restored state correctly
                 if original_show_cmd not in (SW_SHOWNORMAL, SW_MINIMIZE):
                     wp.showCmd = SW_SHOWNORMAL
@@ -2075,10 +2095,6 @@ class CopilotHandler:
 
                 if placement_modified:
                     user32.SetWindowPlacement(edge_hwnd, ctypes.byref(wp))
-
-            # Use SW_MINIMIZE to minimize the window
-            # Note: SW_SHOWMINNOACTIVE can cause restoration issues in some environments
-            user32.ShowWindow(edge_hwnd, SW_MINIMIZE)
 
             logger.info("Edge window minimized successfully")
             return True

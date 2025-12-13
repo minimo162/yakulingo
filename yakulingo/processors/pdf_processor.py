@@ -1757,6 +1757,7 @@ class PdfProcessor(FileProcessor):
         result = {
             'total': len(translations),
             'success': 0,
+            'preserved': 0,  # Non-translatable blocks preserved with original text
             'failed': [],
             'failed_fonts': [],
             'failed_pages': [],
@@ -1902,19 +1903,46 @@ class PdfProcessor(FileProcessor):
                             block_id = f"page_{page_idx}_block_{block_idx}"
                             pymupdf_blocks_dict[block_id] = block
 
-                # Process translations for this page
-                for block_id, translated in translations.items():
-                    # Restore formula placeholders if formula_vars_map provided
-                    # PDFMathTranslate compliant: {vN} placeholders are replaced
-                    # with original formula text after translation
-                    if formula_vars_map and block_id in formula_vars_map:
-                        translated = restore_formula_placeholders(
-                            translated, formula_vars_map[block_id]
-                        )
+                # Build list of blocks to process for this page
+                # Include both translated blocks and non-translatable blocks that need preservation
+                page_prefix = f"page_{page_idx}_"
+                blocks_to_process = []
 
-                    # Check block ID prefix to determine if this block belongs to this page
-                    if not block_id.startswith(f"page_{page_idx}_"):
-                        continue
+                if text_blocks:
+                    # Process all blocks on this page from text_blocks
+                    for text_block in text_blocks:
+                        if not text_block.id.startswith(page_prefix):
+                            continue
+                        block_id = text_block.id
+                        skip_translation = text_block.metadata.get('skip_translation', False)
+
+                        if block_id in translations:
+                            # Translated block
+                            translated = translations[block_id]
+                            # Restore formula placeholders if formula_vars_map provided
+                            if formula_vars_map and block_id in formula_vars_map:
+                                translated = restore_formula_placeholders(
+                                    translated, formula_vars_map[block_id]
+                                )
+                            blocks_to_process.append((block_id, translated, False))
+                        elif skip_translation:
+                            # Non-translatable block - preserve original text
+                            blocks_to_process.append((block_id, text_block.text, True))
+                        # else: block not in translations and not marked for preservation - skip
+                else:
+                    # Fallback: only process translated blocks
+                    for block_id, translated in translations.items():
+                        if not block_id.startswith(page_prefix):
+                            continue
+                        if formula_vars_map and block_id in formula_vars_map:
+                            translated = restore_formula_placeholders(
+                                translated, formula_vars_map[block_id]
+                            )
+                        blocks_to_process.append((block_id, translated, False))
+
+                # Process all blocks for this page
+                for block_id, text_to_render, is_preserved_original in blocks_to_process:
+                    translated = text_to_render  # Use consistent variable name for existing code
 
                     # PDFMathTranslate compliant: Get coordinates from TextBlock
                     if text_blocks:
@@ -2299,7 +2327,15 @@ class PdfProcessor(FileProcessor):
                             op = op_gen.gen_op_txt(font_id, font_size, x, y, hex_text)
                             replacer.add_text_operator(op, font_id)
 
-                        result['success'] += 1
+                        # Track success/preserved counts separately
+                        if is_preserved_original:
+                            result['preserved'] += 1
+                            logger.debug(
+                                "Preserved original text for block %s: '%s...'",
+                                block_id, translated[:50] if len(translated) > 50 else translated
+                            )
+                        else:
+                            result['success'] += 1
 
                     except RuntimeError as e:
                         # PyMuPDF internal errors (e.g., corrupted page, invalid font)
@@ -2392,6 +2428,12 @@ class PdfProcessor(FileProcessor):
             # Font subsetting and save document (PDFMathTranslate compliant)
             doc.subset_fonts(fallback=True)
             doc.save(str(output_path), garbage=3, deflate=True, use_objstms=1)
+
+            # Log summary
+            logger.info(
+                "Low-level PDF translation completed: translated=%d, preserved=%d, failed=%d",
+                result['success'], result['preserved'], len(result['failed'])
+            )
 
             if result['failed']:
                 logger.warning(
@@ -3177,15 +3219,19 @@ class PdfProcessor(FileProcessor):
                 skipped_formula += 1
                 continue
 
-            if not self.should_translate(text_without_placeholders):
+            # Check if this block should be translated or preserved as-is
+            # Non-translatable blocks (numbers, dates, etc.) are included but marked
+            # so apply_translations can preserve original text
+            skip_translation = not self.should_translate(text_without_placeholders)
+            if skip_translation:
                 skipped_no_translate += 1
-                # DEBUG: Log skipped text for troubleshooting
+                # DEBUG: Log non-translatable text for troubleshooting
                 preview = text_without_placeholders[:100].replace('\n', ' ')
                 logger.info(
-                    "Page %d: Skipped text (should_translate=False): '%s...' (len=%d)",
+                    "Page %d: Non-translatable text (will preserve original): '%s...' (len=%d)",
                     page_num, preview, len(text_without_placeholders)
                 )
-                continue
+                # Continue to include this block (don't skip) - it will be preserved
 
             bbox = (para.x0, para.y0, para.x1, para.y1)
 
@@ -3229,13 +3275,14 @@ class PdfProcessor(FileProcessor):
                     'formula_vars': block_vars,
                     'has_formulas': bool(block_vars),
                     'layout_class': para.layout_class,  # For table detection
+                    'skip_translation': skip_translation,  # Preserve original text if True
                 }
             ))
 
         # DEBUG: Log conversion summary
         logger.info(
             "Page %d: sstk=%d, pstk=%d, skipped_empty=%d, skipped_formula=%d, "
-            "skipped_no_translate=%d, output_blocks=%d",
+            "preserved_no_translate=%d, output_blocks=%d",
             page_num, len(sstk), len(pstk),
             skipped_empty, skipped_formula, skipped_no_translate, len(blocks)
         )

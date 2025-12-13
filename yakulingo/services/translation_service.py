@@ -644,8 +644,9 @@ class BatchTranslator:
         # Set cancel callback on CopilotHandler for responsive cancellation
         self.copilot.set_cancel_callback(lambda: self._cancel_event.is_set())
 
-        # Phase 0: Skip formula blocks (preserve original text)
+        # Phase 0: Skip formula blocks and non-translatable blocks (preserve original text)
         formula_skipped = 0
+        skip_translation_count = 0
         translatable_blocks = []
 
         for block in blocks:
@@ -653,6 +654,10 @@ class BatchTranslator:
             if block.metadata and block.metadata.get('is_formula'):
                 translations[block.id] = block.text  # Keep original
                 formula_skipped += 1
+            # Check if block is marked for skip_translation (PDF processor: numbers, dates, etc.)
+            elif block.metadata and block.metadata.get('skip_translation'):
+                # Don't add to translations - apply_translations will handle preservation
+                skip_translation_count += 1
             else:
                 translatable_blocks.append(block)
 
@@ -660,6 +665,11 @@ class BatchTranslator:
             logger.debug(
                 "Skipped %d formula blocks (preserved original text)",
                 formula_skipped
+            )
+        if skip_translation_count > 0:
+            logger.debug(
+                "Skipped %d non-translatable blocks (will preserve original in apply_translations)",
+                skip_translation_count
             )
 
         # Phase 1: Check cache for already-translated blocks

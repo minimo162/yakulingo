@@ -827,6 +827,9 @@ class CopilotHandler:
                 # Disable browser sync to avoid Edge profile sign-in prompts
                 # (YakuLingo uses isolated profile, sync is not needed)
                 "--disable-sync",
+                # Disable popup blocking to allow M365 auth flow to open auth windows
+                # (Without this, clicking "Continue" on auth dialogs leads to about:blank)
+                "--disable-popup-blocking",
             ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                cwd=local_cwd if sys.platform == "win32" else None,
                startupinfo=startupinfo,
@@ -2083,6 +2086,36 @@ class CopilotHandler:
                 return False
 
             try:
+                # Check for auth popup windows that may have opened
+                # (e.g., when user clicks "Continue" on auth dialog)
+                if self._context:
+                    try:
+                        all_pages = self._context.pages
+                        for popup_page in all_pages:
+                            if popup_page == page:
+                                continue
+                            try:
+                                popup_url = popup_page.url
+                                # Skip about:blank pages that are being set up
+                                if popup_url == "about:blank":
+                                    # Wait a moment for the popup to navigate
+                                    try:
+                                        popup_page.wait_for_load_state('domcontentloaded', timeout=3000)
+                                        popup_url = popup_page.url
+                                    except PlaywrightTimeoutError:
+                                        pass
+                                if _is_login_page(popup_url):
+                                    logger.info("Login wait: detected auth popup window (%s)", popup_url[:60])
+                                    # Bring popup to foreground for user to complete auth
+                                    try:
+                                        popup_page.bring_to_front()
+                                    except Exception:
+                                        pass
+                            except PlaywrightError:
+                                pass  # Popup may have closed
+                    except PlaywrightError:
+                        pass  # Context may be closed
+
                 # Wait for any pending navigation to complete
                 try:
                     page.wait_for_load_state('domcontentloaded', timeout=2000)

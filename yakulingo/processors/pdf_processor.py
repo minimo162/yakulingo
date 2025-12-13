@@ -2280,6 +2280,25 @@ class PdfProcessor(FileProcessor):
                                     left_margin_x if left_margin_x is not None else 0
                                 )
 
+                        # PDFMathTranslate compliant: Add white background before text
+                        # This ensures original text is completely hidden even if
+                        # content stream filtering is incomplete
+                        # Calculate the actual text area based on number of lines
+                        text_height = len(lines) * font_size * line_height
+                        if initial_y is not None:
+                            # Use original position as top
+                            bg_y0 = initial_y - text_height + font_size  # bottom
+                            bg_y1 = initial_y + font_size * 0.2  # top with small margin
+                        else:
+                            bg_y0 = pdf_y0
+                            bg_y1 = pdf_y1
+
+                        # Use expanded box_width for background (layout-aware)
+                        bg_x0 = pdf_x1
+                        bg_x1 = pdf_x1 + box_width
+
+                        replacer.add_white_background(bg_x0, bg_y0, bg_x1, bg_y1, margin=2.0)
+
                         # Generate text operators for each line
                         for line_idx, line_text in enumerate(lines):
                             if not line_text.strip():

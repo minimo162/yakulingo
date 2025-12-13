@@ -823,6 +823,33 @@ class TestContentStreamReplacer:
         )
         assert result is replacer
 
+    def test_add_white_background(self, replacer):
+        """Test adding white background rectangle."""
+        result = replacer.add_white_background(100, 200, 300, 250)
+        assert result is replacer
+        # Check that operator was added
+        assert len(replacer.operators) == 1
+        op = replacer.operators[0]
+        # Should contain white fill color and rectangle
+        assert "1 1 1 rg" in op
+        assert "re f" in op
+
+    def test_add_white_background_with_margin(self, replacer):
+        """Test white background with custom margin."""
+        replacer.add_white_background(100, 200, 300, 250, margin=5.0)
+        op = replacer.operators[0]
+        # Margin is applied: x0-5=95, y0-5=195, width=210, height=60
+        assert "95" in op
+        assert "195" in op
+
+    def test_add_white_background_closes_text_block(self, replacer):
+        """Test that adding background closes any open text block."""
+        replacer.begin_text()
+        assert replacer._in_text_block is True
+        replacer.add_white_background(100, 200, 300, 250)
+        # Text block should be closed (graphics need to be outside BT/ET)
+        assert replacer._in_text_block is False
+
 
 class TestContentStreamParserSelective:
     """Tests for selective text filtering in ContentStreamParser."""

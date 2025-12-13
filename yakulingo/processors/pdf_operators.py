@@ -503,85 +503,93 @@ class ContentStreamParser:
 
         return tokens
 
+    # Text operators to skip globally (PDFMathTranslate pdfinterp.py compatible)
+    # This set includes all operators that start with 'T' plus text-related operators
+    TEXT_OPS_TO_SKIP = frozenset({
+        # Text block boundaries
+        'BT', 'ET',
+        # Text showing operators
+        'Tj', 'TJ', "'", '"',
+        # Text state operators
+        'Tc', 'Tw', 'Tz', 'TL', 'Tf', 'Tr', 'Ts',
+        # Text positioning operators
+        'Td', 'TD', 'Tm', 'T*',
+    })
+
     def _filter_tokens(self, tokens: list[tuple[str, str]]) -> list[tuple[str, str]]:
         """
         Filter out text operators and their operands.
 
-        Removes BT...ET blocks entirely, preserving only graphics operations.
+        PDFMathTranslate pdfinterp.py compatible:
+        Removes ALL text-related operators globally, not just inside BT...ET blocks.
+        This is more robust than BT/ET detection alone.
+
+        The key insight from PDFMathTranslate:
+        - Filter condition: `if not (name[0] == "T" or name in ['"', "'", ...])`
+        - This removes operators starting with 'T' everywhere in the stream
+        - More reliable than tracking BT/ET state which can fail on malformed PDFs
         """
         result = []
         i = 0
         n = len(tokens)
-        in_text_block = False
         operand_stack = []
 
         # Debug counters
-        text_block_count = 0
-        filtered_tokens_count = 0
-        filtered_strings = []  # Sample of filtered string content
+        filtered_ops_count = 0
+        filtered_operands_count = 0
+        kept_ops_count = 0
 
         while i < n:
             token_type, token_value = tokens[i]
 
             if token_type == 'whitespace':
-                if not in_text_block:
-                    result.append((token_type, token_value))
+                # Always preserve whitespace for readability
+                result.append((token_type, token_value))
                 i += 1
                 continue
 
             if token_type == 'operator':
-                if token_value == 'BT':
-                    # Enter text block - start filtering
-                    in_text_block = True
-                    text_block_count += 1
-                    operand_stack = []
+                # PDFMathTranslate approach: skip operators starting with 'T'
+                # or in the TEXT_OPS_TO_SKIP set
+                is_text_op = (
+                    token_value in self.TEXT_OPS_TO_SKIP or
+                    (len(token_value) > 0 and token_value[0] == 'T')
+                )
+
+                if is_text_op:
+                    # Skip this text operator and discard its operands
+                    filtered_ops_count += 1
+                    filtered_operands_count += len(operand_stack)
+                    operand_stack = []  # Discard operands for text operator
                     i += 1
                     continue
 
-                if token_value == 'ET':
-                    # Exit text block
-                    in_text_block = False
-                    operand_stack = []
-                    i += 1
-                    continue
-
-                if in_text_block:
-                    # Inside text block - skip all operators
-                    filtered_tokens_count += 1
-                    operand_stack = []
-                    i += 1
-                    continue
-
-                # Outside text block - keep operator and its operands
+                # Non-text operator: keep it with its operands
                 result.extend(operand_stack)
                 result.append((token_type, token_value))
                 operand_stack = []
+                kept_ops_count += 1
                 i += 1
                 continue
 
             # Operand (number, name, string, array, dict)
-            if in_text_block:
-                # Skip operands inside text block
-                filtered_tokens_count += 1
-                # Collect sample of filtered strings for debugging
-                if token_type == 'string' and len(filtered_strings) < 5:
-                    filtered_strings.append(token_value[:100])
-                i += 1
-                continue
-
-            # Accumulate operands
+            # Accumulate until we see the operator
             operand_stack.append((token_type, token_value))
             i += 1
 
-        # Add any remaining operands (shouldn't happen in valid PDF)
-        result.extend(operand_stack)
+        # Add any remaining operands (edge case: stream ends without operator)
+        if operand_stack:
+            logger.debug(
+                "_filter_tokens: %d trailing operands at stream end",
+                len(operand_stack)
+            )
+            result.extend(operand_stack)
 
         # Debug output
         logger.info(
-            "_filter_tokens: text_blocks=%d, filtered_tokens=%d, result_tokens=%d, "
-            "sample_filtered_strings=%s",
-            text_block_count, filtered_tokens_count, len(result),
-            filtered_strings
+            "_filter_tokens (PDFMathTranslate mode): "
+            "filtered_ops=%d, filtered_operands=%d, kept_ops=%d, result_tokens=%d",
+            filtered_ops_count, filtered_operands_count, kept_ops_count, len(result)
         )
 
         return result
@@ -1279,20 +1287,32 @@ class ContentStreamReplacer:
             # Wrap in q/Q to isolate graphics state
             combined = b"q " + self._filtered_base_stream + b" Q " + new_text
 
-            # Debug: Check if filtered base still contains BT/ET
+            # Enhanced debug: Check for remaining text operators (PDFMathTranslate mode)
             filtered_str = self._filtered_base_stream.decode('latin-1', errors='replace')
-            bt_in_filtered = filtered_str.count('BT')
-            et_in_filtered = filtered_str.count('ET')
+
+            # Check for text-related operators that should have been removed
+            # Use word boundary patterns to avoid false positives
+            import re
+            text_ops_pattern = r'\b(BT|ET|Tj|TJ|Tf|Td|TD|Tm|T\*|Tc|Tw|Tz|TL|Tr|Ts)\b'
+            remaining_text_ops = re.findall(text_ops_pattern, filtered_str)
+
             logger.info(
-                "build_combined: filtered_base has BT=%d, ET=%d, combined_len=%d, "
-                "filtered_preview='%s'",
-                bt_in_filtered, et_in_filtered, len(combined),
-                filtered_str[:300].replace('\n', '\\n').replace('\r', '\\r')
+                "build_combined: filtered_base_len=%d, combined_len=%d, "
+                "remaining_text_ops=%d",
+                len(self._filtered_base_stream), len(combined),
+                len(remaining_text_ops)
             )
-            if bt_in_filtered > 0 or et_in_filtered > 0:
-                logger.warning(
-                    "build_combined: WARNING - filtered_base still contains text blocks! "
-                    "Original text may not be removed."
+
+            if remaining_text_ops:
+                # Count each operator type
+                op_counts = {}
+                for op in remaining_text_ops:
+                    op_counts[op] = op_counts.get(op, 0) + 1
+                logger.error(
+                    "CRITICAL: filtered_base still contains text operators! "
+                    "This will cause text duplication. Operators found: %s. "
+                    "Check ContentStreamParser._filter_tokens implementation.",
+                    op_counts
                 )
 
             return combined

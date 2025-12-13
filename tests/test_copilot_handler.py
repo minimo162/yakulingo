@@ -677,6 +677,55 @@ class TestSendMessage:
         total_enter_presses = mock_input.press.call_count + mock_refetched_input.press.call_count
         assert total_enter_presses == 3
 
+    def test_send_message_fallback_to_send_button_click(self):
+        """_send_message tries send button click as fallback when Enter key fails"""
+        handler = CopilotHandler()
+
+        mock_page = MagicMock()
+        mock_input = MagicMock()
+        mock_send_button = MagicMock()
+        mock_stop_button = MagicMock()
+        mock_stop_button.is_visible.return_value = False
+
+        mock_page.wait_for_selector.return_value = mock_input
+
+        # fill() check returns text (fill success)
+        mock_input.inner_text.return_value = "Test prompt"
+
+        # Track query_selector calls to control flow
+        call_count = [0]
+
+        def query_selector_side_effect(selector):
+            call_count[0] += 1
+            # First 3 calls during Enter retries - return input with text
+            # Then send button lookup should return the button
+            if "stop" in selector.lower() or "Stop" in selector:
+                return mock_stop_button
+            if "SendButton" in selector or 'type="submit"' in selector:
+                return mock_send_button
+            # Return input element with text (Enter fails)
+            return mock_input
+
+        mock_page.query_selector.side_effect = query_selector_side_effect
+        handler._page = mock_page
+
+        # After button click, input should be cleared (simulate success)
+        def clear_on_button_click(js_code):
+            if 'click()' in js_code:
+                mock_input.inner_text.return_value = ""  # Simulate cleared
+            return None
+
+        mock_send_button.evaluate.side_effect = clear_on_button_click
+
+        handler._send_message("Test prompt")
+
+        # Verify send button was clicked as fallback
+        assert mock_send_button.evaluate.called
+        # Check that click() was called on send button
+        click_calls = [call for call in mock_send_button.evaluate.call_args_list
+                       if 'click()' in str(call)]
+        assert len(click_calls) > 0, "Send button should have been clicked"
+
 
 class TestGetResponse:
     """Test _get_response functionality"""

@@ -824,6 +824,9 @@ class CopilotHandler:
                 "--proxy-bypass-list=localhost;127.0.0.1",
                 # Start minimized to avoid visual flash when login is not required
                 "--start-minimized",
+                # Position window off-screen to prevent visual flash during Playwright operations
+                # Even if browser comes to foreground, it won't be visible to user
+                "--window-position=-32000,-32000",
                 # Disable browser sync to avoid Edge profile sign-in prompts
                 # (YakuLingo uses isolated profile, sync is not needed)
                 "--disable-sync",
@@ -1881,26 +1884,33 @@ class CopilotHandler:
                     user32.AttachThreadInput(current_thread_id, foreground_thread_id, False)
                     logger.debug("Detached from foreground thread")
 
-            # 8. Check and adjust window size if too small
-            # Some environments show Edge in very small windows
+            # 8. Check and adjust window position and size
+            # Window may be off-screen (started with --window-position=-32000,-32000)
+            # or too small in some environments
             try:
                 rect = wintypes.RECT()
                 if user32.GetWindowRect(edge_hwnd, ctypes.byref(rect)):
+                    current_x = rect.left
+                    current_y = rect.top
                     current_width = rect.right - rect.left
                     current_height = rect.bottom - rect.top
-                    logger.debug("Current Edge window size: %dx%d", current_width, current_height)
+                    logger.debug("Current Edge window: pos=(%d,%d), size=%dx%d",
+                                 current_x, current_y, current_width, current_height)
 
-                    # Only resize if window is smaller than minimum
-                    if current_width < self.MIN_EDGE_WINDOW_WIDTH or current_height < self.MIN_EDGE_WINDOW_HEIGHT:
+                    # Get screen work area (excludes taskbar) for proper positioning
+                    work_area = wintypes.RECT()
+                    SPI_GETWORKAREA = 0x0030
+                    user32.SystemParametersInfoW(SPI_GETWORKAREA, 0, ctypes.byref(work_area), 0)
+                    screen_width = work_area.right - work_area.left
+                    screen_height = work_area.bottom - work_area.top
+
+                    # Check if window is off-screen or too small
+                    is_off_screen = current_x < -10000 or current_y < -10000
+                    is_too_small = current_width < self.MIN_EDGE_WINDOW_WIDTH or current_height < self.MIN_EDGE_WINDOW_HEIGHT
+
+                    if is_off_screen or is_too_small:
                         new_width = max(current_width, self.MIN_EDGE_WINDOW_WIDTH)
                         new_height = max(current_height, self.MIN_EDGE_WINDOW_HEIGHT)
-
-                        # Get screen work area (excludes taskbar) for proper positioning
-                        work_area = wintypes.RECT()
-                        SPI_GETWORKAREA = 0x0030
-                        user32.SystemParametersInfoW(SPI_GETWORKAREA, 0, ctypes.byref(work_area), 0)
-                        screen_width = work_area.right - work_area.left
-                        screen_height = work_area.bottom - work_area.top
 
                         # Center the window on screen work area
                         new_x = work_area.left + (screen_width - new_width) // 2
@@ -1916,10 +1926,14 @@ class CopilotHandler:
                             new_x, new_y, new_width, new_height,
                             SWP_SHOWWINDOW
                         )
-                        logger.info("Adjusted Edge window size from %dx%d to %dx%d",
-                                    current_width, current_height, new_width, new_height)
+                        if is_off_screen:
+                            logger.info("Moved Edge window from off-screen (%d,%d) to (%d,%d)",
+                                        current_x, current_y, new_x, new_y)
+                        if is_too_small:
+                            logger.info("Adjusted Edge window size from %dx%d to %dx%d",
+                                        current_width, current_height, new_width, new_height)
             except Exception as size_error:
-                logger.debug("Failed to check/adjust window size: %s", size_error)
+                logger.debug("Failed to check/adjust window position/size: %s", size_error)
 
             # 9. Flash taskbar icon to get user attention
             # FLASHW_ALL = 3, FLASHW_TIMERNOFG = 12
@@ -2912,6 +2926,9 @@ class CopilotHandler:
             # Start a new chat to clear previous context (prevents using old responses)
             self.start_new_chat(skip_clear_wait=skip_clear_wait if attempt == 0 else True)
 
+            # Minimize browser after start_new_chat to prevent window flash
+            self._send_to_background_impl(self._page)
+
             # Check for cancellation after starting new chat
             if self._is_cancelled():
                 logger.info("Translation cancelled after starting new chat")
@@ -2929,6 +2946,9 @@ class CopilotHandler:
 
             # Send the prompt
             self._send_message(prompt)
+
+            # Minimize browser after _send_message to prevent window flash
+            self._send_to_background_impl(self._page)
 
             # Check for cancellation after sending message (before waiting for response)
             if self._is_cancelled():
@@ -3109,6 +3129,9 @@ class CopilotHandler:
             self.start_new_chat()
             logger.info("[TIMING] start_new_chat: %.2fs", time.time() - new_chat_start)
 
+            # Minimize browser after start_new_chat to prevent window flash
+            self._send_to_background_impl(self._page)
+
             # Check for cancellation after starting new chat
             if self._is_cancelled():
                 logger.info("Translation cancelled after starting new chat (single)")
@@ -3130,6 +3153,9 @@ class CopilotHandler:
             send_start = time.time()
             self._send_message(prompt)
             logger.info("[TIMING] _send_message: %.2fs", time.time() - send_start)
+
+            # Minimize browser after _send_message to prevent window flash
+            self._send_to_background_impl(self._page)
 
             # Check for cancellation after sending message
             if self._is_cancelled():

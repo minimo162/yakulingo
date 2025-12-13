@@ -1290,6 +1290,12 @@ When interacting with users in this repository, prefer Japanese for comments and
 ## Recent Development Focus
 
 Based on recent commits:
+- **PDF Layout Improvement (2024-12)**:
+  - **More aggressive line height compression**: MIN_LINE_HEIGHT を 0.95 から 0.85 に変更し、テキストをより多く収容
+  - **Table cell-specific compression**: テーブルセル用の TABLE_MIN_LINE_HEIGHT = 0.75 を追加
+  - **Table cell font size reduction**: テーブルセル内でテキストがオーバーフローする場合、フォントサイズを縮小
+  - **is_table_cell parameter**: calculate_line_height_with_font に is_table_cell パラメータを追加
+  - **PDFMathTranslate reference**: https://github.com/PDFMathTranslate/PDFMathTranslate を参考に改善
 - **PDF Layout-Aware Box Expansion (2024-12)**:
   - **Horizontal expansion**: テキストが収まらない場合、隣接ブロックがなければ右方向に拡張
   - **Layout-aware**: PP-DocLayout-Lの検出結果を使用して隣接ブロックを回避

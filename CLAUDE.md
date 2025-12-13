@@ -1290,6 +1290,13 @@ When interacting with users in this repository, prefer Japanese for comments and
 ## Recent Development Focus
 
 Based on recent commits:
+- **PDF Layout-Aware Box Expansion (2024-12)**:
+  - **Horizontal expansion**: テキストが収まらない場合、隣接ブロックがなければ右方向に拡張
+  - **Layout-aware**: PP-DocLayout-Lの検出結果を使用して隣接ブロックを回避
+  - **Table cell protection**: 表セル内のテキストは拡張せず、セル境界を尊重
+  - **Page margin respect**: ページ右余白（デフォルト20pt）を考慮
+  - **expandable_width metadata**: TextBlock抽出時に拡張可能幅を事前計算
+  - **Fallback support**: PP-DocLayout-L未使用時はページ余白まで拡張
 - **PDF Translation Bug Fixes (2024-12)**:
   - **Non-translatable text disappearance fix**: PDF翻訳時の非翻訳対象テキスト消失を修正
   - **Number parsing fix**: PDF翻訳時の番号パース失敗を修正

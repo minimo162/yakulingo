@@ -3921,3 +3921,168 @@ class TestSplitTextIntoLinesWithFont:
             "Test", 0, 12.0, "F1", mock_font_registry
         )
         assert lines == ["Test"]
+
+
+class TestCalculateExpandableWidth:
+    """Tests for calculate_expandable_width function"""
+
+    @pytest.fixture
+    def mock_layout_array(self):
+        """Create a mock LayoutArray with some paragraphs"""
+        import numpy as np
+        from yakulingo.processors.pdf_layout import LayoutArray
+
+        # Create a simple layout array (image coordinates: origin top-left)
+        # 600px wide, 800px tall
+        array = np.ones((800, 600), dtype=np.uint16)
+
+        paragraphs = {
+            2: {'box': [100, 100, 250, 150], 'label': 'text'},  # Left column
+            3: {'box': [350, 100, 550, 150], 'label': 'text'},  # Right column
+        }
+        tables = {}
+
+        return LayoutArray(
+            array=array,
+            height=800,
+            width=600,
+            paragraphs=paragraphs,
+            tables=tables,
+            figures=[],
+            fallback_used=False,
+        )
+
+    def test_table_cell_no_expansion(self, mock_layout_array):
+        """Table cells should not expand"""
+        from yakulingo.processors.pdf_layout import calculate_expandable_width
+
+        bbox = (100, 650, 200, 700)  # PDF coords (bottom-left origin)
+        page_width = 600.0
+        page_height = 800.0
+
+        result = calculate_expandable_width(
+            mock_layout_array, bbox, page_width, page_height,
+            is_table_cell=True
+        )
+
+        # Should return original width for table cells
+        assert result == 100  # 200 - 100
+
+    def test_expand_to_adjacent_block(self, mock_layout_array):
+        """Should expand up to adjacent block boundary"""
+        from yakulingo.processors.pdf_layout import calculate_expandable_width
+
+        # Block at left side, adjacent block at x=350 (image coords)
+        # PDF coords: y is flipped
+        bbox = (100, 650, 250, 700)  # PDF coords
+        page_width = 600.0
+        page_height = 800.0
+
+        result = calculate_expandable_width(
+            mock_layout_array, bbox, page_width, page_height,
+            is_table_cell=False
+        )
+
+        # Should expand but stop before adjacent block
+        assert result > 150  # Original width
+        assert result <= page_width - 20  # Should not exceed page margin
+
+    def test_expand_to_page_margin(self):
+        """Should expand to page margin when no adjacent blocks"""
+        import numpy as np
+        from yakulingo.processors.pdf_layout import (
+            LayoutArray, calculate_expandable_width, DEFAULT_PAGE_MARGIN
+        )
+
+        # Empty layout (no paragraphs)
+        array = np.ones((800, 600), dtype=np.uint16)
+        layout = LayoutArray(
+            array=array,
+            height=800,
+            width=600,
+            paragraphs={},
+            tables={},
+            figures=[],
+        )
+
+        bbox = (50, 650, 150, 700)  # PDF coords
+        page_width = 600.0
+        page_height = 800.0
+
+        result = calculate_expandable_width(
+            layout, bbox, page_width, page_height,
+            is_table_cell=False
+        )
+
+        # Should expand to page margin
+        expected = page_width - DEFAULT_PAGE_MARGIN - 50  # x0
+        assert result == expected
+
+    def test_no_layout_info(self):
+        """Should expand to page margin when no layout info"""
+        from yakulingo.processors.pdf_layout import (
+            calculate_expandable_width, DEFAULT_PAGE_MARGIN
+        )
+
+        bbox = (50, 650, 150, 700)
+        page_width = 600.0
+        page_height = 800.0
+
+        result = calculate_expandable_width(
+            None, bbox, page_width, page_height,
+            is_table_cell=False
+        )
+
+        # Should expand to page margin
+        expected = page_width - DEFAULT_PAGE_MARGIN - 50
+        assert result == expected
+
+    def test_fallback_mode(self):
+        """Should expand to page margin in fallback mode"""
+        import numpy as np
+        from yakulingo.processors.pdf_layout import (
+            LayoutArray, calculate_expandable_width, DEFAULT_PAGE_MARGIN
+        )
+
+        array = np.ones((800, 600), dtype=np.uint16)
+        layout = LayoutArray(
+            array=array,
+            height=800,
+            width=600,
+            paragraphs={},
+            tables={},
+            figures=[],
+            fallback_used=True,  # Fallback mode
+        )
+
+        bbox = (50, 650, 150, 700)
+        page_width = 600.0
+        page_height = 800.0
+
+        result = calculate_expandable_width(
+            layout, bbox, page_width, page_height,
+            is_table_cell=False
+        )
+
+        # Should expand to page margin in fallback mode
+        expected = page_width - DEFAULT_PAGE_MARGIN - 50
+        assert result == expected
+
+    def test_already_at_margin(self):
+        """Should return original width when already at page margin"""
+        from yakulingo.processors.pdf_layout import (
+            calculate_expandable_width, DEFAULT_PAGE_MARGIN
+        )
+
+        # Block already at right edge
+        bbox = (500, 650, 590, 700)  # x1 = 590, close to 600 - 20 = 580
+        page_width = 600.0
+        page_height = 800.0
+
+        result = calculate_expandable_width(
+            None, bbox, page_width, page_height,
+            is_table_cell=False
+        )
+
+        # Should return original width since already at margin
+        assert result == 90  # 590 - 500

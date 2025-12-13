@@ -92,6 +92,7 @@ from .pdf_layout import (
     create_layout_array_from_pp_doclayout, create_layout_array_from_yomitoku,
     get_layout_class_at_point, is_same_region, should_abandon_region,
     map_pp_doclayout_label_to_role, prepare_translation_cells,
+    calculate_expandable_width,
     _get_numpy, _get_paddleocr, _get_torch,
 )
 
@@ -2058,6 +2059,11 @@ class PdfProcessor(FileProcessor):
                         # Store original box_width for table cells (don't expand)
                         original_box_width = box_width
 
+                        # Get expandable_width from TextBlock metadata (layout-aware)
+                        # This is pre-calculated during extraction using PP-DocLayout-L
+                        # to respect adjacent blocks and page margins
+                        expandable_width = text_block.metadata.get('expandable_width', box_width) if text_blocks else box_width
+
                         # Adjust box_width for multi-line blocks to prevent excessive fragmentation
                         # IMPORTANT: Skip expansion for table cells - use font size reduction instead
                         # When original text was wrapped into N lines in a narrow box, the box_width
@@ -2067,6 +2073,11 @@ class PdfProcessor(FileProcessor):
                         #
                         # PDFMathTranslate compliant: Table cells must NOT expand box_width
                         # Table cells have fixed boundaries - expanding would overlap adjacent cells
+                        #
+                        # NEW: Layout-aware expansion using expandable_width
+                        # - expandable_width is calculated from PP-DocLayout-L during extraction
+                        # - Respects adjacent block boundaries to prevent overlap
+                        # - Table cells have expandable_width == original_width (no expansion)
                         if is_table_cell:
                             # For table cells, keep original box_width and rely on font size reduction
                             logger.debug(
@@ -2085,11 +2096,17 @@ class PdfProcessor(FileProcessor):
                             cjk_chars = sum(1 for c in translated if ord(c) > 0x2E7F)
                             avg_char_width = estimated_font_size if cjk_chars > len(translated) / 2 else estimated_font_size * 0.5
                             estimated_width = avg_chars_per_line * avg_char_width
+
+                            # Cap estimated_width at expandable_width (layout-aware limit)
+                            estimated_width = min(estimated_width, expandable_width)
+
                             # Use the larger of original width and estimated width
                             if estimated_width > box_width:
                                 logger.debug(
-                                    "Expanding box_width from %.1f to %.1f for block %s (original %d lines)",
-                                    box_width, estimated_width, block_id, original_line_count
+                                    "Expanding box_width from %.1f to %.1f for block %s "
+                                    "(original %d lines, expandable_width=%.1f)",
+                                    box_width, estimated_width, block_id,
+                                    original_line_count, expandable_width
                                 )
                                 box_width = estimated_width
 
@@ -2114,17 +2131,18 @@ class PdfProcessor(FileProcessor):
                                 avg_chars_per_line = len(translated) / target_lines
                                 estimated_width = avg_chars_per_line * avg_char_width
 
-                                # Cap at page width minus margins (assume ~50pt margin on each side)
-                                page_margin = 50.0
-                                max_width = page_width - 2 * page_margin if page_width > 0 else 500.0
-                                estimated_width = min(estimated_width, max_width)
+                                # Cap at expandable_width (layout-aware limit)
+                                # This replaces the old page_width - 2*margin calculation
+                                estimated_width = min(estimated_width, expandable_width)
 
                                 if estimated_width > box_width:
                                     logger.debug(
                                         "Expanding box_width from %.1f to %.1f for single-line block %s "
-                                        "(text_len=%d would need ~%.1f lines, targeting %d lines)",
+                                        "(text_len=%d would need ~%.1f lines, targeting %d lines, "
+                                        "expandable_width=%.1f)",
                                         box_width, estimated_width, block_id,
-                                        len(translated), estimated_output_lines, target_lines
+                                        len(translated), estimated_output_lines, target_lines,
+                                        expandable_width
                                     )
                                     box_width = estimated_width
 
@@ -2565,9 +2583,9 @@ class PdfProcessor(FileProcessor):
                 interpreter = PDFPageInterpreter(rsrcmgr, converter)
 
                 # Collect pages into batches for PP-DocLayout-L batch processing
-                batch_data: list[tuple[int, Any, Any, float]] = []
+                batch_data: list[tuple[int, Any, Any, float, float]] = []
 
-                for page_idx, img, ltpage, page_height in self._iterate_pages_unified(
+                for page_idx, img, ltpage, page_height, page_width in self._iterate_pages_unified(
                     file_path, document, PDFPage, interpreter, converter, dpi
                 ):
                     # Check for cancellation
@@ -2576,7 +2594,7 @@ class PdfProcessor(FileProcessor):
                                    page_idx + 1, total_pages)
                         return
 
-                    batch_data.append((page_idx, img, ltpage, page_height))
+                    batch_data.append((page_idx, img, ltpage, page_height, page_width))
 
                     # Process batch when full or at end
                     if len(batch_data) >= batch_size or page_idx == total_pages - 1:
@@ -2585,7 +2603,7 @@ class PdfProcessor(FileProcessor):
                         batch_layout_results = analyze_layout_batch(batch_images, actual_device)
 
                         # Process each page in the batch
-                        for batch_idx, (p_idx, img, ltpage, p_height) in enumerate(batch_data):
+                        for batch_idx, (p_idx, img, ltpage, p_height, p_width) in enumerate(batch_data):
                             page_num = p_idx + 1
                             pages_processed += 1
 
@@ -2656,7 +2674,8 @@ class PdfProcessor(FileProcessor):
                                     blocks = self._group_chars_into_blocks(
                                         chars, p_idx, LTChar,
                                         layout=layout_array,
-                                        page_height=p_height
+                                        page_height=p_height,
+                                        page_width=p_width
                                     )
                                 else:
                                     blocks = []
@@ -2747,7 +2766,7 @@ class PdfProcessor(FileProcessor):
         interpreter,
         converter,
         dpi: int,
-    ) -> Iterator[tuple[int, Any, Any, float]]:
+    ) -> Iterator[tuple[int, Any, Any, float, float]]:
         """
         Unified iterator for PDF pages - synchronizes pypdfium2 images and pdfminer data.
 
@@ -2763,11 +2782,12 @@ class PdfProcessor(FileProcessor):
             dpi: Resolution for image rendering
 
         Yields:
-            (page_idx, image, ltpage, page_height) for each page
+            (page_idx, image, ltpage, page_height, page_width) for each page
             - page_idx: 0-indexed page number
             - image: BGR numpy array from pypdfium2
             - ltpage: pdfminer LTPage object
             - page_height: Page height in PDF points
+            - page_width: Page width in PDF points
         """
         np = _get_numpy()
 
@@ -2790,12 +2810,13 @@ class PdfProcessor(FileProcessor):
                     else pdfminer_page.mediabox
                 )
                 page_height = abs(y1 - y0)
+                page_width = abs(x1 - x0)
 
                 # Safety check: skip pages with invalid dimensions
-                if page_height <= 0:
+                if page_height <= 0 or page_width <= 0:
                     logger.warning(
-                        "Page %d has invalid height (%s), skipping",
-                        page_idx, page_height
+                        "Page %d has invalid dimensions (height=%s, width=%s), skipping",
+                        page_idx, page_height, page_width
                     )
                     continue
 
@@ -2810,7 +2831,7 @@ class PdfProcessor(FileProcessor):
                 # RGB to BGR (OpenCV compatible)
                 img = img[:, :, ::-1].copy()
 
-                yield (page_idx, img, ltpage, page_height)
+                yield (page_idx, img, ltpage, page_height, page_width)
 
                 # Clear converter.pages to free memory
                 converter.pages.clear()
@@ -3115,6 +3136,9 @@ class PdfProcessor(FileProcessor):
         pstk: list[Paragraph],
         var: list[FormulaVar],
         page_idx: int,
+        layout: Optional[LayoutArray] = None,
+        page_height: float = 0,
+        page_width: float = 0,
     ) -> list[TextBlock]:
         """
         Convert PDFMathTranslate-style stacks to TextBlock objects.
@@ -3124,9 +3148,12 @@ class PdfProcessor(FileProcessor):
             pstk: Paragraph metadata stack
             var: Formula variable storage array
             page_idx: Page index (0-based)
+            layout: Optional LayoutArray for expandable width calculation
+            page_height: Page height in PDF points
+            page_width: Page width in PDF points
 
         Returns:
-            List of TextBlock objects
+            List of TextBlock objects with expandable_width in metadata
         """
         blocks = []
         page_num = page_idx + 1
@@ -3189,15 +3216,32 @@ class PdfProcessor(FileProcessor):
             estimated_line_count = para_height / (font_size * DEFAULT_LINE_HEIGHT) if font_size > 0 else 1
             original_line_count = max(1, round(estimated_line_count))
 
+            # Check if this is a table cell (table cells cannot expand)
+            is_table_cell = para.layout_class >= LAYOUT_TABLE_BASE
+
+            # Calculate expandable width using layout info
+            # This allows text to expand horizontally when there's space on the right
+            original_width = para.x1 - para.x0
+            if layout is not None and page_width > 0 and page_height > 0:
+                expandable_width = calculate_expandable_width(
+                    layout, bbox, page_width, page_height,
+                    is_table_cell=is_table_cell
+                )
+            else:
+                # No layout info - use original width
+                expandable_width = original_width
+
             # Layout debugging: log block extraction details
             logger.debug(
                 "[Layout] Extracted block page_%d_block_%d: "
                 "bbox=(%.1f, %.1f, %.1f, %.1f), para_height=%.1f, font_size=%.1f, "
-                "original_line_count=%d (estimated=%.2f), text_len=%d",
+                "original_line_count=%d (estimated=%.2f), text_len=%d, "
+                "expandable_width=%.1f (original=%.1f), is_table=%s",
                 page_idx, block_idx,
                 para.x0, para.y0, para.x1, para.y1,
                 para_height, font_size,
-                original_line_count, estimated_line_count, len(text)
+                original_line_count, estimated_line_count, len(text),
+                expandable_width, original_width, is_table_cell
             )
 
             blocks.append(TextBlock(
@@ -3218,6 +3262,7 @@ class PdfProcessor(FileProcessor):
                     'has_formulas': bool(block_vars),
                     'layout_class': para.layout_class,  # For table detection
                     'skip_translation': skip_translation,  # Preserve original text if True
+                    'expandable_width': expandable_width,  # Max width block can expand to
                 }
             ))
 
@@ -3238,6 +3283,7 @@ class PdfProcessor(FileProcessor):
         LTChar,
         layout: Optional[LayoutArray] = None,
         page_height: float = 0,
+        page_width: float = 0,
     ) -> list[TextBlock]:
         """
         Group LTChar objects into TextBlock objects using PDFMathTranslate-style
@@ -3262,6 +3308,7 @@ class PdfProcessor(FileProcessor):
             LTChar: LTChar class reference
             layout: Optional LayoutArray from PP-DocLayout-L
             page_height: Page height in PDF points (72 DPI)
+            page_width: Page width in PDF points (for expandable width calculation)
 
         Returns:
             List of TextBlock objects with bbox in PDF coordinates
@@ -3486,7 +3533,9 @@ class PdfProcessor(FileProcessor):
                     pstk.append(create_paragraph_from_char(chars[-1], False))
 
         # Convert stacks to TextBlocks using helper method
-        return self._convert_stacks_to_text_blocks(sstk, pstk, var, page_idx)
+        return self._convert_stacks_to_text_blocks(
+            sstk, pstk, var, page_idx, layout, page_height, page_width
+        )
 
     def get_page_count(self, file_path: Path) -> int:
         """Get total page count of PDF."""

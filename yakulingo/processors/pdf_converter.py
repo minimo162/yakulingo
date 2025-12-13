@@ -751,8 +751,19 @@ def detect_paragraph_boundary(
                     elif y_diff > y_line_thresh:
                         line_break = True
             else:
-                # Non-table region: standard Y-based detection
-                if y_diff > y_line_thresh:
+                # Non-table region: Y-based detection with X gap check
+                # Form fields and multi-column layouts may have significant X gaps
+                # that should be treated as separate paragraphs
+                if prev_x1 is not None:
+                    x_gap = char_x0 - prev_x1
+                    # Use TABLE_CELL_X_THRESHOLD for non-table regions as well
+                    # to properly split form fields (e.g., "上場会社名" and "マツダ株式会社")
+                    if x_gap > TABLE_CELL_X_THRESHOLD:
+                        # Large X gap suggests new field/column = new paragraph
+                        new_paragraph = True
+                    elif y_diff > y_line_thresh:
+                        line_break = True
+                elif y_diff > y_line_thresh:
                     line_break = True
     else:
         # Fallback: Y-coordinate based detection with X-coordinate heuristics

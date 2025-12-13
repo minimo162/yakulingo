@@ -124,6 +124,24 @@ class TestCellTranslator:
         assert translator.should_translate("50%") is False
         assert translator.should_translate("100 %") is False
 
+    # --- Number with symbols ---
+
+    def test_skip_number_with_symbols(self, translator):
+        """Numbers with symbols (▲△ etc.) should not be translated"""
+        # Single number with symbol
+        assert translator.should_translate("△1,731,269") is False
+        assert translator.should_translate("▲500") is False
+        # Multiple numbers with symbols
+        assert translator.should_translate("35,555 1,731,269 △1,731,269") is False
+        assert translator.should_translate("100 200 ▲300") is False
+        # Numbers with various symbols
+        assert translator.should_translate("△100 ▲200") is False
+        assert translator.should_translate("●1,000 ○2,000") is False
+        # Percentage with symbol
+        assert translator.should_translate("△5%") is False
+        # Multiple spaces and formatting
+        assert translator.should_translate("1,000  2,000  △3,000") is False
+
     # --- Currency values ---
 
     def test_skip_currency(self, translator):
@@ -244,12 +262,12 @@ class TestCellTranslatorPatternCompleteness:
 
     def test_all_skip_patterns_defined(self, translator):
         """Ensure expected number of skip patterns exist"""
-        # CellTranslator has 10 skip patterns (including symbol+number pattern)
-        assert len(translator.SKIP_PATTERNS) == 10
+        # CellTranslator has 9 skip patterns (number+symbol pattern unified)
+        assert len(translator.SKIP_PATTERNS) == 9
 
     def test_patterns_are_valid_regex(self, translator):
         """All patterns should be valid compiled regex"""
-        assert len(translator._skip_regex) == 10
+        assert len(translator._skip_regex) == 9
         for regex in translator._skip_regex:
             assert hasattr(regex, 'match')
 
@@ -263,12 +281,12 @@ class TestParagraphTranslatorPatternCompleteness:
 
     def test_all_skip_patterns_defined(self, translator):
         """Ensure expected number of skip patterns exist"""
-        # ParagraphTranslator has 4 skip patterns (including symbol+number pattern)
-        assert len(translator.SKIP_PATTERNS) == 4
+        # ParagraphTranslator has 3 skip patterns (number+symbol pattern unified)
+        assert len(translator.SKIP_PATTERNS) == 3
 
     def test_patterns_are_valid_regex(self, translator):
         """All patterns should be valid compiled regex"""
-        assert len(translator._skip_regex) == 4
+        assert len(translator._skip_regex) == 3
         for regex in translator._skip_regex:
             assert hasattr(regex, 'match')
 

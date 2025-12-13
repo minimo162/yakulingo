@@ -3281,12 +3281,61 @@ class CopilotHandler:
 
                 for send_attempt in range(MAX_SEND_RETRIES):
                     # Ensure input element has focus before pressing Enter
-                    # Use JS click + focus for more reliable focus setting
+                    # Check if focus is already on the input, if not, set it
                     try:
-                        input_elem.evaluate('el => { el.click(); el.focus(); }')
-                        time.sleep(0.2)  # Increased from 0.1s for more reliable first send
-                    except Exception:
-                        pass
+                        has_focus = input_elem.evaluate(
+                            'el => document.activeElement === el || el.contains(document.activeElement)'
+                        )
+                        if not has_focus:
+                            logger.debug("Input lost focus, attempting to restore (attempt %d)", send_attempt + 1)
+                            # Try multiple methods to restore focus
+                            # Method 1: click + focus
+                            input_elem.evaluate('el => { el.click(); el.focus(); }')
+                            time.sleep(0.1)
+
+                            # Verify focus was set
+                            has_focus = input_elem.evaluate(
+                                'el => document.activeElement === el || el.contains(document.activeElement)'
+                            )
+                            if not has_focus:
+                                # Method 2: scrollIntoView + focus
+                                logger.debug("Method 1 failed, trying scrollIntoView + focus")
+                                input_elem.evaluate('el => { el.scrollIntoView({block: "center"}); el.focus(); }')
+                                time.sleep(0.1)
+
+                                has_focus = input_elem.evaluate(
+                                    'el => document.activeElement === el || el.contains(document.activeElement)'
+                                )
+                                if not has_focus:
+                                    # Method 3: dispatchEvent focus
+                                    logger.debug("Method 2 failed, trying dispatchEvent")
+                                    input_elem.evaluate('''el => {
+                                        el.dispatchEvent(new FocusEvent('focus', { bubbles: true }));
+                                        el.focus();
+                                    }''')
+                                    time.sleep(0.1)
+
+                            # Final focus check
+                            has_focus = input_elem.evaluate(
+                                'el => document.activeElement === el || el.contains(document.activeElement)'
+                            )
+                            if has_focus:
+                                logger.debug("Focus successfully restored")
+                            else:
+                                logger.warning("Could not restore focus to input element (attempt %d)", send_attempt + 1)
+                        else:
+                            logger.debug("Input element already has focus")
+
+                        time.sleep(0.15)  # Brief pause after focus handling
+                    except Exception as focus_err:
+                        logger.debug("Focus check/restore failed: %s", focus_err)
+                        # Fallback: just try click + focus
+                        try:
+                            input_elem.evaluate('el => { el.click(); el.focus(); }')
+                            time.sleep(0.2)
+                        except Exception:
+                            pass
+
                     input_elem.press("Enter")
                     time.sleep(SEND_RETRY_WAIT)
 
@@ -3322,13 +3371,54 @@ class CopilotHandler:
                                 send_attempt + 1, MAX_SEND_RETRIES
                             )
                         else:
-                            # Final attempt - log warning but continue
-                            # Response polling will handle actual failure detection
+                            # Final Enter attempt failed - try clicking the send button
                             logger.warning(
                                 "Input still has text after %d Enter attempts. "
-                                "Proceeding anyway - response polling will detect if send failed.",
+                                "Trying send button click as fallback...",
                                 MAX_SEND_RETRIES
                             )
+                            try:
+                                # First try enabled button selector
+                                send_btn = self._page.query_selector(self.SEND_BUTTON_SELECTOR)
+
+                                # If not found, check if button exists but is disabled
+                                if not send_btn:
+                                    any_send_btn = self._page.query_selector(self.SEND_BUTTON_ANY)
+                                    if any_send_btn:
+                                        # Button exists but is disabled - wait for it to become enabled
+                                        logger.info("Send button found but disabled, waiting for it to become enabled...")
+                                        try:
+                                            send_btn = self._page.wait_for_selector(
+                                                self.SEND_BUTTON_SELECTOR,
+                                                timeout=3000,
+                                                state='visible'
+                                            )
+                                        except PlaywrightTimeoutError:
+                                            logger.warning("Send button did not become enabled within 3 seconds")
+                                            send_btn = None
+
+                                if send_btn:
+                                    # Use JS click to avoid bringing browser to front
+                                    send_btn.evaluate('el => el.click()')
+                                    time.sleep(SEND_RETRY_WAIT)
+
+                                    # Re-check if send was successful
+                                    try:
+                                        current_input = self._page.query_selector(input_selector)
+                                        remaining_text = current_input.inner_text().strip() if current_input else ""
+                                    except Exception:
+                                        remaining_text = ""
+
+                                    if not remaining_text:
+                                        logger.info("Message sent via send button click (fallback)")
+                                        send_success = True
+                                    else:
+                                        logger.warning("Send button click did not clear input")
+                                else:
+                                    logger.warning("Send button not found for fallback (selector: %s)",
+                                                   self.SEND_BUTTON_SELECTOR)
+                            except Exception as btn_err:
+                                logger.warning("Send button fallback failed: %s", btn_err)
             else:
                 logger.error("Input element not found!")
                 raise RuntimeError("Copilot入力欄が見つかりませんでした")

@@ -1850,45 +1850,14 @@ class CopilotHandler:
                 if is_minimized:
                     logger.debug("Window is minimized, restoring...")
 
-                # 2. Show and restore window
-                user32.ShowWindow(edge_hwnd, SW_RESTORE if is_minimized else SW_SHOW)
-                user32.ShowWindow(edge_hwnd, SW_SHOWNORMAL)
+                # 2. CRITICAL: Check and reposition window BEFORE showing it
+                # Window may be off-screen (started with --window-position=-32000,-32000)
+                # Repositioning after ShowWindow causes a brief flash at top-left
+                SWP_NOACTIVATE = 0x0010
+                SWP_NOZORDER = 0x0004
 
-                # 3. Bring window to top
-                user32.BringWindowToTop(edge_hwnd)
-
-                # 4. Use SetWindowPos with HWND_TOPMOST to bring to front
-                user32.SetWindowPos(
-                    edge_hwnd, HWND_TOPMOST,
-                    0, 0, 0, 0,
-                    SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW
-                )
-
-                # 5. Remove topmost flag to allow other windows on top later
-                user32.SetWindowPos(
-                    edge_hwnd, HWND_NOTOPMOST,
-                    0, 0, 0, 0,
-                    SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW
-                )
-
-                # 6. Set foreground window
-                user32.SetForegroundWindow(edge_hwnd)
-
-                # 7. Also try AllowSetForegroundWindow to allow our process
-                user32.AllowSetForegroundWindow(wintypes.DWORD(-1))  # ASFW_ANY
-                user32.SetForegroundWindow(edge_hwnd)
-
-            finally:
-                # Detach from the foreground thread
-                if attached:
-                    user32.AttachThreadInput(current_thread_id, foreground_thread_id, False)
-                    logger.debug("Detached from foreground thread")
-
-            # 8. Check and adjust window position and size
-            # Window may be off-screen (started with --window-position=-32000,-32000)
-            # or too small in some environments
-            try:
                 rect = wintypes.RECT()
+                repositioned = False
                 if user32.GetWindowRect(edge_hwnd, ctypes.byref(rect)):
                     current_x = rect.left
                     current_y = rect.top
@@ -1920,20 +1889,53 @@ class CopilotHandler:
                         new_x = max(work_area.left, min(new_x, work_area.right - new_width))
                         new_y = max(work_area.top, min(new_y, work_area.bottom - new_height))
 
-                        # Resize and reposition window
+                        # Reposition window BEFORE showing (SWP_NOACTIVATE to avoid flash)
                         user32.SetWindowPos(
                             edge_hwnd, 0,
                             new_x, new_y, new_width, new_height,
-                            SWP_SHOWWINDOW
+                            SWP_NOACTIVATE | SWP_NOZORDER
                         )
+                        repositioned = True
                         if is_off_screen:
-                            logger.info("Moved Edge window from off-screen (%d,%d) to (%d,%d)",
+                            logger.info("Pre-positioned Edge window from off-screen (%d,%d) to (%d,%d)",
                                         current_x, current_y, new_x, new_y)
                         if is_too_small:
-                            logger.info("Adjusted Edge window size from %dx%d to %dx%d",
+                            logger.info("Pre-adjusted Edge window size from %dx%d to %dx%d",
                                         current_width, current_height, new_width, new_height)
-            except Exception as size_error:
-                logger.debug("Failed to check/adjust window position/size: %s", size_error)
+
+                # 3. Now show and restore window (at correct position)
+                user32.ShowWindow(edge_hwnd, SW_RESTORE if is_minimized else SW_SHOW)
+                user32.ShowWindow(edge_hwnd, SW_SHOWNORMAL)
+
+                # 4. Bring window to top
+                user32.BringWindowToTop(edge_hwnd)
+
+                # 5. Use SetWindowPos with HWND_TOPMOST to bring to front
+                user32.SetWindowPos(
+                    edge_hwnd, HWND_TOPMOST,
+                    0, 0, 0, 0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW
+                )
+
+                # 6. Remove topmost flag to allow other windows on top later
+                user32.SetWindowPos(
+                    edge_hwnd, HWND_NOTOPMOST,
+                    0, 0, 0, 0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW
+                )
+
+                # 7. Set foreground window
+                user32.SetForegroundWindow(edge_hwnd)
+
+                # 8. Also try AllowSetForegroundWindow to allow our process
+                user32.AllowSetForegroundWindow(wintypes.DWORD(-1))  # ASFW_ANY
+                user32.SetForegroundWindow(edge_hwnd)
+
+            finally:
+                # Detach from the foreground thread
+                if attached:
+                    user32.AttachThreadInput(current_thread_id, foreground_thread_id, False)
+                    logger.debug("Detached from foreground thread")
 
             # 9. Flash taskbar icon to get user attention
             # FLASHW_ALL = 3, FLASHW_TIMERNOFG = 12

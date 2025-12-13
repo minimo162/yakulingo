@@ -86,6 +86,22 @@ AUTH_FLOW_PATTERNS = [
     "/sign-in-callback",
     "/authredirect",
     "/authRedirect",
+    # Azure AD / Entra ID endpoints
+    "/common",
+    "/organizations",
+    "/consumers",
+    "/devicelogin",
+    "/callback",
+    # OAuth query parameters that indicate auth flow in progress
+    "?code=",
+    "&code=",
+    "?state=",
+    "&state=",
+    "nonce=",
+    # Microsoft account specific
+    "/federation",
+    "/wsfed",
+    "/saml",
 ]
 
 
@@ -1213,6 +1229,13 @@ class CopilotHandler:
                     page.wait_for_load_state('networkidle', timeout=10000)
                 except PlaywrightTimeoutError:
                     pass
+            elif self._has_auth_dialog():
+                # Auth dialog present - do NOT navigate, wait for user to complete auth
+                logger.info("Auth dialog detected on Copilot page, waiting for auth to complete...")
+                try:
+                    page.wait_for_load_state('networkidle', timeout=10000)
+                except PlaywrightTimeoutError:
+                    pass
             else:
                 logger.info("On Copilot domain but not /chat, navigating...")
                 try:
@@ -1306,6 +1329,13 @@ class CopilotHandler:
                 # Do not interrupt auth redirects/callbacks by forcing navigation.
                 if _is_auth_flow_page(url):
                     logger.info("Auth flow page detected (%s); skipping forced navigation to /chat", url[:80])
+                    self.last_connection_error = self.ERROR_LOGIN_REQUIRED
+                    if not wait_for_login:
+                        return False
+                    return self._wait_for_login_completion(page)
+                # Also check for auth dialog before navigating
+                if self._has_auth_dialog():
+                    logger.info("Auth dialog detected; skipping forced navigation to /chat")
                     self.last_connection_error = self.ERROR_LOGIN_REQUIRED
                     if not wait_for_login:
                         return False
@@ -1523,25 +1553,33 @@ class CopilotHandler:
                     # only navigate if URL has been stable (not actively redirecting)
                     # This prevents interrupting auth redirects
                     if "/chat" not in current_url:
-                        # Only navigate if URL has been stable for at least 2 checks
-                        # This ensures we're not interrupting an ongoing redirect
-                        if stable_count >= 2:
-                            logger.debug(
-                                "Auto-login: on Copilot domain but not /chat (%s), URL stable, navigating...",
-                                current_url[:60]
-                            )
-                            try:
-                                self._page.goto(self.COPILOT_URL, wait_until='commit', timeout=30000)
-                                time.sleep(1.0)  # Brief wait for page load
-                                # Re-check URL after navigation
-                                current_url = self._page.url
-                                stable_count = 0  # Reset after navigation
-                            except (PlaywrightTimeoutError, PlaywrightError) as nav_err:
-                                logger.debug("Failed to navigate to chat: %s", nav_err)
+                        # Only navigate if URL has been stable for at least 4 checks (4 seconds)
+                        # AND no authentication dialog is visible
+                        # This ensures we're not interrupting an ongoing redirect or auth flow
+                        if stable_count >= 4:
+                            # Additional safety check: don't navigate if auth dialog is present
+                            if self._has_auth_dialog():
+                                logger.debug(
+                                    "Auto-login: auth dialog detected, skipping navigation (%s)",
+                                    current_url[:60]
+                                )
+                            else:
+                                logger.debug(
+                                    "Auto-login: on Copilot domain but not /chat (%s), URL stable, navigating...",
+                                    current_url[:60]
+                                )
+                                try:
+                                    self._page.goto(self.COPILOT_URL, wait_until='commit', timeout=30000)
+                                    time.sleep(1.0)  # Brief wait for page load
+                                    # Re-check URL after navigation
+                                    current_url = self._page.url
+                                    stable_count = 0  # Reset after navigation
+                                except (PlaywrightTimeoutError, PlaywrightError) as nav_err:
+                                    logger.debug("Failed to navigate to chat: %s", nav_err)
                         else:
                             logger.debug(
-                                "Auto-login: on Copilot domain but not /chat (%s), waiting for redirect to complete...",
-                                current_url[:60]
+                                "Auto-login: on Copilot domain but not /chat (%s), waiting for redirect to complete (stable_count=%d)...",
+                                current_url[:60], stable_count
                             )
 
                     # Give a bit more time for chat UI to appear after redirect
@@ -1569,16 +1607,23 @@ class CopilotHandler:
                             elif not _is_copilot_url(current_url):
                                 # Not on Copilot domain and not on login page
                                 # (e.g., Edge home page like edge://newtab, msn.com, etc.)
-                                # Navigate to Copilot to get things moving
-                                logger.info(
-                                    "URL stable on non-Copilot page (%s), navigating to Copilot...",
-                                    current_url[:60]
-                                )
-                                try:
-                                    self._page.goto(self.COPILOT_URL, wait_until='commit', timeout=30000)
-                                    stable_count = 0  # Reset counter after navigation
-                                except (PlaywrightTimeoutError, PlaywrightError) as nav_err:
-                                    logger.debug("Failed to navigate to Copilot: %s", nav_err)
+                                # Check for auth flow patterns in URL before navigating
+                                if _is_auth_flow_page(current_url):
+                                    logger.debug(
+                                        "Auto-login: auth flow detected in URL (%s), waiting...",
+                                        current_url[:60]
+                                    )
+                                else:
+                                    # Navigate to Copilot to get things moving
+                                    logger.info(
+                                        "URL stable on non-Copilot page (%s), navigating to Copilot...",
+                                        current_url[:60]
+                                    )
+                                    try:
+                                        self._page.goto(self.COPILOT_URL, wait_until='commit', timeout=30000)
+                                        stable_count = 0  # Reset counter after navigation
+                                    except (PlaywrightTimeoutError, PlaywrightError) as nav_err:
+                                        logger.debug("Failed to navigate to Copilot: %s", nav_err)
                     else:
                         # URL changed - auto-login is progressing
                         logger.debug("Auto-login progressing: %s -> %s", last_url[:50], current_url[:50])
@@ -2093,6 +2138,18 @@ class CopilotHandler:
                         # Avoid interrupting auth redirects/callbacks that temporarily live on the Copilot domain.
                         if _is_auth_flow_page(url):
                             logger.debug("Login wait: on auth flow page, waiting for redirect to complete...")
+                            try:
+                                page.wait_for_load_state('networkidle', timeout=10000)
+                            except PlaywrightTimeoutError:
+                                pass
+                            if not interruptible_sleep(poll_interval):
+                                logger.info("Login wait cancelled during poll")
+                                return False
+                            elapsed += poll_interval
+                            continue
+                        # Also check for auth dialog before navigating
+                        if self._has_auth_dialog():
+                            logger.debug("Login wait: auth dialog detected, waiting for auth to complete...")
                             try:
                                 page.wait_for_load_state('networkidle', timeout=10000)
                             except PlaywrightTimeoutError:

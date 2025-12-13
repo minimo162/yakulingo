@@ -895,3 +895,232 @@ def prepare_translation_cells(
         ))
 
     return cells
+
+
+# =============================================================================
+# Box Width Expansion Functions
+# =============================================================================
+
+# Default page margin for expansion limit
+DEFAULT_PAGE_MARGIN = 20.0
+
+# Minimum gap between blocks to consider as separate columns
+MIN_COLUMN_GAP = 10.0
+
+# Y-overlap threshold for considering blocks on the same line (fraction of height)
+SAME_LINE_OVERLAP_THRESHOLD = 0.3
+
+
+def calculate_expandable_width(
+    layout: LayoutArray,
+    bbox: tuple[float, float, float, float],
+    page_width: float,
+    page_height: float,
+    page_margin: float = DEFAULT_PAGE_MARGIN,
+    is_table_cell: bool = False,
+) -> float:
+    """
+    Calculate the maximum expandable width for a text block.
+
+    This function determines how much a block can expand to the right
+    without overlapping with adjacent blocks or exceeding page margins.
+
+    Features:
+    - Respects adjacent block boundaries (layout-aware)
+    - Respects page right margin
+    - Table cells cannot expand (returns original width)
+    - Uses LayoutArray paragraph/table info for accurate detection
+
+    Coordinate Systems:
+    - bbox: PDF coordinates (origin at bottom-left, y increases upward)
+    - LayoutArray: Image coordinates (origin at top-left, y increases downward)
+
+    Args:
+        layout: LayoutArray from PP-DocLayout-L
+        bbox: Block bounding box in PDF coordinates (x0, y0, x1, y1)
+        page_width: Page width in PDF points
+        page_height: Page height in PDF points
+        page_margin: Minimum margin from page edge (default 20pt)
+        is_table_cell: If True, block is in a table cell (no expansion)
+
+    Returns:
+        Maximum width the block can expand to (in PDF points)
+    """
+    x0, y0, x1, y1 = bbox
+    original_width = x1 - x0
+
+    # Table cells cannot expand - they have fixed boundaries
+    if is_table_cell:
+        return original_width
+
+    # Calculate maximum possible width (page width minus margins)
+    max_right = page_width - page_margin
+    if x1 >= max_right:
+        # Already at or past the right margin
+        return original_width
+
+    # If no layout info, expand to page margin
+    if layout is None or layout.array is None:
+        return max_right - x0
+
+    # If fallback mode (no PP-DocLayout-L results), use simple page margin
+    if layout.fallback_used:
+        return max_right - x0
+
+    # Find adjacent blocks on the right side
+    right_boundary = _find_right_boundary(
+        layout, bbox, page_width, page_height, page_margin
+    )
+
+    # Return expandable width
+    expandable_width = right_boundary - x0
+    return max(original_width, expandable_width)
+
+
+def _find_right_boundary(
+    layout: LayoutArray,
+    bbox: tuple[float, float, float, float],
+    page_width: float,
+    page_height: float,
+    page_margin: float,
+) -> float:
+    """
+    Find the right boundary for block expansion.
+
+    Searches for the nearest block on the right side that overlaps
+    vertically with the current block.
+
+    Args:
+        layout: LayoutArray with paragraph/table info
+        bbox: Block bounding box in PDF coordinates
+        page_width: Page width in PDF points
+        page_height: Page height in PDF points
+        page_margin: Page right margin
+
+    Returns:
+        X-coordinate of right boundary (in PDF points)
+    """
+    x0, y0, x1, y1 = bbox
+    block_height = y1 - y0
+
+    # Default right boundary is page margin
+    right_boundary = page_width - page_margin
+
+    # Scale factor for coordinate conversion (PDF -> image)
+    if layout.height > 0 and page_height > 0:
+        scale = layout.height / page_height
+    else:
+        return right_boundary
+
+    # Convert current block's Y range to image coordinates
+    # PDF: y0 is bottom, y1 is top
+    # Image: y increases downward
+    img_y_top = (page_height - y1) * scale
+    img_y_bottom = (page_height - y0) * scale
+
+    # Search through paragraphs for adjacent blocks
+    for para_id, para_info in layout.paragraphs.items():
+        para_box = para_info.get('box', [])
+        if len(para_box) < 4:
+            continue
+
+        # para_box is in image coordinates
+        para_x0, para_y0, para_x1, para_y1 = para_box[:4]
+
+        # Convert para_box to PDF coordinates for comparison
+        pdf_para_x0 = para_x0 / scale if scale > 0 else para_x0
+        pdf_para_x1 = para_x1 / scale if scale > 0 else para_x1
+        pdf_para_y0 = page_height - (para_y1 / scale) if scale > 0 else para_y1
+        pdf_para_y1 = page_height - (para_y0 / scale) if scale > 0 else para_y0
+
+        # Skip if this is the same block (overlap threshold)
+        if abs(pdf_para_x0 - x0) < 5 and abs(pdf_para_y0 - y0) < 5:
+            continue
+
+        # Check if block is to the right
+        if pdf_para_x0 <= x1 + MIN_COLUMN_GAP:
+            continue
+
+        # Check vertical overlap (same line)
+        overlap_y0 = max(y0, pdf_para_y0)
+        overlap_y1 = min(y1, pdf_para_y1)
+        overlap_height = overlap_y1 - overlap_y0
+
+        # Require significant vertical overlap
+        if overlap_height < block_height * SAME_LINE_OVERLAP_THRESHOLD:
+            continue
+
+        # Found adjacent block - update right boundary
+        # Leave a small gap between blocks
+        candidate_right = pdf_para_x0 - MIN_COLUMN_GAP
+        if candidate_right < right_boundary:
+            right_boundary = candidate_right
+
+    # Also check tables
+    for table_id, table_info in layout.tables.items():
+        table_box = table_info.get('box', [])
+        if len(table_box) < 4:
+            continue
+
+        table_x0, table_y0, table_x1, table_y1 = table_box[:4]
+
+        # Convert to PDF coordinates
+        pdf_table_x0 = table_x0 / scale if scale > 0 else table_x0
+        pdf_table_y0 = page_height - (table_y1 / scale) if scale > 0 else table_y1
+        pdf_table_y1 = page_height - (table_y0 / scale) if scale > 0 else table_y0
+
+        # Skip if same block
+        if abs(pdf_table_x0 - x0) < 5 and abs(pdf_table_y0 - y0) < 5:
+            continue
+
+        # Check if to the right
+        if pdf_table_x0 <= x1 + MIN_COLUMN_GAP:
+            continue
+
+        # Check vertical overlap
+        overlap_y0 = max(y0, pdf_table_y0)
+        overlap_y1 = min(y1, pdf_table_y1)
+        overlap_height = overlap_y1 - overlap_y0
+
+        if overlap_height < block_height * SAME_LINE_OVERLAP_THRESHOLD:
+            continue
+
+        candidate_right = pdf_table_x0 - MIN_COLUMN_GAP
+        if candidate_right < right_boundary:
+            right_boundary = candidate_right
+
+    # Ensure we don't go past the original x1
+    return max(x1, right_boundary)
+
+
+def calculate_all_expandable_widths(
+    layout: LayoutArray,
+    paragraphs: list[tuple[int, tuple[float, float, float, float], bool]],
+    page_width: float,
+    page_height: float,
+    page_margin: float = DEFAULT_PAGE_MARGIN,
+) -> dict[int, float]:
+    """
+    Calculate expandable widths for all paragraphs on a page.
+
+    Batch processing for efficiency when handling multiple blocks.
+
+    Args:
+        layout: LayoutArray from PP-DocLayout-L
+        paragraphs: List of (block_idx, bbox, is_table_cell) tuples
+        page_width: Page width in PDF points
+        page_height: Page height in PDF points
+        page_margin: Page right margin
+
+    Returns:
+        Dictionary mapping block_idx to expandable width
+    """
+    result = {}
+
+    for block_idx, bbox, is_table_cell in paragraphs:
+        expandable_width = calculate_expandable_width(
+            layout, bbox, page_width, page_height, page_margin, is_table_cell
+        )
+        result[block_idx] = expandable_width
+
+    return result

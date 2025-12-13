@@ -1693,7 +1693,9 @@ class TestConstants:
     def test_font_size_constants(self):
         """Test font size constants are properly defined"""
         assert DEFAULT_FONT_SIZE == 10.0
-        assert MIN_FONT_SIZE == 1.0
+        # PDFMathTranslate compliant: MIN_FONT_SIZE is 5.0 for readability
+        # (font size is generally FIXED, this is a safety net only)
+        assert MIN_FONT_SIZE == 5.0
         assert MAX_FONT_SIZE == 72.0  # Changed from 12.0 to allow large fonts
         assert MIN_FONT_SIZE < DEFAULT_FONT_SIZE < MAX_FONT_SIZE
 

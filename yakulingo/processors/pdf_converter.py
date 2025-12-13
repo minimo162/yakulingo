@@ -42,7 +42,10 @@ DEFAULT_LINE_HEIGHT = 1.1
 
 # Font size constants
 DEFAULT_FONT_SIZE = 10.0
-MIN_FONT_SIZE = 1.0
+# PDFMathTranslate compliant: Font size is generally FIXED (not reduced).
+# This MIN_FONT_SIZE is a safety net for edge cases only.
+# 5.0pt is the smallest readable font size in most contexts.
+MIN_FONT_SIZE = 5.0
 MAX_FONT_SIZE = 72.0  # Allow large font sizes
 
 # Subscript/superscript detection (PDFMathTranslate compliant)

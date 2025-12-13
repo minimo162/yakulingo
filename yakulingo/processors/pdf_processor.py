@@ -1866,12 +1866,51 @@ class PdfProcessor(FileProcessor):
                     self._record_failed_page(page_num, f"Invalid page height: {page_height}")
                     continue
 
+                # Build list of blocks to process for this page FIRST
+                # We need to collect translation target bboxes before filtering
+                page_prefix = f"page_{page_idx}_"
+                blocks_to_process = []
+                target_bboxes = []  # Bboxes of text to be removed (translation targets only)
+
+                # Fallback: Get block info using PyMuPDF (if no text_blocks provided)
+                pymupdf_blocks_dict = {}
+                if not text_blocks:
+                    blocks = page.get_text("dict")["blocks"]
+                    for block_idx, block in enumerate(blocks):
+                        if block.get("type") == 0:
+                            block_id = f"page_{page_idx}_block_{block_idx}"
+                            pymupdf_blocks_dict[block_id] = block
+
+                if text_blocks:
+                    # First pass: collect translation targets and their bboxes
+                    for text_block in text_blocks:
+                        if not text_block.id.startswith(page_prefix):
+                            continue
+                        block_id = text_block.id
+                        skip_translation = text_block.metadata.get('skip_translation', False)
+
+                        if block_id in translations:
+                            # This is a translation target - collect bbox
+                            bbox = text_block.metadata.get('bbox')
+                            if bbox and len(bbox) >= 4:
+                                target_bboxes.append(tuple(bbox[:4]))
+
                 # Create content stream replacer for this page
-                # preserve_graphics=True: parse and filter original content stream
-                # to remove text while keeping graphics/images
+                # Use selective filtering: only remove text at translation target positions
+                # Non-translatable text (numbers, URLs, etc.) is preserved
                 replacer = ContentStreamReplacer(doc, font_registry, preserve_graphics=True)
                 try:
-                    replacer.set_base_stream(page)
+                    # Pass target_bboxes to selectively remove only translation targets
+                    # If no targets, this behaves like before (remove all text)
+                    replacer.set_base_stream(
+                        page,
+                        target_bboxes=target_bboxes if target_bboxes else None,
+                        tolerance=5.0,
+                    )
+                    logger.info(
+                        "Page %d: selective filtering with %d target bboxes",
+                        page_num, len(target_bboxes)
+                    )
                 except MemoryError as e:
                     # CRITICAL: Memory exhausted - abort processing immediately
                     # Continuing would likely cause more OOM errors or crash
@@ -1895,22 +1934,8 @@ class PdfProcessor(FileProcessor):
                     self._record_failed_page(page_num, f"Content stream parse error: {e}")
                     continue
 
-                # Fallback: Get block info using PyMuPDF (if no text_blocks provided)
-                pymupdf_blocks_dict = {}
-                if not text_blocks:
-                    blocks = page.get_text("dict")["blocks"]
-                    for block_idx, block in enumerate(blocks):
-                        if block.get("type") == 0:
-                            block_id = f"page_{page_idx}_block_{block_idx}"
-                            pymupdf_blocks_dict[block_id] = block
-
-                # Build list of blocks to process for this page
-                # Include both translated blocks and non-translatable blocks that need preservation
-                page_prefix = f"page_{page_idx}_"
-                blocks_to_process = []
-
                 if text_blocks:
-                    # Process all blocks on this page from text_blocks
+                    # Second pass: build blocks_to_process list
                     for text_block in text_blocks:
                         if not text_block.id.startswith(page_prefix):
                             continue
@@ -1927,9 +1952,14 @@ class PdfProcessor(FileProcessor):
                                 )
                             blocks_to_process.append((block_id, translated, False))
                         elif skip_translation:
-                            # Non-translatable block - preserve original text
-                            blocks_to_process.append((block_id, text_block.text, True))
-                        # else: block not in translations and not marked for preservation - skip
+                            # Non-translatable block - preserved in original PDF by selective filtering
+                            # No need to re-draw, just count it
+                            result['preserved'] += 1
+                            logger.debug(
+                                "Preserving original text (selective filter): block %s",
+                                block_id
+                            )
+                        # else: block not in translations and not marked - skip
                 else:
                     # Fallback: only process translated blocks
                     for block_id, translated in translations.items():
@@ -2287,15 +2317,9 @@ class PdfProcessor(FileProcessor):
                             op = op_gen.gen_op_txt(font_id, font_size, x, y, hex_text)
                             replacer.add_text_operator(op, font_id)
 
-                        # Track success/preserved counts separately
-                        if is_preserved_original:
-                            result['preserved'] += 1
-                            logger.debug(
-                                "Preserved original text for block %s: '%s...'",
-                                block_id, translated[:50] if len(translated) > 50 else translated
-                            )
-                        else:
-                            result['success'] += 1
+                        # Track success count
+                        # (preserved blocks are counted earlier and not in this loop)
+                        result['success'] += 1
 
                     except RuntimeError as e:
                         # PyMuPDF internal errors (e.g., corrupted page, invalid font)

@@ -600,6 +600,394 @@ class ContentStreamParser:
 
         return ''.join(parts)
 
+    def parse_and_filter_selective(
+        self,
+        stream: bytes,
+        target_bboxes: list[tuple[float, float, float, float]],
+        tolerance: float = 5.0,
+    ) -> bytes:
+        """
+        Parse content stream and selectively remove text operators.
+
+        Only removes text at positions that match target_bboxes.
+        Text at other positions is preserved.
+
+        Args:
+            stream: Raw PDF content stream bytes
+            target_bboxes: List of (x0, y0, x1, y1) bboxes to remove (PDF coordinates)
+            tolerance: Position matching tolerance in points (default 5.0)
+
+        Returns:
+            Filtered content stream with only target text removed
+        """
+        if not target_bboxes:
+            # No targets - return original stream unchanged
+            return stream
+
+        try:
+            content = stream.decode('latin-1')
+        except (UnicodeDecodeError, AttributeError):
+            logger.warning("Failed to decode content stream, returning original")
+            return stream
+
+        tokens = self._tokenize(content)
+        filtered = self._filter_tokens_selective(tokens, target_bboxes, tolerance)
+        result = self._reconstruct(filtered)
+
+        logger.info(
+            "parse_and_filter_selective: original_len=%d, result_len=%d, "
+            "target_bboxes=%d, tolerance=%.1f",
+            len(content), len(result), len(target_bboxes), tolerance
+        )
+
+        return result.encode('latin-1')
+
+    def _filter_tokens_selective(
+        self,
+        tokens: list[tuple[str, str]],
+        target_bboxes: list[tuple[float, float, float, float]],
+        tolerance: float = 5.0,
+    ) -> list[tuple[str, str]]:
+        """
+        Filter text operators selectively based on position.
+
+        Tracks text position using Tm/Td/TD operators and only removes
+        text operators (Tj/TJ/'/") when the position matches a target bbox.
+
+        Args:
+            tokens: Tokenized content stream
+            target_bboxes: List of (x0, y0, x1, y1) bboxes to remove
+            tolerance: Position matching tolerance in points
+
+        Returns:
+            Filtered tokens with only target text removed
+        """
+        result = []
+        i = 0
+        n = len(tokens)
+        in_text_block = False
+        operand_stack = []
+
+        # Text state tracking
+        current_x = 0.0
+        current_y = 0.0
+        text_line_matrix = [1, 0, 0, 1, 0, 0]  # Identity matrix
+        text_leading = 0.0
+
+        # Pending text block tokens (may be kept or removed)
+        pending_text_tokens = []
+        pending_has_target = False  # Whether pending tokens contain target text
+
+        # Debug counters
+        removed_count = 0
+        preserved_count = 0
+
+        def _is_in_target_bbox(x: float, y: float) -> bool:
+            """Check if position is within any target bbox."""
+            for x0, y0, x1, y1 in target_bboxes:
+                # Check if point is within bbox (with tolerance)
+                if (x0 - tolerance <= x <= x1 + tolerance and
+                    y0 - tolerance <= y <= y1 + tolerance):
+                    return True
+            return False
+
+        def _parse_number(token_value: str) -> float:
+            """Parse a number token to float."""
+            try:
+                return float(token_value)
+            except (ValueError, TypeError):
+                return 0.0
+
+        while i < n:
+            token_type, token_value = tokens[i]
+
+            if token_type == 'whitespace':
+                if in_text_block:
+                    pending_text_tokens.append((token_type, token_value))
+                else:
+                    result.append((token_type, token_value))
+                i += 1
+                continue
+
+            if token_type == 'operator':
+                if token_value == 'BT':
+                    # Enter text block
+                    in_text_block = True
+                    pending_text_tokens = [('operator', 'BT')]
+                    pending_has_target = False
+                    # Reset text state
+                    current_x = 0.0
+                    current_y = 0.0
+                    text_line_matrix = [1, 0, 0, 1, 0, 0]
+                    operand_stack = []
+                    i += 1
+                    continue
+
+                if token_value == 'ET':
+                    # Exit text block
+                    pending_text_tokens.append(('operator', 'ET'))
+
+                    if pending_has_target:
+                        # This block contained target text - need selective filtering
+                        # Re-process pending tokens to remove only target text
+                        filtered_block = self._filter_text_block_selective(
+                            pending_text_tokens, target_bboxes, tolerance
+                        )
+                        result.extend(filtered_block)
+                        removed_count += 1
+                    else:
+                        # No target text in this block - keep entirely
+                        result.extend(pending_text_tokens)
+                        preserved_count += 1
+
+                    in_text_block = False
+                    pending_text_tokens = []
+                    operand_stack = []
+                    i += 1
+                    continue
+
+                if in_text_block:
+                    # Track text position operators
+                    if token_value == 'Tm' and len(operand_stack) >= 6:
+                        # Text matrix: a b c d e f Tm
+                        # e = x translation, f = y translation
+                        e = _parse_number(operand_stack[-2][1])
+                        f = _parse_number(operand_stack[-1][1])
+                        text_line_matrix = [
+                            _parse_number(operand_stack[-6][1]),
+                            _parse_number(operand_stack[-5][1]),
+                            _parse_number(operand_stack[-4][1]),
+                            _parse_number(operand_stack[-3][1]),
+                            e, f
+                        ]
+                        current_x = e
+                        current_y = f
+
+                    elif token_value in ('Td', 'TD') and len(operand_stack) >= 2:
+                        # Move text position: tx ty Td/TD
+                        tx = _parse_number(operand_stack[-2][1])
+                        ty = _parse_number(operand_stack[-1][1])
+                        current_x = text_line_matrix[4] + tx
+                        current_y = text_line_matrix[5] + ty
+                        text_line_matrix[4] = current_x
+                        text_line_matrix[5] = current_y
+                        if token_value == 'TD':
+                            text_leading = -ty
+
+                    elif token_value == "T*":
+                        # Move to start of next line
+                        current_x = text_line_matrix[4]
+                        current_y = text_line_matrix[5] - text_leading
+
+                    elif token_value == 'TL' and len(operand_stack) >= 1:
+                        # Set text leading: leading TL
+                        text_leading = _parse_number(operand_stack[-1][1])
+
+                    # Check if this is a text showing operator
+                    if token_value in ('Tj', 'TJ', "'", '"'):
+                        if _is_in_target_bbox(current_x, current_y):
+                            pending_has_target = True
+
+                    # Add operator and operands to pending
+                    pending_text_tokens.extend(operand_stack)
+                    pending_text_tokens.append((token_type, token_value))
+                    operand_stack = []
+                    i += 1
+                    continue
+
+                # Outside text block - keep operator and its operands
+                result.extend(operand_stack)
+                result.append((token_type, token_value))
+                operand_stack = []
+                i += 1
+                continue
+
+            # Operand (number, name, string, array, dict)
+            # Accumulate operands until we see an operator
+            operand_stack.append((token_type, token_value))
+            i += 1
+
+        # Add any remaining operands
+        result.extend(operand_stack)
+
+        logger.info(
+            "_filter_tokens_selective: removed_blocks=%d, preserved_blocks=%d",
+            removed_count, preserved_count
+        )
+
+        return result
+
+    def _filter_text_block_selective(
+        self,
+        tokens: list[tuple[str, str]],
+        target_bboxes: list[tuple[float, float, float, float]],
+        tolerance: float,
+    ) -> list[tuple[str, str]]:
+        """
+        Filter a single BT...ET block to remove only target text.
+
+        Args:
+            tokens: Tokens from BT to ET (inclusive)
+            target_bboxes: Target bboxes to remove
+            tolerance: Position matching tolerance
+
+        Returns:
+            Filtered tokens (may be empty if all text removed)
+        """
+        result = []
+        i = 0
+        n = len(tokens)
+        operand_stack = []
+
+        # Text state tracking
+        current_x = 0.0
+        current_y = 0.0
+        text_line_matrix = [1, 0, 0, 1, 0, 0]
+        text_leading = 0.0
+
+        # Track if we've output any text operators
+        has_remaining_text = False
+
+        def _is_in_target_bbox(x: float, y: float) -> bool:
+            for x0, y0, x1, y1 in target_bboxes:
+                if (x0 - tolerance <= x <= x1 + tolerance and
+                    y0 - tolerance <= y <= y1 + tolerance):
+                    return True
+            return False
+
+        def _parse_number(token_value: str) -> float:
+            try:
+                return float(token_value)
+            except (ValueError, TypeError):
+                return 0.0
+
+        while i < n:
+            token_type, token_value = tokens[i]
+
+            if token_type == 'whitespace':
+                operand_stack.append((token_type, token_value))
+                i += 1
+                continue
+
+            if token_type == 'operator':
+                if token_value == 'BT':
+                    result.append((token_type, token_value))
+                    operand_stack = []
+                    i += 1
+                    continue
+
+                if token_value == 'ET':
+                    if has_remaining_text:
+                        result.append((token_type, token_value))
+                    else:
+                        # No text remaining - remove entire BT...ET
+                        result = []
+                    i += 1
+                    continue
+
+                # Track position operators
+                if token_value == 'Tm' and len(operand_stack) >= 6:
+                    nums = [t for t in operand_stack if t[0] == 'number']
+                    if len(nums) >= 6:
+                        e = _parse_number(nums[-2][1])
+                        f = _parse_number(nums[-1][1])
+                        text_line_matrix[4] = e
+                        text_line_matrix[5] = f
+                        current_x = e
+                        current_y = f
+
+                elif token_value in ('Td', 'TD'):
+                    nums = [t for t in operand_stack if t[0] == 'number']
+                    if len(nums) >= 2:
+                        tx = _parse_number(nums[-2][1])
+                        ty = _parse_number(nums[-1][1])
+                        current_x = text_line_matrix[4] + tx
+                        current_y = text_line_matrix[5] + ty
+                        text_line_matrix[4] = current_x
+                        text_line_matrix[5] = current_y
+
+                elif token_value == "T*":
+                    current_x = text_line_matrix[4]
+                    current_y = text_line_matrix[5] - text_leading
+
+                elif token_value == 'TL':
+                    nums = [t for t in operand_stack if t[0] == 'number']
+                    if nums:
+                        text_leading = _parse_number(nums[-1][1])
+
+                # Check if this is a text showing operator
+                if token_value in ('Tj', 'TJ', "'", '"'):
+                    if _is_in_target_bbox(current_x, current_y):
+                        # Target text - skip this operator and its operands
+                        logger.debug(
+                            "Removing text at (%.1f, %.1f): op=%s",
+                            current_x, current_y, token_value
+                        )
+                        operand_stack = []
+                        i += 1
+                        continue
+                    else:
+                        # Non-target text - keep it
+                        has_remaining_text = True
+
+                # Keep this operator and its operands
+                result.extend(operand_stack)
+                result.append((token_type, token_value))
+                operand_stack = []
+                i += 1
+                continue
+
+            # Operand
+            operand_stack.append((token_type, token_value))
+            i += 1
+
+        return result
+
+    def filter_page_contents_selective(
+        self,
+        doc,
+        page,
+        target_bboxes: list[tuple[float, float, float, float]],
+        tolerance: float = 5.0,
+    ) -> bytes:
+        """
+        Get and selectively filter content streams for a page.
+
+        Only removes text at positions matching target_bboxes.
+
+        Args:
+            doc: PyMuPDF document
+            page: PyMuPDF page
+            target_bboxes: List of (x0, y0, x1, y1) bboxes to remove
+            tolerance: Position matching tolerance
+
+        Returns:
+            Filtered content stream
+        """
+        filtered_parts = []
+        contents = page.get_contents()
+        if not contents:
+            return b""
+
+        for xref in contents:
+            try:
+                stream = doc.xref_stream(xref)
+                if stream:
+                    filtered = self.parse_and_filter_selective(
+                        stream, target_bboxes, tolerance
+                    )
+                    filtered_parts.append(filtered)
+            except (RuntimeError, ValueError, KeyError, OSError) as e:
+                logger.warning("Failed to filter content stream xref %d: %s", xref, e)
+                try:
+                    stream = doc.xref_stream(xref)
+                    if stream:
+                        filtered_parts.append(stream)
+                except (RuntimeError, ValueError, KeyError, OSError):
+                    pass
+
+        return b" ".join(filtered_parts)
+
     def filter_page_contents(self, doc, page) -> bytes:
         """
         Get and filter all content streams for a page.
@@ -683,7 +1071,12 @@ class ContentStreamReplacer:
         self._filtered_base_stream: Optional[bytes] = None
         self._parser = ContentStreamParser() if preserve_graphics else None
 
-    def set_base_stream(self, page) -> 'ContentStreamReplacer':
+    def set_base_stream(
+        self,
+        page,
+        target_bboxes: Optional[list[tuple[float, float, float, float]]] = None,
+        tolerance: float = 5.0,
+    ) -> 'ContentStreamReplacer':
         """
         Capture and filter the original content stream for this page.
 
@@ -693,6 +1086,10 @@ class ContentStreamReplacer:
 
         Args:
             page: PyMuPDF page object
+            target_bboxes: If provided, only remove text at these positions.
+                          If None, remove all text (default behavior).
+                          Format: list of (x0, y0, x1, y1) in PDF coordinates.
+            tolerance: Position matching tolerance for selective removal (default 5.0)
 
         Returns:
             self for chaining
@@ -701,9 +1098,23 @@ class ContentStreamReplacer:
             return self
 
         # Filter Form XObjects first (they contain embedded text)
+        # Note: Form XObjects are filtered completely for now
+        # (selective filtering of XObjects is more complex)
         self._filter_form_xobjects(page)
 
-        self._filtered_base_stream = self._parser.filter_page_contents(self.doc, page)
+        if target_bboxes is not None:
+            # Selective filtering: only remove text at target positions
+            self._filtered_base_stream = self._parser.filter_page_contents_selective(
+                self.doc, page, target_bboxes, tolerance
+            )
+            logger.info(
+                "set_base_stream: selective mode with %d target bboxes, tolerance=%.1f",
+                len(target_bboxes), tolerance
+            )
+        else:
+            # Default: remove all text
+            self._filtered_base_stream = self._parser.filter_page_contents(self.doc, page)
+
         return self
 
     def _filter_form_xobjects(self, page) -> None:

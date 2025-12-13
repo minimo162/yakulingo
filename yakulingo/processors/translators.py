@@ -25,6 +25,8 @@ class CellTranslator:
         r'^[\d\s%]+$',                        # パーセント付き数値
         r'^[¥$€£]\s*[\d,\.]+$',               # 通貨記号付き数値
         r'^\d+[年月日時分秒]$',                 # 日本語日時（完全マッチのみ）
+        # 記号+数値のみ（▲△▼▽●○■□〇※など）
+        r'^[▲△▼▽●○■□〇※\u25B2\u25B3\u25BC\u25BD\u25CF\u25CB\u25A0\u25A1\u3007\u203B]\s*[\d\s\.,\-\+\(\)\/\%]+$',
     ]
 
     # Class-level compiled regex patterns (shared across all instances)
@@ -179,6 +181,8 @@ class ParagraphTranslator:
         r'^[\d\s\.,\-\+\(\)\/]+$',           # 数値のみ
         r'^https?://\S+$',                    # URL
         r'^[\w\.\-]+@[\w\.\-]+\.\w+$',        # メールアドレス
+        # 記号+数値のみ（▲△▼▽●○■□〇※など）
+        r'^[▲△▼▽●○■□〇※\u25B2\u25B3\u25BC\u25BD\u25CF\u25CB\u25A0\u25A1\u3007\u203B]\s*[\d\s\.,\-\+\(\)\/\%]+$',
     ]
 
     # Class-level compiled regex patterns (shared across all instances)

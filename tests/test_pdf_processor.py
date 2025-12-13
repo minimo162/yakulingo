@@ -824,6 +824,81 @@ class TestContentStreamReplacer:
         assert result is replacer
 
 
+class TestContentStreamParserSelective:
+    """Tests for selective text filtering in ContentStreamParser."""
+
+    @pytest.fixture
+    def parser(self):
+        from yakulingo.processors.pdf_processor import ContentStreamParser
+        return ContentStreamParser()
+
+    def test_parse_and_filter_selective_no_targets(self, parser):
+        """Test that no targets returns original stream unchanged."""
+        stream = b"BT /F1 12 Tf (Hello) Tj ET"
+        result = parser.parse_and_filter_selective(stream, [])
+        assert result == stream
+
+    def test_parse_and_filter_selective_with_targets(self, parser):
+        """Test selective filtering removes only targeted text."""
+        # Simple stream with text at position (100, 200)
+        stream = b"BT 1 0 0 1 100 200 Tm (Hello) Tj ET"
+        target_bboxes = [(90, 190, 200, 250)]  # Target includes (100, 200)
+        result = parser.parse_and_filter_selective(stream, target_bboxes)
+        # Text should be removed
+        assert b"Hello" not in result
+
+    def test_parse_and_filter_selective_preserves_non_target(self, parser):
+        """Test that non-targeted text is preserved."""
+        # Stream with text at position (100, 200)
+        stream = b"BT 1 0 0 1 100 200 Tm (Hello) Tj ET"
+        # Target at different position - should NOT match
+        target_bboxes = [(500, 500, 600, 600)]
+        result = parser.parse_and_filter_selective(stream, target_bboxes, tolerance=5.0)
+        # Text should be preserved
+        assert b"Hello" in result
+
+    def test_filter_tokens_selective_tracks_position(self, parser):
+        """Test that position tracking works with Tm operator."""
+        tokens = [
+            ('operator', 'BT'),
+            ('number', '1'), ('number', '0'), ('number', '0'), ('number', '1'),
+            ('number', '100'), ('number', '200'),
+            ('operator', 'Tm'),
+            ('string', '(Hello)'),
+            ('operator', 'Tj'),
+            ('operator', 'ET'),
+        ]
+        # Target includes position (100, 200)
+        target_bboxes = [(95, 195, 105, 205)]
+        result = parser._filter_tokens_selective(tokens, target_bboxes, tolerance=5.0)
+        # Should have removed the text block or its content
+        result_str = ''.join(t[1] for t in result if t[0] != 'whitespace')
+        assert 'Hello' not in result_str
+
+    def test_filter_tokens_selective_tolerance(self, parser):
+        """Test that tolerance parameter works correctly."""
+        tokens = [
+            ('operator', 'BT'),
+            ('number', '1'), ('number', '0'), ('number', '0'), ('number', '1'),
+            ('number', '100'), ('number', '200'),
+            ('operator', 'Tm'),
+            ('string', '(Test)'),
+            ('operator', 'Tj'),
+            ('operator', 'ET'),
+        ]
+        # Target close but not exact - within tolerance
+        target_bboxes = [(102, 202, 110, 210)]
+        # With tolerance=5, position (100, 200) should match bbox starting at (102, 202)
+        result = parser._filter_tokens_selective(tokens, target_bboxes, tolerance=5.0)
+        result_str = ''.join(t[1] for t in result if t[0] != 'whitespace')
+        assert 'Test' not in result_str
+
+        # Without tolerance - should not match
+        result2 = parser._filter_tokens_selective(tokens, target_bboxes, tolerance=0.0)
+        result_str2 = ''.join(t[1] for t in result2 if t[0] != 'whitespace')
+        assert 'Test' in result_str2
+
+
 # =============================================================================
 # Tests: Coordinate Conversion
 # =============================================================================

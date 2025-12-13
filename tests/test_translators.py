@@ -244,12 +244,12 @@ class TestCellTranslatorPatternCompleteness:
 
     def test_all_skip_patterns_defined(self, translator):
         """Ensure expected number of skip patterns exist"""
-        # CellTranslator has 9 skip patterns
-        assert len(translator.SKIP_PATTERNS) == 9
+        # CellTranslator has 10 skip patterns (including symbol+number pattern)
+        assert len(translator.SKIP_PATTERNS) == 10
 
     def test_patterns_are_valid_regex(self, translator):
         """All patterns should be valid compiled regex"""
-        assert len(translator._skip_regex) == 9
+        assert len(translator._skip_regex) == 10
         for regex in translator._skip_regex:
             assert hasattr(regex, 'match')
 
@@ -263,12 +263,12 @@ class TestParagraphTranslatorPatternCompleteness:
 
     def test_all_skip_patterns_defined(self, translator):
         """Ensure expected number of skip patterns exist"""
-        # ParagraphTranslator has 3 skip patterns
-        assert len(translator.SKIP_PATTERNS) == 3
+        # ParagraphTranslator has 4 skip patterns (including symbol+number pattern)
+        assert len(translator.SKIP_PATTERNS) == 4
 
     def test_patterns_are_valid_regex(self, translator):
         """All patterns should be valid compiled regex"""
-        assert len(translator._skip_regex) == 3
+        assert len(translator._skip_regex) == 4
         for regex in translator._skip_regex:
             assert hasattr(regex, 'match')
 
@@ -378,7 +378,7 @@ class TestCellTranslatorEdgeCases:
         """Negative number formats"""
         assert translator.should_translate("-100") is False
         assert translator.should_translate("(100)") is False  # Accounting negative
-        assert translator.should_translate("▲100") is True  # Japanese negative marker with number
+        assert translator.should_translate("▲100") is False  # Japanese negative marker with number (symbol+number only)
 
     def test_fractions(self, translator):
         """Fraction patterns"""
@@ -560,9 +560,11 @@ class TestTranslatorSpecialPatterns:
 
     def test_triangle_negative(self, translator):
         """▲ (triangle) as negative marker"""
-        # ▲50 is text that should be translated
-        assert translator.should_translate("▲50") is True
-        assert translator.should_translate("▲1,000") is True
+        # ▲50 is symbol+number only, should be skipped
+        assert translator.should_translate("▲50") is False
+        assert translator.should_translate("▲1,000") is False
+        # But with text, should be translated
+        assert translator.should_translate("▲50円減少") is True
 
     # --- Number formats ---
 
@@ -685,10 +687,10 @@ class TestEnglishToJapaneseTranslation:
         assert cell_translator.should_translate("年度報告", output_language="jp") is True
 
     def test_japanese_symbols_translated_en_to_jp(self, cell_translator):
-        """Japanese document symbols without kana should be translated for EN→JP"""
-        # ▲△〇※ without hiragana/katakana are not considered "Japanese-only"
-        # because similar symbols may be used in Chinese documents
-        assert cell_translator.should_translate("▲50", output_language="jp") is True
+        """Japanese document symbols handling for EN→JP"""
+        # ▲△ with numbers only are skipped (symbol+number pattern)
+        assert cell_translator.should_translate("▲50", output_language="jp") is False
+        # But with kanji, should be translated
         assert cell_translator.should_translate("〇〇株式会社", output_language="jp") is True
 
     def test_japanese_symbols_with_kana_skipped_en_to_jp(self, cell_translator):

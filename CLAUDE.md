@@ -625,8 +625,11 @@ The `connect()` method performs these steps:
 3. Looks for existing Copilot page or creates new one
 4. Navigates to Copilot URL with `wait_until='commit'` (fastest)
 5. Waits for chat input element to appear
-6. Calls `window.stop()` to stop browser loading spinner
+6. Waits for M365 background initialization to complete (1 second)
 7. Sets `_connected = True` if successful
+
+**Important**: Do NOT call `window.stop()` after connection. This interrupts M365's
+background authentication/session establishment, causing auth dialogs to appear.
 
 ### Login Detection Process (ログイン判定プロセス)
 
@@ -1335,6 +1338,9 @@ Based on recent commits:
 - **Auth Flow Improvements (2024-12)**:
   - **Auth dialog detection**: Copilotページ上の認証ダイアログを検出するように修正
   - **Navigation prevention**: 認証フロー中の強制ナビゲーションを防止
+  - **window.stop() removal**: 接続完了時のwindow.stop()を削除（M365認証通信中断を防止）
+  - **Popup blocking disabled**: `--disable-popup-blocking`オプションを追加（認証ポップアップを許可）
+  - **Auth popup monitoring**: ログイン待機中に認証ポップアップウィンドウを検出・前面表示
 - **UI Improvements (2024-12)**:
   - **Terminology fix**: UIの「略語」表記を「用語集」に修正
   - **Card styling**: main-cardのborder-radiusを無効化してガラス効果を削除

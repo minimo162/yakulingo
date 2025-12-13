@@ -111,7 +111,7 @@ YakuLingo/
 │   │   └── history_db.py          # SQLite-based translation history
 │   └── config/                    # Configuration
 │       └── settings.py            # AppSettings with JSON persistence
-├── tests/                         # Test suite (32 test files)
+├── tests/                         # Test suite (33 test files)
 │   ├── conftest.py                # Shared fixtures and mocks
 │   └── test_*.py                  # Unit tests for each module
 ├── prompts/                       # Translation prompt templates (17 files)
@@ -405,7 +405,7 @@ dialog = create_completion_dialog(
 
 - **Framework**: pytest with pytest-asyncio
 - **Test Path**: `tests/`
-- **Test Files**: 32 test files covering all major modules
+- **Test Files**: 33 test files covering all major modules
 - **Naming**: `test_*.py` files, `Test*` classes, `test_*` functions
 - **Fixtures**: Defined in `tests/conftest.py`
 - **Async Mode**: Auto-configured via pyproject.toml
@@ -1290,6 +1290,36 @@ When interacting with users in this repository, prefer Japanese for comments and
 ## Recent Development Focus
 
 Based on recent commits:
+- **PDF Translation Bug Fixes (2024-12)**:
+  - **Non-translatable text disappearance fix**: PDF翻訳時の非翻訳対象テキスト消失を修正
+  - **Number parsing fix**: PDF翻訳時の番号パース失敗を修正
+  - **CID notation recognition**: CID記法を含むテキストを日本語コンテンツとして認識
+  - **Japanese datetime pattern fix**: 日本語日時パターンの正規表現を修正しPDF翻訳の誤スキップを解消
+  - **Table cell boundary detection**: PDFテーブル領域内のセル境界検出を改善
+- **Auth Flow Improvements (2024-12)**:
+  - **Auth dialog detection**: Copilotページ上の認証ダイアログを検出するように修正
+  - **Navigation prevention**: 認証フロー中の強制ナビゲーションを防止
+- **UI Improvements (2024-12)**:
+  - **Terminology fix**: UIの「略語」表記を「用語集」に修正
+  - **Card styling**: main-cardのborder-radiusを無効化してガラス効果を削除
+  - **File panel hover effect**: ファイル翻訳パネルのmain-card外枠エフェクトを削除
+- **Log Output Improvements (2024-12)**:
+  - **Multiprocess support**: マルチプロセス対応でログ出力を修正
+  - **Rotation removal**: ログファイルのローテーションを廃止
+  - **Clear on startup**: ログファイルを起動ごとにクリアするよう修正
+- **Glossary Processing Changes (2024-12)**:
+  - **File consolidation**: abbreviations.csvをglossary.csvに統合
+  - **Processing method change**: 用語集の処理をマージ方式からバックアップ＆上書き方式に変更
+- **Outlook MSG Support (2024-12)**:
+  - **MSG file translation**: Windows + Outlook環境でMSGファイル翻訳サポートを追加
+- **Excel Translation Optimization (2024-12)**:
+  - **Cell reading optimization**: セル読み取り効率化
+  - **Write optimization**: 書き込み効率化
+  - **apply_translations optimization**: 翻訳適用処理の大幅最適化
+  - **Read-only recommended fix**: Excel保存時にread_only_recommendedをクリアしてダイアログを防止
+- **Language Detection Speedup (2024-12)**:
+  - **Local detection only**: Copilot呼び出しを廃止してローカル検出のみに
+  - **File detection speedup**: ファイル言語検出の高速化
 - **Code Review Fixes (2024-12)**:
   - **PlaywrightThreadExecutor shutdown race fix**: `_thread_lock`でフラグ設定を保護、workerスレッドでshutdownフラグを追加チェック
   - **translate_single timeout fix**: `DEFAULT_RESPONSE_TIMEOUT + EXECUTOR_TIMEOUT_BUFFER`を使用
@@ -1522,7 +1552,7 @@ Based on recent commits:
 - **Back-Translate Feature**: Verify translations by translating back to original language
 - **Auto-Update System**: GitHub Releases-based updates with Windows proxy support
 - **Native Launcher**: Rust-based `YakuLingo.exe` for Windows distribution
-- **Test Coverage**: 32 test files
+- **Test Coverage**: 33 test files
 - **Language Detection**: Local-only detection for fast response - kana/Latin/Hangul detection with Japanese as default fallback for CJK-only text
 - **Translation Result UI Enhancements**:
   - **Source text section**: 翻訳結果パネル上部に原文を表示（コピーボタン付き）

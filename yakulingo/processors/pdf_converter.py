@@ -1041,6 +1041,8 @@ def create_paragraph_from_char(char, brk: bool, layout_class: int = 1) -> Paragr
     """
     Create Paragraph metadata from a character.
 
+    PDFMathTranslate compliant: Paragraph.y is set to child.y0 (character bottom).
+
     Args:
         char: LTChar object from pdfminer
         brk: Line break flag
@@ -1054,21 +1056,26 @@ def create_paragraph_from_char(char, brk: bool, layout_class: int = 1) -> Paragr
         Paragraph with initial bounds from character
 
     Note:
-        The y coordinate is set to char.y1 - char_size (approximately the baseline position)
-        instead of char.y0 (character bottom). This ensures consistency with the fallback
-        calculation in calculate_text_position() which uses y = y2 - font_size.
+        PDFMathTranslate reference (converter.py):
+        ```python
+        pstk.append(Paragraph(child.y0, child.x0, child.x0, child.x0,
+                              child.y0, child.y1, child.size, False))
+        ```
+
+        The y coordinate is set to char.y0 (character bottom in PDF coordinates).
+        This is the starting point for text rendering, and subsequent lines
+        are offset downward by (line_index * font_size * line_height).
 
         PDF coordinate system:
         - char.y0: Bottom edge of character (includes descender)
         - char.y1: Top edge of character (includes ascender)
-        - Baseline: Approximately char.y1 - font_size (where text is rendered from)
+        - Origin: Bottom-left of page, Y increases upward
     """
     char_size = char.size if hasattr(char, 'size') else DEFAULT_FONT_SIZE
-    # Use char.y1 - char_size as baseline position (consistent with fallback in calculate_text_position)
-    # This prevents text from being placed too low, which causes overlapping with subsequent lines
-    baseline_y = char.y1 - char_size
+    # PDFMathTranslate compliant: use char.y0 as the initial y coordinate
+    # This ensures Paragraph.y == Paragraph.y0, which is always within box bounds
     return Paragraph(
-        y=baseline_y,
+        y=char.y0,
         x=char.x0,
         x0=char.x0,
         x1=char.x1,

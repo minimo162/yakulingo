@@ -93,7 +93,8 @@ from .pdf_layout import (
     create_layout_array_from_pp_doclayout, create_layout_array_from_yomitoku,
     get_layout_class_at_point, is_same_region, should_abandon_region,
     map_pp_doclayout_label_to_role, prepare_translation_cells,
-    calculate_expandable_width, calculate_expandable_margins, detect_table_cells_for_tables,
+    calculate_expandable_width, calculate_expandable_margins, calculate_expandable_vertical_margins,
+    detect_table_cells_for_tables,
     apply_reading_order_to_layout, analyze_all_table_structures,
     estimate_reading_order,
     # yomitoku-style additions
@@ -148,12 +149,41 @@ _RE_TABLE_ADDRESS = re.compile(r"T(\d+)_")
 # Text alignment detection constants
 ALIGNMENT_TOLERANCE = 5.0  # Tolerance in points for alignment detection
 
+# Vertical text detection constants
+VERTICAL_TEXT_ASPECT_RATIO = 1.5  # height/width > 1.5 suggests vertical text for single block
+
 
 class TextAlignment:
-    """Text alignment types."""
+    """Text alignment types for horizontal text."""
     LEFT = "left"
     RIGHT = "right"
     CENTER = "center"
+
+
+class VerticalAlignment:
+    """Text alignment types for vertical text."""
+    TOP = "top"
+    BOTTOM = "bottom"
+    CENTER = "center"
+
+
+def is_vertical_text(box_width: float, box_height: float) -> bool:
+    """
+    Detect if text is vertical based on bounding box aspect ratio.
+
+    For single text blocks, vertical text typically has height >> width.
+
+    Args:
+        box_width: Width of the bounding box
+        box_height: Height of the bounding box
+
+    Returns:
+        True if text appears to be vertical
+    """
+    if box_width <= 0 or box_height <= 0:
+        return False
+    aspect_ratio = box_height / box_width
+    return aspect_ratio > VERTICAL_TEXT_ASPECT_RATIO
 
 
 def estimate_text_alignment(
@@ -207,6 +237,51 @@ def estimate_text_alignment(
     return TextAlignment.LEFT
 
 
+def estimate_vertical_alignment(
+    text_y0: float,
+    text_y1: float,
+    box_y0: float,
+    box_y1: float,
+) -> str:
+    """
+    Estimate vertical text alignment based on text position within box.
+
+    For vertical text, determines if text is top-aligned, bottom-aligned,
+    or center-aligned within its bounding box.
+
+    Note: In PDF coordinates, y0 is bottom and y1 is top.
+
+    Args:
+        text_y0: Bottom boundary of text
+        text_y1: Top boundary of text
+        box_y0: Bottom boundary of box
+        box_y1: Top boundary of box
+
+    Returns:
+        VerticalAlignment.TOP, VerticalAlignment.BOTTOM, or VerticalAlignment.CENTER
+    """
+    box_height = box_y1 - box_y0
+    if box_height <= 0:
+        return VerticalAlignment.TOP
+
+    # Calculate margins (in PDF coords, top margin = box_y1 - text_y1)
+    top_margin = box_y1 - text_y1
+    bottom_margin = text_y0 - box_y0
+
+    # Check for center alignment first
+    if abs(top_margin - bottom_margin) < ALIGNMENT_TOLERANCE * 2:
+        if top_margin > ALIGNMENT_TOLERANCE and bottom_margin > ALIGNMENT_TOLERANCE:
+            return VerticalAlignment.CENTER
+
+    # Check for bottom alignment
+    # If top margin is significantly larger than bottom margin
+    if top_margin > bottom_margin + ALIGNMENT_TOLERANCE:
+        return VerticalAlignment.BOTTOM
+
+    # Default to top alignment
+    return VerticalAlignment.TOP
+
+
 def calculate_expanded_box(
     box_x0: float,
     box_x1: float,
@@ -257,6 +332,60 @@ def calculate_expanded_box(
         # Left-aligned: expand to the right
         expansion = min(expandable_right, max_additional_width)
         return box_x0, box_x1 + expansion
+
+
+def calculate_expanded_box_vertical(
+    box_y0: float,
+    box_y1: float,
+    expandable_top: float,
+    expandable_bottom: float,
+    alignment: str,
+    max_expansion_ratio: float = 1.5,
+) -> tuple[float, float]:
+    """
+    Calculate expanded box boundaries for vertical text based on vertical alignment.
+
+    Expands the box in the appropriate direction(s) based on vertical alignment:
+    - Top-aligned: Expand downward (decrease y0)
+    - Bottom-aligned: Expand upward (increase y1)
+    - Center-aligned: Expand both directions equally
+
+    Note: In PDF coordinates, y0 is bottom and y1 is top.
+
+    Args:
+        box_y0: Original bottom boundary (smaller y)
+        box_y1: Original top boundary (larger y)
+        expandable_top: How much we can expand upward (new y1 would be box_y1 + expandable_top)
+        expandable_bottom: How much we can expand downward (new y0 would be box_y0 - expandable_bottom)
+        alignment: VerticalAlignment.TOP, BOTTOM, or CENTER
+        max_expansion_ratio: Maximum expansion ratio (e.g., 1.5 = 150% of original height)
+
+    Returns:
+        Tuple of (new_y0, new_y1)
+    """
+    original_height = box_y1 - box_y0
+    if original_height <= 0:
+        return box_y0, box_y1
+
+    max_additional_height = original_height * (max_expansion_ratio - 1.0)
+
+    if alignment == VerticalAlignment.BOTTOM:
+        # Bottom-aligned: expand upward (increase y1)
+        expansion = min(expandable_top, max_additional_height)
+        return box_y0, box_y1 + expansion
+
+    elif alignment == VerticalAlignment.CENTER:
+        # Center-aligned: expand both directions equally
+        half_expansion = min(
+            min(expandable_top, expandable_bottom),
+            max_additional_height / 2
+        )
+        return box_y0 - half_expansion, box_y1 + half_expansion
+
+    else:  # TOP alignment (default)
+        # Top-aligned: expand downward (decrease y0)
+        expansion = min(expandable_bottom, max_additional_height)
+        return box_y0 - expansion, box_y1
 
 
 def estimate_memory_usage_mb(page_count: int, dpi: int = 300) -> float:
@@ -2272,35 +2401,38 @@ class PdfProcessor(FileProcessor):
                             # PyMuPDF fallback: no layout information available
                             is_table_cell = False
 
-                        # Store original box coordinates and width for reference
+                        # Store original box coordinates and dimensions for reference
                         original_box_x0 = pdf_x1
                         original_box_x1 = pdf_x2
+                        original_box_y0 = pdf_y0
+                        original_box_y1 = pdf_y1
                         original_box_width = box_width
+                        original_box_height = box_height
+
+                        # Check if this is vertical text
+                        block_is_vertical = text_block.metadata.get('is_vertical', False) if text_blocks else False
 
                         # Get text position info for alignment detection
                         text_x = getattr(paragraph, 'x', pdf_x1) if paragraph else pdf_x1
                         text_x0 = getattr(paragraph, 'x0', pdf_x1) if paragraph else pdf_x1
                         text_x1 = getattr(paragraph, 'x1', pdf_x2) if paragraph else pdf_x2
+                        text_y0 = getattr(paragraph, 'y0', pdf_y0) if paragraph else pdf_y0
+                        text_y1 = getattr(paragraph, 'y1', pdf_y1) if paragraph else pdf_y1
 
-                        # Estimate text alignment
-                        alignment = estimate_text_alignment(
-                            text_x, text_x0, text_x1,
-                            pdf_x1, pdf_x2
-                        )
-
-                        # Get expandable margins (left and right) from TextBlock metadata
-                        # or calculate them if not available
+                        # Get expandable margins from TextBlock metadata
                         expandable_left = text_block.metadata.get('expandable_left', 0.0) if text_blocks else 0.0
                         expandable_right = text_block.metadata.get('expandable_right', 0.0) if text_blocks else 0.0
+                        expandable_top = text_block.metadata.get('expandable_top', 0.0) if text_blocks else 0.0
+                        expandable_bottom = text_block.metadata.get('expandable_bottom', 0.0) if text_blocks else 0.0
 
-                        # If only expandable_width is available (legacy), use it for right expansion
+                        # Legacy support: If only expandable_width is available, use it for right expansion
                         if expandable_left == 0.0 and expandable_right == 0.0:
                             expandable_width = text_block.metadata.get('expandable_width', box_width) if text_blocks else box_width
                             expandable_right = max(0, expandable_width - original_box_width)
                             # Estimate left expansion from page margin
                             expandable_left = max(0, pdf_x1 - detected_right_margin) if detected_right_margin > 0 else 0
 
-                        # Cap expandable margins at page margins
+                        # Cap horizontal expandable margins at page margins
                         max_x = page_width - detected_right_margin
                         if pdf_x2 + expandable_right > max_x:
                             expandable_right = max(0, max_x - pdf_x2)
@@ -2309,36 +2441,82 @@ class PdfProcessor(FileProcessor):
                         if pdf_x1 - expandable_left < min_x:
                             expandable_left = max(0, pdf_x1 - min_x)
 
+                        # Cap vertical expandable margins at page margins
+                        max_y = page_height - detected_right_margin  # Use same margin for top
+                        if pdf_y1 + expandable_top > max_y:
+                            expandable_top = max(0, max_y - pdf_y1)
+
+                        min_y = detected_right_margin  # Use same margin for bottom
+                        if pdf_y0 - expandable_bottom < min_y:
+                            expandable_bottom = max(0, pdf_y0 - min_y)
+
                         # Box expansion strategy:
-                        # - Expand based on text alignment (left/right/center)
+                        # - Expand based on text alignment (horizontal or vertical)
                         # - Table cells: expand to cell boundary if available
                         # - Regular blocks: limited expansion with strict boundaries
-                        # - Maximum 1.5x original width to prevent extreme overflow
+                        # - Maximum 1.5x original dimension to prevent extreme overflow
                         MAX_EXPANSION_RATIO = 1.5  # Limit expansion to 150% of original
 
-                        # Calculate expanded box based on alignment
-                        new_x0, new_x1 = calculate_expanded_box(
-                            pdf_x1, pdf_x2,
-                            expandable_left, expandable_right,
-                            alignment,
-                            MAX_EXPANSION_RATIO
-                        )
+                        if block_is_vertical:
+                            # Vertical text: estimate vertical alignment and expand vertically
+                            vertical_alignment = estimate_vertical_alignment(
+                                text_y0, text_y1,
+                                pdf_y0, pdf_y1
+                            )
 
-                        # Apply expansion if any
-                        if new_x0 != pdf_x1 or new_x1 != pdf_x2:
-                            new_width = new_x1 - new_x0
-                            if new_width > original_box_width:
-                                logger.debug(
-                                    "Block %s: expanding box from [%.1f, %.1f] to [%.1f, %.1f] "
-                                    "(alignment=%s, is_table=%s, ratio=%.2f)",
-                                    block_id, pdf_x1, pdf_x2, new_x0, new_x1,
-                                    alignment, is_table_cell, new_width / original_box_width
-                                )
-                                # Update box coordinates and width
-                                pdf_x1 = new_x0
-                                pdf_x2 = new_x1
-                                box_width = new_width
-                                box_pdf = [pdf_x1, pdf_y0, pdf_x2, pdf_y1]
+                            # Calculate vertically expanded box based on vertical alignment
+                            new_y0, new_y1 = calculate_expanded_box_vertical(
+                                pdf_y0, pdf_y1,
+                                expandable_top, expandable_bottom,
+                                vertical_alignment,
+                                MAX_EXPANSION_RATIO
+                            )
+
+                            # Apply vertical expansion if any
+                            if new_y0 != pdf_y0 or new_y1 != pdf_y1:
+                                new_height = new_y1 - new_y0
+                                if new_height > original_box_height:
+                                    logger.debug(
+                                        "Block %s (vertical): expanding box from [%.1f, %.1f] to [%.1f, %.1f] "
+                                        "(v_alignment=%s, is_table=%s, ratio=%.2f)",
+                                        block_id, pdf_y0, pdf_y1, new_y0, new_y1,
+                                        vertical_alignment, is_table_cell, new_height / original_box_height
+                                    )
+                                    # Update box coordinates and height
+                                    pdf_y0 = new_y0
+                                    pdf_y1 = new_y1
+                                    box_height = new_height
+                                    box_pdf = [pdf_x1, pdf_y0, pdf_x2, pdf_y1]
+                        else:
+                            # Horizontal text: estimate horizontal alignment and expand horizontally
+                            alignment = estimate_text_alignment(
+                                text_x, text_x0, text_x1,
+                                pdf_x1, pdf_x2
+                            )
+
+                            # Calculate horizontally expanded box based on alignment
+                            new_x0, new_x1 = calculate_expanded_box(
+                                pdf_x1, pdf_x2,
+                                expandable_left, expandable_right,
+                                alignment,
+                                MAX_EXPANSION_RATIO
+                            )
+
+                            # Apply horizontal expansion if any
+                            if new_x0 != pdf_x1 or new_x1 != pdf_x2:
+                                new_width = new_x1 - new_x0
+                                if new_width > original_box_width:
+                                    logger.debug(
+                                        "Block %s: expanding box from [%.1f, %.1f] to [%.1f, %.1f] "
+                                        "(alignment=%s, is_table=%s, ratio=%.2f)",
+                                        block_id, pdf_x1, pdf_x2, new_x0, new_x1,
+                                        alignment, is_table_cell, new_width / original_box_width
+                                    )
+                                    # Update box coordinates and width
+                                    pdf_x1 = new_x0
+                                    pdf_x2 = new_x1
+                                    box_width = new_width
+                                    box_pdf = [pdf_x1, pdf_y0, pdf_x2, pdf_y1]
 
                         # Note: No white rectangle needed anymore.
                         # ContentStreamReplacer.set_base_stream() already filtered out
@@ -3577,8 +3755,14 @@ class PdfProcessor(FileProcessor):
             # This allows text to expand horizontally based on alignment
             # For table cells, use cell boundary from TableCellsDetection if available
             original_width = para.x1 - para.x0
+            original_height = para.y1 - para.y0
             table_id = para.layout_class if is_table_cell else None
+
+            # Detect if text is vertical based on aspect ratio
+            block_is_vertical = is_vertical_text(original_width, original_height)
+
             if layout is not None and page_width > 0 and page_height > 0:
+                # Horizontal expandable margins
                 expandable_left, expandable_right = calculate_expandable_margins(
                     layout, bbox, page_width, page_height,
                     is_table_cell=is_table_cell,
@@ -3586,23 +3770,34 @@ class PdfProcessor(FileProcessor):
                 )
                 # Also calculate expandable_width for backward compatibility
                 expandable_width = original_width + expandable_right
+
+                # Vertical expandable margins (for vertical text)
+                expandable_top, expandable_bottom = calculate_expandable_vertical_margins(
+                    layout, bbox, page_width, page_height,
+                    is_table_cell=is_table_cell,
+                    table_id=table_id
+                )
             else:
                 # No layout info - no expansion
                 expandable_left = 0.0
                 expandable_right = 0.0
                 expandable_width = original_width
+                expandable_top = 0.0
+                expandable_bottom = 0.0
 
             # Layout debugging: log block extraction details
             logger.debug(
                 "[Layout] Extracted block page_%d_block_%d: "
                 "bbox=(%.1f, %.1f, %.1f, %.1f), para_height=%.1f, font_size=%.1f, "
                 "original_line_count=%d (estimated=%.2f), text_len=%d, "
-                "expandable_margins=(left=%.1f, right=%.1f), is_table=%s",
+                "expandable_margins=(left=%.1f, right=%.1f, top=%.1f, bottom=%.1f), "
+                "is_table=%s, is_vertical=%s",
                 page_idx, block_idx,
                 para.x0, para.y0, para.x1, para.y1,
                 para_height, font_size,
                 original_line_count, estimated_line_count, len(text),
-                expandable_left, expandable_right, is_table_cell
+                expandable_left, expandable_right, expandable_top, expandable_bottom,
+                is_table_cell, block_is_vertical
             )
 
             blocks.append(TextBlock(
@@ -3626,6 +3821,9 @@ class PdfProcessor(FileProcessor):
                     'expandable_width': expandable_width,  # Max width block can expand to (legacy)
                     'expandable_left': expandable_left,  # How much can expand to the left
                     'expandable_right': expandable_right,  # How much can expand to the right
+                    'expandable_top': expandable_top,  # How much can expand upward
+                    'expandable_bottom': expandable_bottom,  # How much can expand downward
+                    'is_vertical': block_is_vertical,  # True if vertical text
                 }
             ))
 

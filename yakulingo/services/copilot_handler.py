@@ -3422,7 +3422,10 @@ class CopilotHandler:
                 except Exception as e:
                     # Selector may have changed - use longer fixed wait that matches
                     # successful retry timing (0.8s SEND_RETRY_WAIT + focus handling)
-                    logger.debug("Send button wait skipped: %s - using fixed wait", e)
+                    logger.warning(
+                        "Send button selector may need update (using fallback wait): %s",
+                        type(e).__name__
+                    )
                     time.sleep(1.0)
 
                 # Send via Enter key with retry on failure

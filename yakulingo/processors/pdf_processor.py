@@ -4212,20 +4212,18 @@ class PdfProcessor(FileProcessor):
                     # 4. Check for bullet/list markers at the start of a new line
                     # Bullet points should always be separate paragraphs even if previous
                     # line doesn't end with sentence-ending punctuation
+                    # Note: Digits (0-9) are NOT included to avoid over-splitting
+                    # (e.g., "1,234億円" should not trigger split)
+                    # Patterns like "1. " are handled via TOC/layout detection or
+                    # when preceded by sentence-ending punctuation
                     is_bullet_start = char_text in BULLET_MARKERS
-
-                    # 5. Check for numbered list items (1., 2., 167. etc.)
-                    # Digits at the start of a visually separated line often indicate
-                    # numbered list items in Japanese financial documents
-                    is_numbered_list_start = char_text.isdigit()
 
                     # Force split (skip sentence-end check) for structural boundaries
                     should_force_split = (
                         layout_truly_changed or
                         is_table_region or
                         is_toc_pattern or
-                        is_bullet_start or
-                        is_numbered_list_start
+                        is_bullet_start
                     )
 
                     # Apply sentence-end check only if not forcing split

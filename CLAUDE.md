@@ -1107,9 +1107,15 @@ new_paragraph, line_break, is_strong_boundary = detect_paragraph_boundary(
 | `is_table_region` | テーブル領域内（`char_cls >= 1000 and prev_cls >= 1000`） |
 | `is_toc_pattern` | TOCパターン（X座標リセット > 80pt） |
 | `is_bullet_start` | 箇条書きマーカーで開始（`BULLET_MARKERS`に含まれる文字） |
-| `is_numbered_list_start` | 数字で開始（`char_text.isdigit()`）- 番号付きリスト検出 |
 
 上記以外の場合のみ文末記号チェックを適用し、意味的に連続する文を結合します。
+
+**注意**: 数字（0-9）で始まる行は自動分割しません。理由：
+- 「1,234億円」のような文中の数字を誤分割するのを防ぐため
+- 「1. 連結経営成績」のようなパターンは以下で検出：
+  - 前の行が文末記号で終わる場合 → 自然に分割
+  - TOCパターン（X座標リセット）で検出
+  - `(1)`のようなパターンは開始括弧で検出
 
 **箇条書きマーカー (`BULLET_MARKERS`):**
 - 日本語: ・、‣、●、○、■、□、◆、◇、★、☆
@@ -1121,12 +1127,12 @@ new_paragraph, line_break, is_strong_boundary = detect_paragraph_boundary(
 - 開始括弧: (、（、【、〔（パターン「(1)」「（ア）」「【注】」検出用）
 
 これにより：
-- 決算短信のような構造化ドキュメントでも、同一領域内の連続文は結合
+- 決算短信のような構造化ドキュメントでも、文中の数字を誤分割せず処理
+- 同一領域内の連続文は結合
 - 異なるレイアウト領域（見出し→本文など）は適切に分割
 - テーブルの各セル/行は適切に分割
-- 目次の各項目は適切に分割
-- 箇条書き（・や●などで始まる行）は適切に分割
-- 番号付きリスト（1.、(1)、①などで始まる行）は適切に分割
+- 目次の各項目は適切に分割（X座標リセットで検出）
+- 箇条書き（・●①(【などで始まる行）は適切に分割
 
 ```python
 # pdf_processor.py での処理
@@ -1153,18 +1159,15 @@ if new_paragraph:
             is_toc_pattern = True
 
     # 4. 箇条書きマーカーで開始する場合
+    # 注意: 数字(0-9)は含まない（「1,234億円」等の誤分割を防止）
     is_bullet_start = char_text in BULLET_MARKERS
-
-    # 5. 数字で開始する場合（番号付きリスト）
-    is_numbered_list_start = char_text.isdigit()
 
     # 分割を強制する条件
     should_force_split = (
         layout_truly_changed or
         is_table_region or
         is_toc_pattern or
-        is_bullet_start or
-        is_numbered_list_start
+        is_bullet_start
     )
 
     if not should_force_split and sstk and pstk:
@@ -1672,9 +1675,9 @@ Based on recent commits:
   - **Do NOT merge/split**: 複数行の統合・1行の分割を明示的に禁止するプロンプト指示を追加
   - **Affected files**: `file_translate_to_en_*.txt`, `file_translate_to_jp.txt`
   - **PDF extraction fix**: 文末記号チェック適用範囲を調整し、意味的に連続する文の分割を防止しつつ構造的分割を維持
-  - **Force split conditions**: `layout_truly_changed`、`is_table_region`、`is_toc_pattern`、`is_bullet_start`、`is_numbered_list_start`で分割を強制
+  - **Force split conditions**: `layout_truly_changed`、`is_table_region`、`is_toc_pattern`、`is_bullet_start`で分割を強制
   - **Bullet marker detection**: `BULLET_MARKERS`定数を拡張。箇条書き、丸数字①〜⑳、ローマ数字Ⅰ〜Ⅻ、開始括弧（(、【など）で始まる行は常に別段落として分割
-  - **Numbered list detection**: 数字で始まる行も番号付きリストとして分割（決算短信の「1. 連結経営成績」等に対応）
+  - **Digit detection removed**: 数字(0-9)での自動分割を削除。「1,234億円」等の文中数字の誤分割を防止
   - **Sentence-end check**: 上記以外の場合のみ文末記号チェックを適用し、長い文章の途中改行を結合
 - **App Startup Optimization (2024-12)**:
   - **`_detect_display_settings()` simplified**: pywebview の `screens` API 呼び出しを削除し、デフォルト値を使用。JavaScript で動的にビューポートサイズを調整するため、事前検出は不要

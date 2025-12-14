@@ -828,10 +828,23 @@ def create_paragraph_from_char(char, brk: bool, layout_class: int = 1) -> Paragr
 
     Returns:
         Paragraph with initial bounds from character
+
+    Note:
+        The y coordinate is set to char.y1 - char_size (approximately the baseline position)
+        instead of char.y0 (character bottom). This ensures consistency with the fallback
+        calculation in calculate_text_position() which uses y = y2 - font_size.
+
+        PDF coordinate system:
+        - char.y0: Bottom edge of character (includes descender)
+        - char.y1: Top edge of character (includes ascender)
+        - Baseline: Approximately char.y1 - font_size (where text is rendered from)
     """
     char_size = char.size if hasattr(char, 'size') else DEFAULT_FONT_SIZE
+    # Use char.y1 - char_size as baseline position (consistent with fallback in calculate_text_position)
+    # This prevents text from being placed too low, which causes overlapping with subsequent lines
+    baseline_y = char.y1 - char_size
     return Paragraph(
-        y=char.y0,
+        y=baseline_y,
         x=char.x0,
         x0=char.x0,
         x1=char.x1,

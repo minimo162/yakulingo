@@ -2163,19 +2163,17 @@ class PdfProcessor(FileProcessor):
                                 )
                                 expandable_width = max(original_box_width, capped_width)
 
-                        # Box expansion strategy (readability-first):
-                        # 1. ALWAYS try box expansion first (preferred for readability)
-                        # 2. Only if expansion isn't possible, use font size reduction
+                        # Box expansion strategy:
+                        # - Regular blocks: expand to available space (readability-first)
+                        # - Table cells: NO expansion (PP-DocLayout-L cannot detect cell boundaries)
                         #
-                        # This applies to ALL blocks (table cells and regular blocks alike)
-                        # because readable text is more important than exact layout preservation.
+                        # For table cells, expandable_width equals original_box_width
+                        # (set in pdf_layout.py calculate_expandable_width).
+                        # Font size reduction is used instead for table cells.
                         #
-                        # Layout-aware expansion using expandable_width:
+                        # Layout-aware expansion for regular blocks:
                         # - Respects adjacent block boundaries to prevent overlap
                         # - Respects page margins (capped above)
-                        # - Table cells can expand if there's space on the right
-                        # Unified box expansion logic for ALL blocks:
-                        # Always try to expand to expandable_width first (readability priority)
                         if expandable_width > original_box_width:
                             logger.debug(
                                 "Block %s: expanding box_width from %.1f to %.1f "
@@ -2276,54 +2274,72 @@ class PdfProcessor(FileProcessor):
                         )
 
                         # For table cells: allow LIMITED font size reduction if text overflows.
-                        # Tables have fixed cell boundaries, but readability takes priority.
+                        # Tables have fixed cell boundaries (NO box expansion), so font
+                        # reduction is the only option when text doesn't fit.
                         #
-                        # PDFMathTranslate compliant approach:
-                        # - First, try box expansion (handled above)
-                        # - If still too tall, reduce font size moderately
-                        # - TABLE_MIN_LINE_HEIGHT is 1.0 to prevent overlap
-                        # - Prefer readability over fitting - only moderate font reduction
-                        # - If text still doesn't fit, allow overflow (better than unreadably small text)
-                        TABLE_FONT_MIN_READABLE = 7.0  # Hard readability floor (never increases above original)
-                        TABLE_FONT_MIN_RATIO = 0.7     # Reduce to 70% max for readability
+                        # Table cell handling:
+                        # - Box expansion is disabled for table cells (see pdf_layout.py)
+                        # - PP-DocLayout-L cannot detect cell boundaries within tables
+                        # - Font reduction is applied when text overflows vertically
+                        # - TABLE_MIN_LINE_HEIGHT is 1.0 to prevent line overlap
+                        # - Prefer readability over fitting - limit reduction to 60%
+                        # - If text still doesn't fit, allow overflow (better than unreadable)
+                        TABLE_FONT_MIN_READABLE = 6.0  # Reduced for better table fit
+                        TABLE_FONT_MIN_RATIO = 0.6     # Allow reduction to 60% for tables
 
-                        if is_table_cell and len(lines) > 1:
+                        if is_table_cell:
                             text_height = len(lines) * font_size * line_height
-                            if text_height > box_height * 1.1:  # Allow 10% overflow
-                                # Calculate minimum font size to fit exactly (no extra downscaling)
-                                min_required_font = box_height / (len(lines) * line_height)
+                            # Check if text overflows vertically (allow 5% tolerance)
+                            if text_height > box_height * 1.05:
+                                # Iteratively reduce font size until text fits or minimum reached
+                                # Each iteration: reduce font, recalculate lines, check fit
+                                max_iterations = 5
+                                for iteration in range(max_iterations):
+                                    # Calculate minimum font size to fit exactly
+                                    min_required_font = box_height / (len(lines) * line_height)
 
-                                # Respect user-configured minimum, but never increase above original.
-                                min_setting = MIN_FONT_SIZE
-                                if settings:
-                                    try:
-                                        min_setting = float(getattr(settings, 'font_size_min', MIN_FONT_SIZE) or MIN_FONT_SIZE)
-                                    except (TypeError, ValueError):
-                                        min_setting = MIN_FONT_SIZE
-                                min_setting = max(MIN_FONT_SIZE, min_setting)
-                                min_setting_no_increase = min(font_size, min_setting)
+                                    # Respect user-configured minimum
+                                    min_setting = MIN_FONT_SIZE
+                                    if settings:
+                                        try:
+                                            min_setting = float(getattr(settings, 'font_size_min', MIN_FONT_SIZE) or MIN_FONT_SIZE)
+                                        except (TypeError, ValueError):
+                                            min_setting = MIN_FONT_SIZE
+                                    min_setting = max(MIN_FONT_SIZE, min_setting)
+                                    min_setting_capped = min(font_size, min_setting)
 
-                                # Apply strict limits to prevent unreadable text (also never increases above original)
-                                readable_floor_no_increase = min(font_size, TABLE_FONT_MIN_READABLE)
-                                absolute_min = max(
-                                    readable_floor_no_increase,
-                                    font_size * TABLE_FONT_MIN_RATIO,
-                                    min_setting_no_increase,
-                                )
+                                    # Calculate absolute minimum (never increase above original)
+                                    readable_floor = min(initial_font_size, TABLE_FONT_MIN_READABLE)
+                                    absolute_min = max(
+                                        readable_floor,
+                                        initial_font_size * TABLE_FONT_MIN_RATIO,
+                                        min_setting_capped,
+                                    )
 
-                                # Reduce only as much as needed, but not below our readability limits.
-                                table_target_font = max(absolute_min, min_required_font)
-                                if table_target_font < font_size:
+                                    # Target font size
+                                    table_target_font = max(absolute_min, min_required_font)
+
+                                    if table_target_font >= font_size:
+                                        # Cannot reduce further
+                                        break
+
                                     logger.debug(
-                                        "[Table] Block %s: reducing font size from %.1f to %.1f "
-                                        "to fit %d lines in height %.1f (min allowed: %.1f)",
-                                        block_id, font_size, table_target_font, len(lines), box_height, absolute_min
+                                        "[Table] Block %s (iter %d): reducing font from %.1f to %.1f "
+                                        "to fit %d lines in height %.1f",
+                                        block_id, iteration, font_size, table_target_font,
+                                        len(lines), box_height
                                     )
                                     font_size = table_target_font
-                                    # Recalculate lines with new font size
+
+                                    # Recalculate lines with new font size (smaller font = more chars per line)
                                     lines = split_text_into_lines_with_font(
                                         translated, box_width, font_size, font_id, font_registry
                                     )
+
+                                    # Check if text now fits
+                                    text_height = len(lines) * font_size * line_height
+                                    if text_height <= box_height * 1.05:
+                                        break
 
                         # PDFMathTranslate compliant: Font size is generally FIXED
                         # We preserve the original font size and only adjust line height.

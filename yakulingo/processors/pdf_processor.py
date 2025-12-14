@@ -71,6 +71,8 @@ from .pdf_converter import (
     create_paragraph_from_char, create_formula_var_from_chars,
     # Line joining functions (yomitoku reference)
     get_line_join_separator, is_line_end_hyphenated, _is_cjk_char,
+    # Sentence end characters for paragraph boundary detection
+    SENTENCE_END_CHARS_JA, SENTENCE_END_CHARS_EN,
     # Coordinate conversion utilities (PDFMathTranslate compliant)
     pdf_to_image_coord, image_to_pdf_coord,
     pdf_bbox_to_image_bbox, image_bbox_to_pdf_bbox,
@@ -4018,9 +4020,34 @@ class PdfProcessor(FileProcessor):
 
                 # Handle text
                 if new_paragraph:
-                    # Start new paragraph
-                    sstk.append("")
-                    pstk.append(create_paragraph_from_char(char, False, char_cls))
+                    # Check if we should really start a new paragraph or continue the previous one
+                    # If the previous paragraph doesn't end with a sentence-ending character,
+                    # we may be in the middle of a sentence that spans multiple visual lines
+                    # (e.g., numbered paragraphs like "167. 固定資産に係る...はあ" + "りません。")
+                    should_start_new = True
+
+                    if sstk and pstk:
+                        prev_text = sstk[-1].rstrip() if sstk[-1] else ""
+                        # Check layout class - if different layout regions, always start new paragraph
+                        layout_changed = use_layout and char_cls != prev_cls and prev_cls is not None
+
+                        if prev_text and not layout_changed:
+                            last_char = prev_text[-1] if prev_text else ""
+                            # Check if the previous paragraph ends with sentence-ending punctuation
+                            is_sentence_end = (
+                                last_char in SENTENCE_END_CHARS_JA or
+                                last_char in SENTENCE_END_CHARS_EN
+                            )
+                            if not is_sentence_end:
+                                # Previous paragraph doesn't end with sentence-ending punctuation
+                                # Treat this as a line break instead of a new paragraph
+                                should_start_new = False
+                                line_break = True
+
+                    if should_start_new:
+                        # Start new paragraph
+                        sstk.append("")
+                        pstk.append(create_paragraph_from_char(char, False, char_cls))
 
                 if not sstk:
                     sstk.append("")

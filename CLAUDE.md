@@ -1555,6 +1555,10 @@ When interacting with users in this repository, prefer Japanese for comments and
 ## Recent Development Focus
 
 Based on recent commits:
+- **PDF Translation & Extraction Fixes (2024-12)**:
+  - **[END] marker removal fix**: `parse_batch_result()`の[END]マーカー除去を正規表現に変更し、スペースや大小文字の差異にも対応
+  - **Paragraph continuation detection**: 文末記号（。！？.!?等）で終わっていない段落は継続とみなし、番号付きパラグラフの途中改行で誤って分割される問題を修正
+  - **pdfminer FontBBox warning suppression**: `pdfminer.pdffont`のログレベルをERRORに設定し、FontBBox警告を抑制
 - **PDF Line Joining Logic Improvements (2024-12)** (yomitoku reference):
   - **Intelligent line joining**: yomitokuを参考にした文字種別に基づく行結合ロジックを実装
   - **CJK text handling**: 日本語テキストの行末ではスペースを挿入しない（自然な連結）

@@ -81,6 +81,12 @@ def _get_pdfminer():
         from pdfminer.psparser import PSLiteral
         from pdfminer.pdfparser import PDFObjRef
         from pdfminer.pdftypes import resolve1
+
+        # Suppress pdfminer FontBBox warnings
+        # These occur when PDF fonts lack FontBBox in descriptor (common in older PDFs)
+        # The warnings are non-critical and clutter logs unnecessarily
+        logging.getLogger('pdfminer.pdffont').setLevel(logging.ERROR)
+
         _pdfminer = {
             'PDFCIDFont': PDFCIDFont,
             'PDFUnicodeNotDefined': PDFUnicodeNotDefined,

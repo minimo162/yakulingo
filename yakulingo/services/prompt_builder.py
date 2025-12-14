@@ -379,8 +379,10 @@ class PromptBuilder:
                 text = line
 
             # Remove end marker if present (added in build_batch to prevent merging)
-            if text.endswith(ITEM_END_MARKER.strip()):
-                text = text[:-len(ITEM_END_MARKER.strip())].rstrip()
+            # Use regex for more robust removal - handles spaces around marker
+            # and marker appearing multiple times
+            marker_pattern = r'\s*\[END\]\s*'
+            text = re.sub(marker_pattern, '', text, flags=re.IGNORECASE).strip()
 
             translations.append(text)
 

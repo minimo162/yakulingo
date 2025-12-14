@@ -1287,6 +1287,29 @@ replacer.set_base_stream(xref, original_stream)  # グラフィックスを保�
 replacer.apply_to_page(page)
 ```
 
+**ドキュメント全体のForm XObjectフィルタリング（yomitoku-style）:**
+
+決算短信などの複雑なPDFでは、テキストがネストしたForm XObject内に
+埋め込まれていることがあります。ページごとの処理では不十分なため、
+ドキュメント全体をスキャンして処理します。
+
+```python
+# ContentStreamReplacerのメソッド
+replacer.filter_all_document_xobjects()  # ドキュメント全体のForm XObjectを処理
+
+# 処理フロー:
+# 1. doc.xref_length()で全xrefを取得
+# 2. 各xrefの/Subtype /Formをチェック
+# 3. Form XObjectのストリームからテキストオペレータを削除
+# 4. ネストしたXObject（/Resources N 0 R形式の間接参照も含む）を再帰的に処理
+```
+
+| メソッド | 説明 |
+|----------|------|
+| `filter_all_document_xobjects()` | ドキュメント全体のForm XObjectをスキャンしてテキスト削除 |
+| `_filter_form_xobjects(page)` | ページ単位のForm XObject処理（従来方式） |
+| `_find_nested_xobjects()` | ネストしたXObjectの再帰的検出（間接参照対応） |
+
 **フォント種別に応じたテキストエンコーディング（PDFMathTranslate converter.py準拠）:**
 
 ```python
@@ -1400,6 +1423,12 @@ When interacting with users in this repository, prefer Japanese for comments and
 ## Recent Development Focus
 
 Based on recent commits:
+- **PDF Form XObject Text Removal Improvements (2024-12)**:
+  - **Document-wide XObject scanning**: ドキュメント全体のForm XObjectをスキャンしてテキスト削除（`filter_all_document_xobjects()`メソッド追加）
+  - **Indirect Resources reference support**: `/Resources N 0 R`形式の間接参照を再帰的に処理
+  - **Infinite recursion prevention**: `processed_xrefs`に追加して無限ループを防止
+  - **Pre-compiled regex patterns**: 正規表現をクラスレベルで事前コンパイル（パフォーマンス向上）
+  - **Complex PDF support**: 決算短信等の複雑なPDFで元テキストが残る問題を修正
 - **UI Flickering & Display Fixes (2024-12)**:
   - **Translation result flickering**: 翻訳結果表示時のちらつきを修正（複数回の改善）
   - **Edge window flash fix**: Edgeウィンドウが画面左上に一瞬表示される問題を修正

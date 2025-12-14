@@ -1459,6 +1459,7 @@ Based on recent commits:
   - **CID notation recognition**: CID記法を含むテキストを日本語コンテンツとして認識
   - **Japanese datetime pattern fix**: 日本語日時パターンの正規表現を修正しPDF翻訳の誤スキップを解消
   - **Table cell boundary detection**: PDFテーブル領域内のセル境界検出を改善
+  - **Nested Form XObject text removal**: Form XObject内のネストしたテキストを再帰的に削除（決算短信等の複雑なPDFでのテキスト重なりを防止）
 - **Auth Flow Improvements (2024-12)**:
   - **Auth dialog detection**: Copilotページ上の認証ダイアログを検出するように修正
   - **Navigation prevention**: 認証フロー中の強制ナビゲーションを防止

@@ -1624,8 +1624,11 @@ Based on recent commits:
   - **New functions**: `get_line_join_separator()`, `is_line_end_hyphenated()`, `_is_cjk_char()`, `_is_latin_char()` を追加
   - **Constants**: `SENTENCE_END_CHARS_JA`, `SENTENCE_END_CHARS_EN`, `HYPHEN_CHARS` を追加
 - **PDF Translation Reliability Improvements (2024-12)**:
-  - **Box expansion ratio increase**: `MAX_EXPANSION_RATIO`を1.5から2.0に増加（翻訳テキストの収容改善）
+  - **Box expansion ratio**: `MAX_EXPANSION_RATIO=2.0`を維持（翻訳テキストの収容改善）
   - **Table cell expansion fallback**: セル境界情報がない場合でもlayout-aware拡張を許可
+  - **TextBlock-based adjacent block detection**: PP-DocLayout-Lに依存せず、実際のTextBlock座標を使用した隣接ブロック検出を追加（重なり防止）
+  - **find_adjacent_textblock_boundaries()**: 同じページのTextBlock座標から隣接ブロックの境界を計算し、ボックス拡張の重なりを防止
+  - **Constants**: `ADJACENT_BLOCK_MIN_GAP=5.0`, `ADJACENT_BLOCK_Y_OVERLAP_THRESHOLD=0.3`
 - **PDF Form XObject Text Removal Improvements (2024-12)**:
   - **Document-wide XObject scanning**: ドキュメント全体のForm XObjectをスキャンしてテキスト削除（`filter_all_document_xobjects()`メソッド追加）
   - **Indirect Resources reference support**: `/Resources N 0 R`形式の間接参照を再帰的に処理
@@ -1676,7 +1679,7 @@ Based on recent commits:
   - **Table text overlap fix**: TABLE_MIN_LINE_HEIGHT を 1.0 に設定（行間 < 1.0 ではテキストが重なるため）
   - **Table cell expansion**: テーブルセルでも右側に20pt以上の余裕があればボックスを拡張（読みやすさ優先）
   - **Moderate font reduction**: TABLE_FONT_MIN_RATIO を 0.7 に設定（拡張できない場合のみ70%まで縮小）
-  - **TABLE_FONT_MIN_READABLE**: テーブルセル用の最小可読フォントサイズを 7.0pt に設定
+  - **TABLE_FONT_MIN_READABLE**: テーブルセル用の最小可読フォントサイズを 8.0pt に設定（可読性向上のため6.0ptから増加）
   - **is_table_cell parameter**: calculate_line_height_with_font に is_table_cell パラメータを追加
   - **PDFMathTranslate reference**: https://github.com/PDFMathTranslate/PDFMathTranslate を参考に改善
 - **PDF Layout-Aware Box Expansion (2024-12)**:

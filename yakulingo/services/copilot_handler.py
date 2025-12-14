@@ -3420,9 +3420,10 @@ class CopilotHandler:
                     )
                     logger.debug("Send button is now enabled")
                 except Exception as e:
-                    logger.debug("Send button wait skipped: %s", e)
-                    # Fall back to fixed wait if selector fails
-                    time.sleep(0.3)
+                    # Selector may have changed - use longer fixed wait that matches
+                    # successful retry timing (0.8s SEND_RETRY_WAIT + focus handling)
+                    logger.debug("Send button wait skipped: %s - using fixed wait", e)
+                    time.sleep(1.0)
 
                 # Send via Enter key with retry on failure
                 # After Enter, check if input field is cleared OR stop button appears

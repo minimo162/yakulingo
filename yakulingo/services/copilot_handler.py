@@ -3591,8 +3591,69 @@ class CopilotHandler:
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, self._send_message, message)
 
+    # JavaScript to extract text with list numbers preserved
+    # inner_text() doesn't include CSS-generated list markers, so we need to
+    # manually add them back for <ol> lists
+    _JS_GET_TEXT_WITH_LIST_NUMBERS = """
+    (element) => {
+        const result = [];
+        let listCounter = 0;
+        let inOrderedList = false;
+
+        function processNode(node) {
+            if (node.nodeType === Node.TEXT_NODE) {
+                const text = node.textContent;
+                if (text && text.trim()) {
+                    result.push(text);
+                }
+            } else if (node.nodeType === Node.ELEMENT_NODE) {
+                const tagName = node.tagName.toUpperCase();
+
+                // Track ordered list state
+                if (tagName === 'OL') {
+                    const savedCounter = listCounter;
+                    const savedInList = inOrderedList;
+                    listCounter = parseInt(node.getAttribute('start') || '1', 10);
+                    inOrderedList = true;
+
+                    for (const child of node.childNodes) {
+                        processNode(child);
+                    }
+
+                    listCounter = savedCounter;
+                    inOrderedList = savedInList;
+                    return;
+                }
+
+                // Add list number for <li> in <ol>
+                if (tagName === 'LI' && inOrderedList) {
+                    result.push('\\n' + listCounter + '. ');
+                    listCounter++;
+                }
+
+                // Process children
+                for (const child of node.childNodes) {
+                    processNode(child);
+                }
+
+                // Add newlines for block elements
+                if (['P', 'DIV', 'BR', 'LI', 'TR'].includes(tagName)) {
+                    result.push('\\n');
+                }
+            }
+        }
+
+        processNode(element);
+        return result.join('').replace(/\\n{3,}/g, '\\n\\n').trim();
+    }
+    """
+
     def _get_latest_response_text(self) -> tuple[str, bool]:
-        """Return the latest Copilot response text and whether an element was found."""
+        """Return the latest Copilot response text and whether an element was found.
+
+        Uses JavaScript evaluation to preserve list numbers from <ol> elements,
+        which are not included in inner_text() as they are CSS-generated.
+        """
 
         if not self._page:
             logger.debug("[RESPONSE_TEXT] No page available")
@@ -3615,10 +3676,15 @@ class CopilotHandler:
             logger.debug("[RESPONSE_TEXT] Found %d elements for selector: %s", len(elements), selector)
             for element in reversed(elements):
                 try:
-                    text = element.inner_text()
+                    # Use JavaScript evaluation to get text with list numbers preserved
+                    text = element.evaluate(self._JS_GET_TEXT_WITH_LIST_NUMBERS)
                 except PlaywrightError as e:
-                    logger.debug("[RESPONSE_TEXT] Failed to read element (%s): %s", selector, e)
-                    continue
+                    logger.debug("[RESPONSE_TEXT] Failed to evaluate element (%s): %s", selector, e)
+                    # Fallback to inner_text if evaluate fails
+                    try:
+                        text = element.inner_text()
+                    except PlaywrightError:
+                        continue
 
                 logger.debug("[RESPONSE_TEXT] Got text (len=%d) from selector: %s", len(text) if text else 0, selector)
                 return text or "", True

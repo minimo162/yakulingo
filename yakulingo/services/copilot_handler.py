@@ -1157,6 +1157,9 @@ class CopilotHandler:
         for page in pages:
             if "m365.cloud.microsoft" in page.url:
                 logger.info("Found existing Copilot page")
+                # Ensure browser is minimized when reusing existing page
+                # This prevents browser flash during reconnection (e.g., after PDF layout init)
+                self._minimize_edge_window(None)
                 return page
 
         # Reuse existing tab if available (avoids creating extra tabs)
@@ -1225,6 +1228,8 @@ class CopilotHandler:
                     page.wait_for_load_state('domcontentloaded', timeout=10000)
                 except (PlaywrightTimeoutError, PlaywrightError) as nav_err:
                     logger.warning("Failed to navigate to chat from landing: %s", nav_err)
+                # Ensure browser stays minimized after navigation
+                self._minimize_edge_window(None)
         elif _is_copilot_url(url) and "/chat" not in url:
             # Check if we're on an auth flow intermediate page - do NOT navigate
             if _is_auth_flow_page(url):
@@ -1248,6 +1253,8 @@ class CopilotHandler:
                     page.wait_for_load_state('domcontentloaded', timeout=10000)
                 except (PlaywrightTimeoutError, PlaywrightError) as nav_err:
                     logger.warning("Navigation to chat failed: %s", nav_err)
+                # Ensure browser stays minimized after navigation
+                self._minimize_edge_window(None)
 
         # Use stepped waiting with early login detection
         # Instead of waiting 15 seconds then checking, check every 3 seconds
@@ -1354,6 +1361,8 @@ class CopilotHandler:
                     page.goto(self.COPILOT_URL, wait_until='domcontentloaded', timeout=30000)
                 except (PlaywrightTimeoutError, PlaywrightError) as nav_err:
                     logger.warning("Failed to navigate to chat during wait: %s", nav_err)
+                # Ensure browser stays minimized after navigation
+                self._minimize_edge_window(None)
             self.last_connection_error = self.ERROR_CONNECTION_FAILED
             if not wait_for_login:
                 logger.info("Background connect: chat UI not ready; deferring login prompt")

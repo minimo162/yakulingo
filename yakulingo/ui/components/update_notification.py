@@ -198,7 +198,7 @@ class UpdateNotification:
                 with ui.scroll_area().classes('w-full max-h-40 border rounded p-2'):
                     # リリースノートから [REQUIRES_REINSTALL] マーカーを除去して表示
                     display_notes = info.release_notes.replace('[REQUIRES_REINSTALL]', '').strip()
-                    ui.markdown(display_notes).classes('text-xs')
+                    ui.markdown(display_notes).classes('release-notes-content')
 
             # アクションボタン
             ui.separator().classes('my-3')

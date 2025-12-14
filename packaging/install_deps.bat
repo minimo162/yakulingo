@@ -320,9 +320,11 @@ if !IMPORT_ERROR! neq 0 (
 
 :: Pre-import paddle/paddleocr to download models and cache them (may take a while)
 echo [INFO] Downloading paddleocr models (this may take a few minutes on first run)...
+echo [INFO] - PP-DocLayout-L: Layout detection
+echo [INFO] - TableCellsDetection: Table cell boundary detection (~124MB)
 :: Use PowerShell to run paddleocr check (avoids batch quoting issues)
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-    "$script = 'import warnings; warnings.filterwarnings(''ignore''); import paddle; from paddleocr import LayoutDetection; print(''[OK] paddleocr models ready.'')';" ^
+    "$script = 'import warnings; warnings.filterwarnings(''ignore''); import paddle; from paddleocr import LayoutDetection, TableCellsDetection; print(''[OK] paddleocr models ready.'')';" ^
     "& '.venv\Scripts\python.exe' -W ignore -c $script 2>$null;" ^
     "exit $LASTEXITCODE"
 set OCR_ERROR=!errorlevel!

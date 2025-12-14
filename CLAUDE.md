@@ -1318,14 +1318,15 @@ When interacting with users in this repository, prefer Japanese for comments and
 Based on recent commits:
 - **PDF Layout Improvement (2024-12)**:
   - **Table text overlap fix**: TABLE_MIN_LINE_HEIGHT を 1.0 に設定（行間 < 1.0 ではテキストが重なるため）
-  - **Aggressive font reduction for tables**: TABLE_FONT_MIN_RATIO を 0.5 に設定（行高さ圧縮の代わりにフォント縮小）
-  - **TABLE_FONT_MIN_READABLE**: テーブルセル用の最小可読フォントサイズを 6.0pt に設定
+  - **Table cell expansion**: テーブルセルでも右側に20pt以上の余裕があればボックスを拡張（読みやすさ優先）
+  - **Moderate font reduction**: TABLE_FONT_MIN_RATIO を 0.7 に設定（拡張できない場合のみ70%まで縮小）
+  - **TABLE_FONT_MIN_READABLE**: テーブルセル用の最小可読フォントサイズを 7.0pt に設定
   - **is_table_cell parameter**: calculate_line_height_with_font に is_table_cell パラメータを追加
   - **PDFMathTranslate reference**: https://github.com/PDFMathTranslate/PDFMathTranslate を参考に改善
 - **PDF Layout-Aware Box Expansion (2024-12)**:
   - **Horizontal expansion**: テキストが収まらない場合、隣接ブロックがなければ右方向に拡張
   - **Layout-aware**: PP-DocLayout-Lの検出結果を使用して隣接ブロックを回避
-  - **Table cell protection**: 表セル内のテキストは拡張せず、セル境界を尊重
+  - **Table cell conditional expansion**: 表セル内でも右側に20pt以上の余裕があれば拡張（フォント縮小より優先）
   - **Page margin respect**: ページ右余白（デフォルト20pt）を考慮
   - **expandable_width metadata**: TextBlock抽出時に拡張可能幅を事前計算
   - **Fallback support**: PP-DocLayout-L未使用時はページ余白まで拡張

@@ -2146,12 +2146,21 @@ class PdfProcessor(FileProcessor):
                         # - Respects adjacent block boundaries to prevent overlap
                         # - Table cells have expandable_width == original_width (no expansion)
                         if is_table_cell:
-                            # For table cells, keep original box_width and rely on font size reduction
-                            logger.debug(
-                                "[Table] Block %s is in table cell (layout_class=%d), "
-                                "skipping box_width expansion (keeping %.1f)",
-                                block_id, layout_class, original_box_width
-                            )
+                            # For table cells: try box expansion first (if expandable_width allows)
+                            # This is preferred over font size reduction for readability
+                            if expandable_width > original_box_width:
+                                logger.debug(
+                                    "[Table] Block %s: expanding box_width from %.1f to %.1f "
+                                    "(expandable_width allows expansion)",
+                                    block_id, original_box_width, expandable_width
+                                )
+                                box_width = expandable_width
+                            else:
+                                logger.debug(
+                                    "[Table] Block %s is in table cell (layout_class=%d), "
+                                    "no expansion available (keeping %.1f)",
+                                    block_id, layout_class, original_box_width
+                                )
                         elif original_line_count > 1:
                             # Estimate required width based on translated text length and original line count
                             # Average chars per line in translated text should be similar to original
@@ -2308,13 +2317,13 @@ class PdfProcessor(FileProcessor):
                         # Tables have fixed cell boundaries, but readability takes priority.
                         #
                         # PDFMathTranslate compliant approach:
-                        # - Prefer fixed font size + line-height compression
-                        # - If still too tall, reduce font size more aggressively
-                        # - Since TABLE_MIN_LINE_HEIGHT is 1.0 (to prevent overlap),
-                        #   we need more aggressive font reduction to fit text in cells
+                        # - First, try box expansion (handled above)
+                        # - If still too tall, reduce font size moderately
+                        # - TABLE_MIN_LINE_HEIGHT is 1.0 to prevent overlap
+                        # - Prefer readability over fitting - only moderate font reduction
                         # - If text still doesn't fit, allow overflow (better than unreadably small text)
-                        TABLE_FONT_MIN_READABLE = 6.0  # Hard readability floor (never increases above original)
-                        TABLE_FONT_MIN_RATIO = 0.5     # Allow reducing to 50% of original size for tables
+                        TABLE_FONT_MIN_READABLE = 7.0  # Hard readability floor (never increases above original)
+                        TABLE_FONT_MIN_RATIO = 0.7     # Reduce to 70% max for readability
 
                         if is_table_cell and len(lines) > 1:
                             text_height = len(lines) * font_size * line_height

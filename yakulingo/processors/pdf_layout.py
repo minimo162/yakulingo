@@ -949,15 +949,38 @@ def calculate_expandable_width(
     x0, y0, x1, y1 = bbox
     original_width = x1 - x0
 
-    # Table cells cannot expand - they have fixed boundaries
-    if is_table_cell:
-        return original_width
-
     # Calculate maximum possible width (page width minus margins)
     max_right = page_width - page_margin
     if x1 >= max_right:
         # Already at or past the right margin
         return original_width
+
+    # Table cells: Try to expand if there's space on the right
+    # This allows text to use available space before font size reduction
+    if is_table_cell:
+        # If no layout info, cannot safely expand (might overlap adjacent cells)
+        if layout is None or layout.array is None:
+            return original_width
+        if layout.fallback_used:
+            return original_width
+
+        # Find adjacent blocks on the right side (same logic as non-table)
+        right_boundary = _find_right_boundary(
+            layout, bbox, page_width, page_height, page_margin
+        )
+
+        # For table cells: only expand if there's significant space (>20pt)
+        # This prevents micro-expansions that might overlap cell borders
+        TABLE_CELL_EXPANSION_MIN_GAP = 20.0
+        potential_expansion = right_boundary - x1
+        if potential_expansion >= TABLE_CELL_EXPANSION_MIN_GAP:
+            expandable_width = right_boundary - x0
+            return max(original_width, expandable_width)
+
+        # No significant space to expand
+        return original_width
+
+    # Non-table blocks: expand to page margin or adjacent block
 
     # If no layout info, expand to page margin
     if layout is None or layout.array is None:

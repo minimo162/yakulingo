@@ -1250,37 +1250,114 @@ class ContentStreamReplacer:
             xref_queue: Queue of xrefs to process
             processed_xrefs: Set of already processed xrefs
         """
-        import re
-
         try:
             # Look for /Resources in the object definition
             if '/Resources' not in obj_str:
                 return
 
-            # Try to find XObject references in the Resources
-            # This is a simplified approach - complex PDFs may have indirect references
+            # Pattern 1: Inline XObject dictionary /XObject << /Name N 0 R >>
             xobj_pattern = re.compile(r'/XObject\s*<<([^>]*)>>')
             match = xobj_pattern.search(obj_str)
-            if not match:
-                return
+            if match:
+                xobj_dict = match.group(1)
+                # Find all references to XObjects (format: /Name N 0 R)
+                ref_pattern = re.compile(r'/(\w+)\s+(\d+)\s+0\s+R')
+                for name_match in ref_pattern.finditer(xobj_dict):
+                    nested_name = name_match.group(1)
+                    nested_xref = int(name_match.group(2))
 
-            xobj_dict = match.group(1)
+                    if nested_xref not in processed_xrefs:
+                        logger.debug(
+                            "_find_nested_xobjects: Found nested XObject /%s (xref=%d) in parent xref=%d",
+                            nested_name, nested_xref, parent_xref
+                        )
+                        xref_queue.append((nested_xref, nested_name))
 
-            # Find all references to XObjects (format: /Name N 0 R)
-            ref_pattern = re.compile(r'/(\w+)\s+(\d+)\s+0\s+R')
-            for name_match in ref_pattern.finditer(xobj_dict):
-                nested_name = name_match.group(1)
-                nested_xref = int(name_match.group(2))
-
-                if nested_xref not in processed_xrefs:
-                    logger.debug(
-                        "_find_nested_xobjects: Found nested XObject /%s (xref=%d) in parent xref=%d",
-                        nested_name, nested_xref, parent_xref
-                    )
-                    xref_queue.append((nested_xref, nested_name))
+            # Pattern 2: Indirect reference to Resources /Resources N 0 R
+            resources_ref_pattern = re.compile(r'/Resources\s+(\d+)\s+0\s+R')
+            resources_match = resources_ref_pattern.search(obj_str)
+            if resources_match:
+                resources_xref = int(resources_match.group(1))
+                try:
+                    resources_obj = self.doc.xref_object(resources_xref)
+                    # Recursively search for XObjects in the Resources dictionary
+                    self._find_nested_xobjects(resources_xref, resources_obj, xref_queue, processed_xrefs)
+                except (RuntimeError, ValueError, KeyError) as e:
+                    logger.debug("Could not resolve Resources xref=%d: %s", resources_xref, e)
 
         except (ValueError, AttributeError, re.error) as e:
             logger.debug("Could not find nested XObjects in xref=%d: %s", parent_xref, e)
+
+    def filter_all_document_xobjects(self) -> int:
+        """
+        Filter text from ALL Form XObjects in the entire document.
+
+        This is more thorough than per-page filtering and catches XObjects
+        that may be shared across multiple pages or nested deeply.
+
+        Based on yomitoku's approach of scanning the entire document structure.
+
+        Returns:
+            Number of Form XObjects that were filtered
+        """
+        if not self._parser:
+            return 0
+
+        filtered_count = 0
+        processed_xrefs = set()
+
+        # Scan all xrefs in the document
+        xref_count = self.doc.xref_length()
+        logger.info(
+            "filter_all_document_xobjects: scanning %d xrefs in document",
+            xref_count
+        )
+
+        for xref in range(1, xref_count):
+            if xref in processed_xrefs:
+                continue
+
+            try:
+                # Get object definition
+                obj_str = self.doc.xref_object(xref)
+                if not obj_str:
+                    continue
+
+                # Check if this is a Form XObject
+                is_form = '/Subtype /Form' in obj_str or '/Subtype/Form' in obj_str
+                if not is_form:
+                    continue
+
+                processed_xrefs.add(xref)
+
+                # Get the stream content
+                stream = self.doc.xref_stream(xref)
+                if not stream:
+                    continue
+
+                # Filter text operators from the stream
+                original_size = len(stream)
+                filtered_stream = self._parser.parse_and_filter(stream)
+                filtered_size = len(filtered_stream)
+
+                # Only update if we actually removed something
+                if filtered_size < original_size:
+                    self.doc.update_stream(xref, filtered_stream)
+                    filtered_count += 1
+                    logger.info(
+                        "filter_all_document_xobjects: FILTERED Form XObject xref=%d: %d -> %d bytes",
+                        xref, original_size, filtered_size
+                    )
+
+            except (RuntimeError, ValueError, KeyError, OSError) as e:
+                logger.debug("Could not process xref=%d: %s", xref, e)
+                continue
+
+        logger.info(
+            "filter_all_document_xobjects: filtered %d Form XObjects in document",
+            filtered_count
+        )
+        return filtered_count
 
     def begin_text(self) -> 'ContentStreamReplacer':
         """Begin text block."""

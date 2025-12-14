@@ -1838,6 +1838,17 @@ class PdfProcessor(FileProcessor):
             # Create operator generator
             op_gen = PdfOperatorGenerator(font_registry)
 
+            # yomitoku-style: Filter ALL Form XObjects in the entire document first
+            # This is more thorough than per-page filtering and catches
+            # XObjects that may be shared across pages or nested deeply
+            # (e.g., complex financial reports like 決算短信)
+            doc_replacer = ContentStreamReplacer(doc, font_registry, preserve_graphics=True)
+            doc_filtered_count = doc_replacer.filter_all_document_xobjects()
+            logger.info(
+                "Document-wide XObject filtering: filtered %d Form XObjects",
+                doc_filtered_count
+            )
+
             # PDFMathTranslate compliant: Build TextBlock lookup map
             # TextBlock contains PDF coordinates (origin at bottom-left)
             # No DPI scaling needed - coordinates are already in PDF points

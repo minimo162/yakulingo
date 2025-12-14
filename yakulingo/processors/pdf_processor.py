@@ -69,6 +69,8 @@ from .pdf_converter import (
     is_subscript_superscript, detect_text_style,
     detect_paragraph_boundary, classify_char_type,
     create_paragraph_from_char, create_formula_var_from_chars,
+    # Line joining functions (yomitoku reference)
+    get_line_join_separator, is_line_end_hyphenated, _is_cjk_char,
     # Coordinate conversion utilities (PDFMathTranslate compliant)
     pdf_to_image_coord, image_to_pdf_coord,
     pdf_bbox_to_image_bbox, image_bbox_to_pdf_bbox,
@@ -4024,18 +4026,36 @@ class PdfProcessor(FileProcessor):
                     sstk.append("")
                     pstk.append(create_paragraph_from_char(char, False, char_cls))
 
-                # PDFMathTranslate compliant:
-                # When we detect an in-paragraph line break, record it on the paragraph
-                # and insert a separating space so words don't concatenate across lines.
+                # yomitoku-style line joining:
+                # When we detect an in-paragraph line break, use intelligent joining
+                # based on the character types (CJK vs Latin) instead of blindly adding space.
+                # This prevents unnecessary spaces in Japanese text and handles hyphenation
+                # in English text properly.
                 if line_break and not new_paragraph:
-                    if sstk[-1] and not sstk[-1].endswith(" "):
-                        sstk[-1] += " "
+                    is_hyphenated = is_line_end_hyphenated(sstk[-1]) if sstk[-1] else False
+                    separator = get_line_join_separator(sstk[-1], char_text, is_hyphenated)
+
+                    # If hyphenated, remove the trailing hyphen before joining
+                    # (the word continues on the next line)
+                    if is_hyphenated and not separator and sstk[-1]:
+                        sstk[-1] = sstk[-1][:-1]
+
+                    sstk[-1] += separator
+
                     if pstk:
                         pstk[-1].brk = True
 
-                # Add space between words if gap is significant
+                # Add space between words if gap is significant (within a line)
+                # This handles word spacing within a line, not at line breaks.
+                # Only add space if appropriate for the character types.
                 if has_prev and char_x0 > prev_x1 + WORD_SPACE_X_THRESHOLD:
-                    sstk[-1] += " "
+                    # Use the same intelligent joining logic for word spacing
+                    last_char = sstk[-1][-1] if sstk[-1] else ""
+                    # Only add space for Latin-to-Latin transitions
+                    # CJK text doesn't use word spacing
+                    if not _is_cjk_char(last_char) and not _is_cjk_char(char_text):
+                        if not sstk[-1].endswith(" "):
+                            sstk[-1] += " "
 
                 sstk[-1] += char_text
 

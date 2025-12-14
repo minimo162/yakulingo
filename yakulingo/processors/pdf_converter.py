@@ -142,8 +142,52 @@ BULLET_MARKERS = frozenset({
     '-', '–', '—',
     # Common bullets
     '*', '•', '◦', '※',
-    # Numbered list markers are handled separately (digit detection)
+    # Circled numbers (①-⑳, U+2460-U+2473) - common in Japanese documents
+    '①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩',
+    '⑪', '⑫', '⑬', '⑭', '⑮', '⑯', '⑰', '⑱', '⑲', '⑳',
+    # Roman numerals (Ⅰ-Ⅻ, U+2160-U+216B)
+    'Ⅰ', 'Ⅱ', 'Ⅲ', 'Ⅳ', 'Ⅴ', 'Ⅵ', 'Ⅶ', 'Ⅷ', 'Ⅸ', 'Ⅹ', 'Ⅺ', 'Ⅻ',
+    # Lowercase roman numerals (ⅰ-ⅻ, U+2170-U+217B)
+    'ⅰ', 'ⅱ', 'ⅲ', 'ⅳ', 'ⅴ', 'ⅵ', 'ⅶ', 'ⅷ', 'ⅸ', 'ⅹ', 'ⅺ', 'ⅻ',
+    # Opening parenthesis/brackets (for patterns like (1), (ア), 【注】)
+    '(', '（', '【', '〔',
 })
+
+
+def is_list_item_start(text: str) -> bool:
+    """Check if text starts with a list item marker pattern.
+
+    Detects patterns commonly found in Japanese financial documents:
+    - Numbered: 1., 2., 1), 2), (1), (2)
+    - Japanese: (ア), (イ), イ., ロ., （注）
+    - Note markers: ※1, ※2, 注1, 注2
+
+    Args:
+        text: Text to check (first few characters of a line)
+
+    Returns:
+        True if the text starts with a list item pattern
+    """
+    if not text:
+        return False
+
+    # Single character markers (already in BULLET_MARKERS)
+    if text[0] in BULLET_MARKERS:
+        return True
+
+    # Check for digit followed by period or parenthesis: "1.", "2)", etc.
+    if len(text) >= 2 and text[0].isdigit():
+        # Pattern: digit + . or ) or 、
+        if text[1] in '.）)、':
+            return True
+        # Pattern: multi-digit + . or ) (e.g., "10.", "123)")
+        i = 1
+        while i < len(text) and text[i].isdigit():
+            i += 1
+        if i < len(text) and text[i] in '.）)、':
+            return True
+
+    return False
 
 # Japanese characters that should NOT have space when joining lines
 # Hiragana, Katakana, CJK Ideographs, Full-width punctuation

@@ -75,7 +75,7 @@ from .pdf_converter import (
     # Sentence end characters for paragraph boundary detection
     SENTENCE_END_CHARS_JA, SENTENCE_END_CHARS_EN,
     # Bullet markers for list item detection
-    BULLET_MARKERS,
+    BULLET_MARKERS, is_list_item_start,
     # Coordinate conversion utilities (PDFMathTranslate compliant)
     pdf_to_image_coord, image_to_pdf_coord,
     pdf_bbox_to_image_bbox, image_bbox_to_pdf_bbox,
@@ -4214,12 +4214,18 @@ class PdfProcessor(FileProcessor):
                     # line doesn't end with sentence-ending punctuation
                     is_bullet_start = char_text in BULLET_MARKERS
 
+                    # 5. Check for numbered list items (1., 2., 167. etc.)
+                    # Digits at the start of a visually separated line often indicate
+                    # numbered list items in Japanese financial documents
+                    is_numbered_list_start = char_text.isdigit()
+
                     # Force split (skip sentence-end check) for structural boundaries
                     should_force_split = (
                         layout_truly_changed or
                         is_table_region or
                         is_toc_pattern or
-                        is_bullet_start
+                        is_bullet_start or
+                        is_numbered_list_start
                     )
 
                     # Apply sentence-end check only if not forcing split

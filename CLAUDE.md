@@ -268,7 +268,7 @@ No manual direction selection is required for text translation. File translation
 - **Settings dialog**: Translation style selector (標準/簡潔/最簡潔)
 - **Back-translate button**: Verify translations by translating back to original language
 - **Reference file attachment**: Attach glossary, style guide, or reference materials
-- **Loading screen**: Shows spinner immediately on startup for faster perceived load time
+- **Loading screen**: Shows spinner immediately on startup using inline styles (no CSS load wait)
 
 ## File Processor Pattern
 
@@ -1614,6 +1614,11 @@ Based on recent commits:
   - **XObject filtering fallback**: ドキュメント全体フィルタリングで0件の場合、ページレベルフィルタリングにフォールバック
   - **Debug pattern enhancement**: `'`と`"`テキストオペレータの検出をデバッグログに追加
   - **Issue fixed**: PDF英訳時に元の日本語テキストが残る問題を修正
+- **Loading Screen Performance Improvement (2024-12)**:
+  - **Inline styles for loading screen**: ローディング画面をインラインスタイルで即座に表示。CSS読み込みを待たずにユーザーにフィードバックを提供
+  - **Deferred CSS/settings loading**: CSS変数、JavaScriptスクリプト、設定読み込みを`client.connected()`後に移動
+  - **Phase 1/2 architecture**: Phase 1でローディング画面を即座に表示、Phase 2で重い処理を実行
+  - **Removed loading-screen CSS class**: インラインスタイル使用のため`.loading-screen`/`.loading-title`クラスを削除
 - **PDF Text Positioning Fix (PDFMathTranslate compliant) (2024-12)**:
   - **Paragraph.y = char.y0**: PDFMathTranslate準拠で`Paragraph.y`を`char.y0`（文字の下端）に設定。従来の`char.y1 - char_size`から変更
   - **calculate_text_position fallback**: フォールバック計算で`y1`（ボックス下端）を使用。従来の`y2 - font_size`から変更
@@ -1964,7 +1969,7 @@ Based on recent commits:
   - **Prompt caching**: `PromptBuilder.get_text_template()` caches loaded templates to avoid per-request file I/O
   - **Parallel prompt building**: ThreadPoolExecutor for 3+ batches for concurrent prompt construction
 - **Startup Performance**:
-  - **Loading screen**: Shows spinner immediately via `await client.connected()` for faster perceived startup
+  - **Loading screen (inline styles)**: Shows spinner immediately using inline styles before `client.connected()`, avoiding CSS load delays. Settings and CSS variables are loaded after the loading screen is visible.
   - **Import optimization**: NiceGUI import moved inside `main()` to prevent double initialization in native mode (cuts startup time in half)
   - **Lazy imports**: Heavy modules (openpyxl, python-docx, Playwright) deferred until first use via `__getattr__`
   - **WebSocket optimization**: `reconnect_timeout=30.0` in `ui.run()` (up from default 3s) for stable connections

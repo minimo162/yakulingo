@@ -1524,6 +1524,14 @@ When interacting with users in this repository, prefer Japanese for comments and
 ## Recent Development Focus
 
 Based on recent commits:
+- **PDF Line Joining Logic Improvements (2024-12)** (yomitoku reference):
+  - **Intelligent line joining**: yomitokuを参考にした文字種別に基づく行結合ロジックを実装
+  - **CJK text handling**: 日本語テキストの行末ではスペースを挿入しない（自然な連結）
+  - **Latin text handling**: 英語テキストの行末では単語間スペースを挿入
+  - **Hyphenation support**: ハイフンで終わる行は単語の途中で分割されたと判断し、スペースなしで連結
+  - **Sentence-end detection**: 文末記号（。！？.!?等）で終わる行は適切に処理
+  - **New functions**: `get_line_join_separator()`, `is_line_end_hyphenated()`, `_is_cjk_char()`, `_is_latin_char()` を追加
+  - **Constants**: `SENTENCE_END_CHARS_JA`, `SENTENCE_END_CHARS_EN`, `HYPHEN_CHARS` を追加
 - **PDF Translation Reliability Improvements (2024-12)**:
   - **Item end marker**: `ITEM_END_MARKER = " [END]"` を各項目末尾に追加（Copilotによる項目マージを防止）
   - **Box expansion ratio increase**: `MAX_EXPANSION_RATIO`を1.5から2.0に増加（翻訳テキストの収容改善）

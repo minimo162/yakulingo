@@ -38,6 +38,9 @@ from yakulingo.processors.pdf_processor import (
     _map_pp_doclayout_label_to_role,
     LAYOUT_TRANSLATE_LABELS,
     LAYOUT_SKIP_LABELS,
+    # Line joining functions (yomitoku reference)
+    get_line_join_separator,
+    is_line_end_hyphenated,
     # Constants
     FONT_FILES,
     DEFAULT_VFONT_PATTERN,
@@ -4566,3 +4569,98 @@ class TestReadingOrderGraphBuilding:
 
         # Top-right should have lower distance (higher priority)
         assert dist1 < dist2
+
+
+# =============================================================================
+# Line Joining Tests (yomitoku reference)
+# =============================================================================
+
+class TestLineJoining:
+    """Tests for line joining functions based on yomitoku's approach"""
+
+    def test_get_line_join_separator_cjk_to_cjk(self):
+        """CJK to CJK should not add space"""
+        # next_char is a single character (first char of next line)
+        assert get_line_join_separator("これは日本語", "テ") == ""
+        assert get_line_join_separator("漢字", "漢") == ""
+
+    def test_get_line_join_separator_latin_to_latin(self):
+        """Latin to Latin should add space"""
+        assert get_line_join_separator("Hello", "W") == " "
+        assert get_line_join_separator("test", "w") == " "
+
+    def test_get_line_join_separator_cjk_to_latin(self):
+        """CJK to Latin should not add space (Japanese text with embedded English)"""
+        assert get_line_join_separator("日本語", "A") == ""
+
+    def test_get_line_join_separator_latin_to_cjk(self):
+        """Latin to CJK should not add space"""
+        assert get_line_join_separator("English", "日") == ""
+
+    def test_get_line_join_separator_after_jp_sentence_end(self):
+        """After Japanese sentence-ending punctuation, no space needed"""
+        assert get_line_join_separator("これは文末。", "次") == ""
+        assert get_line_join_separator("質問？", "答") == ""
+        assert get_line_join_separator("終わり！", "始") == ""
+
+    def test_get_line_join_separator_after_en_sentence_end(self):
+        """After English sentence-ending punctuation followed by Latin, add space"""
+        assert get_line_join_separator("Sentence end.", "N") == " "
+        assert get_line_join_separator("Question?", "A") == " "
+
+    def test_get_line_join_separator_hyphenated(self):
+        """Hyphenated word continuation should not add space"""
+        assert get_line_join_separator("hyph-", "e", is_hyphenated=True) == ""
+        assert get_line_join_separator("con-", "t", is_hyphenated=True) == ""
+
+    def test_get_line_join_separator_hyphenated_uppercase(self):
+        """Hyphenated but uppercase next char should add space (not word continuation)"""
+        assert get_line_join_separator("word-", "T", is_hyphenated=True) == " "
+
+    def test_get_line_join_separator_empty_prev(self):
+        """Empty previous text should return empty string"""
+        assert get_line_join_separator("", "a") == ""
+
+    def test_get_line_join_separator_ends_with_space(self):
+        """Text ending with space should not add more space"""
+        assert get_line_join_separator("word ", "a") == ""
+
+    def test_is_line_end_hyphenated_true(self):
+        """Should detect hyphen at end"""
+        assert is_line_end_hyphenated("word-") is True
+        assert is_line_end_hyphenated("con‐") is True  # Unicode hyphen
+        assert is_line_end_hyphenated("test—") is True  # Em dash
+
+    def test_is_line_end_hyphenated_false(self):
+        """Should return False for non-hyphenated text"""
+        assert is_line_end_hyphenated("word") is False
+        assert is_line_end_hyphenated("sentence.") is False
+        assert is_line_end_hyphenated("") is False
+
+
+class TestLineJoiningEdgeCases:
+    """Edge cases for line joining"""
+
+    def test_mixed_cjk_latin_text(self):
+        """Mixed CJK and Latin text should handle transitions correctly"""
+        # Japanese with inline English - no space
+        assert get_line_join_separator("これはtest", "日") == ""
+        assert get_line_join_separator("日本語text", "を") == ""
+
+    def test_fullwidth_punctuation(self):
+        """Fullwidth punctuation should be treated as CJK"""
+        assert get_line_join_separator("テスト。", "次") == ""
+        # next_char is a single character
+        assert get_line_join_separator("質問？", "は") == ""
+
+    def test_numbers_in_text(self):
+        """Numbers should be handled correctly"""
+        # Number followed by Latin adds space
+        assert get_line_join_separator("123", "a") == " "
+        # Number followed by CJK no space
+        assert get_line_join_separator("123", "日") == ""
+
+    def test_closing_brackets(self):
+        """Closing brackets at line end"""
+        assert get_line_join_separator("（内容）", "次") == ""
+        assert get_line_join_separator("「引用」", "の") == ""

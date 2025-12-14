@@ -113,6 +113,68 @@ COLUMN_THRESHOLD_RATIO = 0.2      # 20% of page width
 # Minimum column threshold to handle very narrow pages
 MIN_COLUMN_THRESHOLD = 50.0       # 50pt minimum
 
+# =============================================================================
+# Line Joining Constants (yomitoku reference)
+# =============================================================================
+# Based on yomitoku's approach: join lines within the same paragraph intelligently
+# https://github.com/kotaro-kinoshita/yomitoku
+
+# Sentence-ending punctuation marks that indicate natural line breaks
+# These characters suggest the line is a complete sentence and should preserve the break
+SENTENCE_END_CHARS_JA = frozenset('。！？…‥）」』】｝〕〉》）＞]＞')
+SENTENCE_END_CHARS_EN = frozenset('.!?;:')
+
+# Characters that indicate a word is split across lines (hyphenation)
+# When a line ends with these, the next line continues the same word
+HYPHEN_CHARS = frozenset('-‐‑‒–—−')
+
+# Japanese characters that should NOT have space when joining lines
+# Hiragana, Katakana, CJK Ideographs, Full-width punctuation
+def _is_cjk_char(char: str) -> bool:
+    """Check if character is CJK (Chinese, Japanese, Korean)."""
+    if not char:
+        return False
+    code = ord(char)
+    # Hiragana
+    if 0x3040 <= code <= 0x309F:
+        return True
+    # Katakana
+    if 0x30A0 <= code <= 0x30FF:
+        return True
+    # Half-width Katakana
+    if 0xFF65 <= code <= 0xFF9F:
+        return True
+    # CJK Unified Ideographs
+    if 0x4E00 <= code <= 0x9FFF:
+        return True
+    # CJK Extension A
+    if 0x3400 <= code <= 0x4DBF:
+        return True
+    # Full-width punctuation
+    if 0xFF01 <= code <= 0xFF60:
+        return True
+    # CJK punctuation
+    if 0x3000 <= code <= 0x303F:
+        return True
+    return False
+
+
+def _is_latin_char(char: str) -> bool:
+    """Check if character is Latin alphabet or number."""
+    if not char:
+        return False
+    code = ord(char)
+    # Basic Latin letters
+    if 0x0041 <= code <= 0x005A or 0x0061 <= code <= 0x007A:
+        return True
+    # Numbers
+    if 0x0030 <= code <= 0x0039:
+        return True
+    # Extended Latin
+    if 0x00C0 <= code <= 0x024F:
+        return True
+    return False
+
 
 # =============================================================================
 # Data Classes (PDFMathTranslate compliant)
@@ -836,6 +898,114 @@ def classify_char_type(fontname: str, char_text: str) -> bool:
         True if character is a formula element
     """
     return vflag(fontname, char_text)
+
+
+# =============================================================================
+# Line Joining Logic (yomitoku reference)
+# =============================================================================
+
+def get_line_join_separator(
+    prev_text: str,
+    next_char: str,
+    is_hyphenated: bool = False,
+) -> str:
+    """
+    Determine the separator to use when joining lines within a paragraph.
+
+    Based on yomitoku's approach: intelligently join lines without breaking
+    the natural flow of text. For Japanese text, no space is needed between
+    lines (unless it's a sentence end). For English text, a space is needed
+    to separate words (unless the line ends with a hyphen).
+
+    Args:
+        prev_text: The accumulated text so far (to check last character)
+        next_char: The next character to be added (to check first character of new line)
+        is_hyphenated: True if the previous line ended with a hyphen
+
+    Returns:
+        Separator string: "" (empty), " " (space), or "-" preserved for hyphenation
+    """
+    if not prev_text:
+        return ""
+
+    last_char = prev_text[-1] if prev_text else ""
+
+    # Case 1: Hyphenated word continuation
+    # If line ends with hyphen and next is lowercase letter, join without space
+    if is_hyphenated and next_char and next_char.islower():
+        return ""
+
+    # Case 2: Previous line ends with sentence-ending punctuation
+    # In this case, we DON'T add space as the natural break is preserved
+    # (The paragraph detection should handle actual paragraph breaks)
+    if last_char in SENTENCE_END_CHARS_JA or last_char in SENTENCE_END_CHARS_EN:
+        # For Japanese, no space needed after punctuation
+        if _is_cjk_char(last_char):
+            return ""
+        # For English punctuation followed by CJK, no space
+        if _is_cjk_char(next_char):
+            return ""
+        # For English punctuation followed by Latin, add space
+        return " "
+
+    # Case 3: CJK to CJK transition - no space needed
+    if _is_cjk_char(last_char) and _is_cjk_char(next_char):
+        return ""
+
+    # Case 4: CJK to Latin or Latin to CJK - typically no space in Japanese text
+    # but may need space for readability in some cases
+    if _is_cjk_char(last_char) and _is_latin_char(next_char):
+        # Japanese text with embedded English words - no space
+        return ""
+    if _is_latin_char(last_char) and _is_cjk_char(next_char):
+        # English word followed by Japanese - no space
+        return ""
+
+    # Case 5: Latin to Latin - need space between words
+    if _is_latin_char(last_char) and _is_latin_char(next_char):
+        return " "
+
+    # Case 6: Space or punctuation at end - no additional space needed
+    if last_char in ' \t\n':
+        return ""
+
+    # Default: add space for safety (English-like behavior)
+    return " "
+
+
+def should_preserve_line_break(prev_text: str) -> bool:
+    """
+    Check if a line break should be preserved as a paragraph boundary.
+
+    This helps identify natural sentence endings that might indicate
+    a semantic break, even within the same visual paragraph.
+
+    Args:
+        prev_text: The text accumulated so far
+
+    Returns:
+        True if the line break should be preserved (text ends with sentence-ending punctuation)
+    """
+    if not prev_text:
+        return False
+
+    last_char = prev_text.rstrip()[-1] if prev_text.rstrip() else ""
+    return last_char in SENTENCE_END_CHARS_JA or last_char in SENTENCE_END_CHARS_EN
+
+
+def is_line_end_hyphenated(text: str) -> bool:
+    """
+    Check if text ends with a hyphen indicating word continuation.
+
+    Args:
+        text: Text to check
+
+    Returns:
+        True if text ends with a hyphen character
+    """
+    if not text:
+        return False
+    return text[-1] in HYPHEN_CHARS
 
 
 def create_paragraph_from_char(char, brk: bool, layout_class: int = 1) -> Paragraph:

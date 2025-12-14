@@ -94,7 +94,7 @@ from .pdf_layout import (
     get_layout_class_at_point, is_same_region, should_abandon_region,
     map_pp_doclayout_label_to_role, prepare_translation_cells,
     calculate_expandable_width, detect_table_cells_for_tables,
-    apply_reading_order_to_layout,
+    apply_reading_order_to_layout, analyze_all_table_structures,
     _get_numpy, _get_paddleocr, _get_torch,
 )
 
@@ -2802,6 +2802,25 @@ class PdfProcessor(FileProcessor):
                                             "Detected cells for %d tables on page %d",
                                             len(table_cells), page_num
                                         )
+
+                                        # Step 2.5.1: Analyze table structure for rowspan/colspan
+                                        # Uses coordinate clustering to detect merged cells
+                                        analyzed_cells = analyze_all_table_structures(
+                                            table_cells, layout_array.tables
+                                        )
+                                        if analyzed_cells:
+                                            layout_array.table_cells = analyzed_cells
+                                            # Log cells with spans > 1
+                                            span_count = sum(
+                                                1 for cells in analyzed_cells.values()
+                                                for c in cells
+                                                if c.get('row_span', 1) > 1 or c.get('col_span', 1) > 1
+                                            )
+                                            if span_count > 0:
+                                                logger.debug(
+                                                    "Detected %d merged cells (rowspan/colspan) on page %d",
+                                                    span_count, page_num
+                                                )
 
                                 # Step 2.6: Apply reading order estimation
                                 # Uses graph-based algorithm for top-to-bottom, left-to-right order

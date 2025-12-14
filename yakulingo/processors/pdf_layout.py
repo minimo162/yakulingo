@@ -1931,3 +1931,297 @@ def apply_reading_order_to_layout(
             layout.tables[table_id]['order'] = reading_order[table_id]
 
     return layout
+
+
+# =============================================================================
+# Table Cell Structure Analysis (rowspan/colspan detection)
+# =============================================================================
+#
+# This module implements table structure analysis to detect merged cells
+# (rowspan/colspan) from detected cell bounding boxes.
+#
+# Algorithm overview:
+# 1. Cluster Y coordinates to identify row boundaries
+# 2. Cluster X coordinates to identify column boundaries
+# 3. Map each cell to its row/column range
+# 4. Calculate rowspan/colspan from the range
+#
+# Note: This is an original implementation inspired by general table
+# structure recognition principles.
+
+# Clustering thresholds for row/column detection
+CELL_COORD_CLUSTER_THRESHOLD = 5.0  # Points within 5pt are in same cluster
+
+
+def _cluster_coordinates(coords: list[float], threshold: float = CELL_COORD_CLUSTER_THRESHOLD) -> list[float]:
+    """
+    Cluster coordinates to find grid lines.
+
+    Groups nearby coordinates and returns representative values (averages).
+
+    Args:
+        coords: List of coordinate values to cluster
+        threshold: Maximum distance between coordinates in same cluster
+
+    Returns:
+        Sorted list of cluster representative values
+    """
+    if not coords:
+        return []
+
+    # Sort coordinates
+    sorted_coords = sorted(coords)
+
+    clusters: list[list[float]] = []
+    current_cluster: list[float] = [sorted_coords[0]]
+
+    for coord in sorted_coords[1:]:
+        if coord - current_cluster[-1] <= threshold:
+            # Add to current cluster
+            current_cluster.append(coord)
+        else:
+            # Start new cluster
+            clusters.append(current_cluster)
+            current_cluster = [coord]
+
+    # Don't forget the last cluster
+    clusters.append(current_cluster)
+
+    # Return average of each cluster
+    return [sum(c) / len(c) for c in clusters]
+
+
+def _find_grid_index(value: float, grid_lines: list[float], tolerance: float = CELL_COORD_CLUSTER_THRESHOLD) -> int:
+    """
+    Find the index of the grid line closest to the given value.
+
+    Args:
+        value: Coordinate value to find
+        grid_lines: Sorted list of grid line positions
+        tolerance: Maximum distance to consider a match
+
+    Returns:
+        Index of the closest grid line, or -1 if no match found
+    """
+    if not grid_lines:
+        return -1
+
+    best_idx = -1
+    best_dist = float('inf')
+
+    for idx, line in enumerate(grid_lines):
+        dist = abs(value - line)
+        if dist < best_dist:
+            best_dist = dist
+            best_idx = idx
+
+    # Check if within tolerance
+    if best_dist <= tolerance:
+        return best_idx
+
+    # If not within tolerance, find the closest grid line anyway
+    # (for edge cases where cells don't align perfectly)
+    return best_idx
+
+
+def analyze_table_structure(
+    cells: list[dict],
+    table_box: Optional[tuple[float, float, float, float]] = None,
+) -> list[dict]:
+    """
+    Analyze table structure to detect row/column indices and spans.
+
+    Takes a list of detected cells and determines their grid positions
+    and span information.
+
+    Algorithm:
+    1. Collect all Y coordinates (top/bottom of cells) and cluster them
+       to find row boundaries
+    2. Collect all X coordinates (left/right of cells) and cluster them
+       to find column boundaries
+    3. For each cell, find which rows and columns it spans
+    4. Calculate rowspan/colspan from the span
+
+    Args:
+        cells: List of cell dictionaries with 'box' key ([x0, y0, x1, y1])
+        table_box: Optional table bounding box for validation
+
+    Returns:
+        List of cell dictionaries with additional keys:
+        - 'row': Starting row index (0-based)
+        - 'col': Starting column index (0-based)
+        - 'row_span': Number of rows spanned (default 1)
+        - 'col_span': Number of columns spanned (default 1)
+    """
+    if not cells:
+        return []
+
+    # Collect all Y coordinates (for row detection)
+    y_coords: list[float] = []
+    for cell in cells:
+        box = cell.get('box', [])
+        if len(box) >= 4:
+            y_coords.append(box[1])  # y0 (top)
+            y_coords.append(box[3])  # y1 (bottom)
+
+    # Collect all X coordinates (for column detection)
+    x_coords: list[float] = []
+    for cell in cells:
+        box = cell.get('box', [])
+        if len(box) >= 4:
+            x_coords.append(box[0])  # x0 (left)
+            x_coords.append(box[2])  # x1 (right)
+
+    # Cluster coordinates to find grid lines
+    row_lines = _cluster_coordinates(y_coords)
+    col_lines = _cluster_coordinates(x_coords)
+
+    logger.debug(
+        "Table structure: %d cells, %d row lines, %d col lines",
+        len(cells), len(row_lines), len(col_lines)
+    )
+
+    # Process each cell
+    result = []
+    for cell in cells:
+        box = cell.get('box', [])
+        if len(box) < 4:
+            result.append(cell)
+            continue
+
+        x0, y0, x1, y1 = box
+
+        # Find row range
+        row_start = _find_grid_index(y0, row_lines)
+        row_end = _find_grid_index(y1, row_lines)
+
+        # Find column range
+        col_start = _find_grid_index(x0, col_lines)
+        col_end = _find_grid_index(x1, col_lines)
+
+        # Calculate spans
+        # Row span: number of grid lines crossed (end - start)
+        # For a cell spanning one row, start and end point to adjacent lines
+        row_span = max(1, row_end - row_start)
+        col_span = max(1, col_end - col_start)
+
+        # Convert grid line indices to row/column indices
+        # Row index is the gap between grid lines, so divide by 2
+        # (since each row has top and bottom lines)
+        row_idx = row_start // 2 if row_start >= 0 else 0
+        col_idx = col_start // 2 if col_start >= 0 else 0
+
+        # Adjust span calculation
+        # A normal cell has start at one line and end at the next
+        # A merged cell has start at one line and end at a further line
+        row_span = max(1, (row_end - row_start + 1) // 2)
+        col_span = max(1, (col_end - col_start + 1) // 2)
+
+        # Create updated cell dict
+        updated_cell = dict(cell)
+        updated_cell['row'] = row_idx
+        updated_cell['col'] = col_idx
+        updated_cell['row_span'] = row_span
+        updated_cell['col_span'] = col_span
+
+        result.append(updated_cell)
+
+    # Log structure info
+    if result:
+        max_row = max(c.get('row', 0) + c.get('row_span', 1) for c in result)
+        max_col = max(c.get('col', 0) + c.get('col_span', 1) for c in result)
+        merged_count = sum(1 for c in result if c.get('row_span', 1) > 1 or c.get('col_span', 1) > 1)
+        logger.debug(
+            "Table structure analyzed: %d rows x %d cols, %d merged cells",
+            max_row, max_col, merged_count
+        )
+
+    return result
+
+
+def analyze_all_table_structures(
+    table_cells: dict[int, list[dict]],
+    tables_info: Optional[dict] = None,
+) -> dict[int, list[dict]]:
+    """
+    Analyze structure for all tables on a page.
+
+    Args:
+        table_cells: Dictionary mapping table_id to list of cell dicts
+        tables_info: Optional dictionary of table info (with 'box' key)
+
+    Returns:
+        Dictionary mapping table_id to list of cells with row/col/span info
+    """
+    result = {}
+
+    for table_id, cells in table_cells.items():
+        table_box = None
+        if tables_info and table_id in tables_info:
+            table_box = tables_info[table_id].get('box')
+
+        analyzed_cells = analyze_table_structure(cells, table_box)
+        result[table_id] = analyzed_cells
+
+    return result
+
+
+def get_cell_at_position(
+    table_cells: list[dict],
+    row: int,
+    col: int,
+) -> Optional[dict]:
+    """
+    Find the cell at a specific row/column position.
+
+    Handles merged cells by checking if the position falls within
+    any cell's span range.
+
+    Args:
+        table_cells: List of cells with row/col/span info
+        row: Target row index (0-based)
+        col: Target column index (0-based)
+
+    Returns:
+        Cell dict if found, None otherwise
+    """
+    for cell in table_cells:
+        cell_row = cell.get('row', 0)
+        cell_col = cell.get('col', 0)
+        row_span = cell.get('row_span', 1)
+        col_span = cell.get('col_span', 1)
+
+        # Check if position is within this cell's range
+        if (cell_row <= row < cell_row + row_span and
+            cell_col <= col < cell_col + col_span):
+            return cell
+
+    return None
+
+
+def get_table_dimensions(table_cells: list[dict]) -> tuple[int, int]:
+    """
+    Get the dimensions (rows, columns) of a table.
+
+    Args:
+        table_cells: List of cells with row/col/span info
+
+    Returns:
+        Tuple of (num_rows, num_cols)
+    """
+    if not table_cells:
+        return (0, 0)
+
+    max_row = 0
+    max_col = 0
+
+    for cell in table_cells:
+        row = cell.get('row', 0)
+        col = cell.get('col', 0)
+        row_span = cell.get('row_span', 1)
+        col_span = cell.get('col_span', 1)
+
+        max_row = max(max_row, row + row_span)
+        max_col = max(max_col, col + col_span)
+
+    return (max_row, max_col)

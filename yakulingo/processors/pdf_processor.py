@@ -2097,6 +2097,7 @@ class PdfProcessor(FileProcessor):
                                 y1, y2 = y1_pdf, y2_pdf
 
                             pdf_x1, pdf_y0, pdf_x2, pdf_y1 = x1, y1, x2, y2
+                            box_pdf = (pdf_x1, pdf_y0, pdf_x2, pdf_y1)
                             box_width = pdf_x2 - pdf_x1
                             box_height = pdf_y1 - pdf_y0  # y1 (top) - y0 (bottom)
 

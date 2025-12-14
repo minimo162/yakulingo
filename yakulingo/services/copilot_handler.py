@@ -846,9 +846,11 @@ class CopilotHandler:
                     # Mark that we started this browser (for cleanup on app exit)
                     self._browser_started_by_us = True
                     # Minimize window immediately to prevent visual flash
-                    # Give Edge a moment to create its window, then minimize
-                    time.sleep(0.3)
-                    self._minimize_edge_window()
+                    # Try multiple times with short delays to catch window as soon as it's created
+                    for _ in range(5):
+                        if self._minimize_edge_window():
+                            break
+                        time.sleep(0.05)  # 50ms between attempts
                     return True
 
             logger.warning("Edge startup timeout")
@@ -1957,24 +1959,29 @@ class CopilotHandler:
                                         current_width, current_height, new_width, new_height)
 
                 # 3. Now show and restore window (at correct position)
-                user32.ShowWindow(edge_hwnd, SW_RESTORE if is_minimized else SW_SHOW)
-                user32.ShowWindow(edge_hwnd, SW_SHOWNORMAL)
+                # Use only one ShowWindow call to prevent flicker
+                if is_minimized:
+                    user32.ShowWindow(edge_hwnd, SW_RESTORE)
+                else:
+                    user32.ShowWindow(edge_hwnd, SW_SHOWNORMAL)
 
                 # 4. Bring window to top
                 user32.BringWindowToTop(edge_hwnd)
 
                 # 5. Use SetWindowPos with HWND_TOPMOST to bring to front
+                # Use SWP_NOACTIVATE instead of SWP_SHOWWINDOW to avoid flicker
+                # (window is already shown by ShowWindow above)
                 user32.SetWindowPos(
                     edge_hwnd, HWND_TOPMOST,
                     0, 0, 0, 0,
-                    SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE
                 )
 
                 # 6. Remove topmost flag to allow other windows on top later
                 user32.SetWindowPos(
                     edge_hwnd, HWND_NOTOPMOST,
                     0, 0, 0, 0,
-                    SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE
                 )
 
                 # 7. Set foreground window

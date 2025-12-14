@@ -1609,6 +1609,11 @@ When interacting with users in this repository, prefer Japanese for comments and
 ## Recent Development Focus
 
 Based on recent commits:
+- **PDF Original Text Removal Improvements (2024-12)**:
+  - **Form XObject detection regex**: `/Subtype\s*/Form\b`正規表現でスペース・改行を含むパターンに対応
+  - **XObject filtering fallback**: ドキュメント全体フィルタリングで0件の場合、ページレベルフィルタリングにフォールバック
+  - **Debug pattern enhancement**: `'`と`"`テキストオペレータの検出をデバッグログに追加
+  - **Issue fixed**: PDF英訳時に元の日本語テキストが残る問題を修正
 - **PDF Text Positioning Fix (PDFMathTranslate compliant) (2024-12)**:
   - **Paragraph.y = char.y0**: PDFMathTranslate準拠で`Paragraph.y`を`char.y0`（文字の下端）に設定。従来の`char.y1 - char_size`から変更
   - **calculate_text_position fallback**: フォールバック計算で`y1`（ボックス下端）を使用。従来の`y2 - font_size`から変更

@@ -2381,10 +2381,13 @@ class PdfProcessor(FileProcessor):
                 # causing original text inside tables/graphics to remain visible.
                 replacer = ContentStreamReplacer(doc, font_registry, preserve_graphics=True)
                 try:
+                    # Fallback: If document-wide XObject filtering found nothing,
+                    # enable per-page filtering to catch any missed XObjects
+                    skip_xobj = doc_filtered_count > 0
                     replacer.set_base_stream(
                         page,
                         target_bboxes=None,  # Remove all text (PDFMathTranslate compliant)
-                        skip_xobject_filtering=True,  # Already done by filter_all_document_xobjects()
+                        skip_xobject_filtering=skip_xobj,  # Fallback if doc-wide found nothing
                     )
                     logger.info(
                         "Page %d: removing all text for translation (blocks=%d)",

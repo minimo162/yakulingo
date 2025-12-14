@@ -1194,16 +1194,17 @@ apply_reading_order_to_layout_auto(layout, page_height)
 yomitokuの`_priority_dfs`を参考にした深さ優先探索アルゴリズム：
 
 ```python
-# 内部関数: _priority_dfs(graph, starts, node_count)
-# - graph: 隣接リスト形式のグラフ
-# - starts: 距離度量でソートされた開始ノードリスト
-# - node_count: 総ノード数
+# 内部関数: _priority_dfs(graph, elements, direction)
+# - graph: 隣接リスト形式のグラフ dict[int, list[int]]
+# - elements: 要素IDとbboxのタプルリスト list[(id, (x0, y0, x1, y1))]
+# - direction: ReadingDirection（距離度量の計算に使用）
 ```
 
 **アルゴリズム特徴:**
 - 親ノードがすべて訪問済みの場合のみ子ノードを訪問
 - 距離度量による優先度で開始ノードを選択
 - 未訪問ノードがある場合は次の開始ノードから再開
+- サイクル検出時は未訪問の親が最少のノードから処理
 
 **rowspan/colspan検出 (Table Cell Structure Analysis):**
 

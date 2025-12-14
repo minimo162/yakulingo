@@ -989,6 +989,20 @@ class PdfProcessor(FileProcessor):
     - _group_chars_into_blocks: LayoutArrayを参照して座標変換・グループ化
     - テキスト結合順序: (y0, x0)でソートし読み順を保証（上→下、左→右）
 
+    読み順推定（yomitokuスタイル）:
+    - グラフベースの読み順推定アルゴリズム
+    - ReadingDirection: TOP_TO_BOTTOM（横書き）、RIGHT_TO_LEFT（縦書き）、LEFT_TO_RIGHT（多段組み）
+    - 距離度量による開始ノード選定（方向別の優先度計算）
+    - 中間要素がある場合はエッジを作成しない（正確な読み順）
+    - 優先度付きDFS: 親ノードがすべて訪問済みの場合のみ子ノードを訪問
+
+    縦書き文書の自動検出:
+    - detect_reading_direction(): アスペクト比から縦書き/横書きを自動判定
+    - VERTICAL_TEXT_ASPECT_RATIO_THRESHOLD: 2.0（height/width > 2.0で縦書き要素）
+    - VERTICAL_TEXT_COLUMN_THRESHOLD: 0.7（70%以上が縦書きなら縦書き文書）
+    - estimate_reading_order_auto(): 自動検出と読み順推定を統合
+    - apply_reading_order_to_layout_auto(): 自動検出とLayoutArray更新を統合
+
     PDFMathTranslate準拠機能:
     - 低レベルAPI: PDFオペレータを直接生成（高精度レイアウト制御）
     - 既存フォント再利用: PDFに埋め込まれたCID/Simpleフォントを検出・再利用
@@ -1687,6 +1701,8 @@ python -c "import time; t=time.time(); from yakulingo.ui import run_app; print(f
 - Copilotプロンプト送信の信頼性向上（送信ボタン待機、セレクタ変更検知）
 - PP-DocLayout-Lオンデマンド初期化（起動時間約10秒短縮）
 - 読み順推定アルゴリズム追加（グラフベース、トポロジカルソート）
+- 縦書き文書の自動検出（yomitokuスタイル、アスペクト比ベース）
+- 優先度付きDFS（yomitokuスタイル、親依存性を考慮）
 - TableCellsDetection統合（テーブルセル境界検出）
 - rowspan/colspan検出（座標クラスタリング）
 

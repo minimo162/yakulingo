@@ -4174,23 +4174,30 @@ class PdfProcessor(FileProcessor):
                     # we may be in the middle of a sentence that spans multiple visual lines
                     # (e.g., numbered paragraphs like "167. 固定資産に係る...はあ" + "りません。")
                     #
-                    # However, if is_strong_boundary is True, we always start a new paragraph.
-                    # Strong boundaries include:
-                    # - Layout class change (both non-BACKGROUND)
-                    # - Y change > SAME_PARA_Y_THRESHOLD
-                    # - X gap > TABLE_CELL_X_THRESHOLD
-                    # - Table row change
-                    # - Column change (large X jump + Y going up)
-                    # - TOC-like pattern (Y change + large X reset)
+                    # Previously, is_strong_boundary was used to skip sentence-end check,
+                    # but this caused semantically continuous sentences to be split when
+                    # Y change is large. Now we apply sentence-end check more broadly:
+                    # - Only skip when layout class truly changes (both non-BACKGROUND)
+                    # - Apply sentence-end check for Y gaps, X gaps, etc. within same region
                     should_start_new = True
 
-                    # Only apply sentence-end check for weak boundaries (line wrapping)
-                    if not is_strong_boundary and sstk and pstk:
-                        prev_text = sstk[-1].rstrip() if sstk[-1] else ""
-                        # Check layout class - if different layout regions, always start new paragraph
-                        layout_changed = use_layout and char_cls != prev_cls and prev_cls is not None
+                    # Check if layout class truly changed (between non-BACKGROUND regions)
+                    # LAYOUT_BACKGROUND = 1, so we check both are non-BACKGROUND (cls != 1)
+                    layout_truly_changed = (
+                        use_layout and
+                        char_cls != prev_cls and
+                        prev_cls is not None and
+                        char_cls != 1 and  # 1 = BACKGROUND
+                        prev_cls != 1
+                    )
 
-                        if prev_text and not layout_changed:
+                    # Apply sentence-end check if layout hasn't truly changed
+                    # This allows merging semantically continuous sentences even with
+                    # large Y gaps or other structural boundaries within the same region
+                    if not layout_truly_changed and sstk and pstk:
+                        prev_text = sstk[-1].rstrip() if sstk[-1] else ""
+
+                        if prev_text:
                             last_char = prev_text[-1] if prev_text else ""
                             # Check if the previous paragraph ends with sentence-ending punctuation
                             is_sentence_end = (

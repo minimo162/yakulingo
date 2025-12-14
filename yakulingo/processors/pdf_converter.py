@@ -128,6 +128,23 @@ SENTENCE_END_CHARS_EN = frozenset('.!?;:')
 # When a line ends with these, the next line continues the same word
 HYPHEN_CHARS = frozenset('-‐‑‒–—−')
 
+# Bullet markers that indicate the start of a list item
+# Lines starting with these should always be separate paragraphs
+# (not merged with previous paragraph even if it doesn't end with punctuation)
+BULLET_MARKERS = frozenset({
+    # Japanese bullets
+    '・', '‣', '●', '○', '■', '□', '◆', '◇', '★', '☆',
+    # Arrows
+    '→', '⇒', '➡', '➤', '▶', '▸', '►',
+    # Dashes (as bullet, not hyphenation)
+    # Note: These overlap with HYPHEN_CHARS but context differs
+    # (start of line = bullet, end of line = hyphenation)
+    '-', '–', '—',
+    # Common bullets
+    '*', '•', '◦', '※',
+    # Numbered list markers are handled separately (digit detection)
+})
+
 # Japanese characters that should NOT have space when joining lines
 # Hiragana, Katakana, CJK Ideographs, Full-width punctuation
 def _is_cjk_char(char: str) -> bool:

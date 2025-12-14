@@ -74,6 +74,8 @@ from .pdf_converter import (
     get_line_join_separator, is_line_end_hyphenated, _is_cjk_char,
     # Sentence end characters for paragraph boundary detection
     SENTENCE_END_CHARS_JA, SENTENCE_END_CHARS_EN,
+    # Bullet markers for list item detection
+    BULLET_MARKERS,
     # Coordinate conversion utilities (PDFMathTranslate compliant)
     pdf_to_image_coord, image_to_pdf_coord,
     pdf_bbox_to_image_bbox, image_bbox_to_pdf_bbox,
@@ -4207,8 +4209,18 @@ class PdfProcessor(FileProcessor):
                         if x_reset > TOC_LINE_X_RESET_THRESHOLD:  # 80pt
                             is_toc_pattern = True
 
+                    # 4. Check for bullet/list markers at the start of a new line
+                    # Bullet points should always be separate paragraphs even if previous
+                    # line doesn't end with sentence-ending punctuation
+                    is_bullet_start = char_text in BULLET_MARKERS
+
                     # Force split (skip sentence-end check) for structural boundaries
-                    should_force_split = layout_truly_changed or is_table_region or is_toc_pattern
+                    should_force_split = (
+                        layout_truly_changed or
+                        is_table_region or
+                        is_toc_pattern or
+                        is_bullet_start
+                    )
 
                     # Apply sentence-end check only if not forcing split
                     # This allows merging semantically continuous sentences within same region

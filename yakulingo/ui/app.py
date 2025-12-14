@@ -1106,13 +1106,13 @@ class YakuLingoApp:
                     ui.label(entry.result.options[0].text).classes('text-2xs text-muted history-preview')
 
             # Delete button (visible on hover via CSS)
-            def delete_entry(e):
-                e.stop_propagation()  # Prevent loading entry when clicking delete
+            # Use @click.stop to prevent event propagation to parent item
+            def delete_entry():
                 self.state.delete_history_entry(entry)
                 self._refresh_history()
 
             ui.button(icon='close', on_click=delete_entry).props(
-                'flat dense round size=xs'
+                'flat dense round size=xs @click.stop'
             ).classes('history-delete-btn')
 
     def _get_main_area_classes(self) -> str:

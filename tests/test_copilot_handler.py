@@ -239,7 +239,6 @@ Operating margin improved"""
         assert "Revenue grew 0.5% YoY" in parsed[0]
         assert "Operating margin improved" in parsed[1]
 
-
 class TestCopilotHandlerConnection:
     """Test CopilotHandler connection state management"""
 

@@ -884,11 +884,6 @@ class BatchTranslator:
         Handles oversized blocks (exceeding max_chars_per_batch) by placing them
         in their own batch with a warning. These will be processed via file
         attachment mode by CopilotHandler.
-
-        Note:
-            Item count is not limited here. Instead, ITEM_END_MARKER is added to
-            each item in PromptBuilder.build_batch() to prevent Copilot from
-            merging consecutive items that appear to be parts of the same sentence.
         """
         batches = []
         current_batch = []

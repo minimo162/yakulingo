@@ -1614,7 +1614,6 @@ Based on recent commits:
   - **Weak boundary sentence-end check**: 弱い境界（行折り返し）の場合のみ文末記号チェックを適用。番号付きパラグラフの途中改行を正しく結合
   - **Boundary types**: 強い境界=レイアウト変化/Y>20pt/X>30pt/テーブル行変更/段組み変更/TOCパターン、弱い境界=その他の行折り返し
 - **PDF Translation & Extraction Fixes (2024-12)**:
-  - **[END] marker removal fix**: `parse_batch_result()`の[END]マーカー除去を正規表現に変更し、スペースや大小文字の差異にも対応
   - **pdfminer FontBBox warning suppression**: `pdfminer.pdffont`のログレベルをERRORに設定し、FontBBox警告を抑制
 - **PDF Line Joining Logic Improvements (2024-12)** (yomitoku reference):
   - **Intelligent line joining**: yomitokuを参考にした文字種別に基づく行結合ロジックを実装
@@ -1625,7 +1624,6 @@ Based on recent commits:
   - **New functions**: `get_line_join_separator()`, `is_line_end_hyphenated()`, `_is_cjk_char()`, `_is_latin_char()` を追加
   - **Constants**: `SENTENCE_END_CHARS_JA`, `SENTENCE_END_CHARS_EN`, `HYPHEN_CHARS` を追加
 - **PDF Translation Reliability Improvements (2024-12)**:
-  - **Item end marker**: `ITEM_END_MARKER = " [END]"` を各項目末尾に追加（Copilotによる項目マージを防止）
   - **Box expansion ratio increase**: `MAX_EXPANSION_RATIO`を1.5から2.0に増加（翻訳テキストの収容改善）
   - **Table cell expansion fallback**: セル境界情報がない場合でもlayout-aware拡張を許可
 - **PDF Form XObject Text Removal Improvements (2024-12)**:
@@ -1885,7 +1883,6 @@ Based on recent commits:
 - **Batch Translation Settings**:
   - **max_chars_per_batch**: 7000 → 4000 に縮小（信頼性向上）
   - **request_timeout**: 120秒 → 600秒（10分）に延長（大規模翻訳対応）
-  - **ITEM_END_MARKER**: 各項目末尾に`[END]`マーカーを追加（Copilotによる連続項目マージを防止）
 - **Excel COM Improvements**:
   - **Pre-cleanup**: Excel COM接続の事前クリーンアップを追加
   - **Retry logic**: COMエラー時のリトライ前にCOMリソースのクリーンアップを追加

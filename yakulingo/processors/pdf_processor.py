@@ -1963,6 +1963,24 @@ class PdfProcessor(FileProcessor):
                 if not blocks_to_process:
                     continue
 
+                # Calculate page margins from original text blocks
+                # This allows box expansion to respect the original document's layout
+                from .pdf_layout import calculate_page_margins
+                page_blocks_for_margin = [
+                    block_map[block_id]
+                    for block_id, _, _ in blocks_to_process
+                    if block_id in block_map
+                ] if block_map else []
+                page_margins = calculate_page_margins(
+                    page_blocks_for_margin, page_width, page_height
+                )
+                # Right margin defines the expansion limit
+                detected_right_margin = page_margins['right']
+                logger.debug(
+                    "Page %d: detected right margin=%.1f (will not expand beyond)",
+                    page_num, detected_right_margin
+                )
+
                 # Create content stream replacer for this page
                 # PDFMathTranslate compliant: Remove ALL text from page
                 # Selective mode (target_bboxes) doesn't filter Form XObjects,
@@ -2123,7 +2141,7 @@ class PdfProcessor(FileProcessor):
                             # PyMuPDF fallback: no layout information available
                             is_table_cell = False
 
-                        # Store original box_width for table cells (don't expand)
+                        # Store original box_width for reference
                         original_box_width = box_width
 
                         # Get expandable_width from TextBlock metadata (layout-aware)
@@ -2131,87 +2149,39 @@ class PdfProcessor(FileProcessor):
                         # to respect adjacent blocks and page margins
                         expandable_width = text_block.metadata.get('expandable_width', box_width) if text_blocks else box_width
 
-                        # Adjust box_width for multi-line blocks to prevent excessive fragmentation
-                        # IMPORTANT: Skip expansion for table cells - use font size reduction instead
-                        # When original text was wrapped into N lines in a narrow box, the box_width
-                        # is narrow. If we split translated text with this narrow width, it may
-                        # result in many more lines than the original.
-                        # Solution: Expand box_width to maintain similar line count as original.
-                        #
-                        # PDFMathTranslate compliant: Table cells must NOT expand box_width
-                        # Table cells have fixed boundaries - expanding would overlap adjacent cells
-                        #
-                        # NEW: Layout-aware expansion using expandable_width
-                        # - expandable_width is calculated from PP-DocLayout-L during extraction
-                        # - Respects adjacent block boundaries to prevent overlap
-                        # - Table cells have expandable_width == original_width (no expansion)
-                        if is_table_cell:
-                            # For table cells, keep original box_width and rely on font size reduction
-                            logger.debug(
-                                "[Table] Block %s is in table cell (layout_class=%d), "
-                                "skipping box_width expansion (keeping %.1f)",
-                                block_id, layout_class, original_box_width
-                            )
-                        elif original_line_count > 1:
-                            # Estimate required width based on translated text length and original line count
-                            # Average chars per line in translated text should be similar to original
-                            avg_chars_per_line = len(translated) / original_line_count
-                            # Estimate char width (use 0.5 * font_size for Latin, 1.0 * font_size for CJK)
-                            estimated_font_size = box_height / (original_line_count * 1.2)  # 1.2 = line height
-                            estimated_font_size = max(MIN_FONT_SIZE, min(estimated_font_size, MAX_FONT_SIZE))
-                            # Check if text is mostly CJK
-                            cjk_chars = sum(1 for c in translated if ord(c) > 0x2E7F)
-                            avg_char_width = estimated_font_size if cjk_chars > len(translated) / 2 else estimated_font_size * 0.5
-                            estimated_width = avg_chars_per_line * avg_char_width
-
-                            # Cap estimated_width at expandable_width (layout-aware limit)
-                            estimated_width = min(estimated_width, expandable_width)
-
-                            # Use the larger of original width and estimated width
-                            if estimated_width > box_width:
+                        # Cap expandable_width at the detected page margin
+                        # This ensures we don't expand beyond the original PDF's layout
+                        max_x = page_width - detected_right_margin
+                        if box_pdf[0] + expandable_width > max_x:
+                            capped_width = max_x - box_pdf[0]
+                            if capped_width < expandable_width:
                                 logger.debug(
-                                    "Expanding box_width from %.1f to %.1f for block %s "
-                                    "(original %d lines, expandable_width=%.1f)",
-                                    box_width, estimated_width, block_id,
-                                    original_line_count, expandable_width
+                                    "Block %s: capping expandable_width from %.1f to %.1f "
+                                    "(respecting right margin %.1f)",
+                                    block_id, expandable_width, capped_width, detected_right_margin
                                 )
-                                box_width = estimated_width
+                                expandable_width = max(original_box_width, capped_width)
 
-                        # Also handle single-line blocks that would fragment excessively
-                        # Japanese → English translation often doubles text length, causing
-                        # a single-line original to become 5+ lines if box_width isn't expanded.
-                        elif original_line_count == 1 and box_width > 0:
-                            # Estimate font size from box_height (single line)
-                            estimated_font_size = box_height / DEFAULT_LINE_HEIGHT
-                            estimated_font_size = max(MIN_FONT_SIZE, min(estimated_font_size, MAX_FONT_SIZE))
-                            # Check if text is mostly CJK
-                            cjk_chars = sum(1 for c in translated if ord(c) > 0x2E7F)
-                            avg_char_width = estimated_font_size if cjk_chars > len(translated) / 2 else estimated_font_size * 0.5
-                            # Estimate how many lines translated text would need
-                            chars_per_line = box_width / avg_char_width if avg_char_width > 0 else 1
-                            estimated_output_lines = len(translated) / max(1, chars_per_line)
-
-                            # If translated text would need more than 2 lines, expand box_width
-                            # to fit in approximately 2 lines (reasonable for single-line original)
-                            if estimated_output_lines > 2:
-                                target_lines = max(2, int(estimated_output_lines / 3))  # Reduce lines by ~3x
-                                avg_chars_per_line = len(translated) / target_lines
-                                estimated_width = avg_chars_per_line * avg_char_width
-
-                                # Cap at expandable_width (layout-aware limit)
-                                # This replaces the old page_width - 2*margin calculation
-                                estimated_width = min(estimated_width, expandable_width)
-
-                                if estimated_width > box_width:
-                                    logger.debug(
-                                        "Expanding box_width from %.1f to %.1f for single-line block %s "
-                                        "(text_len=%d would need ~%.1f lines, targeting %d lines, "
-                                        "expandable_width=%.1f)",
-                                        box_width, estimated_width, block_id,
-                                        len(translated), estimated_output_lines, target_lines,
-                                        expandable_width
-                                    )
-                                    box_width = estimated_width
+                        # Box expansion strategy (readability-first):
+                        # 1. ALWAYS try box expansion first (preferred for readability)
+                        # 2. Only if expansion isn't possible, use font size reduction
+                        #
+                        # This applies to ALL blocks (table cells and regular blocks alike)
+                        # because readable text is more important than exact layout preservation.
+                        #
+                        # Layout-aware expansion using expandable_width:
+                        # - Respects adjacent block boundaries to prevent overlap
+                        # - Respects page margins (capped above)
+                        # - Table cells can expand if there's space on the right
+                        # Unified box expansion logic for ALL blocks:
+                        # Always try to expand to expandable_width first (readability priority)
+                        if expandable_width > original_box_width:
+                            logger.debug(
+                                "Block %s: expanding box_width from %.1f to %.1f "
+                                "(expandable_width allows, is_table=%s)",
+                                block_id, original_box_width, expandable_width, is_table_cell
+                            )
+                            box_width = expandable_width
 
                         # Note: No white rectangle needed anymore.
                         # ContentStreamReplacer.set_base_stream() already filtered out
@@ -2308,11 +2278,13 @@ class PdfProcessor(FileProcessor):
                         # Tables have fixed cell boundaries, but readability takes priority.
                         #
                         # PDFMathTranslate compliant approach:
-                        # - Prefer fixed font size + line-height compression
-                        # - If still too tall, reduce font size but keep it readable
+                        # - First, try box expansion (handled above)
+                        # - If still too tall, reduce font size moderately
+                        # - TABLE_MIN_LINE_HEIGHT is 1.0 to prevent overlap
+                        # - Prefer readability over fitting - only moderate font reduction
                         # - If text still doesn't fit, allow overflow (better than unreadably small text)
                         TABLE_FONT_MIN_READABLE = 7.0  # Hard readability floor (never increases above original)
-                        TABLE_FONT_MIN_RATIO = 0.8     # Never reduce below 80% of original size
+                        TABLE_FONT_MIN_RATIO = 0.7     # Reduce to 70% max for readability
 
                         if is_table_cell and len(lines) > 1:
                             text_height = len(lines) * font_size * line_height

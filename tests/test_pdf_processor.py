@@ -1709,9 +1709,10 @@ class TestConstants:
     def test_table_min_line_height_constant(self):
         """Test TABLE_MIN_LINE_HEIGHT constant for table cells"""
         from yakulingo.processors.pdf_converter import TABLE_MIN_LINE_HEIGHT
-        # Table cells use tighter compression (PDFMathTranslate compliant: 0.9)
-        assert TABLE_MIN_LINE_HEIGHT == 0.9
-        assert TABLE_MIN_LINE_HEIGHT < MIN_LINE_HEIGHT
+        # Table cells use line_height >= 1.0 to prevent text overlap.
+        # Font size reduction is used instead for fitting text in constrained cells.
+        assert TABLE_MIN_LINE_HEIGHT == 1.0
+        assert TABLE_MIN_LINE_HEIGHT >= MIN_LINE_HEIGHT
 
 
 class TestVflagEmptyInputs:
@@ -4082,10 +4083,12 @@ class TestCalculateExpandableWidth:
             fallback_used=False,
         )
 
-    def test_table_cell_no_expansion(self, mock_layout_array):
-        """Table cells should not expand"""
+    def test_table_cell_expansion_with_space(self, mock_layout_array):
+        """Table cells can expand if there's significant space (>20pt) on the right"""
         from yakulingo.processors.pdf_layout import calculate_expandable_width
 
+        # bbox from x=100 to x=200, adjacent block at x=350 (image coords)
+        # Potential expansion: 350 - 200 = 150pt > 20pt threshold
         bbox = (100, 650, 200, 700)  # PDF coords (bottom-left origin)
         page_width = 600.0
         page_height = 800.0
@@ -4095,8 +4098,27 @@ class TestCalculateExpandableWidth:
             is_table_cell=True
         )
 
-        # Should return original width for table cells
-        assert result == 100  # 200 - 100
+        # Should expand to adjacent block boundary (340 = 350 - 10 MIN_COLUMN_GAP)
+        # expandable_width = 340 - 100 = 240
+        assert result == 240.0
+
+    def test_table_cell_no_expansion_when_tight(self, mock_layout_array):
+        """Table cells should not expand if space < 20pt"""
+        from yakulingo.processors.pdf_layout import calculate_expandable_width
+
+        # bbox from x=100 to x=335, adjacent block at x=350
+        # Potential expansion: (350 - 10) - 335 = 5pt < 20pt threshold
+        bbox = (100, 650, 335, 700)  # PDF coords (bottom-left origin)
+        page_width = 600.0
+        page_height = 800.0
+
+        result = calculate_expandable_width(
+            mock_layout_array, bbox, page_width, page_height,
+            is_table_cell=True
+        )
+
+        # Should return original width when no significant space
+        assert result == 235  # 335 - 100
 
     def test_expand_to_adjacent_block(self, mock_layout_array):
         """Should expand up to adjacent block boundary"""

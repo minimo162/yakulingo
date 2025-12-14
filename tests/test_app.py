@@ -272,21 +272,27 @@ class TestNativeModeDetection:
 
         assert ui_app._native_mode_enabled(True) is False
 
-    def test_native_disabled_without_backend(self, monkeypatch):
-        """Native mode should fall back when pywebview has no GUI backend."""
+    def test_native_enabled_when_webview_importable(self, monkeypatch):
+        """Native mode enabled when pywebview can be imported (backend check deferred to ui.run).
+
+        Note: The _native_mode_enabled() function no longer calls webview.initialize()
+        for faster startup. Backend availability is checked lazily by NiceGUI's ui.run().
+        """
 
         import yakulingo.ui.app as ui_app
 
         monkeypatch.setattr(sys, 'platform', 'linux')
         monkeypatch.setenv('DISPLAY', ':0')
         monkeypatch.setenv('WAYLAND_DISPLAY', 'wayland-0')
+        # Even with guilib=None, native mode is enabled because
+        # backend initialization is deferred to ui.run()
         monkeypatch.setitem(
             sys.modules,
             'webview',
             SimpleNamespace(guilib=None, initialize=lambda: None),
         )
 
-        assert ui_app._native_mode_enabled(True) is False
+        assert ui_app._native_mode_enabled(True) is True
 
     def test_native_enabled_when_backend_available(self, monkeypatch):
         """Native mode remains enabled when a GUI backend is present."""

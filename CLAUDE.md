@@ -1609,6 +1609,11 @@ When interacting with users in this repository, prefer Japanese for comments and
 ## Recent Development Focus
 
 Based on recent commits:
+- **App Startup Optimization (2024-12)**:
+  - **`_detect_display_settings()` simplified**: pywebview の `screens` API 呼び出しを削除し、デフォルト値を使用。JavaScript で動的にビューポートサイズを調整するため、事前検出は不要
+  - **`_native_mode_enabled()` deferred initialization**: `webview.initialize()` をスキップして起動時間を短縮。バックエンド初期化は `ui.run()` で遅延実行
+  - **`create_app()` duplicate import removed**: `_lazy_import_nicegui()` の重複呼び出しを削除（`run_app()` で既に実行されるため）
+  - **Startup time improvement**: ローディング画面表示までの時間を大幅に短縮（pywebview初期化の遅延により）
 - **PDF Original Text Removal Improvements (2024-12)**:
   - **Form XObject detection regex**: `/Subtype\s*/Form\b`正規表現でスペース・改行を含むパターンに対応
   - **XObject filtering fallback**: ドキュメント全体フィルタリングで0件の場合、ページレベルフィルタリングにフォールバック

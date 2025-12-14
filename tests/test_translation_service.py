@@ -1690,9 +1690,10 @@ class TestBatchSizeBoundaries:
         assert len(batches) == 1
         assert len(batches[0]) == 1
 
-    def test_many_tiny_blocks_single_batch(self, batch_translator):
-        """Many tiny blocks fit in single batch when under char limit"""
-        # 200 blocks with 1 char each = 200 chars (well under 10000)
+    def test_many_tiny_blocks_respects_item_limit(self, batch_translator):
+        """Many tiny blocks respect item count limit even under char limit"""
+        # 200 blocks with 1 char each = 200 chars (well under 4000 char limit)
+        # But exceeds DEFAULT_MAX_ITEMS_PER_BATCH (100)
         blocks = [
             TextBlock(id=str(i), text="a", location=f"A{i}")
             for i in range(200)
@@ -1700,9 +1701,24 @@ class TestBatchSizeBoundaries:
 
         batches = batch_translator._create_batches(blocks)
 
-        # All blocks should fit in one batch (no block count limit)
+        # Should split into 2 batches due to item count limit (100 max)
+        assert len(batches) == 2
+        assert len(batches[0]) == 100
+        assert len(batches[1]) == 100
+
+    def test_blocks_under_item_limit_single_batch(self, batch_translator):
+        """Blocks under item limit stay in single batch"""
+        # 99 blocks (under 100 limit) and under char limit
+        blocks = [
+            TextBlock(id=str(i), text="a", location=f"A{i}")
+            for i in range(99)
+        ]
+
+        batches = batch_translator._create_batches(blocks)
+
+        # All blocks should fit in one batch
         assert len(batches) == 1
-        assert len(batches[0]) == 200
+        assert len(batches[0]) == 99
 
     def test_alternating_large_small_blocks(self, batch_translator):
         """Alternating large and small blocks batch correctly"""

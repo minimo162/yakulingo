@@ -520,6 +520,9 @@ class BatchTranslator:
     # Default values (used when settings not provided)
     DEFAULT_MAX_CHARS_PER_BATCH = 4000   # Characters per batch (reduced for reliability)
     DEFAULT_REQUEST_TIMEOUT = 600  # Default timeout for Copilot response (10 minutes)
+    # Maximum items per batch to prevent Copilot response truncation
+    # Copilot has ~10,000 char output limit; with avg 80 chars/item, 100 items is safe
+    DEFAULT_MAX_ITEMS_PER_BATCH = 100
 
     def __init__(
         self,
@@ -884,6 +887,9 @@ class BatchTranslator:
         Handles oversized blocks (exceeding max_chars_per_batch) by placing them
         in their own batch with a warning. These will be processed via file
         attachment mode by CopilotHandler.
+
+        Also limits the number of items per batch to prevent Copilot response
+        truncation (Copilot has ~10,000 char output limit).
         """
         batches = []
         current_batch = []
@@ -909,8 +915,10 @@ class BatchTranslator:
                 batches.append([block])
                 continue
 
-            # Normal batching logic (character limit only)
-            if current_chars + block_size > self.max_chars_per_batch:
+            # Check both character limit AND item count limit
+            # Item count limit prevents Copilot response truncation
+            if (current_chars + block_size > self.max_chars_per_batch or
+                    len(current_batch) >= self.DEFAULT_MAX_ITEMS_PER_BATCH):
                 if current_batch:
                     batches.append(current_batch)
                 current_batch = []

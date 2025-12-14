@@ -1097,19 +1097,31 @@ new_paragraph, line_break, is_strong_boundary = detect_paragraph_boundary(
 | 段組み変更 | X大ジャンプ + Y上昇 |
 | TOCパターン | Y変化 + X大リセット (>80pt) |
 
-**弱い境界の文末記号チェック:**
+**文末記号チェックの適用ルール:**
 
-強い境界でない場合（`is_strong_boundary=False`）のみ、文末記号チェックを適用します。
-これにより、番号付きパラグラフの途中改行（例: "167. 固定資産に係る...はあ" + "りません。"）を
-正しく結合しつつ、決算短信のような構造化ドキュメントでの各項目は
-適切に分割されます。
+`is_strong_boundary`の値に関わらず、**レイアウトクラスが真に変化する場合のみ**
+文末記号チェックをスキップします。同じレイアウト領域内であれば、Y変化が大きくても
+文末記号チェックを適用し、意味的に連続する文を適切に結合します。
+
+これにより：
+- 番号付きパラグラフの途中改行（例: "167. 固定資産に係る...はあ" + "りません。"）を正しく結合
+- 決算短信のような構造化ドキュメントでも、同一領域内の連続文は結合
+- 異なるレイアウト領域（見出し→本文など）は適切に分割
 
 ```python
 # pdf_processor.py での処理
 if new_paragraph:
     should_start_new = True
-    # 強い境界の場合は文末記号チェックをスキップ
-    if not is_strong_boundary and sstk and pstk:
+    # レイアウトクラスが真に変化する場合のみ文末記号チェックをスキップ
+    # 両方が非BACKGROUND（有効なレイアウト領域）かつ異なるクラスの場合のみ
+    layout_truly_changed = (
+        use_layout and
+        char_cls != prev_cls and
+        prev_cls is not None and
+        char_cls != 1 and  # 1 = BACKGROUND
+        prev_cls != 1
+    )
+    if not layout_truly_changed and sstk and pstk:
         prev_text = sstk[-1].rstrip()
         if prev_text:
             last_char = prev_text[-1]
@@ -1118,7 +1130,7 @@ if new_paragraph:
                 last_char in SENTENCE_END_CHARS_EN
             )
             if not is_sentence_end:
-                # 弱い境界で文末記号なし → 継続行として扱う
+                # 文末記号なし → 継続行として扱う
                 should_start_new = False
                 line_break = True
 ```
@@ -1609,6 +1621,12 @@ When interacting with users in this repository, prefer Japanese for comments and
 ## Recent Development Focus
 
 Based on recent commits:
+- **File Translation List Alignment Fix (2024-12)**:
+  - **Prompt improvement**: 番号付きリスト翻訳時の1入力行=1出力行の厳密な1:1マッピングを追加
+  - **Do NOT merge/split**: 複数行の統合・1行の分割を明示的に禁止するプロンプト指示を追加
+  - **Affected files**: `file_translate_to_en_*.txt`, `file_translate_to_jp.txt`
+  - **PDF extraction fix**: 文末記号チェック適用範囲を拡大し、意味的に連続する文の分割を防止
+  - **layout_truly_changed**: レイアウトクラスが真に変化する場合のみ文末記号チェックをスキップ
 - **App Startup Optimization (2024-12)**:
   - **`_detect_display_settings()` simplified**: pywebview の `screens` API 呼び出しを削除し、デフォルト値を使用。JavaScript で動的にビューポートサイズを調整するため、事前検出は不要
   - **`_native_mode_enabled()` deferred initialization**: `webview.initialize()` をスキップして起動時間を短縮。バックエンド初期化は `ui.run()` で遅延実行
@@ -1631,9 +1649,10 @@ Based on recent commits:
   - **Reference**: PDFMathTranslate converter.pyの`vals["dy"] + y - vals["lidx"] * size * line_height`に準拠
   - **Issue fixed**: 翻訳後のテキストが表のセル内に入り込む問題を修正（Note: The above earnings...などが表の外側に正しく配置される）
 - **PDF Paragraph Splitting Improvements (2024-12)**:
-  - **Strong boundary detection**: `detect_paragraph_boundary()`に`is_strong_boundary`フラグを追加。強い境界（Y座標大変化、X大ギャップ、レイアウトクラス変化等）では文末記号チェックをスキップし、決算短信のような構造化ドキュメントでの各項目を適切に分割
-  - **Weak boundary sentence-end check**: 弱い境界（行折り返し）の場合のみ文末記号チェックを適用。番号付きパラグラフの途中改行を正しく結合
-  - **Boundary types**: 強い境界=レイアウト変化/Y>20pt/X>30pt/テーブル行変更/段組み変更/TOCパターン、弱い境界=その他の行折り返し
+  - **Extended sentence-end check**: `is_strong_boundary`に関わらず、レイアウトクラスが真に変化する場合のみ文末記号チェックをスキップ。同一レイアウト領域内ではY/Xギャップが大きくても意味的に連続する文を結合
+  - **layout_truly_changed condition**: 両方が非BACKGROUND（有効なレイアウト領域）かつ異なるクラスの場合のみ「真のレイアウト変化」と判定
+  - **Improved merging**: 番号付きパラグラフの途中改行（例: "167. 固定資産に係る...はあ" + "りません。"）を確実に結合
+  - **Boundary types**: 強い境界=レイアウト変化/Y>20pt/X>30pt/テーブル行変更/段組み変更/TOCパターン（ただし文末記号チェックはレイアウト変化時のみスキップ）
 - **PDF Translation & Extraction Fixes (2024-12)**:
   - **pdfminer FontBBox warning suppression**: `pdfminer.pdffont`のログレベルをERRORに設定し、FontBBox警告を抑制
 - **PDF Line Joining Logic Improvements (2024-12)** (yomitoku reference):

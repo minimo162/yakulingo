@@ -2602,27 +2602,31 @@ class YakuLingoApp:
 
 
 def create_app() -> YakuLingoApp:
-    """Create application instance"""
-    _lazy_import_nicegui()
+    """Create application instance.
+
+    Note: NiceGUI should already be imported by run_app() before calling this.
+    The _lazy_import_nicegui() call is removed to avoid duplicate initialization.
+    """
     return YakuLingoApp()
 
 
 def _detect_display_settings() -> tuple[tuple[int, int], tuple[int, int, int]]:
-    """Detect connected monitors and determine window size and panel widths.
+    """Return default window size and panel widths.
 
-    Uses pywebview's screens API to detect multiple monitors BEFORE ui.run().
-    This allows setting the correct window size from the start (no resize flicker).
+    This function returns reasonable default values without querying pywebview's
+    screens API, which triggers expensive initialization and delays startup.
 
-    **重要: DPIスケーリングの影響**
+    The actual viewport-aware sizing is handled by JavaScript in the @ui.page('/')
+    handler, which dynamically updates CSS variables based on window.innerWidth.
+    This approach provides:
+    - Faster startup (no pywebview.screens call)
+    - Correct sizing even after window resize
+    - Support for multi-monitor setups via browser viewport detection
+
+    **DPIスケーリングの影響**
 
     pywebviewはWindows上で**論理ピクセル**を返す（DPIスケーリング適用後）。
-    そのため、同じ物理解像度でもDPIスケーリング設定により異なるウィンドウサイズになる。
-
-    例:
-    - 1920x1200 at 100% → 論理1920x1200 → ウィンドウ1424x916 (画面の74%)
-    - 1920x1200 at 125% → 論理1536x960 → ウィンドウ1140x733 (画面の74%)
-    - 2560x1440 at 100% → 論理2560x1440 → ウィンドウ1900x1100 (画面の74%)
-    - 2560x1440 at 150% → 論理1706x960 → ウィンドウ1266x733 (画面の74%)
+    JavaScript側で動的に調整されるため、デフォルト値を使用しても問題ない。
 
     Window and panel sizes are calculated based on **logical** screen resolution.
     Reference: 2560x1440 logical → 1900x1100 window (74.2% width, 76.4% height).
@@ -2631,119 +2635,37 @@ def _detect_display_settings() -> tuple[tuple[int, int], tuple[int, int, int]]:
         Tuple of ((window_width, window_height), (sidebar_width, input_panel_width, content_width))
         - content_width: Unified width for both input and result panel content (600-900px)
     """
-    # Reference ratios based on 2560x1440 → 1900x1100
-    WIDTH_RATIO = 1900 / 2560  # 0.742
-    HEIGHT_RATIO = 1100 / 1440  # 0.764
+    # Default sizes based on common 1920x1080 screen
+    # JavaScript will adjust these dynamically based on actual viewport
+    DEFAULT_WINDOW_WIDTH = 1424
+    DEFAULT_WINDOW_HEIGHT = 825
+    DEFAULT_SIDEBAR_WIDTH = 260
+    DEFAULT_INPUT_PANEL_WIDTH = 420
+    DEFAULT_CONTENT_WIDTH = 700
 
-    # Panel ratios based on 1900px window width
-    SIDEBAR_RATIO = 260 / 1900  # 0.137
-    INPUT_PANEL_RATIO = 420 / 1900  # 0.221
+    logger.debug(
+        "Using default display settings: window=%dx%d, sidebar=%d, input=%d, content=%d",
+        DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT,
+        DEFAULT_SIDEBAR_WIDTH, DEFAULT_INPUT_PANEL_WIDTH, DEFAULT_CONTENT_WIDTH
+    )
 
-    # Minimum sizes to prevent layout breaking on smaller screens
-    # These are absolute minimums - below this, UI elements may overlap
-    # Note: These values are in logical pixels, not physical pixels
-    # Example: 1366x768 at 125% = 1092x614 logical → window ~810x469 (74% ratio)
-    MIN_WINDOW_WIDTH = 1100   # Lowered from 1400 to maintain ~74% ratio on smaller screens
-    MIN_WINDOW_HEIGHT = 650   # Lowered from 850 to maintain ~76% ratio on smaller screens
-    MIN_SIDEBAR_WIDTH = 220   # Lowered from 260 for smaller screens
-    MIN_INPUT_PANEL_WIDTH = 320  # Lowered from 380 for smaller screens
-
-    # Unified content width for both input and result panels
-    # Uses mainAreaWidth * 0.55, clamped to min-max range
-    # This ensures consistent panel proportions across all resolutions
-    CONTENT_RATIO = 0.55
-    MIN_CONTENT_WIDTH = 500  # Lowered from 600 for smaller screens
-    MAX_CONTENT_WIDTH = 900
-
-    def calculate_sizes(screen_width: int, screen_height: int) -> tuple[tuple[int, int], tuple[int, int, int]]:
-        """Calculate window size and panel widths from screen resolution.
-
-        Applies minimum values for larger screens, but respects screen bounds for smaller screens.
-        Window size is capped to 95% of screen dimensions to ensure it fits on screen.
-
-        Returns:
-            Tuple of ((window_width, window_height),
-                      (sidebar_width, input_panel_width, content_width))
-        """
-        # Calculate window size based on ratio, but never exceed screen bounds
-        max_window_width = int(screen_width * 0.95)  # Leave 5% margin
-        max_window_height = int(screen_height * 0.95)
-
-        # Apply ratio-based calculation with minimum, but cap at screen bounds
-        window_width = min(max(int(screen_width * WIDTH_RATIO), MIN_WINDOW_WIDTH), max_window_width)
-        window_height = min(max(int(screen_height * HEIGHT_RATIO), MIN_WINDOW_HEIGHT), max_window_height)
-
-        # For smaller windows, use ratio-based panel sizes instead of fixed minimums
-        if window_width < MIN_WINDOW_WIDTH:
-            # Small screen: use pure ratio-based sizes
-            sidebar_width = int(window_width * SIDEBAR_RATIO)
-            input_panel_width = int(window_width * INPUT_PANEL_RATIO)
-        else:
-            # Normal screen: apply minimums
-            sidebar_width = max(int(window_width * SIDEBAR_RATIO), MIN_SIDEBAR_WIDTH)
-            input_panel_width = max(int(window_width * INPUT_PANEL_RATIO), MIN_INPUT_PANEL_WIDTH)
-
-        # Calculate unified content width for both input and result panels
-        # Main area = window - sidebar
-        main_area_width = window_width - sidebar_width
-
-        # Content width: mainAreaWidth * 0.55, clamped to 600-900px
-        # This ensures consistent proportions across all resolutions
-        content_width = min(max(int(main_area_width * CONTENT_RATIO), MIN_CONTENT_WIDTH), MAX_CONTENT_WIDTH)
-
-        return ((window_width, window_height), (sidebar_width, input_panel_width, content_width))
-
-    # Default based on 1920x1080 screen
-    default_window, default_panels = calculate_sizes(1920, 1080)
-
-    try:
-        import webview
-        screens = webview.screens
-        if not screens:
-            logger.debug("No screens detected via pywebview, using default")
-            return (default_window, default_panels)
-
-        # Log all detected screens
-        # Note: pywebview on Windows returns logical pixels (after DPI scaling applied)
-        # e.g., 1920x1200 physical at 125% scaling → 1536x960 logical
-        for i, screen in enumerate(screens):
-            logger.info(
-                "Screen %d: %dx%d at (%d, %d)",
-                i, screen.width, screen.height, screen.x, screen.y
-            )
-
-        # Find the largest screen by resolution
-        largest_screen = max(screens, key=lambda s: s.width * s.height)
-
-        # Use screen dimensions directly (already in logical pixels on Windows)
-        logical_width = largest_screen.width
-        logical_height = largest_screen.height
-
-        logger.info(
-            "Display detection: %d monitor(s), largest screen=%dx%d",
-            len(screens), logical_width, logical_height
-        )
-
-        # Calculate window and panel sizes based on logical screen resolution
-        window_size, panel_sizes = calculate_sizes(logical_width, logical_height)
-
-        logger.info(
-            "Window %dx%d, sidebar %dpx, input panel %dpx, content %dpx",
-            window_size[0], window_size[1],
-            panel_sizes[0], panel_sizes[1], panel_sizes[2]
-        )
-        return (window_size, panel_sizes)
-
-    except ImportError:
-        logger.debug("pywebview not available, using default")
-        return (default_window, default_panels)
-    except Exception as e:
-        logger.warning("Failed to detect display: %s, using default", e)
-        return (default_window, default_panels)
+    return (
+        (DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT),
+        (DEFAULT_SIDEBAR_WIDTH, DEFAULT_INPUT_PANEL_WIDTH, DEFAULT_CONTENT_WIDTH)
+    )
 
 
 def _native_mode_enabled(native_requested: bool) -> bool:
-    """Return whether native (pywebview) mode can be used safely."""
+    """Return whether native (pywebview) mode can be used safely.
+
+    This function performs minimal checks for faster startup:
+    - Linux: Check for display server (DISPLAY or WAYLAND_DISPLAY)
+    - All platforms: Check if pywebview can be imported
+
+    The actual GUI backend initialization is deferred to ui.run() time,
+    which avoids the expensive webview.initialize() call at startup.
+    If the backend fails to initialize, NiceGUI will fall back to browser mode.
+    """
 
     if not native_requested:
         return False
@@ -2762,33 +2684,16 @@ def _native_mode_enabled(native_requested: bool) -> bool:
         return False
 
     try:
-        import webview  # type: ignore
+        import webview  # type: ignore  # noqa: F401
     except Exception as e:  # pragma: no cover - defensive import guard
         logger.warning(
             "Native mode requested but pywebview is unavailable: %s; starting in browser mode.", e
         )
         return False
 
-    # pywebview resolves the available GUI backend lazily when `initialize()` is called.
-    # Triggering the initialization here prevents false negatives where `webview.guilib`
-    # remains ``None`` prior to the first window creation (notably on Windows).
-    try:
-        backend = getattr(webview, 'guilib', None) or webview.initialize()
-    except Exception as e:  # pragma: no cover - defensive import guard
-        logger.warning(
-            "Native mode requested but pywebview could not initialize a GUI backend: %s; "
-            "starting in browser mode instead.",
-            e,
-        )
-        return False
-
-    if backend is None:
-        logger.warning(
-            "Native mode requested but no GUI backend was found for pywebview; "
-            "starting in browser mode instead."
-        )
-        return False
-
+    # Skip webview.initialize() call here for faster startup.
+    # The GUI backend will be initialized lazily by NiceGUI's ui.run().
+    # On Windows, EdgeChromium is almost always available (via PYWEBVIEW_GUI env var).
     return True
 
 

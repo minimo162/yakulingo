@@ -11,7 +11,10 @@ Translate the text to English. Output only the translation as a numbered list.
 - Example input/output:
   Input: "1. こんにちは\n2. さようなら"
   Output: "1. Hello\n2. Goodbye"
-- Do NOT skip, merge, or reorder numbers
+- **CRITICAL: 1 input line = 1 output line (strict 1:1 mapping)**
+- Do NOT merge multiple input lines into one output line
+- Do NOT split one input line into multiple output lines
+- Do NOT skip or reorder numbers
 - Do NOT add explanations, markdown, or extra text
 - Do NOT output without numbers
 

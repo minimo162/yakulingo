@@ -1646,10 +1646,16 @@ def calculate_expandable_margins(
                 )
                 return expandable_left, expandable_right
 
-        # No cell boundary info - no expansion
-        return 0.0, 0.0
+        # No cell boundary info - fall through to layout-aware boundaries
+        # This allows table cells to expand when TableCellsDetection is not available,
+        # while still respecting adjacent blocks and page margins.
+        logger.debug(
+            "Table cell without cell boundary info, using layout-aware boundaries for bbox=%s",
+            bbox
+        )
+        # Fall through to use layout-aware boundaries (same as non-table blocks)
 
-    # Non-table blocks: use layout-aware boundaries
+    # Non-table blocks (and table cells without cell boundary info): use layout-aware boundaries
     if layout is None or layout.array is None or layout.fallback_used:
         # Fallback: use page margins
         expandable_left = max(0, x0 - page_margin)

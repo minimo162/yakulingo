@@ -76,14 +76,15 @@ class TestPromptBuilder:
         assert "用語集" in prompt
 
     def test_build_batch_numbered_format(self):
-        """Build batch creates numbered format"""
+        """Build batch creates numbered format with end markers"""
         builder = PromptBuilder()
         texts = ["こんにちは", "さようなら", "ありがとう"]
         prompt = builder.build_batch(texts)
 
-        assert "1. こんにちは" in prompt
-        assert "2. さようなら" in prompt
-        assert "3. ありがとう" in prompt
+        # Each item should have [END] marker to prevent Copilot from merging items
+        assert "1. こんにちは [END]" in prompt
+        assert "2. さようなら [END]" in prompt
+        assert "3. ありがとう [END]" in prompt
 
     def test_build_batch_with_reference(self):
         """Build batch with reference files"""
@@ -91,8 +92,8 @@ class TestPromptBuilder:
         texts = ["Text1", "Text2"]
         prompt = builder.build_batch(texts, has_reference_files=True)
 
-        assert "1. Text1" in prompt
-        assert "2. Text2" in prompt
+        assert "1. Text1 [END]" in prompt
+        assert "2. Text2 [END]" in prompt
         assert "添付の参考ファイル" in prompt
 
     def test_build_batch_for_japanese_output(self):
@@ -101,8 +102,8 @@ class TestPromptBuilder:
         texts = ["Hello", "World"]
         prompt = builder.build_batch(texts, output_language="jp")
 
-        assert "1. Hello" in prompt
-        assert "2. World" in prompt
+        assert "1. Hello [END]" in prompt
+        assert "2. World [END]" in prompt
         assert "日本語" in prompt
 
     def test_missing_text_prompts_fall_back_to_defaults(self, tmp_path):
@@ -129,6 +130,35 @@ class TestPromptBuilderParseBatchResult:
         result = """1. Hello
 2. Goodbye
 3. Thank you"""
+        parsed = builder.parse_batch_result(result, expected_count=3)
+
+        assert len(parsed) == 3
+        assert parsed[0] == "Hello"
+        assert parsed[1] == "Goodbye"
+        assert parsed[2] == "Thank you"
+
+    def test_parse_removes_end_marker(self):
+        """Parse removes [END] marker from results"""
+        builder = PromptBuilder()
+        # Copilot might include the [END] marker in its response
+        result = """1. Hello [END]
+2. Goodbye [END]
+3. Thank you [END]"""
+        parsed = builder.parse_batch_result(result, expected_count=3)
+
+        assert len(parsed) == 3
+        # [END] marker should be stripped
+        assert parsed[0] == "Hello"
+        assert parsed[1] == "Goodbye"
+        assert parsed[2] == "Thank you"
+
+    def test_parse_handles_mixed_marker_presence(self):
+        """Parse handles results with and without [END] markers"""
+        builder = PromptBuilder()
+        # Some items might have markers, some might not
+        result = """1. Hello [END]
+2. Goodbye
+3. Thank you [END]"""
         parsed = builder.parse_batch_result(result, expected_count=3)
 
         assert len(parsed) == 3
@@ -417,7 +447,7 @@ class TestPromptBuilderEdgeCases:
         builder = PromptBuilder()
         prompt = builder.build_batch(["Single"])
 
-        assert "1. Single" in prompt
+        assert "1. Single [END]" in prompt
 
     def test_get_template_defaults_to_en(self):
         """_get_template defaults to English output"""

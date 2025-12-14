@@ -879,11 +879,16 @@ class BatchTranslator:
 
     def _create_batches(self, blocks: list[TextBlock]) -> list[list[TextBlock]]:
         """
-        Split blocks into batches based on configured limits.
+        Split blocks into batches based on configured character limits.
 
         Handles oversized blocks (exceeding max_chars_per_batch) by placing them
         in their own batch with a warning. These will be processed via file
         attachment mode by CopilotHandler.
+
+        Note:
+            Item count is not limited here. Instead, ITEM_END_MARKER is added to
+            each item in PromptBuilder.build_batch() to prevent Copilot from
+            merging consecutive items that appear to be parts of the same sentence.
         """
         batches = []
         current_batch = []
@@ -909,7 +914,7 @@ class BatchTranslator:
                 batches.append([block])
                 continue
 
-            # Normal batching logic (character limit only)
+            # Check character limit only (item merging is prevented by end markers)
             if current_chars + block_size > self.max_chars_per_batch:
                 if current_batch:
                     batches.append(current_batch)

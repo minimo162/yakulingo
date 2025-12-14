@@ -1267,7 +1267,7 @@ analyzed_cells = analyze_table_structure(cells, table_box)
 |------|------|------|
 | `ALIGNMENT_TOLERANCE` | 5.0pt | アライメント判定の許容誤差 |
 | `VERTICAL_TEXT_ASPECT_RATIO` | 1.5 | 縦書き判定の閾値（ブロック単位） |
-| `MAX_EXPANSION_RATIO` | 1.5 | 最大拡張比率（150%） |
+| `MAX_EXPANSION_RATIO` | 2.0 | 最大拡張比率（200%） |
 
 **DPI設定 (`ocr_dpi`):**
 
@@ -1524,6 +1524,10 @@ When interacting with users in this repository, prefer Japanese for comments and
 ## Recent Development Focus
 
 Based on recent commits:
+- **PDF Translation Reliability Improvements (2024-12)**:
+  - **Item end marker**: `ITEM_END_MARKER = " [END]"` を各項目末尾に追加（Copilotによる項目マージを防止）
+  - **Box expansion ratio increase**: `MAX_EXPANSION_RATIO`を1.5から2.0に増加（翻訳テキストの収容改善）
+  - **Table cell expansion fallback**: セル境界情報がない場合でもlayout-aware拡張を許可
 - **PDF Form XObject Text Removal Improvements (2024-12)**:
   - **Document-wide XObject scanning**: ドキュメント全体のForm XObjectをスキャンしてテキスト削除（`filter_all_document_xobjects()`メソッド追加）
   - **Indirect Resources reference support**: `/Resources N 0 R`形式の間接参照を再帰的に処理
@@ -1778,6 +1782,7 @@ Based on recent commits:
 - **Batch Translation Settings**:
   - **max_chars_per_batch**: 7000 → 4000 に縮小（信頼性向上）
   - **request_timeout**: 120秒 → 600秒（10分）に延長（大規模翻訳対応）
+  - **ITEM_END_MARKER**: 各項目末尾に`[END]`マーカーを追加（Copilotによる連続項目マージを防止）
 - **Excel COM Improvements**:
   - **Pre-cleanup**: Excel COM接続の事前クリーンアップを追加
   - **Retry logic**: COMエラー時のリトライ前にCOMリソースのクリーンアップを追加

@@ -1691,8 +1691,8 @@ class TestBatchSizeBoundaries:
         assert len(batches[0]) == 1
 
     def test_many_tiny_blocks_single_batch(self, batch_translator):
-        """Many tiny blocks fit in single batch when under char limit"""
-        # 200 blocks with 1 char each = 200 chars (well under 10000)
+        """Many tiny blocks fit in single batch"""
+        # 200 blocks with 1 char each = 200 chars (well under 4000 char limit)
         blocks = [
             TextBlock(id=str(i), text="a", location=f"A{i}")
             for i in range(200)
@@ -1700,7 +1700,8 @@ class TestBatchSizeBoundaries:
 
         batches = batch_translator._create_batches(blocks)
 
-        # All blocks should fit in one batch (no block count limit)
+        # All blocks should fit in one batch since total chars < limit
+        # Item merging is prevented by ITEM_END_MARKER in PromptBuilder, not by batch splitting
         assert len(batches) == 1
         assert len(batches[0]) == 200
 

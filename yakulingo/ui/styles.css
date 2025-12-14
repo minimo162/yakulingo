@@ -2987,6 +2987,40 @@ a:hover {
     padding: 0.75rem;
 }
 
+/* Release notes markdown styling */
+.release-notes-content {
+    font-size: 0.75rem !important;  /* 12px */
+    line-height: 1.5;
+}
+
+.release-notes-content p,
+.release-notes-content li,
+.release-notes-content ul,
+.release-notes-content ol {
+    font-size: 0.75rem !important;  /* 12px */
+    margin: 0.25rem 0;
+}
+
+.release-notes-content h1,
+.release-notes-content h2,
+.release-notes-content h3 {
+    font-size: 0.8125rem !important;  /* 13px */
+    font-weight: 600;
+    margin: 0.5rem 0 0.25rem 0;
+}
+
+.release-notes-content ul,
+.release-notes-content ol {
+    padding-left: 1.25rem;
+}
+
+.release-notes-content code {
+    font-size: 0.6875rem !important;  /* 11px */
+    background-color: var(--md-sys-color-surface-container);
+    padding: 0.125rem 0.25rem;
+    border-radius: 0.25rem;
+}
+
 /* === File Panel Checkbox === */
 .pdf-mode-checkbox {
     font-size: 1rem;

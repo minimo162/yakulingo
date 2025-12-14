@@ -4083,12 +4083,12 @@ class TestCalculateExpandableWidth:
             fallback_used=False,
         )
 
-    def test_table_cell_expansion_with_space(self, mock_layout_array):
-        """Table cells can expand if there's significant space (>20pt) on the right"""
+    def test_table_cell_no_expansion_even_with_space(self, mock_layout_array):
+        """Table cells should NEVER expand (PP-DocLayout-L cannot detect cell boundaries)"""
         from yakulingo.processors.pdf_layout import calculate_expandable_width
 
         # bbox from x=100 to x=200, adjacent block at x=350 (image coords)
-        # Potential expansion: 350 - 200 = 150pt > 20pt threshold
+        # Even though there's space, table cells should not expand
         bbox = (100, 650, 200, 700)  # PDF coords (bottom-left origin)
         page_width = 600.0
         page_height = 800.0
@@ -4098,16 +4098,16 @@ class TestCalculateExpandableWidth:
             is_table_cell=True
         )
 
-        # Should expand to adjacent block boundary (340 = 350 - 10 MIN_COLUMN_GAP)
-        # expandable_width = 340 - 100 = 240
-        assert result == 240.0
+        # Table cells should NOT expand - return original width
+        # This prevents text overlap within table cells
+        original_width = 200 - 100
+        assert result == original_width
 
-    def test_table_cell_no_expansion_when_tight(self, mock_layout_array):
-        """Table cells should not expand if space < 20pt"""
+    def test_table_cell_no_expansion_regardless_of_space(self, mock_layout_array):
+        """Table cells never expand regardless of available space"""
         from yakulingo.processors.pdf_layout import calculate_expandable_width
 
         # bbox from x=100 to x=335, adjacent block at x=350
-        # Potential expansion: (350 - 10) - 335 = 5pt < 20pt threshold
         bbox = (100, 650, 335, 700)  # PDF coords (bottom-left origin)
         page_width = 600.0
         page_height = 800.0
@@ -4117,7 +4117,7 @@ class TestCalculateExpandableWidth:
             is_table_cell=True
         )
 
-        # Should return original width when no significant space
+        # Table cells NEVER expand - return original width
         assert result == 235  # 335 - 100
 
     def test_expand_to_adjacent_block(self, mock_layout_array):

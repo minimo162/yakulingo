@@ -901,14 +901,112 @@ def prepare_translation_cells(
 # Box Width Expansion Functions
 # =============================================================================
 
-# Default page margin for expansion limit
+# Default page margin for expansion limit (fallback if not detected)
 DEFAULT_PAGE_MARGIN = 20.0
+
+# Minimum margin to maintain even when original margin is smaller
+MIN_PRESERVED_MARGIN = 10.0
 
 # Minimum gap between blocks to consider as separate columns
 MIN_COLUMN_GAP = 10.0
 
 # Y-overlap threshold for considering blocks on the same line (fraction of height)
 SAME_LINE_OVERLAP_THRESHOLD = 0.3
+
+
+def calculate_page_margins(
+    text_blocks: list,
+    page_width: float,
+    page_height: float,
+) -> dict[str, float]:
+    """
+    Calculate actual page margins from existing text blocks.
+
+    Analyzes the positions of all text blocks on a page to determine
+    the actual margins used in the original PDF. This allows box expansion
+    to respect the original document's layout.
+
+    Args:
+        text_blocks: List of TextBlock or objects with metadata['bbox']
+        page_width: Page width in PDF points
+        page_height: Page height in PDF points
+
+    Returns:
+        Dictionary with margin values:
+        - 'left': Left margin (minimum x0 of all blocks)
+        - 'right': Right margin (page_width - maximum x1 of all blocks)
+        - 'top': Top margin (page_height - maximum y1 of all blocks)
+        - 'bottom': Bottom margin (minimum y0 of all blocks)
+
+    Note:
+        If no blocks are provided, returns DEFAULT_PAGE_MARGIN for all sides.
+        Margins are clamped to MIN_PRESERVED_MARGIN to prevent extreme expansion.
+    """
+    if not text_blocks:
+        return {
+            'left': DEFAULT_PAGE_MARGIN,
+            'right': DEFAULT_PAGE_MARGIN,
+            'top': DEFAULT_PAGE_MARGIN,
+            'bottom': DEFAULT_PAGE_MARGIN,
+        }
+
+    # Collect all bboxes
+    min_x0 = page_width
+    max_x1 = 0.0
+    min_y0 = page_height
+    max_y1 = 0.0
+
+    valid_blocks = 0
+    for block in text_blocks:
+        # Support both TextBlock objects and dictionaries
+        if hasattr(block, 'metadata'):
+            bbox = block.metadata.get('bbox') if block.metadata else None
+        elif isinstance(block, dict):
+            bbox = block.get('bbox')
+        else:
+            continue
+
+        if not bbox or len(bbox) < 4:
+            continue
+
+        x0, y0, x1, y1 = bbox[:4]
+
+        # Skip invalid bboxes
+        if x1 <= x0 or y1 <= y0:
+            continue
+
+        min_x0 = min(min_x0, x0)
+        max_x1 = max(max_x1, x1)
+        min_y0 = min(min_y0, y0)
+        max_y1 = max(max_y1, y1)
+        valid_blocks += 1
+
+    if valid_blocks == 0:
+        return {
+            'left': DEFAULT_PAGE_MARGIN,
+            'right': DEFAULT_PAGE_MARGIN,
+            'top': DEFAULT_PAGE_MARGIN,
+            'bottom': DEFAULT_PAGE_MARGIN,
+        }
+
+    # Calculate margins (with minimum preservation)
+    left_margin = max(MIN_PRESERVED_MARGIN, min_x0)
+    right_margin = max(MIN_PRESERVED_MARGIN, page_width - max_x1)
+    top_margin = max(MIN_PRESERVED_MARGIN, page_height - max_y1)
+    bottom_margin = max(MIN_PRESERVED_MARGIN, min_y0)
+
+    logger.debug(
+        "Page margins calculated: left=%.1f, right=%.1f, top=%.1f, bottom=%.1f "
+        "(from %d blocks)",
+        left_margin, right_margin, top_margin, bottom_margin, valid_blocks
+    )
+
+    return {
+        'left': left_margin,
+        'right': right_margin,
+        'top': top_margin,
+        'bottom': bottom_margin,
+    }
 
 
 def calculate_expandable_width(

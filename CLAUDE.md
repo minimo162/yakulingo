@@ -1330,6 +1330,8 @@ Based on recent commits:
   - **Page margin respect**: ページ右余白（デフォルト20pt）を考慮
   - **expandable_width metadata**: TextBlock抽出時に拡張可能幅を事前計算
   - **Fallback support**: PP-DocLayout-L未使用時はページ余白まで拡張
+  - **Dynamic margin detection**: `calculate_page_margins()`で元PDFの余白を動的に計算し、余白にはみ出さないよう制限
+  - **Unified expansion logic**: テーブル・非テーブルに関わらずすべてのブロックでボックス拡張を優先（フォント縮小は最後の手段）
 - **PDF Translation Bug Fixes (2024-12)**:
   - **Non-translatable text disappearance fix**: PDF翻訳時の非翻訳対象テキスト消失を修正
   - **Number parsing fix**: PDF翻訳時の番号パース失敗を修正

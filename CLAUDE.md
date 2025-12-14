@@ -178,7 +178,7 @@ YakuLingo/
 | `yakulingo/processors/base.py` | Abstract base class for all file processors | ~105 |
 | `yakulingo/processors/pdf_processor.py` | PDF processing with PyMuPDF, pdfminer.six, and PP-DocLayout-L | ~2819 |
 | `yakulingo/processors/pdf_converter.py` | PDFMathTranslate準拠: Paragraph, FormulaVar, vflag, 座標変換 | ~600 |
-| `yakulingo/processors/pdf_layout.py` | PP-DocLayout-L統合: LayoutArray, TableCellsDetection, レイアウト解析 | ~1517 |
+| `yakulingo/processors/pdf_layout.py` | PP-DocLayout-L統合: LayoutArray, TableCellsDetection, 読み順推定, rowspan/colspan検出 | ~2227 |
 | `yakulingo/processors/pdf_font_manager.py` | PDF font management: font registry, type detection, glyph encoding | ~1140 |
 | `yakulingo/processors/pdf_operators.py` | PDF low-level operator generation for text rendering | ~731 |
 
@@ -1107,9 +1107,62 @@ model = TableCellsDetection(
 ```
 1. PP-DocLayout-L: ページ全体のレイアウト解析 → テーブル領域検出
 2. TableCellsDetection: テーブル領域ごとにセル境界を検出
-3. LayoutArray.table_cells: テーブルID → セルボックスリストを格納
-4. calculate_expandable_width(): セル境界まで拡張を許可
+3. analyze_all_table_structures(): セル構造解析（rowspan/colspan検出）
+4. apply_reading_order_to_layout(): グラフベースの読み順推定
+5. LayoutArray.table_cells: テーブルID → セルボックスリストを格納
+6. calculate_expandable_width(): セル境界まで拡張を許可
 ```
+
+**読み順推定 (Reading Order Estimation):**
+
+グラフベースのアルゴリズムで文書要素の読み順を推定します：
+
+```python
+from yakulingo.processors.pdf_layout import (
+    estimate_reading_order,         # 読み順推定
+    apply_reading_order_to_layout,  # LayoutArrayに適用
+)
+
+# 使用例
+order = estimate_reading_order(boxes, page_height)
+# boxes: list of (x0, y0, x1, y1, label, score)
+# 戻り値: list of (box, order_index)
+```
+
+**アルゴリズム:**
+1. 要素間の直接読み順関係をグラフ化（中間要素がある場合はエッジを作成しない）
+2. 上から下、左から右を優先したトポロジカルソート
+3. 多段組みレイアウトにも対応
+
+**rowspan/colspan検出 (Table Cell Structure Analysis):**
+
+座標クラスタリングによるセル構造解析で、結合セルを検出します：
+
+```python
+from yakulingo.processors.pdf_layout import (
+    analyze_table_structure,        # 単一テーブルのセル構造解析
+    analyze_all_table_structures,   # 複数テーブルを一括解析
+    get_cell_at_position,           # 特定位置のセル取得
+    get_table_dimensions,           # テーブルの行・列数取得
+)
+
+# 使用例
+analyzed_cells = analyze_table_structure(cells, table_box)
+# cells: list of dict with 'box' key [(x0, y0, x1, y1)]
+# 戻り値: list of dict with 'row', 'col', 'row_span', 'col_span' keys
+```
+
+**アルゴリズム:**
+1. セルのX/Y座標をクラスタリングしてグリッド線を検出
+2. 各セルがどのグリッド線にまたがるかを計算
+3. 複数グリッドにまたがるセルをrowspan/colspanとして検出
+
+| 関数 | 説明 |
+|------|------|
+| `_cluster_coordinates()` | 座標をクラスタリングしてグリッド線を検出 |
+| `analyze_table_structure()` | セルのrow/col/spanを計算 |
+| `get_cell_at_position()` | 指定行・列のセルを取得 |
+| `get_table_dimensions()` | テーブルの行数・列数を取得 |
 
 **拡張ロジック:**
 - セル境界検出成功時: セル境界まで拡張可能（テキストの読みやすさ優先）
@@ -1347,6 +1400,18 @@ When interacting with users in this repository, prefer Japanese for comments and
 ## Recent Development Focus
 
 Based on recent commits:
+- **Reading Order & Table Structure Analysis (2024-12)**:
+  - **Graph-based reading order**: グラフベースの読み順推定アルゴリズムを追加（上から下、左から右優先）
+  - **Intermediate element detection**: 中間要素がある場合はエッジを作成しない（正確な読み順）
+  - **Topological sort with priority**: Y座標優先のトポロジカルソートで多段組みにも対応
+  - **rowspan/colspan detection**: 座標クラスタリングによるセル構造解析を追加
+  - **Grid line detection**: セルのX/Y座標をクラスタリングしてグリッド線を自動検出
+  - **Merged cell detection**: 複数グリッドにまたがるセルをrowspan/colspanとして検出
+  - **yomitoku reference**: yomitoku (CC BY-NC-SA 4.0) のアルゴリズムを参考に独自実装（MIT互換）
+- **TOC Line Separation Fix (2024-12)**:
+  - **TOC_LINE_X_RESET_THRESHOLD**: 目次行がブロックとして翻訳される問題を修正
+  - **X-reset detection**: X座標が80pt以上リセットされた場合に新しい段落として認識
+  - **Paragraph boundary improvement**: Y変化 + X大幅リセットで目次項目を正しく分離
 - **TableCellsDetection Integration (2024-12)**:
   - **RT-DETR-L model**: PaddleOCRのTableCellsDetectionを統合（テーブルセル境界検出）
   - **LayoutArray.table_cells**: テーブルID→セルボックスリストを格納

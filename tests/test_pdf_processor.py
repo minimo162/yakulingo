@@ -4238,3 +4238,331 @@ class TestCalculateExpandableWidth:
 
         # Should return original width since already at margin
         assert result == 90  # 590 - 500
+
+
+# =============================================================================
+# Tests for yomitoku-style Reading Order Functions
+# =============================================================================
+class TestDetectReadingDirection:
+    """Tests for detect_reading_direction function (yomitoku-style)"""
+
+    def _create_layout(self, width=800, height=600, paragraphs=None, tables=None):
+        """Helper to create a LayoutArray for testing"""
+        import numpy as np
+        from yakulingo.processors.pdf_layout import LayoutArray
+
+        array = np.ones((height, width), dtype=np.uint16)
+        layout = LayoutArray(array=array, height=height, width=width)
+        layout.paragraphs = paragraphs or {}
+        layout.tables = tables or {}
+        return layout
+
+    def test_horizontal_text_detected(self):
+        """Should detect horizontal text as TOP_TO_BOTTOM"""
+        from yakulingo.processors.pdf_layout import (
+            detect_reading_direction, ReadingDirection
+        )
+
+        # Create layout with horizontal (wide) boxes
+        layout = self._create_layout(
+            paragraphs={
+                1: {'box': [50, 50, 300, 80]},   # width=250, height=30 -> horizontal
+                2: {'box': [50, 100, 350, 130]}, # width=300, height=30 -> horizontal
+                3: {'box': [50, 150, 280, 180]}, # width=230, height=30 -> horizontal
+            }
+        )
+
+        direction = detect_reading_direction(layout, page_height=600)
+
+        assert direction == ReadingDirection.TOP_TO_BOTTOM
+
+    def test_vertical_text_detected(self):
+        """Should detect vertical text as RIGHT_TO_LEFT"""
+        from yakulingo.processors.pdf_layout import (
+            detect_reading_direction, ReadingDirection
+        )
+
+        # Create layout with vertical (tall) boxes
+        layout = self._create_layout(
+            paragraphs={
+                1: {'box': [700, 50, 730, 400]},  # width=30, height=350 -> vertical (ratio > 2)
+                2: {'box': [650, 50, 680, 350]},  # width=30, height=300 -> vertical
+                3: {'box': [600, 50, 630, 320]},  # width=30, height=270 -> vertical
+            }
+        )
+
+        direction = detect_reading_direction(layout, page_height=600)
+
+        assert direction == ReadingDirection.RIGHT_TO_LEFT
+
+    def test_insufficient_elements_defaults_to_horizontal(self):
+        """Should default to TOP_TO_BOTTOM with too few elements"""
+        from yakulingo.processors.pdf_layout import (
+            detect_reading_direction, ReadingDirection
+        )
+
+        # Only 2 elements (below VERTICAL_TEXT_MIN_ELEMENTS=3)
+        layout = self._create_layout(
+            paragraphs={
+                1: {'box': [700, 50, 730, 400]},  # vertical
+                2: {'box': [650, 50, 680, 350]},  # vertical
+            }
+        )
+
+        direction = detect_reading_direction(layout, page_height=600)
+
+        assert direction == ReadingDirection.TOP_TO_BOTTOM
+
+    def test_none_layout_defaults_to_horizontal(self):
+        """Should return TOP_TO_BOTTOM for None layout"""
+        from yakulingo.processors.pdf_layout import (
+            detect_reading_direction, ReadingDirection
+        )
+
+        direction = detect_reading_direction(None)
+
+        assert direction == ReadingDirection.TOP_TO_BOTTOM
+
+
+class TestPriorityDfs:
+    """Tests for _priority_dfs function (yomitoku-style DFS)"""
+
+    def test_simple_linear_order(self):
+        """Should return elements in simple top-to-bottom order"""
+        from yakulingo.processors.pdf_layout import (
+            _priority_dfs, _build_reading_order_graph, ReadingDirection
+        )
+
+        # Three boxes stacked vertically (in PDF coords, higher y = higher on page)
+        elements = [
+            (1, (50, 700, 200, 750)),  # top
+            (2, (50, 600, 200, 650)),  # middle
+            (3, (50, 500, 200, 550)),  # bottom
+        ]
+
+        graph = _build_reading_order_graph(elements, ReadingDirection.TOP_TO_BOTTOM)
+        result = _priority_dfs(graph, elements, ReadingDirection.TOP_TO_BOTTOM)
+
+        assert result == [1, 2, 3]
+
+    def test_two_column_layout(self):
+        """Should handle two-column layout correctly"""
+        from yakulingo.processors.pdf_layout import (
+            _priority_dfs, _build_reading_order_graph, ReadingDirection
+        )
+
+        # Two columns: left column (1, 2), right column (3, 4)
+        elements = [
+            (1, (50, 700, 200, 750)),   # left top
+            (2, (50, 600, 200, 650)),   # left bottom
+            (3, (300, 700, 450, 750)),  # right top
+            (4, (300, 600, 450, 650)),  # right bottom
+        ]
+
+        graph = _build_reading_order_graph(elements, ReadingDirection.TOP_TO_BOTTOM)
+        result = _priority_dfs(graph, elements, ReadingDirection.TOP_TO_BOTTOM)
+
+        # In top-to-bottom with left-to-right, should be: left-top, left-bottom or right-top
+        # The exact order depends on graph structure, but element 1 should come first
+        assert result[0] == 1
+
+    def test_empty_elements(self):
+        """Should return empty list for empty elements"""
+        from yakulingo.processors.pdf_layout import (
+            _priority_dfs, _build_reading_order_graph, ReadingDirection
+        )
+
+        elements = []
+        graph = _build_reading_order_graph(elements, ReadingDirection.TOP_TO_BOTTOM)
+        result = _priority_dfs(graph, elements, ReadingDirection.TOP_TO_BOTTOM)
+
+        assert result == []
+
+
+class TestEstimateReadingOrderAuto:
+    """Tests for estimate_reading_order_auto function"""
+
+    def _create_layout(self, width=800, height=600, paragraphs=None, tables=None):
+        """Helper to create a LayoutArray for testing"""
+        import numpy as np
+        from yakulingo.processors.pdf_layout import LayoutArray
+
+        array = np.ones((height, width), dtype=np.uint16)
+        layout = LayoutArray(array=array, height=height, width=width)
+        layout.paragraphs = paragraphs or {}
+        layout.tables = tables or {}
+        return layout
+
+    def test_auto_detection_with_horizontal_layout(self):
+        """Should automatically detect and apply horizontal reading order"""
+        from yakulingo.processors.pdf_layout import estimate_reading_order_auto
+
+        # Horizontal layout
+        layout = self._create_layout(
+            paragraphs={
+                1: {'box': [50, 50, 300, 80]},   # horizontal
+                2: {'box': [50, 100, 350, 130]}, # horizontal
+                3: {'box': [50, 150, 280, 180]}, # horizontal
+            }
+        )
+
+        order = estimate_reading_order_auto(layout, page_height=600)
+
+        assert len(order) == 3
+        # All 3 paragraphs should have reading order
+        assert set(order.keys()) == {1, 2, 3}
+
+
+class TestApplyReadingOrderToLayoutAuto:
+    """Tests for apply_reading_order_to_layout_auto function"""
+
+    def _create_layout(self, width=800, height=600, paragraphs=None, tables=None):
+        """Helper to create a LayoutArray for testing"""
+        import numpy as np
+        from yakulingo.processors.pdf_layout import LayoutArray
+
+        array = np.ones((height, width), dtype=np.uint16)
+        layout = LayoutArray(array=array, height=height, width=width)
+        layout.paragraphs = paragraphs or {}
+        layout.tables = tables or {}
+        return layout
+
+    def test_applies_order_to_paragraphs(self):
+        """Should apply reading order to paragraph info"""
+        from yakulingo.processors.pdf_layout import apply_reading_order_to_layout_auto
+
+        layout = self._create_layout(
+            paragraphs={
+                1: {'box': [50, 50, 300, 80]},
+                2: {'box': [50, 100, 350, 130]},
+            }
+        )
+
+        result = apply_reading_order_to_layout_auto(layout, page_height=600)
+
+        # Check that order was added to paragraphs
+        assert 'order' in result.paragraphs[1]
+        assert 'order' in result.paragraphs[2]
+
+    def test_returns_same_layout_object(self):
+        """Should modify layout in place and return it"""
+        from yakulingo.processors.pdf_layout import apply_reading_order_to_layout_auto
+
+        layout = self._create_layout(
+            paragraphs={1: {'box': [50, 50, 300, 80]}}
+        )
+
+        result = apply_reading_order_to_layout_auto(layout, page_height=600)
+
+        assert result is layout
+
+
+class TestReadingOrderGraphBuilding:
+    """Tests for graph building functions (yomitoku-style)"""
+
+    def test_vertical_overlap_detection(self):
+        """Should detect vertically overlapping boxes"""
+        from yakulingo.processors.pdf_layout import _boxes_vertically_overlap
+
+        # Two boxes on the same line (significant Y overlap)
+        box1 = (50, 700, 150, 750)
+        box2 = (200, 705, 300, 745)
+
+        assert _boxes_vertically_overlap(box1, box2, threshold=0.3) is True
+
+    def test_no_vertical_overlap(self):
+        """Should detect non-overlapping boxes"""
+        from yakulingo.processors.pdf_layout import _boxes_vertically_overlap
+
+        # Two boxes on different lines
+        box1 = (50, 700, 150, 750)
+        box2 = (50, 600, 150, 650)
+
+        assert _boxes_vertically_overlap(box1, box2, threshold=0.3) is False
+
+    def test_horizontal_overlap_detection(self):
+        """Should detect horizontally overlapping boxes"""
+        from yakulingo.processors.pdf_layout import _boxes_horizontally_overlap
+
+        # Two boxes in the same column
+        box1 = (100, 700, 200, 750)
+        box2 = (90, 600, 210, 650)
+
+        assert _boxes_horizontally_overlap(box1, box2, threshold=0.3) is True
+
+    def test_intermediate_element_detection_vertical(self):
+        """Should detect intermediate elements between vertical boxes"""
+        from yakulingo.processors.pdf_layout import _exists_intermediate_element
+
+        box1 = (50, 700, 150, 750)  # top
+        box2 = (50, 500, 150, 550)  # bottom
+        intermediate = (50, 600, 150, 650)  # middle
+
+        all_boxes = [
+            (1, box1),
+            (2, intermediate),
+            (3, box2),
+        ]
+
+        # Should find intermediate element between box1 and box2
+        assert _exists_intermediate_element(box1, box2, all_boxes, "vertical") is True
+
+    def test_no_intermediate_element(self):
+        """Should not find intermediate when none exists"""
+        from yakulingo.processors.pdf_layout import _exists_intermediate_element
+
+        box1 = (50, 700, 150, 750)  # top
+        box2 = (50, 600, 150, 650)  # bottom (adjacent)
+
+        all_boxes = [
+            (1, box1),
+            (2, box2),
+        ]
+
+        assert _exists_intermediate_element(box1, box2, all_boxes, "vertical") is False
+
+    def test_distance_metric_top_to_bottom(self):
+        """Should calculate correct distance for TOP_TO_BOTTOM direction"""
+        from yakulingo.processors.pdf_layout import (
+            _calculate_distance_metric, ReadingDirection
+        )
+
+        # Top-left box should have lower distance
+        box_top_left = (50, 700, 150, 750)
+        box_bottom_right = (400, 100, 500, 150)
+
+        max_x = 600
+        max_y = 800
+
+        dist1 = _calculate_distance_metric(
+            box_top_left, ReadingDirection.TOP_TO_BOTTOM, max_x, max_y
+        )
+        dist2 = _calculate_distance_metric(
+            box_bottom_right, ReadingDirection.TOP_TO_BOTTOM, max_x, max_y
+        )
+
+        # Top-left should have lower distance (higher priority)
+        assert dist1 < dist2
+
+    def test_distance_metric_right_to_left(self):
+        """Should calculate correct distance for RIGHT_TO_LEFT direction"""
+        from yakulingo.processors.pdf_layout import (
+            _calculate_distance_metric, ReadingDirection
+        )
+
+        # Top-right box should have lower distance
+        box_top_right = (400, 700, 500, 750)
+        box_bottom_left = (50, 100, 150, 150)
+
+        max_x = 600
+        max_y = 800
+
+        dist1 = _calculate_distance_metric(
+            box_top_right, ReadingDirection.RIGHT_TO_LEFT, max_x, max_y
+        )
+        dist2 = _calculate_distance_metric(
+            box_bottom_left, ReadingDirection.RIGHT_TO_LEFT, max_x, max_y
+        )
+
+        # Top-right should have lower distance (higher priority)
+        assert dist1 < dist2

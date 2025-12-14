@@ -1156,6 +1156,55 @@ order = estimate_reading_order(
 注意: yomitokuはCC BY-NC-SA 4.0ライセンスのため、
 アルゴリズムを参考にした独自MIT互換実装です。
 
+**縦書き文書の自動検出 (Auto Direction Detection):**
+
+縦書き日本語文書を自動検出して適切な読み順推定を行う機能：
+
+```python
+from yakulingo.processors.pdf_layout import (
+    detect_reading_direction,           # 縦書き/横書き自動検出
+    estimate_reading_order_auto,        # 自動検出 + 読み順推定
+    apply_reading_order_to_layout_auto, # 自動検出 + LayoutArray適用
+)
+
+# 使用例（方向を自動検出）
+direction = detect_reading_direction(layout, page_height)
+order = estimate_reading_order_auto(layout, page_height)
+
+# LayoutArrayに自動適用
+apply_reading_order_to_layout_auto(layout, page_height)
+```
+
+**縦書き検出の閾値:**
+
+| 定数 | 値 | 説明 |
+|------|------|------|
+| `VERTICAL_TEXT_ASPECT_RATIO_THRESHOLD` | 2.0 | height/width > 2.0 で縦書き要素と判定 |
+| `VERTICAL_TEXT_MIN_ELEMENTS` | 3 | 最低3要素以上で判定 |
+| `VERTICAL_TEXT_COLUMN_THRESHOLD` | 0.7 | 70%以上が縦書きなら縦書き文書 |
+
+**検出アルゴリズム:**
+1. 段落要素のアスペクト比（高さ/幅）を計算
+2. 閾値（2.0）を超える要素を縦書き要素としてカウント
+3. 縦書き要素が70%以上 → `RIGHT_TO_LEFT`（縦書き）
+4. それ以外 → `TOP_TO_BOTTOM`（横書き）
+
+**優先度付きDFS (Priority DFS - yomitoku-style):**
+
+yomitokuの`_priority_dfs`を参考にした深さ優先探索アルゴリズム：
+
+```python
+# 内部関数: _priority_dfs(graph, starts, node_count)
+# - graph: 隣接リスト形式のグラフ
+# - starts: 距離度量でソートされた開始ノードリスト
+# - node_count: 総ノード数
+```
+
+**アルゴリズム特徴:**
+- 親ノードがすべて訪問済みの場合のみ子ノードを訪問
+- 距離度量による優先度で開始ノードを選択
+- 未訪問ノードがある場合は次の開始ノードから再開
+
 **rowspan/colspan検出 (Table Cell Structure Analysis):**
 
 座標クラスタリングによるセル構造解析で、結合セルを検出します：

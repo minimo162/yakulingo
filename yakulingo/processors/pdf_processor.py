@@ -96,6 +96,9 @@ from .pdf_layout import (
     calculate_expandable_width, detect_table_cells_for_tables,
     apply_reading_order_to_layout, analyze_all_table_structures,
     estimate_reading_order,
+    # yomitoku-style additions
+    detect_reading_direction, estimate_reading_order_auto,
+    apply_reading_order_to_layout_auto,
     _get_numpy, _get_paddleocr, _get_torch,
 )
 

@@ -1031,7 +1031,7 @@ class YakuLingoApp:
                 self.state._ensure_history_db()
 
                 if not self.state.history:
-                    with ui.column().classes('items-center justify-center py-8 opacity-50'):
+                    with ui.column().classes('w-full flex-1 items-center justify-center py-8 opacity-50'):
                         ui.icon('history').classes('text-2xl')
                         ui.label('履歴がありません').classes('text-xs mt-1')
                 else:

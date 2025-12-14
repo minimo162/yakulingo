@@ -312,11 +312,17 @@ class ContentStreamParser:
         """
         try:
             # Decode stream (PDF uses latin-1 for content streams)
-            content = stream.decode('latin-1')
-        except (UnicodeDecodeError, AttributeError):
-            # If decoding fails, return original
-            logger.warning("Failed to decode content stream, returning original")
-            return stream
+            # Use surrogatescape to ensure round-trip compatibility
+            content = stream.decode('latin-1', errors='surrogatepass')
+        except (UnicodeDecodeError, AttributeError) as e:
+            # If decoding fails, return empty stream to prevent text duplication
+            # Do NOT return original stream as it would preserve text operators
+            logger.error(
+                "Failed to decode content stream: %s. "
+                "Returning empty stream to prevent text duplication.",
+                e
+            )
+            return b""
 
         # Debug: count BT/ET in original
         bt_count = content.count('BT')
@@ -351,7 +357,18 @@ class ContentStreamParser:
             result_bt, result_et
         )
 
-        return result.encode('latin-1')
+        try:
+            # Use surrogatepass to ensure round-trip compatibility with decode
+            return result.encode('latin-1', errors='surrogatepass')
+        except (UnicodeEncodeError, LookupError) as e:
+            # If encoding fails, return empty stream to prevent text duplication
+            # Do NOT return original stream as it would preserve text operators
+            logger.error(
+                "Failed to encode filtered content stream: %s. "
+                "Returning empty stream to prevent text duplication.",
+                e
+            )
+            return b""
 
     def _tokenize(self, content: str) -> list[tuple[str, str]]:
         """
@@ -488,10 +505,20 @@ class ContentStreamParser:
                     i = j
                     continue
 
+            # Single-character text operators: ' and "
+            # These are PDF text showing operators and must be treated as standalone
+            # ' - move to next line and show text
+            # " - set word/char spacing, move to next line and show text
+            if c in "'\"":
+                tokens.append(('operator', c))
+                i += 1
+                continue
+
             # Operator (keyword)
-            if c.isalpha() or c in "'\"*":
+            # Note: * is part of compound operators like b*, B*, f*, T*
+            if c.isalpha() or c == '*':
                 j = i
-                while j < n and (content[j].isalnum() or content[j] in "'\"*"):
+                while j < n and (content[j].isalnum() or content[j] == '*'):
                     j += 1
                 tokens.append(('operator', content[i:j]))
                 i = j
@@ -648,7 +675,17 @@ class ContentStreamParser:
             len(content), len(result), len(target_bboxes), tolerance
         )
 
-        return result.encode('latin-1')
+        try:
+            # Use surrogatepass to ensure round-trip compatibility with decode
+            return result.encode('latin-1', errors='surrogatepass')
+        except (UnicodeEncodeError, LookupError) as e:
+            # If encoding fails, return empty stream to prevent text duplication
+            logger.error(
+                "Failed to encode filtered content stream: %s. "
+                "Returning empty stream to prevent text duplication.",
+                e
+            )
+            return b""
 
     def _filter_tokens_selective(
         self,
@@ -986,13 +1023,15 @@ class ContentStreamParser:
                     )
                     filtered_parts.append(filtered)
             except (RuntimeError, ValueError, KeyError, OSError) as e:
-                logger.warning("Failed to filter content stream xref %d: %s", xref, e)
-                try:
-                    stream = doc.xref_stream(xref)
-                    if stream:
-                        filtered_parts.append(stream)
-                except (RuntimeError, ValueError, KeyError, OSError):
-                    pass
+                # IMPORTANT: Do NOT use original stream as fallback - it would preserve
+                # text operators and cause text duplication. Skip this stream instead.
+                logger.error(
+                    "Failed to filter content stream xref %d: %s. "
+                    "Skipping stream to prevent text duplication.",
+                    xref, e
+                )
+                # Append empty bytes to maintain structure but prevent text duplication
+                filtered_parts.append(b"")
 
         return b" ".join(filtered_parts)
 
@@ -1035,14 +1074,15 @@ class ContentStreamParser:
                 # ValueError: invalid stream data
                 # KeyError: missing xref entry
                 # OSError: file access issues
-                logger.warning("Failed to filter content stream xref %d: %s", xref, e)
-                # On error, try to get original stream
-                try:
-                    stream = doc.xref_stream(xref)
-                    if stream:
-                        filtered_parts.append(stream)
-                except (RuntimeError, ValueError, KeyError, OSError):
-                    pass
+                # IMPORTANT: Do NOT use original stream as fallback - it would preserve
+                # text operators and cause text duplication. Skip this stream instead.
+                logger.error(
+                    "Failed to filter content stream xref %d: %s. "
+                    "Skipping stream to prevent text duplication.",
+                    xref, e
+                )
+                # Append empty bytes to maintain structure but prevent text duplication
+                filtered_parts.append(b"")
 
         result = b" ".join(filtered_parts)
         logger.debug(

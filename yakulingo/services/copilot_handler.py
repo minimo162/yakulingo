@@ -2087,11 +2087,10 @@ class CopilotHandler:
                         logger.info("Fixed small rcNormalPosition: %dx%d -> %dx%d",
                                     saved_width, saved_height, new_width, new_height)
 
-                # Set showCmd to SW_SHOWNORMAL for proper restoration
-                # This ensures Windows remembers the restored state correctly
-                if original_show_cmd not in (SW_SHOWNORMAL, SW_MINIMIZE):
-                    wp.showCmd = SW_SHOWNORMAL
-                    placement_modified = True
+                # IMPORTANT: Keep showCmd as SW_MINIMIZE to maintain minimized state
+                # SetWindowPlacement will apply showCmd, so we must not change it to
+                # SW_SHOWNORMAL or the window will be restored (shown on screen)
+                wp.showCmd = SW_MINIMIZE
 
                 if placement_modified:
                     user32.SetWindowPlacement(edge_hwnd, ctypes.byref(wp))

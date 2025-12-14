@@ -1609,6 +1609,11 @@ When interacting with users in this repository, prefer Japanese for comments and
 ## Recent Development Focus
 
 Based on recent commits:
+- **PDF Original Text Removal Improvements (2024-12)**:
+  - **Form XObject detection regex**: `/Subtype\s*/Form\b`正規表現でスペース・改行を含むパターンに対応
+  - **XObject filtering fallback**: ドキュメント全体フィルタリングで0件の場合、ページレベルフィルタリングにフォールバック
+  - **Debug pattern enhancement**: `'`と`"`テキストオペレータの検出をデバッグログに追加
+  - **Issue fixed**: PDF英訳時に元の日本語テキストが残る問題を修正
 - **Loading Screen Performance Improvement (2024-12)**:
   - **Inline styles for loading screen**: ローディング画面をインラインスタイルで即座に表示。CSS読み込みを待たずにユーザーにフィードバックを提供
   - **Deferred CSS/settings loading**: CSS変数、JavaScriptスクリプト、設定読み込みを`client.connected()`後に移動

@@ -1109,6 +1109,10 @@ class ContentStreamReplacer:
     - New: Parses content stream, removes text operators, keeps graphics
     """
 
+    # Pre-compiled regex for Form XObject detection
+    # Handles variations: "/Subtype /Form", "/Subtype/Form", or with newlines
+    _RE_FORM_XOBJECT = re.compile(r'/Subtype\s*/Form\b', re.MULTILINE)
+
     def __init__(self, doc, font_registry: FontRegistry, preserve_graphics: bool = True):
         self.doc = doc
         self.font_registry = font_registry
@@ -1376,7 +1380,8 @@ class ContentStreamReplacer:
                     continue
 
                 # Check if this is a Form XObject
-                is_form = '/Subtype /Form' in obj_str or '/Subtype/Form' in obj_str
+                # Use regex to handle variations (with/without spaces, newlines)
+                is_form = self._RE_FORM_XOBJECT.search(obj_str)
                 if not is_form:
                     continue
 
@@ -1533,9 +1538,14 @@ class ContentStreamReplacer:
 
             # Check for text-related operators that should have been removed
             # Use word boundary patterns to avoid false positives
-            import re
+            # Note: ' and " operators are single chars, detected separately
             text_ops_pattern = r'\b(BT|ET|Tj|TJ|Tf|Td|TD|Tm|T\*|Tc|Tw|Tz|TL|Tr|Ts)\b'
             remaining_text_ops = re.findall(text_ops_pattern, filtered_str)
+            # Also check for ' and " operators (move to next line + show text)
+            # These are single-char operators that appear after whitespace
+            quote_ops_pattern = r"(?<=[\s\n])(['\"])"
+            quote_ops = re.findall(quote_ops_pattern, filtered_str)
+            remaining_text_ops.extend(quote_ops)
 
             logger.info(
                 "build_combined: filtered_base_len=%d, combined_len=%d, "

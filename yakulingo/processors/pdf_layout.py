@@ -1514,3 +1514,420 @@ def calculate_all_expandable_widths(
         result[block_idx] = expandable_width
 
     return result
+
+
+# =============================================================================
+# Reading Order Estimation
+# =============================================================================
+#
+# Inspired by graph-based reading order algorithms, this module implements
+# an independent reading order estimation system for Japanese documents.
+#
+# Design principles:
+# - Top-to-bottom, left-to-right priority (standard Japanese reading order)
+# - Graph-based approach: elements are nodes, reading sequence forms edges
+# - Intermediate element detection to avoid crossing relationships
+#
+# Note: This is an original implementation, not derived from any specific
+# codebase. The algorithm concepts are based on general document layout
+# analysis principles.
+
+# Reading order detection thresholds
+READING_ORDER_Y_TOLERANCE = 5.0  # Y tolerance for same-line detection (pts)
+READING_ORDER_X_TOLERANCE = 10.0  # X tolerance for column detection (pts)
+
+
+def _boxes_vertically_overlap(
+    box1: tuple[float, float, float, float],
+    box2: tuple[float, float, float, float],
+    threshold: float = 0.3,
+) -> bool:
+    """
+    Check if two boxes have significant vertical overlap.
+
+    Two boxes are considered on the "same line" if they overlap vertically
+    by at least threshold fraction of the smaller box's height.
+
+    Args:
+        box1: First box (x0, y0, x1, y1) in PDF coordinates
+        box2: Second box (x0, y0, x1, y1) in PDF coordinates
+        threshold: Minimum overlap fraction (default 0.3)
+
+    Returns:
+        True if boxes overlap vertically
+    """
+    _, y0_1, _, y1_1 = box1
+    _, y0_2, _, y1_2 = box2
+
+    # Calculate overlap
+    overlap_y0 = max(y0_1, y0_2)
+    overlap_y1 = min(y1_1, y1_2)
+
+    if overlap_y1 <= overlap_y0:
+        return False
+
+    overlap_height = overlap_y1 - overlap_y0
+    min_height = min(y1_1 - y0_1, y1_2 - y0_2)
+
+    if min_height <= 0:
+        return False
+
+    return (overlap_height / min_height) >= threshold
+
+
+def _boxes_horizontally_overlap(
+    box1: tuple[float, float, float, float],
+    box2: tuple[float, float, float, float],
+    threshold: float = 0.3,
+) -> bool:
+    """
+    Check if two boxes have significant horizontal overlap.
+
+    Args:
+        box1: First box (x0, y0, x1, y1) in PDF coordinates
+        box2: Second box (x0, y0, x1, y1) in PDF coordinates
+        threshold: Minimum overlap fraction (default 0.3)
+
+    Returns:
+        True if boxes overlap horizontally
+    """
+    x0_1, _, x1_1, _ = box1
+    x0_2, _, x1_2, _ = box2
+
+    # Calculate overlap
+    overlap_x0 = max(x0_1, x0_2)
+    overlap_x1 = min(x1_1, x1_2)
+
+    if overlap_x1 <= overlap_x0:
+        return False
+
+    overlap_width = overlap_x1 - overlap_x0
+    min_width = min(x1_1 - x0_1, x1_2 - x0_2)
+
+    if min_width <= 0:
+        return False
+
+    return (overlap_width / min_width) >= threshold
+
+
+def _exists_intermediate_element(
+    box1: tuple[float, float, float, float],
+    box2: tuple[float, float, float, float],
+    all_boxes: list[tuple[int, tuple[float, float, float, float]]],
+    direction: str = "vertical",
+) -> bool:
+    """
+    Check if there's an intermediate element between two boxes.
+
+    This prevents creating direct reading order relationships when
+    another element is positioned between them.
+
+    Args:
+        box1: First box (x0, y0, x1, y1) in PDF coordinates
+        box2: Second box (x0, y0, x1, y1) in PDF coordinates
+        all_boxes: List of (id, bbox) tuples for all elements
+        direction: "vertical" (top-to-bottom) or "horizontal" (left-to-right)
+
+    Returns:
+        True if an intermediate element exists
+    """
+    x0_1, y0_1, x1_1, y1_1 = box1
+    x0_2, y0_2, x1_2, y1_2 = box2
+
+    for _, other_box in all_boxes:
+        # Skip if it's one of the two boxes being compared
+        if other_box == box1 or other_box == box2:
+            continue
+
+        ox0, oy0, ox1, oy1 = other_box
+
+        if direction == "vertical":
+            # Check if other is between box1 and box2 vertically
+            # box1 is above box2 (higher Y in PDF coords)
+            if y1_1 > y1_2:  # box1 is above
+                upper_y = y0_1
+                lower_y = y1_2
+            else:  # box2 is above
+                upper_y = y0_2
+                lower_y = y1_1
+
+            # Check if other box is between them vertically
+            if oy1 >= upper_y or oy0 <= lower_y:
+                continue
+
+            # Check horizontal overlap with both boxes
+            if _boxes_horizontally_overlap(box1, other_box) and \
+               _boxes_horizontally_overlap(box2, other_box):
+                return True
+
+        else:  # horizontal
+            # Check if other is between box1 and box2 horizontally
+            if x0_1 < x0_2:  # box1 is left
+                left_x = x1_1
+                right_x = x0_2
+            else:  # box2 is left
+                left_x = x1_2
+                right_x = x0_1
+
+            # Check if other box is between them horizontally
+            if ox1 <= left_x or ox0 >= right_x:
+                continue
+
+            # Check vertical overlap with both boxes
+            if _boxes_vertically_overlap(box1, other_box) and \
+               _boxes_vertically_overlap(box2, other_box):
+                return True
+
+    return False
+
+
+def _build_reading_order_graph(
+    elements: list[tuple[int, tuple[float, float, float, float]]],
+) -> dict[int, list[int]]:
+    """
+    Build a directed graph representing reading order relationships.
+
+    For each element, finds which elements should be read next.
+    Uses top-to-bottom priority, then left-to-right for same-line elements.
+
+    Args:
+        elements: List of (id, bbox) tuples where bbox is (x0, y0, x1, y1)
+                  in PDF coordinates (y increases upward)
+
+    Returns:
+        Dictionary mapping element id to list of successor ids
+    """
+    if not elements:
+        return {}
+
+    graph: dict[int, list[int]] = {elem_id: [] for elem_id, _ in elements}
+
+    # For each element, find potential successors
+    for i, (id_i, box_i) in enumerate(elements):
+        _, y0_i, _, y1_i = box_i
+        center_y_i = (y0_i + y1_i) / 2
+
+        for j, (id_j, box_j) in enumerate(elements):
+            if i == j:
+                continue
+
+            _, y0_j, _, y1_j = box_j
+            center_y_j = (y0_j + y1_j) / 2
+
+            # Check if j comes after i in reading order
+            # In PDF coordinates, higher Y is higher on page
+
+            if _boxes_vertically_overlap(box_i, box_j):
+                # Same line: check left-to-right
+                x0_i = box_i[0]
+                x0_j = box_j[0]
+
+                if x0_j > x0_i + READING_ORDER_X_TOLERANCE:
+                    # j is to the right of i
+                    if not _exists_intermediate_element(
+                        box_i, box_j, elements, "horizontal"
+                    ):
+                        graph[id_i].append(id_j)
+
+            elif center_y_j < center_y_i - READING_ORDER_Y_TOLERANCE:
+                # j is below i (lower Y in PDF coords)
+                if _boxes_horizontally_overlap(box_i, box_j):
+                    # Same column: direct vertical relationship
+                    if not _exists_intermediate_element(
+                        box_i, box_j, elements, "vertical"
+                    ):
+                        graph[id_i].append(id_j)
+
+    return graph
+
+
+def _topological_sort_with_priority(
+    graph: dict[int, list[int]],
+    elements: list[tuple[int, tuple[float, float, float, float]]],
+) -> list[int]:
+    """
+    Perform topological sort with reading order priority.
+
+    When multiple elements have no predecessors, prioritize:
+    1. Higher Y (top of page) first
+    2. Lower X (left of page) for same Y
+
+    Args:
+        graph: Directed graph from _build_reading_order_graph
+        elements: List of (id, bbox) tuples
+
+    Returns:
+        List of element ids in reading order
+    """
+    if not elements:
+        return []
+
+    # Create element lookup and calculate priority scores
+    # Priority: high Y first, then low X (top-to-bottom, left-to-right)
+    elem_lookup = {elem_id: bbox for elem_id, bbox in elements}
+    elem_priority = {}
+    for elem_id, bbox in elements:
+        x0, y0, x1, y1 = bbox
+        # Higher Y = higher priority (negative for sorting)
+        # Lower X = higher priority
+        center_y = (y0 + y1) / 2
+        center_x = (x0 + x1) / 2
+        elem_priority[elem_id] = (-center_y, center_x)
+
+    # Calculate in-degree for each node
+    in_degree = {elem_id: 0 for elem_id, _ in elements}
+    for successors in graph.values():
+        for succ in successors:
+            if succ in in_degree:
+                in_degree[succ] += 1
+
+    # Initialize queue with nodes that have no predecessors
+    # Sort by priority (top-to-bottom, left-to-right)
+    ready = [elem_id for elem_id, deg in in_degree.items() if deg == 0]
+    ready.sort(key=lambda x: elem_priority.get(x, (0, 0)))
+
+    result = []
+    while ready:
+        # Take the highest priority element
+        current = ready.pop(0)
+        result.append(current)
+
+        # Remove edges from current node
+        for succ in graph.get(current, []):
+            if succ in in_degree:
+                in_degree[succ] -= 1
+                if in_degree[succ] == 0:
+                    ready.append(succ)
+
+        # Re-sort ready list by priority
+        ready.sort(key=lambda x: elem_priority.get(x, (0, 0)))
+
+    # Handle cycles: add remaining elements in priority order
+    if len(result) < len(elements):
+        remaining = [elem_id for elem_id, _ in elements if elem_id not in result]
+        remaining.sort(key=lambda x: elem_priority.get(x, (0, 0)))
+        result.extend(remaining)
+
+    return result
+
+
+def estimate_reading_order(
+    layout: LayoutArray,
+    page_height: float = 0,
+) -> dict[int, int]:
+    """
+    Estimate reading order for all elements in a LayoutArray.
+
+    Uses a graph-based algorithm to determine the natural reading order
+    of document elements (paragraphs and tables).
+
+    Algorithm:
+    1. Collect all elements with their bounding boxes
+    2. Build a directed graph of reading relationships
+    3. Perform topological sort with priority (top-bottom, left-right)
+    4. Return mapping of element id to reading order
+
+    Note: Coordinates in LayoutArray are in image space (origin at top-left),
+    but this function expects PDF coordinates (origin at bottom-left).
+    The page_height parameter is used for coordinate conversion.
+
+    Args:
+        layout: LayoutArray containing paragraphs and tables info
+        page_height: Page height in points (for coordinate conversion)
+
+    Returns:
+        Dictionary mapping element id (para_id or table_id) to reading order (0-based)
+    """
+    if layout is None:
+        return {}
+
+    elements: list[tuple[int, tuple[float, float, float, float]]] = []
+
+    # Collect paragraphs
+    for para_id, para_info in layout.paragraphs.items():
+        box = para_info.get('box', [])
+        if len(box) >= 4:
+            # Convert from image coordinates to PDF coordinates if needed
+            if page_height > 0 and layout.height > 0:
+                scale = page_height / layout.height
+                pdf_box = (
+                    box[0] * scale,
+                    page_height - box[3] * scale,  # y0
+                    box[2] * scale,
+                    page_height - box[1] * scale,  # y1
+                )
+            else:
+                # Assume already in usable format (just flip Y)
+                pdf_box = (box[0], -box[3], box[2], -box[1])
+
+            elements.append((para_id, pdf_box))
+
+    # Collect tables
+    for table_id, table_info in layout.tables.items():
+        box = table_info.get('box', [])
+        if len(box) >= 4:
+            if page_height > 0 and layout.height > 0:
+                scale = page_height / layout.height
+                pdf_box = (
+                    box[0] * scale,
+                    page_height - box[3] * scale,
+                    box[2] * scale,
+                    page_height - box[1] * scale,
+                )
+            else:
+                pdf_box = (box[0], -box[3], box[2], -box[1])
+
+            elements.append((table_id, pdf_box))
+
+    if not elements:
+        return {}
+
+    # Build graph and perform topological sort
+    graph = _build_reading_order_graph(elements)
+    sorted_ids = _topological_sort_with_priority(graph, elements)
+
+    # Create reading order mapping
+    reading_order = {elem_id: order for order, elem_id in enumerate(sorted_ids)}
+
+    logger.debug(
+        "Reading order estimated for %d elements: %s",
+        len(reading_order),
+        sorted_ids[:10] if len(sorted_ids) > 10 else sorted_ids
+    )
+
+    return reading_order
+
+
+def apply_reading_order_to_layout(
+    layout: LayoutArray,
+    page_height: float = 0,
+) -> LayoutArray:
+    """
+    Apply estimated reading order to a LayoutArray.
+
+    Updates the 'order' field in paragraphs and tables info dictionaries
+    with the estimated reading order.
+
+    Args:
+        layout: LayoutArray to update
+        page_height: Page height in points (for coordinate conversion)
+
+    Returns:
+        Updated LayoutArray (modified in place)
+    """
+    if layout is None:
+        return layout
+
+    reading_order = estimate_reading_order(layout, page_height)
+
+    # Update paragraph orders
+    for para_id in layout.paragraphs:
+        if para_id in reading_order:
+            layout.paragraphs[para_id]['order'] = reading_order[para_id]
+
+    # Update table orders
+    for table_id in layout.tables:
+        if table_id in reading_order:
+            layout.tables[table_id]['order'] = reading_order[table_id]
+
+    return layout

@@ -94,6 +94,7 @@ from .pdf_layout import (
     get_layout_class_at_point, is_same_region, should_abandon_region,
     map_pp_doclayout_label_to_role, prepare_translation_cells,
     calculate_expandable_width, detect_table_cells_for_tables,
+    apply_reading_order_to_layout,
     _get_numpy, _get_paddleocr, _get_torch,
 )
 
@@ -2801,6 +2802,10 @@ class PdfProcessor(FileProcessor):
                                             "Detected cells for %d tables on page %d",
                                             len(table_cells), page_num
                                         )
+
+                                # Step 2.6: Apply reading order estimation
+                                # Uses graph-based algorithm for top-to-bottom, left-to-right order
+                                apply_reading_order_to_layout(layout_array, p_height)
 
                                 # Step 3: Extract characters from pdfminer
                                 chars = []

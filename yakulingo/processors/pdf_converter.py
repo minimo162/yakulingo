@@ -101,6 +101,12 @@ TABLE_CELL_X_THRESHOLD = 15.0   # Gap > 15pt between chars suggests new cell
 # Y gap for table row detection - more sensitive than paragraph threshold
 TABLE_ROW_Y_THRESHOLD = 5.0     # Y diff > 5pt in table suggests new row
 
+# TOC (Table of Contents) line detection threshold
+# When X position resets by more than this value AND Y changes,
+# treat as new paragraph (not just line break). This helps split
+# TOC-like structures where each line should be a separate block.
+TOC_LINE_X_RESET_THRESHOLD = 80.0  # X reset > 80pt suggests new TOC entry
+
 # Dynamic threshold calculation constants
 # For multi-column detection, threshold as fraction of page width
 COLUMN_THRESHOLD_RATIO = 0.2      # 20% of page width
@@ -767,10 +773,17 @@ def detect_paragraph_boundary(
                 # that should be treated as separate paragraphs
                 if prev_x1 is not None:
                     x_gap = char_x0 - prev_x1
+                    x_reset = prev_x1 - char_x0  # How much X moved back (positive = left)
+
                     # Use TABLE_CELL_X_THRESHOLD for non-table regions as well
                     # to properly split form fields (e.g., "上場会社名" and "マツダ株式会社")
                     if x_gap > TABLE_CELL_X_THRESHOLD:
                         # Large X gap suggests new field/column = new paragraph
+                        new_paragraph = True
+                    elif y_diff > y_line_thresh and x_reset > TOC_LINE_X_RESET_THRESHOLD:
+                        # TOC-like pattern: Y changed (new line) AND X reset significantly
+                        # This indicates a new entry (e.g., new TOC item), not just a
+                        # line break within a paragraph. Treat as new paragraph.
                         new_paragraph = True
                     elif y_diff > y_line_thresh:
                         line_break = True
@@ -781,6 +794,11 @@ def detect_paragraph_boundary(
         # for multi-column layouts
         y_diff = abs(char_y0 - prev_y0)
         x_diff = char_x0 - prev_x0  # Positive = char is to the right
+
+        # Calculate X reset for TOC detection (when prev_x1 is available)
+        x_reset = 0.0
+        if prev_x1 is not None:
+            x_reset = prev_x1 - char_x0  # How much X moved back (positive = left)
 
         if y_diff > y_para_thresh:
             new_paragraph = True
@@ -793,6 +811,11 @@ def detect_paragraph_boundary(
                 # X jump but Y continues downward - might be indent or table
                 # Check if it's a significant jump relative to page structure
                 line_break = True
+        elif y_diff > y_line_thresh and x_reset > TOC_LINE_X_RESET_THRESHOLD:
+            # TOC-like pattern: Y changed (new line) AND X reset significantly
+            # This indicates a new entry (e.g., new TOC item), not just a
+            # line break within a paragraph. Treat as new paragraph.
+            new_paragraph = True
         elif y_diff > y_line_thresh:
             line_break = True
 

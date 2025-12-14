@@ -1556,6 +1556,12 @@ READING_ORDER_X_TOLERANCE = 10.0  # X tolerance for column detection (pts)
 DISTANCE_X_WEIGHT = 1.0
 DISTANCE_Y_WEIGHT = 5.0
 
+# Vertical text detection thresholds (yomitoku-style)
+# Used for automatic detection of Japanese vertical (tategaki) documents
+VERTICAL_TEXT_ASPECT_RATIO_THRESHOLD = 2.0  # height/width > 2.0 suggests vertical
+VERTICAL_TEXT_MIN_ELEMENTS = 3  # Minimum elements to detect vertical text
+VERTICAL_TEXT_COLUMN_THRESHOLD = 0.7  # 70% of elements should be vertical
+
 
 def _boxes_vertically_overlap(
     box1: tuple[float, float, float, float],
@@ -2142,6 +2148,263 @@ def apply_reading_order_to_layout(
             layout.tables[table_id]['order'] = reading_order[table_id]
 
     return layout
+
+
+# =============================================================================
+# Vertical Text Detection (yomitoku-style auto detection)
+# =============================================================================
+#
+# Automatic detection of document reading direction based on element shapes.
+# This is inspired by yomitoku's approach to handling Japanese vertical text.
+
+def detect_reading_direction(
+    layout: LayoutArray,
+    page_height: float = 0,
+    page_width: float = 0,
+) -> ReadingDirection:
+    """
+    Automatically detect reading direction from layout elements (yomitoku-style).
+
+    Analyzes element shapes to determine if document uses vertical text
+    (Japanese tategaki) or horizontal text.
+
+    Detection criteria:
+    1. Calculate aspect ratio (height/width) for each text element
+    2. Elements with aspect ratio > 2.0 are considered vertical
+    3. If >= 70% of elements are vertical, use RIGHT_TO_LEFT direction
+
+    Args:
+        layout: LayoutArray containing paragraphs and tables info
+        page_height: Page height in points (for coordinate conversion)
+        page_width: Page width in points (optional, for additional heuristics)
+
+    Returns:
+        ReadingDirection.RIGHT_TO_LEFT for vertical text
+        ReadingDirection.TOP_TO_BOTTOM for horizontal text
+
+    Example:
+        direction = detect_reading_direction(layout, page_height)
+        order = estimate_reading_order(layout, page_height, direction)
+    """
+    if layout is None:
+        return ReadingDirection.TOP_TO_BOTTOM
+
+    vertical_count = 0
+    horizontal_count = 0
+
+    # Analyze paragraph shapes
+    for para_id, para_info in layout.paragraphs.items():
+        box = para_info.get('box', [])
+        if len(box) >= 4:
+            width = abs(box[2] - box[0])
+            height = abs(box[3] - box[1])
+
+            if width > 0 and height > 0:
+                aspect_ratio = height / width
+                if aspect_ratio > VERTICAL_TEXT_ASPECT_RATIO_THRESHOLD:
+                    vertical_count += 1
+                else:
+                    horizontal_count += 1
+
+    # Also check tables (though typically they're not vertical)
+    for table_id, table_info in layout.tables.items():
+        box = table_info.get('box', [])
+        if len(box) >= 4:
+            width = abs(box[2] - box[0])
+            height = abs(box[3] - box[1])
+
+            if width > 0 and height > 0:
+                aspect_ratio = height / width
+                if aspect_ratio > VERTICAL_TEXT_ASPECT_RATIO_THRESHOLD:
+                    vertical_count += 1
+                else:
+                    horizontal_count += 1
+
+    total = vertical_count + horizontal_count
+
+    # Need minimum elements for reliable detection
+    if total < VERTICAL_TEXT_MIN_ELEMENTS:
+        return ReadingDirection.TOP_TO_BOTTOM
+
+    # Calculate vertical text ratio
+    vertical_ratio = vertical_count / total
+
+    if vertical_ratio >= VERTICAL_TEXT_COLUMN_THRESHOLD:
+        logger.debug(
+            "Vertical text detected: %d/%d elements (%.1f%%) are vertical",
+            vertical_count, total, vertical_ratio * 100
+        )
+        return ReadingDirection.RIGHT_TO_LEFT
+
+    logger.debug(
+        "Horizontal text detected: %d/%d elements (%.1f%%) are vertical",
+        vertical_count, total, vertical_ratio * 100
+    )
+    return ReadingDirection.TOP_TO_BOTTOM
+
+
+def _priority_dfs(
+    graph: dict[int, list[int]],
+    elements: list[tuple[int, tuple[float, float, float, float]]],
+    direction: ReadingDirection = ReadingDirection.TOP_TO_BOTTOM,
+) -> list[int]:
+    """
+    Perform priority-based DFS for reading order (yomitoku-style).
+
+    Unlike standard topological sort, this uses DFS with priority queue
+    to ensure natural reading order even in complex layouts.
+
+    Algorithm (yomitoku-style):
+    1. Calculate distance metrics for all nodes
+    2. Sort nodes by distance (priority)
+    3. Process nodes in priority order using DFS
+    4. Only visit a node when all its parents have been visited
+
+    Args:
+        graph: Directed graph from _build_reading_order_graph
+        elements: List of (id, bbox) tuples
+        direction: Reading direction for distance metric
+
+    Returns:
+        List of element ids in reading order
+    """
+    if not elements:
+        return []
+
+    # Calculate max coordinates
+    max_x = max(bbox[2] for _, bbox in elements)
+    max_y = max(bbox[3] for _, bbox in elements)
+
+    # Element lookup and distance metrics
+    elem_lookup = {elem_id: bbox for elem_id, bbox in elements}
+    elem_distance = {}
+    for elem_id, bbox in elements:
+        elem_distance[elem_id] = _calculate_distance_metric(
+            bbox, direction, max_x, max_y
+        )
+
+    # Build reverse graph (for finding parents)
+    parents: dict[int, set[int]] = {elem_id: set() for elem_id, _ in elements}
+    for node_id, successors in graph.items():
+        for succ in successors:
+            if succ in parents:
+                parents[succ].add(node_id)
+
+    # Track visited nodes
+    visited = set()
+    result = []
+
+    # Sort all nodes by distance (priority queue)
+    sorted_nodes = sorted(
+        [elem_id for elem_id, _ in elements],
+        key=lambda x: elem_distance.get(x, float('inf'))
+    )
+
+    def dfs_visit(node_id: int) -> None:
+        """DFS helper that respects parent dependencies."""
+        if node_id in visited:
+            return
+
+        # Check if all parents have been visited
+        node_parents = parents.get(node_id, set())
+        if not node_parents.issubset(visited):
+            return  # Wait until all parents are visited
+
+        visited.add(node_id)
+        result.append(node_id)
+
+        # Visit children in priority order
+        children = graph.get(node_id, [])
+        children_sorted = sorted(
+            children,
+            key=lambda x: elem_distance.get(x, float('inf'))
+        )
+
+        for child in children_sorted:
+            if child not in visited:
+                dfs_visit(child)
+
+    # Process nodes in priority order
+    iterations = 0
+    max_iterations = len(elements) * len(elements)  # Safety limit
+
+    while len(visited) < len(elements) and iterations < max_iterations:
+        iterations += 1
+        progress_made = False
+
+        for node_id in sorted_nodes:
+            if node_id not in visited:
+                # Check if all parents visited
+                node_parents = parents.get(node_id, set())
+                if node_parents.issubset(visited):
+                    dfs_visit(node_id)
+                    progress_made = True
+                    break
+
+        if not progress_made:
+            # Handle cycles: add remaining nodes with least dependencies
+            remaining = [n for n in sorted_nodes if n not in visited]
+            if remaining:
+                # Find node with most parents already visited
+                best_node = min(
+                    remaining,
+                    key=lambda n: len(parents.get(n, set()) - visited)
+                )
+                visited.add(best_node)
+                result.append(best_node)
+                logger.debug(
+                    "Reading order: breaking cycle at node %d", best_node
+                )
+
+    return result
+
+
+def estimate_reading_order_auto(
+    layout: LayoutArray,
+    page_height: float = 0,
+    page_width: float = 0,
+) -> dict[int, int]:
+    """
+    Estimate reading order with automatic direction detection (yomitoku-style).
+
+    Combines direction detection and reading order estimation.
+    Use this when you don't know the document's text orientation.
+
+    Args:
+        layout: LayoutArray containing paragraphs and tables info
+        page_height: Page height in points
+        page_width: Page width in points (optional)
+
+    Returns:
+        Dictionary mapping element id to reading order (0-based)
+
+    Example:
+        order = estimate_reading_order_auto(layout, page_height, page_width)
+    """
+    direction = detect_reading_direction(layout, page_height, page_width)
+    return estimate_reading_order(layout, page_height, direction)
+
+
+def apply_reading_order_to_layout_auto(
+    layout: LayoutArray,
+    page_height: float = 0,
+    page_width: float = 0,
+) -> LayoutArray:
+    """
+    Apply reading order with automatic direction detection (yomitoku-style).
+
+    Combines direction detection and layout update.
+
+    Args:
+        layout: LayoutArray to update
+        page_height: Page height in points
+        page_width: Page width in points (optional)
+
+    Returns:
+        Updated LayoutArray (modified in place)
+    """
+    direction = detect_reading_direction(layout, page_height, page_width)
+    return apply_reading_order_to_layout(layout, page_height, direction)
 
 
 # =============================================================================

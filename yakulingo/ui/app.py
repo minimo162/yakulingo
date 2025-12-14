@@ -2950,6 +2950,32 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
         # Save client reference for async handlers (context.client not available in async tasks)
         yakulingo_app._client = client
 
+        # ===================================================================
+        # Phase 1: Show loading screen IMMEDIATELY with minimal inline styles
+        # This ensures users see feedback before any heavy processing
+        # ===================================================================
+        loading_container = ui.element('div').style(
+            'position: fixed; top: 0; left: 0; right: 0; bottom: 0; '
+            'display: flex; flex-direction: column; align-items: center; '
+            'justify-content: center; background: #FEFBFF; z-index: 9999;'
+        )
+        with loading_container:
+            ui.spinner('dots', size='5em', color='primary')
+            ui.label('YakuLingo').style(
+                'margin-top: 1.5rem; font-size: 1.75rem; font-weight: 500; '
+                'color: #1B1B1F; letter-spacing: 0.02em;'
+            )
+
+        # Wait for client connection - loading screen is now visible
+        import time as _time_module
+        _t_conn = _time_module.perf_counter()
+        await client.connected()
+        logger.info("[TIMING] client.connected(): %.2fs", _time_module.perf_counter() - _t_conn)
+
+        # ===================================================================
+        # Phase 2: Load settings and CSS (after loading screen is visible)
+        # ===================================================================
+
         # Lazy-load settings when the first client connects (defers disk I/O from startup)
         yakulingo_app.settings
 
@@ -3075,30 +3101,8 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
 })();
 </script>''')
 
-        # Add early CSS for loading screen and font loading handling
-        # This runs before create_ui() which loads COMPLETE_CSS
+        # Add CSS for font loading handling (icons should be hidden until fonts load)
         ui.add_head_html('''<style>
-/* Loading screen styles (needed before main CSS loads) */
-.loading-screen {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    background: #FEFBFF;
-    z-index: 9999;
-}
-.loading-title {
-    margin-top: 1.5rem;
-    font-size: 1.75rem;
-    font-weight: 500;
-    color: #1B1B1F;
-    letter-spacing: 0.02em;
-}
 /* Hide Material Icons until font is loaded to prevent showing text */
 .material-icons, .q-icon {
     opacity: 0;
@@ -3115,18 +3119,6 @@ document.fonts.ready.then(function() {
     document.documentElement.classList.add('fonts-ready');
 });
 </script>''')
-
-        # Show loading screen immediately (before client connects)
-        loading_container = ui.element('div').classes('loading-screen')
-        with loading_container:
-            ui.spinner('dots', size='5em', color='primary')
-            ui.label('YakuLingo').classes('loading-title')
-
-        # Wait for client connection
-        import time as _time_module
-        _t_conn = _time_module.perf_counter()
-        await client.connected()
-        logger.info("[TIMING] client.connected(): %.2fs", _time_module.perf_counter() - _t_conn)
 
         # NOTE: PP-DocLayout-L initialization moved to on-demand (when user selects PDF)
         # This saves ~10 seconds on startup for users who don't use PDF translation.

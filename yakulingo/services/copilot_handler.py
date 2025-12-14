@@ -1787,6 +1787,59 @@ class CopilotHandler:
             logger.debug("Failed to locate Edge window handle: %s", e)
             return None
 
+    def _close_edge_gracefully(self, timeout: float = 3.0) -> bool:
+        """Close Edge browser gracefully by sending WM_CLOSE message.
+
+        This method sends WM_CLOSE to the Edge window, which is equivalent to
+        clicking the X button. This allows Edge to close normally without
+        showing "Microsoft Edge was closed unexpectedly" message.
+
+        Args:
+            timeout: Seconds to wait for graceful shutdown after sending WM_CLOSE
+
+        Returns:
+            True if Edge was closed gracefully, False otherwise
+        """
+        if sys.platform != "win32":
+            return False
+
+        if not self.edge_process:
+            return False
+
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            user32 = ctypes.WinDLL('user32', use_last_error=True)
+            WM_CLOSE = 0x0010
+
+            # Find the Edge window handle
+            edge_hwnd = self._find_edge_window_handle()
+            if not edge_hwnd:
+                logger.debug("Could not find Edge window handle for graceful close")
+                return False
+
+            # Send WM_CLOSE to the window (equivalent to clicking X button)
+            result = user32.PostMessageW(edge_hwnd, WM_CLOSE, 0, 0)
+            if not result:
+                logger.debug("PostMessageW failed for WM_CLOSE")
+                return False
+
+            logger.debug("Sent WM_CLOSE to Edge window, waiting for graceful shutdown...")
+
+            # Wait for the process to terminate
+            try:
+                self.edge_process.wait(timeout=timeout)
+                logger.info("Edge browser closed gracefully")
+                return True
+            except subprocess.TimeoutExpired:
+                logger.debug("Edge did not close within timeout after WM_CLOSE")
+                return False
+
+        except Exception as e:
+            logger.debug("Failed to close Edge gracefully: %s", e)
+            return False
+
     def _bring_edge_window_to_front(self, page_title: str = None) -> bool:
         """Bring Edge browser window to foreground using Windows API.
 
@@ -2705,23 +2758,29 @@ class CopilotHandler:
         if self._browser_started_by_us:
             browser_terminated = False
 
-            # Try to terminate via edge_process first
+            # First try graceful close via WM_CLOSE (avoids "closed unexpectedly" message)
             with suppress(Exception):
-                if self.edge_process:
-                    self.edge_process.terminate()
-                    try:
-                        self.edge_process.wait(timeout=3)
-                        browser_terminated = True
-                    except subprocess.TimeoutExpired:
-                        self.edge_process.kill()
-                        # Wait for kill to complete (ensures process is fully terminated)
+                if self._close_edge_gracefully(timeout=3.0):
+                    browser_terminated = True
+
+            # Fall back to terminate/kill if graceful close failed
+            if not browser_terminated:
+                with suppress(Exception):
+                    if self.edge_process:
+                        self.edge_process.terminate()
                         try:
-                            self.edge_process.wait(timeout=2)
+                            self.edge_process.wait(timeout=3)
                             browser_terminated = True
                         except subprocess.TimeoutExpired:
-                            logger.warning("Edge process did not terminate after kill")
-                    if browser_terminated:
-                        logger.info("Edge browser terminated (force via process)")
+                            self.edge_process.kill()
+                            # Wait for kill to complete (ensures process is fully terminated)
+                            try:
+                                self.edge_process.wait(timeout=2)
+                                browser_terminated = True
+                            except subprocess.TimeoutExpired:
+                                logger.warning("Edge process did not terminate after kill")
+                        if browser_terminated:
+                            logger.info("Edge browser terminated (force via terminate)")
 
             # Verify process is truly terminated by checking poll()
             if browser_terminated and self.edge_process:
@@ -2777,17 +2836,24 @@ class CopilotHandler:
         if self._browser_started_by_us:
             browser_terminated = False
 
+            # First try graceful close via WM_CLOSE (avoids "closed unexpectedly" message)
             with suppress(Exception):
-                if self.edge_process:
-                    self.edge_process.terminate()
-                    # Wait briefly for graceful shutdown
-                    try:
-                        self.edge_process.wait(timeout=2)
-                    except subprocess.TimeoutExpired:
-                        # Force kill if it doesn't terminate gracefully
-                        self.edge_process.kill()
-                    logger.info("Edge browser terminated")
+                if self._close_edge_gracefully(timeout=3.0):
                     browser_terminated = True
+
+            # Fall back to terminate/kill if graceful close failed
+            if not browser_terminated:
+                with suppress(Exception):
+                    if self.edge_process:
+                        self.edge_process.terminate()
+                        # Wait briefly for shutdown
+                        try:
+                            self.edge_process.wait(timeout=2)
+                        except subprocess.TimeoutExpired:
+                            # Force kill if it doesn't terminate
+                            self.edge_process.kill()
+                        logger.info("Edge browser terminated (via terminate)")
+                        browser_terminated = True
 
             # If edge_process was None (lost after cleanup_on_error), kill by port
             if not browser_terminated and self._is_port_in_use():

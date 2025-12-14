@@ -2002,6 +2002,7 @@ class PdfProcessor(FileProcessor):
                     replacer.set_base_stream(
                         page,
                         target_bboxes=None,  # Remove all text (PDFMathTranslate compliant)
+                        skip_xobject_filtering=True,  # Already done by filter_all_document_xobjects()
                     )
                     logger.info(
                         "Page %d: removing all text for translation (blocks=%d)",

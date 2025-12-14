@@ -1084,6 +1084,7 @@ class ContentStreamReplacer:
         page,
         target_bboxes: Optional[list[tuple[float, float, float, float]]] = None,
         tolerance: float = 5.0,
+        skip_xobject_filtering: bool = False,
     ) -> 'ContentStreamReplacer':
         """
         Capture and filter the original content stream for this page.
@@ -1098,6 +1099,9 @@ class ContentStreamReplacer:
                           If None, remove all text (default behavior).
                           Format: list of (x0, y0, x1, y1) in PDF coordinates.
             tolerance: Position matching tolerance for selective removal (default 5.0)
+            skip_xobject_filtering: If True, skip Form XObject filtering.
+                          Use this when filter_all_document_xobjects() has already
+                          been called to avoid redundant processing.
 
         Returns:
             self for chaining
@@ -1112,7 +1116,9 @@ class ContentStreamReplacer:
         #   because we'll redraw all text anyway.
         # - In selective mode, do NOT filter XObjects. Filtering them entirely would
         #   delete unrelated text and break layout when we are only redrawing a subset.
-        if target_bboxes is None:
+        # - If skip_xobject_filtering is True, skip this step (document-wide filtering
+        #   has already been done via filter_all_document_xobjects()).
+        if target_bboxes is None and not skip_xobject_filtering:
             # Note: Form XObjects are filtered completely for now
             # (selective filtering of XObjects is more complex)
             self._filter_form_xobjects(page)

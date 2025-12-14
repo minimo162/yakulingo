@@ -3102,7 +3102,7 @@ class TestTableCellBoundaryDetection:
             TABLE_CELL_X_THRESHOLD,
         )
         # X gap = 100 - 80 = 20pt > TABLE_CELL_X_THRESHOLD (15pt)
-        new_para, line_break = detect_paragraph_boundary(
+        new_para, line_break, is_strong = detect_paragraph_boundary(
             char_x0=100, char_y0=500,
             prev_x0=50, prev_y0=500,
             char_cls=1000, prev_cls=1000,  # Table region
@@ -3111,6 +3111,7 @@ class TestTableCellBoundaryDetection:
         )
         assert new_para is True
         assert line_break is False
+        assert is_strong is True  # Table cell boundary is a strong boundary
 
     def test_table_cell_small_x_gap_same_cell(self):
         """Small X gap in table region should stay in same cell"""
@@ -3119,7 +3120,7 @@ class TestTableCellBoundaryDetection:
             TABLE_CELL_X_THRESHOLD,
         )
         # X gap = 100 - 95 = 5pt < TABLE_CELL_X_THRESHOLD (15pt)
-        new_para, line_break = detect_paragraph_boundary(
+        new_para, line_break, is_strong = detect_paragraph_boundary(
             char_x0=100, char_y0=500,
             prev_x0=90, prev_y0=500,
             char_cls=1000, prev_cls=1000,
@@ -3128,6 +3129,7 @@ class TestTableCellBoundaryDetection:
         )
         assert new_para is False
         assert line_break is False
+        assert is_strong is False
 
     def test_table_row_y_diff_triggers_new_paragraph(self):
         """Y movement in table region should trigger new paragraph (new row)"""
@@ -3136,7 +3138,7 @@ class TestTableCellBoundaryDetection:
             TABLE_ROW_Y_THRESHOLD,
         )
         # Y diff = |490 - 500| = 10pt > TABLE_ROW_Y_THRESHOLD (5pt)
-        new_para, line_break = detect_paragraph_boundary(
+        new_para, line_break, is_strong = detect_paragraph_boundary(
             char_x0=50, char_y0=490,
             prev_x0=50, prev_y0=500,
             char_cls=1000, prev_cls=1000,
@@ -3145,6 +3147,7 @@ class TestTableCellBoundaryDetection:
         )
         assert new_para is True
         assert line_break is False
+        assert is_strong is True  # Table row change is a strong boundary
 
     def test_non_table_region_detects_x_gap(self):
         """Non-table region should detect X gap for form fields/multi-column layouts"""
@@ -3153,7 +3156,7 @@ class TestTableCellBoundaryDetection:
         )
         # Large X gap in non-table region (cls=2) - should be detected
         # This is important for form-like layouts (e.g., "上場会社名" and "マツダ株式会社")
-        new_para, line_break = detect_paragraph_boundary(
+        new_para, line_break, is_strong = detect_paragraph_boundary(
             char_x0=100, char_y0=500,
             prev_x0=50, prev_y0=500,
             char_cls=2, prev_cls=2,  # Normal paragraph region
@@ -3161,6 +3164,7 @@ class TestTableCellBoundaryDetection:
             prev_x1=80,  # X gap = 100 - 80 = 20pt > TABLE_CELL_X_THRESHOLD (15pt)
         )
         assert new_para is True  # Large X gap detected as new paragraph
+        assert is_strong is True  # Large X gap is a strong boundary
 
     def test_non_table_region_small_x_gap_same_paragraph(self):
         """Non-table region with small X gap should remain in same paragraph"""
@@ -3168,7 +3172,7 @@ class TestTableCellBoundaryDetection:
             detect_paragraph_boundary, TABLE_CELL_X_THRESHOLD
         )
         # Small X gap in non-table region - should not create new paragraph
-        new_para, line_break = detect_paragraph_boundary(
+        new_para, line_break, is_strong = detect_paragraph_boundary(
             char_x0=95, char_y0=500,
             prev_x0=50, prev_y0=500,
             char_cls=2, prev_cls=2,  # Normal paragraph region
@@ -3176,6 +3180,7 @@ class TestTableCellBoundaryDetection:
             prev_x1=90,  # X gap = 95 - 90 = 5pt < TABLE_CELL_X_THRESHOLD (15pt)
         )
         assert new_para is False  # Small X gap, same paragraph
+        assert is_strong is False
 
     def test_table_constants_values(self):
         """Table detection constants should have expected values"""

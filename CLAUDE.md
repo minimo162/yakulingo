@@ -1069,6 +1069,60 @@ var: list[FormulaVar] = []     # 数式格納配列
 pstk: list[Paragraph] = []     # 段落メタデータスタック
 ```
 
+**`detect_paragraph_boundary`関数と強い境界フラグ:**
+
+`detect_paragraph_boundary()`は段落境界検出の中核関数で、3つの値を返します：
+
+```python
+new_paragraph, line_break, is_strong_boundary = detect_paragraph_boundary(
+    char_x0, char_y0, prev_x0, prev_y0,
+    char_cls, prev_cls, use_layout,
+    prev_x1=prev_x1
+)
+```
+
+**戻り値:**
+- `new_paragraph`: 新しい段落を開始すべきか
+- `line_break`: 段落内の改行か
+- `is_strong_boundary`: 強い境界フラグ（文末記号チェックを上書き）
+
+**強い境界 (`is_strong_boundary=True`) の条件:**
+
+| 条件 | 説明 |
+|------|------|
+| レイアウトクラス変化 | 両方がBACKGROUND以外で異なるクラス |
+| Y座標大変化 | `y_diff > SAME_PARA_Y_THRESHOLD` (20pt) |
+| X座標大ギャップ | `x_gap > TABLE_CELL_X_THRESHOLD` (30pt) |
+| テーブル行変更 | テーブル内で `y_diff > TABLE_ROW_Y_THRESHOLD` |
+| 段組み変更 | X大ジャンプ + Y上昇 |
+| TOCパターン | Y変化 + X大リセット (>80pt) |
+
+**弱い境界の文末記号チェック:**
+
+強い境界でない場合（`is_strong_boundary=False`）のみ、文末記号チェックを適用します。
+これにより、番号付きパラグラフの途中改行（例: "167. 固定資産に係る...はあ" + "りません。"）を
+正しく結合しつつ、決算短信のような構造化ドキュメントでの各項目は
+適切に分割されます。
+
+```python
+# pdf_processor.py での処理
+if new_paragraph:
+    should_start_new = True
+    # 強い境界の場合は文末記号チェックをスキップ
+    if not is_strong_boundary and sstk and pstk:
+        prev_text = sstk[-1].rstrip()
+        if prev_text:
+            last_char = prev_text[-1]
+            is_sentence_end = (
+                last_char in SENTENCE_END_CHARS_JA or
+                last_char in SENTENCE_END_CHARS_EN
+            )
+            if not is_sentence_end:
+                # 弱い境界で文末記号なし → 継続行として扱う
+                should_start_new = False
+                line_break = True
+```
+
 **PP-DocLayout-Lフォールバック処理:**
 
 PP-DocLayout-Lが結果を返さない場合のフォールバック処理：
@@ -1555,9 +1609,12 @@ When interacting with users in this repository, prefer Japanese for comments and
 ## Recent Development Focus
 
 Based on recent commits:
+- **PDF Paragraph Splitting Improvements (2024-12)**:
+  - **Strong boundary detection**: `detect_paragraph_boundary()`に`is_strong_boundary`フラグを追加。強い境界（Y座標大変化、X大ギャップ、レイアウトクラス変化等）では文末記号チェックをスキップし、決算短信のような構造化ドキュメントでの各項目を適切に分割
+  - **Weak boundary sentence-end check**: 弱い境界（行折り返し）の場合のみ文末記号チェックを適用。番号付きパラグラフの途中改行を正しく結合
+  - **Boundary types**: 強い境界=レイアウト変化/Y>20pt/X>30pt/テーブル行変更/段組み変更/TOCパターン、弱い境界=その他の行折り返し
 - **PDF Translation & Extraction Fixes (2024-12)**:
   - **[END] marker removal fix**: `parse_batch_result()`の[END]マーカー除去を正規表現に変更し、スペースや大小文字の差異にも対応
-  - **Paragraph continuation detection**: 文末記号（。！？.!?等）で終わっていない段落は継続とみなし、番号付きパラグラフの途中改行で誤って分割される問題を修正
   - **pdfminer FontBBox warning suppression**: `pdfminer.pdffont`のログレベルをERRORに設定し、FontBBox警告を抑制
 - **PDF Line Joining Logic Improvements (2024-12)** (yomitoku reference):
   - **Intelligent line joining**: yomitokuを参考にした文字種別に基づく行結合ロジックを実装

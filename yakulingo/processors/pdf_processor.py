@@ -158,9 +158,9 @@ VERTICAL_TEXT_ASPECT_RATIO = 1.5  # height/width > 1.5 suggests vertical text fo
 
 # Box expansion constants
 # MAX_EXPANSION_RATIO limits how much a text box can expand relative to original size.
-# A value of 1.5 means a box can expand up to 150% of its original width/height.
-# Reduced from 2.0 to prevent text overlap in table cells and adjacent blocks.
-MAX_EXPANSION_RATIO = 1.5
+# A value of 2.0 means a box can expand up to 200% of its original width/height.
+# TextBlock-based adjacent block detection is used to prevent overlap instead of reducing this ratio.
+MAX_EXPANSION_RATIO = 2.0
 
 
 class TextAlignment:
@@ -396,6 +396,115 @@ def calculate_expanded_box_vertical(
         # Top-aligned: expand downward (decrease y0)
         expansion = min(expandable_bottom, max_additional_height)
         return box_y0 - expansion, box_y1
+
+
+# Minimum gap between adjacent blocks (in points)
+ADJACENT_BLOCK_MIN_GAP = 5.0
+# Y-overlap threshold for considering blocks on the same line (fraction of height)
+ADJACENT_BLOCK_Y_OVERLAP_THRESHOLD = 0.3
+
+
+def find_adjacent_textblock_boundaries(
+    current_block_id: str,
+    current_bbox: tuple[float, float, float, float],
+    page_blocks: list['TextBlock'],
+    page_width: float,
+    page_height: float,
+    page_margin: float = 20.0,
+) -> tuple[float, float, float, float]:
+    """
+    Find adjacent block boundaries using TextBlock coordinates.
+
+    This function provides runtime detection of adjacent blocks using actual
+    TextBlock positions, independent of PP-DocLayout-L results. This ensures
+    accurate expansion limits even when layout analysis is incomplete.
+
+    Args:
+        current_block_id: ID of the current block being processed
+        current_bbox: Current block bounding box (x0, y0, x1, y1) in PDF coordinates
+        page_blocks: List of TextBlocks on the same page
+        page_width: Page width in points
+        page_height: Page height in points
+        page_margin: Minimum margin from page edge
+
+    Returns:
+        Tuple of (max_left, max_right, max_bottom, max_top) boundaries in PDF coordinates
+    """
+    x0, y0, x1, y1 = current_bbox
+    block_height = y1 - y0
+    block_width = x1 - x0
+
+    # Initialize with page boundaries
+    max_left = page_margin
+    max_right = page_width - page_margin
+    max_bottom = page_margin
+    max_top = page_height - page_margin
+
+    for block in page_blocks:
+        # Skip current block
+        if block.id == current_block_id:
+            continue
+
+        # Get block bbox from metadata
+        block_bbox = block.metadata.get('bbox')
+        if not block_bbox or len(block_bbox) < 4:
+            continue
+
+        bx0, by0, bx1, by1 = block_bbox[:4]
+
+        # Check for right adjacent block (same vertical level)
+        if bx0 > x1 + ADJACENT_BLOCK_MIN_GAP:
+            # Check vertical overlap
+            overlap_y0 = max(y0, by0)
+            overlap_y1 = min(y1, by1)
+            overlap_height = overlap_y1 - overlap_y0
+
+            if overlap_height > block_height * ADJACENT_BLOCK_Y_OVERLAP_THRESHOLD:
+                # Found adjacent block on right - update right boundary
+                candidate_right = bx0 - ADJACENT_BLOCK_MIN_GAP
+                if candidate_right < max_right:
+                    max_right = candidate_right
+
+        # Check for left adjacent block (same vertical level)
+        if bx1 < x0 - ADJACENT_BLOCK_MIN_GAP:
+            # Check vertical overlap
+            overlap_y0 = max(y0, by0)
+            overlap_y1 = min(y1, by1)
+            overlap_height = overlap_y1 - overlap_y0
+
+            if overlap_height > block_height * ADJACENT_BLOCK_Y_OVERLAP_THRESHOLD:
+                # Found adjacent block on left - update left boundary
+                candidate_left = bx1 + ADJACENT_BLOCK_MIN_GAP
+                if candidate_left > max_left:
+                    max_left = candidate_left
+
+        # Check for bottom adjacent block (same horizontal level)
+        if by1 < y0 - ADJACENT_BLOCK_MIN_GAP:
+            # Check horizontal overlap
+            overlap_x0 = max(x0, bx0)
+            overlap_x1 = min(x1, bx1)
+            overlap_width = overlap_x1 - overlap_x0
+
+            if overlap_width > block_width * ADJACENT_BLOCK_Y_OVERLAP_THRESHOLD:
+                # Found adjacent block below - update bottom boundary
+                candidate_bottom = by1 + ADJACENT_BLOCK_MIN_GAP
+                if candidate_bottom > max_bottom:
+                    max_bottom = candidate_bottom
+
+        # Check for top adjacent block (same horizontal level)
+        if by0 > y1 + ADJACENT_BLOCK_MIN_GAP:
+            # Check horizontal overlap
+            overlap_x0 = max(x0, bx0)
+            overlap_x1 = min(x1, bx1)
+            overlap_width = overlap_x1 - overlap_x0
+
+            if overlap_width > block_width * ADJACENT_BLOCK_Y_OVERLAP_THRESHOLD:
+                # Found adjacent block above - update top boundary
+                candidate_top = by0 - ADJACENT_BLOCK_MIN_GAP
+                if candidate_top < max_top:
+                    max_top = candidate_top
+
+    return max_left, max_right, max_bottom, max_top
 
 
 def estimate_memory_usage_mb(page_count: int, dpi: int = 300) -> float:
@@ -2159,6 +2268,14 @@ class PdfProcessor(FileProcessor):
                 blocks_to_process: list[tuple[str, str, bool]] = []
                 target_bboxes: list[tuple[float, float, float, float]] = []
 
+                # Build list of TextBlocks on this page for adjacent block detection
+                page_textblocks: list[TextBlock] = []
+                if text_blocks:
+                    page_textblocks = [
+                        tb for tb in text_blocks
+                        if tb.id.startswith(page_prefix) and tb.metadata.get('bbox')
+                    ]
+
                 # Fallback: Get block info using PyMuPDF (if no text_blocks provided)
                 pymupdf_blocks_dict = {}
                 if not text_blocks:
@@ -2459,6 +2576,25 @@ class PdfProcessor(FileProcessor):
                         min_y = detected_right_margin  # Use same margin for bottom
                         if pdf_y0 - expandable_bottom < min_y:
                             expandable_bottom = max(0, pdf_y0 - min_y)
+
+                        # Additional check: Use TextBlock coordinates for adjacent block detection
+                        # This provides runtime detection independent of PP-DocLayout-L results
+                        if page_textblocks and len(page_textblocks) > 1:
+                            current_bbox = (pdf_x1, pdf_y0, pdf_x2, pdf_y1)
+                            adj_left, adj_right, adj_bottom, adj_top = find_adjacent_textblock_boundaries(
+                                block_id, current_bbox, page_textblocks,
+                                page_width, page_height, detected_right_margin
+                            )
+
+                            # Further limit expansion based on adjacent TextBlocks
+                            if pdf_x2 + expandable_right > adj_right:
+                                expandable_right = max(0, adj_right - pdf_x2)
+                            if pdf_x1 - expandable_left < adj_left:
+                                expandable_left = max(0, pdf_x1 - adj_left)
+                            if pdf_y1 + expandable_top > adj_top:
+                                expandable_top = max(0, adj_top - pdf_y1)
+                            if pdf_y0 - expandable_bottom < adj_bottom:
+                                expandable_bottom = max(0, pdf_y0 - adj_bottom)
 
                         # Box expansion strategy:
                         # - Expand based on text alignment (horizontal or vertical)

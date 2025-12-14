@@ -145,6 +145,7 @@ html {
     /* Base font size scaled by window width (set dynamically in app.py) */
     /* Reference: 1900px window → 16px, scaled with sqrt for gentle effect */
     font-size: var(--base-font-size, 16px);
+    height: 100%;
 }
 
 body {
@@ -167,8 +168,10 @@ body {
     line-height: 1.6;
     margin: 0;
     padding: 0;
-    min-height: var(--viewport-height);
+    height: var(--viewport-height);
+    max-height: var(--viewport-height);
     min-width: 1000px;  /* Minimum width to prevent layout breaking */
+    overflow: hidden;   /* Prevent body scrolling - use inner containers for scroll */
     overflow-x: auto;   /* Enable horizontal scroll when window is too narrow */
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;

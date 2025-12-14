@@ -2181,24 +2181,41 @@ class PdfProcessor(FileProcessor):
                                 expandable_width = max(original_box_width, capped_width)
 
                         # Box expansion strategy:
-                        # - Regular blocks: expand to available space (readability-first)
-                        # - Table cells: expand to cell boundary if TableCellsDetection available
+                        # - Table cells: NO expansion (use font size reduction instead)
+                        # - Regular blocks: limited expansion with strict boundaries
                         #
-                        # For table cells:
-                        # - If TableCellsDetection found cell boundaries: expand to cell boundary
-                        # - If no cell boundary info: use font size reduction instead
-                        # (logic in pdf_layout.py calculate_expandable_width)
+                        # Table cells MUST NOT expand because:
+                        # - Table structures have fixed cell boundaries
+                        # - Expansion causes text to overlap with adjacent cells
+                        # - Font size reduction is the only safe option
                         #
-                        # Layout-aware expansion:
-                        # - Respects adjacent block boundaries to prevent overlap
-                        # - Respects page margins (capped above)
-                        if expandable_width > original_box_width:
+                        # Regular blocks can expand BUT with limits:
+                        # - Maximum 1.5x original width to prevent extreme overflow
+                        # - Must respect adjacent block boundaries
+                        # - Must respect page margins
+                        MAX_EXPANSION_RATIO = 1.5  # Limit expansion to 150% of original
+
+                        if is_table_cell:
+                            # Table cells: NO expansion, use font reduction instead
                             logger.debug(
-                                "Block %s: expanding box_width from %.1f to %.1f "
-                                "(expandable_width allows, is_table=%s)",
-                                block_id, original_box_width, expandable_width, is_table_cell
+                                "Block %s: table cell, skipping expansion "
+                                "(original_width=%.1f, expandable_width=%.1f)",
+                                block_id, original_box_width, expandable_width
                             )
-                            box_width = expandable_width
+                            # Keep box_width = original_box_width (no change)
+                        elif expandable_width > original_box_width:
+                            # Non-table: allow limited expansion
+                            max_allowed_width = original_box_width * MAX_EXPANSION_RATIO
+                            actual_expansion = min(expandable_width, max_allowed_width)
+
+                            if actual_expansion > original_box_width:
+                                logger.debug(
+                                    "Block %s: expanding box_width from %.1f to %.1f "
+                                    "(limited from %.1f, ratio=%.2f)",
+                                    block_id, original_box_width, actual_expansion,
+                                    expandable_width, actual_expansion / original_box_width
+                                )
+                                box_width = actual_expansion
 
                         # Note: No white rectangle needed anymore.
                         # ContentStreamReplacer.set_base_stream() already filtered out

@@ -24,11 +24,6 @@ Reference Files
 用語集がある場合は、記載されている用語は必ずその訳語を使用してください。
 """
 
-# Item delimiter marker to prevent Copilot from merging consecutive items
-# This marker is added to each item in batch translation and removed from the response.
-# Without this marker, Copilot may merge items that appear to be parts of the same sentence.
-ITEM_END_MARKER = " [END]"
-
 # Fallback template for → English (used when translate_to_en.txt doesn't exist)
 DEFAULT_TO_EN_TEMPLATE = """Role Definition
 あなたは英語への翻訳を行う、完全自動化されたデータ処理エンジンです。
@@ -327,17 +322,10 @@ class PromptBuilder:
 
         Returns:
             Complete prompt with numbered input
-
-        Note:
-            Each item is appended with ITEM_END_MARKER to prevent Copilot from
-            merging consecutive items that appear to be parts of the same sentence.
-            The marker is removed in parse_batch_result().
         """
-        # Format as numbered list with end markers to prevent item merging
-        # Without markers, Copilot may merge items like "一定の前提に基づいており、"
-        # and "その達成を..." into a single translated item.
+        # Format as numbered list
         numbered_input = "\n".join(
-            f"{i+1}. {text}{ITEM_END_MARKER}" for i, text in enumerate(texts)
+            f"{i+1}. {text}" for i, text in enumerate(texts)
         )
 
         return self.build(numbered_input, has_reference_files, output_language, translation_style)
@@ -358,10 +346,6 @@ class PromptBuilder:
 
         Returns:
             List of translated texts
-
-        Note:
-            Removes ITEM_END_MARKER from each translation if present.
-            The marker is added in build_batch() to prevent Copilot from merging items.
         """
         lines = result.strip().split('\n')
         translations = []
@@ -377,12 +361,6 @@ class PromptBuilder:
                 text = match.group(1)
             else:
                 text = line
-
-            # Remove end marker if present (added in build_batch to prevent merging)
-            # Use regex for more robust removal - handles spaces around marker
-            # and marker appearing multiple times
-            marker_pattern = r'\s*\[END\]\s*'
-            text = re.sub(marker_pattern, '', text, flags=re.IGNORECASE).strip()
 
             translations.append(text)
 

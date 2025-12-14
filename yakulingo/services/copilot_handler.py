@@ -32,11 +32,6 @@ logger = logging.getLogger(__name__)
 # The indentation group is used by _parse_batch_result to filter out nested numbered lists
 _RE_BATCH_ITEM = re.compile(r'^(\s*)(\d+)\.\s*(.*?)(?=\n\s*\d+\.|\Z)', re.MULTILINE | re.DOTALL)
 
-# Pre-compiled regex pattern for removing [END] markers from translation results
-# The ITEM_END_MARKER (" [END]") is added in build_batch() to prevent Copilot from merging items
-# This pattern handles: spaces around marker, case variations, and multiple occurrences
-_RE_END_MARKER = re.compile(r'\s*\[END\]\s*', re.IGNORECASE)
-
 # Known Copilot error response patterns that indicate we should retry with a new chat
 # These are system messages that don't represent actual translation results
 COPILOT_ERROR_PATTERNS = [
@@ -4257,12 +4252,6 @@ class CopilotHandler:
             # Pad with empty strings if needed
             while len(translations) < expected_count:
                 translations.append("")
-
-        # Remove [END] markers from all translations
-        # These markers are added in build_batch() to prevent Copilot from merging items
-        translations = [
-            _RE_END_MARKER.sub('', text).strip() for text in translations
-        ]
 
         return translations[:expected_count]
 

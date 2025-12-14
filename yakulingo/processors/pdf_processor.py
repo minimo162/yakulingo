@@ -85,7 +85,7 @@ from .pdf_layout import (
     LAYOUT_ABANDON, LAYOUT_BACKGROUND, LAYOUT_PARAGRAPH_BASE, LAYOUT_TABLE_BASE,
     LAYOUT_TRANSLATE_LABELS, LAYOUT_SKIP_LABELS,
     # Classes
-    LayoutArray,
+    LayoutArray, ReadingDirection,
     # Functions
     is_layout_available, get_device, get_layout_model,
     prewarm_layout_model, clear_analyzer_cache,
@@ -95,6 +95,7 @@ from .pdf_layout import (
     map_pp_doclayout_label_to_role, prepare_translation_cells,
     calculate_expandable_width, detect_table_cells_for_tables,
     apply_reading_order_to_layout, analyze_all_table_structures,
+    estimate_reading_order,
     _get_numpy, _get_paddleocr, _get_torch,
 )
 

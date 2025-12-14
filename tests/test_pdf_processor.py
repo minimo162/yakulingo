@@ -1709,9 +1709,10 @@ class TestConstants:
     def test_table_min_line_height_constant(self):
         """Test TABLE_MIN_LINE_HEIGHT constant for table cells"""
         from yakulingo.processors.pdf_converter import TABLE_MIN_LINE_HEIGHT
-        # Table cells use tighter compression (PDFMathTranslate compliant: 0.9)
-        assert TABLE_MIN_LINE_HEIGHT == 0.9
-        assert TABLE_MIN_LINE_HEIGHT < MIN_LINE_HEIGHT
+        # Table cells use line_height >= 1.0 to prevent text overlap.
+        # Font size reduction is used instead for fitting text in constrained cells.
+        assert TABLE_MIN_LINE_HEIGHT == 1.0
+        assert TABLE_MIN_LINE_HEIGHT >= MIN_LINE_HEIGHT
 
 
 class TestVflagEmptyInputs:

@@ -2309,10 +2309,12 @@ class PdfProcessor(FileProcessor):
                         #
                         # PDFMathTranslate compliant approach:
                         # - Prefer fixed font size + line-height compression
-                        # - If still too tall, reduce font size but keep it readable
+                        # - If still too tall, reduce font size more aggressively
+                        # - Since TABLE_MIN_LINE_HEIGHT is 1.0 (to prevent overlap),
+                        #   we need more aggressive font reduction to fit text in cells
                         # - If text still doesn't fit, allow overflow (better than unreadably small text)
-                        TABLE_FONT_MIN_READABLE = 7.0  # Hard readability floor (never increases above original)
-                        TABLE_FONT_MIN_RATIO = 0.8     # Never reduce below 80% of original size
+                        TABLE_FONT_MIN_READABLE = 6.0  # Hard readability floor (never increases above original)
+                        TABLE_FONT_MIN_RATIO = 0.5     # Allow reducing to 50% of original size for tables
 
                         if is_table_cell and len(lines) > 1:
                             text_height = len(lines) * font_size * line_height

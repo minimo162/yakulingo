@@ -1317,9 +1317,9 @@ When interacting with users in this repository, prefer Japanese for comments and
 
 Based on recent commits:
 - **PDF Layout Improvement (2024-12)**:
-  - **More aggressive line height compression**: MIN_LINE_HEIGHT を 0.95 から 0.85 に変更し、テキストをより多く収容
-  - **Table cell-specific compression**: テーブルセル用の TABLE_MIN_LINE_HEIGHT = 0.75 を追加
-  - **Table cell font size reduction**: テーブルセル内でテキストがオーバーフローする場合、フォントサイズを縮小
+  - **Table text overlap fix**: TABLE_MIN_LINE_HEIGHT を 1.0 に設定（行間 < 1.0 ではテキストが重なるため）
+  - **Aggressive font reduction for tables**: TABLE_FONT_MIN_RATIO を 0.5 に設定（行高さ圧縮の代わりにフォント縮小）
+  - **TABLE_FONT_MIN_READABLE**: テーブルセル用の最小可読フォントサイズを 6.0pt に設定
   - **is_table_cell parameter**: calculate_line_height_with_font に is_table_cell パラメータを追加
   - **PDFMathTranslate reference**: https://github.com/PDFMathTranslate/PDFMathTranslate を参考に改善
 - **PDF Layout-Aware Box Expansion (2024-12)**:

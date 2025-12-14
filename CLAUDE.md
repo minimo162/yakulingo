@@ -1755,6 +1755,9 @@ Based on recent commits:
 - **Translation Result Parsing (2024-12)**:
   - **Metadata leak fix**: 翻訳結果パース時のメタデータ混入を修正
 - **Browser Close Behavior (2024-12)**:
+  - **Graceful Edge termination**: WM_CLOSEメッセージでEdgeを正常終了（「予期せず閉じられました」メッセージを防止）
+  - **`_close_edge_gracefully()`**: Win32 PostMessageWでWM_CLOSEを送信、3秒タイムアウトで待機
+  - **Fallback to terminate/kill**: グレースフル終了失敗時のみ`terminate()`/`kill()`を使用
   - **App exit cleanup**: アプリ終了時のブラウザ終了を確実にする
 - **Copilot Prompt Submission Reliability (2024-12)**:
   - **Response stability**: `RESPONSE_STABLE_COUNT` increased from 2 to 3 for more reliable completion detection

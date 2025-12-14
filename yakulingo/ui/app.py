@@ -2099,20 +2099,7 @@ class YakuLingoApp:
             logger.warning("PP-DocLayout-L initialization timeout while waiting")
             return True  # Proceed anyway
 
-        # Get client for UI updates
-        with self._client_lock:
-            client = self._client
-
-        # Show initialization dialog
-        init_dialog = None
-        if client:
-            try:
-                with client:
-                    init_dialog = self._create_layout_init_dialog()
-                    init_dialog.open()
-            except Exception as e:
-                logger.debug("Failed to show init dialog: %s", e)
-
+        # Perform initialization (dialog is shown by caller)
         try:
             # Step 1: Disconnect Copilot to avoid conflicts with PaddlePaddle
             was_connected = self.copilot.is_connected
@@ -2146,15 +2133,6 @@ class YakuLingoApp:
             logger.error("Error during PP-DocLayout-L initialization: %s", e)
             self._layout_init_state = LayoutInitializationState.FAILED
             return True  # Proceed anyway, PDF will work with degraded quality
-
-        finally:
-            # Close dialog
-            if init_dialog and client:
-                try:
-                    with client:
-                        init_dialog.close()
-                except Exception:
-                    pass
 
     async def _reconnect_copilot_with_retry(self, max_retries: int = 3) -> bool:
         """
@@ -2210,11 +2188,21 @@ class YakuLingoApp:
                 logger.warning("File selection aborted: no client connected")
                 return
 
+        init_dialog = None
         try:
             # On-demand PP-DocLayout-L initialization for PDF files
             if file_path.suffix.lower() == '.pdf':
+                # Show initialization dialog immediately for fast feedback
+                with client:
+                    init_dialog = self._create_layout_init_dialog()
+                    init_dialog.open()
+                # Yield to event loop to ensure dialog is rendered
+                await asyncio.sleep(0)
+
                 from yakulingo.processors import is_layout_available
-                if is_layout_available():
+                # Check availability in background thread (import paddleocr can be slow)
+                layout_available = await asyncio.to_thread(is_layout_available)
+                if layout_available:
                     # PP-DocLayout-L is available, ensure it's initialized
                     await self._ensure_layout_initialized()
                 else:
@@ -2257,6 +2245,14 @@ class YakuLingoApp:
             with client:
                 self._notify_error(str(e))
                 self._refresh_content()
+        finally:
+            # Close initialization dialog if shown
+            if init_dialog:
+                try:
+                    with client:
+                        init_dialog.close()
+                except Exception:
+                    pass
 
     async def _detect_file_language(self, file_path: Path):
         """Detect source language of file and set output language accordingly"""

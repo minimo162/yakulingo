@@ -93,7 +93,7 @@ from .pdf_layout import (
     create_layout_array_from_pp_doclayout, create_layout_array_from_yomitoku,
     get_layout_class_at_point, is_same_region, should_abandon_region,
     map_pp_doclayout_label_to_role, prepare_translation_cells,
-    calculate_expandable_width, detect_table_cells_for_tables,
+    calculate_expandable_width, calculate_expandable_margins, detect_table_cells_for_tables,
     apply_reading_order_to_layout, analyze_all_table_structures,
     estimate_reading_order,
     # yomitoku-style additions
@@ -144,6 +144,119 @@ DEFAULT_OCR_DPI = 300        # Default DPI for precision
 # Pre-compiled regex patterns for performance (local patterns)
 _RE_PARAGRAPH_ADDRESS = re.compile(r"P(\d+)_")
 _RE_TABLE_ADDRESS = re.compile(r"T(\d+)_")
+
+# Text alignment detection constants
+ALIGNMENT_TOLERANCE = 5.0  # Tolerance in points for alignment detection
+
+
+class TextAlignment:
+    """Text alignment types."""
+    LEFT = "left"
+    RIGHT = "right"
+    CENTER = "center"
+
+
+def estimate_text_alignment(
+    text_x: float,
+    text_x0: float,
+    text_x1: float,
+    box_x0: float,
+    box_x1: float,
+) -> str:
+    """
+    Estimate text alignment based on text position within box.
+
+    Compares the text's position relative to the box boundaries to determine
+    whether the text is left-aligned, right-aligned, or center-aligned.
+
+    Args:
+        text_x: Initial X position of text (first character)
+        text_x0: Left boundary of text
+        text_x1: Right boundary of text
+        box_x0: Left boundary of box
+        box_x1: Right boundary of box
+
+    Returns:
+        TextAlignment.LEFT, TextAlignment.RIGHT, or TextAlignment.CENTER
+    """
+    box_width = box_x1 - box_x0
+    if box_width <= 0:
+        return TextAlignment.LEFT
+
+    # Calculate margins
+    left_margin = text_x0 - box_x0
+    right_margin = box_x1 - text_x1
+
+    # Normalize margins to box width for comparison
+    left_ratio = left_margin / box_width if box_width > 0 else 0
+    right_ratio = right_margin / box_width if box_width > 0 else 0
+
+    # Check for center alignment first
+    # If both margins are similar (within tolerance), it's center-aligned
+    if abs(left_margin - right_margin) < ALIGNMENT_TOLERANCE * 2:
+        # Both margins are similar - likely center aligned
+        if left_margin > ALIGNMENT_TOLERANCE and right_margin > ALIGNMENT_TOLERANCE:
+            return TextAlignment.CENTER
+
+    # Check for right alignment
+    # If left margin is significantly larger than right margin
+    if left_margin > right_margin + ALIGNMENT_TOLERANCE:
+        return TextAlignment.RIGHT
+
+    # Default to left alignment
+    return TextAlignment.LEFT
+
+
+def calculate_expanded_box(
+    box_x0: float,
+    box_x1: float,
+    expandable_left: float,
+    expandable_right: float,
+    alignment: str,
+    max_expansion_ratio: float = 1.5,
+) -> tuple[float, float]:
+    """
+    Calculate expanded box boundaries based on text alignment.
+
+    Expands the box in the appropriate direction(s) based on alignment:
+    - Left-aligned: Expand to the right
+    - Right-aligned: Expand to the left
+    - Center-aligned: Expand both directions equally
+
+    Args:
+        box_x0: Original left boundary
+        box_x1: Original right boundary
+        expandable_left: How much we can expand to the left (new x0 would be box_x0 - expandable_left)
+        expandable_right: How much we can expand to the right (new x1 would be box_x1 + expandable_right)
+        alignment: TextAlignment.LEFT, RIGHT, or CENTER
+        max_expansion_ratio: Maximum expansion ratio (e.g., 1.5 = 150% of original width)
+
+    Returns:
+        Tuple of (new_x0, new_x1)
+    """
+    original_width = box_x1 - box_x0
+    if original_width <= 0:
+        return box_x0, box_x1
+
+    max_additional_width = original_width * (max_expansion_ratio - 1.0)
+
+    if alignment == TextAlignment.RIGHT:
+        # Right-aligned: expand to the left
+        expansion = min(expandable_left, max_additional_width)
+        return box_x0 - expansion, box_x1
+
+    elif alignment == TextAlignment.CENTER:
+        # Center-aligned: expand both directions equally
+        half_expansion = min(
+            min(expandable_left, expandable_right),
+            max_additional_width / 2
+        )
+        return box_x0 - half_expansion, box_x1 + half_expansion
+
+    else:  # LEFT alignment (default)
+        # Left-aligned: expand to the right
+        expansion = min(expandable_right, max_additional_width)
+        return box_x0, box_x1 + expansion
 
 
 def estimate_memory_usage_mb(page_count: int, dpi: int = 300) -> float:
@@ -2159,63 +2272,73 @@ class PdfProcessor(FileProcessor):
                             # PyMuPDF fallback: no layout information available
                             is_table_cell = False
 
-                        # Store original box_width for reference
+                        # Store original box coordinates and width for reference
+                        original_box_x0 = pdf_x1
+                        original_box_x1 = pdf_x2
                         original_box_width = box_width
 
-                        # Get expandable_width from TextBlock metadata (layout-aware)
-                        # This is pre-calculated during extraction using PP-DocLayout-L
-                        # to respect adjacent blocks and page margins
-                        expandable_width = text_block.metadata.get('expandable_width', box_width) if text_blocks else box_width
+                        # Get text position info for alignment detection
+                        text_x = getattr(paragraph, 'x', pdf_x1) if paragraph else pdf_x1
+                        text_x0 = getattr(paragraph, 'x0', pdf_x1) if paragraph else pdf_x1
+                        text_x1 = getattr(paragraph, 'x1', pdf_x2) if paragraph else pdf_x2
 
-                        # Cap expandable_width at the detected page margin
-                        # This ensures we don't expand beyond the original PDF's layout
+                        # Estimate text alignment
+                        alignment = estimate_text_alignment(
+                            text_x, text_x0, text_x1,
+                            pdf_x1, pdf_x2
+                        )
+
+                        # Get expandable margins (left and right) from TextBlock metadata
+                        # or calculate them if not available
+                        expandable_left = text_block.metadata.get('expandable_left', 0.0) if text_blocks else 0.0
+                        expandable_right = text_block.metadata.get('expandable_right', 0.0) if text_blocks else 0.0
+
+                        # If only expandable_width is available (legacy), use it for right expansion
+                        if expandable_left == 0.0 and expandable_right == 0.0:
+                            expandable_width = text_block.metadata.get('expandable_width', box_width) if text_blocks else box_width
+                            expandable_right = max(0, expandable_width - original_box_width)
+                            # Estimate left expansion from page margin
+                            expandable_left = max(0, pdf_x1 - detected_right_margin) if detected_right_margin > 0 else 0
+
+                        # Cap expandable margins at page margins
                         max_x = page_width - detected_right_margin
-                        if box_pdf[0] + expandable_width > max_x:
-                            capped_width = max_x - box_pdf[0]
-                            if capped_width < expandable_width:
-                                logger.debug(
-                                    "Block %s: capping expandable_width from %.1f to %.1f "
-                                    "(respecting right margin %.1f)",
-                                    block_id, expandable_width, capped_width, detected_right_margin
-                                )
-                                expandable_width = max(original_box_width, capped_width)
+                        if pdf_x2 + expandable_right > max_x:
+                            expandable_right = max(0, max_x - pdf_x2)
+
+                        min_x = detected_right_margin  # Use same margin for left side
+                        if pdf_x1 - expandable_left < min_x:
+                            expandable_left = max(0, pdf_x1 - min_x)
 
                         # Box expansion strategy:
-                        # - Table cells: NO expansion (use font size reduction instead)
+                        # - Expand based on text alignment (left/right/center)
+                        # - Table cells: expand to cell boundary if available
                         # - Regular blocks: limited expansion with strict boundaries
-                        #
-                        # Table cells MUST NOT expand because:
-                        # - Table structures have fixed cell boundaries
-                        # - Expansion causes text to overlap with adjacent cells
-                        # - Font size reduction is the only safe option
-                        #
-                        # Regular blocks can expand BUT with limits:
                         # - Maximum 1.5x original width to prevent extreme overflow
-                        # - Must respect adjacent block boundaries
-                        # - Must respect page margins
                         MAX_EXPANSION_RATIO = 1.5  # Limit expansion to 150% of original
 
-                        if is_table_cell:
-                            # Table cells: NO expansion, use font reduction instead
-                            logger.debug(
-                                "Block %s: table cell, skipping expansion "
-                                "(original_width=%.1f, expandable_width=%.1f)",
-                                block_id, original_box_width, expandable_width
-                            )
-                            # Keep box_width = original_box_width (no change)
-                        elif expandable_width > original_box_width:
-                            # Non-table: allow limited expansion
-                            max_allowed_width = original_box_width * MAX_EXPANSION_RATIO
-                            actual_expansion = min(expandable_width, max_allowed_width)
+                        # Calculate expanded box based on alignment
+                        new_x0, new_x1 = calculate_expanded_box(
+                            pdf_x1, pdf_x2,
+                            expandable_left, expandable_right,
+                            alignment,
+                            MAX_EXPANSION_RATIO
+                        )
 
-                            if actual_expansion > original_box_width:
+                        # Apply expansion if any
+                        if new_x0 != pdf_x1 or new_x1 != pdf_x2:
+                            new_width = new_x1 - new_x0
+                            if new_width > original_box_width:
                                 logger.debug(
-                                    "Block %s: expanding box_width from %.1f to %.1f "
-                                    "(limited from %.1f, ratio=%.2f)",
-                                    block_id, original_box_width, actual_expansion,
-                                    expandable_width, actual_expansion / original_box_width
+                                    "Block %s: expanding box from [%.1f, %.1f] to [%.1f, %.1f] "
+                                    "(alignment=%s, is_table=%s, ratio=%.2f)",
+                                    block_id, pdf_x1, pdf_x2, new_x0, new_x1,
+                                    alignment, is_table_cell, new_width / original_box_width
                                 )
-                                box_width = actual_expansion
+                                # Update box coordinates and width
+                                pdf_x1 = new_x0
+                                pdf_x2 = new_x1
+                                box_width = new_width
+                                box_pdf = [pdf_x1, pdf_y0, pdf_x2, pdf_y1]
 
                         # Note: No white rectangle needed anymore.
                         # ContentStreamReplacer.set_base_stream() already filtered out
@@ -3450,19 +3573,23 @@ class PdfProcessor(FileProcessor):
                     else 1
                 )
 
-            # Calculate expandable width using layout info
-            # This allows text to expand horizontally when there's space on the right
+            # Calculate expandable margins (left and right) using layout info
+            # This allows text to expand horizontally based on alignment
             # For table cells, use cell boundary from TableCellsDetection if available
             original_width = para.x1 - para.x0
             table_id = para.layout_class if is_table_cell else None
             if layout is not None and page_width > 0 and page_height > 0:
-                expandable_width = calculate_expandable_width(
+                expandable_left, expandable_right = calculate_expandable_margins(
                     layout, bbox, page_width, page_height,
                     is_table_cell=is_table_cell,
                     table_id=table_id
                 )
+                # Also calculate expandable_width for backward compatibility
+                expandable_width = original_width + expandable_right
             else:
-                # No layout info - use original width
+                # No layout info - no expansion
+                expandable_left = 0.0
+                expandable_right = 0.0
                 expandable_width = original_width
 
             # Layout debugging: log block extraction details
@@ -3470,12 +3597,12 @@ class PdfProcessor(FileProcessor):
                 "[Layout] Extracted block page_%d_block_%d: "
                 "bbox=(%.1f, %.1f, %.1f, %.1f), para_height=%.1f, font_size=%.1f, "
                 "original_line_count=%d (estimated=%.2f), text_len=%d, "
-                "expandable_width=%.1f (original=%.1f), is_table=%s",
+                "expandable_margins=(left=%.1f, right=%.1f), is_table=%s",
                 page_idx, block_idx,
                 para.x0, para.y0, para.x1, para.y1,
                 para_height, font_size,
                 original_line_count, estimated_line_count, len(text),
-                expandable_width, original_width, is_table_cell
+                expandable_left, expandable_right, is_table_cell
             )
 
             blocks.append(TextBlock(
@@ -3496,7 +3623,9 @@ class PdfProcessor(FileProcessor):
                     'has_formulas': bool(block_vars),
                     'layout_class': para.layout_class,  # For table detection
                     'skip_translation': skip_translation,  # Preserve original text if True
-                    'expandable_width': expandable_width,  # Max width block can expand to
+                    'expandable_width': expandable_width,  # Max width block can expand to (legacy)
+                    'expandable_left': expandable_left,  # How much can expand to the left
+                    'expandable_right': expandable_right,  # How much can expand to the right
                 }
             ))
 

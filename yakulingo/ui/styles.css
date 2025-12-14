@@ -594,7 +594,7 @@ body {
     transform: translateX(4px);
 }
 
-/* Note: .history-menu-btn is defined below in the Nani-inspired enhancements section */
+/* Note: .history-delete-btn is defined below in the Nani-inspired enhancements section */
 
 /* === Status Indicator === */
 .status-indicator {
@@ -2026,21 +2026,27 @@ textarea:focus-visible {
 
 /* nav-item position and overflow are set in the main nav-item definition above */
 
-/* Three-dot menu button for history items */
-.history-menu-btn {
+/* Delete button for history items */
+.history-delete-btn {
     opacity: 0;
-    transition: opacity var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+    transition: opacity var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard),
+                color var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
     position: absolute;
     right: 0.25rem;
     top: 50%;
     transform: translateY(-50%);
-    background: var(--md-sys-color-surface-container) !important;
+    background: transparent !important;
     min-width: 24px !important;
     min-height: 24px !important;
+    color: var(--md-sys-color-on-surface-variant) !important;
 }
 
-.history-item:hover .history-menu-btn {
+.history-item:hover .history-delete-btn {
     opacity: 1;
+}
+
+.history-delete-btn:hover {
+    color: var(--md-sys-color-error) !important;
 }
 
 /* Flag icons for language selector */

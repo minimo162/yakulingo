@@ -50,6 +50,14 @@ class ConnectionState(Enum):
     CONNECTION_FAILED = "connection_failed"  # Connection failed for other reasons
 
 
+class LayoutInitializationState(Enum):
+    """PP-DocLayout-L initialization states for on-demand PDF support"""
+    NOT_INITIALIZED = "not_initialized"  # Initial state - not yet initialized
+    INITIALIZING = "initializing"        # Currently initializing (prevents double init)
+    INITIALIZED = "initialized"          # Successfully initialized
+    FAILED = "failed"                    # Initialization failed
+
+
 @dataclass
 class AppState:
     """

@@ -1488,7 +1488,9 @@ Based on recent commits:
   - **Startup timeout**: Edge起動タイムアウトを6秒から20秒に延長
   - **JS click operations**: Playwrightのクリック操作をJSクリックに変更してブラウザが前面に来るのを防止
 - **PP-DocLayout-L Optimization**:
-  - **Pre-initialization**: 起動時に事前初期化してPlaywright競合を回避
+  - **On-demand initialization**: PDF選択時にオンデマンド初期化（起動時間を約10秒短縮）
+  - **Copilot disconnect/reconnect**: 初期化前にCopilot切断→初期化→再接続（Playwright競合回避）
+  - **LayoutInitializationState**: 初期化状態管理（NOT_INITIALIZED, INITIALIZING, INITIALIZED, FAILED）
   - **Windows message suppression**: Windowsメッセージを抑制
   - **Installation check**: PDF選択時に`is_layout_available()`でチェック、未インストール時にUI警告を表示
   - **Fallback detection**: `_layout_fallback_used`フラグで状態を追跡

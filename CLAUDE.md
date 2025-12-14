@@ -177,7 +177,7 @@ YakuLingo/
 | `yakulingo/storage/history_db.py` | SQLite database for translation history | ~320 |
 | `yakulingo/processors/base.py` | Abstract base class for all file processors | ~105 |
 | `yakulingo/processors/pdf_processor.py` | PDF processing with PyMuPDF, pdfminer.six, and PP-DocLayout-L | ~2819 |
-| `yakulingo/processors/pdf_converter.py` | PDFMathTranslate準拠: Paragraph, FormulaVar, vflag, 座標変換 | ~600 |
+| `yakulingo/processors/pdf_converter.py` | PDFMathTranslate準拠: Paragraph, FormulaVar, vflag, 座標変換, 行結合ロジック | ~1400 |
 | `yakulingo/processors/pdf_layout.py` | PP-DocLayout-L統合: LayoutArray, TableCellsDetection, 読み順推定(yomitokuスタイル), rowspan/colspan検出 | ~2438 |
 | `yakulingo/processors/pdf_font_manager.py` | PDF font management: font registry, type detection, glyph encoding | ~1140 |
 | `yakulingo/processors/pdf_operators.py` | PDF low-level operator generation for text rendering | ~731 |
@@ -1306,9 +1306,40 @@ is_safe, estimated_mb, available_mb = check_memory_for_pdf_processing(
 | `MEMORY_AVAILABLE_RATIO` | 0.5 | 利用可能メモリの最大使用率 |
 | `MEMORY_WARNING_THRESHOLD_MB` | 1024 | 警告出力の閾値 |
 
-**Line Break Handling:**
-- PDF text extraction removes line breaks: `text.replace("\n", "")`
-- Optimized for Japanese documents where line breaks within paragraphs are visual-only
+**Line Break Handling (yomitoku reference):**
+
+PDF翻訳では視覚的な行末での改行を文字種別に基づいて処理します：
+
+| 文字種別 | 行結合時の処理 | 例 |
+|----------|---------------|-----|
+| CJK → CJK | スペースなしで連結 | `日本語` + `テキスト` → `日本語テキスト` |
+| Latin → Latin | スペースを挿入 | `Hello` + `World` → `Hello World` |
+| CJK → Latin | スペースなしで連結 | `日本語` + `ABC` → `日本語ABC` |
+| Latin → CJK | スペースなしで連結 | `ABC` + `日本語` → `ABC日本語` |
+| ハイフン終了 | ハイフン削除して連結 | `hyph-` + `en` → `hyphen` |
+
+**行結合関数:**
+
+```python
+from yakulingo.processors.pdf_converter import (
+    get_line_join_separator,    # 行結合時のセパレータを決定
+    is_line_end_hyphenated,     # ハイフン終了行の検出
+    _is_cjk_char,               # CJK文字判定
+    _is_latin_char,             # ラテン文字判定
+)
+
+# 使用例
+separator = get_line_join_separator("日本語", "テ")  # returns ""
+separator = get_line_join_separator("Hello", "W")    # returns " "
+```
+
+**定数:**
+
+| 定数名 | 説明 |
+|--------|------|
+| `SENTENCE_END_CHARS_JA` | 日本語文末記号: `。！？…‥）」』】｝〕〉》）＞]＞` |
+| `SENTENCE_END_CHARS_EN` | 英語文末記号: `.!?;:` |
+| `HYPHEN_CHARS` | ハイフン文字: `-‐‑‒–—−` |
 
 **Coordinate System Utilities (PDFMathTranslate compliant):**
 

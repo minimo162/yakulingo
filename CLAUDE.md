@@ -178,7 +178,7 @@ YakuLingo/
 | `yakulingo/processors/base.py` | Abstract base class for all file processors | ~105 |
 | `yakulingo/processors/pdf_processor.py` | PDF processing with PyMuPDF, pdfminer.six, and PP-DocLayout-L | ~2819 |
 | `yakulingo/processors/pdf_converter.py` | PDFMathTranslate準拠: Paragraph, FormulaVar, vflag, 座標変換 | ~600 |
-| `yakulingo/processors/pdf_layout.py` | PP-DocLayout-L統合: LayoutArray, レイアウト解析, 領域分類 | ~500 |
+| `yakulingo/processors/pdf_layout.py` | PP-DocLayout-L統合: LayoutArray, TableCellsDetection, レイアウト解析 | ~1517 |
 | `yakulingo/processors/pdf_font_manager.py` | PDF font management: font registry, type detection, glyph encoding | ~1140 |
 | `yakulingo/processors/pdf_operators.py` | PDF low-level operator generation for text rendering | ~731 |
 
@@ -963,9 +963,10 @@ Install separately for PDF translation support:
 ```bash
 pip install -r requirements_pdf.txt
 ```
-- `paddleocr>=3.0.0`: PP-DocLayout-L for document layout analysis (Apache-2.0)
+- `paddleocr>=3.0.0`: PP-DocLayout-L (レイアウト解析) + TableCellsDetection (セル境界検出)
 - `paddlepaddle>=3.0.0`: PaddlePaddle framework
 - GPU recommended but CPU is also supported (~760ms/page on CPU)
+- TableCellsDetection requires paddleocr>=3.0.0 for RT-DETR-L models
 
 ### PDF Processing Details
 
@@ -1083,6 +1084,36 @@ model = LayoutDetection(
     device=device,              # "cpu" or "gpu"
 )
 ```
+
+**TableCellsDetection (テーブルセル境界検出):**
+
+PP-DocLayout-Lはテーブル領域全体を検出しますが、個々のセル境界は検出できません。
+テーブル内のテキストが重なる問題を解決するため、PaddleOCRの`TableCellsDetection`を追加統合しました。
+
+```python
+from paddleocr import TableCellsDetection
+model = TableCellsDetection(
+    model_name="RT-DETR-L_wired_table_cell_det",  # 罫線あり表用 (82.7% mAP)
+    device=device,
+)
+```
+
+| モデル | 用途 | 精度 | サイズ |
+|--------|------|------|--------|
+| RT-DETR-L_wired_table_cell_det | 罫線あり表 | 82.7% mAP | 124MB |
+| RT-DETR-L_wireless_table_cell_det | 罫線なし表 | - | 124MB |
+
+**動作フロー:**
+```
+1. PP-DocLayout-L: ページ全体のレイアウト解析 → テーブル領域検出
+2. TableCellsDetection: テーブル領域ごとにセル境界を検出
+3. LayoutArray.table_cells: テーブルID → セルボックスリストを格納
+4. calculate_expandable_width(): セル境界まで拡張を許可
+```
+
+**拡張ロジック:**
+- セル境界検出成功時: セル境界まで拡張可能（テキストの読みやすさ優先）
+- セル境界検出失敗時: フォントサイズ縮小にフォールバック（重なり防止）
 
 **DPI設定 (`ocr_dpi`):**
 
@@ -1316,6 +1347,12 @@ When interacting with users in this repository, prefer Japanese for comments and
 ## Recent Development Focus
 
 Based on recent commits:
+- **TableCellsDetection Integration (2024-12)**:
+  - **RT-DETR-L model**: PaddleOCRのTableCellsDetectionを統合（テーブルセル境界検出）
+  - **LayoutArray.table_cells**: テーブルID→セルボックスリストを格納
+  - **Cell boundary expansion**: セル境界が検出できた場合のみボックス拡張を許可
+  - **Coordinate conversion**: 画像座標⇔PDF座標の正確な変換でセル境界を特定
+  - **Graceful fallback**: TableCellsDetection未対応時はフォントサイズ縮小にフォールバック
 - **PDF Layout Improvement (2024-12)**:
   - **Table text overlap fix**: TABLE_MIN_LINE_HEIGHT を 1.0 に設定（行間 < 1.0 ではテキストが重なるため）
   - **Table cell expansion**: テーブルセルでも右側に20pt以上の余裕があればボックスを拡張（読みやすさ優先）

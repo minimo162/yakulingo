@@ -2165,13 +2165,14 @@ class PdfProcessor(FileProcessor):
 
                         # Box expansion strategy:
                         # - Regular blocks: expand to available space (readability-first)
-                        # - Table cells: NO expansion (PP-DocLayout-L cannot detect cell boundaries)
+                        # - Table cells: expand to cell boundary if TableCellsDetection available
                         #
-                        # For table cells, expandable_width equals original_box_width
-                        # (set in pdf_layout.py calculate_expandable_width).
-                        # Font size reduction is used instead for table cells.
+                        # For table cells:
+                        # - If TableCellsDetection found cell boundaries: expand to cell boundary
+                        # - If no cell boundary info: use font size reduction instead
+                        # (logic in pdf_layout.py calculate_expandable_width)
                         #
-                        # Layout-aware expansion for regular blocks:
+                        # Layout-aware expansion:
                         # - Respects adjacent block boundaries to prevent overlap
                         # - Respects page margins (capped above)
                         if expandable_width > original_box_width:

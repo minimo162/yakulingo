@@ -1483,6 +1483,642 @@ def _find_right_boundary(
     return max(x1, right_boundary)
 
 
+def _find_left_boundary(
+    layout: LayoutArray,
+    bbox: tuple[float, float, float, float],
+    page_width: float,
+    page_height: float,
+    page_margin: float,
+) -> float:
+    """
+    Find the left boundary for block expansion.
+
+    Searches for the nearest block on the left side that overlaps
+    vertically with the current block.
+
+    Args:
+        layout: LayoutArray with paragraph/table info
+        bbox: Block bounding box in PDF coordinates
+        page_width: Page width in PDF points
+        page_height: Page height in PDF points
+        page_margin: Page left margin
+
+    Returns:
+        X-coordinate of left boundary (in PDF points)
+    """
+    x0, y0, x1, y1 = bbox
+    block_height = y1 - y0
+
+    # Default left boundary is page margin
+    left_boundary = page_margin
+
+    # Scale factor for coordinate conversion (PDF -> image)
+    if layout.height > 0 and page_height > 0:
+        scale = layout.height / page_height
+    else:
+        return left_boundary
+
+    # Search through paragraphs for adjacent blocks
+    for para_id, para_info in layout.paragraphs.items():
+        para_box = para_info.get('box', [])
+        if len(para_box) < 4:
+            continue
+
+        # para_box is in image coordinates
+        para_x0, para_y0, para_x1, para_y1 = para_box[:4]
+
+        # Convert para_box to PDF coordinates for comparison
+        pdf_para_x0 = para_x0 / scale if scale > 0 else para_x0
+        pdf_para_x1 = para_x1 / scale if scale > 0 else para_x1
+        pdf_para_y0 = page_height - (para_y1 / scale) if scale > 0 else para_y1
+        pdf_para_y1 = page_height - (para_y0 / scale) if scale > 0 else para_y0
+
+        # Skip if this is the same block (overlap threshold)
+        if abs(pdf_para_x0 - x0) < 5 and abs(pdf_para_y0 - y0) < 5:
+            continue
+
+        # Check if block is to the left
+        if pdf_para_x1 >= x0 - MIN_COLUMN_GAP:
+            continue
+
+        # Check vertical overlap (same line)
+        overlap_y0 = max(y0, pdf_para_y0)
+        overlap_y1 = min(y1, pdf_para_y1)
+        overlap_height = overlap_y1 - overlap_y0
+
+        # Require significant vertical overlap
+        if overlap_height < block_height * SAME_LINE_OVERLAP_THRESHOLD:
+            continue
+
+        # Found adjacent block - update left boundary
+        # Leave a small gap between blocks
+        candidate_left = pdf_para_x1 + MIN_COLUMN_GAP
+        if candidate_left > left_boundary:
+            left_boundary = candidate_left
+
+    # Also check tables
+    for table_id, table_info in layout.tables.items():
+        table_box = table_info.get('box', [])
+        if len(table_box) < 4:
+            continue
+
+        table_x0, table_y0, table_x1, table_y1 = table_box[:4]
+
+        # Convert to PDF coordinates
+        pdf_table_x1 = table_x1 / scale if scale > 0 else table_x1
+        pdf_table_y0 = page_height - (table_y1 / scale) if scale > 0 else table_y1
+        pdf_table_y1 = page_height - (table_y0 / scale) if scale > 0 else table_y0
+
+        # Skip if same block
+        if abs(table_x0 / scale - x0) < 5 and abs(pdf_table_y0 - y0) < 5:
+            continue
+
+        # Check if to the left
+        if pdf_table_x1 >= x0 - MIN_COLUMN_GAP:
+            continue
+
+        # Check vertical overlap
+        overlap_y0 = max(y0, pdf_table_y0)
+        overlap_y1 = min(y1, pdf_table_y1)
+        overlap_height = overlap_y1 - overlap_y0
+
+        if overlap_height < block_height * SAME_LINE_OVERLAP_THRESHOLD:
+            continue
+
+        candidate_left = pdf_table_x1 + MIN_COLUMN_GAP
+        if candidate_left > left_boundary:
+            left_boundary = candidate_left
+
+    # Ensure we don't go past the original x0
+    return min(x0, left_boundary)
+
+
+def calculate_expandable_margins(
+    layout: LayoutArray,
+    bbox: tuple[float, float, float, float],
+    page_width: float,
+    page_height: float,
+    page_margin: float = DEFAULT_PAGE_MARGIN,
+    is_table_cell: bool = False,
+    table_id: Optional[int] = None,
+) -> tuple[float, float]:
+    """
+    Calculate the expandable margins (left and right) for a text block.
+
+    This function determines how much a block can expand in both directions
+    without overlapping with adjacent blocks or exceeding page margins.
+
+    Args:
+        layout: LayoutArray from PP-DocLayout-L
+        bbox: Block bounding box in PDF coordinates (x0, y0, x1, y1)
+        page_width: Page width in PDF points
+        page_height: Page height in PDF points
+        page_margin: Minimum margin from page edge (default 20pt)
+        is_table_cell: If True, block is in a table cell
+        table_id: Table ID if block is in a table (for cell boundary lookup)
+
+    Returns:
+        Tuple of (expandable_left, expandable_right) in PDF points.
+        - expandable_left: How much the block can expand to the left (x0 - expandable_left = new x0)
+        - expandable_right: How much the block can expand to the right (x1 + expandable_right = new x1)
+    """
+    x0, y0, x1, y1 = bbox
+
+    # Table cells: try to get cell boundaries if available
+    if is_table_cell:
+        if (
+            layout is not None
+            and layout.table_cells
+            and table_id is not None
+            and table_id in layout.table_cells
+        ):
+            # Find the cell that contains this block
+            cell_bounds = _find_containing_cell_boundaries(
+                layout, bbox, page_width, page_height, table_id
+            )
+            if cell_bounds is not None:
+                cell_left, cell_right = cell_bounds
+                expandable_left = max(0, x0 - cell_left - MIN_COLUMN_GAP)
+                expandable_right = max(0, cell_right - x1 - MIN_COLUMN_GAP)
+                logger.debug(
+                    "Table cell margins: left=%.1f, right=%.1f (cell_left=%.1f, cell_right=%.1f)",
+                    expandable_left, expandable_right, cell_left, cell_right
+                )
+                return expandable_left, expandable_right
+
+        # No cell boundary info - no expansion
+        return 0.0, 0.0
+
+    # Non-table blocks: use layout-aware boundaries
+    if layout is None or layout.array is None or layout.fallback_used:
+        # Fallback: use page margins
+        expandable_left = max(0, x0 - page_margin)
+        expandable_right = max(0, (page_width - page_margin) - x1)
+        return expandable_left, expandable_right
+
+    # Find boundaries using layout info
+    left_boundary = _find_left_boundary(layout, bbox, page_width, page_height, page_margin)
+    right_boundary = _find_right_boundary(layout, bbox, page_width, page_height, page_margin)
+
+    expandable_left = max(0, x0 - left_boundary)
+    expandable_right = max(0, right_boundary - x1)
+
+    return expandable_left, expandable_right
+
+
+def _find_containing_cell_boundaries(
+    layout: LayoutArray,
+    bbox: tuple[float, float, float, float],
+    page_width: float,
+    page_height: float,
+    table_id: int,
+) -> Optional[tuple[float, float]]:
+    """
+    Find the left and right boundaries of the cell containing this block.
+
+    Args:
+        layout: LayoutArray with table_cells information
+        bbox: Block bounding box in PDF coordinates (x0, y0, x1, y1)
+        page_width: Page width in PDF points
+        page_height: Page height in PDF points
+        table_id: Table ID to look up cells
+
+    Returns:
+        Tuple of (cell_left, cell_right) in PDF coordinates,
+        or None if no containing cell found.
+    """
+    cells = layout.table_cells.get(table_id, [])
+    if not cells:
+        return None
+
+    x0, y0, x1, y1 = bbox
+
+    # Scale factor for coordinate conversion (image -> PDF)
+    if layout.height > 0 and page_height > 0:
+        scale = layout.height / page_height
+    else:
+        return None
+
+    # Convert block center to image coordinates for matching
+    block_center_x = (x0 + x1) / 2
+    block_center_y = page_height - (y0 + y1) / 2  # PDF y -> image y
+
+    block_center_img_x = block_center_x * scale
+    block_center_img_y = block_center_y * scale
+
+    # Find the cell that contains the block center
+    best_cell = None
+    best_overlap = 0
+
+    for cell in cells:
+        cell_box = cell.get('box', [])
+        if len(cell_box) < 4:
+            continue
+
+        cell_x0, cell_y0, cell_x1, cell_y1 = cell_box
+
+        # Check if block center is inside this cell
+        if (cell_x0 <= block_center_img_x <= cell_x1 and
+            cell_y0 <= block_center_img_y <= cell_y1):
+
+            # Calculate overlap area for better matching
+            overlap_x0 = max(x0 * scale, cell_x0)
+            overlap_x1 = min(x1 * scale, cell_x1)
+            overlap_y0 = max((page_height - y1) * scale, cell_y0)
+            overlap_y1 = min((page_height - y0) * scale, cell_y1)
+
+            if overlap_x1 > overlap_x0 and overlap_y1 > overlap_y0:
+                overlap = (overlap_x1 - overlap_x0) * (overlap_y1 - overlap_y0)
+                if overlap > best_overlap:
+                    best_overlap = overlap
+                    best_cell = cell
+
+    if best_cell is None:
+        return None
+
+    # Convert cell boundaries to PDF coordinates
+    cell_x0_img = best_cell['box'][0]
+    cell_x1_img = best_cell['box'][2]
+    cell_left_pdf = cell_x0_img / scale if scale > 0 else cell_x0_img
+    cell_right_pdf = cell_x1_img / scale if scale > 0 else cell_x1_img
+
+    return cell_left_pdf, cell_right_pdf
+
+
+def _find_top_boundary(
+    layout: LayoutArray,
+    bbox: tuple[float, float, float, float],
+    page_width: float,
+    page_height: float,
+    page_margin: float,
+) -> float:
+    """
+    Find the top boundary for vertical block expansion.
+
+    Searches for the nearest block above that overlaps horizontally
+    with the current block.
+
+    Args:
+        layout: LayoutArray with paragraph/table info
+        bbox: Block bounding box in PDF coordinates (x0, y0, x1, y1)
+        page_width: Page width in PDF points
+        page_height: Page height in PDF points
+        page_margin: Page top margin
+
+    Returns:
+        Y-coordinate of top boundary (in PDF points)
+    """
+    x0, y0, x1, y1 = bbox
+    block_width = x1 - x0
+
+    # Default top boundary is page height minus margin
+    top_boundary = page_height - page_margin
+
+    # Scale factor for coordinate conversion (PDF -> image)
+    if layout.height > 0 and page_height > 0:
+        scale = layout.height / page_height
+    else:
+        return top_boundary
+
+    # Search through paragraphs for blocks above
+    for para_id, para_info in layout.paragraphs.items():
+        para_box = para_info.get('box', [])
+        if len(para_box) < 4:
+            continue
+
+        # para_box is in image coordinates
+        para_x0, para_y0, para_x1, para_y1 = para_box[:4]
+
+        # Convert para_box to PDF coordinates
+        pdf_para_x0 = para_x0 / scale if scale > 0 else para_x0
+        pdf_para_x1 = para_x1 / scale if scale > 0 else para_x1
+        pdf_para_y0 = page_height - (para_y1 / scale) if scale > 0 else para_y1
+        pdf_para_y1 = page_height - (para_y0 / scale) if scale > 0 else para_y0
+
+        # Skip if this is the same block
+        if abs(pdf_para_x0 - x0) < 5 and abs(pdf_para_y0 - y0) < 5:
+            continue
+
+        # Check if block is above (in PDF coords, above means larger y)
+        if pdf_para_y0 <= y1 + MIN_COLUMN_GAP:
+            continue
+
+        # Check horizontal overlap
+        overlap_x0 = max(x0, pdf_para_x0)
+        overlap_x1 = min(x1, pdf_para_x1)
+        overlap_width = overlap_x1 - overlap_x0
+
+        # Require significant horizontal overlap
+        if overlap_width < block_width * SAME_LINE_OVERLAP_THRESHOLD:
+            continue
+
+        # Found adjacent block above - update top boundary
+        candidate_top = pdf_para_y0 - MIN_COLUMN_GAP
+        if candidate_top < top_boundary:
+            top_boundary = candidate_top
+
+    # Also check tables
+    for table_id, table_info in layout.tables.items():
+        table_box = table_info.get('box', [])
+        if len(table_box) < 4:
+            continue
+
+        table_x0, table_y0, table_x1, table_y1 = table_box[:4]
+
+        # Convert to PDF coordinates
+        pdf_table_x0 = table_x0 / scale if scale > 0 else table_x0
+        pdf_table_x1 = table_x1 / scale if scale > 0 else table_x1
+        pdf_table_y0 = page_height - (table_y1 / scale) if scale > 0 else table_y1
+        pdf_table_y1 = page_height - (table_y0 / scale) if scale > 0 else table_y0
+
+        # Skip if same block
+        if abs(pdf_table_x0 - x0) < 5 and abs(pdf_table_y0 - y0) < 5:
+            continue
+
+        # Check if above
+        if pdf_table_y0 <= y1 + MIN_COLUMN_GAP:
+            continue
+
+        # Check horizontal overlap
+        overlap_x0 = max(x0, pdf_table_x0)
+        overlap_x1 = min(x1, pdf_table_x1)
+        overlap_width = overlap_x1 - overlap_x0
+
+        if overlap_width < block_width * SAME_LINE_OVERLAP_THRESHOLD:
+            continue
+
+        candidate_top = pdf_table_y0 - MIN_COLUMN_GAP
+        if candidate_top < top_boundary:
+            top_boundary = candidate_top
+
+    # Ensure we don't go past the original y1
+    return max(y1, top_boundary)
+
+
+def _find_bottom_boundary(
+    layout: LayoutArray,
+    bbox: tuple[float, float, float, float],
+    page_width: float,
+    page_height: float,
+    page_margin: float,
+) -> float:
+    """
+    Find the bottom boundary for vertical block expansion.
+
+    Searches for the nearest block below that overlaps horizontally
+    with the current block.
+
+    Args:
+        layout: LayoutArray with paragraph/table info
+        bbox: Block bounding box in PDF coordinates (x0, y0, x1, y1)
+        page_width: Page width in PDF points
+        page_height: Page height in PDF points
+        page_margin: Page bottom margin
+
+    Returns:
+        Y-coordinate of bottom boundary (in PDF points)
+    """
+    x0, y0, x1, y1 = bbox
+    block_width = x1 - x0
+
+    # Default bottom boundary is page margin
+    bottom_boundary = page_margin
+
+    # Scale factor for coordinate conversion (PDF -> image)
+    if layout.height > 0 and page_height > 0:
+        scale = layout.height / page_height
+    else:
+        return bottom_boundary
+
+    # Search through paragraphs for blocks below
+    for para_id, para_info in layout.paragraphs.items():
+        para_box = para_info.get('box', [])
+        if len(para_box) < 4:
+            continue
+
+        # para_box is in image coordinates
+        para_x0, para_y0, para_x1, para_y1 = para_box[:4]
+
+        # Convert para_box to PDF coordinates
+        pdf_para_x0 = para_x0 / scale if scale > 0 else para_x0
+        pdf_para_x1 = para_x1 / scale if scale > 0 else para_x1
+        pdf_para_y0 = page_height - (para_y1 / scale) if scale > 0 else para_y1
+        pdf_para_y1 = page_height - (para_y0 / scale) if scale > 0 else para_y0
+
+        # Skip if this is the same block
+        if abs(pdf_para_x0 - x0) < 5 and abs(pdf_para_y0 - y0) < 5:
+            continue
+
+        # Check if block is below (in PDF coords, below means smaller y)
+        if pdf_para_y1 >= y0 - MIN_COLUMN_GAP:
+            continue
+
+        # Check horizontal overlap
+        overlap_x0 = max(x0, pdf_para_x0)
+        overlap_x1 = min(x1, pdf_para_x1)
+        overlap_width = overlap_x1 - overlap_x0
+
+        # Require significant horizontal overlap
+        if overlap_width < block_width * SAME_LINE_OVERLAP_THRESHOLD:
+            continue
+
+        # Found adjacent block below - update bottom boundary
+        candidate_bottom = pdf_para_y1 + MIN_COLUMN_GAP
+        if candidate_bottom > bottom_boundary:
+            bottom_boundary = candidate_bottom
+
+    # Also check tables
+    for table_id, table_info in layout.tables.items():
+        table_box = table_info.get('box', [])
+        if len(table_box) < 4:
+            continue
+
+        table_x0, table_y0, table_x1, table_y1 = table_box[:4]
+
+        # Convert to PDF coordinates
+        pdf_table_x0 = table_x0 / scale if scale > 0 else table_x0
+        pdf_table_x1 = table_x1 / scale if scale > 0 else table_x1
+        pdf_table_y0 = page_height - (table_y1 / scale) if scale > 0 else table_y1
+        pdf_table_y1 = page_height - (table_y0 / scale) if scale > 0 else table_y0
+
+        # Skip if same block
+        if abs(pdf_table_x0 - x0) < 5 and abs(pdf_table_y0 - y0) < 5:
+            continue
+
+        # Check if below
+        if pdf_table_y1 >= y0 - MIN_COLUMN_GAP:
+            continue
+
+        # Check horizontal overlap
+        overlap_x0 = max(x0, pdf_table_x0)
+        overlap_x1 = min(x1, pdf_table_x1)
+        overlap_width = overlap_x1 - overlap_x0
+
+        if overlap_width < block_width * SAME_LINE_OVERLAP_THRESHOLD:
+            continue
+
+        candidate_bottom = pdf_table_y1 + MIN_COLUMN_GAP
+        if candidate_bottom > bottom_boundary:
+            bottom_boundary = candidate_bottom
+
+    # Ensure we don't go past the original y0
+    return min(y0, bottom_boundary)
+
+
+def _find_containing_cell_vertical_boundaries(
+    layout: LayoutArray,
+    bbox: tuple[float, float, float, float],
+    page_width: float,
+    page_height: float,
+    table_id: int,
+) -> Optional[tuple[float, float]]:
+    """
+    Find the top and bottom boundaries of the cell containing this block.
+
+    Args:
+        layout: LayoutArray with table_cells information
+        bbox: Block bounding box in PDF coordinates (x0, y0, x1, y1)
+        page_width: Page width in PDF points
+        page_height: Page height in PDF points
+        table_id: Table ID to look up cells
+
+    Returns:
+        Tuple of (cell_bottom, cell_top) in PDF coordinates,
+        or None if no containing cell found.
+    """
+    cells = layout.table_cells.get(table_id, [])
+    if not cells:
+        return None
+
+    x0, y0, x1, y1 = bbox
+
+    # Scale factor for coordinate conversion (image -> PDF)
+    if layout.height > 0 and page_height > 0:
+        scale = layout.height / page_height
+    else:
+        return None
+
+    # Convert block center to image coordinates for matching
+    block_center_x = (x0 + x1) / 2
+    block_center_y = page_height - (y0 + y1) / 2  # PDF y -> image y
+
+    block_center_img_x = block_center_x * scale
+    block_center_img_y = block_center_y * scale
+
+    # Find the cell that contains the block center
+    best_cell = None
+    best_overlap = 0
+
+    for cell in cells:
+        cell_box = cell.get('box', [])
+        if len(cell_box) < 4:
+            continue
+
+        cell_x0, cell_y0, cell_x1, cell_y1 = cell_box
+
+        # Check if block center is inside this cell
+        if (cell_x0 <= block_center_img_x <= cell_x1 and
+            cell_y0 <= block_center_img_y <= cell_y1):
+
+            # Calculate overlap area for better matching
+            overlap_x0 = max(x0 * scale, cell_x0)
+            overlap_x1 = min(x1 * scale, cell_x1)
+            overlap_y0 = max((page_height - y1) * scale, cell_y0)
+            overlap_y1 = min((page_height - y0) * scale, cell_y1)
+
+            if overlap_x1 > overlap_x0 and overlap_y1 > overlap_y0:
+                overlap = (overlap_x1 - overlap_x0) * (overlap_y1 - overlap_y0)
+                if overlap > best_overlap:
+                    best_overlap = overlap
+                    best_cell = cell
+
+    if best_cell is None:
+        return None
+
+    # Convert cell boundaries to PDF coordinates
+    # Image y0 (top) -> PDF y1 (top), Image y1 (bottom) -> PDF y0 (bottom)
+    cell_y0_img = best_cell['box'][1]  # top in image
+    cell_y1_img = best_cell['box'][3]  # bottom in image
+    cell_top_pdf = page_height - (cell_y0_img / scale) if scale > 0 else page_height - cell_y0_img
+    cell_bottom_pdf = page_height - (cell_y1_img / scale) if scale > 0 else page_height - cell_y1_img
+
+    return cell_bottom_pdf, cell_top_pdf
+
+
+def calculate_expandable_vertical_margins(
+    layout: LayoutArray,
+    bbox: tuple[float, float, float, float],
+    page_width: float,
+    page_height: float,
+    page_margin: float = DEFAULT_PAGE_MARGIN,
+    is_table_cell: bool = False,
+    table_id: Optional[int] = None,
+) -> tuple[float, float]:
+    """
+    Calculate the expandable vertical margins (top and bottom) for a text block.
+
+    This function determines how much a block can expand vertically
+    without overlapping with adjacent blocks or exceeding page margins.
+
+    Args:
+        layout: LayoutArray from PP-DocLayout-L
+        bbox: Block bounding box in PDF coordinates (x0, y0, x1, y1)
+        page_width: Page width in PDF points
+        page_height: Page height in PDF points
+        page_margin: Minimum margin from page edge (default 20pt)
+        is_table_cell: If True, block is in a table cell
+        table_id: Table ID if block is in a table (for cell boundary lookup)
+
+    Returns:
+        Tuple of (expandable_top, expandable_bottom) in PDF points.
+        - expandable_top: How much the block can expand upward (y1 + expandable_top = new y1)
+        - expandable_bottom: How much the block can expand downward (y0 - expandable_bottom = new y0)
+    """
+    x0, y0, x1, y1 = bbox
+
+    # Table cells: try to get cell boundaries if available
+    if is_table_cell:
+        if (
+            layout is not None
+            and layout.table_cells
+            and table_id is not None
+            and table_id in layout.table_cells
+        ):
+            # Find the cell that contains this block
+            cell_bounds = _find_containing_cell_vertical_boundaries(
+                layout, bbox, page_width, page_height, table_id
+            )
+            if cell_bounds is not None:
+                cell_bottom, cell_top = cell_bounds
+                expandable_top = max(0, cell_top - y1 - MIN_COLUMN_GAP)
+                expandable_bottom = max(0, y0 - cell_bottom - MIN_COLUMN_GAP)
+                logger.debug(
+                    "Table cell vertical margins: top=%.1f, bottom=%.1f "
+                    "(cell_bottom=%.1f, cell_top=%.1f)",
+                    expandable_top, expandable_bottom, cell_bottom, cell_top
+                )
+                return expandable_top, expandable_bottom
+
+        # No cell boundary info - no expansion
+        return 0.0, 0.0
+
+    # Non-table blocks: use layout-aware boundaries
+    if layout is None or layout.array is None or layout.fallback_used:
+        # Fallback: use page margins
+        expandable_top = max(0, (page_height - page_margin) - y1)
+        expandable_bottom = max(0, y0 - page_margin)
+        return expandable_top, expandable_bottom
+
+    # Find boundaries using layout info
+    top_boundary = _find_top_boundary(layout, bbox, page_width, page_height, page_margin)
+    bottom_boundary = _find_bottom_boundary(layout, bbox, page_width, page_height, page_margin)
+
+    expandable_top = max(0, top_boundary - y1)
+    expandable_bottom = max(0, y0 - bottom_boundary)
+
+    return expandable_top, expandable_bottom
+
+
 def calculate_all_expandable_widths(
     layout: LayoutArray,
     paragraphs: list[tuple[int, tuple[float, float, float, float], bool]],

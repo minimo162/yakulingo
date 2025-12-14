@@ -1240,6 +1240,35 @@ analyzed_cells = analyze_table_structure(cells, table_box)
 - セル境界検出成功時: セル境界まで拡張可能（テキストの読みやすさ優先）
 - セル境界検出失敗時: フォントサイズ縮小にフォールバック（重なり防止）
 
+**アライメントベース拡張方向 (pdf_processor.py):**
+
+| 関数 | 説明 |
+|------|------|
+| `TextAlignment` | 横書きテキストの配置タイプ（LEFT/RIGHT/CENTER） |
+| `VerticalAlignment` | 縦書きテキストの配置タイプ（TOP/BOTTOM/CENTER） |
+| `is_vertical_text()` | アスペクト比（height/width > 1.5）で縦書き判定 |
+| `estimate_text_alignment()` | 横方向の配置推定（マージン比較） |
+| `estimate_vertical_alignment()` | 縦方向の配置推定（マージン比較） |
+| `calculate_expanded_box()` | 横方向のアライメントベース拡張 |
+| `calculate_expanded_box_vertical()` | 縦方向のアライメントベース拡張 |
+
+**縦方向境界検出 (pdf_layout.py):**
+
+| 関数 | 説明 |
+|------|------|
+| `_find_top_boundary()` | 上側の隣接ブロックを検索して上境界を決定 |
+| `_find_bottom_boundary()` | 下側の隣接ブロックを検索して下境界を決定 |
+| `_find_containing_cell_vertical_boundaries()` | テーブルセルの上下境界を取得 |
+| `calculate_expandable_vertical_margins()` | 上下の拡張可能マージンを計算 |
+
+**定数:**
+
+| 定数 | 値 | 説明 |
+|------|------|------|
+| `ALIGNMENT_TOLERANCE` | 5.0pt | アライメント判定の許容誤差 |
+| `VERTICAL_TEXT_ASPECT_RATIO` | 1.5 | 縦書き判定の閾値（ブロック単位） |
+| `MAX_EXPANSION_RATIO` | 1.5 | 最大拡張比率（150%） |
+
 **DPI設定 (`ocr_dpi`):**
 
 | 設定値 | 解像度 | メモリ使用量 | 精度 | 処理時間 |
@@ -1557,6 +1586,24 @@ Based on recent commits:
   - **Fallback support**: PP-DocLayout-L未使用時はページ余白まで拡張
   - **Dynamic margin detection**: `calculate_page_margins()`で元PDFの余白を動的に計算し、余白にはみ出さないよう制限
   - **Unified expansion logic**: テーブル・非テーブルに関わらずすべてのブロックでボックス拡張を優先（フォント縮小は最後の手段）
+  - **Alignment-based expansion direction**: テキストの配置に応じた拡張方向
+    - 左揃え: 右方向に拡張
+    - 右揃え: 左方向に拡張
+    - 中央揃え: 両方向に均等拡張
+  - **Vertical text support**: 縦書きテキスト対応のボックス拡張
+    - `is_vertical_text()`: アスペクト比（height/width > 1.5）で縦書き検出
+    - `VerticalAlignment`: TOP/BOTTOM/CENTER の縦方向配置タイプ
+    - `estimate_vertical_alignment()`: 縦方向の配置推定
+    - `calculate_expanded_box_vertical()`: 縦方向の拡張計算
+    - 上揃え: 下方向に拡張（y0を減少）
+    - 下揃え: 上方向に拡張（y1を増加）
+    - 中央揃え: 両方向に均等拡張
+  - **Bidirectional margin calculation**: 左右・上下両方向の拡張可能幅を計算
+    - `calculate_expandable_margins()`: 左右マージン計算
+    - `calculate_expandable_vertical_margins()`: 上下マージン計算
+    - `_find_left_boundary()`, `_find_right_boundary()`: 水平境界検出
+    - `_find_top_boundary()`, `_find_bottom_boundary()`: 垂直境界検出
+  - **TextBlock metadata拡張**: `expandable_left`, `expandable_right`, `expandable_top`, `expandable_bottom`, `is_vertical`を保存
 - **PDF Translation Bug Fixes (2024-12)**:
   - **Non-translatable text disappearance fix**: PDF翻訳時の非翻訳対象テキスト消失を修正
   - **Number parsing fix**: PDF翻訳時の番号パース失敗を修正

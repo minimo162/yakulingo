@@ -3966,10 +3966,11 @@ class PdfProcessor(FileProcessor):
                 new_paragraph = True
                 line_break = False
                 prev_cls = char_cls
+                is_strong_boundary = False  # For first char case
             else:
                 # Use detect_paragraph_boundary from pdf_converter.py
                 # Pass prev_x1 for table cell boundary detection
-                new_paragraph, line_break = detect_paragraph_boundary(
+                new_paragraph, line_break, is_strong_boundary = detect_paragraph_boundary(
                     char_x0, char_y0, prev_x0, prev_y0,
                     char_cls, prev_cls, use_layout,
                     prev_x1=prev_x1
@@ -4024,9 +4025,19 @@ class PdfProcessor(FileProcessor):
                     # If the previous paragraph doesn't end with a sentence-ending character,
                     # we may be in the middle of a sentence that spans multiple visual lines
                     # (e.g., numbered paragraphs like "167. 固定資産に係る...はあ" + "りません。")
+                    #
+                    # However, if is_strong_boundary is True, we always start a new paragraph.
+                    # Strong boundaries include:
+                    # - Layout class change (both non-BACKGROUND)
+                    # - Y change > SAME_PARA_Y_THRESHOLD
+                    # - X gap > TABLE_CELL_X_THRESHOLD
+                    # - Table row change
+                    # - Column change (large X jump + Y going up)
+                    # - TOC-like pattern (Y change + large X reset)
                     should_start_new = True
 
-                    if sstk and pstk:
+                    # Only apply sentence-end check for weak boundaries (line wrapping)
+                    if not is_strong_boundary and sstk and pstk:
                         prev_text = sstk[-1].rstrip() if sstk[-1] else ""
                         # Check layout class - if different layout regions, always start new paragraph
                         layout_changed = use_layout and char_cls != prev_cls and prev_cls is not None

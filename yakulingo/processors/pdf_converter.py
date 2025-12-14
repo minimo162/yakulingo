@@ -753,7 +753,7 @@ def detect_paragraph_boundary(
     use_layout: bool,
     thresholds: Optional[dict] = None,
     prev_x1: Optional[float] = None,
-) -> tuple[bool, bool]:
+) -> tuple[bool, bool, bool]:
     """
     Detect if a new paragraph or line break should start.
 
@@ -773,7 +773,15 @@ def detect_paragraph_boundary(
         prev_x1: Previous character X1 coordinate (right edge) for X gap detection
 
     Returns:
-        Tuple of (new_paragraph, line_break) booleans
+        Tuple of (new_paragraph, line_break, is_strong_boundary) booleans
+        is_strong_boundary: If True, new_paragraph should not be overridden by
+                           sentence-end check. Strong boundaries include:
+                           - Layout class change (both non-BACKGROUND)
+                           - Y change > SAME_PARA_Y_THRESHOLD
+                           - X gap > TABLE_CELL_X_THRESHOLD
+                           - Table row change (Y > TABLE_ROW_Y_THRESHOLD)
+                           - Column change (large X jump + Y going up)
+                           - TOC-like pattern (Y change + large X reset)
     """
     # Table layout class base constant (imported locally to avoid circular import)
     # LAYOUT_TABLE_BASE = 1000, table regions have IDs >= 1000
@@ -781,6 +789,7 @@ def detect_paragraph_boundary(
 
     new_paragraph = False
     line_break = False
+    is_strong_boundary = False  # True if boundary should not be overridden by sentence-end check
 
     # Use dynamic thresholds if provided, otherwise use defaults
     y_line_thresh = thresholds['y_line'] if thresholds else SAME_LINE_Y_THRESHOLD
@@ -799,13 +808,16 @@ def detect_paragraph_boundary(
             # Both are in detected regions (not BACKGROUND=1)
             if char_cls != 1 and prev_cls != 1:
                 new_paragraph = True
+                is_strong_boundary = True  # Layout class change is strong
             else:
                 # One or both are BACKGROUND -> use Y-coordinate
                 y_diff = abs(char_y0 - prev_y0)
                 if y_diff > y_para_thresh:
                     new_paragraph = True
+                    is_strong_boundary = True  # Large Y change is strong
                 elif y_diff > y_line_thresh:
                     line_break = True
+                    # Not strong - may be overridden by sentence-end check
         else:
             # Same region - special handling for table regions
             y_diff = abs(char_y0 - prev_y0)
@@ -818,15 +830,18 @@ def detect_paragraph_boundary(
                     if x_gap > TABLE_CELL_X_THRESHOLD:
                         # Large X gap in table = new cell = new paragraph
                         new_paragraph = True
+                        is_strong_boundary = True  # Table cell boundary is strong
                     elif y_diff > TABLE_ROW_Y_THRESHOLD:
                         # Y movement in table = new row = new paragraph
                         new_paragraph = True
+                        is_strong_boundary = True  # Table row change is strong
                     elif y_diff > y_line_thresh:
                         line_break = True
                 else:
                     # No prev_x1, fall back to Y-based detection with table threshold
                     if y_diff > TABLE_ROW_Y_THRESHOLD:
                         new_paragraph = True
+                        is_strong_boundary = True  # Table row change is strong
                     elif y_diff > y_line_thresh:
                         line_break = True
             else:
@@ -842,13 +857,23 @@ def detect_paragraph_boundary(
                     if x_gap > TABLE_CELL_X_THRESHOLD:
                         # Large X gap suggests new field/column = new paragraph
                         new_paragraph = True
+                        is_strong_boundary = True  # Large X gap is strong
                     elif y_diff > y_line_thresh and x_reset > TOC_LINE_X_RESET_THRESHOLD:
                         # TOC-like pattern: Y changed (new line) AND X reset significantly
                         # This indicates a new entry (e.g., new TOC item), not just a
                         # line break within a paragraph. Treat as new paragraph.
                         new_paragraph = True
+                        is_strong_boundary = True  # TOC pattern is strong
+                    elif y_diff > y_para_thresh:
+                        # Y change exceeds paragraph threshold
+                        new_paragraph = True
+                        is_strong_boundary = True  # Large Y change is strong
                     elif y_diff > y_line_thresh:
                         line_break = True
+                        # Not strong - may be overridden by sentence-end check
+                elif y_diff > y_para_thresh:
+                    new_paragraph = True
+                    is_strong_boundary = True  # Large Y change is strong
                 elif y_diff > y_line_thresh:
                     line_break = True
     else:
@@ -864,11 +889,13 @@ def detect_paragraph_boundary(
 
         if y_diff > y_para_thresh:
             new_paragraph = True
+            is_strong_boundary = True  # Large Y change is strong
         elif x_diff > x_column_thresh:
             # Large X jump suggests column change in multi-column layout
             # Combined with Y going back up indicates new column
             if char_y0 > prev_y0:  # char is above prev (PDF coords: higher Y = higher on page)
                 new_paragraph = True
+                is_strong_boundary = True  # Column change is strong
             else:
                 # X jump but Y continues downward - might be indent or table
                 # Check if it's a significant jump relative to page structure
@@ -878,10 +905,12 @@ def detect_paragraph_boundary(
             # This indicates a new entry (e.g., new TOC item), not just a
             # line break within a paragraph. Treat as new paragraph.
             new_paragraph = True
+            is_strong_boundary = True  # TOC pattern is strong
         elif y_diff > y_line_thresh:
             line_break = True
+            # Not strong - may be overridden by sentence-end check
 
-    return new_paragraph, line_break
+    return new_paragraph, line_break, is_strong_boundary
 
 
 def classify_char_type(fontname: str, char_text: str) -> bool:

@@ -239,6 +239,54 @@ Operating margin improved"""
         assert "Revenue grew 0.5% YoY" in parsed[0]
         assert "Operating margin improved" in parsed[1]
 
+    def test_parse_removes_end_marker(self, handler):
+        """Removes [END] marker from translations"""
+        result = """1. Hello [END]
+2. World [END]
+3. Test [END]"""
+        parsed = handler._parse_batch_result(result, 3)
+
+        assert len(parsed) == 3
+        assert parsed[0] == "Hello"
+        assert parsed[1] == "World"
+        assert parsed[2] == "Test"
+
+    def test_parse_removes_end_marker_case_insensitive(self, handler):
+        """Removes [END] marker regardless of case"""
+        result = """1. Hello [end]
+2. World [End]
+3. Test [END]"""
+        parsed = handler._parse_batch_result(result, 3)
+
+        assert len(parsed) == 3
+        assert parsed[0] == "Hello"
+        assert parsed[1] == "World"
+        assert parsed[2] == "Test"
+
+    def test_parse_removes_end_marker_with_spaces(self, handler):
+        """Removes [END] marker with varying whitespace"""
+        result = """1. Hello  [END]
+2. World[END]
+3. Test   [END]   """
+        parsed = handler._parse_batch_result(result, 3)
+
+        assert len(parsed) == 3
+        assert parsed[0] == "Hello"
+        assert parsed[1] == "World"
+        assert parsed[2] == "Test"
+
+    def test_parse_removes_multiple_end_markers(self, handler):
+        """Removes multiple [END] markers from a single translation"""
+        # Note: The regex removes surrounding whitespace with the marker,
+        # so "Hello [END] World" becomes "HelloWorld"
+        result = """1. Hello [END] World [END]
+2. Test [END]"""
+        parsed = handler._parse_batch_result(result, 2)
+
+        assert len(parsed) == 2
+        assert parsed[0] == "HelloWorld"
+        assert parsed[1] == "Test"
+
 
 class TestCopilotHandlerConnection:
     """Test CopilotHandler connection state management"""

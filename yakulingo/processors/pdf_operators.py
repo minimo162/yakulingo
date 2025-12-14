@@ -1230,6 +1230,11 @@ class ContentStreamReplacer:
             # Non-critical error - page may not have XObjects
             logger.debug("Form XObject filtering skipped for page %d: %s", page.number, e)
 
+    # Pre-compiled regex patterns for XObject detection (performance optimization)
+    _RE_XOBJECT_DICT = re.compile(r'/XObject\s*<<([^>]*)>>')
+    _RE_XOBJECT_REF = re.compile(r'/(\w+)\s+(\d+)\s+0\s+R')
+    _RE_RESOURCES_REF = re.compile(r'/Resources\s+(\d+)\s+0\s+R')
+
     def _find_nested_xobjects(
         self,
         parent_xref: int,
@@ -1256,13 +1261,11 @@ class ContentStreamReplacer:
                 return
 
             # Pattern 1: Inline XObject dictionary /XObject << /Name N 0 R >>
-            xobj_pattern = re.compile(r'/XObject\s*<<([^>]*)>>')
-            match = xobj_pattern.search(obj_str)
+            match = self._RE_XOBJECT_DICT.search(obj_str)
             if match:
                 xobj_dict = match.group(1)
                 # Find all references to XObjects (format: /Name N 0 R)
-                ref_pattern = re.compile(r'/(\w+)\s+(\d+)\s+0\s+R')
-                for name_match in ref_pattern.finditer(xobj_dict):
+                for name_match in self._RE_XOBJECT_REF.finditer(xobj_dict):
                     nested_name = name_match.group(1)
                     nested_xref = int(name_match.group(2))
 
@@ -1274,10 +1277,13 @@ class ContentStreamReplacer:
                         xref_queue.append((nested_xref, nested_name))
 
             # Pattern 2: Indirect reference to Resources /Resources N 0 R
-            resources_ref_pattern = re.compile(r'/Resources\s+(\d+)\s+0\s+R')
-            resources_match = resources_ref_pattern.search(obj_str)
+            resources_match = self._RE_RESOURCES_REF.search(obj_str)
             if resources_match:
                 resources_xref = int(resources_match.group(1))
+                # Prevent infinite recursion by checking if already processed
+                if resources_xref in processed_xrefs:
+                    return
+                processed_xrefs.add(resources_xref)
                 try:
                     resources_obj = self.doc.xref_object(resources_xref)
                     # Recursively search for XObjects in the Resources dictionary

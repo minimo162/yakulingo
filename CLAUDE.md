@@ -180,7 +180,7 @@ YakuLingo/
 | `yakulingo/processors/pdf_converter.py` | PDFMathTranslate準拠: Paragraph, FormulaVar, vflag, 座標変換 | ~600 |
 | `yakulingo/processors/pdf_layout.py` | PP-DocLayout-L統合: LayoutArray, TableCellsDetection, 読み順推定, rowspan/colspan検出 | ~2227 |
 | `yakulingo/processors/pdf_font_manager.py` | PDF font management: font registry, type detection, glyph encoding | ~1140 |
-| `yakulingo/processors/pdf_operators.py` | PDF low-level operator generation for text rendering | ~731 |
+| `yakulingo/processors/pdf_operators.py` | PDF low-level operator generation, Form XObject filtering | ~800 |
 
 ## Core Data Types
 
@@ -1287,6 +1287,44 @@ replacer.set_base_stream(xref, original_stream)  # グラフィックスを保�
 replacer.apply_to_page(page)
 ```
 
+**Form XObjectフィルタリング（yomitoku参照）:**
+
+複雑なPDF（決算短信等）では、テキストがForm XObject（埋め込みPDFオブジェクト）内に
+格納されていることがあります。`ContentStreamReplacer._filter_form_xobjects()`は
+yomitokuを参考にした再帰的な処理でネストしたXObjectも含めて全てのテキストを削除します。
+
+```python
+# Form XObjectフィルタリングの動作
+def _filter_form_xobjects(self, page) -> None:
+    """
+    ページ内のForm XObjectからテキストを削除。
+    yomitoku-style: ネストしたXObjectも再帰的に処理。
+    """
+    xobjects = page.get_xobjects()
+    xref_queue = [(xobj[0], xobj[1]) for xobj in xobjects]
+    processed_xrefs = set()
+
+    while xref_queue:
+        xref, name = xref_queue.pop(0)
+        if xref in processed_xrefs:
+            continue
+        processed_xrefs.add(xref)
+
+        # Form XObjectのストリームからテキストを削除
+        stream = doc.xref_stream(xref)
+        filtered = parser.parse_and_filter(stream)
+        doc.update_stream(xref, filtered)
+
+        # ネストしたXObjectをキューに追加
+        self._find_nested_xobjects(xref, obj_str, xref_queue, processed_xrefs)
+```
+
+| メソッド | 説明 |
+|----------|------|
+| `_filter_form_xobjects()` | ページ内のForm XObjectからテキストを再帰的に削除 |
+| `_find_nested_xobjects()` | Form XObjectのResourcesからネストしたXObjectを探索 |
+| `ContentStreamParser.parse_and_filter()` | コンテンツストリームからテキストオペレータを削除 |
+
 **フォント種別に応じたテキストエンコーディング（PDFMathTranslate converter.py準拠）:**
 
 ```python
@@ -1400,6 +1438,12 @@ When interacting with users in this repository, prefer Japanese for comments and
 ## Recent Development Focus
 
 Based on recent commits:
+- **Form XObject Recursive Filtering (2024-12)**:
+  - **Nested XObject processing**: Form XObject内のネストしたXObjectを再帰的に処理
+  - **yomitoku-style queue-based**: キューベースの幅優先探索でXObjectツリーを走査
+  - **_find_nested_xobjects()**: Form XObjectのResourcesからネストしたXObjectを探索
+  - **Text overlap fix**: 複雑なPDF（決算短信等）でのテキスト重なり問題を修正
+  - **Reference**: https://github.com/kotaro-kinoshita/yomitoku を参考に実装
 - **Reading Order & Table Structure Analysis (2024-12)**:
   - **Graph-based reading order**: グラフベースの読み順推定アルゴリズムを追加（上から下、左から右優先）
   - **Intermediate element detection**: 中間要素がある場合はエッジを作成しない（正確な読み順）

@@ -3406,9 +3406,23 @@ class CopilotHandler:
                 # using both click and focus for maximum reliability
                 try:
                     input_elem.evaluate('el => { el.click(); el.focus(); }')
-                    time.sleep(0.3)  # Increased from 0.15s - first send often fails with shorter wait
+                    time.sleep(0.1)  # Brief pause for focus to take effect
                 except Exception as e:
                     logger.debug("Re-focus after fill failed: %s", e)
+
+                # Wait for send button to become enabled before pressing Enter
+                # This indicates Copilot has processed the input and is ready
+                try:
+                    self._page.wait_for_selector(
+                        self.SEND_BUTTON_SELECTOR,
+                        timeout=3000,
+                        state='visible'
+                    )
+                    logger.debug("Send button is now enabled")
+                except Exception as e:
+                    logger.debug("Send button wait skipped: %s", e)
+                    # Fall back to fixed wait if selector fails
+                    time.sleep(0.3)
 
                 # Send via Enter key with retry on failure
                 # After Enter, check if input field is cleared OR stop button appears

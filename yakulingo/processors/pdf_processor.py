@@ -152,6 +152,12 @@ ALIGNMENT_TOLERANCE = 5.0  # Tolerance in points for alignment detection
 # Vertical text detection constants
 VERTICAL_TEXT_ASPECT_RATIO = 1.5  # height/width > 1.5 suggests vertical text for single block
 
+# Box expansion constants
+# MAX_EXPANSION_RATIO limits how much a text box can expand relative to original size.
+# A value of 2.0 means a box can expand up to 200% of its original width/height.
+# This prevents extreme overflow while allowing reasonable expansion for longer translations.
+MAX_EXPANSION_RATIO = 2.0
+
 
 class TextAlignment:
     """Text alignment types for horizontal text."""
@@ -2454,8 +2460,7 @@ class PdfProcessor(FileProcessor):
                         # - Expand based on text alignment (horizontal or vertical)
                         # - Table cells: expand to cell boundary if available
                         # - Regular blocks: limited expansion with strict boundaries
-                        # - Maximum 1.5x original dimension to prevent extreme overflow
-                        MAX_EXPANSION_RATIO = 1.5  # Limit expansion to 150% of original
+                        # - Uses module-level MAX_EXPANSION_RATIO constant
 
                         if block_is_vertical:
                             # Vertical text: estimate vertical alignment and expand vertically

@@ -2070,23 +2070,24 @@ class YakuLingoApp:
             return True
 
         # Check if already initializing (another task is handling it)
+        should_initialize = False
         with self._layout_init_lock:
             if self._layout_init_state == LayoutInitializationState.INITIALIZING:
                 # Wait for the other initialization to complete
                 logger.debug("PP-DocLayout-L initialization already in progress, waiting...")
-                # Release lock and wait
-                pass
+                # Release lock and wait (should_initialize remains False)
             elif self._layout_init_state == LayoutInitializationState.INITIALIZED:
                 return True
             elif self._layout_init_state == LayoutInitializationState.FAILED:
                 # Previously failed - still allow PDF but with degraded quality
                 return True
             else:
-                # Start initialization
+                # Start initialization - this task will do it
                 self._layout_init_state = LayoutInitializationState.INITIALIZING
+                should_initialize = True
 
-        # Wait if another task is initializing
-        if self._layout_init_state == LayoutInitializationState.INITIALIZING:
+        # Wait if another task is initializing (not us)
+        if not should_initialize:
             # Poll until initialization completes (max 30 seconds)
             for _ in range(60):
                 await asyncio.sleep(0.5)

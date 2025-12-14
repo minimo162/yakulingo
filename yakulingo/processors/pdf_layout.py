@@ -1528,13 +1528,33 @@ def calculate_all_expandable_widths(
 # - Graph-based approach: elements are nodes, reading sequence forms edges
 # - Intermediate element detection to avoid crossing relationships
 #
-# Note: This is an original implementation, not derived from any specific
-# codebase. The algorithm concepts are based on general document layout
-# analysis principles.
+# Note: This implementation is inspired by yomitoku (https://github.com/kotaro-kinoshita/yomitoku)
+# but is an independent MIT-licensed implementation.
+#
+# yomitoku uses graph-based DFS with direction-specific distance metrics.
+# Key concepts adapted:
+# - Three reading directions: top2bottom, right2left (vertical Japanese), left2right
+# - Distance metric for start node selection
+# - Intermediate element detection for accurate edge creation
+
+from enum import Enum
+
+
+class ReadingDirection(Enum):
+    """Reading direction for document layout (yomitoku-style)."""
+    TOP_TO_BOTTOM = "top2bottom"    # Default: top→bottom, left→right (horizontal text)
+    RIGHT_TO_LEFT = "right2left"    # Japanese vertical: right→left, top→bottom
+    LEFT_TO_RIGHT = "left2right"    # Alternative: left→right, top→bottom
+
 
 # Reading order detection thresholds
 READING_ORDER_Y_TOLERANCE = 5.0  # Y tolerance for same-line detection (pts)
 READING_ORDER_X_TOLERANCE = 10.0  # X tolerance for column detection (pts)
+
+# Distance metric weights (yomitoku-style)
+# For left2right: Y has higher weight to prioritize top-to-bottom within columns
+DISTANCE_X_WEIGHT = 1.0
+DISTANCE_Y_WEIGHT = 5.0
 
 
 def _boxes_vertically_overlap(
@@ -1681,18 +1701,60 @@ def _exists_intermediate_element(
     return False
 
 
+def _calculate_distance_metric(
+    bbox: tuple[float, float, float, float],
+    direction: ReadingDirection,
+    max_x: float = 0,
+    max_y: float = 0,
+) -> float:
+    """
+    Calculate distance metric for start node selection (yomitoku-style).
+
+    Each direction uses a different distance formula to find the optimal
+    starting node for reading order traversal.
+
+    Args:
+        bbox: Bounding box (x0, y0, x1, y1) in PDF coordinates
+        direction: Reading direction
+        max_x: Maximum X coordinate (for right2left calculation)
+        max_y: Maximum Y coordinate (for reference)
+
+    Returns:
+        Distance metric value (lower = higher priority as start node)
+    """
+    x0, y0, x1, y1 = bbox
+
+    if direction == ReadingDirection.TOP_TO_BOTTOM:
+        # top2bottom: Start from top-left
+        # Lower X + higher Y = higher priority
+        # In PDF coords, higher Y is top of page, so use -Y for sorting
+        return x0 + (max_y - y1)  # top-left corner priority
+
+    elif direction == ReadingDirection.RIGHT_TO_LEFT:
+        # right2left (Japanese vertical): Start from top-right
+        # Higher X + higher Y = higher priority
+        return (max_x - x1) + (max_y - y1)  # top-right corner priority
+
+    else:  # LEFT_TO_RIGHT
+        # left2right: Start from top-left, Y has higher weight
+        # Prioritize top rows over left columns
+        return x0 * DISTANCE_X_WEIGHT + (max_y - y1) * DISTANCE_Y_WEIGHT
+
+
 def _build_reading_order_graph(
     elements: list[tuple[int, tuple[float, float, float, float]]],
+    direction: ReadingDirection = ReadingDirection.TOP_TO_BOTTOM,
 ) -> dict[int, list[int]]:
     """
-    Build a directed graph representing reading order relationships.
+    Build a directed graph representing reading order relationships (yomitoku-style).
 
-    For each element, finds which elements should be read next.
-    Uses top-to-bottom priority, then left-to-right for same-line elements.
+    For each element, finds which elements should be read next based on
+    the specified reading direction.
 
     Args:
         elements: List of (id, bbox) tuples where bbox is (x0, y0, x1, y1)
                   in PDF coordinates (y increases upward)
+        direction: Reading direction (top2bottom, right2left, left2right)
 
     Returns:
         Dictionary mapping element id to list of successor ids
@@ -1702,7 +1764,29 @@ def _build_reading_order_graph(
 
     graph: dict[int, list[int]] = {elem_id: [] for elem_id, _ in elements}
 
-    # For each element, find potential successors
+    if direction == ReadingDirection.TOP_TO_BOTTOM:
+        # top2bottom: Vertical flow with left-to-right within same line
+        _build_graph_top_to_bottom(elements, graph)
+    elif direction == ReadingDirection.RIGHT_TO_LEFT:
+        # right2left: Horizontal flow (right→left) with vertical within same column
+        _build_graph_right_to_left(elements, graph)
+    else:  # LEFT_TO_RIGHT
+        # left2right: Horizontal flow (left→right) with vertical within same column
+        _build_graph_left_to_right(elements, graph)
+
+    return graph
+
+
+def _build_graph_top_to_bottom(
+    elements: list[tuple[int, tuple[float, float, float, float]]],
+    graph: dict[int, list[int]],
+) -> None:
+    """
+    Build graph for top-to-bottom reading (yomitoku top2bottom style).
+
+    Primary direction: top → bottom
+    Secondary direction: left → right (for same-line elements)
+    """
     for i, (id_i, box_i) in enumerate(elements):
         _, y0_i, _, y1_i = box_i
         center_y_i = (y0_i + y1_i) / 2
@@ -1738,23 +1822,137 @@ def _build_reading_order_graph(
                     ):
                         graph[id_i].append(id_j)
 
-    return graph
+    # Sort successors by X coordinate (left-to-right priority)
+    for elem_id in graph:
+        elem_lookup = {eid: bbox for eid, bbox in elements}
+        graph[elem_id].sort(key=lambda eid: elem_lookup.get(eid, (0, 0, 0, 0))[0])
+
+
+def _build_graph_right_to_left(
+    elements: list[tuple[int, tuple[float, float, float, float]]],
+    graph: dict[int, list[int]],
+) -> None:
+    """
+    Build graph for right-to-left reading (yomitoku right2left style).
+
+    For Japanese vertical text: columns read right → left,
+    text within columns read top → bottom.
+
+    Primary direction: right → left
+    Secondary direction: top → bottom (for same-column elements)
+    """
+    for i, (id_i, box_i) in enumerate(elements):
+        x0_i, y0_i, x1_i, y1_i = box_i
+        center_x_i = (x0_i + x1_i) / 2
+
+        for j, (id_j, box_j) in enumerate(elements):
+            if i == j:
+                continue
+
+            x0_j, y0_j, x1_j, y1_j = box_j
+            center_x_j = (x0_j + x1_j) / 2
+
+            # Check horizontal overlap (same column in vertical text)
+            if _boxes_horizontally_overlap(box_i, box_j):
+                # Same column: check top-to-bottom
+                center_y_i = (y0_i + y1_i) / 2
+                center_y_j = (y0_j + y1_j) / 2
+
+                if center_y_j < center_y_i - READING_ORDER_Y_TOLERANCE:
+                    # j is below i
+                    if not _exists_intermediate_element(
+                        box_i, box_j, elements, "vertical"
+                    ):
+                        graph[id_i].append(id_j)
+
+            elif _boxes_vertically_overlap(box_i, box_j):
+                # Same row: check right-to-left
+                if center_x_j < center_x_i - READING_ORDER_X_TOLERANCE:
+                    # j is to the left of i (read after in right2left)
+                    if not _exists_intermediate_element(
+                        box_i, box_j, elements, "horizontal"
+                    ):
+                        graph[id_i].append(id_j)
+
+    # Sort successors by Y coordinate descending (top-to-bottom priority)
+    for elem_id in graph:
+        elem_lookup = {eid: bbox for eid, bbox in elements}
+        graph[elem_id].sort(
+            key=lambda eid: -(elem_lookup.get(eid, (0, 0, 0, 0))[1] +
+                              elem_lookup.get(eid, (0, 0, 0, 0))[3]) / 2
+        )
+
+
+def _build_graph_left_to_right(
+    elements: list[tuple[int, tuple[float, float, float, float]]],
+    graph: dict[int, list[int]],
+) -> None:
+    """
+    Build graph for left-to-right reading (yomitoku left2right style).
+
+    For multi-column layouts where columns are read left → right,
+    text within columns read top → bottom.
+
+    Primary direction: left → right
+    Secondary direction: top → bottom (for same-column elements)
+    """
+    for i, (id_i, box_i) in enumerate(elements):
+        x0_i, y0_i, x1_i, y1_i = box_i
+        center_x_i = (x0_i + x1_i) / 2
+
+        for j, (id_j, box_j) in enumerate(elements):
+            if i == j:
+                continue
+
+            x0_j, y0_j, x1_j, y1_j = box_j
+            center_x_j = (x0_j + x1_j) / 2
+
+            # Check horizontal overlap (same column)
+            if _boxes_horizontally_overlap(box_i, box_j):
+                # Same column: check top-to-bottom
+                center_y_i = (y0_i + y1_i) / 2
+                center_y_j = (y0_j + y1_j) / 2
+
+                if center_y_j < center_y_i - READING_ORDER_Y_TOLERANCE:
+                    # j is below i
+                    if not _exists_intermediate_element(
+                        box_i, box_j, elements, "vertical"
+                    ):
+                        graph[id_i].append(id_j)
+
+            elif _boxes_vertically_overlap(box_i, box_j):
+                # Same row: check left-to-right
+                if center_x_j > center_x_i + READING_ORDER_X_TOLERANCE:
+                    # j is to the right of i
+                    if not _exists_intermediate_element(
+                        box_i, box_j, elements, "horizontal"
+                    ):
+                        graph[id_i].append(id_j)
+
+    # Sort successors by Y coordinate descending (top-to-bottom priority)
+    for elem_id in graph:
+        elem_lookup = {eid: bbox for eid, bbox in elements}
+        graph[elem_id].sort(
+            key=lambda eid: -(elem_lookup.get(eid, (0, 0, 0, 0))[1] +
+                              elem_lookup.get(eid, (0, 0, 0, 0))[3]) / 2
+        )
 
 
 def _topological_sort_with_priority(
     graph: dict[int, list[int]],
     elements: list[tuple[int, tuple[float, float, float, float]]],
+    direction: ReadingDirection = ReadingDirection.TOP_TO_BOTTOM,
 ) -> list[int]:
     """
-    Perform topological sort with reading order priority.
+    Perform topological sort with reading order priority (yomitoku-style).
 
-    When multiple elements have no predecessors, prioritize:
-    1. Higher Y (top of page) first
-    2. Lower X (left of page) for same Y
+    Uses direction-specific distance metrics for start node selection
+    when multiple elements have no predecessors.
 
     Args:
         graph: Directed graph from _build_reading_order_graph
         elements: List of (id, bbox) tuples
+        direction: Reading direction for distance metric calculation
 
     Returns:
         List of element ids in reading order
@@ -1762,17 +1960,17 @@ def _topological_sort_with_priority(
     if not elements:
         return []
 
-    # Create element lookup and calculate priority scores
-    # Priority: high Y first, then low X (top-to-bottom, left-to-right)
+    # Calculate max coordinates for distance metric
+    max_x = max(bbox[2] for _, bbox in elements)
+    max_y = max(bbox[3] for _, bbox in elements)
+
+    # Create element lookup and calculate distance metrics (yomitoku-style)
     elem_lookup = {elem_id: bbox for elem_id, bbox in elements}
-    elem_priority = {}
+    elem_distance = {}
     for elem_id, bbox in elements:
-        x0, y0, x1, y1 = bbox
-        # Higher Y = higher priority (negative for sorting)
-        # Lower X = higher priority
-        center_y = (y0 + y1) / 2
-        center_x = (x0 + x1) / 2
-        elem_priority[elem_id] = (-center_y, center_x)
+        elem_distance[elem_id] = _calculate_distance_metric(
+            bbox, direction, max_x, max_y
+        )
 
     # Calculate in-degree for each node
     in_degree = {elem_id: 0 for elem_id, _ in elements}
@@ -1782,13 +1980,13 @@ def _topological_sort_with_priority(
                 in_degree[succ] += 1
 
     # Initialize queue with nodes that have no predecessors
-    # Sort by priority (top-to-bottom, left-to-right)
+    # Sort by distance metric (lower distance = higher priority)
     ready = [elem_id for elem_id, deg in in_degree.items() if deg == 0]
-    ready.sort(key=lambda x: elem_priority.get(x, (0, 0)))
+    ready.sort(key=lambda x: elem_distance.get(x, float('inf')))
 
     result = []
     while ready:
-        # Take the highest priority element
+        # Take the highest priority element (lowest distance)
         current = ready.pop(0)
         result.append(current)
 
@@ -1799,14 +1997,18 @@ def _topological_sort_with_priority(
                 if in_degree[succ] == 0:
                     ready.append(succ)
 
-        # Re-sort ready list by priority
-        ready.sort(key=lambda x: elem_priority.get(x, (0, 0)))
+        # Re-sort ready list by distance metric
+        ready.sort(key=lambda x: elem_distance.get(x, float('inf')))
 
-    # Handle cycles: add remaining elements in priority order
+    # Handle cycles: add remaining elements in distance order
     if len(result) < len(elements):
         remaining = [elem_id for elem_id, _ in elements if elem_id not in result]
-        remaining.sort(key=lambda x: elem_priority.get(x, (0, 0)))
+        remaining.sort(key=lambda x: elem_distance.get(x, float('inf')))
         result.extend(remaining)
+        logger.debug(
+            "Reading order: %d elements in cycle, added in distance order",
+            len(remaining)
+        )
 
     return result
 
@@ -1814,18 +2016,20 @@ def _topological_sort_with_priority(
 def estimate_reading_order(
     layout: LayoutArray,
     page_height: float = 0,
+    direction: ReadingDirection = ReadingDirection.TOP_TO_BOTTOM,
 ) -> dict[int, int]:
     """
-    Estimate reading order for all elements in a LayoutArray.
+    Estimate reading order for all elements in a LayoutArray (yomitoku-style).
 
     Uses a graph-based algorithm to determine the natural reading order
     of document elements (paragraphs and tables).
 
-    Algorithm:
+    Algorithm (inspired by yomitoku):
     1. Collect all elements with their bounding boxes
-    2. Build a directed graph of reading relationships
-    3. Perform topological sort with priority (top-bottom, left-right)
-    4. Return mapping of element id to reading order
+    2. Build a directed graph based on reading direction
+    3. Calculate distance metrics for start node selection
+    4. Perform topological sort with distance-based priority
+    5. Return mapping of element id to reading order
 
     Note: Coordinates in LayoutArray are in image space (origin at top-left),
     but this function expects PDF coordinates (origin at bottom-left).
@@ -1834,6 +2038,10 @@ def estimate_reading_order(
     Args:
         layout: LayoutArray containing paragraphs and tables info
         page_height: Page height in points (for coordinate conversion)
+        direction: Reading direction (default: TOP_TO_BOTTOM for horizontal text)
+                   - TOP_TO_BOTTOM: Standard horizontal text (top→bottom, left→right)
+                   - RIGHT_TO_LEFT: Japanese vertical text (right→left, top→bottom)
+                   - LEFT_TO_RIGHT: Multi-column (left→right, top→bottom)
 
     Returns:
         Dictionary mapping element id (para_id or table_id) to reading order (0-based)
@@ -1882,16 +2090,17 @@ def estimate_reading_order(
     if not elements:
         return {}
 
-    # Build graph and perform topological sort
-    graph = _build_reading_order_graph(elements)
-    sorted_ids = _topological_sort_with_priority(graph, elements)
+    # Build graph and perform topological sort (yomitoku-style)
+    graph = _build_reading_order_graph(elements, direction)
+    sorted_ids = _topological_sort_with_priority(graph, elements, direction)
 
     # Create reading order mapping
     reading_order = {elem_id: order for order, elem_id in enumerate(sorted_ids)}
 
     logger.debug(
-        "Reading order estimated for %d elements: %s",
+        "Reading order estimated for %d elements (direction=%s): %s",
         len(reading_order),
+        direction.value,
         sorted_ids[:10] if len(sorted_ids) > 10 else sorted_ids
     )
 
@@ -1901,15 +2110,17 @@ def estimate_reading_order(
 def apply_reading_order_to_layout(
     layout: LayoutArray,
     page_height: float = 0,
+    direction: ReadingDirection = ReadingDirection.TOP_TO_BOTTOM,
 ) -> LayoutArray:
     """
-    Apply estimated reading order to a LayoutArray.
+    Apply estimated reading order to a LayoutArray (yomitoku-style).
 
     Updates the 'order' field in paragraphs and tables info dictionaries
     with the estimated reading order.
 
     Args:
         layout: LayoutArray to update
+        direction: Reading direction for order estimation
         page_height: Page height in points (for coordinate conversion)
 
     Returns:
@@ -1918,7 +2129,7 @@ def apply_reading_order_to_layout(
     if layout is None:
         return layout
 
-    reading_order = estimate_reading_order(layout, page_height)
+    reading_order = estimate_reading_order(layout, page_height, direction)
 
     # Update paragraph orders
     for para_id in layout.paragraphs:

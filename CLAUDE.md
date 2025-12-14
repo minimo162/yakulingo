@@ -178,7 +178,7 @@ YakuLingo/
 | `yakulingo/processors/base.py` | Abstract base class for all file processors | ~105 |
 | `yakulingo/processors/pdf_processor.py` | PDF processing with PyMuPDF, pdfminer.six, and PP-DocLayout-L | ~2819 |
 | `yakulingo/processors/pdf_converter.py` | PDFMathTranslate準拠: Paragraph, FormulaVar, vflag, 座標変換 | ~600 |
-| `yakulingo/processors/pdf_layout.py` | PP-DocLayout-L統合: LayoutArray, TableCellsDetection, 読み順推定, rowspan/colspan検出 | ~2227 |
+| `yakulingo/processors/pdf_layout.py` | PP-DocLayout-L統合: LayoutArray, TableCellsDetection, 読み順推定(yomitokuスタイル), rowspan/colspan検出 | ~2438 |
 | `yakulingo/processors/pdf_font_manager.py` | PDF font management: font registry, type detection, glyph encoding | ~1140 |
 | `yakulingo/processors/pdf_operators.py` | PDF low-level operator generation for text rendering | ~731 |
 
@@ -1113,26 +1113,48 @@ model = TableCellsDetection(
 6. calculate_expandable_width(): セル境界まで拡張を許可
 ```
 
-**読み順推定 (Reading Order Estimation):**
+**読み順推定 (Reading Order Estimation) - yomitokuスタイル:**
 
-グラフベースのアルゴリズムで文書要素の読み順を推定します：
+yomitoku (https://github.com/kotaro-kinoshita/yomitoku) を参考にした
+グラフベースの読み順推定アルゴリズムを実装しています：
 
 ```python
 from yakulingo.processors.pdf_layout import (
+    ReadingDirection,               # 読み方向enum
     estimate_reading_order,         # 読み順推定
     apply_reading_order_to_layout,  # LayoutArrayに適用
 )
 
-# 使用例
-order = estimate_reading_order(boxes, page_height)
-# boxes: list of (x0, y0, x1, y1, label, score)
-# 戻り値: list of (box, order_index)
+# 使用例（デフォルト: 横書き）
+order = estimate_reading_order(layout, page_height)
+
+# 縦書き日本語の場合
+order = estimate_reading_order(
+    layout, page_height,
+    direction=ReadingDirection.RIGHT_TO_LEFT
+)
 ```
 
-**アルゴリズム:**
-1. 要素間の直接読み順関係をグラフ化（中間要素がある場合はエッジを作成しない）
-2. 上から下、左から右を優先したトポロジカルソート
-3. 多段組みレイアウトにも対応
+**ReadingDirection enum:**
+
+| 値 | 説明 | 用途 |
+|-----|------|------|
+| `TOP_TO_BOTTOM` | 上→下、左→右 | 横書き文書（デフォルト） |
+| `RIGHT_TO_LEFT` | 右→左、上→下 | 縦書き日本語文書 |
+| `LEFT_TO_RIGHT` | 左→右、上→下 | 多段組みレイアウト |
+
+**アルゴリズム (yomitoku準拠):**
+1. 方向に応じたグラフ構築（中間要素がある場合はエッジを作成しない）
+2. 距離度量による開始ノード選定（方向別の優先度計算）
+3. トポロジカルソートで読み順を決定
+
+**距離度量計算:**
+- `top2bottom`: `X + (max_Y - Y)` → 左上優先
+- `right2left`: `(max_X - X) + (max_Y - Y)` → 右上優先
+- `left2right`: `X * 1 + (max_Y - Y) * 5` → Y優先（上段優先）
+
+注意: yomitokuはCC BY-NC-SA 4.0ライセンスのため、
+アルゴリズムを参考にした独自MIT互換実装です。
 
 **rowspan/colspan検出 (Table Cell Structure Analysis):**
 
@@ -1449,9 +1471,12 @@ Based on recent commits:
   - **Selector change detection**: セレクタ変更検知をWARNINGログで通知
   - **Fallback wait time**: セレクタ変更時のフォールバック待機時間を1.0秒に増加
 - **Reading Order & Table Structure Analysis (2024-12)**:
-  - **Graph-based reading order**: グラフベースの読み順推定アルゴリズムを追加（上から下、左から右優先）
+  - **yomitoku-style reading order**: yomitokuを参考にした読み順推定アルゴリズムを実装
+  - **ReadingDirection enum**: `TOP_TO_BOTTOM`, `RIGHT_TO_LEFT`, `LEFT_TO_RIGHT` の3方向対応
+  - **Direction-specific graph building**: 方向ごとのグラフ構築ロジック（縦書き日本語対応）
+  - **Distance metric for start node**: yomitokuスタイルの距離度量による開始ノード選定
   - **Intermediate element detection**: 中間要素がある場合はエッジを作成しない（正確な読み順）
-  - **Topological sort with priority**: Y座標優先のトポロジカルソートで多段組みにも対応
+  - **Topological sort with priority**: 距離度量優先のトポロジカルソートで多段組みにも対応
   - **rowspan/colspan detection**: 座標クラスタリングによるセル構造解析を追加
   - **Grid line detection**: セルのX/Y座標をクラスタリングしてグリッド線を自動検出
   - **Merged cell detection**: 複数グリッドにまたがるセルをrowspan/colspanとして検出

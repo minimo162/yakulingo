@@ -1105,16 +1105,15 @@ class YakuLingoApp:
                 if entry.result.options:
                     ui.label(entry.result.options[0].text).classes('text-2xs text-muted history-preview')
 
-            # Three-dot menu button (visible on hover via CSS)
-            # Menu is placed as child of button for correct positioning
-            with ui.button(icon='more_vert').props('flat dense round size=xs').classes('history-menu-btn'):
-                with ui.menu().props('auto-close') as menu:
-                    def delete_entry():
-                        menu.close()
-                        self.state.delete_history_entry(entry)
-                        self._refresh_history()
+            # Delete button (visible on hover via CSS)
+            def delete_entry(e):
+                e.stop_propagation()  # Prevent loading entry when clicking delete
+                self.state.delete_history_entry(entry)
+                self._refresh_history()
 
-                    ui.menu_item('削除', on_click=delete_entry).classes('text-error')
+            ui.button(icon='close', on_click=delete_entry).props(
+                'flat dense round size=xs'
+            ).classes('history-delete-btn')
 
     def _get_main_area_classes(self) -> str:
         """Get dynamic CSS classes for main-area based on current state."""

@@ -7,6 +7,7 @@ following the architecture of PDFMathTranslate's doclayout.py.
 
 Features:
 - PP-DocLayout-L integration (Apache-2.0 licensed)
+- TableCellsDetection for table cell boundary detection
 - LayoutArray: 2D region segmentation map
 - Layout category classification (text, table, figure, etc.)
 - Thread-safe model caching
@@ -29,6 +30,7 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 _paddleocr = None
+_table_cell_detector = None
 _torch = None
 _np = None
 _layout_dependency_warning_logged = False
@@ -87,6 +89,27 @@ def _get_paddleocr():
                 "This may be a compatibility issue with your system."
             ) from e
     return _paddleocr
+
+
+def _get_table_cell_detector():
+    """Lazy import TableCellsDetection for table cell boundary detection."""
+    global _table_cell_detector
+    if _table_cell_detector is None:
+        try:
+            from paddleocr import TableCellsDetection
+            _table_cell_detector = TableCellsDetection
+            logger.debug("TableCellsDetection loaded successfully")
+        except ImportError as e:
+            logger.warning(
+                "TableCellsDetection not available: %s. "
+                "Table cell detection will be disabled.",
+                e
+            )
+            _table_cell_detector = False  # Mark as unavailable
+        except (RuntimeError, OSError, ValueError) as e:
+            logger.warning("TableCellsDetection initialization error: %s", e)
+            _table_cell_detector = False
+    return _table_cell_detector if _table_cell_detector is not False else None
 
 
 def _get_torch():
@@ -158,6 +181,9 @@ class LayoutArray:
                        Y-coordinate based paragraph detection will be used.
                        This helps downstream code decide whether to trust
                        layout boundaries or use simpler heuristics.
+        table_cells: Dictionary mapping table_id to list of cell bounding boxes.
+                     Each cell is {'box': [x0, y0, x1, y1], 'score': float}.
+                     Coordinates are in image space (origin at top-left).
     """
     array: Any  # NumPy array (height, width)
     height: int
@@ -165,6 +191,7 @@ class LayoutArray:
     paragraphs: dict = field(default_factory=dict)  # index -> region info
     tables: dict = field(default_factory=dict)      # index -> region info
     figures: list = field(default_factory=list)     # list of figure boxes
+    table_cells: dict = field(default_factory=dict)  # table_id -> list of cell boxes
     fallback_used: bool = False  # True if layout detection failed/returned no results
 
 
@@ -474,6 +501,168 @@ def analyze_layout(img, device: str = "cpu"):
         return {'boxes': []}
 
     return results
+
+
+# =============================================================================
+# Table Cell Detection (RT-DETR-L based)
+# =============================================================================
+
+# Table cell detection model cache
+_table_cell_model: Optional[Any] = None
+_table_cell_model_lock = threading.Lock()
+_table_cell_detection_warning_logged = False
+
+
+def get_table_cell_model(device: str = "cpu"):
+    """
+    Get or create cached TableCellsDetection model.
+
+    Args:
+        device: "cpu" or "gpu"
+
+    Returns:
+        TableCellsDetection model instance, or None if unavailable
+    """
+    global _table_cell_model
+
+    TableCellsDetection = _get_table_cell_detector()
+    if TableCellsDetection is None:
+        return None
+
+    with _table_cell_model_lock:
+        if _table_cell_model is None:
+            try:
+                # Use wired table model (better for financial documents with borders)
+                _table_cell_model = TableCellsDetection(
+                    model_name="RT-DETR-L_wired_table_cell_det",
+                    device=device,
+                )
+                logger.info("TableCellsDetection model loaded (device=%s)", device)
+            except (RuntimeError, OSError, ValueError) as e:
+                logger.warning("Failed to load TableCellsDetection model: %s", e)
+                return None
+        return _table_cell_model
+
+
+def detect_table_cells(
+    img,
+    table_box: tuple[float, float, float, float],
+    device: str = "cpu",
+    threshold: float = 0.3,
+) -> list[dict]:
+    """
+    Detect individual cells within a table region.
+
+    Uses RT-DETR-L_wired_table_cell_det model for accurate cell boundary detection.
+
+    Args:
+        img: Full page image (numpy array, BGR)
+        table_box: Table bounding box in image coordinates [x0, y0, x1, y1]
+        device: "cpu" or "gpu"
+        threshold: Detection confidence threshold (default 0.3)
+
+    Returns:
+        List of detected cells, each with:
+        - 'box': [x0, y0, x1, y1] in full page coordinates
+        - 'score': detection confidence
+    """
+    global _table_cell_detection_warning_logged
+
+    model = get_table_cell_model(device)
+    if model is None:
+        if not _table_cell_detection_warning_logged:
+            logger.warning(
+                "Table cell detection unavailable. "
+                "Table text may overlap. "
+                "Ensure paddleocr>=3.0.0 is installed."
+            )
+            _table_cell_detection_warning_logged = True
+        return []
+
+    np = _get_numpy()
+
+    # Extract table region from image
+    x0, y0, x1, y1 = [int(c) for c in table_box]
+
+    # Validate coordinates
+    img_height, img_width = img.shape[:2]
+    x0 = max(0, min(x0, img_width - 1))
+    y0 = max(0, min(y0, img_height - 1))
+    x1 = max(0, min(x1, img_width))
+    y1 = max(0, min(y1, img_height))
+
+    if x1 <= x0 or y1 <= y0:
+        logger.warning("Invalid table box: %s", table_box)
+        return []
+
+    # Crop table region
+    table_img = img[y0:y1, x0:x1]
+
+    try:
+        results = model.predict(table_img, threshold=threshold)
+    except (RuntimeError, ValueError, MemoryError) as e:
+        logger.warning("Table cell detection failed: %s", e)
+        return []
+
+    cells = []
+
+    # Extract cells from results
+    for result in results:
+        if hasattr(result, 'boxes'):
+            boxes = result.boxes
+        else:
+            boxes = []
+
+        for box in boxes:
+            if isinstance(box, dict):
+                coord = box.get('coordinate', [])
+                score = box.get('score', 0)
+            else:
+                coord = getattr(box, 'coordinate', [])
+                score = getattr(box, 'score', 0)
+
+            if len(coord) >= 4:
+                # Convert from table-local to full-page coordinates
+                cell_x0 = coord[0] + x0
+                cell_y0 = coord[1] + y0
+                cell_x1 = coord[2] + x0
+                cell_y1 = coord[3] + y0
+
+                cells.append({
+                    'box': [cell_x0, cell_y0, cell_x1, cell_y1],
+                    'score': score,
+                })
+
+    logger.debug("Detected %d cells in table at %s", len(cells), table_box)
+    return cells
+
+
+def detect_table_cells_for_tables(
+    img,
+    tables_info: dict,
+    device: str = "cpu",
+) -> dict[int, list[dict]]:
+    """
+    Detect cells for all tables on a page.
+
+    Args:
+        img: Full page image (numpy array, BGR)
+        tables_info: Dictionary of table_id -> table info (with 'box' key)
+        device: "cpu" or "gpu"
+
+    Returns:
+        Dictionary mapping table_id to list of cell boxes
+    """
+    table_cells = {}
+
+    for table_id, table_info in tables_info.items():
+        table_box = table_info.get('box', [])
+        if len(table_box) >= 4:
+            cells = detect_table_cells(img, table_box, device)
+            if cells:
+                table_cells[table_id] = cells
+
+    return table_cells
 
 
 def analyze_layout_batch(images: list, device: str = "cpu") -> list:
@@ -1016,6 +1205,7 @@ def calculate_expandable_width(
     page_height: float,
     page_margin: float = DEFAULT_PAGE_MARGIN,
     is_table_cell: bool = False,
+    table_id: Optional[int] = None,
 ) -> float:
     """
     Calculate the maximum expandable width for a text block.
@@ -1026,8 +1216,8 @@ def calculate_expandable_width(
     Features:
     - Respects adjacent block boundaries (layout-aware)
     - Respects page right margin
-    - Table cells cannot expand (returns original width)
-    - Uses LayoutArray paragraph/table info for accurate detection
+    - Table cells: expand to cell boundary if TableCellsDetection available
+    - Uses LayoutArray paragraph/table/table_cells info for accurate detection
 
     Coordinate Systems:
     - bbox: PDF coordinates (origin at bottom-left, y increases upward)
@@ -1039,7 +1229,8 @@ def calculate_expandable_width(
         page_width: Page width in PDF points
         page_height: Page height in PDF points
         page_margin: Minimum margin from page edge (default 20pt)
-        is_table_cell: If True, block is in a table cell (no expansion)
+        is_table_cell: If True, block is in a table cell
+        table_id: Table ID if block is in a table (for cell boundary lookup)
 
     Returns:
         Maximum width the block can expand to (in PDF points)
@@ -1053,14 +1244,30 @@ def calculate_expandable_width(
         # Already at or past the right margin
         return original_width
 
-    # Table cells: NEVER expand horizontally
-    # PP-DocLayout-L detects table regions but not individual cell boundaries.
-    # Therefore, _find_right_boundary cannot correctly detect adjacent cells
-    # within the same table, leading to text overlap issues.
-    #
-    # Instead of expansion, table cells should use font size reduction
-    # to fit text within the original cell boundaries.
+    # Table cells: try to expand to cell boundary if available
     if is_table_cell:
+        # Check if we have cell boundary information
+        if (
+            layout is not None
+            and layout.table_cells
+            and table_id is not None
+            and table_id in layout.table_cells
+        ):
+            # Find the cell that contains this block
+            cell_right = _find_containing_cell_right_boundary(
+                layout, bbox, page_width, page_height, table_id
+            )
+            if cell_right is not None and cell_right > x1:
+                # Allow expansion to cell boundary (with small margin)
+                expandable_width = cell_right - x0 - MIN_COLUMN_GAP
+                if expandable_width > original_width:
+                    logger.debug(
+                        "Table cell expansion: original=%.1f, expandable=%.1f (cell_right=%.1f)",
+                        original_width, expandable_width, cell_right
+                    )
+                    return expandable_width
+
+        # No cell boundary info - don't expand (use font reduction instead)
         return original_width
 
     # Non-table blocks: expand to page margin or adjacent block
@@ -1081,6 +1288,83 @@ def calculate_expandable_width(
     # Return expandable width
     expandable_width = right_boundary - x0
     return max(original_width, expandable_width)
+
+
+def _find_containing_cell_right_boundary(
+    layout: LayoutArray,
+    bbox: tuple[float, float, float, float],
+    page_width: float,
+    page_height: float,
+    table_id: int,
+) -> Optional[float]:
+    """
+    Find the right boundary of the cell containing this block.
+
+    Args:
+        layout: LayoutArray with table_cells information
+        bbox: Block bounding box in PDF coordinates (x0, y0, x1, y1)
+        page_width: Page width in PDF points
+        page_height: Page height in PDF points
+        table_id: Table ID to look up cells
+
+    Returns:
+        Right boundary (x1) of the containing cell in PDF coordinates,
+        or None if no containing cell found.
+    """
+    cells = layout.table_cells.get(table_id, [])
+    if not cells:
+        return None
+
+    x0, y0, x1, y1 = bbox
+
+    # Scale factor for coordinate conversion (image -> PDF)
+    if layout.height > 0 and page_height > 0:
+        scale = layout.height / page_height
+    else:
+        return None
+
+    # Convert block center to image coordinates for matching
+    block_center_x = (x0 + x1) / 2
+    block_center_y = page_height - (y0 + y1) / 2  # PDF y -> image y
+
+    block_center_img_x = block_center_x * scale
+    block_center_img_y = block_center_y * scale
+
+    # Find the cell that contains the block center
+    best_cell = None
+    best_overlap = 0
+
+    for cell in cells:
+        cell_box = cell.get('box', [])
+        if len(cell_box) < 4:
+            continue
+
+        cell_x0, cell_y0, cell_x1, cell_y1 = cell_box
+
+        # Check if block center is inside this cell
+        if (cell_x0 <= block_center_img_x <= cell_x1 and
+            cell_y0 <= block_center_img_y <= cell_y1):
+
+            # Calculate overlap area for better matching
+            overlap_x0 = max(x0 * scale, cell_x0)
+            overlap_x1 = min(x1 * scale, cell_x1)
+            overlap_y0 = max((page_height - y1) * scale, cell_y0)
+            overlap_y1 = min((page_height - y0) * scale, cell_y1)
+
+            if overlap_x1 > overlap_x0 and overlap_y1 > overlap_y0:
+                overlap = (overlap_x1 - overlap_x0) * (overlap_y1 - overlap_y0)
+                if overlap > best_overlap:
+                    best_overlap = overlap
+                    best_cell = cell
+
+    if best_cell is None:
+        return None
+
+    # Convert cell right boundary to PDF coordinates
+    cell_x1_img = best_cell['box'][2]
+    cell_x1_pdf = cell_x1_img / scale if scale > 0 else cell_x1_img
+
+    return cell_x1_pdf
 
 
 def _find_right_boundary(

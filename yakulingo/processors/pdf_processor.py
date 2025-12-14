@@ -93,7 +93,7 @@ from .pdf_layout import (
     create_layout_array_from_pp_doclayout, create_layout_array_from_yomitoku,
     get_layout_class_at_point, is_same_region, should_abandon_region,
     map_pp_doclayout_label_to_role, prepare_translation_cells,
-    calculate_expandable_width,
+    calculate_expandable_width, detect_table_cells_for_tables,
     _get_numpy, _get_paddleocr, _get_torch,
 )
 
@@ -2788,6 +2788,19 @@ class PdfProcessor(FileProcessor):
                                     results, img_height, img_width
                                 )
 
+                                # Step 2.5: Detect table cells for accurate cell boundaries
+                                # This enables proper text expansion within table cells
+                                if layout_array.tables:
+                                    table_cells = detect_table_cells_for_tables(
+                                        img, layout_array.tables, actual_device
+                                    )
+                                    if table_cells:
+                                        layout_array.table_cells = table_cells
+                                        logger.debug(
+                                            "Detected cells for %d tables on page %d",
+                                            len(table_cells), page_num
+                                        )
+
                                 # Step 3: Extract characters from pdfminer
                                 chars = []
 
@@ -3381,11 +3394,14 @@ class PdfProcessor(FileProcessor):
 
             # Calculate expandable width using layout info
             # This allows text to expand horizontally when there's space on the right
+            # For table cells, use cell boundary from TableCellsDetection if available
             original_width = para.x1 - para.x0
+            table_id = para.layout_class if is_table_cell else None
             if layout is not None and page_width > 0 and page_height > 0:
                 expandable_width = calculate_expandable_width(
                     layout, bbox, page_width, page_height,
-                    is_table_cell=is_table_cell
+                    is_table_cell=is_table_cell,
+                    table_id=table_id
                 )
             else:
                 # No layout info - use original width

@@ -158,9 +158,9 @@ VERTICAL_TEXT_ASPECT_RATIO = 1.5  # height/width > 1.5 suggests vertical text fo
 
 # Box expansion constants
 # MAX_EXPANSION_RATIO limits how much a text box can expand relative to original size.
-# A value of 2.0 means a box can expand up to 200% of its original width/height.
-# This prevents extreme overflow while allowing reasonable expansion for longer translations.
-MAX_EXPANSION_RATIO = 2.0
+# A value of 1.5 means a box can expand up to 150% of its original width/height.
+# Reduced from 2.0 to prevent text overlap in table cells and adjacent blocks.
+MAX_EXPANSION_RATIO = 1.5
 
 
 class TextAlignment:
@@ -2627,10 +2627,10 @@ class PdfProcessor(FileProcessor):
                         # - PP-DocLayout-L cannot detect cell boundaries within tables
                         # - Font reduction is applied when text overflows vertically
                         # - TABLE_MIN_LINE_HEIGHT is 1.0 to prevent line overlap
-                        # - Prefer readability over fitting - limit reduction to 60%
+                        # - Prefer readability over fitting - limit reduction to 70%
                         # - If text still doesn't fit, allow overflow (better than unreadable)
-                        TABLE_FONT_MIN_READABLE = 6.0  # Reduced for better table fit
-                        TABLE_FONT_MIN_RATIO = 0.6     # Allow reduction to 60% for tables
+                        TABLE_FONT_MIN_READABLE = 8.0  # Increased for better readability
+                        TABLE_FONT_MIN_RATIO = 0.7     # Allow reduction to 70% for tables (max 30% reduction)
 
                         if is_table_cell:
                             text_height = len(lines) * font_size * line_height

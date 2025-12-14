@@ -1321,7 +1321,7 @@ analyzed_cells = analyze_table_structure(cells, table_box)
 |------|------|------|
 | `ALIGNMENT_TOLERANCE` | 5.0pt | アライメント判定の許容誤差 |
 | `VERTICAL_TEXT_ASPECT_RATIO` | 1.5 | 縦書き判定の閾値（ブロック単位） |
-| `MAX_EXPANSION_RATIO` | 2.0 | 最大拡張比率（200%） |
+| `MAX_EXPANSION_RATIO` | 1.5 | 最大拡張比率（150%）※テーブルセル・隣接ブロックの重なり防止のため2.0から縮小 |
 
 **DPI設定 (`ocr_dpi`):**
 
@@ -1624,7 +1624,7 @@ Based on recent commits:
   - **New functions**: `get_line_join_separator()`, `is_line_end_hyphenated()`, `_is_cjk_char()`, `_is_latin_char()` を追加
   - **Constants**: `SENTENCE_END_CHARS_JA`, `SENTENCE_END_CHARS_EN`, `HYPHEN_CHARS` を追加
 - **PDF Translation Reliability Improvements (2024-12)**:
-  - **Box expansion ratio increase**: `MAX_EXPANSION_RATIO`を1.5から2.0に増加（翻訳テキストの収容改善）
+  - **Box expansion ratio decrease**: `MAX_EXPANSION_RATIO`を2.0から1.5に縮小（テーブルセル・隣接ブロックの重なり防止）
   - **Table cell expansion fallback**: セル境界情報がない場合でもlayout-aware拡張を許可
 - **PDF Form XObject Text Removal Improvements (2024-12)**:
   - **Document-wide XObject scanning**: ドキュメント全体のForm XObjectをスキャンしてテキスト削除（`filter_all_document_xobjects()`メソッド追加）
@@ -1676,7 +1676,7 @@ Based on recent commits:
   - **Table text overlap fix**: TABLE_MIN_LINE_HEIGHT を 1.0 に設定（行間 < 1.0 ではテキストが重なるため）
   - **Table cell expansion**: テーブルセルでも右側に20pt以上の余裕があればボックスを拡張（読みやすさ優先）
   - **Moderate font reduction**: TABLE_FONT_MIN_RATIO を 0.7 に設定（拡張できない場合のみ70%まで縮小）
-  - **TABLE_FONT_MIN_READABLE**: テーブルセル用の最小可読フォントサイズを 7.0pt に設定
+  - **TABLE_FONT_MIN_READABLE**: テーブルセル用の最小可読フォントサイズを 8.0pt に設定（可読性向上のため6.0ptから増加）
   - **is_table_cell parameter**: calculate_line_height_with_font に is_table_cell パラメータを追加
   - **PDFMathTranslate reference**: https://github.com/PDFMathTranslate/PDFMathTranslate を参考に改善
 - **PDF Layout-Aware Box Expansion (2024-12)**:

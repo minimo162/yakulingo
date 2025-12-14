@@ -1138,7 +1138,8 @@ class ContentStreamReplacer:
 
         Form XObjects (also called XForms) can contain text that is rendered
         via the 'Do' operator. This method filters text operators from all
-        Form XObjects referenced by this page, including inherited ones.
+        Form XObjects referenced by this page, including inherited ones
+        and nested XObjects (yomitoku-style recursive processing).
 
         Uses PyMuPDF's get_xobjects() for reliable detection of all XObjects,
         including those defined in parent Resources or referenced indirectly.
@@ -1163,11 +1164,11 @@ class ContentStreamReplacer:
             filtered_count = 0
             processed_xrefs = set()  # Track processed xrefs to avoid duplicates
 
-            for xobj_info in xobjects:
-                # get_xobjects() returns tuple: (xref, name, gen_or_ref, bbox)
-                # where gen_or_ref is 0 for direct or xref of referencing XObject
-                xref = xobj_info[0]
-                name = xobj_info[1]
+            # Collect all XObject xrefs for recursive processing
+            xref_queue = [(xobj[0], xobj[1]) for xobj in xobjects]
+
+            while xref_queue:
+                xref, name = xref_queue.pop(0)
 
                 # Skip if already processed (avoid nested duplicates)
                 if xref in processed_xrefs:
@@ -1212,6 +1213,10 @@ class ContentStreamReplacer:
                             name, xref, original_size, filtered_size
                         )
 
+                    # yomitoku-style: Check for nested XObjects in this Form's Resources
+                    # Form XObjects can have their own /Resources with nested XObjects
+                    self._find_nested_xobjects(xref, obj_str, xref_queue, processed_xrefs)
+
                 except (RuntimeError, ValueError, KeyError, OSError) as e:
                     logger.debug("Could not filter Form XObject /%s (xref=%d): %s", name, xref, e)
                     continue
@@ -1224,6 +1229,58 @@ class ContentStreamReplacer:
         except (RuntimeError, ValueError, KeyError, AttributeError, OSError) as e:
             # Non-critical error - page may not have XObjects
             logger.debug("Form XObject filtering skipped for page %d: %s", page.number, e)
+
+    def _find_nested_xobjects(
+        self,
+        parent_xref: int,
+        obj_str: str,
+        xref_queue: list,
+        processed_xrefs: set,
+    ) -> None:
+        """
+        Find nested XObjects in a Form XObject's Resources.
+
+        yomitoku-style recursive XObject discovery.
+        Form XObjects can have their own /Resources dictionary containing
+        additional XObjects that need to be processed.
+
+        Args:
+            parent_xref: xref of the parent Form XObject
+            obj_str: Object definition string of the parent
+            xref_queue: Queue of xrefs to process
+            processed_xrefs: Set of already processed xrefs
+        """
+        import re
+
+        try:
+            # Look for /Resources in the object definition
+            if '/Resources' not in obj_str:
+                return
+
+            # Try to find XObject references in the Resources
+            # This is a simplified approach - complex PDFs may have indirect references
+            xobj_pattern = re.compile(r'/XObject\s*<<([^>]*)>>')
+            match = xobj_pattern.search(obj_str)
+            if not match:
+                return
+
+            xobj_dict = match.group(1)
+
+            # Find all references to XObjects (format: /Name N 0 R)
+            ref_pattern = re.compile(r'/(\w+)\s+(\d+)\s+0\s+R')
+            for name_match in ref_pattern.finditer(xobj_dict):
+                nested_name = name_match.group(1)
+                nested_xref = int(name_match.group(2))
+
+                if nested_xref not in processed_xrefs:
+                    logger.debug(
+                        "_find_nested_xobjects: Found nested XObject /%s (xref=%d) in parent xref=%d",
+                        nested_name, nested_xref, parent_xref
+                    )
+                    xref_queue.append((nested_xref, nested_name))
+
+        except (ValueError, AttributeError, re.error) as e:
+            logger.debug("Could not find nested XObjects in xref=%d: %s", parent_xref, e)
 
     def begin_text(self) -> 'ContentStreamReplacer':
         """Begin text block."""

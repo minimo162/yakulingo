@@ -72,7 +72,7 @@ def _lazy_import_nicegui() -> ModuleType:
     return ui_module
 
 # Fast imports - required at startup (lightweight modules only)
-from yakulingo.ui.state import AppState, Tab, FileState, ConnectionState
+from yakulingo.ui.state import AppState, Tab, FileState, ConnectionState, LayoutInitializationState
 from yakulingo.models.types import TranslationProgress, TranslationStatus, TextTranslationResult, TranslationOption, HistoryEntry
 from yakulingo.config.settings import AppSettings, get_default_settings_path, get_default_prompts_dir
 
@@ -216,6 +216,10 @@ class YakuLingoApp:
 
         # Hotkey manager for quick translation (Ctrl+J)
         self._hotkey_manager = None
+
+        # PP-DocLayout-L initialization state (on-demand for PDF)
+        self._layout_init_state = LayoutInitializationState.NOT_INITIALIZED
+        self._layout_init_lock = threading.Lock()  # Prevents double initialization
 
         # Text input textarea reference for auto-focus
         self._text_input_textarea: Optional[ui.textarea] = None
@@ -2046,6 +2050,153 @@ class YakuLingoApp:
         self.state.toggle_section_selection(section_index, selected)
         # Note: Don't call _refresh_content() here as it would close the expansion panel
 
+    async def _ensure_layout_initialized(self) -> bool:
+        """
+        Ensure PP-DocLayout-L is initialized before PDF processing.
+
+        On-demand initialization pattern:
+        1. Check if already initialized
+        2. If not, disconnect Copilot (to avoid conflicts)
+        3. Initialize PP-DocLayout-L
+        4. Reconnect Copilot
+
+        This avoids the 10+ second startup delay for users who don't use PDF translation.
+
+        Returns:
+            True if initialization succeeded or was already done, False if failed
+        """
+        # Fast path: already initialized
+        if self._layout_init_state == LayoutInitializationState.INITIALIZED:
+            return True
+
+        # Check if already initializing (another task is handling it)
+        with self._layout_init_lock:
+            if self._layout_init_state == LayoutInitializationState.INITIALIZING:
+                # Wait for the other initialization to complete
+                logger.debug("PP-DocLayout-L initialization already in progress, waiting...")
+                # Release lock and wait
+                pass
+            elif self._layout_init_state == LayoutInitializationState.INITIALIZED:
+                return True
+            elif self._layout_init_state == LayoutInitializationState.FAILED:
+                # Previously failed - still allow PDF but with degraded quality
+                return True
+            else:
+                # Start initialization
+                self._layout_init_state = LayoutInitializationState.INITIALIZING
+
+        # Wait if another task is initializing
+        if self._layout_init_state == LayoutInitializationState.INITIALIZING:
+            # Poll until initialization completes (max 30 seconds)
+            for _ in range(60):
+                await asyncio.sleep(0.5)
+                if self._layout_init_state in (
+                    LayoutInitializationState.INITIALIZED,
+                    LayoutInitializationState.FAILED,
+                ):
+                    return True
+            logger.warning("PP-DocLayout-L initialization timeout while waiting")
+            return True  # Proceed anyway
+
+        # Get client for UI updates
+        with self._client_lock:
+            client = self._client
+
+        # Show initialization dialog
+        init_dialog = None
+        if client:
+            try:
+                with client:
+                    init_dialog = self._create_layout_init_dialog()
+                    init_dialog.open()
+            except Exception as e:
+                logger.debug("Failed to show init dialog: %s", e)
+
+        try:
+            # Step 1: Disconnect Copilot to avoid conflicts with PaddlePaddle
+            was_connected = self.copilot.is_connected
+            if was_connected:
+                logger.info("Disconnecting Copilot before PP-DocLayout-L initialization...")
+                await asyncio.to_thread(self.copilot.disconnect)
+
+            # Step 2: Initialize PP-DocLayout-L
+            logger.info("Initializing PP-DocLayout-L on-demand...")
+            try:
+                from yakulingo.processors.pdf_processor import prewarm_layout_model
+                success = await asyncio.to_thread(prewarm_layout_model)
+                if success:
+                    self._layout_init_state = LayoutInitializationState.INITIALIZED
+                    logger.info("PP-DocLayout-L initialized successfully")
+                else:
+                    self._layout_init_state = LayoutInitializationState.FAILED
+                    logger.warning("PP-DocLayout-L initialization returned False")
+            except Exception as e:
+                self._layout_init_state = LayoutInitializationState.FAILED
+                logger.warning("PP-DocLayout-L initialization failed: %s", e)
+
+            # Step 3: Reconnect Copilot
+            if was_connected:
+                logger.info("Reconnecting Copilot after PP-DocLayout-L initialization...")
+                await self._reconnect_copilot_with_retry(max_retries=3)
+
+            return True
+
+        except Exception as e:
+            logger.error("Error during PP-DocLayout-L initialization: %s", e)
+            self._layout_init_state = LayoutInitializationState.FAILED
+            return True  # Proceed anyway, PDF will work with degraded quality
+
+        finally:
+            # Close dialog
+            if init_dialog and client:
+                try:
+                    with client:
+                        init_dialog.close()
+                except Exception:
+                    pass
+
+    async def _reconnect_copilot_with_retry(self, max_retries: int = 3) -> bool:
+        """
+        Reconnect to Copilot with exponential backoff.
+
+        Args:
+            max_retries: Maximum number of retry attempts
+
+        Returns:
+            True if reconnection succeeded, False otherwise
+        """
+        for attempt in range(max_retries):
+            try:
+                success = await asyncio.to_thread(self.copilot.connect)
+                if success:
+                    logger.info("Copilot reconnected successfully (attempt %d)", attempt + 1)
+                    # Update connection state
+                    self.state.connection_state = ConnectionState.CONNECTED
+                    self.state.copilot_ready = True
+                    return True
+                else:
+                    logger.warning("Copilot reconnect returned False (attempt %d)", attempt + 1)
+            except Exception as e:
+                logger.warning("Copilot reconnect attempt %d failed: %s", attempt + 1, e)
+
+            if attempt < max_retries - 1:
+                wait_time = 2 ** attempt  # 1s, 2s, 4s
+                logger.debug("Waiting %ds before retry...", wait_time)
+                await asyncio.sleep(wait_time)
+
+        logger.error("Copilot reconnection failed after %d attempts", max_retries)
+        self.state.connection_state = ConnectionState.CONNECTION_FAILED
+        return False
+
+    def _create_layout_init_dialog(self) -> "ui.dialog":
+        """Create a dialog showing PP-DocLayout-L initialization progress."""
+        dialog = ui.dialog().props('persistent')
+        with dialog, ui.card().classes('items-center p-8'):
+            ui.spinner('dots', size='3em', color='primary')
+            ui.label('PDF翻訳機能を準備中...').classes('text-lg mt-4')
+            ui.label('（約10秒）').classes('text-sm text-gray-500 mt-1')
+        return dialog
+
     async def _select_file(self, file_path: Path):
         """Select file for translation with auto language detection (async)"""
         if not self._require_connection():
@@ -2059,10 +2210,14 @@ class YakuLingoApp:
                 return
 
         try:
-            # Check PP-DocLayout-L availability for PDF files
+            # On-demand PP-DocLayout-L initialization for PDF files
             if file_path.suffix.lower() == '.pdf':
                 from yakulingo.processors import is_layout_available
-                if not is_layout_available():
+                if is_layout_available():
+                    # PP-DocLayout-L is available, ensure it's initialized
+                    await self._ensure_layout_initialized()
+                else:
+                    # PP-DocLayout-L not installed - warn user
                     with client:
                         ui.notify(
                             'PDF翻訳: レイアウト解析(PP-DocLayout-L)が未インストールのため、'
@@ -2977,16 +3132,9 @@ document.fonts.ready.then(function() {
         await client.connected()
         logger.info("[TIMING] client.connected(): %.2fs", _time_module.perf_counter() - _t_conn)
 
-        # Pre-initialize PP-DocLayout-L (PDF layout analysis) while showing loading screen
-        # BEFORE any Playwright connection. PaddlePaddle's subprocess initialization
-        # can interfere with Playwright's Node.js pipe communication if done concurrently.
-        _t_prewarm = _time_module.perf_counter()
-        try:
-            from yakulingo.processors.pdf_processor import prewarm_layout_model
-            await asyncio.to_thread(prewarm_layout_model)
-        except Exception as e:
-            logger.debug("PP-DocLayout-L prewarm skipped: %s", e)
-        logger.info("[TIMING] prewarm_layout_model: %.2fs", _time_module.perf_counter() - _t_prewarm)
+        # NOTE: PP-DocLayout-L initialization moved to on-demand (when user selects PDF)
+        # This saves ~10 seconds on startup for users who don't use PDF translation.
+        # See _ensure_layout_initialized() for the on-demand initialization logic.
 
         # Remove loading screen and show main UI
         loading_container.delete()

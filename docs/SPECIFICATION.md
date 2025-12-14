@@ -54,8 +54,12 @@ M365 Copilotを翻訳エンジンとして使用し、テキストとドキュ�
 | その他 | 日本語（解説付き、アクションボタン付き） |
 
 **検出メカニズム:**
-- `detect_language()`: Copilotに`detect_language.txt`プロンプトを送信し、言語名を取得
-- フォールバック: ローカルの`is_japanese_text()`関数（Unicode文字範囲分析）
+- `detect_language()`: ローカルのみで検出（Copilot呼び出しなし、高速）
+  - ひらがな/カタカナ検出 → 日本語
+  - ハングル検出 → 韓国語
+  - ラテン文字優勢 → 英語
+  - CJKのみ（仮名なし） → 日本語（ターゲットユーザー向けデフォルト）
+  - その他/混合 → 日本語（フォールバック）
 
 ### 1.4 対応ファイル形式
 
@@ -186,7 +190,7 @@ YakuLingo/
 │   └── test_*.py
 │
 ├── prompts/                        # 翻訳プロンプト（17ファイル）
-│   ├── detect_language.txt         # 言語検出用（Copilot）
+│   ├── detect_language.txt         # 言語検出用（現在未使用、ローカル検出を優先）
 │   ├── copilot_injection_review.md # プロンプトのインジェクションリスクレビュー
 │   ├── file_translate_to_en_{standard|concise|minimal}.txt  # ファイル翻訳（日→英）
 │   ├── file_translate_to_jp.txt    # ファイル翻訳用（英→日）
@@ -760,9 +764,11 @@ class TranslationService:
 
     def detect_language(text: str) -> str:
         """
-        Copilotを使用して言語を検出
-        - detect_language.txt プロンプトを使用
-        - 結果: "日本語", "英語", "中国語" 等
+        ローカルで言語を検出（Copilot呼び出しなし）
+        - ひらがな/カタカナ → "日本語"
+        - ハングル → "韓国語"
+        - ラテン文字優勢 → "英語"
+        - CJKのみ → "日本語"（デフォルト）
         """
 
     def translate_text(text, reference_files) -> TextTranslationResult:
@@ -1673,6 +1679,17 @@ python -c "import time; t=time.time(); from yakulingo.ui import run_app; print(f
 - 左カラムのタブを大きく見やすく改善
 - 履歴プレビューの文字切り詰めをCSSに委任
 
+### 2.10 (2025-12)
+- UIのちらつき・表示問題修正（翻訳結果表示、Edgeウィンドウ）
+- 履歴削除機能改善（1クリック削除、ボタン動作修正）
+- 言語検出改善（英字+漢字混合テキストを日本語として正しく検出）
+- PDF翻訳準備ダイアログの即時表示
+- Copilotプロンプト送信の信頼性向上（送信ボタン待機、セレクタ変更検知）
+- PP-DocLayout-Lオンデマンド初期化（起動時間約10秒短縮）
+- 読み順推定アルゴリズム追加（グラフベース、トポロジカルソート）
+- TableCellsDetection統合（テーブルセル境界検出）
+- rowspan/colspan検出（座標クラスタリング）
+
 ### 2.9 (2025-12)
 - 翻訳速度の最適化（テキスト・ファイル翻訳のポーリング間隔短縮）
 - プロンプトテンプレートのキャッシュ機能追加（PromptBuilder）
@@ -1683,8 +1700,8 @@ python -c "import time; t=time.time(); from yakulingo.ui import run_app; print(f
 - 入力欄を縦幅いっぱいに拡張
 
 ### 2.7 (2025-12)
-- Copilotによる言語検出機能追加（`detect_language()`）
-- 言語検出プロンプト追加
+- ローカル言語検出機能追加（`detect_language()`、Copilot呼び出しなし）
+- 言語検出プロンプト追加（互換性のため保持、未使用）
 
 ### 2.6 (2025-12)
 - ローディング画面追加、テキスト翻訳UI簡素化（1訳文+インライン調整）

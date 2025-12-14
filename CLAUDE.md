@@ -1400,6 +1400,25 @@ When interacting with users in this repository, prefer Japanese for comments and
 ## Recent Development Focus
 
 Based on recent commits:
+- **UI Flickering & Display Fixes (2024-12)**:
+  - **Translation result flickering**: 翻訳結果表示時のちらつきを修正（複数回の改善）
+  - **Edge window flash fix**: Edgeウィンドウが画面左上に一瞬表示される問題を修正
+  - **Browser window visibility**: ブラウザウィンドウが一瞬表示される問題を修正
+  - **SetWindowPlacement fix**: showCmdをSW_MINIMIZEに維持してウィンドウ表示を防止
+  - **Streaming preview removal**: ストリーミングプレビュー機能を削除（安定性向上）
+- **History UI Improvements (2024-12)**:
+  - **One-click deletion**: 履歴削除を1クリックで実行可能に改善
+  - **Delete button fix**: 履歴削除ボタンが動作しない問題を修正
+  - **Panel height fix**: メインパネルの高さがウィンドウに合わずスクロールする問題を修正
+- **Language Detection Improvements (2024-12)**:
+  - **Mixed text detection**: 英字+漢字の混合テキストを日本語として正しく検出
+- **PDF Translation Preparation Dialog (2024-12)**:
+  - **Immediate dialog display**: PDF翻訳準備中ダイアログを即座に表示するように改善
+  - **Dialog visibility fix**: PDF翻訳準備中ダイアログが表示されない問題を修正
+- **Copilot Prompt Submission Improvements (2024-12)**:
+  - **Send button wait**: 送信ボタンの有効化を待機してプロンプト送信の信頼性を向上
+  - **Selector change detection**: セレクタ変更検知をWARNINGログで通知
+  - **Fallback wait time**: セレクタ変更時のフォールバック待機時間を1.0秒に増加
 - **Reading Order & Table Structure Analysis (2024-12)**:
   - **Graph-based reading order**: グラフベースの読み順推定アルゴリズムを追加（上から下、左から右優先）
   - **Intermediate element detection**: 中間要素がある場合はエッジを作成しない（正確な読み順）

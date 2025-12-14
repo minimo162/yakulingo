@@ -62,6 +62,7 @@ from .pdf_converter import (
     DEFAULT_VFONT_PATTERN, FORMULA_UNICODE_CATEGORIES,
     SAME_LINE_Y_THRESHOLD, SAME_PARA_Y_THRESHOLD,
     WORD_SPACE_X_THRESHOLD, LINE_BREAK_X_THRESHOLD,
+    TOC_LINE_X_RESET_THRESHOLD,  # For TOC pattern detection
     # Functions
     get_pdf_converter_ex_class,
     vflag, restore_formula_placeholders, extract_formula_vars_from_metadata,
@@ -4174,14 +4175,14 @@ class PdfProcessor(FileProcessor):
                     # we may be in the middle of a sentence that spans multiple visual lines
                     # (e.g., numbered paragraphs like "167. 固定資産に係る...はあ" + "りません。")
                     #
-                    # Previously, is_strong_boundary was used to skip sentence-end check,
-                    # but this caused semantically continuous sentences to be split when
-                    # Y change is large. Now we apply sentence-end check more broadly:
-                    # - Only skip when layout class truly changes (both non-BACKGROUND)
-                    # - Apply sentence-end check for Y gaps, X gaps, etc. within same region
+                    # Apply sentence-end check ONLY when layout class hasn't truly changed.
+                    # Force split (skip sentence-end check) for:
+                    # - Layout class change (both non-BACKGROUND and different)
+                    # - Table region boundaries (table rows/cells should be separate)
+                    # - TOC pattern (large X reset indicates new entry)
                     should_start_new = True
 
-                    # Check if layout class truly changed (between non-BACKGROUND regions)
+                    # 1. Check if layout class truly changed (between non-BACKGROUND regions)
                     # LAYOUT_BACKGROUND = 1, so we check both are non-BACKGROUND (cls != 1)
                     layout_truly_changed = (
                         use_layout and
@@ -4191,10 +4192,27 @@ class PdfProcessor(FileProcessor):
                         prev_cls != 1
                     )
 
-                    # Apply sentence-end check if layout hasn't truly changed
-                    # This allows merging semantically continuous sentences even with
-                    # large Y gaps or other structural boundaries within the same region
-                    if not layout_truly_changed and sstk and pstk:
+                    # 2. Check if in table region (table rows/cells should always be split)
+                    # LAYOUT_TABLE_BASE = 1000, table regions have IDs >= 1000
+                    is_table_region = (
+                        char_cls is not None and prev_cls is not None and
+                        char_cls >= LAYOUT_TABLE_BASE and prev_cls >= LAYOUT_TABLE_BASE
+                    )
+
+                    # 3. Check for TOC-like pattern (large X reset indicates new entry)
+                    # This catches TOC items that don't end with sentence-ending punctuation
+                    is_toc_pattern = False
+                    if has_prev and prev_x1 is not None:
+                        x_reset = prev_x1 - char_x0
+                        if x_reset > TOC_LINE_X_RESET_THRESHOLD:  # 80pt
+                            is_toc_pattern = True
+
+                    # Force split (skip sentence-end check) for structural boundaries
+                    should_force_split = layout_truly_changed or is_table_region or is_toc_pattern
+
+                    # Apply sentence-end check only if not forcing split
+                    # This allows merging semantically continuous sentences within same region
+                    if not should_force_split and sstk and pstk:
                         prev_text = sstk[-1].rstrip() if sstk[-1] else ""
 
                         if prev_text:

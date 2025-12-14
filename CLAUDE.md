@@ -1099,21 +1099,28 @@ new_paragraph, line_break, is_strong_boundary = detect_paragraph_boundary(
 
 **文末記号チェックの適用ルール:**
 
-`is_strong_boundary`の値に関わらず、**レイアウトクラスが真に変化する場合のみ**
-文末記号チェックをスキップします。同じレイアウト領域内であれば、Y変化が大きくても
-文末記号チェックを適用し、意味的に連続する文を適切に結合します。
+以下の条件で**分割を強制**（文末記号チェックをスキップ）します：
+
+| 条件 | 説明 |
+|------|------|
+| `layout_truly_changed` | レイアウトクラスが真に変化（両方が非BACKGROUND） |
+| `is_table_region` | テーブル領域内（`char_cls >= 1000 and prev_cls >= 1000`） |
+| `is_toc_pattern` | TOCパターン（X座標リセット > 80pt） |
+
+上記以外の場合のみ文末記号チェックを適用し、意味的に連続する文を結合します。
 
 これにより：
 - 番号付きパラグラフの途中改行（例: "167. 固定資産に係る...はあ" + "りません。"）を正しく結合
 - 決算短信のような構造化ドキュメントでも、同一領域内の連続文は結合
 - 異なるレイアウト領域（見出し→本文など）は適切に分割
+- テーブルの各セル/行は適切に分割
+- 目次の各項目は適切に分割
 
 ```python
 # pdf_processor.py での処理
 if new_paragraph:
     should_start_new = True
-    # レイアウトクラスが真に変化する場合のみ文末記号チェックをスキップ
-    # 両方が非BACKGROUND（有効なレイアウト領域）かつ異なるクラスの場合のみ
+    # 1. レイアウトクラスが真に変化する場合
     layout_truly_changed = (
         use_layout and
         char_cls != prev_cls and
@@ -1121,7 +1128,22 @@ if new_paragraph:
         char_cls != 1 and  # 1 = BACKGROUND
         prev_cls != 1
     )
-    if not layout_truly_changed and sstk and pstk:
+    # 2. テーブル領域内の場合
+    is_table_region = (
+        char_cls is not None and prev_cls is not None and
+        char_cls >= LAYOUT_TABLE_BASE and prev_cls >= LAYOUT_TABLE_BASE
+    )
+    # 3. TOCパターンの場合
+    is_toc_pattern = False
+    if has_prev and prev_x1 is not None:
+        x_reset = prev_x1 - char_x0
+        if x_reset > TOC_LINE_X_RESET_THRESHOLD:  # 80pt
+            is_toc_pattern = True
+
+    # 分割を強制する条件
+    should_force_split = layout_truly_changed or is_table_region or is_toc_pattern
+
+    if not should_force_split and sstk and pstk:
         prev_text = sstk[-1].rstrip()
         if prev_text:
             last_char = prev_text[-1]
@@ -1625,8 +1647,9 @@ Based on recent commits:
   - **Prompt improvement**: 番号付きリスト翻訳時の1入力行=1出力行の厳密な1:1マッピングを追加
   - **Do NOT merge/split**: 複数行の統合・1行の分割を明示的に禁止するプロンプト指示を追加
   - **Affected files**: `file_translate_to_en_*.txt`, `file_translate_to_jp.txt`
-  - **PDF extraction fix**: 文末記号チェック適用範囲を拡大し、意味的に連続する文の分割を防止
-  - **layout_truly_changed**: レイアウトクラスが真に変化する場合のみ文末記号チェックをスキップ
+  - **PDF extraction fix**: 文末記号チェック適用範囲を調整し、意味的に連続する文の分割を防止しつつ構造的分割を維持
+  - **Force split conditions**: `layout_truly_changed`（レイアウト変化）、`is_table_region`（テーブル内）、`is_toc_pattern`（TOC）で分割を強制
+  - **Sentence-end check**: 上記以外の場合のみ文末記号チェックを適用し、連続文を結合
 - **App Startup Optimization (2024-12)**:
   - **`_detect_display_settings()` simplified**: pywebview の `screens` API 呼び出しを削除し、デフォルト値を使用。JavaScript で動的にビューポートサイズを調整するため、事前検出は不要
   - **`_native_mode_enabled()` deferred initialization**: `webview.initialize()` をスキップして起動時間を短縮。バックエンド初期化は `ui.run()` で遅延実行

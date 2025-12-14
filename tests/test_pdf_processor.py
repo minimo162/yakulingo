@@ -1117,6 +1117,44 @@ class TestCalculateTextPosition:
         assert x1 == 50.0  # Full width (left margin)
         assert y1 == 380.0 - (1 * 12.0 * 1.2)
 
+    def test_initial_y_out_of_bounds_uses_fallback(self):
+        """When initial_y is far outside box bounds, use fallback calculation."""
+        box_pdf = (100, 200, 300, 400)  # y1=200 (bottom), y2=400 (top)
+        font_size = 12.0
+        # initial_y far below the box (more than 2x font_size tolerance)
+        initial_y_below = 100.0  # Way below y1=200
+
+        x, y = calculate_text_position(box_pdf, 0, font_size, 1.2, initial_y_below)
+
+        # Should use fallback: y = y2 - font_size = 400 - 12 = 388
+        assert y == 400 - font_size
+        assert x == 100  # Left edge
+
+    def test_initial_y_slightly_out_of_bounds_still_uses_initial_y(self):
+        """When initial_y is within tolerance, still use initial_y."""
+        box_pdf = (100, 200, 300, 400)  # y1=200 (bottom), y2=400 (top)
+        font_size = 12.0
+        # initial_y slightly below y1 but within tolerance (2x font_size = 24)
+        initial_y_near = 190.0  # 10pt below y1=200, within 24pt tolerance
+
+        x, y = calculate_text_position(box_pdf, 0, font_size, 1.2, initial_y_near)
+
+        # Should use initial_y because it's within tolerance
+        assert y == initial_y_near
+        assert x == 100
+
+    def test_initial_y_above_box_uses_fallback(self):
+        """When initial_y is far above box, use fallback calculation."""
+        box_pdf = (100, 200, 300, 400)  # y1=200 (bottom), y2=400 (top)
+        font_size = 12.0
+        # initial_y far above the box (more than 2x font_size tolerance)
+        initial_y_above = 500.0  # Way above y2=400
+
+        x, y = calculate_text_position(box_pdf, 0, font_size, 1.2, initial_y_above)
+
+        # Should use fallback: y = y2 - font_size = 400 - 12 = 388
+        assert y == 400 - font_size
+
 
 class TestCalculateCharWidth:
     """Tests for calculate_char_width function"""

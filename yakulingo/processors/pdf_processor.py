@@ -845,7 +845,16 @@ def calculate_text_position(
         x = x1
 
     # Y position: PDFMathTranslate compliant
-    if initial_y is not None:
+    # Validate initial_y is within box bounds with tolerance
+    # This prevents text from being placed outside the intended region
+    # when Paragraph.y is incorrectly calculated
+    box_tolerance = font_size * 2  # Allow 2x font_size tolerance
+    use_initial_y = (
+        initial_y is not None and
+        y1 - box_tolerance <= initial_y <= y2 + box_tolerance
+    )
+
+    if use_initial_y:
         # Use original position as baseline
         # Formula: y = initial_y - (line_index * font_size * line_height)
         # - Line 0: y = initial_y (original position)
@@ -855,7 +864,15 @@ def calculate_text_position(
     else:
         # Fallback: Box-based calculation
         # Formula: y = y2 - font_size - (line_index * font_size * line_height)
+        # This ensures text is placed at the top of the box
         y = y2 - font_size - (line_index * font_size * line_height)
+        if initial_y is not None:
+            # Log warning when initial_y is out of bounds
+            logger.debug(
+                "calculate_text_position: initial_y=%.1f out of box bounds "
+                "[y1=%.1f, y2=%.1f], using fallback y=%.1f",
+                initial_y, y1, y2, y
+            )
 
     return x, y
 

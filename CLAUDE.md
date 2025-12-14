@@ -1609,6 +1609,12 @@ When interacting with users in this repository, prefer Japanese for comments and
 ## Recent Development Focus
 
 Based on recent commits:
+- **PDF Text Positioning Fix (2024-12)**:
+  - **initial_y validation**: `calculate_text_position()`で`initial_y`がbox_pdf境界内にあるかを検証。範囲外の場合はフォールバック計算を使用
+  - **Tolerance-based bounds check**: 2倍のフォントサイズを許容誤差として使用し、わずかな座標ずれを許容
+  - **Fallback to box-based calculation**: `initial_y`が範囲外の場合、`y2 - font_size`のフォールバック計算を使用
+  - **Debug logging**: `initial_y`が範囲外の場合にデバッグログを出力
+  - **Issue fixed**: 翻訳後のテキストが表のセル内に入り込む問題を修正
 - **PDF Paragraph Splitting Improvements (2024-12)**:
   - **Strong boundary detection**: `detect_paragraph_boundary()`に`is_strong_boundary`フラグを追加。強い境界（Y座標大変化、X大ギャップ、レイアウトクラス変化等）では文末記号チェックをスキップし、決算短信のような構造化ドキュメントでの各項目を適切に分割
   - **Weak boundary sentence-end check**: 弱い境界（行折り返し）の場合のみ文末記号チェックを適用。番号付きパラグラフの途中改行を正しく結合

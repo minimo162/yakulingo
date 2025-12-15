@@ -883,6 +883,19 @@ class CopilotHandler:
                 # Disable popup blocking to allow M365 auth flow to open auth windows
                 # (Without this, clicking "Continue" on auth dialogs leads to about:blank)
                 "--disable-popup-blocking",
+                # === PERFORMANCE OPTIMIZATIONS ===
+                # Disable background networking (telemetry, update checks, etc.)
+                "--disable-background-networking",
+                # Disable phishing detection - not needed for Copilot
+                "--disable-client-side-phishing-detection",
+                # Disable default apps installation prompts
+                "--disable-default-apps",
+                # Disable component updates during session
+                "--disable-component-update",
+                # Disable background timer throttling for faster response
+                "--disable-background-timer-throttling",
+                # Disable renderer backgrounding for consistent performance
+                "--disable-renderer-backgrounding",
             ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                cwd=local_cwd if sys.platform == "win32" else None,
                startupinfo=startupinfo,
@@ -2809,61 +2822,39 @@ class CopilotHandler:
         if self._browser_started_by_us:
             browser_terminated = False
 
-            # First try graceful close via WM_CLOSE (avoids "closed unexpectedly" message)
-            # OPTIMIZED: Very short timeout (0.05s) because:
-            # 1. Edge usually closes immediately or not at all (due to dialogs like "Restore pages")
-            # 2. We want fast app shutdown - falling back to force kill is acceptable
-            graceful_start = time.time()
-            with suppress(Exception):
-                if self._close_edge_gracefully(timeout=0.05):
-                    browser_terminated = True
-            logger.debug("[TIMING] graceful_close: %.2fs (success=%s)", time.time() - graceful_start, browser_terminated)
+            # OPTIMIZED: Skip graceful close (WM_CLOSE) entirely during force_disconnect
+            # Reason: In practice, graceful close almost always times out because:
+            # 1. Edge may show "Restore pages" dialog
+            # 2. M365 Copilot may have unsaved state
+            # Skipping saves ~0.05-0.1s on every shutdown
+            # Note: "Edge was closed unexpectedly" message is acceptable during app exit
 
-            # Fall back to kill process tree if graceful close failed
+            # Directly kill process tree (fastest method)
             # Use _kill_process_tree to kill all child processes (renderer, GPU, etc.)
             # that may be holding file handles to the profile directory
-            if not browser_terminated:
-                taskkill_start = time.time()
-                with suppress(Exception):
-                    if self.edge_process and self.edge_process.pid:
-                        if self._kill_process_tree(self.edge_process.pid):
+            taskkill_start = time.time()
+            with suppress(Exception):
+                if self.edge_process and self.edge_process.pid:
+                    if self._kill_process_tree(self.edge_process.pid):
+                        browser_terminated = True
+                        logger.info("Edge browser terminated (force via process tree kill)")
+                    else:
+                        # Fall back to terminate/kill if taskkill failed
+                        self.edge_process.terminate()
+                        try:
+                            self.edge_process.wait(timeout=0.05)
                             browser_terminated = True
-                            logger.info("Edge browser terminated (force via process tree kill)")
-                        else:
-                            # Fall back to terminate/kill if taskkill failed
-                            # OPTIMIZED: Use minimal timeouts for fast shutdown
-                            self.edge_process.terminate()
-                            try:
-                                self.edge_process.wait(timeout=0.05)
-                                browser_terminated = True
-                            except subprocess.TimeoutExpired:
-                                self.edge_process.kill()
-                                try:
-                                    self.edge_process.wait(timeout=0.1)
-                                    browser_terminated = True
-                                except subprocess.TimeoutExpired:
-                                    logger.warning("Edge process did not terminate after kill")
-                            if browser_terminated:
-                                logger.info("Edge browser terminated (force via terminate)")
-                logger.debug("[TIMING] kill_process_tree: %.2fs", time.time() - taskkill_start)
-
-            # Verify process is truly terminated by checking poll()
-            if browser_terminated and self.edge_process:
-                with suppress(Exception):
-                    if self.edge_process.poll() is None:
-                        # Process still running, try kill process tree again
-                        logger.warning("Edge process still running after termination, forcing kill")
-                        if not self._kill_process_tree(self.edge_process.pid):
+                        except subprocess.TimeoutExpired:
                             self.edge_process.kill()
-                        # OPTIMIZED: Short wait for verification
-                        self.edge_process.wait(timeout=0.1)
+                            browser_terminated = True  # Assume success after kill
+                        if browser_terminated:
+                            logger.info("Edge browser terminated (force via terminate)")
+            logger.debug("[TIMING] kill_process_tree: %.2fs", time.time() - taskkill_start)
 
             # If edge_process was None (lost after cleanup_on_error), kill by port
             if not browser_terminated and self._is_port_in_use():
                 with suppress(Exception):
                     self._kill_existing_translator_edge()
-                    # OPTIMIZED: Minimal wait for port release
-                    time.sleep(0.05)
                     logger.info("Edge browser terminated (force via port)")
 
         # Clear references (Playwright cleanup may fail but that's OK during shutdown)
@@ -3652,8 +3643,10 @@ class CopilotHandler:
                 # After Enter, poll for input cleared OR stop button appears
                 # Either indicates successful send
                 MAX_SEND_RETRIES = 3
-                SEND_VERIFY_POLL_INTERVAL = 0.1  # Poll every 100ms
-                SEND_VERIFY_MAX_WAIT = 1.5  # Max wait for verification
+                # OPTIMIZED: Faster polling (50ms) with longer max wait (2.5s)
+                # This reduces retries by allowing more time for initial detection
+                SEND_VERIFY_POLL_INTERVAL = 0.05  # Poll every 50ms (was 100ms)
+                SEND_VERIFY_MAX_WAIT = 2.5  # Max wait for verification (was 1.5s)
                 send_success = False
 
                 for send_attempt in range(MAX_SEND_RETRIES):
@@ -3685,7 +3678,17 @@ class CopilotHandler:
                     send_verified = False
                     verify_reason = ""
 
-                    while time.time() - poll_start < SEND_VERIFY_MAX_WAIT:
+                    # OPTIMIZED: Check immediately before first sleep
+                    # This can save up to 50ms if stop button appears quickly
+                    try:
+                        stop_button = self._page.query_selector(self.STOP_BUTTON_SELECTOR_COMBINED)
+                        if stop_button is not None and stop_button.is_visible():
+                            send_verified = True
+                            verify_reason = "stop button visible (immediate)"
+                    except Exception:
+                        pass
+
+                    while not send_verified and time.time() - poll_start < SEND_VERIFY_MAX_WAIT:
                         time.sleep(SEND_VERIFY_POLL_INTERVAL)
 
                         # Check stop button first (faster indicator)

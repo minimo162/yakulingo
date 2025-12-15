@@ -867,13 +867,18 @@ def detect_paragraph_boundary(
                     elif y_diff > y_para_thresh:
                         # Y change exceeds paragraph threshold
                         new_paragraph = True
-                        is_strong_boundary = True  # Large Y change is strong
+                        # NOTE: Within the same layout class, large Y gaps might just be
+                        # wider line spacing (common in financial documents like 決算短信).
+                        # Do NOT mark as strong boundary - let sentence-end check decide
+                        # whether this is a continuation or a new paragraph.
+                        # is_strong_boundary = True  # Removed - weak boundary
                     elif y_diff > y_line_thresh:
                         line_break = True
                         # Not strong - may be overridden by sentence-end check
                 elif y_diff > y_para_thresh:
                     new_paragraph = True
-                    is_strong_boundary = True  # Large Y change is strong
+                    # Same as above: within same layout class, let sentence-end check decide
+                    # is_strong_boundary = True  # Removed - weak boundary
                 elif y_diff > y_line_thresh:
                     line_break = True
     else:
@@ -889,7 +894,10 @@ def detect_paragraph_boundary(
 
         if y_diff > y_para_thresh:
             new_paragraph = True
-            is_strong_boundary = True  # Large Y change is strong
+            # In fallback mode (no layout info), large Y change might still be
+            # within the same paragraph with wide line spacing.
+            # Let sentence-end check decide.
+            # is_strong_boundary = True  # Removed - weak boundary
         elif x_diff > x_column_thresh:
             # Large X jump suggests column change in multi-column layout
             # Combined with Y going back up indicates new column

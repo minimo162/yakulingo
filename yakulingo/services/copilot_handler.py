@@ -3779,6 +3779,58 @@ class CopilotHandler:
 
                 for send_attempt in range(MAX_SEND_RETRIES):
                     send_method = ""
+
+                    # Debug: Log environment state before each attempt
+                    try:
+                        pre_attempt_state = self._page.evaluate('''() => {
+                            const input = document.querySelector('#m365-chat-editor-target-element');
+                            const sendBtn = document.querySelector('.fai-SendButton');
+                            const stopBtn = document.querySelector('.fai-SendButton__stopBackground');
+
+                            const sendBtnRect = sendBtn ? sendBtn.getBoundingClientRect() : null;
+
+                            return {
+                                // Input state
+                                inputTextLength: input ? input.innerText.trim().length : -1,
+                                inputHasFocus: input ? document.activeElement === input : false,
+
+                                // Send button state
+                                sendBtnExists: !!sendBtn,
+                                sendBtnDisabled: sendBtn ? sendBtn.disabled : null,
+                                sendBtnAriaDisabled: sendBtn ? sendBtn.getAttribute('aria-disabled') : null,
+                                sendBtnVisible: sendBtn ? sendBtn.offsetParent !== null : false,
+                                sendBtnRect: sendBtnRect ? {
+                                    x: Math.round(sendBtnRect.x),
+                                    y: Math.round(sendBtnRect.y),
+                                    width: Math.round(sendBtnRect.width),
+                                    height: Math.round(sendBtnRect.height)
+                                } : null,
+                                sendBtnInViewport: sendBtnRect ? (
+                                    sendBtnRect.y >= 0 && sendBtnRect.y < window.innerHeight
+                                ) : false,
+
+                                // Stop button state
+                                stopBtnExists: !!stopBtn,
+                                stopBtnVisible: stopBtn ? stopBtn.offsetParent !== null : false,
+
+                                // Window/Document state
+                                windowInnerWidth: window.innerWidth,
+                                windowInnerHeight: window.innerHeight,
+                                documentVisibility: document.visibilityState,
+                                documentHidden: document.hidden,
+
+                                // Active element
+                                activeElementTag: document.activeElement?.tagName,
+                                activeElementId: document.activeElement?.id,
+
+                                // Response elements
+                                responseCount: document.querySelectorAll('[data-message-author-role="assistant"]').length
+                            };
+                        }''')
+                        logger.info("[SEND_DEBUG] Attempt %d PRE-STATE: %s", send_attempt + 1, pre_attempt_state)
+                    except Exception as state_err:
+                        logger.debug("[SEND_DEBUG] Could not get pre-attempt state: %s", state_err)
+
                     try:
                         if send_attempt == 0:
                             # First attempt: Enter key with robust focus management
@@ -3910,6 +3962,51 @@ class CopilotHandler:
 
                     # Small delay to let Copilot's JavaScript process the click event
                     time.sleep(0.1)  # Increased from 0.05s for reliability
+
+                    # Debug: Log environment state after send attempt
+                    try:
+                        post_attempt_state = self._page.evaluate('''() => {
+                            const input = document.querySelector('#m365-chat-editor-target-element');
+                            const sendBtn = document.querySelector('.fai-SendButton');
+                            const stopBtn = document.querySelector('.fai-SendButton__stopBackground');
+
+                            const sendBtnRect = sendBtn ? sendBtn.getBoundingClientRect() : null;
+
+                            return {
+                                // Input state
+                                inputTextLength: input ? input.innerText.trim().length : -1,
+                                inputHasFocus: input ? document.activeElement === input : false,
+
+                                // Send button state
+                                sendBtnExists: !!sendBtn,
+                                sendBtnDisabled: sendBtn ? sendBtn.disabled : null,
+                                sendBtnRect: sendBtnRect ? {
+                                    x: Math.round(sendBtnRect.x),
+                                    y: Math.round(sendBtnRect.y)
+                                } : null,
+                                sendBtnInViewport: sendBtnRect ? (
+                                    sendBtnRect.y >= 0 && sendBtnRect.y < window.innerHeight
+                                ) : false,
+
+                                // Stop button state (key indicator of send success)
+                                stopBtnExists: !!stopBtn,
+                                stopBtnVisible: stopBtn ? stopBtn.offsetParent !== null : false,
+
+                                // Window/Document state
+                                documentVisibility: document.visibilityState,
+                                documentHidden: document.hidden,
+
+                                // Active element
+                                activeElementTag: document.activeElement?.tagName,
+                                activeElementId: document.activeElement?.id,
+
+                                // Response elements
+                                responseCount: document.querySelectorAll('[data-message-author-role="assistant"]').length
+                            };
+                        }''')
+                        logger.info("[SEND_DEBUG] Attempt %d POST-STATE: %s", send_attempt + 1, post_attempt_state)
+                    except Exception as state_err:
+                        logger.debug("[SEND_DEBUG] Could not get post-attempt state: %s", state_err)
 
                     # Optimized send verification: parallel polling of both conditions
                     # This is faster than sequential wait_for_selector + input check

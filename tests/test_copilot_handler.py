@@ -589,11 +589,6 @@ class TestSendMessage:
         mock_stop_button = MagicMock()
         mock_stop_button.is_visible.return_value = False  # Stop button not visible
         mock_send_button = MagicMock()
-        mock_page.wait_for_selector.return_value = mock_input
-
-        # fill() check returns text (fill success)
-        mock_input.inner_text.return_value = "Test prompt"
-        mock_input.evaluate.return_value = True  # has focus
 
         # Track send button clicks to detect retries
         click_count = [0]
@@ -604,14 +599,31 @@ class TestSendMessage:
             return None
 
         mock_send_button.evaluate.side_effect = send_button_click_side_effect
+
+        # fill() check returns text (fill success)
+        mock_input.inner_text.return_value = "Test prompt"
+        mock_input.evaluate.return_value = True  # has focus
         mock_refetched_input.evaluate.return_value = True  # has focus
 
-        # inner_text: First attempt fails (text not cleared), second attempt succeeds (cleared)
-        inner_text_calls = [0]
+        # wait_for_selector behavior:
+        # - First call: return mock_input (for finding input element)
+        # - Subsequent calls for stop button: raise TimeoutError (stop button not visible)
+        wait_for_selector_calls = [0]
 
+        def wait_for_selector_side_effect(selector, **kwargs):
+            wait_for_selector_calls[0] += 1
+            # First call is for input element
+            if wait_for_selector_calls[0] == 1:
+                return mock_input
+            # Subsequent calls are for stop button - raise timeout to simulate not visible
+            if "stop" in selector.lower() or "fai-SendButton__stopBackground" in selector:
+                raise TimeoutError("Stop button not found")
+            return mock_input
+
+        mock_page.wait_for_selector.side_effect = wait_for_selector_side_effect
+
+        # inner_text: First attempt fails (text not cleared), second attempt succeeds (cleared)
         def inner_text_side_effect():
-            inner_text_calls[0] += 1
-            # During first retry polling, return text (not cleared)
             # After second click, return empty (cleared)
             if click_count[0] < 2:
                 return "Test prompt"  # Not cleared
@@ -630,12 +642,8 @@ class TestSendMessage:
         mock_page.query_selector.side_effect = query_selector_side_effect
         handler._page = mock_page
 
-        # Mock time to make polling loop exit quickly after a few iterations
-        time_values = [i * 0.2 for i in range(100)]
-
-        with patch('time.time', side_effect=time_values):
-            with patch('time.sleep'):  # Skip actual sleep
-                handler._send_message("Test prompt")
+        with patch('time.sleep'):  # Skip actual sleep
+            handler._send_message("Test prompt")
 
         # Should have clicked send button twice (retry once)
         assert click_count[0] == 2, f"Expected 2 send button clicks but got {click_count[0]}"
@@ -699,7 +707,6 @@ class TestSendMessage:
         mock_stop_button = MagicMock()
         mock_stop_button.is_visible.return_value = False  # Stop button never visible
         mock_send_button = MagicMock()
-        mock_page.wait_for_selector.return_value = mock_input
 
         # fill() check returns text (fill success)
         mock_input.inner_text.return_value = "Test prompt"
@@ -719,6 +726,23 @@ class TestSendMessage:
         mock_refetched_input.inner_text.return_value = "Test prompt"
         mock_refetched_input.evaluate.return_value = True  # has focus
 
+        # wait_for_selector behavior:
+        # - First call: return mock_input (for finding input element)
+        # - Subsequent calls for stop button: raise TimeoutError
+        wait_for_selector_calls = [0]
+
+        def wait_for_selector_side_effect(selector, **kwargs):
+            wait_for_selector_calls[0] += 1
+            # First call is for input element
+            if wait_for_selector_calls[0] == 1:
+                return mock_input
+            # Subsequent calls are for stop button - raise timeout
+            if "stop" in selector.lower() or "fai-SendButton__stopBackground" in selector:
+                raise TimeoutError("Stop button not found")
+            return mock_input
+
+        mock_page.wait_for_selector.side_effect = wait_for_selector_side_effect
+
         def query_selector_side_effect(selector):
             if "stop" in selector.lower() or "Stop" in selector:
                 return mock_stop_button
@@ -729,17 +753,12 @@ class TestSendMessage:
         mock_page.query_selector.side_effect = query_selector_side_effect
         handler._page = mock_page
 
-        # Mock time to make polling loops exit quickly (each poll advances time)
-        # Need enough time values for 3 attempts × ~8 polls each = ~24 time() calls
-        time_values = [i * 0.2 for i in range(100)]
+        with patch('time.sleep'):
+            # Should not raise - continues anyway (response polling will detect failure)
+            handler._send_message("Test prompt")
 
-        with patch('time.time', side_effect=time_values):
-            with patch('time.sleep'):
-                # Should not raise - continues anyway (response polling will detect failure)
-                handler._send_message("Test prompt")
-
-        # Should click send button 3 times (max retries)
-        assert click_count[0] == 3, f"Expected 3 send button clicks but got {click_count[0]}"
+        # Should click send button 2 times (max retries = 2)
+        assert click_count[0] == 2, f"Expected 2 send button clicks but got {click_count[0]}"
 
     def test_send_message_uses_send_button_click(self):
         """_send_message uses send button click as primary method"""

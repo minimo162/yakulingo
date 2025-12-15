@@ -3635,12 +3635,10 @@ class CopilotHandler:
                     time.sleep(0.15)  # Reduced fallback from 0.2s
 
                 # Send via send button click (more reliable than Enter key)
-                # After click, poll for input cleared OR stop button appears
-                # Either indicates successful send
-                MAX_SEND_RETRIES = 3
-                # OPTIMIZED: Faster polling (50ms) with shorter max wait (0.8s)
-                SEND_VERIFY_POLL_INTERVAL = 0.05  # Poll every 50ms
-                SEND_VERIFY_MAX_WAIT = 0.8  # Max wait for verification (reduced from 1.5s)
+                # After click, use wait_for_selector for efficient stop button detection
+                # This is more efficient than polling with query_selector
+                MAX_SEND_RETRIES = 2  # Reduced from 3 (usually succeeds on first try)
+                SEND_VERIFY_TIMEOUT_MS = 1500  # 1.5s timeout for wait_for_selector
                 send_success = False
 
                 for send_attempt in range(MAX_SEND_RETRIES):
@@ -3659,52 +3657,40 @@ class CopilotHandler:
                         logger.debug("Send button click failed, using Enter key: %s", click_err)
                         input_elem.press("Enter")
 
-                    # Poll for successful send indicators (instead of fixed wait)
-                    # 1. Input field is cleared (text removed)
-                    # 2. Stop button appeared (Copilot started generating)
-                    poll_start = time.time()
+                    # Use wait_for_selector for efficient browser-level waiting
+                    # This is more efficient than polling with query_selector every 50ms
+                    verify_start = time.time()
                     send_verified = False
                     verify_reason = ""
 
-                    # OPTIMIZED: Check immediately before first sleep
-                    # This can save up to 50ms if stop button appears quickly
+                    # Method 1: Wait for stop button (indicates Copilot started generating)
                     try:
-                        stop_button = self._page.query_selector(self.STOP_BUTTON_SELECTOR_COMBINED)
-                        if stop_button is not None and stop_button.is_visible():
-                            send_verified = True
-                            verify_reason = "stop button visible (immediate)"
+                        self._page.wait_for_selector(
+                            self.STOP_BUTTON_SELECTOR_COMBINED,
+                            timeout=SEND_VERIFY_TIMEOUT_MS,
+                            state='visible'
+                        )
+                        send_verified = True
+                        verify_reason = "stop button visible"
                     except Exception:
+                        # Stop button didn't appear - check if input was cleared instead
                         pass
 
-                    while not send_verified and time.time() - poll_start < SEND_VERIFY_MAX_WAIT:
-                        time.sleep(SEND_VERIFY_POLL_INTERVAL)
-
-                        # Check stop button first (faster indicator)
-                        try:
-                            stop_button = self._page.query_selector(self.STOP_BUTTON_SELECTOR_COMBINED)
-                            if stop_button is not None and stop_button.is_visible():
-                                send_verified = True
-                                verify_reason = "stop button visible"
-                                break
-                        except Exception:
-                            pass
-
-                        # Check if input is cleared
+                    # Method 2: Fallback - check if input is cleared
+                    if not send_verified:
                         try:
                             current_input = self._page.query_selector(input_selector)
                             remaining_text = current_input.inner_text().strip() if current_input else ""
                             if not remaining_text:
                                 send_verified = True
                                 verify_reason = "input cleared"
-                                break
                         except Exception:
                             # If we can't check, assume it might have been sent
                             send_verified = True
                             verify_reason = "input check failed (assuming sent)"
-                            break
 
                     if send_verified:
-                        elapsed = time.time() - poll_start
+                        elapsed = time.time() - verify_start
                         logger.info("Message sent (attempt %d, %s, verified in %.2fs)",
                                     send_attempt + 1, verify_reason, elapsed)
                         send_success = True
@@ -3721,7 +3707,7 @@ class CopilotHandler:
                         if send_attempt < MAX_SEND_RETRIES - 1:
                             logger.warning(
                                 "Send not verified after %.1fs (attempt %d/%d), retrying...",
-                                SEND_VERIFY_MAX_WAIT, send_attempt + 1, MAX_SEND_RETRIES
+                                SEND_VERIFY_TIMEOUT_MS / 1000, send_attempt + 1, MAX_SEND_RETRIES
                             )
                         else:
                             # All attempts failed

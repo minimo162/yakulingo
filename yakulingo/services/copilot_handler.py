@@ -3906,23 +3906,9 @@ class CopilotHandler:
         first_content_time = None
 
         try:
-            # Wait for response element to appear (instead of fixed sleep)
-            wait_response_start = time.time()
-            try:
-                self._page.wait_for_selector(
-                    self.RESPONSE_SELECTOR_COMBINED, timeout=self.SELECTOR_RESPONSE_TIMEOUT_MS, state='visible'
-                )
-            except PlaywrightTimeoutError:
-                # Response may already be present or selector changed, continue polling
-                pass
-            logger.info("[TIMING] wait_for_response_element: %.2fs", time.time() - wait_response_start)
-
-            # Check for cancellation after initial wait
-            if self._is_cancelled():
-                logger.info("Translation cancelled after initial wait")
-                raise TranslationCancelledError("Translation cancelled by user")
-
             # Wait for response completion with dynamic polling
+            # Note: We no longer use wait_for_selector here to ensure stop button detection
+            # during the initial waiting period (stop button appears before response element)
             max_wait = float(timeout)
             last_text = ""
             stable_count = 0
@@ -3931,6 +3917,8 @@ class CopilotHandler:
             last_log_time = time.time()
             stop_button_ever_seen = False  # Track if stop button was ever visible
             stop_button_warning_logged = False  # Avoid repeated warnings
+            response_element_seen = False  # Track if response element has appeared
+            response_element_first_seen_time = None  # Track when response element first appeared
             # Initialize to past time so first iteration always checks page validity
             last_page_validity_check = time.time() - self.PAGE_VALIDITY_CHECK_INTERVAL
 
@@ -4015,6 +4003,12 @@ class CopilotHandler:
                 text_preview = (current_text[:50] + "...") if current_text and len(current_text) > 50 else current_text
 
                 if found_response:
+                    # Track when response element first appears
+                    if not response_element_seen:
+                        response_element_seen = True
+                        response_element_first_seen_time = time.time()
+                        logger.info("[TIMING] response_element_detected: %.2fs",
+                                   response_element_first_seen_time - response_start_time)
 
                     # Only count stability if there's actual content
                     # Don't consider empty or whitespace-only text as stable

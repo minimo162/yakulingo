@@ -971,6 +971,17 @@ class CopilotHandler:
                 logger.info("Starting Edge browser...")
                 if not self._start_translator_edge():
                     return False
+            else:
+                # Ensure profile_dir is set even when connecting to existing Edge
+                # This is needed for storage_state path resolution
+                if not self.profile_dir:
+                    local_app_data = os.environ.get("LOCALAPPDATA", "")
+                    if local_app_data:
+                        self.profile_dir = Path(local_app_data) / "YakuLingo" / "EdgeProfile"
+                    else:
+                        self.profile_dir = Path.home() / ".yakulingo" / "edge-profile"
+                    self.profile_dir.mkdir(parents=True, exist_ok=True)
+                    logger.debug("Set profile_dir for existing Edge: %s", self.profile_dir)
 
             # Step 2: Connect via Playwright CDP
             logger.info("Connecting to browser...")
@@ -1146,16 +1157,20 @@ class CopilotHandler:
 
         # フォールバック: 新規context作成（storage_stateから復元を試みる）
         storage_path = self._get_storage_state_path()
+        logger.info("Looking for storage_state at: %s", storage_path)
         if storage_path.exists():
             try:
-                logger.info("Restoring session from storage_state...")
+                file_size = storage_path.stat().st_size
+                logger.info("Restoring session from storage_state (size: %d bytes)...", file_size)
                 context = self._browser.new_context(storage_state=str(storage_path))
-                logger.info("Session restored from storage_state")
+                logger.info("Session restored from storage_state successfully")
                 return context
             except (PlaywrightError, PlaywrightTimeoutError, OSError) as e:
-                logger.warning("Failed to restore storage_state: %s", e)
+                logger.warning("Failed to restore storage_state: %s (type: %s)", e, type(e).__name__)
+        else:
+            logger.warning("storage_state file not found at: %s", storage_path)
 
-        logger.warning("Creating new context - no storage_state found")
+        logger.warning("Creating new context without storage_state - login will be required")
         return self._browser.new_context()
 
     def _get_or_create_copilot_page(self):
@@ -2863,8 +2878,13 @@ class CopilotHandler:
 
         # Save storage_state before closing browser (moved from translation methods
         # to avoid window activation during translation completion)
-        with suppress(Exception):
-            self._save_storage_state()
+        logger.info("Saving storage_state before disconnect...")
+        try:
+            saved = self._save_storage_state()
+            if not saved:
+                logger.warning("storage_state was not saved during disconnect")
+        except Exception as e:
+            logger.warning("Error saving storage_state during disconnect: %s", e)
 
         self._connected = False
 
@@ -2941,7 +2961,8 @@ class CopilotHandler:
             storage_path.parent.mkdir(parents=True, exist_ok=True)
             # Save storage state (cookies, localStorage, sessionStorage)
             self._context.storage_state(path=str(storage_path))
-            logger.debug("Storage state saved to %s", storage_path)
+            file_size = storage_path.stat().st_size if storage_path.exists() else 0
+            logger.info("Storage state saved to %s (size: %d bytes)", storage_path, file_size)
             return True
         except PlaywrightError as e:
             logger.warning("Failed to save storage_state (Playwright): %s", e)

@@ -2629,7 +2629,83 @@ def create_app() -> YakuLingoApp:
     return YakuLingoApp()
 
 
-def _detect_display_settings() -> tuple[tuple[int, int], tuple[int, int, int]]:
+def _get_display_cache_path() -> Path:
+    """Get the path to the display settings cache file."""
+    return Path.home() / ".yakulingo" / "display_cache.json"
+
+
+def _load_display_cache() -> tuple[tuple[int, int], tuple[int, int, int]] | None:
+    """Load cached display settings from disk.
+
+    Returns:
+        Cached display settings or None if cache is invalid/missing.
+    """
+    import json
+
+    cache_path = _get_display_cache_path()
+    if not cache_path.exists():
+        return None
+
+    try:
+        with open(cache_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+
+        # Validate cache structure
+        if not isinstance(data, dict):
+            return None
+
+        window = data.get('window')
+        panels = data.get('panels')
+
+        if not (isinstance(window, list) and len(window) == 2 and
+                isinstance(panels, list) and len(panels) == 3):
+            return None
+
+        # Validate values are reasonable
+        if window[0] < 800 or window[1] < 500:
+            return None
+
+        logger.debug("Loaded display cache: window=%s, panels=%s", window, panels)
+        return (tuple(window), tuple(panels))
+
+    except (json.JSONDecodeError, OSError, KeyError, TypeError) as e:
+        logger.debug("Failed to load display cache: %s", e)
+        return None
+
+
+def _save_display_cache(
+    window_size: tuple[int, int],
+    panel_sizes: tuple[int, int, int],
+    screen_signature: str
+) -> None:
+    """Save display settings to cache file.
+
+    Args:
+        window_size: (width, height) tuple.
+        panel_sizes: (sidebar_width, input_panel_width, content_width) tuple.
+        screen_signature: String identifying the screen configuration.
+    """
+    import json
+
+    cache_path = _get_display_cache_path()
+    try:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        data = {
+            'window': list(window_size),
+            'panels': list(panel_sizes),
+            'screen_signature': screen_signature,
+        }
+        with open(cache_path, 'w', encoding='utf-8') as f:
+            json.dump(data, f)
+        logger.debug("Saved display cache: %s", data)
+    except OSError as e:
+        logger.debug("Failed to save display cache: %s", e)
+
+
+def _detect_display_settings(
+    webview_module: "ModuleType | None" = None,
+    use_cache: bool = True
+) -> tuple[tuple[int, int], tuple[int, int, int]]:
     """Detect connected monitors and determine window size and panel widths.
 
     Uses pywebview's screens API to detect multiple monitors BEFORE ui.run().
@@ -2648,6 +2724,10 @@ def _detect_display_settings() -> tuple[tuple[int, int], tuple[int, int, int]]:
 
     Window and panel sizes are calculated based on **logical** screen resolution.
     Reference: 2560x1440 logical → 1900x1100 window (74.2% width, 76.4% height).
+
+    Args:
+        webview_module: Pre-initialized webview module (avoids redundant initialization).
+        use_cache: If True, try to load from cache first (default: True).
 
     Returns:
         Tuple of ((window_width, window_height), (sidebar_width, input_panel_width, content_width))
@@ -2718,8 +2798,24 @@ def _detect_display_settings() -> tuple[tuple[int, int], tuple[int, int, int]]:
     # Default based on 1920x1080 screen
     default_window, default_panels = calculate_sizes(1920, 1080)
 
+    # Try to load from cache first (saves ~0.3-0.4s)
+    if use_cache:
+        cached = _load_display_cache()
+        if cached is not None:
+            logger.info("Using cached display settings (fast startup)")
+            return cached
+
+    # Use pre-initialized webview module if provided, otherwise import
+    webview = webview_module
+    if webview is None:
+        try:
+            import webview as webview_import
+            webview = webview_import
+        except ImportError:
+            logger.debug("pywebview not available, using default")
+            return (default_window, default_panels)
+
     try:
-        import webview
         screens = webview.screens
         if not screens:
             logger.debug("No screens detected via pywebview, using default")
@@ -2754,21 +2850,31 @@ def _detect_display_settings() -> tuple[tuple[int, int], tuple[int, int, int]]:
             window_size[0], window_size[1],
             panel_sizes[0], panel_sizes[1], panel_sizes[2]
         )
+
+        # Save to cache for next startup
+        screen_signature = f"{len(screens)}:{logical_width}x{logical_height}"
+        _save_display_cache(window_size, panel_sizes, screen_signature)
+
         return (window_size, panel_sizes)
 
-    except ImportError:
-        logger.debug("pywebview not available, using default")
-        return (default_window, default_panels)
     except Exception as e:
         logger.warning("Failed to detect display: %s, using default", e)
         return (default_window, default_panels)
 
 
-def _native_mode_enabled(native_requested: bool) -> bool:
-    """Return whether native (pywebview) mode can be used safely."""
+def _check_native_mode_and_get_webview(native_requested: bool) -> tuple[bool, "ModuleType | None"]:
+    """Check if native mode can be used and return initialized webview module.
+
+    This function combines native mode check and webview initialization to avoid
+    redundant initialization calls (saves ~0.2-0.3s on startup).
+
+    Returns:
+        Tuple of (native_enabled, webview_module).
+        If native mode is disabled, webview_module will be None.
+    """
 
     if not native_requested:
-        return False
+        return (False, None)
 
     import os
     import sys
@@ -2781,7 +2887,7 @@ def _native_mode_enabled(native_requested: bool) -> bool:
             "Native mode requested but no display detected (DISPLAY / WAYLAND_DISPLAY); "
             "falling back to browser mode."
         )
-        return False
+        return (False, None)
 
     try:
         import webview  # type: ignore
@@ -2789,7 +2895,7 @@ def _native_mode_enabled(native_requested: bool) -> bool:
         logger.warning(
             "Native mode requested but pywebview is unavailable: %s; starting in browser mode.", e
         )
-        return False
+        return (False, None)
 
     # pywebview resolves the available GUI backend lazily when `initialize()` is called.
     # Triggering the initialization here prevents false negatives where `webview.guilib`
@@ -2802,16 +2908,16 @@ def _native_mode_enabled(native_requested: bool) -> bool:
             "starting in browser mode instead.",
             e,
         )
-        return False
+        return (False, None)
 
     if backend is None:
         logger.warning(
             "Native mode requested but no GUI backend was found for pywebview; "
             "starting in browser mode instead."
         )
-        return False
+        return (False, None)
 
-    return True
+    return (True, webview)
 
 
 def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
@@ -2830,10 +2936,12 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
     # Detect optimal window size BEFORE ui.run() to avoid resize flicker
     _t2 = time.perf_counter()
     # Fallback to browser mode when pywebview cannot create a native window (e.g., headless Linux)
-    native = _native_mode_enabled(native)
+    # Combined check + webview initialization to avoid redundant webview.initialize() calls
+    native, webview_module = _check_native_mode_and_get_webview(native)
     logger.info("Native mode enabled: %s", native)
     if native:
-        window_size, panel_sizes = _detect_display_settings()
+        # Pass pre-initialized webview module to avoid second initialization
+        window_size, panel_sizes = _detect_display_settings(webview_module=webview_module)
         yakulingo_app._panel_sizes = panel_sizes  # (sidebar_width, input_panel_width, content_width)
         yakulingo_app._window_size = window_size
         run_window_size = window_size

@@ -4199,6 +4199,10 @@ class PdfProcessor(FileProcessor):
                                 # Treat this as a line break instead of a new paragraph
                                 should_start_new = False
                                 line_break = True
+                                # Reset new_paragraph flag to enable line joining logic at line 4217
+                                # Without this, the condition "if line_break and not new_paragraph"
+                                # would always be False, skipping the yomitoku-style line joining
+                                new_paragraph = False
 
                     if should_start_new:
                         # Start new paragraph

@@ -1034,46 +1034,51 @@ class CopilotHandler:
 
         try:
             import time as _time
-            from concurrent.futures import ThreadPoolExecutor, as_completed
+            from concurrent.futures import ThreadPoolExecutor
 
-            # Step 1: Start Edge and initialize Playwright in parallel
-            # This saves ~0.3-0.5s by overlapping Edge startup with Playwright initialization
+            # Step 1: Start Edge and initialize Playwright
+            # Edge startup runs in background thread while Playwright initializes in current thread
+            # Note: Playwright MUST be initialized in the same thread where it will be used
+            # (greenlet limitation), so only Edge startup can be parallelized
             need_start_edge = not self._is_port_in_use()
 
-            def _init_playwright():
-                """Initialize Playwright in background thread."""
-                _t_start = _time.perf_counter()
-                _, sync_playwright = _get_playwright()
-                pw = sync_playwright().start()
-                logger.debug("[TIMING] sync_playwright().start() (parallel): %.2fs", _time.perf_counter() - _t_start)
-                return pw
-
-            def _start_edge():
-                """Start Edge browser."""
-                logger.info("Starting Edge browser...")
-                return self._start_translator_edge()
-
             if need_start_edge:
-                # Parallel execution: Edge startup + Playwright init
+                # Start Edge in background thread while initializing Playwright in current thread
                 _t_parallel_start = _time.perf_counter()
-                with ThreadPoolExecutor(max_workers=2, thread_name_prefix="copilot_init") as executor:
-                    edge_future = executor.submit(_start_edge)
-                    pw_future = executor.submit(_init_playwright)
 
-                    # Wait for both to complete
+                def _start_edge_background():
+                    """Start Edge browser in background."""
+                    logger.info("Starting Edge browser...")
+                    return self._start_translator_edge()
+
+                # Submit Edge startup to background thread
+                with ThreadPoolExecutor(max_workers=1, thread_name_prefix="edge_start") as executor:
+                    edge_future = executor.submit(_start_edge_background)
+
+                    # Initialize Playwright in current thread while Edge starts
+                    logger.info("Connecting to browser...")
+                    _t_pw_start = _time.perf_counter()
+                    _, sync_playwright = _get_playwright()
+                    logger.debug("[TIMING] _get_playwright(): %.2fs", _time.perf_counter() - _t_pw_start)
+                    _t_pw_init = _time.perf_counter()
+                    self._playwright = sync_playwright().start()
+                    logger.debug("[TIMING] sync_playwright().start() (parallel with Edge): %.2fs",
+                                 _time.perf_counter() - _t_pw_init)
+
+                    # Wait for Edge startup to complete
                     edge_started = edge_future.result()
                     if not edge_started:
-                        # Cancel Playwright init if Edge failed (it will complete but we ignore result)
-                        try:
-                            pw = pw_future.result(timeout=0.1)
-                            if pw:
-                                pw.stop()
-                        except Exception:
-                            pass
+                        # Clean up Playwright if Edge failed
+                        if self._playwright:
+                            try:
+                                self._playwright.stop()
+                            except Exception:
+                                pass
+                            self._playwright = None
                         return False
 
-                    self._playwright = pw_future.result()
-                logger.debug("[TIMING] Parallel Edge+Playwright init: %.2fs", _time.perf_counter() - _t_parallel_start)
+                logger.debug("[TIMING] Parallel Edge+Playwright init: %.2fs",
+                             _time.perf_counter() - _t_parallel_start)
             else:
                 # Edge already running, just initialize Playwright
                 # Ensure profile_dir is set even when connecting to existing Edge

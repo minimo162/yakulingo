@@ -2862,6 +2862,44 @@ def _detect_display_settings(
         return (default_window, default_panels)
 
 
+def _check_native_mode_minimal(native_requested: bool) -> bool:
+    """Minimal check for native mode availability (import only, no initialize).
+
+    This is a fast-path check used when display cache is available.
+    It only verifies that webview can be imported and a display is available,
+    without calling webview.initialize() (which takes ~2 seconds).
+
+    Returns:
+        True if native mode appears available, False otherwise.
+    """
+    if not native_requested:
+        return False
+
+    import os
+    import sys
+
+    # Linux containers often lack a display server; avoid pywebview crashes
+    if sys.platform.startswith('linux') and not (
+        os.environ.get('DISPLAY') or os.environ.get('WAYLAND_DISPLAY')
+    ):
+        logger.warning(
+            "Native mode requested but no display detected (DISPLAY / WAYLAND_DISPLAY); "
+            "falling back to browser mode."
+        )
+        return False
+
+    try:
+        import webview  # type: ignore  # noqa: F401
+        # Just verify import succeeds - don't call initialize()
+        # If cache exists, native mode worked before, so it should work now
+        return True
+    except Exception as e:
+        logger.warning(
+            "Native mode requested but pywebview is unavailable: %s; starting in browser mode.", e
+        )
+        return False
+
+
 def _check_native_mode_and_get_webview(native_requested: bool) -> tuple[bool, "ModuleType | None"]:
     """Check if native mode can be used and return initialized webview module.
 
@@ -2934,22 +2972,39 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
     logger.info("[TIMING] create_app: %.2fs", time.perf_counter() - _t1)
 
     # Detect optimal window size BEFORE ui.run() to avoid resize flicker
+    # OPTIMIZATION: Check cache FIRST to skip expensive webview.initialize() (~2s savings)
     _t2 = time.perf_counter()
-    # Fallback to browser mode when pywebview cannot create a native window (e.g., headless Linux)
-    # Combined check + webview initialization to avoid redundant webview.initialize() calls
-    native, webview_module = _check_native_mode_and_get_webview(native)
-    logger.info("Native mode enabled: %s", native)
-    if native:
-        # Pass pre-initialized webview module to avoid second initialization
-        window_size, panel_sizes = _detect_display_settings(webview_module=webview_module)
-        yakulingo_app._panel_sizes = panel_sizes  # (sidebar_width, input_panel_width, content_width)
+    cached_settings = _load_display_cache() if native else None
+
+    if cached_settings is not None:
+        # Cache hit: skip webview.initialize() entirely (saves ~2 seconds)
+        logger.info("Using cached display settings (fast startup)")
+        window_size, panel_sizes = cached_settings
+        yakulingo_app._panel_sizes = panel_sizes
         yakulingo_app._window_size = window_size
         run_window_size = window_size
+        # Still need to verify webview is available for native mode (import only, no initialize)
+        native = _check_native_mode_minimal(native)
+        logger.info("Native mode enabled: %s (cache hit)", native)
+        if not native:
+            run_window_size = None
     else:
-        window_size = (1900, 1100)  # Default size for browser mode
-        yakulingo_app._panel_sizes = (260, 420, 800)  # Default panel sizes (sidebar, input, content)
-        yakulingo_app._window_size = window_size
-        run_window_size = None  # Passing a size would re-enable native mode inside NiceGUI
+        # Cache miss: perform full webview initialization and screen detection
+        # Fallback to browser mode when pywebview cannot create a native window (e.g., headless Linux)
+        # Combined check + webview initialization to avoid redundant webview.initialize() calls
+        native, webview_module = _check_native_mode_and_get_webview(native)
+        logger.info("Native mode enabled: %s (full detection)", native)
+        if native:
+            # Pass pre-initialized webview module to avoid second initialization
+            window_size, panel_sizes = _detect_display_settings(webview_module=webview_module, use_cache=False)
+            yakulingo_app._panel_sizes = panel_sizes  # (sidebar_width, input_panel_width, content_width)
+            yakulingo_app._window_size = window_size
+            run_window_size = window_size
+        else:
+            window_size = (1900, 1100)  # Default size for browser mode
+            yakulingo_app._panel_sizes = (260, 420, 800)  # Default panel sizes (sidebar, input, content)
+            yakulingo_app._window_size = window_size
+            run_window_size = None  # Passing a size would re-enable native mode inside NiceGUI
     logger.info("[TIMING] _detect_display_settings: %.2fs", time.perf_counter() - _t2)
 
     # NOTE: PP-DocLayout-L pre-initialization moved to @ui.page('/') handler
@@ -3221,6 +3276,12 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
     justify-content: center;
     background: #FEFBFF;
     z-index: 9999;
+    opacity: 1;
+    transition: opacity 0.25s ease-out;
+}
+.loading-screen.fade-out {
+    opacity: 0;
+    pointer-events: none;
 }
 .loading-title {
     margin-top: 1.5rem;
@@ -3228,6 +3289,14 @@ def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
     font-weight: 500;
     color: #1B1B1F;
     letter-spacing: 0.02em;
+}
+/* Main app fade-in animation */
+.main-app-container {
+    opacity: 0;
+    transition: opacity 0.3s ease-in;
+}
+.main-app-container.visible {
+    opacity: 1;
 }
 /* Hide Material Icons until font is loaded to prevent showing text */
 .material-icons, .q-icon {
@@ -3262,11 +3331,24 @@ document.fonts.ready.then(function() {
         # This saves ~10 seconds on startup for users who don't use PDF translation.
         # See _ensure_layout_initialized() for the on-demand initialization logic.
 
-        # Remove loading screen and show main UI
-        loading_container.delete()
+        # Smooth transition from loading screen to main UI
+        # 1. Create main UI (hidden initially)
         _t_ui = _time_module.perf_counter()
-        yakulingo_app.create_ui()
+        main_container = ui.element('div').classes('main-app-container')
+        with main_container:
+            yakulingo_app.create_ui()
         logger.info("[TIMING] create_ui(): %.2fs", _time_module.perf_counter() - _t_ui)
+
+        # 2. Start fade-out of loading screen
+        loading_container.classes(add='fade-out')
+
+        # 3. After a brief delay, show main UI with fade-in
+        await asyncio.sleep(0.1)  # Small delay for loading fade-out to start
+        main_container.classes(add='visible')
+
+        # 4. Wait for animations to complete, then remove loading screen
+        await asyncio.sleep(0.3)  # Wait for fade animations
+        loading_container.delete()
 
         # Start hotkey manager immediately after UI is displayed (doesn't need connection)
         yakulingo_app.start_hotkey_manager()

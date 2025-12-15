@@ -2,7 +2,7 @@
 """
 Tests for HotkeyManager.
 
-Since HotkeyManager uses Windows-specific APIs (RegisterHotKey, SendInput, etc.),
+Since HotkeyManager uses Windows-specific APIs (WH_KEYBOARD_LL, SendInput, etc.),
 these tests mock the Windows API calls to allow testing on any platform.
 """
 
@@ -33,7 +33,7 @@ class TestHotkeyManagerInit:
         assert manager._callback is None
         assert manager._thread is None
         assert manager._running is False
-        assert manager._registered is False
+        assert manager._hook_installed is False
 
     def test_is_running_returns_false_when_not_started(self):
         """Test is_running property returns False when not started."""
@@ -43,21 +43,21 @@ class TestHotkeyManagerInit:
 
         assert manager.is_running is False
 
-    def test_is_running_requires_both_running_and_registered(self):
-        """Test is_running requires both _running and _registered to be True."""
+    def test_is_running_requires_both_running_and_hook_installed(self):
+        """Test is_running requires both _running and _hook_installed to be True."""
         from yakulingo.services.hotkey_manager import HotkeyManager
 
         manager = HotkeyManager()
         manager._running = True
-        manager._registered = False
+        manager._hook_installed = False
         assert manager.is_running is False
 
         manager._running = False
-        manager._registered = True
+        manager._hook_installed = True
         assert manager.is_running is False
 
         manager._running = True
-        manager._registered = True
+        manager._hook_installed = True
         assert manager.is_running is True
 
 
@@ -144,13 +144,13 @@ class TestHotkeyManagerStartStop:
 
         manager.stop()
 
-        mock_thread.join.assert_called_once_with(timeout=2.0)
+        mock_thread.join.assert_called_once_with(timeout=5.0)
         assert manager._thread is None
         assert manager._running is False
 
 
 class TestSendInputStructures:
-    """Test SendInput structure definitions."""
+    """Test SendInput and hook structure definitions."""
 
     def test_keybdinput_structure_fields(self):
         """Test KEYBDINPUT structure has correct fields."""
@@ -172,6 +172,18 @@ class TestSendInputStructures:
 
         assert 'type' in field_names
 
+    def test_kbdllhookstruct_fields(self):
+        """Test KBDLLHOOKSTRUCT structure has correct fields for low-level keyboard hook."""
+        from yakulingo.services.hotkey_manager import KBDLLHOOKSTRUCT
+
+        field_names = [f[0] for f in KBDLLHOOKSTRUCT._fields_]
+
+        assert 'vkCode' in field_names
+        assert 'scanCode' in field_names
+        assert 'flags' in field_names
+        assert 'time' in field_names
+        assert 'dwExtraInfo' in field_names
+
 
 class TestSendCtrlC:
     """Test Ctrl+C sending via SendInput."""
@@ -182,7 +194,7 @@ class TestSendCtrlC:
 
         manager = HotkeyManager()
 
-        with patch('ctypes.windll.user32') as mock_user32:
+        with patch('yakulingo.services.hotkey_manager._user32') as mock_user32:
             mock_user32.SendInput.return_value = 4
 
             manager._send_ctrl_c()
@@ -197,12 +209,16 @@ class TestSendCtrlC:
 
         manager = HotkeyManager()
 
-        with patch('ctypes.windll.user32') as mock_user32:
+        with patch('yakulingo.services.hotkey_manager._user32') as mock_user32:
             mock_user32.SendInput.return_value = 2  # Only 2 of 4 sent
 
             with patch('yakulingo.services.hotkey_manager.logger') as mock_logger:
-                manager._send_ctrl_c()
-                mock_logger.warning.assert_called_with("SendInput sent 2/4 inputs")
+                with patch('ctypes.get_last_error', return_value=0):
+                    manager._send_ctrl_c()
+                    # Verify warning was called (message includes error code and input_size)
+                    mock_logger.warning.assert_called_once()
+                    call_args = mock_logger.warning.call_args[0][0]
+                    assert "SendInput sent 2/4 inputs" in call_args
 
 
 class TestWaitForCtrlRelease:
@@ -214,7 +230,7 @@ class TestWaitForCtrlRelease:
 
         manager = HotkeyManager()
 
-        with patch('ctypes.windll.user32') as mock_user32:
+        with patch('yakulingo.services.hotkey_manager._user32') as mock_user32:
             # Ctrl not pressed (high bit not set)
             mock_user32.GetAsyncKeyState.return_value = 0
 
@@ -240,7 +256,7 @@ class TestWaitForCtrlRelease:
                 return 0x8000  # High bit set = pressed
             return 0
 
-        with patch('ctypes.windll.user32') as mock_user32:
+        with patch('yakulingo.services.hotkey_manager._user32') as mock_user32:
             mock_user32.GetAsyncKeyState.side_effect = mock_get_async_key_state
 
             manager._wait_for_ctrl_release()
@@ -257,7 +273,7 @@ class TestClipboardOperations:
 
         manager = HotkeyManager()
 
-        with patch('ctypes.windll.user32') as mock_user32:
+        with patch('yakulingo.services.hotkey_manager._user32') as mock_user32:
             mock_user32.OpenClipboard.return_value = False
 
             result = manager._get_clipboard_text()
@@ -270,7 +286,7 @@ class TestClipboardOperations:
 
         manager = HotkeyManager()
 
-        with patch('ctypes.windll.user32') as mock_user32:
+        with patch('yakulingo.services.hotkey_manager._user32') as mock_user32:
             mock_user32.OpenClipboard.return_value = True
             mock_user32.IsClipboardFormatAvailable.return_value = False
             mock_user32.CloseClipboard.return_value = True
@@ -446,8 +462,24 @@ class TestConstants:
 
     def test_virtual_key_codes_are_correct(self):
         """Test that virtual key codes are correct."""
-        from yakulingo.services.hotkey_manager import VK_J, VK_CONTROL, VK_C
+        from yakulingo.services.hotkey_manager import (
+            VK_J, VK_CONTROL, VK_C, VK_LCONTROL, VK_RCONTROL
+        )
 
         assert VK_J == 0x4A  # J key
         assert VK_CONTROL == 0x11  # Ctrl key
         assert VK_C == 0x43  # C key
+        assert VK_LCONTROL == 0xA2  # Left Ctrl key
+        assert VK_RCONTROL == 0xA3  # Right Ctrl key
+
+    def test_hook_constants_are_correct(self):
+        """Test that low-level keyboard hook constants are correct."""
+        from yakulingo.services.hotkey_manager import (
+            WH_KEYBOARD_LL, WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP
+        )
+
+        assert WH_KEYBOARD_LL == 13
+        assert WM_KEYDOWN == 0x0100
+        assert WM_KEYUP == 0x0101
+        assert WM_SYSKEYDOWN == 0x0104
+        assert WM_SYSKEYUP == 0x0105

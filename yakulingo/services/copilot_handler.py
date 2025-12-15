@@ -359,10 +359,10 @@ class PlaywrightThreadExecutor:
             logger.debug("Cleared %d pending items during shutdown", cleared_count)
 
         # Send stop signal and wait for worker to finish
-        # Use 5 second timeout for faster shutdown (daemon thread will be killed on process exit anyway)
+        # Use 1 second timeout for fast shutdown (daemon thread will be killed on process exit anyway)
         if self._thread is not None and self._thread.is_alive():
             self._request_queue.put((None, None, None))
-            self._thread.join(timeout=5)
+            self._thread.join(timeout=1)
             if self._thread.is_alive():
                 # This is not critical - daemon thread will be terminated on process exit
                 logger.debug("Playwright worker thread still running, will be terminated on exit")
@@ -803,7 +803,7 @@ class CopilotHandler:
 
             result = subprocess.run(
                 [taskkill_path, "/F", "/T", "/PID", str(pid)],
-                capture_output=True, timeout=5, cwd=local_cwd,
+                capture_output=True, timeout=2, cwd=local_cwd,
                 creationflags=subprocess.CREATE_NO_WINDOW
             )
             # taskkill returns 0 on success, 128 if process not found
@@ -2785,12 +2785,15 @@ class CopilotHandler:
         from contextlib import suppress
 
         logger.info("Force disconnecting Copilot...")
+        shutdown_start = time.time()
 
         # Mark as disconnected first
         self._connected = False
 
         # First, shutdown the executor to release any pending operations
+        executor_start = time.time()
         _playwright_executor.shutdown()
+        logger.debug("[TIMING] executor.shutdown: %.2fs", time.time() - executor_start)
 
         # Note: We don't call self._playwright.stop() here because:
         # 1. Playwright operations must run in the same greenlet where it was initialized
@@ -2807,14 +2810,17 @@ class CopilotHandler:
             # Very short timeout (0.3s) because:
             # 1. Edge usually closes immediately or not at all (due to dialogs like "Restore pages")
             # 2. We want fast app shutdown - falling back to force kill is acceptable
+            graceful_start = time.time()
             with suppress(Exception):
                 if self._close_edge_gracefully(timeout=0.3):
                     browser_terminated = True
+            logger.debug("[TIMING] graceful_close: %.2fs (success=%s)", time.time() - graceful_start, browser_terminated)
 
             # Fall back to kill process tree if graceful close failed
             # Use _kill_process_tree to kill all child processes (renderer, GPU, etc.)
             # that may be holding file handles to the profile directory
             if not browser_terminated:
+                taskkill_start = time.time()
                 with suppress(Exception):
                     if self.edge_process and self.edge_process.pid:
                         if self._kill_process_tree(self.edge_process.pid):
@@ -2836,6 +2842,7 @@ class CopilotHandler:
                                     logger.warning("Edge process did not terminate after kill")
                             if browser_terminated:
                                 logger.info("Edge browser terminated (force via terminate)")
+                logger.debug("[TIMING] kill_process_tree: %.2fs", time.time() - taskkill_start)
 
             # Verify process is truly terminated by checking poll()
             if browser_terminated and self.edge_process:
@@ -2862,6 +2869,8 @@ class CopilotHandler:
         self._playwright = None
         self.edge_process = None
         self._browser_started_by_us = False
+
+        logger.info("[TIMING] force_disconnect total: %.2fs", time.time() - shutdown_start)
 
     def _disconnect_impl(self, keep_browser: bool = False) -> None:
         """Implementation of disconnect that runs in the Playwright thread.

@@ -830,10 +830,14 @@ def detect_paragraph_boundary(
                 is_strong_boundary = True  # Layout class change is strong
             else:
                 # One or both are BACKGROUND -> use Y-coordinate
+                # NOTE: When one is BACKGROUND, this could be a PP-DocLayout-L detection artifact.
+                # Adjacent characters in the same paragraph may be inconsistently classified.
+                # Do NOT mark as strong boundary - let sentence-end check decide.
+                # (yomitoku reference: layout class changes alone don't guarantee paragraph breaks)
                 y_diff = abs(char_y0 - prev_y0)
                 if y_diff > y_para_thresh:
                     new_paragraph = True
-                    is_strong_boundary = True  # Large Y change is strong
+                    # is_strong_boundary = True  # Removed - weak boundary when BACKGROUND involved
                 elif y_diff > y_line_thresh:
                     line_break = True
                     # Not strong - may be overridden by sentence-end check

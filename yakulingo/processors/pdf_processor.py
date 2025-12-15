@@ -4246,10 +4246,17 @@ class PdfProcessor(FileProcessor):
                     # Only apply sentence-end check for weak boundaries (line wrapping)
                     if not is_strong_boundary and sstk and pstk:
                         prev_text = sstk[-1].rstrip() if sstk[-1] else ""
-                        # Check layout class - if different layout regions, always start new paragraph
-                        layout_changed = use_layout and char_cls != prev_cls and prev_cls is not None
+                        # Check layout class - only consider it a strong layout change if BOTH
+                        # are non-BACKGROUND regions. When one is BACKGROUND (cls=1), it could be
+                        # a PP-DocLayout-L detection artifact. In such cases, rely on sentence-end
+                        # check to determine paragraph continuity.
+                        # (yomitoku reference: adjacent chars in same paragraph may be inconsistently classified)
+                        layout_strongly_changed = (
+                            use_layout and char_cls != prev_cls and prev_cls is not None
+                            and char_cls != 1 and prev_cls != 1  # Both must be non-BACKGROUND
+                        )
 
-                        if prev_text and not layout_changed:
+                        if prev_text and not layout_strongly_changed:
                             last_char = prev_text[-1] if prev_text else ""
                             # Check if the previous paragraph ends with sentence-ending punctuation
                             is_sentence_end = (

@@ -230,6 +230,10 @@ class YakuLingoApp:
         self._layout_init_state = LayoutInitializationState.NOT_INITIALIZED
         self._layout_init_lock = threading.Lock()  # Prevents double initialization
 
+        # Early Copilot connection (started before UI, result applied after)
+        self._early_connection_task: "asyncio.Task | None" = None
+        self._early_connection_result: Optional[bool] = None
+
         # Text input textarea reference for auto-focus
         self._text_input_textarea: Optional[ui.textarea] = None
 
@@ -582,6 +586,48 @@ class YakuLingoApp:
                     "Copilot connection error: %s", self.copilot.last_connection_error
                 )
             self._refresh_status()
+
+    async def _apply_early_connection_or_connect(self):
+        """Apply early connection result or start new connection.
+
+        This method checks if an early connection was started during app.on_startup().
+        If successful, it applies the result to UI. Otherwise, falls back to normal connection.
+        """
+        import time as _time_module
+        _t_start = _time_module.perf_counter()
+
+        # Initialize TranslationService immediately (doesn't need connection)
+        if not self._ensure_translation_service():
+            return
+
+        # Wait for early connection task if it exists
+        if self._early_connection_task is not None:
+            try:
+                # Wait for early connection with timeout (should already be done or nearly done)
+                await asyncio.wait_for(self._early_connection_task, timeout=10.0)
+            except asyncio.TimeoutError:
+                logger.warning("Early connection timed out, starting new connection")
+                self._early_connection_result = None
+            except Exception as e:
+                logger.debug("Early connection task failed: %s", e)
+                self._early_connection_result = None
+
+        # Check early connection result
+        if self._early_connection_result is True:
+            # Early connection succeeded - just update UI
+            logger.info("[TIMING] Using early connection result (saved %.2fs)",
+                       _time_module.perf_counter() - _t_start)
+            self.state.copilot_ready = True
+            self._refresh_status()
+            await self._on_browser_ready(bring_to_front=False)
+        elif self._early_connection_result is False:
+            # Early connection failed - update UI and check if login needed
+            self._refresh_status()
+            await self._start_login_polling_if_needed()
+        else:
+            # Early connection not started or result unknown - fall back to normal connection
+            logger.info("Early connection not available, starting normal connection")
+            await self.start_edge_and_connect()
 
     async def start_edge_and_connect(self):
         """Start Edge and connect to browser in background (non-blocking).
@@ -3152,6 +3198,31 @@ def run_app(
     nicegui_app_module.on_shutdown(cleanup)
     atexit.register(cleanup)
 
+    # Serve styles.css as static file for browser caching (faster subsequent loads)
+    ui_dir = Path(__file__).parent
+    nicegui_app_module.add_static_files('/static', ui_dir)
+
+    # Early Copilot connection: Start Edge browser BEFORE UI is displayed
+    # This saves ~2-3 seconds as Edge startup runs in parallel with UI rendering
+    async def _early_connect_copilot():
+        """Start Copilot connection early (before UI is displayed)."""
+        try:
+            # Initialize CopilotHandler and start connection
+            # Note: This runs in background, UI updates happen in main_page()
+            logger.info("[TIMING] Starting early Copilot connection")
+            result = await asyncio.to_thread(yakulingo_app.copilot.connect)
+            yakulingo_app._early_connection_result = result
+            logger.info("[TIMING] Early Copilot connection completed: %s", result)
+        except Exception as e:
+            logger.debug("Early Copilot connection failed: %s", e)
+            yakulingo_app._early_connection_result = False
+
+    @nicegui_app_module.on_startup
+    async def on_startup():
+        """Called when NiceGUI server starts (before clients connect)."""
+        # Start Copilot connection early - runs in parallel with pywebview window creation
+        yakulingo_app._early_connection_task = asyncio.create_task(_early_connect_copilot())
+
     @ui.page('/')
     async def main_page(client: Client):
         # Save client reference for async handlers (context.client not available in async tasks)
@@ -3366,8 +3437,8 @@ document.fonts.ready.then(function() {
         # Start hotkey manager immediately after UI is displayed (doesn't need connection)
         yakulingo_app.start_hotkey_manager()
 
-        # Start Edge connection AFTER UI is displayed
-        asyncio.create_task(yakulingo_app.start_edge_and_connect())
+        # Apply early connection result or start new connection
+        asyncio.create_task(yakulingo_app._apply_early_connection_or_connect())
         asyncio.create_task(yakulingo_app.check_for_updates())
         logger.info("[TIMING] UI displayed - total from run_app: %.2fs", _time_module.perf_counter() - _t0)
 
@@ -3388,4 +3459,5 @@ document.fonts.ready.then(function() {
         frameless=False,
         show=False,  # Don't open browser (native mode uses pywebview window)
         reconnect_timeout=30.0,  # Increase from default 3s for stable WebSocket connection
+        uvicorn_logging_level='warning',  # Reduce log output for faster startup
     )

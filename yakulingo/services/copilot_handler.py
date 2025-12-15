@@ -2799,16 +2799,11 @@ class CopilotHandler:
         # First, shutdown the executor to release any pending operations
         _playwright_executor.shutdown()
 
-        # Stop Playwright to close WebSocket/pipe connections before killing Edge
-        # This prevents EPIPE errors when Node.js tries to write to terminated process
-        with suppress(Exception):
-            if self._playwright is not None:
-                try:
-                    self._playwright.stop()
-                    logger.debug("Playwright stopped cleanly")
-                except Exception as e:
-                    logger.debug("Error stopping Playwright: %s", e)
-                self._playwright = None
+        # Note: We don't call self._playwright.stop() here because:
+        # 1. Playwright operations must run in the same greenlet where it was initialized
+        # 2. The executor's worker thread (with the greenlet) has been shutdown
+        # 3. Calling stop() from a different thread causes "Cannot switch to a different thread" error
+        # 4. Edge process termination below will close the connection anyway
 
         # Terminate Edge browser process directly (don't wait for Playwright)
         # Only if we started the browser in this session

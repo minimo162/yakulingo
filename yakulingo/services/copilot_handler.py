@@ -915,9 +915,9 @@ class CopilotHandler:
                     logger.info("Edge started successfully")
                     # Mark that we started this browser (for cleanup on app exit)
                     self._browser_started_by_us = True
-                    # Minimize window immediately to prevent visual flash
-                    # Give Edge a moment to create its window, then minimize
-                    time.sleep(0.3)
+                    # Minimize window - Edge is started with --start-minimized but
+                    # ensure it stays minimized (some Edge versions may ignore the flag)
+                    # No delay needed: try immediately, retry with backoff if window not ready
                     self._minimize_edge_window()
                     return True
 
@@ -1033,12 +1033,49 @@ class CopilotHandler:
             return False
 
         try:
-            # Step 1: Start Edge if needed
-            if not self._is_port_in_use():
+            import time as _time
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+
+            # Step 1: Start Edge and initialize Playwright in parallel
+            # This saves ~0.3-0.5s by overlapping Edge startup with Playwright initialization
+            need_start_edge = not self._is_port_in_use()
+
+            def _init_playwright():
+                """Initialize Playwright in background thread."""
+                _t_start = _time.perf_counter()
+                _, sync_playwright = _get_playwright()
+                pw = sync_playwright().start()
+                logger.debug("[TIMING] sync_playwright().start() (parallel): %.2fs", _time.perf_counter() - _t_start)
+                return pw
+
+            def _start_edge():
+                """Start Edge browser."""
                 logger.info("Starting Edge browser...")
-                if not self._start_translator_edge():
-                    return False
+                return self._start_translator_edge()
+
+            if need_start_edge:
+                # Parallel execution: Edge startup + Playwright init
+                _t_parallel_start = _time.perf_counter()
+                with ThreadPoolExecutor(max_workers=2, thread_name_prefix="copilot_init") as executor:
+                    edge_future = executor.submit(_start_edge)
+                    pw_future = executor.submit(_init_playwright)
+
+                    # Wait for both to complete
+                    edge_started = edge_future.result()
+                    if not edge_started:
+                        # Cancel Playwright init if Edge failed (it will complete but we ignore result)
+                        try:
+                            pw = pw_future.result(timeout=0.1)
+                            if pw:
+                                pw.stop()
+                        except Exception:
+                            pass
+                        return False
+
+                    self._playwright = pw_future.result()
+                logger.debug("[TIMING] Parallel Edge+Playwright init: %.2fs", _time.perf_counter() - _t_parallel_start)
             else:
+                # Edge already running, just initialize Playwright
                 # Ensure profile_dir is set even when connecting to existing Edge
                 # This is needed for storage_state path resolution
                 if not self.profile_dir:
@@ -1050,18 +1087,18 @@ class CopilotHandler:
                     self.profile_dir.mkdir(parents=True, exist_ok=True)
                     logger.debug("Set profile_dir for existing Edge: %s", self.profile_dir)
 
+                logger.info("Connecting to browser...")
+                _t_pw_start = _time.perf_counter()
+                _, sync_playwright = _get_playwright()
+                logger.debug("[TIMING] _get_playwright(): %.2fs", _time.perf_counter() - _t_pw_start)
+                _t_pw_init = _time.perf_counter()
+                self._playwright = sync_playwright().start()
+                logger.debug("[TIMING] sync_playwright().start(): %.2fs", _time.perf_counter() - _t_pw_init)
+
             # Debug: Check EdgeProfile directory contents for login persistence
             self._log_profile_directory_status()
 
-            # Step 2: Connect via Playwright CDP
-            import time as _time
-            logger.info("Connecting to browser...")
-            _t_pw_start = _time.perf_counter()
-            _, sync_playwright = _get_playwright()
-            logger.debug("[TIMING] _get_playwright(): %.2fs", _time.perf_counter() - _t_pw_start)
-            _t_pw_init = _time.perf_counter()
-            self._playwright = sync_playwright().start()
-            logger.debug("[TIMING] sync_playwright().start(): %.2fs", _time.perf_counter() - _t_pw_init)
+            # Step 2: Connect to browser via Playwright CDP
             _t_cdp = _time.perf_counter()
             self._browser = self._playwright.chromium.connect_over_cdp(
                 f"http://127.0.0.1:{self.cdp_port}"

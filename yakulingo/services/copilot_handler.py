@@ -3720,76 +3720,85 @@ class CopilotHandler:
                     raise RuntimeError("Copilotに入力できませんでした。Edgeブラウザを確認してください。")
 
                 # Wait for Copilot to process input and update internal React state
-                # Optimized: reduced from 0.3s to 0.1s (React state update is typically fast)
+                # Need to wait for UI to stabilize (button may be off-screen initially)
                 time.sleep(0.1)
 
-                # Wait for send button to become enabled before clicking
-                # This indicates Copilot has processed the input and is ready
+                # Wait for send button to become visible AND in viewport
                 send_button_start = time.time()
-                try:
-                    self._page.wait_for_selector(
-                        self.SEND_BUTTON_SELECTOR,
-                        timeout=2000,
-                        state='visible'
-                    )
-                    send_button_wait = time.time() - send_button_start
-                    logger.debug("Send button enabled after %.2fs", send_button_wait)
-                except Exception as e:
-                    # Selector may have changed - use minimal fallback wait
-                    send_button_wait = time.time() - send_button_start
-                    logger.warning(
-                        "Send button selector may need update after %.2fs (using fallback): %s",
-                        send_button_wait, type(e).__name__
-                    )
+                send_btn = None
+                btn_ready = False
+
+                for wait_iter in range(20):  # Max 2 seconds (20 * 0.1s)
+                    send_btn = self._page.query_selector(self.SEND_BUTTON_SELECTOR)
+                    if send_btn:
+                        try:
+                            btn_state = send_btn.evaluate('''el => {
+                                const rect = el.getBoundingClientRect();
+                                const style = window.getComputedStyle(el);
+                                return {
+                                    rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+                                    disabled: el.disabled,
+                                    ariaDisabled: el.getAttribute('aria-disabled'),
+                                    display: style.display,
+                                    visibility: style.visibility,
+                                    inViewport: rect.y >= 0 && rect.y < window.innerHeight
+                                };
+                            }''')
+
+                            if wait_iter == 0:
+                                logger.debug("[SEND_PREP] Initial button state: %s", btn_state)
+
+                            # Check if button is ready (visible and in viewport)
+                            if (btn_state['rect']['y'] >= 0 and
+                                not btn_state['disabled'] and
+                                btn_state['ariaDisabled'] != 'true' and
+                                btn_state['display'] != 'none' and
+                                btn_state['visibility'] != 'hidden'):
+                                btn_ready = True
+                                if wait_iter > 0:
+                                    logger.debug("[SEND_PREP] Button ready after %d iterations (%.2fs): %s",
+                                                wait_iter, time.time() - send_button_start, btn_state)
+                                break
+                            elif wait_iter == 0:
+                                logger.debug("[SEND_PREP] Button not ready yet (y=%.1f, disabled=%s), waiting...",
+                                            btn_state['rect']['y'], btn_state['disabled'])
+                        except Exception as e:
+                            logger.debug("[SEND_PREP] Could not get button state: %s", e)
+
                     time.sleep(0.1)
 
-                # Send via click (more reliable than Enter key in Copilot)
-                # Optimized: short wait_for_selector + parallel polling for fast detection
-                MAX_SEND_RETRIES = 3  # Increased for reliability
+                send_button_wait = time.time() - send_button_start
+                if not btn_ready:
+                    logger.warning("[SEND_PREP] Button may not be ready after %.2fs, proceeding anyway", send_button_wait)
+                else:
+                    logger.debug("[SEND_PREP] Button ready after %.2fs", send_button_wait)
+
+                # Send via click
+                MAX_SEND_RETRIES = 3
                 send_success = False
 
                 for send_attempt in range(MAX_SEND_RETRIES):
-                    # Send via JS mouse events, Enter key, or button click
-                    # Note: JS mouse events are most reliable for React components
                     send_method = ""
                     try:
                         if send_attempt == 0:
-                            # First attempt: JS mouse events + Enter key (dual approach for reliability)
+                            # First attempt: JS click() method
                             send_btn = self._page.query_selector(self.SEND_BUTTON_SELECTOR)
                             if send_btn:
-                                # Try JS mouse events first
-                                send_btn.evaluate('''el => {
-                                    const rect = el.getBoundingClientRect();
-                                    const x = rect.left + rect.width / 2;
-                                    const y = rect.top + rect.height / 2;
-                                    const opts = { bubbles: true, cancelable: true, clientX: x, clientY: y };
-                                    el.dispatchEvent(new MouseEvent('mousedown', opts));
-                                    el.dispatchEvent(new MouseEvent('mouseup', opts));
-                                    el.dispatchEvent(new MouseEvent('click', opts));
-                                }''')
-                                # Also send Enter key as backup (some Copilot states respond better to Enter)
-                                time.sleep(0.05)
-                                input_elem.focus()
-                                input_elem.press("Enter")
-                                send_method = "JS mouse events + Enter"
+                                send_btn.evaluate('el => el.click()')
+                                send_method = "JS click()"
                             else:
                                 input_elem.focus()
                                 time.sleep(0.05)
                                 input_elem.press("Enter")
                                 send_method = "Enter key (button not found)"
                         elif send_attempt == 1:
-                            # Second attempt: Playwright click with force
-                            send_btn = self._page.query_selector(self.SEND_BUTTON_SELECTOR)
-                            if send_btn:
-                                send_btn.click(force=True)
-                                send_method = "Playwright click"
-                            else:
-                                input_elem.focus()
-                                time.sleep(0.05)
-                                input_elem.press("Enter")
-                                send_method = "Enter key (button not found)"
+                            # Second attempt: Enter key
+                            input_elem.focus()
+                            time.sleep(0.05)
+                            input_elem.press("Enter")
+                            send_method = "Enter key"
                         else:
-                            # Third attempt: JS click() method call (bypasses event handling)
+                            # Third attempt: Playwright click with force (scrolls element into view)
                             send_btn = self._page.query_selector(self.SEND_BUTTON_SELECTOR)
                             if send_btn:
                                 try:
@@ -3804,9 +3813,8 @@ class CopilotHandler:
                                     logger.debug("[SEND] Button info: %s", btn_info)
                                 except Exception as info_err:
                                     logger.debug("[SEND] Could not get button info: %s", info_err)
-                                # Use JS click() method directly
-                                send_btn.evaluate('el => el.click()')
-                                send_method = "JS click() method"
+                                send_btn.click(force=True)
+                                send_method = "Playwright click"
                             else:
                                 # Fallback to Enter key if send button not found
                                 logger.debug("[SEND] Button not found (selector: %s), using Enter key",

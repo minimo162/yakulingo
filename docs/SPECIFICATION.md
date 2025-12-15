@@ -1584,9 +1584,9 @@ python -c "import time; t=time.time(); from yakulingo.ui import run_app; print(f
   - Copilotページ上の認証ダイアログを検出
   - 認証フロー中の強制ナビゲーションを防止
 - Copilot送信プロセス最適化
-  - デュアルアプローチ採用（JS mouse events + Enter keyを同時に使用）
-  - 送信優先度: 1. JS mouse events + Enter key → 2. Playwright click → 3. JS click() method
-  - Copilotの状態によって効果的な方法が異なるため、両方を組み合わせて信頼性向上
+  - JS click()を最初の送信方法として使用（ボタンが画面外でも動作）
+  - 送信優先度: 1. JS click() → 2. Enter key → 3. Playwright click（force=True）
+  - 送信ボタンが画面外（y: -5）にある場合でもDOM click()で確実に動作
 - UI改善
   - 「略語」表記を「用語集」に修正
   - main-cardのborder-radiusを無効化

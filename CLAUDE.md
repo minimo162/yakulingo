@@ -1624,10 +1624,13 @@ When interacting with users in this repository, prefer Japanese for comments and
 
 Based on recent commits:
 - **Copilot Send Process Optimization (2024-12)**:
-  - **Enter key first**: Enter keyを最初の送信方法として使用（最小化ウィンドウでも確実に動作）
-  - **Robust focus management**: 送信前にJSで複数のフォーカス設定方法を試行（focus, click+focus, mousedown+mouseup+focus）
-  - **New priority**: 1. Enter key（確実なフォーカス付き）→ 2. JS click（multi-event）→ 3. Playwright click（force=True）
-  - **Effect**: 最小化ウィンドウでも確実に送信成功
+  - **Complete key cycle**: keydown + keypress + keyup の完全なキーサイクルをJSでディスパッチ（keydownのみでは送信されない）
+  - **Root cause**: CopilotのReact UIはkeydownでpreventDefault()を呼ぶが、送信処理は完全なキーサイクルが必要
+  - **Pre-warm UI**: 送信前にscrollIntoView + 0.3秒待機でUI安定化
+  - **Send button scroll**: Enterキー送信前に送信ボタンもscrollIntoViewで表示位置に移動
+  - **New priority**: 1. JS key events（complete cycle）+ Playwright Enter → 2. JS click（multi-event）→ 3. Playwright click（force=True）
+  - **Debug logging**: 各イベントのdefaultPrevented状態、stopButton出現タイミング、経過時間を詳細ログ出力
+  - **Effect**: 最小化ウィンドウでも1回目の試行で確実に送信成功
 - **PDF Line Break Fix (2024-12)**:
   - **TOC pattern is_strong_boundary removal**: TOCパターン（Y変化 + X大リセット）で`is_strong_boundary = True`を設定しないように修正
   - **Issue**: 通常の段落内の行折り返しがTOCパターンとして誤検出され、`is_japanese_continuation_line()`による継続行判定がスキップされていた
@@ -1916,9 +1919,11 @@ Based on recent commits:
   - **Automatic eviction**: Oldest entries removed when cache is full
 - **Copilot Input Reliability Improvements**:
   - **fill() method**: Playwright fill()を使用して改行を正しく処理（改行がEnterキーとして解釈される問題を修正）
-  - **Enter key first**: 最初の試行でEnter keyを使用（最小化ウィンドウでも確実に動作）
+  - **Complete key cycle**: keydown + keypress + keyup の完全なキーサイクルをJSでディスパッチ（keydownのみでは送信されない）
+  - **Root cause discovered**: CopilotのReact UIはkeydownでpreventDefault()を呼ぶが、送信処理自体は完全なキーサイクルが必要
+  - **Pre-warm UI**: scrollIntoView + 0.3秒待機でUI安定化、送信ボタンもscrollIntoViewで表示位置に移動
   - **Robust focus management**: 送信前にJSで複数のフォーカス設定方法を試行（focus, click+focus, mousedown+mouseup+focus）
-  - **Send method priority**: 1. Enter key（確実なフォーカス付き）→ 2. JS click（multi-event）→ 3. Playwright click（force=True）
+  - **Send method priority**: 1. JS key events（complete cycle）+ Playwright Enter → 2. JS click（multi-event）→ 3. Playwright click（force=True）
   - **Post-send verification**: 送信後に入力欄がクリアされたかを確認し、残っていればリトライ（最大3回）
   - **DOM re-fetch after send**: 送信後は`query_selector`で入力欄を再取得（CopilotがDOM要素を再生成する可能性があるためstale element回避）
   - **Why not wait for send button**: 送信ボタンの有効化を待機する方式は、ボタンが有効にならないケースがあり無限待機の原因となるため不採用。代わりに送信後の確認方式を採用

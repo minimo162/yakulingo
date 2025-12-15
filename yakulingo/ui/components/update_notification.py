@@ -308,7 +308,7 @@ class UpdateNotification:
             if success:
                 dialog.close()
                 ui.notify(
-                    'アップデートの準備ができました。アプリケーションを終了します...',
+                    'アップデートの準備ができました。アプリケーションを再起動します...',
                     type='positive',
                     timeout=3000,
                 )

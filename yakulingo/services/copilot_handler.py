@@ -3638,7 +3638,7 @@ class CopilotHandler:
                 # After click, use wait_for_selector for efficient stop button detection
                 # This is more efficient than polling with query_selector
                 MAX_SEND_RETRIES = 2  # Reduced from 3 (usually succeeds on first try)
-                SEND_VERIFY_TIMEOUT_MS = 1500  # 1.5s timeout (optimized from 2.5s - stop button usually appears within 500ms)
+                SEND_VERIFY_TIMEOUT_MS = 2000  # 2.0s timeout (balance between speed and reliability)
                 send_success = False
 
                 for send_attempt in range(MAX_SEND_RETRIES):

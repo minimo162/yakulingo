@@ -3614,6 +3614,10 @@ class CopilotHandler:
                     logger.warning("Input field is empty after fill - Copilot may need attention")
                     raise RuntimeError("Copilotに入力できませんでした。Edgeブラウザを確認してください。")
 
+                # Wait for Copilot to process input and update internal React state
+                # Without this delay, the send button may be visible but not yet functional
+                time.sleep(0.3)
+
                 # Wait for send button to become enabled before clicking
                 # This indicates Copilot has processed the input and is ready
                 send_button_start = time.time()
@@ -3632,35 +3636,35 @@ class CopilotHandler:
                         "Send button selector may need update after %.2fs (using fallback): %s",
                         send_button_wait, type(e).__name__
                     )
-                    time.sleep(0.1)  # Reduced fallback from 0.15s
+                    time.sleep(0.1)
 
-                # Send via send button click (more reliable than Enter key)
-                # After click, use wait_for_selector for efficient stop button detection
-                # This is more efficient than polling with query_selector
+                # Send via Enter key (more reliable than button click in Copilot)
+                # After send, use wait_for_selector for efficient stop button detection
                 MAX_SEND_RETRIES = 2  # Reduced from 3 (usually succeeds on first try)
                 SEND_VERIFY_TIMEOUT_MS = 2000  # 2.0s timeout (balance between speed and reliability)
                 send_success = False
 
                 for send_attempt in range(MAX_SEND_RETRIES):
-                    # Click send button (more reliable than Enter key)
+                    # Send via Enter key (more reliable than button click in Copilot)
+                    # Ensure input element is focused and send Enter
                     try:
-                        send_btn = self._page.query_selector(self.SEND_BUTTON_SELECTOR)
-                        if send_btn:
-                            # Use JS click to avoid bringing browser to front
-                            send_btn.evaluate('el => el.click()')
-                            logger.debug("Send button clicked (attempt %d)", send_attempt + 1)
-                        else:
-                            # Fallback to Enter key if send button not found
-                            logger.debug("Send button not found, using Enter key (attempt %d)", send_attempt + 1)
-                            input_elem.press("Enter")
-                    except Exception as click_err:
-                        logger.debug("Send button click failed, using Enter key: %s", click_err)
+                        # Re-focus input element before sending
+                        input_elem.focus()
                         input_elem.press("Enter")
+                        logger.debug("Enter key sent (attempt %d)", send_attempt + 1)
+                    except Exception as send_err:
+                        logger.debug("Enter key send failed: %s", send_err)
+                        # Try clicking send button as fallback
+                        try:
+                            send_btn = self._page.query_selector(self.SEND_BUTTON_SELECTOR)
+                            if send_btn:
+                                send_btn.click(force=True)
+                                logger.debug("Send button clicked as fallback (attempt %d)", send_attempt + 1)
+                        except Exception:
+                            pass
 
-                    # Small delay to let Copilot's JavaScript process the click event
-                    # This is critical for first-attempt success - without this delay,
-                    # the stop button may not appear in time on the first click
-                    time.sleep(0.1)  # Optimized from 0.15s
+                    # Small delay to let Copilot process the send
+                    time.sleep(0.1)
 
                     # Use wait_for_selector for efficient browser-level waiting
                     # This is more efficient than polling with query_selector every 50ms

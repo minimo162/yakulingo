@@ -3645,13 +3645,13 @@ class CopilotHandler:
                         "Send button selector may need update after %.2fs (using fallback): %s",
                         send_button_wait, type(e).__name__
                     )
-                    time.sleep(0.15)  # Reduced fallback from 0.2s
+                    time.sleep(0.1)  # Reduced fallback from 0.15s
 
                 # Send via send button click (more reliable than Enter key)
                 # After click, use wait_for_selector for efficient stop button detection
                 # This is more efficient than polling with query_selector
                 MAX_SEND_RETRIES = 2  # Reduced from 3 (usually succeeds on first try)
-                SEND_VERIFY_TIMEOUT_MS = 2500  # 2.5s timeout (increased from 1.5s for reliability)
+                SEND_VERIFY_TIMEOUT_MS = 1500  # 1.5s timeout (optimized from 2.5s - stop button usually appears within 500ms)
                 send_success = False
 
                 for send_attempt in range(MAX_SEND_RETRIES):
@@ -3673,7 +3673,7 @@ class CopilotHandler:
                     # Small delay to let Copilot's JavaScript process the click event
                     # This is critical for first-attempt success - without this delay,
                     # the stop button may not appear in time on the first click
-                    time.sleep(0.15)
+                    time.sleep(0.1)  # Optimized from 0.15s
 
                     # Use wait_for_selector for efficient browser-level waiting
                     # This is more efficient than polling with query_selector every 50ms

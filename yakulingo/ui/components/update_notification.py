@@ -315,8 +315,7 @@ class UpdateNotification:
                 # 少し待ってからアプリを終了（通知を表示する時間）
                 await asyncio.sleep(1.0)
                 # アプリを終了（Windowsの場合はバッチファイルが処理を引き継ぐ）
-                import sys
-                sys.exit(0)
+                await self._shutdown_app()
             else:
                 install_btn.enable()
                 install_btn.text = 'インストール'
@@ -327,6 +326,40 @@ class UpdateNotification:
             install_btn.text = 'インストール'
             later_btn.enable()
             ui.notify(f'インストールエラー: {e}', type='negative')
+
+    async def _shutdown_app(self):
+        """アプリケーションを確実に終了する
+
+        NiceGUIのnativeモード（pywebview）では、sys.exit(0)だけでは
+        プロセスが終了しない問題があるため、複数の方法を試みる。
+        """
+        import os
+        import sys
+
+        from nicegui import app as nicegui_app
+
+        try:
+            # NiceGUI のシャットダウンを実行
+            nicegui_app.shutdown()
+            # シャットダウン完了を待機
+            await asyncio.sleep(0.5)
+        except Exception:
+            pass
+
+        # pywebview native mode の場合、ウィンドウを閉じる
+        try:
+            if hasattr(nicegui_app, 'native') and nicegui_app.native.main_window:
+                nicegui_app.native.main_window.destroy()
+                await asyncio.sleep(0.3)
+        except Exception:
+            pass
+
+        # 最終手段: プロセスを強制終了
+        try:
+            sys.exit(0)
+        except SystemExit:
+            # sys.exit が機能しない場合は os._exit を使用
+            os._exit(0)
 
 
 async def check_updates_on_startup(

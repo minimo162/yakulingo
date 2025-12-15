@@ -3830,34 +3830,8 @@ class CopilotHandler:
                             send_method = "Enter key (robust focus)"
 
                         elif send_attempt == 1:
-                            # Second attempt: Playwright click with force
-                            # This scrolls element into view and clicks even if obscured
-                            send_btn = self._page.query_selector(self.SEND_BUTTON_SELECTOR)
-                            if send_btn:
-                                try:
-                                    btn_info = send_btn.evaluate('''el => ({
-                                        tag: el.tagName,
-                                        disabled: el.disabled,
-                                        ariaDisabled: el.getAttribute('aria-disabled'),
-                                        visible: el.offsetParent !== null,
-                                        rect: el.getBoundingClientRect()
-                                    })''')
-                                    logger.debug("[SEND] Button info: %s", btn_info)
-                                except Exception as info_err:
-                                    logger.debug("[SEND] Could not get button info: %s", info_err)
-                                send_btn.click(force=True)
-                                send_method = "Playwright click (force)"
-                            else:
-                                # Fallback to Enter key if button not found
-                                logger.debug("[SEND] Button not found, using Enter key")
-                                input_elem.focus()
-                                time.sleep(0.05)
-                                input_elem.press("Enter")
-                                send_method = "Enter key (button not found)"
-
-                        else:
-                            # Third attempt: JS click with multiple event dispatch
-                            # For cases where previous methods didn't trigger React handlers
+                            # Second attempt: JS click with multiple event dispatch
+                            # Most reliable for minimized windows - dispatch mousedown/mouseup/click
                             send_btn = self._page.query_selector(self.SEND_BUTTON_SELECTOR)
                             if send_btn:
                                 click_result = send_btn.evaluate('''el => {
@@ -3888,6 +3862,31 @@ class CopilotHandler:
                                 }''')
                                 logger.debug("[SEND] JS click result: %s", click_result)
                                 send_method = "JS click (multi-event)"
+                            else:
+                                # Fallback to Enter key if button not found
+                                logger.debug("[SEND] Button not found, using Enter key")
+                                input_elem.focus()
+                                time.sleep(0.05)
+                                input_elem.press("Enter")
+                                send_method = "Enter key (button not found)"
+
+                        else:
+                            # Third attempt: Playwright click with force (scrolls element into view)
+                            send_btn = self._page.query_selector(self.SEND_BUTTON_SELECTOR)
+                            if send_btn:
+                                try:
+                                    btn_info = send_btn.evaluate('''el => ({
+                                        tag: el.tagName,
+                                        disabled: el.disabled,
+                                        ariaDisabled: el.getAttribute('aria-disabled'),
+                                        visible: el.offsetParent !== null,
+                                        rect: el.getBoundingClientRect()
+                                    })''')
+                                    logger.debug("[SEND] Button info: %s", btn_info)
+                                except Exception as info_err:
+                                    logger.debug("[SEND] Could not get button info: %s", info_err)
+                                send_btn.click(force=True)
+                                send_method = "Playwright click (force)"
                             else:
                                 # Final fallback: Enter key
                                 input_elem.focus()

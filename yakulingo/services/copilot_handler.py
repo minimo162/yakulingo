@@ -1151,13 +1151,29 @@ class CopilotHandler:
         Returns:
             Copilot page ready for use
         """
+        error_types = _get_playwright_errors()
+        PlaywrightError = error_types['Error']
+        PlaywrightTimeoutError = error_types['TimeoutError']
+
         logger.info("Checking for existing Copilot page...")
         pages = self._context.pages
 
         # Check if Copilot page already exists
         for page in pages:
-            if "m365.cloud.microsoft" in page.url:
-                logger.info("Found existing Copilot page")
+            url = page.url
+            if "m365.cloud.microsoft" in url:
+                logger.info("Found existing Copilot page (URL: %s)", url[:80])
+
+                # Check if the page is on a login page - if so, navigate to Copilot
+                # This handles the case where the session has expired during
+                # PP-DocLayout-L initialization
+                if _is_login_page(url):
+                    logger.info("Existing Copilot page is on login page, navigating to Copilot...")
+                    try:
+                        page.goto(self.COPILOT_URL, wait_until='commit', timeout=self.PAGE_GOTO_TIMEOUT_MS)
+                        self._minimize_edge_window(None)
+                    except (PlaywrightTimeoutError, PlaywrightError) as nav_err:
+                        logger.warning("Failed to navigate to Copilot from login page: %s", nav_err)
                 return page
 
         # Reuse existing tab if available (avoids creating extra tabs)
@@ -2389,8 +2405,9 @@ class CopilotHandler:
                     try:
                         page.wait_for_selector(input_selector, timeout=3000, state='visible')
                         logger.info("Login completed successfully")
-                        self.last_connection_error = self.ERROR_NONE
-                        self._send_to_background_impl(page)
+                        # Finalize connection state and save storage_state
+                        # This ensures the session is persisted immediately after login
+                        self._finalize_connected_state()
                         return True
                     except PlaywrightTimeoutError:
                         # Chat input not visible yet, might still be loading
@@ -2719,11 +2736,17 @@ class CopilotHandler:
         except Exception as e:
             logger.debug("Failed to send window to background: %s", e)
 
-    def disconnect(self) -> None:
-        """Close browser and cleanup"""
+    def disconnect(self, keep_browser: bool = False) -> None:
+        """Close browser connection and cleanup.
+
+        Args:
+            keep_browser: If True, keep Edge browser running and only disconnect
+                          Playwright. Useful when temporarily disconnecting for
+                          PP-DocLayout-L initialization.
+        """
         # Execute cleanup in Playwright thread to avoid greenlet errors
         try:
-            _playwright_executor.execute(self._disconnect_impl)
+            _playwright_executor.execute(self._disconnect_impl, keep_browser)
         except Exception as e:
             logger.debug("Error during disconnect: %s", e)
 
@@ -2810,10 +2833,16 @@ class CopilotHandler:
         self.edge_process = None
         self._browser_started_by_us = False
 
-    def _disconnect_impl(self) -> None:
+    def _disconnect_impl(self, keep_browser: bool = False) -> None:
         """Implementation of disconnect that runs in the Playwright thread.
 
-        Only terminates Edge if we started it (_browser_started_by_us flag).
+        Args:
+            keep_browser: If True, keep Edge browser running and only disconnect
+                          Playwright connection. This preserves the Edge session
+                          for reconnection.
+
+        Only terminates Edge if we started it (_browser_started_by_us flag) and
+        keep_browser is False.
         """
         from contextlib import suppress
 
@@ -2835,8 +2864,8 @@ class CopilotHandler:
                 self._playwright.stop()
 
         # Terminate Edge browser process that we started
-        # Only if we started the browser in this session
-        if self._browser_started_by_us:
+        # Only if we started the browser in this session AND keep_browser is False
+        if self._browser_started_by_us and not keep_browser:
             browser_terminated = False
 
             # First try graceful close via WM_CLOSE (avoids "closed unexpectedly" message)
@@ -2864,12 +2893,16 @@ class CopilotHandler:
                     self._kill_existing_translator_edge()
                     logger.info("Edge browser terminated (via port)")
 
+            # Only clear edge_process if we terminated the browser
+            self.edge_process = None
+            self._browser_started_by_us = False
+        elif keep_browser:
+            logger.info("Keeping Edge browser running for reconnection")
+
         self._browser = None
         self._context = None
         self._page = None
         self._playwright = None
-        self.edge_process = None
-        self._browser_started_by_us = False
 
     def _save_storage_state(self) -> bool:
         """

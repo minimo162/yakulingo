@@ -2101,10 +2101,12 @@ class YakuLingoApp:
         # Perform initialization (dialog is shown by caller)
         try:
             # Step 1: Disconnect Copilot to avoid conflicts with PaddlePaddle
+            # Use keep_browser=True to preserve the Edge session for reconnection
+            # This avoids requiring re-login after PP-DocLayout-L initialization
             was_connected = self.copilot.is_connected
             if was_connected:
                 logger.info("Disconnecting Copilot before PP-DocLayout-L initialization...")
-                await asyncio.to_thread(self.copilot.disconnect)
+                await asyncio.to_thread(lambda: self.copilot.disconnect(keep_browser=True))
 
             # Step 2: Initialize PP-DocLayout-L
             logger.info("Initializing PP-DocLayout-L on-demand...")
@@ -2137,12 +2139,17 @@ class YakuLingoApp:
         """
         Reconnect to Copilot with exponential backoff.
 
+        If login is required after reconnection, starts background polling
+        for login completion.
+
         Args:
             max_retries: Maximum number of retry attempts
 
         Returns:
             True if reconnection succeeded, False otherwise
         """
+        from yakulingo.services.copilot_handler import CopilotHandler
+
         for attempt in range(max_retries):
             try:
                 success = await asyncio.to_thread(self.copilot.connect)
@@ -2153,6 +2160,19 @@ class YakuLingoApp:
                     self.state.copilot_ready = True
                     return True
                 else:
+                    # Check if login is required
+                    if self.copilot.last_connection_error == CopilotHandler.ERROR_LOGIN_REQUIRED:
+                        logger.info("Copilot reconnect: login required, starting login polling...")
+                        self.state.connection_state = ConnectionState.LOGIN_REQUIRED
+                        self.state.copilot_ready = False
+
+                        # Start login completion polling in background
+                        if not self._login_polling_active:
+                            self._login_polling_task = asyncio.create_task(
+                                self._wait_for_login_completion()
+                            )
+                        # Return False but don't retry - user needs to login
+                        return False
                     logger.warning("Copilot reconnect returned False (attempt %d)", attempt + 1)
             except Exception as e:
                 logger.warning("Copilot reconnect attempt %d failed: %s", attempt + 1, e)

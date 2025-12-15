@@ -1094,11 +1094,16 @@ function Invoke-Update {{
         if (Test-Path $pythonExe) {{
             # Merge settings
             try {{
-                $mergeSettingsCmd = "from pathlib import Path; import sys; sys.path.insert(0, str(Path(r'$($script:AppDir)'))); from yakulingo.services.updater import merge_settings; added = merge_settings(Path(r'$($script:AppDir)'), Path(r'$($script:SourceDir)'))"
+                $mergeSettingsCmd = "from pathlib import Path; import sys; sys.path.insert(0, str(Path(r'$($script:AppDir)'))); from yakulingo.services.updater import merge_settings; added = merge_settings(Path(r'$($script:AppDir)'), Path(r'$($script:SourceDir)')); print('OK:', added)"
                 $result = & $pythonExe -c $mergeSettingsCmd 2>&1
-                Write-DebugLog "Settings merge result: $result"
+                $resultStr = ($result | Out-String).Trim()
+                if ($LASTEXITCODE -eq 0) {{
+                    Write-DebugLog "Settings merge OK: $resultStr"
+                }} else {{
+                    Write-DebugLog "Settings merge failed (exit $LASTEXITCODE): $resultStr"
+                }}
             }} catch {{
-                Write-DebugLog "Settings merge error: $($_.Exception.Message)"
+                Write-DebugLog "Settings merge exception: $($_.Exception.Message)"
             }}
 
             # Update glossary (compare, backup to Desktop if changed, then overwrite)
@@ -1107,12 +1112,21 @@ function Invoke-Update {{
             $sourceGlossary = Join-Path $script:SourceDir "glossary.csv"
             if (Test-Path $sourceGlossary) {{
                 try {{
-                    $updateGlossaryCmd = "from pathlib import Path; import sys; sys.path.insert(0, str(Path(r'$($script:AppDir)'))); from yakulingo.services.updater import backup_and_update_glossary; result = backup_and_update_glossary(Path(r'$($script:AppDir)'), Path(r'$($script:SourceDir)')); print(result if result else '')"
+                    $updateGlossaryCmd = "from pathlib import Path; import sys; sys.path.insert(0, str(Path(r'$($script:AppDir)'))); from yakulingo.services.updater import backup_and_update_glossary; result = backup_and_update_glossary(Path(r'$($script:AppDir)'), Path(r'$($script:SourceDir)')); print('OK:', result if result else 'none')"
                     $result = & $pythonExe -c $updateGlossaryCmd 2>&1
-                    $script:GlossaryBackupName = ($result | Out-String).Trim()
-                    Write-DebugLog "Glossary update result: $($script:GlossaryBackupName)"
+                    $resultStr = ($result | Out-String).Trim()
+                    if ($LASTEXITCODE -eq 0) {{
+                        # Extract backup name if present
+                        if ($resultStr -match "OK: (.+)$") {{
+                            $script:GlossaryBackupName = $Matches[1]
+                            if ($script:GlossaryBackupName -eq "none") {{ $script:GlossaryBackupName = "" }}
+                        }}
+                        Write-DebugLog "Glossary update OK: $resultStr"
+                    }} else {{
+                        Write-DebugLog "Glossary update failed (exit $LASTEXITCODE): $resultStr"
+                    }}
                 }} catch {{
-                    Write-DebugLog "Glossary update error: $($_.Exception.Message)"
+                    Write-DebugLog "Glossary update exception: $($_.Exception.Message)"
                 }}
             }}
         }} else {{
@@ -1425,9 +1439,10 @@ def merge_settings(app_dir: Path, source_dir: Path) -> int:
 
     # 両方の設定を読み込む
     try:
-        with open(user_settings, "r", encoding="utf-8") as f:
+        # utf-8-sig を使用してBOM付きファイルにも対応
+        with open(user_settings, "r", encoding="utf-8-sig") as f:
             user_data = json.load(f)
-        with open(new_settings, "r", encoding="utf-8") as f:
+        with open(new_settings, "r", encoding="utf-8-sig") as f:
             new_data = json.load(f)
     except (json.JSONDecodeError, OSError) as e:
         logger.warning("設定ファイルの読み込みに失敗: %s", e)

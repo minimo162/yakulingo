@@ -650,10 +650,13 @@ Option Explicit
 
 On Error Resume Next
 
-Dim objShell, objFSO, scriptDir, psScript
+Dim objShell, objFSO, scriptDir, psScript, debugLogPath
 
 Set objShell = CreateObject("WScript.Shell")
 Set objFSO = CreateObject("Scripting.FileSystemObject")
+
+' Get debug log path
+debugLogPath = objShell.Environment("Process")("TEMP") & "\\YakuLingo_update_debug.log"
 
 ' Get script directory
 scriptDir = objFSO.GetParentFolderName(WScript.ScriptFullName)
@@ -669,17 +672,40 @@ End If
 
 ' Run PowerShell script with GUI mode (hidden console)
 Dim command, exitCode
-command = "cmd.exe /c powershell.exe -ExecutionPolicy Bypass -File """ & psScript & """"
+command = "powershell.exe -ExecutionPolicy Bypass -NoProfile -File """ & psScript & """"
 
 ' Run and wait for completion (0 = hidden, True = wait)
 exitCode = objShell.Run(command, 0, True)
 
 If exitCode <> 0 Then
-    Dim errorMessage, debugLogPath
-    debugLogPath = objShell.Environment("Process")("TEMP") & "\\YakuLingo_update_debug.log"
+    Dim errorMessage, debugLogContent
+
+    ' Try to read debug log content
+    debugLogContent = ""
+    If objFSO.FileExists(debugLogPath) Then
+        On Error Resume Next
+        Dim objFile
+        Set objFile = objFSO.OpenTextFile(debugLogPath, 1, False)
+        If Not objFile Is Nothing Then
+            debugLogContent = objFile.ReadAll()
+            objFile.Close
+        End If
+        On Error Goto 0
+    End If
+
     errorMessage = "Update failed." & vbCrLf & vbCrLf & _
                    "Error code: " & exitCode & vbCrLf & vbCrLf & _
                    "Details: " & debugLogPath
+
+    ' Show debug log content if available
+    If Len(debugLogContent) > 0 Then
+        errorMessage = errorMessage & vbCrLf & vbCrLf & _
+                       "=== Debug Log ===" & vbCrLf & _
+                       Left(debugLogContent, 1000)
+    Else
+        errorMessage = errorMessage & vbCrLf & vbCrLf & _
+                       "(Debug log was not created - PowerShell may have failed to start)"
+    End If
 
     MsgBox errorMessage, vbCritical, "YakuLingo Update - Error"
     WScript.Quit exitCode
@@ -693,13 +719,21 @@ WScript.Quit 0
 # YakuLingo Update Script (GUI Version)
 # ============================================================
 
-$ErrorActionPreference = "Stop"
-
-# Debug log for troubleshooting
+# Debug log for troubleshooting - create BEFORE ErrorActionPreference
 $debugLog = Join-Path $env:TEMP "YakuLingo_update_debug.log"
-try {{
-    "=== Update started: $(Get-Date) ===" | Out-File -FilePath $debugLog -Encoding UTF8
-}} catch {{}}
+"=== Update started: $(Get-Date) ===" | Out-File -FilePath $debugLog -Encoding UTF8 -Force
+
+# Global error trap to ensure errors are logged
+trap {{
+    $errMsg = $_.Exception.Message
+    $errLine = $_.InvocationInfo.ScriptLineNumber
+    "TRAP ERROR at line $errLine : $errMsg" | Out-File -FilePath $debugLog -Append -Encoding UTF8
+    "Stack: $($_.ScriptStackTrace)" | Out-File -FilePath $debugLog -Append -Encoding UTF8
+    # Continue to normal error handling
+    continue
+}}
+
+$ErrorActionPreference = "Stop"
 
 # Configuration
 $script:AppDir = "{app_dir}"
@@ -707,11 +741,19 @@ $script:SourceDir = "{source_dir}"
 $script:DirsToUpdate = @({dirs_to_update_ps})
 $script:FilesToUpdate = @({files_to_update_ps})
 
+"Config loaded - AppDir: $($script:AppDir)" | Out-File -FilePath $debugLog -Append -Encoding UTF8
+
 # ============================================================
 # GUI Helper Functions
 # ============================================================
-Add-Type -AssemblyName System.Windows.Forms
-Add-Type -AssemblyName System.Drawing
+try {{
+    Add-Type -AssemblyName System.Windows.Forms
+    Add-Type -AssemblyName System.Drawing
+    "GUI assemblies loaded successfully" | Out-File -FilePath $debugLog -Append -Encoding UTF8
+}} catch {{
+    "ERROR loading GUI assemblies: $($_.Exception.Message)" | Out-File -FilePath $debugLog -Append -Encoding UTF8
+    throw
+}}
 
 $script:progressForm = $null
 $script:progressBar = $null

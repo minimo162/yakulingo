@@ -270,7 +270,9 @@ class TestNativeModeDetection:
         monkeypatch.delenv('DISPLAY', raising=False)
         monkeypatch.delenv('WAYLAND_DISPLAY', raising=False)
 
-        assert ui_app._native_mode_enabled(True) is False
+        enabled, webview_module = ui_app._check_native_mode_and_get_webview(True)
+        assert enabled is False
+        assert webview_module is None
 
     def test_native_disabled_without_backend(self, monkeypatch):
         """Native mode should fall back when pywebview has no GUI backend."""
@@ -286,7 +288,9 @@ class TestNativeModeDetection:
             SimpleNamespace(guilib=None, initialize=lambda: None),
         )
 
-        assert ui_app._native_mode_enabled(True) is False
+        enabled, webview_module = ui_app._check_native_mode_and_get_webview(True)
+        assert enabled is False
+        assert webview_module is None
 
     def test_native_enabled_when_backend_available(self, monkeypatch):
         """Native mode remains enabled when a GUI backend is present."""
@@ -296,13 +300,16 @@ class TestNativeModeDetection:
         monkeypatch.setattr(sys, 'platform', 'linux')
         monkeypatch.setenv('DISPLAY', ':0')
         monkeypatch.setenv('WAYLAND_DISPLAY', 'wayland-0')
+        mock_webview = SimpleNamespace(guilib=None, initialize=lambda: object())
         monkeypatch.setitem(
             sys.modules,
             'webview',
-            SimpleNamespace(guilib=None, initialize=lambda: object()),
+            mock_webview,
         )
 
-        assert ui_app._native_mode_enabled(True) is True
+        enabled, webview_module = ui_app._check_native_mode_and_get_webview(True)
+        assert enabled is True
+        assert webview_module is mock_webview
 
 
 # =============================================================================

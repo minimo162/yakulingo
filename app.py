@@ -156,11 +156,6 @@ SPLASH_HTML = """
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             background-clip: text;
-            margin-bottom: 8px;
-        }
-        .app-subtitle {
-            font-size: 16px;
-            color: #64748B;
             margin-bottom: 32px;
         }
         .spinner-container {
@@ -200,7 +195,6 @@ SPLASH_HTML = """
 <body>
     <div class="splash-card">
         <div class="app-name">YakuLingo</div>
-        <div class="app-subtitle">訳リンゴ</div>
         <div class="spinner-container">
             <div class="spinner"></div>
         </div>

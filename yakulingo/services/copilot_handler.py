@@ -514,16 +514,29 @@ class CopilotHandler:
     CHAT_INPUT_SELECTOR = '#m365-chat-editor-target-element, [data-lexical-editor="true"]'
     CHAT_INPUT_SELECTOR_EXTENDED = '#m365-chat-editor-target-element, [data-lexical-editor="true"], [contenteditable="true"]'
 
-    # Send button selectors
-    SEND_BUTTON_SELECTOR = '.fai-SendButton:not([disabled]), button[type="submit"]:not([disabled])'
-    SEND_BUTTON_ANY = '.fai-SendButton, button[type="submit"]'
+    # Send button selectors - Multiple fallbacks for UI changes
+    # Note: Copilot may change the UI, so we include various patterns
+    SEND_BUTTON_SELECTOR = (
+        '.fai-SendButton:not([disabled]), '
+        'button[type="submit"]:not([disabled]), '
+        'button[aria-label*="送信"]:not([disabled]), '
+        'button[aria-label*="Send"]:not([disabled]), '
+        '[data-testid="sendButton"]:not([disabled]), '
+        'button.send-button:not([disabled])'
+    )
+    SEND_BUTTON_ANY = '.fai-SendButton, button[type="submit"], button[aria-label*="送信"], button[aria-label*="Send"]'
 
     # Stop button selectors (for cancelling generation)
+    # Indicates Copilot is processing - used to verify send was successful
     STOP_BUTTON_SELECTORS = (
         '.fai-SendButton__stopBackground',
         'button[aria-label*="Stop"]',
         'button[aria-label*="停止"]',
         '[data-testid="stopGeneratingButton"]',
+        'button[aria-label*="Cancel"]',
+        'button[aria-label*="キャンセル"]',
+        '.stop-button',
+        '[data-testid="stop-button"]',
     )
     STOP_BUTTON_SELECTOR_COMBINED = ", ".join(STOP_BUTTON_SELECTORS)
 
@@ -546,12 +559,20 @@ class CopilotHandler:
     )
 
     # Copilot response selectors (fallback for DOM changes)
+    # Multiple patterns to handle various Copilot UI versions
     RESPONSE_SELECTORS = (
         '[data-testid="markdown-reply"]',
         'div[data-message-type="Chat"]',
         '[data-message-author-role="assistant"] [data-content-element]',
         'article[data-message-author-role="assistant"]',
         'div[data-message-author-role="assistant"]',
+        # Additional patterns for newer Copilot UI
+        '[data-testid="response-content"]',
+        '.message-content',
+        '.assistant-message',
+        '[role="article"][data-message-author-role="assistant"]',
+        '.fai-Response',
+        '.chat-message-assistant',
     )
     RESPONSE_SELECTOR_COMBINED = ", ".join(RESPONSE_SELECTORS)
 
@@ -3695,20 +3716,51 @@ class CopilotHandler:
 
                 # Send via click (more reliable than Enter key in Copilot)
                 # Optimized: short wait_for_selector + parallel polling for fast detection
-                MAX_SEND_RETRIES = 2  # Reduced from 3 (usually succeeds on first try)
+                MAX_SEND_RETRIES = 3  # Increased for reliability
                 send_success = False
 
                 for send_attempt in range(MAX_SEND_RETRIES):
-                    # Send via button click
-                    # Try simple click first (faster), then JS events if needed
+                    # Send via Enter key or button click
+                    # Note: Recent Copilot UI changes may break button clicks,
+                    # so we use Enter key as the primary method now
+                    send_method = ""
                     try:
-                        send_btn = self._page.query_selector(self.SEND_BUTTON_SELECTOR)
-                        if send_btn:
-                            if send_attempt == 0:
-                                # First attempt: simple click (faster, works most of the time)
+                        if send_attempt == 0:
+                            # First attempt: Enter key (most reliable)
+                            input_elem.focus()
+                            time.sleep(0.05)
+                            input_elem.press("Enter")
+                            send_method = "Enter key"
+                        elif send_attempt == 1:
+                            # Second attempt: try send button click
+                            send_btn = self._page.query_selector(self.SEND_BUTTON_SELECTOR)
+                            if send_btn:
+                                try:
+                                    btn_info = send_btn.evaluate('''el => ({
+                                        tag: el.tagName,
+                                        class: el.className,
+                                        disabled: el.disabled,
+                                        ariaDisabled: el.getAttribute('aria-disabled'),
+                                        visible: el.offsetParent !== null,
+                                        rect: el.getBoundingClientRect()
+                                    })''')
+                                    logger.debug("[SEND] Button info: %s", btn_info)
+                                except Exception as info_err:
+                                    logger.debug("[SEND] Could not get button info: %s", info_err)
                                 send_btn.click(force=True)
+                                send_method = "button click"
                             else:
-                                # Retry: use complete mouse event sequence for React components
+                                # Fallback to Enter key if send button not found
+                                logger.debug("[SEND] Button not found (selector: %s), using Enter key",
+                                            self.SEND_BUTTON_SELECTOR)
+                                input_elem.focus()
+                                time.sleep(0.05)
+                                input_elem.press("Enter")
+                                send_method = "Enter key (button not found)"
+                        else:
+                            # Third attempt: use complete mouse event sequence for React components
+                            send_btn = self._page.query_selector(self.SEND_BUTTON_SELECTOR)
+                            if send_btn:
                                 send_btn.evaluate('''el => {
                                     const rect = el.getBoundingClientRect();
                                     const x = rect.left + rect.width / 2;
@@ -3718,25 +3770,33 @@ class CopilotHandler:
                                     el.dispatchEvent(new MouseEvent('mouseup', opts));
                                     el.dispatchEvent(new MouseEvent('click', opts));
                                 }''')
-                            logger.debug("Send button clicked (attempt %d)", send_attempt + 1)
-                        else:
-                            # Fallback to Enter key if send button not found
-                            logger.debug("Send button not found, using Enter key (attempt %d)", send_attempt + 1)
+                                send_method = "JS mouse events"
+                            else:
+                                input_elem.focus()
+                                time.sleep(0.05)
+                                input_elem.press("Enter")
+                                send_method = "Enter key (JS fallback)"
+                        logger.debug("[SEND] Sent via %s (attempt %d)", send_method, send_attempt + 1)
+                    except Exception as send_err:
+                        logger.debug("[SEND] Method failed: %s, trying Enter key", send_err)
+                        try:
+                            input_elem.focus()
+                            time.sleep(0.05)
                             input_elem.press("Enter")
-                    except Exception as click_err:
-                        logger.debug("Send button click failed, using Enter key: %s", click_err)
-                        input_elem.press("Enter")
-                        logger.debug("Enter key sent (attempt %d)", send_attempt + 1)
+                            send_method = "Enter key (fallback)"
+                        except Exception as enter_err:
+                            logger.warning("[SEND] Enter key also failed: %s", enter_err)
+                            send_method = "failed"
+                        logger.debug("[SEND] Sent via %s (attempt %d)", send_method, send_attempt + 1)
 
                     # Small delay to let Copilot's JavaScript process the click event
-                    time.sleep(0.05)  # Reduced from 0.1s
+                    time.sleep(0.1)  # Increased from 0.05s for reliability
 
                     # Optimized send verification: parallel polling of both conditions
                     # This is faster than sequential wait_for_selector + input check
-                    # Optimized: reduced timeouts (2nd attempt usually succeeds in 0.01s)
-                    SEND_VERIFY_SHORT_WAIT_MS = 200  # Reduced from 300ms
-                    SEND_VERIFY_POLL_INTERVAL = 0.03  # Reduced from 50ms
-                    SEND_VERIFY_POLL_MAX = 0.5  # Reduced from 1.2s (retry is fast)
+                    SEND_VERIFY_SHORT_WAIT_MS = 500  # Increased from 200ms
+                    SEND_VERIFY_POLL_INTERVAL = 0.05  # Increased from 0.03s for stability
+                    SEND_VERIFY_POLL_MAX = 1.5  # Increased from 0.5s for reliability
 
                     verify_start = time.time()
                     send_verified = False
@@ -3751,23 +3811,29 @@ class CopilotHandler:
                         )
                         send_verified = True
                         verify_reason = "stop button visible"
-                    except Exception:
+                        logger.debug("[SEND_VERIFY] Stop button appeared")
+                    except Exception as stop_err:
                         # Stop button didn't appear quickly - continue with polling
-                        pass
+                        logger.debug("[SEND_VERIFY] Stop button not visible after %dms: %s",
+                                    SEND_VERIFY_SHORT_WAIT_MS, type(stop_err).__name__)
 
                     # Method 2: Poll both conditions (stop button AND input cleared)
                     # This catches cases where input clears quickly but stop button is slow
+                    poll_iteration = 0
                     poll_start = time.time()
                     while not send_verified and (time.time() - poll_start) < SEND_VERIFY_POLL_MAX:
+                        poll_iteration += 1
                         # Check stop button
                         try:
                             stop_btn = self._page.query_selector(self.STOP_BUTTON_SELECTOR_COMBINED)
                             if stop_btn and stop_btn.is_visible():
                                 send_verified = True
                                 verify_reason = "stop button visible"
+                                logger.debug("[SEND_VERIFY] Stop button found at poll iteration %d", poll_iteration)
                                 break
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            if poll_iteration == 1:
+                                logger.debug("[SEND_VERIFY] Stop button check error: %s", e)
 
                         # Check if input is cleared
                         try:
@@ -3776,22 +3842,52 @@ class CopilotHandler:
                             if not remaining_text:
                                 send_verified = True
                                 verify_reason = "input cleared"
+                                logger.debug("[SEND_VERIFY] Input cleared at poll iteration %d", poll_iteration)
                                 break
-                        except Exception:
+                            elif poll_iteration == 1:
+                                # Log remaining text on first iteration for debugging
+                                logger.debug("[SEND_VERIFY] Input still has text (len=%d): %s...",
+                                            len(remaining_text), remaining_text[:50] if len(remaining_text) > 50 else remaining_text)
+                        except Exception as e:
                             # If we can't check, assume it might have been sent
                             send_verified = True
                             verify_reason = "input check failed (assuming sent)"
+                            logger.debug("[SEND_VERIFY] Input check failed: %s", e)
                             break
+
+                        # Check for response elements as alternative verification
+                        try:
+                            response_elem = self._page.query_selector(self.RESPONSE_SELECTOR_COMBINED)
+                            if response_elem:
+                                send_verified = True
+                                verify_reason = "response element appeared"
+                                logger.debug("[SEND_VERIFY] Response element found at poll iteration %d", poll_iteration)
+                                break
+                        except Exception:
+                            pass
 
                         time.sleep(SEND_VERIFY_POLL_INTERVAL)
 
                     if send_verified:
                         elapsed = time.time() - verify_start
-                        logger.info("Message sent (attempt %d, %s, verified in %.2fs)",
+                        logger.info("[SEND] Message sent (attempt %d, %s, verified in %.2fs)",
                                     send_attempt + 1, verify_reason, elapsed)
                         send_success = True
                         break
                     else:
+                        # Debug: Dump page state for troubleshooting
+                        try:
+                            page_state = self._page.evaluate('''() => ({
+                                url: location.href,
+                                inputExists: !!document.querySelector('#m365-chat-editor-target-element'),
+                                sendBtnExists: !!document.querySelector('.fai-SendButton'),
+                                stopBtnExists: !!document.querySelector('.fai-SendButton__stopBackground'),
+                                responseDivs: document.querySelectorAll('[data-message-author-role="assistant"]').length
+                            })''')
+                            logger.debug("[SEND_VERIFY] Page state: %s", page_state)
+                        except Exception as state_err:
+                            logger.debug("[SEND_VERIFY] Could not get page state: %s", state_err)
+
                         # Update input_elem for next retry attempt
                         try:
                             current_input = self._page.query_selector(input_selector)
@@ -3803,13 +3899,13 @@ class CopilotHandler:
                         if send_attempt < MAX_SEND_RETRIES - 1:
                             elapsed = time.time() - verify_start
                             logger.warning(
-                                "Send not verified after %.1fs (attempt %d/%d), retrying...",
+                                "[SEND] Not verified after %.1fs (attempt %d/%d), retrying...",
                                 elapsed, send_attempt + 1, MAX_SEND_RETRIES
                             )
                         else:
                             # All attempts failed
                             logger.warning(
-                                "Send not verified after %d attempts",
+                                "[SEND] Not verified after %d attempts",
                                 MAX_SEND_RETRIES
                             )
             else:
@@ -3926,6 +4022,39 @@ class CopilotHandler:
                 logger.debug("[RESPONSE_TEXT] Got text (len=%d) from selector: %s", len(text) if text else 0, selector)
                 return text or "", True
 
+        # Debug: Dump page structure to help identify new selectors
+        try:
+            page_debug = self._page.evaluate('''() => {
+                const info = {
+                    url: location.href,
+                    title: document.title,
+                    // Check for various message containers
+                    articles: document.querySelectorAll('article').length,
+                    chatDivs: document.querySelectorAll('[data-message-type]').length,
+                    roleDivs: document.querySelectorAll('[data-message-author-role]').length,
+                    faiElements: document.querySelectorAll('[class*="fai-"]').length,
+                    messageElements: document.querySelectorAll('[class*="message"]').length,
+                    // Sample class names from the page
+                    sampleClasses: []
+                };
+                // Get sample class names from elements that might be messages
+                const potentialMessages = document.querySelectorAll('article, [role="article"], div[data-message-type], div[class*="message"]');
+                for (let i = 0; i < Math.min(5, potentialMessages.length); i++) {
+                    info.sampleClasses.push({
+                        tag: potentialMessages[i].tagName,
+                        class: potentialMessages[i].className,
+                        role: potentialMessages[i].getAttribute('role'),
+                        dataAttrs: Array.from(potentialMessages[i].attributes)
+                            .filter(a => a.name.startsWith('data-'))
+                            .map(a => a.name + '=' + a.value.substring(0, 30))
+                            .join(', ')
+                    });
+                }
+                return info;
+            }''')
+            logger.debug("[RESPONSE_TEXT] Page debug info: %s", page_debug)
+        except Exception as dump_err:
+            logger.debug("[RESPONSE_TEXT] Could not dump page info: %s", dump_err)
         logger.debug("[RESPONSE_TEXT] No response found from any selector")
         return "", False
 

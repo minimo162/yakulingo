@@ -52,24 +52,33 @@ def _ensure_nicegui_version(nicegui_module: ModuleType) -> None:
 # Lazily loaded NiceGUI modules (initialized in _lazy_import_nicegui)
 nicegui: ModuleType | None = None
 ui: ModuleType | None = None
+nicegui_app: ModuleType | None = None
+nicegui_Client: type | None = None
 
 
-def _lazy_import_nicegui() -> ModuleType:
-    """Import NiceGUI only when needed to speed up module import time."""
+def _lazy_import_nicegui() -> tuple:
+    """Import NiceGUI only when needed to speed up module import time.
 
-    global nicegui, ui
+    Returns:
+        Tuple of (ui_module, app_module, Client_class)
+    """
+    global nicegui, ui, nicegui_app, nicegui_Client
 
     if ui is not None and nicegui is not None:
-        return ui
+        return ui, nicegui_app, nicegui_Client
 
     import nicegui as nicegui_module
     from nicegui import ui as ui_module
+    from nicegui import app as app_module
+    from nicegui import Client as Client_class
 
     _ensure_nicegui_version(nicegui_module)
 
     nicegui = nicegui_module
     ui = ui_module
-    return ui_module
+    nicegui_app = app_module
+    nicegui_Client = Client_class
+    return ui_module, app_module, Client_class
 
 # Fast imports - required at startup (lightweight modules only)
 from yakulingo.ui.state import AppState, Tab, FileState, ConnectionState, LayoutInitializationState
@@ -412,14 +421,14 @@ class YakuLingoApp:
 
         # Method 1: pywebview's on_top property
         try:
-            from nicegui import app as nicegui_app
-            if hasattr(nicegui_app, 'native') and nicegui_app.native.main_window:
+            # Use global nicegui_app (already imported in _lazy_import_nicegui)
+            if nicegui_app and hasattr(nicegui_app, 'native') and nicegui_app.native.main_window:
                 window = nicegui_app.native.main_window
                 window.on_top = True
                 await asyncio.sleep(0.05)
                 window.on_top = False
                 logger.debug("pywebview on_top toggle executed")
-        except (ImportError, AttributeError, RuntimeError) as e:
+        except (AttributeError, RuntimeError) as e:
             logger.debug(f"pywebview bring_to_front failed: {e}")
 
         # Method 2: Windows API (more reliable for hotkey activation)
@@ -629,15 +638,15 @@ class YakuLingoApp:
         if bring_to_front:
             # Bring app window to front using pywebview (native mode)
             try:
-                from nicegui import app as nicegui_app
-                if hasattr(nicegui_app, 'native') and nicegui_app.native.main_window:
+                # Use global nicegui_app (already imported in _lazy_import_nicegui)
+                if nicegui_app and hasattr(nicegui_app, 'native') and nicegui_app.native.main_window:
                     # pywebview window methods
                     window = nicegui_app.native.main_window
                     # Activate window (bring to front)
                     window.on_top = True
                     await asyncio.sleep(0.1)
                     window.on_top = False  # Reset so it doesn't stay always on top
-            except (ImportError, AttributeError, RuntimeError) as e:
+            except (AttributeError, RuntimeError) as e:
                 logger.debug("Failed to bring window to front: %s", e)
 
         # Show ready notification (need client context for UI operations in async task)
@@ -2976,8 +2985,8 @@ def run_app(
     import time
     _t0 = time.perf_counter()
 
-    _lazy_import_nicegui()
-    from nicegui import app as nicegui_app, Client
+    # Import NiceGUI (all modules in one call to avoid redundant imports)
+    _, nicegui_app_module, Client = _lazy_import_nicegui()
     logger.info("[TIMING] NiceGUI import: %.2fs", time.perf_counter() - _t0)
 
     _t1 = time.perf_counter()
@@ -3140,7 +3149,7 @@ def run_app(
     # Register shutdown handler (both for reliability)
     # - on_shutdown: Called when NiceGUI server shuts down gracefully
     # - atexit: Backup for when window is closed abruptly (pywebview native mode)
-    nicegui_app.on_shutdown(cleanup)
+    nicegui_app_module.on_shutdown(cleanup)
     atexit.register(cleanup)
 
     @ui.page('/')

@@ -1004,6 +1004,70 @@ function Invoke-Setup {
                 }
             }
         }
+
+        # ============================================================
+        # Handle glossary.csv: Compare and backup to Desktop if changed
+        # (Must be done BEFORE cleaning up backup directory)
+        # ============================================================
+        $userGlossaryPath = Join-Path $SetupPath "glossary.csv"
+
+        # Check if user had a glossary.csv before extraction
+        if (Test-Path $BackupDir) {
+            $userGlossaryBackup = Get-ChildItem -Path $BackupDir -Filter "glossary.csv" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+        }
+
+        # If user's glossary existed and new glossary exists, compare them
+        if ($userGlossaryBackup -and (Test-Path $userGlossaryPath)) {
+            Write-Status -Message "Checking glossary updates..." -Progress -Step "Step 3/4: Extracting" -Percent 88
+
+            # Compare file hashes
+            $userHash = (Get-FileHash -Path $userGlossaryBackup.FullName -Algorithm MD5).Hash
+            $newHash = (Get-FileHash -Path $userGlossaryPath -Algorithm MD5).Hash
+
+            # Also check against glossary_old.csv (previous version)
+            # Skip backup if user's glossary matches either new or old version (not customized)
+            $oldGlossaryPath = Join-Path $SetupPath "glossary_old.csv"
+            $oldHash = $null
+            if (Test-Path $oldGlossaryPath) {
+                $oldHash = (Get-FileHash -Path $oldGlossaryPath -Algorithm MD5).Hash
+            }
+
+            # Only backup if user's glossary differs from both new and old versions
+            $matchesNew = ($userHash -eq $newHash)
+            $matchesOld = ($oldHash -and $userHash -eq $oldHash)
+
+            if (-not $matchesNew -and -not $matchesOld) {
+                # Files are different - backup user's glossary to Desktop
+                $desktopPath = [Environment]::GetFolderPath("Desktop")
+                $timestamp = Get-Date -Format "yyyyMMdd"
+                $backupFileName = "glossary_backup_$timestamp.csv"
+                $script:GlossaryBackupPath = Join-Path $desktopPath $backupFileName
+
+                # Avoid overwriting existing backup
+                $counter = 1
+                while (Test-Path $script:GlossaryBackupPath) {
+                    $backupFileName = "glossary_backup_${timestamp}_$counter.csv"
+                    $script:GlossaryBackupPath = Join-Path $desktopPath $backupFileName
+                    $counter++
+                }
+
+                Copy-Item -Path $userGlossaryBackup.FullName -Destination $script:GlossaryBackupPath -Force
+
+                if (-not $GuiMode) {
+                    Write-Host "      Glossary updated - backup saved to Desktop: $backupFileName" -ForegroundColor Cyan
+                }
+            } else {
+                # User's glossary matches new or old version (not customized) - no backup needed
+                if (-not $GuiMode) {
+                    if ($matchesNew) {
+                        Write-Host "      Glossary unchanged" -ForegroundColor Gray
+                    } else {
+                        Write-Host "      Glossary not customized (matches previous version)" -ForegroundColor Gray
+                    }
+                }
+            }
+        }
+
         # Clean up backup directory (with safety check)
         if (Test-Path $BackupDir) {
             $backupLeafName = Split-Path -Leaf $BackupDir
@@ -1014,52 +1078,6 @@ function Invoke-Setup {
         Write-Status -Message "User data restored" -Progress -Step "Step 3/4: Extracting" -Percent 89
         if (-not $GuiMode) {
             Write-Host "[OK] User data restored" -ForegroundColor Green
-        }
-    }
-
-    # ============================================================
-    # Handle glossary.csv: Compare and backup to Desktop if changed
-    # ============================================================
-    $userGlossaryPath = Join-Path $SetupPath "glossary.csv"
-    $newGlossaryInBackup = Join-Path $BackupDir "glossary_user.csv"
-
-    # Check if user had a glossary.csv before extraction
-    if (Test-Path $BackupDir) {
-        $userGlossaryBackup = Get-ChildItem -Path $BackupDir -Filter "glossary.csv" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-    }
-
-    # If user's glossary existed and new glossary exists, compare them
-    if ($userGlossaryBackup -and (Test-Path $userGlossaryPath)) {
-        Write-Status -Message "Checking glossary updates..." -Progress -Step "Step 3/4: Extracting" -Percent 88
-
-        # Compare file hashes
-        $userHash = (Get-FileHash -Path $userGlossaryBackup.FullName -Algorithm MD5).Hash
-        $newHash = (Get-FileHash -Path $userGlossaryPath -Algorithm MD5).Hash
-
-        if ($userHash -ne $newHash) {
-            # Files are different - backup user's glossary to Desktop
-            $desktopPath = [Environment]::GetFolderPath("Desktop")
-            $timestamp = Get-Date -Format "yyyyMMdd"
-            $backupFileName = "glossary_backup_$timestamp.csv"
-            $script:GlossaryBackupPath = Join-Path $desktopPath $backupFileName
-
-            # Avoid overwriting existing backup
-            $counter = 1
-            while (Test-Path $script:GlossaryBackupPath) {
-                $backupFileName = "glossary_backup_${timestamp}_$counter.csv"
-                $script:GlossaryBackupPath = Join-Path $desktopPath $backupFileName
-                $counter++
-            }
-
-            Copy-Item -Path $userGlossaryBackup.FullName -Destination $script:GlossaryBackupPath -Force
-
-            if (-not $GuiMode) {
-                Write-Host "      Glossary updated - backup saved to Desktop: $backupFileName" -ForegroundColor Cyan
-            }
-        } else {
-            if (-not $GuiMode) {
-                Write-Host "      Glossary unchanged" -ForegroundColor Gray
-            }
         }
     }
 

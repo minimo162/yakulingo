@@ -3754,9 +3754,10 @@ class CopilotHandler:
                     send_method = ""
                     try:
                         if send_attempt == 0:
-                            # First attempt: JS mouse events (most reliable for React)
+                            # First attempt: JS mouse events + Enter key (dual approach for reliability)
                             send_btn = self._page.query_selector(self.SEND_BUTTON_SELECTOR)
                             if send_btn:
+                                # Try JS mouse events first
                                 send_btn.evaluate('''el => {
                                     const rect = el.getBoundingClientRect();
                                     const x = rect.left + rect.width / 2;
@@ -3766,20 +3767,29 @@ class CopilotHandler:
                                     el.dispatchEvent(new MouseEvent('mouseup', opts));
                                     el.dispatchEvent(new MouseEvent('click', opts));
                                 }''')
-                                send_method = "JS mouse events"
+                                # Also send Enter key as backup (some Copilot states respond better to Enter)
+                                time.sleep(0.05)
+                                input_elem.focus()
+                                input_elem.press("Enter")
+                                send_method = "JS mouse events + Enter"
                             else:
                                 input_elem.focus()
                                 time.sleep(0.05)
                                 input_elem.press("Enter")
                                 send_method = "Enter key (button not found)"
                         elif send_attempt == 1:
-                            # Second attempt: Enter key
-                            input_elem.focus()
-                            time.sleep(0.05)
-                            input_elem.press("Enter")
-                            send_method = "Enter key"
+                            # Second attempt: Playwright click with force
+                            send_btn = self._page.query_selector(self.SEND_BUTTON_SELECTOR)
+                            if send_btn:
+                                send_btn.click(force=True)
+                                send_method = "Playwright click"
+                            else:
+                                input_elem.focus()
+                                time.sleep(0.05)
+                                input_elem.press("Enter")
+                                send_method = "Enter key (button not found)"
                         else:
-                            # Third attempt: try send button click with force
+                            # Third attempt: JS click() method call (bypasses event handling)
                             send_btn = self._page.query_selector(self.SEND_BUTTON_SELECTOR)
                             if send_btn:
                                 try:
@@ -3794,8 +3804,9 @@ class CopilotHandler:
                                     logger.debug("[SEND] Button info: %s", btn_info)
                                 except Exception as info_err:
                                     logger.debug("[SEND] Could not get button info: %s", info_err)
-                                send_btn.click(force=True)
-                                send_method = "button click"
+                                # Use JS click() method directly
+                                send_btn.evaluate('el => el.click()')
+                                send_method = "JS click() method"
                             else:
                                 # Fallback to Enter key if send button not found
                                 logger.debug("[SEND] Button not found (selector: %s), using Enter key",

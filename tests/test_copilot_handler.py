@@ -404,7 +404,10 @@ class TestCopilotHandlerNewChat:
         mock_new_chat_btn = Mock()
         mock_page.query_selector.return_value = mock_new_chat_btn
         mock_page.query_selector_all.return_value = []  # No responses (cleared)
+        mock_page.is_closed.return_value = False  # Page is valid
         handler._page = mock_page
+        # Mock _is_page_valid to return True
+        handler._is_page_valid = Mock(return_value=True)
 
         handler.start_new_chat()
 
@@ -421,7 +424,10 @@ class TestCopilotHandlerNewChat:
         mock_page.query_selector.return_value = None
         # Also mock query_selector_all for _wait_for_responses_cleared
         mock_page.query_selector_all.return_value = []
+        mock_page.is_closed.return_value = False  # Page is valid
         handler._page = mock_page
+        # Mock _is_page_valid to return True
+        handler._is_page_valid = Mock(return_value=True)
 
         # Should not raise
         handler.start_new_chat()
@@ -554,6 +560,7 @@ class TestSendMessage:
         mock_page.query_selector.return_value = mock_input
         mock_page.wait_for_selector.return_value = mock_input
         handler._page = mock_page
+        handler._is_page_valid = Mock(return_value=True)
 
         handler._send_message("Test prompt")
 
@@ -573,6 +580,7 @@ class TestSendMessage:
         mock_input.inner_text.return_value = ""
         # Method 3: type also fails to produce content
         handler._page = mock_page
+        handler._is_page_valid = Mock(return_value=True)
 
         with pytest.raises(RuntimeError) as exc:
             handler._send_message("Test prompt")
@@ -582,6 +590,7 @@ class TestSendMessage:
     def test_send_message_retries_on_input_not_cleared(self):
         """_send_message retries if input field is not cleared after first attempt"""
         handler = CopilotHandler()
+        handler._is_page_valid = Mock(return_value=True)
 
         mock_page = MagicMock()
         mock_input = MagicMock()
@@ -656,6 +665,7 @@ class TestSendMessage:
     def test_send_message_succeeds_on_first_attempt(self):
         """_send_message succeeds immediately when input is cleared after first click"""
         handler = CopilotHandler()
+        handler._is_page_valid = Mock(return_value=True)
 
         mock_page = MagicMock()
         mock_input = MagicMock()
@@ -695,6 +705,7 @@ class TestSendMessage:
     def test_send_message_continues_after_max_retries(self):
         """_send_message continues even if input never clears after max retries"""
         handler = CopilotHandler()
+        handler._is_page_valid = Mock(return_value=True)
 
         mock_page = MagicMock()
         mock_input = MagicMock()
@@ -748,6 +759,7 @@ class TestSendMessage:
     def test_send_message_uses_enter_key(self):
         """_send_message uses Enter key as primary method (first attempt)"""
         handler = CopilotHandler()
+        handler._is_page_valid = Mock(return_value=True)
 
         mock_page = MagicMock()
         mock_input = MagicMock()

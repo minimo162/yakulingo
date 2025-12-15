@@ -1224,8 +1224,11 @@ class CopilotHandler:
         self._connected = True
         self.last_connection_error = self.ERROR_NONE
 
-        # Save storage_state to preserve login session
-        self._save_storage_state()
+        # Note: storage_state is saved on disconnect() rather than here.
+        # Saving immediately after connection can cause issues where the
+        # Edge browser navigates away (to ntp.msn.com) and closes the page context.
+        # The session is persisted through the EdgeProfile directory cookies anyway.
+        logger.debug("Connection finalized (storage_state will be saved on disconnect)")
 
         # Note: Do NOT call window.stop() here as it interrupts M365 background
         # authentication/session establishment, causing auth dialogs to appear.
@@ -1233,6 +1236,19 @@ class CopilotHandler:
         # Wait for M365 background initialization to complete
         # This prevents auth dialogs that appear when operations start too early
         time.sleep(1.0)
+
+        # Re-verify page is still valid after waiting
+        if not self._is_page_valid():
+            logger.warning("Page became invalid during finalization, attempting to recover...")
+            try:
+                # Try to get a fresh page reference
+                self._page = self._get_active_copilot_page()
+                if self._page:
+                    logger.info("Recovered page reference successfully")
+                else:
+                    logger.warning("Could not recover page reference")
+            except Exception as e:
+                logger.warning("Error recovering page: %s", e)
 
         # Hide browser window when login is not required
         self._send_to_background_impl(self._page)
@@ -3579,6 +3595,19 @@ class CopilotHandler:
         logger.info("Sending message to Copilot (length: %d chars)", len(message))
         send_msg_start = time.time()
 
+        # Ensure we have a valid page reference
+        if not self._page or not self._is_page_valid():
+            logger.warning("Page is invalid at _send_message, attempting to recover...")
+            try:
+                self._page = self._get_active_copilot_page()
+                if not self._page:
+                    logger.error("Could not recover page reference in _send_message")
+                    raise RuntimeError("Copilotページが見つかりません。再接続してください。")
+                logger.info("Recovered page reference in _send_message")
+            except PlaywrightError as e:
+                logger.error("Error recovering page in _send_message: %s", e)
+                raise RuntimeError(f"Copilotページの回復に失敗しました: {e}") from e
+
         # Check for authentication dialog that blocks input
         # This can appear even after initial login (MFA re-auth, session expiry)
         auth_dialog = self._page.query_selector(self.AUTH_DIALOG_TITLE_SELECTOR)
@@ -4296,13 +4325,26 @@ class CopilotHandler:
         Returns:
             True if file was attached successfully
         """
-        if not self._page or not file_path.exists():
+        if not file_path.exists():
             return False
 
         # Get Playwright error types for specific exception handling
         error_types = _get_playwright_errors()
         PlaywrightError = error_types['Error']
         PlaywrightTimeoutError = error_types['TimeoutError']
+
+        # Ensure we have a valid page reference
+        if not self._page or not self._is_page_valid():
+            logger.warning("Page is invalid at _attach_file, attempting to recover...")
+            try:
+                self._page = self._get_active_copilot_page()
+                if not self._page:
+                    logger.error("Could not recover page reference in _attach_file")
+                    return False
+                logger.info("Recovered page reference in _attach_file")
+            except Exception as e:
+                logger.error("Error recovering page in _attach_file: %s", e)
+                return False
 
         try:
             # Priority 1: Direct file input (most stable)
@@ -4567,12 +4609,22 @@ class CopilotHandler:
                            Useful for 2nd+ batches where we just finished getting
                            a response (so chat is already clear).
         """
-        if not self._page:
-            return
-
         error_types = _get_playwright_errors()
         PlaywrightError = error_types['Error']
         PlaywrightTimeoutError = error_types['TimeoutError']
+
+        # Ensure we have a valid page reference
+        if not self._page or not self._is_page_valid():
+            logger.warning("Page is invalid at start_new_chat, attempting to recover...")
+            try:
+                self._page = self._get_active_copilot_page()
+                if not self._page:
+                    logger.error("Could not recover page reference in start_new_chat")
+                    return
+                logger.info("Recovered page reference in start_new_chat")
+            except Exception as e:
+                logger.error("Error recovering page in start_new_chat: %s", e)
+                return
 
         try:
             new_chat_total_start = time.time()

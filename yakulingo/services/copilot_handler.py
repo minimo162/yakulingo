@@ -2807,12 +2807,12 @@ class CopilotHandler:
             browser_terminated = False
 
             # First try graceful close via WM_CLOSE (avoids "closed unexpectedly" message)
-            # Very short timeout (0.3s) because:
+            # Very short timeout (0.1s) because:
             # 1. Edge usually closes immediately or not at all (due to dialogs like "Restore pages")
             # 2. We want fast app shutdown - falling back to force kill is acceptable
             graceful_start = time.time()
             with suppress(Exception):
-                if self._close_edge_gracefully(timeout=0.3):
+                if self._close_edge_gracefully(timeout=0.1):
                     browser_terminated = True
             logger.debug("[TIMING] graceful_close: %.2fs (success=%s)", time.time() - graceful_start, browser_terminated)
 
@@ -2831,7 +2831,7 @@ class CopilotHandler:
                             # Use short timeouts for fast shutdown
                             self.edge_process.terminate()
                             try:
-                                self.edge_process.wait(timeout=0.3)
+                                self.edge_process.wait(timeout=0.1)
                                 browser_terminated = True
                             except subprocess.TimeoutExpired:
                                 self.edge_process.kill()
@@ -2859,7 +2859,7 @@ class CopilotHandler:
                 with suppress(Exception):
                     self._kill_existing_translator_edge()
                     # Wait a bit for port to be released
-                    time.sleep(0.3)
+                    time.sleep(0.1)
                     logger.info("Edge browser terminated (force via port)")
 
         # Clear references (Playwright cleanup may fail but that's OK during shutdown)
@@ -3628,10 +3628,11 @@ class CopilotHandler:
 
                 # Wait for send button to become enabled before pressing Enter
                 # This indicates Copilot has processed the input and is ready
+                # Reduced timeout from 3s to 1.5s for faster response
                 try:
                     self._page.wait_for_selector(
                         self.SEND_BUTTON_SELECTOR,
-                        timeout=3000,
+                        timeout=1500,
                         state='visible'
                     )
                     logger.debug("Send button is now enabled")
@@ -3641,7 +3642,7 @@ class CopilotHandler:
                         "Send button selector may need update (using fallback wait): %s",
                         type(e).__name__
                     )
-                    time.sleep(0.5)
+                    time.sleep(0.2)
 
                 # Send via Enter key with retry on failure
                 # After Enter, poll for input cleared OR stop button appears
@@ -3747,11 +3748,11 @@ class CopilotHandler:
                                         try:
                                             send_btn = self._page.wait_for_selector(
                                                 self.SEND_BUTTON_SELECTOR,
-                                                timeout=3000,
+                                                timeout=1500,
                                                 state='visible'
                                             )
                                         except PlaywrightTimeoutError:
-                                            logger.warning("Send button did not become enabled within 3 seconds")
+                                            logger.warning("Send button did not become enabled within 1.5 seconds")
                                             send_btn = None
 
                                 if send_btn:

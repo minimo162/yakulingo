@@ -3773,6 +3773,44 @@ class CopilotHandler:
                 else:
                     logger.debug("[SEND_PREP] Button ready after %.2fs", send_button_wait)
 
+                # Pre-warm: Stabilize UI before sending
+                # First attempt often fails because UI needs time to settle after text input
+                try:
+                    warmup_result = self._page.evaluate('''() => {
+                        const input = document.querySelector('#m365-chat-editor-target-element');
+                        const sendBtn = document.querySelector('.fai-SendButton');
+
+                        const result = {
+                            inputScrolled: false,
+                            buttonScrolled: false,
+                            initialBtnY: null,
+                            finalBtnY: null
+                        };
+
+                        // Scroll input into view
+                        if (input) {
+                            input.scrollIntoView({ block: 'center', behavior: 'instant' });
+                            result.inputScrolled = true;
+                        }
+
+                        // Scroll button into view and get position
+                        if (sendBtn) {
+                            result.initialBtnY = Math.round(sendBtn.getBoundingClientRect().y);
+                            sendBtn.scrollIntoView({ block: 'center', behavior: 'instant' });
+                            result.buttonScrolled = true;
+                            result.finalBtnY = Math.round(sendBtn.getBoundingClientRect().y);
+                        }
+
+                        return result;
+                    }''')
+                    logger.debug("[SEND_WARMUP] Result: %s", warmup_result)
+
+                    # Wait for UI to stabilize after scroll
+                    time.sleep(0.2)
+
+                except Exception as warmup_err:
+                    logger.debug("[SEND_WARMUP] Failed: %s", warmup_err)
+
                 # Send via Enter key (most reliable for minimized windows)
                 MAX_SEND_RETRIES = 3
                 send_success = False

@@ -941,10 +941,13 @@ def detect_paragraph_boundary(
                         is_strong_boundary = True  # Large X gap is strong
                     elif y_diff > y_line_thresh and x_reset > TOC_LINE_X_RESET_THRESHOLD:
                         # TOC-like pattern: Y changed (new line) AND X reset significantly
-                        # This indicates a new entry (e.g., new TOC item), not just a
-                        # line break within a paragraph. Treat as new paragraph.
+                        # However, this pattern is too common in normal paragraphs where
+                        # lines wrap back to the left margin. Do NOT mark as strong boundary
+                        # to allow is_japanese_continuation_line() check to run.
+                        # TOC items typically end with page numbers, which will be
+                        # correctly separated by the sentence-end check.
                         new_paragraph = True
-                        is_strong_boundary = True  # TOC pattern is strong
+                        # is_strong_boundary = True  # Removed - let sentence-end check decide
                     elif y_diff > y_para_thresh:
                         # Y change exceeds paragraph threshold
                         new_paragraph = True
@@ -991,10 +994,13 @@ def detect_paragraph_boundary(
                 line_break = True
         elif y_diff > y_line_thresh and x_reset > TOC_LINE_X_RESET_THRESHOLD:
             # TOC-like pattern: Y changed (new line) AND X reset significantly
-            # This indicates a new entry (e.g., new TOC item), not just a
-            # line break within a paragraph. Treat as new paragraph.
+            # However, this pattern is too common in normal paragraphs where
+            # lines wrap back to the left margin. Do NOT mark as strong boundary
+            # to allow is_japanese_continuation_line() check to run.
+            # TOC items typically end with page numbers, which will be
+            # correctly separated by the sentence-end check.
             new_paragraph = True
-            is_strong_boundary = True  # TOC pattern is strong
+            # is_strong_boundary = True  # Removed - let sentence-end check decide
         elif y_diff > y_line_thresh:
             line_break = True
             # Not strong - may be overridden by sentence-end check

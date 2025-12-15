@@ -3260,6 +3260,78 @@ class TestTableCellBoundaryDetection:
         assert TABLE_ROW_Y_THRESHOLD == 5.0
 
 
+class TestTOCPatternDetection:
+    """Tests for TOC-like pattern detection in detect_paragraph_boundary
+
+    TOC patterns (large X reset + Y change) should NOT be strong boundaries
+    to allow is_japanese_continuation_line() check to run for proper
+    line joining in normal paragraphs.
+    """
+
+    def test_toc_pattern_is_not_strong_boundary(self):
+        """TOC-like pattern should NOT be a strong boundary
+
+        This is critical for proper line joining. Normal paragraph line wraps
+        often have large X resets (line end to line start), which was incorrectly
+        treated as TOC pattern with strong boundary.
+        """
+        from yakulingo.processors.pdf_converter import (
+            detect_paragraph_boundary,
+            TOC_LINE_X_RESET_THRESHOLD,
+            SAME_LINE_Y_THRESHOLD,
+        )
+        # Simulate line wrap: Y changes (new line), X resets significantly
+        # prev_x1=400 (end of line), char_x0=50 (start of new line)
+        # x_reset = 400 - 50 = 350 > 80pt
+        new_para, line_break, is_strong = detect_paragraph_boundary(
+            char_x0=50, char_y0=700,  # New line starts at left margin
+            prev_x0=300, prev_y0=715,  # Previous char was at right
+            char_cls=2, prev_cls=2,  # Same paragraph region
+            use_layout=True,
+            prev_x1=400,  # Line ended at 400pt
+        )
+        # Should detect as new paragraph (for now), but NOT strong boundary
+        assert new_para is True  # TOC pattern triggers new_paragraph
+        assert is_strong is False  # But NOT strong - allows is_japanese_continuation_line() check
+
+    def test_toc_pattern_fallback_mode_not_strong(self):
+        """TOC-like pattern in fallback mode should NOT be strong boundary"""
+        from yakulingo.processors.pdf_converter import (
+            detect_paragraph_boundary,
+            TOC_LINE_X_RESET_THRESHOLD,
+        )
+        # Same test without layout info (fallback mode)
+        new_para, line_break, is_strong = detect_paragraph_boundary(
+            char_x0=50, char_y0=700,
+            prev_x0=300, prev_y0=715,
+            char_cls=None, prev_cls=None,
+            use_layout=False,
+            prev_x1=400,
+        )
+        assert new_para is True  # TOC pattern triggers new_paragraph
+        assert is_strong is False  # But NOT strong
+
+    def test_small_x_reset_not_toc_pattern(self):
+        """Small X reset should not trigger TOC pattern"""
+        from yakulingo.processors.pdf_converter import (
+            detect_paragraph_boundary,
+            TOC_LINE_X_RESET_THRESHOLD,
+            SAME_LINE_Y_THRESHOLD,
+        )
+        # Small X reset (< 80pt) should be normal line break
+        new_para, line_break, is_strong = detect_paragraph_boundary(
+            char_x0=100, char_y0=700,  # x_reset = 150 - 100 = 50pt < 80pt
+            prev_x0=100, prev_y0=715,
+            char_cls=2, prev_cls=2,
+            use_layout=True,
+            prev_x1=150,
+        )
+        # Should be line break, not new paragraph
+        assert new_para is False
+        assert line_break is True
+        assert is_strong is False
+
+
 # =============================================================================
 # Tests for LayoutArray class (PDFMathTranslate compliant, PP-DocLayout-L based)
 # =============================================================================

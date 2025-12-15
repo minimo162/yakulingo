@@ -465,11 +465,13 @@ class CopilotHandler:
     EDGE_STARTUP_CHECK_INTERVAL = 0.25  # Seconds between startup checks (total: 20 seconds)
 
     # Response detection settings
-    RESPONSE_STABLE_COUNT = 3  # Number of stable checks before considering response complete
+    # OPTIMIZED: Reduced stable count from 3 to 2 for faster response detection
+    # Stop button visibility check ensures response is complete before stability counting
+    RESPONSE_STABLE_COUNT = 2  # Number of stable checks before considering response complete
     DEFAULT_RESPONSE_TIMEOUT = 600  # Default timeout for response in seconds (10 minutes)
     # When stop button is never detected (possible stale selector), use higher stable count
-    # Reduced from 5 to 4 for faster response on short translations
-    STALE_SELECTOR_STABLE_COUNT = 4  # Extra stability checks when stop button not detected
+    # Reduced from 5 to 3 for faster response on short translations
+    STALE_SELECTOR_STABLE_COUNT = 3  # Extra stability checks when stop button not detected
 
     # =========================================================================
     # Timeout Settings - Centralized for consistency across operations
@@ -554,9 +556,10 @@ class CopilotHandler:
     RESPONSE_SELECTOR_COMBINED = ", ".join(RESPONSE_SELECTORS)
 
     # Dynamic polling intervals for faster response detection
-    RESPONSE_POLL_INITIAL = 0.2  # Initial interval while waiting for response to start
-    RESPONSE_POLL_ACTIVE = 0.2  # Interval after text is detected
-    RESPONSE_POLL_STABLE = 0.1  # Interval during stability checking
+    # OPTIMIZED: Reduced intervals for quicker response detection
+    RESPONSE_POLL_INITIAL = 0.15  # Initial interval while waiting for response to start
+    RESPONSE_POLL_ACTIVE = 0.15  # Interval after text is detected
+    RESPONSE_POLL_STABLE = 0.05  # Interval during stability checking (fastest)
 
     # Page validity check during polling (detect login expiration)
     PAGE_VALIDITY_CHECK_INTERVAL = 5.0  # Check page validity every 5 seconds
@@ -2807,12 +2810,12 @@ class CopilotHandler:
             browser_terminated = False
 
             # First try graceful close via WM_CLOSE (avoids "closed unexpectedly" message)
-            # Very short timeout (0.1s) because:
+            # OPTIMIZED: Very short timeout (0.05s) because:
             # 1. Edge usually closes immediately or not at all (due to dialogs like "Restore pages")
             # 2. We want fast app shutdown - falling back to force kill is acceptable
             graceful_start = time.time()
             with suppress(Exception):
-                if self._close_edge_gracefully(timeout=0.1):
+                if self._close_edge_gracefully(timeout=0.05):
                     browser_terminated = True
             logger.debug("[TIMING] graceful_close: %.2fs (success=%s)", time.time() - graceful_start, browser_terminated)
 
@@ -2828,15 +2831,15 @@ class CopilotHandler:
                             logger.info("Edge browser terminated (force via process tree kill)")
                         else:
                             # Fall back to terminate/kill if taskkill failed
-                            # Use short timeouts for fast shutdown
+                            # OPTIMIZED: Use minimal timeouts for fast shutdown
                             self.edge_process.terminate()
                             try:
-                                self.edge_process.wait(timeout=0.1)
+                                self.edge_process.wait(timeout=0.05)
                                 browser_terminated = True
                             except subprocess.TimeoutExpired:
                                 self.edge_process.kill()
                                 try:
-                                    self.edge_process.wait(timeout=0.2)
+                                    self.edge_process.wait(timeout=0.1)
                                     browser_terminated = True
                                 except subprocess.TimeoutExpired:
                                     logger.warning("Edge process did not terminate after kill")
@@ -2852,14 +2855,15 @@ class CopilotHandler:
                         logger.warning("Edge process still running after termination, forcing kill")
                         if not self._kill_process_tree(self.edge_process.pid):
                             self.edge_process.kill()
-                        self.edge_process.wait(timeout=0.2)
+                        # OPTIMIZED: Short wait for verification
+                        self.edge_process.wait(timeout=0.1)
 
             # If edge_process was None (lost after cleanup_on_error), kill by port
             if not browser_terminated and self._is_port_in_use():
                 with suppress(Exception):
                     self._kill_existing_translator_edge()
-                    # Wait a bit for port to be released
-                    time.sleep(0.1)
+                    # OPTIMIZED: Minimal wait for port release
+                    time.sleep(0.05)
                     logger.info("Edge browser terminated (force via port)")
 
         # Clear references (Playwright cleanup may fail but that's OK during shutdown)

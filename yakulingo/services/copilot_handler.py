@@ -3773,6 +3773,9 @@ class CopilotHandler:
                 else:
                     logger.debug("[SEND_PREP] Button ready after %.2fs", send_button_wait)
 
+                # Track when we're ready to send (for timing analysis)
+                send_ready_time = time.time()
+
                 # Pre-warm: Stabilize UI before sending
                 # First attempt often fails because UI needs time to settle after text input
                 try:
@@ -3873,6 +3876,9 @@ class CopilotHandler:
                         if send_attempt == 0:
                             # First attempt: Enter key with robust focus management
                             # This works reliably even when window is minimized
+                            elapsed_since_ready = time.time() - send_ready_time
+                            logger.info("[SEND_DETAILED] Attempt 1 starting (%.2fs since send_ready)", elapsed_since_ready)
+
                             focus_result = self._page.evaluate('''(inputSelector) => {
                                 const input = document.querySelector(inputSelector);
                                 if (!input) return { success: false, error: 'input not found' };
@@ -3936,66 +3942,230 @@ class CopilotHandler:
 
                             time.sleep(0.1)  # Wait for UI to settle after scroll
 
-                            # Try JS-dispatched Enter key first (more reliable in minimized windows)
-                            # Then fall back to Playwright press if needed
+                            # Detailed debug: Check UI readiness before sending
+                            pre_send_state = self._page.evaluate('''() => {
+                                const input = document.querySelector('#m365-chat-editor-target-element');
+                                const sendBtn = document.querySelector('.fai-SendButton');
+                                const stopBtn = document.querySelector('.fai-SendButton__stopBackground');
+
+                                // Check for any loading/disabled states
+                                const isLoading = !!document.querySelector('[class*="loading"], [class*="spinner"]');
+                                const pendingRequests = window.performance.getEntriesByType('resource')
+                                    .filter(r => r.initiatorType === 'fetch' && !r.responseEnd).length;
+
+                                // Get computed styles
+                                const btnStyle = sendBtn ? window.getComputedStyle(sendBtn) : null;
+
+                                return {
+                                    timestamp: Date.now(),
+                                    inputReady: input ? {
+                                        textLength: input.innerText.trim().length,
+                                        isContentEditable: input.isContentEditable,
+                                        hasSelection: window.getSelection().rangeCount > 0
+                                    } : null,
+                                    buttonReady: sendBtn ? {
+                                        tagName: sendBtn.tagName,
+                                        type: sendBtn.type,
+                                        disabled: sendBtn.disabled,
+                                        ariaDisabled: sendBtn.getAttribute('aria-disabled'),
+                                        tabIndex: sendBtn.tabIndex,
+                                        pointerEvents: btnStyle?.pointerEvents,
+                                        opacity: btnStyle?.opacity,
+                                        cursor: btnStyle?.cursor,
+                                        rect: sendBtn.getBoundingClientRect()
+                                    } : null,
+                                    stopBtnExists: !!stopBtn,
+                                    isLoading,
+                                    pendingRequests,
+                                    documentState: document.readyState,
+                                    activeElement: {
+                                        tag: document.activeElement?.tagName,
+                                        id: document.activeElement?.id
+                                    }
+                                };
+                            }''')
+                            logger.info("[SEND_DETAILED] Pre-send state: %s", pre_send_state)
+
+                            # Try multiple send methods in sequence with timing
+                            send_start = time.time()
+
+                            # Method 1: JS keydown + keypress + keyup (complete key cycle)
                             enter_result = self._page.evaluate('''(inputSelector) => {
                                 const input = document.querySelector(inputSelector);
                                 if (!input) return { success: false, error: 'input not found' };
 
+                                const results = {
+                                    inputFound: true,
+                                    events: [],
+                                    textLengthBefore: input.innerText.trim().length
+                                };
+
                                 try {
-                                    // Dispatch KeyboardEvent for Enter key
-                                    const enterEvent = new KeyboardEvent('keydown', {
+                                    // Ensure focus
+                                    input.focus();
+
+                                    // Create events with all properties
+                                    const eventProps = {
                                         key: 'Enter',
                                         code: 'Enter',
                                         keyCode: 13,
                                         which: 13,
+                                        charCode: 13,
                                         bubbles: true,
-                                        cancelable: true
-                                    });
-                                    const dispatched = input.dispatchEvent(enterEvent);
-                                    return { success: true, dispatched };
-                                } catch (e) {
-                                    return { success: false, error: e.message };
-                                }
-                            }''', input_selector)
-                            logger.debug("[SEND] JS Enter dispatch result: %s", enter_result)
+                                        cancelable: true,
+                                        composed: true,
+                                        view: window
+                                    };
 
-                            # Also try Playwright press as backup
+                                    // Dispatch keydown
+                                    const keydownEvent = new KeyboardEvent('keydown', eventProps);
+                                    const keydownResult = input.dispatchEvent(keydownEvent);
+                                    results.events.push({
+                                        type: 'keydown',
+                                        dispatched: keydownResult,
+                                        defaultPrevented: keydownEvent.defaultPrevented
+                                    });
+
+                                    // Dispatch keypress (some handlers listen to this)
+                                    const keypressEvent = new KeyboardEvent('keypress', eventProps);
+                                    const keypressResult = input.dispatchEvent(keypressEvent);
+                                    results.events.push({
+                                        type: 'keypress',
+                                        dispatched: keypressResult,
+                                        defaultPrevented: keypressEvent.defaultPrevented
+                                    });
+
+                                    // Dispatch keyup
+                                    const keyupEvent = new KeyboardEvent('keyup', eventProps);
+                                    const keyupResult = input.dispatchEvent(keyupEvent);
+                                    results.events.push({
+                                        type: 'keyup',
+                                        dispatched: keyupResult,
+                                        defaultPrevented: keyupEvent.defaultPrevented
+                                    });
+
+                                    results.textLengthAfter = input.innerText.trim().length;
+                                    results.success = true;
+
+                                } catch (e) {
+                                    results.success = false;
+                                    results.error = e.message;
+                                }
+
+                                // Check for stop button after events
+                                results.stopBtnAfterEvents = !!document.querySelector('.fai-SendButton__stopBackground');
+
+                                return results;
+                            }''', input_selector)
+                            logger.info("[SEND_DETAILED] JS key events result: %s", enter_result)
+
+                            # Small wait to see if events triggered anything
+                            time.sleep(0.05)
+
+                            # Check immediate state after JS events
+                            post_js_state = self._page.evaluate('''() => {
+                                const input = document.querySelector('#m365-chat-editor-target-element');
+                                const stopBtn = document.querySelector('.fai-SendButton__stopBackground');
+                                return {
+                                    textLength: input ? input.innerText.trim().length : -1,
+                                    stopBtnVisible: !!stopBtn,
+                                    timestamp: Date.now()
+                                };
+                            }''')
+                            logger.debug("[SEND_DETAILED] After JS events: %s", post_js_state)
+
+                            # Method 2: Playwright press as backup
                             input_elem.press("Enter")
-                            send_method = "Enter key (JS dispatch + Playwright)"
+                            pw_time = time.time() - send_start
+
+                            # Check state after Playwright press
+                            time.sleep(0.05)
+                            post_pw_state = self._page.evaluate('''() => {
+                                const input = document.querySelector('#m365-chat-editor-target-element');
+                                const stopBtn = document.querySelector('.fai-SendButton__stopBackground');
+                                return {
+                                    textLength: input ? input.innerText.trim().length : -1,
+                                    stopBtnVisible: !!stopBtn,
+                                    timestamp: Date.now()
+                                };
+                            }''')
+                            logger.debug("[SEND_DETAILED] After Playwright Enter (%.3fs): %s", pw_time, post_pw_state)
+
+                            send_method = "Enter key (JS events + Playwright)"
 
                         elif send_attempt == 1:
                             # Second attempt: JS click with multiple event dispatch
                             # Most reliable for minimized windows - dispatch mousedown/mouseup/click
+
+                            # Log elapsed time since send ready
+                            elapsed_since_ready = time.time() - send_ready_time
+                            logger.info("[SEND_DETAILED] Attempt 2 starting (%.2fs since send_ready)", elapsed_since_ready)
+
                             send_btn = self._page.query_selector(self.SEND_BUTTON_SELECTOR)
                             if send_btn:
                                 click_result = send_btn.evaluate('''el => {
-                                    let clicked = false;
-                                    let error = null;
+                                    const result = {
+                                        events: [],
+                                        textLengthBefore: null,
+                                        textLengthAfter: null,
+                                        stopBtnBefore: false,
+                                        stopBtnAfter: false,
+                                        btnRect: null
+                                    };
+
+                                    const input = document.querySelector('#m365-chat-editor-target-element');
+                                    result.textLengthBefore = input ? input.innerText.trim().length : -1;
+                                    result.stopBtnBefore = !!document.querySelector('.fai-SendButton__stopBackground');
+                                    result.btnRect = el.getBoundingClientRect();
+
                                     try {
                                         // Scroll into view
                                         el.scrollIntoView({ block: 'center', behavior: 'instant' });
+                                        result.events.push({ type: 'scrollIntoView', success: true });
+
+                                        // Get rect after scroll
+                                        const rectAfterScroll = el.getBoundingClientRect();
+                                        result.rectAfterScroll = {
+                                            x: Math.round(rectAfterScroll.x),
+                                            y: Math.round(rectAfterScroll.y)
+                                        };
 
                                         // Dispatch multiple events for React compatibility
-                                        el.dispatchEvent(new MouseEvent('mousedown', {
+                                        const mousedownResult = el.dispatchEvent(new MouseEvent('mousedown', {
                                             bubbles: true, cancelable: true, view: window
                                         }));
-                                        el.dispatchEvent(new MouseEvent('mouseup', {
+                                        result.events.push({ type: 'mousedown', dispatched: mousedownResult });
+
+                                        const mouseupResult = el.dispatchEvent(new MouseEvent('mouseup', {
                                             bubbles: true, cancelable: true, view: window
                                         }));
-                                        el.dispatchEvent(new MouseEvent('click', {
+                                        result.events.push({ type: 'mouseup', dispatched: mouseupResult });
+
+                                        const clickResult = el.dispatchEvent(new MouseEvent('click', {
                                             bubbles: true, cancelable: true, view: window
                                         }));
+                                        result.events.push({ type: 'click', dispatched: clickResult });
+
+                                        // Check state after synthetic events
+                                        result.stopBtnAfterSynthetic = !!document.querySelector('.fai-SendButton__stopBackground');
+                                        result.textLengthAfterSynthetic = input ? input.innerText.trim().length : -1;
 
                                         // Also try DOM click as backup
                                         el.click();
-                                        clicked = true;
+                                        result.events.push({ type: 'el.click()', success: true });
+
+                                        result.clicked = true;
                                     } catch (e) {
-                                        error = e.message;
+                                        result.error = e.message;
                                     }
-                                    return { clicked, error };
+
+                                    // Final state
+                                    result.textLengthAfter = input ? input.innerText.trim().length : -1;
+                                    result.stopBtnAfter = !!document.querySelector('.fai-SendButton__stopBackground');
+
+                                    return result;
                                 }''')
-                                logger.debug("[SEND] JS click result: %s", click_result)
+                                logger.info("[SEND_DETAILED] JS click result: %s", click_result)
                                 send_method = "JS click (multi-event)"
                             else:
                                 # Fallback to Enter key if button not found

@@ -1742,9 +1742,9 @@ class CopilotHandler:
 
                 last_url = current_url
 
-                # Check if Edge came to foreground unexpectedly and minimize if needed
-                # This handles cases where Edge steals focus during auth redirects
-                self._ensure_edge_minimized()
+                # Re-minimize Edge if it came to foreground during SSO redirect
+                # This is expected behavior during auto-login, not an error
+                self._ensure_edge_minimized(during_auto_login=True)
 
                 time.sleep(poll_interval)
                 elapsed += poll_interval
@@ -2237,14 +2237,23 @@ class CopilotHandler:
         except Exception:
             return False
 
-    def _ensure_edge_minimized(self) -> None:
-        """Ensure Edge window is minimized if it came to foreground unexpectedly.
+    def _ensure_edge_minimized(self, during_auto_login: bool = False) -> None:
+        """Ensure Edge window is minimized if it came to foreground.
 
         This is called during auto-login wait to prevent Edge from staying
         in foreground when login is not yet required.
+
+        Args:
+            during_auto_login: If True, this is expected behavior during SSO
+                redirects and will be logged at a lower level.
         """
         if self._is_edge_in_foreground():
-            logger.debug("Edge came to foreground unexpectedly, minimizing...")
+            if during_auto_login:
+                # During SSO redirects, Edge coming to foreground is expected
+                # Log at DEBUG level without alarming "unexpectedly" message
+                logger.debug("Re-minimizing Edge window during SSO redirect")
+            else:
+                logger.debug("Edge came to foreground unexpectedly, minimizing...")
             self._minimize_edge_window(None)
 
     def _wait_for_login_completion(self, page, timeout: int = 300) -> bool:
@@ -2960,23 +2969,28 @@ class CopilotHandler:
 
                 from datetime import datetime
 
-                # Check for Cookies file
+                # Check for Cookies file (older Edge) or Network/Cookies (newer Edge)
+                # Newer Edge versions (since ~2020) store cookies in Network/Cookies
                 cookies_file = default_dir / "Cookies"
+                network_cookies = default_dir / "Network" / "Cookies"
+
+                cookies_found = False
                 if cookies_file.exists():
                     size = cookies_file.stat().st_size
                     mtime = cookies_file.stat().st_mtime
                     mtime_str = datetime.fromtimestamp(mtime).strftime('%Y-%m-%d %H:%M:%S')
                     logger.info("Cookies file exists: size=%d bytes, modified=%s", size, mtime_str)
-                else:
-                    logger.warning("Cookies file NOT found in Default profile")
+                    cookies_found = True
 
-                # Check Network/Cookies (newer Edge versions)
-                network_cookies = default_dir / "Network" / "Cookies"
                 if network_cookies.exists():
                     size = network_cookies.stat().st_size
                     mtime = network_cookies.stat().st_mtime
                     mtime_str = datetime.fromtimestamp(mtime).strftime('%Y-%m-%d %H:%M:%S')
                     logger.info("Network/Cookies file exists: size=%d bytes, modified=%s", size, mtime_str)
+                    cookies_found = True
+
+                if not cookies_found:
+                    logger.warning("Cookies file NOT found (neither Default/Cookies nor Network/Cookies)")
 
                 # Check storage_state.json
                 storage_path = self._get_storage_state_path()

@@ -330,36 +330,22 @@ class UpdateNotification:
     async def _shutdown_app(self):
         """アプリケーションを確実に終了する
 
-        NiceGUIのnativeモード（pywebview）では、sys.exit(0)だけでは
-        プロセスが終了しない問題があるため、複数の方法を試みる。
+        NiceGUIのon_shutdownで登録されたcleanup処理（Copilot切断、DB閉鎖など）を
+        呼び出した後、プロセスを終了する。通常の×ボタン終了と同じ処理が行われる。
         """
         import os
-        import sys
 
         from nicegui import app as nicegui_app
 
-        try:
-            # NiceGUI のシャットダウンを実行
-            nicegui_app.shutdown()
-            # シャットダウン完了を待機
-            await asyncio.sleep(0.5)
-        except Exception:
-            pass
+        # NiceGUI のシャットダウンを実行（on_shutdown で登録された cleanup が呼ばれる）
+        # これにより Copilot切断、翻訳キャンセル、DB閉鎖などが行われる
+        nicegui_app.shutdown()
 
-        # pywebview native mode の場合、ウィンドウを閉じる
-        try:
-            if hasattr(nicegui_app, 'native') and nicegui_app.native.main_window:
-                nicegui_app.native.main_window.destroy()
-                await asyncio.sleep(0.3)
-        except Exception:
-            pass
+        # cleanup処理が完了するまで待機
+        await asyncio.sleep(3.0)
 
-        # 最終手段: プロセスを強制終了
-        try:
-            sys.exit(0)
-        except SystemExit:
-            # sys.exit が機能しない場合は os._exit を使用
-            os._exit(0)
+        # NiceGUI shutdown でプロセスが終了しない場合のフォールバック
+        os._exit(0)
 
 
 async def check_updates_on_startup(

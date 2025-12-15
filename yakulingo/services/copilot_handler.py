@@ -884,6 +884,8 @@ class CopilotHandler:
                 # (Without this, clicking "Continue" on auth dialogs leads to about:blank)
                 "--disable-popup-blocking",
                 # === PERFORMANCE OPTIMIZATIONS ===
+                # Disable extensions to speed up startup
+                "--disable-extensions",
                 # Disable background networking (telemetry, update checks, etc.)
                 "--disable-background-networking",
                 # Disable phishing detection - not needed for Copilot
@@ -896,6 +898,10 @@ class CopilotHandler:
                 "--disable-background-timer-throttling",
                 # Disable renderer backgrounding for consistent performance
                 "--disable-renderer-backgrounding",
+                # Disable features that slow down initial page load
+                "--disable-features=TranslateUI",
+                # Disable GPU hardware acceleration (reduces resource usage)
+                "--disable-gpu-sandbox",
             ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                cwd=local_cwd if sys.platform == "win32" else None,
                startupinfo=startupinfo,
@@ -3645,10 +3651,10 @@ class CopilotHandler:
                 # After Enter, poll for input cleared OR stop button appears
                 # Either indicates successful send
                 MAX_SEND_RETRIES = 3
-                # OPTIMIZED: Faster polling (50ms) with longer max wait (2.5s)
-                # This reduces retries by allowing more time for initial detection
-                SEND_VERIFY_POLL_INTERVAL = 0.05  # Poll every 50ms (was 100ms)
-                SEND_VERIFY_MAX_WAIT = 2.5  # Max wait for verification (was 1.5s)
+                # OPTIMIZED: Faster polling (50ms) with shorter max wait (1.5s)
+                # Reduced from 2.5s to 1.5s - faster retry if first send fails
+                SEND_VERIFY_POLL_INTERVAL = 0.05  # Poll every 50ms
+                SEND_VERIFY_MAX_WAIT = 1.5  # Max wait for verification (reduced from 2.5s)
                 send_success = False
 
                 for send_attempt in range(MAX_SEND_RETRIES):
@@ -4013,6 +4019,16 @@ class CopilotHandler:
                     time.sleep(poll_interval)
                     max_wait -= poll_interval
                     continue
+
+                # OPTIMIZED: Early termination check when stop button just disappeared
+                # If we have content and stop button was seen but just disappeared,
+                # check if text is already stable (same as last) to skip first stability check
+                if stop_button_ever_seen and has_content and stable_count == 0:
+                    quick_text, quick_found = self._get_latest_response_text()
+                    if quick_found and quick_text and quick_text == last_text:
+                        # Text is already stable - start with stable_count=1
+                        stable_count = 1
+                        logger.debug("[POLLING] Early stability: stop button disappeared, text unchanged")
 
                 # Warn if stop button was never found (possible selector change)
                 if has_content and not stop_button_ever_seen and not stop_button_warning_logged:
@@ -4449,9 +4465,10 @@ class CopilotHandler:
             logger.info("[TIMING] new_chat: wait_for_input_ready: %.2fs", time.time() - input_ready_start)
 
             # Verify that previous responses are cleared (can be skipped for 2nd+ batches)
+            # OPTIMIZED: Reduced timeout from 1.0s to 0.5s for faster new chat start
             if not skip_clear_wait:
                 clear_start = time.time()
-                self._wait_for_responses_cleared(timeout=1.0)
+                self._wait_for_responses_cleared(timeout=0.5)
                 logger.info("[TIMING] new_chat: _wait_for_responses_cleared: %.2fs", time.time() - clear_start)
 
             logger.info("[TIMING] start_new_chat total: %.2fs", time.time() - new_chat_total_start)
@@ -4475,7 +4492,8 @@ class CopilotHandler:
             return True
 
         response_selector = self.RESPONSE_SELECTOR_COMBINED
-        poll_interval = 0.15
+        # OPTIMIZED: Reduced poll interval from 0.15s to 0.05s for faster clear detection
+        poll_interval = 0.05
         elapsed = 0.0
 
         while elapsed < timeout:

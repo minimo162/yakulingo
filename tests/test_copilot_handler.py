@@ -776,13 +776,33 @@ class TestSendMessage:
         # Track JS click() method call
         js_click_called = [False]
 
-        def evaluate_side_effect(js_code):
-            if js_code == 'el => el.click()':
+        def button_evaluate_side_effect(js_code):
+            # Match the click execution code (contains el.click())
+            if 'el.click()' in js_code and 'clicked' in js_code:
                 js_click_called[0] = True
                 mock_input.inner_text.return_value = ""  # Simulate cleared
+                return {'clicked': True, 'error': None}
+            # Pre-click state check
+            if 'getBoundingClientRect' in js_code:
+                return {
+                    'rect': {'x': 434, 'y': 288, 'width': 32, 'height': 32},
+                    'disabled': False,
+                    'ariaDisabled': None,
+                    'hasClickHandler': False,
+                    'parentVisible': True,
+                    'computedPointerEvents': 'auto'
+                }
             return True
 
-        mock_send_button.evaluate.side_effect = evaluate_side_effect
+        mock_send_button.evaluate.side_effect = button_evaluate_side_effect
+
+        # Page evaluate for post-click state
+        def page_evaluate_side_effect(js_code):
+            if 'inputTextLength' in js_code:
+                return {'inputTextLength': 0, 'stopButtonVisible': False, 'responseCount': 0}
+            return {}
+
+        mock_page.evaluate.side_effect = page_evaluate_side_effect
 
         def query_selector_side_effect(selector):
             if "stop" in selector.lower() or "Stop" in selector:

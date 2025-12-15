@@ -219,11 +219,30 @@ def _run_splash_subprocess():
 
     try:
         import webview
+
+        # Calculate center position
+        width, height = 450, 300
+        # Get screen size using tkinter (lightweight, built-in)
+        try:
+            import tkinter as tk
+            root = tk.Tk()
+            root.withdraw()  # Hide the tkinter window
+            screen_width = root.winfo_screenwidth()
+            screen_height = root.winfo_screenheight()
+            root.destroy()
+            x = (screen_width - width) // 2
+            y = (screen_height - height) // 2
+        except Exception:
+            # Fallback: let pywebview decide position
+            x, y = None, None
+
         window = webview.create_window(
             'YakuLingo',
             html=SPLASH_HTML,
-            width=450,
-            height=300,
+            width=width,
+            height=height,
+            x=x,
+            y=y,
             resizable=False,
             frameless=True,
             on_top=True,

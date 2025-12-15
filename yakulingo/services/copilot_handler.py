@@ -2811,8 +2811,9 @@ class CopilotHandler:
             browser_terminated = False
 
             # First try graceful close via WM_CLOSE (avoids "closed unexpectedly" message)
+            # Short timeout because dialogs like "Restore pages" prevent immediate close
             with suppress(Exception):
-                if self._close_edge_gracefully(timeout=3.0):
+                if self._close_edge_gracefully(timeout=1.5):
                     browser_terminated = True
 
             # Fall back to terminate/kill if graceful close failed
@@ -2821,13 +2822,13 @@ class CopilotHandler:
                     if self.edge_process:
                         self.edge_process.terminate()
                         try:
-                            self.edge_process.wait(timeout=3)
+                            self.edge_process.wait(timeout=2)
                             browser_terminated = True
                         except subprocess.TimeoutExpired:
                             self.edge_process.kill()
                             # Wait for kill to complete (ensures process is fully terminated)
                             try:
-                                self.edge_process.wait(timeout=2)
+                                self.edge_process.wait(timeout=1)
                                 browser_terminated = True
                             except subprocess.TimeoutExpired:
                                 logger.warning("Edge process did not terminate after kill")
@@ -2841,14 +2842,14 @@ class CopilotHandler:
                         # Process still running, try kill again
                         logger.warning("Edge process still running after termination, forcing kill")
                         self.edge_process.kill()
-                        self.edge_process.wait(timeout=2)
+                        self.edge_process.wait(timeout=1)
 
             # If edge_process was None (lost after cleanup_on_error), kill by port
             if not browser_terminated and self._is_port_in_use():
                 with suppress(Exception):
                     self._kill_existing_translator_edge()
                     # Wait a bit for port to be released
-                    time.sleep(0.5)
+                    time.sleep(0.3)
                     logger.info("Edge browser terminated (force via port)")
 
         # Clear references (Playwright cleanup may fail but that's OK during shutdown)

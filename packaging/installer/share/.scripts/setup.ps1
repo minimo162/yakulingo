@@ -1021,12 +1021,20 @@ function Invoke-Setup {
     # Handle glossary.csv: Compare and backup to Desktop if changed
     # ============================================================
     $userGlossaryPath = Join-Path $SetupPath "glossary.csv"
-    $newGlossaryInBackup = Join-Path $BackupDir "glossary_user.csv"
+
+    # DEBUG: Log backup directory state
+    Write-Host "DEBUG: BackupDir = $BackupDir" -ForegroundColor Magenta
+    Write-Host "DEBUG: BackupDir exists = $(Test-Path $BackupDir)" -ForegroundColor Magenta
 
     # Check if user had a glossary.csv before extraction
     if (Test-Path $BackupDir) {
         $userGlossaryBackup = Get-ChildItem -Path $BackupDir -Filter "glossary.csv" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+        Write-Host "DEBUG: userGlossaryBackup = $($userGlossaryBackup.FullName)" -ForegroundColor Magenta
+    } else {
+        Write-Host "DEBUG: BackupDir does not exist!" -ForegroundColor Red
     }
+    Write-Host "DEBUG: userGlossaryPath = $userGlossaryPath" -ForegroundColor Magenta
+    Write-Host "DEBUG: userGlossaryPath exists = $(Test-Path $userGlossaryPath)" -ForegroundColor Magenta
 
     # If user's glossary existed and new glossary exists, compare them
     if ($userGlossaryBackup -and (Test-Path $userGlossaryPath)) {

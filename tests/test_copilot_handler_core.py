@@ -252,6 +252,7 @@ class TestCopilotHandlerGetResponse:
 
         mock_response_elem = Mock()
         mock_response_elem.inner_text.return_value = "Translated result"
+        mock_response_elem.evaluate.return_value = "Translated result"
 
         # Mock stop button (not visible = generation complete)
         mock_stop_button = Mock()
@@ -268,7 +269,10 @@ class TestCopilotHandlerGetResponse:
             return None
 
         def mock_query_selector_all(selector):
-            if 'markdown-reply' in selector or 'data-message-type="Chat"' in selector:
+            # Handle RESPONSE_SELECTOR_COMBINED (comma-separated selectors)
+            if 'markdown-reply' in selector:
+                return [mock_response_elem]
+            if 'data-message-type="Chat"' in selector:
                 return [mock_response_elem]
             if 'data-message-author-role="assistant"' in selector:
                 return [mock_response_elem]
@@ -297,13 +301,14 @@ class TestCopilotHandlerGetResponse:
         responses = ["Partial...", "Partial response", "Full response",
                      "Full response", "Full response", "Full response", "Full response"]
 
-        def mock_inner_text():
+        def mock_text(*args):
             call_count[0] += 1
             idx = min(call_count[0] - 1, len(responses) - 1)
             return responses[idx]
 
         mock_response_elem = Mock()
-        mock_response_elem.inner_text = mock_inner_text
+        mock_response_elem.inner_text = mock_text
+        mock_response_elem.evaluate.side_effect = mock_text
 
         # Mock stop button (not visible)
         mock_stop_button = Mock()
@@ -389,6 +394,7 @@ class TestCopilotHandlerGetResponse:
 
         mock_response_elem = Mock()
         mock_response_elem.inner_text.return_value = "Assistant role text"
+        mock_response_elem.evaluate.return_value = "Assistant role text"
 
         mock_stop_button = Mock()
         mock_stop_button.is_visible.return_value = False
@@ -404,14 +410,14 @@ class TestCopilotHandlerGetResponse:
             return None
 
         def mock_query_selector_all(selector):
-            selector_map = {
-                handler.RESPONSE_SELECTORS[0]: [],  # markdown reply
-                handler.RESPONSE_SELECTORS[1]: [],  # legacy chat container
-                handler.RESPONSE_SELECTORS[2]: [mock_response_elem],  # assistant role content element
-                handler.RESPONSE_SELECTORS[3]: [],
-                handler.RESPONSE_SELECTORS[4]: [],
-            }
-            return selector_map.get(selector, [])
+            # Use contains check for selector matching (handles RESPONSE_SELECTOR_COMBINED)
+            if 'markdown-reply' in selector:
+                return []  # No match for markdown reply
+            if 'data-message-type="Chat"' in selector:
+                return []  # No match for legacy chat
+            if 'data-message-author-role="assistant"' in selector:
+                return [mock_response_elem]  # Return for assistant role
+            return []
 
         mock_page = Mock()
         mock_page.query_selector.side_effect = mock_query_selector

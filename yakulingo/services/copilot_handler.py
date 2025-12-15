@@ -915,9 +915,9 @@ class CopilotHandler:
                     logger.info("Edge started successfully")
                     # Mark that we started this browser (for cleanup on app exit)
                     self._browser_started_by_us = True
-                    # Minimize window immediately to prevent visual flash
-                    # Give Edge a moment to create its window, then minimize
-                    time.sleep(0.3)
+                    # Minimize window - Edge is started with --start-minimized but
+                    # ensure it stays minimized (some Edge versions may ignore the flag)
+                    # No delay needed: try immediately, retry with backoff if window not ready
                     self._minimize_edge_window()
                     return True
 
@@ -1033,12 +1033,54 @@ class CopilotHandler:
             return False
 
         try:
-            # Step 1: Start Edge if needed
-            if not self._is_port_in_use():
-                logger.info("Starting Edge browser...")
-                if not self._start_translator_edge():
-                    return False
+            import time as _time
+            from concurrent.futures import ThreadPoolExecutor
+
+            # Step 1: Start Edge and initialize Playwright
+            # Edge startup runs in background thread while Playwright initializes in current thread
+            # Note: Playwright MUST be initialized in the same thread where it will be used
+            # (greenlet limitation), so only Edge startup can be parallelized
+            need_start_edge = not self._is_port_in_use()
+
+            if need_start_edge:
+                # Start Edge in background thread while initializing Playwright in current thread
+                _t_parallel_start = _time.perf_counter()
+
+                def _start_edge_background():
+                    """Start Edge browser in background."""
+                    logger.info("Starting Edge browser...")
+                    return self._start_translator_edge()
+
+                # Submit Edge startup to background thread
+                with ThreadPoolExecutor(max_workers=1, thread_name_prefix="edge_start") as executor:
+                    edge_future = executor.submit(_start_edge_background)
+
+                    # Initialize Playwright in current thread while Edge starts
+                    logger.info("Connecting to browser...")
+                    _t_pw_start = _time.perf_counter()
+                    _, sync_playwright = _get_playwright()
+                    logger.debug("[TIMING] _get_playwright(): %.2fs", _time.perf_counter() - _t_pw_start)
+                    _t_pw_init = _time.perf_counter()
+                    self._playwright = sync_playwright().start()
+                    logger.debug("[TIMING] sync_playwright().start() (parallel with Edge): %.2fs",
+                                 _time.perf_counter() - _t_pw_init)
+
+                    # Wait for Edge startup to complete
+                    edge_started = edge_future.result()
+                    if not edge_started:
+                        # Clean up Playwright if Edge failed
+                        if self._playwright:
+                            try:
+                                self._playwright.stop()
+                            except Exception:
+                                pass
+                            self._playwright = None
+                        return False
+
+                logger.debug("[TIMING] Parallel Edge+Playwright init: %.2fs",
+                             _time.perf_counter() - _t_parallel_start)
             else:
+                # Edge already running, just initialize Playwright
                 # Ensure profile_dir is set even when connecting to existing Edge
                 # This is needed for storage_state path resolution
                 if not self.profile_dir:
@@ -1050,19 +1092,28 @@ class CopilotHandler:
                     self.profile_dir.mkdir(parents=True, exist_ok=True)
                     logger.debug("Set profile_dir for existing Edge: %s", self.profile_dir)
 
+                logger.info("Connecting to browser...")
+                _t_pw_start = _time.perf_counter()
+                _, sync_playwright = _get_playwright()
+                logger.debug("[TIMING] _get_playwright(): %.2fs", _time.perf_counter() - _t_pw_start)
+                _t_pw_init = _time.perf_counter()
+                self._playwright = sync_playwright().start()
+                logger.debug("[TIMING] sync_playwright().start(): %.2fs", _time.perf_counter() - _t_pw_init)
+
             # Debug: Check EdgeProfile directory contents for login persistence
             self._log_profile_directory_status()
 
-            # Step 2: Connect via Playwright CDP
-            logger.info("Connecting to browser...")
-            _, sync_playwright = _get_playwright()
-            self._playwright = sync_playwright().start()
+            # Step 2: Connect to browser via Playwright CDP
+            _t_cdp = _time.perf_counter()
             self._browser = self._playwright.chromium.connect_over_cdp(
                 f"http://127.0.0.1:{self.cdp_port}"
             )
+            logger.debug("[TIMING] connect_over_cdp(): %.2fs", _time.perf_counter() - _t_cdp)
 
             # Step 3: Get or create context
+            _t_ctx = _time.perf_counter()
             self._context = self._get_or_create_context()
+            logger.debug("[TIMING] _get_or_create_context(): %.2fs", _time.perf_counter() - _t_ctx)
             if not self._context:
                 logger.error("Failed to get or create browser context")
                 self.last_connection_error = self.ERROR_CONNECTION_FAILED
@@ -1070,7 +1121,9 @@ class CopilotHandler:
                 return False
 
             # Step 4: Get or create Copilot page
+            _t_page = _time.perf_counter()
             self._page = self._get_or_create_copilot_page()
+            logger.debug("[TIMING] _get_or_create_copilot_page(): %.2fs", _time.perf_counter() - _t_page)
             if not self._page:
                 logger.error("Failed to get or create Copilot page")
                 self.last_connection_error = self.ERROR_CONNECTION_FAILED
@@ -1082,7 +1135,9 @@ class CopilotHandler:
 
             # Step 5: Wait for chat UI. Do not block for login; let the UI handle
             # login-required state via polling so the user sees feedback immediately.
+            _t_chat = _time.perf_counter()
             chat_ready = self._wait_for_chat_ready(self._page, wait_for_login=False)
+            logger.debug("[TIMING] _wait_for_chat_ready(): %.2fs", _time.perf_counter() - _t_chat)
             if not chat_ready:
                 # Keep Edge/Playwright alive when login is required so the UI can
                 # poll for completion while the user signs in.
@@ -3648,8 +3703,26 @@ class CopilotHandler:
                     # Send via Enter key (more reliable than button click in Copilot)
                     # Ensure input element is focused and send Enter
                     try:
-                        # Re-focus input element before sending
-                        input_elem.focus()
+                        send_btn = self._page.query_selector(self.SEND_BUTTON_SELECTOR)
+                        if send_btn:
+                            # Use complete mouse event sequence for React components
+                            # Simple el.click() may not trigger React's event handlers properly
+                            send_btn.evaluate('''el => {
+                                const rect = el.getBoundingClientRect();
+                                const x = rect.left + rect.width / 2;
+                                const y = rect.top + rect.height / 2;
+                                const opts = { bubbles: true, cancelable: true, clientX: x, clientY: y };
+                                el.dispatchEvent(new MouseEvent('mousedown', opts));
+                                el.dispatchEvent(new MouseEvent('mouseup', opts));
+                                el.dispatchEvent(new MouseEvent('click', opts));
+                            }''')
+                            logger.debug("Send button clicked (attempt %d)", send_attempt + 1)
+                        else:
+                            # Fallback to Enter key if send button not found
+                            logger.debug("Send button not found, using Enter key (attempt %d)", send_attempt + 1)
+                            input_elem.press("Enter")
+                    except Exception as click_err:
+                        logger.debug("Send button click failed, using Enter key: %s", click_err)
                         input_elem.press("Enter")
                         logger.debug("Enter key sent (attempt %d)", send_attempt + 1)
                     except Exception as send_err:
@@ -3663,7 +3736,7 @@ class CopilotHandler:
                         except Exception:
                             pass
 
-                    # Small delay to let Copilot process the send
+                    # Small delay to let Copilot's JavaScript process the click event
                     time.sleep(0.1)
 
                     # Use wait_for_selector for efficient browser-level waiting

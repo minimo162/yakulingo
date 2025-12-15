@@ -3186,6 +3186,13 @@ def run_app(
     ui_dir = Path(__file__).parent
     nicegui_app.add_static_files('/static', ui_dir)
 
+    # Optimize pywebview startup (native mode only)
+    # - background_color: Match app background to reduce visual flicker
+    # - easy_drag: Disable titlebar drag region (not needed, window has native titlebar)
+    if native:
+        nicegui_app.native.window_args['background_color'] = '#FEFBFF'  # M3 surface color
+        nicegui_app.native.window_args['easy_drag'] = False
+
     # Early Copilot connection: Start Edge browser BEFORE UI is displayed
     # This saves ~2-3 seconds as Edge startup runs in parallel with UI rendering
     async def _early_connect_copilot():

@@ -561,7 +561,7 @@ class TestSendMessage:
         mock_page.wait_for_selector.assert_called()
 
     def test_send_message_empty_input_raises(self):
-        """_send_message raises when input field is empty after fill"""
+https://github.com/minimo162/yakulingo/pull/962/conflict?name=tests%252Ftest_copilot_handler.py&ancestor_oid=a323f4ebbc3fedb46d3d86b8a8196b26b46a773d&base_oid=091c1752372bf09d3cb675fed911e9cff96d9d2c&head_oid=7f8f6a6f123de7da273aaea3151c91b69e972552        """_send_message raises when input field is empty after fill"""
         handler = CopilotHandler()
 
         mock_page = MagicMock()
@@ -593,9 +593,11 @@ class TestSendMessage:
         # Track Enter key presses to detect retries
         enter_count = [0]
 
-        def press_side_effect(key):
-            if key == "Enter":
-                enter_count[0] += 1
+        def send_button_click_side_effect(js_code):
+            # Check for mouse event dispatch (new click method)
+            if 'MouseEvent' in js_code or 'dispatchEvent' in js_code:
+                click_count[0] += 1
+            return None
 
         # Both original and refetched input need press mock
         mock_input.press.side_effect = press_side_effect
@@ -668,9 +670,11 @@ class TestSendMessage:
         # Track Enter key presses
         enter_count = [0]
 
-        def press_side_effect(key):
-            if key == "Enter":
-                enter_count[0] += 1
+        def send_button_click_side_effect(js_code):
+            # Check for mouse event dispatch (new click method)
+            if 'MouseEvent' in js_code or 'dispatchEvent' in js_code:
+                click_count[0] += 1
+            return None
 
         mock_input.press.side_effect = press_side_effect
 
@@ -715,9 +719,11 @@ class TestSendMessage:
         # Track Enter key presses
         enter_count = [0]
 
-        def press_side_effect(key):
-            if key == "Enter":
-                enter_count[0] += 1
+        def send_button_click_side_effect(js_code):
+            # Check for mouse event dispatch (new click method)
+            if 'MouseEvent' in js_code or 'dispatchEvent' in js_code:
+                click_count[0] += 1
+            return None
 
         # Both original and refetched input need press mock
         mock_input.press.side_effect = press_side_effect
@@ -798,6 +804,15 @@ class TestSendMessage:
         mock_page.query_selector.side_effect = query_selector_side_effect
         handler._page = mock_page
 
+        # After button click, input should be cleared (simulate success)
+        def clear_on_button_click(js_code):
+            # Check for mouse event dispatch (new click method)
+            if 'MouseEvent' in js_code or 'dispatchEvent' in js_code:
+                mock_input.inner_text.return_value = ""  # Simulate cleared
+            return None
+
+        mock_send_button.evaluate.side_effect = clear_on_button_click
+
         # Mock time to make polling loops exit quickly
         time_values = [i * 0.2 for i in range(100)]
 
@@ -805,8 +820,12 @@ class TestSendMessage:
             with patch('time.sleep'):
                 handler._send_message("Test prompt")
 
-        # Verify Enter key was pressed
-        assert enter_pressed[0], "Enter key should have been pressed"
+        # Verify send button was clicked
+        assert mock_send_button.evaluate.called
+        # Check that mouse events were dispatched on send button
+        click_calls = [call for call in mock_send_button.evaluate.call_args_list
+                       if 'MouseEvent' in str(call) or 'dispatchEvent' in str(call)]
+        assert len(click_calls) > 0, "Send button should have been clicked"
 
 
 class TestGetResponse:

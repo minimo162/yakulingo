@@ -756,8 +756,8 @@ class TestSendMessage:
         # Should have tried multiple times based on wait_for_selector call count
         assert wait_for_selector_calls[0] >= 2, f"Expected at least 2 wait_for_selector calls but got {wait_for_selector_calls[0]}"
 
-    def test_send_message_uses_js_click(self):
-        """_send_message uses JS click() as primary method (first attempt)"""
+    def test_send_message_uses_enter_key_first(self):
+        """_send_message uses Enter key as primary method (first attempt)"""
         handler = CopilotHandler()
         handler._is_page_valid = Mock(return_value=True)
 
@@ -765,41 +765,35 @@ class TestSendMessage:
         mock_input = MagicMock()
         mock_send_button = MagicMock()
         mock_stop_button = MagicMock()
-        mock_stop_button.is_visible.return_value = False
+        mock_stop_button.is_visible.return_value = True  # Stop button visible after send
 
         mock_page.wait_for_selector.return_value = mock_input
 
         # fill() check returns text (fill success)
         mock_input.inner_text.return_value = "Test prompt"
-        mock_input.evaluate.return_value = True  # has focus
 
-        # Track JS click() method call
-        js_click_called = [False]
+        # Track Enter key press
+        enter_key_pressed = [False]
 
-        def button_evaluate_side_effect(js_code):
-            # Match the click execution code (contains el.click())
-            if 'el.click()' in js_code and 'clicked' in js_code:
-                js_click_called[0] = True
-                mock_input.inner_text.return_value = ""  # Simulate cleared
-                return {'clicked': True, 'error': None}
-            # Pre-click state check
-            if 'getBoundingClientRect' in js_code:
+        def input_press_side_effect(key):
+            if key == "Enter":
+                enter_key_pressed[0] = True
+                # Simulate input cleared after Enter
+                mock_input.inner_text.return_value = ""
+
+        mock_input.press.side_effect = input_press_side_effect
+
+        # Page evaluate for focus management and post-send state
+        def page_evaluate_side_effect(js_code, *args):
+            if 'focusAttempts' in js_code:
+                # Focus management result
                 return {
-                    'rect': {'x': 434, 'y': 288, 'width': 32, 'height': 32},
-                    'disabled': False,
-                    'ariaDisabled': None,
-                    'hasClickHandler': False,
-                    'parentVisible': True,
-                    'computedPointerEvents': 'auto'
+                    'initialFocus': False,
+                    'focusAttempts': [{'method': 'focus()', 'success': True}],
+                    'finalFocus': True,
+                    'activeElementTag': 'SPAN',
+                    'activeElementId': 'm365-chat-editor-target-element'
                 }
-            return True
-
-        mock_send_button.evaluate.side_effect = button_evaluate_side_effect
-
-        # Page evaluate for post-click state
-        def page_evaluate_side_effect(js_code):
-            if 'inputTextLength' in js_code:
-                return {'inputTextLength': 0, 'stopButtonVisible': False, 'responseCount': 0}
             return {}
 
         mock_page.evaluate.side_effect = page_evaluate_side_effect
@@ -809,7 +803,6 @@ class TestSendMessage:
                 return mock_stop_button
             if "SendButton" in selector or 'type="submit"' in selector:
                 return mock_send_button
-            # Return input element with text
             return mock_input
 
         mock_page.query_selector.side_effect = query_selector_side_effect
@@ -822,8 +815,8 @@ class TestSendMessage:
             with patch('time.sleep'):
                 handler._send_message("Test prompt")
 
-        # Verify JS click() method was called (most reliable for off-screen buttons)
-        assert js_click_called[0], "JS click() should have been called"
+        # Verify Enter key was pressed (most reliable for minimized windows)
+        assert enter_key_pressed[0], "Enter key should have been pressed"
 
 
 class TestGetResponse:

@@ -3773,7 +3773,7 @@ class CopilotHandler:
                 else:
                     logger.debug("[SEND_PREP] Button ready after %.2fs", send_button_wait)
 
-                # Send via click
+                # Send via Enter key (most reliable for minimized windows)
                 MAX_SEND_RETRIES = 3
                 send_success = False
 
@@ -3781,76 +3781,62 @@ class CopilotHandler:
                     send_method = ""
                     try:
                         if send_attempt == 0:
-                            # First attempt: JS click() method
-                            send_btn = self._page.query_selector(self.SEND_BUTTON_SELECTOR)
-                            if send_btn:
-                                # Debug: Check button state before click
-                                try:
-                                    pre_click_state = send_btn.evaluate('''el => {
-                                        const rect = el.getBoundingClientRect();
-                                        return {
-                                            rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
-                                            disabled: el.disabled,
-                                            ariaDisabled: el.getAttribute('aria-disabled'),
-                                            hasClickHandler: typeof el.onclick === 'function' || el.getAttribute('onclick'),
-                                            parentVisible: el.offsetParent !== null,
-                                            computedPointerEvents: window.getComputedStyle(el).pointerEvents
-                                        };
-                                    }''')
-                                    logger.debug("[SEND] Pre-click button state: %s", pre_click_state)
-                                except Exception as e:
-                                    logger.debug("[SEND] Could not get pre-click state: %s", e)
+                            # First attempt: Enter key with robust focus management
+                            # This works reliably even when window is minimized
+                            focus_result = self._page.evaluate('''(inputSelector) => {
+                                const input = document.querySelector(inputSelector);
+                                if (!input) return { success: false, error: 'input not found' };
 
-                                # Try click and capture result
-                                click_result = send_btn.evaluate('''el => {
-                                    let clicked = false;
-                                    let error = null;
-                                    try {
-                                        el.click();
-                                        clicked = true;
-                                    } catch (e) {
-                                        error = e.message;
+                                const result = {
+                                    initialFocus: document.activeElement === input,
+                                    focusAttempts: []
+                                };
+
+                                // Step 1: Ensure element is visible and scrolled into view
+                                input.scrollIntoView({ block: 'center', behavior: 'instant' });
+
+                                // Step 2: Try multiple focus methods
+                                const focusMethods = [
+                                    () => { input.focus(); return 'focus()'; },
+                                    () => { input.click(); input.focus(); return 'click+focus'; },
+                                    () => {
+                                        input.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+                                        input.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+                                        input.focus();
+                                        return 'mousedown+mouseup+focus';
                                     }
-                                    return { clicked, error };
-                                }''')
-                                logger.debug("[SEND] Click result: %s", click_result)
+                                ];
 
-                                # Debug: Check state immediately after click
-                                time.sleep(0.05)  # Small delay for React to process
-                                try:
-                                    post_click_state = self._page.evaluate('''() => {
-                                        const input = document.querySelector('#m365-chat-editor-target-element');
-                                        const stopBtn = document.querySelector('.fai-SendButton__stopBackground');
-                                        return {
-                                            inputTextLength: input ? input.innerText.trim().length : -1,
-                                            stopButtonVisible: stopBtn ? stopBtn.offsetParent !== null : false,
-                                            responseCount: document.querySelectorAll('[data-message-author-role="assistant"]').length
-                                        };
-                                    }''')
-                                    logger.debug("[SEND] Post-click state (after 50ms): %s", post_click_state)
-                                except Exception as e:
-                                    logger.debug("[SEND] Could not get post-click state: %s", e)
+                                for (const method of focusMethods) {
+                                    const methodName = method();
+                                    const hasFocus = document.activeElement === input;
+                                    result.focusAttempts.push({ method: methodName, success: hasFocus });
+                                    if (hasFocus) break;
+                                }
 
-                                send_method = "JS click()"
-                            else:
+                                result.finalFocus = document.activeElement === input;
+                                result.activeElementTag = document.activeElement?.tagName;
+                                result.activeElementId = document.activeElement?.id;
+                                return result;
+                            }''', input_selector)
+                            logger.debug("[SEND] Focus result: %s", focus_result)
+
+                            if not focus_result.get('finalFocus'):
+                                logger.warning("[SEND] Could not focus input, trying Playwright focus")
                                 input_elem.focus()
-                                time.sleep(0.05)
-                                input_elem.press("Enter")
-                                send_method = "Enter key (button not found)"
-                        elif send_attempt == 1:
-                            # Second attempt: Enter key
-                            input_elem.focus()
-                            time.sleep(0.05)
+
+                            time.sleep(0.05)  # Small delay for UI to settle
                             input_elem.press("Enter")
-                            send_method = "Enter key"
-                        else:
-                            # Third attempt: Playwright click with force (scrolls element into view)
+                            send_method = "Enter key (robust focus)"
+
+                        elif send_attempt == 1:
+                            # Second attempt: Playwright click with force
+                            # This scrolls element into view and clicks even if obscured
                             send_btn = self._page.query_selector(self.SEND_BUTTON_SELECTOR)
                             if send_btn:
                                 try:
                                     btn_info = send_btn.evaluate('''el => ({
                                         tag: el.tagName,
-                                        class: el.className,
                                         disabled: el.disabled,
                                         ariaDisabled: el.getAttribute('aria-disabled'),
                                         visible: el.offsetParent !== null,
@@ -3860,23 +3846,64 @@ class CopilotHandler:
                                 except Exception as info_err:
                                     logger.debug("[SEND] Could not get button info: %s", info_err)
                                 send_btn.click(force=True)
-                                send_method = "Playwright click"
+                                send_method = "Playwright click (force)"
                             else:
-                                # Fallback to Enter key if send button not found
-                                logger.debug("[SEND] Button not found (selector: %s), using Enter key",
-                                            self.SEND_BUTTON_SELECTOR)
+                                # Fallback to Enter key if button not found
+                                logger.debug("[SEND] Button not found, using Enter key")
                                 input_elem.focus()
                                 time.sleep(0.05)
                                 input_elem.press("Enter")
                                 send_method = "Enter key (button not found)"
+
+                        else:
+                            # Third attempt: JS click with multiple event dispatch
+                            # For cases where previous methods didn't trigger React handlers
+                            send_btn = self._page.query_selector(self.SEND_BUTTON_SELECTOR)
+                            if send_btn:
+                                click_result = send_btn.evaluate('''el => {
+                                    let clicked = false;
+                                    let error = null;
+                                    try {
+                                        // Scroll into view
+                                        el.scrollIntoView({ block: 'center', behavior: 'instant' });
+
+                                        // Dispatch multiple events for React compatibility
+                                        el.dispatchEvent(new MouseEvent('mousedown', {
+                                            bubbles: true, cancelable: true, view: window
+                                        }));
+                                        el.dispatchEvent(new MouseEvent('mouseup', {
+                                            bubbles: true, cancelable: true, view: window
+                                        }));
+                                        el.dispatchEvent(new MouseEvent('click', {
+                                            bubbles: true, cancelable: true, view: window
+                                        }));
+
+                                        // Also try DOM click as backup
+                                        el.click();
+                                        clicked = true;
+                                    } catch (e) {
+                                        error = e.message;
+                                    }
+                                    return { clicked, error };
+                                }''')
+                                logger.debug("[SEND] JS click result: %s", click_result)
+                                send_method = "JS click (multi-event)"
+                            else:
+                                # Final fallback: Enter key
+                                input_elem.focus()
+                                time.sleep(0.05)
+                                input_elem.press("Enter")
+                                send_method = "Enter key (final fallback)"
+
                         logger.debug("[SEND] Sent via %s (attempt %d)", send_method, send_attempt + 1)
+
                     except Exception as send_err:
                         logger.debug("[SEND] Method failed: %s, trying Enter key", send_err)
                         try:
                             input_elem.focus()
                             time.sleep(0.05)
                             input_elem.press("Enter")
-                            send_method = "Enter key (fallback)"
+                            send_method = "Enter key (exception fallback)"
                         except Exception as enter_err:
                             logger.warning("[SEND] Enter key also failed: %s", enter_err)
                             send_method = "failed"

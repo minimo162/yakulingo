@@ -3787,16 +3787,16 @@ class CopilotHandler:
                             finalBtnY: null
                         };
 
-                        // Scroll input into view
+                        // Scroll input into view (use 'nearest' for small viewports)
                         if (input) {
-                            input.scrollIntoView({ block: 'center', behavior: 'instant' });
+                            input.scrollIntoView({ block: 'nearest', behavior: 'instant' });
                             result.inputScrolled = true;
                         }
 
                         // Scroll button into view and get position
                         if (sendBtn) {
                             result.initialBtnY = Math.round(sendBtn.getBoundingClientRect().y);
-                            sendBtn.scrollIntoView({ block: 'center', behavior: 'instant' });
+                            sendBtn.scrollIntoView({ block: 'nearest', behavior: 'instant' });
                             result.buttonScrolled = true;
                             result.finalBtnY = Math.round(sendBtn.getBoundingClientRect().y);
                         }
@@ -3915,9 +3915,54 @@ class CopilotHandler:
                                 logger.warning("[SEND] Could not focus input, trying Playwright focus")
                                 input_elem.focus()
 
-                            time.sleep(0.1)  # Wait for UI to settle after focus
+                            # Scroll send button into view before pressing Enter
+                            # This is critical for minimized windows - Copilot's React UI
+                            # may require the button to be in a "ready" state
+                            # Use block: 'nearest' to avoid negative Y positions in small viewports
+                            try:
+                                scroll_result = self._page.evaluate('''() => {
+                                    const sendBtn = document.querySelector('.fai-SendButton');
+                                    if (sendBtn) {
+                                        // Use 'nearest' to get optimal position in small viewports
+                                        sendBtn.scrollIntoView({ block: 'nearest', behavior: 'instant' });
+                                        const rect = sendBtn.getBoundingClientRect();
+                                        return { scrolled: true, btnY: Math.round(rect.y) };
+                                    }
+                                    return { scrolled: false };
+                                }''')
+                                logger.debug("[SEND] Button scroll before Enter: %s", scroll_result)
+                            except Exception as scroll_err:
+                                logger.debug("[SEND] Button scroll failed: %s", scroll_err)
+
+                            time.sleep(0.1)  # Wait for UI to settle after scroll
+
+                            # Try JS-dispatched Enter key first (more reliable in minimized windows)
+                            # Then fall back to Playwright press if needed
+                            enter_result = self._page.evaluate('''(inputSelector) => {
+                                const input = document.querySelector(inputSelector);
+                                if (!input) return { success: false, error: 'input not found' };
+
+                                try {
+                                    // Dispatch KeyboardEvent for Enter key
+                                    const enterEvent = new KeyboardEvent('keydown', {
+                                        key: 'Enter',
+                                        code: 'Enter',
+                                        keyCode: 13,
+                                        which: 13,
+                                        bubbles: true,
+                                        cancelable: true
+                                    });
+                                    const dispatched = input.dispatchEvent(enterEvent);
+                                    return { success: true, dispatched };
+                                } catch (e) {
+                                    return { success: false, error: e.message };
+                                }
+                            }''', input_selector)
+                            logger.debug("[SEND] JS Enter dispatch result: %s", enter_result)
+
+                            # Also try Playwright press as backup
                             input_elem.press("Enter")
-                            send_method = "Enter key (robust focus)"
+                            send_method = "Enter key (JS dispatch + Playwright)"
 
                         elif send_attempt == 1:
                             # Second attempt: JS click with multiple event dispatch

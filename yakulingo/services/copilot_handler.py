@@ -453,7 +453,10 @@ class CopilotHandler:
     Handles communication with M365 Copilot via Playwright.
     """
 
-    COPILOT_URL = "https://m365.cloud.microsoft/chat/?auth=2"
+    # Note: Removed ?auth=2 parameter to allow M365 to use existing session cookies.
+    # With ?auth=2, M365 always forces authentication even with valid session.
+    # Without it, M365 auto-detects auth type and reuses existing sessions.
+    COPILOT_URL = "https://m365.cloud.microsoft/chat/"
 
     # Configuration constants
     DEFAULT_CDP_PORT = 9333  # Dedicated port for translator

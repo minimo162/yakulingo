@@ -1054,15 +1054,24 @@ class CopilotHandler:
             self._log_profile_directory_status()
 
             # Step 2: Connect via Playwright CDP
+            import time as _time
             logger.info("Connecting to browser...")
+            _t_pw_start = _time.perf_counter()
             _, sync_playwright = _get_playwright()
+            logger.debug("[TIMING] _get_playwright(): %.2fs", _time.perf_counter() - _t_pw_start)
+            _t_pw_init = _time.perf_counter()
             self._playwright = sync_playwright().start()
+            logger.debug("[TIMING] sync_playwright().start(): %.2fs", _time.perf_counter() - _t_pw_init)
+            _t_cdp = _time.perf_counter()
             self._browser = self._playwright.chromium.connect_over_cdp(
                 f"http://127.0.0.1:{self.cdp_port}"
             )
+            logger.debug("[TIMING] connect_over_cdp(): %.2fs", _time.perf_counter() - _t_cdp)
 
             # Step 3: Get or create context
+            _t_ctx = _time.perf_counter()
             self._context = self._get_or_create_context()
+            logger.debug("[TIMING] _get_or_create_context(): %.2fs", _time.perf_counter() - _t_ctx)
             if not self._context:
                 logger.error("Failed to get or create browser context")
                 self.last_connection_error = self.ERROR_CONNECTION_FAILED
@@ -1070,7 +1079,9 @@ class CopilotHandler:
                 return False
 
             # Step 4: Get or create Copilot page
+            _t_page = _time.perf_counter()
             self._page = self._get_or_create_copilot_page()
+            logger.debug("[TIMING] _get_or_create_copilot_page(): %.2fs", _time.perf_counter() - _t_page)
             if not self._page:
                 logger.error("Failed to get or create Copilot page")
                 self.last_connection_error = self.ERROR_CONNECTION_FAILED
@@ -1082,7 +1093,9 @@ class CopilotHandler:
 
             # Step 5: Wait for chat UI. Do not block for login; let the UI handle
             # login-required state via polling so the user sees feedback immediately.
+            _t_chat = _time.perf_counter()
             chat_ready = self._wait_for_chat_ready(self._page, wait_for_login=False)
+            logger.debug("[TIMING] _wait_for_chat_ready(): %.2fs", _time.perf_counter() - _t_chat)
             if not chat_ready:
                 # Keep Edge/Playwright alive when login is required so the UI can
                 # poll for completion while the user signs in.

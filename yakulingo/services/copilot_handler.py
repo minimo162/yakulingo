@@ -771,7 +771,7 @@ class CopilotHandler:
                     if parts:
                         pid = parts[-1]
                         subprocess.run(
-                            [taskkill_path, "/F", "/PID", pid],
+                            [taskkill_path, "/F", "/T", "/PID", pid],
                             capture_output=True, timeout=5, cwd=local_cwd,
                             creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
                         )
@@ -779,6 +779,45 @@ class CopilotHandler:
                         break
         except (subprocess.SubprocessError, OSError, TimeoutError) as e:
             logger.warning("Failed to kill existing Edge: %s", e)
+
+    def _kill_process_tree(self, pid: int) -> bool:
+        """Kill a process and all its child processes using taskkill /T.
+
+        This is necessary because Edge spawns multiple child processes (renderer,
+        GPU process, network service, etc.) that may hold file handles to the
+        profile directory. Using terminate() only kills the parent process.
+
+        Args:
+            pid: Process ID to kill (with all its children)
+
+        Returns:
+            True if the process tree was killed successfully
+        """
+        if sys.platform != "win32":
+            return False
+
+        try:
+            taskkill_path = r"C:\Windows\System32\taskkill.exe"
+            local_cwd = os.environ.get("SYSTEMROOT", r"C:\Windows")
+
+            result = subprocess.run(
+                [taskkill_path, "/F", "/T", "/PID", str(pid)],
+                capture_output=True, timeout=5, cwd=local_cwd,
+                creationflags=subprocess.CREATE_NO_WINDOW
+            )
+            # taskkill returns 0 on success, 128 if process not found
+            if result.returncode == 0:
+                logger.debug("Process tree killed: PID %s", pid)
+                return True
+            elif result.returncode == 128:
+                logger.debug("Process already terminated: PID %s", pid)
+                return True
+            else:
+                logger.debug("taskkill returned %s for PID %s", result.returncode, pid)
+                return False
+        except (subprocess.SubprocessError, OSError, TimeoutError) as e:
+            logger.warning("Failed to kill process tree: %s", e)
+            return False
 
     def _start_translator_edge(self) -> bool:
         """Start dedicated Edge instance for translation"""
@@ -2827,32 +2866,39 @@ class CopilotHandler:
                 if self._close_edge_gracefully(timeout=1.5):
                     browser_terminated = True
 
-            # Fall back to terminate/kill if graceful close failed
+            # Fall back to kill process tree if graceful close failed
+            # Use _kill_process_tree to kill all child processes (renderer, GPU, etc.)
+            # that may be holding file handles to the profile directory
             if not browser_terminated:
                 with suppress(Exception):
-                    if self.edge_process:
-                        self.edge_process.terminate()
-                        try:
-                            self.edge_process.wait(timeout=2)
+                    if self.edge_process and self.edge_process.pid:
+                        if self._kill_process_tree(self.edge_process.pid):
                             browser_terminated = True
-                        except subprocess.TimeoutExpired:
-                            self.edge_process.kill()
-                            # Wait for kill to complete (ensures process is fully terminated)
+                            logger.info("Edge browser terminated (force via process tree kill)")
+                        else:
+                            # Fall back to terminate/kill if taskkill failed
+                            self.edge_process.terminate()
                             try:
-                                self.edge_process.wait(timeout=1)
+                                self.edge_process.wait(timeout=2)
                                 browser_terminated = True
                             except subprocess.TimeoutExpired:
-                                logger.warning("Edge process did not terminate after kill")
-                        if browser_terminated:
-                            logger.info("Edge browser terminated (force via terminate)")
+                                self.edge_process.kill()
+                                try:
+                                    self.edge_process.wait(timeout=1)
+                                    browser_terminated = True
+                                except subprocess.TimeoutExpired:
+                                    logger.warning("Edge process did not terminate after kill")
+                            if browser_terminated:
+                                logger.info("Edge browser terminated (force via terminate)")
 
             # Verify process is truly terminated by checking poll()
             if browser_terminated and self.edge_process:
                 with suppress(Exception):
                     if self.edge_process.poll() is None:
-                        # Process still running, try kill again
+                        # Process still running, try kill process tree again
                         logger.warning("Edge process still running after termination, forcing kill")
-                        self.edge_process.kill()
+                        if not self._kill_process_tree(self.edge_process.pid):
+                            self.edge_process.kill()
                         self.edge_process.wait(timeout=1)
 
             # If edge_process was None (lost after cleanup_on_error), kill by port
@@ -2916,19 +2962,24 @@ class CopilotHandler:
                 if self._close_edge_gracefully(timeout=3.0):
                     browser_terminated = True
 
-            # Fall back to terminate/kill if graceful close failed
+            # Fall back to kill process tree if graceful close failed
+            # Use _kill_process_tree to kill all child processes (renderer, GPU, etc.)
+            # that may be holding file handles to the profile directory
             if not browser_terminated:
                 with suppress(Exception):
-                    if self.edge_process:
-                        self.edge_process.terminate()
-                        # Wait briefly for shutdown
-                        try:
-                            self.edge_process.wait(timeout=2)
-                        except subprocess.TimeoutExpired:
-                            # Force kill if it doesn't terminate
-                            self.edge_process.kill()
-                        logger.info("Edge browser terminated (via terminate)")
-                        browser_terminated = True
+                    if self.edge_process and self.edge_process.pid:
+                        if self._kill_process_tree(self.edge_process.pid):
+                            browser_terminated = True
+                            logger.info("Edge browser terminated (via process tree kill)")
+                        else:
+                            # Fall back to terminate/kill if taskkill failed
+                            self.edge_process.terminate()
+                            try:
+                                self.edge_process.wait(timeout=2)
+                            except subprocess.TimeoutExpired:
+                                self.edge_process.kill()
+                            logger.info("Edge browser terminated (via terminate)")
+                            browser_terminated = True
 
             # If edge_process was None (lost after cleanup_on_error), kill by port
             if not browser_terminated and self._is_port_in_use():

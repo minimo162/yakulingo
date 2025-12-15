@@ -1887,7 +1887,7 @@ class CopilotHandler:
             logger.debug("Failed to locate Edge window handle: %s", e)
             return None
 
-    def _close_edge_gracefully(self, timeout: float = 3.0) -> bool:
+    def _close_edge_gracefully(self, timeout: float = 0.5) -> bool:
         """Close Edge browser gracefully by sending WM_CLOSE message.
 
         This method sends WM_CLOSE to the Edge window, which is equivalent to
@@ -1895,7 +1895,9 @@ class CopilotHandler:
         showing "Microsoft Edge was closed unexpectedly" message.
 
         Args:
-            timeout: Seconds to wait for graceful shutdown after sending WM_CLOSE
+            timeout: Seconds to wait for graceful shutdown after sending WM_CLOSE.
+                     Default is 0.5s - Edge usually closes immediately or not at all
+                     (due to dialogs). Short timeout ensures fast app shutdown.
 
         Returns:
             True if Edge was closed gracefully, False otherwise
@@ -2138,22 +2140,8 @@ class CopilotHandler:
 
         try:
             import ctypes
-            from ctypes import wintypes
 
             user32 = ctypes.WinDLL('user32', use_last_error=True)
-            SW_MINIMIZE = 6
-            SW_SHOWNORMAL = 1
-
-            # WINDOWPLACEMENT structure for saving/restoring window position
-            class WINDOWPLACEMENT(ctypes.Structure):
-                _fields_ = [
-                    ("length", wintypes.UINT),
-                    ("flags", wintypes.UINT),
-                    ("showCmd", wintypes.UINT),
-                    ("ptMinPosition", wintypes.POINT),
-                    ("ptMaxPosition", wintypes.POINT),
-                    ("rcNormalPosition", wintypes.RECT),
-                ]
 
             # Retry logic with exponential backoff: Edge window may not be ready immediately
             # Wait times: 0.3s, 0.6s, 1.2s, 2.4s (total ~4.5s max wait)
@@ -2178,75 +2166,20 @@ class CopilotHandler:
                 logger.debug("Edge window is already minimized, skipping")
                 return True
 
-            # FIRST: Minimize the window IMMEDIATELY to hide it
-            # This must happen before any SetWindowPlacement calls, which could
-            # move the window from off-screen (-32000,-32000) to visible position
-            # and cause a momentary flash.
-            # Note: SW_SHOWMINNOACTIVE can cause restoration issues in some environments
-            user32.ShowWindow(edge_hwnd, SW_MINIMIZE)
+            # Use SW_SHOWMINNOACTIVE to minimize without activating/showing the window
+            # This prevents the window from briefly flashing to foreground
+            # SW_MINIMIZE (6) can cause a brief flash because it activates the window
+            # SW_SHOWMINNOACTIVE (7) minimizes without changing the active window
+            SW_SHOWMINNOACTIVE = 7
+            user32.ShowWindow(edge_hwnd, SW_SHOWMINNOACTIVE)
 
-            # THEN: Update window placement for proper restoration from taskbar
-            # Since the window is already minimized, these changes won't be visible
-            wp = WINDOWPLACEMENT()
-            wp.length = ctypes.sizeof(WINDOWPLACEMENT)
-            if user32.GetWindowPlacement(edge_hwnd, ctypes.byref(wp)):
-                # Store the current show state for restoration
-                original_show_cmd = wp.showCmd
-                logger.debug("Saved window placement: showCmd=%d, rcNormalPosition=(%d,%d,%d,%d)",
-                             original_show_cmd,
-                             wp.rcNormalPosition.left, wp.rcNormalPosition.top,
-                             wp.rcNormalPosition.right, wp.rcNormalPosition.bottom)
-
-                # Check if rcNormalPosition is too small or off-screen and fix it
-                # This ensures proper size/position when window is restored from taskbar
-                rc = wp.rcNormalPosition
-                saved_width = rc.right - rc.left
-                saved_height = rc.bottom - rc.top
-                placement_modified = False
-
-                # Check for off-screen position (Edge starts at -32000,-32000)
-                is_offscreen = rc.left < -10000 or rc.top < -10000
-
-                if saved_width < self.MIN_EDGE_WINDOW_WIDTH or saved_height < self.MIN_EDGE_WINDOW_HEIGHT or is_offscreen:
-                    # Get screen work area (excludes taskbar) for centering
-                    work_area = wintypes.RECT()
-                    SPI_GETWORKAREA = 0x0030
-                    user32.SystemParametersInfoW(SPI_GETWORKAREA, 0, ctypes.byref(work_area), 0)
-                    screen_width = work_area.right - work_area.left
-                    screen_height = work_area.bottom - work_area.top
-
-                    # Calculate new size
-                    new_width = max(saved_width, self.MIN_EDGE_WINDOW_WIDTH)
-                    new_height = max(saved_height, self.MIN_EDGE_WINDOW_HEIGHT)
-
-                    # Center on screen
-                    new_x = work_area.left + (screen_width - new_width) // 2
-                    new_y = work_area.top + (screen_height - new_height) // 2
-
-                    # Ensure within screen bounds
-                    new_x = max(work_area.left, min(new_x, work_area.right - new_width))
-                    new_y = max(work_area.top, min(new_y, work_area.bottom - new_height))
-
-                    rc.left = new_x
-                    rc.top = new_y
-                    rc.right = new_x + new_width
-                    rc.bottom = new_y + new_height
-                    placement_modified = True
-
-                    if is_offscreen:
-                        logger.debug("Fixed off-screen position: (%d,%d) -> (%d,%d)",
-                                     wp.rcNormalPosition.left, wp.rcNormalPosition.top, new_x, new_y)
-                    else:
-                        logger.info("Fixed small rcNormalPosition: %dx%d -> %dx%d",
-                                    saved_width, saved_height, new_width, new_height)
-
-                # IMPORTANT: Keep showCmd as SW_MINIMIZE to maintain minimized state
-                # SetWindowPlacement will apply showCmd, so we must not change it to
-                # SW_SHOWNORMAL or the window will be restored (shown on screen)
-                wp.showCmd = SW_MINIMIZE
-
-                if placement_modified:
-                    user32.SetWindowPlacement(edge_hwnd, ctypes.byref(wp))
+            # Note: We intentionally skip SetWindowPlacement here to avoid any
+            # possibility of the window flashing on screen. The rcNormalPosition
+            # (restored window position) will be set by Edge when user manually
+            # restores the window from taskbar. This is acceptable because:
+            # 1. Users rarely restore the Edge window manually
+            # 2. Edge will pick a reasonable default position when restored
+            # 3. Avoiding the flash is more important than perfect window placement
 
             logger.info("Edge window minimized successfully")
             return True
@@ -2861,9 +2794,11 @@ class CopilotHandler:
             browser_terminated = False
 
             # First try graceful close via WM_CLOSE (avoids "closed unexpectedly" message)
-            # Short timeout because dialogs like "Restore pages" prevent immediate close
+            # Very short timeout (0.3s) because:
+            # 1. Edge usually closes immediately or not at all (due to dialogs like "Restore pages")
+            # 2. We want fast app shutdown - falling back to force kill is acceptable
             with suppress(Exception):
-                if self._close_edge_gracefully(timeout=1.5):
+                if self._close_edge_gracefully(timeout=0.3):
                     browser_terminated = True
 
             # Fall back to kill process tree if graceful close failed
@@ -2877,14 +2812,15 @@ class CopilotHandler:
                             logger.info("Edge browser terminated (force via process tree kill)")
                         else:
                             # Fall back to terminate/kill if taskkill failed
+                            # Use short timeouts for fast shutdown
                             self.edge_process.terminate()
                             try:
-                                self.edge_process.wait(timeout=2)
+                                self.edge_process.wait(timeout=0.3)
                                 browser_terminated = True
                             except subprocess.TimeoutExpired:
                                 self.edge_process.kill()
                                 try:
-                                    self.edge_process.wait(timeout=1)
+                                    self.edge_process.wait(timeout=0.2)
                                     browser_terminated = True
                                 except subprocess.TimeoutExpired:
                                     logger.warning("Edge process did not terminate after kill")
@@ -2899,7 +2835,7 @@ class CopilotHandler:
                         logger.warning("Edge process still running after termination, forcing kill")
                         if not self._kill_process_tree(self.edge_process.pid):
                             self.edge_process.kill()
-                        self.edge_process.wait(timeout=1)
+                        self.edge_process.wait(timeout=0.2)
 
             # If edge_process was None (lost after cleanup_on_error), kill by port
             if not browser_terminated and self._is_port_in_use():

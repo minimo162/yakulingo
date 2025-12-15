@@ -47,6 +47,10 @@ class HistoryDB:
         self._local = threading.local()
         self._lock = threading.Lock()
 
+        # Track all connections for proper shutdown (thread ID -> connection)
+        self._all_connections: dict[int, sqlite3.Connection] = {}
+        self._connections_lock = threading.Lock()
+
         self._init_db()
 
     def _get_connection(self) -> sqlite3.Connection:
@@ -66,13 +70,36 @@ class HistoryDB:
             # Enable foreign keys
             conn.execute('PRAGMA foreign_keys=ON')
             self._local.connection = conn
+
+            # Track connection for cleanup during shutdown
+            thread_id = threading.get_ident()
+            with self._connections_lock:
+                self._all_connections[thread_id] = conn
+
         return conn
 
     def close(self):
-        """Close the connection for the current thread."""
-        conn = getattr(self._local, 'connection', None)
-        if conn is not None:
-            conn.close()
+        """Close all database connections and ensure WAL checkpoint.
+
+        This method closes connections from all threads, not just the current thread.
+        It also performs a WAL checkpoint to ensure all data is written to the main
+        database file before shutdown.
+        """
+        # Close all tracked connections from all threads
+        with self._connections_lock:
+            for thread_id, conn in list(self._all_connections.items()):
+                try:
+                    # Perform WAL checkpoint before closing
+                    # TRUNCATE mode moves all WAL content to main database and resets WAL
+                    conn.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+                    conn.close()
+                    logger.debug("Closed DB connection for thread %d", thread_id)
+                except sqlite3.Error as e:
+                    logger.debug("Error closing DB connection for thread %d: %s", thread_id, e)
+            self._all_connections.clear()
+
+        # Also clear thread-local storage for current thread
+        if hasattr(self._local, 'connection'):
             self._local.connection = None
 
     def _init_db(self):

@@ -320,7 +320,7 @@ class PlaywrightThreadExecutor:
         if self._thread is not None:
             # Send stop signal
             self._request_queue.put((None, None, None))
-            self._thread.join(timeout=10)
+            self._thread.join(timeout=5)  # Reduced from 10s for faster shutdown
 
     def shutdown(self):
         """Force shutdown: stop thread and release all waiting operations.
@@ -359,12 +359,13 @@ class PlaywrightThreadExecutor:
             logger.debug("Cleared %d pending items during shutdown", cleared_count)
 
         # Send stop signal and wait for worker to finish
-        # Use 10 second timeout to allow Playwright greenlets to complete I/O operations
+        # Use 5 second timeout for faster shutdown (daemon thread will be killed on process exit anyway)
         if self._thread is not None and self._thread.is_alive():
             self._request_queue.put((None, None, None))
-            self._thread.join(timeout=10)
+            self._thread.join(timeout=5)
             if self._thread.is_alive():
-                logger.warning("Playwright worker thread did not terminate within timeout")
+                # This is not critical - daemon thread will be terminated on process exit
+                logger.debug("Playwright worker thread still running, will be terminated on exit")
 
     def _worker(self):
         """Worker thread that processes Playwright operations.
@@ -2809,16 +2810,11 @@ class CopilotHandler:
         # First, shutdown the executor to release any pending operations
         _playwright_executor.shutdown()
 
-        # Stop Playwright to close WebSocket/pipe connections before killing Edge
-        # This prevents EPIPE errors when Node.js tries to write to terminated process
-        with suppress(Exception):
-            if self._playwright is not None:
-                try:
-                    self._playwright.stop()
-                    logger.debug("Playwright stopped cleanly")
-                except Exception as e:
-                    logger.debug("Error stopping Playwright: %s", e)
-                self._playwright = None
+        # Note: We don't call self._playwright.stop() here because:
+        # 1. Playwright operations must run in the same greenlet where it was initialized
+        # 2. The executor's worker thread (with the greenlet) has been shutdown
+        # 3. Calling stop() from a different thread causes "Cannot switch to a different thread" error
+        # 4. Edge process termination below will close the connection anyway
 
         # Terminate Edge browser process directly (don't wait for Playwright)
         # Only if we started the browser in this session
@@ -2826,8 +2822,9 @@ class CopilotHandler:
             browser_terminated = False
 
             # First try graceful close via WM_CLOSE (avoids "closed unexpectedly" message)
+            # Short timeout because dialogs like "Restore pages" prevent immediate close
             with suppress(Exception):
-                if self._close_edge_gracefully(timeout=3.0):
+                if self._close_edge_gracefully(timeout=1.5):
                     browser_terminated = True
 
             # Fall back to terminate/kill if graceful close failed
@@ -2836,13 +2833,13 @@ class CopilotHandler:
                     if self.edge_process:
                         self.edge_process.terminate()
                         try:
-                            self.edge_process.wait(timeout=3)
+                            self.edge_process.wait(timeout=2)
                             browser_terminated = True
                         except subprocess.TimeoutExpired:
                             self.edge_process.kill()
                             # Wait for kill to complete (ensures process is fully terminated)
                             try:
-                                self.edge_process.wait(timeout=2)
+                                self.edge_process.wait(timeout=1)
                                 browser_terminated = True
                             except subprocess.TimeoutExpired:
                                 logger.warning("Edge process did not terminate after kill")
@@ -2856,14 +2853,14 @@ class CopilotHandler:
                         # Process still running, try kill again
                         logger.warning("Edge process still running after termination, forcing kill")
                         self.edge_process.kill()
-                        self.edge_process.wait(timeout=2)
+                        self.edge_process.wait(timeout=1)
 
             # If edge_process was None (lost after cleanup_on_error), kill by port
             if not browser_terminated and self._is_port_in_use():
                 with suppress(Exception):
                     self._kill_existing_translator_edge()
                     # Wait a bit for port to be released
-                    time.sleep(0.5)
+                    time.sleep(0.3)
                     logger.info("Edge browser terminated (force via port)")
 
         # Clear references (Playwright cleanup may fail but that's OK during shutdown)

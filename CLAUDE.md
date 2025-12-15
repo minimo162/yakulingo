@@ -1095,11 +1095,16 @@ new_paragraph, line_break, is_strong_boundary = detect_paragraph_boundary(
 | 条件 | 説明 |
 |------|------|
 | 領域タイプ変化 | 段落⇔テーブルの境界を跨ぐ変化（同じ領域タイプ内の変化は弱い境界） |
-| Y座標大変化 | `y_diff > SAME_PARA_Y_THRESHOLD` (20pt) |
-| X座標大ギャップ | `x_gap > TABLE_CELL_X_THRESHOLD` (30pt) |
-| テーブル行変更 | テーブル内で `y_diff > TABLE_ROW_Y_THRESHOLD` |
-| 段組み変更 | X大ジャンプ + Y上昇 |
-| TOCパターン | Y変化 + X大リセット (>80pt) |
+| X座標大ギャップ | `x_gap > TABLE_CELL_X_THRESHOLD` (15pt) - フォーム欄や表のセル間 |
+| テーブル行変更 | テーブル内で `y_diff > TABLE_ROW_Y_THRESHOLD` (5pt) |
+| 段組み変更 | X大ジャンプ (>100pt) + Y上昇（多段組みレイアウト）|
+
+**弱い境界（文末記号チェック適用）の条件:**
+
+| 条件 | 説明 |
+|------|------|
+| Y座標大変化 | `y_diff > SAME_PARA_Y_THRESHOLD` (20pt) - 行間が広い場合も継続判定 |
+| TOCパターン | Y変化 + X大リセット (>80pt) - 通常の行折り返しと同様に扱う |
 
 **領域タイプの分類:**
 - 段落領域: クラスID 2〜999（PP-DocLayout-Lが同一文書内で異なるID割当可）
@@ -1618,6 +1623,11 @@ When interacting with users in this repository, prefer Japanese for comments and
 ## Recent Development Focus
 
 Based on recent commits:
+- **PDF Line Break Fix (2024-12)**:
+  - **TOC pattern is_strong_boundary removal**: TOCパターン（Y変化 + X大リセット）で`is_strong_boundary = True`を設定しないように修正
+  - **Issue**: 通常の段落内の行折り返しがTOCパターンとして誤検出され、`is_japanese_continuation_line()`による継続行判定がスキップされていた
+  - **Fix**: TOCパターン検出でも弱い境界として扱い、`is_japanese_continuation_line()`チェックを適用
+  - **Result**: 「判断する」→「一定の前提に...」のような行折り返しが正しく結合されるようになった
 - **Global Hotkey Change to Ctrl+Alt+J (2024-12)**:
   - **Excel/Word conflict resolution**: Ctrl+JはExcelのJustifyショートカット、Ctrl+Shift+JはWordのJustifyショートカットと競合するため、Ctrl+Alt+Jに変更
   - **Low-level keyboard hook**: WH_KEYBOARD_LLを使用して確実にホットキーを処理

@@ -983,6 +983,9 @@ class CopilotHandler:
                     self.profile_dir.mkdir(parents=True, exist_ok=True)
                     logger.debug("Set profile_dir for existing Edge: %s", self.profile_dir)
 
+            # Debug: Check EdgeProfile directory contents for login persistence
+            self._log_profile_directory_status()
+
             # Step 2: Connect via Playwright CDP
             logger.info("Connecting to browser...")
             _, sync_playwright = _get_playwright()
@@ -2938,6 +2941,65 @@ class CopilotHandler:
         self._context = None
         self._page = None
         self._playwright = None
+
+    def _log_profile_directory_status(self) -> None:
+        """Log EdgeProfile directory contents for debugging login persistence issues."""
+        if not self.profile_dir:
+            logger.debug("Profile directory not set")
+            return
+
+        try:
+            logger.info("Checking EdgeProfile directory: %s", self.profile_dir)
+
+            if not self.profile_dir.exists():
+                logger.warning("EdgeProfile directory does not exist!")
+                return
+
+            # List top-level contents
+            contents = list(self.profile_dir.iterdir())
+            logger.info("EdgeProfile contents: %s", [c.name for c in contents[:20]])
+
+            # Check for Default profile (where Cookies are stored)
+            default_dir = self.profile_dir / "Default"
+            if default_dir.exists():
+                default_contents = list(default_dir.iterdir())
+                logger.info("Default profile contents: %s", [c.name for c in default_contents[:30]])
+
+                from datetime import datetime
+
+                # Check for Cookies file
+                cookies_file = default_dir / "Cookies"
+                if cookies_file.exists():
+                    size = cookies_file.stat().st_size
+                    mtime = cookies_file.stat().st_mtime
+                    mtime_str = datetime.fromtimestamp(mtime).strftime('%Y-%m-%d %H:%M:%S')
+                    logger.info("Cookies file exists: size=%d bytes, modified=%s", size, mtime_str)
+                else:
+                    logger.warning("Cookies file NOT found in Default profile")
+
+                # Check Network/Cookies (newer Edge versions)
+                network_cookies = default_dir / "Network" / "Cookies"
+                if network_cookies.exists():
+                    size = network_cookies.stat().st_size
+                    mtime = network_cookies.stat().st_mtime
+                    mtime_str = datetime.fromtimestamp(mtime).strftime('%Y-%m-%d %H:%M:%S')
+                    logger.info("Network/Cookies file exists: size=%d bytes, modified=%s", size, mtime_str)
+
+                # Check storage_state.json
+                storage_path = self._get_storage_state_path()
+                if storage_path.exists():
+                    size = storage_path.stat().st_size
+                    mtime = storage_path.stat().st_mtime
+                    mtime_str = datetime.fromtimestamp(mtime).strftime('%Y-%m-%d %H:%M:%S')
+                    logger.info("storage_state.json exists: size=%d bytes, modified=%s", size, mtime_str)
+                else:
+                    logger.info("storage_state.json does not exist (first run or cleared)")
+
+            else:
+                logger.warning("Default profile directory NOT found - this may cause login issues!")
+
+        except (OSError, PermissionError) as e:
+            logger.warning("Error checking profile directory: %s", e)
 
     def _save_storage_state(self) -> bool:
         """

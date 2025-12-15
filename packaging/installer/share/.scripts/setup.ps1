@@ -1024,7 +1024,19 @@ function Invoke-Setup {
             $userHash = (Get-FileHash -Path $userGlossaryBackup.FullName -Algorithm MD5).Hash
             $newHash = (Get-FileHash -Path $userGlossaryPath -Algorithm MD5).Hash
 
-            if ($userHash -ne $newHash) {
+            # Also check against glossary_old.csv (previous version)
+            # Skip backup if user's glossary matches either new or old version (not customized)
+            $oldGlossaryPath = Join-Path $SetupPath "glossary_old.csv"
+            $oldHash = $null
+            if (Test-Path $oldGlossaryPath) {
+                $oldHash = (Get-FileHash -Path $oldGlossaryPath -Algorithm MD5).Hash
+            }
+
+            # Only backup if user's glossary differs from both new and old versions
+            $matchesNew = ($userHash -eq $newHash)
+            $matchesOld = ($oldHash -and $userHash -eq $oldHash)
+
+            if (-not $matchesNew -and -not $matchesOld) {
                 # Files are different - backup user's glossary to Desktop
                 $desktopPath = [Environment]::GetFolderPath("Desktop")
                 $timestamp = Get-Date -Format "yyyyMMdd"
@@ -1045,8 +1057,13 @@ function Invoke-Setup {
                     Write-Host "      Glossary updated - backup saved to Desktop: $backupFileName" -ForegroundColor Cyan
                 }
             } else {
+                # User's glossary matches new or old version (not customized) - no backup needed
                 if (-not $GuiMode) {
-                    Write-Host "      Glossary unchanged" -ForegroundColor Gray
+                    if ($matchesNew) {
+                        Write-Host "      Glossary unchanged" -ForegroundColor Gray
+                    } else {
+                        Write-Host "      Glossary not customized (matches previous version)" -ForegroundColor Gray
+                    }
                 }
             }
         }

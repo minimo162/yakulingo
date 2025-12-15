@@ -1416,11 +1416,23 @@ def backup_and_update_glossary(app_dir: Path, source_dir: Path) -> Optional[str]
     user_hash = file_hash(user_glossary)
     new_hash = file_hash(new_glossary)
 
-    if user_hash == new_hash:
-        logger.info("用語集は変更されていません")
+    # glossary_old.csvとも比較（前バージョンと一致すればカスタマイズされていない）
+    old_glossary = app_dir / "glossary_old.csv"
+    old_hash = None
+    if old_glossary.exists():
+        old_hash = file_hash(old_glossary)
+
+    matches_new = user_hash == new_hash
+    matches_old = old_hash and user_hash == old_hash
+
+    if matches_new or matches_old:
+        if matches_new:
+            logger.info("用語集は変更されていません")
+        else:
+            logger.info("用語集はカスタマイズされていません（前バージョンと一致）")
         return None
 
-    # 異なる場合はデスクトップにバックアップ
+    # カスタマイズされている場合はデスクトップにバックアップ
     desktop = Path.home() / "Desktop"
     if not desktop.exists():
         # デスクトップが見つからない場合はホームディレクトリを使用

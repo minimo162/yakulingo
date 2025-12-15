@@ -1176,7 +1176,7 @@ class YakuLingoApp:
                 # File panel: 2-column layout (sidebar + centered file panel)
                 # Use input-panel class for consistent scrolling behavior
                 with ui.column().classes('input-panel'):
-                    with ui.column().classes('w-full max-w-2xl mx-auto px-6 py-8'):
+                    with ui.column().classes('w-full'):
                         create_file_panel(
                         state=self.state,
                         on_file_select=self._select_file,

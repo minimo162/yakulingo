@@ -1154,11 +1154,17 @@ function Invoke-Update {{
 # ============================================================
 try {{
     $debugInfo = Invoke-Update
-    $successMsg = "アップデートが完了しました。`n`nアプリケーションを再起動してください。"
-    if ($script:GlossaryBackupName) {{
-        $successMsg += "`n`n用語集が更新されました。`n以前の用語集はデスクトップに保存しました:`n  $($script:GlossaryBackupName)"
+    Write-DebugLog "Update completed, restarting application..."
+    Close-Progress
+
+    # アプリケーションを再起動
+    $exePath = Join-Path $script:AppDir "YakuLingo.exe"
+    if (Test-Path $exePath) {{
+        Write-DebugLog "Starting: $exePath"
+        Start-Process -FilePath $exePath
+    }} else {{
+        Write-DebugLog "YakuLingo.exe not found, skipping restart"
     }}
-    Show-Success $successMsg
     exit 0
 }} catch {{
     $errorMsg = $_.Exception.Message

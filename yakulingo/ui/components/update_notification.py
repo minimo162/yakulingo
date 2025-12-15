@@ -308,15 +308,14 @@ class UpdateNotification:
             if success:
                 dialog.close()
                 ui.notify(
-                    'アップデートの準備ができました。アプリケーションを終了します...',
+                    'アップデートの準備ができました。アプリケーションを再起動します...',
                     type='positive',
                     timeout=3000,
                 )
                 # 少し待ってからアプリを終了（通知を表示する時間）
                 await asyncio.sleep(1.0)
                 # アプリを終了（Windowsの場合はバッチファイルが処理を引き継ぐ）
-                import sys
-                sys.exit(0)
+                await self._shutdown_app()
             else:
                 install_btn.enable()
                 install_btn.text = 'インストール'
@@ -327,6 +326,26 @@ class UpdateNotification:
             install_btn.text = 'インストール'
             later_btn.enable()
             ui.notify(f'インストールエラー: {e}', type='negative')
+
+    async def _shutdown_app(self):
+        """アプリケーションを確実に終了する
+
+        NiceGUIのon_shutdownで登録されたcleanup処理（Copilot切断、DB閉鎖など）を
+        呼び出した後、プロセスを終了する。通常の×ボタン終了と同じ処理が行われる。
+        """
+        import os
+
+        from nicegui import app as nicegui_app
+
+        # NiceGUI のシャットダウンを実行（on_shutdown で登録された cleanup が呼ばれる）
+        # これにより Copilot切断、翻訳キャンセル、DB閉鎖などが行われる
+        nicegui_app.shutdown()
+
+        # cleanup処理が完了するまで待機
+        await asyncio.sleep(3.0)
+
+        # NiceGUI shutdown でプロセスが終了しない場合のフォールバック
+        os._exit(0)
 
 
 async def check_updates_on_startup(

@@ -3784,7 +3784,53 @@ class CopilotHandler:
                             # First attempt: JS click() method
                             send_btn = self._page.query_selector(self.SEND_BUTTON_SELECTOR)
                             if send_btn:
-                                send_btn.evaluate('el => el.click()')
+                                # Debug: Check button state before click
+                                try:
+                                    pre_click_state = send_btn.evaluate('''el => {
+                                        const rect = el.getBoundingClientRect();
+                                        return {
+                                            rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+                                            disabled: el.disabled,
+                                            ariaDisabled: el.getAttribute('aria-disabled'),
+                                            hasClickHandler: typeof el.onclick === 'function' || el.getAttribute('onclick'),
+                                            parentVisible: el.offsetParent !== null,
+                                            computedPointerEvents: window.getComputedStyle(el).pointerEvents
+                                        };
+                                    }''')
+                                    logger.debug("[SEND] Pre-click button state: %s", pre_click_state)
+                                except Exception as e:
+                                    logger.debug("[SEND] Could not get pre-click state: %s", e)
+
+                                # Try click and capture result
+                                click_result = send_btn.evaluate('''el => {
+                                    let clicked = false;
+                                    let error = null;
+                                    try {
+                                        el.click();
+                                        clicked = true;
+                                    } catch (e) {
+                                        error = e.message;
+                                    }
+                                    return { clicked, error };
+                                }''')
+                                logger.debug("[SEND] Click result: %s", click_result)
+
+                                # Debug: Check state immediately after click
+                                time.sleep(0.05)  # Small delay for React to process
+                                try:
+                                    post_click_state = self._page.evaluate('''() => {
+                                        const input = document.querySelector('#m365-chat-editor-target-element');
+                                        const stopBtn = document.querySelector('.fai-SendButton__stopBackground');
+                                        return {
+                                            inputTextLength: input ? input.innerText.trim().length : -1,
+                                            stopButtonVisible: stopBtn ? stopBtn.offsetParent !== null : false,
+                                            responseCount: document.querySelectorAll('[data-message-author-role="assistant"]').length
+                                        };
+                                    }''')
+                                    logger.debug("[SEND] Post-click state (after 50ms): %s", post_click_state)
+                                except Exception as e:
+                                    logger.debug("[SEND] Could not get post-click state: %s", e)
+
                                 send_method = "JS click()"
                             else:
                                 input_elem.focus()

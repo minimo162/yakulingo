@@ -1,10 +1,9 @@
 # yakulingo/services/hotkey_manager.py
 """
-Global hotkey manager for quick translation via Ctrl+J.
+Global hotkey manager for quick translation via Ctrl+Shift+J.
 
-Uses low-level keyboard hook (WH_KEYBOARD_LL) to intercept Ctrl+J at OS level,
-ensuring it works even when applications like Excel have focus and would
-otherwise capture the shortcut.
+Uses RegisterHotKey API to register a global hotkey. Ctrl+Shift+J is used
+instead of Ctrl+J to avoid conflicts with Excel's built-in shortcut (Justify).
 
 The full implementation uses Windows-specific APIs. To avoid import errors on
 other platforms (e.g., macOS/Linux during development or testing), the module
@@ -37,22 +36,20 @@ if not _IS_WINDOWS:
 
         raise OSError("HotkeyManager is only available on Windows platforms.")
 else:
-    # Windows API constants for low-level keyboard hook
-    WH_KEYBOARD_LL = 13
-    WM_KEYDOWN = 0x0100
-    WM_SYSKEYDOWN = 0x0104
-    WM_KEYUP = 0x0101
-    WM_SYSKEYUP = 0x0105
+    # Windows API constants for RegisterHotKey
+    MOD_CONTROL = 0x0002
+    MOD_SHIFT = 0x0004
+    MOD_NOREPEAT = 0x4000
 
     VK_J = 0x4A  # J key
+
+    WM_HOTKEY = 0x0312
 
     # Clipboard format
     CF_UNICODETEXT = 13
 
     # Virtual key codes for Ctrl+C
     VK_CONTROL = 0x11
-    VK_LCONTROL = 0xA2
-    VK_RCONTROL = 0xA3
     VK_C = 0x43
 
     # SendInput constants (replaces legacy keybd_event)
@@ -70,27 +67,6 @@ else:
 
     # ULONG_PTR type (pointer-sized unsigned integer)
     ULONG_PTR = ctypes.c_size_t
-
-
-    # Low-level keyboard hook structure
-    class KBDLLHOOKSTRUCT(ctypes.Structure):
-        """Structure for low-level keyboard hook."""
-        _fields_ = [
-            ("vkCode", ctypes.wintypes.DWORD),
-            ("scanCode", ctypes.wintypes.DWORD),
-            ("flags", ctypes.wintypes.DWORD),
-            ("time", ctypes.wintypes.DWORD),
-            ("dwExtraInfo", ULONG_PTR),
-        ]
-
-
-    # Callback type for low-level keyboard hook
-    HOOKPROC = ctypes.WINFUNCTYPE(
-        ctypes.c_long,  # return type (LRESULT)
-        ctypes.c_int,   # nCode
-        ctypes.wintypes.WPARAM,
-        ctypes.wintypes.LPARAM
-    )
 
 
     # SendInput structures (must match Windows API exactly)
@@ -150,10 +126,10 @@ else:
 
     class HotkeyManager:
         """
-        Manages global hotkey registration for quick translation using low-level keyboard hook.
+        Manages global hotkey registration for quick translation.
 
-        Uses WH_KEYBOARD_LL to intercept Ctrl+J at OS level, ensuring it works even when
-        applications like Excel have focus and would otherwise capture the shortcut.
+        Uses Ctrl+Shift+J instead of Ctrl+J to avoid conflicts with Excel's
+        built-in Justify shortcut.
 
         Usage:
             manager = HotkeyManager()
@@ -163,15 +139,15 @@ else:
             manager.stop()
         """
 
+        # Hotkey ID (must be unique across the application)
+        HOTKEY_ID = 1
+
         def __init__(self):
             self._callback: Optional[Callable[[str], None]] = None
             self._thread: Optional[threading.Thread] = None
             self._running = False
-            self._hook_installed = False
-            self._hook_handle: Optional[ctypes.wintypes.HHOOK] = None
+            self._registered = False
             self._lock = threading.Lock()
-            self._hook_proc: Optional[HOOKPROC] = None  # Keep reference to prevent GC
-            self._thread_id: Optional[int] = None
 
         def set_callback(self, callback: Callable[[str], None]):
             """
@@ -201,125 +177,65 @@ else:
                 if not self._running:
                     return
                 self._running = False
-                thread_id = self._thread_id
-
-            # Post WM_QUIT to the message loop thread to unblock GetMessage
-            if thread_id:
-                _user32.PostThreadMessageW(thread_id, 0x0012, 0, 0)  # WM_QUIT = 0x0012
 
             if self._thread:
-                self._thread.join(timeout=5.0)
+                self._thread.join(timeout=2.0)
                 if self._thread.is_alive():
                     logger.warning("HotkeyManager thread did not stop in time")
-                    # Fallback: manually unhook if thread didn't clean up
-                    self._unhook_keyboard()
+                    # Fallback: manually unregister hotkey if thread didn't clean up
+                    if self._registered:
+                        try:
+                            _user32.UnregisterHotKey(None, self.HOTKEY_ID)
+                            self._registered = False
+                            logger.info("Manually unregistered hotkey after timeout")
+                        except Exception as e:
+                            logger.debug("Failed to manually unregister hotkey: %s", e)
                 self._thread = None
             logger.info("HotkeyManager stopped")
 
         @property
         def is_running(self) -> bool:
             """Check if hotkey manager is running."""
-            return self._running and self._hook_installed
-
-        def _unhook_keyboard(self):
-            """Remove the keyboard hook."""
-            with self._lock:
-                if self._hook_handle:
-                    try:
-                        _user32.UnhookWindowsHookEx(self._hook_handle)
-                        logger.info("Uninstalled low-level keyboard hook")
-                    except Exception as e:
-                        logger.debug("Failed to unhook keyboard: %s", e)
-                    self._hook_handle = None
-                self._hook_installed = False
-                self._hook_proc = None
-
-        def _keyboard_hook_proc(self, nCode: int, wParam: int, lParam: int) -> int:
-            """
-            Low-level keyboard hook procedure.
-
-            This intercepts all keyboard events at OS level, before they reach any application.
-            Returns 1 to block the key event, or calls CallNextHookEx to pass it along.
-
-            CRITICAL: This function MUST return quickly and MUST NOT raise exceptions,
-            otherwise all keyboard input will be blocked system-wide.
-            """
-            try:
-                if nCode >= 0 and wParam in (WM_KEYDOWN, WM_SYSKEYDOWN):
-                    # Get keyboard event data
-                    kb_struct = ctypes.cast(lParam, ctypes.POINTER(KBDLLHOOKSTRUCT)).contents
-                    vk_code = kb_struct.vkCode
-
-                    # Check for J key
-                    if vk_code == VK_J:
-                        # Use GetAsyncKeyState for reliable Ctrl detection
-                        ctrl_state = _user32.GetAsyncKeyState(VK_CONTROL)
-                        if ctrl_state & 0x8000:  # High bit indicates key is down
-                            logger.debug("Low-level hook: Ctrl+J detected")
-                            # Handle hotkey in separate thread to not block the hook
-                            threading.Thread(
-                                target=self._handle_hotkey_safe,
-                                daemon=True
-                            ).start()
-                            # Return 1 to consume the event (prevent it from reaching applications)
-                            return 1
-            except Exception:
-                # Never let exceptions escape - they would block all keyboard input
-                pass
-
-            # Pass the event to the next hook
-            return _user32.CallNextHookEx(self._hook_handle, nCode, wParam, lParam)
-
-        def _handle_hotkey_safe(self):
-            """Safe wrapper for _handle_hotkey that catches exceptions."""
-            try:
-                self._handle_hotkey()
-            except Exception as e:
-                logger.error(f"Error in hotkey handler: {e}", exc_info=True)
+            return self._running and self._registered
 
         def _hotkey_loop(self):
-            """Main loop that runs the low-level keyboard hook."""
-            # Store thread ID for WM_QUIT posting
-            self._thread_id = _kernel32.GetCurrentThreadId()
-
-            # Create hook procedure (must keep reference to prevent garbage collection)
-            self._hook_proc = HOOKPROC(self._keyboard_hook_proc)
-
-            # Install low-level keyboard hook
-            self._hook_handle = _user32.SetWindowsHookExW(
-                WH_KEYBOARD_LL,
-                self._hook_proc,
-                None,  # hMod - NULL for low-level hooks
-                0      # dwThreadId - 0 for all threads
+            """Main loop that listens for hotkey events."""
+            # Register hotkey: Ctrl+Shift+J
+            # MOD_NOREPEAT prevents repeated firing when key is held
+            success = _user32.RegisterHotKey(
+                None,  # No window, thread-level hotkey
+                self.HOTKEY_ID,
+                MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT,
+                VK_J
             )
 
-            if not self._hook_handle:
+            if not success:
                 error_code = ctypes.get_last_error()
-                logger.error(f"Failed to install keyboard hook (error: {error_code})")
+                logger.error(f"Failed to register hotkey Ctrl+Shift+J (error: {error_code})")
+                logger.error("The hotkey may be registered by another application")
                 self._running = False
                 return
 
-            self._hook_installed = True
-            logger.info("Installed low-level keyboard hook for Ctrl+J")
+            self._registered = True
+            logger.info("Registered global hotkey: Ctrl+Shift+J")
 
             try:
-                # Message loop is required for low-level hooks to work
                 msg = ctypes.wintypes.MSG()
                 while self._running:
-                    # GetMessage blocks until a message is available
-                    # Returns 0 for WM_QUIT, -1 for error
-                    result = _user32.GetMessageW(ctypes.byref(msg), None, 0, 0)
-                    if result == 0:  # WM_QUIT
-                        break
-                    if result == -1:  # Error
-                        error_code = ctypes.get_last_error()
-                        logger.error(f"GetMessage error: {error_code}")
-                        break
-                    _user32.TranslateMessage(ctypes.byref(msg))
-                    _user32.DispatchMessageW(ctypes.byref(msg))
+                    # PeekMessage with PM_REMOVE (non-blocking)
+                    if _user32.PeekMessageW(ctypes.byref(msg), None, 0, 0, 1):
+                        if msg.message == WM_HOTKEY and msg.wParam == self.HOTKEY_ID:
+                            logger.debug("Hotkey Ctrl+Shift+J triggered")
+                            self._handle_hotkey()
+                    else:
+                        # Sleep a bit to avoid busy waiting
+                        time.sleep(MESSAGE_POLL_INTERVAL_SEC)
             finally:
-                self._unhook_keyboard()
-                self._thread_id = None
+                # Unregister hotkey
+                if self._registered:
+                    _user32.UnregisterHotKey(None, self.HOTKEY_ID)
+                    self._registered = False
+                    logger.info("Unregistered global hotkey: Ctrl+Shift+J")
 
         def _handle_hotkey(self):
             """Handle hotkey press: copy selected text and trigger callback."""

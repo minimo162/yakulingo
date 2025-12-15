@@ -804,14 +804,17 @@ class CopilotHandler:
         try:
             local_cwd = os.environ.get("SYSTEMROOT", r"C:\Windows")
 
-            # On Windows, use STARTUPINFO and creationflags to prevent any window flicker
+            # On Windows, use STARTUPINFO to start Edge minimized
+            # Note: STARTF_USESHOWWINDOW with SW_MINIMIZE doesn't work for GUI apps
+            # that create their own windows (Edge creates its own window), but we use
+            # --start-minimized and --window-position=-32000,-32000 command line args instead.
+            # We avoid CREATE_NO_WINDOW flag as it can cause issues with GUI applications.
             startupinfo = None
             creationflags = 0
             if sys.platform == "win32":
                 startupinfo = subprocess.STARTUPINFO()
-                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                startupinfo.wShowWindow = 0  # SW_HIDE
-                creationflags = subprocess.CREATE_NO_WINDOW
+                # Don't set STARTF_USESHOWWINDOW - it has no effect on GUI apps
+                # and may interfere with Edge's own window management
 
             self.edge_process = subprocess.Popen([
                 edge_exe,

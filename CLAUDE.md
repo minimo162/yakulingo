@@ -582,7 +582,7 @@ Application logs are stored in:
 The `CopilotHandler` class automates Microsoft Edge browser:
 - Uses Playwright for browser automation
 - Connects to Edge on CDP port 9333
-- Endpoint: `https://m365.cloud.microsoft/chat/?auth=2`
+- Endpoint: `https://m365.cloud.microsoft/chat/`
 - Handles Windows proxy detection from registry
 - Methods: `connect()`, `disconnect()`, `translate_sync()`, `translate_single()`
 
@@ -1613,6 +1613,26 @@ When interacting with users in this repository, prefer Japanese for comments and
 ## Recent Development Focus
 
 Based on recent commits:
+- **Global Hotkey Change to Ctrl+Alt+J (2024-12)**:
+  - **Excel/Word conflict resolution**: Ctrl+JはExcelのJustifyショートカット、Ctrl+Shift+JはWordのJustifyショートカットと競合するため、Ctrl+Alt+Jに変更
+  - **Low-level keyboard hook**: WH_KEYBOARD_LLを使用して確実にホットキーを処理
+  - **Exception handling fix**: 低レベルキーボードフックの例外処理を修正してキーボードブロックを防止
+- **Session Persistence Improvements (2024-12)**:
+  - **auth=2 parameter removal**: COPILOT_URLから?auth=2パラメータを削除。M365は?authパラメータがなくても既存セッションの認証タイプを自動検出
+  - **Storage state restoration**: 起動時のstorage_state復元を改善してログイン保持を修正
+  - **Auto-login Edge visibility fix**: 自動ログイン時のEdge表示を防止
+- **Edge Browser Process Management (2024-12)**:
+  - **Process tree termination**: アプリ終了時にEdgeの子プロセスも確実に終了（taskkill /T /F使用）
+  - **Profile directory cleanup**: 子プロセス終了によりプロファイルディレクトリのファイルハンドルロック解除
+  - **Playwright greenlet fix**: シャットダウン時にPlaywright.stop()を削除してgreenletエラーを回避
+  - **Timeout optimization**: Edge終了時のタイムアウトを短縮
+- **File Panel Scrolling Fix (2024-12)**:
+  - **ui.scroll_area usage**: ファイルパネルにui.scroll_area()を使用してスクロールを確実に有効化
+- **File Attachment Button Improvement (2024-12)**:
+  - **Direct file selection**: ファイル添付ボタンでダイアログを経由せず直接ファイル選択を開くように改善
+- **Glossary Processing Improvements (2024-12)**:
+  - **glossary_old.csv comparison**: glossary_old.csvとの比較でカスタマイズ判定を追加（前バージョンと一致すればバックアップをスキップ）
+  - **Backup timing fix**: glossary.csv比較処理をバックアップディレクトリ削除前に移動
 - **PDF Text Positioning Fix (PDFMathTranslate compliant) (2024-12)**:
   - **Paragraph.y = char.y0**: PDFMathTranslate準拠で`Paragraph.y`を`char.y0`（文字の下端）に設定。従来の`char.y1 - char_size`から変更
   - **calculate_text_position fallback**: フォールバック計算で`y1`（ボックス下端）を使用。従来の`y2 - font_size`から変更
@@ -1774,8 +1794,8 @@ Based on recent commits:
   - **2-column layout**: 3カラム（サイドバー+入力パネル+結果パネル）から2カラム（サイドバー+結果パネル）に簡素化
   - **CSS visibility toggle**: 翻訳結果表示時は入力パネルをCSSで非表示にし、結果パネルを中央配置
   - **Tab-based navigation**: 新しい翻訳は「テキスト翻訳」タブをクリックしてINPUT状態に戻す
-- **Ctrl+J Hint Styling (2024-12)**:
-  - **Larger font size**: Ctrl+Jヒントのフォントサイズを拡大して視認性向上
+- **Ctrl+Alt+J Hint Styling (2024-12)**:
+  - **Larger font size**: Ctrl+Alt+Jヒントのフォントサイズを拡大して視認性向上
 - **File Panel UI (2024-12)**:
   - **Simplified completion**: ファイル翻訳完了画面から「新しいファイルを翻訳」ボタンを削除
 - **Copilot Submission Reliability (2024-12)**:
@@ -2008,8 +2028,8 @@ Based on recent commits:
     - 1920x1200 at 125% → 論理1536x960 → window 1140x733 (74%)
     - 2560x1440 at 150% → 論理1706x960 → window 1266x733 (74%)
   - **Panel layout**: Translation result panel elements aligned to 2/3 width with center alignment
-- **Global Hotkey (Ctrl+J)**:
-  - **Quick translation**: Select text in any app, press Ctrl+J to translate
+- **Global Hotkey (Ctrl+Alt+J)**:
+  - **Quick translation**: Select text in any app, press Ctrl+Alt+J to translate
   - **Character limit**: 5,000 chars max for text translation
   - **Auto file translation**: Texts exceeding limit automatically switch to file translation mode (saves as .txt, translates via batch processing)
   - **SendInput API**: Uses modern Windows API for reliable Ctrl+C simulation
@@ -2024,9 +2044,9 @@ Based on recent commits:
   - **Race condition handling**: Discards detection result if user selects different file during detection
   - **Manual override**: Language toggle buttons allow manual selection after auto-detection
   - **UI feedback**: Shows detected language (e.g., "日本語を検出 → 英訳します")
-- **Unified Ctrl+J Hint**:
-  - **Both panels**: Text and file translation panels show same Ctrl+J hint with keycap styling
-  - **Consistent messaging**: "[Ctrl] + [J] : 他アプリで選択したテキストを翻訳"
+- **Unified Ctrl+Alt+J Hint**:
+  - **Both panels**: Text and file translation panels show same Ctrl+Alt+J hint with keycap styling
+  - **Consistent messaging**: "[Ctrl] + [Alt] + [J] : 他アプリで選択したテキストを翻訳"
 - **setup.ps1 Robustness & Reliability**:
   - **Running process detection**: YakuLingo実行中の再インストール試行を検出してエラー表示
   - **Python process detection**: YakuLingoインストールディレクトリで実行中のPythonプロセスも検出

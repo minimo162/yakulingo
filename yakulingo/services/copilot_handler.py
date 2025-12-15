@@ -3613,22 +3613,8 @@ class CopilotHandler:
                     logger.warning("Input field is empty after fill - Copilot may need attention")
                     raise RuntimeError("Copilotに入力できませんでした。Edgeブラウザを確認してください。")
 
-                # OPTIMIZED: Removed fixed 0.8s wait - replaced by send button readiness check
-                # The send button becoming enabled indicates Copilot has processed the input
-                # This can save 0.3-0.7s when Copilot responds quickly
-
-                # Re-focus input element after fill() to ensure Enter key is received
-                # fill() can cause focus loss, so we need to explicitly restore it
-                try:
-                    input_elem.evaluate('el => { el.click(); el.focus(); }')
-                    time.sleep(0.05)  # Minimal pause for focus (reduced from 0.1s)
-                except Exception as e:
-                    logger.debug("Re-focus after fill failed: %s", e)
-
-                # Wait for send button to become enabled before pressing Enter
+                # Wait for send button to become enabled before clicking
                 # This indicates Copilot has processed the input and is ready
-                # OPTIMIZED: This replaces the fixed 0.8s wait - timeout increased to 2s
-                # to ensure reliability while still being faster on average
                 send_button_start = time.time()
                 try:
                     self._page.wait_for_selector(
@@ -3647,37 +3633,30 @@ class CopilotHandler:
                     )
                     time.sleep(0.15)  # Reduced fallback from 0.2s
 
-                # Send via Enter key with retry on failure
-                # After Enter, poll for input cleared OR stop button appears
+                # Send via send button click (more reliable than Enter key)
+                # After click, poll for input cleared OR stop button appears
                 # Either indicates successful send
                 MAX_SEND_RETRIES = 3
                 # OPTIMIZED: Faster polling (50ms) with shorter max wait (1.5s)
-                # Reduced from 2.5s to 1.5s - faster retry if first send fails
                 SEND_VERIFY_POLL_INTERVAL = 0.05  # Poll every 50ms
-                SEND_VERIFY_MAX_WAIT = 1.5  # Max wait for verification (reduced from 2.5s)
+                SEND_VERIFY_MAX_WAIT = 1.5  # Max wait for verification
                 send_success = False
 
                 for send_attempt in range(MAX_SEND_RETRIES):
-                    # Ensure input element has focus before pressing Enter (simplified)
+                    # Click send button (more reliable than Enter key)
                     try:
-                        has_focus = input_elem.evaluate(
-                            'el => document.activeElement === el || el.contains(document.activeElement)'
-                        )
-                        if not has_focus:
-                            logger.debug("Input lost focus, restoring (attempt %d)", send_attempt + 1)
-                            input_elem.evaluate('el => { el.click(); el.focus(); }')
-                            time.sleep(0.1)
+                        send_btn = self._page.query_selector(self.SEND_BUTTON_SELECTOR)
+                        if send_btn:
+                            # Use JS click to avoid bringing browser to front
+                            send_btn.evaluate('el => el.click()')
+                            logger.debug("Send button clicked (attempt %d)", send_attempt + 1)
                         else:
-                            logger.debug("Input element already has focus")
-                    except Exception as focus_err:
-                        logger.debug("Focus check/restore failed: %s", focus_err)
-                        try:
-                            input_elem.evaluate('el => { el.click(); el.focus(); }')
-                            time.sleep(0.1)
-                        except Exception:
-                            pass
-
-                    input_elem.press("Enter")
+                            # Fallback to Enter key if send button not found
+                            logger.debug("Send button not found, using Enter key (attempt %d)", send_attempt + 1)
+                            input_elem.press("Enter")
+                    except Exception as click_err:
+                        logger.debug("Send button click failed, using Enter key: %s", click_err)
+                        input_elem.press("Enter")
 
                     # Poll for successful send indicators (instead of fixed wait)
                     # 1. Input field is cleared (text removed)
@@ -3725,7 +3704,7 @@ class CopilotHandler:
 
                     if send_verified:
                         elapsed = time.time() - poll_start
-                        logger.info("Message sent via Enter key (attempt %d, %s, verified in %.2fs)",
+                        logger.info("Message sent (attempt %d, %s, verified in %.2fs)",
                                     send_attempt + 1, verify_reason, elapsed)
                         send_success = True
                         break
@@ -3744,68 +3723,11 @@ class CopilotHandler:
                                 SEND_VERIFY_MAX_WAIT, send_attempt + 1, MAX_SEND_RETRIES
                             )
                         else:
-                            # Final Enter attempt failed - try clicking the send button
+                            # All attempts failed
                             logger.warning(
-                                "Input still has text after %d Enter attempts. "
-                                "Trying send button click as fallback...",
+                                "Send not verified after %d attempts",
                                 MAX_SEND_RETRIES
                             )
-                            try:
-                                # First try enabled button selector
-                                send_btn = self._page.query_selector(self.SEND_BUTTON_SELECTOR)
-
-                                # If not found, check if button exists but is disabled
-                                if not send_btn:
-                                    any_send_btn = self._page.query_selector(self.SEND_BUTTON_ANY)
-                                    if any_send_btn:
-                                        # Button exists but is disabled - wait for it to become enabled
-                                        logger.info("Send button found but disabled, waiting for it to become enabled...")
-                                        try:
-                                            send_btn = self._page.wait_for_selector(
-                                                self.SEND_BUTTON_SELECTOR,
-                                                timeout=1500,
-                                                state='visible'
-                                            )
-                                        except PlaywrightTimeoutError:
-                                            logger.warning("Send button did not become enabled within 1.5 seconds")
-                                            send_btn = None
-
-                                if send_btn:
-                                    # Use JS click to avoid bringing browser to front
-                                    send_btn.evaluate('el => el.click()')
-
-                                    # Poll for verification (same as Enter key)
-                                    btn_poll_start = time.time()
-                                    btn_verified = False
-                                    while time.time() - btn_poll_start < SEND_VERIFY_MAX_WAIT:
-                                        time.sleep(SEND_VERIFY_POLL_INTERVAL)
-                                        try:
-                                            stop_btn = self._page.query_selector(self.STOP_BUTTON_SELECTOR_COMBINED)
-                                            if stop_btn is not None and stop_btn.is_visible():
-                                                btn_verified = True
-                                                break
-                                        except Exception:
-                                            pass
-                                        try:
-                                            current_input = self._page.query_selector(input_selector)
-                                            remaining_text = current_input.inner_text().strip() if current_input else ""
-                                            if not remaining_text:
-                                                btn_verified = True
-                                                break
-                                        except Exception:
-                                            btn_verified = True
-                                            break
-
-                                    if btn_verified:
-                                        logger.info("Message sent via send button click (fallback)")
-                                        send_success = True
-                                    else:
-                                        logger.warning("Send button click did not clear input")
-                                else:
-                                    logger.warning("Send button not found for fallback (selector: %s)",
-                                                   self.SEND_BUTTON_SELECTOR)
-                            except Exception as btn_err:
-                                logger.warning("Send button fallback failed: %s", btn_err)
             else:
                 logger.error("Input element not found!")
                 raise RuntimeError("Copilot入力欄が見つかりませんでした")

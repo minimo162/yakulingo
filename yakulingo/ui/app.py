@@ -89,7 +89,7 @@ if TYPE_CHECKING:
 # App constants
 COPILOT_LOGIN_TIMEOUT = 300  # 5 minutes for login
 MAX_HISTORY_DISPLAY = 20  # Maximum history items to display in sidebar
-TEXT_TRANSLATION_CHAR_LIMIT = 5000  # Max chars for text translation (Ctrl+J, Ctrl+Enter)
+TEXT_TRANSLATION_CHAR_LIMIT = 5000  # Max chars for text translation (Ctrl+Alt+J, Ctrl+Enter)
 
 
 @dataclass
@@ -214,7 +214,7 @@ class YakuLingoApp:
         self._login_polling_task: "asyncio.Task | None" = None
         self._shutdown_requested = False
 
-        # Hotkey manager for quick translation (Ctrl+J)
+        # Hotkey manager for quick translation (Ctrl+Alt+J)
         self._hotkey_manager = None
 
         # PP-DocLayout-L initialization state (on-demand for PDF)
@@ -275,7 +275,7 @@ class YakuLingoApp:
         self._settings = value
 
     def start_hotkey_manager(self):
-        """Start the global hotkey manager for quick translation (Ctrl+J)."""
+        """Start the global hotkey manager for quick translation (Ctrl+Alt+J)."""
         import sys
         if sys.platform != 'win32':
             logger.info("Hotkey manager only available on Windows")
@@ -287,7 +287,7 @@ class YakuLingoApp:
             self._hotkey_manager = get_hotkey_manager()
             self._hotkey_manager.set_callback(self._on_hotkey_triggered)
             self._hotkey_manager.start()
-            logger.info("Hotkey manager started (Ctrl+J)")
+            logger.info("Hotkey manager started (Ctrl+Alt+J)")
         except Exception as e:
             logger.error(f"Failed to start hotkey manager: {e}")
 

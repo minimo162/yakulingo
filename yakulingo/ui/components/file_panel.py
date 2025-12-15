@@ -230,6 +230,9 @@ def create_file_panel(
                         ui.label('Ctrl')
                     ui.label('+').classes('text-muted text-xs mx-0.5')
                     with ui.element('span').classes('keycap keycap-hint'):
+                        ui.label('Alt')
+                    ui.label('+').classes('text-muted text-xs mx-0.5')
+                    with ui.element('span').classes('keycap keycap-hint'):
                         ui.label('J')
                     ui.label(': 他のアプリで選択中の文章を取り込んで翻訳').classes('text-muted ml-1')
 

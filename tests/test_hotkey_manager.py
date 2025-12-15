@@ -182,7 +182,7 @@ class TestSendCtrlC:
 
         manager = HotkeyManager()
 
-        with patch('ctypes.windll.user32') as mock_user32:
+        with patch('yakulingo.services.hotkey_manager._user32') as mock_user32:
             mock_user32.SendInput.return_value = 4
 
             manager._send_ctrl_c()
@@ -197,12 +197,16 @@ class TestSendCtrlC:
 
         manager = HotkeyManager()
 
-        with patch('ctypes.windll.user32') as mock_user32:
+        with patch('yakulingo.services.hotkey_manager._user32') as mock_user32:
             mock_user32.SendInput.return_value = 2  # Only 2 of 4 sent
 
             with patch('yakulingo.services.hotkey_manager.logger') as mock_logger:
-                manager._send_ctrl_c()
-                mock_logger.warning.assert_called_with("SendInput sent 2/4 inputs")
+                with patch('ctypes.get_last_error', return_value=0):
+                    manager._send_ctrl_c()
+                    # Verify warning was called (message includes error code and input_size)
+                    mock_logger.warning.assert_called_once()
+                    call_args = mock_logger.warning.call_args[0][0]
+                    assert "SendInput sent 2/4 inputs" in call_args
 
 
 class TestWaitForCtrlRelease:
@@ -214,7 +218,7 @@ class TestWaitForCtrlRelease:
 
         manager = HotkeyManager()
 
-        with patch('ctypes.windll.user32') as mock_user32:
+        with patch('yakulingo.services.hotkey_manager._user32') as mock_user32:
             # Ctrl not pressed (high bit not set)
             mock_user32.GetAsyncKeyState.return_value = 0
 
@@ -240,7 +244,7 @@ class TestWaitForCtrlRelease:
                 return 0x8000  # High bit set = pressed
             return 0
 
-        with patch('ctypes.windll.user32') as mock_user32:
+        with patch('yakulingo.services.hotkey_manager._user32') as mock_user32:
             mock_user32.GetAsyncKeyState.side_effect = mock_get_async_key_state
 
             manager._wait_for_ctrl_release()
@@ -257,7 +261,7 @@ class TestClipboardOperations:
 
         manager = HotkeyManager()
 
-        with patch('ctypes.windll.user32') as mock_user32:
+        with patch('yakulingo.services.hotkey_manager._user32') as mock_user32:
             mock_user32.OpenClipboard.return_value = False
 
             result = manager._get_clipboard_text()
@@ -270,7 +274,7 @@ class TestClipboardOperations:
 
         manager = HotkeyManager()
 
-        with patch('ctypes.windll.user32') as mock_user32:
+        with patch('yakulingo.services.hotkey_manager._user32') as mock_user32:
             mock_user32.OpenClipboard.return_value = True
             mock_user32.IsClipboardFormatAvailable.return_value = False
             mock_user32.CloseClipboard.return_value = True

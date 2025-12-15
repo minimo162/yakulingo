@@ -1,16 +1,9 @@
 # yakulingo/services/hotkey_manager.py
 """
-Global hotkey manager for quick translation.
+Global hotkey manager for quick translation via Ctrl+Alt+J.
 
-Registers Ctrl+J as a global hotkey that:
-1. Sends Ctrl+C to copy selected text
-2. Gets text from clipboard
-3. Triggers translation callback with the text
-"""
-
-# yakulingo/services/hotkey_manager.py
-"""
-Global hotkey manager for quick translation via Ctrl+J.
+Uses RegisterHotKey API to register a global hotkey. Ctrl+Alt+J is used
+instead of Ctrl+J to avoid conflicts with Excel/Word's built-in shortcuts.
 
 The full implementation uses Windows-specific APIs. To avoid import errors on
 other platforms (e.g., macOS/Linux during development or testing), the module
@@ -43,7 +36,8 @@ if not _IS_WINDOWS:
 
         raise OSError("HotkeyManager is only available on Windows platforms.")
 else:
-    # Windows API constants
+    # Windows API constants for RegisterHotKey
+    MOD_ALT = 0x0001
     MOD_CONTROL = 0x0002
     MOD_NOREPEAT = 0x4000
 
@@ -134,6 +128,9 @@ else:
         """
         Manages global hotkey registration for quick translation.
 
+        Uses Ctrl+Alt+J instead of Ctrl+J to avoid conflicts with Excel/Word's
+        built-in Justify shortcuts (Ctrl+J and Ctrl+Shift+J).
+
         Usage:
             manager = HotkeyManager()
             manager.set_callback(on_text_received)
@@ -182,12 +179,10 @@ else:
                 self._running = False
 
             if self._thread:
-                # Use longer timeout to allow message loop to process WM_QUIT
-                self._thread.join(timeout=5.0)
+                self._thread.join(timeout=2.0)
                 if self._thread.is_alive():
                     logger.warning("HotkeyManager thread did not stop in time")
                     # Fallback: manually unregister hotkey if thread didn't clean up
-                    # This ensures the global hotkey is released even if thread is stuck
                     if self._registered:
                         try:
                             _user32.UnregisterHotKey(None, self.HOTKEY_ID)
@@ -205,24 +200,24 @@ else:
 
         def _hotkey_loop(self):
             """Main loop that listens for hotkey events."""
-            # Register hotkey: Ctrl+J
+            # Register hotkey: Ctrl+Alt+J
             # MOD_NOREPEAT prevents repeated firing when key is held
             success = _user32.RegisterHotKey(
                 None,  # No window, thread-level hotkey
                 self.HOTKEY_ID,
-                MOD_CONTROL | MOD_NOREPEAT,
+                MOD_CONTROL | MOD_ALT | MOD_NOREPEAT,
                 VK_J
             )
 
             if not success:
                 error_code = ctypes.get_last_error()
-                logger.error(f"Failed to register hotkey Ctrl+J (error: {error_code})")
+                logger.error(f"Failed to register hotkey Ctrl+Alt+J (error: {error_code})")
                 logger.error("The hotkey may be registered by another application")
                 self._running = False
                 return
 
             self._registered = True
-            logger.info("Registered global hotkey: Ctrl+J")
+            logger.info("Registered global hotkey: Ctrl+Alt+J")
 
             try:
                 msg = ctypes.wintypes.MSG()
@@ -230,7 +225,7 @@ else:
                     # PeekMessage with PM_REMOVE (non-blocking)
                     if _user32.PeekMessageW(ctypes.byref(msg), None, 0, 0, 1):
                         if msg.message == WM_HOTKEY and msg.wParam == self.HOTKEY_ID:
-                            logger.debug("Hotkey Ctrl+J triggered")
+                            logger.debug("Hotkey Ctrl+Alt+J triggered")
                             self._handle_hotkey()
                     else:
                         # Sleep a bit to avoid busy waiting
@@ -240,7 +235,7 @@ else:
                 if self._registered:
                     _user32.UnregisterHotKey(None, self.HOTKEY_ID)
                     self._registered = False
-                    logger.info("Unregistered global hotkey: Ctrl+J")
+                    logger.info("Unregistered global hotkey: Ctrl+Alt+J")
 
         def _handle_hotkey(self):
             """Handle hotkey press: copy selected text and trigger callback."""

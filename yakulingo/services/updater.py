@@ -650,35 +650,60 @@ Option Explicit
 
 On Error Resume Next
 
-Dim objShell, objFSO, scriptDir, psScript, debugLogPath
+Dim objShell, objFSO, scriptDir, psScript, debugLogPath, vbsLogPath
 
 Set objShell = CreateObject("WScript.Shell")
 Set objFSO = CreateObject("Scripting.FileSystemObject")
 
-' Get debug log path
+' Get debug log paths
 debugLogPath = objShell.Environment("Process")("TEMP") & "\\YakuLingo_update_debug.log"
+vbsLogPath = objShell.Environment("Process")("TEMP") & "\\YakuLingo_update_vbs.log"
+
+' Write VBS startup log
+Sub WriteVbsLog(msg)
+    On Error Resume Next
+    Dim f
+    Set f = objFSO.OpenTextFile(vbsLogPath, 8, True)
+    If Not f Is Nothing Then
+        f.WriteLine Now & " - " & msg
+        f.Close
+    End If
+    On Error Goto 0
+End Sub
+
+WriteVbsLog "=== VBS Script Started ==="
 
 ' Get script directory
 scriptDir = objFSO.GetParentFolderName(WScript.ScriptFullName)
 psScript = scriptDir & "\\.scripts\\update.ps1"
 
+WriteVbsLog "Script dir: " & scriptDir
+WriteVbsLog "PS script: " & psScript
+
 ' Check if PowerShell script exists
 If Not objFSO.FileExists(psScript) Then
+    WriteVbsLog "ERROR: PS script not found"
     MsgBox "Update script not found." & vbCrLf & vbCrLf & _
            "Expected: " & psScript, _
            vbCritical, "YakuLingo Update - Error"
     WScript.Quit 1
 End If
 
+WriteVbsLog "PS script exists, starting PowerShell..."
+
 ' Run PowerShell script with GUI mode (hidden console)
 Dim command, exitCode
 command = "powershell.exe -ExecutionPolicy Bypass -NoProfile -File """ & psScript & """"
 
+WriteVbsLog "Command: " & command
+
 ' Run and wait for completion (0 = hidden, True = wait)
 exitCode = objShell.Run(command, 0, True)
 
+WriteVbsLog "PowerShell exit code: " & exitCode
+
 If exitCode <> 0 Then
-    Dim errorMessage, debugLogContent
+    Dim errorMessage, debugLogContent, vbsLogContent
 
     ' Try to read debug log content
     debugLogContent = ""
@@ -693,6 +718,19 @@ If exitCode <> 0 Then
         On Error Goto 0
     End If
 
+    ' Try to read VBS log content
+    vbsLogContent = ""
+    If objFSO.FileExists(vbsLogPath) Then
+        On Error Resume Next
+        Dim vbsFile
+        Set vbsFile = objFSO.OpenTextFile(vbsLogPath, 1, False)
+        If Not vbsFile Is Nothing Then
+            vbsLogContent = vbsFile.ReadAll()
+            vbsFile.Close
+        End If
+        On Error Goto 0
+    End If
+
     errorMessage = "Update failed." & vbCrLf & vbCrLf & _
                    "Error code: " & exitCode & vbCrLf & vbCrLf & _
                    "Details: " & debugLogPath
@@ -701,16 +739,22 @@ If exitCode <> 0 Then
     If Len(debugLogContent) > 0 Then
         errorMessage = errorMessage & vbCrLf & vbCrLf & _
                        "=== Debug Log ===" & vbCrLf & _
-                       Left(debugLogContent, 1000)
+                       Left(debugLogContent, 800)
+    ElseIf Len(vbsLogContent) > 0 Then
+        errorMessage = errorMessage & vbCrLf & vbCrLf & _
+                       "(PowerShell log not created)" & vbCrLf & vbCrLf & _
+                       "=== VBS Log ===" & vbCrLf & _
+                       Left(vbsLogContent, 800)
     Else
         errorMessage = errorMessage & vbCrLf & vbCrLf & _
-                       "(Debug log was not created - PowerShell may have failed to start)"
+                       "(No logs created - PowerShell may have failed to start)"
     End If
 
     MsgBox errorMessage, vbCritical, "YakuLingo Update - Error"
     WScript.Quit exitCode
 End If
 
+WriteVbsLog "Update completed successfully"
 WScript.Quit 0
 '''
 
@@ -1118,10 +1162,12 @@ try {{
 '''
 
         # スクリプトを保存
-        with open(vbs_path, "w", encoding="utf-8") as f:
+        # VBSはANSIで保存（日本語Windows互換）
+        with open(vbs_path, "w", encoding="cp932") as f:
             f.write(vbs_content)
 
-        with open(ps1_path, "w", encoding="utf-8") as f:
+        # PowerShellスクリプトはUTF-8 BOM付きで保存（日本語Windows必須）
+        with open(ps1_path, "w", encoding="utf-8-sig") as f:
             f.write(ps1_content)
 
         # VBSスクリプトを実行（GUIモード、コンソール非表示）

@@ -359,10 +359,10 @@ class PlaywrightThreadExecutor:
             logger.debug("Cleared %d pending items during shutdown", cleared_count)
 
         # Send stop signal and wait for worker to finish
-        # Use 5 second timeout for faster shutdown (daemon thread will be killed on process exit anyway)
+        # Use 1 second timeout for fast shutdown (daemon thread will be killed on process exit anyway)
         if self._thread is not None and self._thread.is_alive():
             self._request_queue.put((None, None, None))
-            self._thread.join(timeout=5)
+            self._thread.join(timeout=1)
             if self._thread.is_alive():
                 # This is not critical - daemon thread will be terminated on process exit
                 logger.debug("Playwright worker thread still running, will be terminated on exit")
@@ -803,7 +803,7 @@ class CopilotHandler:
 
             result = subprocess.run(
                 [taskkill_path, "/F", "/T", "/PID", str(pid)],
-                capture_output=True, timeout=5, cwd=local_cwd,
+                capture_output=True, timeout=2, cwd=local_cwd,
                 creationflags=subprocess.CREATE_NO_WINDOW
             )
             # taskkill returns 0 on success, 128 if process not found
@@ -2785,12 +2785,15 @@ class CopilotHandler:
         from contextlib import suppress
 
         logger.info("Force disconnecting Copilot...")
+        shutdown_start = time.time()
 
         # Mark as disconnected first
         self._connected = False
 
         # First, shutdown the executor to release any pending operations
+        executor_start = time.time()
         _playwright_executor.shutdown()
+        logger.debug("[TIMING] executor.shutdown: %.2fs", time.time() - executor_start)
 
         # Note: We don't call self._playwright.stop() here because:
         # 1. Playwright operations must run in the same greenlet where it was initialized
@@ -2807,14 +2810,17 @@ class CopilotHandler:
             # Very short timeout (0.3s) because:
             # 1. Edge usually closes immediately or not at all (due to dialogs like "Restore pages")
             # 2. We want fast app shutdown - falling back to force kill is acceptable
+            graceful_start = time.time()
             with suppress(Exception):
                 if self._close_edge_gracefully(timeout=0.3):
                     browser_terminated = True
+            logger.debug("[TIMING] graceful_close: %.2fs (success=%s)", time.time() - graceful_start, browser_terminated)
 
             # Fall back to kill process tree if graceful close failed
             # Use _kill_process_tree to kill all child processes (renderer, GPU, etc.)
             # that may be holding file handles to the profile directory
             if not browser_terminated:
+                taskkill_start = time.time()
                 with suppress(Exception):
                     if self.edge_process and self.edge_process.pid:
                         if self._kill_process_tree(self.edge_process.pid):
@@ -2836,6 +2842,7 @@ class CopilotHandler:
                                     logger.warning("Edge process did not terminate after kill")
                             if browser_terminated:
                                 logger.info("Edge browser terminated (force via terminate)")
+                logger.debug("[TIMING] kill_process_tree: %.2fs", time.time() - taskkill_start)
 
             # Verify process is truly terminated by checking poll()
             if browser_terminated and self.edge_process:
@@ -2862,6 +2869,8 @@ class CopilotHandler:
         self._playwright = None
         self.edge_process = None
         self._browser_started_by_us = False
+
+        logger.info("[TIMING] force_disconnect total: %.2fs", time.time() - shutdown_start)
 
     def _disconnect_impl(self, keep_browser: bool = False) -> None:
         """Implementation of disconnect that runs in the Playwright thread.
@@ -3627,111 +3636,96 @@ class CopilotHandler:
                     )
                     logger.debug("Send button is now enabled")
                 except Exception as e:
-                    # Selector may have changed - use longer fixed wait that matches
-                    # successful retry timing (0.8s SEND_RETRY_WAIT + focus handling)
+                    # Selector may have changed - use fixed wait as fallback
                     logger.warning(
                         "Send button selector may need update (using fallback wait): %s",
                         type(e).__name__
                     )
-                    time.sleep(1.0)
+                    time.sleep(0.5)
 
                 # Send via Enter key with retry on failure
-                # After Enter, check if input field is cleared OR stop button appears
+                # After Enter, poll for input cleared OR stop button appears
                 # Either indicates successful send
                 MAX_SEND_RETRIES = 3
-                SEND_RETRY_WAIT = 0.8  # seconds between retries (increased for reliability)
+                SEND_VERIFY_POLL_INTERVAL = 0.1  # Poll every 100ms
+                SEND_VERIFY_MAX_WAIT = 1.5  # Max wait for verification
                 send_success = False
 
                 for send_attempt in range(MAX_SEND_RETRIES):
-                    # Ensure input element has focus before pressing Enter
-                    # Check if focus is already on the input, if not, set it
+                    # Ensure input element has focus before pressing Enter (simplified)
                     try:
                         has_focus = input_elem.evaluate(
                             'el => document.activeElement === el || el.contains(document.activeElement)'
                         )
                         if not has_focus:
-                            logger.debug("Input lost focus, attempting to restore (attempt %d)", send_attempt + 1)
-                            # Try multiple methods to restore focus
-                            # Method 1: click + focus
+                            logger.debug("Input lost focus, restoring (attempt %d)", send_attempt + 1)
                             input_elem.evaluate('el => { el.click(); el.focus(); }')
                             time.sleep(0.1)
-
-                            # Verify focus was set
-                            has_focus = input_elem.evaluate(
-                                'el => document.activeElement === el || el.contains(document.activeElement)'
-                            )
-                            if not has_focus:
-                                # Method 2: scrollIntoView + focus
-                                logger.debug("Method 1 failed, trying scrollIntoView + focus")
-                                input_elem.evaluate('el => { el.scrollIntoView({block: "center"}); el.focus(); }')
-                                time.sleep(0.1)
-
-                                has_focus = input_elem.evaluate(
-                                    'el => document.activeElement === el || el.contains(document.activeElement)'
-                                )
-                                if not has_focus:
-                                    # Method 3: dispatchEvent focus
-                                    logger.debug("Method 2 failed, trying dispatchEvent")
-                                    input_elem.evaluate('''el => {
-                                        el.dispatchEvent(new FocusEvent('focus', { bubbles: true }));
-                                        el.focus();
-                                    }''')
-                                    time.sleep(0.1)
-
-                            # Final focus check
-                            has_focus = input_elem.evaluate(
-                                'el => document.activeElement === el || el.contains(document.activeElement)'
-                            )
-                            if has_focus:
-                                logger.debug("Focus successfully restored")
-                            else:
-                                logger.warning("Could not restore focus to input element (attempt %d)", send_attempt + 1)
                         else:
                             logger.debug("Input element already has focus")
-
-                        time.sleep(0.15)  # Brief pause after focus handling
                     except Exception as focus_err:
                         logger.debug("Focus check/restore failed: %s", focus_err)
-                        # Fallback: just try click + focus
                         try:
                             input_elem.evaluate('el => { el.click(); el.focus(); }')
-                            time.sleep(0.2)
+                            time.sleep(0.1)
                         except Exception:
                             pass
 
                     input_elem.press("Enter")
-                    time.sleep(SEND_RETRY_WAIT)
 
-                    # Check for successful send indicators:
+                    # Poll for successful send indicators (instead of fixed wait)
                     # 1. Input field is cleared (text removed)
                     # 2. Stop button appeared (Copilot started generating)
-                    try:
-                        current_input = self._page.query_selector(input_selector)
-                        remaining_text = current_input.inner_text().strip() if current_input else ""
-                    except Exception:
-                        remaining_text = ""
+                    poll_start = time.time()
+                    send_verified = False
+                    verify_reason = ""
 
-                    # Check if stop button is visible (indicates Copilot is processing)
-                    stop_button_visible = False
-                    try:
-                        stop_button = self._page.query_selector(self.STOP_BUTTON_SELECTOR_COMBINED)
-                        stop_button_visible = stop_button is not None and stop_button.is_visible()
-                    except Exception:
-                        pass
+                    while time.time() - poll_start < SEND_VERIFY_MAX_WAIT:
+                        time.sleep(SEND_VERIFY_POLL_INTERVAL)
 
-                    if not remaining_text or stop_button_visible:
-                        reason = "input cleared" if not remaining_text else "stop button visible"
-                        logger.info("Message sent via Enter key (attempt %d, %s)", send_attempt + 1, reason)
+                        # Check stop button first (faster indicator)
+                        try:
+                            stop_button = self._page.query_selector(self.STOP_BUTTON_SELECTOR_COMBINED)
+                            if stop_button is not None and stop_button.is_visible():
+                                send_verified = True
+                                verify_reason = "stop button visible"
+                                break
+                        except Exception:
+                            pass
+
+                        # Check if input is cleared
+                        try:
+                            current_input = self._page.query_selector(input_selector)
+                            remaining_text = current_input.inner_text().strip() if current_input else ""
+                            if not remaining_text:
+                                send_verified = True
+                                verify_reason = "input cleared"
+                                break
+                        except Exception:
+                            # If we can't check, assume it might have been sent
+                            send_verified = True
+                            verify_reason = "input check failed (assuming sent)"
+                            break
+
+                    if send_verified:
+                        elapsed = time.time() - poll_start
+                        logger.info("Message sent via Enter key (attempt %d, %s, verified in %.2fs)",
+                                    send_attempt + 1, verify_reason, elapsed)
                         send_success = True
                         break
                     else:
                         # Update input_elem for next retry attempt
-                        if current_input:
-                            input_elem = current_input
+                        try:
+                            current_input = self._page.query_selector(input_selector)
+                            if current_input:
+                                input_elem = current_input
+                        except Exception:
+                            pass
+
                         if send_attempt < MAX_SEND_RETRIES - 1:
                             logger.warning(
-                                "Input not cleared after Enter (attempt %d/%d), retrying...",
-                                send_attempt + 1, MAX_SEND_RETRIES
+                                "Send not verified after %.1fs (attempt %d/%d), retrying...",
+                                SEND_VERIFY_MAX_WAIT, send_attempt + 1, MAX_SEND_RETRIES
                             )
                         else:
                             # Final Enter attempt failed - try clicking the send button
@@ -3763,16 +3757,30 @@ class CopilotHandler:
                                 if send_btn:
                                     # Use JS click to avoid bringing browser to front
                                     send_btn.evaluate('el => el.click()')
-                                    time.sleep(SEND_RETRY_WAIT)
 
-                                    # Re-check if send was successful
-                                    try:
-                                        current_input = self._page.query_selector(input_selector)
-                                        remaining_text = current_input.inner_text().strip() if current_input else ""
-                                    except Exception:
-                                        remaining_text = ""
+                                    # Poll for verification (same as Enter key)
+                                    btn_poll_start = time.time()
+                                    btn_verified = False
+                                    while time.time() - btn_poll_start < SEND_VERIFY_MAX_WAIT:
+                                        time.sleep(SEND_VERIFY_POLL_INTERVAL)
+                                        try:
+                                            stop_btn = self._page.query_selector(self.STOP_BUTTON_SELECTOR_COMBINED)
+                                            if stop_btn is not None and stop_btn.is_visible():
+                                                btn_verified = True
+                                                break
+                                        except Exception:
+                                            pass
+                                        try:
+                                            current_input = self._page.query_selector(input_selector)
+                                            remaining_text = current_input.inner_text().strip() if current_input else ""
+                                            if not remaining_text:
+                                                btn_verified = True
+                                                break
+                                        except Exception:
+                                            btn_verified = True
+                                            break
 
-                                    if not remaining_text:
+                                    if btn_verified:
                                         logger.info("Message sent via send button click (fallback)")
                                         send_success = True
                                     else:

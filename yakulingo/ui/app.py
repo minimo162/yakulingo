@@ -224,6 +224,9 @@ class YakuLingoApp:
         # Text input textarea reference for auto-focus
         self._text_input_textarea: Optional[ui.textarea] = None
 
+        # Hidden file upload element for direct file selection (no dialog)
+        self._reference_upload = None
+
     @property
     def copilot(self) -> "CopilotHandler":
         """Lazy-load CopilotHandler for faster startup."""
@@ -941,6 +944,14 @@ class YakuLingoApp:
         ui.add_head_html('<meta name="viewport" content="width=device-width, initial-scale=1.0">')
         ui.add_head_html(f'<style>{COMPLETE_CSS}</style>')
 
+        # Hidden file upload for direct file selection (no dialog needed)
+        # Uses Quasar's pickFiles() method to open file picker directly
+        self._reference_upload = ui.upload(
+            on_upload=self._handle_reference_upload,
+            auto_upload=True,
+            max_files=1,
+        ).props('accept=".csv,.txt,.pdf,.docx,.xlsx,.pptx,.md,.json"').classes('hidden')
+
         # Layout container: 2-column (sidebar + main content)
         with ui.element('div').classes('app-container'):
             # Left Sidebar (tabs + history)
@@ -1310,68 +1321,49 @@ class YakuLingoApp:
     # =========================================================================
 
     async def _attach_reference_file(self):
-        """Open file picker to attach a reference file (glossary, style guide, etc.)"""
-        # Use NiceGUI's native file upload approach
-        with ui.dialog() as dialog, ui.card().classes('w-96'):
-            # Refresh content and restore focus when dialog closes
-            def on_dialog_close():
-                self._refresh_content()
-                self._focus_text_input()
-            dialog.on('close', on_dialog_close)
+        """Open file picker directly to attach a reference file (glossary, style guide, etc.)"""
+        # Use Quasar's pickFiles() method to open file picker directly (no dialog)
+        if self._reference_upload:
+            self._reference_upload.run_method('pickFiles')
 
-            with ui.column().classes('w-full gap-4 p-4'):
-                # Header
-                with ui.row().classes('w-full justify-between items-center'):
-                    ui.label('参照ファイルを選択').classes('text-base font-medium')
-                    ui.button(icon='close', on_click=dialog.close).props('flat dense round')
-
-                ui.label('スタイルガイド、参考資料など').classes('text-xs text-muted')
-
-                async def handle_upload(e):
-                    try:
-                        # NiceGUI 3.3+ uses e.file with FileUpload object
-                        if hasattr(e, 'file'):
-                            # NiceGUI 3.x: SmallFileUpload has _data, LargeFileUpload has _path
-                            file_obj = e.file
-                            name = file_obj.name
-                            if hasattr(file_obj, '_path'):
-                                # LargeFileUpload: file is saved to temp directory
-                                with open(file_obj._path, 'rb') as f:
-                                    content = f.read()
-                            elif hasattr(file_obj, '_data'):
-                                # SmallFileUpload: data is in memory
-                                content = file_obj._data
-                            elif hasattr(file_obj, 'read'):
-                                # Fallback: use async read() method
-                                content = await file_obj.read()
-                            else:
-                                raise AttributeError(f"Unknown file upload type: {type(file_obj)}")
-                        else:
-                            # Older NiceGUI: direct content and name attributes
-                            if not e.content:
-                                return
-                            content = e.content.read()
-                            name = e.name
-                        # Use temp file manager for automatic cleanup
-                        from yakulingo.ui.utils import temp_file_manager
-                        uploaded_path = temp_file_manager.create_temp_file(content, name)
-                        # Add to reference files (UI refresh happens in on_dialog_close)
-                        self.state.reference_files.append(uploaded_path)
-                        logger.info("Reference file added: %s, total: %d", name, len(self.state.reference_files))
-                        ui.notify(f'アップロードしました: {name}', type='positive')
-                        dialog.close()
-                    except (OSError, AttributeError) as err:
-                        ui.notify(f'ファイルの読み込みに失敗しました: {err}', type='negative')
-
-                ui.upload(
-                    on_upload=handle_upload,
-                    auto_upload=True,
-                    max_files=1,
-                ).classes('w-full').props('accept=".csv,.txt,.pdf,.docx,.xlsx,.pptx,.md,.json"')
-
-                ui.button('キャンセル', on_click=dialog.close).props('flat')
-
-        dialog.open()
+    async def _handle_reference_upload(self, e):
+        """Handle file upload from the hidden upload component."""
+        try:
+            # NiceGUI 3.3+ uses e.file with FileUpload object
+            if hasattr(e, 'file'):
+                # NiceGUI 3.x: SmallFileUpload has _data, LargeFileUpload has _path
+                file_obj = e.file
+                name = file_obj.name
+                if hasattr(file_obj, '_path'):
+                    # LargeFileUpload: file is saved to temp directory
+                    with open(file_obj._path, 'rb') as f:
+                        content = f.read()
+                elif hasattr(file_obj, '_data'):
+                    # SmallFileUpload: data is in memory
+                    content = file_obj._data
+                elif hasattr(file_obj, 'read'):
+                    # Fallback: use async read() method
+                    content = await file_obj.read()
+                else:
+                    raise AttributeError(f"Unknown file upload type: {type(file_obj)}")
+            else:
+                # Older NiceGUI: direct content and name attributes
+                if not e.content:
+                    return
+                content = e.content.read()
+                name = e.name
+            # Use temp file manager for automatic cleanup
+            from yakulingo.ui.utils import temp_file_manager
+            uploaded_path = temp_file_manager.create_temp_file(content, name)
+            # Add to reference files
+            self.state.reference_files.append(uploaded_path)
+            logger.info("Reference file added: %s, total: %d", name, len(self.state.reference_files))
+            ui.notify(f'参照ファイルを追加しました: {name}', type='positive')
+            # Refresh UI to show attached file indicator
+            self._refresh_content()
+            self._focus_text_input()
+        except (OSError, AttributeError) as err:
+            ui.notify(f'ファイルの読み込みに失敗しました: {err}', type='negative')
 
     def _remove_reference_file(self, index: int):
         """Remove a reference file by index"""

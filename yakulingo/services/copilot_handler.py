@@ -804,9 +804,10 @@ class CopilotHandler:
             taskkill_path = r"C:\Windows\System32\taskkill.exe"
             local_cwd = os.environ.get("SYSTEMROOT", r"C:\Windows")
 
+            # OPTIMIZED: Reduced timeout from 2s to 1s for faster shutdown
             result = subprocess.run(
                 [taskkill_path, "/F", "/T", "/PID", str(pid)],
-                capture_output=True, timeout=2, cwd=local_cwd,
+                capture_output=True, timeout=1, cwd=local_cwd,
                 creationflags=subprocess.CREATE_NO_WINDOW
             )
             # taskkill returns 0 on success, 128 if process not found

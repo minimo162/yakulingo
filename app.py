@@ -350,20 +350,21 @@ def main():
     import_thread.join()
     logger.info("[TIMING] yakulingo.ui.app import: %.2fs", time.perf_counter() - _t_import)
 
-    # Close splash screen before starting NiceGUI
-    splash.close()
-    logger.info("[TIMING] Splash screen closed: %.2fs", time.perf_counter() - _t_start)
-
     # Check for import errors
     if import_error:
         logger.error("Failed to import yakulingo.ui.app: %s", import_error)
+        # Close splash before raising
+        splash.close()
         raise import_error
 
+    # Pass splash.close as on_ready callback for seamless transition
+    # Splash will be closed after NiceGUI client connects (right before UI shows)
     try:
         run_app_func(
             host='127.0.0.1',
             port=8765,
             native=True,  # Native window mode (no browser needed)
+            on_ready=splash.close,  # Close splash when NiceGUI is ready
         )
     except KeyboardInterrupt:
         # Normal shutdown via window close or Ctrl+C

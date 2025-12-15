@@ -2958,8 +2958,21 @@ def _check_native_mode_and_get_webview(native_requested: bool) -> tuple[bool, "M
     return (True, webview)
 
 
-def run_app(host: str = '127.0.0.1', port: int = 8765, native: bool = True):
-    """Run the application"""
+def run_app(
+    host: str = '127.0.0.1',
+    port: int = 8765,
+    native: bool = True,
+    on_ready: callable = None,
+):
+    """Run the application.
+
+    Args:
+        host: Host to bind to
+        port: Port to bind to
+        native: Use native window mode (pywebview)
+        on_ready: Callback to call after client connection is ready (before UI shows).
+                  Use this to close splash screens for seamless transition.
+    """
     import time
     _t0 = time.perf_counter()
 
@@ -3315,40 +3328,31 @@ document.fonts.ready.then(function() {
 });
 </script>''')
 
-        # Show loading screen immediately (before client connects)
-        loading_container = ui.element('div').classes('loading-screen')
-        with loading_container:
-            ui.spinner('dots', size='5em', color='primary')
-            ui.label('YakuLingo').classes('loading-title')
-
-        # Wait for client connection
+        # Wait for client connection (WebSocket ready)
         import time as _time_module
         _t_conn = _time_module.perf_counter()
         await client.connected()
         logger.info("[TIMING] client.connected(): %.2fs", _time_module.perf_counter() - _t_conn)
 
+        # Close splash screen now that NiceGUI is ready
+        # This provides seamless transition: splash → main UI (no intermediate loading screen)
+        if on_ready is not None:
+            try:
+                on_ready()
+                logger.info("[TIMING] on_ready callback executed (splash closed)")
+            except Exception as e:
+                logger.debug("on_ready callback failed: %s", e)
+
         # NOTE: PP-DocLayout-L initialization moved to on-demand (when user selects PDF)
         # This saves ~10 seconds on startup for users who don't use PDF translation.
         # See _ensure_layout_initialized() for the on-demand initialization logic.
 
-        # Smooth transition from loading screen to main UI
-        # 1. Create main UI (hidden initially)
+        # Create main UI directly (no loading screen needed - splash handles that)
         _t_ui = _time_module.perf_counter()
-        main_container = ui.element('div').classes('main-app-container')
+        main_container = ui.element('div').classes('main-app-container visible')
         with main_container:
             yakulingo_app.create_ui()
         logger.info("[TIMING] create_ui(): %.2fs", _time_module.perf_counter() - _t_ui)
-
-        # 2. Start fade-out of loading screen
-        loading_container.classes(add='fade-out')
-
-        # 3. After a brief delay, show main UI with fade-in
-        await asyncio.sleep(0.1)  # Small delay for loading fade-out to start
-        main_container.classes(add='visible')
-
-        # 4. Wait for animations to complete, then remove loading screen
-        await asyncio.sleep(0.3)  # Wait for fade animations
-        loading_container.delete()
 
         # Start hotkey manager immediately after UI is displayed (doesn't need connection)
         yakulingo_app.start_hotkey_manager()

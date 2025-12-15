@@ -1893,7 +1893,7 @@ Based on recent commits:
   - **Selector waits**: `SELECTOR_CHAT_INPUT_TIMEOUT_MS=15000`, `SELECTOR_RESPONSE_TIMEOUT_MS=10000`, `SELECTOR_NEW_CHAT_READY_TIMEOUT_MS=5000`, `SELECTOR_LOGIN_CHECK_TIMEOUT_MS=2000`
   - **Login timeouts**: `LOGIN_WAIT_TIMEOUT_SECONDS=300`, `AUTO_LOGIN_TIMEOUT_SECONDS=15`
   - **Executor buffer**: `EXECUTOR_TIMEOUT_BUFFER_SECONDS=60` for response timeout margin
-  - **Send retry**: `MAX_SEND_RETRIES=3`, `SEND_RETRY_WAIT=0.3s` (post-send verification)
+  - **Send retry**: `MAX_SEND_RETRIES=2`, `SEND_VERIFY_SHORT_WAIT_MS=250`, `SEND_VERIFY_POLL_MAX=0.8s` (post-send verification)
 - **PDF Page-Level Error Handling**:
   - **Failed pages tracking**: `failed_pages` property, `failed_page_reasons` property
   - **Clear method**: `clear_failed_pages()` for resetting state
@@ -2094,6 +2094,11 @@ Based on recent commits:
   - **Early termination check**: stop_button消失直後にテキスト安定性を即座にチェック（stable_count=1から開始可能）
   - **Edge startup optimization**: `--disable-extensions`, `--disable-features=TranslateUI`, `--disable-gpu-sandbox` を追加
   - **Expected improvement**: 送信処理 約1秒高速化、新規チャット開始 約0.5秒高速化、ポーリング完了 約0.05〜0.1秒高速化
+- **Copilot Send Optimization (2025-12)**:
+  - **React state wait reduction**: 0.3秒→0.1秒に短縮（入力後のReact状態更新待機）
+  - **Send verification timeout**: `SEND_VERIFY_SHORT_WAIT_MS` 300→250ms、`SEND_VERIFY_POLL_MAX` 1.2→0.8秒、`SEND_VERIFY_POLL_INTERVAL` 50→30ms
+  - **MouseEvent sequence**: ReactコンポーネントにはMouseEventシーケンス（mousedown→mouseup→click）が必要。`click(force=True)`は動作しない
+  - **Expected improvement**: 送信処理 約0.65秒高速化（リトライ発生時）
 
 ## Git Workflow
 

@@ -128,6 +128,44 @@ MIN_COLUMN_THRESHOLD = 50.0       # 50pt minimum
 SENTENCE_END_CHARS_JA = frozenset('。！？…‥）」』】｝〕〉》）＞]＞')
 SENTENCE_END_CHARS_EN = frozenset('.!?;:')
 
+# Japanese particles and suffixes that indicate line continuation (yomitoku reference)
+# When text ends with these characters, it's likely a continuation to the next line.
+# Based on yomitoku's approach: intelligently join lines within paragraphs.
+#
+# Categories:
+# - Case particles (格助詞): が、を、に、で、と、へ、から、まで、より、の
+# - Binding particles (係助詞): は、も、こそ、さえ、でも、しか、ばかり
+# - Conjunctive particles (接続助詞): て、で、ば、たら、なら、ので、から、が、けれど、のに、ながら
+# - Adverbial particles (副助詞): だけ、ほど、くらい、ばかり、など、なんか
+# - Sentence-final particles typically NOT here (終助詞: ね、よ、か - these end sentences)
+# - Commas and continuation marks: 、,
+JAPANESE_CONTINUATION_CHARS = frozenset(
+    # Case particles (格助詞)
+    'がをにでとへの'
+    # Binding particles (係助詞) - は、も indicate topic, often continue
+    'はも'
+    # Conjunctive particles (接続助詞) - indicate clause continuation
+    'てばり'
+    # Commas indicate continuation
+    '、,'
+)
+
+# Multi-character continuation patterns (ending with these suggest continuation)
+# These are checked as suffixes (e.g., text.endswith(pattern))
+JAPANESE_CONTINUATION_SUFFIXES = (
+    # Conjunctive particles (接続助詞)
+    'から', 'まで', 'より', 'ので', 'けど', 'けれど', 'けれども',
+    'ながら', 'たら', 'なら', 'のに', 'ても', 'でも',
+    # Adverbial particles (副助詞)
+    'だけ', 'ほど', 'くらい', 'ばかり', 'など', 'なんか', 'なんて',
+    # Other continuation indicators
+    'こと', 'もの', 'ところ', 'ため', 'とき', 'ため', '場合', '際',
+    # Te-form and conjunctive forms (verb endings that continue)
+    'して', 'され', 'であ', 'であり', 'でき', 'おり', 'あり',
+    # Copula and auxiliary forms that continue
+    'です', 'ます', 'である', 'となり', 'とし', 'につ', 'にお',
+)
+
 # Characters that indicate a word is split across lines (hyphenation)
 # When a line ends with these, the next line continues the same word
 HYPHEN_CHARS = frozenset('-‐‑‒–—−')
@@ -1066,6 +1104,85 @@ def is_line_end_hyphenated(text: str) -> bool:
     if not text:
         return False
     return text[-1] in HYPHEN_CHARS
+
+
+def is_japanese_continuation_line(text: str) -> bool:
+    """
+    Check if Japanese text ends with a continuation indicator (yomitoku reference).
+
+    This function determines if the text is likely to continue on the next line
+    rather than being a complete sentence. Based on yomitoku's approach of
+    intelligently joining lines within paragraphs.
+
+    Continuation indicators include:
+    - Japanese particles (助詞): が、を、に、で、と、へ、の、は、も、etc.
+    - Conjunctive particles (接続助詞): て、ば、ながら、ので、から、etc.
+    - Reading marks (読点): 、
+    - Multi-character suffixes that indicate clause continuation
+
+    Args:
+        text: Text to check
+
+    Returns:
+        True if text ends with a continuation indicator (NOT a sentence ending)
+
+    Note:
+        This is the inverse of sentence-end detection. If this returns True,
+        the line should be joined with the next line without starting a new paragraph.
+        If this returns False AND text ends with sentence-ending punctuation,
+        a new paragraph may be appropriate.
+
+    Examples:
+        >>> is_japanese_continuation_line("その達成を")
+        True  # ends with particle を
+        >>> is_japanese_continuation_line("情報に基づき、")
+        True  # ends with comma
+        >>> is_japanese_continuation_line("ありません。")
+        False  # ends with sentence-ending punctuation
+        >>> is_japanese_continuation_line("含まれます。")
+        False  # ends with sentence-ending punctuation
+    """
+    if not text:
+        return False
+
+    stripped = text.rstrip()
+    if not stripped:
+        return False
+
+    last_char = stripped[-1]
+
+    # First check: if it ends with sentence-ending punctuation, it's NOT a continuation
+    if last_char in SENTENCE_END_CHARS_JA or last_char in SENTENCE_END_CHARS_EN:
+        return False
+
+    # Second check: single-character continuation indicators
+    if last_char in JAPANESE_CONTINUATION_CHARS:
+        return True
+
+    # Third check: multi-character suffix patterns
+    # Check if text ends with any of the known continuation suffixes
+    for suffix in JAPANESE_CONTINUATION_SUFFIXES:
+        if stripped.endswith(suffix):
+            return True
+
+    # Fourth check: if the text contains Japanese characters and doesn't end with
+    # sentence-ending punctuation, it's likely a continuation (conservative approach)
+    # This handles cases where the ending is not explicitly in our patterns but
+    # the line is clearly incomplete in Japanese context.
+    #
+    # Only apply this if the text appears to be Japanese (contains hiragana/katakana)
+    has_japanese = any(_is_cjk_char(c) for c in stripped[-10:] if c)
+    if has_japanese:
+        # Additional check: common non-continuation endings to avoid false positives
+        # Sentence-final particles that DO end sentences
+        sentence_final_particles = frozenset('ねよなかわぞ')
+        if last_char in sentence_final_particles:
+            return False
+        # If it's a CJK character that's not a known ending, assume continuation
+        if _is_cjk_char(last_char):
+            return True
+
+    return False
 
 
 def create_paragraph_from_char(char, brk: bool, layout_class: int = 1) -> Paragraph:

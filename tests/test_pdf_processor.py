@@ -41,6 +41,7 @@ from yakulingo.processors.pdf_processor import (
     # Line joining functions (yomitoku reference)
     get_line_join_separator,
     is_line_end_hyphenated,
+    is_japanese_continuation_line,
     # Constants
     FONT_FILES,
     DEFAULT_VFONT_PATTERN,
@@ -4736,3 +4737,92 @@ class TestLineJoiningEdgeCases:
         """Closing brackets at line end"""
         assert get_line_join_separator("（内容）", "次") == ""
         assert get_line_join_separator("「引用」", "の") == ""
+
+
+class TestJapaneseContinuationLine:
+    """Tests for is_japanese_continuation_line() function (yomitoku reference)"""
+
+    def test_particle_endings_are_continuation(self):
+        """Lines ending with Japanese particles should be continuation"""
+        # Case particles (格助詞)
+        assert is_japanese_continuation_line("その達成を") is True
+        assert is_japanese_continuation_line("情報に") is True
+        assert is_japanese_continuation_line("経営者が") is True
+        assert is_japanese_continuation_line("見通しで") is True
+        assert is_japanese_continuation_line("リスクと") is True
+        assert is_japanese_continuation_line("趣旨へ") is True
+        assert is_japanese_continuation_line("当社の") is True
+
+    def test_binding_particles_are_continuation(self):
+        """Lines ending with binding particles should be continuation"""
+        # Binding particles (係助詞)
+        assert is_japanese_continuation_line("投資判断は") is True
+        assert is_japanese_continuation_line("業績予想も") is True
+
+    def test_comma_is_continuation(self):
+        """Lines ending with comma should be continuation"""
+        assert is_japanese_continuation_line("情報に基づき、") is True
+        assert is_japanese_continuation_line("判断した見通しで,") is True  # Half-width comma
+
+    def test_sentence_endings_are_not_continuation(self):
+        """Lines ending with sentence-ending punctuation are NOT continuation"""
+        assert is_japanese_continuation_line("ありません。") is False
+        assert is_japanese_continuation_line("含まれます。") is False
+        assert is_japanese_continuation_line("いたします！") is False
+        assert is_japanese_continuation_line("でしょうか？") is False
+        assert is_japanese_continuation_line("ません…") is False
+
+    def test_conjunctive_suffix_patterns(self):
+        """Multi-character continuation patterns should be detected"""
+        assert is_japanese_continuation_line("情報から") is True
+        assert is_japanese_continuation_line("時点まで") is True
+        assert is_japanese_continuation_line("判断より") is True
+        assert is_japanese_continuation_line("含んでおり") is True
+        assert is_japanese_continuation_line("基づいため") is True
+        assert is_japanese_continuation_line("することで") is True
+
+    def test_verb_te_form_is_continuation(self):
+        """Lines ending with te-form are continuation"""
+        assert is_japanese_continuation_line("含んでいて") is True
+        assert is_japanese_continuation_line("処理して") is True
+        assert is_japanese_continuation_line("されており") is True
+
+    def test_closing_brackets_are_not_continuation(self):
+        """Closing brackets are sentence-ending punctuation"""
+        assert is_japanese_continuation_line("（注）") is False
+        assert is_japanese_continuation_line("です）") is False
+        assert is_japanese_continuation_line("資料」") is False
+
+    def test_sentence_final_particles_are_not_continuation(self):
+        """Sentence-final particles end sentences"""
+        assert is_japanese_continuation_line("ですね") is False
+        assert is_japanese_continuation_line("ですよ") is False
+        assert is_japanese_continuation_line("ですか") is False
+
+    def test_empty_text(self):
+        """Empty text is not continuation"""
+        assert is_japanese_continuation_line("") is False
+        assert is_japanese_continuation_line("   ") is False
+
+    def test_english_text(self):
+        """English text without Japanese is not flagged as continuation"""
+        assert is_japanese_continuation_line("The end.") is False
+        assert is_japanese_continuation_line("Hello World!") is False
+        # English text without sentence-ending punctuation
+        assert is_japanese_continuation_line("continued") is False
+
+    def test_realistic_business_document(self):
+        """Test with realistic business document text from 決算短信"""
+        # From user's example: these lines should be continuation
+        assert is_japanese_continuation_line(
+            "現時点で入手可能な情報に基づき当社の経営者が判断した見通しで、リスクや不確実性を含んでおり、その達成を"
+        ) is True
+
+        assert is_japanese_continuation_line(
+            "当社として約束する趣旨のものではありません。従いまして、これらの業績予想のみに全面的に依拠して投資判断を行うことは控える"
+        ) is True  # ends with る (verb stem, continuation)
+
+        # This line should NOT be continuation (ends with sentence ending)
+        assert is_japanese_continuation_line(
+            "実際の業績に影響を与え得る重要な要素には、当社の事業を取り巻く経済情勢、為替レート等が含まれます。"
+        ) is False

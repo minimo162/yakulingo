@@ -1174,8 +1174,11 @@ class YakuLingoApp:
                     result_panel_content()
             else:
                 # File panel: 2-column layout (sidebar + centered file panel)
-                with ui.column().classes('w-full max-w-2xl mx-auto px-6 py-8 flex-1'):
-                    create_file_panel(
+                # Use input-panel class with scroll_area for reliable scrolling
+                with ui.column().classes('input-panel file-panel-container'):
+                    with ui.scroll_area().classes('file-panel-scroll'):
+                        with ui.column().classes('w-full max-w-2xl mx-auto py-8'):
+                            create_file_panel(
                         state=self.state,
                         on_file_select=self._select_file,
                         on_translate=self._translate_file,

@@ -1493,10 +1493,35 @@ textarea:focus-visible {
     width: 100%;
     min-width: 100%;
     max-width: none;
+    height: 100%;
     border-right: none;
     box-shadow: none;
     background: transparent;
+    position: relative;
+    padding: 0;
+    overflow: hidden;
+}
+
+/* File panel scroll area */
+.file-panel-scroll {
+    width: 100% !important;
+    height: 100% !important;
+}
+
+.file-panel-scroll .q-scrollarea {
+    width: 100% !important;
+    height: 100% !important;
+}
+
+.file-panel-scroll .q-scrollarea__container {
+    width: 100% !important;
+}
+
+.file-panel-scroll .q-scrollarea__content {
+    width: 100% !important;
+    display: flex;
     justify-content: center;
+    padding: 0 1.5rem;
 }
 
 /* File mode: Remove main-card wrapper styling (枠の重複を防ぐ) */

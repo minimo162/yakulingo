@@ -592,17 +592,29 @@ class TestSendMessage:
 
         # fill() check returns text (fill success)
         mock_input.inner_text.return_value = "Test prompt"
+        mock_input.evaluate.return_value = True  # has focus
 
-        # After send, query_selector re-fetches the input element and checks stop button
-        # 1st attempt: input still has text, stop button not visible → retry
-        # 2nd attempt: input cleared, stop button not visible → success
-        # Note: On success (input cleared), stop button check is still performed
+        # Track press calls to detect retries
+        press_count = [0]
 
-        # Track inner_text calls
-        inner_text_results = iter(["Test prompt", "Test prompt", ""])
+        def input_press_side_effect(key):
+            press_count[0] += 1
+
+        mock_input.press.side_effect = input_press_side_effect
+        mock_refetched_input.press.side_effect = input_press_side_effect
+        mock_refetched_input.evaluate.return_value = True  # has focus
+
+        # inner_text: First attempt fails (text not cleared), second attempt succeeds (cleared)
+        inner_text_calls = [0]
 
         def inner_text_side_effect():
-            return next(inner_text_results)
+            inner_text_calls[0] += 1
+            # During first retry polling, return text (not cleared)
+            # After second Enter press, return empty (cleared)
+            if press_count[0] < 2:
+                return "Test prompt"  # Not cleared
+            else:
+                return ""  # Cleared on 2nd attempt
 
         mock_refetched_input.inner_text.side_effect = inner_text_side_effect
 
@@ -614,11 +626,18 @@ class TestSendMessage:
         mock_page.query_selector.side_effect = query_selector_side_effect
         handler._page = mock_page
 
-        handler._send_message("Test prompt")
+        # Mock time to make polling loop exit quickly after a few iterations
+        time_values = [i * 0.2 for i in range(100)]
 
-        # Should press Enter twice (retry once)
-        assert mock_input.press.call_count == 1  # First attempt on original input
-        assert mock_refetched_input.press.call_count == 1  # Second attempt on refetched input
+        with patch('time.time', side_effect=time_values):
+            with patch('time.sleep'):  # Skip actual sleep
+                handler._send_message("Test prompt")
+
+        # Should have pressed Enter twice (retry once)
+        assert press_count[0] == 2, f"Expected 2 Enter presses but got {press_count[0]}"
+        # First press on original input, second on refetched input
+        assert mock_input.press.call_count == 1
+        assert mock_refetched_input.press.call_count == 1
 
     def test_send_message_succeeds_on_first_attempt(self):
         """_send_message succeeds immediately when input is cleared after first Enter"""
@@ -627,17 +646,31 @@ class TestSendMessage:
         mock_page = MagicMock()
         mock_input = MagicMock()
         mock_refetched_input = MagicMock()
+        mock_stop_button = MagicMock()
+        mock_stop_button.is_visible.return_value = False
         mock_page.wait_for_selector.return_value = mock_input
 
         # fill() check returns text (fill success)
         mock_input.inner_text.return_value = "Test prompt"
+        mock_input.evaluate.return_value = True  # has focus
 
         # After send, query_selector re-fetches and finds empty (send success)
         mock_refetched_input.inner_text.return_value = ""
-        mock_page.query_selector.return_value = mock_refetched_input
+
+        def query_selector_side_effect(selector):
+            if "stop" in selector.lower() or "Stop" in selector:
+                return mock_stop_button
+            return mock_refetched_input
+
+        mock_page.query_selector.side_effect = query_selector_side_effect
         handler._page = mock_page
 
-        handler._send_message("Test prompt")
+        # Mock time to make polling loops work (need many values for timing code)
+        time_values = [i * 0.1 for i in range(100)]
+
+        with patch('time.time', side_effect=time_values):
+            with patch('time.sleep'):
+                handler._send_message("Test prompt")
 
         # Should press Enter only once (immediate success on first attempt)
         assert mock_input.press.call_count == 1
@@ -656,9 +689,11 @@ class TestSendMessage:
 
         # fill() check returns text (fill success)
         mock_input.inner_text.return_value = "Test prompt"
+        mock_input.evaluate.return_value = True  # has focus
 
         # After send, query_selector always returns element with text (never clears)
         mock_refetched_input.inner_text.return_value = "Test prompt"
+        mock_refetched_input.evaluate.return_value = True  # has focus
 
         def query_selector_side_effect(selector):
             if "stop" in selector.lower() or "Stop" in selector:
@@ -668,8 +703,14 @@ class TestSendMessage:
         mock_page.query_selector.side_effect = query_selector_side_effect
         handler._page = mock_page
 
-        # Should not raise - continues anyway (response polling will detect failure)
-        handler._send_message("Test prompt")
+        # Mock time to make polling loops exit quickly (each poll advances time)
+        # Need enough time values for 3 attempts × ~8 polls each = ~24 time() calls
+        time_values = [i * 0.2 for i in range(100)]
+
+        with patch('time.time', side_effect=time_values):
+            with patch('time.sleep'):
+                # Should not raise - continues anyway (response polling will detect failure)
+                handler._send_message("Test prompt")
 
         # Should press Enter 3 times (max retries)
         # Note: First Enter is on mock_input, subsequent retries are on mock_refetched_input
@@ -690,6 +731,7 @@ class TestSendMessage:
 
         # fill() check returns text (fill success)
         mock_input.inner_text.return_value = "Test prompt"
+        mock_input.evaluate.return_value = True  # has focus
 
         # Track query_selector calls to control flow
         call_count = [0]
@@ -716,7 +758,12 @@ class TestSendMessage:
 
         mock_send_button.evaluate.side_effect = clear_on_button_click
 
-        handler._send_message("Test prompt")
+        # Mock time to make polling loops exit quickly
+        time_values = [i * 0.2 for i in range(100)]
+
+        with patch('time.time', side_effect=time_values):
+            with patch('time.sleep'):
+                handler._send_message("Test prompt")
 
         # Verify send button was clicked as fallback
         assert mock_send_button.evaluate.called

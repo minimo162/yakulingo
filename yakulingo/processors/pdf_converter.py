@@ -440,6 +440,21 @@ def vflag(font: str, char: str, vfont: str = None, vchar: str = None) -> bool:
             if char_code == 0x3005 or 0x309D <= char_code <= 0x309E or 0x30FC <= char_code <= 0x30FE:
                 return False
 
+            # Exclude common arithmetic operators from formula detection
+            # In financial documents (決算短信), these are normal text characters:
+            # +6.3%, -5.2%, 10*20, 100/50, <10, >20, etc.
+            # Note: More specialized math symbols (∫, Σ, ∏) are still detected as formulas
+            if char_code in (
+                0x002B,  # + PLUS SIGN
+                0x002D,  # - HYPHEN-MINUS
+                0x002A,  # * ASTERISK
+                0x002F,  # / SOLIDUS
+                0x003C,  # < LESS-THAN SIGN
+                0x003D,  # = EQUALS SIGN
+                0x003E,  # > GREATER-THAN SIGN
+            ):
+                return False
+
             if unicodedata.category(char[0]) in FORMULA_UNICODE_CATEGORIES:
                 return True
             # Greek letters (U+0370 to U+03FF)

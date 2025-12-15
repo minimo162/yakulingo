@@ -171,6 +171,7 @@ class TestCopilotHandlerSendMessage:
     def test_send_message_fills_and_submits(self):
         """_send_message uses fill() to set text and presses Enter to send"""
         handler = CopilotHandler()
+        handler._is_page_valid = Mock(return_value=True)
 
         mock_input = Mock()
         mock_input.inner_text.return_value = "Test message"  # Non-empty after fill()
@@ -192,6 +193,7 @@ class TestCopilotHandlerSendMessage:
     def test_send_message_presses_enter_when_no_button(self):
         """_send_message presses Enter when send button not found"""
         handler = CopilotHandler()
+        handler._is_page_valid = Mock(return_value=True)
 
         mock_input = Mock()
         mock_input.inner_text.return_value = "Test message"  # Non-empty after fill
@@ -210,6 +212,7 @@ class TestCopilotHandlerSendMessage:
     def test_send_message_handles_timeout(self):
         """_send_message handles input element timeout"""
         handler = CopilotHandler()
+        handler._is_page_valid = Mock(return_value=True)
 
         mock_page = Mock()
         mock_page.query_selector.return_value = None  # No auth dialog
@@ -225,6 +228,7 @@ class TestCopilotHandlerSendMessage:
     def test_send_message_with_special_characters(self):
         """_send_message handles special characters via fill()"""
         handler = CopilotHandler()
+        handler._is_page_valid = Mock(return_value=True)
 
         mock_input = Mock()
         mock_input.inner_text.return_value = "日本語テスト"  # Non-empty after fill()
@@ -695,6 +699,7 @@ class TestCopilotHandlerStartNewChat:
     def test_start_new_chat_clicks_button(self):
         """start_new_chat clicks new chat button when found"""
         handler = CopilotHandler()
+        handler._is_page_valid = Mock(return_value=True)
 
         mock_button = Mock()
         mock_page = Mock()

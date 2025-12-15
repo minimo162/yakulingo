@@ -783,7 +783,7 @@ class TestSendMessage:
 
         # After button click, input should be cleared (simulate success)
         def clear_on_button_click(js_code):
-            # Check for mouse event dispatch (new click method)
+            # Check for mouse event dispatch
             if 'MouseEvent' in js_code or 'dispatchEvent' in js_code:
                 mock_input.inner_text.return_value = ""  # Simulate cleared
             return None
@@ -797,7 +797,7 @@ class TestSendMessage:
             with patch('time.sleep'):
                 handler._send_message("Test prompt")
 
-        # Verify send button was clicked
+        # Verify send button was clicked via evaluate (MouseEvent sequence)
         assert mock_send_button.evaluate.called
         # Check that mouse events were dispatched on send button
         click_calls = [call for call in mock_send_button.evaluate.call_args_list

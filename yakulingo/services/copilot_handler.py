@@ -1203,6 +1203,8 @@ class CopilotHandler:
                 # PP-DocLayout-L initialization
                 if _is_login_page(url):
                     logger.info("Existing Copilot page is on login page, navigating to Copilot...")
+                    # Minimize before navigation to prevent flash during redirect
+                    self._minimize_edge_window(None)
                     try:
                         page.goto(self.COPILOT_URL, wait_until='commit', timeout=self.PAGE_GOTO_TIMEOUT_MS)
                     except (PlaywrightTimeoutError, PlaywrightError) as nav_err:
@@ -1219,6 +1221,9 @@ class CopilotHandler:
         else:
             copilot_page = self._context.new_page()
             logger.info("Created new tab for Copilot")
+
+        # Minimize before navigation to prevent flash during redirect
+        self._minimize_edge_window(None)
 
         # Navigate with 'commit' (fastest - just wait for first response)
         logger.info("Navigating to Copilot...")

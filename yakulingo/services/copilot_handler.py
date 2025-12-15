@@ -320,7 +320,7 @@ class PlaywrightThreadExecutor:
         if self._thread is not None:
             # Send stop signal
             self._request_queue.put((None, None, None))
-            self._thread.join(timeout=10)
+            self._thread.join(timeout=5)  # Reduced from 10s for faster shutdown
 
     def shutdown(self):
         """Force shutdown: stop thread and release all waiting operations.
@@ -359,12 +359,13 @@ class PlaywrightThreadExecutor:
             logger.debug("Cleared %d pending items during shutdown", cleared_count)
 
         # Send stop signal and wait for worker to finish
-        # Use 10 second timeout to allow Playwright greenlets to complete I/O operations
+        # Use 5 second timeout for faster shutdown (daemon thread will be killed on process exit anyway)
         if self._thread is not None and self._thread.is_alive():
             self._request_queue.put((None, None, None))
-            self._thread.join(timeout=10)
+            self._thread.join(timeout=5)
             if self._thread.is_alive():
-                logger.warning("Playwright worker thread did not terminate within timeout")
+                # This is not critical - daemon thread will be terminated on process exit
+                logger.debug("Playwright worker thread still running, will be terminated on exit")
 
     def _worker(self):
         """Worker thread that processes Playwright operations.

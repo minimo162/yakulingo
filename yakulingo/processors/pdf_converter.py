@@ -83,7 +83,11 @@ FORMULA_UNICODE_CATEGORIES = ["Lm", "Mn", "Sk", "Sm", "Zl", "Zp", "Zs"]
 
 # Pre-compiled regex patterns for performance
 _RE_CID_NOTATION = re.compile(r"\(cid:")
-_RE_FORMULA_PLACEHOLDER = re.compile(r"\{\s*v([\d\s]+)\}", re.IGNORECASE)
+# Formula placeholder pattern - matches {vN}, (vN), [vN] formats
+# Copilot sometimes converts {v0} to (v0) during translation, so we need to
+# handle all bracket types for reliable placeholder restoration.
+# \s* allows optional whitespace inside brackets: { v0 }, (v0), [v 0]
+_RE_FORMULA_PLACEHOLDER = re.compile(r"[\{\(\[]\s*v([\d\s]+)\s*[\}\)\]]", re.IGNORECASE)
 
 # Paragraph boundary detection thresholds (PDFMathTranslate compliant)
 # NOTE: These are DEFAULT values. Use calculate_dynamic_thresholds() for

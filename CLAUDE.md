@@ -844,10 +844,10 @@ wait_time = backoff_time + jitter
 
 | 定数名 | 値 | 説明 |
 |--------|------|------|
-| `RESPONSE_STABLE_COUNT` | 3 | 連続で同じテキストを検出した回数で完了判定 |
-| `RESPONSE_POLL_INITIAL` | 0.2s | レスポンス開始待機時のポーリング間隔 |
-| `RESPONSE_POLL_ACTIVE` | 0.2s | テキスト検出後のポーリング間隔 |
-| `RESPONSE_POLL_STABLE` | 0.1s | 安定性チェック中のポーリング間隔 |
+| `RESPONSE_STABLE_COUNT` | 2 | 連続で同じテキストを検出した回数で完了判定 |
+| `RESPONSE_POLL_INITIAL` | 0.15s | レスポンス開始待機時のポーリング間隔 |
+| `RESPONSE_POLL_ACTIVE` | 0.15s | テキスト検出後のポーリング間隔 |
+| `RESPONSE_POLL_STABLE` | 0.05s | 安定性チェック中のポーリング間隔 |
 
 ### Auth Dialog Detection
 
@@ -1854,7 +1854,7 @@ Based on recent commits:
   - **Fallback to terminate/kill**: グレースフル終了失敗時のみ`terminate()`/`kill()`を使用
   - **App exit cleanup**: アプリ終了時のブラウザ終了を確実にする
 - **Copilot Prompt Submission Reliability (2024-12)**:
-  - **Response stability**: `RESPONSE_STABLE_COUNT` increased from 2 to 3 for more reliable completion detection
+  - **Response stability**: `RESPONSE_STABLE_COUNT` was 3 (later optimized to 2 for faster detection)
   - **Auth dialog multi-language**: `AUTH_DIALOG_KEYWORDS` constant added with Japanese and English keywords
   - **fill() failure logging**: Enhanced logging with element info (tag, id, class, editable) and URL on Method 1 failure
   - **Stop button tracking**: `stop_button_ever_seen` flag to detect when stop button selectors may be outdated
@@ -2059,6 +2059,11 @@ Based on recent commits:
   - **glossary.csv merge improved**: 末尾改行確認、正規化した値を追加
   - **settings.json deep copy**: 浅いコピーから深いコピーに変更（ネストしたオブジェクト対応）
   - **Progress update**: GUIモード時のユーザーデータ復元中プログレス更新（87%→89%）
+- **Performance Optimization (2024-12)**:
+  - **Polling interval reduction**: `RESPONSE_POLL_INITIAL`/`ACTIVE` 0.2→0.15秒、`RESPONSE_POLL_STABLE` 0.1→0.05秒
+  - **Stability check optimization**: `RESPONSE_STABLE_COUNT` 3→2回、`STALE_SELECTOR_STABLE_COUNT` 4→3回
+  - **App exit speedup**: グレースフル終了タイムアウト 0.1→0.05秒、terminate/kill待機時間を短縮
+  - **Expected improvement**: 翻訳完了検出 約0.1〜0.15秒高速化、終了処理 約0.15〜0.2秒高速化
 
 ## Git Workflow
 

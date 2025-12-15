@@ -4247,14 +4247,40 @@ class PdfProcessor(FileProcessor):
                     # Only apply sentence-end check for weak boundaries (line wrapping)
                     if not is_strong_boundary and sstk and pstk:
                         prev_text = sstk[-1].rstrip() if sstk[-1] else ""
-                        # Check layout class - only consider it a strong layout change if BOTH
-                        # are non-BACKGROUND regions. When one is BACKGROUND (cls=1), it could be
-                        # a PP-DocLayout-L detection artifact. In such cases, rely on sentence-end
-                        # check to determine paragraph continuity.
-                        # (yomitoku reference: adjacent chars in same paragraph may be inconsistently classified)
+                        # Check layout class - only consider it a strong layout change if
+                        # crossing region type boundaries (yomitoku reference).
+                        # PP-DocLayout-L may assign different class IDs (e.g., 2, 3, 4) to
+                        # different paragraphs within the same document, but these are all
+                        # "paragraph" type regions and should NOT be considered a strong change.
+                        #
+                        # Region type classification:
+                        # - BACKGROUND (1): Default, possibly PP-DocLayout-L artifact
+                        # - Paragraph (2-999): LAYOUT_PARAGRAPH_BASE to LAYOUT_TABLE_BASE-1
+                        # - Table (>=1000): LAYOUT_TABLE_BASE and above
+                        #
+                        # Strong layout change only when crossing boundaries:
+                        # - Paragraph -> Table or vice versa
+                        # - NOT when going from Paragraph(2) -> Paragraph(3)
+                        def is_same_region_type(cls1: int, cls2: int) -> bool:
+                            """Check if two layout classes are in the same region type."""
+                            if cls1 is None or cls2 is None:
+                                return True  # Unknown, assume same
+                            if cls1 == LAYOUT_BACKGROUND or cls2 == LAYOUT_BACKGROUND:
+                                return True  # Background is flexible
+                            # Both paragraph type (2-999)?
+                            both_paragraph = (
+                                LAYOUT_PARAGRAPH_BASE <= cls1 < LAYOUT_TABLE_BASE and
+                                LAYOUT_PARAGRAPH_BASE <= cls2 < LAYOUT_TABLE_BASE
+                            )
+                            # Both table type (>=1000)?
+                            both_table = (
+                                cls1 >= LAYOUT_TABLE_BASE and cls2 >= LAYOUT_TABLE_BASE
+                            )
+                            return both_paragraph or both_table
+
                         layout_strongly_changed = (
                             use_layout and char_cls != prev_cls and prev_cls is not None
-                            and char_cls != 1 and prev_cls != 1  # Both must be non-BACKGROUND
+                            and not is_same_region_type(char_cls, prev_cls)
                         )
 
                         if prev_text and not layout_strongly_changed:

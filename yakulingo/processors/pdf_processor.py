@@ -3991,6 +3991,38 @@ class PdfProcessor(FileProcessor):
 
         return blocks
 
+    def _find_cell_at_image_coord(
+        self,
+        img_x: float,
+        img_y: float,
+        table_cells: dict,
+        table_id: int,
+    ) -> Optional[int]:
+        """
+        Find which cell index contains the given image coordinate.
+
+        Args:
+            img_x: X coordinate in image space
+            img_y: Y coordinate in image space
+            table_cells: Dictionary mapping table_id to list of cell boxes
+            table_id: The table ID to search within
+
+        Returns:
+            Cell index if found, None otherwise
+        """
+        cells = table_cells.get(table_id)
+        if not cells:
+            return None
+
+        for cell_idx, cell in enumerate(cells):
+            box = cell.get('box', [])
+            if len(box) >= 4:
+                x0, y0, x1, y1 = box[:4]
+                if x0 <= img_x < x1 and y0 <= img_y < y1:
+                    return cell_idx
+
+        return None
+
     def _group_chars_into_blocks(
         self,
         chars: list,
@@ -4123,6 +4155,36 @@ class PdfProcessor(FileProcessor):
                 # Also check X position for line break
                 if not new_paragraph and char_x1 < prev_x0 - LINE_BREAK_X_THRESHOLD:
                     line_break = True
+
+                # Check table cell boundary using TableCellsDetection results
+                # This ensures text from different cells are in separate blocks,
+                # even if X/Y gap-based detection fails
+                if (use_layout and layout.table_cells and
+                    char_cls is not None and char_cls >= LAYOUT_TABLE_BASE):
+                    # Convert PDF coordinates to image coordinates for cell lookup
+                    img_x = char_x0 * coord_scale
+                    img_y = (page_height - char_y1) * coord_scale  # Use y1 (top of char)
+
+                    # Find which cell this character belongs to
+                    current_cell_idx = self._find_cell_at_image_coord(
+                        img_x, img_y, layout.table_cells, char_cls
+                    )
+
+                    # Check if previous character was in a different cell
+                    if has_prev and prev_cls == char_cls:
+                        prev_img_x = prev_x0 * coord_scale
+                        prev_img_y = (page_height - prev_y0) * coord_scale
+                        prev_cell_idx = self._find_cell_at_image_coord(
+                            prev_img_x, prev_img_y, layout.table_cells, prev_cls
+                        )
+
+                        # If cells are different, force new paragraph
+                        if (current_cell_idx is not None and prev_cell_idx is not None and
+                            current_cell_idx != prev_cell_idx):
+                            new_paragraph = True
+                            is_strong_boundary = True
+                            line_break = False
+
                 prev_cls = char_cls
 
             # Handle formula/text transitions

@@ -3038,6 +3038,28 @@ class TestRestoreFormulaPlaceholders:
         result = restore_formula_placeholders("Test {v 0} here", vars)
         assert result == "Test formula here"
 
+    def test_restore_parentheses_placeholder(self):
+        """Should restore placeholders with parentheses (vN) format.
+
+        Copilot sometimes converts {v0} to (v0) during translation,
+        so we need to handle this format for reliable restoration.
+        """
+        vars = [FormulaVar(text="△"), FormulaVar(text="▲")]
+        result = restore_formula_placeholders("Value is 68(v0)4(v1)6.3%", vars)
+        assert result == "Value is 68△4▲6.3%"
+
+    def test_restore_bracket_placeholder(self):
+        """Should restore placeholders with bracket [vN] format."""
+        vars = [FormulaVar(text="α")]
+        result = restore_formula_placeholders("Test [v0] here", vars)
+        assert result == "Test α here"
+
+    def test_restore_mixed_bracket_formats(self):
+        """Should restore mixed bracket formats in same text."""
+        vars = [FormulaVar(text="x"), FormulaVar(text="y"), FormulaVar(text="z")]
+        result = restore_formula_placeholders("{v0} and (v1) and [v2]", vars)
+        assert result == "x and y and z"
+
 
 # =============================================================================
 # Tests for extract_formula_vars_from_metadata

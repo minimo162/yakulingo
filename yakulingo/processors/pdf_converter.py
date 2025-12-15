@@ -83,7 +83,11 @@ FORMULA_UNICODE_CATEGORIES = ["Lm", "Mn", "Sk", "Sm", "Zl", "Zp", "Zs"]
 
 # Pre-compiled regex patterns for performance
 _RE_CID_NOTATION = re.compile(r"\(cid:")
-_RE_FORMULA_PLACEHOLDER = re.compile(r"\{\s*v([\d\s]+)\}", re.IGNORECASE)
+# Formula placeholder pattern - matches {vN}, (vN), [vN] formats
+# Copilot sometimes converts {v0} to (v0) during translation, so we need to
+# handle all bracket types for reliable placeholder restoration.
+# \s* allows optional whitespace inside brackets: { v0 }, (v0), [v 0]
+_RE_FORMULA_PLACEHOLDER = re.compile(r"[\{\(\[]\s*v([\d\s]+)\s*[\}\)\]]", re.IGNORECASE)
 
 # Paragraph boundary detection thresholds (PDFMathTranslate compliant)
 # NOTE: These are DEFAULT values. Use calculate_dynamic_thresholds() for
@@ -434,6 +438,21 @@ def vflag(font: str, char: str, vfont: str = None, vchar: str = None) -> bool:
             # These have category 'Lm' but are common text characters, not formulas:
             # U+3005 (々), U+309D-309E (ゝゞ), U+30FC-30FE (ーヽヾ)
             if char_code == 0x3005 or 0x309D <= char_code <= 0x309E or 0x30FC <= char_code <= 0x30FE:
+                return False
+
+            # Exclude common arithmetic operators from formula detection
+            # In financial documents (決算短信), these are normal text characters:
+            # +6.3%, -5.2%, 10*20, 100/50, <10, >20, etc.
+            # Note: More specialized math symbols (∫, Σ, ∏) are still detected as formulas
+            if char_code in (
+                0x002B,  # + PLUS SIGN
+                0x002D,  # - HYPHEN-MINUS
+                0x002A,  # * ASTERISK
+                0x002F,  # / SOLIDUS
+                0x003C,  # < LESS-THAN SIGN
+                0x003D,  # = EQUALS SIGN
+                0x003E,  # > GREATER-THAN SIGN
+            ):
                 return False
 
             if unicodedata.category(char[0]) in FORMULA_UNICODE_CATEGORIES:

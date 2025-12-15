@@ -110,177 +110,64 @@ def setup_logging():
     return (console_handler, file_handler)  # Return both handlers to keep references
 
 
-# HTML content for the splash screen (NiceGUI-style design)
-SPLASH_HTML = """
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        body {
-            font-family: 'Segoe UI', 'Meiryo UI', sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            overflow: hidden;
-        }
-        .splash-card {
-            background: white;
-            border-radius: 24px;
-            padding: 48px 64px;
-            text-align: center;
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
-            animation: slideUp 0.5s ease-out;
-        }
-        @keyframes slideUp {
-            from {
-                opacity: 0;
-                transform: translateY(20px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-        .app-name {
-            font-size: 42px;
-            font-weight: 700;
-            background: linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-            margin-bottom: 8px;
-        }
-        .app-subtitle {
-            font-size: 16px;
-            color: #64748B;
-            margin-bottom: 32px;
-        }
-        .spinner-container {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            gap: 12px;
-            margin-bottom: 16px;
-        }
-        .spinner {
-            width: 24px;
-            height: 24px;
-            border: 3px solid #E2E8F0;
-            border-top-color: #6366F1;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-        }
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-        .loading-text {
-            font-size: 14px;
-            color: #94A3B8;
-        }
-        .dots {
-            display: inline-block;
-            width: 24px;
-            text-align: left;
-        }
-        @keyframes dots {
-            0%, 20% { content: '.'; }
-            40% { content: '..'; }
-            60%, 100% { content: '...'; }
-        }
-    </style>
-</head>
-<body>
-    <div class="splash-card">
-        <div class="app-name">YakuLingo</div>
-        <div class="app-subtitle">訳リンゴ</div>
-        <div class="spinner-container">
-            <div class="spinner"></div>
-        </div>
-        <div class="loading-text">読み込み中<span class="dots" id="dots"></span></div>
-    </div>
-    <script>
-        let dotCount = 0;
-        setInterval(() => {
-            dotCount = (dotCount + 1) % 4;
-            document.getElementById('dots').textContent = '.'.repeat(dotCount);
-        }, 400);
-    </script>
-</body>
-</html>
-"""
+class WaitCursor:
+    """Show Windows wait cursor during loading.
 
-
-def _run_splash_subprocess():
-    """Run splash screen in a subprocess (called via multiprocessing)."""
-    import os
-    os.environ.setdefault('PYWEBVIEW_GUI', 'edgechromium')
-
-    try:
-        import webview
-        window = webview.create_window(
-            'YakuLingo',
-            html=SPLASH_HTML,
-            width=450,
-            height=300,
-            resizable=False,
-            frameless=True,
-            on_top=True,
-        )
-        webview.start()
-    except Exception:
-        pass  # Silently fail if webview not available
-
-
-class SplashScreen:
-    """Beautiful splash screen using pywebview in a subprocess.
-
-    Shows a loading screen while NiceGUI imports in the background.
-    Uses subprocess to avoid conflicts with NiceGUI's native mode.
+    Uses the "app starting" cursor (arrow + hourglass) which is the
+    standard Windows indicator for an application that is loading.
     """
 
     def __init__(self):
-        self._process = None
+        self._original_cursor = None
+        self._active = False
 
     def show(self):
-        """Create and show the splash screen in a subprocess."""
-        import multiprocessing
+        """Show wait cursor (Windows only)."""
+        if sys.platform != 'win32':
+            return False
 
         try:
-            # Start splash in subprocess to avoid pywebview conflicts
-            self._process = multiprocessing.Process(
-                target=_run_splash_subprocess,
-                daemon=True
+            import ctypes
+            # IDC_APPSTARTING = arrow + hourglass (standard "app is starting" cursor)
+            IDC_APPSTARTING = 32650
+            self._original_cursor = ctypes.windll.user32.SetCursor(
+                ctypes.windll.user32.LoadCursorW(None, IDC_APPSTARTING)
             )
-            self._process.start()
+            self._active = True
             return True
-        except Exception as e:
-            logging.getLogger(__name__).debug("Failed to create splash screen: %s", e)
+        except Exception:
             return False
 
     def update(self):
-        """No-op for compatibility (subprocess handles its own event loop)."""
-        pass
+        """Keep the wait cursor active (Windows may reset it)."""
+        if not self._active or sys.platform != 'win32':
+            return
+
+        try:
+            import ctypes
+            IDC_APPSTARTING = 32650
+            ctypes.windll.user32.SetCursor(
+                ctypes.windll.user32.LoadCursorW(None, IDC_APPSTARTING)
+            )
+        except Exception:
+            pass
 
     def close(self):
-        """Close the splash screen subprocess."""
-        if self._process is not None:
-            try:
-                self._process.terminate()
-                self._process.join(timeout=1.0)
-                if self._process.is_alive():
-                    self._process.kill()
-            except Exception:
-                pass
-            finally:
-                self._process = None
+        """Restore normal cursor."""
+        if not self._active or sys.platform != 'win32':
+            return
+
+        try:
+            import ctypes
+            # IDC_ARROW = normal arrow cursor
+            IDC_ARROW = 32512
+            ctypes.windll.user32.SetCursor(
+                ctypes.windll.user32.LoadCursorW(None, IDC_ARROW)
+            )
+        except Exception:
+            pass
+        finally:
+            self._active = False
 
 
 # Global reference to keep log handlers alive (prevents garbage collection)
@@ -299,7 +186,6 @@ def main():
     import asyncio
     import multiprocessing
     import os
-    import threading
     import time
 
     _t_start = time.perf_counter()
@@ -318,53 +204,21 @@ def main():
     logger = logging.getLogger(__name__)
     logger.info("[TIMING] main() setup: %.2fs", time.perf_counter() - _t_start)
 
-    # Show splash screen immediately while importing NiceGUI
-    splash = SplashScreen()
-    splash_shown = splash.show()
-    if splash_shown:
-        logger.info("[TIMING] Splash screen shown: %.2fs", time.perf_counter() - _t_start)
+    # Show wait cursor during import
+    wait_cursor = WaitCursor()
+    wait_cursor.show()
 
     # Import NiceGUI (this takes ~2.4s)
-    # Keep splash screen responsive during import
-    run_app_func = None
-    import_error = None
-
-    def do_import():
-        nonlocal run_app_func, import_error
-        try:
-            from yakulingo.ui.app import run_app
-            run_app_func = run_app
-        except Exception as e:
-            import_error = e
-
-    # Start import in background thread
-    import_thread = threading.Thread(target=do_import, daemon=True)
     _t_import = time.perf_counter()
-    import_thread.start()
-
-    # Keep splash screen responsive while importing
-    while import_thread.is_alive():
-        splash.update()
-        time.sleep(0.05)  # 50ms intervals
-
-    import_thread.join()
+    from yakulingo.ui.app import run_app
     logger.info("[TIMING] yakulingo.ui.app import: %.2fs", time.perf_counter() - _t_import)
 
-    # Check for import errors
-    if import_error:
-        logger.error("Failed to import yakulingo.ui.app: %s", import_error)
-        # Close splash before raising
-        splash.close()
-        raise import_error
-
-    # Pass splash.close as on_ready callback for seamless transition
-    # Splash will be closed after NiceGUI client connects (right before UI shows)
     try:
-        run_app_func(
+        run_app(
             host='127.0.0.1',
             port=8765,
             native=True,  # Native window mode (no browser needed)
-            on_ready=splash.close,  # Close splash when NiceGUI is ready
+            on_ready=wait_cursor.close,  # Restore cursor when NiceGUI is ready
         )
     except KeyboardInterrupt:
         # Normal shutdown via window close or Ctrl+C

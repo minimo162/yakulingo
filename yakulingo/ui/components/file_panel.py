@@ -230,7 +230,7 @@ def create_file_panel(
                         ui.label('Ctrl')
                     ui.label('+').classes('text-muted text-xs mx-0.5')
                     with ui.element('span').classes('keycap keycap-hint'):
-                        ui.label('Shift')
+                        ui.label('Alt')
                     ui.label('+').classes('text-muted text-xs mx-0.5')
                     with ui.element('span').classes('keycap keycap-hint'):
                         ui.label('J')

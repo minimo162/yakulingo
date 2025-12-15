@@ -71,6 +71,7 @@ from .pdf_converter import (
     create_paragraph_from_char, create_formula_var_from_chars,
     # Line joining functions (yomitoku reference)
     get_line_join_separator, is_line_end_hyphenated, _is_cjk_char,
+    is_japanese_continuation_line,  # For intelligent paragraph boundary detection
     # Sentence end characters for paragraph boundary detection
     SENTENCE_END_CHARS_JA, SENTENCE_END_CHARS_EN,
     # Coordinate conversion utilities (PDFMathTranslate compliant)
@@ -4257,18 +4258,33 @@ class PdfProcessor(FileProcessor):
                         )
 
                         if prev_text and not layout_strongly_changed:
+                            # Use yomitoku-style continuation detection
+                            # is_japanese_continuation_line() checks for:
+                            # - Japanese particles (が、を、に、で、と、へ、の、は、も等)
+                            # - Conjunctive particles (て、ば、ながら、ので、から等)
+                            # - Reading marks (、) and other continuation indicators
+                            # - Returns True if the line should continue (NOT a sentence end)
+                            #
+                            # This is more sophisticated than just checking sentence-ending
+                            # punctuation, as it considers the linguistic structure of Japanese.
+                            is_continuation = is_japanese_continuation_line(prev_text)
+
+                            # Fallback: also check for explicit sentence-ending punctuation
+                            # This handles English text and edge cases
                             last_char = prev_text[-1] if prev_text else ""
-                            # Check if the previous paragraph ends with sentence-ending punctuation
                             is_sentence_end = (
                                 last_char in SENTENCE_END_CHARS_JA or
                                 last_char in SENTENCE_END_CHARS_EN
                             )
-                            if not is_sentence_end:
+
+                            # If it's a continuation line OR not a sentence end, join the lines
+                            if is_continuation or not is_sentence_end:
                                 # Previous paragraph doesn't end with sentence-ending punctuation
+                                # or ends with a continuation indicator
                                 # Treat this as a line break instead of a new paragraph
                                 should_start_new = False
                                 line_break = True
-                                # Reset new_paragraph flag to enable line joining logic at line 4217
+                                # Reset new_paragraph flag to enable line joining logic below
                                 # Without this, the condition "if line_break and not new_paragraph"
                                 # would always be False, skipping the yomitoku-style line joining
                                 new_paragraph = False

@@ -1094,12 +1094,17 @@ new_paragraph, line_break, is_strong_boundary = detect_paragraph_boundary(
 
 | 条件 | 説明 |
 |------|------|
-| レイアウトクラス変化 | 両方がBACKGROUND以外で異なるクラス |
+| 領域タイプ変化 | 段落⇔テーブルの境界を跨ぐ変化（同じ領域タイプ内の変化は弱い境界） |
 | Y座標大変化 | `y_diff > SAME_PARA_Y_THRESHOLD` (20pt) |
 | X座標大ギャップ | `x_gap > TABLE_CELL_X_THRESHOLD` (30pt) |
 | テーブル行変更 | テーブル内で `y_diff > TABLE_ROW_Y_THRESHOLD` |
 | 段組み変更 | X大ジャンプ + Y上昇 |
 | TOCパターン | Y変化 + X大リセット (>80pt) |
+
+**領域タイプの分類:**
+- 段落領域: クラスID 2〜999（PP-DocLayout-Lが同一文書内で異なるID割当可）
+- テーブル領域: クラスID >= 1000
+- 同じ領域タイプ内のクラス変化（段落2→段落3等）は弱い境界として扱い、`is_japanese_continuation_line()`で継続判定
 
 **弱い境界の文末記号チェック:**
 
@@ -1640,9 +1645,10 @@ Based on recent commits:
   - **Reference**: PDFMathTranslate converter.pyの`vals["dy"] + y - vals["lidx"] * size * line_height`に準拠
   - **Issue fixed**: 翻訳後のテキストが表のセル内に入り込む問題を修正（Note: The above earnings...などが表の外側に正しく配置される）
 - **PDF Paragraph Splitting Improvements (2024-12)**:
-  - **Strong boundary detection**: `detect_paragraph_boundary()`に`is_strong_boundary`フラグを追加。強い境界（Y座標大変化、X大ギャップ、レイアウトクラス変化等）では文末記号チェックをスキップし、決算短信のような構造化ドキュメントでの各項目を適切に分割
+  - **Strong boundary detection**: `detect_paragraph_boundary()`に`is_strong_boundary`フラグを追加。強い境界（Y座標大変化、X大ギャップ、領域タイプ変化等）では文末記号チェックをスキップし、決算短信のような構造化ドキュメントでの各項目を適切に分割
   - **Weak boundary sentence-end check**: 弱い境界（行折り返し）の場合のみ文末記号チェックを適用。番号付きパラグラフの途中改行を正しく結合
-  - **Boundary types**: 強い境界=レイアウト変化/Y>20pt/X>30pt/テーブル行変更/段組み変更/TOCパターン、弱い境界=その他の行折り返し
+  - **Boundary types**: 強い境界=領域タイプ変化（段落⇔テーブル）/Y>20pt/X>30pt/テーブル行変更/段組み変更/TOCパターン、弱い境界=その他の行折り返し
+  - **Region type check (yomitoku reference)**: PP-DocLayout-Lが同一文書内で異なる段落クラスID（2, 3, 4等）を割り当てても、同じ領域タイプ内の変化は弱い境界として扱い`is_japanese_continuation_line()`で継続判定。「その達成を」→「当社として約束する」のような行折り返しが正しく結合される
 - **PDF Translation & Extraction Fixes (2024-12)**:
   - **pdfminer FontBBox warning suppression**: `pdfminer.pdffont`のログレベルをERRORに設定し、FontBBox警告を抑制
 - **PDF Line Joining Logic Improvements (2024-12)** (yomitoku reference):

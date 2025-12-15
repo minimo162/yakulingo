@@ -3693,15 +3693,15 @@ class CopilotHandler:
                     )
                     time.sleep(0.1)
 
-                # Send via send button click (more reliable than Enter key)
-                # After click, use wait_for_selector for efficient stop button detection
-                # This is more efficient than polling with query_selector
+                # Send via Enter key (more reliable than button click in Copilot)
+                # After send, use wait_for_selector for efficient stop button detection
                 MAX_SEND_RETRIES = 2  # Reduced from 3 (usually succeeds on first try)
                 SEND_VERIFY_TIMEOUT_MS = 2000  # 2.0s timeout (balance between speed and reliability)
                 send_success = False
 
                 for send_attempt in range(MAX_SEND_RETRIES):
-                    # Click send button (more reliable than Enter key)
+                    # Send via Enter key (more reliable than button click in Copilot)
+                    # Ensure input element is focused and send Enter
                     try:
                         send_btn = self._page.query_selector(self.SEND_BUTTON_SELECTOR)
                         if send_btn:
@@ -3724,6 +3724,17 @@ class CopilotHandler:
                     except Exception as click_err:
                         logger.debug("Send button click failed, using Enter key: %s", click_err)
                         input_elem.press("Enter")
+                        logger.debug("Enter key sent (attempt %d)", send_attempt + 1)
+                    except Exception as send_err:
+                        logger.debug("Enter key send failed: %s", send_err)
+                        # Try clicking send button as fallback
+                        try:
+                            send_btn = self._page.query_selector(self.SEND_BUTTON_SELECTOR)
+                            if send_btn:
+                                send_btn.click(force=True)
+                                logger.debug("Send button clicked as fallback (attempt %d)", send_attempt + 1)
+                        except Exception:
+                            pass
 
                     # Small delay to let Copilot's JavaScript process the click event
                     time.sleep(0.1)

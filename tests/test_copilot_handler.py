@@ -561,7 +561,7 @@ class TestSendMessage:
         mock_page.wait_for_selector.assert_called()
 
     def test_send_message_empty_input_raises(self):
-        """_send_message raises when input field is empty after fill"""
+https://github.com/minimo162/yakulingo/pull/962/conflict?name=tests%252Ftest_copilot_handler.py&ancestor_oid=a323f4ebbc3fedb46d3d86b8a8196b26b46a773d&base_oid=091c1752372bf09d3cb675fed911e9cff96d9d2c&head_oid=7f8f6a6f123de7da273aaea3151c91b69e972552        """_send_message raises when input field is empty after fill"""
         handler = CopilotHandler()
 
         mock_page = MagicMock()
@@ -580,7 +580,7 @@ class TestSendMessage:
         assert "Copilotに入力できませんでした" in str(exc.value)
 
     def test_send_message_retries_on_input_not_cleared(self):
-        """_send_message retries send button click if input field is not cleared after first attempt"""
+        """_send_message retries Enter key if input field is not cleared after first attempt"""
         handler = CopilotHandler()
 
         mock_page = MagicMock()
@@ -590,8 +590,8 @@ class TestSendMessage:
         mock_stop_button.is_visible.return_value = False  # Stop button not visible
         mock_send_button = MagicMock()
 
-        # Track send button clicks to detect retries
-        click_count = [0]
+        # Track Enter key presses to detect retries
+        enter_count = [0]
 
         def send_button_click_side_effect(js_code):
             # Check for mouse event dispatch (new click method)
@@ -599,7 +599,9 @@ class TestSendMessage:
                 click_count[0] += 1
             return None
 
-        mock_send_button.evaluate.side_effect = send_button_click_side_effect
+        # Both original and refetched input need press mock
+        mock_input.press.side_effect = press_side_effect
+        mock_refetched_input.press.side_effect = press_side_effect
 
         # fill() check returns text (fill success)
         mock_input.inner_text.return_value = "Test prompt"
@@ -625,8 +627,8 @@ class TestSendMessage:
 
         # inner_text: First attempt fails (text not cleared), second attempt succeeds (cleared)
         def inner_text_side_effect():
-            # After second click, return empty (cleared)
-            if click_count[0] < 2:
+            # After second Enter, return empty (cleared)
+            if enter_count[0] < 2:
                 return "Test prompt"  # Not cleared
             else:
                 return ""  # Cleared on 2nd attempt
@@ -646,11 +648,11 @@ class TestSendMessage:
         with patch('time.sleep'):  # Skip actual sleep
             handler._send_message("Test prompt")
 
-        # Should have clicked send button twice (retry once)
-        assert click_count[0] == 2, f"Expected 2 send button clicks but got {click_count[0]}"
+        # Should have pressed Enter twice (retry once)
+        assert enter_count[0] == 2, f"Expected 2 Enter key presses but got {enter_count[0]}"
 
     def test_send_message_succeeds_on_first_attempt(self):
-        """_send_message succeeds immediately when input is cleared after first send button click"""
+        """_send_message succeeds immediately when input is cleared after first Enter key"""
         handler = CopilotHandler()
 
         mock_page = MagicMock()
@@ -665,8 +667,8 @@ class TestSendMessage:
         mock_input.inner_text.return_value = "Test prompt"
         mock_input.evaluate.return_value = True  # has focus
 
-        # Track send button clicks
-        click_count = [0]
+        # Track Enter key presses
+        enter_count = [0]
 
         def send_button_click_side_effect(js_code):
             # Check for mouse event dispatch (new click method)
@@ -674,7 +676,7 @@ class TestSendMessage:
                 click_count[0] += 1
             return None
 
-        mock_send_button.evaluate.side_effect = send_button_click_side_effect
+        mock_input.press.side_effect = press_side_effect
 
         # After send, query_selector re-fetches and finds empty (send success)
         mock_refetched_input.inner_text.return_value = ""
@@ -696,8 +698,8 @@ class TestSendMessage:
             with patch('time.sleep'):
                 handler._send_message("Test prompt")
 
-        # Should click send button only once (immediate success on first attempt)
-        assert click_count[0] == 1, f"Expected 1 send button click but got {click_count[0]}"
+        # Should press Enter only once (immediate success on first attempt)
+        assert enter_count[0] == 1, f"Expected 1 Enter key press but got {enter_count[0]}"
 
     def test_send_message_continues_after_max_retries(self):
         """_send_message continues even if input never clears after max retries"""
@@ -714,8 +716,8 @@ class TestSendMessage:
         mock_input.inner_text.return_value = "Test prompt"
         mock_input.evaluate.return_value = True  # has focus
 
-        # Track send button clicks
-        click_count = [0]
+        # Track Enter key presses
+        enter_count = [0]
 
         def send_button_click_side_effect(js_code):
             # Check for mouse event dispatch (new click method)
@@ -723,7 +725,9 @@ class TestSendMessage:
                 click_count[0] += 1
             return None
 
-        mock_send_button.evaluate.side_effect = send_button_click_side_effect
+        # Both original and refetched input need press mock
+        mock_input.press.side_effect = press_side_effect
+        mock_refetched_input.press.side_effect = press_side_effect
 
         # After send, query_selector always returns element with text (never clears)
         mock_refetched_input.inner_text.return_value = "Test prompt"
@@ -760,11 +764,11 @@ class TestSendMessage:
             # Should not raise - continues anyway (response polling will detect failure)
             handler._send_message("Test prompt")
 
-        # Should click send button 2 times (max retries = 2)
-        assert click_count[0] == 2, f"Expected 2 send button clicks but got {click_count[0]}"
+        # Should press Enter 2 times (max retries = 2)
+        assert enter_count[0] == 2, f"Expected 2 Enter key presses but got {enter_count[0]}"
 
-    def test_send_message_uses_send_button_click(self):
-        """_send_message uses send button click as primary method"""
+    def test_send_message_uses_enter_key(self):
+        """_send_message uses Enter key as primary method"""
         handler = CopilotHandler()
 
         mock_page = MagicMock()
@@ -778,6 +782,16 @@ class TestSendMessage:
         # fill() check returns text (fill success)
         mock_input.inner_text.return_value = "Test prompt"
         mock_input.evaluate.return_value = True  # has focus
+
+        # Track Enter key presses
+        enter_pressed = [False]
+
+        def press_side_effect(key):
+            if key == "Enter":
+                enter_pressed[0] = True
+                mock_input.inner_text.return_value = ""  # Simulate cleared
+
+        mock_input.press.side_effect = press_side_effect
 
         def query_selector_side_effect(selector):
             if "stop" in selector.lower() or "Stop" in selector:

@@ -1992,6 +1992,9 @@ Based on recent commits:
   - **Non-blocking translation**: All translation methods use `asyncio.to_thread()` to avoid blocking NiceGUI event loop
   - **pywebview engine**: `PYWEBVIEW_GUI=edgechromium` environment variable to avoid runtime installation dialogs
   - **Multiprocessing support**: `multiprocessing.freeze_support()` for Windows/PyInstaller compatibility
+  - **Early Copilot connection**: `app.on_startup()` でEdge起動を開始し、UI表示と並列化（~2-3秒短縮）
+  - **uvicorn logging level**: `uvicorn_logging_level='warning'` でログ出力を削減
+  - **Static CSS files**: `app.add_static_files('/static', ui_dir)` でブラウザキャッシュを活用
 - **Threading & Context Fixes**:
   - **Client reference**: `self._client` saved from `@ui.page` handler for async button handlers (NiceGUI's `context.client` not available in async tasks)
   - **PlaywrightThreadExecutor**: All Playwright operations wrapped in dedicated thread executor to avoid greenlet thread-switching errors

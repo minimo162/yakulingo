@@ -3012,6 +3012,7 @@ def run_app(
     if multiprocessing.current_process().name != 'MainProcess':
         return
 
+    _t0 = time.perf_counter()  # Start timing for total run_app duration
     _t1 = time.perf_counter()
     yakulingo_app = create_app()
     logger.info("[TIMING] create_app: %.2fs", time.perf_counter() - _t1)

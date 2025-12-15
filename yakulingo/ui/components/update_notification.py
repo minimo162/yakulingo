@@ -245,22 +245,19 @@ class UpdateNotification:
 
     async def _start_download(self, info: VersionInfo, dialog: ui.dialog):
         """ダウンロードを開始"""
-        ui.notify('ダウンロード開始...', type='info')  # デバッグ
         dialog.close()
 
         if not self.updater:
-            ui.notify('updaterがありません', type='warning')  # デバッグ
+            ui.notify('アップデーターが初期化されていません', type='warning')
             return
 
         try:
-            # ダウンロード実行
-            ui.notify('ダウンロード中...', type='info')  # デバッグ
+            # ダウンロード実行（高速なため通知なしで直接実行）
             zip_path = await asyncio.to_thread(
                 lambda: self.updater.download_update(info, None)
             )
-            ui.notify(f'ダウンロード完了: {zip_path}', type='positive')  # デバッグ
 
-            # インストール確認ダイアログ
+            # インストール確認ダイアログを直接表示
             await self._confirm_install(zip_path)
 
         except (OSError, ValueError, RuntimeError) as e:
@@ -283,35 +280,52 @@ class UpdateNotification:
                     ).classes('text-sm text-center text-muted')
 
                     with ui.row().classes('w-full justify-end gap-2 mt-2'):
-                        ui.button('後で', on_click=dialog.close).props('flat').classes('text-muted')
-                        ui.button(
-                            'インストール',
-                            on_click=lambda: self._do_install(zip_path, dialog),
-                        ).classes('btn-primary')
+                        later_btn = ui.button('後で', on_click=dialog.close).props('flat').classes('text-muted')
+                        install_btn = ui.button('インストール').classes('btn-primary')
+
+                        async def on_install_click():
+                            await self._do_install(zip_path, dialog, install_btn, later_btn)
+
+                        install_btn.on_click(on_install_click)
 
             dialog.open()
 
-    def _do_install(self, zip_path, dialog: ui.dialog):
+    async def _do_install(self, zip_path, dialog: ui.dialog, install_btn, later_btn):
         """インストールを実行"""
-        dialog.close()
-
         if not self.updater:
             return
 
+        # ボタンを無効化してローディング表示
+        install_btn.disable()
+        install_btn.text = 'インストール中...'
+        later_btn.disable()
+
         try:
-            success = self.updater.install_update(zip_path)
+            # install_updateは同期処理だがスクリプト生成のみなので高速
+            success = await asyncio.to_thread(
+                lambda: self.updater.install_update(zip_path)
+            )
             if success:
+                dialog.close()
                 ui.notify(
-                    'アップデートの準備ができました。アプリケーションを終了してインストールを開始します。',
+                    'アップデートの準備ができました。アプリケーションを終了します...',
                     type='positive',
-                    timeout=10000,
+                    timeout=3000,
                 )
+                # 少し待ってからアプリを終了（通知を表示する時間）
+                await asyncio.sleep(1.0)
                 # アプリを終了（Windowsの場合はバッチファイルが処理を引き継ぐ）
                 import sys
                 sys.exit(0)
             else:
+                install_btn.enable()
+                install_btn.text = 'インストール'
+                later_btn.enable()
                 ui.notify('インストールに失敗しました', type='negative')
         except (OSError, ValueError, RuntimeError) as e:
+            install_btn.enable()
+            install_btn.text = 'インストール'
+            later_btn.enable()
             ui.notify(f'インストールエラー: {e}', type='negative')
 
 

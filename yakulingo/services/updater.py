@@ -650,41 +650,111 @@ Option Explicit
 
 On Error Resume Next
 
-Dim objShell, objFSO, scriptDir, psScript
+Dim objShell, objFSO, scriptDir, psScript, debugLogPath, vbsLogPath
 
 Set objShell = CreateObject("WScript.Shell")
 Set objFSO = CreateObject("Scripting.FileSystemObject")
+
+' Get debug log paths
+debugLogPath = objShell.Environment("Process")("TEMP") & "\\YakuLingo_update_debug.log"
+vbsLogPath = objShell.Environment("Process")("TEMP") & "\\YakuLingo_update_vbs.log"
+
+' Write VBS startup log
+Sub WriteVbsLog(msg)
+    On Error Resume Next
+    Dim f
+    Set f = objFSO.OpenTextFile(vbsLogPath, 8, True)
+    If Not f Is Nothing Then
+        f.WriteLine Now & " - " & msg
+        f.Close
+    End If
+    On Error Goto 0
+End Sub
+
+WriteVbsLog "=== VBS Script Started ==="
 
 ' Get script directory
 scriptDir = objFSO.GetParentFolderName(WScript.ScriptFullName)
 psScript = scriptDir & "\\.scripts\\update.ps1"
 
+WriteVbsLog "Script dir: " & scriptDir
+WriteVbsLog "PS script: " & psScript
+
 ' Check if PowerShell script exists
 If Not objFSO.FileExists(psScript) Then
+    WriteVbsLog "ERROR: PS script not found"
     MsgBox "Update script not found." & vbCrLf & vbCrLf & _
            "Expected: " & psScript, _
            vbCritical, "YakuLingo Update - Error"
     WScript.Quit 1
 End If
 
+WriteVbsLog "PS script exists, starting PowerShell..."
+
 ' Run PowerShell script with GUI mode (hidden console)
 Dim command, exitCode
-command = "cmd.exe /c powershell.exe -ExecutionPolicy Bypass -File """ & psScript & """"
+command = "powershell.exe -ExecutionPolicy Bypass -NoProfile -File """ & psScript & """"
+
+WriteVbsLog "Command: " & command
 
 ' Run and wait for completion (0 = hidden, True = wait)
 exitCode = objShell.Run(command, 0, True)
 
+WriteVbsLog "PowerShell exit code: " & exitCode
+
 If exitCode <> 0 Then
-    Dim errorMessage, debugLogPath
-    debugLogPath = objShell.Environment("Process")("TEMP") & "\\YakuLingo_update_debug.log"
+    Dim errorMessage, debugLogContent, vbsLogContent
+
+    ' Try to read debug log content
+    debugLogContent = ""
+    If objFSO.FileExists(debugLogPath) Then
+        On Error Resume Next
+        Dim objFile
+        Set objFile = objFSO.OpenTextFile(debugLogPath, 1, False)
+        If Not objFile Is Nothing Then
+            debugLogContent = objFile.ReadAll()
+            objFile.Close
+        End If
+        On Error Goto 0
+    End If
+
+    ' Try to read VBS log content
+    vbsLogContent = ""
+    If objFSO.FileExists(vbsLogPath) Then
+        On Error Resume Next
+        Dim vbsFile
+        Set vbsFile = objFSO.OpenTextFile(vbsLogPath, 1, False)
+        If Not vbsFile Is Nothing Then
+            vbsLogContent = vbsFile.ReadAll()
+            vbsFile.Close
+        End If
+        On Error Goto 0
+    End If
+
     errorMessage = "Update failed." & vbCrLf & vbCrLf & _
                    "Error code: " & exitCode & vbCrLf & vbCrLf & _
                    "Details: " & debugLogPath
+
+    ' Show debug log content if available
+    If Len(debugLogContent) > 0 Then
+        errorMessage = errorMessage & vbCrLf & vbCrLf & _
+                       "=== Debug Log ===" & vbCrLf & _
+                       Left(debugLogContent, 800)
+    ElseIf Len(vbsLogContent) > 0 Then
+        errorMessage = errorMessage & vbCrLf & vbCrLf & _
+                       "(PowerShell log not created)" & vbCrLf & vbCrLf & _
+                       "=== VBS Log ===" & vbCrLf & _
+                       Left(vbsLogContent, 800)
+    Else
+        errorMessage = errorMessage & vbCrLf & vbCrLf & _
+                       "(No logs created - PowerShell may have failed to start)"
+    End If
 
     MsgBox errorMessage, vbCritical, "YakuLingo Update - Error"
     WScript.Quit exitCode
 End If
 
+WriteVbsLog "Update completed successfully"
 WScript.Quit 0
 '''
 
@@ -693,13 +763,21 @@ WScript.Quit 0
 # YakuLingo Update Script (GUI Version)
 # ============================================================
 
-$ErrorActionPreference = "Stop"
-
-# Debug log for troubleshooting
+# Debug log for troubleshooting - create BEFORE ErrorActionPreference
 $debugLog = Join-Path $env:TEMP "YakuLingo_update_debug.log"
-try {{
-    "=== Update started: $(Get-Date) ===" | Out-File -FilePath $debugLog -Encoding UTF8
-}} catch {{}}
+"=== Update started: $(Get-Date) ===" | Out-File -FilePath $debugLog -Encoding UTF8 -Force
+
+# Global error trap to ensure errors are logged
+trap {{
+    $errMsg = $_.Exception.Message
+    $errLine = $_.InvocationInfo.ScriptLineNumber
+    "TRAP ERROR at line $errLine : $errMsg" | Out-File -FilePath $debugLog -Append -Encoding UTF8
+    "Stack: $($_.ScriptStackTrace)" | Out-File -FilePath $debugLog -Append -Encoding UTF8
+    # Continue to normal error handling
+    continue
+}}
+
+$ErrorActionPreference = "Stop"
 
 # Configuration
 $script:AppDir = "{app_dir}"
@@ -707,11 +785,19 @@ $script:SourceDir = "{source_dir}"
 $script:DirsToUpdate = @({dirs_to_update_ps})
 $script:FilesToUpdate = @({files_to_update_ps})
 
+"Config loaded - AppDir: $($script:AppDir)" | Out-File -FilePath $debugLog -Append -Encoding UTF8
+
 # ============================================================
 # GUI Helper Functions
 # ============================================================
-Add-Type -AssemblyName System.Windows.Forms
-Add-Type -AssemblyName System.Drawing
+try {{
+    Add-Type -AssemblyName System.Windows.Forms
+    Add-Type -AssemblyName System.Drawing
+    "GUI assemblies loaded successfully" | Out-File -FilePath $debugLog -Append -Encoding UTF8
+}} catch {{
+    "ERROR loading GUI assemblies: $($_.Exception.Message)" | Out-File -FilePath $debugLog -Append -Encoding UTF8
+    throw
+}}
 
 $script:progressForm = $null
 $script:progressBar = $null
@@ -1008,11 +1094,16 @@ function Invoke-Update {{
         if (Test-Path $pythonExe) {{
             # Merge settings
             try {{
-                $mergeSettingsCmd = "from pathlib import Path; import sys; sys.path.insert(0, str(Path(r'$($script:AppDir)'))); from yakulingo.services.updater import merge_settings; added = merge_settings(Path(r'$($script:AppDir)'), Path(r'$($script:SourceDir)'))"
+                $mergeSettingsCmd = "from pathlib import Path; import sys; sys.path.insert(0, str(Path(r'$($script:AppDir)'))); from yakulingo.services.updater import merge_settings; added = merge_settings(Path(r'$($script:AppDir)'), Path(r'$($script:SourceDir)')); print('OK:', added)"
                 $result = & $pythonExe -c $mergeSettingsCmd 2>&1
-                Write-DebugLog "Settings merge result: $result"
+                $resultStr = ($result | Out-String).Trim()
+                if ($LASTEXITCODE -eq 0) {{
+                    Write-DebugLog "Settings merge OK: $resultStr"
+                }} else {{
+                    Write-DebugLog "Settings merge failed (exit $LASTEXITCODE): $resultStr"
+                }}
             }} catch {{
-                Write-DebugLog "Settings merge error: $($_.Exception.Message)"
+                Write-DebugLog "Settings merge exception: $($_.Exception.Message)"
             }}
 
             # Update glossary (compare, backup to Desktop if changed, then overwrite)
@@ -1021,12 +1112,21 @@ function Invoke-Update {{
             $sourceGlossary = Join-Path $script:SourceDir "glossary.csv"
             if (Test-Path $sourceGlossary) {{
                 try {{
-                    $updateGlossaryCmd = "from pathlib import Path; import sys; sys.path.insert(0, str(Path(r'$($script:AppDir)'))); from yakulingo.services.updater import backup_and_update_glossary; result = backup_and_update_glossary(Path(r'$($script:AppDir)'), Path(r'$($script:SourceDir)')); print(result if result else '')"
+                    $updateGlossaryCmd = "from pathlib import Path; import sys; sys.path.insert(0, str(Path(r'$($script:AppDir)'))); from yakulingo.services.updater import backup_and_update_glossary; result = backup_and_update_glossary(Path(r'$($script:AppDir)'), Path(r'$($script:SourceDir)')); print('OK:', result if result else 'none')"
                     $result = & $pythonExe -c $updateGlossaryCmd 2>&1
-                    $script:GlossaryBackupName = ($result | Out-String).Trim()
-                    Write-DebugLog "Glossary update result: $($script:GlossaryBackupName)"
+                    $resultStr = ($result | Out-String).Trim()
+                    if ($LASTEXITCODE -eq 0) {{
+                        # Extract backup name if present
+                        if ($resultStr -match "OK: (.+)$") {{
+                            $script:GlossaryBackupName = $Matches[1]
+                            if ($script:GlossaryBackupName -eq "none") {{ $script:GlossaryBackupName = "" }}
+                        }}
+                        Write-DebugLog "Glossary update OK: $resultStr"
+                    }} else {{
+                        Write-DebugLog "Glossary update failed (exit $LASTEXITCODE): $resultStr"
+                    }}
                 }} catch {{
-                    Write-DebugLog "Glossary update error: $($_.Exception.Message)"
+                    Write-DebugLog "Glossary update exception: $($_.Exception.Message)"
                 }}
             }}
         }} else {{
@@ -1076,10 +1176,12 @@ try {{
 '''
 
         # スクリプトを保存
-        with open(vbs_path, "w", encoding="utf-8") as f:
+        # VBSはANSIで保存（日本語Windows互換）
+        with open(vbs_path, "w", encoding="cp932") as f:
             f.write(vbs_content)
 
-        with open(ps1_path, "w", encoding="utf-8") as f:
+        # PowerShellスクリプトはUTF-8 BOM付きで保存（日本語Windows必須）
+        with open(ps1_path, "w", encoding="utf-8-sig") as f:
             f.write(ps1_content)
 
         # VBSスクリプトを実行（GUIモード、コンソール非表示）
@@ -1337,9 +1439,10 @@ def merge_settings(app_dir: Path, source_dir: Path) -> int:
 
     # 両方の設定を読み込む
     try:
-        with open(user_settings, "r", encoding="utf-8") as f:
+        # utf-8-sig を使用してBOM付きファイルにも対応
+        with open(user_settings, "r", encoding="utf-8-sig") as f:
             user_data = json.load(f)
-        with open(new_settings, "r", encoding="utf-8") as f:
+        with open(new_settings, "r", encoding="utf-8-sig") as f:
             new_data = json.load(f)
     except (json.JSONDecodeError, OSError) as e:
         logger.warning("設定ファイルの読み込みに失敗: %s", e)

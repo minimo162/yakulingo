@@ -1493,10 +1493,13 @@ textarea:focus-visible {
     width: 100%;
     min-width: 100%;
     max-width: none;
+    height: 100%;
     border-right: none;
     box-shadow: none;
     background: transparent;
     justify-content: center;
+    overflow-y: auto;
+    position: relative;  /* Override sticky for file mode */
 }
 
 /* File mode: Remove main-card wrapper styling (枠の重複を防ぐ) */

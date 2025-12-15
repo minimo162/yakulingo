@@ -141,6 +141,7 @@ YakuLingo/
 │   ├── install_deps.bat           # Install dependencies for distribution
 │   └── make_distribution.bat      # Create distribution package
 ├── glossary.csv                   # Default reference file (glossary, style guide, etc.)
+├── glossary_old.csv               # Previous version glossary (for customization detection)
 ├── pyproject.toml                 # Project metadata & dependencies
 ├── uv.lock                        # Lock file for reproducible builds
 ├── requirements.txt               # Core pip dependencies
@@ -870,9 +871,12 @@ The `AutoUpdater` class provides GitHub Releases-based updates:
 アップデートおよび再インストール時、ユーザーデータは以下のルールで保護されます：
 
 **用語集 (glossary.csv):**
-- ユーザーの用語集を保持しつつ、開発者が追加した新規用語をマージ
-- 重複判定は「ソース,翻訳」のペア全体で行う（同じソースでも翻訳が違えば追加）
-- `merge_glossary()` 関数で実装
+- バックアップ＆上書き方式で処理
+- ユーザーの用語集が以下のいずれかと一致する場合はバックアップをスキップ：
+  - 最新の`glossary.csv`と一致（変更なし）
+  - `glossary_old.csv`と一致（前バージョンのまま＝カスタマイズなし）
+- カスタマイズされている場合のみデスクトップに`glossary_backup_YYYYMMDD.csv`としてバックアップ
+- `backup_and_update_glossary()` 関数で実装（`merge_glossary()`は後方互換性のため維持）
 
 **設定ファイル (settings.json):**
 - 新しい設定ファイルをベースとし、ユーザー保護対象の設定のみ上書き
@@ -1739,6 +1743,8 @@ Based on recent commits:
 - **Glossary Processing Changes (2024-12)**:
   - **File consolidation**: abbreviations.csvをglossary.csvに統合
   - **Processing method change**: 用語集の処理をマージ方式からバックアップ＆上書き方式に変更
+  - **Customization detection**: `glossary_old.csv`との比較でカスタマイズ判定を追加（前バージョンと一致すればバックアップをスキップ）
+  - **Bug fix**: setup.ps1でバックアップディレクトリ削除前にglossary.csv比較処理を実行するよう修正
 - **Outlook MSG Support (2024-12)**:
   - **MSG file translation**: Windows + Outlook環境でMSGファイル翻訳サポートを追加
 - **Excel Translation Optimization (2024-12)**:

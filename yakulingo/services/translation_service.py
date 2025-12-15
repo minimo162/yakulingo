@@ -35,15 +35,17 @@ _RE_TRANSLATION_TEXT = re.compile(
     r'|(?:Translation|Translated)[:：]'  # English labels - colon REQUIRED
     r')\**[\]\)]?\s*'
     r'(.+?)'
-    r'(?=[\n\s]*[#>*\s-]*[\[\(]?\**(?:解説|説明|Explanation|Notes?|Commentary)\**[\]\)]?[:：]?\s*|$)',
+    # Lookahead: 解説 must be at line start (after \n) to avoid "解説付き" false match
+    r'(?=\n[#>*\s-]*[\[\(]?\**(?:解説|説明|Explanation|Notes?|Commentary)\**[\]\)]?[:：]?\s*|$)',
     re.DOTALL | re.IGNORECASE,
 )
 
 # Explanation pattern - supports multiple formats:
 # - Japanese: 解説, 説明 (colon optional)
 # - English: Explanation, Notes, Note, Commentary (colon optional for flexibility)
+# NOTE: Must be at line start (after ^ or \n) to avoid "解説付き" false match
 _RE_EXPLANATION = re.compile(
-    r'[#>*\s-]*[\[\(]?\**(?:解説|説明|Explanation|Notes?|Commentary)\**[\]\)]?[:：]?\s*(.+)',
+    r'(?:^|\n)[#>*\s-]*[\[\(]?\**(?:解説|説明|Explanation|Notes?|Commentary)\**[\]\)]?[:：]?\s*(.+)',
     re.DOTALL | re.IGNORECASE,
 )
 _RE_MARKDOWN_SEPARATOR = re.compile(r'\n?\s*[\*\-]{3,}\s*$')

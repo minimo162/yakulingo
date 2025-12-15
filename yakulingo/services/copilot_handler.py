@@ -468,7 +468,8 @@ class CopilotHandler:
     RESPONSE_STABLE_COUNT = 3  # Number of stable checks before considering response complete
     DEFAULT_RESPONSE_TIMEOUT = 600  # Default timeout for response in seconds (10 minutes)
     # When stop button is never detected (possible stale selector), use higher stable count
-    STALE_SELECTOR_STABLE_COUNT = 5  # Extra stability checks when stop button not detected
+    # Reduced from 5 to 4 for faster response on short translations
+    STALE_SELECTOR_STABLE_COUNT = 4  # Extra stability checks when stop button not detected
 
     # =========================================================================
     # Timeout Settings - Centralized for consistency across operations

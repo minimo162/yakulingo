@@ -3669,6 +3669,10 @@ class CopilotHandler:
                     logger.warning("Input field is empty after fill - Copilot may need attention")
                     raise RuntimeError("Copilotに入力できませんでした。Edgeブラウザを確認してください。")
 
+                # Wait for Copilot to process input and update internal React state
+                # Without this delay, the send button may be visible but not yet functional
+                time.sleep(0.3)
+
                 # Wait for send button to become enabled before clicking
                 # This indicates Copilot has processed the input and is ready
                 send_button_start = time.time()
@@ -3687,13 +3691,13 @@ class CopilotHandler:
                         "Send button selector may need update after %.2fs (using fallback): %s",
                         send_button_wait, type(e).__name__
                     )
-                    time.sleep(0.1)  # Reduced fallback from 0.15s
+                    time.sleep(0.1)
 
                 # Send via send button click (more reliable than Enter key)
                 # After click, use wait_for_selector for efficient stop button detection
                 # This is more efficient than polling with query_selector
                 MAX_SEND_RETRIES = 2  # Reduced from 3 (usually succeeds on first try)
-                SEND_VERIFY_TIMEOUT_MS = 1500  # 1.5s timeout (optimized from 2.5s - stop button usually appears within 500ms)
+                SEND_VERIFY_TIMEOUT_MS = 2000  # 2.0s timeout (balance between speed and reliability)
                 send_success = False
 
                 for send_attempt in range(MAX_SEND_RETRIES):
@@ -3701,8 +3705,17 @@ class CopilotHandler:
                     try:
                         send_btn = self._page.query_selector(self.SEND_BUTTON_SELECTOR)
                         if send_btn:
-                            # Use JS click to avoid bringing browser to front
-                            send_btn.evaluate('el => el.click()')
+                            # Use complete mouse event sequence for React components
+                            # Simple el.click() may not trigger React's event handlers properly
+                            send_btn.evaluate('''el => {
+                                const rect = el.getBoundingClientRect();
+                                const x = rect.left + rect.width / 2;
+                                const y = rect.top + rect.height / 2;
+                                const opts = { bubbles: true, cancelable: true, clientX: x, clientY: y };
+                                el.dispatchEvent(new MouseEvent('mousedown', opts));
+                                el.dispatchEvent(new MouseEvent('mouseup', opts));
+                                el.dispatchEvent(new MouseEvent('click', opts));
+                            }''')
                             logger.debug("Send button clicked (attempt %d)", send_attempt + 1)
                         else:
                             # Fallback to Enter key if send button not found
@@ -3713,9 +3726,7 @@ class CopilotHandler:
                         input_elem.press("Enter")
 
                     # Small delay to let Copilot's JavaScript process the click event
-                    # This is critical for first-attempt success - without this delay,
-                    # the stop button may not appear in time on the first click
-                    time.sleep(0.1)  # Optimized from 0.15s
+                    time.sleep(0.1)
 
                     # Use wait_for_selector for efficient browser-level waiting
                     # This is more efficient than polling with query_selector every 50ms

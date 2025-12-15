@@ -3003,6 +3003,15 @@ def run_app(
         on_ready: Callback to call after client connection is ready (before UI shows).
                   Use this to close splash screens for seamless transition.
     """
+    import multiprocessing
+
+    # On Windows, pywebview uses 'spawn' multiprocessing which re-executes the entire script
+    # in the child process. NiceGUI's ui.run() checks for this and returns early, but by then
+    # we've already done setup (logging, create_app, atexit.register) which causes confusing
+    # "Shutting down YakuLingo..." log messages. Early return here to avoid this.
+    if multiprocessing.current_process().name != 'MainProcess':
+        return
+
     _t1 = time.perf_counter()
     yakulingo_app = create_app()
     logger.info("[TIMING] create_app: %.2fs", time.perf_counter() - _t1)

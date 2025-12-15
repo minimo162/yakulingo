@@ -594,7 +594,8 @@ class TestSendMessage:
         click_count = [0]
 
         def send_button_click_side_effect(js_code):
-            if 'click()' in js_code:
+            # Check for mouse event dispatch (new click method)
+            if 'MouseEvent' in js_code or 'dispatchEvent' in js_code:
                 click_count[0] += 1
             return None
 
@@ -668,7 +669,8 @@ class TestSendMessage:
         click_count = [0]
 
         def send_button_click_side_effect(js_code):
-            if 'click()' in js_code:
+            # Check for mouse event dispatch (new click method)
+            if 'MouseEvent' in js_code or 'dispatchEvent' in js_code:
                 click_count[0] += 1
             return None
 
@@ -716,7 +718,8 @@ class TestSendMessage:
         click_count = [0]
 
         def send_button_click_side_effect(js_code):
-            if 'click()' in js_code:
+            # Check for mouse event dispatch (new click method)
+            if 'MouseEvent' in js_code or 'dispatchEvent' in js_code:
                 click_count[0] += 1
             return None
 
@@ -789,7 +792,8 @@ class TestSendMessage:
 
         # After button click, input should be cleared (simulate success)
         def clear_on_button_click(js_code):
-            if 'click()' in js_code:
+            # Check for mouse event dispatch (new click method)
+            if 'MouseEvent' in js_code or 'dispatchEvent' in js_code:
                 mock_input.inner_text.return_value = ""  # Simulate cleared
             return None
 
@@ -804,9 +808,9 @@ class TestSendMessage:
 
         # Verify send button was clicked
         assert mock_send_button.evaluate.called
-        # Check that click() was called on send button
+        # Check that mouse events were dispatched on send button
         click_calls = [call for call in mock_send_button.evaluate.call_args_list
-                       if 'click()' in str(call)]
+                       if 'MouseEvent' in str(call) or 'dispatchEvent' in str(call)]
         assert len(click_calls) > 0, "Send button should have been clicked"
 
 

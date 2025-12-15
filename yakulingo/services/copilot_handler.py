@@ -3607,37 +3607,39 @@ class CopilotHandler:
                     logger.warning("Input field is empty after fill - Copilot may need attention")
                     raise RuntimeError("Copilotに入力できませんでした。Edgeブラウザを確認してください。")
 
-                # Pause to let Copilot process the input before sending
-                # This is critical - if we press Enter too quickly, Copilot may not
-                # have processed the input yet and the send will fail.
-                time.sleep(0.8)
+                # OPTIMIZED: Removed fixed 0.8s wait - replaced by send button readiness check
+                # The send button becoming enabled indicates Copilot has processed the input
+                # This can save 0.3-0.7s when Copilot responds quickly
 
                 # Re-focus input element after fill() to ensure Enter key is received
                 # fill() can cause focus loss, so we need to explicitly restore it
-                # using both click and focus for maximum reliability
                 try:
                     input_elem.evaluate('el => { el.click(); el.focus(); }')
-                    time.sleep(0.1)  # Brief pause for focus to take effect
+                    time.sleep(0.05)  # Minimal pause for focus (reduced from 0.1s)
                 except Exception as e:
                     logger.debug("Re-focus after fill failed: %s", e)
 
                 # Wait for send button to become enabled before pressing Enter
                 # This indicates Copilot has processed the input and is ready
-                # Reduced timeout from 3s to 1.5s for faster response
+                # OPTIMIZED: This replaces the fixed 0.8s wait - timeout increased to 2s
+                # to ensure reliability while still being faster on average
+                send_button_start = time.time()
                 try:
                     self._page.wait_for_selector(
                         self.SEND_BUTTON_SELECTOR,
-                        timeout=1500,
+                        timeout=2000,
                         state='visible'
                     )
-                    logger.debug("Send button is now enabled")
+                    send_button_wait = time.time() - send_button_start
+                    logger.debug("Send button enabled after %.2fs", send_button_wait)
                 except Exception as e:
-                    # Selector may have changed - use fixed wait as fallback
+                    # Selector may have changed - use minimal fallback wait
+                    send_button_wait = time.time() - send_button_start
                     logger.warning(
-                        "Send button selector may need update (using fallback wait): %s",
-                        type(e).__name__
+                        "Send button selector may need update after %.2fs (using fallback): %s",
+                        send_button_wait, type(e).__name__
                     )
-                    time.sleep(0.2)
+                    time.sleep(0.15)  # Reduced fallback from 0.2s
 
                 # Send via Enter key with retry on failure
                 # After Enter, poll for input cleared OR stop button appears

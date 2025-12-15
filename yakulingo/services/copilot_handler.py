@@ -556,10 +556,10 @@ class CopilotHandler:
     RESPONSE_SELECTOR_COMBINED = ", ".join(RESPONSE_SELECTORS)
 
     # Dynamic polling intervals for faster response detection
-    # OPTIMIZED: Reduced intervals for quicker response detection
-    RESPONSE_POLL_INITIAL = 0.15  # Initial interval while waiting for response to start
-    RESPONSE_POLL_ACTIVE = 0.15  # Interval after text is detected
-    RESPONSE_POLL_STABLE = 0.05  # Interval during stability checking (fastest)
+    # OPTIMIZED: Reduced intervals for quicker response detection (0.15s -> 0.1s)
+    RESPONSE_POLL_INITIAL = 0.1  # Initial interval while waiting for response to start
+    RESPONSE_POLL_ACTIVE = 0.1  # Interval after text is detected
+    RESPONSE_POLL_STABLE = 0.03  # Interval during stability checking (fastest)
 
     # Page validity check during polling (detect login expiration)
     PAGE_VALIDITY_CHECK_INTERVAL = 5.0  # Check page validity every 5 seconds
@@ -804,9 +804,10 @@ class CopilotHandler:
             taskkill_path = r"C:\Windows\System32\taskkill.exe"
             local_cwd = os.environ.get("SYSTEMROOT", r"C:\Windows")
 
+            # OPTIMIZED: Reduced timeout from 2s to 1s for faster shutdown
             result = subprocess.run(
                 [taskkill_path, "/F", "/T", "/PID", str(pid)],
-                capture_output=True, timeout=2, cwd=local_cwd,
+                capture_output=True, timeout=1, cwd=local_cwd,
                 creationflags=subprocess.CREATE_NO_WINDOW
             )
             # taskkill returns 0 on success, 128 if process not found
@@ -3637,9 +3638,9 @@ class CopilotHandler:
                 # After click, poll for input cleared OR stop button appears
                 # Either indicates successful send
                 MAX_SEND_RETRIES = 3
-                # OPTIMIZED: Faster polling (50ms) with shorter max wait (1.5s)
+                # OPTIMIZED: Faster polling (50ms) with shorter max wait (0.8s)
                 SEND_VERIFY_POLL_INTERVAL = 0.05  # Poll every 50ms
-                SEND_VERIFY_MAX_WAIT = 1.5  # Max wait for verification
+                SEND_VERIFY_MAX_WAIT = 0.8  # Max wait for verification (reduced from 1.5s)
                 send_success = False
 
                 for send_attempt in range(MAX_SEND_RETRIES):

@@ -3084,12 +3084,14 @@ def run_app(
     def cleanup():
         """Clean up resources on shutdown."""
         import gc
+        import time as time_module
 
         nonlocal cleanup_done
         if cleanup_done:
             return
         cleanup_done = True
 
+        cleanup_start = time_module.time()
         logger.info("Shutting down YakuLingo...")
 
         # Set shutdown flag FIRST to prevent new tasks from starting
@@ -3098,10 +3100,11 @@ def run_app(
         # Clear PP-DocLayout-L cache FIRST to release GPU/CPU memory and file handles
         # This must happen before Playwright cleanup because PaddlePaddle may hold
         # file handles that prevent folder deletion
+        step_start = time_module.time()
         try:
             from yakulingo.processors.pdf_layout import clear_analyzer_cache
             clear_analyzer_cache()
-            logger.debug("PP-DocLayout-L cache cleared")
+            logger.debug("[TIMING] PP-DocLayout-L cache cleared: %.2fs", time_module.time() - step_start)
         except ImportError:
             pass  # PDF dependencies not installed
         except Exception as e:
@@ -3112,18 +3115,18 @@ def run_app(
             try:
                 yakulingo_app._active_progress_timer.cancel()
                 yakulingo_app._active_progress_timer = None
-                logger.debug("Progress timer cancelled")
             except Exception as e:
                 logger.debug("Error cancelling progress timer: %s", e)
 
         # Stop hotkey manager
+        step_start = time_module.time()
         yakulingo_app.stop_hotkey_manager()
+        logger.debug("[TIMING] hotkey_manager.stop: %.2fs", time_module.time() - step_start)
 
         # Cancel login polling task in app.py (async task)
         if yakulingo_app._login_polling_task is not None:
             try:
                 yakulingo_app._login_polling_task.cancel()
-                logger.debug("Login polling task cancelled")
             except Exception as e:
                 logger.debug("Error cancelling login polling task: %s", e)
 
@@ -3131,7 +3134,6 @@ def run_app(
         if yakulingo_app.translation_service is not None:
             try:
                 yakulingo_app.translation_service.cancel()
-                logger.debug("Translation service cancelled")
             except Exception as e:
                 logger.debug("Error cancelling translation: %s", e)
 
@@ -3139,23 +3141,24 @@ def run_app(
         if yakulingo_app._copilot is not None:
             try:
                 yakulingo_app._copilot.cancel_login_wait()
-                logger.debug("Login wait cancelled")
             except Exception as e:
                 logger.debug("Error cancelling login wait: %s", e)
 
         # Force disconnect from Copilot (close Edge browser immediately)
         # Use force_disconnect to avoid waiting for pending Playwright operations
+        step_start = time_module.time()
         if yakulingo_app._copilot is not None:
             try:
                 yakulingo_app._copilot.force_disconnect()
-                logger.info("Copilot disconnected")
+                logger.info("[TIMING] Copilot disconnected: %.2fs", time_module.time() - step_start)
             except Exception as e:
                 logger.debug("Error disconnecting Copilot: %s", e)
 
         # Close database connections (ensures WAL checkpoint)
+        step_start = time_module.time()
         try:
             yakulingo_app.state.close()
-            logger.debug("Database connections closed")
+            logger.debug("[TIMING] database.close: %.2fs", time_module.time() - step_start)
         except Exception as e:
             logger.debug("Error closing database: %s", e)
 
@@ -3166,8 +3169,11 @@ def run_app(
 
         # Force garbage collection to clean up before Python shutdown
         # This helps prevent WeakSet errors during interpreter shutdown
+        step_start = time_module.time()
         gc.collect()
-        logger.debug("Cleanup completed")
+        logger.debug("[TIMING] gc.collect: %.2fs", time_module.time() - step_start)
+
+        logger.info("[TIMING] cleanup total: %.2fs", time_module.time() - cleanup_start)
 
     # Suppress WeakSet errors during Python shutdown
     # These occur when garbage collection runs during interpreter shutdown

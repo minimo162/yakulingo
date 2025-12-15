@@ -2063,10 +2063,15 @@ Based on recent commits:
   - **settings.json deep copy**: 浅いコピーから深いコピーに変更（ネストしたオブジェクト対応）
   - **Progress update**: GUIモード時のユーザーデータ復元中プログレス更新（87%→89%）
 - **Performance Optimization (2024-12)**:
-  - **Polling interval reduction**: `RESPONSE_POLL_INITIAL`/`ACTIVE` 0.2→0.15秒、`RESPONSE_POLL_STABLE` 0.1→0.05秒
+  - **Polling interval reduction**: `RESPONSE_POLL_INITIAL`/`ACTIVE` 0.15→0.1秒、`RESPONSE_POLL_STABLE` 0.05→0.03秒
   - **Stability check optimization**: `RESPONSE_STABLE_COUNT` 3→2回、`STALE_SELECTOR_STABLE_COUNT` 4→3回
-  - **App exit speedup**: グレースフル終了タイムアウト 0.1→0.05秒、terminate/kill待機時間を短縮
-  - **Expected improvement**: 翻訳完了検出 約0.1〜0.15秒高速化、終了処理 約0.15〜0.2秒高速化
+  - **Send verification speedup**: `SEND_VERIFY_MAX_WAIT` 1.5秒→0.8秒に短縮（リトライまでの待機時間を削減）
+  - **Expected improvement**: 翻訳完了検出 約0.1〜0.15秒高速化、送信リトライ 約0.7秒高速化
+- **App Shutdown Optimization (2024-12)**:
+  - **Shutdown timing logs**: cleanup()関数に各ステップのタイミングログを追加
+  - **taskkill timeout**: プロセスツリー終了タイムアウト 2秒→1秒に短縮
+  - **Timing log output**: `[TIMING] cleanup total`, `[TIMING] Copilot disconnected`, `[TIMING] force_disconnect total`
+  - **Expected improvement**: アプリ終了処理 約1秒高速化（最悪ケース）
 - **Translation Speed Optimization (2024-12)**:
   - **Send retry improvement**: `SEND_VERIFY_MAX_WAIT` 2.5秒→1.5秒に短縮（リトライまでの待機時間を削減）
   - **New chat optimization**: `_wait_for_responses_cleared` タイムアウト 1.0秒→0.5秒、ポーリング間隔 0.15秒→0.05秒

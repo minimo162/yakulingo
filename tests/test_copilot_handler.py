@@ -650,7 +650,8 @@ class TestSendMessage:
 
         # Should have completed successfully (input was eventually cleared)
         # The test verifies that the retry logic works by checking inner_text was called multiple times
-        assert inner_text_calls[0] >= 3, f"Expected at least 3 inner_text calls but got {inner_text_calls[0]}"
+        # Note: With Enter key as primary send method, the call pattern may differ
+        assert inner_text_calls[0] >= 2, f"Expected at least 2 inner_text calls but got {inner_text_calls[0]}"
 
     def test_send_message_succeeds_on_first_attempt(self):
         """_send_message succeeds immediately when input is cleared after first click"""
@@ -745,7 +746,7 @@ class TestSendMessage:
         assert wait_for_selector_calls[0] >= 2, f"Expected at least 2 wait_for_selector calls but got {wait_for_selector_calls[0]}"
 
     def test_send_message_uses_enter_key(self):
-        """_send_message uses Enter key as primary method"""
+        """_send_message uses Enter key as primary method (first attempt)"""
         handler = CopilotHandler()
 
         mock_page = MagicMock()
@@ -781,12 +782,6 @@ class TestSendMessage:
         mock_page.query_selector.side_effect = query_selector_side_effect
         handler._page = mock_page
 
-        # After button click, input should be cleared (simulate success)
-        def clear_on_click(*args, **kwargs):
-            mock_input.inner_text.return_value = ""  # Simulate cleared
-
-        mock_send_button.click.side_effect = clear_on_click
-
         # Mock time to make polling loops exit quickly
         time_values = [i * 0.2 for i in range(100)]
 
@@ -794,8 +789,9 @@ class TestSendMessage:
             with patch('time.sleep'):
                 handler._send_message("Test prompt")
 
-        # Verify send button was clicked (first attempt uses click(force=True))
-        assert mock_send_button.click.called, "Send button should have been clicked"
+        # Verify Enter key was pressed (first attempt uses Enter key)
+        assert enter_pressed[0], "Enter key should have been pressed"
+        assert mock_input.focus.called, "Input should have been focused before Enter key"
 
 
 class TestGetResponse:

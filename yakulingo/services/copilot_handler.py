@@ -3754,42 +3754,25 @@ class CopilotHandler:
                     send_method = ""
                     try:
                         if send_attempt == 0:
-                            # First attempt: JS mouse events + Enter key (dual approach for reliability)
+                            # First attempt: JS click() method (most reliable - works even when button is off-screen)
+                            # The button can be at y: -5 (off-screen) which breaks mouse events
                             send_btn = self._page.query_selector(self.SEND_BUTTON_SELECTOR)
                             if send_btn:
-                                # Try JS mouse events first
-                                send_btn.evaluate('''el => {
-                                    const rect = el.getBoundingClientRect();
-                                    const x = rect.left + rect.width / 2;
-                                    const y = rect.top + rect.height / 2;
-                                    const opts = { bubbles: true, cancelable: true, clientX: x, clientY: y };
-                                    el.dispatchEvent(new MouseEvent('mousedown', opts));
-                                    el.dispatchEvent(new MouseEvent('mouseup', opts));
-                                    el.dispatchEvent(new MouseEvent('click', opts));
-                                }''')
-                                # Also send Enter key as backup (some Copilot states respond better to Enter)
-                                time.sleep(0.05)
-                                input_elem.focus()
-                                input_elem.press("Enter")
-                                send_method = "JS mouse events + Enter"
+                                send_btn.evaluate('el => el.click()')
+                                send_method = "JS click()"
                             else:
                                 input_elem.focus()
                                 time.sleep(0.05)
                                 input_elem.press("Enter")
                                 send_method = "Enter key (button not found)"
                         elif send_attempt == 1:
-                            # Second attempt: Playwright click with force
-                            send_btn = self._page.query_selector(self.SEND_BUTTON_SELECTOR)
-                            if send_btn:
-                                send_btn.click(force=True)
-                                send_method = "Playwright click"
-                            else:
-                                input_elem.focus()
-                                time.sleep(0.05)
-                                input_elem.press("Enter")
-                                send_method = "Enter key (button not found)"
+                            # Second attempt: Enter key
+                            input_elem.focus()
+                            time.sleep(0.05)
+                            input_elem.press("Enter")
+                            send_method = "Enter key"
                         else:
-                            # Third attempt: JS click() method call (bypasses event handling)
+                            # Third attempt: Playwright click with force (scrolls element into view)
                             send_btn = self._page.query_selector(self.SEND_BUTTON_SELECTOR)
                             if send_btn:
                                 try:
@@ -3804,9 +3787,8 @@ class CopilotHandler:
                                     logger.debug("[SEND] Button info: %s", btn_info)
                                 except Exception as info_err:
                                     logger.debug("[SEND] Could not get button info: %s", info_err)
-                                # Use JS click() method directly
-                                send_btn.evaluate('el => el.click()')
-                                send_method = "JS click() method"
+                                send_btn.click(force=True)
+                                send_method = "Playwright click"
                             else:
                                 # Fallback to Enter key if send button not found
                                 logger.debug("[SEND] Button not found (selector: %s), using Enter key",

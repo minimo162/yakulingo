@@ -1624,10 +1624,10 @@ When interacting with users in this repository, prefer Japanese for comments and
 
 Based on recent commits:
 - **Copilot Send Process Optimization (2024-12)**:
-  - **Dual approach**: 最初の試行でJS mouse eventsとEnter keyの両方を使用するデュアルアプローチを採用
-  - **Reason**: Copilotの状態によって効果的な方法が異なるため、両方を組み合わせることで信頼性を向上
-  - **New priority**: 1. JS mouse events + Enter key（デュアル）→ 2. Playwright click → 3. JS click() method
-  - **Effect**: リトライにかかる時間を削減、最初の試行での成功率を向上
+  - **JS click() first**: DOM の `el.click()` を最初の送信方法として使用
+  - **Reason**: 送信ボタンが画面外（`y: -5`）にあるとマウスイベントが正しく処理されないため、DOM click() が最も信頼性が高い
+  - **New priority**: 1. JS click()（最も信頼性が高い）→ 2. Enter key → 3. Playwright click（force=True）
+  - **Effect**: ほとんどの場合で最初の試行で成功、リトライ時間を約4秒削減
 - **PDF Line Break Fix (2024-12)**:
   - **TOC pattern is_strong_boundary removal**: TOCパターン（Y変化 + X大リセット）で`is_strong_boundary = True`を設定しないように修正
   - **Issue**: 通常の段落内の行折り返しがTOCパターンとして誤検出され、`is_japanese_continuation_line()`による継続行判定がスキップされていた
@@ -1916,8 +1916,9 @@ Based on recent commits:
   - **Automatic eviction**: Oldest entries removed when cache is full
 - **Copilot Input Reliability Improvements**:
   - **fill() method**: Playwright fill()を使用して改行を正しく処理（改行がEnterキーとして解釈される問題を修正）
-  - **Dual approach first**: 最初の試行でJS mouse eventsとEnter keyの両方を使用（Copilotの状態によって効果的な方法が異なるため）
-  - **Send method priority**: 1. JS mouse events + Enter key（デュアル）→ 2. Playwright click（force=True）→ 3. JS click() method
+  - **JS click() first**: 最初の試行でDOM の `el.click()` を直接呼び出し（ボタンが画面外 `y: -5` でもクリック可能）
+  - **Send method priority**: 1. JS click()（最も信頼性が高い）→ 2. Enter key → 3. Playwright click（force=True）
+  - **Off-screen button handling**: 送信ボタンが画面外にある場合でもJS click()で確実に動作
   - **Post-send verification**: 送信後に入力欄がクリアされたかを確認し、残っていればリトライ（最大3回）
   - **DOM re-fetch after send**: 送信後は`query_selector`で入力欄を再取得（CopilotがDOM要素を再生成する可能性があるためstale element回避）
   - **Why not wait for send button**: 送信ボタンの有効化を待機する方式は、ボタンが有効にならないケースがあり無限待機の原因となるため不採用。代わりに送信後の確認方式を採用

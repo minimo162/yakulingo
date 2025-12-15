@@ -3749,19 +3749,37 @@ class CopilotHandler:
                 send_success = False
 
                 for send_attempt in range(MAX_SEND_RETRIES):
-                    # Send via Enter key or button click
-                    # Note: Recent Copilot UI changes may break button clicks,
-                    # so we use Enter key as the primary method now
+                    # Send via JS mouse events, Enter key, or button click
+                    # Note: JS mouse events are most reliable for React components
                     send_method = ""
                     try:
                         if send_attempt == 0:
-                            # First attempt: Enter key (most reliable)
+                            # First attempt: JS mouse events (most reliable for React)
+                            send_btn = self._page.query_selector(self.SEND_BUTTON_SELECTOR)
+                            if send_btn:
+                                send_btn.evaluate('''el => {
+                                    const rect = el.getBoundingClientRect();
+                                    const x = rect.left + rect.width / 2;
+                                    const y = rect.top + rect.height / 2;
+                                    const opts = { bubbles: true, cancelable: true, clientX: x, clientY: y };
+                                    el.dispatchEvent(new MouseEvent('mousedown', opts));
+                                    el.dispatchEvent(new MouseEvent('mouseup', opts));
+                                    el.dispatchEvent(new MouseEvent('click', opts));
+                                }''')
+                                send_method = "JS mouse events"
+                            else:
+                                input_elem.focus()
+                                time.sleep(0.05)
+                                input_elem.press("Enter")
+                                send_method = "Enter key (button not found)"
+                        elif send_attempt == 1:
+                            # Second attempt: Enter key
                             input_elem.focus()
                             time.sleep(0.05)
                             input_elem.press("Enter")
                             send_method = "Enter key"
-                        elif send_attempt == 1:
-                            # Second attempt: try send button click
+                        else:
+                            # Third attempt: try send button click with force
                             send_btn = self._page.query_selector(self.SEND_BUTTON_SELECTOR)
                             if send_btn:
                                 try:
@@ -3786,25 +3804,6 @@ class CopilotHandler:
                                 time.sleep(0.05)
                                 input_elem.press("Enter")
                                 send_method = "Enter key (button not found)"
-                        else:
-                            # Third attempt: use complete mouse event sequence for React components
-                            send_btn = self._page.query_selector(self.SEND_BUTTON_SELECTOR)
-                            if send_btn:
-                                send_btn.evaluate('''el => {
-                                    const rect = el.getBoundingClientRect();
-                                    const x = rect.left + rect.width / 2;
-                                    const y = rect.top + rect.height / 2;
-                                    const opts = { bubbles: true, cancelable: true, clientX: x, clientY: y };
-                                    el.dispatchEvent(new MouseEvent('mousedown', opts));
-                                    el.dispatchEvent(new MouseEvent('mouseup', opts));
-                                    el.dispatchEvent(new MouseEvent('click', opts));
-                                }''')
-                                send_method = "JS mouse events"
-                            else:
-                                input_elem.focus()
-                                time.sleep(0.05)
-                                input_elem.press("Enter")
-                                send_method = "Enter key (JS fallback)"
                         logger.debug("[SEND] Sent via %s (attempt %d)", send_method, send_attempt + 1)
                     except Exception as send_err:
                         logger.debug("[SEND] Method failed: %s, trying Enter key", send_err)

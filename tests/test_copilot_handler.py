@@ -756,8 +756,8 @@ class TestSendMessage:
         # Should have tried multiple times based on wait_for_selector call count
         assert wait_for_selector_calls[0] >= 2, f"Expected at least 2 wait_for_selector calls but got {wait_for_selector_calls[0]}"
 
-    def test_send_message_uses_enter_key(self):
-        """_send_message uses Enter key as primary method (first attempt)"""
+    def test_send_message_uses_js_mouse_events(self):
+        """_send_message uses JS mouse events as primary method (first attempt)"""
         handler = CopilotHandler()
         handler._is_page_valid = Mock(return_value=True)
 
@@ -773,15 +773,16 @@ class TestSendMessage:
         mock_input.inner_text.return_value = "Test prompt"
         mock_input.evaluate.return_value = True  # has focus
 
-        # Track Enter key presses
-        enter_pressed = [False]
+        # Track JS mouse events dispatch
+        js_events_dispatched = [False]
 
-        def press_side_effect(key):
-            if key == "Enter":
-                enter_pressed[0] = True
+        def evaluate_side_effect(js_code):
+            if "MouseEvent" in js_code and "dispatchEvent" in js_code:
+                js_events_dispatched[0] = True
                 mock_input.inner_text.return_value = ""  # Simulate cleared
+            return True
 
-        mock_input.press.side_effect = press_side_effect
+        mock_send_button.evaluate.side_effect = evaluate_side_effect
 
         def query_selector_side_effect(selector):
             if "stop" in selector.lower() or "Stop" in selector:
@@ -801,9 +802,8 @@ class TestSendMessage:
             with patch('time.sleep'):
                 handler._send_message("Test prompt")
 
-        # Verify Enter key was pressed (first attempt uses Enter key)
-        assert enter_pressed[0], "Enter key should have been pressed"
-        assert mock_input.focus.called, "Input should have been focused before Enter key"
+        # Verify JS mouse events were dispatched (first attempt uses JS mouse events)
+        assert js_events_dispatched[0], "JS mouse events should have been dispatched"
 
 
 class TestGetResponse:

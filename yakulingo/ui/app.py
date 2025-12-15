@@ -10,12 +10,11 @@ import atexit
 import asyncio
 import logging
 import threading
+import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, TYPE_CHECKING
-
-from types import ModuleType
 
 # Module logger
 logger = logging.getLogger(__name__)
@@ -23,8 +22,14 @@ logger = logging.getLogger(__name__)
 # Minimum supported NiceGUI version (major, minor, patch)
 MIN_NICEGUI_VERSION = (3, 0, 0)
 
+# Import NiceGUI directly (no lazy loading - simplifies code and debugging)
+_t_nicegui_import = time.perf_counter()
+import nicegui
+from nicegui import ui, app as nicegui_app, Client as nicegui_Client
+logger.info("[TIMING] NiceGUI import: %.2fs", time.perf_counter() - _t_nicegui_import)
 
-def _ensure_nicegui_version(nicegui_module: ModuleType) -> None:
+
+def _ensure_nicegui_version() -> None:
     """Validate that the installed NiceGUI version meets the minimum requirement.
 
     NiceGUI 3.0 introduced several breaking changes (e.g., Quasar v2 upgrade,
@@ -32,8 +37,7 @@ def _ensure_nicegui_version(nicegui_module: ModuleType) -> None:
     rather than hitting obscure runtime errors when an older version is
     installed.
     """
-
-    version_str = getattr(nicegui_module, '__version__', '')
+    version_str = getattr(nicegui, '__version__', '')
     try:
         version_parts = tuple(int(part) for part in version_str.split('.')[:3])
     except ValueError:
@@ -49,36 +53,8 @@ def _ensure_nicegui_version(nicegui_module: ModuleType) -> None:
         )
 
 
-# Lazily loaded NiceGUI modules (initialized in _lazy_import_nicegui)
-nicegui: ModuleType | None = None
-ui: ModuleType | None = None
-nicegui_app: ModuleType | None = None
-nicegui_Client: type | None = None
-
-
-def _lazy_import_nicegui() -> tuple:
-    """Import NiceGUI only when needed to speed up module import time.
-
-    Returns:
-        Tuple of (ui_module, app_module, Client_class)
-    """
-    global nicegui, ui, nicegui_app, nicegui_Client
-
-    if ui is not None and nicegui is not None:
-        return ui, nicegui_app, nicegui_Client
-
-    import nicegui as nicegui_module
-    from nicegui import ui as ui_module
-    from nicegui import app as app_module
-    from nicegui import Client as Client_class
-
-    _ensure_nicegui_version(nicegui_module)
-
-    nicegui = nicegui_module
-    ui = ui_module
-    nicegui_app = app_module
-    nicegui_Client = Client_class
-    return ui_module, app_module, Client_class
+# Validate NiceGUI version at import time
+_ensure_nicegui_version()
 
 # Fast imports - required at startup (lightweight modules only)
 from yakulingo.ui.state import AppState, Tab, FileState, ConnectionState, LayoutInitializationState
@@ -2680,7 +2656,6 @@ class YakuLingoApp:
 
 def create_app() -> YakuLingoApp:
     """Create application instance"""
-    _lazy_import_nicegui()
     return YakuLingoApp()
 
 
@@ -3028,13 +3003,6 @@ def run_app(
         on_ready: Callback to call after client connection is ready (before UI shows).
                   Use this to close splash screens for seamless transition.
     """
-    import time
-    _t0 = time.perf_counter()
-
-    # Import NiceGUI (all modules in one call to avoid redundant imports)
-    _, nicegui_app_module, Client = _lazy_import_nicegui()
-    logger.info("[TIMING] NiceGUI import: %.2fs", time.perf_counter() - _t0)
-
     _t1 = time.perf_counter()
     yakulingo_app = create_app()
     logger.info("[TIMING] create_app: %.2fs", time.perf_counter() - _t1)
@@ -3201,12 +3169,12 @@ def run_app(
     # Register shutdown handler (both for reliability)
     # - on_shutdown: Called when NiceGUI server shuts down gracefully
     # - atexit: Backup for when window is closed abruptly (pywebview native mode)
-    nicegui_app_module.on_shutdown(cleanup)
+    nicegui_app.on_shutdown(cleanup)
     atexit.register(cleanup)
 
     # Serve styles.css as static file for browser caching (faster subsequent loads)
     ui_dir = Path(__file__).parent
-    nicegui_app_module.add_static_files('/static', ui_dir)
+    nicegui_app.add_static_files('/static', ui_dir)
 
     # Early Copilot connection: Start Edge browser BEFORE UI is displayed
     # This saves ~2-3 seconds as Edge startup runs in parallel with UI rendering
@@ -3223,14 +3191,14 @@ def run_app(
             logger.debug("Early Copilot connection failed: %s", e)
             yakulingo_app._early_connection_result = False
 
-    @nicegui_app_module.on_startup
+    @nicegui_app.on_startup
     async def on_startup():
         """Called when NiceGUI server starts (before clients connect)."""
         # Start Copilot connection early - runs in parallel with pywebview window creation
         yakulingo_app._early_connection_task = asyncio.create_task(_early_connect_copilot())
 
     @ui.page('/')
-    async def main_page(client: Client):
+    async def main_page(client: nicegui_Client):
         # Save client reference for async handlers (context.client not available in async tasks)
         yakulingo_app._client = client
 

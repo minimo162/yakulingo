@@ -3638,7 +3638,7 @@ class CopilotHandler:
                 # After click, use wait_for_selector for efficient stop button detection
                 # This is more efficient than polling with query_selector
                 MAX_SEND_RETRIES = 2  # Reduced from 3 (usually succeeds on first try)
-                SEND_VERIFY_TIMEOUT_MS = 1500  # 1.5s timeout for wait_for_selector
+                SEND_VERIFY_TIMEOUT_MS = 2500  # 2.5s timeout (increased from 1.5s for reliability)
                 send_success = False
 
                 for send_attempt in range(MAX_SEND_RETRIES):
@@ -3656,6 +3656,11 @@ class CopilotHandler:
                     except Exception as click_err:
                         logger.debug("Send button click failed, using Enter key: %s", click_err)
                         input_elem.press("Enter")
+
+                    # Small delay to let Copilot's JavaScript process the click event
+                    # This is critical for first-attempt success - without this delay,
+                    # the stop button may not appear in time on the first click
+                    time.sleep(0.15)
 
                     # Use wait_for_selector for efficient browser-level waiting
                     # This is more efficient than polling with query_selector every 50ms

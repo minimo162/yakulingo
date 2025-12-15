@@ -144,10 +144,10 @@ def main():
     logger = logging.getLogger(__name__)
     logger.info("[TIMING] main() setup: %.2fs", time.perf_counter() - _t_start)
 
-    # Import NiceGUI (this takes ~2.4s)
+    # Import UI module (includes NiceGUI - takes ~3s)
     _t_import = time.perf_counter()
     from yakulingo.ui.app import run_app
-    logger.info("[TIMING] yakulingo.ui.app import: %.2fs", time.perf_counter() - _t_import)
+    logger.info("[TIMING] yakulingo.ui.app import (includes NiceGUI): %.2fs", time.perf_counter() - _t_import)
 
     try:
         run_app(

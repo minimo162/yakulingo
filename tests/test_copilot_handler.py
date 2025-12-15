@@ -782,13 +782,10 @@ class TestSendMessage:
         handler._page = mock_page
 
         # After button click, input should be cleared (simulate success)
-        def clear_on_button_click(js_code):
-            # Check for mouse event dispatch (new click method)
-            if 'MouseEvent' in js_code or 'dispatchEvent' in js_code:
-                mock_input.inner_text.return_value = ""  # Simulate cleared
-            return None
+        def clear_on_click(*args, **kwargs):
+            mock_input.inner_text.return_value = ""  # Simulate cleared
 
-        mock_send_button.evaluate.side_effect = clear_on_button_click
+        mock_send_button.click.side_effect = clear_on_click
 
         # Mock time to make polling loops exit quickly
         time_values = [i * 0.2 for i in range(100)]
@@ -797,12 +794,8 @@ class TestSendMessage:
             with patch('time.sleep'):
                 handler._send_message("Test prompt")
 
-        # Verify send button was clicked
-        assert mock_send_button.evaluate.called
-        # Check that mouse events were dispatched on send button
-        click_calls = [call for call in mock_send_button.evaluate.call_args_list
-                       if 'MouseEvent' in str(call) or 'dispatchEvent' in str(call)]
-        assert len(click_calls) > 0, "Send button should have been clicked"
+        # Verify send button was clicked (first attempt uses click(force=True))
+        assert mock_send_button.click.called, "Send button should have been clicked"
 
 
 class TestGetResponse:

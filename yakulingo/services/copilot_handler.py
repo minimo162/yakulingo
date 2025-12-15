@@ -3806,7 +3806,7 @@ class CopilotHandler:
                     logger.debug("[SEND_WARMUP] Result: %s", warmup_result)
 
                     # Wait for UI to stabilize after scroll
-                    time.sleep(0.2)
+                    time.sleep(0.3)
 
                 except Exception as warmup_err:
                     logger.debug("[SEND_WARMUP] Failed: %s", warmup_err)
@@ -3882,10 +3882,10 @@ class CopilotHandler:
                                     focusAttempts: []
                                 };
 
-                                // Step 1: Ensure element is visible and scrolled into view
-                                input.scrollIntoView({ block: 'center', behavior: 'instant' });
+                                // Note: scrollIntoView is done in warmup phase to avoid
+                                // scrolling the send button out of view
 
-                                // Step 2: Try multiple focus methods
+                                // Try multiple focus methods
                                 const focusMethods = [
                                     () => { input.focus(); return 'focus()'; },
                                     () => { input.click(); input.focus(); return 'click+focus'; },
@@ -3915,7 +3915,7 @@ class CopilotHandler:
                                 logger.warning("[SEND] Could not focus input, trying Playwright focus")
                                 input_elem.focus()
 
-                            time.sleep(0.05)  # Small delay for UI to settle
+                            time.sleep(0.1)  # Wait for UI to settle after focus
                             input_elem.press("Enter")
                             send_method = "Enter key (robust focus)"
 

@@ -3670,8 +3670,8 @@ class CopilotHandler:
                     raise RuntimeError("Copilotに入力できませんでした。Edgeブラウザを確認してください。")
 
                 # Wait for Copilot to process input and update internal React state
-                # Without this delay, the send button may be visible but not yet functional
-                time.sleep(0.3)
+                # Optimized: reduced from 0.3s to 0.1s (React state update is typically fast)
+                time.sleep(0.1)
 
                 # Wait for send button to become enabled before clicking
                 # This indicates Copilot has processed the input and is ready
@@ -3699,22 +3699,25 @@ class CopilotHandler:
                 send_success = False
 
                 for send_attempt in range(MAX_SEND_RETRIES):
-                    # Send via Enter key (more reliable than button click in Copilot)
-                    # Ensure input element is focused and send Enter
+                    # Send via button click
+                    # Try simple click first (faster), then JS events if needed
                     try:
                         send_btn = self._page.query_selector(self.SEND_BUTTON_SELECTOR)
                         if send_btn:
-                            # Use complete mouse event sequence for React components
-                            # Simple el.click() may not trigger React's event handlers properly
-                            send_btn.evaluate('''el => {
-                                const rect = el.getBoundingClientRect();
-                                const x = rect.left + rect.width / 2;
-                                const y = rect.top + rect.height / 2;
-                                const opts = { bubbles: true, cancelable: true, clientX: x, clientY: y };
-                                el.dispatchEvent(new MouseEvent('mousedown', opts));
-                                el.dispatchEvent(new MouseEvent('mouseup', opts));
-                                el.dispatchEvent(new MouseEvent('click', opts));
-                            }''')
+                            if send_attempt == 0:
+                                # First attempt: simple click (faster, works most of the time)
+                                send_btn.click(force=True)
+                            else:
+                                # Retry: use complete mouse event sequence for React components
+                                send_btn.evaluate('''el => {
+                                    const rect = el.getBoundingClientRect();
+                                    const x = rect.left + rect.width / 2;
+                                    const y = rect.top + rect.height / 2;
+                                    const opts = { bubbles: true, cancelable: true, clientX: x, clientY: y };
+                                    el.dispatchEvent(new MouseEvent('mousedown', opts));
+                                    el.dispatchEvent(new MouseEvent('mouseup', opts));
+                                    el.dispatchEvent(new MouseEvent('click', opts));
+                                }''')
                             logger.debug("Send button clicked (attempt %d)", send_attempt + 1)
                         else:
                             # Fallback to Enter key if send button not found
@@ -3724,25 +3727,16 @@ class CopilotHandler:
                         logger.debug("Send button click failed, using Enter key: %s", click_err)
                         input_elem.press("Enter")
                         logger.debug("Enter key sent (attempt %d)", send_attempt + 1)
-                    except Exception as send_err:
-                        logger.debug("Enter key send failed: %s", send_err)
-                        # Try clicking send button as fallback
-                        try:
-                            send_btn = self._page.query_selector(self.SEND_BUTTON_SELECTOR)
-                            if send_btn:
-                                send_btn.click(force=True)
-                                logger.debug("Send button clicked as fallback (attempt %d)", send_attempt + 1)
-                        except Exception:
-                            pass
 
                     # Small delay to let Copilot's JavaScript process the click event
                     time.sleep(0.05)  # Reduced from 0.1s
 
                     # Optimized send verification: parallel polling of both conditions
                     # This is faster than sequential wait_for_selector + input check
-                    SEND_VERIFY_SHORT_WAIT_MS = 300  # Short initial wait for stop button
-                    SEND_VERIFY_POLL_INTERVAL = 0.05  # 50ms polling interval
-                    SEND_VERIFY_POLL_MAX = 1.2  # Max polling time after short wait
+                    # Optimized: reduced timeouts (2nd attempt usually succeeds in 0.01s)
+                    SEND_VERIFY_SHORT_WAIT_MS = 200  # Reduced from 300ms
+                    SEND_VERIFY_POLL_INTERVAL = 0.03  # Reduced from 50ms
+                    SEND_VERIFY_POLL_MAX = 0.5  # Reduced from 1.2s (retry is fast)
 
                     verify_start = time.time()
                     send_verified = False

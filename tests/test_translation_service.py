@@ -1533,6 +1533,37 @@ The 18.3 trillion yen supplementary budget proposal is under review. Opposition 
         # Explanation should contain the explanation text
         assert "こんにちは" in options[0].explanation or "挨拶" in options[0].explanation
 
+    def test_parse_avoids_kaisetsu_tsuki_false_match(self, service):
+        """Ensure 「解説付き」 in preamble doesn't match as explanation label.
+
+        Regression test for bug where "・解説付き" (meaning "with explanation")
+        would match the explanation pattern, causing metadata to leak into
+        the explanation field starting with "付き".
+        """
+        raw = """ユーザーの依頼内容を確認しました：
+日本語テキスト「GPT-5が大学院生なら、楽天のAIは高校生レベル?」の英訳
+用語集（glossary.csv）を参照し、記載の訳語を優先使用
+指定のスタイル・記号変換・略語・構造維持・解説付き
+訳文:
+
+If GPT-5 is grad student level, is Rakuten's AI just high school level?
+解説:
+この表現を選んだ理由: 原文の比喩とニュアンスを簡潔に英語へ置き換えました。
+使用場面・注意点: カジュアルな議論向けです。"""
+
+        options = service._parse_single_translation_result(raw)
+
+        assert len(options) == 1
+        # Translation should NOT contain metadata from preamble
+        assert "依頼内容" not in options[0].text
+        assert "用語集" not in options[0].text
+        # Translation should be the actual content
+        assert "GPT-5" in options[0].text
+        assert "grad student level" in options[0].text
+        # Explanation should NOT start with "付き" (from false match of "解説付き")
+        assert not options[0].explanation.startswith("付き")
+        assert "この表現を選んだ理由" in options[0].explanation
+
 
 class TestParseSingleOptionResult:
     """Tests for TranslationService._parse_single_option_result()"""

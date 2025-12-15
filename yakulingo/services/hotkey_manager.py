@@ -170,7 +170,6 @@ else:
             self._hook_installed = False
             self._hook_handle: Optional[ctypes.wintypes.HHOOK] = None
             self._lock = threading.Lock()
-            self._ctrl_pressed = False
             self._hook_proc: Optional[HOOKPROC] = None  # Keep reference to prevent GC
             self._thread_id: Optional[int] = None
 
@@ -241,30 +240,32 @@ else:
 
             This intercepts all keyboard events at OS level, before they reach any application.
             Returns 1 to block the key event, or calls CallNextHookEx to pass it along.
+
+            CRITICAL: This function MUST return quickly and MUST NOT raise exceptions,
+            otherwise all keyboard input will be blocked system-wide.
             """
-            if nCode >= 0:
-                # Get keyboard event data
-                kb_struct = ctypes.cast(lParam, ctypes.POINTER(KBDLLHOOKSTRUCT)).contents
-                vk_code = kb_struct.vkCode
+            try:
+                if nCode >= 0 and wParam in (WM_KEYDOWN, WM_SYSKEYDOWN):
+                    # Get keyboard event data
+                    kb_struct = ctypes.cast(lParam, ctypes.POINTER(KBDLLHOOKSTRUCT)).contents
+                    vk_code = kb_struct.vkCode
 
-                # Track Ctrl key state
-                if vk_code in (VK_CONTROL, VK_LCONTROL, VK_RCONTROL):
-                    if wParam in (WM_KEYDOWN, WM_SYSKEYDOWN):
-                        self._ctrl_pressed = True
-                    elif wParam in (WM_KEYUP, WM_SYSKEYUP):
-                        self._ctrl_pressed = False
-
-                # Check for Ctrl+J
-                if vk_code == VK_J and wParam in (WM_KEYDOWN, WM_SYSKEYDOWN):
-                    if self._ctrl_pressed:
-                        logger.debug("Low-level hook: Ctrl+J detected")
-                        # Handle hotkey in separate thread to not block the hook
-                        threading.Thread(
-                            target=self._handle_hotkey_safe,
-                            daemon=True
-                        ).start()
-                        # Return 1 to consume the event (prevent it from reaching applications)
-                        return 1
+                    # Check for J key
+                    if vk_code == VK_J:
+                        # Use GetAsyncKeyState for reliable Ctrl detection
+                        ctrl_state = _user32.GetAsyncKeyState(VK_CONTROL)
+                        if ctrl_state & 0x8000:  # High bit indicates key is down
+                            logger.debug("Low-level hook: Ctrl+J detected")
+                            # Handle hotkey in separate thread to not block the hook
+                            threading.Thread(
+                                target=self._handle_hotkey_safe,
+                                daemon=True
+                            ).start()
+                            # Return 1 to consume the event (prevent it from reaching applications)
+                            return 1
+            except Exception:
+                # Never let exceptions escape - they would block all keyboard input
+                pass
 
             # Pass the event to the next hook
             return _user32.CallNextHookEx(self._hook_handle, nCode, wParam, lParam)

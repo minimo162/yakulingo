@@ -2152,9 +2152,16 @@ class YakuLingoApp:
 
         for attempt in range(max_retries):
             try:
-                success = await asyncio.to_thread(self.copilot.connect)
+                # Use bring_to_foreground_on_login=False to avoid bringing Edge to foreground
+                # during background reconnection (e.g., after PP-DocLayout-L initialization)
+                success = await asyncio.to_thread(
+                    self.copilot.connect, bring_to_foreground_on_login=False
+                )
                 if success:
                     logger.info("Copilot reconnected successfully (attempt %d)", attempt + 1)
+                    # Ensure Edge is minimized after reconnection
+                    # Playwright operations during reconnect may bring Edge to foreground
+                    await asyncio.to_thread(self.copilot._minimize_edge_window, None)
                     # Update connection state
                     self.state.connection_state = ConnectionState.CONNECTED
                     self.state.copilot_ready = True

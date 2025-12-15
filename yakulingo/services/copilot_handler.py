@@ -910,7 +910,7 @@ class CopilotHandler:
             logger.debug("Page validity check failed (other): %s", e)
             return False
 
-    def connect(self) -> bool:
+    def connect(self, bring_to_foreground_on_login: bool = True) -> bool:
         """
         Connect to Copilot browser via Playwright.
         Does NOT check login state - that is done lazily on first translation.
@@ -918,13 +918,19 @@ class CopilotHandler:
         This method runs in a dedicated Playwright thread to ensure consistent
         greenlet context with other Playwright operations.
 
+        Args:
+            bring_to_foreground_on_login: If True, bring browser to foreground when
+                manual login is required. Set to False for background reconnection
+                (e.g., after PP-DocLayout-L initialization).
+
         Returns:
             True if browser connection established
         """
-        logger.info("connect() called - delegating to Playwright thread")
-        return _playwright_executor.execute(self._connect_impl)
+        logger.info("connect() called - delegating to Playwright thread (bring_to_foreground_on_login=%s)",
+                    bring_to_foreground_on_login)
+        return _playwright_executor.execute(self._connect_impl, bring_to_foreground_on_login)
 
-    def _connect_impl(self) -> bool:
+    def _connect_impl(self, bring_to_foreground_on_login: bool = True) -> bool:
         """Implementation of connect() that runs in Playwright thread.
 
         Connection flow:
@@ -934,6 +940,10 @@ class CopilotHandler:
         4. Get or create browser context
         5. Get or create Copilot page
         6. Wait for chat UI to be ready
+
+        Args:
+            bring_to_foreground_on_login: If True, bring browser to foreground when
+                manual login is required. Set to False for background reconnection.
         """
         # Check if existing connection is still valid
         if self._connected and self._is_page_valid():
@@ -1009,8 +1019,11 @@ class CopilotHandler:
                         # Auto-login did not complete - check if manual login is needed
                         url = self._page.url
                         if _is_login_page(url) or self._has_auth_dialog():
-                            logger.info("Manual login required; showing browser")
-                            self._bring_to_foreground_impl(self._page, reason="connect: manual login required")
+                            if bring_to_foreground_on_login:
+                                logger.info("Manual login required; showing browser")
+                                self._bring_to_foreground_impl(self._page, reason="connect: manual login required")
+                            else:
+                                logger.info("Manual login required; skipping browser foreground (background reconnect)")
                         else:
                             # Not on login page - treat as connection failure (slow load, etc.)
                             logger.info("Chat UI not ready but not on login page; treating as slow load")
@@ -1171,9 +1184,11 @@ class CopilotHandler:
                     logger.info("Existing Copilot page is on login page, navigating to Copilot...")
                     try:
                         page.goto(self.COPILOT_URL, wait_until='commit', timeout=self.PAGE_GOTO_TIMEOUT_MS)
-                        self._minimize_edge_window(None)
                     except (PlaywrightTimeoutError, PlaywrightError) as nav_err:
                         logger.warning("Failed to navigate to Copilot from login page: %s", nav_err)
+                # Always minimize Edge when returning existing page
+                # Playwright reconnection may bring Edge to foreground
+                self._minimize_edge_window(None)
                 return page
 
         # Reuse existing tab if available (avoids creating extra tabs)

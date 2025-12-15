@@ -110,66 +110,6 @@ def setup_logging():
     return (console_handler, file_handler)  # Return both handlers to keep references
 
 
-class WaitCursor:
-    """Show Windows wait cursor during loading.
-
-    Uses the "app starting" cursor (arrow + hourglass) which is the
-    standard Windows indicator for an application that is loading.
-    """
-
-    def __init__(self):
-        self._original_cursor = None
-        self._active = False
-
-    def show(self):
-        """Show wait cursor (Windows only)."""
-        if sys.platform != 'win32':
-            return False
-
-        try:
-            import ctypes
-            # IDC_APPSTARTING = arrow + hourglass (standard "app is starting" cursor)
-            IDC_APPSTARTING = 32650
-            self._original_cursor = ctypes.windll.user32.SetCursor(
-                ctypes.windll.user32.LoadCursorW(None, IDC_APPSTARTING)
-            )
-            self._active = True
-            return True
-        except Exception:
-            return False
-
-    def update(self):
-        """Keep the wait cursor active (Windows may reset it)."""
-        if not self._active or sys.platform != 'win32':
-            return
-
-        try:
-            import ctypes
-            IDC_APPSTARTING = 32650
-            ctypes.windll.user32.SetCursor(
-                ctypes.windll.user32.LoadCursorW(None, IDC_APPSTARTING)
-            )
-        except Exception:
-            pass
-
-    def close(self):
-        """Restore normal cursor."""
-        if not self._active or sys.platform != 'win32':
-            return
-
-        try:
-            import ctypes
-            # IDC_ARROW = normal arrow cursor
-            IDC_ARROW = 32512
-            ctypes.windll.user32.SetCursor(
-                ctypes.windll.user32.LoadCursorW(None, IDC_ARROW)
-            )
-        except Exception:
-            pass
-        finally:
-            self._active = False
-
-
 # Global reference to keep log handlers alive (prevents garbage collection)
 # Tuple of (console_handler, file_handler)
 _global_log_handlers = None
@@ -204,10 +144,6 @@ def main():
     logger = logging.getLogger(__name__)
     logger.info("[TIMING] main() setup: %.2fs", time.perf_counter() - _t_start)
 
-    # Show wait cursor during import
-    wait_cursor = WaitCursor()
-    wait_cursor.show()
-
     # Import NiceGUI (this takes ~2.4s)
     _t_import = time.perf_counter()
     from yakulingo.ui.app import run_app
@@ -218,7 +154,6 @@ def main():
             host='127.0.0.1',
             port=8765,
             native=True,  # Native window mode (no browser needed)
-            on_ready=wait_cursor.close,  # Restore cursor when NiceGUI is ready
         )
     except KeyboardInterrupt:
         # Normal shutdown via window close or Ctrl+C

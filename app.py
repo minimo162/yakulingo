@@ -110,145 +110,177 @@ def setup_logging():
     return (console_handler, file_handler)  # Return both handlers to keep references
 
 
+# HTML content for the splash screen (NiceGUI-style design)
+SPLASH_HTML = """
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', 'Meiryo UI', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+        .splash-card {
+            background: white;
+            border-radius: 24px;
+            padding: 48px 64px;
+            text-align: center;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+            animation: slideUp 0.5s ease-out;
+        }
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        .app-name {
+            font-size: 42px;
+            font-weight: 700;
+            background: linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 8px;
+        }
+        .app-subtitle {
+            font-size: 16px;
+            color: #64748B;
+            margin-bottom: 32px;
+        }
+        .spinner-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+        .spinner {
+            width: 24px;
+            height: 24px;
+            border: 3px solid #E2E8F0;
+            border-top-color: #6366F1;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .loading-text {
+            font-size: 14px;
+            color: #94A3B8;
+        }
+        .dots {
+            display: inline-block;
+            width: 24px;
+            text-align: left;
+        }
+        @keyframes dots {
+            0%, 20% { content: '.'; }
+            40% { content: '..'; }
+            60%, 100% { content: '...'; }
+        }
+    </style>
+</head>
+<body>
+    <div class="splash-card">
+        <div class="app-name">YakuLingo</div>
+        <div class="app-subtitle">訳リンゴ</div>
+        <div class="spinner-container">
+            <div class="spinner"></div>
+        </div>
+        <div class="loading-text">読み込み中<span class="dots" id="dots"></span></div>
+    </div>
+    <script>
+        let dotCount = 0;
+        setInterval(() => {
+            dotCount = (dotCount + 1) % 4;
+            document.getElementById('dots').textContent = '.'.repeat(dotCount);
+        }, 400);
+    </script>
+</body>
+</html>
+"""
+
+
+def _run_splash_subprocess():
+    """Run splash screen in a subprocess (called via multiprocessing)."""
+    import os
+    os.environ.setdefault('PYWEBVIEW_GUI', 'edgechromium')
+
+    try:
+        import webview
+        window = webview.create_window(
+            'YakuLingo',
+            html=SPLASH_HTML,
+            width=450,
+            height=300,
+            resizable=False,
+            frameless=True,
+            on_top=True,
+        )
+        webview.start()
+    except Exception:
+        pass  # Silently fail if webview not available
+
+
 class SplashScreen:
-    """Lightweight splash screen using tkinter.
+    """Beautiful splash screen using pywebview in a subprocess.
 
     Shows a loading screen while NiceGUI imports in the background.
-    This improves perceived startup time by showing UI immediately.
+    Uses subprocess to avoid conflicts with NiceGUI's native mode.
     """
 
     def __init__(self):
-        self.root = None
-        self.canvas = None
-        self._dot_count = 0
-        self._loading_text_id = None
-        self._animation_after_id = None
+        self._process = None
 
     def show(self):
-        """Create and show the splash screen."""
-        try:
-            import tkinter as tk
-        except ImportError:
-            # tkinter not available, skip splash screen
-            return False
+        """Create and show the splash screen in a subprocess."""
+        import multiprocessing
 
         try:
-            self.root = tk.Tk()
-            self.root.title("YakuLingo")
-
-            # Window settings - borderless, centered
-            width, height = 400, 200
-            self.root.overrideredirect(True)  # Borderless window
-            self.root.attributes('-topmost', True)  # Keep on top
-
-            # Center on screen
-            screen_width = self.root.winfo_screenwidth()
-            screen_height = self.root.winfo_screenheight()
-            x = (screen_width - width) // 2
-            y = (screen_height - height) // 2
-            self.root.geometry(f'{width}x{height}+{x}+{y}')
-
-            # Create canvas for drawing
-            self.canvas = tk.Canvas(
-                self.root,
-                width=width,
-                height=height,
-                bg='#FFFFFF',
-                highlightthickness=0
+            # Start splash in subprocess to avoid pywebview conflicts
+            self._process = multiprocessing.Process(
+                target=_run_splash_subprocess,
+                daemon=True
             )
-            self.canvas.pack()
-
-            # Draw rounded rectangle background (simulate)
-            self._draw_rounded_rect(10, 10, width - 10, height - 10, radius=20, fill='#F8FAFC', outline='#E2E8F0')
-
-            # App name
-            self.canvas.create_text(
-                width // 2, 70,
-                text="YakuLingo",
-                font=('Segoe UI', 28, 'bold'),
-                fill='#6366F1'
-            )
-
-            # Subtitle
-            self.canvas.create_text(
-                width // 2, 105,
-                text="訳リンゴ",
-                font=('Meiryo UI', 12),
-                fill='#64748B'
-            )
-
-            # Loading text (will be animated)
-            self._loading_text_id = self.canvas.create_text(
-                width // 2, 155,
-                text="読み込み中...",
-                font=('Meiryo UI', 10),
-                fill='#94A3B8'
-            )
-
-            # Start animation
-            self._animate_loading()
-
-            # Process events to show window
-            self.root.update()
+            self._process.start()
             return True
-
         except Exception as e:
             logging.getLogger(__name__).debug("Failed to create splash screen: %s", e)
-            self.root = None
             return False
 
-    def _draw_rounded_rect(self, x1, y1, x2, y2, radius=20, **kwargs):
-        """Draw a rounded rectangle on the canvas."""
-        points = [
-            x1 + radius, y1,
-            x2 - radius, y1,
-            x2, y1,
-            x2, y1 + radius,
-            x2, y2 - radius,
-            x2, y2,
-            x2 - radius, y2,
-            x1 + radius, y2,
-            x1, y2,
-            x1, y2 - radius,
-            x1, y1 + radius,
-            x1, y1,
-        ]
-        return self.canvas.create_polygon(points, smooth=True, **kwargs)
-
-    def _animate_loading(self):
-        """Animate the loading dots."""
-        if self.root is None or self.canvas is None:
-            return
-
-        self._dot_count = (self._dot_count + 1) % 4
-        dots = "." * self._dot_count
-        self.canvas.itemconfig(self._loading_text_id, text=f"読み込み中{dots}")
-
-        # Schedule next animation frame
-        self._animation_after_id = self.root.after(300, self._animate_loading)
-
     def update(self):
-        """Process pending events to keep the splash responsive."""
-        if self.root:
-            try:
-                self.root.update()
-            except Exception:
-                pass
+        """No-op for compatibility (subprocess handles its own event loop)."""
+        pass
 
     def close(self):
-        """Close the splash screen."""
-        if self.root:
+        """Close the splash screen subprocess."""
+        if self._process is not None:
             try:
-                # Cancel animation
-                if self._animation_after_id:
-                    self.root.after_cancel(self._animation_after_id)
-                    self._animation_after_id = None
-                self.root.destroy()
+                self._process.terminate()
+                self._process.join(timeout=1.0)
+                if self._process.is_alive():
+                    self._process.kill()
             except Exception:
                 pass
             finally:
-                self.root = None
-                self.canvas = None
+                self._process = None
 
 
 # Global reference to keep log handlers alive (prevents garbage collection)

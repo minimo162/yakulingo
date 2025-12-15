@@ -864,8 +864,28 @@ def detect_paragraph_boundary(
         if char_cls != prev_cls:
             # Both are in detected regions (not BACKGROUND=1)
             if char_cls != 1 and prev_cls != 1:
+                # Check if both are in the same region type (yomitoku reference)
+                # PP-DocLayout-L may assign different class IDs to paragraphs
+                # within the same document (e.g., 2, 3, 4), but these should NOT
+                # be treated as strong boundaries.
+                #
+                # Strong boundary only when crossing region type boundaries:
+                # - Paragraph (2-999) -> Table (>=1000) or vice versa = strong
+                # - Paragraph -> Paragraph (different IDs) = NOT strong
+                # - Table -> Table (different IDs) = NOT strong
+                LAYOUT_PARAGRAPH_BASE = 2
+                both_paragraph = (
+                    LAYOUT_PARAGRAPH_BASE <= char_cls < LAYOUT_TABLE_BASE and
+                    LAYOUT_PARAGRAPH_BASE <= prev_cls < LAYOUT_TABLE_BASE
+                )
+                both_table = (
+                    char_cls >= LAYOUT_TABLE_BASE and prev_cls >= LAYOUT_TABLE_BASE
+                )
+                is_same_region = both_paragraph or both_table
+
                 new_paragraph = True
-                is_strong_boundary = True  # Layout class change is strong
+                # Only mark as strong boundary if crossing region type boundaries
+                is_strong_boundary = not is_same_region
             else:
                 # One or both are BACKGROUND -> use Y-coordinate
                 # NOTE: When one is BACKGROUND, this could be a PP-DocLayout-L detection artifact.

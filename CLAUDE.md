@@ -1729,6 +1729,20 @@ The application includes a Rust-based native launcher (`YakuLingo.exe`):
 - Handles Python venv setup and application startup
 - Replaces previous VBS scripts for cleaner, faster startup
 
+### Build Artifacts (.gitignore)
+以下のビルド成果物は `.gitignore` で除外されています：
+
+| ファイル/ディレクトリ | 生成元 | 説明 |
+|----------------------|--------|------|
+| `YakuLingo.exe` | Rust launcher build | ルートに配置されるランチャー実行ファイル |
+| `share_package/` | `make_distribution.bat` | 配布パッケージ出力ディレクトリ |
+| `dist_temp/` | `make_distribution.bat` | ビルド中の一時ディレクトリ |
+| `.venv/` | `install_deps.bat` | Python仮想環境 |
+| `.uv-cache/` | `install_deps.bat` | uvパッケージキャッシュ |
+| `.uv-python/` | `install_deps.bat` | uvでインストールしたPython |
+| `.playwright-browsers/` | `install_deps.bat` | Playwrightブラウザ |
+| `uv.exe`, `uvx.exe` | `install_deps.bat` | uvパッケージマネージャー |
+
 ## Language Note
 
 すべての回答とコメントは日本語で行ってください。

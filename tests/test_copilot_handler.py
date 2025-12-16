@@ -614,6 +614,24 @@ class TestSendMessage:
         mock_input.evaluate.return_value = True  # has focus
         mock_refetched_input.evaluate.return_value = True  # has focus
 
+        # Mock page.evaluate for POST-STATE check (early verification)
+        # Return dict showing input not cleared and stop button not visible
+        page_evaluate_calls = [0]
+        def page_evaluate_side_effect(js_code):
+            page_evaluate_calls[0] += 1
+            # POST-STATE check: input not cleared, stop button not visible
+            if 'inputTextLength' in js_code or 'stopBtnVisible' in js_code:
+                return {
+                    'inputTextLength': 10,  # Not cleared
+                    'stopBtnExists': False,
+                    'stopBtnVisible': False,
+                    'responseCount': 0
+                }
+            # Other evaluate calls (focus, etc.)
+            return {'success': True}
+
+        mock_page.evaluate.side_effect = page_evaluate_side_effect
+
         # wait_for_selector behavior:
         # - First call: return mock_input (for finding input element)
         # - Subsequent calls for stop button: raise TimeoutError (stop button not visible)
@@ -720,6 +738,20 @@ class TestSendMessage:
         # After send, query_selector always returns element with text (never clears)
         mock_refetched_input.inner_text.return_value = "Test prompt"
         mock_refetched_input.evaluate.return_value = True  # has focus
+
+        # Mock page.evaluate for POST-STATE check (early verification)
+        # Return dict showing input not cleared and stop button not visible
+        def page_evaluate_side_effect(js_code):
+            if 'inputTextLength' in js_code or 'stopBtnVisible' in js_code:
+                return {
+                    'inputTextLength': 10,  # Not cleared
+                    'stopBtnExists': False,
+                    'stopBtnVisible': False,
+                    'responseCount': 0
+                }
+            return {'success': True}
+
+        mock_page.evaluate.side_effect = page_evaluate_side_effect
 
         # wait_for_selector behavior:
         # - First call: return mock_input (for finding input element)

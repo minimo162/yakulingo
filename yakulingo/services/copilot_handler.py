@@ -2070,9 +2070,11 @@ class CopilotHandler:
     def _calculate_side_panel_geometry_from_screen(self) -> tuple[int, int, int, int] | None:
         """Calculate side panel position and size from screen resolution.
 
-        This method calculates where the Edge window should be placed as a side panel
-        by inferring the YakuLingo app position from screen resolution (assuming the app
-        is centered on screen, which is the default pywebview behavior).
+        This method calculates where the Edge window should be placed as a side panel.
+        App and side panel are positioned as a "set" centered on screen, ensuring
+        both windows fit without overlapping.
+
+        Layout: |---margin---|---app_window---|---gap---|---side_panel---|---margin---|
 
         Used when Edge is started before the YakuLingo window is visible (early connection).
 
@@ -2125,29 +2127,33 @@ class CopilotHandler:
             app_width = min(max(ratio_based_width, MIN_WINDOW_WIDTH), available_width)
             app_height = min(max(int(screen_height * self.APP_HEIGHT_RATIO), MIN_WINDOW_HEIGHT), max_window_height)
 
-            # Assume app is centered on screen (pywebview default behavior)
-            app_x = work_area.left + (screen_width - app_width) // 2
-            app_y = work_area.top + (screen_height - app_height) // 2
+            # Calculate total width of app + gap + side panel
+            total_width = app_width + self.SIDE_PANEL_GAP + edge_width
 
-            # Calculate Edge window position (right side of app)
+            # Position the "set" (app + side panel) centered on screen
+            # This ensures both windows fit within the screen
+            set_start_x = work_area.left + (screen_width - total_width) // 2
+            set_start_y = work_area.top + (screen_height - app_height) // 2
+
+            # Ensure set doesn't go off screen (left edge)
+            if set_start_x < work_area.left:
+                set_start_x = work_area.left
+
+            # App window position (left side of the set)
+            app_x = set_start_x
+            app_y = set_start_y
+
+            # Edge window position (right side of app)
             edge_x = app_x + app_width + self.SIDE_PANEL_GAP
             edge_y = app_y
             edge_height = app_height
-
-            # Adjust if Edge would go off screen
-            if edge_x + edge_width > work_area.right:
-                # Place on left side instead
-                edge_x = app_x - edge_width - self.SIDE_PANEL_GAP
-                if edge_x < work_area.left:
-                    # Not enough room on either side, use right edge
-                    edge_x = work_area.right - edge_width
 
             # Ensure minimum height
             if edge_height < self.SIDE_PANEL_MIN_HEIGHT:
                 edge_height = self.SIDE_PANEL_MIN_HEIGHT
 
-            logger.debug("Side panel geometry from screen: (%d, %d) %dx%d (screen: %dx%d)",
-                        edge_x, edge_y, edge_width, edge_height, screen_width, screen_height)
+            logger.debug("Side panel geometry from screen: (%d, %d) %dx%d (app_x=%d, screen: %dx%d)",
+                        edge_x, edge_y, edge_width, edge_height, app_x, screen_width, screen_height)
 
             return (edge_x, edge_y, edge_width, edge_height)
 
@@ -2158,19 +2164,21 @@ class CopilotHandler:
     def _position_edge_as_side_panel(self, page_title: str = None) -> bool:
         """Position Edge window as a side panel next to YakuLingo app.
 
-        This places the Edge browser window to the right of the YakuLingo window,
-        with matching height, allowing users to see the translation progress.
+        This method positions both the YakuLingo app and Edge browser as a "set"
+        centered on screen, ensuring both windows fit without overlapping.
+
+        Layout: |---margin---|---app_window---|---gap---|---side_panel---|---margin---|
 
         The panel width scales based on available screen space:
-        - 1920px+ screen width: 450px panel
-        - 1366-1919px: scales proportionally (350-450px)
-        - <1366px: 350px minimum
+        - 1920px+ screen width: 550px panel
+        - 1366-1919px: scales proportionally (450-550px)
+        - <1366px: 450px minimum
 
         Args:
             page_title: The current page title for exact matching
 
         Returns:
-            True if window was successfully positioned
+            True if windows were successfully positioned
         """
         if sys.platform != "win32":
             return False
@@ -2227,6 +2235,7 @@ class CopilotHandler:
             # Use work area (excludes taskbar) of the monitor containing YakuLingo
             work_area = monitor_info.rcWork
             screen_width = work_area.right - work_area.left
+            screen_height = work_area.bottom - work_area.top
 
             # Calculate side panel width based on screen resolution
             # Scale from MIN_WIDTH (at 1366px) to BASE_WIDTH (at 1920px+)
@@ -2240,28 +2249,61 @@ class CopilotHandler:
                 edge_width = int(self.SIDE_PANEL_MIN_WIDTH +
                                (self.SIDE_PANEL_BASE_WIDTH - self.SIDE_PANEL_MIN_WIDTH) * ratio)
 
-            # Calculate Edge window position (right side of YakuLingo)
+            # Get app window dimensions
+            app_width = app_rect.right - app_rect.left
             app_height = app_rect.bottom - app_rect.top
-            edge_x = app_rect.right + self.SIDE_PANEL_GAP
-            edge_y = app_rect.top
-
-            # Adjust if Edge would go off screen
-            if edge_x + edge_width > work_area.right:
-                # Place on left side instead
-                edge_x = app_rect.left - edge_width - self.SIDE_PANEL_GAP
-                if edge_x < work_area.left:
-                    # Not enough room on either side, use right side anyway
-                    edge_x = work_area.right - edge_width
 
             # Ensure minimum height for usability
             if app_height < self.SIDE_PANEL_MIN_HEIGHT:
                 app_height = self.SIDE_PANEL_MIN_HEIGHT
 
-            logger.debug("Side panel sizing: screen_width=%d, panel_width=%d",
-                        screen_width, edge_width)
+            # Calculate total width of app + gap + side panel
+            total_width = app_width + self.SIDE_PANEL_GAP + edge_width
 
-            # Check if window is off-screen (started with --window-position=-32000,-32000)
-            # or minimized - in either case, we need to restore it first
+            # Position the "set" (app + side panel) centered on screen
+            # This ensures both windows fit within the screen
+            set_start_x = work_area.left + (screen_width - total_width) // 2
+            set_start_y = work_area.top + (screen_height - app_height) // 2
+
+            # Ensure set doesn't go off screen (left edge)
+            if set_start_x < work_area.left:
+                set_start_x = work_area.left
+
+            # Calculate new positions
+            new_app_x = set_start_x
+            new_app_y = set_start_y
+            edge_x = new_app_x + app_width + self.SIDE_PANEL_GAP
+            edge_y = new_app_y
+
+            logger.debug("Side panel positioning: screen=%dx%d, app=%dx%d, edge=%dx%d",
+                        screen_width, screen_height, app_width, app_height, edge_width, app_height)
+            logger.debug("New positions: app=(%d,%d), edge=(%d,%d)",
+                        new_app_x, new_app_y, edge_x, edge_y)
+
+            # Check if app needs to be moved (compare with current position)
+            app_needs_move = (app_rect.left != new_app_x or app_rect.top != new_app_y)
+
+            # SetWindowPos flags
+            SWP_NOACTIVATE = 0x0010  # Don't activate window
+            SWP_NOZORDER = 0x0004    # Don't change Z-order
+            SWP_NOSIZE = 0x0001      # Don't change size
+            SWP_SHOWWINDOW = 0x0040  # Show window
+
+            # Move YakuLingo app if needed (only position, keep size)
+            if app_needs_move:
+                logger.debug("Moving YakuLingo app from (%d,%d) to (%d,%d)",
+                            app_rect.left, app_rect.top, new_app_x, new_app_y)
+                user32.SetWindowPos(
+                    yakulingo_hwnd,
+                    None,  # hWndInsertAfter
+                    new_app_x,
+                    new_app_y,
+                    0,  # width (ignored due to SWP_NOSIZE)
+                    0,  # height (ignored due to SWP_NOSIZE)
+                    SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOSIZE
+                )
+
+            # Check if Edge window is off-screen or minimized
             current_rect = RECT()
             user32.GetWindowRect(edge_hwnd, ctypes.byref(current_rect))
             is_off_screen = current_rect.left < -10000 or current_rect.top < -10000
@@ -2276,11 +2318,6 @@ class CopilotHandler:
                 user32.ShowWindow(edge_hwnd, SW_RESTORE)
 
             # Position and resize Edge window
-            # SWP_NOZORDER (4) = Don't change Z-order
-            # SWP_NOACTIVATE (16) = Don't activate window
-            # SWP_SHOWWINDOW (64) = Show window (needed for off-screen windows)
-            SWP_NOACTIVATE = 0x0010
-            SWP_SHOWWINDOW = 0x0040
             flags = SWP_NOACTIVATE | SWP_SHOWWINDOW
             user32.SetWindowPos(
                 edge_hwnd,
@@ -2296,8 +2333,8 @@ class CopilotHandler:
             SW_SHOWNOACTIVATE = 4
             user32.ShowWindow(edge_hwnd, SW_SHOWNOACTIVATE)
 
-            logger.info("Edge positioned as side panel at (%d, %d) %dx%d",
-                        edge_x, edge_y, edge_width, app_height)
+            logger.info("Windows positioned as set: app=(%d,%d), edge=(%d,%d) %dx%d",
+                        new_app_x, new_app_y, edge_x, edge_y, edge_width, app_height)
             return True
 
         except Exception as e:

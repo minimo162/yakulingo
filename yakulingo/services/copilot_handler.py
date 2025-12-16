@@ -4330,25 +4330,42 @@ class CopilotHandler:
     # JavaScript to extract text with list numbers preserved
     # inner_text() doesn't include CSS-generated list markers, so we need to
     # manually add them back for <ol> lists
-    # Also uses Selection API to preserve <> brackets that may be lost via DOM traversal
+    # Uses innerHTML + HTML entity decoding to preserve <> brackets
     _JS_GET_TEXT_WITH_LIST_NUMBERS = """
     (element) => {
-        // First, try Selection API to get text with <> preserved
-        // This works because Selection.toString() returns the visible text as-is
+        // Helper: Decode HTML entities (e.g., &lt; -> <, &gt; -> >)
+        function decodeHtmlEntities(text) {
+            const textarea = document.createElement('textarea');
+            textarea.innerHTML = text;
+            return textarea.value;
+        }
+
+        // Helper: Extract text from innerHTML, preserving <> brackets
+        function extractTextFromHtml(html) {
+            // Replace <br> and block-level closing tags with newlines
+            let text = html
+                .replace(/<br\\s*\\/?>/gi, '\\n')
+                .replace(/<\\/(p|div|li|tr|h[1-6])>/gi, '\\n')
+                .replace(/<li[^>]*>/gi, '\\n')  // Add newline before list items
+                .replace(/<[^>]+>/g, '')  // Remove all HTML tags
+                .replace(/\\n{3,}/g, '\\n\\n');  // Collapse multiple newlines
+
+            // Decode HTML entities to get <> brackets back
+            return decodeHtmlEntities(text).trim();
+        }
+
+        // First, try innerHTML approach to preserve <> brackets
+        // Copilot escapes < and > as &lt; and &gt; in the HTML
         try {
-            const selection = window.getSelection();
-            const range = document.createRange();
-            range.selectNodeContents(element);
-            selection.removeAllRanges();
-            selection.addRange(range);
-            const selectedText = selection.toString();
-            selection.removeAllRanges();  // Clean up selection
-            if (selectedText && selectedText.trim()) {
-                // Selection API preserves <> brackets, return it directly
-                return selectedText.trim();
+            const html = element.innerHTML;
+            if (html) {
+                const text = extractTextFromHtml(html);
+                if (text) {
+                    return text;
+                }
             }
         } catch (e) {
-            // Selection API failed, fall through to DOM traversal
+            // innerHTML approach failed, fall through to DOM traversal
         }
 
         // Fallback: DOM traversal with list number handling

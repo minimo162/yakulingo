@@ -1750,9 +1750,19 @@ class ExcelProcessor(FileProcessor):
             for start_col, end_col, range_cells in ranges:
                 self._write_cell_values_batch(sheet, sheet_name, row, start_col, end_col, range_cells)
 
-        # Phase 2: Apply font to all cells in single batch
-        # Merged cells are handled in fallback if batch fails
-        self._apply_font_batch_fast(sheet, all_cells, output_font_name, new_font_size, get_col_letter)
+        # Phase 2: Apply font to entire used range (single COM call)
+        # This is much faster than applying to individual cells and handles merged cells correctly
+        try:
+            used_range = sheet.used_range
+            if used_range is not None:
+                used_range.font.name = output_font_name
+                used_range.font.size = new_font_size
+                logger.debug(
+                    "Applied font '%s' size %.1f to used range in sheet '%s'",
+                    output_font_name, new_font_size, sheet_name
+                )
+        except Exception as e:
+            logger.warning("Error applying font to used range in '%s': %s", sheet_name, e)
 
     def _find_contiguous_ranges(
         self, cells: list[tuple[int, str, str]]
@@ -1847,96 +1857,6 @@ class ExcelProcessor(FileProcessor):
                     sheet.range(row, col).value = final_text
                 except Exception as inner_e:
                     logger.debug("Error writing cell %s_%s: %s", sheet_name, cell_ref, inner_e)
-
-    def _apply_font_batch_fast(
-        self,
-        sheet,
-        cells: list[tuple[int, int]],
-        font_name: str,
-        font_size: float,
-        get_col_letter,
-    ) -> None:
-        """Apply font to cells with optimized batch processing.
-
-        Uses pre-built merged cells map to separate normal cells from merged cells,
-        then processes them differently:
-        - Normal cells: Safe to batch process (no merged cells to cause errors)
-        - Merged cells: Apply font directly via merge_address
-
-        This approach minimizes COM calls by:
-        1. Building merged cells map once per sheet (via FindFormat API)
-        2. Classifying cells in Python (no COM calls)
-        3. Batching normal cells safely (no fallback needed)
-        4. Processing merged areas directly by address
-
-        Args:
-            sheet: xlwings Sheet object
-            cells: List of (row, col)
-            font_name: Font name to apply
-            font_size: Font size to apply
-            get_col_letter: Cached column letter lookup function
-        """
-        if not cells:
-            return
-
-        # Large batch size for efficiency
-        # Excel's range string limit is ~8000 chars, so 500 cells × ~5 chars ≈ 2500 chars is safe
-        MAX_ADDRESSES_PER_BATCH = 500
-
-        try:
-            # 1. Get merged cells map (built once per sheet, cached)
-            merged_map = self._get_merged_cells_map(sheet)
-
-            # 2. Classify cells: normal vs merged (Python dict lookup only, no COM)
-            normal_cells: list[tuple[int, int]] = []
-            merged_areas_to_process: dict[str, bool] = {}
-
-            for row, col in cells:
-                merge_address = self._is_cell_in_merged_area(row, col, merged_map)
-                if merge_address:
-                    # Track unique merge areas (process each only once)
-                    if merge_address not in merged_areas_to_process:
-                        merged_areas_to_process[merge_address] = True
-                else:
-                    normal_cells.append((row, col))
-
-            logger.debug(
-                "Font batch optimized: %d normal cells, %d merged areas",
-                len(normal_cells), len(merged_areas_to_process)
-            )
-
-            # 3. Batch process normal cells (safe - no merged cells)
-            for i in range(0, len(normal_cells), MAX_ADDRESSES_PER_BATCH):
-                batch = normal_cells[i:i + MAX_ADDRESSES_PER_BATCH]
-                addresses = [f"{get_col_letter(col)}{row}" for row, col in batch]
-
-                try:
-                    union_address = ",".join(addresses)
-                    rng = sheet.range(union_address)
-                    rng.font.name = font_name
-                    rng.font.size = font_size
-                except Exception as e:
-                    # Unexpected failure - fall back to individual cells
-                    logger.debug("Normal batch failed (unexpected): %s", e)
-                    for row, col in batch:
-                        try:
-                            cell = sheet.range(row, col)
-                            cell.font.name = font_name
-                            cell.font.size = font_size
-                        except Exception:
-                            pass
-
-            # 4. Process merged areas directly by address
-            for merge_address in merged_areas_to_process:
-                try:
-                    rng = sheet.range(merge_address)
-                    rng.font.name = font_name
-                    rng.font.size = font_size
-                except Exception as e:
-                    logger.debug("Merged area %s font failed: %s", merge_address, e)
-
-        except Exception as e:
-            logger.warning("Error in font batch application: %s", e)
 
     def _apply_single_cell_xlwings(
         self,

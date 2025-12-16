@@ -1552,8 +1552,10 @@ class ExcelProcessor(FileProcessor):
                     logger.debug("Could not disable screen updating: %s", e)
 
                 try:
-                    original_calculation = app.calculation
-                    app.calculation = 'manual'
+                    # Use Excel API directly with constant value
+                    # xlCalculationManual = -4135, xlCalculationAutomatic = -4105
+                    original_calculation = app.api.Calculation
+                    app.api.Calculation = -4135  # xlCalculationManual
                 except Exception as e:
                     logger.debug("Could not set manual calculation: %s", e)
 
@@ -1669,7 +1671,7 @@ class ExcelProcessor(FileProcessor):
 
                 try:
                     if original_calculation is not None:
-                        app.calculation = original_calculation
+                        app.api.Calculation = original_calculation
                 except Exception as e:
                     logger.debug("Could not restore calculation mode: %s", e)
 
@@ -1690,13 +1692,9 @@ class ExcelProcessor(FileProcessor):
     ) -> None:
         """Apply cell translations with batch optimization for xlwings.
 
-        Optimization strategy (v2 - simplified):
-        1. Write all cell values first (batched by row ranges)
-        2. Apply font to all cells in single batch (no pre-merge detection)
-        3. Handle errors at batch level with fallback to individual cells
-
-        Merged cell detection is now done lazily during font application,
-        eliminating the O(n) pre-scan that was causing performance issues.
+        Optimization strategy:
+        1. Write all cell values first (batched by contiguous row ranges)
+        2. Apply font to entire used_range via Excel API (handles merged cells)
 
         Args:
             sheet: xlwings Sheet object
@@ -1706,14 +1704,6 @@ class ExcelProcessor(FileProcessor):
         """
         if not cell_translations:
             return
-
-        # Column letter cache for this batch (avoids repeated get_column_letter calls)
-        col_letter_cache: dict[int, str] = {}
-
-        def get_col_letter(col: int) -> str:
-            if col not in col_letter_cache:
-                col_letter_cache[col] = get_column_letter(col)
-            return col_letter_cache[col]
 
         # Get output font settings (single lookup)
         output_font_name = font_manager.get_output_font()
@@ -1729,9 +1719,6 @@ class ExcelProcessor(FileProcessor):
                 break
 
         _, new_font_size = font_manager.select_font(None, default_font_size)
-
-        # Collect all cells for processing
-        all_cells: list[tuple[int, int]] = list(cell_translations.keys())
 
         # Group translations by row for batch value writing
         rows_data: dict[int, list[tuple[int, str, str]]] = {}  # row -> [(col, text, cell_ref), ...]
@@ -1751,18 +1738,19 @@ class ExcelProcessor(FileProcessor):
                 self._write_cell_values_batch(sheet, sheet_name, row, start_col, end_col, range_cells)
 
         # Phase 2: Apply font to entire used range (single COM call)
-        # This is much faster than applying to individual cells and handles merged cells correctly
+        # This handles merged cells correctly without boundary issues
         try:
             used_range = sheet.used_range
             if used_range is not None:
-                used_range.font.name = output_font_name
-                used_range.font.size = new_font_size
+                # Use API directly for faster font application
+                used_range.api.Font.Name = output_font_name
+                used_range.api.Font.Size = new_font_size
                 logger.debug(
-                    "Applied font '%s' size %.1f to used range in sheet '%s'",
+                    "Applied font '%s' size %.1f to used_range in sheet '%s'",
                     output_font_name, new_font_size, sheet_name
                 )
         except Exception as e:
-            logger.warning("Error applying font to used range in '%s': %s", sheet_name, e)
+            logger.warning("Error applying font to used_range in '%s': %s", sheet_name, e)
 
     def _find_contiguous_ranges(
         self, cells: list[tuple[int, str, str]]

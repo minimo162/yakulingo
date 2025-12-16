@@ -576,10 +576,6 @@ class CopilotHandler:
     )
     RESPONSE_SELECTOR_COMBINED = ", ".join(RESPONSE_SELECTORS)
 
-    # Copy button selector for getting response text via clipboard
-    # This is used when DOM text extraction fails (e.g., <> brackets interpreted as HTML)
-    COPY_BUTTON_SELECTOR = '[data-testid="CopyButtonTestId"]'
-
     # Dynamic polling intervals for faster response detection
     # OPTIMIZED: Reduced intervals for quicker response detection (0.15s -> 0.1s)
     RESPONSE_POLL_INITIAL = 0.1  # Initial interval while waiting for response to start
@@ -4331,11 +4327,67 @@ class CopilotHandler:
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, self._send_message, message)
 
-    # JavaScript to extract text with list numbers preserved
-    # inner_text() doesn't include CSS-generated list markers, so we need to
-    # manually add them back for <ol> lists
+    # JavaScript to extract text with list numbers preserved and <> brackets intact
+    # Uses innerHTML + HTML entity decoding to preserve <> brackets (Copilot escapes as &lt; &gt;)
+    # Handles ordered lists by adding numbers in a cloned DOM before extracting
     _JS_GET_TEXT_WITH_LIST_NUMBERS = """
     (element) => {
+        // Helper: Decode HTML entities (e.g., &lt; -> <, &gt; -> >)
+        function decodeHtmlEntities(text) {
+            const textarea = document.createElement('textarea');
+            textarea.innerHTML = text;
+            return textarea.value;
+        }
+
+        // Helper: Add list numbers to <ol> items in a cloned element
+        function addListNumbers(clonedElement) {
+            const orderedLists = clonedElement.querySelectorAll('ol');
+            orderedLists.forEach(ol => {
+                const start = parseInt(ol.getAttribute('start') || '1', 10);
+                const items = ol.querySelectorAll(':scope > li');
+                items.forEach((li, index) => {
+                    const number = start + index;
+                    // Create a text node with the number and prepend it
+                    const numberText = document.createTextNode(number + '. ');
+                    li.insertBefore(numberText, li.firstChild);
+                });
+            });
+        }
+
+        // Helper: Extract text from element, preserving <> brackets via innerHTML
+        function extractText(el) {
+            // Get innerHTML and process it
+            let html = el.innerHTML;
+
+            // Replace <br> and block-level closing tags with newlines
+            let text = html
+                .replace(/<br\\s*\\/?>/gi, '\\n')
+                .replace(/<\\/(p|div|li|tr|h[1-6])>/gi, '\\n')
+                .replace(/<li[^>]*>/gi, '\\n')  // Add newline before list items
+                .replace(/<[^>]+>/g, '')  // Remove all HTML tags
+                .replace(/\\n{3,}/g, '\\n\\n');  // Collapse multiple newlines
+
+            // Decode HTML entities to get <> brackets back
+            return decodeHtmlEntities(text).trim();
+        }
+
+        // Clone the element to avoid modifying the original DOM
+        try {
+            const clone = element.cloneNode(true);
+
+            // Add list numbers to ordered lists in the clone
+            addListNumbers(clone);
+
+            // Extract text from the modified clone
+            const text = extractText(clone);
+            if (text) {
+                return text;
+            }
+        } catch (e) {
+            // Clone/innerHTML approach failed, fall through to DOM traversal
+        }
+
+        // Fallback: DOM traversal with list number handling
         const result = [];
         let listCounter = 0;
         let inOrderedList = false;
@@ -4391,8 +4443,13 @@ class CopilotHandler:
     def _get_latest_response_text(self) -> tuple[str, bool]:
         """Return the latest Copilot response text and whether an element was found.
 
-        Uses JavaScript evaluation to preserve list numbers from <ol> elements,
-        which are not included in inner_text() as they are CSS-generated.
+        Uses JavaScript evaluation with innerHTML + HTML entity decoding:
+        1. Clone the element to avoid modifying the original DOM
+        2. Add list numbers to <ol> items in the clone (CSS-generated numbers aren't in innerHTML)
+        3. Extract innerHTML and decode HTML entities (&lt; -> <, &gt; -> >)
+
+        This preserves both <> brackets and ordered list numbers.
+        Falls back to DOM traversal if the innerHTML approach fails.
         """
 
         if not self._page:
@@ -4464,109 +4521,6 @@ class CopilotHandler:
             logger.debug("[RESPONSE_TEXT] Could not dump page info: %s", dump_err)
         logger.debug("[RESPONSE_TEXT] No response found from any selector")
         return "", False
-
-    def _get_response_text_via_copy_button(self) -> str | None:
-        """Get response text by clicking the copy button and reading clipboard.
-
-        This method is used as a fallback when DOM text extraction fails,
-        particularly when text contains <> brackets that are interpreted as HTML tags.
-
-        Returns:
-            The response text from clipboard, or None if extraction failed.
-        """
-        # Check for cancellation/shutdown before attempting page operations
-        if self._is_cancelled():
-            logger.debug("[COPY_BUTTON] Skipped - cancelled")
-            return None
-
-        if not self._page:
-            return None
-
-        # Check if page is still valid (not closed)
-        try:
-            if self._page.is_closed():
-                logger.debug("[COPY_BUTTON] Skipped - page is closed")
-                return None
-        except Exception:
-            # If we can't check, assume page is invalid
-            return None
-
-        error_types = _get_playwright_errors()
-        PlaywrightError = error_types['Error']
-
-        try:
-            # Find all copy buttons
-            copy_buttons = self._page.query_selector_all(self.COPY_BUTTON_SELECTOR)
-            if not copy_buttons:
-                logger.debug("[COPY_BUTTON] No copy buttons found")
-                return None
-
-            # Get the last copy button (most recent response)
-            last_copy_button = copy_buttons[-1]
-
-            # Click the copy button using JavaScript to avoid bringing window to foreground
-            try:
-                last_copy_button.evaluate('el => el.click()')
-            except PlaywrightError as e:
-                logger.debug("[COPY_BUTTON] Failed to click button: %s", e)
-                return None
-
-            # Small delay for clipboard to be updated
-            time.sleep(0.1)
-
-            # Read clipboard content using JavaScript
-            try:
-                clipboard_text = self._page.evaluate('() => navigator.clipboard.readText()')
-                if clipboard_text:
-                    logger.debug("[COPY_BUTTON] Got text from clipboard (len=%d)", len(clipboard_text))
-                    return clipboard_text.strip()
-            except PlaywrightError as e:
-                logger.debug("[COPY_BUTTON] Failed to read clipboard: %s", e)
-                return None
-
-        except Exception as e:
-            logger.debug("[COPY_BUTTON] Unexpected error: %s", e)
-
-        return None
-
-    def _finalize_response_text(self, dom_text: str) -> str:
-        """Finalize response text by trying copy button fallback if needed.
-
-        When DOM text extraction may have missed content (e.g., <> brackets
-        interpreted as HTML), try getting text via copy button which preserves
-        the original content.
-
-        Args:
-            dom_text: Text extracted from DOM elements
-
-        Returns:
-            Final response text (from copy button if successful and longer, else dom_text)
-        """
-        # Skip copy button fallback if cancelled or shutting down
-        if self._is_cancelled():
-            return dom_text
-
-        # Always try copy button as it preserves <> brackets that DOM may miss
-        copy_text = self._get_response_text_via_copy_button()
-
-        if copy_text:
-            # Use copy button text if it's available and longer
-            # (longer usually means it preserved content that DOM missed)
-            if len(copy_text) > len(dom_text):
-                logger.info("[RESPONSE] Using copy button text (len=%d) over DOM text (len=%d)",
-                           len(copy_text), len(dom_text))
-                return copy_text
-            # Also use copy button text if DOM text seems incomplete
-            # (e.g., has empty lines where content should be)
-            elif dom_text and copy_text:
-                dom_lines = [l for l in dom_text.split('\n') if l.strip()]
-                copy_lines = [l for l in copy_text.split('\n') if l.strip()]
-                if len(copy_lines) > len(dom_lines):
-                    logger.info("[RESPONSE] Using copy button text (%d lines) over DOM text (%d lines)",
-                               len(copy_lines), len(dom_lines))
-                    return copy_text
-
-        return dom_text
 
     def _get_response(
         self,
@@ -4726,8 +4680,7 @@ class CopilotHandler:
                                            time.time() - response_start_time,
                                            time.time() - first_content_time if first_content_time else 0,
                                            required_stable_count)
-                                # Try copy button to recover text with <> brackets
-                                return self._finalize_response_text(current_text)
+                                return current_text
                             # Use fastest interval during stability checking
                             poll_interval = self.RESPONSE_POLL_STABLE
                             # Log stability check progress
@@ -4790,8 +4743,7 @@ class CopilotHandler:
                 logger.error("[POLLING] No content received - possible selector issues. "
                             "Response selectors: %s, Stop button selectors: %s",
                             self.RESPONSE_SELECTORS, self.STOP_BUTTON_SELECTORS)
-            # Try copy button to recover text with <> brackets
-            return self._finalize_response_text(last_text)
+            return last_text
 
         except PlaywrightError as e:
             logger.error("Browser error getting response: %s", e)

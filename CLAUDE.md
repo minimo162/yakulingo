@@ -1644,6 +1644,16 @@ When interacting with users in this repository, prefer Japanese for comments and
 ## Recent Development Focus
 
 Based on recent commits:
+- **Copilot Response Text Extraction Fix (2024-12)**:
+  - **Problem**: Copilotが`<placeholder>`のような`<>`括弧を含むテキストを返すと、ブラウザがHTMLタグとして解釈してしまい、DOM経由では取得できなかった
+  - **Previous approach (removed)**: コピーボタンをクリックしてクリップボード経由でテキスト取得。`navigator.clipboard.readText()`がブロックする問題があった
+  - **New approach**: innerHTML + HTMLエンティティデコード方式
+    1. `element.cloneNode(true)`で要素をクローン（元DOMを変更しない）
+    2. クローン内の`<ol>`に番号を追加（CSS生成番号はinnerHTMLに含まれないため）
+    3. `innerHTML`を取得してHTMLタグを除去
+    4. `textarea.innerHTML`を使って`&lt;`→`<`、`&gt;`→`>`にデコード
+  - **Benefits**: クリップボードアクセス不要でブロックしない、`<>`括弧と番号付きリストの両方を保持
+  - **Implementation**: `_JS_GET_TEXT_WITH_LIST_NUMBERS`を更新、`_get_latest_response_text()`のdocstringを更新
 - **Early Connection Timeout Fix (2024-12)**:
   - **Timeout extended**: 早期接続タイムアウトを15秒から30秒に延長（Playwright初期化15秒 + CDP接続4秒 + UI待機5秒 = 約25-30秒）
   - **asyncio.shield protection**: タイムアウト時のタスクキャンセルを防止

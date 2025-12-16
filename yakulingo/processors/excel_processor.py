@@ -1655,6 +1655,15 @@ class ExcelProcessor(FileProcessor):
                     except Exception as e:
                         logger.error("Error saving workbook: %s", e)
                         raise
+
+                    # Restore calculation mode BEFORE closing workbook (more reliable)
+                    # Excel may reject Calculation changes after workbook is closed
+                    try:
+                        if original_calculation is not None:
+                            app.api.Calculation = original_calculation
+                            original_calculation = None  # Mark as restored
+                    except Exception as e:
+                        logger.debug("Could not restore calculation mode (will retry after close): %s", e)
                 finally:
                     wb.close()
 

@@ -4328,8 +4328,8 @@ class CopilotHandler:
         return await loop.run_in_executor(None, self._send_message, message)
 
     # JavaScript to extract text with list numbers preserved and <> brackets intact
-    # - Uses innerHTML + HTML entity decoding to preserve <> brackets (Copilot escapes as &lt; &gt;)
-    # - Falls back to DOM traversal for ordered lists (to preserve CSS-generated numbers)
+    # Uses innerHTML + HTML entity decoding to preserve <> brackets (Copilot escapes as &lt; &gt;)
+    # Handles ordered lists by adding numbers in a cloned DOM before extracting
     _JS_GET_TEXT_WITH_LIST_NUMBERS = """
     (element) => {
         // Helper: Decode HTML entities (e.g., &lt; -> <, &gt; -> >)
@@ -4339,8 +4339,26 @@ class CopilotHandler:
             return textarea.value;
         }
 
-        // Helper: Extract text from innerHTML, preserving <> brackets
-        function extractTextFromHtml(html) {
+        // Helper: Add list numbers to <ol> items in a cloned element
+        function addListNumbers(clonedElement) {
+            const orderedLists = clonedElement.querySelectorAll('ol');
+            orderedLists.forEach(ol => {
+                const start = parseInt(ol.getAttribute('start') || '1', 10);
+                const items = ol.querySelectorAll(':scope > li');
+                items.forEach((li, index) => {
+                    const number = start + index;
+                    // Create a text node with the number and prepend it
+                    const numberText = document.createTextNode(number + '. ');
+                    li.insertBefore(numberText, li.firstChild);
+                });
+            });
+        }
+
+        // Helper: Extract text from element, preserving <> brackets via innerHTML
+        function extractText(el) {
+            // Get innerHTML and process it
+            let html = el.innerHTML;
+
             // Replace <br> and block-level closing tags with newlines
             let text = html
                 .replace(/<br\\s*\\/?>/gi, '\\n')
@@ -4353,26 +4371,23 @@ class CopilotHandler:
             return decodeHtmlEntities(text).trim();
         }
 
-        // Check if element contains ordered lists (need DOM traversal for list numbers)
-        const hasOrderedList = element.querySelector('ol') !== null;
+        // Clone the element to avoid modifying the original DOM
+        try {
+            const clone = element.cloneNode(true);
 
-        // Use innerHTML approach only if no ordered lists
-        // (ordered list numbers are CSS-generated and not in innerHTML)
-        if (!hasOrderedList) {
-            try {
-                const html = element.innerHTML;
-                if (html) {
-                    const text = extractTextFromHtml(html);
-                    if (text) {
-                        return text;
-                    }
-                }
-            } catch (e) {
-                // innerHTML approach failed, fall through to DOM traversal
+            // Add list numbers to ordered lists in the clone
+            addListNumbers(clone);
+
+            // Extract text from the modified clone
+            const text = extractText(clone);
+            if (text) {
+                return text;
             }
+        } catch (e) {
+            // Clone/innerHTML approach failed, fall through to DOM traversal
         }
 
-        // DOM traversal with list number handling
+        // Fallback: DOM traversal with list number handling
         const result = [];
         let listCounter = 0;
         let inOrderedList = false;
@@ -4428,11 +4443,13 @@ class CopilotHandler:
     def _get_latest_response_text(self) -> tuple[str, bool]:
         """Return the latest Copilot response text and whether an element was found.
 
-        Uses JavaScript evaluation with two approaches:
-        1. innerHTML + HTML entity decoding: Preserves <> brackets that Copilot
-           escapes as &lt; and &gt;. Used when no ordered lists are present.
-        2. DOM traversal: Preserves CSS-generated list numbers from <ol> elements.
-           Falls back to this when ordered lists are detected.
+        Uses JavaScript evaluation with innerHTML + HTML entity decoding:
+        1. Clone the element to avoid modifying the original DOM
+        2. Add list numbers to <ol> items in the clone (CSS-generated numbers aren't in innerHTML)
+        3. Extract innerHTML and decode HTML entities (&lt; -> <, &gt; -> >)
+
+        This preserves both <> brackets and ordered list numbers.
+        Falls back to DOM traversal if the innerHTML approach fails.
         """
 
         if not self._page:

@@ -579,11 +579,23 @@ class YakuLingoApp:
         # Wait for early connection task if it exists
         if self._early_connection_task is not None:
             try:
-                # Wait for early connection with timeout (should already be done or nearly done)
-                await asyncio.wait_for(self._early_connection_task, timeout=10.0)
+                # Wait for early connection with timeout
+                # Playwright initialization can take 12+ seconds on first run
+                await asyncio.wait_for(self._early_connection_task, timeout=15.0)
             except asyncio.TimeoutError:
-                logger.warning("Early connection timed out, starting new connection")
-                self._early_connection_result = None
+                # Check if task completed just after timeout
+                if self._early_connection_task.done():
+                    # Task completed, use its result
+                    logger.debug("Early connection completed just after timeout check")
+                    try:
+                        self._early_connection_task.result()  # Propagate any exception
+                    except Exception as e:
+                        logger.debug("Early connection task failed: %s", e)
+                        self._early_connection_result = None
+                else:
+                    # Task still running - let it continue in background but proceed with new connection
+                    logger.debug("Early connection still in progress, proceeding with normal flow")
+                    self._early_connection_result = None
             except Exception as e:
                 logger.debug("Early connection task failed: %s", e)
                 self._early_connection_result = None

@@ -3060,15 +3060,15 @@ class CopilotHandler:
                 logger.warning("EdgeProfile directory does not exist!")
                 return
 
-            # List top-level contents
+            # List top-level contents (debug level - verbose)
             contents = list(self.profile_dir.iterdir())
-            logger.info("EdgeProfile contents: %s", [c.name for c in contents[:20]])
+            logger.debug("EdgeProfile contents: %s", [c.name for c in contents[:20]])
 
             # Check for Default profile (where Cookies are stored)
             default_dir = self.profile_dir / "Default"
             if default_dir.exists():
                 default_contents = list(default_dir.iterdir())
-                logger.info("Default profile contents: %s", [c.name for c in default_contents[:30]])
+                logger.debug("Default profile contents: %s", [c.name for c in default_contents[:30]])
 
                 from datetime import datetime
 

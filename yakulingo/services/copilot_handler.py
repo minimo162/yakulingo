@@ -4195,21 +4195,48 @@ class CopilotHandler:
                     send_verified = False
                     verify_reason = ""
 
-                    # Method 1: Short wait_for_selector (efficient browser-level waiting)
+                    # Method 0: Early verification from POST-STATE (fastest path)
+                    # If JS already confirmed stop button or input cleared, skip slow Playwright waits
                     try:
-                        self._page.wait_for_selector(
-                            self.STOP_BUTTON_SELECTOR_COMBINED,
-                            timeout=SEND_VERIFY_SHORT_WAIT_MS,
-                            state='visible'
-                        )
-                        send_verified = True
-                        verify_reason = "stop button visible"
-                        stop_button_seen_during_send = True
-                        logger.debug("[SEND_VERIFY] Stop button appeared")
-                    except Exception as stop_err:
-                        # Stop button didn't appear quickly - continue with polling
-                        logger.debug("[SEND_VERIFY] Stop button not visible after %dms: %s",
-                                    SEND_VERIFY_SHORT_WAIT_MS, type(stop_err).__name__)
+                        if post_attempt_state:
+                            input_cleared = post_attempt_state.get('inputTextLength', -1) == 0
+                            stop_btn_visible = post_attempt_state.get('stopBtnVisible', False)
+                            stop_btn_exists = post_attempt_state.get('stopBtnExists', False)
+
+                            if stop_btn_visible:
+                                send_verified = True
+                                verify_reason = "JS confirmed (stop button visible)"
+                                stop_button_seen_during_send = True
+                                logger.debug("[SEND_VERIFY] Early verification: stop button visible in POST-STATE")
+                            elif input_cleared and stop_btn_exists:
+                                send_verified = True
+                                verify_reason = "JS confirmed (input cleared + stop button exists)"
+                                stop_button_seen_during_send = True
+                                logger.debug("[SEND_VERIFY] Early verification: input cleared and stop button exists")
+                            elif input_cleared:
+                                send_verified = True
+                                verify_reason = "JS confirmed (input cleared)"
+                                logger.debug("[SEND_VERIFY] Early verification: input cleared")
+                    except Exception as early_err:
+                        logger.debug("[SEND_VERIFY] Early verification check failed: %s", early_err)
+
+                    # Method 1: Short wait_for_selector (efficient browser-level waiting)
+                    # Skip if already verified by Method 0
+                    if not send_verified:
+                        try:
+                            self._page.wait_for_selector(
+                                self.STOP_BUTTON_SELECTOR_COMBINED,
+                                timeout=SEND_VERIFY_SHORT_WAIT_MS,
+                                state='visible'
+                            )
+                            send_verified = True
+                            verify_reason = "stop button visible"
+                            stop_button_seen_during_send = True
+                            logger.debug("[SEND_VERIFY] Stop button appeared")
+                        except Exception as stop_err:
+                            # Stop button didn't appear quickly - continue with polling
+                            logger.debug("[SEND_VERIFY] Stop button not visible after %dms: %s",
+                                        SEND_VERIFY_SHORT_WAIT_MS, type(stop_err).__name__)
 
                     # Method 2: Poll both conditions (stop button AND input cleared)
                     # This catches cases where input clears quickly but stop button is slow

@@ -507,6 +507,16 @@ class CopilotHandler:
     MIN_EDGE_WINDOW_HEIGHT = 768   # Minimum height in pixels
 
     # =========================================================================
+    # Side Panel Mode Settings
+    # =========================================================================
+    # Side panel width scales based on screen width to accommodate different resolutions
+    # Reference: 1920px screen → 450px panel, 1366px screen → 350px panel
+    SIDE_PANEL_BASE_WIDTH = 450      # Base width for 1920px+ screens
+    SIDE_PANEL_MIN_WIDTH = 350       # Minimum width for smaller screens
+    SIDE_PANEL_GAP = 10              # Gap between app and side panel
+    SIDE_PANEL_MIN_HEIGHT = 500      # Minimum height for usability
+
+    # =========================================================================
     # UI Selectors - Centralized for easier maintenance when Copilot UI changes
     # =========================================================================
 
@@ -2047,6 +2057,11 @@ class CopilotHandler:
         This places the Edge browser window to the right of the YakuLingo window,
         with matching height, allowing users to see the translation progress.
 
+        The panel width scales based on available screen space:
+        - 1920px+ screen width: 450px panel
+        - 1366-1919px: scales proportionally (350-450px)
+        - <1366px: 350px minimum
+
         Args:
             page_title: The current page title for exact matching
 
@@ -2087,12 +2102,6 @@ class CopilotHandler:
                 logger.warning("Failed to get YakuLingo window rect")
                 return False
 
-            # Calculate Edge window position (right side of YakuLingo)
-            app_height = app_rect.bottom - app_rect.top
-            edge_width = 500  # Fixed width for side panel
-            edge_x = app_rect.right + 10  # 10px gap between windows
-            edge_y = app_rect.top
-
             # Get monitor info for the monitor containing YakuLingo window
             # This handles multi-monitor setups correctly
             class MONITORINFO(ctypes.Structure):
@@ -2113,19 +2122,39 @@ class CopilotHandler:
 
             # Use work area (excludes taskbar) of the monitor containing YakuLingo
             work_area = monitor_info.rcWork
+            screen_width = work_area.right - work_area.left
+
+            # Calculate side panel width based on screen resolution
+            # Scale from MIN_WIDTH (at 1366px) to BASE_WIDTH (at 1920px+)
+            if screen_width >= 1920:
+                edge_width = self.SIDE_PANEL_BASE_WIDTH
+            elif screen_width <= 1366:
+                edge_width = self.SIDE_PANEL_MIN_WIDTH
+            else:
+                # Linear interpolation between 1366px and 1920px
+                ratio = (screen_width - 1366) / (1920 - 1366)
+                edge_width = int(self.SIDE_PANEL_MIN_WIDTH +
+                               (self.SIDE_PANEL_BASE_WIDTH - self.SIDE_PANEL_MIN_WIDTH) * ratio)
+
+            # Calculate Edge window position (right side of YakuLingo)
+            app_height = app_rect.bottom - app_rect.top
+            edge_x = app_rect.right + self.SIDE_PANEL_GAP
+            edge_y = app_rect.top
 
             # Adjust if Edge would go off screen
             if edge_x + edge_width > work_area.right:
                 # Place on left side instead
-                edge_x = app_rect.left - edge_width - 10
+                edge_x = app_rect.left - edge_width - self.SIDE_PANEL_GAP
                 if edge_x < work_area.left:
                     # Not enough room on either side, use right side anyway
                     edge_x = work_area.right - edge_width
 
             # Ensure minimum height for usability
-            MIN_HEIGHT = 400
-            if app_height < MIN_HEIGHT:
-                app_height = MIN_HEIGHT
+            if app_height < self.SIDE_PANEL_MIN_HEIGHT:
+                app_height = self.SIDE_PANEL_MIN_HEIGHT
+
+            logger.debug("Side panel sizing: screen_width=%d, panel_width=%d",
+                        screen_width, edge_width)
 
             # Check if window is off-screen (started with --window-position=-32000,-32000)
             # or minimized - in either case, we need to restore it first

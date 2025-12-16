@@ -2139,13 +2139,14 @@ Based on recent commits:
   - **Full-height input area**: 翻訳中・翻訳後の入力欄を縦幅いっぱいに拡張
 - **Window Sizing (Dynamic Scaling)**:
   - **Dynamic calculation**: `_detect_display_settings()` calculates window size from logical screen resolution
-  - **DPI-aware**: pywebview returns logical pixels (after DPI scaling), so window maintains ~74% width ratio
-  - **Reference**: 2560x1440 logical → 1900x1100 window (74.2% width, 76.4% height)
+  - **DPI-aware**: pywebview returns logical pixels (after DPI scaling), so window maintains ~70% width ratio
+  - **Side panel accommodation**: WIDTH_RATIO reduced from 74% to 70% to fit side panel mode (500px + 10px gap)
+  - **Reference**: 2560x1440 logical → 1800x1100 window (70.3% width, 76.4% height)
   - **Minimum sizes**: 1100x650 pixels (lowered from 1400x850 to maintain ratio on smaller screens)
   - **Examples by DPI scaling**:
-    - 1920x1200 at 100% → 論理1920x1200 → window 1424x916 (74%)
-    - 1920x1200 at 125% → 論理1536x960 → window 1140x733 (74%)
-    - 2560x1440 at 150% → 論理1706x960 → window 1266x733 (74%)
+    - 1920x1200 at 100% → 論理1920x1200 → window 1344x916 (70%) + side panel (510px) = 1854px ✓
+    - 1920x1200 at 125% → 論理1536x960 → window 1075x733 (70%)
+    - 2560x1440 at 150% → 論理1706x960 → window 1194x733 (70%)
   - **Panel layout**: Translation result panel elements aligned to 2/3 width with center alignment
 - **Global Hotkey (Ctrl+Alt+J)**:
   - **Quick translation**: Select text in any app, press Ctrl+Alt+J to translate

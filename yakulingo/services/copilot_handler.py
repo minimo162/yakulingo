@@ -2103,15 +2103,28 @@ class CopilotHandler:
             if app_height < MIN_HEIGHT:
                 app_height = MIN_HEIGHT
 
-            # Restore window if minimized
+            # Check if window is off-screen (started with --window-position=-32000,-32000)
+            # or minimized - in either case, we need to restore it first
+            current_rect = RECT()
+            user32.GetWindowRect(edge_hwnd, ctypes.byref(current_rect))
+            is_off_screen = current_rect.left < -10000 or current_rect.top < -10000
+            is_minimized = user32.IsIconic(edge_hwnd)
+
+            logger.debug("Edge window state: off_screen=%s, minimized=%s, pos=(%d,%d)",
+                        is_off_screen, is_minimized, current_rect.left, current_rect.top)
+
+            # If window is off-screen or minimized, restore it first
             SW_RESTORE = 9
-            if user32.IsIconic(edge_hwnd):
+            if is_off_screen or is_minimized:
                 user32.ShowWindow(edge_hwnd, SW_RESTORE)
 
             # Position and resize Edge window
             # SWP_NOZORDER (4) = Don't change Z-order
             # SWP_NOACTIVATE (16) = Don't activate window
+            # SWP_SHOWWINDOW (64) = Show window (needed for off-screen windows)
             SWP_NOACTIVATE = 0x0010
+            SWP_SHOWWINDOW = 0x0040
+            flags = SWP_NOACTIVATE | SWP_SHOWWINDOW
             user32.SetWindowPos(
                 edge_hwnd,
                 None,  # hWndInsertAfter
@@ -2119,10 +2132,10 @@ class CopilotHandler:
                 edge_y,
                 edge_width,
                 app_height,
-                SWP_NOACTIVATE
+                flags
             )
 
-            # Show window (not minimized, not activated)
+            # Ensure window is visible (not minimized, not activated)
             SW_SHOWNOACTIVATE = 4
             user32.ShowWindow(edge_hwnd, SW_SHOWNOACTIVATE)
 

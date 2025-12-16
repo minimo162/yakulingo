@@ -4581,7 +4581,8 @@ class CopilotHandler:
             # Wait for response completion with dynamic polling
             # Note: We no longer use wait_for_selector here to ensure stop button detection
             # during the initial waiting period (stop button appears before response element)
-            max_wait = float(timeout)
+            polling_start_time = time.time()
+            timeout_float = float(timeout)
             last_text = ""
             stable_count = 0
             has_content = False  # Track if we've seen any content
@@ -4594,13 +4595,15 @@ class CopilotHandler:
             response_element_first_seen_time = None  # Track when response element first appeared
             # Initialize to past time so first iteration always checks page validity
             last_page_validity_check = time.time() - self.PAGE_VALIDITY_CHECK_INTERVAL
+            # Cache the working stop button selector for faster subsequent checks
+            cached_stop_selector = None
 
             current_url = self._page.url if self._page else "unknown"
             # Ensure current_url is a string before slicing (for test mocks)
             url_str = str(current_url) if current_url else "empty"
-            logger.info("[POLLING] Starting response polling (timeout=%.0fs, URL: %s)", max_wait, url_str[:80])
+            logger.info("[POLLING] Starting response polling (timeout=%.0fs, URL: %s)", timeout_float, url_str[:80])
 
-            while max_wait > 0:
+            while (time.time() - polling_start_time) < timeout_float:
                 poll_iteration += 1
                 # Check for cancellation at the start of each polling iteration
                 if self._is_cancelled():
@@ -4627,54 +4630,48 @@ class CopilotHandler:
 
                 # Check if Copilot is still generating (stop button visible)
                 # If stop button is present, response is not complete yet
-                # Try multiple selectors for stop/loading indicators
+                # Use cached selector first for faster checks, fall back to all selectors
                 stop_button = None
                 stop_button_selector = None
-                for stop_sel in self.STOP_BUTTON_SELECTORS:
+
+                # Try cached selector first (if available)
+                if cached_stop_selector:
                     try:
-                        stop_button = self._page.query_selector(stop_sel)
+                        stop_button = self._page.query_selector(cached_stop_selector)
                         if stop_button:
-                            stop_button_selector = stop_sel
-                            break
-                    except Exception as e:
-                        logger.debug("Stop button selector failed (%s): %s", stop_sel, e)
-                        continue
+                            stop_button_selector = cached_stop_selector
+                    except Exception:
+                        # Cache is stale, clear it and try all selectors
+                        cached_stop_selector = None
+
+                # If cached selector didn't work, try all selectors
+                if not stop_button:
+                    for stop_sel in self.STOP_BUTTON_SELECTORS:
+                        try:
+                            stop_button = self._page.query_selector(stop_sel)
+                            if stop_button:
+                                stop_button_selector = stop_sel
+                                # Cache the working selector for faster subsequent checks
+                                cached_stop_selector = stop_sel
+                                break
+                        except Exception as e:
+                            logger.debug("Stop button selector failed (%s): %s", stop_sel, e)
+                            continue
 
                 stop_button_visible = stop_button and stop_button.is_visible()
                 if stop_button_visible:
                     stop_button_ever_seen = True
-                    # Still generating, reset stability counter
+                    # Still generating, reset stability counter and wait
+                    # Don't extract text while generating - evaluate() blocks when browser is busy
                     stable_count = 0
-
-                    # Check for response element even while generating
-                    # This allows early detection of content for faster response
-                    try:
-                        gen_text, gen_found = self._get_latest_response_text()
-                        if gen_found and gen_text and gen_text.strip():
-                            # Track first content detection
-                            if not has_content:
-                                first_content_time = time.time()
-                                logger.info("[TIMING] first_content_received: %.2fs (during generation)",
-                                           first_content_time - response_start_time)
-                            has_content = True
-                            last_text = gen_text  # Update for early stability check
-                            # Track response element detection
-                            if not response_element_seen:
-                                response_element_seen = True
-                                response_element_first_seen_time = time.time()
-                                logger.info("[TIMING] response_element_detected: %.2fs (during generation)",
-                                           response_element_first_seen_time - response_start_time)
-                    except Exception as gen_err:
-                        logger.debug("[POLLING] Error checking response during generation: %s", gen_err)
-
-                    poll_interval = self.RESPONSE_POLL_ACTIVE if has_content else self.RESPONSE_POLL_INITIAL
+                    poll_interval = self.RESPONSE_POLL_INITIAL
                     # Log every 1 second
                     if time.time() - last_log_time >= 1.0:
+                        remaining = timeout_float - (time.time() - polling_start_time)
                         logger.info("[POLLING] iter=%d stop_button visible (%s), waiting... (remaining=%.1fs)",
-                                   poll_iteration, stop_button_selector, max_wait)
+                                   poll_iteration, stop_button_selector, remaining)
                         last_log_time = time.time()
                     time.sleep(poll_interval)
-                    max_wait -= poll_interval
                     continue
 
                 # OPTIMIZED: Early termination check when stop button just disappeared
@@ -4734,8 +4731,9 @@ class CopilotHandler:
                             poll_interval = self.RESPONSE_POLL_STABLE
                             # Log stability check progress
                             if time.time() - last_log_time >= 1.0:
+                                remaining = timeout_float - (time.time() - polling_start_time)
                                 logger.info("[POLLING] iter=%d stable_count=%d/%d, text_len=%d (remaining=%.1fs)",
-                                           poll_iteration, stable_count, required_stable_count, text_len, max_wait)
+                                           poll_iteration, stable_count, required_stable_count, text_len, remaining)
                                 last_log_time = time.time()
                         else:
                             stable_count = 0
@@ -4744,8 +4742,9 @@ class CopilotHandler:
                             poll_interval = self.RESPONSE_POLL_ACTIVE
                             # Log content growth every 1 second
                             if time.time() - last_log_time >= 1.0:
+                                remaining = timeout_float - (time.time() - polling_start_time)
                                 logger.info("[POLLING] iter=%d content growing, text_len=%d, preview='%s' (remaining=%.1fs)",
-                                           poll_iteration, text_len, text_preview, max_wait)
+                                           poll_iteration, text_len, text_preview, remaining)
                                 last_log_time = time.time()
                             # Notify streaming callback with partial text
                             if on_chunk:
@@ -4765,8 +4764,9 @@ class CopilotHandler:
                         poll_interval = self.RESPONSE_POLL_INITIAL
                         # Log empty response state
                         if time.time() - last_log_time >= 1.0:
+                            remaining = timeout_float - (time.time() - polling_start_time)
                             logger.info("[POLLING] iter=%d found_response=True but text empty (remaining=%.1fs)",
-                                       poll_iteration, max_wait)
+                                       poll_iteration, remaining)
                             last_log_time = time.time()
                 else:
                     # No response element yet, use initial interval
@@ -4774,8 +4774,9 @@ class CopilotHandler:
                     # Log no response state with URL check
                     if time.time() - last_log_time >= 1.0:
                         current_url = self._page.url if self._page else "unknown"
+                        remaining = timeout_float - (time.time() - polling_start_time)
                         logger.info("[POLLING] iter=%d no response element found (remaining=%.1fs, URL: %s)",
-                                   poll_iteration, max_wait, current_url[:80] if current_url else "empty")
+                                   poll_iteration, remaining, current_url[:80] if current_url else "empty")
                         last_log_time = time.time()
                         # Warn about potential selector issues after significant wait
                         if poll_iteration > 20 and not has_content:
@@ -4783,7 +4784,6 @@ class CopilotHandler:
                                           self.RESPONSE_SELECTORS[:2])  # Log first 2 selectors
 
                 time.sleep(poll_interval)
-                max_wait -= poll_interval
 
             # Log detailed info on timeout for debugging
             logger.warning("[POLLING] Timeout reached after %d iterations, returning last_text (len=%d)",

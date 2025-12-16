@@ -73,8 +73,10 @@ class MsgProcessor(FileProcessor):
                 self._cached_content = {
                     'subject': subject,
                     'body': body,
-                    'sender': msg.sender or "(送信者不明)",
-                    'date': str(msg.date) if msg.date else "(日付不明)",
+                    'sender': msg.sender or "",
+                    'to': msg.to or "",
+                    'cc': msg.cc or "",
+                    'date': str(msg.date) if msg.date else "",
                 }
                 self._cached_file_path = file_path_str
             finally:
@@ -357,6 +359,8 @@ class MsgProcessor(FileProcessor):
         output_path: Path,
         subject: str,
         body: str,
+        to: str = "",
+        cc: str = "",
     ) -> bool:
         """
         Create a new .msg file using Outlook COM.
@@ -365,6 +369,8 @@ class MsgProcessor(FileProcessor):
             output_path: Path for the output .msg file
             subject: Email subject
             body: Email body text
+            to: Recipients (To field)
+            cc: CC recipients
 
         Returns:
             True if successful, False otherwise
@@ -377,6 +383,10 @@ class MsgProcessor(FileProcessor):
 
             mail.Subject = subject
             mail.Body = body
+            if to:
+                mail.To = to
+            if cc:
+                mail.CC = cc
 
             # Save as .msg file
             # 3 = olMSG format
@@ -409,11 +419,20 @@ class MsgProcessor(FileProcessor):
             input_path, translations
         )
 
+        # Get original email metadata (to, cc, sender, date)
+        content = self._get_cached_content(input_path)
+        to = content.get('to', '')
+        cc = content.get('cc', '')
+        sender = content.get('sender', '')
+        date = content.get('date', '')
+
         # Try to create .msg file via Outlook COM (Windows only)
         if self.outlook_available:
             # Ensure output has .msg extension
             msg_output_path = output_path.with_suffix('.msg')
-            if self._create_msg_via_outlook(msg_output_path, translated_subject, translated_body):
+            if self._create_msg_via_outlook(
+                msg_output_path, translated_subject, translated_body, to, cc
+            ):
                 return None
 
         # Fallback: save as .txt
@@ -421,6 +440,15 @@ class MsgProcessor(FileProcessor):
         txt_output_path = output_path.with_suffix('.txt')
 
         output_lines = []
+        # Include email headers
+        if sender:
+            output_lines.append(f"From: {sender}")
+        if to:
+            output_lines.append(f"To: {to}")
+        if cc:
+            output_lines.append(f"CC: {cc}")
+        if date:
+            output_lines.append(f"Date: {date}")
         output_lines.append(f"Subject: {translated_subject}")
         output_lines.append("")
         output_lines.append(translated_body)
@@ -443,8 +471,10 @@ class MsgProcessor(FileProcessor):
         content = self._get_cached_content(original_path)
         original_subject = content.get('subject') or "(件名なし)"
         original_body = content.get('body', '')
-        sender = content.get('sender', "(送信者不明)")
-        date = content.get('date', "(日付不明)")
+        sender = content.get('sender') or "(送信者不明)"
+        to = content.get('to', '')
+        cc = content.get('cc', '')
+        date = content.get('date') or "(日付不明)"
 
         extract_msg = _lazy_import_extract_msg()
 
@@ -459,15 +489,27 @@ class MsgProcessor(FileProcessor):
             finally:
                 msg.close()
         else:
-            # Read from .txt file
+            # Read from .txt file (may include headers)
             translated_content = translated_path.read_text(encoding='utf-8')
             translated_lines = translated_content.split('\n')
 
             translated_subject = ""
             translated_body = ""
-            if translated_lines and translated_lines[0].startswith("Subject: "):
-                translated_subject = translated_lines[0][9:]  # Remove "Subject: " prefix
-                translated_body = '\n'.join(translated_lines[2:])  # Skip empty line
+            body_start_idx = 0
+
+            # Parse headers until we find Subject or an empty line
+            for i, line in enumerate(translated_lines):
+                if line.startswith("Subject: "):
+                    translated_subject = line[9:]
+                    body_start_idx = i + 2  # Skip Subject line and empty line
+                    break
+                elif line == "":
+                    # End of headers without Subject
+                    body_start_idx = i + 1
+                    break
+
+            if body_start_idx < len(translated_lines):
+                translated_body = '\n'.join(translated_lines[body_start_idx:])
 
         # Build bilingual output
         separator = '─' * 50
@@ -475,6 +517,10 @@ class MsgProcessor(FileProcessor):
 
         # Header info
         output_parts.append(f"From: {sender}")
+        if to:
+            output_parts.append(f"To: {to}")
+        if cc:
+            output_parts.append(f"CC: {cc}")
         output_parts.append(f"Date: {date}")
         output_parts.append(separator)
         output_parts.append("")

@@ -3567,7 +3567,8 @@ class CopilotHandler:
                         el.dispatchEvent(new Event('input', { bubbles: true }));
                         el.dispatchEvent(new Event('change', { bubbles: true }));
                     }''')
-                    time.sleep(0.1)
+                    # Reduced from 0.1s - fill() already waits for actionability
+                    time.sleep(0.02)
                     content = input_elem.inner_text()
                     fill_success = len(content.strip()) > 0
                     if fill_success:
@@ -3643,8 +3644,8 @@ class CopilotHandler:
                     raise RuntimeError("Copilotに入力できませんでした。Edgeブラウザを確認してください。")
 
                 # Wait for Copilot to process input and update internal React state
-                # Need to wait for UI to stabilize (button may be off-screen initially)
-                time.sleep(0.1)
+                # Reduced from 0.1s - button loop below handles stabilization
+                time.sleep(0.02)
 
                 # Wait for send button to become visible AND in viewport
                 send_button_start = time.time()
@@ -3732,7 +3733,8 @@ class CopilotHandler:
                     logger.debug("[SEND_WARMUP] Result: %s", warmup_result)
 
                     # Wait for UI to stabilize after scroll
-                    time.sleep(0.3)
+                    # Reduced from 0.3s - scrollIntoView uses 'instant' behavior
+                    time.sleep(0.05)
 
                 except Exception as warmup_err:
                     logger.debug("[SEND_WARMUP] Failed: %s", warmup_err)

@@ -138,6 +138,9 @@ pip install -r requirements.txt
 # Playwrightブラウザのインストール
 playwright install chromium
 
+# PDF翻訳機能を使用する場合（オプション）
+pip install -r requirements_pdf.txt
+
 # 起動（デスクトップアプリとして自動で立ち上がります）
 python app.py
 ```
@@ -420,6 +423,7 @@ YakuLingo/
 |--------|------|
 | 設定ファイル | `config/settings.json` |
 | 翻訳履歴 | `~/.yakulingo/history.db` |
+| ログファイル | `~/.yakulingo/logs/startup.log` |
 | 参照ファイル | `glossary.csv`（デフォルト） |
 
 ## ライセンス

@@ -513,6 +513,70 @@ class YakuLingoApp:
     # Section 2: Connection & Startup
     # =========================================================================
 
+    async def _ensure_app_window_visible(self):
+        """Ensure the app window is visible and in front after UI is ready.
+
+        This is called after create_ui() to restore focus to the app window,
+        as Edge startup (side_panel mode) may steal focus.
+        """
+        # Small delay to ensure pywebview window is fully initialized
+        await asyncio.sleep(0.5)
+
+        try:
+            # Use pywebview's on_top toggle to bring window to front
+            if nicegui_app and hasattr(nicegui_app, 'native') and nicegui_app.native.main_window:
+                window = nicegui_app.native.main_window
+                # First ensure window is not minimized (restore if needed)
+                if hasattr(window, 'restore'):
+                    window.restore()
+                # Toggle on_top to force window to front
+                window.on_top = True
+                await asyncio.sleep(0.1)
+                window.on_top = False
+                logger.debug("App window brought to front after UI ready")
+        except (AttributeError, RuntimeError) as e:
+            logger.debug("Failed to bring app window to front: %s", e)
+
+        # Additional Windows API fallback
+        if sys.platform == 'win32':
+            try:
+                await asyncio.to_thread(self._restore_app_window_win32)
+            except Exception as e:
+                logger.debug("Windows API restore failed: %s", e)
+
+    def _restore_app_window_win32(self) -> bool:
+        """Restore and bring app window to front using Windows API."""
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            user32 = ctypes.WinDLL('user32', use_last_error=True)
+
+            # Find YakuLingo window
+            hwnd = self.copilot._find_yakulingo_window_handle() if self._copilot else None
+            if not hwnd:
+                # Try finding by title directly
+                hwnd = user32.FindWindowW(None, "YakuLingo")
+            if not hwnd:
+                logger.debug("YakuLingo window not found for restore")
+                return False
+
+            # Check if window is minimized
+            is_minimized = user32.IsIconic(hwnd)
+            if is_minimized:
+                # Restore minimized window
+                SW_RESTORE = 9
+                user32.ShowWindow(hwnd, SW_RESTORE)
+                logger.debug("Restored minimized YakuLingo window")
+
+            # Bring to front
+            user32.SetForegroundWindow(hwnd)
+            return True
+
+        except Exception as e:
+            logger.debug("Failed to restore app window: %s", e)
+            return False
+
     async def wait_for_edge_connection(self, edge_future):
         """Wait for Edge connection result from parallel startup.
 
@@ -3551,6 +3615,11 @@ document.fonts.ready.then(function() {
         # Apply early connection result or start new connection
         asyncio.create_task(yakulingo_app._apply_early_connection_or_connect())
         asyncio.create_task(yakulingo_app.check_for_updates())
+
+        # Ensure app window is visible and in front after UI is ready
+        # Edge startup (early connection) may steal focus, so we restore it here
+        asyncio.create_task(yakulingo_app._ensure_app_window_visible())
+
         logger.info("[TIMING] UI displayed - total from run_app: %.2fs", _time_module.perf_counter() - _t0)
 
     # window_size is already determined at the start of run_app()

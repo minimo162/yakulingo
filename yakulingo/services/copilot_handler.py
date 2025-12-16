@@ -1758,6 +1758,13 @@ class CopilotHandler:
         PlaywrightError = error_types['Error']
         PlaywrightTimeoutError = error_types['TimeoutError']
 
+        # Check browser display mode - only minimize in "minimized" mode
+        # In side_panel/foreground mode, browser should remain visible
+        from yakulingo.config.settings import AppSettings
+        settings_path = Path.home() / ".yakulingo" / "settings.json"
+        settings = AppSettings.load(settings_path)
+        should_minimize = settings.browser_display_mode == "minimized"
+
         elapsed = 0.0
         last_url = None
         stable_count = 0  # Counter for how many consecutive checks show no URL change
@@ -1767,7 +1774,9 @@ class CopilotHandler:
         logger.info("Waiting for auto-login to complete (max %.1fs)...", max_wait)
 
         # Minimize browser window at start - login redirects may bring it to foreground
-        self._minimize_edge_window(None)
+        # (only in minimized mode - side_panel/foreground should stay visible)
+        if should_minimize:
+            self._minimize_edge_window(None)
 
         while elapsed < max_wait:
             try:
@@ -1776,8 +1785,9 @@ class CopilotHandler:
                 try:
                     self._page.wait_for_selector(input_selector, timeout=500, state='visible')
                     logger.info("Auto-login completed - chat UI is ready (%.1fs)", elapsed)
-                    # Ensure window is minimized before returning
-                    self._minimize_edge_window(None)
+                    # Ensure window is minimized before returning (only in minimized mode)
+                    if should_minimize:
+                        self._minimize_edge_window(None)
                     return True
                 except PlaywrightTimeoutError:
                     pass  # Chat not ready yet, continue monitoring
@@ -1836,8 +1846,9 @@ class CopilotHandler:
                     try:
                         self._page.wait_for_selector(input_selector, timeout=2000, state='visible')
                         logger.info("Auto-login completed after redirect - chat UI ready (%.1fs)", elapsed)
-                        # Ensure window is minimized before returning
-                        self._minimize_edge_window(None)
+                        # Ensure window is minimized before returning (only in minimized mode)
+                        if should_minimize:
+                            self._minimize_edge_window(None)
                         return True
                     except PlaywrightTimeoutError:
                         pass  # Keep waiting
@@ -1879,7 +1890,9 @@ class CopilotHandler:
                         logger.debug("Auto-login progressing: %s -> %s", last_url[:50], current_url[:50])
                         stable_count = 0
                         # Re-minimize after redirect - Edge may steal focus during redirects
-                        self._minimize_edge_window(None)
+                        # (only in minimized mode - side_panel/foreground should stay visible)
+                        if should_minimize:
+                            self._minimize_edge_window(None)
 
                 last_url = current_url
 

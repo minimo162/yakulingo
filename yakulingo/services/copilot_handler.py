@@ -4643,8 +4643,30 @@ class CopilotHandler:
                 stop_button_visible = stop_button and stop_button.is_visible()
                 if stop_button_visible:
                     stop_button_ever_seen = True
-                    # Still generating, reset stability counter and wait
+                    # Still generating, reset stability counter
                     stable_count = 0
+
+                    # Check for response element even while generating
+                    # This allows early detection of content for faster response
+                    try:
+                        gen_text, gen_found = self._get_latest_response_text()
+                        if gen_found and gen_text and gen_text.strip():
+                            # Track first content detection
+                            if not has_content:
+                                first_content_time = time.time()
+                                logger.info("[TIMING] first_content_received: %.2fs (during generation)",
+                                           first_content_time - response_start_time)
+                            has_content = True
+                            last_text = gen_text  # Update for early stability check
+                            # Track response element detection
+                            if not response_element_seen:
+                                response_element_seen = True
+                                response_element_first_seen_time = time.time()
+                                logger.info("[TIMING] response_element_detected: %.2fs (during generation)",
+                                           response_element_first_seen_time - response_start_time)
+                    except Exception as gen_err:
+                        logger.debug("[POLLING] Error checking response during generation: %s", gen_err)
+
                     poll_interval = self.RESPONSE_POLL_ACTIVE if has_content else self.RESPONSE_POLL_INITIAL
                     # Log every 1 second
                     if time.time() - last_log_time >= 1.0:

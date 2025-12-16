@@ -350,6 +350,16 @@ class YakuLingoApp:
         # Bring app window to front
         await self._bring_window_to_front()
 
+        # Check if this is Excel-like tabular data (multiple columns)
+        # Only treat as Excel cells if there are at least 2 columns
+        if summary.excel_like and summary.max_columns >= 2:
+            logger.info(
+                "Hotkey translation [%s] detected Excel format: %d rows x %d cols",
+                trace_id, summary.row_count, summary.max_columns,
+            )
+            await self._translate_excel_cells(text, trace_id)
+            return
+
         # Set source text (length check is done in _translate_text)
         self.state.source_text = text
 
@@ -389,6 +399,275 @@ class YakuLingoApp:
 
         if summary.preview:
             logger.debug("Hotkey translation [%s] preview: %s", trace_id, summary.preview)
+
+    async def _translate_excel_cells(self, text: str, trace_id: str):
+        """Translate Excel-like tabular data (tab-separated cells).
+
+        Translates each cell individually while preserving the table structure,
+        then copies the result to clipboard for easy paste back to Excel.
+
+        Args:
+            text: Tab-separated text from clipboard
+            trace_id: Trace ID for logging
+        """
+        import time
+        from yakulingo.ui.state import Tab, TextViewState
+
+        if not self._require_connection():
+            return
+
+        # Parse the tabular data into 2D array
+        normalized = text.replace("\r\n", "\n")
+        rows = normalized.split("\n")
+        cells_2d: list[list[str]] = []
+        for row in rows:
+            cells_2d.append(row.split("\t"))
+
+        # Find non-empty cells that need translation
+        cells_to_translate: list[tuple[int, int, str]] = []  # (row, col, text)
+        for row_idx, row in enumerate(cells_2d):
+            for col_idx, cell in enumerate(row):
+                cell_text = cell.strip()
+                if cell_text:
+                    cells_to_translate.append((row_idx, col_idx, cell_text))
+
+        if not cells_to_translate:
+            logger.info("Translation [%s] no cells to translate", trace_id)
+            return
+
+        logger.info(
+            "Translation [%s] translating %d cells from %d rows x %d cols",
+            trace_id, len(cells_to_translate), len(cells_2d),
+            max(len(row) for row in cells_2d) if cells_2d else 0,
+        )
+
+        # Prepare source text display (show first few cells)
+        preview_cells = [c[2][:30] for c in cells_to_translate[:5]]
+        preview_text = " | ".join(preview_cells)
+        if len(cells_to_translate) > 5:
+            preview_text += f" ... ({len(cells_to_translate)} cells)"
+        self.state.source_text = preview_text
+
+        # Switch to text tab and show loading state
+        self.state.current_tab = Tab.TEXT
+        self.state.text_view_state = TextViewState.INPUT
+
+        with self._client_lock:
+            client = self._client
+            if not client:
+                logger.warning("Translation [%s] aborted: no client connected", trace_id)
+                self._active_translation_trace_id = None
+                return
+
+        # Track translation time
+        start_time = time.time()
+
+        # Update UI to show loading state
+        self.state.text_translating = True
+        self.state.text_detected_language = None
+        self.state.text_result = None
+        self.state.text_translation_elapsed_time = None
+        with client:
+            self._refresh_result_panel()
+            self._refresh_tabs()
+
+        error_message = None
+        translated_text = None
+
+        try:
+            # Yield control to event loop
+            await asyncio.sleep(0)
+
+            # Detect language from the first non-empty cell
+            sample_text = cells_to_translate[0][2]
+            detected_language = await asyncio.to_thread(
+                self.translation_service.detect_language,
+                sample_text,
+            )
+
+            logger.debug("Translation [%s] detected language: %s", trace_id, detected_language)
+            self.state.text_detected_language = detected_language
+            with client:
+                self._refresh_result_panel()
+
+            # Get glossary content for embedding
+            glossary_content = self._get_glossary_content_for_embedding()
+            reference_files = self._get_effective_reference_files(exclude_glossary=bool(glossary_content))
+
+            # Translate all cells in batches using the existing batch translation
+            cell_texts = [c[2] for c in cells_to_translate]
+            translations = await asyncio.to_thread(
+                self._translate_cell_batch,
+                cell_texts,
+                detected_language,
+                reference_files,
+                glossary_content,
+            )
+
+            if translations is None:
+                error_message = "Translation failed"
+            else:
+                # Build translated 2D array
+                translated_2d = [row[:] for row in cells_2d]  # Deep copy
+                for (row_idx, col_idx, _), translated in zip(cells_to_translate, translations):
+                    translated_2d[row_idx][col_idx] = translated
+
+                # Reconstruct tab-separated text
+                translated_rows = ["\t".join(row) for row in translated_2d]
+                translated_text = "\n".join(translated_rows)
+
+                # Copy to clipboard
+                try:
+                    from yakulingo.services.hotkey_manager import set_clipboard_text
+                    if set_clipboard_text(translated_text):
+                        logger.info("Translation [%s] copied to clipboard", trace_id)
+                    else:
+                        logger.warning("Translation [%s] failed to copy to clipboard", trace_id)
+                except Exception as e:
+                    logger.warning("Translation [%s] clipboard error: %s", trace_id, e)
+
+                # Calculate elapsed time
+                elapsed_time = time.time() - start_time
+                self.state.text_translation_elapsed_time = elapsed_time
+
+                logger.info(
+                    "Translation [%s] completed %d cells in %.2fs",
+                    trace_id, len(cells_to_translate), elapsed_time,
+                )
+
+                # Create result to display
+                from yakulingo.models.types import TextTranslationResult, TranslationOption
+                result = TextTranslationResult(
+                    source_text=text,
+                    options=[TranslationOption(
+                        text=translated_text,
+                        explanation=f"Excelセル翻訳完了（{len(cells_to_translate)}セル）\nクリップボードにコピーしました。Excelに戻って Ctrl+V で貼り付けてください。",
+                    )],
+                    output_language="en" if detected_language == "日本語" else "jp",
+                )
+                self.state.text_result = result
+                self.state.text_view_state = TextViewState.RESULT
+                self.state.source_text = ""
+
+        except Exception as e:
+            logger.exception("Translation error [%s]: %s", trace_id, e)
+            error_message = str(e)
+
+        self.state.text_translating = False
+        self.state.text_detected_language = None
+
+        with client:
+            if error_message:
+                ui.notify(f"翻訳エラー: {error_message}", type="negative")
+            self._refresh_content()
+
+        self._active_translation_trace_id = None
+
+    def _translate_cell_batch(
+        self,
+        cells: list[str],
+        detected_language: str,
+        reference_files: list[str],
+        glossary_content: str | None,
+    ) -> list[str] | None:
+        """Translate a batch of cells.
+
+        Args:
+            cells: List of cell texts to translate
+            detected_language: Pre-detected source language
+            reference_files: Reference files for translation
+            glossary_content: Glossary content to embed in prompt
+
+        Returns:
+            List of translated texts, or None if failed
+        """
+        from yakulingo.services.prompt_builder import PromptBuilder
+
+        prompt_builder = PromptBuilder(prompts_dir=get_default_prompts_dir())
+
+        # Determine output language
+        if detected_language == "日本語":
+            output_language = "en"
+        else:
+            output_language = "jp"
+
+        # Get translation style
+        style = self.settings.get("text_translation_style", "concise")
+
+        # Build prompt for batch translation
+        # Use numbered format to preserve cell order
+        numbered_cells = [f"[{i+1}] {cell}" for i, cell in enumerate(cells)]
+        combined_text = "\n".join(numbered_cells)
+
+        prompt = prompt_builder.build_text_prompt(
+            combined_text,
+            output_language,
+            style,
+            glossary_content,
+        )
+
+        # Add instruction to preserve numbered format
+        prompt += "\n\n【重要】各項目の番号を維持して、番号ごとに翻訳結果のみを返してください。"
+        prompt += "\n例: [1] 翻訳結果1\n[2] 翻訳結果2"
+
+        try:
+            response = self.copilot.translate_single(
+                prompt,
+                reference_files if reference_files else None,
+            )
+
+            if not response:
+                return None
+
+            # Parse numbered responses
+            translations = self._parse_numbered_translations(response, len(cells))
+            return translations
+
+        except Exception as e:
+            logger.error("Batch translation error: %s", e)
+            return None
+
+    def _parse_numbered_translations(self, response: str, expected_count: int) -> list[str]:
+        """Parse numbered translation response.
+
+        Args:
+            response: Response text with numbered translations
+            expected_count: Expected number of translations
+
+        Returns:
+            List of translated texts
+        """
+        import re
+
+        # Try to extract numbered items like [1] text, [2] text, etc.
+        pattern = r'\[(\d+)\]\s*(.+?)(?=\[\d+\]|$)'
+        matches = re.findall(pattern, response, re.DOTALL)
+
+        if matches:
+            # Sort by number and extract texts
+            sorted_matches = sorted(matches, key=lambda x: int(x[0]))
+            translations = [m[1].strip() for m in sorted_matches]
+
+            # Pad with original if not enough translations
+            while len(translations) < expected_count:
+                translations.append("")
+
+            return translations[:expected_count]
+
+        # Fallback: split by newlines
+        lines = [line.strip() for line in response.strip().split("\n") if line.strip()]
+
+        # Try to remove leading numbers like "1." or "1)" or "[1]"
+        cleaned_lines = []
+        for line in lines:
+            cleaned = re.sub(r'^[\[\(]?\d+[\]\)\.]?\s*', '', line)
+            cleaned_lines.append(cleaned)
+
+        # Pad or truncate to expected count
+        while len(cleaned_lines) < expected_count:
+            cleaned_lines.append("")
+
+        return cleaned_lines[:expected_count]
 
     async def _bring_window_to_front(self):
         """Bring the app window to front.

@@ -465,3 +465,88 @@ else:
                 if _hotkey_manager is None:
                     _hotkey_manager = HotkeyManager()
         return _hotkey_manager
+
+
+    # Clipboard constants for SetClipboardData
+    GMEM_MOVEABLE = 0x0002
+    GMEM_ZEROINIT = 0x0040
+
+
+    def set_clipboard_text(text: str) -> bool:
+        """Set text to clipboard.
+
+        Args:
+            text: Text to set to clipboard
+
+        Returns:
+            True if successful, False otherwise
+        """
+        # Set argument and return types for type safety
+        _user32.OpenClipboard.argtypes = [ctypes.wintypes.HWND]
+        _user32.OpenClipboard.restype = ctypes.wintypes.BOOL
+        _user32.CloseClipboard.argtypes = []
+        _user32.CloseClipboard.restype = ctypes.wintypes.BOOL
+        _user32.EmptyClipboard.argtypes = []
+        _user32.EmptyClipboard.restype = ctypes.wintypes.BOOL
+        _user32.SetClipboardData.argtypes = [ctypes.wintypes.UINT, ctypes.wintypes.HANDLE]
+        _user32.SetClipboardData.restype = ctypes.wintypes.HANDLE
+
+        _kernel32.GlobalAlloc.argtypes = [ctypes.wintypes.UINT, ctypes.c_size_t]
+        _kernel32.GlobalAlloc.restype = ctypes.wintypes.HGLOBAL
+        _kernel32.GlobalLock.argtypes = [ctypes.wintypes.HGLOBAL]
+        _kernel32.GlobalLock.restype = ctypes.wintypes.LPVOID
+        _kernel32.GlobalUnlock.argtypes = [ctypes.wintypes.HGLOBAL]
+        _kernel32.GlobalUnlock.restype = ctypes.wintypes.BOOL
+        _kernel32.GlobalFree.argtypes = [ctypes.wintypes.HGLOBAL]
+        _kernel32.GlobalFree.restype = ctypes.wintypes.HGLOBAL
+
+        # Encode text as UTF-16LE (Windows Unicode) with null terminator
+        encoded = (text + '\0').encode('utf-16-le')
+        size = len(encoded)
+
+        # Allocate global memory
+        h_mem = _kernel32.GlobalAlloc(GMEM_MOVEABLE | GMEM_ZEROINIT, size)
+        if not h_mem:
+            error_code = ctypes.get_last_error()
+            logger.warning(f"Failed to allocate global memory (error: {error_code})")
+            return False
+
+        # Lock and copy data
+        ptr = _kernel32.GlobalLock(h_mem)
+        if not ptr:
+            error_code = ctypes.get_last_error()
+            logger.warning(f"GlobalLock failed (error: {error_code})")
+            _kernel32.GlobalFree(h_mem)
+            return False
+
+        try:
+            ctypes.memmove(ptr, encoded, size)
+        finally:
+            _kernel32.GlobalUnlock(h_mem)
+
+        # Open clipboard and set data
+        if not _user32.OpenClipboard(None):
+            error_code = ctypes.get_last_error()
+            logger.warning(f"Failed to open clipboard (error: {error_code})")
+            _kernel32.GlobalFree(h_mem)
+            return False
+
+        try:
+            if not _user32.EmptyClipboard():
+                error_code = ctypes.get_last_error()
+                logger.warning(f"Failed to empty clipboard (error: {error_code})")
+                _kernel32.GlobalFree(h_mem)
+                return False
+
+            # SetClipboardData takes ownership of the memory
+            result = _user32.SetClipboardData(CF_UNICODETEXT, h_mem)
+            if not result:
+                error_code = ctypes.get_last_error()
+                logger.warning(f"Failed to set clipboard data (error: {error_code})")
+                _kernel32.GlobalFree(h_mem)
+                return False
+
+            logger.debug("Successfully set clipboard text (len=%d)", len(text))
+            return True
+        finally:
+            _user32.CloseClipboard()

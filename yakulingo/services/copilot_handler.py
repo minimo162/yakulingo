@@ -910,6 +910,8 @@ class CopilotHandler:
                 "--disable-background-timer-throttling",
                 # Disable renderer backgrounding for consistent performance
                 "--disable-renderer-backgrounding",
+                # Disable throttling when window is occluded (covered by other windows)
+                "--disable-backgrounding-occluded-windows",
                 # Disable features that slow down initial page load
                 "--disable-features=TranslateUI",
                 # Disable GPU hardware acceleration (reduces resource usage)
@@ -1233,8 +1235,8 @@ class CopilotHandler:
             except Exception as e:
                 logger.warning("Error recovering page: %s", e)
 
-        # Hide browser window when login is not required
-        self._send_to_background_impl(self._page)
+        # Apply browser display mode based on settings
+        self._apply_browser_display_mode(None)
 
     def _cleanup_on_error(self) -> None:
         """Clean up resources when connection fails."""
@@ -1972,6 +1974,187 @@ class CopilotHandler:
             logger.debug("Failed to locate Edge window handle: %s", e)
             return None
 
+    def _find_yakulingo_window_handle(self):
+        """Locate the YakuLingo app window handle using Win32 APIs."""
+        if sys.platform != "win32":
+            return None
+
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            user32 = ctypes.WinDLL('user32', use_last_error=True)
+
+            EnumWindowsProc = ctypes.WINFUNCTYPE(
+                wintypes.BOOL, wintypes.HWND, wintypes.LPARAM
+            )
+
+            found_hwnd = None
+
+            def enum_windows_callback(hwnd, lparam):
+                nonlocal found_hwnd
+
+                # Check if window is visible
+                if not user32.IsWindowVisible(hwnd):
+                    return True
+
+                title_length = user32.GetWindowTextLengthW(hwnd) + 1
+                title = ctypes.create_unicode_buffer(title_length)
+                user32.GetWindowTextW(hwnd, title, title_length)
+                window_title = title.value
+
+                # Match "YakuLingo" exactly or as prefix (pywebview may add suffix)
+                if window_title == "YakuLingo" or window_title.startswith("YakuLingo"):
+                    logger.debug("Found YakuLingo window: %s", window_title)
+                    found_hwnd = hwnd
+                    return False
+
+                return True
+
+            user32.EnumWindows(EnumWindowsProc(enum_windows_callback), 0)
+            return found_hwnd
+        except Exception as e:
+            logger.debug("Failed to locate YakuLingo window handle: %s", e)
+            return None
+
+    def _position_edge_as_side_panel(self, page_title: str = None) -> bool:
+        """Position Edge window as a side panel next to YakuLingo app.
+
+        This places the Edge browser window to the right of the YakuLingo window,
+        with matching height, allowing users to see the translation progress.
+
+        Args:
+            page_title: The current page title for exact matching
+
+        Returns:
+            True if window was successfully positioned
+        """
+        if sys.platform != "win32":
+            return False
+
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            user32 = ctypes.WinDLL('user32', use_last_error=True)
+
+            # Find both windows
+            yakulingo_hwnd = self._find_yakulingo_window_handle()
+            edge_hwnd = self._find_edge_window_handle(page_title)
+
+            if not yakulingo_hwnd:
+                logger.warning("YakuLingo window not found for side panel positioning")
+                return False
+            if not edge_hwnd:
+                logger.warning("Edge window not found for side panel positioning")
+                return False
+
+            # Get YakuLingo window rect
+            class RECT(ctypes.Structure):
+                _fields_ = [
+                    ("left", wintypes.LONG),
+                    ("top", wintypes.LONG),
+                    ("right", wintypes.LONG),
+                    ("bottom", wintypes.LONG),
+                ]
+
+            app_rect = RECT()
+            if not user32.GetWindowRect(yakulingo_hwnd, ctypes.byref(app_rect)):
+                logger.warning("Failed to get YakuLingo window rect")
+                return False
+
+            # Calculate Edge window position (right side of YakuLingo)
+            app_height = app_rect.bottom - app_rect.top
+            edge_width = 500  # Fixed width for side panel
+            edge_x = app_rect.right + 10  # 10px gap between windows
+            edge_y = app_rect.top
+
+            # Get monitor info for the monitor containing YakuLingo window
+            # This handles multi-monitor setups correctly
+            class MONITORINFO(ctypes.Structure):
+                _fields_ = [
+                    ("cbSize", wintypes.DWORD),
+                    ("rcMonitor", RECT),
+                    ("rcWork", RECT),
+                    ("dwFlags", wintypes.DWORD),
+                ]
+
+            # Get monitor from YakuLingo window position
+            MONITOR_DEFAULTTONEAREST = 2
+            monitor = user32.MonitorFromWindow(yakulingo_hwnd, MONITOR_DEFAULTTONEAREST)
+
+            monitor_info = MONITORINFO()
+            monitor_info.cbSize = ctypes.sizeof(MONITORINFO)
+            user32.GetMonitorInfoW(monitor, ctypes.byref(monitor_info))
+
+            # Use work area (excludes taskbar) of the monitor containing YakuLingo
+            work_area = monitor_info.rcWork
+
+            # Adjust if Edge would go off screen
+            if edge_x + edge_width > work_area.right:
+                # Place on left side instead
+                edge_x = app_rect.left - edge_width - 10
+                if edge_x < work_area.left:
+                    # Not enough room on either side, use right side anyway
+                    edge_x = work_area.right - edge_width
+
+            # Ensure minimum height for usability
+            MIN_HEIGHT = 400
+            if app_height < MIN_HEIGHT:
+                app_height = MIN_HEIGHT
+
+            # Restore window if minimized
+            SW_RESTORE = 9
+            if user32.IsIconic(edge_hwnd):
+                user32.ShowWindow(edge_hwnd, SW_RESTORE)
+
+            # Position and resize Edge window
+            # SWP_NOZORDER (4) = Don't change Z-order
+            # SWP_NOACTIVATE (16) = Don't activate window
+            SWP_NOACTIVATE = 0x0010
+            user32.SetWindowPos(
+                edge_hwnd,
+                None,  # hWndInsertAfter
+                edge_x,
+                edge_y,
+                edge_width,
+                app_height,
+                SWP_NOACTIVATE
+            )
+
+            # Show window (not minimized, not activated)
+            SW_SHOWNOACTIVATE = 4
+            user32.ShowWindow(edge_hwnd, SW_SHOWNOACTIVATE)
+
+            logger.info("Edge positioned as side panel at (%d, %d) %dx%d",
+                        edge_x, edge_y, edge_width, app_height)
+            return True
+
+        except Exception as e:
+            logger.warning("Failed to position Edge as side panel: %s", e)
+            return False
+
+    def _apply_browser_display_mode(self, page_title: str = None) -> None:
+        """Apply browser display mode based on settings.
+
+        Args:
+            page_title: The current page title for exact matching
+        """
+        from yakulingo.config.settings import AppSettings
+        from pathlib import Path
+
+        # Load settings
+        settings_path = Path.home() / ".yakulingo" / "settings.json"
+        settings = AppSettings.load(settings_path)
+        mode = settings.browser_display_mode
+
+        if mode == "side_panel":
+            self._position_edge_as_side_panel(page_title)
+        elif mode == "foreground":
+            self._bring_edge_to_foreground_impl(page_title, reason="foreground display mode")
+        else:  # "minimized" (default)
+            self._minimize_edge_window(page_title)
+
     def _close_edge_gracefully(self, timeout: float = 0.5) -> bool:
         """Close Edge browser gracefully by sending WM_CLOSE message.
 
@@ -2273,20 +2456,34 @@ class CopilotHandler:
             return False
 
     def _send_to_background_impl(self, page) -> None:
-        """Hide or minimize the Edge window after translation completes.
+        """Apply browser display mode after translation completes.
 
         Note: We intentionally avoid calling page.title() or any Playwright
         methods here, as they can briefly bring the browser to the foreground
         due to the communication with the browser process.
+
+        Behavior depends on browser_display_mode setting:
+        - "minimized": Minimize Edge window (default)
+        - "side_panel": Keep Edge as side panel (no action needed)
+        - "foreground": Keep Edge in foreground (no action needed)
         """
         if sys.platform == "win32":
-            # Pass None for page_title - _find_edge_window_handle will use
-            # the Edge process ID to find the window handle instead.
-            self._minimize_edge_window(None)
+            from yakulingo.config.settings import AppSettings
+            from pathlib import Path
+
+            settings_path = Path.home() / ".yakulingo" / "settings.json"
+            settings = AppSettings.load(settings_path)
+            mode = settings.browser_display_mode
+
+            if mode == "minimized":
+                # Only minimize in minimized mode
+                self._minimize_edge_window(None)
+            # For side_panel and foreground modes, keep the window visible
+            logger.debug("Browser display mode: %s", mode)
         else:
             logger.debug("Background minimization not implemented for this platform")
 
-        logger.debug("Browser window returned to background after translation")
+        logger.debug("Browser window display mode applied after translation")
 
     def _is_edge_in_foreground(self) -> bool:
         """Check if Edge window is in foreground.
@@ -3567,7 +3764,8 @@ class CopilotHandler:
                         el.dispatchEvent(new Event('input', { bubbles: true }));
                         el.dispatchEvent(new Event('change', { bubbles: true }));
                     }''')
-                    time.sleep(0.1)
+                    # Reduced from 0.1s - fill() already waits for actionability
+                    time.sleep(0.02)
                     content = input_elem.inner_text()
                     fill_success = len(content.strip()) > 0
                     if fill_success:
@@ -3643,8 +3841,8 @@ class CopilotHandler:
                     raise RuntimeError("Copilotに入力できませんでした。Edgeブラウザを確認してください。")
 
                 # Wait for Copilot to process input and update internal React state
-                # Need to wait for UI to stabilize (button may be off-screen initially)
-                time.sleep(0.1)
+                # Reduced from 0.1s - button loop below handles stabilization
+                time.sleep(0.02)
 
                 # Wait for send button to become visible AND in viewport
                 send_button_start = time.time()
@@ -3732,7 +3930,8 @@ class CopilotHandler:
                     logger.debug("[SEND_WARMUP] Result: %s", warmup_result)
 
                     # Wait for UI to stabilize after scroll
-                    time.sleep(0.3)
+                    # Reduced from 0.3s - scrollIntoView uses 'instant' behavior
+                    time.sleep(0.05)
 
                 except Exception as warmup_err:
                     logger.debug("[SEND_WARMUP] Failed: %s", warmup_err)

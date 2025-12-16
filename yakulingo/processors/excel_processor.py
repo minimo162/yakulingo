@@ -202,6 +202,122 @@ def _is_recoverable_com_error(e: Exception) -> bool:
     )
 
 
+def _try_create_new_excel_instance(xw, max_attempts: int = 3):
+    """
+    Try to create a new isolated Excel instance using win32com.DispatchEx.
+
+    Unlike xw.App() which may connect to an existing Excel instance via ROT,
+    DispatchEx always creates a new process.
+
+    Args:
+        xw: xlwings module
+        max_attempts: Maximum number of creation attempts
+
+    Returns:
+        xlwings App instance with no pre-existing books, or None on failure
+
+    Note:
+        This function does NOT call quit() on any Excel instance to avoid
+        closing the user's manually opened Excel files.
+    """
+    try:
+        import win32com.client
+    except ImportError:
+        logger.warning("win32com not available - falling back to xw.App()")
+        # Fall back to simple retry with xw.App()
+        for attempt in range(max_attempts):
+            gc.collect()
+            _cleanup_com_before_retry()
+            time.sleep(0.3 * (attempt + 1))
+            try:
+                app = xw.App(visible=False, add_book=False)
+                if len(app.books) == 0:
+                    return app
+                del app
+            except Exception:
+                pass
+        return None
+
+    for attempt in range(max_attempts):
+        gc.collect()
+        _cleanup_com_before_retry()
+        time.sleep(0.2 * (attempt + 1))
+
+        excel_com = None
+        try:
+            # DispatchEx ALWAYS creates a new Excel process (not via ROT)
+            excel_com = win32com.client.DispatchEx("Excel.Application")
+            excel_com.Visible = False
+            excel_com.DisplayAlerts = False
+
+            # Get the Hwnd of this new Excel process for identification
+            new_hwnd = excel_com.Hwnd
+            logger.debug("Created new Excel via DispatchEx (Hwnd=%s)", new_hwnd)
+
+            # Find this instance in xlwings by matching Hwnd
+            # This is more reliable than xw.App() which may connect to a different instance
+            target_app = None
+            for xw_app in xw.apps:
+                try:
+                    # xlwings App has .hwnd property that matches Excel.Application.Hwnd
+                    if hasattr(xw_app, 'hwnd') and xw_app.hwnd == new_hwnd:
+                        target_app = xw_app
+                        logger.debug("Found xlwings App matching Hwnd=%s", new_hwnd)
+                        break
+                except Exception:
+                    continue
+
+            if target_app is not None:
+                # Verify this instance has no pre-existing books
+                if len(target_app.books) == 0:
+                    logger.info(
+                        "Created isolated Excel instance via DispatchEx (PID=%s, Hwnd=%s)",
+                        target_app.pid, new_hwnd
+                    )
+                    return target_app
+                else:
+                    logger.warning(
+                        "DispatchEx instance has books (count=%d), this is unexpected",
+                        len(target_app.books)
+                    )
+
+            # If we couldn't find it in xw.apps, try xw.App() as fallback
+            # but verify it's truly isolated
+            logger.debug("Hwnd not found in xw.apps, trying xw.App() fallback")
+            app = xw.App(visible=False, add_book=False)
+            if len(app.books) == 0:
+                logger.info(
+                    "Created isolated Excel instance via fallback (PID=%s)",
+                    app.pid
+                )
+                # Don't quit excel_com - it might be the same instance
+                return app
+            else:
+                logger.debug(
+                    "Attempt %d: xw.App() connected to existing Excel (PID=%s, books=%d)",
+                    attempt + 1, app.pid, len(app.books)
+                )
+                del app
+
+            # Clean up the DispatchEx COM object if we couldn't use it
+            try:
+                excel_com.Quit()
+            except Exception:
+                pass
+            excel_com = None
+
+        except Exception as e:
+            logger.debug("Attempt %d failed: %s", attempt + 1, e)
+            # Clean up on error
+            if excel_com is not None:
+                try:
+                    excel_com.Quit()
+                except Exception:
+                    pass
+
+    return None
+
+
 def _copy_sheet_with_retry(
     source_sheet,
     target_wb,
@@ -291,6 +407,42 @@ def _create_excel_app_with_retry(xw, max_retries: int = _EXCEL_RETRY_COUNT, retr
     for attempt in range(max_retries):
         try:
             app = xw.App(visible=False, add_book=False)
+            # Verify this is a truly isolated instance (no pre-existing books)
+            if len(app.books) > 0:
+                existing_books = len(app.books)
+                existing_pid = app.pid
+                # CRITICAL: Do NOT call app.quit() here - it would close user's Excel!
+                # Instead, just release this reference and try to create a new instance
+                logger.warning(
+                    "xlwings connected to existing Excel instance with %d books (PID=%s). "
+                    "Releasing reference and creating new instance...",
+                    existing_books, existing_pid
+                )
+                # Release the reference without closing the app
+                del app
+                # Force COM to release objects
+                gc.collect()
+                _cleanup_com_before_retry()
+                time.sleep(0.5)
+                # Try creating a new instance - if we still get the same one,
+                # we need to use win32com to force a new process
+                app = xw.App(visible=False, add_book=False)
+                if len(app.books) > 0:
+                    # Still connected to existing instance - try multiple attempts
+                    logger.warning(
+                        "Still connected to existing Excel (PID=%s). Attempting isolation...",
+                        app.pid
+                    )
+                    del app
+                    gc.collect()
+                    # Try to create a new isolated instance
+                    app = _try_create_new_excel_instance(xw)
+                    if app is None:
+                        raise RuntimeError(
+                            "既存のExcelインスタンスから分離できませんでした。\n"
+                            "開いているExcelファイルをすべて閉じてから再試行してください。"
+                        )
+            logger.debug("Created isolated Excel instance (PID=%s, books=%d)", app.pid, len(app.books))
             return app
         except Exception as e:
             last_error = e
@@ -318,6 +470,41 @@ def _create_excel_app_with_retry(xw, max_retries: int = _EXCEL_RETRY_COUNT, retr
     # All retries exhausted (shouldn't reach here)
     if last_error:
         raise last_error
+
+
+def _verify_workbook_path(wb, expected_path: Path, operation: str = "open") -> None:
+    """Verify that the opened workbook matches the expected path.
+
+    This is a critical safety check to prevent operating on wrong files
+    if xlwings accidentally connected to an existing Excel instance.
+
+    Args:
+        wb: xlwings Workbook object
+        expected_path: Expected file path
+        operation: Description of operation for error message
+
+    Raises:
+        RuntimeError: If paths don't match
+    """
+    try:
+        opened_path = Path(wb.fullname).resolve()
+        expected_resolved = Path(expected_path).resolve()
+
+        if opened_path != expected_resolved:
+            logger.error(
+                "SAFETY: Workbook path mismatch during %s! Expected: %s, Got: %s. "
+                "This may indicate xlwings connected to wrong Excel instance.",
+                operation, expected_resolved, opened_path
+            )
+            raise RuntimeError(
+                f"ワークブックパスの不一致を検出しました（{operation}）。"
+                f"期待: {expected_resolved}, 実際: {opened_path}。"
+                f"Excelが他のファイルを開いている可能性があります。"
+            )
+        logger.debug("Verified workbook path (%s): %s", operation, opened_path)
+    except AttributeError:
+        # wb.fullname not available (shouldn't happen with xlwings)
+        logger.warning("Could not verify workbook path - fullname attribute not available")
 
 
 # Excel sheet name forbidden characters: \ / ? * [ ] :
@@ -701,9 +888,12 @@ class ExcelProcessor(FileProcessor):
 
     def _get_file_info_xlwings(self, file_path: Path, xw) -> FileInfo:
         """Get file info using xlwings (fast: sheet names only, no cell scanning)"""
-        app = xw.App(visible=False, add_book=False)
+        # Use isolated app creation to prevent connecting to existing Excel instances
+        app = _create_excel_app_with_retry(xw)
         try:
             wb = app.books.open(str(file_path), ignore_read_only_recommended=True)
+            # SAFETY: Verify we opened the correct workbook (even for read-only)
+            _verify_workbook_path(wb, file_path, "get_file_info")
             try:
                 sheet_count = len(wb.sheets)
                 section_details = [
@@ -949,6 +1139,8 @@ class ExcelProcessor(FileProcessor):
             app = _create_excel_app_with_retry(xw)
             try:
                 wb = app.books.open(str(file_path), ignore_read_only_recommended=True)
+                # SAFETY: Verify we opened the correct workbook
+                _verify_workbook_path(wb, file_path, "extract_text_blocks")
                 try:
                     for sheet_idx, sheet in enumerate(wb.sheets):
                         sheet_name = sheet.name
@@ -1564,6 +1756,9 @@ class ExcelProcessor(FileProcessor):
                     logger.debug("Could not disable display alerts: %s", e)
 
                 wb = app.books.open(str(input_path), ignore_read_only_recommended=True)
+
+                # SAFETY: Verify we opened the correct workbook
+                _verify_workbook_path(wb, input_path, "apply_translations")
 
                 # Set calculation mode AFTER opening workbook (more reliable)
                 # Use Excel API directly with constant value
@@ -2182,6 +2377,10 @@ class ExcelProcessor(FileProcessor):
                 # Open source workbooks (track each for cleanup)
                 original_wb = app.books.open(str(original_path), ignore_read_only_recommended=True)
                 translated_wb = app.books.open(str(translated_path), ignore_read_only_recommended=True)
+
+                # SAFETY: Verify we opened the correct workbooks
+                _verify_workbook_path(original_wb, original_path, "bilingual_original")
+                _verify_workbook_path(translated_wb, translated_path, "bilingual_translated")
 
                 # Create new workbook for bilingual output
                 bilingual_wb = app.books.add()

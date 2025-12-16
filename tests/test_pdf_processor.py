@@ -3180,8 +3180,8 @@ class TestParagraphBoundaryConstants:
         assert SAME_PARA_Y_THRESHOLD == 20.0
 
     def test_word_space_x_threshold(self):
-        """WORD_SPACE_X_THRESHOLD should be 2.0pt"""
-        assert WORD_SPACE_X_THRESHOLD == 2.0
+        """WORD_SPACE_X_THRESHOLD should be 1.0pt (PDFMathTranslate compliant)"""
+        assert WORD_SPACE_X_THRESHOLD == 1.0
 
     def test_line_break_x_threshold(self):
         """LINE_BREAK_X_THRESHOLD should be 1.0pt"""
@@ -5058,3 +5058,407 @@ class TestTocLineEnding:
 
         for entry in toc_entries:
             assert is_toc_line_ending(entry) is True, f"Failed for: {entry}"
+
+
+# =============================================================================
+# yomitoku-style Functions Tests
+# =============================================================================
+
+class TestNoiseElementDetection:
+    """Tests for yomitoku-style noise element detection"""
+
+    def test_is_noise_element_small_width(self):
+        """Element with width < 32px should be noise (yomitoku threshold)"""
+        from yakulingo.processors.pdf_layout import is_noise_element
+
+        assert is_noise_element((0, 0, 10, 100)) is True  # width=10
+        assert is_noise_element((0, 0, 31, 100)) is True  # width=31
+
+    def test_is_noise_element_small_height(self):
+        """Element with height < 32px should be noise (yomitoku threshold)"""
+        from yakulingo.processors.pdf_layout import is_noise_element
+
+        assert is_noise_element((0, 0, 100, 10)) is True  # height=10
+        assert is_noise_element((0, 0, 100, 31)) is True  # height=31
+
+    def test_is_noise_element_valid_element(self):
+        """Element with width and height >= 32px should not be noise (yomitoku threshold)"""
+        from yakulingo.processors.pdf_layout import is_noise_element
+
+        # 32x32 is the minimum size (yomitoku reference)
+        assert is_noise_element((0, 0, 32, 32)) is False
+        assert is_noise_element((0, 0, 100, 100)) is False
+        # 31x31 is still noise (below threshold)
+        assert is_noise_element((0, 0, 31, 31)) is True
+
+    def test_is_noise_element_custom_threshold(self):
+        """Test with custom size threshold"""
+        from yakulingo.processors.pdf_layout import is_noise_element
+
+        assert is_noise_element((0, 0, 20, 20), min_size=25) is True
+        assert is_noise_element((0, 0, 30, 30), min_size=25) is False
+
+    def test_is_noise_element_invalid_box(self):
+        """Invalid box should be treated as noise"""
+        from yakulingo.processors.pdf_layout import is_noise_element
+
+        assert is_noise_element((0, 0, 0)) is True  # Too few elements
+        assert is_noise_element(()) is True  # Empty
+
+
+class TestFilterNoiseElements:
+    """Tests for filter_noise_elements function"""
+
+    def test_filter_removes_small_elements(self):
+        """Small elements should be filtered out"""
+        from yakulingo.processors.pdf_layout import filter_noise_elements
+
+        elements = [
+            {'box': [0, 0, 10, 10]},   # Small - should be removed
+            {'box': [0, 0, 100, 100]}, # Large - should remain
+            {'box': [0, 0, 5, 200]},   # Narrow - should be removed
+        ]
+
+        result = filter_noise_elements(elements)
+        assert len(result) == 1
+        assert result[0]['box'] == [0, 0, 100, 100]
+
+    def test_filter_keeps_valid_elements(self):
+        """All valid elements should remain"""
+        from yakulingo.processors.pdf_layout import filter_noise_elements
+
+        elements = [
+            {'box': [0, 0, 50, 50]},
+            {'box': [100, 100, 200, 200]},
+        ]
+
+        result = filter_noise_elements(elements)
+        assert len(result) == 2
+
+    def test_filter_empty_list(self):
+        """Empty list should return empty"""
+        from yakulingo.processors.pdf_layout import filter_noise_elements
+
+        assert filter_noise_elements([]) == []
+
+
+class TestHeaderFooterDetection:
+    """Tests for yomitoku-style header/footer detection by position"""
+
+    def test_detect_header(self):
+        """Elements in top 5% should be detected as headers"""
+        from yakulingo.processors.pdf_layout import detect_header_footer_by_position
+
+        page_height = 1000.0
+        elements = [
+            {'box': [0, 10, 100, 30]},    # In header region (center_y=20)
+            {'box': [0, 500, 100, 600]},  # In body
+        ]
+
+        headers, body, footers = detect_header_footer_by_position(elements, page_height)
+        assert len(headers) == 1
+        assert len(body) == 1
+        assert len(footers) == 0
+
+    def test_detect_footer(self):
+        """Elements in bottom 5% should be detected as footers"""
+        from yakulingo.processors.pdf_layout import detect_header_footer_by_position
+
+        page_height = 1000.0
+        elements = [
+            {'box': [0, 960, 100, 990]},  # In footer region (center_y=975)
+            {'box': [0, 500, 100, 600]},  # In body
+        ]
+
+        headers, body, footers = detect_header_footer_by_position(elements, page_height)
+        assert len(headers) == 0
+        assert len(body) == 1
+        assert len(footers) == 1
+
+    def test_detect_all_body(self):
+        """Elements in middle region should all be body"""
+        from yakulingo.processors.pdf_layout import detect_header_footer_by_position
+
+        page_height = 1000.0
+        elements = [
+            {'box': [0, 100, 100, 200]},
+            {'box': [0, 300, 100, 400]},
+            {'box': [0, 600, 100, 700]},
+        ]
+
+        headers, body, footers = detect_header_footer_by_position(elements, page_height)
+        assert len(headers) == 0
+        assert len(body) == 3
+        assert len(footers) == 0
+
+    def test_custom_header_footer_ratio(self):
+        """Test with custom header/footer ratio"""
+        from yakulingo.processors.pdf_layout import detect_header_footer_by_position
+
+        page_height = 1000.0
+        elements = [
+            {'box': [0, 80, 100, 120]},  # center_y=100, in header with 15% ratio
+        ]
+
+        # With 15% header ratio, elements with center_y < 150 are headers
+        headers, body, footers = detect_header_footer_by_position(
+            elements, page_height, header_ratio=0.15
+        )
+        assert len(headers) == 1
+
+
+class TestAreaBasedDirectionDetection:
+    """Tests for yomitoku-style area-based page direction detection"""
+
+    def test_horizontal_text_by_area(self):
+        """Document with mostly horizontal elements should return TOP_TO_BOTTOM"""
+        from yakulingo.processors.pdf_layout import (
+            detect_reading_direction_by_area,
+            ReadingDirection,
+            LayoutArray,
+        )
+        import numpy as np
+
+        layout = LayoutArray(
+            array=np.zeros((100, 100)),
+            height=100,
+            width=100,
+            paragraphs={
+                1: {'box': [0, 0, 200, 50]},   # Horizontal: width=200, height=50
+                2: {'box': [0, 60, 150, 100]},  # Horizontal: width=150, height=40
+            }
+        )
+
+        direction = detect_reading_direction_by_area(layout)
+        assert direction == ReadingDirection.TOP_TO_BOTTOM
+
+    def test_vertical_text_by_area(self):
+        """Document with mostly vertical elements should return RIGHT_TO_LEFT"""
+        from yakulingo.processors.pdf_layout import (
+            detect_reading_direction_by_area,
+            ReadingDirection,
+            LayoutArray,
+        )
+        import numpy as np
+
+        layout = LayoutArray(
+            array=np.zeros((100, 100)),
+            height=100,
+            width=100,
+            paragraphs={
+                1: {'box': [0, 0, 30, 200]},   # Vertical: width=30, height=200
+                2: {'box': [40, 0, 70, 180]},  # Vertical: width=30, height=180
+            }
+        )
+
+        direction = detect_reading_direction_by_area(layout)
+        assert direction == ReadingDirection.RIGHT_TO_LEFT
+
+    def test_empty_layout_returns_default(self):
+        """Empty layout should return default direction"""
+        from yakulingo.processors.pdf_layout import (
+            detect_reading_direction_by_area,
+            ReadingDirection,
+            LayoutArray,
+        )
+        import numpy as np
+
+        layout = LayoutArray(
+            array=np.zeros((100, 100)),
+            height=100,
+            width=100,
+        )
+
+        direction = detect_reading_direction_by_area(layout)
+        assert direction == ReadingDirection.TOP_TO_BOTTOM
+
+
+class TestOverlapRatio:
+    """Tests for yomitoku-style overlap ratio calculation"""
+
+    def test_full_overlap(self):
+        """Box fully contained should have ratio 1.0"""
+        from yakulingo.processors.pdf_layout import calc_overlap_ratio
+
+        box1 = (25, 25, 75, 75)  # Inner box
+        box2 = (0, 0, 100, 100)  # Outer box
+
+        ratio = calc_overlap_ratio(box1, box2)
+        assert ratio == 1.0
+
+    def test_no_overlap(self):
+        """Non-overlapping boxes should have ratio 0.0"""
+        from yakulingo.processors.pdf_layout import calc_overlap_ratio
+
+        box1 = (0, 0, 50, 50)
+        box2 = (100, 100, 200, 200)
+
+        ratio = calc_overlap_ratio(box1, box2)
+        assert ratio == 0.0
+
+    def test_partial_overlap(self):
+        """Partially overlapping boxes should have ratio between 0 and 1"""
+        from yakulingo.processors.pdf_layout import calc_overlap_ratio
+
+        box1 = (0, 0, 100, 100)   # Area = 10000
+        box2 = (50, 50, 150, 150)  # Intersection: (50,50,100,100) = 2500
+
+        ratio = calc_overlap_ratio(box1, box2)
+        assert abs(ratio - 0.25) < 0.001  # 2500/10000 = 0.25
+
+    def test_zero_area_box(self):
+        """Box with zero area should return 0.0"""
+        from yakulingo.processors.pdf_layout import calc_overlap_ratio
+
+        box1 = (0, 0, 0, 100)  # Zero width
+        box2 = (0, 0, 100, 100)
+
+        ratio = calc_overlap_ratio(box1, box2)
+        assert ratio == 0.0
+
+
+class TestElementContainment:
+    """Tests for is_element_contained function"""
+
+    def test_contained_element(self):
+        """Element fully inside should be contained"""
+        from yakulingo.processors.pdf_layout import is_element_contained
+
+        inner = (25, 25, 75, 75)
+        outer = (0, 0, 100, 100)
+
+        assert is_element_contained(inner, outer) is True
+
+    def test_not_contained_element(self):
+        """Element mostly outside should not be contained"""
+        from yakulingo.processors.pdf_layout import is_element_contained
+
+        inner = (80, 80, 180, 180)  # Mostly outside
+        outer = (0, 0, 100, 100)
+
+        # Overlap is only 20x20=400, inner area is 10000
+        # Ratio = 0.04, which is < 0.5 threshold
+        assert is_element_contained(inner, outer) is False
+
+    def test_custom_threshold(self):
+        """Test with custom threshold"""
+        from yakulingo.processors.pdf_layout import is_element_contained
+
+        inner = (0, 0, 100, 100)
+        outer = (50, 50, 150, 150)
+
+        # Overlap ratio is 0.25
+        assert is_element_contained(inner, outer, threshold=0.2) is True
+        assert is_element_contained(inner, outer, threshold=0.3) is False
+
+
+class TestIntersectedFunctions:
+    """Tests for yomitoku-style intersection functions"""
+
+    def test_is_intersected_horizontal_full_overlap(self):
+        """Elements with significant horizontal overlap"""
+        from yakulingo.processors.pdf_layout import is_intersected_horizontal
+
+        box1 = (0, 0, 100, 50)
+        box2 = (0, 50, 100, 100)
+
+        # Horizontal ranges are identical (0-100), overlap ratio = 1.0
+        assert is_intersected_horizontal(box1, box2) is True
+
+    def test_is_intersected_horizontal_partial_overlap(self):
+        """Elements with partial horizontal overlap"""
+        from yakulingo.processors.pdf_layout import is_intersected_horizontal
+
+        box1 = (0, 0, 100, 50)
+        box2 = (40, 50, 140, 100)
+
+        # Overlap: 40-100 = 60, min width = 100, ratio = 0.6 > 0.5
+        assert is_intersected_horizontal(box1, box2) is True
+
+    def test_is_intersected_horizontal_no_overlap(self):
+        """Elements with no horizontal overlap"""
+        from yakulingo.processors.pdf_layout import is_intersected_horizontal
+
+        box1 = (0, 0, 100, 50)
+        box2 = (150, 50, 250, 100)
+
+        # No horizontal overlap
+        assert is_intersected_horizontal(box1, box2) is False
+
+    def test_is_intersected_horizontal_custom_threshold(self):
+        """Test with custom threshold"""
+        from yakulingo.processors.pdf_layout import is_intersected_horizontal
+
+        box1 = (0, 0, 100, 50)
+        box2 = (70, 50, 170, 100)
+
+        # Overlap: 70-100 = 30, min width = 100, ratio = 0.3
+        assert is_intersected_horizontal(box1, box2, threshold=0.2) is True
+        assert is_intersected_horizontal(box1, box2, threshold=0.4) is False
+
+    def test_is_intersected_vertical_full_overlap(self):
+        """Elements with significant vertical overlap"""
+        from yakulingo.processors.pdf_layout import is_intersected_vertical
+
+        box1 = (0, 0, 50, 100)
+        box2 = (50, 0, 100, 100)
+
+        # Vertical ranges are identical (0-100), overlap ratio = 1.0
+        assert is_intersected_vertical(box1, box2) is True
+
+    def test_is_intersected_vertical_partial_overlap(self):
+        """Elements with partial vertical overlap"""
+        from yakulingo.processors.pdf_layout import is_intersected_vertical
+
+        box1 = (0, 0, 50, 100)
+        box2 = (50, 40, 100, 140)
+
+        # Overlap: 40-100 = 60, min height = 100, ratio = 0.6 > 0.5
+        assert is_intersected_vertical(box1, box2) is True
+
+    def test_is_intersected_vertical_no_overlap(self):
+        """Elements with no vertical overlap"""
+        from yakulingo.processors.pdf_layout import is_intersected_vertical
+
+        box1 = (0, 0, 50, 100)
+        box2 = (50, 150, 100, 250)
+
+        # No vertical overlap
+        assert is_intersected_vertical(box1, box2) is False
+
+    def test_is_intersected_vertical_custom_threshold(self):
+        """Test with custom threshold"""
+        from yakulingo.processors.pdf_layout import is_intersected_vertical
+
+        box1 = (0, 0, 50, 100)
+        box2 = (50, 70, 100, 170)
+
+        # Overlap: 70-100 = 30, min height = 100, ratio = 0.3
+        assert is_intersected_vertical(box1, box2, threshold=0.2) is True
+        assert is_intersected_vertical(box1, box2, threshold=0.4) is False
+
+
+class TestMarkHeaderFooterInLayout:
+    """Tests for mark_header_footer_in_layout function"""
+
+    def test_marks_headers_and_footers(self):
+        """Should mark elements in header/footer regions"""
+        from yakulingo.processors.pdf_layout import mark_header_footer_in_layout, LayoutArray
+        import numpy as np
+
+        layout = LayoutArray(
+            array=np.zeros((1000, 100)),
+            height=1000,
+            width=100,
+            paragraphs={
+                1: {'box': [0, 20, 100, 40]},    # Header region
+                2: {'box': [0, 500, 100, 600]},  # Body
+                3: {'box': [0, 960, 100, 980]},  # Footer region
+            }
+        )
+
+        result = mark_header_footer_in_layout(layout, page_height=1000)
+
+        assert result.paragraphs[1].get('role') == 'header'
+        assert 'role' not in result.paragraphs[2] or result.paragraphs[2].get('role') is None
+        assert result.paragraphs[3].get('role') == 'footer'

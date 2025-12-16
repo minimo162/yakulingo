@@ -150,6 +150,37 @@ LAYOUT_SKIP_LABELS = {
     "formula", "formula_number",
 }
 
+# =============================================================================
+# yomitoku-style Noise/Header/Footer Detection Constants
+# =============================================================================
+# Based on yomitoku's approach to filtering small elements and detecting
+# page structure components like headers and footers.
+# https://github.com/kotaro-kinoshita/yomitoku
+
+# Noise element detection (yomitoku reference)
+# Elements smaller than this size (in pixels) are considered noise
+# yomitoku uses image_min_size=32 in constants.py
+# NOTE: At 300 DPI, 32px ≈ 2.7pt, which filters very small artifacts
+NOISE_MIN_SIZE_PX = 32
+
+# Image size warning threshold (yomitoku reference)
+# Images smaller than this may have reduced OCR accuracy
+# yomitoku uses 720px as the warning threshold
+IMAGE_WARNING_SIZE_PX = 720
+
+# Header/Footer position-based detection
+# Elements in the top/bottom N% of the page are potential headers/footers
+HEADER_FOOTER_RATIO = 0.05  # 5% of page height
+
+# Overlap ratio thresholds (yomitoku reference)
+# Different thresholds for different purposes:
+# - is_contained(): Use 0.8 to determine if box1 is contained in box2
+# - is_intersected(): Use 0.5 to determine if boxes overlap significantly
+ELEMENT_CONTAINMENT_THRESHOLD = 0.8  # For containment (is_contained)
+ELEMENT_INTERSECTION_THRESHOLD = 0.5  # For intersection (is_intersected)
+# Default overlap threshold (backward compatibility)
+ELEMENT_OVERLAP_THRESHOLD = 0.5
+
 
 # =============================================================================
 # Model Cache (Thread-safe)
@@ -3341,3 +3372,503 @@ def get_table_dimensions(table_cells: list[dict]) -> tuple[int, int]:
         max_col = max(max_col, col + col_span)
 
     return (max_row, max_col)
+
+
+# =============================================================================
+# yomitoku-style Noise Detection and Filtering
+# =============================================================================
+#
+# Functions for detecting and filtering noise elements (small artifacts)
+# based on yomitoku's approach.
+# https://github.com/kotaro-kinoshita/yomitoku
+
+def is_noise_element(
+    box: tuple[float, float, float, float],
+    min_size: float = NOISE_MIN_SIZE_PX,
+) -> bool:
+    """
+    Check if an element is noise (too small to be meaningful text).
+
+    Based on yomitoku's is_noise function which filters elements
+    smaller than 15 pixels in width or height.
+
+    Args:
+        box: Element bounding box (x0, y0, x1, y1) in image coordinates
+        min_size: Minimum size threshold in pixels (default: 15)
+
+    Returns:
+        True if the element is considered noise (should be filtered out)
+
+    Example:
+        if is_noise_element((10, 20, 15, 25)):
+            # Skip this element - it's too small
+            continue
+    """
+    if len(box) < 4:
+        return True
+
+    x0, y0, x1, y1 = box
+    width = abs(x1 - x0)
+    height = abs(y1 - y0)
+
+    return width < min_size or height < min_size
+
+
+def filter_noise_elements(
+    elements: list[dict],
+    min_size: float = NOISE_MIN_SIZE_PX,
+    box_key: str = 'box',
+) -> list[dict]:
+    """
+    Filter out noise elements from a list of detected elements.
+
+    Based on yomitoku's approach to filtering small artifacts
+    that are unlikely to be meaningful text.
+
+    Args:
+        elements: List of element dictionaries with bounding boxes
+        min_size: Minimum size threshold in pixels
+        box_key: Key to access the bounding box in each element dict
+
+    Returns:
+        Filtered list with noise elements removed
+
+    Example:
+        paragraphs = filter_noise_elements(detected_paragraphs)
+    """
+    if not elements:
+        return []
+
+    filtered = []
+    noise_count = 0
+
+    for elem in elements:
+        box = elem.get(box_key, [])
+        if len(box) >= 4 and not is_noise_element(tuple(box), min_size):
+            filtered.append(elem)
+        else:
+            noise_count += 1
+
+    if noise_count > 0:
+        logger.debug(
+            "Filtered %d noise elements (< %dpx), %d remaining",
+            noise_count, min_size, len(filtered)
+        )
+
+    return filtered
+
+
+# =============================================================================
+# yomitoku-style Header/Footer Detection
+# =============================================================================
+#
+# Position-based detection of headers and footers as a fallback when
+# PP-DocLayout-L doesn't detect them explicitly.
+# https://github.com/kotaro-kinoshita/yomitoku
+
+def detect_header_footer_by_position(
+    elements: list[dict],
+    page_height: float,
+    header_ratio: float = HEADER_FOOTER_RATIO,
+    footer_ratio: float = HEADER_FOOTER_RATIO,
+    box_key: str = 'box',
+) -> tuple[list[dict], list[dict], list[dict]]:
+    """
+    Detect headers and footers based on vertical position on the page.
+
+    Elements in the top N% of the page are classified as headers,
+    elements in the bottom N% are classified as footers.
+    Remaining elements are classified as body content.
+
+    This is a fallback for when PP-DocLayout-L doesn't explicitly
+    detect header/footer regions.
+
+    Args:
+        elements: List of element dictionaries with bounding boxes
+        page_height: Page height in image coordinates (pixels)
+        header_ratio: Ratio of page height for header region (default: 0.05 = 5%)
+        footer_ratio: Ratio of page height for footer region (default: 0.05 = 5%)
+        box_key: Key to access the bounding box in each element dict
+
+    Returns:
+        Tuple of (headers, body, footers) - each is a list of element dicts
+
+    Example:
+        headers, body, footers = detect_header_footer_by_position(
+            paragraphs, page_height=3508
+        )
+    """
+    if not elements or page_height <= 0:
+        return [], elements, []
+
+    header_threshold = page_height * header_ratio
+    footer_threshold = page_height * (1.0 - footer_ratio)
+
+    headers = []
+    body = []
+    footers = []
+
+    for elem in elements:
+        box = elem.get(box_key, [])
+        if len(box) < 4:
+            body.append(elem)
+            continue
+
+        # Use center Y position for classification
+        y0, y1 = box[1], box[3]
+        center_y = (y0 + y1) / 2
+
+        if center_y < header_threshold:
+            headers.append(elem)
+        elif center_y > footer_threshold:
+            footers.append(elem)
+        else:
+            body.append(elem)
+
+    if headers or footers:
+        logger.debug(
+            "Position-based header/footer detection: %d headers, %d body, %d footers",
+            len(headers), len(body), len(footers)
+        )
+
+    return headers, body, footers
+
+
+def mark_header_footer_in_layout(
+    layout: LayoutArray,
+    page_height: float,
+    header_ratio: float = HEADER_FOOTER_RATIO,
+    footer_ratio: float = HEADER_FOOTER_RATIO,
+) -> LayoutArray:
+    """
+    Mark header/footer regions in a LayoutArray based on position.
+
+    Updates paragraph and table info to mark elements in header/footer
+    regions, which can then be used to adjust reading order or skip
+    these elements during translation.
+
+    Args:
+        layout: LayoutArray to update
+        page_height: Page height in image coordinates
+        header_ratio: Ratio of page height for header region
+        footer_ratio: Ratio of page height for footer region
+
+    Returns:
+        Updated LayoutArray (modified in place)
+    """
+    if layout is None or page_height <= 0:
+        return layout
+
+    header_threshold = page_height * header_ratio
+    footer_threshold = page_height * (1.0 - footer_ratio)
+
+    # Mark paragraphs
+    for para_id, para_info in layout.paragraphs.items():
+        box = para_info.get('box', [])
+        if len(box) >= 4:
+            center_y = (box[1] + box[3]) / 2
+            if center_y < header_threshold:
+                para_info['role'] = 'header'
+            elif center_y > footer_threshold:
+                para_info['role'] = 'footer'
+            # Don't override existing role if not header/footer
+
+    # Mark tables (though tables are rarely headers/footers)
+    for table_id, table_info in layout.tables.items():
+        box = table_info.get('box', [])
+        if len(box) >= 4:
+            center_y = (box[1] + box[3]) / 2
+            if center_y < header_threshold:
+                table_info['role'] = 'header'
+            elif center_y > footer_threshold:
+                table_info['role'] = 'footer'
+
+    return layout
+
+
+# =============================================================================
+# yomitoku-style Area-Based Page Direction Detection
+# =============================================================================
+#
+# Enhanced page direction detection using area-weighted voting instead
+# of simple element counting.
+# https://github.com/kotaro-kinoshita/yomitoku
+
+def detect_reading_direction_by_area(
+    layout: LayoutArray,
+    page_height: float = 0,
+    page_width: float = 0,
+    vertical_threshold: float = VERTICAL_TEXT_ASPECT_RATIO_THRESHOLD,
+    area_ratio_threshold: float = VERTICAL_TEXT_COLUMN_THRESHOLD,
+) -> ReadingDirection:
+    """
+    Detect reading direction using area-weighted voting (yomitoku-style).
+
+    Instead of counting elements, this function sums the area of
+    vertical vs horizontal elements to determine the dominant direction.
+    This is more robust for documents with mixed element sizes.
+
+    Based on yomitoku's judge_page_direction function which uses
+    area-based voting.
+
+    Algorithm:
+    1. Calculate area of each text element
+    2. Classify elements as vertical (height/width > threshold) or horizontal
+    3. Sum areas for each category
+    4. If vertical area >= threshold of total area, use vertical direction
+
+    Args:
+        layout: LayoutArray containing paragraphs and tables info
+        page_height: Page height in points (for coordinate conversion)
+        page_width: Page width in points (optional)
+        vertical_threshold: Aspect ratio threshold for vertical text (default: 2.0)
+        area_ratio_threshold: Ratio of vertical area to trigger vertical mode (default: 0.7)
+
+    Returns:
+        ReadingDirection.RIGHT_TO_LEFT for vertical text
+        ReadingDirection.TOP_TO_BOTTOM for horizontal text
+
+    Example:
+        direction = detect_reading_direction_by_area(layout, page_height)
+        # More reliable than detect_reading_direction for mixed-size documents
+    """
+    if layout is None:
+        return ReadingDirection.TOP_TO_BOTTOM
+
+    vertical_area = 0.0
+    horizontal_area = 0.0
+
+    # Analyze paragraph areas
+    for para_id, para_info in layout.paragraphs.items():
+        box = para_info.get('box', [])
+        if len(box) >= 4:
+            width = abs(box[2] - box[0])
+            height = abs(box[3] - box[1])
+
+            if width > 0 and height > 0:
+                area = width * height
+                aspect_ratio = height / width
+
+                if aspect_ratio > vertical_threshold:
+                    vertical_area += area
+                else:
+                    horizontal_area += area
+
+    # Also consider table areas (less weight since tables are typically horizontal)
+    for table_id, table_info in layout.tables.items():
+        box = table_info.get('box', [])
+        if len(box) >= 4:
+            width = abs(box[2] - box[0])
+            height = abs(box[3] - box[1])
+
+            if width > 0 and height > 0:
+                area = width * height
+                aspect_ratio = height / width
+
+                if aspect_ratio > vertical_threshold:
+                    vertical_area += area
+                else:
+                    horizontal_area += area
+
+    total_area = vertical_area + horizontal_area
+
+    if total_area <= 0:
+        return ReadingDirection.TOP_TO_BOTTOM
+
+    # Calculate vertical area ratio
+    vertical_ratio = vertical_area / total_area
+
+    if vertical_ratio >= area_ratio_threshold:
+        logger.debug(
+            "Vertical text detected by area: %.1f%% vertical (threshold: %.1f%%)",
+            vertical_ratio * 100, area_ratio_threshold * 100
+        )
+        return ReadingDirection.RIGHT_TO_LEFT
+
+    logger.debug(
+        "Horizontal text detected by area: %.1f%% vertical (threshold: %.1f%%)",
+        vertical_ratio * 100, area_ratio_threshold * 100
+    )
+    return ReadingDirection.TOP_TO_BOTTOM
+
+
+def estimate_reading_order_by_area(
+    layout: LayoutArray,
+    page_height: float = 0,
+    page_width: float = 0,
+) -> dict[int, int]:
+    """
+    Estimate reading order with area-based direction detection.
+
+    Combines area-based direction detection with reading order estimation
+    for more robust results on documents with mixed element sizes.
+
+    Args:
+        layout: LayoutArray containing paragraphs and tables info
+        page_height: Page height in points
+        page_width: Page width in points (optional)
+
+    Returns:
+        Dictionary mapping element id to reading order (0-based)
+    """
+    direction = detect_reading_direction_by_area(layout, page_height, page_width)
+    return estimate_reading_order(layout, page_height, direction)
+
+
+# =============================================================================
+# yomitoku-style Element Overlap Calculation
+# =============================================================================
+
+def calc_overlap_ratio(
+    box1: tuple[float, float, float, float],
+    box2: tuple[float, float, float, float],
+) -> float:
+    """
+    Calculate the overlap ratio of box1 with respect to box2.
+
+    Based on yomitoku's calc_overlap_ratio function which is used
+    to determine element containment.
+
+    The ratio is calculated as:
+    (intersection area) / (box1 area)
+
+    A ratio of 1.0 means box1 is fully contained in box2.
+    A ratio of 0.5 means 50% of box1 overlaps with box2.
+
+    Args:
+        box1: First bounding box (x0, y0, x1, y1)
+        box2: Second bounding box (x0, y0, x1, y1)
+
+    Returns:
+        Overlap ratio from 0.0 to 1.0
+
+    Example:
+        if calc_overlap_ratio(word_box, paragraph_box) > 0.5:
+            # Word belongs to this paragraph
+            paragraph.add_word(word)
+    """
+    # Unpack boxes
+    x0_1, y0_1, x1_1, y1_1 = box1
+    x0_2, y0_2, x1_2, y1_2 = box2
+
+    # Calculate intersection
+    x0_i = max(x0_1, x0_2)
+    y0_i = max(y0_1, y0_2)
+    x1_i = min(x1_1, x1_2)
+    y1_i = min(y1_1, y1_2)
+
+    # Check if there's any intersection
+    if x0_i >= x1_i or y0_i >= y1_i:
+        return 0.0
+
+    intersection_area = (x1_i - x0_i) * (y1_i - y0_i)
+
+    # Calculate box1 area
+    box1_area = abs(x1_1 - x0_1) * abs(y1_1 - y0_1)
+
+    if box1_area <= 0:
+        return 0.0
+
+    return intersection_area / box1_area
+
+
+def is_element_contained(
+    inner_box: tuple[float, float, float, float],
+    outer_box: tuple[float, float, float, float],
+    threshold: float = ELEMENT_CONTAINMENT_THRESHOLD,
+) -> bool:
+    """
+    Check if an element is contained within another element.
+
+    Based on yomitoku's is_contained() function which uses 0.8 threshold
+    to determine if a box is contained within another.
+
+    Args:
+        inner_box: Bounding box of the potentially contained element
+        outer_box: Bounding box of the container element
+        threshold: Minimum overlap ratio for containment (default: 0.8)
+
+    Returns:
+        True if inner_box is contained in outer_box
+
+    Example:
+        if is_element_contained(word_box, paragraph_box):
+            paragraph.add_word(word)
+    """
+    return calc_overlap_ratio(inner_box, outer_box) >= threshold
+
+
+def is_intersected_horizontal(
+    box1: tuple[float, float, float, float],
+    box2: tuple[float, float, float, float],
+    threshold: float = ELEMENT_INTERSECTION_THRESHOLD,
+) -> bool:
+    """
+    Check if two elements intersect horizontally (yomitoku-style).
+
+    Based on yomitoku's is_intersected_horizontal() function.
+    Returns True if the horizontal overlap is at least threshold * min_width.
+
+    Args:
+        box1: First bounding box (x0, y0, x1, y1)
+        box2: Second bounding box (x0, y0, x1, y1)
+        threshold: Minimum overlap ratio (default: 0.5)
+
+    Returns:
+        True if boxes have significant horizontal overlap
+    """
+    x0_1, _, x1_1, _ = box1
+    x0_2, _, x1_2, _ = box2
+
+    # Calculate intersection
+    left = max(x0_1, x0_2)
+    right = min(x1_1, x1_2)
+
+    if left >= right:
+        return False
+
+    intersection_width = right - left
+    min_width = min(x1_1 - x0_1, x1_2 - x0_2)
+
+    if min_width <= 0:
+        return False
+
+    return intersection_width >= threshold * min_width
+
+
+def is_intersected_vertical(
+    box1: tuple[float, float, float, float],
+    box2: tuple[float, float, float, float],
+    threshold: float = ELEMENT_INTERSECTION_THRESHOLD,
+) -> bool:
+    """
+    Check if two elements intersect vertically (yomitoku-style).
+
+    Based on yomitoku's is_intersected_vertical() function.
+    Returns True if the vertical overlap is at least threshold * min_height.
+
+    Args:
+        box1: First bounding box (x0, y0, x1, y1)
+        box2: Second bounding box (x0, y0, x1, y1)
+        threshold: Minimum overlap ratio (default: 0.5)
+
+    Returns:
+        True if boxes have significant vertical overlap
+    """
+    _, y0_1, _, y1_1 = box1
+    _, y0_2, _, y1_2 = box2
+
+    # Calculate intersection
+    top = max(y0_1, y0_2)
+    bottom = min(y1_1, y1_2)
+
+    if top >= bottom:
+        return False
+
+    intersection_height = bottom - top
+    min_height = min(y1_1 - y0_1, y1_2 - y0_2)
+
+    if min_height <= 0:
+        return False
+
+    return intersection_height >= threshold * min_height

@@ -90,6 +90,10 @@ from .pdf_layout import (
     # Constants
     LAYOUT_ABANDON, LAYOUT_BACKGROUND, LAYOUT_PARAGRAPH_BASE, LAYOUT_TABLE_BASE,
     LAYOUT_TRANSLATE_LABELS, LAYOUT_SKIP_LABELS,
+    # yomitoku-style constants
+    NOISE_MIN_SIZE_PX, HEADER_FOOTER_RATIO, ELEMENT_OVERLAP_THRESHOLD,
+    ELEMENT_CONTAINMENT_THRESHOLD, ELEMENT_INTERSECTION_THRESHOLD,
+    IMAGE_WARNING_SIZE_PX,
     # Classes
     LayoutArray, ReadingDirection,
     # Functions
@@ -106,6 +110,12 @@ from .pdf_layout import (
     # yomitoku-style additions
     detect_reading_direction, estimate_reading_order_auto,
     apply_reading_order_to_layout_auto,
+    # yomitoku-style noise/header/footer detection
+    is_noise_element, filter_noise_elements,
+    detect_header_footer_by_position, mark_header_footer_in_layout,
+    detect_reading_direction_by_area, estimate_reading_order_by_area,
+    calc_overlap_ratio, is_element_contained,
+    is_intersected_horizontal, is_intersected_vertical,
     _get_numpy, _get_paddleocr, _get_torch,
 )
 
@@ -156,7 +166,7 @@ _RE_TABLE_ADDRESS = re.compile(r"T(\d+)_")
 ALIGNMENT_TOLERANCE = 5.0  # Tolerance in points for alignment detection
 
 # Vertical text detection constants
-VERTICAL_TEXT_ASPECT_RATIO = 1.5  # height/width > 1.5 suggests vertical text for single block
+VERTICAL_TEXT_ASPECT_RATIO = 2.0  # height/width > 2.0 suggests vertical text (yomitoku: thresh_aspect=2)
 
 # Box expansion constants
 # MAX_EXPANSION_RATIO limits how much a text box can expand relative to original size.

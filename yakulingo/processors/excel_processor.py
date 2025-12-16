@@ -291,6 +291,22 @@ def _create_excel_app_with_retry(xw, max_retries: int = _EXCEL_RETRY_COUNT, retr
     for attempt in range(max_retries):
         try:
             app = xw.App(visible=False, add_book=False)
+            # Verify this is a truly isolated instance (no pre-existing books)
+            if len(app.books) > 0:
+                logger.warning(
+                    "xlwings connected to existing Excel instance with %d books (PID=%s). "
+                    "Closing and retrying with fresh instance...",
+                    len(app.books), app.pid
+                )
+                try:
+                    app.quit()
+                except Exception:
+                    pass
+                # Force a fresh instance by cleaning up COM
+                _cleanup_com_before_retry()
+                time.sleep(0.5)
+                app = xw.App(visible=False, add_book=False)
+            logger.debug("Created isolated Excel instance (PID=%s, books=%d)", app.pid, len(app.books))
             return app
         except Exception as e:
             last_error = e

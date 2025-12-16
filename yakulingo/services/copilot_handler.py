@@ -4327,10 +4327,9 @@ class CopilotHandler:
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, self._send_message, message)
 
-    # JavaScript to extract text with list numbers preserved
-    # inner_text() doesn't include CSS-generated list markers, so we need to
-    # manually add them back for <ol> lists
-    # Uses innerHTML + HTML entity decoding to preserve <> brackets
+    # JavaScript to extract text with list numbers preserved and <> brackets intact
+    # - Uses innerHTML + HTML entity decoding to preserve <> brackets (Copilot escapes as &lt; &gt;)
+    # - Falls back to DOM traversal for ordered lists (to preserve CSS-generated numbers)
     _JS_GET_TEXT_WITH_LIST_NUMBERS = """
     (element) => {
         // Helper: Decode HTML entities (e.g., &lt; -> <, &gt; -> >)
@@ -4354,21 +4353,26 @@ class CopilotHandler:
             return decodeHtmlEntities(text).trim();
         }
 
-        // First, try innerHTML approach to preserve <> brackets
-        // Copilot escapes < and > as &lt; and &gt; in the HTML
-        try {
-            const html = element.innerHTML;
-            if (html) {
-                const text = extractTextFromHtml(html);
-                if (text) {
-                    return text;
+        // Check if element contains ordered lists (need DOM traversal for list numbers)
+        const hasOrderedList = element.querySelector('ol') !== null;
+
+        // Use innerHTML approach only if no ordered lists
+        // (ordered list numbers are CSS-generated and not in innerHTML)
+        if (!hasOrderedList) {
+            try {
+                const html = element.innerHTML;
+                if (html) {
+                    const text = extractTextFromHtml(html);
+                    if (text) {
+                        return text;
+                    }
                 }
+            } catch (e) {
+                // innerHTML approach failed, fall through to DOM traversal
             }
-        } catch (e) {
-            // innerHTML approach failed, fall through to DOM traversal
         }
 
-        // Fallback: DOM traversal with list number handling
+        // DOM traversal with list number handling
         const result = [];
         let listCounter = 0;
         let inOrderedList = false;
@@ -4424,8 +4428,11 @@ class CopilotHandler:
     def _get_latest_response_text(self) -> tuple[str, bool]:
         """Return the latest Copilot response text and whether an element was found.
 
-        Uses JavaScript evaluation to preserve list numbers from <ol> elements,
-        which are not included in inner_text() as they are CSS-generated.
+        Uses JavaScript evaluation with two approaches:
+        1. innerHTML + HTML entity decoding: Preserves <> brackets that Copilot
+           escapes as &lt; and &gt;. Used when no ordered lists are present.
+        2. DOM traversal: Preserves CSS-generated list numbers from <ol> elements.
+           Falls back to this when ordered lists are detected.
         """
 
         if not self._page:

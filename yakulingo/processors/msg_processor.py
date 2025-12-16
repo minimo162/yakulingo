@@ -57,6 +57,34 @@ class MsgProcessor(FileProcessor):
 
     def __init__(self):
         self._outlook_available: Optional[bool] = None
+        self._cached_content: Optional[dict] = None
+        self._cached_file_path: Optional[str] = None
+
+    def _get_cached_content(self, file_path: Path) -> dict:
+        """Get MSG content with caching to avoid multiple file reads."""
+        file_path_str = str(file_path)
+        if self._cached_file_path != file_path_str or self._cached_content is None:
+            extract_msg = _lazy_import_extract_msg()
+            msg = extract_msg.Message(file_path_str)
+            try:
+                subject = msg.subject or ""
+                body = msg.body or ""
+                body = body.replace('\r\n', '\n').replace('\r', '\n')
+                self._cached_content = {
+                    'subject': subject,
+                    'body': body,
+                    'sender': msg.sender or "(送信者不明)",
+                    'date': str(msg.date) if msg.date else "(日付不明)",
+                }
+                self._cached_file_path = file_path_str
+            finally:
+                msg.close()
+        return self._cached_content
+
+    def clear_cache(self):
+        """Clear cached MSG content."""
+        self._cached_content = None
+        self._cached_file_path = None
 
     @property
     def outlook_available(self) -> bool:
@@ -73,42 +101,96 @@ class MsgProcessor(FileProcessor):
     def supported_extensions(self) -> list[str]:
         return ['.msg']
 
+    def extract_sample_text_fast(self, file_path: Path, max_chars: int = 500) -> Optional[str]:
+        """Fast text extraction for language detection.
+
+        Uses cached content to avoid multiple file reads.
+
+        Args:
+            file_path: Path to MSG file.
+            max_chars: Maximum characters to return.
+
+        Returns:
+            Sample text for language detection (subject + start of body).
+        """
+        try:
+            content = self._get_cached_content(file_path)
+            subject = content.get('subject', '')
+            body = content.get('body', '')
+
+            # Combine subject and start of body
+            sample_parts = []
+            if subject:
+                sample_parts.append(subject)
+            if body:
+                # Take first few hundred chars from body
+                sample_parts.append(body[:max_chars - len(subject) if subject else max_chars])
+
+            sample = ' '.join(sample_parts)
+            return sample[:max_chars] if sample else None
+
+        except Exception as e:
+            logger.warning("Fast MSG text extraction failed: %s", e)
+            return None
+
     def get_file_info(self, file_path: Path) -> FileInfo:
         """Get file metadata for UI display."""
-        extract_msg = _lazy_import_extract_msg()
+        content = self._get_cached_content(file_path)
 
-        msg = extract_msg.Message(str(file_path))
-        try:
-            # Get basic info
-            subject = msg.subject or "(件名なし)"
-            sender = msg.sender or "(送信者不明)"
+        # Get basic info
+        subject = content.get('subject') or "(件名なし)"
 
-            # Count body paragraphs for section details
-            body = msg.body or ""
-            paragraphs = [p.strip() for p in body.split('\n\n') if p.strip()]
-            paragraph_count = len(paragraphs)
+        # Count body paragraphs for section details
+        body = content.get('body', '')
+        paragraphs = self._split_body_into_paragraphs(body)
+        paragraph_count = len(paragraphs)
 
-            # Create section details
-            section_details = [
-                SectionDetail(index=0, name="件名", selected=True),
-            ]
-            if paragraph_count > 0:
-                for i in range(paragraph_count):
-                    section_details.append(SectionDetail(
-                        index=i + 1,
-                        name=f"本文 段落{i + 1}",
-                        selected=True,
-                    ))
+        # Create section details
+        section_details = [
+            SectionDetail(index=0, name="件名", selected=True),
+        ]
+        if paragraph_count > 0:
+            for i in range(paragraph_count):
+                section_details.append(SectionDetail(
+                    index=i + 1,
+                    name=f"本文 段落{i + 1}",
+                    selected=True,
+                ))
 
-            return FileInfo(
-                path=file_path,
-                file_type=FileType.EMAIL,
-                size_bytes=file_path.stat().st_size,
-                page_count=1,  # Single email = 1 page
-                section_details=section_details,
-            )
-        finally:
-            msg.close()
+        return FileInfo(
+            path=file_path,
+            file_type=FileType.EMAIL,
+            size_bytes=file_path.stat().st_size,
+            page_count=1,  # Single email = 1 page
+            section_details=section_details,
+        )
+
+    def _split_body_into_paragraphs(self, body: str) -> list[dict]:
+        """Split body into paragraphs while preserving structure.
+
+        Returns a list of paragraph dicts with:
+        - 'text': paragraph text (may be empty for blank paragraphs)
+        - 'is_empty': True if paragraph is effectively empty
+        - 'original_text': original text before stripping (preserves leading/trailing spaces)
+
+        This preserves the structure including empty lines between sections.
+        """
+        if not body:
+            return []
+
+        # Split by double newlines (paragraph separator)
+        raw_paragraphs = body.split('\n\n')
+        paragraphs = []
+
+        for p in raw_paragraphs:
+            stripped = p.strip()
+            paragraphs.append({
+                'text': stripped,
+                'is_empty': len(stripped) == 0,
+                'original_text': p,
+            })
+
+        return paragraphs
 
     def extract_text_blocks(
         self, file_path: Path, output_language: str = "en"
@@ -118,59 +200,64 @@ class MsgProcessor(FileProcessor):
 
         Extracts:
         - Subject line
-        - Body paragraphs (split by double newlines)
+        - Body paragraphs (split by double newlines, preserving structure)
         """
-        extract_msg = _lazy_import_extract_msg()
+        content = self._get_cached_content(file_path)
 
-        msg = extract_msg.Message(str(file_path))
-        try:
-            # Extract subject
-            subject = msg.subject
-            if subject and self.should_translate(subject):
-                yield TextBlock(
-                    id="msg_subject",
-                    text=subject,
-                    location="件名",
-                    metadata={'field': 'subject'}
-                )
+        # Extract subject
+        subject = content.get('subject', '')
+        if subject and self.should_translate(subject):
+            yield TextBlock(
+                id="msg_subject",
+                text=subject,
+                location="件名",
+                metadata={'field': 'subject'}
+            )
 
-            # Extract body
-            body = msg.body or ""
-            # Normalize line endings and split by paragraphs
-            body = body.replace('\r\n', '\n').replace('\r', '\n')
-            paragraphs = [p.strip() for p in body.split('\n\n') if p.strip()]
+        # Extract body paragraphs
+        body = content.get('body', '')
+        paragraphs = self._split_body_into_paragraphs(body)
 
-            for para_index, paragraph in enumerate(paragraphs):
-                # Split long paragraphs into chunks
-                if len(paragraph) > MAX_CHARS_PER_BLOCK:
-                    chunks = self._split_into_chunks(paragraph, MAX_CHARS_PER_BLOCK)
-                    for chunk_index, chunk in enumerate(chunks):
-                        if self.should_translate(chunk):
-                            yield TextBlock(
-                                id=f"msg_body_{para_index}_chunk_{chunk_index}",
-                                text=chunk,
-                                location=f"本文 段落{para_index + 1} (部分{chunk_index + 1})",
-                                metadata={
-                                    'field': 'body',
-                                    'paragraph_index': para_index,
-                                    'chunk_index': chunk_index,
-                                    'is_chunked': True,
-                                }
-                            )
-                else:
-                    if self.should_translate(paragraph):
+        # Track index for non-empty paragraphs
+        non_empty_index = 0
+        for para_index, para_info in enumerate(paragraphs):
+            paragraph = para_info['text']
+            is_empty = para_info['is_empty']
+
+            # Skip empty paragraphs but record their position
+            if is_empty:
+                continue
+
+            # Split long paragraphs into chunks
+            if len(paragraph) > MAX_CHARS_PER_BLOCK:
+                chunks = self._split_into_chunks(paragraph, MAX_CHARS_PER_BLOCK)
+                for chunk_index, chunk in enumerate(chunks):
+                    if self.should_translate(chunk):
                         yield TextBlock(
-                            id=f"msg_body_{para_index}",
-                            text=paragraph,
-                            location=f"本文 段落{para_index + 1}",
+                            id=f"msg_body_{para_index}_chunk_{chunk_index}",
+                            text=chunk,
+                            location=f"本文 段落{non_empty_index + 1} (部分{chunk_index + 1})",
                             metadata={
                                 'field': 'body',
-                                'paragraph_index': para_index,
-                                'is_chunked': False,
+                                'paragraph_index': para_index,  # Original index including empty paragraphs
+                                'chunk_index': chunk_index,
+                                'is_chunked': True,
                             }
                         )
-        finally:
-            msg.close()
+            else:
+                if self.should_translate(paragraph):
+                    yield TextBlock(
+                        id=f"msg_body_{para_index}",
+                        text=paragraph,
+                        location=f"本文 段落{non_empty_index + 1}",
+                        metadata={
+                            'field': 'body',
+                            'paragraph_index': para_index,  # Original index including empty paragraphs
+                            'is_chunked': False,
+                        }
+                    )
+
+            non_empty_index += 1
 
     def _split_into_chunks(self, text: str, max_chars: int) -> list[str]:
         """Split long text into chunks, preferring sentence boundaries."""
@@ -211,55 +298,59 @@ class MsgProcessor(FileProcessor):
         """
         Build translated subject and body from translations dict.
 
+        Preserves empty paragraphs to maintain email structure.
+
         Returns:
             Tuple of (translated_subject, translated_body)
         """
-        extract_msg = _lazy_import_extract_msg()
+        content = self._get_cached_content(input_path)
 
-        msg = extract_msg.Message(str(input_path))
-        try:
-            # Get original content
-            original_subject = msg.subject or ""
-            original_body = msg.body or ""
-            original_body = original_body.replace('\r\n', '\n').replace('\r', '\n')
+        # Get original content
+        original_subject = content.get('subject', '')
+        original_body = content.get('body', '')
 
-            # Build translated subject
-            translated_subject = translations.get("msg_subject", original_subject)
+        # Build translated subject
+        translated_subject = translations.get("msg_subject", original_subject)
 
-            # Build translated body
-            paragraphs = [p.strip() for p in original_body.split('\n\n') if p.strip()]
-            translated_paragraphs = []
+        # Build translated body preserving empty paragraphs
+        paragraphs = self._split_body_into_paragraphs(original_body)
+        translated_paragraphs = []
 
-            for para_index, paragraph in enumerate(paragraphs):
-                # Check if this paragraph was chunked
-                chunked_ids = [
-                    block_id for block_id in translations.keys()
-                    if block_id.startswith(f"msg_body_{para_index}_chunk_")
-                ]
+        for para_index, para_info in enumerate(paragraphs):
+            paragraph = para_info['text']
+            is_empty = para_info['is_empty']
 
-                if chunked_ids:
-                    # Reconstruct from chunks
-                    chunk_texts = []
-                    chunks = self._split_into_chunks(paragraph, MAX_CHARS_PER_BLOCK)
+            # Preserve empty paragraphs as-is
+            if is_empty:
+                translated_paragraphs.append('')
+                continue
 
-                    for chunk_index, chunk in enumerate(chunks):
-                        chunk_id = f"msg_body_{para_index}_chunk_{chunk_index}"
-                        chunk_texts.append(translations.get(chunk_id, chunk))
+            # Check if this paragraph was chunked
+            chunked_ids = [
+                block_id for block_id in translations.keys()
+                if block_id.startswith(f"msg_body_{para_index}_chunk_")
+            ]
 
-                    translated_paragraphs.append(''.join(chunk_texts))
+            if chunked_ids:
+                # Reconstruct from chunks
+                chunk_texts = []
+                chunks = self._split_into_chunks(paragraph, MAX_CHARS_PER_BLOCK)
+
+                for chunk_index, chunk in enumerate(chunks):
+                    chunk_id = f"msg_body_{para_index}_chunk_{chunk_index}"
+                    chunk_texts.append(translations.get(chunk_id, chunk))
+
+                translated_paragraphs.append(''.join(chunk_texts))
+            else:
+                # Single block paragraph
+                block_id = f"msg_body_{para_index}"
+                if block_id in translations:
+                    translated_paragraphs.append(translations[block_id])
                 else:
-                    # Single block paragraph
-                    block_id = f"msg_body_{para_index}"
-                    if block_id in translations:
-                        translated_paragraphs.append(translations[block_id])
-                    else:
-                        translated_paragraphs.append(paragraph)
+                    translated_paragraphs.append(paragraph)
 
-            translated_body = '\n\n'.join(translated_paragraphs)
-            return translated_subject, translated_body
-
-        finally:
-            msg.close()
+        translated_body = '\n\n'.join(translated_paragraphs)
+        return translated_subject, translated_body
 
     def _create_msg_via_outlook(
         self,
@@ -348,18 +439,14 @@ class MsgProcessor(FileProcessor):
         """
         Create bilingual document with original and translated email interleaved.
         """
-        extract_msg = _lazy_import_extract_msg()
+        # Read original MSG (use cached content)
+        content = self._get_cached_content(original_path)
+        original_subject = content.get('subject') or "(件名なし)"
+        original_body = content.get('body', '')
+        sender = content.get('sender', "(送信者不明)")
+        date = content.get('date', "(日付不明)")
 
-        # Read original MSG
-        msg = extract_msg.Message(str(original_path))
-        try:
-            original_subject = msg.subject or "(件名なし)"
-            original_body = msg.body or ""
-            original_body = original_body.replace('\r\n', '\n').replace('\r', '\n')
-            sender = msg.sender or "(送信者不明)"
-            date = str(msg.date) if msg.date else "(日付不明)"
-        finally:
-            msg.close()
+        extract_msg = _lazy_import_extract_msg()
 
         # Read translated content (could be .msg or .txt)
         if translated_path.suffix.lower() == '.msg':

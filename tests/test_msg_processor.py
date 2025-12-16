@@ -423,3 +423,129 @@ class TestMsgProcessorOutlookIntegration:
         content = output_path.read_text(encoding='utf-8')
         assert "Original" in content
         assert "Translated" in content
+
+
+class TestMsgProcessorEmptyLines:
+    """Test empty line preservation in MsgProcessor."""
+
+    def test_preserves_empty_paragraphs_in_translation(self, processor, tmp_path, mock_extract_msg):
+        """Test that empty paragraphs (blank lines) are preserved during translation."""
+        msg_path = tmp_path / "test.msg"
+        msg_path.write_bytes(b"dummy content")
+        output_path = tmp_path / "output.txt"
+
+        # Body with empty paragraphs (simulating email with blank lines between sections)
+        body_with_empty = "First paragraph.\n\n\n\nSecond paragraph after blank line."
+        mock_extract_msg.Message = lambda path: MockMessage(
+            subject="Test Subject",
+            body=body_with_empty
+        )
+
+        translations = {
+            "msg_subject": "Translated Subject",
+            "msg_body_0": "Translated first.",
+            "msg_body_2": "Translated second.",  # Index 2 because index 1 is empty
+        }
+
+        processor.apply_translations(msg_path, output_path, translations)
+
+        content = output_path.read_text(encoding='utf-8')
+        # Should have blank lines preserved in output
+        assert "Translated first.\n\n\n\nTranslated second." in content
+
+    def test_extract_text_blocks_skips_empty_paragraphs(self, processor, tmp_path, mock_extract_msg):
+        """Test that empty paragraphs are skipped during extraction but indexed correctly."""
+        msg_path = tmp_path / "test.msg"
+        msg_path.write_bytes(b"dummy content")
+
+        # Body with empty paragraph in the middle
+        body_with_empty = "Para 1.\n\n\n\nPara 2."
+        mock_extract_msg.Message = lambda path: MockMessage(
+            subject="Test",
+            body=body_with_empty
+        )
+
+        blocks = list(processor.extract_text_blocks(msg_path))
+
+        # Should have subject + 2 body paragraphs (empty one skipped)
+        body_blocks = [b for b in blocks if b.metadata.get('field') == 'body']
+        assert len(body_blocks) == 2
+
+        # Check that paragraph indices reflect original positions (including empty)
+        assert body_blocks[0].id == "msg_body_0"  # First paragraph
+        assert body_blocks[1].id == "msg_body_2"  # Third paragraph (index 1 was empty)
+
+
+class TestMsgProcessorFastExtraction:
+    """Test fast text extraction for language detection."""
+
+    def test_extract_sample_text_fast(self, processor, tmp_path, mock_extract_msg):
+        """Test fast sample extraction returns subject and body."""
+        msg_path = tmp_path / "test.msg"
+        msg_path.write_bytes(b"dummy content")
+
+        mock_extract_msg.Message = lambda path: MockMessage(
+            subject="Test Subject",
+            body="Test body content."
+        )
+
+        sample = processor.extract_sample_text_fast(msg_path)
+
+        assert sample is not None
+        assert "Test Subject" in sample
+        assert "Test body content" in sample
+
+    def test_extract_sample_text_fast_respects_max_chars(self, processor, tmp_path, mock_extract_msg):
+        """Test that fast extraction respects max_chars limit."""
+        msg_path = tmp_path / "test.msg"
+        msg_path.write_bytes(b"dummy content")
+
+        mock_extract_msg.Message = lambda path: MockMessage(
+            subject="Short Subject",
+            body="A" * 1000
+        )
+
+        sample = processor.extract_sample_text_fast(msg_path, max_chars=100)
+
+        assert sample is not None
+        assert len(sample) <= 100
+
+    def test_extract_sample_text_fast_uses_cache(self, processor, tmp_path, mock_extract_msg):
+        """Test that fast extraction uses caching."""
+        msg_path = tmp_path / "test.msg"
+        msg_path.write_bytes(b"dummy content")
+
+        call_count = [0]
+        def counting_message(path):
+            call_count[0] += 1
+            return MockMessage()
+
+        mock_extract_msg.Message = counting_message
+
+        # Call multiple times
+        processor.extract_sample_text_fast(msg_path)
+        processor.extract_sample_text_fast(msg_path)
+
+        # Should only have parsed the file once due to caching
+        assert call_count[0] == 1
+
+    def test_cache_cleared_on_different_file(self, processor, tmp_path, mock_extract_msg):
+        """Test that cache is cleared when a different file is processed."""
+        msg_path1 = tmp_path / "test1.msg"
+        msg_path1.write_bytes(b"dummy content 1")
+        msg_path2 = tmp_path / "test2.msg"
+        msg_path2.write_bytes(b"dummy content 2")
+
+        call_count = [0]
+        def counting_message(path):
+            call_count[0] += 1
+            return MockMessage()
+
+        mock_extract_msg.Message = counting_message
+
+        # Process two different files
+        processor.extract_sample_text_fast(msg_path1)
+        processor.extract_sample_text_fast(msg_path2)
+
+        # Should have parsed both files
+        assert call_count[0] == 2

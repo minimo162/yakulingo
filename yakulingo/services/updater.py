@@ -62,6 +62,8 @@ class VersionInfo:
     release_notes: str
     file_size: int = 0
     requires_reinstall: bool = False  # 依存関係変更により再セットアップが必要
+    exe_download_url: str = ""  # YakuLingo.exe の個別ダウンロードURL
+    exe_file_size: int = 0  # YakuLingo.exe のファイルサイズ
 
 
 @dataclass
@@ -425,16 +427,21 @@ class AutoUpdater:
             # ダウンロードURLを探す（zipball または特定のアセット）
             download_url = ""
             file_size = 0
+            exe_download_url = ""
+            exe_file_size = 0
 
-            # アセットからZIPファイルを探す
+            # アセットからZIPファイルとYakuLingo.exeを探す
             assets = release_info.get("assets", [])
             for asset in assets:
-                if asset.get("name", "").endswith(".zip"):
+                asset_name = asset.get("name", "")
+                if asset_name.endswith(".zip") and not download_url:
                     download_url = asset.get("browser_download_url", "")
                     file_size = asset.get("size", 0)
-                    break
+                elif asset_name == "YakuLingo.exe":
+                    exe_download_url = asset.get("browser_download_url", "")
+                    exe_file_size = asset.get("size", 0)
 
-            # アセットがなければ zipball_url を使用
+            # ZIPアセットがなければ zipball_url を使用（ソースコードのみ）
             if not download_url:
                 download_url = release_info.get("zipball_url", "")
 
@@ -448,6 +455,8 @@ class AutoUpdater:
                 release_notes=release_notes,
                 file_size=file_size,
                 requires_reinstall=requires_reinstall,
+                exe_download_url=exe_download_url,
+                exe_file_size=exe_file_size,
             )
 
             # バージョン比較
@@ -521,7 +530,7 @@ class AutoUpdater:
             progress_callback: 進捗コールバック(downloaded_bytes, total_bytes)
 
         Returns:
-            Path: ダウンロードしたファイルのパス
+            Path: ダウンロードしたZIPファイルのパス
         """
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
@@ -532,6 +541,8 @@ class AutoUpdater:
             if version_info.file_size and download_path.stat().st_size != version_info.file_size:
                 download_path.unlink(missing_ok=True)
             else:
+                # YakuLingo.exe もダウンロード（存在する場合）
+                self._download_exe_if_needed(version_info)
                 return download_path
 
         # ダウンロード実行
@@ -553,7 +564,60 @@ class AutoUpdater:
                     if progress_callback and total_size > 0:
                         progress_callback(downloaded, total_size)
 
+        # YakuLingo.exe もダウンロード（存在する場合）
+        self._download_exe_if_needed(version_info, progress_callback)
+
         return download_path
+
+    def _download_exe_if_needed(
+        self,
+        version_info: VersionInfo,
+        progress_callback: Optional[Callable[[int, int], None]] = None,
+    ) -> Optional[Path]:
+        """
+        YakuLingo.exe をダウンロード（アセットとして存在する場合のみ）
+
+        Args:
+            version_info: バージョン情報
+            progress_callback: 進捗コールバック
+
+        Returns:
+            Path: ダウンロードしたexeファイルのパス、またはNone
+        """
+        if not version_info.exe_download_url:
+            return None
+
+        exe_path = self.cache_dir / "YakuLingo.exe"
+
+        # 既にダウンロード済みの場合はスキップ（サイズ一致時のみ）
+        if exe_path.exists():
+            if version_info.exe_file_size and exe_path.stat().st_size != version_info.exe_file_size:
+                exe_path.unlink(missing_ok=True)
+            else:
+                return exe_path
+
+        logger.info("YakuLingo.exe をダウンロード中...")
+
+        req = urllib.request.Request(version_info.exe_download_url)
+        req.add_header("User-Agent", f"YakuLingo/{self.current_version}")
+
+        with self.opener.open(req, timeout=300) as response:
+            total_size = int(response.headers.get("Content-Length", 0) or version_info.exe_file_size or 0)
+            downloaded = 0
+
+            with open(exe_path, "wb") as f:
+                while True:
+                    chunk = response.read(8192)
+                    if not chunk:
+                        break
+                    f.write(chunk)
+                    downloaded += len(chunk)
+
+                    if progress_callback and total_size > 0:
+                        progress_callback(downloaded, total_size)
+
+        logger.info("YakuLingo.exe のダウンロード完了")
+        return exe_path
 
     # 更新対象ファイル/ディレクトリ一覧
     # 環境ファイル（.venv, .uv-python, .playwright-browsers）は含まない
@@ -617,6 +681,13 @@ class AutoUpdater:
 
                 # キャッシュディレクトリにコピー（バッチファイル実行時まで保持）
                 shutil.copytree(source_dir, persistent_source_dir)
+
+            # YakuLingo.exe がキャッシュにあれば、ソースディレクトリにもコピー
+            # （別アセットとしてダウンロードした場合）
+            exe_in_cache = self.cache_dir / "YakuLingo.exe"
+            if exe_in_cache.exists():
+                shutil.copy2(exe_in_cache, persistent_source_dir / "YakuLingo.exe")
+                logger.info("YakuLingo.exe をソースディレクトリにコピーしました")
 
             # Windowsの場合、バッチファイルでアップデートを実行
             if platform.system() == "Windows":
@@ -1526,7 +1597,9 @@ def backup_and_update_glossary(app_dir: Path, source_dir: Path) -> Optional[str]
     new_hash = file_hash(new_glossary)
 
     # glossary_old.csvとも比較（前バージョンと一致すればカスタマイズされていない）
-    old_glossary = app_dir / "glossary_old.csv"
+    # Note: source_dir（新しいソース）から glossary_old.csv を参照
+    # app_dir はまだ古いファイルが残っている可能性があるため
+    old_glossary = source_dir / "glossary_old.csv"
     old_hash = None
     if old_glossary.exists():
         old_hash = file_hash(old_glossary)
@@ -1539,6 +1612,16 @@ def backup_and_update_glossary(app_dir: Path, source_dir: Path) -> Optional[str]
             logger.info("用語集は変更されていません")
         else:
             logger.info("用語集はカスタマイズされていません（前バージョンと一致）")
+            # 前バージョンと一致 = カスタマイズされていないので、新しい用語集で上書き
+            shutil.copy2(new_glossary, user_glossary)
+            logger.info("用語集を更新しました: %s", user_glossary)
+
+        # glossary_old.csv も更新（次回アップデート時の比較用）
+        if old_glossary.exists():
+            dest_old_glossary = app_dir / "glossary_old.csv"
+            shutil.copy2(old_glossary, dest_old_glossary)
+            logger.info("glossary_old.csv を更新しました: %s", dest_old_glossary)
+
         return None
 
     # カスタマイズされている場合はデスクトップにバックアップ
@@ -1564,6 +1647,12 @@ def backup_and_update_glossary(app_dir: Path, source_dir: Path) -> Optional[str]
     # 新しい用語集で上書き
     shutil.copy2(new_glossary, user_glossary)
     logger.info("用語集を更新しました: %s", user_glossary)
+
+    # glossary_old.csv も更新（次回アップデート時の比較用）
+    if old_glossary.exists():
+        dest_old_glossary = app_dir / "glossary_old.csv"
+        shutil.copy2(old_glossary, dest_old_glossary)
+        logger.info("glossary_old.csv を更新しました: %s", dest_old_glossary)
 
     return backup_name
 

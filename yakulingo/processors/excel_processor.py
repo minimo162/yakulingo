@@ -608,8 +608,20 @@ class ExcelProcessor(FileProcessor):
             first_address = first_cell.Address
             current_cell = first_cell
 
+            # Track visited addresses to prevent infinite loop
+            visited_addresses: set[str] = set()
+            # Safety limit to prevent infinite loop
+            MAX_ITERATIONS = 10000
+
             # Loop through all merged cells
-            while True:
+            for _ in range(MAX_ITERATIONS):
+                current_address = current_cell.Address
+
+                # Check if we've seen this cell before (prevents infinite loop)
+                if current_address in visited_addresses:
+                    break
+                visited_addresses.add(current_address)
+
                 merge_area = current_cell.MergeArea
                 merge_address = merge_area.Address
 
@@ -624,7 +636,7 @@ class ExcelProcessor(FileProcessor):
                 # Find next merged cell
                 current_cell = used_range.api.FindNext(current_cell)
 
-                # Stop when we've looped back to the first cell
+                # Stop when we've looped back to the first cell or no more cells
                 if current_cell is None or current_cell.Address == first_address:
                     break
 

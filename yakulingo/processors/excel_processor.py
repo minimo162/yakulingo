@@ -1552,14 +1552,6 @@ class ExcelProcessor(FileProcessor):
                     logger.debug("Could not disable screen updating: %s", e)
 
                 try:
-                    # Use Excel API directly with constant value
-                    # xlCalculationManual = -4135, xlCalculationAutomatic = -4105
-                    original_calculation = app.api.Calculation
-                    app.api.Calculation = -4135  # xlCalculationManual
-                except Exception as e:
-                    logger.debug("Could not set manual calculation: %s", e)
-
-                try:
                     original_enable_events = app.api.EnableEvents
                     app.api.EnableEvents = False
                 except Exception as e:
@@ -1572,6 +1564,17 @@ class ExcelProcessor(FileProcessor):
                     logger.debug("Could not disable display alerts: %s", e)
 
                 wb = app.books.open(str(input_path), ignore_read_only_recommended=True)
+
+                # Set calculation mode AFTER opening workbook (more reliable)
+                # Use Excel API directly with constant value
+                # xlCalculationManual = -4135, xlCalculationAutomatic = -4105
+                try:
+                    original_calculation = app.api.Calculation
+                    app.api.Calculation = -4135  # xlCalculationManual
+                except Exception as e:
+                    logger.debug("Could not set manual calculation (performance optimization skipped): %s", e)
+                    original_calculation = None
+
                 try:
                     # Pre-group translations by sheet name using metadata when available
                     sheet_names = {sheet.name for sheet in wb.sheets}

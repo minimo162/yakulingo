@@ -910,6 +910,8 @@ class CopilotHandler:
                 "--disable-background-timer-throttling",
                 # Disable renderer backgrounding for consistent performance
                 "--disable-renderer-backgrounding",
+                # Disable throttling when window is occluded (covered by other windows)
+                "--disable-backgrounding-occluded-windows",
                 # Disable features that slow down initial page load
                 "--disable-features=TranslateUI",
                 # Disable GPU hardware acceleration (reduces resource usage)

@@ -336,6 +336,41 @@ def _create_excel_app_with_retry(xw, max_retries: int = _EXCEL_RETRY_COUNT, retr
         raise last_error
 
 
+def _verify_workbook_path(wb, expected_path: Path, operation: str = "open") -> None:
+    """Verify that the opened workbook matches the expected path.
+
+    This is a critical safety check to prevent operating on wrong files
+    if xlwings accidentally connected to an existing Excel instance.
+
+    Args:
+        wb: xlwings Workbook object
+        expected_path: Expected file path
+        operation: Description of operation for error message
+
+    Raises:
+        RuntimeError: If paths don't match
+    """
+    try:
+        opened_path = Path(wb.fullname).resolve()
+        expected_resolved = Path(expected_path).resolve()
+
+        if opened_path != expected_resolved:
+            logger.error(
+                "SAFETY: Workbook path mismatch during %s! Expected: %s, Got: %s. "
+                "This may indicate xlwings connected to wrong Excel instance.",
+                operation, expected_resolved, opened_path
+            )
+            raise RuntimeError(
+                f"ワークブックパスの不一致を検出しました（{operation}）。"
+                f"期待: {expected_resolved}, 実際: {opened_path}。"
+                f"Excelが他のファイルを開いている可能性があります。"
+            )
+        logger.debug("Verified workbook path (%s): %s", operation, opened_path)
+    except AttributeError:
+        # wb.fullname not available (shouldn't happen with xlwings)
+        logger.warning("Could not verify workbook path - fullname attribute not available")
+
+
 # Excel sheet name forbidden characters: \ / ? * [ ] :
 # Maximum length: 31 characters
 _EXCEL_SHEET_NAME_FORBIDDEN = re.compile(r'[\\/?*\[\]:]')
@@ -717,9 +752,12 @@ class ExcelProcessor(FileProcessor):
 
     def _get_file_info_xlwings(self, file_path: Path, xw) -> FileInfo:
         """Get file info using xlwings (fast: sheet names only, no cell scanning)"""
-        app = xw.App(visible=False, add_book=False)
+        # Use isolated app creation to prevent connecting to existing Excel instances
+        app = _create_excel_app_with_retry(xw)
         try:
             wb = app.books.open(str(file_path), ignore_read_only_recommended=True)
+            # SAFETY: Verify we opened the correct workbook (even for read-only)
+            _verify_workbook_path(wb, file_path, "get_file_info")
             try:
                 sheet_count = len(wb.sheets)
                 section_details = [
@@ -965,6 +1003,8 @@ class ExcelProcessor(FileProcessor):
             app = _create_excel_app_with_retry(xw)
             try:
                 wb = app.books.open(str(file_path), ignore_read_only_recommended=True)
+                # SAFETY: Verify we opened the correct workbook
+                _verify_workbook_path(wb, file_path, "extract_text_blocks")
                 try:
                     for sheet_idx, sheet in enumerate(wb.sheets):
                         sheet_name = sheet.name
@@ -1580,6 +1620,9 @@ class ExcelProcessor(FileProcessor):
                     logger.debug("Could not disable display alerts: %s", e)
 
                 wb = app.books.open(str(input_path), ignore_read_only_recommended=True)
+
+                # SAFETY: Verify we opened the correct workbook
+                _verify_workbook_path(wb, input_path, "apply_translations")
 
                 # Set calculation mode AFTER opening workbook (more reliable)
                 # Use Excel API directly with constant value
@@ -2198,6 +2241,10 @@ class ExcelProcessor(FileProcessor):
                 # Open source workbooks (track each for cleanup)
                 original_wb = app.books.open(str(original_path), ignore_read_only_recommended=True)
                 translated_wb = app.books.open(str(translated_path), ignore_read_only_recommended=True)
+
+                # SAFETY: Verify we opened the correct workbooks
+                _verify_workbook_path(original_wb, original_path, "bilingual_original")
+                _verify_workbook_path(translated_wb, translated_path, "bilingual_translated")
 
                 # Create new workbook for bilingual output
                 bilingual_wb = app.books.add()

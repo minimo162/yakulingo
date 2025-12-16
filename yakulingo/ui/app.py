@@ -518,6 +518,9 @@ class YakuLingoApp:
 
         This is called after create_ui() to restore focus to the app window,
         as Edge startup (side_panel mode) may steal focus.
+
+        For side_panel mode, this also repositions both app and Edge windows
+        to be centered as a "set" on screen, ensuring no overlap.
         """
         # Small delay to ensure pywebview window is fully initialized
         await asyncio.sleep(0.5)
@@ -537,12 +540,45 @@ class YakuLingoApp:
         except (AttributeError, RuntimeError) as e:
             logger.debug("Failed to bring app window to front: %s", e)
 
-        # Additional Windows API fallback
+        # For side_panel mode, reposition both windows after UI is fully displayed
+        # This ensures windows are positioned correctly even if pywebview placed app at center
         if sys.platform == 'win32':
+            try:
+                await asyncio.to_thread(self._reposition_windows_for_side_panel)
+            except Exception as e:
+                logger.debug("Window repositioning failed: %s", e)
+
+            # Additional Windows API fallback to bring app to front
             try:
                 await asyncio.to_thread(self._restore_app_window_win32)
             except Exception as e:
                 logger.debug("Windows API restore failed: %s", e)
+
+    def _reposition_windows_for_side_panel(self) -> bool:
+        """Reposition app and Edge windows for side_panel mode.
+
+        This is called after UI is displayed to fix window positions.
+        pywebview places the app at screen center, which may cause overlap
+        with the side panel. This method repositions both windows as a "set"
+        centered on screen.
+
+        Returns:
+            True if repositioning was successful
+        """
+        try:
+            # Check if side_panel mode is enabled
+            settings = self._settings
+            if not settings or settings.browser_display_mode != "side_panel":
+                return False
+
+            # Use Copilot handler's repositioning method
+            if self._copilot and self._copilot._connected:
+                return self._copilot._position_edge_as_side_panel()
+            return False
+
+        except Exception as e:
+            logger.debug("Failed to reposition windows for side panel: %s", e)
+            return False
 
     def _restore_app_window_win32(self) -> bool:
         """Restore and bring app window to front using Windows API."""

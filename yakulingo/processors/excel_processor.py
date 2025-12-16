@@ -202,6 +202,47 @@ def _is_recoverable_com_error(e: Exception) -> bool:
     )
 
 
+def _try_create_new_excel_instance(xw, max_attempts: int = 3):
+    """
+    Try to create a new isolated Excel instance, avoiding existing ones.
+
+    Args:
+        xw: xlwings module
+        max_attempts: Maximum number of creation attempts
+
+    Returns:
+        xlwings App instance with no pre-existing books, or None on failure
+
+    Note:
+        This function does NOT call quit() on any Excel instance to avoid
+        closing the user's manually opened Excel files.
+    """
+    for attempt in range(max_attempts):
+        gc.collect()
+        _cleanup_com_before_retry()
+        time.sleep(0.3 * (attempt + 1))
+
+        try:
+            app = xw.App(visible=False, add_book=False)
+            if len(app.books) == 0:
+                logger.debug(
+                    "Created isolated Excel instance on attempt %d (PID=%s)",
+                    attempt + 1, app.pid
+                )
+                return app
+            else:
+                # Still connected to existing instance
+                logger.debug(
+                    "Attempt %d: Still connected to existing Excel (PID=%s, books=%d)",
+                    attempt + 1, app.pid, len(app.books)
+                )
+                del app  # Release without quit()
+        except Exception as e:
+            logger.debug("Attempt %d failed: %s", attempt + 1, e)
+
+    return None
+
+
 def _copy_sheet_with_retry(
     source_sheet,
     target_wb,
@@ -293,19 +334,39 @@ def _create_excel_app_with_retry(xw, max_retries: int = _EXCEL_RETRY_COUNT, retr
             app = xw.App(visible=False, add_book=False)
             # Verify this is a truly isolated instance (no pre-existing books)
             if len(app.books) > 0:
+                existing_books = len(app.books)
+                existing_pid = app.pid
+                # CRITICAL: Do NOT call app.quit() here - it would close user's Excel!
+                # Instead, just release this reference and try to create a new instance
                 logger.warning(
                     "xlwings connected to existing Excel instance with %d books (PID=%s). "
-                    "Closing and retrying with fresh instance...",
-                    len(app.books), app.pid
+                    "Releasing reference and creating new instance...",
+                    existing_books, existing_pid
                 )
-                try:
-                    app.quit()
-                except Exception:
-                    pass
-                # Force a fresh instance by cleaning up COM
+                # Release the reference without closing the app
+                del app
+                # Force COM to release objects
+                gc.collect()
                 _cleanup_com_before_retry()
                 time.sleep(0.5)
+                # Try creating a new instance - if we still get the same one,
+                # we need to use win32com to force a new process
                 app = xw.App(visible=False, add_book=False)
+                if len(app.books) > 0:
+                    # Still connected to existing instance - try multiple attempts
+                    logger.warning(
+                        "Still connected to existing Excel (PID=%s). Attempting isolation...",
+                        app.pid
+                    )
+                    del app
+                    gc.collect()
+                    # Try to create a new isolated instance
+                    app = _try_create_new_excel_instance(xw)
+                    if app is None:
+                        raise RuntimeError(
+                            "既存のExcelインスタンスから分離できませんでした。\n"
+                            "開いているExcelファイルをすべて閉じてから再試行してください。"
+                        )
             logger.debug("Created isolated Excel instance (PID=%s, books=%d)", app.pid, len(app.books))
             return app
         except Exception as e:

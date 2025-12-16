@@ -4474,7 +4474,21 @@ class CopilotHandler:
         Returns:
             The response text from clipboard, or None if extraction failed.
         """
+        # Check for cancellation/shutdown before attempting page operations
+        if self._is_cancelled():
+            logger.debug("[COPY_BUTTON] Skipped - cancelled")
+            return None
+
         if not self._page:
+            return None
+
+        # Check if page is still valid (not closed)
+        try:
+            if self._page.is_closed():
+                logger.debug("[COPY_BUTTON] Skipped - page is closed")
+                return None
+        except Exception:
+            # If we can't check, assume page is invalid
             return None
 
         error_types = _get_playwright_errors()
@@ -4528,6 +4542,10 @@ class CopilotHandler:
         Returns:
             Final response text (from copy button if successful and longer, else dom_text)
         """
+        # Skip copy button fallback if cancelled or shutting down
+        if self._is_cancelled():
+            return dom_text
+
         # Always try copy button as it preserves <> brackets that DOM may miss
         copy_text = self._get_response_text_via_copy_button()
 

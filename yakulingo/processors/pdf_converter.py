@@ -1258,17 +1258,27 @@ def is_japanese_continuation_line(text: str) -> bool:
     if last_char in SENTENCE_END_CHARS_JA or last_char in SENTENCE_END_CHARS_EN:
         return False
 
-    # Second check: single-character continuation indicators
+    # Second check: if it ends with closing brackets, it's likely a complete phrase
+    # This handles cases like:
+    # - "(百万円未満四捨五入)" followed by "１．連結業績..."
+    # - "(株)" but this won't cause issues because paragraph boundary detection
+    #   requires Y/X coordinate changes first
+    # Both half-width and full-width closing brackets are checked
+    CLOSING_BRACKETS = frozenset(')）]］')
+    if last_char in CLOSING_BRACKETS:
+        return False
+
+    # Third check: single-character continuation indicators
     if last_char in JAPANESE_CONTINUATION_CHARS:
         return True
 
-    # Third check: multi-character suffix patterns
+    # Fourth check: multi-character suffix patterns
     # Check if text ends with any of the known continuation suffixes
     for suffix in JAPANESE_CONTINUATION_SUFFIXES:
         if stripped.endswith(suffix):
             return True
 
-    # Fourth check: if the text contains Japanese characters and doesn't end with
+    # Fifth check: if the text contains Japanese characters and doesn't end with
     # sentence-ending punctuation, it's likely a continuation (conservative approach)
     # This handles cases where the ending is not explicitly in our patterns but
     # the line is clearly incomplete in Japanese context.

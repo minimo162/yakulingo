@@ -1325,9 +1325,13 @@ class YakuLingoApp:
         """Get glossary content for embedding in prompt.
 
         Returns:
-            Glossary content as string if use_bundled_glossary is enabled, else None
+            Glossary content as string if both use_bundled_glossary and
+            embed_glossary_in_prompt are enabled, else None
         """
+        # Both settings must be enabled for embedding
         if not self.settings.use_bundled_glossary:
+            return None
+        if not self.settings.embed_glossary_in_prompt:
             return None
 
         if not self._glossary_path.exists():

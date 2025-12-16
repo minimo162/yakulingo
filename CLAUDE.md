@@ -529,11 +529,18 @@ async def _translate_text(self):
   "github_repo_name": "yakulingo",
   "last_update_check": null,
   "skipped_version": null,
-  "use_bundled_glossary": false
+  "use_bundled_glossary": false,
+  "embed_glossary_in_prompt": true
 }
 ```
 
 **translation_style / text_translation_style values**: `"standard"`, `"concise"` (default), `"minimal"`
+
+**用語集の処理モード**:
+- `use_bundled_glossary`: 同梱の glossary.csv を使用するか（デフォルト: true）
+- `embed_glossary_in_prompt`: 用語集をプロンプトに埋め込むか（デフォルト: true）
+  - `true`: 用語集をプロンプトに直接埋め込み（高速、約16〜19秒短縮）
+  - `false`: 用語集をファイルとして添付（従来方式）
 
 **フォント設定**:
 - `font_jp_to_en`: 英訳時の出力フォント（全ファイル形式共通）
@@ -888,7 +895,7 @@ The `AutoUpdater` class provides GitHub Releases-based updates:
 |---------|------|---------|
 | 翻訳スタイル | `translation_style`, `text_translation_style` | 設定ダイアログ |
 | フォント | `font_jp_to_en`, `font_en_to_jp`, `font_size_adjustment_jp_to_en` | 設定ダイアログ |
-| 出力オプション | `bilingual_output`, `export_glossary`, `use_bundled_glossary` | ファイル翻訳パネル |
+| 出力オプション | `bilingual_output`, `export_glossary`, `use_bundled_glossary`, `embed_glossary_in_prompt` | ファイル翻訳パネル |
 | UI状態 | `last_tab` | 自動保存 |
 | 更新設定 | `skipped_version` | 更新ダイアログ |
 

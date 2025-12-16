@@ -541,6 +541,7 @@ async def _translate_text(self):
 - `embed_glossary_in_prompt`: 用語集をプロンプトに埋め込むか（デフォルト: true）
   - `true`: 用語集をプロンプトに直接埋め込み（高速、約16〜19秒短縮）
   - `false`: 用語集をファイルとして添付（従来方式）
+  - **適用範囲**: テキスト翻訳のみ。ファイル翻訳は従来通りファイル添付方式を使用
 
 **フォント設定**:
 - `font_jp_to_en`: 英訳時の出力フォント（全ファイル形式共通）
@@ -1630,6 +1631,11 @@ When interacting with users in this repository, prefer Japanese for comments and
 ## Recent Development Focus
 
 Based on recent commits:
+- **Glossary Processing Optimization (2024-12)**:
+  - **Prompt embedding**: テキスト翻訳時に用語集をプロンプトに直接埋め込み（ファイル添付より高速）
+  - **Performance improvement**: 翻訳時間が約22秒から約7〜10秒に短縮（約16〜19秒改善）
+  - **Configuration**: `embed_glossary_in_prompt` 設定で埋め込み/添付モードを切替可能
+  - **Scope**: テキスト翻訳のみ適用。ファイル翻訳は従来のファイル添付方式を維持
 - **Copilot Send Process Optimization (2024-12)**:
   - **Complete key cycle**: keydown + keypress + keyup の完全なキーサイクルをJSでディスパッチ（keydownのみでは送信されない）
   - **Root cause**: CopilotのReact UIはkeydownでpreventDefault()を呼ぶが、送信処理は完全なキーサイクルが必要

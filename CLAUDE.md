@@ -1891,11 +1891,11 @@ Based on recent commits:
     - **アプリとEdgeを最初から正しい位置に配置**（ちらつきなし）
   - **Window positioning optimization (2024-12)**:
     - `_calculate_app_position_for_side_panel()`: サイドパネルモードのアプリ位置を事前計算
-    - `app.native.window_args['x'], ['y']`: pywebviewにアプリ位置を事前指定
+    - `_position_window_early_sync()`: on_startupでウィンドウ監視タスクを開始し、pywebviewウィンドウが作成されたら即座に（50ms以内）正しい位置に移動
     - `_calculate_side_panel_geometry_from_screen()`: Edge位置計算 + アプリ位置を`_expected_app_position`に保存
     - `--window-position`: Edge起動時に正しい位置を指定
-    - アプリもEdgeも最初から正しい位置に配置され、再配置によるちらつきが解消
-    - `_reposition_windows_for_side_panel()`: フォールバック用（通常は使用されない）
+    - **早期ウィンドウ配置**: NiceGUIのmultiprocessingによりwindow_argsが子プロセスに渡されない問題を回避。ウィンドウ作成をポーリングで監視し、見つかったらすぐにSetWindowPos()で移動
+    - `_reposition_windows_for_side_panel()`: 既に正しい位置なら移動をスキップ（重複移動によるちらつき防止）
   - **Simplified browser handling**:
     - サイドパネル/foregroundモードではログイン時の前面表示処理をスキップ
     - サイドパネル/foregroundモードではEdge起動時に画面外配置オプションを使用しない

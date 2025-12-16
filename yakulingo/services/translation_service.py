@@ -594,6 +594,7 @@ class BatchTranslator:
         on_progress: Optional[ProgressCallback] = None,
         output_language: str = "en",
         translation_style: str = "concise",
+        glossary_content: Optional[str] = None,
     ) -> dict[str, str]:
         """
         Translate blocks in batches.
@@ -604,6 +605,7 @@ class BatchTranslator:
             on_progress: Progress callback
             output_language: "en" for English, "jp" for Japanese
             translation_style: "standard", "concise", or "minimal" (default: "concise")
+            glossary_content: Optional glossary content to embed in prompt (faster than file attachment)
 
         Returns:
             Mapping of block_id -> translated_text
@@ -617,7 +619,7 @@ class BatchTranslator:
             translate_blocks_with_result() instead.
         """
         result = self.translate_blocks_with_result(
-            blocks, reference_files, on_progress, output_language, translation_style
+            blocks, reference_files, on_progress, output_language, translation_style, glossary_content
         )
         # Raise exception if cancelled to prevent partial results from being applied
         if result.cancelled:
@@ -633,6 +635,7 @@ class BatchTranslator:
         on_progress: Optional[ProgressCallback] = None,
         output_language: str = "en",
         translation_style: str = "concise",
+        glossary_content: Optional[str] = None,
     ) -> 'BatchTranslationResult':
         """
         Translate blocks in batches with detailed result information.
@@ -643,6 +646,7 @@ class BatchTranslator:
             on_progress: Progress callback
             output_language: "en" for English, "jp" for Japanese
             translation_style: "standard", "concise", or "minimal" (default: "concise")
+            glossary_content: Optional glossary content to embed in prompt (faster than file attachment)
 
         Returns:
             BatchTranslationResult with translations and error details.
@@ -733,7 +737,8 @@ class BatchTranslator:
 
         # Phase 2: Batch translate uncached blocks
         batches = self._create_batches(uncached_blocks)
-        has_refs = bool(reference_files)
+        # has_refs is used for reference file attachment indicator (ignored when glossary_content is provided)
+        has_refs = bool(reference_files) and not glossary_content
 
         # Pre-build unique text data for each batch to avoid re-translating duplicates
         # within the same batch (e.g., repeated headers, footers, common phrases)
@@ -767,8 +772,11 @@ class BatchTranslator:
 
         # Pre-build all prompts before translation loop for efficiency
         # This eliminates prompt construction time from the translation loop
+        # When glossary_content is provided, embed it in prompt (faster than file attachment)
         def build_prompt(unique_texts: list[str]) -> str:
-            return self.prompt_builder.build_batch(unique_texts, has_refs, output_language, translation_style)
+            return self.prompt_builder.build_batch(
+                unique_texts, has_refs, output_language, translation_style, glossary_content
+            )
 
         # Use parallel prompt construction for multiple batches
         unique_texts_list = [d[0] for d in batch_unique_data]
@@ -1755,6 +1763,7 @@ class TranslationService:
         output_language: str = "en",
         translation_style: str = "concise",
         selected_sections: Optional[list[int]] = None,
+        glossary_content: Optional[str] = None,
     ) -> TranslationResult:
         """
         Translate a file to specified output language.
@@ -1767,6 +1776,7 @@ class TranslationService:
             translation_style: "standard", "concise", or "minimal" (default: "concise")
                               Only affects English output
             selected_sections: List of section indices to translate (None = all sections)
+            glossary_content: Optional glossary content to embed in prompt (faster than file attachment)
 
         Returns:
             TranslationResult with output_path
@@ -1794,6 +1804,7 @@ class TranslationService:
                     start_time,
                     translation_style,
                     selected_sections,
+                    glossary_content,
                 )
 
             # Standard processing for other file types
@@ -1806,6 +1817,7 @@ class TranslationService:
                 start_time,
                 translation_style,
                 selected_sections,
+                glossary_content,
             )
 
         except MemoryError as e:
@@ -1852,6 +1864,7 @@ class TranslationService:
         start_time: float,
         translation_style: str = "concise",
         selected_sections: Optional[list[int]] = None,
+        glossary_content: Optional[str] = None,
     ) -> TranslationResult:
         """Standard translation flow for non-PDF files."""
         # Report progress
@@ -1912,6 +1925,7 @@ class TranslationService:
             batch_progress,
             output_language=output_language,
             translation_style=translation_style,
+            glossary_content=glossary_content,
         )
 
         # Check for cancellation (thread-safe)
@@ -2008,6 +2022,7 @@ class TranslationService:
         start_time: float,
         translation_style: str = "concise",
         selected_sections: Optional[list[int]] = None,
+        glossary_content: Optional[str] = None,
     ) -> TranslationResult:
         """
         Streaming translation for PDF files.
@@ -2104,6 +2119,7 @@ class TranslationService:
             batch_progress,
             output_language=output_language,
             translation_style=translation_style,
+            glossary_content=glossary_content,
         )
 
         if self._cancel_event.is_set():

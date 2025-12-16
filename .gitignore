@@ -221,3 +221,6 @@ uvx.exe
 share_package/
 dist_temp/
 YakuLingo.exe
+
+# Temporary files (development/testing)
+.tmp/

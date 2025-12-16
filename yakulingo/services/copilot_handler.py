@@ -576,6 +576,10 @@ class CopilotHandler:
     )
     RESPONSE_SELECTOR_COMBINED = ", ".join(RESPONSE_SELECTORS)
 
+    # Copy button selector for getting response text via clipboard
+    # This is used when DOM text extraction fails (e.g., <> brackets interpreted as HTML)
+    COPY_BUTTON_SELECTOR = '[data-testid="CopyButtonTestId"]'
+
     # Dynamic polling intervals for faster response detection
     # OPTIMIZED: Reduced intervals for quicker response detection (0.15s -> 0.1s)
     RESPONSE_POLL_INITIAL = 0.1  # Initial interval while waiting for response to start
@@ -4461,6 +4465,91 @@ class CopilotHandler:
         logger.debug("[RESPONSE_TEXT] No response found from any selector")
         return "", False
 
+    def _get_response_text_via_copy_button(self) -> str | None:
+        """Get response text by clicking the copy button and reading clipboard.
+
+        This method is used as a fallback when DOM text extraction fails,
+        particularly when text contains <> brackets that are interpreted as HTML tags.
+
+        Returns:
+            The response text from clipboard, or None if extraction failed.
+        """
+        if not self._page:
+            return None
+
+        error_types = _get_playwright_errors()
+        PlaywrightError = error_types['Error']
+
+        try:
+            # Find all copy buttons
+            copy_buttons = self._page.query_selector_all(self.COPY_BUTTON_SELECTOR)
+            if not copy_buttons:
+                logger.debug("[COPY_BUTTON] No copy buttons found")
+                return None
+
+            # Get the last copy button (most recent response)
+            last_copy_button = copy_buttons[-1]
+
+            # Click the copy button using JavaScript to avoid bringing window to foreground
+            try:
+                last_copy_button.evaluate('el => el.click()')
+            except PlaywrightError as e:
+                logger.debug("[COPY_BUTTON] Failed to click button: %s", e)
+                return None
+
+            # Small delay for clipboard to be updated
+            time.sleep(0.1)
+
+            # Read clipboard content using JavaScript
+            try:
+                clipboard_text = self._page.evaluate('() => navigator.clipboard.readText()')
+                if clipboard_text:
+                    logger.debug("[COPY_BUTTON] Got text from clipboard (len=%d)", len(clipboard_text))
+                    return clipboard_text.strip()
+            except PlaywrightError as e:
+                logger.debug("[COPY_BUTTON] Failed to read clipboard: %s", e)
+                return None
+
+        except Exception as e:
+            logger.debug("[COPY_BUTTON] Unexpected error: %s", e)
+
+        return None
+
+    def _finalize_response_text(self, dom_text: str) -> str:
+        """Finalize response text by trying copy button fallback if needed.
+
+        When DOM text extraction may have missed content (e.g., <> brackets
+        interpreted as HTML), try getting text via copy button which preserves
+        the original content.
+
+        Args:
+            dom_text: Text extracted from DOM elements
+
+        Returns:
+            Final response text (from copy button if successful and longer, else dom_text)
+        """
+        # Always try copy button as it preserves <> brackets that DOM may miss
+        copy_text = self._get_response_text_via_copy_button()
+
+        if copy_text:
+            # Use copy button text if it's available and longer
+            # (longer usually means it preserved content that DOM missed)
+            if len(copy_text) > len(dom_text):
+                logger.info("[RESPONSE] Using copy button text (len=%d) over DOM text (len=%d)",
+                           len(copy_text), len(dom_text))
+                return copy_text
+            # Also use copy button text if DOM text seems incomplete
+            # (e.g., has empty lines where content should be)
+            elif dom_text and copy_text:
+                dom_lines = [l for l in dom_text.split('\n') if l.strip()]
+                copy_lines = [l for l in copy_text.split('\n') if l.strip()]
+                if len(copy_lines) > len(dom_lines):
+                    logger.info("[RESPONSE] Using copy button text (%d lines) over DOM text (%d lines)",
+                               len(copy_lines), len(dom_lines))
+                    return copy_text
+
+        return dom_text
+
     def _get_response(
         self,
         timeout: int = 120,
@@ -4619,7 +4708,8 @@ class CopilotHandler:
                                            time.time() - response_start_time,
                                            time.time() - first_content_time if first_content_time else 0,
                                            required_stable_count)
-                                return current_text
+                                # Try copy button to recover text with <> brackets
+                                return self._finalize_response_text(current_text)
                             # Use fastest interval during stability checking
                             poll_interval = self.RESPONSE_POLL_STABLE
                             # Log stability check progress
@@ -4682,7 +4772,8 @@ class CopilotHandler:
                 logger.error("[POLLING] No content received - possible selector issues. "
                             "Response selectors: %s, Stop button selectors: %s",
                             self.RESPONSE_SELECTORS, self.STOP_BUTTON_SELECTORS)
-            return last_text
+            # Try copy button to recover text with <> brackets
+            return self._finalize_response_text(last_text)
 
         except PlaywrightError as e:
             logger.error("Browser error getting response: %s", e)

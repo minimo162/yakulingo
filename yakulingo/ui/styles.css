@@ -212,6 +212,8 @@ body {
 /* === 3-Column Main Layout === */
 .main-area {
     margin-left: var(--sidebar-width);
+    width: calc(100vw - var(--sidebar-width));
+    max-width: calc(100% - var(--sidebar-width));  /* Prevent overflow from scrollbar width */
     flex: 1;
     height: var(--viewport-height);  /* Fixed height to match viewport */
     max-height: var(--viewport-height);

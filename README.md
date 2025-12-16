@@ -80,6 +80,48 @@ PDF翻訳はPP-DocLayout-L（PaddleOCR）によるレイアウト解析を使用
 
 ## インストールと起動
 
+### 方法1: install_deps.bat を使用（推奨）
+
+Windows環境で最も簡単にセットアップできる方法です。Python、依存関係、Playwrightブラウザを自動でインストールします。
+
+```bash
+# リポジトリをクローン
+git clone https://github.com/minimo162/yakulingo.git
+cd yakulingo
+
+# セットアップスクリプトを実行
+packaging\install_deps.bat
+```
+
+**実行時の選択肢:**
+```
+Do you need to use a proxy server?
+
+  [1] Yes - Use proxy (corporate network)
+  [2] No  - Direct connection
+  [3] No  - Direct connection (skip SSL verification)
+```
+
+| 選択肢 | 説明 | 用途 |
+|-------|------|------|
+| 1 | プロキシ経由で接続 | 企業ネットワーク環境 |
+| 2 | 直接接続 | 通常のインターネット環境 |
+| 3 | 直接接続（SSL検証スキップ） | SSL証明書エラーが発生する環境 |
+
+> **Note**: プロキシを使用する場合（選択肢1）、プロキシサーバーのアドレスとユーザー名/パスワードの入力が求められます。
+
+**install_deps.bat が行う処理:**
+1. uv（高速パッケージマネージャー）のダウンロード
+2. Python 3.11 のインストール
+3. 仮想環境の作成と依存関係のインストール
+4. Playwrightブラウザ（Chromium）のインストール
+5. PaddleOCR（PDF翻訳用）のインストールと検証
+6. 起動高速化のためのバイトコードプリコンパイル
+
+セットアップ完了後、`YakuLingo.exe` をダブルクリックして起動します。
+
+### 方法2: 手動インストール
+
 ```bash
 # リポジトリをクローン
 git clone https://github.com/minimo162/yakulingo.git
@@ -101,9 +143,9 @@ python app.py
 ```
 
 ### クイックスタート（最短手順）
-1. `uv sync`（または `pip install -r requirements.txt`）
-2. `playwright install chromium`
-3. `python app.py` を実行（デスクトップアプリとして起動）
+1. `packaging\install_deps.bat` を実行（推奨）、または `uv sync` / `pip install -r requirements.txt`
+2. `playwright install chromium`（install_deps.bat使用時は不要）
+3. `YakuLingo.exe` または `python app.py` を実行
 
 ## 初回セットアップ
 

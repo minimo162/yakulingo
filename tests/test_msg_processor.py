@@ -16,11 +16,13 @@ from yakulingo.models.types import FileType
 class MockMessage:
     """Mock for extract_msg.Message"""
 
-    def __init__(self, subject="Test Subject", body="Test body paragraph 1.\n\nTest body paragraph 2.", sender="test@example.com", date="2024-01-01"):
+    def __init__(self, subject="Test Subject", body="Test body paragraph 1.\n\nTest body paragraph 2.", sender="test@example.com", date="2024-01-01", to="recipient@example.com", cc="cc@example.com"):
         self.subject = subject
         self.body = body
         self.sender = sender
         self.date = date
+        self.to = to
+        self.cc = cc
 
     def close(self):
         pass
@@ -205,6 +207,35 @@ class TestMsgProcessorApplyTranslations:
         assert "Subject: Original Subject" in content  # Subject preserved
         assert "Translated Para 1." in content
         assert "Para 2." in content  # Second para preserved
+
+    def test_preserves_to_and_cc_in_output(self, processor, tmp_path, mock_extract_msg):
+        """Test that To and CC recipients are preserved in translated output."""
+        msg_path = tmp_path / "test.msg"
+        msg_path.write_bytes(b"dummy content")
+        output_path = tmp_path / "output.txt"
+
+        mock_extract_msg.Message = lambda path: MockMessage(
+            subject="Test Subject",
+            body="Test body.",
+            sender="sender@example.com",
+            to="recipient@example.com; recipient2@example.com",
+            cc="cc1@example.com; cc2@example.com",
+            date="2024-01-01"
+        )
+
+        translations = {
+            "msg_subject": "Translated Subject",
+            "msg_body_0": "Translated body."
+        }
+
+        processor.apply_translations(msg_path, output_path, translations)
+
+        content = output_path.read_text(encoding='utf-8')
+        assert "From: sender@example.com" in content
+        assert "To: recipient@example.com; recipient2@example.com" in content
+        assert "CC: cc1@example.com; cc2@example.com" in content
+        assert "Date: 2024-01-01" in content
+        assert "Subject: Translated Subject" in content
 
     def test_changes_extension_to_txt(self, processor, tmp_path, mock_extract_msg):
         msg_path = tmp_path / "test.msg"

@@ -3172,7 +3172,6 @@ def run_app(
 
     def cleanup():
         """Clean up resources on shutdown."""
-        import gc
         import time as time_module
 
         nonlocal cleanup_done
@@ -3186,81 +3185,64 @@ def run_app(
         # Set shutdown flag FIRST to prevent new tasks from starting
         yakulingo_app._shutdown_requested = True
 
-        # Clear PP-DocLayout-L cache FIRST to release GPU/CPU memory and file handles
-        # This must happen before Playwright cleanup because PaddlePaddle may hold
-        # file handles that prevent folder deletion
-        step_start = time_module.time()
-        try:
-            from yakulingo.processors.pdf_layout import clear_analyzer_cache
-            clear_analyzer_cache()
-            logger.debug("[TIMING] PP-DocLayout-L cache cleared: %.2fs", time_module.time() - step_start)
-        except ImportError:
-            pass  # PDF dependencies not installed
-        except Exception as e:
-            logger.debug("Error clearing PP-DocLayout-L cache: %s", e)
-
-        # Cancel any active UI timers (prevents NiceGUI threads from blocking shutdown)
+        # Cancel all pending operations immediately (non-blocking)
+        # These are just flag settings, no waiting
         if yakulingo_app._active_progress_timer is not None:
             try:
                 yakulingo_app._active_progress_timer.cancel()
                 yakulingo_app._active_progress_timer = None
-            except Exception as e:
-                logger.debug("Error cancelling progress timer: %s", e)
+            except Exception:
+                pass
 
-        # Stop hotkey manager
-        step_start = time_module.time()
-        yakulingo_app.stop_hotkey_manager()
-        logger.debug("[TIMING] hotkey_manager.stop: %.2fs", time_module.time() - step_start)
-
-        # Cancel login polling task in app.py (async task)
         if yakulingo_app._login_polling_task is not None:
             try:
                 yakulingo_app._login_polling_task.cancel()
-            except Exception as e:
-                logger.debug("Error cancelling login polling task: %s", e)
+            except Exception:
+                pass
 
-        # Cancel any ongoing translation (prevents incomplete output files)
         if yakulingo_app.translation_service is not None:
             try:
                 yakulingo_app.translation_service.cancel()
-            except Exception as e:
-                logger.debug("Error cancelling translation: %s", e)
+            except Exception:
+                pass
 
-        # Cancel login wait if in progress in copilot_handler (sync loop)
         if yakulingo_app._copilot is not None:
             try:
                 yakulingo_app._copilot.cancel_login_wait()
-            except Exception as e:
-                logger.debug("Error cancelling login wait: %s", e)
+            except Exception:
+                pass
 
-        # Force disconnect from Copilot (close Edge browser immediately)
-        # Use force_disconnect to avoid waiting for pending Playwright operations
+        # Stop hotkey manager (quick, just unregisters hotkey)
+        yakulingo_app.stop_hotkey_manager()
+
+        # Force disconnect from Copilot (the main time-consuming step)
         step_start = time_module.time()
         if yakulingo_app._copilot is not None:
             try:
                 yakulingo_app._copilot.force_disconnect()
-                logger.info("[TIMING] Copilot disconnected: %.2fs", time_module.time() - step_start)
+                logger.debug("[TIMING] Copilot disconnected: %.2fs", time_module.time() - step_start)
             except Exception as e:
                 logger.debug("Error disconnecting Copilot: %s", e)
 
-        # Close database connections (ensures WAL checkpoint)
-        step_start = time_module.time()
+        # Close database connections (quick)
         try:
             yakulingo_app.state.close()
-            logger.debug("[TIMING] database.close: %.2fs", time_module.time() - step_start)
-        except Exception as e:
-            logger.debug("Error closing database: %s", e)
+        except Exception:
+            pass
 
-        # Clear references to help with garbage collection
+        # Clear PP-DocLayout-L cache (only if loaded)
+        try:
+            from yakulingo.processors.pdf_layout import clear_analyzer_cache
+            clear_analyzer_cache()
+        except ImportError:
+            pass
+        except Exception:
+            pass
+
+        # Clear references (helps GC but don't force gc.collect - it's slow)
         yakulingo_app._copilot = None
         yakulingo_app.translation_service = None
         yakulingo_app._login_polling_task = None
-
-        # Force garbage collection to clean up before Python shutdown
-        # This helps prevent WeakSet errors during interpreter shutdown
-        step_start = time_module.time()
-        gc.collect()
-        logger.debug("[TIMING] gc.collect: %.2fs", time_module.time() - step_start)
 
         logger.info("[TIMING] cleanup total: %.2fs", time_module.time() - cleanup_start)
 

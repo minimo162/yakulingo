@@ -3790,7 +3790,8 @@ document.fonts.ready.then(function() {
         try:
             # Load settings to check browser_display_mode
             from yakulingo.config.settings import AppSettings
-            settings = AppSettings.load()
+            settings_path = Path.home() / ".yakulingo" / "settings.json"
+            settings = AppSettings.load(settings_path)
             if settings.browser_display_mode == "side_panel":
                 app_position = _calculate_app_position_for_side_panel(
                     run_window_size[0], run_window_size[1]

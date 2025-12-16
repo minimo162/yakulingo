@@ -925,11 +925,14 @@ class CopilotHandler:
                 "--disable-renderer-backgrounding",
                 # Disable throttling when window is occluded (covered by other windows)
                 "--disable-backgrounding-occluded-windows",
-                # Disable features that slow down initial page load
-                "--disable-features=TranslateUI",
+                # Disable features that slow down initial page load or cause restore prompts
+                # TranslateUI: translation prompts, InfiniteSessionRestore: session restore
+                "--disable-features=TranslateUI,InfiniteSessionRestore",
                 # Disable "Restore pages" prompt when Edge is force-killed
                 # (Chromium flag to suppress session crash bubble on next startup)
                 "--disable-session-crashed-bubble",
+                # Hide the crash restore bubble (Edge-specific, additional safety)
+                "--hide-crash-restore-bubble",
             ]
 
             # Configure window position based on display mode
@@ -3386,6 +3389,15 @@ class CopilotHandler:
         # Mark as disconnected first
         self._connected = False
 
+        # Navigate to about:blank before closing to prevent "Restore pages" dialog
+        # Do this before shutting down the executor
+        with suppress(Exception):
+            if self._page and not self._page.is_closed():
+                _playwright_executor.execute(
+                    lambda: self._page.goto("about:blank", wait_until="commit", timeout=1000)
+                )
+                logger.debug("Navigated to about:blank before force disconnect")
+
         # First, shutdown the executor to release any pending operations
         executor_start = time.time()
         _playwright_executor.shutdown()
@@ -3458,6 +3470,13 @@ class CopilotHandler:
         from contextlib import suppress
 
         self._connected = False
+
+        # Navigate to about:blank before closing to prevent "Restore pages" dialog
+        # When Edge is closed with content, it may prompt to restore on next startup
+        with suppress(Exception):
+            if self._page and not self._page.is_closed():
+                self._page.goto("about:blank", wait_until="commit", timeout=2000)
+                logger.debug("Navigated to about:blank before closing")
 
         # Use suppress for cleanup - we want to continue even if errors occur
         # Catch all exceptions during cleanup to ensure resources are released

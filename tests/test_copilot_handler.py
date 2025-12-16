@@ -351,7 +351,6 @@ class TestCopilotHandlerTranslateSingle:
         handler.start_new_chat = lambda: None
         handler._send_message = lambda prompt: False  # Returns bool
         handler._get_response = lambda on_chunk=None, stop_button_seen_during_send=False: ""
-        handler._save_storage_state = lambda: None
 
         monkeypatch.setattr(copilot_handler._playwright_executor, 'execute', mock_execute)
 

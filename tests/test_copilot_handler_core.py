@@ -490,7 +490,6 @@ class TestCopilotHandlerTranslateSync:
         handler._send_message = Mock()  # Mock to avoid auth dialog check
         handler._send_prompt_smart = Mock()
         handler._get_response = Mock(return_value="1. Result")
-        handler._save_storage_state = Mock()
 
         result = handler.translate_sync(["test"], "prompt")
 
@@ -521,12 +520,9 @@ class TestCopilotHandlerTranslateSync:
         handler._page = mock_page
         handler._send_message = Mock()
         handler._get_response = Mock(return_value="   ")
-        handler._save_storage_state = Mock()
 
         with pytest.raises(RuntimeError):
             handler.translate_sync(["text"], "prompt")
-
-        handler._save_storage_state.assert_not_called()
 
 
 class TestCopilotHandlerTranslateSingle:
@@ -550,7 +546,6 @@ class TestCopilotHandlerTranslateSingle:
         handler._send_message = Mock()  # Mock to avoid auth dialog check
         handler._send_prompt_smart = Mock()
         handler._get_response = Mock(return_value="訳文: Translated\n解説: This is explanation")
-        handler._save_storage_state = Mock()
 
         result = handler.translate_single("テスト", "prompt")
 
@@ -574,12 +569,9 @@ class TestCopilotHandlerTranslateSingle:
         handler._send_message = Mock()  # Mock to avoid auth dialog check
         handler._send_prompt_smart = Mock()
         handler._get_response = Mock(return_value="")
-        handler._save_storage_state = Mock()
 
         with pytest.raises(RuntimeError):
             handler.translate_single("テスト", "prompt")
-
-        handler._save_storage_state.assert_not_called()
 
     def test_translate_single_with_reference_files(self):
         """translate_single attaches reference files"""
@@ -599,7 +591,6 @@ class TestCopilotHandlerTranslateSingle:
         handler._attach_file = Mock(return_value=True)
         handler._send_prompt_smart = Mock()
         handler._get_response = Mock(return_value="Translated")
-        handler._save_storage_state = Mock()
 
         ref_files = [Path("/path/to/glossary.csv")]
         # Need to make the file "exist" for attach logic

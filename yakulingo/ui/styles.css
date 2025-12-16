@@ -140,6 +140,11 @@
     }
 }
 
+/* === Box Sizing Reset === */
+*, *::before, *::after {
+    box-sizing: border-box;
+}
+
 /* === Base === */
 html {
     /* Base font size scaled by window width (set dynamically in app.py) */

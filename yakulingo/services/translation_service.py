@@ -64,6 +64,31 @@ def _sanitize_output_stem(name: str) -> str:
     return sanitized or 'translated_file'
 
 
+def load_glossary_content(glossary_path: Path) -> Optional[str]:
+    """Load glossary file content for embedding in prompt.
+
+    Args:
+        glossary_path: Path to glossary CSV file
+
+    Returns:
+        Glossary content as string, or None if file doesn't exist or is empty
+    """
+    if not glossary_path.exists():
+        logger.debug("Glossary file not found: %s", glossary_path)
+        return None
+
+    try:
+        content = glossary_path.read_text(encoding='utf-8-sig')  # Handle BOM
+        if not content.strip():
+            logger.debug("Glossary file is empty: %s", glossary_path)
+            return None
+        logger.debug("Loaded glossary content: %d chars from %s", len(content), glossary_path)
+        return content.strip()
+    except (OSError, UnicodeDecodeError) as e:
+        logger.warning("Failed to load glossary file %s: %s", glossary_path, e)
+        return None
+
+
 # =============================================================================
 # Language Detection
 # =============================================================================
@@ -1141,6 +1166,7 @@ class TranslationService:
         style: Optional[str] = None,
         pre_detected_language: Optional[str] = None,
         on_chunk: "Callable[[str], None] | None" = None,
+        glossary_content: Optional[str] = None,
     ) -> TextTranslationResult:
         """
         Translate text with language-specific handling:
@@ -1149,11 +1175,12 @@ class TranslationService:
 
         Args:
             text: Source text to translate
-            reference_files: Optional list of reference files to attach
+            reference_files: Optional list of reference files to attach (ignored if glossary_content is provided)
             style: Translation style for English output ("standard", "concise", "minimal")
                    If None, uses settings.text_translation_style (default: "concise")
             pre_detected_language: Pre-detected language from detect_language() to skip detection
             on_chunk: Optional callback called with partial text during streaming
+            glossary_content: Optional glossary content to embed in prompt (faster than file attachment)
 
         Returns:
             TextTranslationResult with options and output_language
@@ -1201,8 +1228,21 @@ class TranslationService:
                     error_message=result.error_message,
                 )
 
-            # Build prompt with reference section if files are attached
-            reference_section = REFERENCE_INSTRUCTION if reference_files else ""
+            # Build prompt with reference section
+            # If glossary_content is provided, embed it in prompt (faster than file attachment)
+            from yakulingo.services.prompt_builder import GLOSSARY_EMBEDDED_INSTRUCTION
+            if glossary_content:
+                reference_section = GLOSSARY_EMBEDDED_INSTRUCTION.format(glossary_content=glossary_content)
+                # Don't attach files when glossary is embedded
+                files_to_attach = None
+                logger.debug("Embedding glossary in prompt (%d chars)", len(glossary_content))
+            elif reference_files:
+                reference_section = REFERENCE_INSTRUCTION
+                files_to_attach = reference_files
+            else:
+                reference_section = ""
+                files_to_attach = None
+
             prompt = template.replace("{reference_section}", reference_section)
             prompt = prompt.replace("{input_text}", text)
             # Replace style placeholder for English translation
@@ -1211,11 +1251,12 @@ class TranslationService:
 
             # Translate
             logger.debug(
-                "Sending text to Copilot (streaming=%s, refs=%d)",
+                "Sending text to Copilot (streaming=%s, refs=%d, glossary_embedded=%s)",
                 bool(on_chunk),
-                len(reference_files) if reference_files else 0,
+                len(files_to_attach) if files_to_attach else 0,
+                bool(glossary_content),
             )
-            raw_result = self.copilot.translate_single(text, prompt, reference_files, on_chunk)
+            raw_result = self.copilot.translate_single(text, prompt, files_to_attach, on_chunk)
 
             # Parse the result - always single option now
             options = self._parse_single_translation_result(raw_result)

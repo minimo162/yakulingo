@@ -1303,19 +1303,38 @@ class YakuLingoApp:
         # (button won't appear again until next refresh after 3s)
         await asyncio.sleep(3)
 
-    def _get_effective_reference_files(self) -> list[Path] | None:
+    def _get_effective_reference_files(self, exclude_glossary: bool = False) -> list[Path] | None:
         """Get reference files including bundled glossary if enabled.
 
         Uses cached glossary path to avoid repeated path calculations.
+
+        Args:
+            exclude_glossary: If True, don't include bundled glossary (for when it's embedded in prompt)
         """
         files = list(self.state.reference_files) if self.state.reference_files else []
 
         # Add bundled glossary if enabled (uses cached path)
-        if self.settings.use_bundled_glossary:
+        # Skip if exclude_glossary is True (glossary will be embedded in prompt instead)
+        if self.settings.use_bundled_glossary and not exclude_glossary:
             if self._glossary_path.exists() and self._glossary_path not in files:
                 files.insert(0, self._glossary_path)
 
         return files if files else None
+
+    def _get_glossary_content_for_embedding(self) -> Optional[str]:
+        """Get glossary content for embedding in prompt.
+
+        Returns:
+            Glossary content as string if use_bundled_glossary is enabled, else None
+        """
+        if not self.settings.use_bundled_glossary:
+            return None
+
+        if not self._glossary_path.exists():
+            return None
+
+        from yakulingo.services.translation_service import load_glossary_content
+        return load_glossary_content(self._glossary_path)
 
     def _copy_text(self, text: str):
         """Copy specified text to clipboard"""
@@ -1533,7 +1552,11 @@ class YakuLingoApp:
                 self._active_translation_trace_id = None
             return
 
-        reference_files = self._get_effective_reference_files()
+        # Get glossary content for embedding (faster than file attachment)
+        glossary_content = self._get_glossary_content_for_embedding()
+
+        # Get reference files (exclude glossary if it will be embedded)
+        reference_files = self._get_effective_reference_files(exclude_glossary=bool(glossary_content))
 
         # Use saved client reference (context.client not available in async tasks)
         # Protected by _client_lock for thread-safe access
@@ -1587,6 +1610,8 @@ class YakuLingoApp:
                 reference_files,
                 None,  # style (use default)
                 detected_language,  # pre_detected_language
+                None,  # on_chunk (not using streaming)
+                glossary_content,  # Embed glossary in prompt for faster translation
             )
 
             # Calculate elapsed time

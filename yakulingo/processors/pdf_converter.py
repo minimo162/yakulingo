@@ -490,6 +490,15 @@ def vflag(font: str, char: str, vfont: str = None, vchar: str = None) -> bool:
                 0x003C,  # < LESS-THAN SIGN
                 0x003D,  # = EQUALS SIGN
                 0x003E,  # > GREATER-THAN SIGN
+                # Fullwidth forms (often used in Japanese text headings like ＜見出し＞)
+                0xFF0B,  # ＋ FULLWIDTH PLUS SIGN
+                0xFF0D,  # － FULLWIDTH HYPHEN-MINUS
+                0xFF0A,  # ＊ FULLWIDTH ASTERISK
+                0xFF0F,  # ／ FULLWIDTH SOLIDUS
+                0xFF1C,  # ＜ FULLWIDTH LESS-THAN SIGN
+                0xFF1D,  # ＝ FULLWIDTH EQUALS SIGN
+                0xFF1E,  # ＞ FULLWIDTH GREATER-THAN SIGN
+                0xFF5E,  # ～ FULLWIDTH TILDE (wave dash, used for ranges like 10～20)
             ):
                 return False
 
@@ -1132,6 +1141,74 @@ def is_line_end_hyphenated(text: str) -> bool:
     return text[-1] in HYPHEN_CHARS
 
 
+# Characters used as TOC leaders (dots/dashes connecting item to page number)
+TOC_LEADER_CHARS = frozenset('…‥・．.·')
+
+
+def is_toc_line_ending(text: str) -> bool:
+    """
+    Check if text ends with a TOC-like pattern: leader dots followed by page number.
+
+    Table of Contents entries typically look like:
+    - "経営成績等の概況…………… 2"
+    - "中間連結財務諸表及び主な注記... 4"
+    - "セグメント情報等・・・・・・・11"
+
+    This pattern should be treated as a line ending (new paragraph), not a
+    continuation, even though it ends with a number (not punctuation).
+
+    Args:
+        text: Text to check
+
+    Returns:
+        True if text appears to be a TOC entry ending with leader + page number
+
+    Examples:
+        >>> is_toc_line_ending("経営成績等の概況…………… 2")
+        True
+        >>> is_toc_line_ending("セグメント情報等………11")
+        True
+        >>> is_toc_line_ending("第2四半期の売上高は")
+        False
+        >>> is_toc_line_ending("売上高 1,234 百万円")
+        False
+    """
+    if not text:
+        return False
+
+    stripped = text.rstrip()
+    if not stripped:
+        return False
+
+    # Check if ends with digit(s) - page number
+    # Find the rightmost non-digit position
+    i = len(stripped) - 1
+    while i >= 0 and (stripped[i].isdigit() or stripped[i] in ' \u3000'):
+        i -= 1
+
+    if i < 0 or i == len(stripped) - 1:
+        # No digits at end, or only digits - not a TOC pattern
+        return False
+
+    # Check if the character before the page number is a TOC leader
+    # (or there are consecutive leader chars before spaces and digits)
+    leader_found = False
+    while i >= 0:
+        char = stripped[i]
+        if char in TOC_LEADER_CHARS:
+            leader_found = True
+            break
+        elif char in ' \u3000':
+            # Skip spaces between leader and page number
+            i -= 1
+            continue
+        else:
+            # Non-leader, non-space character found
+            break
+
+    return leader_found
+
+
 def is_japanese_continuation_line(text: str) -> bool:
     """
     Check if Japanese text ends with a continuation indicator (yomitoku reference).
@@ -1204,6 +1281,14 @@ def is_japanese_continuation_line(text: str) -> bool:
         sentence_final_particles = frozenset('ねよなかわぞ')
         if last_char in sentence_final_particles:
             return False
+
+        # Quantity units that typically END a phrase (not continuation)
+        # Common in financial documents: △971億円, 5,000万円, 100台, etc.
+        # These should NOT be treated as continuation lines in table contexts.
+        quantity_units = frozenset('円万億千台個件名社年月日回本枚％%')
+        if last_char in quantity_units:
+            return False
+
         # If it's a CJK character that's not a known ending, assume continuation
         if _is_cjk_char(last_char):
             return True

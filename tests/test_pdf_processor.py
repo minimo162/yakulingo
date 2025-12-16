@@ -362,6 +362,37 @@ class TestVflag:
         assert vflag("MS-Gothic", "ルール") is False  # rule
         assert vflag("MS-Gothic", "時々") is False  # sometimes
 
+    def test_vflag_fullwidth_operators(self):
+        """Fullwidth arithmetic operators should NOT be detected as formula.
+
+        These characters have Unicode category 'Sm' (Symbol, math) but are
+        commonly used in Japanese document headings like ＜見出し＞.
+        """
+        # Fullwidth angle brackets (common in headings)
+        assert vflag("MS-Gothic", "＜") is False  # U+FF1C
+        assert vflag("MS-Gothic", "＞") is False  # U+FF1E
+        assert vflag("MS-Gothic", "＜見出し＞") is False
+
+        # Fullwidth arithmetic operators
+        assert vflag("MS-Gothic", "＋") is False  # U+FF0B
+        assert vflag("MS-Gothic", "－") is False  # U+FF0D
+        assert vflag("MS-Gothic", "＊") is False  # U+FF0A
+        assert vflag("MS-Gothic", "／") is False  # U+FF0F
+        assert vflag("MS-Gothic", "＝") is False  # U+FF1D
+
+        # Fullwidth tilde (wave dash, used for ranges like 10～20)
+        assert vflag("MS-Gothic", "～") is False  # U+FF5E
+        assert vflag("MS-Gothic", "10～20") is False
+
+        # Half-width versions should also not be formulas
+        assert vflag("Arial", "<") is False  # U+003C
+        assert vflag("Arial", ">") is False  # U+003E
+        assert vflag("Arial", "+") is False  # U+002B
+        assert vflag("Arial", "-") is False  # U+002D
+        assert vflag("Arial", "*") is False  # U+002A
+        assert vflag("Arial", "/") is False  # U+002F
+        assert vflag("Arial", "=") is False  # U+003D
+
     def test_vflag_unicode_category(self):
         """Mathematical symbols should be detected"""
         assert vflag("Arial", "∑") is True  # Math symbol (Sm)
@@ -4871,6 +4902,39 @@ class TestJapaneseContinuationLine:
         assert is_japanese_continuation_line("ですよ") is False
         assert is_japanese_continuation_line("ですか") is False
 
+    def test_quantity_units_are_not_continuation(self):
+        """Quantity units (円, 億, 万, etc.) should NOT be continuation.
+
+        These are common in financial documents and table cells.
+        Text ending with these units typically completes a data item,
+        not continues to the next line.
+        """
+        # Currency units
+        assert is_japanese_continuation_line("△971億円") is False
+        assert is_japanese_continuation_line("5,000万円") is False
+        assert is_japanese_continuation_line("100億") is False
+        assert is_japanese_continuation_line("1,234万") is False
+        assert is_japanese_continuation_line("50千") is False
+
+        # Count units
+        assert is_japanese_continuation_line("100台") is False
+        assert is_japanese_continuation_line("50個") is False
+        assert is_japanese_continuation_line("10件") is False
+        assert is_japanese_continuation_line("5名") is False
+        assert is_japanese_continuation_line("3社") is False
+
+        # Time units
+        assert is_japanese_continuation_line("2024年") is False
+        assert is_japanese_continuation_line("12月") is False
+        assert is_japanese_continuation_line("15日") is False
+        assert is_japanese_continuation_line("5回") is False
+
+        # Other units
+        assert is_japanese_continuation_line("10本") is False
+        assert is_japanese_continuation_line("100枚") is False
+        assert is_japanese_continuation_line("50％") is False
+        assert is_japanese_continuation_line("30%") is False
+
     def test_empty_text(self):
         """Empty text is not continuation"""
         assert is_japanese_continuation_line("") is False
@@ -4898,3 +4962,99 @@ class TestJapaneseContinuationLine:
         assert is_japanese_continuation_line(
             "実際の業績に影響を与え得る重要な要素には、当社の事業を取り巻く経済情勢、為替レート等が含まれます。"
         ) is False
+
+
+class TestTocLineEnding:
+    """Test is_toc_line_ending function for detecting TOC entries"""
+
+    def test_typical_toc_entry_with_ellipsis(self):
+        """TOC entries with ellipsis leader followed by page number"""
+        from yakulingo.processors.pdf_converter import is_toc_line_ending
+
+        assert is_toc_line_ending("経営成績等の概況…………… 2") is True
+        assert is_toc_line_ending("中間連結財務諸表及び主な注記………………… 4") is True
+        assert is_toc_line_ending("セグメント情報等……………………11") is True
+
+    def test_toc_entry_with_various_leaders(self):
+        """TOC entries with different leader characters"""
+        from yakulingo.processors.pdf_converter import is_toc_line_ending
+
+        # Full-width ellipsis (…)
+        assert is_toc_line_ending("項目１……… 5") is True
+        # Two-dot leader (‥)
+        assert is_toc_line_ending("項目２‥‥‥ 10") is True
+        # Middle dot (・)
+        assert is_toc_line_ending("項目３・・・・・ 15") is True
+        # Full-width period (．)
+        assert is_toc_line_ending("項目４．．．． 20") is True
+        # Half-width period (.)
+        assert is_toc_line_ending("Item 5..... 25") is True
+        # Middle dot (·)
+        assert is_toc_line_ending("Item 6···· 30") is True
+
+    def test_toc_entry_with_multi_digit_page_number(self):
+        """TOC entries with multi-digit page numbers"""
+        from yakulingo.processors.pdf_converter import is_toc_line_ending
+
+        assert is_toc_line_ending("長い項目名……………………………………100") is True
+        assert is_toc_line_ending("別の項目…… 1234") is True
+
+    def test_not_toc_normal_text(self):
+        """Normal text should not be detected as TOC entries"""
+        from yakulingo.processors.pdf_converter import is_toc_line_ending
+
+        assert is_toc_line_ending("第2四半期の売上高は") is False
+        assert is_toc_line_ending("売上高 1,234 百万円") is False
+        assert is_toc_line_ending("含まれます。") is False
+
+    def test_not_toc_ends_with_number_but_no_leader(self):
+        """Text ending with number but no leader should not match"""
+        from yakulingo.processors.pdf_converter import is_toc_line_ending
+
+        assert is_toc_line_ending("2024年3月期第2") is False
+        assert is_toc_line_ending("売上高は100") is False
+        assert is_toc_line_ending("約50億円") is False
+
+    def test_only_digits(self):
+        """Text that is only digits should not match"""
+        from yakulingo.processors.pdf_converter import is_toc_line_ending
+
+        assert is_toc_line_ending("123") is False
+        assert is_toc_line_ending("  456  ") is False
+
+    def test_empty_string(self):
+        """Empty string should not match"""
+        from yakulingo.processors.pdf_converter import is_toc_line_ending
+
+        assert is_toc_line_ending("") is False
+        assert is_toc_line_ending("   ") is False
+
+    def test_leader_without_number(self):
+        """Text with leader but no trailing number should not match"""
+        from yakulingo.processors.pdf_converter import is_toc_line_ending
+
+        assert is_toc_line_ending("項目……………………") is False
+        assert is_toc_line_ending("Something...") is False
+
+    def test_realistic_toc_from_kessan_tanshin(self):
+        """Test with realistic TOC entries from 決算短信"""
+        from yakulingo.processors.pdf_converter import is_toc_line_ending
+
+        toc_entries = [
+            "１．経営成績等の概況………………………………………………………………………… 2",
+            "（１）当中間連結会計期間の経営成績の概況……………………………………………… 2",
+            "（２）当中間連結会計期間の財政状態及びキャッシュ・フローの概況………………… 2",
+            "（３）連結業績予想などの将来予測情報に関する説明…………………………………… 3",
+            "２．中間連結財務諸表及び主な注記………………………………………………………… 4",
+            "（１）中間連結貸借対照表…………………………………………………………………… 4",
+            "（２）中間連結損益計算書及び中間連結包括利益計算書………………………………… 6",
+            "中間連結損益計算書………………………………………………………………… 6",
+            "中間連結包括利益計算書…………………………………………………………… 7",
+            "（３）中間連結キャッシュ・フロー計算書………………………………………………… 8",
+            "（４）中間連結財務諸表に関する注記事項…………………………………………………10",
+            "（セグメント情報等）………………………………………………………………………11",
+            "（重要な後発事象）…………………………………………………………………………11",
+        ]
+
+        for entry in toc_entries:
+            assert is_toc_line_ending(entry) is True, f"Failed for: {entry}"

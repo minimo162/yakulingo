@@ -1088,19 +1088,29 @@ def vflag(font: str, char: str) -> bool:
     if re.match(r"\(cid:", char):
         return True
 
-    # 3. 数式フォント名パターン
+    # 3. 演算子・記号の除外（見出しなどで使用される一般的な記号）
+    #    半角: + - * / < = >
+    #    全角: ＋ － ＊ ／ ＜ ＝ ＞ ～（波ダッシュ）
+    if char_code in (
+        0x002B, 0x002D, 0x002A, 0x002F, 0x003C, 0x003D, 0x003E,  # 半角
+        0xFF0B, 0xFF0D, 0xFF0A, 0xFF0F, 0xFF1C, 0xFF1D, 0xFF1E,  # 全角
+        0xFF5E,  # ～ FULLWIDTH TILDE (波ダッシュ)
+    ):
+        return False
+
+    # 4. 数式フォント名パターン
     #    CM*, MS.M, XY, MT, BL, RM, EU, LA, RS, LINE,
     #    TeX-, rsfs, txsy, wasy, stmary, *Mono, *Code, *Ital, *Sym, *Math
     if re.match(DEFAULT_VFONT_PATTERN, font):
         return True
 
-    # 4. Unicode文字カテゴリ
+    # 5. Unicode文字カテゴリ
     #    Lm(修飾文字), Mn(結合記号), Sk(修飾記号),
     #    Sm(数学記号), Zl/Zp/Zs(分離子)
     if unicodedata.category(char[0]) in FORMULA_UNICODE_CATEGORIES:
         return True
 
-    # 5. ギリシャ文字 (U+0370～U+03FF)
+    # 6. ギリシャ文字 (U+0370～U+03FF)
     if 0x370 <= ord(char[0]) < 0x400:
         return True
 
@@ -1180,12 +1190,45 @@ if new_paragraph:
             last_char = prev_text[-1]
             is_sentence_end = (
                 last_char in SENTENCE_END_CHARS_JA or
-                last_char in SENTENCE_END_CHARS_EN
+                last_char in SENTENCE_END_CHARS_EN or
+                is_toc_line_ending(prev_text)  # 目次パターン（リーダー＋ページ番号）
             )
             if not is_sentence_end:
                 # 弱い境界で文末記号なし → 継続行として扱う
                 should_start_new = False
                 line_break = True
+
+    # 強い境界でも開き括弧で終わる場合は分割しない
+    if should_start_new and sstk and sstk[-1]:
+        if sstk[-1].rstrip()[-1] in OPENING_BRACKETS:
+            should_start_new = False
+            line_break = True
+
+    # 強い境界でも1-2文字のCJKテキストは分割しない（スペース入りテキスト対策）
+    if should_start_new and sstk and sstk[-1]:
+        prev_text = sstk[-1].rstrip()
+        if len(prev_text) <= 2 and all(_is_cjk_char(c) for c in prev_text):
+            should_start_new = False
+            line_break = True
+```
+
+**目次パターン検出 `is_toc_line_ending()`:**
+
+目次項目（リーダー＋ページ番号）を文末として認識：
+
+```python
+TOC_LEADER_CHARS = frozenset('…‥・．.·')  # リーダー文字
+
+def is_toc_line_ending(text: str) -> bool:
+    """目次パターン（リーダー＋ページ番号）を検出"""
+    # 例: "経営成績等の概況…………… 2" → True
+    # 例: "1. 連結財務諸表..... 15" → True
+```
+
+**開き括弧定数 `OPENING_BRACKETS`:**
+
+```python
+OPENING_BRACKETS = frozenset('(（「『【〔〈《｛［')
 ```
 
 **PP-DocLayout-Lフォールバック処理:**
@@ -1443,6 +1486,8 @@ PDF翻訳では視覚的な行末での改行を文字種別に基づいて処�
 from yakulingo.processors.pdf_converter import (
     get_line_join_separator,    # 行結合時のセパレータを決定
     is_line_end_hyphenated,     # ハイフン終了行の検出
+    is_toc_line_ending,         # 目次パターン検出
+    is_japanese_continuation_line,  # 日本語継続行判定
     _is_cjk_char,               # CJK文字判定
     _is_latin_char,             # ラテン文字判定
 )
@@ -1452,6 +1497,19 @@ separator = get_line_join_separator("日本語", "テ")  # returns ""
 separator = get_line_join_separator("Hello", "W")    # returns " "
 ```
 
+**継続行判定 `is_japanese_continuation_line()`:**
+
+日本語テキストが次の行に継続するかを判定：
+
+```python
+def is_japanese_continuation_line(text: str) -> bool:
+    """日本語継続行判定"""
+    # 以下の場合は継続しない（Falseを返す）:
+    # 1. 文末記号で終わる（。！？など）
+    # 2. 数量単位で終わる（円万億千台個件名社年月日回本枚％%）
+    # 3. 目次パターン（リーダー＋ページ番号）
+```
+
 **定数:**
 
 | 定数名 | 説明 |
@@ -1459,6 +1517,9 @@ separator = get_line_join_separator("Hello", "W")    # returns " "
 | `SENTENCE_END_CHARS_JA` | 日本語文末記号: `。！？…‥）」』】｝〕〉》）＞]＞` |
 | `SENTENCE_END_CHARS_EN` | 英語文末記号: `.!?;:` |
 | `HYPHEN_CHARS` | ハイフン文字: `-‐‑‒–—−` |
+| `TOC_LEADER_CHARS` | 目次リーダー文字: `…‥・．.·` |
+| `OPENING_BRACKETS` | 開き括弧: `(（「『【〔〈《｛［` |
+| `QUANTITY_UNITS_JA` | 数量単位（継続行判定除外）: `円万億千台個件名社年月日回本枚％%` |
 
 **Coordinate System Utilities (PDFMathTranslate compliant):**
 
@@ -1740,6 +1801,11 @@ Based on recent commits:
   - **Issue**: 通常の段落内の行折り返しがTOCパターンとして誤検出され、`is_japanese_continuation_line()`による継続行判定がスキップされていた
   - **Fix**: TOCパターン検出でも弱い境界として扱い、`is_japanese_continuation_line()`チェックを適用
   - **Result**: 「判断する」→「一定の前提に...」のような行折り返しが正しく結合されるようになった
+  - **TOC line ending detection**: `is_toc_line_ending()`関数を追加。リーダー（…‥・．.·）＋ページ番号パターンを検出して目次項目を正しく分離
+  - **Fullwidth operator exclusion**: `vflag()`に全角演算子（＜＞＋－＊／＝）と波ダッシュ（～）を除外リストに追加。見出しなどで使用される記号が数式判定されなくなった
+  - **Quantity units exclusion**: `is_japanese_continuation_line()`に数量単位（円万億千台個件名社年月日回本枚％%）を非継続行として追加。テーブルセルの結合を防止
+  - **Opening bracket protection**: 強い境界でも開き括弧（(（「『【〔〈《｛［）で終わる場合は分割しない。「百万円(」のような分割を防止
+  - **Short CJK text protection**: 強い境界でも1-2文字のCJKテキストは分割しない。スペース入りテキスト（「代 表 者」等）の分割を防止
 - **Global Hotkey Change to Ctrl+Alt+J (2024-12)**:
   - **Excel/Word conflict resolution**: Ctrl+JはExcelのJustifyショートカット、Ctrl+Shift+JはWordのJustifyショートカットと競合するため、Ctrl+Alt+Jに変更
   - **Low-level keyboard hook**: WH_KEYBOARD_LLを使用して確実にホットキーを処理

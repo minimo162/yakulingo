@@ -927,6 +927,9 @@ class CopilotHandler:
                 "--disable-backgrounding-occluded-windows",
                 # Disable features that slow down initial page load
                 "--disable-features=TranslateUI",
+                # Disable "Restore pages" prompt when Edge is force-killed
+                # (Chromium flag to suppress session crash bubble on next startup)
+                "--disable-session-crashed-bubble",
             ]
 
             # Configure window position based on display mode
@@ -3399,12 +3402,9 @@ class CopilotHandler:
         if self._browser_started_by_us:
             browser_terminated = False
 
-            # OPTIMIZED: Skip graceful close (WM_CLOSE) entirely during force_disconnect
-            # Reason: In practice, graceful close almost always times out because:
-            # 1. Edge may show "Restore pages" dialog
-            # 2. M365 Copilot may have unsaved state
-            # Skipping saves ~0.05-0.1s on every shutdown
-            # Note: "Edge was closed unexpectedly" message is acceptable during app exit
+            # Note: Graceful close (WM_CLOSE) is skipped here because it almost always
+            # times out due to M365 Copilot's state. Instead, we use --disable-session-crashed-bubble
+            # flag when starting Edge to suppress the "Restore pages" prompt.
 
             # Directly kill process tree (fastest method)
             # Use _kill_process_tree to kill all child processes (renderer, GPU, etc.)
@@ -4811,6 +4811,9 @@ class CopilotHandler:
                         logger.info("[SEND] Message sent (attempt %d, %s, verified in %.2fs)",
                                     send_attempt + 1, verify_reason, elapsed)
                         send_success = True
+                        # Wait for Copilot's internal state to stabilize before proceeding
+                        # This prevents "応答を処理中です" message from DOM operations during response generation
+                        time.sleep(0.3)
                         break
                     else:
                         # Debug: Dump page state for troubleshooting

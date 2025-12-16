@@ -546,13 +546,20 @@ async def _translate_text(self):
 | `"foreground"` | 前面に表示 |
 
 サイドパネルモード (`side_panel`) の動作:
+- アプリとサイドパネルを「セット」として画面中央に配置
 - EdgeウィンドウをYakuLingoアプリの右側に配置
 - アプリと高さを揃えて表示（最小高さ500px）
-- 画面右端を超える場合は左側に自動配置
 - マルチモニター対応（アプリと同じモニターに表示）
 - ブラウザスロットリング問題を回避可能
 - ログイン時の前面表示処理がスキップされる（既に見えているため）
-- Edge起動時に画面外配置オプションを使用しない
+- UI表示後にウィンドウ位置を再調整（pywebviewの中央配置を修正）
+
+**サイドパネルのレイアウト:**
+```
+|---余白---|---アプリ---|---隙間---|---サイドパネル---|---余白---|
+```
+- アプリとサイドパネルの全体幅（`app_width + gap + side_panel_width`）を画面中央に配置
+- pywebviewがアプリを中央に配置した後、`_position_edge_as_side_panel()`で両ウィンドウを再配置
 
 **サイドパネルのサイズ計算（解像度対応）:**
 
@@ -1682,16 +1689,22 @@ Based on recent commits:
     - アプリウィンドウ幅: `screen_width × 0.68` または `screen_width - side_panel - gap` の小さい方
     - 定数: `SIDE_PANEL_BASE_WIDTH=550`, `SIDE_PANEL_MIN_WIDTH=450`, `SIDE_PANEL_GAP=10`, `SIDE_PANEL_MIN_HEIGHT=500`
   - **Side panel features**:
+    - アプリとサイドパネルを「セット」として画面中央に配置（重なりを防止）
     - YakuLingoアプリの右側にEdgeを配置
     - アプリと高さを揃えて表示（最小高さ500px）
     - マルチモニター対応（`MonitorFromWindow` API使用）
-    - 画面端を超える場合は左側に自動配置
+    - UI表示後にウィンドウ位置を再調整（pywebviewの中央配置を修正）
+  - **Window positioning fix (2024-12)**:
+    - pywebviewがアプリを画面中央に配置するため、サイドパネルが画面からはみ出す問題を修正
+    - `_calculate_side_panel_geometry_from_screen()`: アプリ+サイドパネルの全体を画面中央に配置
+    - `_position_edge_as_side_panel()`: アプリウィンドウも移動して両ウィンドウが重ならないよう配置
+    - `_reposition_windows_for_side_panel()`: UI表示後の再配置用ヘルパーメソッド
   - **Simplified browser handling**:
     - サイドパネル/foregroundモードではログイン時の前面表示処理をスキップ
     - サイドパネル/foregroundモードではEdge起動時に画面外配置オプションを使用しない
     - `_bring_to_foreground_impl`と`_ensure_edge_minimized`がモードを考慮
   - **Benefits**: ブラウザスロットリング問題を回避、翻訳経過をリアルタイムで確認可能
-  - **Implementation**: `_find_yakulingo_window_handle()`, `_position_edge_as_side_panel()`, `_apply_browser_display_mode()`, `calculate_side_panel_width()`
+  - **Implementation**: `_find_yakulingo_window_handle()`, `_position_edge_as_side_panel()`, `_apply_browser_display_mode()`, `calculate_side_panel_width()`, `_reposition_windows_for_side_panel()`
 - **Excel COM Isolation Improvements (2024-12)**:
   - **Problem**: xlwingsの`xw.App()`がCOM ROT経由で既存Excelインスタンスに接続する可能性
   - **Risk**: ユーザーが手動で開いているExcelファイルに誤って翻訳処理が実行される危険性

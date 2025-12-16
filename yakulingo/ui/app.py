@@ -1303,19 +1303,42 @@ class YakuLingoApp:
         # (button won't appear again until next refresh after 3s)
         await asyncio.sleep(3)
 
-    def _get_effective_reference_files(self) -> list[Path] | None:
+    def _get_effective_reference_files(self, exclude_glossary: bool = False) -> list[Path] | None:
         """Get reference files including bundled glossary if enabled.
 
         Uses cached glossary path to avoid repeated path calculations.
+
+        Args:
+            exclude_glossary: If True, don't include bundled glossary (for when it's embedded in prompt)
         """
         files = list(self.state.reference_files) if self.state.reference_files else []
 
         # Add bundled glossary if enabled (uses cached path)
-        if self.settings.use_bundled_glossary:
+        # Skip if exclude_glossary is True (glossary will be embedded in prompt instead)
+        if self.settings.use_bundled_glossary and not exclude_glossary:
             if self._glossary_path.exists() and self._glossary_path not in files:
                 files.insert(0, self._glossary_path)
 
         return files if files else None
+
+    def _get_glossary_content_for_embedding(self) -> Optional[str]:
+        """Get glossary content for embedding in prompt.
+
+        Returns:
+            Glossary content as string if both use_bundled_glossary and
+            embed_glossary_in_prompt are enabled, else None
+        """
+        # Both settings must be enabled for embedding
+        if not self.settings.use_bundled_glossary:
+            return None
+        if not self.settings.embed_glossary_in_prompt:
+            return None
+
+        if not self._glossary_path.exists():
+            return None
+
+        from yakulingo.services.translation_service import load_glossary_content
+        return load_glossary_content(self._glossary_path)
 
     def _copy_text(self, text: str):
         """Copy specified text to clipboard"""
@@ -1533,7 +1556,11 @@ class YakuLingoApp:
                 self._active_translation_trace_id = None
             return
 
-        reference_files = self._get_effective_reference_files()
+        # Get glossary content for embedding (faster than file attachment)
+        glossary_content = self._get_glossary_content_for_embedding()
+
+        # Get reference files (exclude glossary if it will be embedded)
+        reference_files = self._get_effective_reference_files(exclude_glossary=bool(glossary_content))
 
         # Use saved client reference (context.client not available in async tasks)
         # Protected by _client_lock for thread-safe access
@@ -1587,6 +1614,8 @@ class YakuLingoApp:
                 reference_files,
                 None,  # style (use default)
                 detected_language,  # pre_detected_language
+                None,  # on_chunk (not using streaming)
+                glossary_content,  # Embed glossary in prompt for faster translation
             )
 
             # Calculate elapsed time
@@ -1732,6 +1761,18 @@ class YakuLingoApp:
             # Yield control to event loop before starting blocking operation
             await asyncio.sleep(0)
 
+            # Get glossary content for embedding (if enabled)
+            glossary_content = self._get_glossary_content_for_embedding()
+
+            # Build reference section (embed glossary or instruct to use attached files)
+            reference_section = ""
+            if glossary_content:
+                from yakulingo.services.prompt_builder import GLOSSARY_EMBEDDED_INSTRUCTION
+                reference_section = GLOSSARY_EMBEDDED_INSTRUCTION.format(glossary_content=glossary_content)
+            elif self.settings.use_bundled_glossary:
+                from yakulingo.services.prompt_builder import REFERENCE_INSTRUCTION
+                reference_section = REFERENCE_INSTRUCTION
+
             # Build back-translation prompt
             prompt = f"""以下の翻訳文を元の言語に戻して翻訳してください。
 これは翻訳の正確性をチェックするための「戻し訳」です。
@@ -1749,10 +1790,13 @@ class YakuLingoApp:
 ## 禁止事項
 - 「続けますか？」「他に質問はありますか？」などの対話継続の質問
 - 指定形式以外の追加説明やコメント
+
+{reference_section}
 """
 
-            # Send to Copilot (with reference files for consistent translations)
-            reference_files = self._get_effective_reference_files()
+            # Send to Copilot (exclude glossary from files if embedded in prompt)
+            exclude_glossary = glossary_content is not None
+            reference_files = self._get_effective_reference_files(exclude_glossary=exclude_glossary)
             result = await asyncio.to_thread(
                 lambda: self.copilot.translate_single(text, prompt, reference_files)
             )
@@ -1791,6 +1835,7 @@ class YakuLingoApp:
         translation: str,
         content: str = "",
         reference_files: Optional[list[Path]] = None,
+        glossary_content: Optional[str] = None,
     ) -> Optional[str]:
         """
         Build prompt for follow-up actions.
@@ -1801,6 +1846,7 @@ class YakuLingoApp:
             translation: Current translation
             content: Additional content (question text, reply intent, etc.)
             reference_files: Attached reference files for prompt context
+            glossary_content: Optional glossary content to embed in prompt (faster than file attachment)
 
         Returns:
             Built prompt string, or None if action_type is unknown
@@ -1808,7 +1854,11 @@ class YakuLingoApp:
         prompts_dir = get_default_prompts_dir()
 
         reference_section = ""
-        if reference_files and self.translation_service:
+        if glossary_content:
+            # Embed glossary directly in prompt (faster than file attachment)
+            from yakulingo.services.prompt_builder import GLOSSARY_EMBEDDED_INSTRUCTION
+            reference_section = GLOSSARY_EMBEDDED_INSTRUCTION.format(glossary_content=glossary_content)
+        elif reference_files and self.translation_service:
             reference_section = self.translation_service.prompt_builder.build_reference_section(reference_files)
         elif reference_files:
             # Fallback in unlikely case translation_service is not ready
@@ -2001,11 +2051,16 @@ class YakuLingoApp:
             source_text = self.state.text_result.source_text if self.state.text_result else self.state.source_text
             translation = self.state.text_result.options[-1].text if self.state.text_result and self.state.text_result.options else ""
 
-            reference_files = self._get_effective_reference_files()
+            # Get glossary content for embedding (if enabled)
+            glossary_content = self._get_glossary_content_for_embedding()
+
+            # Exclude glossary from reference files if embedded in prompt
+            exclude_glossary = glossary_content is not None
+            reference_files = self._get_effective_reference_files(exclude_glossary=exclude_glossary)
 
             # Build prompt
             prompt = self._build_follow_up_prompt(
-                action_type, source_text, translation, content, reference_files
+                action_type, source_text, translation, content, reference_files, glossary_content
             )
             if prompt is None:
                 error_message = '不明なアクションタイプです'
@@ -2482,14 +2537,22 @@ class YakuLingoApp:
                 if len(selected_sections) == len(self.state.file_info.section_details):
                     selected_sections = None
 
+            # Get glossary content for embedding (if enabled)
+            glossary_content = self._get_glossary_content_for_embedding()
+
+            # Exclude glossary from reference files if embedded in prompt
+            exclude_glossary = glossary_content is not None
+            reference_files = self._get_effective_reference_files(exclude_glossary=exclude_glossary)
+
             result = await asyncio.to_thread(
                 lambda: self.translation_service.translate_file(
                     self.state.selected_file,
-                    self._get_effective_reference_files(),
+                    reference_files,
                     on_progress,
                     output_language=self.state.file_output_language,
                     translation_style=self.settings.translation_style,
                     selected_sections=selected_sections,
+                    glossary_content=glossary_content,
                 )
             )
 

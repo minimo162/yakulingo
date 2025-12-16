@@ -24,6 +24,14 @@ Reference Files
 用語集がある場合は、記載されている用語は必ずその訳語を使用してください。
 """
 
+# 用語集埋め込み時の指示文（プロンプト内に用語集を含める場合）
+GLOSSARY_EMBEDDED_INSTRUCTION = """
+用語集 (Glossary)
+以下の用語集に記載されている用語は、必ずその訳語を使用してください。
+
+{glossary_content}
+"""
+
 # Fallback template for → English (used when translate_to_en.txt doesn't exist)
 DEFAULT_TO_EN_TEMPLATE = """Role Definition
 あなたは英語への翻訳を行う、完全自動化されたデータ処理エンジンです。
@@ -275,6 +283,7 @@ class PromptBuilder:
         has_reference_files: bool = False,
         output_language: str = "en",
         translation_style: str = "concise",
+        glossary_content: Optional[str] = None,
     ) -> str:
         """
         Build complete prompt with input text.
@@ -285,12 +294,19 @@ class PromptBuilder:
             output_language: "en" or "jp" (default: "en")
             translation_style: "standard", "concise", or "minimal" (default: "concise")
                               Only affects English output
+            glossary_content: Optional glossary content to embed in prompt (faster than file attachment)
 
         Returns:
             Complete prompt string
         """
-        # Add reference instruction only if files are attached
-        reference_section = REFERENCE_INSTRUCTION if has_reference_files else ""
+        # Build reference section
+        reference_section = ""
+        if glossary_content:
+            # Embed glossary directly in prompt (faster than file attachment)
+            reference_section = GLOSSARY_EMBEDDED_INSTRUCTION.format(glossary_content=glossary_content)
+        elif has_reference_files:
+            # Reference files attached to Copilot
+            reference_section = REFERENCE_INSTRUCTION
 
         # Get appropriate template based on language and style
         template = self._get_template(output_language, translation_style)
@@ -309,6 +325,7 @@ class PromptBuilder:
         has_reference_files: bool = False,
         output_language: str = "en",
         translation_style: str = "concise",
+        glossary_content: Optional[str] = None,
     ) -> str:
         """
         Build prompt for batch translation.
@@ -319,6 +336,7 @@ class PromptBuilder:
             output_language: "en" or "jp" (default: "en")
             translation_style: "standard", "concise", or "minimal" (default: "concise")
                               Only affects English output
+            glossary_content: Optional glossary content to embed in prompt (faster than file attachment)
 
         Returns:
             Complete prompt with numbered input
@@ -328,13 +346,27 @@ class PromptBuilder:
             f"{i+1}. {text}" for i, text in enumerate(texts)
         )
 
-        return self.build(numbered_input, has_reference_files, output_language, translation_style)
+        return self.build(numbered_input, has_reference_files, output_language, translation_style, glossary_content)
 
-    def build_reference_section(self, reference_files: Optional[Sequence[Path]]) -> str:
-        """Return reference section text when reference files are provided."""
+    def build_reference_section(
+        self,
+        reference_files: Optional[Sequence[Path]],
+        glossary_content: Optional[str] = None,
+    ) -> str:
+        """Return reference section text when reference files or glossary are provided.
 
-        has_reference_files = bool(reference_files)
-        return REFERENCE_INSTRUCTION if has_reference_files else ""
+        Args:
+            reference_files: Optional reference files being attached
+            glossary_content: Optional glossary content to embed in prompt
+
+        Returns:
+            Reference section text for prompt
+        """
+        if glossary_content:
+            return GLOSSARY_EMBEDDED_INSTRUCTION.format(glossary_content=glossary_content)
+        elif reference_files:
+            return REFERENCE_INSTRUCTION
+        return ""
 
     def parse_batch_result(self, result: str, expected_count: int) -> list[str]:
         """

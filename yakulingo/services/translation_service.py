@@ -64,6 +64,31 @@ def _sanitize_output_stem(name: str) -> str:
     return sanitized or 'translated_file'
 
 
+def load_glossary_content(glossary_path: Path) -> Optional[str]:
+    """Load glossary file content for embedding in prompt.
+
+    Args:
+        glossary_path: Path to glossary CSV file
+
+    Returns:
+        Glossary content as string, or None if file doesn't exist or is empty
+    """
+    if not glossary_path.exists():
+        logger.debug("Glossary file not found: %s", glossary_path)
+        return None
+
+    try:
+        content = glossary_path.read_text(encoding='utf-8-sig')  # Handle BOM
+        if not content.strip():
+            logger.debug("Glossary file is empty: %s", glossary_path)
+            return None
+        logger.debug("Loaded glossary content: %d chars from %s", len(content), glossary_path)
+        return content.strip()
+    except (OSError, UnicodeDecodeError) as e:
+        logger.warning("Failed to load glossary file %s: %s", glossary_path, e)
+        return None
+
+
 # =============================================================================
 # Language Detection
 # =============================================================================
@@ -569,6 +594,7 @@ class BatchTranslator:
         on_progress: Optional[ProgressCallback] = None,
         output_language: str = "en",
         translation_style: str = "concise",
+        glossary_content: Optional[str] = None,
     ) -> dict[str, str]:
         """
         Translate blocks in batches.
@@ -579,6 +605,7 @@ class BatchTranslator:
             on_progress: Progress callback
             output_language: "en" for English, "jp" for Japanese
             translation_style: "standard", "concise", or "minimal" (default: "concise")
+            glossary_content: Optional glossary content to embed in prompt (faster than file attachment)
 
         Returns:
             Mapping of block_id -> translated_text
@@ -592,7 +619,7 @@ class BatchTranslator:
             translate_blocks_with_result() instead.
         """
         result = self.translate_blocks_with_result(
-            blocks, reference_files, on_progress, output_language, translation_style
+            blocks, reference_files, on_progress, output_language, translation_style, glossary_content
         )
         # Raise exception if cancelled to prevent partial results from being applied
         if result.cancelled:
@@ -608,6 +635,7 @@ class BatchTranslator:
         on_progress: Optional[ProgressCallback] = None,
         output_language: str = "en",
         translation_style: str = "concise",
+        glossary_content: Optional[str] = None,
     ) -> 'BatchTranslationResult':
         """
         Translate blocks in batches with detailed result information.
@@ -618,6 +646,7 @@ class BatchTranslator:
             on_progress: Progress callback
             output_language: "en" for English, "jp" for Japanese
             translation_style: "standard", "concise", or "minimal" (default: "concise")
+            glossary_content: Optional glossary content to embed in prompt (faster than file attachment)
 
         Returns:
             BatchTranslationResult with translations and error details.
@@ -708,7 +737,8 @@ class BatchTranslator:
 
         # Phase 2: Batch translate uncached blocks
         batches = self._create_batches(uncached_blocks)
-        has_refs = bool(reference_files)
+        # has_refs is used for reference file attachment indicator (ignored when glossary_content is provided)
+        has_refs = bool(reference_files) and not glossary_content
 
         # Pre-build unique text data for each batch to avoid re-translating duplicates
         # within the same batch (e.g., repeated headers, footers, common phrases)
@@ -742,8 +772,11 @@ class BatchTranslator:
 
         # Pre-build all prompts before translation loop for efficiency
         # This eliminates prompt construction time from the translation loop
+        # When glossary_content is provided, embed it in prompt (faster than file attachment)
         def build_prompt(unique_texts: list[str]) -> str:
-            return self.prompt_builder.build_batch(unique_texts, has_refs, output_language, translation_style)
+            return self.prompt_builder.build_batch(
+                unique_texts, has_refs, output_language, translation_style, glossary_content
+            )
 
         # Use parallel prompt construction for multiple batches
         unique_texts_list = [d[0] for d in batch_unique_data]
@@ -1141,6 +1174,7 @@ class TranslationService:
         style: Optional[str] = None,
         pre_detected_language: Optional[str] = None,
         on_chunk: "Callable[[str], None] | None" = None,
+        glossary_content: Optional[str] = None,
     ) -> TextTranslationResult:
         """
         Translate text with language-specific handling:
@@ -1149,11 +1183,12 @@ class TranslationService:
 
         Args:
             text: Source text to translate
-            reference_files: Optional list of reference files to attach
+            reference_files: Optional list of reference files to attach (ignored if glossary_content is provided)
             style: Translation style for English output ("standard", "concise", "minimal")
                    If None, uses settings.text_translation_style (default: "concise")
             pre_detected_language: Pre-detected language from detect_language() to skip detection
             on_chunk: Optional callback called with partial text during streaming
+            glossary_content: Optional glossary content to embed in prompt (faster than file attachment)
 
         Returns:
             TextTranslationResult with options and output_language
@@ -1201,8 +1236,21 @@ class TranslationService:
                     error_message=result.error_message,
                 )
 
-            # Build prompt with reference section if files are attached
-            reference_section = REFERENCE_INSTRUCTION if reference_files else ""
+            # Build prompt with reference section
+            # If glossary_content is provided, embed it in prompt (faster than file attachment)
+            from yakulingo.services.prompt_builder import GLOSSARY_EMBEDDED_INSTRUCTION
+            if glossary_content:
+                reference_section = GLOSSARY_EMBEDDED_INSTRUCTION.format(glossary_content=glossary_content)
+                # Don't attach files when glossary is embedded
+                files_to_attach = None
+                logger.debug("Embedding glossary in prompt (%d chars)", len(glossary_content))
+            elif reference_files:
+                reference_section = REFERENCE_INSTRUCTION
+                files_to_attach = reference_files
+            else:
+                reference_section = ""
+                files_to_attach = None
+
             prompt = template.replace("{reference_section}", reference_section)
             prompt = prompt.replace("{input_text}", text)
             # Replace style placeholder for English translation
@@ -1211,11 +1259,12 @@ class TranslationService:
 
             # Translate
             logger.debug(
-                "Sending text to Copilot (streaming=%s, refs=%d)",
+                "Sending text to Copilot (streaming=%s, refs=%d, glossary_embedded=%s)",
                 bool(on_chunk),
-                len(reference_files) if reference_files else 0,
+                len(files_to_attach) if files_to_attach else 0,
+                bool(glossary_content),
             )
-            raw_result = self.copilot.translate_single(text, prompt, reference_files, on_chunk)
+            raw_result = self.copilot.translate_single(text, prompt, files_to_attach, on_chunk)
 
             # Parse the result - always single option now
             options = self._parse_single_translation_result(raw_result)
@@ -1714,6 +1763,7 @@ class TranslationService:
         output_language: str = "en",
         translation_style: str = "concise",
         selected_sections: Optional[list[int]] = None,
+        glossary_content: Optional[str] = None,
     ) -> TranslationResult:
         """
         Translate a file to specified output language.
@@ -1726,6 +1776,7 @@ class TranslationService:
             translation_style: "standard", "concise", or "minimal" (default: "concise")
                               Only affects English output
             selected_sections: List of section indices to translate (None = all sections)
+            glossary_content: Optional glossary content to embed in prompt (faster than file attachment)
 
         Returns:
             TranslationResult with output_path
@@ -1753,6 +1804,7 @@ class TranslationService:
                     start_time,
                     translation_style,
                     selected_sections,
+                    glossary_content,
                 )
 
             # Standard processing for other file types
@@ -1765,6 +1817,7 @@ class TranslationService:
                 start_time,
                 translation_style,
                 selected_sections,
+                glossary_content,
             )
 
         except MemoryError as e:
@@ -1811,6 +1864,7 @@ class TranslationService:
         start_time: float,
         translation_style: str = "concise",
         selected_sections: Optional[list[int]] = None,
+        glossary_content: Optional[str] = None,
     ) -> TranslationResult:
         """Standard translation flow for non-PDF files."""
         # Report progress
@@ -1871,6 +1925,7 @@ class TranslationService:
             batch_progress,
             output_language=output_language,
             translation_style=translation_style,
+            glossary_content=glossary_content,
         )
 
         # Check for cancellation (thread-safe)
@@ -1967,6 +2022,7 @@ class TranslationService:
         start_time: float,
         translation_style: str = "concise",
         selected_sections: Optional[list[int]] = None,
+        glossary_content: Optional[str] = None,
     ) -> TranslationResult:
         """
         Streaming translation for PDF files.
@@ -2063,6 +2119,7 @@ class TranslationService:
             batch_progress,
             output_language=output_language,
             translation_style=translation_style,
+            glossary_content=glossary_content,
         )
 
         if self._cancel_event.is_set():

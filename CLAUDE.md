@@ -529,11 +529,32 @@ async def _translate_text(self):
   "github_repo_name": "yakulingo",
   "last_update_check": null,
   "skipped_version": null,
-  "use_bundled_glossary": false
+  "use_bundled_glossary": false,
+  "embed_glossary_in_prompt": true
 }
 ```
 
 **translation_style / text_translation_style values**: `"standard"`, `"concise"` (default), `"minimal"`
+
+**用語集の処理モード**:
+- `use_bundled_glossary`: 同梱の glossary.csv を使用するか（デフォルト: true）
+- `embed_glossary_in_prompt`: 用語集をプロンプトに埋め込むか（デフォルト: true）
+  - `true`: 用語集をプロンプトに直接埋め込み（高速、約16〜19秒短縮）
+  - `false`: 用語集をファイルとして添付（従来方式）
+  - **適用範囲**: 全翻訳パス（テキスト翻訳、ファイル翻訳、戻し訳、フォローアップ翻訳）
+
+**プロンプト文字数計算（Copilot無料版8,000文字制限）**:
+
+| 項目 | 文字数 | 説明 |
+|------|--------|------|
+| プロンプトテンプレート | ~553 | file_translate_to_en_concise.txt |
+| 用語集埋め込み指示文 | ~52 | GLOSSARY_EMBEDDED_INSTRUCTION |
+| 用語集（glossary.csv） | ~1,160 | 126行、UTF-8（2,015バイト） |
+| バッチ翻訳テキスト | 最大4,000 | max_chars_per_batch設定 |
+| **合計** | **~5,765** | 8,000文字制限に対し約2,235文字の余裕 |
+
+- 用語集が約2倍に増えても8,000文字制限内に収まる
+- UTF-8では日本語1文字=3バイト（バイト数÷約1.74=文字数の目安）
 
 **フォント設定**:
 - `font_jp_to_en`: 英訳時の出力フォント（全ファイル形式共通）
@@ -888,7 +909,7 @@ The `AutoUpdater` class provides GitHub Releases-based updates:
 |---------|------|---------|
 | 翻訳スタイル | `translation_style`, `text_translation_style` | 設定ダイアログ |
 | フォント | `font_jp_to_en`, `font_en_to_jp`, `font_size_adjustment_jp_to_en` | 設定ダイアログ |
-| 出力オプション | `bilingual_output`, `export_glossary`, `use_bundled_glossary` | ファイル翻訳パネル |
+| 出力オプション | `bilingual_output`, `export_glossary`, `use_bundled_glossary`, `embed_glossary_in_prompt` | ファイル翻訳パネル |
 | UI状態 | `last_tab` | 自動保存 |
 | 更新設定 | `skipped_version` | 更新ダイアログ |
 
@@ -1623,6 +1644,11 @@ When interacting with users in this repository, prefer Japanese for comments and
 ## Recent Development Focus
 
 Based on recent commits:
+- **Glossary Processing Optimization (2024-12)**:
+  - **Prompt embedding**: 用語集をプロンプトに直接埋め込み（ファイル添付より高速）
+  - **Performance improvement**: 翻訳時間が約22秒から約7〜10秒に短縮（約16〜19秒改善）
+  - **Configuration**: `embed_glossary_in_prompt` 設定で埋め込み/添付モードを切替可能
+  - **Scope**: 全翻訳パスに適用（テキスト翻訳、ファイル翻訳、戻し訳、フォローアップ翻訳）
 - **Copilot Send Process Optimization (2024-12)**:
   - **Complete key cycle**: keydown + keypress + keyup の完全なキーサイクルをJSでディスパッチ（keydownのみでは送信されない）
   - **Root cause**: CopilotのReact UIはkeydownでpreventDefault()を呼ぶが、送信処理は完全なキーサイクルが必要

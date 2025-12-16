@@ -523,6 +523,7 @@ async def _translate_text(self):
   "ocr_batch_size": 5,
   "ocr_dpi": 300,
   "ocr_device": "auto",
+  "browser_display_mode": "minimized",
   "auto_update_enabled": true,
   "auto_update_check_interval": 86400,
   "github_repo_owner": "minimo162",
@@ -535,6 +536,21 @@ async def _translate_text(self):
 ```
 
 **translation_style / text_translation_style values**: `"standard"`, `"concise"` (default), `"minimal"`
+
+**browser_display_mode (ブラウザ表示モード)**:
+
+| 値 | 説明 |
+|-----|------|
+| `"minimized"` | 最小化して非表示（デフォルト、従来動作） |
+| `"side_panel"` | アプリの横にパネルとして表示（翻訳経過が見える） |
+| `"foreground"` | 前面に表示 |
+
+サイドパネルモード (`side_panel`) の動作:
+- EdgeウィンドウをYakuLingoアプリの右側に配置
+- アプリと高さを揃えて表示（幅500px、最小高さ400px）
+- 画面右端を超える場合は左側に自動配置
+- マルチモニター対応（アプリと同じモニターに表示）
+- ブラウザスロットリング問題を回避可能
 
 **用語集の処理モード**:
 - `use_bundled_glossary`: 同梱の glossary.csv を使用するか（デフォルト: true）
@@ -1644,6 +1660,26 @@ When interacting with users in this repository, prefer Japanese for comments and
 ## Recent Development Focus
 
 Based on recent commits:
+- **Browser Side Panel Display Mode (2024-12)**:
+  - **New setting**: `browser_display_mode` で翻訳時のEdge表示方法を選択可能
+  - **Modes**: `"minimized"`（従来）、`"side_panel"`（並列表示）、`"foreground"`（前面）
+  - **Side panel features**:
+    - YakuLingoアプリの右側にEdgeを配置
+    - アプリと高さを揃えて表示（幅500px、最小高さ400px）
+    - マルチモニター対応（`MonitorFromWindow` API使用）
+    - 画面端を超える場合は左側に自動配置
+  - **Benefits**: ブラウザスロットリング問題を回避、翻訳経過をリアルタイムで確認可能
+  - **Implementation**: `_find_yakulingo_window_handle()`, `_position_edge_as_side_panel()`, `_apply_browser_display_mode()`
+- **Excel COM Isolation Improvements (2024-12)**:
+  - **Problem**: xlwingsの`xw.App()`がCOM ROT経由で既存Excelインスタンスに接続する可能性
+  - **Risk**: ユーザーが手動で開いているExcelファイルに誤って翻訳処理が実行される危険性
+  - **Solution**: `win32com.client.DispatchEx`を使用して確実に新しいExcelプロセスを作成
+  - **Hwnd matching**: DispatchExで作成したインスタンスのHwndを使用してxlwingsで正確に識別
+  - **Safety measures**:
+    - `len(app.books) > 0` で既存インスタンスへの接続を検出
+    - `_verify_workbook_path()` で全操作前にパス検証
+    - 既存インスタンス検出時は`app.quit()`を呼ばない（ユーザーのExcelを閉じない）
+  - **Implementation**: `_try_create_new_excel_instance()` 関数を改善
 - **Copilot Response Text Extraction Fix (2024-12)**:
   - **Problem**: Copilotが`<placeholder>`のような`<>`括弧を含むテキストを返すと、ブラウザがHTMLタグとして解釈してしまい、DOM経由では取得できなかった
   - **Previous approach (removed)**: コピーボタンをクリックしてクリップボード経由でテキスト取得。`navigator.clipboard.readText()`がブロックする問題があった

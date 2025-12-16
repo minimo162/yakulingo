@@ -2069,19 +2069,26 @@ class CopilotHandler:
             edge_x = app_rect.right + 10  # 10px gap between windows
             edge_y = app_rect.top
 
-            # Get screen work area to ensure Edge stays on screen
-            SPI_GETWORKAREA = 0x0030
-
-            class RECT_WORKAREA(ctypes.Structure):
+            # Get monitor info for the monitor containing YakuLingo window
+            # This handles multi-monitor setups correctly
+            class MONITORINFO(ctypes.Structure):
                 _fields_ = [
-                    ("left", ctypes.c_long),
-                    ("top", ctypes.c_long),
-                    ("right", ctypes.c_long),
-                    ("bottom", ctypes.c_long),
+                    ("cbSize", wintypes.DWORD),
+                    ("rcMonitor", RECT),
+                    ("rcWork", RECT),
+                    ("dwFlags", wintypes.DWORD),
                 ]
 
-            work_area = RECT_WORKAREA()
-            user32.SystemParametersInfoW(SPI_GETWORKAREA, 0, ctypes.byref(work_area), 0)
+            # Get monitor from YakuLingo window position
+            MONITOR_DEFAULTTONEAREST = 2
+            monitor = user32.MonitorFromWindow(yakulingo_hwnd, MONITOR_DEFAULTTONEAREST)
+
+            monitor_info = MONITORINFO()
+            monitor_info.cbSize = ctypes.sizeof(MONITORINFO)
+            user32.GetMonitorInfoW(monitor, ctypes.byref(monitor_info))
+
+            # Use work area (excludes taskbar) of the monitor containing YakuLingo
+            work_area = monitor_info.rcWork
 
             # Adjust if Edge would go off screen
             if edge_x + edge_width > work_area.right:
@@ -2090,6 +2097,11 @@ class CopilotHandler:
                 if edge_x < work_area.left:
                     # Not enough room on either side, use right side anyway
                     edge_x = work_area.right - edge_width
+
+            # Ensure minimum height for usability
+            MIN_HEIGHT = 400
+            if app_height < MIN_HEIGHT:
+                app_height = MIN_HEIGHT
 
             # Restore window if minimized
             SW_RESTORE = 9

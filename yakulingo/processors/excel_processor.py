@@ -243,61 +243,77 @@ def _try_create_new_excel_instance(xw, max_attempts: int = 3):
         _cleanup_com_before_retry()
         time.sleep(0.2 * (attempt + 1))
 
+        excel_com = None
         try:
             # DispatchEx ALWAYS creates a new Excel process (not via ROT)
             excel_com = win32com.client.DispatchEx("Excel.Application")
             excel_com.Visible = False
             excel_com.DisplayAlerts = False
 
-            # Get the PID of this new Excel process
+            # Get the Hwnd of this new Excel process for identification
             new_hwnd = excel_com.Hwnd
             logger.debug("Created new Excel via DispatchEx (Hwnd=%s)", new_hwnd)
 
-            # Now use xlwings to wrap this - xlwings should find our new instance
-            # since it's the most recently created one
-            app = xw.App(visible=False, add_book=False)
+            # Find this instance in xlwings by matching Hwnd
+            # This is more reliable than xw.App() which may connect to a different instance
+            target_app = None
+            for xw_app in xw.apps:
+                try:
+                    # xlwings App has .hwnd property that matches Excel.Application.Hwnd
+                    if hasattr(xw_app, 'hwnd') and xw_app.hwnd == new_hwnd:
+                        target_app = xw_app
+                        logger.debug("Found xlwings App matching Hwnd=%s", new_hwnd)
+                        break
+                except Exception:
+                    continue
 
-            # Verify xlwings connected to our new instance by checking books count
+            if target_app is not None:
+                # Verify this instance has no pre-existing books
+                if len(target_app.books) == 0:
+                    logger.info(
+                        "Created isolated Excel instance via DispatchEx (PID=%s, Hwnd=%s)",
+                        target_app.pid, new_hwnd
+                    )
+                    return target_app
+                else:
+                    logger.warning(
+                        "DispatchEx instance has books (count=%d), this is unexpected",
+                        len(target_app.books)
+                    )
+
+            # If we couldn't find it in xw.apps, try xw.App() as fallback
+            # but verify it's truly isolated
+            logger.debug("Hwnd not found in xw.apps, trying xw.App() fallback")
+            app = xw.App(visible=False, add_book=False)
             if len(app.books) == 0:
                 logger.info(
-                    "Created isolated Excel instance via DispatchEx (PID=%s)",
+                    "Created isolated Excel instance via fallback (PID=%s)",
                     app.pid
                 )
+                # Don't quit excel_com - it might be the same instance
                 return app
             else:
-                # xlwings still connected to existing instance
-                # Keep the DispatchEx instance running and try again
                 logger.debug(
-                    "Attempt %d: xlwings connected to existing Excel (PID=%s, books=%d). "
-                    "DispatchEx instance still available.",
+                    "Attempt %d: xw.App() connected to existing Excel (PID=%s, books=%d)",
                     attempt + 1, app.pid, len(app.books)
                 )
                 del app
 
-                # Try to directly use the DispatchEx instance
-                # Create a minimal xlwings-compatible wrapper
-                try:
-                    # Check if this Excel has no books
-                    if excel_com.Workbooks.Count == 0:
-                        # Wrap with xlwings using the apps collection
-                        for xw_app in xw.apps:
-                            if len(xw_app.books) == 0:
-                                logger.info(
-                                    "Found isolated Excel in xw.apps (PID=%s)",
-                                    xw_app.pid
-                                )
-                                return xw_app
-                except Exception as e:
-                    logger.debug("Failed to find isolated app in xw.apps: %s", e)
+            # Clean up the DispatchEx COM object if we couldn't use it
+            try:
+                excel_com.Quit()
+            except Exception:
+                pass
+            excel_com = None
 
-                # Release the COM object if we can't use it
+        except Exception as e:
+            logger.debug("Attempt %d failed: %s", attempt + 1, e)
+            # Clean up on error
+            if excel_com is not None:
                 try:
                     excel_com.Quit()
                 except Exception:
                     pass
-
-        except Exception as e:
-            logger.debug("Attempt %d failed: %s", attempt + 1, e)
 
     return None
 

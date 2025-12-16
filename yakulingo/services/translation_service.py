@@ -9,6 +9,7 @@ import csv
 import logging
 import threading
 import time
+from itertools import islice
 from pathlib import Path
 from typing import Callable, Optional
 from zipfile import BadZipFile
@@ -1366,17 +1367,18 @@ class TranslationService:
             )
 
         # Standard extraction fallback (for .xls, .doc, .ppt legacy formats or when fast path fails)
+        # Use islice to stop extraction early after max_blocks (avoids loading entire document)
         # First pass: JP→EN extraction (default)
-        blocks = list(processor.extract_text_blocks(file_path, output_language="en"))
+        blocks = list(islice(processor.extract_text_blocks(file_path, output_language="en"), max_blocks))
 
         # Retry with EN→JP extraction to capture English/Chinese-only files
         if not blocks:
-            blocks = list(processor.extract_text_blocks(file_path, output_language="jp"))
+            blocks = list(islice(processor.extract_text_blocks(file_path, output_language="jp"), max_blocks))
 
         if not blocks:
             return None
 
-        return " ".join(block.text for block in blocks[:max_blocks])[:500]
+        return " ".join(block.text for block in blocks)[:500]
 
     def adjust_translation(
         self,

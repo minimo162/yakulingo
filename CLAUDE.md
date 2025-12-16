@@ -1825,6 +1825,8 @@ Based on recent commits:
 - **Language Detection Speedup (2024-12)**:
   - **Local detection only**: Copilot呼び出しを廃止してローカル検出のみに
   - **File detection speedup**: ファイル言語検出の高速化
+  - **Excel/Word XML streaming**: `ET.iterparse()`によるストリーミング解析で大きなファイルの言語検出を高速化
+  - **Fallback path optimization**: `islice`で最初の5ブロックのみ抽出（全ブロック読み込みを回避）
 - **Code Review Fixes (2024-12)**:
   - **PlaywrightThreadExecutor shutdown race fix**: `_thread_lock`でフラグ設定を保護、workerスレッドでshutdownフラグを追加チェック
   - **translate_single timeout fix**: `DEFAULT_RESPONSE_TIMEOUT + EXECUTOR_TIMEOUT_BUFFER`を使用

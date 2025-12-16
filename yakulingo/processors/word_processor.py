@@ -285,8 +285,10 @@ class WordProcessor(FileProcessor):
     ) -> Optional[str]:
         """Extract a text sample for language detection without full document load.
 
-        This method parses document.xml directly from the docx archive,
-        avoiding the overhead of loading the entire document with python-docx.
+        This method uses iterparse to stream document.xml directly from the docx
+        archive, avoiding the overhead of loading the entire XML into memory.
+        Large Word files can have document.xml of tens of MB, so streaming
+        is essential for fast language detection.
 
         Args:
             file_path: Path to the Word file
@@ -307,21 +309,23 @@ class WordProcessor(FileProcessor):
                     logger.debug("No document.xml found in docx")
                     return None
 
-                xml_content = zf.read('word/document.xml')
-                root = ET.fromstring(xml_content)
+                # Use iterparse for streaming XML parsing (avoids loading entire XML into memory)
+                # This is critical for large Word files where document.xml can be huge
+                with zf.open('word/document.xml') as xml_file:
+                    # Word namespace
+                    ns = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
+                    t_tag = f'{{{ns}}}t'
 
-                # Word namespace
-                ns = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
-
-                # Extract text from all <w:t> elements (text runs)
-                for t_elem in root.findall('.//w:t', ns):
-                    if t_elem.text:
-                        text = t_elem.text.strip()
-                        if text and len(text) > 1:  # Skip single chars
-                            texts.append(text)
-                            total_chars += len(text)
-                            if total_chars >= max_chars:
-                                break
+                    for event, elem in ET.iterparse(xml_file, events=('end',)):
+                        if elem.tag == t_tag and elem.text:
+                            text = elem.text.strip()
+                            if text and len(text) > 1:  # Skip single chars
+                                texts.append(text)
+                                total_chars += len(text)
+                                if total_chars >= max_chars:
+                                    break
+                        # Clear element to free memory
+                        elem.clear()
 
             if texts:
                 result = ' '.join(texts)[:max_chars]

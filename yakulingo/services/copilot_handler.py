@@ -510,11 +510,15 @@ class CopilotHandler:
     # Side Panel Mode Settings
     # =========================================================================
     # Side panel width scales based on screen width to accommodate different resolutions
-    # Reference: 1920px screen → 450px panel, 1366px screen → 350px panel
-    SIDE_PANEL_BASE_WIDTH = 450      # Base width for 1920px+ screens
-    SIDE_PANEL_MIN_WIDTH = 350       # Minimum width for smaller screens
+    # Reference: 1920px screen → 550px panel, 1366px screen → 450px panel
+    SIDE_PANEL_BASE_WIDTH = 550      # Base width for 1920px+ screens
+    SIDE_PANEL_MIN_WIDTH = 450       # Minimum width for smaller screens
     SIDE_PANEL_GAP = 10              # Gap between app and side panel
     SIDE_PANEL_MIN_HEIGHT = 500      # Minimum height for usability
+
+    # App window size calculation ratios (must match app.py _detect_display_settings)
+    APP_WIDTH_RATIO = 0.68           # App window width as ratio of screen width
+    APP_HEIGHT_RATIO = 1100 / 1440   # 0.764
 
     # =========================================================================
     # UI Selectors - Centralized for easier maintenance when Copilot UI changes
@@ -919,18 +923,30 @@ class CopilotHandler:
                 "--disable-backgrounding-occluded-windows",
                 # Disable features that slow down initial page load
                 "--disable-features=TranslateUI",
-                # Disable GPU hardware acceleration (reduces resource usage)
-                "--disable-gpu-sandbox",
             ]
 
-            # Only add minimized/off-screen options for "minimized" mode
-            # For side_panel and foreground modes, start Edge normally
+            # Configure window position based on display mode
             if display_mode == "minimized":
                 edge_args.extend([
                     "--start-minimized",
                     "--window-position=-32000,-32000",
                 ])
                 logger.debug("Starting Edge in minimized mode (off-screen)")
+            elif display_mode == "side_panel":
+                # Calculate side panel position from screen resolution
+                # This allows Edge to start in the correct position without moving
+                geometry = self._calculate_side_panel_geometry_from_screen()
+                if geometry:
+                    edge_x, edge_y, edge_width, edge_height = geometry
+                    edge_args.extend([
+                        f"--window-position={edge_x},{edge_y}",
+                        f"--window-size={edge_width},{edge_height}",
+                    ])
+                    logger.debug("Starting Edge in side_panel mode at (%d, %d) %dx%d",
+                                edge_x, edge_y, edge_width, edge_height)
+                else:
+                    # Fallback: start visible and let _apply_browser_display_mode position it
+                    logger.debug("Starting Edge in side_panel mode (position will be adjusted)")
             else:
                 logger.debug("Starting Edge in %s mode (visible)", display_mode)
 
@@ -2049,6 +2065,94 @@ class CopilotHandler:
             return found_hwnd
         except Exception as e:
             logger.debug("Failed to locate YakuLingo window handle: %s", e)
+            return None
+
+    def _calculate_side_panel_geometry_from_screen(self) -> tuple[int, int, int, int] | None:
+        """Calculate side panel position and size from screen resolution.
+
+        This method calculates where the Edge window should be placed as a side panel
+        by inferring the YakuLingo app position from screen resolution (assuming the app
+        is centered on screen, which is the default pywebview behavior).
+
+        Used when Edge is started before the YakuLingo window is visible (early connection).
+
+        Returns:
+            Tuple of (x, y, width, height) for the Edge window, or None if calculation fails.
+        """
+        if sys.platform != "win32":
+            return None
+
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            user32 = ctypes.WinDLL('user32', use_last_error=True)
+
+            # Get primary monitor work area (excludes taskbar)
+            class RECT(ctypes.Structure):
+                _fields_ = [
+                    ("left", wintypes.LONG),
+                    ("top", wintypes.LONG),
+                    ("right", wintypes.LONG),
+                    ("bottom", wintypes.LONG),
+                ]
+
+            work_area = RECT()
+            # SPI_GETWORKAREA = 0x0030
+            user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(work_area), 0)
+
+            screen_width = work_area.right - work_area.left
+            screen_height = work_area.bottom - work_area.top
+
+            # Calculate side panel width based on screen resolution
+            if screen_width >= 1920:
+                edge_width = self.SIDE_PANEL_BASE_WIDTH
+            elif screen_width <= 1366:
+                edge_width = self.SIDE_PANEL_MIN_WIDTH
+            else:
+                ratio = (screen_width - 1366) / (1920 - 1366)
+                edge_width = int(self.SIDE_PANEL_MIN_WIDTH +
+                               (self.SIDE_PANEL_BASE_WIDTH - self.SIDE_PANEL_MIN_WIDTH) * ratio)
+
+            # Calculate available space for app window
+            available_width = screen_width - edge_width - self.SIDE_PANEL_GAP
+            max_window_height = int(screen_height * 0.95)
+
+            # Calculate app window size (must match app.py _detect_display_settings)
+            MIN_WINDOW_WIDTH = 1100
+            MIN_WINDOW_HEIGHT = 650
+            ratio_based_width = int(screen_width * self.APP_WIDTH_RATIO)
+            app_width = min(max(ratio_based_width, MIN_WINDOW_WIDTH), available_width)
+            app_height = min(max(int(screen_height * self.APP_HEIGHT_RATIO), MIN_WINDOW_HEIGHT), max_window_height)
+
+            # Assume app is centered on screen (pywebview default behavior)
+            app_x = work_area.left + (screen_width - app_width) // 2
+            app_y = work_area.top + (screen_height - app_height) // 2
+
+            # Calculate Edge window position (right side of app)
+            edge_x = app_x + app_width + self.SIDE_PANEL_GAP
+            edge_y = app_y
+            edge_height = app_height
+
+            # Adjust if Edge would go off screen
+            if edge_x + edge_width > work_area.right:
+                # Place on left side instead
+                edge_x = app_x - edge_width - self.SIDE_PANEL_GAP
+                if edge_x < work_area.left:
+                    # Not enough room on either side, use right edge
+                    edge_x = work_area.right - edge_width
+
+            # Ensure minimum height
+            if edge_height < self.SIDE_PANEL_MIN_HEIGHT:
+                edge_height = self.SIDE_PANEL_MIN_HEIGHT
+
+            logger.debug("Side panel geometry from screen: (%d, %d) %dx%d (screen: %dx%d)",
+                        edge_x, edge_y, edge_width, edge_height, screen_width, screen_height)
+
+            return (edge_x, edge_y, edge_width, edge_height)
+
+        except Exception as e:
+            logger.warning("Failed to calculate side panel geometry: %s", e)
             return None
 
     def _position_edge_as_side_panel(self, page_title: str = None) -> bool:

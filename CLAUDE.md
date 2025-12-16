@@ -558,12 +558,12 @@ async def _translate_text(self):
 
 | 画面幅 | サイドパネル幅 | アプリ幅の目安 | 合計 |
 |--------|---------------|---------------|------|
-| 1920px+ | 450px | 1460px (73%) | 1920px |
-| 1600px | 400px | 1168px (73%) | 1578px |
-| 1366px | 350px | 997px (73%) | 1357px |
+| 1920px+ | 550px | 1306px (68%) | 1866px |
+| 1600px | 492px | 1088px (68%) | 1590px |
+| 1366px | 450px | 906px (66%) | 1366px |
 
-- サイドパネル幅は1366px〜1920pxの間で線形補間
-- アプリウィンドウ幅は `screen_width - side_panel - gap` を上限として計算
+- サイドパネル幅は1366px〜1920pxの間で線形補間（450px〜550px）
+- アプリウィンドウ幅は `min(screen_width × 0.68, screen_width - side_panel - gap)` で計算
 - ギャップ: 10px
 
 **用語集の処理モード**:
@@ -1678,9 +1678,9 @@ Based on recent commits:
   - **Default changed**: `browser_display_mode` のデフォルトを `"side_panel"` に変更
   - **Modes**: `"side_panel"`（デフォルト）、`"minimized"`（従来）、`"foreground"`（前面）
   - **Resolution-aware sizing**: サイドパネルとアプリウィンドウの幅を解像度に応じて動的計算
-    - サイドパネル幅: 1920px+ → 450px、1366px → 350px、間は線形補間
-    - アプリウィンドウ幅: `screen_width × 0.73` または `screen_width - side_panel - gap` の小さい方
-    - 定数: `SIDE_PANEL_BASE_WIDTH=450`, `SIDE_PANEL_MIN_WIDTH=350`, `SIDE_PANEL_GAP=10`, `SIDE_PANEL_MIN_HEIGHT=500`
+    - サイドパネル幅: 1920px+ → 550px、1366px → 450px、間は線形補間
+    - アプリウィンドウ幅: `screen_width × 0.68` または `screen_width - side_panel - gap` の小さい方
+    - 定数: `SIDE_PANEL_BASE_WIDTH=550`, `SIDE_PANEL_MIN_WIDTH=450`, `SIDE_PANEL_GAP=10`, `SIDE_PANEL_MIN_HEIGHT=500`
   - **Side panel features**:
     - YakuLingoアプリの右側にEdgeを配置
     - アプリと高さを揃えて表示（最小高さ500px）
@@ -2161,14 +2161,14 @@ Based on recent commits:
   - **Full-height input area**: 翻訳中・翻訳後の入力欄を縦幅いっぱいに拡張
 - **Window Sizing (Dynamic Scaling)**:
   - **Dynamic calculation**: `_detect_display_settings()` calculates window size from logical screen resolution
-  - **DPI-aware**: pywebview returns logical pixels (after DPI scaling), so window maintains ~70% width ratio
-  - **Side panel accommodation**: WIDTH_RATIO reduced from 74% to 70% to fit side panel mode (500px + 10px gap)
-  - **Reference**: 2560x1440 logical → 1800x1100 window (70.3% width, 76.4% height)
+  - **DPI-aware**: pywebview returns logical pixels (after DPI scaling), so window maintains ~68% width ratio
+  - **Side panel accommodation**: WIDTH_RATIO reduced to 68% to fit side panel mode (550px + 10px gap)
+  - **Reference**: 2560x1440 logical → 1740x1100 window (68% width, 76.4% height)
   - **Minimum sizes**: 1100x650 pixels (lowered from 1400x850 to maintain ratio on smaller screens)
   - **Examples by DPI scaling**:
-    - 1920x1200 at 100% → 論理1920x1200 → window 1344x916 (70%) + side panel (510px) = 1854px ✓
-    - 1920x1200 at 125% → 論理1536x960 → window 1075x733 (70%)
-    - 2560x1440 at 150% → 論理1706x960 → window 1194x733 (70%)
+    - 1920x1200 at 100% → 論理1920x1200 → window 1306x916 (68%) + side panel (550px) = 1866px ✓
+    - 1920x1200 at 125% → 論理1536x960 → window 1044x733 (68%)
+    - 2560x1440 at 150% → 論理1706x960 → window 1160x733 (68%)
   - **Panel layout**: Translation result panel elements aligned to 2/3 width with center alignment
 - **Global Hotkey (Ctrl+Alt+J)**:
   - **Quick translation**: Select text in any app, press Ctrl+Alt+J to translate

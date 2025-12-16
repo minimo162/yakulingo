@@ -845,8 +845,11 @@ class YakuLingoApp:
         Using the pre-calculated position avoids recalculation and reduces
         window movement (Edge doesn't move at all), minimizing visual flickering.
 
+        If the window is already at the correct position (within tolerance),
+        SetWindowPos() is skipped to avoid unnecessary visual flickering.
+
         Returns:
-            True if repositioning was successful
+            True if repositioning was successful or skipped (already correct)
         """
         if sys.platform != 'win32':
             return False
@@ -868,6 +871,7 @@ class YakuLingoApp:
             app_x, app_y, app_width, app_height = self._copilot._expected_app_position
 
             import ctypes
+            from ctypes import wintypes
 
             user32 = ctypes.WinDLL('user32', use_last_error=True)
 
@@ -876,6 +880,38 @@ class YakuLingoApp:
             if not yakulingo_hwnd:
                 logger.debug("YakuLingo window not found for repositioning")
                 return False
+
+            # Get current window position to check if repositioning is needed
+            class RECT(ctypes.Structure):
+                _fields_ = [
+                    ("left", ctypes.c_long),
+                    ("top", ctypes.c_long),
+                    ("right", ctypes.c_long),
+                    ("bottom", ctypes.c_long),
+                ]
+
+            current_rect = RECT()
+            if user32.GetWindowRect(yakulingo_hwnd, ctypes.byref(current_rect)):
+                current_x = current_rect.left
+                current_y = current_rect.top
+                current_width = current_rect.right - current_rect.left
+                current_height = current_rect.bottom - current_rect.top
+
+                # Tolerance for position comparison (accounts for DPI scaling/rounding)
+                POSITION_TOLERANCE = 10  # pixels
+
+                # Skip repositioning if already at correct position
+                if (abs(current_x - app_x) <= POSITION_TOLERANCE and
+                    abs(current_y - app_y) <= POSITION_TOLERANCE and
+                    abs(current_width - app_width) <= POSITION_TOLERANCE and
+                    abs(current_height - app_height) <= POSITION_TOLERANCE):
+                    logger.debug("App window already at correct position: (%d, %d) %dx%d, skipping repositioning",
+                               current_x, current_y, current_width, current_height)
+                    return True
+
+                logger.debug("App window position change needed: (%d, %d) %dx%d -> (%d, %d) %dx%d",
+                           current_x, current_y, current_width, current_height,
+                           app_x, app_y, app_width, app_height)
 
             # Move app window to pre-calculated position
             SWP_NOZORDER = 0x0004
@@ -3829,11 +3865,100 @@ def run_app(
             logger.debug("Early Copilot connection failed: %s", e)
             yakulingo_app._early_connection_result = False
 
+    # Early window positioning: Move app window IMMEDIATELY when pywebview creates it
+    # This runs in parallel with Edge startup and positions the window before UI is rendered
+    def _position_window_early_sync():
+        """Position YakuLingo window immediately when it's created (sync, runs in thread)."""
+        if sys.platform != 'win32':
+            return
+
+        try:
+            import ctypes
+
+            # Load settings to check browser_display_mode
+            from yakulingo.config.settings import AppSettings
+            settings_path = Path.home() / ".yakulingo" / "settings.json"
+            settings = AppSettings.load(settings_path)
+            if settings.browser_display_mode != "side_panel":
+                return
+
+            # Calculate target position
+            app_position = _calculate_app_position_for_side_panel(
+                yakulingo_app._window_size[0], yakulingo_app._window_size[1]
+            )
+            if not app_position:
+                return
+
+            target_x, target_y = app_position
+            target_width, target_height = yakulingo_app._window_size
+
+            user32 = ctypes.WinDLL('user32', use_last_error=True)
+
+            # Poll for YakuLingo window (check every 50ms for up to 10 seconds)
+            MAX_WAIT_MS = 10000
+            POLL_INTERVAL_MS = 50
+            waited_ms = 0
+
+            class RECT(ctypes.Structure):
+                _fields_ = [
+                    ("left", ctypes.c_long),
+                    ("top", ctypes.c_long),
+                    ("right", ctypes.c_long),
+                    ("bottom", ctypes.c_long),
+                ]
+
+            while waited_ms < MAX_WAIT_MS:
+                # Find YakuLingo window by title
+                hwnd = user32.FindWindowW(None, "YakuLingo")
+                if hwnd:
+                    # Get current position
+                    current_rect = RECT()
+                    if user32.GetWindowRect(hwnd, ctypes.byref(current_rect)):
+                        current_x = current_rect.left
+                        current_y = current_rect.top
+
+                        # Check if window is NOT at target position (needs moving)
+                        POSITION_TOLERANCE = 10
+                        if (abs(current_x - target_x) > POSITION_TOLERANCE or
+                            abs(current_y - target_y) > POSITION_TOLERANCE):
+                            # Move window immediately
+                            SWP_NOZORDER = 0x0004
+                            SWP_NOACTIVATE = 0x0010
+                            result = user32.SetWindowPos(
+                                hwnd, None,
+                                target_x, target_y, target_width, target_height,
+                                SWP_NOZORDER | SWP_NOACTIVATE
+                            )
+                            if result:
+                                logger.debug("[EARLY_POSITION] Window moved from (%d, %d) to (%d, %d) after %dms",
+                                           current_x, current_y, target_x, target_y, waited_ms)
+                            else:
+                                logger.debug("[EARLY_POSITION] SetWindowPos failed after %dms", waited_ms)
+                        else:
+                            logger.debug("[EARLY_POSITION] Window already at correct position after %dms", waited_ms)
+                    return
+
+                time.sleep(POLL_INTERVAL_MS / 1000)
+                waited_ms += POLL_INTERVAL_MS
+
+            logger.debug("[EARLY_POSITION] Window not found within %dms", MAX_WAIT_MS)
+
+        except Exception as e:
+            logger.debug("[EARLY_POSITION] Failed: %s", e)
+
+    async def _position_window_early():
+        """Async wrapper for early window positioning."""
+        await asyncio.to_thread(_position_window_early_sync)
+
     @nicegui_app.on_startup
     async def on_startup():
         """Called when NiceGUI server starts (before clients connect)."""
         # Start Copilot connection early - runs in parallel with pywebview window creation
         yakulingo_app._early_connection_task = asyncio.create_task(_early_connect_copilot())
+
+        # Start early window positioning - moves window before UI is rendered
+        if native and sys.platform == 'win32':
+            asyncio.create_task(_position_window_early())
 
     @ui.page('/')
     async def main_page(client: nicegui_Client):

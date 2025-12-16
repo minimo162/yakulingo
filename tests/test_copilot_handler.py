@@ -349,8 +349,8 @@ class TestCopilotHandlerTranslateSingle:
         handler._connect_impl = lambda: True
         handler._is_cancelled = lambda: False
         handler.start_new_chat = lambda: None
-        handler._send_message = lambda prompt: None
-        handler._get_response = lambda on_chunk=None: ""
+        handler._send_message = lambda prompt: False  # Returns bool
+        handler._get_response = lambda on_chunk=None, stop_button_seen_during_send=False: ""
         handler._save_storage_state = lambda: None
 
         monkeypatch.setattr(copilot_handler._playwright_executor, 'execute', mock_execute)
@@ -947,9 +947,9 @@ class TestCopilotHandlerAsync:
 
         # Mock internal methods
         async def mock_send(msg):
-            pass
+            return False  # Returns bool (stop button seen)
 
-        async def mock_get():
+        async def mock_get(stop_button_seen_during_send=False):
             return "1. Result"
 
         handler._send_message_async = mock_send
@@ -973,7 +973,8 @@ class TestCopilotHandlerAsync:
         call_order = []
 
         handler._attach_file_async = AsyncMock(side_effect=lambda *_: call_order.append("attach"))
-        handler._send_message_async = AsyncMock(side_effect=lambda *_: call_order.append("send"))
+        # _send_message_async returns bool (stop button seen)
+        handler._send_message_async = AsyncMock(side_effect=lambda *_: (call_order.append("send"), False)[1])
         handler._get_response_async = AsyncMock(return_value="1. Result")
 
         await handler.translate(["Text"], "prompt", [reference])

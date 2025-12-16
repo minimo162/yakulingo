@@ -75,7 +75,8 @@ class AppSettings:
         """Load settings from JSON file"""
         if path.exists():
             try:
-                with open(path, 'r', encoding='utf-8') as f:
+                # Use utf-8-sig to handle UTF-8 BOM (Windows Notepad etc.)
+                with open(path, 'r', encoding='utf-8-sig') as f:
                     data = json.load(f)
                     # Remove deprecated fields
                     data.pop('last_direction', None)

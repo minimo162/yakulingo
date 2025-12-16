@@ -3170,10 +3170,12 @@ class CopilotHandler:
                     await self._attach_file_async(file_path)
 
         # Send the prompt
-        await self._send_message_async(prompt)
+        stop_button_seen = await self._send_message_async(prompt)
 
         # Get response
-        result = await self._get_response_async()
+        result = await self._get_response_async(
+            stop_button_seen_during_send=stop_button_seen
+        )
 
         # Parse batch result
         return self._parse_batch_result(result, len(texts))
@@ -3272,7 +3274,7 @@ class CopilotHandler:
                             raise TranslationCancelledError("Translation cancelled by user")
 
             # Send the prompt
-            self._send_message(prompt)
+            stop_button_seen = self._send_message(prompt)
 
             # Minimize browser after _send_message to prevent window flash
             self._send_to_background_impl(self._page)
@@ -3283,7 +3285,10 @@ class CopilotHandler:
                 raise TranslationCancelledError("Translation cancelled by user")
 
             # Get response
-            result = self._get_response(timeout=timeout)
+            result = self._get_response(
+                timeout=timeout,
+                stop_button_seen_during_send=stop_button_seen
+            )
 
             # Check for error conditions: Copilot error response patterns OR empty response
             is_error_response = result and _is_copilot_error_response(result)
@@ -3478,7 +3483,7 @@ class CopilotHandler:
 
             # Send the prompt
             send_start = time.time()
-            self._send_message(prompt)
+            stop_button_seen = self._send_message(prompt)
             logger.info("[TIMING] _send_message: %.2fs", time.time() - send_start)
 
             # Minimize browser after _send_message to prevent window flash
@@ -3491,7 +3496,10 @@ class CopilotHandler:
 
             # Get response and return raw (no parsing - preserves 訳文/解説 format)
             response_start = time.time()
-            result = self._get_response(on_chunk=on_chunk)
+            result = self._get_response(
+                on_chunk=on_chunk,
+                stop_button_seen_during_send=stop_button_seen
+            )
             logger.info("[TIMING] _get_response: %.2fs", time.time() - response_start)
 
             logger.debug(
@@ -3586,8 +3594,13 @@ class CopilotHandler:
 
         return ""
 
-    def _send_message(self, message: str) -> None:
-        """Send message to Copilot (sync)"""
+    def _send_message(self, message: str) -> bool:
+        """Send message to Copilot (sync)
+
+        Returns:
+            True if stop button was detected during send verification,
+            False otherwise (input cleared or response appeared without stop button)
+        """
         error_types = _get_playwright_errors()
         PlaywrightError = error_types['Error']
         PlaywrightTimeoutError = error_types['TimeoutError']
@@ -3817,6 +3830,7 @@ class CopilotHandler:
                 # Send via Enter key (most reliable for minimized windows)
                 MAX_SEND_RETRIES = 3
                 send_success = False
+                stop_button_seen_during_send = False  # Track if stop button was detected
 
                 for send_attempt in range(MAX_SEND_RETRIES):
                     send_method = ""
@@ -4280,6 +4294,7 @@ class CopilotHandler:
                         )
                         send_verified = True
                         verify_reason = "stop button visible"
+                        stop_button_seen_during_send = True
                         logger.debug("[SEND_VERIFY] Stop button appeared")
                     except Exception as stop_err:
                         # Stop button didn't appear quickly - continue with polling
@@ -4298,6 +4313,7 @@ class CopilotHandler:
                             if stop_btn and stop_btn.is_visible():
                                 send_verified = True
                                 verify_reason = "stop button visible"
+                                stop_button_seen_during_send = True
                                 logger.debug("[SEND_VERIFY] Stop button found at poll iteration %d", poll_iteration)
                                 break
                         except Exception as e:
@@ -4388,10 +4404,18 @@ class CopilotHandler:
             logger.error("Browser error sending message: %s", e)
             raise RuntimeError(f"Failed to send message: {e}") from e
 
-    async def _send_message_async(self, message: str) -> None:
-        """Send message to Copilot (async wrapper)"""
+        # Return whether stop button was detected during send verification
+        # This is used by _get_response to avoid false "selector may need update" warnings
+        return stop_button_seen_during_send
+
+    async def _send_message_async(self, message: str) -> bool:
+        """Send message to Copilot (async wrapper)
+
+        Returns:
+            True if stop button was detected during send verification
+        """
         loop = asyncio.get_running_loop()
-        await loop.run_in_executor(None, self._send_message, message)
+        return await loop.run_in_executor(None, self._send_message, message)
 
     # JavaScript to extract text with list numbers preserved
     # inner_text() doesn't include CSS-generated list markers, so we need to
@@ -4527,7 +4551,12 @@ class CopilotHandler:
         logger.debug("[RESPONSE_TEXT] No response found from any selector")
         return "", False
 
-    def _get_response(self, timeout: int = 120, on_chunk: "Callable[[str], None] | None" = None) -> str:
+    def _get_response(
+        self,
+        timeout: int = 120,
+        on_chunk: "Callable[[str], None] | None" = None,
+        stop_button_seen_during_send: bool = False,
+    ) -> str:
         """Get response from Copilot (sync)
 
         Uses dynamic polling intervals for faster response detection:
@@ -4538,6 +4567,9 @@ class CopilotHandler:
         Args:
             timeout: Maximum time to wait for response in seconds
             on_chunk: Optional callback called with partial text during streaming
+            stop_button_seen_during_send: Whether stop button was detected during send verification.
+                If True, we won't warn about missing stop button during polling (it may have
+                disappeared quickly for short translations).
         """
         error_types = _get_playwright_errors()
         PlaywrightError = error_types['Error']
@@ -4557,7 +4589,8 @@ class CopilotHandler:
             has_content = False  # Track if we've seen any content
             poll_iteration = 0
             last_log_time = time.time()
-            stop_button_ever_seen = False  # Track if stop button was ever visible
+            # Track if stop button was ever visible (including during send verification)
+            stop_button_ever_seen = stop_button_seen_during_send
             stop_button_warning_logged = False  # Avoid repeated warnings
             response_element_seen = False  # Track if response element has appeared
             response_element_first_seen_time = None  # Track when response element first appeared
@@ -4748,10 +4781,25 @@ class CopilotHandler:
             logger.error("Page state error: %s", e)
             return ""
 
-    async def _get_response_async(self, timeout: int = 120) -> str:
-        """Get response from Copilot (async wrapper)"""
+    async def _get_response_async(
+        self,
+        timeout: int = 120,
+        stop_button_seen_during_send: bool = False,
+    ) -> str:
+        """Get response from Copilot (async wrapper)
+
+        Args:
+            timeout: Maximum time to wait for response in seconds
+            stop_button_seen_during_send: Whether stop button was detected during send verification
+        """
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, self._get_response, timeout)
+        return await loop.run_in_executor(
+            None,
+            lambda: self._get_response(
+                timeout=timeout,
+                stop_button_seen_during_send=stop_button_seen_during_send
+            )
+        )
 
     def _attach_file(self, file_path: Path) -> bool:
         """

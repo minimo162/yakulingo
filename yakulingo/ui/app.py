@@ -581,29 +581,49 @@ class YakuLingoApp:
             try:
                 # Wait for early connection with timeout
                 # Playwright initialization can take 12+ seconds on first run
-                await asyncio.wait_for(self._early_connection_task, timeout=15.0)
+                # Use asyncio.shield to prevent task cancellation on timeout
+                await asyncio.wait_for(
+                    asyncio.shield(self._early_connection_task),
+                    timeout=15.0
+                )
             except asyncio.TimeoutError:
-                # Check if task completed just after timeout
-                task_done = self._early_connection_task.done()
-                logger.debug("Timeout reached: task.done()=%s, _early_connection_result=%s",
-                           task_done, self._early_connection_result)
-                if task_done:
-                    # Task completed, use its result
-                    logger.debug("Early connection completed just after timeout check")
-                    try:
-                        self._early_connection_task.result()  # Propagate any exception
-                        # Task succeeded - _early_connection_result should be set by the task
-                        # but ensure it's True in case of race condition
-                        if self._early_connection_result is None:
-                            self._early_connection_result = True
-                            logger.debug("Set _early_connection_result to True after timeout")
-                    except Exception as e:
-                        logger.debug("Early connection task failed: %s", e)
-                        self._early_connection_result = None
+                # Task is still running (shield prevented cancellation)
+                # Check if result was set by the task
+                if self._early_connection_result is not None:
+                    logger.debug("Timeout but result already set: %s",
+                               self._early_connection_result)
                 else:
-                    # Task still running - let it continue in background but proceed with new connection
-                    logger.debug("Early connection still in progress, proceeding with normal flow")
+                    # Task still running - set up background completion handler
+                    logger.debug("Early connection still in progress after timeout, "
+                               "setting up background handler")
                     self._early_connection_result = None
+
+                    # Add callback to update UI when task completes in background
+                    def _on_early_connection_complete(task: "asyncio.Task"):
+                        try:
+                            result = task.result()
+                            logger.info("Early connection completed in background: %s", result)
+                            if result:
+                                # Connection succeeded - update UI state
+                                self.state.copilot_ready = True
+                                self.state.connection_state = ConnectionState.CONNECTED
+                                # Schedule UI refresh on main thread
+                                if self._client is not None:
+                                    try:
+                                        with self._client:
+                                            self._refresh_status()
+                                    except Exception as e:
+                                        logger.debug("Failed to refresh UI from background: %s", e)
+                        except asyncio.CancelledError:
+                            logger.debug("Early connection task was cancelled")
+                        except Exception as e:
+                            logger.debug("Early connection task failed in background: %s", e)
+
+                    self._early_connection_task.add_done_callback(_on_early_connection_complete)
+            except asyncio.CancelledError:
+                # Task itself was cancelled (not by wait_for timeout)
+                logger.debug("Early connection task cancelled")
+                self._early_connection_result = None
             except Exception as e:
                 logger.debug("Early connection task failed: %s", e)
                 self._early_connection_result = None
@@ -620,6 +640,13 @@ class YakuLingoApp:
             # Early connection failed - update UI and check if login needed
             self._refresh_status()
             await self._start_login_polling_if_needed()
+        elif (self._early_connection_task is not None
+              and not self._early_connection_task.done()):
+            # Early connection still in progress - keep "connecting" state
+            # UI will be updated by the background callback when complete
+            logger.info("Early connection still in progress, waiting for background completion")
+            self.state.connection_state = ConnectionState.CONNECTING
+            self._refresh_status()
         else:
             # Early connection not started or result unknown - fall back to normal connection
             logger.info("Early connection not available, starting normal connection")

@@ -673,8 +673,10 @@ class ExcelProcessor(FileProcessor):
     ) -> Optional[str]:
         """Extract a text sample for language detection without full workbook load.
 
-        This method parses the sharedStrings.xml directly from the xlsx archive,
-        avoiding the overhead of loading the entire workbook with openpyxl or xlwings.
+        This method uses iterparse to stream sharedStrings.xml directly from the xlsx
+        archive, avoiding the overhead of loading the entire XML into memory.
+        Large Excel files can have sharedStrings.xml of tens of MB, so streaming
+        is essential for fast language detection.
 
         Args:
             file_path: Path to the Excel file
@@ -697,38 +699,40 @@ class ExcelProcessor(FileProcessor):
                     logger.debug("No sharedStrings.xml found in xlsx")
                     return None
 
-                xml_content = zf.read('xl/sharedStrings.xml')
-                root = ET.fromstring(xml_content)
+                # Use iterparse for streaming XML parsing (avoids loading entire XML into memory)
+                # This is critical for large Excel files where sharedStrings.xml can be huge
+                with zf.open('xl/sharedStrings.xml') as xml_file:
+                    # Excel namespace
+                    ns = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
+                    si_tag = f'{{{ns}}}si'
+                    t_tag = f'{{{ns}}}t'
+                    r_tag = f'{{{ns}}}r'
 
-                # Excel namespace
-                ns = {'ns': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
+                    # Track current <si> element's text parts
+                    current_parts = []
+                    in_si = False
 
-                # Extract text from <t> elements within <si> (string items)
-                for si in root.findall('ns:si', ns):
-                    # Simple string: <si><t>text</t></si>
-                    t_elem = si.find('ns:t', ns)
-                    if t_elem is not None and t_elem.text:
-                        text = t_elem.text.strip()
-                        if text and len(text) > 1:  # Skip single chars
-                            texts.append(text)
-                            total_chars += len(text)
-                            if total_chars >= max_chars:
-                                break
-                        continue
-
-                    # Rich text: <si><r><t>part1</t></r><r><t>part2</t></r></si>
-                    parts = []
-                    for r in si.findall('ns:r', ns):
-                        t_elem = r.find('ns:t', ns)
-                        if t_elem is not None and t_elem.text:
-                            parts.append(t_elem.text)
-                    if parts:
-                        text = ''.join(parts).strip()
-                        if text and len(text) > 1:
-                            texts.append(text)
-                            total_chars += len(text)
-                            if total_chars >= max_chars:
-                                break
+                    for event, elem in ET.iterparse(xml_file, events=('start', 'end')):
+                        if event == 'start' and elem.tag == si_tag:
+                            in_si = True
+                            current_parts = []
+                        elif event == 'end':
+                            if elem.tag == t_tag and in_si:
+                                # Collect text from <t> elements
+                                if elem.text:
+                                    current_parts.append(elem.text)
+                            elif elem.tag == si_tag:
+                                # End of <si> element - process collected text
+                                in_si = False
+                                if current_parts:
+                                    text = ''.join(current_parts).strip()
+                                    if text and len(text) > 1:  # Skip single chars
+                                        texts.append(text)
+                                        total_chars += len(text)
+                                        if total_chars >= max_chars:
+                                            break
+                                # Clear element to free memory
+                                elem.clear()
 
             if texts:
                 result = ' '.join(texts)[:max_chars]

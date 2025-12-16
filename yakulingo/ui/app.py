@@ -584,11 +584,19 @@ class YakuLingoApp:
                 await asyncio.wait_for(self._early_connection_task, timeout=15.0)
             except asyncio.TimeoutError:
                 # Check if task completed just after timeout
-                if self._early_connection_task.done():
+                task_done = self._early_connection_task.done()
+                logger.debug("Timeout reached: task.done()=%s, _early_connection_result=%s",
+                           task_done, self._early_connection_result)
+                if task_done:
                     # Task completed, use its result
                     logger.debug("Early connection completed just after timeout check")
                     try:
                         self._early_connection_task.result()  # Propagate any exception
+                        # Task succeeded - _early_connection_result should be set by the task
+                        # but ensure it's True in case of race condition
+                        if self._early_connection_result is None:
+                            self._early_connection_result = True
+                            logger.debug("Set _early_connection_result to True after timeout")
                     except Exception as e:
                         logger.debug("Early connection task failed: %s", e)
                         self._early_connection_result = None

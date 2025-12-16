@@ -384,27 +384,42 @@ function Resolve-SetupPath {
         "Resolve-SetupPath: LOCALAPPDATA='$env:LOCALAPPDATA'" | Out-File -FilePath $debugLog -Append -Encoding UTF8
     } catch { }
 
+    # Debug: Log that we're about to check dangerous roots
+    try {
+        "Resolve-SetupPath: Checking drive root..." | Out-File -FilePath $debugLog -Append -Encoding UTF8
+    } catch { }
+
     $driveRoot = [System.IO.Path]::GetPathRoot($resolvedPath)
     if ($resolvedPath -eq $driveRoot) {
         throw "SetupPath points to a drive root. Please specify a subdirectory (e.g., $($env:LOCALAPPDATA)\\$AppName)."
     }
 
-    $dangerousRoots = @(
-        $env:USERPROFILE,
-        $env:LOCALAPPDATA,
-        $env:APPDATA,
-        [Environment]::GetFolderPath("Windows"),
-        [Environment]::GetFolderPath("ProgramFiles"),
-        [Environment]::GetFolderPath("ProgramFilesX86"),
-        [Environment]::GetFolderPath("System"),
-        [Environment]::GetFolderPath("SystemX86")
-    ) | Where-Object { $_ }
+    # Build dangerous roots list safely (some GetFolderPath calls may fail on certain systems)
+    $dangerousRoots = @()
+    if ($env:USERPROFILE) { $dangerousRoots += $env:USERPROFILE }
+    if ($env:LOCALAPPDATA) { $dangerousRoots += $env:LOCALAPPDATA }
+    if ($env:APPDATA) { $dangerousRoots += $env:APPDATA }
+    try { $path = [Environment]::GetFolderPath([Environment+SpecialFolder]::Windows); if ($path) { $dangerousRoots += $path } } catch { }
+    try { $path = [Environment]::GetFolderPath([Environment+SpecialFolder]::ProgramFiles); if ($path) { $dangerousRoots += $path } } catch { }
+    try { $path = [Environment]::GetFolderPath([Environment+SpecialFolder]::ProgramFilesX86); if ($path) { $dangerousRoots += $path } } catch { }
+    try { $path = [Environment]::GetFolderPath([Environment+SpecialFolder]::System); if ($path) { $dangerousRoots += $path } } catch { }
+    try { $path = [Environment]::GetFolderPath([Environment+SpecialFolder]::SystemX86); if ($path) { $dangerousRoots += $path } } catch { }
+
+    # Debug: Log the number of dangerous roots found
+    try {
+        "Resolve-SetupPath: Found $($dangerousRoots.Count) dangerous roots to check" | Out-File -FilePath $debugLog -Append -Encoding UTF8
+    } catch { }
 
     foreach ($dangerousRoot in $dangerousRoots) {
         if ($resolvedPath.TrimEnd('\\') -eq $dangerousRoot.TrimEnd('\\')) {
             throw "SetupPath cannot be a system directory: $resolvedPath"
         }
     }
+
+    # Debug: Log successful completion
+    try {
+        "Resolve-SetupPath: Returning targetPath='$targetPath'" | Out-File -FilePath $debugLog -Append -Encoding UTF8
+    } catch { }
 
     return $targetPath
 }
@@ -617,7 +632,13 @@ function Invoke-Setup {
     }
 
     # Default path: LocalAppData\YakuLingo with safety checks
+    try {
+        "Invoke-Setup: Calling Resolve-SetupPath..." | Out-File -FilePath $debugLog -Append -Encoding UTF8
+    } catch { }
     $SetupPath = Resolve-SetupPath -InputPath $SetupPath -AppName $AppName
+    try {
+        "Invoke-Setup: SetupPath resolved to '$SetupPath'" | Out-File -FilePath $debugLog -Append -Encoding UTF8
+    } catch { }
 
     # ============================================================
     # Step 1: Prepare destination (backup user data first)
@@ -1159,6 +1180,14 @@ if ($GuiMode) {
         Invoke-Setup
         exit 0
     } catch {
+        # Write error to debug log (catch block errors)
+        try {
+            "=== CATCH ERROR: $(Get-Date) ===" | Out-File -FilePath $debugLog -Append -Encoding UTF8
+            "Exception: $($_.Exception.Message)" | Out-File -FilePath $debugLog -Append -Encoding UTF8
+            "ScriptStackTrace: $($_.ScriptStackTrace)" | Out-File -FilePath $debugLog -Append -Encoding UTF8
+            "InvocationInfo: $($_.InvocationInfo.PositionMessage)" | Out-File -FilePath $debugLog -Append -Encoding UTF8
+        } catch { }
+
         # Close progress dialog first
         Close-Progress
 

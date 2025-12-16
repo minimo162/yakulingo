@@ -4683,10 +4683,12 @@ class CopilotHandler:
                             const stopBtn = document.querySelector('.fai-SendButton__stopBackground');
 
                             const sendBtnRect = sendBtn ? sendBtn.getBoundingClientRect() : null;
+                            const inputText = input ? input.innerText.trim() : '';
 
                             return {
                                 // Input state
-                                inputTextLength: input ? input.innerText.trim().length : -1,
+                                inputTextLength: inputText.length,
+                                inputTextPreview: inputText.substring(0, 50),
                                 inputHasFocus: input ? document.activeElement === input : false,
 
                                 // Send button state
@@ -4732,17 +4734,28 @@ class CopilotHandler:
 
                     # Method 0: Early verification from POST-STATE (fastest path)
                     # If JS already confirmed stop button or input cleared, skip slow Playwright waits
+                    # Processing message phrases that indicate Copilot is generating a response
+                    PROCESSING_PHRASES = ("応答を処理中", "Processing", "処理中", "お待ち")
                     try:
                         if post_attempt_state:
                             input_cleared = post_attempt_state.get('inputTextLength', -1) == 0
+                            input_text_preview = post_attempt_state.get('inputTextPreview', '')
                             stop_btn_visible = post_attempt_state.get('stopBtnVisible', False)
                             stop_btn_exists = post_attempt_state.get('stopBtnExists', False)
+                            # Check if input shows processing message
+                            input_shows_processing = any(
+                                phrase in input_text_preview for phrase in PROCESSING_PHRASES
+                            )
 
                             if stop_btn_visible:
                                 send_verified = True
                                 verify_reason = "JS confirmed (stop button visible)"
                                 stop_button_seen_during_send = True
                                 logger.debug("[SEND_VERIFY] Early verification: stop button visible in POST-STATE")
+                            elif input_shows_processing:
+                                send_verified = True
+                                verify_reason = "JS confirmed (processing message in input)"
+                                logger.debug("[SEND_VERIFY] Early verification: processing message detected: %s", input_text_preview)
                             elif input_cleared and stop_btn_exists:
                                 send_verified = True
                                 verify_reason = "JS confirmed (input cleared + stop button exists)"
@@ -4800,6 +4813,15 @@ class CopilotHandler:
                                 send_verified = True
                                 verify_reason = "input cleared"
                                 logger.debug("[SEND_VERIFY] Input cleared at poll iteration %d", poll_iteration)
+                                break
+                            # Check if Copilot is processing (shows "応答を処理中です" or similar)
+                            # This message appears in the input field during response generation
+                            elif any(phrase in remaining_text for phrase in (
+                                "応答を処理中", "Processing", "処理中", "お待ち"
+                            )):
+                                send_verified = True
+                                verify_reason = "input shows processing message"
+                                logger.debug("[SEND_VERIFY] Processing message detected: %s", remaining_text[:50])
                                 break
                             elif poll_iteration == 1:
                                 # Log remaining text on first iteration for debugging

@@ -204,7 +204,10 @@ def _is_recoverable_com_error(e: Exception) -> bool:
 
 def _try_create_new_excel_instance(xw, max_attempts: int = 3):
     """
-    Try to create a new isolated Excel instance, avoiding existing ones.
+    Try to create a new isolated Excel instance using win32com.DispatchEx.
+
+    Unlike xw.App() which may connect to an existing Excel instance via ROT,
+    DispatchEx always creates a new process.
 
     Args:
         xw: xlwings module
@@ -217,26 +220,82 @@ def _try_create_new_excel_instance(xw, max_attempts: int = 3):
         This function does NOT call quit() on any Excel instance to avoid
         closing the user's manually opened Excel files.
     """
+    try:
+        import win32com.client
+    except ImportError:
+        logger.warning("win32com not available - falling back to xw.App()")
+        # Fall back to simple retry with xw.App()
+        for attempt in range(max_attempts):
+            gc.collect()
+            _cleanup_com_before_retry()
+            time.sleep(0.3 * (attempt + 1))
+            try:
+                app = xw.App(visible=False, add_book=False)
+                if len(app.books) == 0:
+                    return app
+                del app
+            except Exception:
+                pass
+        return None
+
     for attempt in range(max_attempts):
         gc.collect()
         _cleanup_com_before_retry()
-        time.sleep(0.3 * (attempt + 1))
+        time.sleep(0.2 * (attempt + 1))
 
         try:
+            # DispatchEx ALWAYS creates a new Excel process (not via ROT)
+            excel_com = win32com.client.DispatchEx("Excel.Application")
+            excel_com.Visible = False
+            excel_com.DisplayAlerts = False
+
+            # Get the PID of this new Excel process
+            new_hwnd = excel_com.Hwnd
+            logger.debug("Created new Excel via DispatchEx (Hwnd=%s)", new_hwnd)
+
+            # Now use xlwings to wrap this - xlwings should find our new instance
+            # since it's the most recently created one
             app = xw.App(visible=False, add_book=False)
+
+            # Verify xlwings connected to our new instance by checking books count
             if len(app.books) == 0:
-                logger.debug(
-                    "Created isolated Excel instance on attempt %d (PID=%s)",
-                    attempt + 1, app.pid
+                logger.info(
+                    "Created isolated Excel instance via DispatchEx (PID=%s)",
+                    app.pid
                 )
                 return app
             else:
-                # Still connected to existing instance
+                # xlwings still connected to existing instance
+                # Keep the DispatchEx instance running and try again
                 logger.debug(
-                    "Attempt %d: Still connected to existing Excel (PID=%s, books=%d)",
+                    "Attempt %d: xlwings connected to existing Excel (PID=%s, books=%d). "
+                    "DispatchEx instance still available.",
                     attempt + 1, app.pid, len(app.books)
                 )
-                del app  # Release without quit()
+                del app
+
+                # Try to directly use the DispatchEx instance
+                # Create a minimal xlwings-compatible wrapper
+                try:
+                    # Check if this Excel has no books
+                    if excel_com.Workbooks.Count == 0:
+                        # Wrap with xlwings using the apps collection
+                        for xw_app in xw.apps:
+                            if len(xw_app.books) == 0:
+                                logger.info(
+                                    "Found isolated Excel in xw.apps (PID=%s)",
+                                    xw_app.pid
+                                )
+                                return xw_app
+                except Exception as e:
+                    logger.debug("Failed to find isolated app in xw.apps: %s", e)
+
+                # Release the COM object if we can't use it
+                try:
+                    excel_com.Quit()
+                except Exception:
+                    pass
+
         except Exception as e:
             logger.debug("Attempt %d failed: %s", attempt + 1, e)
 

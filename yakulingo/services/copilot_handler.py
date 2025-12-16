@@ -1974,7 +1974,15 @@ class CopilotHandler:
         logger.info("Browser window brought to foreground for: %s", reason)
 
     def _find_edge_window_handle(self, page_title: str = None):
-        """Locate the Edge window handle using Win32 APIs."""
+        """Locate the Edge window handle using Win32 APIs.
+
+        Uses two methods:
+        1. Title matching: If page_title is provided, find window with matching title
+        2. Process tree matching: Find window belonging to edge_process or its children
+
+        Edge uses a multi-process architecture where the parent process (edge_process)
+        may not own the window directly - it's often owned by a child renderer process.
+        """
         if sys.platform != "win32":
             return None
 
@@ -1988,7 +1996,20 @@ class CopilotHandler:
                 wintypes.BOOL, wintypes.HWND, wintypes.LPARAM
             )
 
-            target_pid = self.edge_process.pid if self.edge_process else None
+            # Get parent PID and all child PIDs for process tree matching
+            target_pids = set()
+            if self.edge_process:
+                target_pids.add(self.edge_process.pid)
+                # Get child process PIDs using psutil
+                try:
+                    import psutil
+                    parent = psutil.Process(self.edge_process.pid)
+                    for child in parent.children(recursive=True):
+                        target_pids.add(child.pid)
+                except Exception:
+                    # psutil may fail if process already terminated
+                    pass
+
             exact_match_hwnd = None
             fallback_hwnd = None
 
@@ -2005,19 +2026,19 @@ class CopilotHandler:
                 title = ctypes.create_unicode_buffer(title_length)
                 user32.GetWindowTextW(hwnd, title, title_length)
                 window_title = title.value
-                window_title_lower = window_title.lower()
 
                 if page_title and page_title in window_title:
                     logger.debug("Found exact title match: %s", window_title[:60])
                     exact_match_hwnd = hwnd
                     return False
 
-                # Only match by process ID to avoid interfering with user's Edge windows
-                if target_pid:
+                # Match by process tree (parent + children) to avoid interfering with user's Edge
+                if target_pids:
                     window_pid = wintypes.DWORD()
                     user32.GetWindowThreadProcessId(hwnd, ctypes.byref(window_pid))
-                    if window_pid.value == target_pid and fallback_hwnd is None:
-                        logger.debug("Found Edge window by process ID: %s", window_title[:60])
+                    if window_pid.value in target_pids and fallback_hwnd is None:
+                        logger.debug("Found Edge window by process tree: %s (pid=%d)",
+                                     window_title[:60], window_pid.value)
                         fallback_hwnd = hwnd
 
                 return True

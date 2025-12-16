@@ -1677,9 +1677,13 @@ Based on recent commits:
 - **Browser Side Panel Display Mode (2024-12)**:
   - **Default changed**: `browser_display_mode` のデフォルトを `"side_panel"` に変更
   - **Modes**: `"side_panel"`（デフォルト）、`"minimized"`（従来）、`"foreground"`（前面）
+  - **Resolution-aware sizing**: サイドパネルとアプリウィンドウの幅を解像度に応じて動的計算
+    - サイドパネル幅: 1920px+ → 450px、1366px → 350px、間は線形補間
+    - アプリウィンドウ幅: `screen_width × 0.73` または `screen_width - side_panel - gap` の小さい方
+    - 定数: `SIDE_PANEL_BASE_WIDTH=450`, `SIDE_PANEL_MIN_WIDTH=350`, `SIDE_PANEL_GAP=10`, `SIDE_PANEL_MIN_HEIGHT=500`
   - **Side panel features**:
     - YakuLingoアプリの右側にEdgeを配置
-    - アプリと高さを揃えて表示（幅500px、最小高さ400px）
+    - アプリと高さを揃えて表示（最小高さ500px）
     - マルチモニター対応（`MonitorFromWindow` API使用）
     - 画面端を超える場合は左側に自動配置
   - **Simplified browser handling**:
@@ -1687,7 +1691,7 @@ Based on recent commits:
     - サイドパネル/foregroundモードではEdge起動時に画面外配置オプションを使用しない
     - `_bring_to_foreground_impl`と`_ensure_edge_minimized`がモードを考慮
   - **Benefits**: ブラウザスロットリング問題を回避、翻訳経過をリアルタイムで確認可能
-  - **Implementation**: `_find_yakulingo_window_handle()`, `_position_edge_as_side_panel()`, `_apply_browser_display_mode()`
+  - **Implementation**: `_find_yakulingo_window_handle()`, `_position_edge_as_side_panel()`, `_apply_browser_display_mode()`, `calculate_side_panel_width()`
 - **Excel COM Isolation Improvements (2024-12)**:
   - **Problem**: xlwingsの`xw.App()`がCOM ROT経由で既存Excelインスタンスに接続する可能性
   - **Risk**: ユーザーが手動で開いているExcelファイルに誤って翻訳処理が実行される危険性

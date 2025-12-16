@@ -1076,6 +1076,10 @@ class CopilotHandler:
         os.environ.setdefault('NO_PROXY', 'localhost,127.0.0.1')
         os.environ.setdefault('no_proxy', 'localhost,127.0.0.1')
 
+        # Enable Playwright debug logging to investigate slow startup
+        # DEBUG=pw:api shows API calls, DEBUG=pw:* shows all internal logs
+        os.environ.setdefault('DEBUG', 'pw:api')
+
         try:
             error_types = _get_playwright_errors()
             PlaywrightError = error_types['Error']
@@ -1356,6 +1360,12 @@ class CopilotHandler:
         PlaywrightError = error_types['Error']
         PlaywrightTimeoutError = error_types['TimeoutError']
 
+        # Check browser display mode - skip minimize for side_panel/foreground modes
+        from yakulingo.config.settings import AppSettings
+        settings_path = Path.home() / ".yakulingo" / "settings.json"
+        settings = AppSettings.load(settings_path)
+        should_minimize = settings.browser_display_mode not in ("side_panel", "foreground")
+
         logger.info("Checking for existing Copilot page...")
         pages = self._context.pages
 
@@ -1371,14 +1381,17 @@ class CopilotHandler:
                 if _is_login_page(url):
                     logger.info("Existing Copilot page is on login page, navigating to Copilot...")
                     # Minimize before navigation to prevent flash during redirect
-                    self._minimize_edge_window(None)
+                    # (only in minimized mode)
+                    if should_minimize:
+                        self._minimize_edge_window(None)
                     try:
                         page.goto(self.COPILOT_URL, wait_until='commit', timeout=self.PAGE_GOTO_TIMEOUT_MS)
                     except (PlaywrightTimeoutError, PlaywrightError) as nav_err:
                         logger.warning("Failed to navigate to Copilot from login page: %s", nav_err)
-                # Always minimize Edge when returning existing page
+                # Minimize Edge when returning existing page (only in minimized mode)
                 # Playwright reconnection may bring Edge to foreground
-                self._minimize_edge_window(None)
+                if should_minimize:
+                    self._minimize_edge_window(None)
                 return page
 
         # Reuse existing tab if available (avoids creating extra tabs)
@@ -1390,16 +1403,18 @@ class CopilotHandler:
             logger.info("Created new tab for Copilot")
 
         # Minimize before navigation to prevent flash during redirect
-        self._minimize_edge_window(None)
+        # (only in minimized mode - side_panel/foreground should stay visible)
+        if should_minimize:
+            self._minimize_edge_window(None)
 
         # Navigate with 'commit' (fastest - just wait for first response)
         logger.info("Navigating to Copilot...")
         copilot_page.goto(self.COPILOT_URL, wait_until='commit', timeout=self.PAGE_GOTO_TIMEOUT_MS)
 
-        # Immediately minimize browser after navigation to prevent it from
-        # staying in foreground during login redirect. Login redirects can
-        # cause Edge to steal focus even when started minimized.
-        self._minimize_edge_window(None)
+        # Minimize browser after navigation to prevent it from staying in foreground
+        # during login redirect. (only in minimized mode)
+        if should_minimize:
+            self._minimize_edge_window(None)
 
         return copilot_page
 
@@ -2092,6 +2107,36 @@ class CopilotHandler:
             logger.debug("Failed to locate YakuLingo window handle: %s", e)
             return None
 
+    def _load_window_size_from_cache(self) -> tuple[int, int] | None:
+        """Load window size from app.py's display cache.
+
+        This ensures the side panel calculation uses the same window size
+        as the actual pywebview window.
+
+        Returns:
+            Tuple of (width, height) or None if cache is unavailable.
+        """
+        import json
+
+        cache_path = Path.home() / ".yakulingo" / "display_cache.json"
+        if not cache_path.exists():
+            return None
+
+        try:
+            with open(cache_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+
+            window = data.get('window')
+            if isinstance(window, list) and len(window) == 2:
+                width, height = window[0], window[1]
+                if width >= 800 and height >= 500:
+                    return (width, height)
+
+            return None
+        except (json.JSONDecodeError, OSError, KeyError, TypeError) as e:
+            logger.debug("Failed to load window size from cache: %s", e)
+            return None
+
     def _calculate_side_panel_geometry_from_screen(self) -> tuple[int, int, int, int] | None:
         """Calculate side panel position and size from screen resolution.
 
@@ -2145,12 +2190,23 @@ class CopilotHandler:
             available_width = screen_width - edge_width - self.SIDE_PANEL_GAP
             max_window_height = int(screen_height * 0.95)
 
-            # Calculate app window size (must match app.py _detect_display_settings)
-            MIN_WINDOW_WIDTH = 1100
-            MIN_WINDOW_HEIGHT = 650
-            ratio_based_width = int(screen_width * self.APP_WIDTH_RATIO)
-            app_width = min(max(ratio_based_width, MIN_WINDOW_WIDTH), available_width)
-            app_height = min(max(int(screen_height * self.APP_HEIGHT_RATIO), MIN_WINDOW_HEIGHT), max_window_height)
+            # Try to load cached window size from app.py's display cache
+            # This ensures consistency with the actual window size used by pywebview
+            cached_window_size = self._load_window_size_from_cache()
+            if cached_window_size:
+                app_width, app_height = cached_window_size
+                # Ensure cached size fits in available space
+                app_width = min(app_width, available_width)
+                app_height = min(app_height, max_window_height)
+                logger.debug("Using cached window size: %dx%d", app_width, app_height)
+            else:
+                # Fallback: Calculate app window size (must match app.py _detect_display_settings)
+                MIN_WINDOW_WIDTH = 1100
+                MIN_WINDOW_HEIGHT = 650
+                ratio_based_width = int(screen_width * self.APP_WIDTH_RATIO)
+                app_width = min(max(ratio_based_width, MIN_WINDOW_WIDTH), available_width)
+                app_height = min(max(int(screen_height * self.APP_HEIGHT_RATIO), MIN_WINDOW_HEIGHT), max_window_height)
+                logger.debug("Using calculated window size: %dx%d (no cache)", app_width, app_height)
 
             # Calculate total width of app + gap + side panel
             total_width = app_width + self.SIDE_PANEL_GAP + edge_width

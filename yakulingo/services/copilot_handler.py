@@ -4330,8 +4330,28 @@ class CopilotHandler:
     # JavaScript to extract text with list numbers preserved
     # inner_text() doesn't include CSS-generated list markers, so we need to
     # manually add them back for <ol> lists
+    # Also uses Selection API to preserve <> brackets that may be lost via DOM traversal
     _JS_GET_TEXT_WITH_LIST_NUMBERS = """
     (element) => {
+        // First, try Selection API to get text with <> preserved
+        // This works because Selection.toString() returns the visible text as-is
+        try {
+            const selection = window.getSelection();
+            const range = document.createRange();
+            range.selectNodeContents(element);
+            selection.removeAllRanges();
+            selection.addRange(range);
+            const selectedText = selection.toString();
+            selection.removeAllRanges();  // Clean up selection
+            if (selectedText && selectedText.trim()) {
+                // Selection API preserves <> brackets, return it directly
+                return selectedText.trim();
+            }
+        } catch (e) {
+            // Selection API failed, fall through to DOM traversal
+        }
+
+        // Fallback: DOM traversal with list number handling
         const result = [];
         let listCounter = 0;
         let inOrderedList = false;

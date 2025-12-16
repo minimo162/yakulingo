@@ -732,7 +732,7 @@ connect() が False を返した後
         │     └─ ERROR → 連続3回でポーリング停止
         │
         └─ 状態に応じた処理
-              ├─ READY: _connected=True, storage_state保存, Edge最小化
+              ├─ READY: _connected=True, Edge最小化
               └─ タイムアウト: 翻訳ボタン押下時に再試行
 ```
 
@@ -1644,6 +1644,16 @@ When interacting with users in this repository, prefer Japanese for comments and
 ## Recent Development Focus
 
 Based on recent commits:
+- **Early Connection Timeout Fix (2024-12)**:
+  - **Timeout extended**: 早期接続タイムアウトを15秒から30秒に延長（Playwright初期化15秒 + CDP接続4秒 + UI待機5秒 = 約25-30秒）
+  - **asyncio.shield protection**: タイムアウト時のタスクキャンセルを防止
+  - **Background completion handler**: タイムアウト後もバックグラウンドで接続を続行し、完了時にUIを更新
+  - **Issue fixed**: UIが「接続中」のまま更新されない問題を修正
+- **Cleanup Optimization (2024-12)**:
+  - **gc.collect() removed**: 約0.15秒削減
+  - **Streamlined cancellation**: キャンセル処理を最適化
+  - **PP-DocLayout-L cache clear moved**: Edge終了後に移動
+  - **Expected improvement**: cleanup時間 2.04秒 → 約1.0-1.5秒
 - **Glossary Processing Optimization (2024-12)**:
   - **Prompt embedding**: 用語集をプロンプトに直接埋め込み（ファイル添付より高速）
   - **Performance improvement**: 翻訳時間が約22秒から約7〜10秒に短縮（約16〜19秒改善）
@@ -1668,7 +1678,7 @@ Based on recent commits:
   - **Exception handling fix**: 低レベルキーボードフックの例外処理を修正してキーボードブロックを防止
 - **Session Persistence Improvements (2024-12)**:
   - **auth=2 parameter removal**: COPILOT_URLから?auth=2パラメータを削除。M365は?authパラメータがなくても既存セッションの認証タイプを自動検出
-  - **Storage state restoration**: 起動時のstorage_state復元を改善してログイン保持を修正
+  - **storage_state.json removed**: EdgeProfileのCookiesがセッション保持を担うため、storage_state.json関連のコードを削除（-93行）
   - **Auto-login Edge visibility fix**: 自動ログイン時のEdge表示を防止
 - **Edge Browser Process Management (2024-12)**:
   - **Process tree termination**: アプリ終了時にEdgeの子プロセスも確実に終了（taskkill /T /F使用）

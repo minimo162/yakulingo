@@ -696,16 +696,6 @@ class CopilotHandler:
             return self._cancel_callback()
         return False
 
-    def _get_storage_state_path(self) -> Path:
-        """Get path to storage_state.json for cookie/session persistence."""
-        if self.profile_dir:
-            return self.profile_dir / "storage_state.json"
-        # Fallback if profile_dir not set yet
-        local_app_data = os.environ.get("LOCALAPPDATA", "")
-        if local_app_data:
-            return Path(local_app_data) / "YakuLingo" / "EdgeProfile" / "storage_state.json"
-        return Path.home() / ".yakulingo" / "edge-profile" / "storage_state.json"
-
     def _find_edge_exe(self) -> Optional[str]:
         """Find Edge executable across supported platforms.
 
@@ -1103,7 +1093,6 @@ class CopilotHandler:
             else:
                 # Edge already running, just initialize Playwright
                 # Ensure profile_dir is set even when connecting to existing Edge
-                # This is needed for storage_state path resolution
                 if not self.profile_dir:
                     local_app_data = os.environ.get("LOCALAPPDATA", "")
                     if local_app_data:
@@ -1224,12 +1213,6 @@ class CopilotHandler:
         self._connected = True
         self.last_connection_error = self.ERROR_NONE
 
-        # Note: storage_state is saved on disconnect() rather than here.
-        # Saving immediately after connection can cause issues where the
-        # Edge browser navigates away (to ntp.msn.com) and closes the page context.
-        # The session is persisted through the EdgeProfile directory cookies anyway.
-        logger.debug("Connection finalized (storage_state will be saved on disconnect)")
-
         # Note: Do NOT call window.stop() here as it interrupts M365 background
         # authentication/session establishment, causing auth dialogs to appear.
 
@@ -1317,22 +1300,8 @@ class CopilotHandler:
             logger.debug("Found context after retry")
             return contexts[0]
 
-        # フォールバック: 新規context作成（storage_stateから復元を試みる）
-        storage_path = self._get_storage_state_path()
-        logger.info("Looking for storage_state at: %s", storage_path)
-        if storage_path.exists():
-            try:
-                file_size = storage_path.stat().st_size
-                logger.info("Restoring session from storage_state (size: %d bytes)...", file_size)
-                context = self._browser.new_context(storage_state=str(storage_path))
-                logger.info("Session restored from storage_state successfully")
-                return context
-            except (PlaywrightError, PlaywrightTimeoutError, OSError) as e:
-                logger.warning("Failed to restore storage_state: %s (type: %s)", e, type(e).__name__)
-        else:
-            logger.warning("storage_state file not found at: %s", storage_path)
-
-        logger.warning("Creating new context without storage_state - login will be required")
+        # フォールバック: 新規context作成（EdgeProfileのCookiesでセッション保持）
+        logger.warning("Creating new context - login may be required")
         return self._browser.new_context()
 
     def _get_or_create_copilot_page(self):
@@ -2544,8 +2513,7 @@ class CopilotHandler:
                     try:
                         page.wait_for_selector(input_selector, timeout=3000, state='visible')
                         logger.info("Login completed successfully")
-                        # Finalize connection state and save storage_state
-                        # This ensures the session is persisted immediately after login
+                        # Finalize connection state
                         self._finalize_connected_state()
                         return True
                     except PlaywrightTimeoutError:
@@ -2828,10 +2796,6 @@ class CopilotHandler:
             logger.warning("wait_for_page_load: error - %s", e)
             return False
 
-    def save_storage_state(self) -> bool:
-        """Thread-safe wrapper to persist the current login session."""
-        return _playwright_executor.execute(self._save_storage_state)
-
     def check_copilot_state(self, timeout: int = 5) -> str:
         """Thread-safe wrapper for _check_copilot_state."""
         return _playwright_executor.execute(self._check_copilot_state, timeout)
@@ -2979,16 +2943,6 @@ class CopilotHandler:
         """
         from contextlib import suppress
 
-        # Save storage_state before closing browser (moved from translation methods
-        # to avoid window activation during translation completion)
-        logger.info("Saving storage_state before disconnect...")
-        try:
-            saved = self._save_storage_state()
-            if not saved:
-                logger.warning("storage_state was not saved during disconnect")
-        except Exception as e:
-            logger.warning("Error saving storage_state during disconnect: %s", e)
-
         self._connected = False
 
         # Use suppress for cleanup - we want to continue even if errors occur
@@ -3095,53 +3049,11 @@ class CopilotHandler:
                 if not cookies_found:
                     logger.warning("Cookies file NOT found (neither Default/Cookies nor Network/Cookies)")
 
-                # Check storage_state.json
-                storage_path = self._get_storage_state_path()
-                if storage_path.exists():
-                    size = storage_path.stat().st_size
-                    mtime = storage_path.stat().st_mtime
-                    mtime_str = datetime.fromtimestamp(mtime).strftime('%Y-%m-%d %H:%M:%S')
-                    logger.info("storage_state.json exists: size=%d bytes, modified=%s", size, mtime_str)
-                else:
-                    logger.info("storage_state.json does not exist (first run or cleared)")
-
             else:
                 logger.warning("Default profile directory NOT found - this may cause login issues!")
 
         except (OSError, PermissionError) as e:
             logger.warning("Error checking profile directory: %s", e)
-
-    def _save_storage_state(self) -> bool:
-        """
-        Save current session cookies/storage to file for persistence.
-
-        Should be called after successful translation to ensure session is saved.
-
-        Returns:
-            True if storage_state was saved successfully
-        """
-        if not self._context:
-            logger.debug("Cannot save storage_state: no context")
-            return False
-
-        error_types = _get_playwright_errors()
-        PlaywrightError = error_types['Error']
-
-        try:
-            storage_path = self._get_storage_state_path()
-            # Ensure parent directory exists
-            storage_path.parent.mkdir(parents=True, exist_ok=True)
-            # Save storage state (cookies, localStorage, sessionStorage)
-            self._context.storage_state(path=str(storage_path))
-            file_size = storage_path.stat().st_size if storage_path.exists() else 0
-            logger.info("Storage state saved to %s (size: %d bytes)", storage_path, file_size)
-            return True
-        except PlaywrightError as e:
-            logger.warning("Failed to save storage_state (Playwright): %s", e)
-            return False
-        except OSError as e:
-            logger.warning("Failed to save storage_state (IO): %s", e)
-            return False
 
     async def translate(
         self,
@@ -3364,7 +3276,6 @@ class CopilotHandler:
                         )
 
             # Minimize browser after a successful translation to avoid stealing focus
-            # Note: storage_state is saved on disconnect() to avoid window activation
             try:
                 self._send_to_background_impl(self._page)
             except Exception:
@@ -3580,7 +3491,6 @@ class CopilotHandler:
                         )
 
             # Minimize browser after a successful translation to keep it in background
-            # Note: storage_state is saved on disconnect() to avoid window activation
             try:
                 self._send_to_background_impl(self._page)
             except Exception:

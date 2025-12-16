@@ -420,6 +420,7 @@ YakuLingo/
 |--------|------|
 | 設定ファイル | `config/settings.json` |
 | 翻訳履歴 | `~/.yakulingo/history.db` |
+| ログファイル | `~/.yakulingo/logs/startup.log` |
 | 参照ファイル | `glossary.csv`（デフォルト） |
 
 ## ライセンス

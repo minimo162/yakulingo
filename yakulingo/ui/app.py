@@ -187,12 +187,13 @@ class YakuLingoApp:
 
         # Panel sizes (sidebar_width, input_panel_width, content_width) in pixels
         # Set by run_app() based on monitor detection
-        # content_width is unified for both input and result panels (600-900px)
-        self._panel_sizes: tuple[int, int, int] = (260, 420, 800)
+        # content_width is unified for both input and result panels (500-900px)
+        self._panel_sizes: tuple[int, int, int] = (250, 400, 850)
 
         # Window size (width, height) in pixels
         # Set by run_app() based on monitor detection
-        self._window_size: tuple[int, int] = (1900, 1100)
+        # Window width is reduced to accommodate side panel mode (500px + 10px gap)
+        self._window_size: tuple[int, int] = (1800, 1100)
 
         # Login polling state (prevents duplicate polling)
         self._login_polling_active = False
@@ -2871,13 +2872,16 @@ def _detect_display_settings(
         Tuple of ((window_width, window_height), (sidebar_width, input_panel_width, content_width))
         - content_width: Unified width for both input and result panel content (600-900px)
     """
-    # Reference ratios based on 2560x1440 → 1900x1100
-    WIDTH_RATIO = 1900 / 2560  # 0.742
+    # Reference ratios based on 2560x1440 → 1800x1100
+    # WIDTH_RATIO is reduced from 0.742 to 0.70 to accommodate side panel mode
+    # Side panel (500px) + gap (10px) = 510px
+    # Example: 1920px screen × 0.70 = 1344px window + 510px side panel = 1854px < 1920px ✓
+    WIDTH_RATIO = 1800 / 2560  # 0.703
     HEIGHT_RATIO = 1100 / 1440  # 0.764
 
-    # Panel ratios based on 1900px window width
-    SIDEBAR_RATIO = 260 / 1900  # 0.137
-    INPUT_PANEL_RATIO = 420 / 1900  # 0.221
+    # Panel ratios based on 1800px window width
+    SIDEBAR_RATIO = 250 / 1800  # 0.139
+    INPUT_PANEL_RATIO = 400 / 1800  # 0.222
 
     # Minimum sizes to prevent layout breaking on smaller screens
     # These are absolute minimums - below this, UI elements may overlap
@@ -3155,8 +3159,8 @@ def run_app(
             yakulingo_app._window_size = window_size
             run_window_size = window_size
         else:
-            window_size = (1900, 1100)  # Default size for browser mode
-            yakulingo_app._panel_sizes = (260, 420, 800)  # Default panel sizes (sidebar, input, content)
+            window_size = (1800, 1100)  # Default size for browser mode (reduced for side panel)
+            yakulingo_app._panel_sizes = (250, 400, 850)  # Default panel sizes (sidebar, input, content)
             yakulingo_app._window_size = window_size
             run_window_size = None  # Passing a size would re-enable native mode inside NiceGUI
     logger.info("[TIMING] _detect_display_settings: %.2fs", time.perf_counter() - _t2)
@@ -3360,10 +3364,11 @@ def run_app(
         ui.add_head_html('''<script>
 (function() {
     // Constants matching Python calculation (from _detect_display_settings)
-    const REFERENCE_WINDOW_WIDTH = 1900;
+    // Reference window width reduced to accommodate side panel mode (500px + 10px gap)
+    const REFERENCE_WINDOW_WIDTH = 1800;
     const REFERENCE_FONT_SIZE = 16;
-    const SIDEBAR_RATIO = 260 / 1900;
-    const INPUT_PANEL_RATIO = 420 / 1900;
+    const SIDEBAR_RATIO = 250 / 1800;
+    const INPUT_PANEL_RATIO = 400 / 1800;
     const MIN_SIDEBAR_WIDTH = 220;  // Lowered for smaller screens
     const MIN_INPUT_PANEL_WIDTH = 320;  // Lowered for smaller screens
     // Unified content width for both input and result panels

@@ -4892,9 +4892,18 @@ class TestJapaneseContinuationLine:
 
     def test_closing_brackets_are_not_continuation(self):
         """Closing brackets are sentence-ending punctuation"""
+        # Full-width closing brackets (in SENTENCE_END_CHARS_JA)
         assert is_japanese_continuation_line("（注）") is False
         assert is_japanese_continuation_line("です）") is False
         assert is_japanese_continuation_line("資料」") is False
+
+        # Half-width closing brackets (handled by CLOSING_BRACKETS check)
+        # This is important for financial documents like:
+        # "(百万円未満四捨五入)" followed by "１．連結業績..."
+        assert is_japanese_continuation_line("(百万円未満四捨五入)") is False
+        assert is_japanese_continuation_line("(株)") is False
+        assert is_japanese_continuation_line("(連結)") is False
+        assert is_japanese_continuation_line("[注記]") is False
 
     def test_sentence_final_particles_are_not_continuation(self):
         """Sentence-final particles end sentences"""

@@ -72,6 +72,7 @@ from .pdf_converter import (
     # Line joining functions (yomitoku reference)
     get_line_join_separator, is_line_end_hyphenated, _is_cjk_char,
     is_japanese_continuation_line,  # For intelligent paragraph boundary detection
+    is_toc_line_ending,  # For TOC pattern detection (leader + page number)
     # Sentence end characters for paragraph boundary detection
     SENTENCE_END_CHARS_JA, SENTENCE_END_CHARS_EN,
     # Coordinate conversion utilities (PDFMathTranslate compliant)
@@ -4244,6 +4245,29 @@ class PdfProcessor(FileProcessor):
                     # - TOC-like pattern (Y change + large X reset)
                     should_start_new = True
 
+                    # Special case: text ending with opening brackets should NEVER be split
+                    # Examples: "百万円(" should not be separated from "％)"
+                    # Opening brackets clearly indicate the text continues.
+                    OPENING_BRACKETS = frozenset('(（「『【〔〈《｛［')
+                    if sstk and sstk[-1]:
+                        prev_text_check = sstk[-1].rstrip()
+                        if prev_text_check and prev_text_check[-1] in OPENING_BRACKETS:
+                            should_start_new = False
+                            line_break = True
+                            new_paragraph = False
+
+                    # Special case: very short CJK text should not be split
+                    # Examples: "代 表 者" with spaces → "代", "表", "者" should be joined
+                    # Single CJK characters are clearly incomplete and should continue.
+                    if should_start_new and sstk and sstk[-1]:
+                        prev_text_check = sstk[-1].rstrip()
+                        # Check if text is 1-2 CJK characters only (excluding spaces)
+                        if prev_text_check and len(prev_text_check) <= 2:
+                            if all(_is_cjk_char(c) for c in prev_text_check):
+                                should_start_new = False
+                                line_break = True
+                                new_paragraph = False
+
                     # Only apply sentence-end check for weak boundaries (line wrapping)
                     if not is_strong_boundary and sstk and pstk:
                         prev_text = sstk[-1].rstrip() if sstk[-1] else ""
@@ -4300,7 +4324,10 @@ class PdfProcessor(FileProcessor):
                             last_char = prev_text[-1] if prev_text else ""
                             is_sentence_end = (
                                 last_char in SENTENCE_END_CHARS_JA or
-                                last_char in SENTENCE_END_CHARS_EN
+                                last_char in SENTENCE_END_CHARS_EN or
+                                # TOC pattern: leader dots (…) followed by page number
+                                # e.g., "経営成績等の概況…………… 2"
+                                is_toc_line_ending(prev_text)
                             )
 
                             # If it's a continuation line OR not a sentence end, join the lines

@@ -435,7 +435,7 @@ def _drop_zone(on_file_select: Callable[[Path], Union[None, Awaitable[None]]]):
             ui.icon('upload_file').classes('drop-zone-icon')
             ui.label('翻訳するファイルをドロップ').classes('drop-zone-text')
             ui.label('または クリックして選択').classes('drop-zone-subtext')
-            ui.label('Excel / Word / PowerPoint / PDF / TXT').classes('drop-zone-hint')
+            ui.label('Excel / Word / PowerPoint / PDF / TXT / MSG').classes('drop-zone-hint')
 
         # Upload component for click selection
         upload = ui.upload(

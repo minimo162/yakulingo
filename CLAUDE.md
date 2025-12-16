@@ -1131,7 +1131,7 @@ def vflag(font: str, char: str) -> bool:
 # pdf_converter.py の定数
 SAME_LINE_Y_THRESHOLD = 3.0       # 3pt以内は同じ行
 SAME_PARA_Y_THRESHOLD = 20.0      # 20pt以内は同じ段落
-WORD_SPACE_X_THRESHOLD = 2.0      # 2pt以上の間隔でスペース挿入
+WORD_SPACE_X_THRESHOLD = 1.0      # 1pt以上の間隔でスペース挿入（PDFMathTranslate準拠: x0 > x1 + 1）
 LINE_BREAK_X_THRESHOLD = 1.0      # X座標が戻ったら改行
 COLUMN_JUMP_X_THRESHOLD = 100.0   # 100pt以上のX移動は段組み変更
 
@@ -1410,6 +1410,125 @@ analyzed_cells = analyze_table_structure(cells, table_box)
 - セル境界検出成功時: セル境界まで拡張可能（テキストの読みやすさ優先）
 - セル境界検出失敗時: フォントサイズ縮小にフォールバック（重なり防止）
 
+**yomitoku-style ノイズフィルタリング:**
+
+yomitokuの`is_noise`関数を参考にした小要素フィルタリング：
+
+```python
+from yakulingo.processors.pdf_layout import (
+    is_noise_element,         # 要素がノイズかどうか判定
+    filter_noise_elements,    # リストからノイズ要素を除去
+    NOISE_MIN_SIZE_PX,        # 最小サイズ閾値（32px, yomitoku準拠）
+    IMAGE_WARNING_SIZE_PX,    # 画像警告サイズ閾値（720px）
+)
+
+# 使用例
+if is_noise_element((10, 20, 15, 25)):  # 幅=5, 高さ=5
+    # この要素はノイズ - スキップ
+    continue
+
+# リストからノイズを除去
+filtered = filter_noise_elements(detected_elements)
+```
+
+| 定数/関数 | 値/説明 |
+|----------|--------|
+| `NOISE_MIN_SIZE_PX` | 32px - 幅または高さがこれ未満の要素はノイズ（yomitoku準拠） |
+| `IMAGE_WARNING_SIZE_PX` | 720px - この以下の画像は低品質警告（yomitoku準拠） |
+| `is_noise_element()` | 単一要素のノイズ判定 |
+| `filter_noise_elements()` | リストからノイズ要素を除去 |
+
+**yomitoku-style ヘッダー・フッター検出:**
+
+PP-DocLayout-Lがheader/footerを検出しない場合のフォールバック機能：
+
+```python
+from yakulingo.processors.pdf_layout import (
+    detect_header_footer_by_position,  # 位置ベースの検出
+    mark_header_footer_in_layout,      # LayoutArrayにマーク
+    HEADER_FOOTER_RATIO,               # ヘッダー/フッター領域比率（5%）
+)
+
+# 要素リストを分類
+headers, body, footers = detect_header_footer_by_position(
+    elements, page_height=3508
+)
+
+# LayoutArrayにroleをマーク
+layout = mark_header_footer_in_layout(layout, page_height=3508)
+# layout.paragraphs[id]['role'] == 'header' or 'footer'
+```
+
+| 定数/関数 | 値/説明 |
+|----------|--------|
+| `HEADER_FOOTER_RATIO` | 0.05 - ページの上下5%をヘッダー/フッター領域とする |
+| `detect_header_footer_by_position()` | (headers, body, footers) のタプルを返す |
+| `mark_header_footer_in_layout()` | LayoutArray内の要素にroleをマーク |
+
+**yomitoku-style 面積ベースのページ方向判定:**
+
+要素数ではなく面積でページ方向を判定する、より堅牢なアルゴリズム：
+
+```python
+from yakulingo.processors.pdf_layout import (
+    detect_reading_direction_by_area,   # 面積ベースの方向検出
+    estimate_reading_order_by_area,     # 面積ベースで読み順推定
+)
+
+# 面積ベースの方向検出（混在サイズの文書で堅牢）
+direction = detect_reading_direction_by_area(layout, page_height)
+
+# 面積ベースの読み順推定
+order = estimate_reading_order_by_area(layout, page_height)
+```
+
+**アルゴリズム:**
+1. 各テキスト要素の面積を計算
+2. 縦長（height/width > 2.0）な要素の面積を合計
+3. 縦長要素の面積が全体の70%以上 → 縦書き（RIGHT_TO_LEFT）
+4. それ以外 → 横書き（TOP_TO_BOTTOM）
+
+**yomitoku-style 要素重複判定:**
+
+yomitokuの`calc_overlap_ratio`、`is_contained`、`is_intersected`を参考にした重複計算：
+
+```python
+from yakulingo.processors.pdf_layout import (
+    calc_overlap_ratio,               # 重複比率を計算
+    is_element_contained,             # 要素が含まれているか判定（閾値0.8）
+    is_intersected_horizontal,        # 水平方向の交差判定（閾値0.5）
+    is_intersected_vertical,          # 垂直方向の交差判定（閾値0.5）
+    ELEMENT_CONTAINMENT_THRESHOLD,    # 含有判定閾値（0.8, yomitoku準拠）
+    ELEMENT_INTERSECTION_THRESHOLD,   # 交差判定閾値（0.5, yomitoku準拠）
+    ELEMENT_OVERLAP_THRESHOLD,        # 後方互換性用（0.5）
+)
+
+# 重複比率（0.0〜1.0）
+ratio = calc_overlap_ratio(word_box, paragraph_box)
+
+# 含有判定（閾値0.8以上で含まれていると判定 - yomitoku準拠）
+if is_element_contained(word_box, paragraph_box):
+    paragraph.add_word(word)
+
+# 水平方向の交差（閾値0.5以上で交差と判定）
+if is_intersected_horizontal(box1, box2):
+    # box1とbox2は水平方向に重なっている
+
+# 垂直方向の交差（閾値0.5以上で交差と判定）
+if is_intersected_vertical(box1, box2):
+    # box1とbox2は垂直方向に重なっている
+```
+
+| 定数/関数 | 値/説明 |
+|----------|--------|
+| `ELEMENT_CONTAINMENT_THRESHOLD` | 0.8 - 80%以上重複で含有と判定（yomitoku準拠） |
+| `ELEMENT_INTERSECTION_THRESHOLD` | 0.5 - 50%以上重複で交差と判定（yomitoku準拠） |
+| `ELEMENT_OVERLAP_THRESHOLD` | 0.5 - 後方互換性用 |
+| `calc_overlap_ratio()` | (交差面積) / (box1面積) を返す |
+| `is_element_contained()` | 含有判定（デフォルト閾値0.8） |
+| `is_intersected_horizontal()` | 水平方向の交差判定（min_width比） |
+| `is_intersected_vertical()` | 垂直方向の交差判定（min_height比） |
+
 **アライメントベース拡張方向 (pdf_processor.py):**
 
 | 関数 | 説明 |
@@ -1436,7 +1555,7 @@ analyzed_cells = analyze_table_structure(cells, table_box)
 | 定数 | 値 | 説明 |
 |------|------|------|
 | `ALIGNMENT_TOLERANCE` | 5.0pt | アライメント判定の許容誤差 |
-| `VERTICAL_TEXT_ASPECT_RATIO` | 1.5 | 縦書き判定の閾値（ブロック単位） |
+| `VERTICAL_TEXT_ASPECT_RATIO` | 2.0 | 縦書き判定の閾値（yomitoku: thresh_aspect=2） |
 | `MAX_EXPANSION_RATIO` | 2.0 | 最大拡張比率（200%） |
 
 **DPI設定 (`ocr_dpi`):**

@@ -94,7 +94,7 @@ _RE_FORMULA_PLACEHOLDER = re.compile(r"[\{\(\[]\s*v([\d\s]+)\s*[\}\)\]]", re.IGN
 # page-size and font-size adaptive thresholds.
 SAME_LINE_Y_THRESHOLD = 3.0       # Characters within 3pt are on same line
 SAME_PARA_Y_THRESHOLD = 20.0      # Lines within 20pt are in same paragraph
-WORD_SPACE_X_THRESHOLD = 2.0      # Gap > 2pt between chars inserts space
+WORD_SPACE_X_THRESHOLD = 1.0      # Gap > 1pt between chars inserts space (PDFMathTranslate: x0 > x1 + 1)
 LINE_BREAK_X_THRESHOLD = 1.0      # child.x1 < xt.x0 indicates line break
 # Multi-column detection: large X jump (>100pt) suggests column change
 COLUMN_JUMP_X_THRESHOLD = 100.0

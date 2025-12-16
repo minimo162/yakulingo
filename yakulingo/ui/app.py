@@ -9,6 +9,7 @@ Japanese → English, Other → Japanese (auto-detected by AI).
 import atexit
 import asyncio
 import logging
+import sys
 import threading
 import time
 import uuid
@@ -555,26 +556,66 @@ class YakuLingoApp:
                 logger.debug("Windows API restore failed: %s", e)
 
     def _reposition_windows_for_side_panel(self) -> bool:
-        """Reposition app and Edge windows for side_panel mode.
+        """Reposition app window for side_panel mode using pre-calculated position.
 
         This is called after UI is displayed to fix window positions.
         pywebview places the app at screen center, which may cause overlap
-        with the side panel. This method repositions both windows as a "set"
-        centered on screen.
+        with the side panel. This method moves only the app window to the
+        pre-calculated position (Edge is already in the correct position).
+
+        Using the pre-calculated position avoids recalculation and reduces
+        window movement (Edge doesn't move at all), minimizing visual flickering.
 
         Returns:
             True if repositioning was successful
         """
+        if sys.platform != 'win32':
+            return False
+
         try:
             # Check if side_panel mode is enabled
             settings = self._settings
             if not settings or settings.browser_display_mode != "side_panel":
                 return False
 
-            # Use Copilot handler's repositioning method
-            if self._copilot and self._copilot._connected:
-                return self._copilot._position_edge_as_side_panel()
-            return False
+            # Check if we have a pre-calculated app position from early connection
+            if not self._copilot or not self._copilot._expected_app_position:
+                # Fall back to full repositioning if no pre-calculated position
+                if self._copilot and self._copilot._connected:
+                    return self._copilot._position_edge_as_side_panel()
+                return False
+
+            # Use pre-calculated position (app only, Edge is already positioned)
+            app_x, app_y, app_width, app_height = self._copilot._expected_app_position
+
+            import ctypes
+
+            user32 = ctypes.WinDLL('user32', use_last_error=True)
+
+            # Find YakuLingo window
+            yakulingo_hwnd = self._copilot._find_yakulingo_window_handle()
+            if not yakulingo_hwnd:
+                logger.debug("YakuLingo window not found for repositioning")
+                return False
+
+            # Move app window to pre-calculated position
+            SWP_NOZORDER = 0x0004
+            SWP_NOACTIVATE = 0x0010
+            flags = SWP_NOZORDER | SWP_NOACTIVATE
+
+            result = user32.SetWindowPos(
+                yakulingo_hwnd, None,
+                app_x, app_y, app_width, app_height,
+                flags
+            )
+
+            if result:
+                logger.debug("App window moved to pre-calculated position: (%d, %d) %dx%d",
+                           app_x, app_y, app_width, app_height)
+                return True
+            else:
+                logger.debug("Failed to move app window to pre-calculated position")
+                return False
 
         except Exception as e:
             logger.debug("Failed to reposition windows for side panel: %s", e)
@@ -3225,6 +3266,88 @@ def _check_native_mode_and_get_webview(native_requested: bool) -> tuple[bool, "M
     return (True, webview)
 
 
+def _calculate_app_position_for_side_panel(
+    window_width: int,
+    window_height: int
+) -> tuple[int, int] | None:
+    """Calculate app window position for side panel mode.
+
+    This calculates where the app window should be placed so that both
+    the app and the side panel (Edge browser) are centered on screen as a set.
+
+    Layout: |---margin---|---app_window---|---gap---|---side_panel---|---margin---|
+
+    Args:
+        window_width: The app window width
+        window_height: The app window height
+
+    Returns:
+        Tuple of (x, y) for the app window, or None if calculation fails.
+    """
+    if sys.platform != 'win32':
+        return None
+
+    try:
+        import ctypes
+
+        user32 = ctypes.WinDLL('user32', use_last_error=True)
+
+        # Get primary monitor work area (excludes taskbar)
+        class RECT(ctypes.Structure):
+            _fields_ = [
+                ("left", ctypes.c_long),
+                ("top", ctypes.c_long),
+                ("right", ctypes.c_long),
+                ("bottom", ctypes.c_long),
+            ]
+
+        work_area = RECT()
+        # SPI_GETWORKAREA = 0x0030
+        user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(work_area), 0)
+
+        screen_width = work_area.right - work_area.left
+        screen_height = work_area.bottom - work_area.top
+
+        # Side panel constants (must match CopilotHandler)
+        SIDE_PANEL_BASE_WIDTH = 550
+        SIDE_PANEL_MIN_WIDTH = 450
+        SIDE_PANEL_GAP = 10
+
+        # Calculate side panel width based on screen resolution
+        if screen_width >= 1920:
+            edge_width = SIDE_PANEL_BASE_WIDTH
+        elif screen_width <= 1366:
+            edge_width = SIDE_PANEL_MIN_WIDTH
+        else:
+            ratio = (screen_width - 1366) / (1920 - 1366)
+            edge_width = int(SIDE_PANEL_MIN_WIDTH +
+                           (SIDE_PANEL_BASE_WIDTH - SIDE_PANEL_MIN_WIDTH) * ratio)
+
+        # Calculate total width of app + gap + side panel
+        total_width = window_width + SIDE_PANEL_GAP + edge_width
+
+        # Position the "set" (app + side panel) centered on screen
+        set_start_x = work_area.left + (screen_width - total_width) // 2
+        set_start_y = work_area.top + (screen_height - window_height) // 2
+
+        # Ensure set doesn't go off screen (left edge)
+        if set_start_x < work_area.left:
+            set_start_x = work_area.left
+
+        # App window position (left side of the set)
+        app_x = set_start_x
+        app_y = set_start_y
+
+        logger.debug("Calculated app position for side panel: (%d, %d) (screen: %dx%d)",
+                    app_x, app_y, screen_width, screen_height)
+
+        return (app_x, app_y)
+
+    except Exception as e:
+        logger.debug("Failed to calculate app position for side panel: %s", e)
+        return None
+
+
 def run_app(
     host: str = '127.0.0.1',
     port: int = 8765,
@@ -3660,6 +3783,25 @@ document.fonts.ready.then(function() {
 
     # window_size is already determined at the start of run_app()
     logger.info("[TIMING] Before ui.run(): %.2fs", time.perf_counter() - _t0)
+
+    # Set initial window position for side_panel mode (avoids post-creation repositioning)
+    # This must be done before ui.run() to pass position to pywebview
+    if native and run_window_size is not None:
+        try:
+            # Load settings to check browser_display_mode
+            from yakulingo.config.settings import AppSettings
+            settings = AppSettings.load()
+            if settings.browser_display_mode == "side_panel":
+                app_position = _calculate_app_position_for_side_panel(
+                    run_window_size[0], run_window_size[1]
+                )
+                if app_position:
+                    nicegui_app.native.window_args['x'] = app_position[0]
+                    nicegui_app.native.window_args['y'] = app_position[1]
+                    logger.debug("Set initial window position: (%d, %d)", app_position[0], app_position[1])
+        except Exception as e:
+            logger.debug("Failed to set initial window position: %s", e)
+
     # Use the same icon as desktop shortcut for taskbar
     icon_path = Path(__file__).parent / 'yakulingo.ico'
 

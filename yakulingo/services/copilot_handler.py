@@ -645,6 +645,10 @@ class CopilotHandler:
         # Flag to track if we started the browser (for cleanup purposes)
         # This remains True even if edge_process becomes None after cleanup
         self._browser_started_by_us = False
+        # Expected app position calculated during early connection (for side panel mode)
+        # This allows the app window to move directly to the correct position
+        # without waiting for Edge window to be found
+        self._expected_app_position: tuple[int, int, int, int] | None = None
 
     @property
     def is_connected(self) -> bool:
@@ -2154,6 +2158,9 @@ class CopilotHandler:
 
             logger.debug("Side panel geometry from screen: (%d, %d) %dx%d (app_x=%d, screen: %dx%d)",
                         edge_x, edge_y, edge_width, edge_height, app_x, screen_width, screen_height)
+
+            # Save expected app position for later use (avoids recalculation and flickering)
+            self._expected_app_position = (app_x, app_y, app_width, app_height)
 
             return (edge_x, edge_y, edge_width, edge_height)
 

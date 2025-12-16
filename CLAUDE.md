@@ -552,14 +552,15 @@ async def _translate_text(self):
 - マルチモニター対応（アプリと同じモニターに表示）
 - ブラウザスロットリング問題を回避可能
 - ログイン時の前面表示処理がスキップされる（既に見えているため）
-- UI表示後にウィンドウ位置を再調整（pywebviewの中央配置を修正）
+- **アプリとEdgeを最初から正しい位置に配置**（ちらつきなし）
 
 **サイドパネルのレイアウト:**
 ```
 |---余白---|---アプリ---|---隙間---|---サイドパネル---|---余白---|
 ```
 - アプリとサイドパネルの全体幅（`app_width + gap + side_panel_width`）を画面中央に配置
-- pywebviewがアプリを中央に配置した後、`_position_edge_as_side_panel()`で両ウィンドウを再配置
+- `app.native.window_args` でpywebviewにアプリ位置を事前指定
+- `--window-position` でEdge起動時に位置を指定
 
 **サイドパネルのサイズ計算（解像度対応）:**
 
@@ -1693,18 +1694,20 @@ Based on recent commits:
     - YakuLingoアプリの右側にEdgeを配置
     - アプリと高さを揃えて表示（最小高さ500px）
     - マルチモニター対応（`MonitorFromWindow` API使用）
-    - UI表示後にウィンドウ位置を再調整（pywebviewの中央配置を修正）
-  - **Window positioning fix (2024-12)**:
-    - pywebviewがアプリを画面中央に配置するため、サイドパネルが画面からはみ出す問題を修正
-    - `_calculate_side_panel_geometry_from_screen()`: アプリ+サイドパネルの全体を画面中央に配置
-    - `_position_edge_as_side_panel()`: アプリウィンドウも移動して両ウィンドウが重ならないよう配置
-    - `_reposition_windows_for_side_panel()`: UI表示後の再配置用ヘルパーメソッド
+    - **アプリとEdgeを最初から正しい位置に配置**（ちらつきなし）
+  - **Window positioning optimization (2024-12)**:
+    - `_calculate_app_position_for_side_panel()`: サイドパネルモードのアプリ位置を事前計算
+    - `app.native.window_args['x'], ['y']`: pywebviewにアプリ位置を事前指定
+    - `_calculate_side_panel_geometry_from_screen()`: Edge位置計算 + アプリ位置を`_expected_app_position`に保存
+    - `--window-position`: Edge起動時に正しい位置を指定
+    - アプリもEdgeも最初から正しい位置に配置され、再配置によるちらつきが解消
+    - `_reposition_windows_for_side_panel()`: フォールバック用（通常は使用されない）
   - **Simplified browser handling**:
     - サイドパネル/foregroundモードではログイン時の前面表示処理をスキップ
     - サイドパネル/foregroundモードではEdge起動時に画面外配置オプションを使用しない
     - `_bring_to_foreground_impl`と`_ensure_edge_minimized`がモードを考慮
   - **Benefits**: ブラウザスロットリング問題を回避、翻訳経過をリアルタイムで確認可能
-  - **Implementation**: `_find_yakulingo_window_handle()`, `_position_edge_as_side_panel()`, `_apply_browser_display_mode()`, `calculate_side_panel_width()`, `_reposition_windows_for_side_panel()`
+  - **Implementation**: `_calculate_app_position_for_side_panel()`, `_calculate_side_panel_geometry_from_screen()`, `_expected_app_position`, `app.native.window_args`, `_find_yakulingo_window_handle()`, `_position_edge_as_side_panel()`, `_reposition_windows_for_side_panel()`
 - **Excel COM Isolation Improvements (2024-12)**:
   - **Problem**: xlwingsの`xw.App()`がCOM ROT経由で既存Excelインスタンスに接続する可能性
   - **Risk**: ユーザーが手動で開いているExcelファイルに誤って翻訳処理が実行される危険性

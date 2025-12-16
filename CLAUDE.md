@@ -523,7 +523,7 @@ async def _translate_text(self):
   "ocr_batch_size": 5,
   "ocr_dpi": 300,
   "ocr_device": "auto",
-  "browser_display_mode": "minimized",
+  "browser_display_mode": "side_panel",
   "auto_update_enabled": true,
   "auto_update_check_interval": 86400,
   "github_repo_owner": "minimo162",
@@ -541,16 +541,30 @@ async def _translate_text(self):
 
 | 値 | 説明 |
 |-----|------|
-| `"minimized"` | 最小化して非表示（デフォルト、従来動作） |
-| `"side_panel"` | アプリの横にパネルとして表示（翻訳経過が見える） |
+| `"side_panel"` | アプリの横にパネルとして表示（デフォルト、翻訳経過が見える） |
+| `"minimized"` | 最小化して非表示（従来動作） |
 | `"foreground"` | 前面に表示 |
 
 サイドパネルモード (`side_panel`) の動作:
 - EdgeウィンドウをYakuLingoアプリの右側に配置
-- アプリと高さを揃えて表示（幅500px、最小高さ400px）
+- アプリと高さを揃えて表示（最小高さ500px）
 - 画面右端を超える場合は左側に自動配置
 - マルチモニター対応（アプリと同じモニターに表示）
 - ブラウザスロットリング問題を回避可能
+- ログイン時の前面表示処理がスキップされる（既に見えているため）
+- Edge起動時に画面外配置オプションを使用しない
+
+**サイドパネルのサイズ計算（解像度対応）:**
+
+| 画面幅 | サイドパネル幅 | アプリ幅の目安 | 合計 |
+|--------|---------------|---------------|------|
+| 1920px+ | 450px | 1460px (73%) | 1920px |
+| 1600px | 400px | 1168px (73%) | 1578px |
+| 1366px | 350px | 997px (73%) | 1357px |
+
+- サイドパネル幅は1366px〜1920pxの間で線形補間
+- アプリウィンドウ幅は `screen_width - side_panel - gap` を上限として計算
+- ギャップ: 10px
 
 **用語集の処理モード**:
 - `use_bundled_glossary`: 同梱の glossary.csv を使用するか（デフォルト: true）
@@ -1661,15 +1675,23 @@ When interacting with users in this repository, prefer Japanese for comments and
 
 Based on recent commits:
 - **Browser Side Panel Display Mode (2024-12)**:
-  - **New setting**: `browser_display_mode` で翻訳時のEdge表示方法を選択可能
-  - **Modes**: `"minimized"`（従来）、`"side_panel"`（並列表示）、`"foreground"`（前面）
+  - **Default changed**: `browser_display_mode` のデフォルトを `"side_panel"` に変更
+  - **Modes**: `"side_panel"`（デフォルト）、`"minimized"`（従来）、`"foreground"`（前面）
+  - **Resolution-aware sizing**: サイドパネルとアプリウィンドウの幅を解像度に応じて動的計算
+    - サイドパネル幅: 1920px+ → 450px、1366px → 350px、間は線形補間
+    - アプリウィンドウ幅: `screen_width × 0.73` または `screen_width - side_panel - gap` の小さい方
+    - 定数: `SIDE_PANEL_BASE_WIDTH=450`, `SIDE_PANEL_MIN_WIDTH=350`, `SIDE_PANEL_GAP=10`, `SIDE_PANEL_MIN_HEIGHT=500`
   - **Side panel features**:
     - YakuLingoアプリの右側にEdgeを配置
-    - アプリと高さを揃えて表示（幅500px、最小高さ400px）
+    - アプリと高さを揃えて表示（最小高さ500px）
     - マルチモニター対応（`MonitorFromWindow` API使用）
     - 画面端を超える場合は左側に自動配置
+  - **Simplified browser handling**:
+    - サイドパネル/foregroundモードではログイン時の前面表示処理をスキップ
+    - サイドパネル/foregroundモードではEdge起動時に画面外配置オプションを使用しない
+    - `_bring_to_foreground_impl`と`_ensure_edge_minimized`がモードを考慮
   - **Benefits**: ブラウザスロットリング問題を回避、翻訳経過をリアルタイムで確認可能
-  - **Implementation**: `_find_yakulingo_window_handle()`, `_position_edge_as_side_panel()`, `_apply_browser_display_mode()`
+  - **Implementation**: `_find_yakulingo_window_handle()`, `_position_edge_as_side_panel()`, `_apply_browser_display_mode()`, `calculate_side_panel_width()`
 - **Excel COM Isolation Improvements (2024-12)**:
   - **Problem**: xlwingsの`xw.App()`がCOM ROT経由で既存Excelインスタンスに接続する可能性
   - **Risk**: ユーザーが手動で開いているExcelファイルに誤って翻訳処理が実行される危険性

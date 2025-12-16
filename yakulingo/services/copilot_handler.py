@@ -507,6 +507,16 @@ class CopilotHandler:
     MIN_EDGE_WINDOW_HEIGHT = 768   # Minimum height in pixels
 
     # =========================================================================
+    # Side Panel Mode Settings
+    # =========================================================================
+    # Side panel width scales based on screen width to accommodate different resolutions
+    # Reference: 1920px screen → 450px panel, 1366px screen → 350px panel
+    SIDE_PANEL_BASE_WIDTH = 450      # Base width for 1920px+ screens
+    SIDE_PANEL_MIN_WIDTH = 350       # Minimum width for smaller screens
+    SIDE_PANEL_GAP = 10              # Gap between app and side panel
+    SIDE_PANEL_MIN_HEIGHT = 500      # Minimum height for usability
+
+    # =========================================================================
     # UI Selectors - Centralized for easier maintenance when Copilot UI changes
     # =========================================================================
 
@@ -863,19 +873,19 @@ class CopilotHandler:
         try:
             local_cwd = os.environ.get("SYSTEMROOT", r"C:\Windows")
 
-            # On Windows, use STARTUPINFO to start Edge minimized
-            # Note: STARTF_USESHOWWINDOW with SW_MINIMIZE doesn't work for GUI apps
-            # that create their own windows (Edge creates its own window), but we use
-            # --start-minimized and --window-position=-32000,-32000 command line args instead.
-            # We avoid CREATE_NO_WINDOW flag as it can cause issues with GUI applications.
+            # Load settings to determine browser display mode
+            from yakulingo.config.settings import AppSettings
+            settings_path = Path.home() / ".yakulingo" / "settings.json"
+            settings = AppSettings.load(settings_path)
+            display_mode = settings.browser_display_mode
+
             startupinfo = None
             creationflags = 0
             if sys.platform == "win32":
                 startupinfo = subprocess.STARTUPINFO()
-                # Don't set STARTF_USESHOWWINDOW - it has no effect on GUI apps
-                # and may interfere with Edge's own window management
 
-            self.edge_process = subprocess.Popen([
+            # Build command line arguments based on display mode
+            edge_args = [
                 edge_exe,
                 f"--remote-debugging-port={self.cdp_port}",
                 f"--user-data-dir={self.profile_dir}",
@@ -884,11 +894,6 @@ class CopilotHandler:
                 "--no-default-browser-check",
                 # Bypass proxy for localhost connections (fixes 401 errors in corporate environments)
                 "--proxy-bypass-list=localhost;127.0.0.1",
-                # Start minimized to avoid visual flash when login is not required
-                "--start-minimized",
-                # Position window off-screen to prevent visual flash during Playwright operations
-                # Even if browser comes to foreground, it won't be visible to user
-                "--window-position=-32000,-32000",
                 # Disable browser sync to avoid Edge profile sign-in prompts
                 # (YakuLingo uses isolated profile, sync is not needed)
                 "--disable-sync",
@@ -916,10 +921,27 @@ class CopilotHandler:
                 "--disable-features=TranslateUI",
                 # Disable GPU hardware acceleration (reduces resource usage)
                 "--disable-gpu-sandbox",
-            ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-               cwd=local_cwd if sys.platform == "win32" else None,
-               startupinfo=startupinfo,
-               creationflags=creationflags)
+            ]
+
+            # Only add minimized/off-screen options for "minimized" mode
+            # For side_panel and foreground modes, start Edge normally
+            if display_mode == "minimized":
+                edge_args.extend([
+                    "--start-minimized",
+                    "--window-position=-32000,-32000",
+                ])
+                logger.debug("Starting Edge in minimized mode (off-screen)")
+            else:
+                logger.debug("Starting Edge in %s mode (visible)", display_mode)
+
+            self.edge_process = subprocess.Popen(
+                edge_args,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                cwd=local_cwd if sys.platform == "win32" else None,
+                startupinfo=startupinfo,
+                creationflags=creationflags,
+            )
 
             # Wait for Edge to start
             for i in range(self.EDGE_STARTUP_MAX_ATTEMPTS):
@@ -928,10 +950,8 @@ class CopilotHandler:
                     logger.info("Edge started successfully")
                     # Mark that we started this browser (for cleanup on app exit)
                     self._browser_started_by_us = True
-                    # Minimize window - Edge is started with --start-minimized but
-                    # ensure it stays minimized (some Edge versions may ignore the flag)
-                    # No delay needed: try immediately, retry with backoff if window not ready
-                    self._minimize_edge_window()
+                    # Apply browser display mode (minimize, side panel, or foreground)
+                    self._apply_browser_display_mode(None)
                     return True
 
             logger.warning("Edge startup timeout")
@@ -1884,10 +1904,24 @@ class CopilotHandler:
         1. Playwright's bring_to_front() - works within browser context
         2. Windows API (pywin32/ctypes) - forces window to foreground
 
+        Note: In side_panel or foreground mode, this method does nothing because
+        the browser is already visible to the user.
+
         Args:
             page: The Playwright page to bring to front
             reason: Reason for bringing window to foreground (for logging)
         """
+        # Check browser display mode - skip for side_panel/foreground modes
+        # (browser is already visible, no need to bring to front)
+        from yakulingo.config.settings import AppSettings
+        settings_path = Path.home() / ".yakulingo" / "settings.json"
+        settings = AppSettings.load(settings_path)
+        mode = settings.browser_display_mode
+
+        if mode in ("side_panel", "foreground"):
+            logger.debug("Skipping bring_to_foreground in %s mode (already visible): %s", mode, reason)
+            return
+
         error_types = _get_playwright_errors()
         PlaywrightError = error_types['Error']
 
@@ -2023,6 +2057,11 @@ class CopilotHandler:
         This places the Edge browser window to the right of the YakuLingo window,
         with matching height, allowing users to see the translation progress.
 
+        The panel width scales based on available screen space:
+        - 1920px+ screen width: 450px panel
+        - 1366-1919px: scales proportionally (350-450px)
+        - <1366px: 350px minimum
+
         Args:
             page_title: The current page title for exact matching
 
@@ -2063,12 +2102,6 @@ class CopilotHandler:
                 logger.warning("Failed to get YakuLingo window rect")
                 return False
 
-            # Calculate Edge window position (right side of YakuLingo)
-            app_height = app_rect.bottom - app_rect.top
-            edge_width = 500  # Fixed width for side panel
-            edge_x = app_rect.right + 10  # 10px gap between windows
-            edge_y = app_rect.top
-
             # Get monitor info for the monitor containing YakuLingo window
             # This handles multi-monitor setups correctly
             class MONITORINFO(ctypes.Structure):
@@ -2089,19 +2122,39 @@ class CopilotHandler:
 
             # Use work area (excludes taskbar) of the monitor containing YakuLingo
             work_area = monitor_info.rcWork
+            screen_width = work_area.right - work_area.left
+
+            # Calculate side panel width based on screen resolution
+            # Scale from MIN_WIDTH (at 1366px) to BASE_WIDTH (at 1920px+)
+            if screen_width >= 1920:
+                edge_width = self.SIDE_PANEL_BASE_WIDTH
+            elif screen_width <= 1366:
+                edge_width = self.SIDE_PANEL_MIN_WIDTH
+            else:
+                # Linear interpolation between 1366px and 1920px
+                ratio = (screen_width - 1366) / (1920 - 1366)
+                edge_width = int(self.SIDE_PANEL_MIN_WIDTH +
+                               (self.SIDE_PANEL_BASE_WIDTH - self.SIDE_PANEL_MIN_WIDTH) * ratio)
+
+            # Calculate Edge window position (right side of YakuLingo)
+            app_height = app_rect.bottom - app_rect.top
+            edge_x = app_rect.right + self.SIDE_PANEL_GAP
+            edge_y = app_rect.top
 
             # Adjust if Edge would go off screen
             if edge_x + edge_width > work_area.right:
                 # Place on left side instead
-                edge_x = app_rect.left - edge_width - 10
+                edge_x = app_rect.left - edge_width - self.SIDE_PANEL_GAP
                 if edge_x < work_area.left:
                     # Not enough room on either side, use right side anyway
                     edge_x = work_area.right - edge_width
 
             # Ensure minimum height for usability
-            MIN_HEIGHT = 400
-            if app_height < MIN_HEIGHT:
-                app_height = MIN_HEIGHT
+            if app_height < self.SIDE_PANEL_MIN_HEIGHT:
+                app_height = self.SIDE_PANEL_MIN_HEIGHT
+
+            logger.debug("Side panel sizing: screen_width=%d, panel_width=%d",
+                        screen_width, edge_width)
 
             # Check if window is off-screen (started with --window-position=-32000,-32000)
             # or minimized - in either case, we need to restore it first
@@ -2537,10 +2590,23 @@ class CopilotHandler:
         This is called during auto-login wait to prevent Edge from staying
         in foreground when login is not yet required.
 
+        Note: In side_panel or foreground mode, this method does nothing because
+        the browser is intentionally visible.
+
         Args:
             during_auto_login: If True, this is expected behavior during SSO
                 redirects and will be logged at a lower level.
         """
+        # Check browser display mode - skip for side_panel/foreground modes
+        from yakulingo.config.settings import AppSettings
+        settings_path = Path.home() / ".yakulingo" / "settings.json"
+        settings = AppSettings.load(settings_path)
+        mode = settings.browser_display_mode
+
+        if mode in ("side_panel", "foreground"):
+            # Browser is intentionally visible, no need to minimize
+            return
+
         if self._is_edge_in_foreground():
             if during_auto_login:
                 # During SSO redirects, Edge coming to foreground is expected

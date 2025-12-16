@@ -2873,11 +2873,17 @@ def _detect_display_settings(
         - content_width: Unified width for both input and result panel content (600-900px)
     """
     # Reference ratios based on 2560x1440 → 1800x1100
-    # WIDTH_RATIO is reduced from 0.742 to 0.70 to accommodate side panel mode
-    # Side panel (500px) + gap (10px) = 510px
-    # Example: 1920px screen × 0.70 = 1344px window + 510px side panel = 1854px < 1920px ✓
-    WIDTH_RATIO = 1800 / 2560  # 0.703
+    # WIDTH_RATIO adjusts to accommodate side panel mode (default)
+    # Side panel width: 450px (1920px+), 350px (1366px-), gap: 10px
+    # Calculation: screen_width - side_panel - gap = available_for_app
+    # Example: 1920px - 450px - 10px = 1460px available → 1400px window (73%)
+    WIDTH_RATIO = 0.73  # Adjusted for side panel mode
     HEIGHT_RATIO = 1100 / 1440  # 0.764
+
+    # Side panel dimensions (must match copilot_handler.py constants)
+    SIDE_PANEL_BASE_WIDTH = 450  # For 1920px+ screens
+    SIDE_PANEL_MIN_WIDTH = 350   # For smaller screens
+    SIDE_PANEL_GAP = 10
 
     # Panel ratios based on 1800px window width
     SIDEBAR_RATIO = 250 / 1800  # 0.139
@@ -2899,22 +2905,41 @@ def _detect_display_settings(
     MIN_CONTENT_WIDTH = 500  # Lowered from 600 for smaller screens
     MAX_CONTENT_WIDTH = 900
 
+    def calculate_side_panel_width(screen_width: int) -> int:
+        """Calculate side panel width based on screen resolution.
+
+        Scales from MIN_WIDTH (at 1366px) to BASE_WIDTH (at 1920px+).
+        """
+        if screen_width >= 1920:
+            return SIDE_PANEL_BASE_WIDTH
+        elif screen_width <= 1366:
+            return SIDE_PANEL_MIN_WIDTH
+        else:
+            ratio = (screen_width - 1366) / (1920 - 1366)
+            return int(SIDE_PANEL_MIN_WIDTH +
+                      (SIDE_PANEL_BASE_WIDTH - SIDE_PANEL_MIN_WIDTH) * ratio)
+
     def calculate_sizes(screen_width: int, screen_height: int) -> tuple[tuple[int, int], tuple[int, int, int]]:
         """Calculate window size and panel widths from screen resolution.
 
         Applies minimum values for larger screens, but respects screen bounds for smaller screens.
-        Window size is capped to 95% of screen dimensions to ensure it fits on screen.
+        Window size is calculated to fit alongside the side panel (default mode).
 
         Returns:
             Tuple of ((window_width, window_height),
                       (sidebar_width, input_panel_width, content_width))
         """
-        # Calculate window size based on ratio, but never exceed screen bounds
-        max_window_width = int(screen_width * 0.95)  # Leave 5% margin
+        # Calculate side panel width for this screen resolution
+        side_panel_width = calculate_side_panel_width(screen_width)
+
+        # Calculate available space for app window (screen - side panel - gap)
+        available_width = screen_width - side_panel_width - SIDE_PANEL_GAP
         max_window_height = int(screen_height * 0.95)
 
-        # Apply ratio-based calculation with minimum, but cap at screen bounds
-        window_width = min(max(int(screen_width * WIDTH_RATIO), MIN_WINDOW_WIDTH), max_window_width)
+        # Apply ratio-based calculation, ensuring app + side panel fit on screen
+        # Use the smaller of: ratio-based width or available width
+        ratio_based_width = int(screen_width * WIDTH_RATIO)
+        window_width = min(max(ratio_based_width, MIN_WINDOW_WIDTH), available_width)
         window_height = min(max(int(screen_height * HEIGHT_RATIO), MIN_WINDOW_HEIGHT), max_window_height)
 
         # For smaller windows, use ratio-based panel sizes instead of fixed minimums

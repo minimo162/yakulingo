@@ -1280,3 +1280,63 @@ class TestCopiesHyperlinks:
         # Original sheet should have hyperlink preserved
         assert wb_out["Sheet1"]["A1"].hyperlink is not None
         assert "example.com" in wb_out["Sheet1"]["A1"].hyperlink.target
+
+
+class TestMergedCellsOptimization:
+    """Tests for merged cells map optimization."""
+
+    def test_is_cell_in_merged_area_inside(self, processor):
+        """Cell inside merged area returns merge address."""
+        merged_map = {
+            "$A$1:$C$3": (1, 1, 3, 3),  # A1:C3
+            "$E$5:$F$6": (5, 5, 6, 6),  # E5:F6
+        }
+
+        # Cell in first merged area
+        assert processor._is_cell_in_merged_area(2, 2, merged_map) == "$A$1:$C$3"
+        assert processor._is_cell_in_merged_area(1, 1, merged_map) == "$A$1:$C$3"
+        assert processor._is_cell_in_merged_area(3, 3, merged_map) == "$A$1:$C$3"
+
+        # Cell in second merged area
+        assert processor._is_cell_in_merged_area(5, 5, merged_map) == "$E$5:$F$6"
+        assert processor._is_cell_in_merged_area(6, 6, merged_map) == "$E$5:$F$6"
+
+    def test_is_cell_in_merged_area_outside(self, processor):
+        """Cell outside merged area returns None."""
+        merged_map = {
+            "$A$1:$C$3": (1, 1, 3, 3),
+        }
+
+        # Cells outside merged area
+        assert processor._is_cell_in_merged_area(4, 1, merged_map) is None
+        assert processor._is_cell_in_merged_area(1, 4, merged_map) is None
+        assert processor._is_cell_in_merged_area(10, 10, merged_map) is None
+
+    def test_is_cell_in_merged_area_empty_map(self, processor):
+        """Empty merged map returns None for any cell."""
+        merged_map = {}
+
+        assert processor._is_cell_in_merged_area(1, 1, merged_map) is None
+        assert processor._is_cell_in_merged_area(5, 5, merged_map) is None
+
+    def test_clear_merged_cells_cache(self, processor):
+        """Cache is cleared properly."""
+        # Simulate cache population
+        processor._merged_cells_cache["Sheet1"] = {"$A$1:$B$2": (1, 1, 2, 2)}
+        processor._merged_cells_cache["Sheet2"] = {"$C$3:$D$4": (3, 3, 4, 4)}
+
+        assert len(processor._merged_cells_cache) == 2
+
+        processor.clear_merged_cells_cache()
+
+        assert len(processor._merged_cells_cache) == 0
+
+    def test_merged_cells_cache_is_per_sheet(self, processor):
+        """Each sheet has its own cache entry."""
+        # Populate cache for multiple sheets
+        processor._merged_cells_cache["Sheet1"] = {"$A$1:$B$2": (1, 1, 2, 2)}
+        processor._merged_cells_cache["Sheet2"] = {"$C$3:$D$4": (3, 3, 4, 4)}
+
+        assert "Sheet1" in processor._merged_cells_cache
+        assert "Sheet2" in processor._merged_cells_cache
+        assert processor._merged_cells_cache["Sheet1"] != processor._merged_cells_cache["Sheet2"]

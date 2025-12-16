@@ -544,6 +544,9 @@ class ExcelProcessor(FileProcessor):
         # Font info cache: block_id -> (font_name, font_size)
         # Populated during extract, used during apply to avoid double COM calls
         self._font_cache: dict[str, tuple[Optional[str], float]] = {}
+        # Merged cells cache: sheet_name -> {merge_address: (row1, col1, row2, col2)}
+        # Built once per sheet during apply_translations to avoid repeated COM calls
+        self._merged_cells_cache: dict[str, dict[str, tuple[int, int, int, int]]] = {}
 
     def clear_warnings(self) -> None:
         """Clear accumulated warnings."""
@@ -553,6 +556,109 @@ class ExcelProcessor(FileProcessor):
     def clear_font_cache(self) -> None:
         """Clear font info cache."""
         self._font_cache.clear()
+
+    def clear_merged_cells_cache(self) -> None:
+        """Clear merged cells cache."""
+        self._merged_cells_cache.clear()
+
+    def _get_merged_cells_map(self, sheet) -> dict[str, tuple[int, int, int, int]]:
+        """Get merged cells map for a sheet, building cache if needed.
+
+        Uses Excel's FindFormat API to efficiently find all merged cells
+        in a single scan, rather than checking each cell individually.
+
+        Args:
+            sheet: xlwings Sheet object
+
+        Returns:
+            Dict mapping merge_address to (row1, col1, row2, col2) bounds
+        """
+        sheet_name = sheet.name
+
+        if sheet_name in self._merged_cells_cache:
+            return self._merged_cells_cache[sheet_name]
+
+        merged_cells: dict[str, tuple[int, int, int, int]] = {}
+
+        try:
+            app = sheet.book.app
+
+            # Clear FindFormat and set to search for merged cells
+            app.api.FindFormat.Clear()
+            app.api.FindFormat.MergeCells = True
+
+            # Search within used range only
+            used_range = sheet.used_range
+            if used_range is None:
+                self._merged_cells_cache[sheet_name] = merged_cells
+                return merged_cells
+
+            # Find first merged cell
+            # LookAt=2 is xlPart, SearchFormat=True enables format-based search
+            first_cell = used_range.api.Find(
+                What="",
+                LookAt=2,
+                SearchFormat=True
+            )
+
+            if first_cell is None:
+                self._merged_cells_cache[sheet_name] = merged_cells
+                return merged_cells
+
+            first_address = first_cell.Address
+            current_cell = first_cell
+
+            # Loop through all merged cells
+            while True:
+                merge_area = current_cell.MergeArea
+                merge_address = merge_area.Address
+
+                if merge_address not in merged_cells:
+                    merged_cells[merge_address] = (
+                        merge_area.Row,
+                        merge_area.Column,
+                        merge_area.Row + merge_area.Rows.Count - 1,
+                        merge_area.Column + merge_area.Columns.Count - 1
+                    )
+
+                # Find next merged cell
+                current_cell = used_range.api.FindNext(current_cell)
+
+                # Stop when we've looped back to the first cell
+                if current_cell is None or current_cell.Address == first_address:
+                    break
+
+            logger.debug(
+                "Built merged cells map for sheet '%s': %d merged areas",
+                sheet_name, len(merged_cells)
+            )
+
+        except Exception as e:
+            logger.debug("Error building merged cells map for '%s': %s", sheet_name, e)
+
+        self._merged_cells_cache[sheet_name] = merged_cells
+        return merged_cells
+
+    def _is_cell_in_merged_area(
+        self,
+        row: int,
+        col: int,
+        merged_map: dict[str, tuple[int, int, int, int]]
+    ) -> Optional[str]:
+        """Check if a cell is within a merged area.
+
+        Args:
+            row: Cell row (1-indexed)
+            col: Cell column (1-indexed)
+            merged_map: Dict from _get_merged_cells_map()
+
+        Returns:
+            Merge address string if cell is in a merged area, None otherwise
+        """
+        for merge_address, (r1, c1, r2, c2) in merged_map.items():
+            if r1 <= row <= r2 and c1 <= col <= c2:
+                return merge_address
+        return None
 
     @property
     def warnings(self) -> list[str]:
@@ -753,9 +859,10 @@ class ExcelProcessor(FileProcessor):
             file_path: Path to the Excel file
             output_language: "en" for JP→EN, "jp" for EN→JP translation
         """
-        # Clear warnings and font cache at start of extraction
+        # Clear warnings and caches at start of extraction
         self.clear_warnings()
         self.clear_font_cache()
+        self.clear_merged_cells_cache()
 
         xw = _get_xlwings()
 
@@ -1735,10 +1842,16 @@ class ExcelProcessor(FileProcessor):
     ) -> None:
         """Apply font to cells with optimized batch processing.
 
-        Tries batch application first, falls back to individual cells with
-        merged cell handling if batch fails.
+        Uses pre-built merged cells map to separate normal cells from merged cells,
+        then processes them differently:
+        - Normal cells: Safe to batch process (no merged cells to cause errors)
+        - Merged cells: Apply font directly via merge_address
 
-        Uses larger batch sizes for maximum efficiency.
+        This approach minimizes COM calls by:
+        1. Building merged cells map once per sheet (via FindFormat API)
+        2. Classifying cells in Python (no COM calls)
+        3. Batching normal cells safely (no fallback needed)
+        4. Processing merged areas directly by address
 
         Args:
             sheet: xlwings Sheet object
@@ -1755,8 +1868,30 @@ class ExcelProcessor(FileProcessor):
         MAX_ADDRESSES_PER_BATCH = 500
 
         try:
-            for i in range(0, len(cells), MAX_ADDRESSES_PER_BATCH):
-                batch = cells[i:i + MAX_ADDRESSES_PER_BATCH]
+            # 1. Get merged cells map (built once per sheet, cached)
+            merged_map = self._get_merged_cells_map(sheet)
+
+            # 2. Classify cells: normal vs merged (Python dict lookup only, no COM)
+            normal_cells: list[tuple[int, int]] = []
+            merged_areas_to_process: dict[str, bool] = {}
+
+            for row, col in cells:
+                merge_address = self._is_cell_in_merged_area(row, col, merged_map)
+                if merge_address:
+                    # Track unique merge areas (process each only once)
+                    if merge_address not in merged_areas_to_process:
+                        merged_areas_to_process[merge_address] = True
+                else:
+                    normal_cells.append((row, col))
+
+            logger.debug(
+                "Font batch optimized: %d normal cells, %d merged areas",
+                len(normal_cells), len(merged_areas_to_process)
+            )
+
+            # 3. Batch process normal cells (safe - no merged cells)
+            for i in range(0, len(normal_cells), MAX_ADDRESSES_PER_BATCH):
+                batch = normal_cells[i:i + MAX_ADDRESSES_PER_BATCH]
                 addresses = [f"{get_col_letter(col)}{row}" for row, col in batch]
 
                 try:
@@ -1765,38 +1900,24 @@ class ExcelProcessor(FileProcessor):
                     rng.font.name = font_name
                     rng.font.size = font_size
                 except Exception as e:
-                    # Batch failed (likely merged cells) - fall back with merge handling
-                    logger.debug("Font batch failed, using fallback with merge handling: %s", e)
-                    processed_merge_areas: set[str] = set()
-
+                    # Unexpected failure - fall back to individual cells
+                    logger.debug("Normal batch failed (unexpected): %s", e)
                     for row, col in batch:
                         try:
-                            cell_rng = sheet.range(row, col)
+                            cell = sheet.range(row, col)
+                            cell.font.name = font_name
+                            cell.font.size = font_size
+                        except Exception:
+                            pass
 
-                            # Check if this cell is part of a merged range
-                            try:
-                                is_merged = cell_rng.api.MergeCells
-                            except Exception:
-                                is_merged = False
-
-                            if is_merged:
-                                # Get the merge area and apply font to it once
-                                try:
-                                    merge_area = cell_rng.api.MergeArea
-                                    merge_address = merge_area.Address
-                                    if merge_address not in processed_merge_areas:
-                                        processed_merge_areas.add(merge_address)
-                                        merge_area.Font.Name = font_name
-                                        merge_area.Font.Size = font_size
-                                except Exception as merge_e:
-                                    logger.debug("Error applying font to merged cell at (%d,%d): %s", row, col, merge_e)
-                            else:
-                                # Normal cell - apply font directly
-                                cell_rng.font.name = font_name
-                                cell_rng.font.size = font_size
-
-                        except Exception as inner_e:
-                            logger.debug("Error applying font to cell (%d,%d): %s", row, col, inner_e)
+            # 4. Process merged areas directly by address
+            for merge_address in merged_areas_to_process:
+                try:
+                    rng = sheet.range(merge_address)
+                    rng.font.name = font_name
+                    rng.font.size = font_size
+                except Exception as e:
+                    logger.debug("Merged area %s font failed: %s", merge_address, e)
 
         except Exception as e:
             logger.warning("Error in font batch application: %s", e)

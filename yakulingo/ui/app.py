@@ -2938,15 +2938,15 @@ def _detect_display_settings(
     """
     # Reference ratios based on 2560x1440 → 1800x1100
     # WIDTH_RATIO adjusts to accommodate side panel mode (default)
-    # Side panel width: 450px (1920px+), 350px (1366px-), gap: 10px
+    # Side panel width: 550px (1920px+), 450px (1366px-), gap: 10px
     # Calculation: screen_width - side_panel - gap = available_for_app
-    # Example: 1920px - 450px - 10px = 1460px available → 1400px window (73%)
-    WIDTH_RATIO = 0.73  # Adjusted for side panel mode
+    # Example: 1920px - 550px - 10px = 1360px available → 1306px window (68%)
+    WIDTH_RATIO = 0.68  # Adjusted for side panel mode
     HEIGHT_RATIO = 1100 / 1440  # 0.764
 
     # Side panel dimensions (must match copilot_handler.py constants)
-    SIDE_PANEL_BASE_WIDTH = 450  # For 1920px+ screens
-    SIDE_PANEL_MIN_WIDTH = 350   # For smaller screens
+    SIDE_PANEL_BASE_WIDTH = 550  # For 1920px+ screens
+    SIDE_PANEL_MIN_WIDTH = 450   # For smaller screens
     SIDE_PANEL_GAP = 10
 
     # Panel ratios based on 1800px window width

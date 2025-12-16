@@ -510,14 +510,14 @@ class CopilotHandler:
     # Side Panel Mode Settings
     # =========================================================================
     # Side panel width scales based on screen width to accommodate different resolutions
-    # Reference: 1920px screen → 450px panel, 1366px screen → 350px panel
-    SIDE_PANEL_BASE_WIDTH = 450      # Base width for 1920px+ screens
-    SIDE_PANEL_MIN_WIDTH = 350       # Minimum width for smaller screens
+    # Reference: 1920px screen → 550px panel, 1366px screen → 450px panel
+    SIDE_PANEL_BASE_WIDTH = 550      # Base width for 1920px+ screens
+    SIDE_PANEL_MIN_WIDTH = 450       # Minimum width for smaller screens
     SIDE_PANEL_GAP = 10              # Gap between app and side panel
     SIDE_PANEL_MIN_HEIGHT = 500      # Minimum height for usability
 
     # App window size calculation ratios (must match app.py _detect_display_settings)
-    APP_WIDTH_RATIO = 0.73           # App window width as ratio of screen width
+    APP_WIDTH_RATIO = 0.68           # App window width as ratio of screen width
     APP_HEIGHT_RATIO = 1100 / 1440   # 0.764
 
     # =========================================================================

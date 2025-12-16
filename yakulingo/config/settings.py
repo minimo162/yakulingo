@@ -64,10 +64,10 @@ class AppSettings:
     ocr_device: str = "auto"            # "auto", "cpu", "cuda"
 
     # Browser Display Mode (翻訳時のEdgeブラウザ表示方法)
-    # "minimized": 最小化して非表示（従来動作）
-    # "side_panel": アプリの横にパネルとして表示（翻訳経過が見える）
+    # "side_panel": アプリの横にパネルとして表示（翻訳経過が見える、デフォルト）
+    # "minimized": 最小化して非表示
     # "foreground": 前面に表示
-    browser_display_mode: str = "minimized"
+    browser_display_mode: str = "side_panel"
 
     # Auto Update
     auto_update_enabled: bool = True            # 起動時に自動チェック

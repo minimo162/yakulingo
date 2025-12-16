@@ -685,7 +685,7 @@ class PlaywrightThreadExecutor:
     def execute(func, *args, timeout=120)  # 関数を専用スレッドで実行
 
 class CopilotHandler:
-    COPILOT_URL = "https://m365.cloud.microsoft/chat/?auth=2"
+    COPILOT_URL = "https://m365.cloud.microsoft/chat/"
     cdp_port = 9333  # Edge CDP専用ポート
 
     def connect() -> bool:

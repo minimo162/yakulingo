@@ -580,11 +580,12 @@ class YakuLingoApp:
         if self._early_connection_task is not None:
             try:
                 # Wait for early connection with timeout
-                # Playwright initialization can take 12+ seconds on first run
+                # Playwright initialization can take 15+ seconds, CDP connection 4+ seconds,
+                # and Copilot UI ready check 5+ seconds (total ~25-30 seconds on first run)
                 # Use asyncio.shield to prevent task cancellation on timeout
                 await asyncio.wait_for(
                     asyncio.shield(self._early_connection_task),
-                    timeout=15.0
+                    timeout=30.0
                 )
             except asyncio.TimeoutError:
                 # Task is still running (shield prevented cancellation)

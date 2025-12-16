@@ -1698,8 +1698,9 @@ Based on recent commits:
 - **File Panel Scrolling Fix (2024-12)**:
   - **ui.scroll_area usage**: ファイルパネルにui.scroll_area()を使用してスクロールを確実に有効化
 - **Main Panel Horizontal Scroll Fix (2024-12)**:
-  - **Global box-sizing reset**: `*, *::before, *::after { box-sizing: border-box; }` を追加。padding/borderがwidth計算に含まれるようになりレイアウトが安定
-  - **100vw → 100% fix**: `.main-area` の幅計算を `100vw` から `100%` に変更。`100vw` はスクロールバー幅を含むため微小な横スクロールが発生していた
+  - **Root cause**: `100vw` はスクロールバー幅を含むため、`.main-area` が実際の表示領域より広くなり微小な横スクロールが発生
+  - **Solution**: `width: calc(100vw - sidebar)` を維持しつつ `max-width: calc(100% - sidebar)` を追加。`width` でカード位置を維持し、`max-width` でスクロールバー幅分のオーバーフローを防止
+  - **Why not 100% only**: `100%` のみに変更するとカード位置がずれる（内部レイアウトが `100vw` ベースの幅を基準にしているため）
 - **File Attachment Button Improvement (2024-12)**:
   - **Direct file selection**: ファイル添付ボタンでダイアログを経由せず直接ファイル選択を開くように改善
 - **Glossary Processing Improvements (2024-12)**:

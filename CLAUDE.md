@@ -1899,7 +1899,8 @@ Based on recent commits:
   - **Simplified browser handling**:
     - サイドパネル/foregroundモードではログイン時の前面表示処理をスキップ
     - サイドパネル/foregroundモードではEdge起動時に画面外配置オプションを使用しない
-    - `_bring_to_foreground_impl`と`_ensure_edge_minimized`がモードを考慮
+    - サイドパネル/foregroundモードでは自動ログイン中もEdgeを最小化しない（常に表示）
+    - `_bring_to_foreground_impl`、`_ensure_edge_minimized`、`_wait_for_auto_login_impl`がモードを考慮
   - **Benefits**: ブラウザスロットリング問題を回避、翻訳経過をリアルタイムで確認可能
   - **Implementation**: `_calculate_app_position_for_side_panel()`, `_calculate_side_panel_geometry_from_screen()`, `_expected_app_position`, `app.native.window_args`, `_find_yakulingo_window_handle()`, `_position_edge_as_side_panel()`, `_reposition_windows_for_side_panel()`
 - **Excel COM Isolation Improvements (2024-12)**:

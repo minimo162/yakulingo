@@ -4533,24 +4533,35 @@ class CopilotHandler:
                             }''')
                             logger.debug("[SEND_DETAILED] After JS events: %s", post_js_state)
 
-                            # Method 2: Playwright press as backup
-                            input_elem.press("Enter")
-                            pw_time = time.time() - send_start
+                            # Check if JS events already triggered send (stop button visible or input cleared)
+                            js_send_succeeded = (
+                                post_js_state.get('stopBtnVisible', False) or
+                                post_js_state.get('textLength', -1) == 0
+                            )
 
-                            # Check state after Playwright press
-                            time.sleep(0.05)
-                            post_pw_state = self._page.evaluate('''() => {
-                                const input = document.querySelector('#m365-chat-editor-target-element');
-                                const stopBtn = document.querySelector('.fai-SendButton__stopBackground');
-                                return {
-                                    textLength: input ? input.innerText.trim().length : -1,
-                                    stopBtnVisible: !!stopBtn,
-                                    timestamp: Date.now()
-                                };
-                            }''')
-                            logger.debug("[SEND_DETAILED] After Playwright Enter (%.3fs): %s", pw_time, post_pw_state)
+                            if js_send_succeeded:
+                                # JS events worked - skip Playwright Enter to avoid sending empty message
+                                logger.debug("[SEND] JS events succeeded (stopBtn=%s, textLen=%d), skipping Playwright Enter",
+                                           post_js_state.get('stopBtnVisible'), post_js_state.get('textLength', -1))
+                                send_method = "Enter key (JS events only)"
+                            else:
+                                # JS events didn't trigger send - use Playwright as backup
+                                input_elem.press("Enter")
+                                pw_time = time.time() - send_start
 
-                            send_method = "Enter key (JS events + Playwright)"
+                                # Check state after Playwright press
+                                time.sleep(0.05)
+                                post_pw_state = self._page.evaluate('''() => {
+                                    const input = document.querySelector('#m365-chat-editor-target-element');
+                                    const stopBtn = document.querySelector('.fai-SendButton__stopBackground');
+                                    return {
+                                        textLength: input ? input.innerText.trim().length : -1,
+                                        stopBtnVisible: !!stopBtn,
+                                        timestamp: Date.now()
+                                    };
+                                }''')
+                                logger.debug("[SEND_DETAILED] After Playwright Enter (%.3fs): %s", pw_time, post_pw_state)
+                                send_method = "Enter key (JS events + Playwright)"
 
                         elif send_attempt == 1:
                             # Second attempt: JS click with multiple event dispatch

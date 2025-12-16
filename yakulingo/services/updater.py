@@ -1616,12 +1616,6 @@ def backup_and_update_glossary(app_dir: Path, source_dir: Path) -> Optional[str]
             shutil.copy2(new_glossary, user_glossary)
             logger.info("用語集を更新しました: %s", user_glossary)
 
-        # glossary_old.csv も更新（次回アップデート時の比較用）
-        if old_glossary.exists():
-            dest_old_glossary = app_dir / "glossary_old.csv"
-            shutil.copy2(old_glossary, dest_old_glossary)
-            logger.info("glossary_old.csv を更新しました: %s", dest_old_glossary)
-
         return None
 
     # カスタマイズされている場合はデスクトップにバックアップ
@@ -1647,12 +1641,6 @@ def backup_and_update_glossary(app_dir: Path, source_dir: Path) -> Optional[str]
     # 新しい用語集で上書き
     shutil.copy2(new_glossary, user_glossary)
     logger.info("用語集を更新しました: %s", user_glossary)
-
-    # glossary_old.csv も更新（次回アップデート時の比較用）
-    if old_glossary.exists():
-        dest_old_glossary = app_dir / "glossary_old.csv"
-        shutil.copy2(old_glossary, dest_old_glossary)
-        logger.info("glossary_old.csv を更新しました: %s", dest_old_glossary)
 
     return backup_name
 

@@ -252,8 +252,9 @@ body {
 /* Apply padding to result panel's direct child to prevent flickering */
 .result-panel > .nicegui-column {
     padding: 1.5rem 2rem;
+    /* flex-shrink: 0 prevents content from shrinking and disappearing */
+    flex-shrink: 0;
     /* min-height: 0 is required for proper scrolling in flex containers */
-    /* Without this, flex-1 children can prevent scrolling to the top */
     min-height: 0;
 }
 

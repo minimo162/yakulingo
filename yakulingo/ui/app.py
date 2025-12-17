@@ -1723,9 +1723,13 @@ class YakuLingoApp:
 
             # Delete button (visible on hover via CSS)
             # Use @click.stop to prevent event propagation to parent item
-            def delete_entry():
+            def delete_entry(item_element=item):
                 self.state.delete_history_entry(entry)
-                self._refresh_history()
+                # Delete only the specific item element instead of refreshing entire list
+                item_element.delete()
+                # Only refresh entire list if history becomes empty (to show "履歴がありません")
+                if not self.state.history:
+                    self._refresh_history()
 
             ui.button(icon='close', on_click=delete_entry).props(
                 'flat dense round size=xs @click.stop'

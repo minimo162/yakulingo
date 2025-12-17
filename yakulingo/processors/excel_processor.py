@@ -148,12 +148,9 @@ def _cleanup_com_before_retry():
     Clean up COM resources before retrying Excel connection.
 
     This helps resolve CO_E_SERVER_EXEC_FAILURE errors by:
-    1. Running garbage collection to release COM objects
-    2. Pumping pending COM messages (Windows only)
+    1. Pumping pending COM messages (Windows only)
+    2. Running garbage collection to release COM objects (single pass for performance)
     """
-    # Force garbage collection to release any lingering COM objects
-    gc.collect()
-
     pythoncom = _get_pythoncom()
     if pythoncom is not None:
         try:
@@ -162,7 +159,7 @@ def _cleanup_com_before_retry():
         except Exception as e:
             logger.debug("PumpWaitingMessages failed: %s", e)
 
-    # Additional gc pass after message pump
+    # Single gc pass after message pump (removed duplicate call for performance)
     gc.collect()
 
 
@@ -1133,15 +1130,22 @@ class ExcelProcessor(FileProcessor):
             2. Splitting the file into smaller chunks before processing
             3. Using openpyxl fallback which has better streaming support for reads
         """
+        import time as _time
         blocks: list[TextBlock] = []
 
         with com_initialized():
+            _t_start = _time.perf_counter()
             app = _create_excel_app_with_retry(xw)
+            _t_app = _time.perf_counter()
+            logger.debug("[TIMING] Excel app creation: %.2fs", _t_app - _t_start)
             try:
                 wb = app.books.open(str(file_path), ignore_read_only_recommended=True)
+                _t_open = _time.perf_counter()
+                logger.debug("[TIMING] Workbook open: %.2fs", _t_open - _t_app)
                 # SAFETY: Verify we opened the correct workbook
                 _verify_workbook_path(wb, file_path, "extract_text_blocks")
                 try:
+                    _t_sheets_start = _time.perf_counter()
                     for sheet_idx, sheet in enumerate(wb.sheets):
                         sheet_name = sheet.name
 
@@ -1292,119 +1296,133 @@ class ExcelProcessor(FileProcessor):
                         # Note: Some shape types (images, OLE objects, charts) don't have
                         # a text property and will raise COM errors when accessed
                         try:
-                            for shape_idx, shape in enumerate(sheet.shapes):
-                                try:
-                                    # First check shape type - some shapes don't support text
-                                    # xlwings shape types: 1=msoAutoShape, 17=msoTextBox, etc.
-                                    # Skip shapes that typically don't have text (images, OLE, etc.)
-                                    shape_type = None
+                            # Optimization: Skip shape iteration if no shapes exist
+                            shape_count = len(sheet.shapes)
+                            if shape_count > 0:
+                                for shape_idx, shape in enumerate(sheet.shapes):
                                     try:
-                                        shape_type = shape.type
-                                    except Exception:
-                                        # If we can't even get the type, skip this shape
-                                        continue
-
-                                    # Skip shape types that don't have text:
-                                    # 13 = msoPicture (images)
-                                    # 3 = msoChart (embedded charts)
-                                    # 12 = msoOLEControlObject
-                                    # 7 = msoEmbeddedOLEObject
-                                    # 10 = msoLinkedOLEObject
-                                    # 19 = msoMedia
-                                    non_text_types = {3, 7, 10, 12, 13, 19}
-                                    if shape_type in non_text_types:
-                                        continue
-
-                                    # Try to get text from shape
-                                    text = None
-                                    try:
-                                        if hasattr(shape, 'text'):
-                                            raw_text = shape.text  # Access only once
-                                            if raw_text:
-                                                text = raw_text.strip()
-                                    except Exception:
-                                        # COM error accessing text - shape doesn't support text
-                                        continue
-
-                                    if text and self.cell_translator.should_translate(text, output_language):
-                                        # Get shape name safely
-                                        shape_name = None
+                                        # First check shape type - some shapes don't support text
+                                        # xlwings shape types: 1=msoAutoShape, 17=msoTextBox, etc.
+                                        # Skip shapes that typically don't have text (images, OLE, etc.)
+                                        shape_type = None
                                         try:
-                                            shape_name = shape.name
+                                            shape_type = shape.type
                                         except Exception:
-                                            shape_name = f"Shape_{shape_idx}"
+                                            # If we can't even get the type, skip this shape
+                                            continue
 
-                                        blocks.append(TextBlock(
-                                            id=f"{sheet_name}_shape_{shape_idx}",
-                                            text=text,
-                                            location=f"{sheet_name}, Shape '{shape_name}'",
-                                            metadata={
-                                                'sheet': sheet_name,
-                                                'sheet_idx': sheet_idx,
-                                                'shape': shape_idx,
-                                                'shape_name': shape_name,
-                                                'type': 'shape',
-                                            }
-                                        ))
-                                except Exception as e:
-                                    # Log at debug level - many shapes legitimately don't have text
-                                    logger.debug("Skipping shape %d in sheet '%s': %s", shape_idx, sheet_name, e)
+                                        # Skip shape types that don't have text:
+                                        # 13 = msoPicture (images)
+                                        # 3 = msoChart (embedded charts)
+                                        # 12 = msoOLEControlObject
+                                        # 7 = msoEmbeddedOLEObject
+                                        # 10 = msoLinkedOLEObject
+                                        # 19 = msoMedia
+                                        non_text_types = {3, 7, 10, 12, 13, 19}
+                                        if shape_type in non_text_types:
+                                            continue
+
+                                        # Try to get text from shape
+                                        text = None
+                                        try:
+                                            if hasattr(shape, 'text'):
+                                                raw_text = shape.text  # Access only once
+                                                if raw_text:
+                                                    text = raw_text.strip()
+                                        except Exception:
+                                            # COM error accessing text - shape doesn't support text
+                                            continue
+
+                                        if text and self.cell_translator.should_translate(text, output_language):
+                                            # Get shape name safely
+                                            shape_name = None
+                                            try:
+                                                shape_name = shape.name
+                                            except Exception:
+                                                shape_name = f"Shape_{shape_idx}"
+
+                                            blocks.append(TextBlock(
+                                                id=f"{sheet_name}_shape_{shape_idx}",
+                                                text=text,
+                                                location=f"{sheet_name}, Shape '{shape_name}'",
+                                                metadata={
+                                                    'sheet': sheet_name,
+                                                    'sheet_idx': sheet_idx,
+                                                    'shape': shape_idx,
+                                                    'shape_name': shape_name,
+                                                    'type': 'shape',
+                                                }
+                                            ))
+                                    except Exception as e:
+                                        # Log at debug level - many shapes legitimately don't have text
+                                        logger.debug("Skipping shape %d in sheet '%s': %s", shape_idx, sheet_name, e)
                         except Exception as e:
                             logger.warning("Error iterating shapes in sheet '%s': %s", sheet_name, e)
 
                         # === Chart Titles and Labels ===
                         # Wrap chart iteration in try-except to handle COM errors
                         try:
-                            for chart_idx, chart in enumerate(sheet.charts):
-                                try:
-                                    api_chart = chart.api[1]  # xlwings COM object (1-indexed)
+                            # Optimization: Skip chart iteration if no charts exist
+                            chart_count = len(sheet.charts)
+                            if chart_count > 0:
+                                for chart_idx, chart in enumerate(sheet.charts):
+                                    try:
+                                        api_chart = chart.api[1]  # xlwings COM object (1-indexed)
 
-                                    # Chart title
-                                    if api_chart.HasTitle:
-                                        title = api_chart.ChartTitle.Text
-                                        if title and self.cell_translator.should_translate(title, output_language):
-                                            blocks.append(TextBlock(
-                                                id=f"{sheet_name}_chart_{chart_idx}_title",
-                                                text=title,
-                                                location=f"{sheet_name}, Chart {chart_idx + 1} Title",
-                                                metadata={
-                                                    'sheet': sheet_name,
-                                                    'sheet_idx': sheet_idx,
-                                                    'chart': chart_idx,
-                                                    'type': 'chart_title',
-                                                }
-                                            ))
+                                        # Chart title
+                                        if api_chart.HasTitle:
+                                            title = api_chart.ChartTitle.Text
+                                            if title and self.cell_translator.should_translate(title, output_language):
+                                                blocks.append(TextBlock(
+                                                    id=f"{sheet_name}_chart_{chart_idx}_title",
+                                                    text=title,
+                                                    location=f"{sheet_name}, Chart {chart_idx + 1} Title",
+                                                    metadata={
+                                                        'sheet': sheet_name,
+                                                        'sheet_idx': sheet_idx,
+                                                        'chart': chart_idx,
+                                                        'type': 'chart_title',
+                                                    }
+                                                ))
 
-                                    # Axis titles
-                                    for axis_type, axis_name in [(1, 'category'), (2, 'value')]:
-                                        try:
-                                            axis = api_chart.Axes(axis_type)
-                                            if axis.HasTitle:
-                                                axis_title = axis.AxisTitle.Text
-                                                if axis_title and self.cell_translator.should_translate(axis_title, output_language):
-                                                    blocks.append(TextBlock(
-                                                        id=f"{sheet_name}_chart_{chart_idx}_axis_{axis_name}",
-                                                        text=axis_title,
-                                                        location=f"{sheet_name}, Chart {chart_idx + 1} {axis_name.title()} Axis",
-                                                        metadata={
-                                                            'sheet': sheet_name,
-                                                            'sheet_idx': sheet_idx,
-                                                            'chart': chart_idx,
-                                                            'axis': axis_name,
-                                                            'type': 'chart_axis_title',
-                                                        }
-                                                    ))
-                                        except Exception as e:
-                                            logger.debug("Error reading %s axis title for chart %d: %s", axis_name, chart_idx, e)
+                                        # Axis titles
+                                        for axis_type, axis_name in [(1, 'category'), (2, 'value')]:
+                                            try:
+                                                axis = api_chart.Axes(axis_type)
+                                                if axis.HasTitle:
+                                                    axis_title = axis.AxisTitle.Text
+                                                    if axis_title and self.cell_translator.should_translate(axis_title, output_language):
+                                                        blocks.append(TextBlock(
+                                                            id=f"{sheet_name}_chart_{chart_idx}_axis_{axis_name}",
+                                                            text=axis_title,
+                                                            location=f"{sheet_name}, Chart {chart_idx + 1} {axis_name.title()} Axis",
+                                                            metadata={
+                                                                'sheet': sheet_name,
+                                                                'sheet_idx': sheet_idx,
+                                                                'chart': chart_idx,
+                                                                'axis': axis_name,
+                                                                'type': 'chart_axis_title',
+                                                            }
+                                                        ))
+                                            except Exception as e:
+                                                logger.debug("Error reading %s axis title for chart %d: %s", axis_name, chart_idx, e)
 
-                                except Exception as e:
-                                    logger.debug("Error extracting chart %d in sheet '%s': %s", chart_idx, sheet_name, e)
+                                    except Exception as e:
+                                        logger.debug("Error extracting chart %d in sheet '%s': %s", chart_idx, sheet_name, e)
                         except Exception as e:
                             logger.warning("Error iterating charts in sheet '%s': %s", sheet_name, e)
+                    _t_sheets_end = _time.perf_counter()
+                    logger.debug("[TIMING] All sheets processed: %.2fs (%d sheets, %d blocks)",
+                                _t_sheets_end - _t_sheets_start, len(wb.sheets), len(blocks))
                 finally:
                     wb.close()
+                    _t_close = _time.perf_counter()
+                    logger.debug("[TIMING] Workbook close: %.2fs", _t_close - _t_sheets_end)
             finally:
                 app.quit()
+                _t_quit = _time.perf_counter()
+                logger.debug("[TIMING] Excel app quit: %.2fs", _t_quit - _t_start)
+                logger.debug("[TIMING] Total extraction: %.2fs", _t_quit - _t_start)
 
         # Log warning for very large files
         block_count = len(blocks)

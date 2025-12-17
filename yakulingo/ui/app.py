@@ -1591,11 +1591,50 @@ class YakuLingoApp:
                     rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
                     scroll: { top: resultPanel.scrollTop, left: resultPanel.scrollLeft },
                     scrollSize: { width: resultPanel.scrollWidth, height: resultPanel.scrollHeight },
+                    scrollRange: {
+                        maxScrollTop: resultPanel.scrollHeight - resultPanel.clientHeight,
+                        clientHeight: resultPanel.clientHeight
+                    },
                     overflow: { x: computed.overflowX, y: computed.overflowY },
                     height: computed.height,
+                    minHeight: computed.minHeight,
                     maxHeight: computed.maxHeight,
-                    flex: computed.flex
+                    flex: computed.flex,
+                    flexShrink: computed.flexShrink,
+                    flexGrow: computed.flexGrow
                 };
+
+                // Check nicegui-column inside result panel
+                const niceguiColumn = resultPanel.querySelector(':scope > .nicegui-column');
+                if (niceguiColumn) {
+                    const ncRect = niceguiColumn.getBoundingClientRect();
+                    const ncComputed = getComputedStyle(niceguiColumn);
+                    results.resultPanelNiceguiColumn = {
+                        rect: { x: ncRect.x, y: ncRect.y, width: ncRect.width, height: ncRect.height },
+                        height: ncComputed.height,
+                        minHeight: ncComputed.minHeight,
+                        flex: ncComputed.flex,
+                        flexShrink: ncComputed.flexShrink,
+                        flexGrow: ncComputed.flexGrow,
+                        overflow: { x: ncComputed.overflowX, y: ncComputed.overflowY }
+                    };
+
+                    // Check inner column (flex-1)
+                    const innerColumn = niceguiColumn.querySelector(':scope > .nicegui-column');
+                    if (innerColumn) {
+                        const icRect = innerColumn.getBoundingClientRect();
+                        const icComputed = getComputedStyle(innerColumn);
+                        results.innerColumn = {
+                            classes: innerColumn.className,
+                            rect: { x: icRect.x, y: icRect.y, width: icRect.width, height: icRect.height },
+                            height: icComputed.height,
+                            minHeight: icComputed.minHeight,
+                            flex: icComputed.flex,
+                            flexShrink: icComputed.flexShrink,
+                            flexGrow: icComputed.flexGrow
+                        };
+                    }
+                }
             }
 
             // Sidebar

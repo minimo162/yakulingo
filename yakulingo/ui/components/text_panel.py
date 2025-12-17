@@ -306,6 +306,15 @@ def create_text_result_panel(
     """
     elapsed_time = state.text_translation_elapsed_time
 
+    # Debug logging for result panel state
+    logger.debug(
+        "[LAYOUT] create_text_result_panel: text_translating=%s, text_result=%s, options=%s, view_state=%s",
+        state.text_translating,
+        bool(state.text_result),
+        len(state.text_result.options) if state.text_result and state.text_result.options else 0,
+        state.text_view_state
+    )
+
     with ui.column().classes('flex-1 w-full gap-4'):
         # Source text section at the top (when translating or has result)
         source_text_to_display = None

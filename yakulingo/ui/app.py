@@ -1431,6 +1431,8 @@ class YakuLingoApp:
         self._update_layout_classes()
         if self._result_panel:
             self._result_panel.refresh()
+            # Debug: Log layout dimensions after refresh
+            self._log_layout_dimensions()
 
     def _batch_refresh(self, refresh_types: set[str]):
         """Batch refresh multiple UI components in a single operation.
@@ -1480,16 +1482,155 @@ class YakuLingoApp:
             is_file_mode = self.state.current_tab == Tab.FILE
             has_results = self.state.text_result or self.state.text_translating
 
+            # Debug logging for layout state changes
+            logger.debug(
+                "[LAYOUT] _update_layout_classes: is_file_mode=%s, has_results=%s, text_translating=%s, text_result=%s",
+                is_file_mode, has_results, self.state.text_translating, bool(self.state.text_result)
+            )
+
             # Toggle file-mode class
             if is_file_mode:
                 self._main_area_element.classes(add='file-mode', remove='has-results')
+                logger.debug("[LAYOUT] Applied classes: file-mode (removed has-results)")
             else:
                 self._main_area_element.classes(remove='file-mode')
                 # Toggle has-results class (only in text mode)
                 if has_results:
                     self._main_area_element.classes(add='has-results')
+                    logger.debug("[LAYOUT] Applied classes: has-results")
                 else:
                     self._main_area_element.classes(remove='has-results')
+                    logger.debug("[LAYOUT] Removed classes: has-results")
+
+    def _log_layout_dimensions(self):
+        """Log layout container dimensions for debugging via JavaScript"""
+        # JavaScript to collect and log layout dimensions
+        js_code = """
+        (function() {
+            const results = {};
+
+            // Window dimensions
+            results.window = {
+                innerWidth: window.innerWidth,
+                innerHeight: window.innerHeight,
+                scrollX: window.scrollX,
+                scrollY: window.scrollY
+            };
+
+            // Document dimensions
+            results.document = {
+                scrollWidth: document.documentElement.scrollWidth,
+                scrollHeight: document.documentElement.scrollHeight,
+                clientWidth: document.documentElement.clientWidth,
+                clientHeight: document.documentElement.clientHeight
+            };
+
+            // Body dimensions
+            const body = document.body;
+            if (body) {
+                results.body = {
+                    scrollWidth: body.scrollWidth,
+                    scrollHeight: body.scrollHeight,
+                    clientWidth: body.clientWidth,
+                    clientHeight: body.clientHeight,
+                    offsetWidth: body.offsetWidth,
+                    offsetHeight: body.offsetHeight
+                };
+            }
+
+            // App container
+            const appContainer = document.querySelector('.app-container');
+            if (appContainer) {
+                const rect = appContainer.getBoundingClientRect();
+                const computed = getComputedStyle(appContainer);
+                results.appContainer = {
+                    rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+                    scroll: { top: appContainer.scrollTop, left: appContainer.scrollLeft },
+                    scrollSize: { width: appContainer.scrollWidth, height: appContainer.scrollHeight },
+                    overflow: { x: computed.overflowX, y: computed.overflowY }
+                };
+            }
+
+            // Main area
+            const mainArea = document.querySelector('.main-area');
+            if (mainArea) {
+                const rect = mainArea.getBoundingClientRect();
+                const computed = getComputedStyle(mainArea);
+                results.mainArea = {
+                    classes: mainArea.className,
+                    rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+                    scroll: { top: mainArea.scrollTop, left: mainArea.scrollLeft },
+                    scrollSize: { width: mainArea.scrollWidth, height: mainArea.scrollHeight },
+                    overflow: { x: computed.overflowX, y: computed.overflowY },
+                    height: computed.height,
+                    maxHeight: computed.maxHeight
+                };
+            }
+
+            // Input panel
+            const inputPanel = document.querySelector('.input-panel');
+            if (inputPanel) {
+                const rect = inputPanel.getBoundingClientRect();
+                const computed = getComputedStyle(inputPanel);
+                results.inputPanel = {
+                    display: computed.display,
+                    rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+                    scroll: { top: inputPanel.scrollTop, left: inputPanel.scrollLeft },
+                    scrollSize: { width: inputPanel.scrollWidth, height: inputPanel.scrollHeight },
+                    overflow: { x: computed.overflowX, y: computed.overflowY }
+                };
+            }
+
+            // Result panel
+            const resultPanel = document.querySelector('.result-panel');
+            if (resultPanel) {
+                const rect = resultPanel.getBoundingClientRect();
+                const computed = getComputedStyle(resultPanel);
+                results.resultPanel = {
+                    display: computed.display,
+                    rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+                    scroll: { top: resultPanel.scrollTop, left: resultPanel.scrollLeft },
+                    scrollSize: { width: resultPanel.scrollWidth, height: resultPanel.scrollHeight },
+                    overflow: { x: computed.overflowX, y: computed.overflowY },
+                    height: computed.height,
+                    maxHeight: computed.maxHeight,
+                    flex: computed.flex
+                };
+            }
+
+            // Sidebar
+            const sidebar = document.querySelector('.sidebar');
+            if (sidebar) {
+                const rect = sidebar.getBoundingClientRect();
+                const computed = getComputedStyle(sidebar);
+                results.sidebar = {
+                    rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+                    overflow: { x: computed.overflowX, y: computed.overflowY }
+                };
+            }
+
+            // Result container (inside result panel)
+            const resultContainer = document.querySelector('.result-container');
+            if (resultContainer) {
+                const rect = resultContainer.getBoundingClientRect();
+                results.resultContainer = {
+                    rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
+                };
+            }
+
+            // Check for horizontal overflow
+            results.hasHorizontalOverflow = document.documentElement.scrollWidth > document.documentElement.clientWidth;
+            results.hasVerticalOverflow = document.documentElement.scrollHeight > document.documentElement.clientHeight;
+
+            console.log('[LAYOUT_DEBUG]', JSON.stringify(results, null, 2));
+            return results;
+        })();
+        """
+        try:
+            ui.run_javascript(js_code)
+            logger.debug("[LAYOUT] Layout dimensions logging triggered via JavaScript")
+        except Exception as e:
+            logger.warning("[LAYOUT] Failed to log layout dimensions: %s", e)
 
     def _refresh_tabs(self):
         """Refresh tab buttons"""
@@ -2254,11 +2395,14 @@ class YakuLingoApp:
 
         # Restore client context for UI operations after asyncio.to_thread
         ui_refresh_start = time.time()
+        logger.debug("[LAYOUT] Translation [%s] starting UI refresh (text_result=%s, text_translating=%s)",
+                     trace_id, bool(self.state.text_result), self.state.text_translating)
         with client:
             if error_message:
                 self._notify_error(error_message)
             # Only refresh result panel (input panel is already in compact state)
             self._refresh_result_panel()
+            logger.debug("[LAYOUT] Translation [%s] result panel refreshed", trace_id)
             # Re-enable translate button
             self._update_translate_button_state()
             # Update connection status (may have changed during translation)

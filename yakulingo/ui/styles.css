@@ -146,6 +146,7 @@ html {
     /* Reference: 1900px window → 16px, scaled with sqrt for gentle effect */
     font-size: var(--base-font-size, 16px);
     height: 100%;
+    overflow-x: hidden; /* Prevent horizontal scroll at document level */
 }
 
 body {
@@ -1479,7 +1480,7 @@ textarea:focus-visible {
 .main-area.has-results .result-panel {
     display: flex;
     flex: 1;
-    justify-content: center;  /* Center content horizontally */
+    justify-content: flex-start;  /* Align content to top (horizontal centering via align-items) */
 }
 
 /* File panel always 2-column (centered) */

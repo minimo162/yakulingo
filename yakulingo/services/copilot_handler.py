@@ -2729,7 +2729,17 @@ class CopilotHandler:
                     0, 0, 0, 0,
                     SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE
                 )
-                logger.debug("Edge brought to front via TOPMOST/NOTOPMOST")
+                # After NOTOPMOST, Edge may be behind the foreground window (YakuLingo app)
+                # Use HWND_TOP to bring Edge to top of Z-order (within non-topmost windows)
+                # This ensures Edge is visible alongside the app
+                HWND_TOP = 0
+                user32.SetWindowPos(
+                    edge_hwnd,
+                    HWND_TOP,
+                    0, 0, 0, 0,
+                    SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW
+                )
+                logger.debug("Edge brought to front via TOPMOST/NOTOPMOST/TOP")
             else:
                 flags = SWP_NOACTIVATE | SWP_SHOWWINDOW
                 user32.SetWindowPos(

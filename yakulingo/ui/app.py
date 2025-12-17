@@ -2878,6 +2878,31 @@ class YakuLingoApp:
                         self.state.connection_state = ConnectionState.LOGIN_REQUIRED
                         self.state.copilot_ready = False
 
+                        # Bring browser to foreground so user can login
+                        # This is critical for PDF translation reconnection - without this,
+                        # the browser stays hidden and user cannot complete login
+                        try:
+                            await asyncio.to_thread(
+                                self.copilot._bring_to_foreground_impl,
+                                self.copilot._page,
+                                "reconnect: login required"
+                            )
+                            logger.info("Browser brought to foreground for login")
+                        except Exception as e:
+                            logger.warning("Failed to bring browser to foreground: %s", e)
+
+                        # Notify user that login is required
+                        with self._client_lock:
+                            client = self._client
+                        if client:
+                            with client:
+                                ui.notify(
+                                    'Copilotへのログインが必要です。ブラウザでログインしてください。',
+                                    type='warning',
+                                    position='top',
+                                    timeout=10000
+                                )
+
                         # Start login completion polling in background
                         if not self._login_polling_active:
                             self._login_polling_task = asyncio.create_task(

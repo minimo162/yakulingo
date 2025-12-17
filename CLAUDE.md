@@ -2004,6 +2004,14 @@ Based on recent commits:
     - Ctrl+Alt+Jホットキー時: `_bring_window_to_front`でサイドパネルモード時にEdgeも配置
     - PDF翻訳再接続時: `_reconnect_copilot_with_retry`で`browser_display_mode`をチェック
     - 自動ログイン完了時: `should_minimize`条件を追加して不要な最小化を防止
+  - **PDF Translation Reconnection Fix (2024-12)**:
+    - **Problem**: PP-DocLayout-L初期化後の再接続でセッション喪失→ログイン要求
+    - **Root cause**: `_get_or_create_context()`の待機時間が0.2秒と短く、CDP接続確立前にコンテキスト取得失敗
+    - **Fixes**:
+      - `_get_or_create_context()`: 待機時間を最大3秒（0.3秒×10回リトライ）に延長
+      - `_cleanup_on_error()`: `browser_display_mode`をチェックしside_panel/foregroundモードで最小化をスキップ
+      - `_reconnect_copilot_with_retry()`: ログイン要求時にブラウザを前面表示＋UI通知を追加
+    - **Constants**: `CONTEXT_RETRY_COUNT=10`, `CONTEXT_RETRY_INTERVAL=0.3`
   - **Benefits**: ブラウザスロットリング問題を回避、翻訳経過をリアルタイムで確認可能
   - **Implementation**: `_calculate_app_position_for_side_panel()`, `_calculate_side_panel_geometry_from_screen()`, `_expected_app_position`, `_position_window_early_sync()`, `_find_yakulingo_window_handle()`, `_position_edge_as_side_panel()`, `_reposition_windows_for_side_panel()`
 - **Window Minimization Fix at Startup (2024-12)**:

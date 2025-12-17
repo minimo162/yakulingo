@@ -4017,11 +4017,13 @@ def run_app(
 
             user32 = ctypes.WinDLL('user32', use_last_error=True)
 
-            # Poll for YakuLingo window
-            # Optimized: 25ms interval for faster detection (was 50ms)
-            # Reduced max wait: 6s is sufficient (typical detection < 3s)
+            # Poll for YakuLingo window with exponential backoff
+            # Starts at 25ms, doubles up to 200ms max for efficient CPU usage
+            # Total max wait: 6s is sufficient (typical detection < 3s)
             MAX_WAIT_MS = 6000
-            POLL_INTERVAL_MS = 25
+            POLL_INTERVAL_INITIAL_MS = 25
+            POLL_INTERVAL_MAX_MS = 200
+            poll_interval_ms = POLL_INTERVAL_INITIAL_MS
             waited_ms = 0
 
             class RECT(ctypes.Structure):
@@ -4098,8 +4100,11 @@ def run_app(
                                    settings.browser_display_mode, waited_ms)
                     return
 
-                time.sleep(POLL_INTERVAL_MS / 1000)
-                waited_ms += POLL_INTERVAL_MS
+                time.sleep(poll_interval_ms / 1000)
+                waited_ms += poll_interval_ms
+                # Exponential backoff: double interval after first second, cap at max
+                if waited_ms > 1000:
+                    poll_interval_ms = min(poll_interval_ms * 2, POLL_INTERVAL_MAX_MS)
 
             logger.debug("[EARLY_POSITION] Window not found within %dms", MAX_WAIT_MS)
 

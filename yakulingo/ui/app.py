@@ -3882,9 +3882,13 @@ def run_app(
     # Optimize pywebview startup (native mode only)
     # - background_color: Match app background to reduce visual flicker
     # - easy_drag: Disable titlebar drag region (not needed, window has native titlebar)
+    # - icon: Use YakuLingo icon for taskbar (instead of default Python icon)
     if native:
         nicegui_app.native.window_args['background_color'] = '#FEFBFF'  # M3 surface color
         nicegui_app.native.window_args['easy_drag'] = False
+        icon_path = Path(__file__).parent / 'yakulingo.ico'
+        if icon_path.exists():
+            nicegui_app.native.window_args['icon'] = str(icon_path)
 
     # Early Copilot connection: Start Edge browser BEFORE UI is displayed
     # This saves ~2-3 seconds as Edge startup runs in parallel with UI rendering
@@ -4243,14 +4247,14 @@ document.fonts.ready.then(function() {
         except Exception as e:
             logger.debug("Failed to set initial window position: %s", e)
 
-    # Use the same icon as desktop shortcut for taskbar
-    icon_path = Path(__file__).parent / 'yakulingo.ico'
+    # Use the same icon for favicon (browser tab icon)
+    favicon_path = Path(__file__).parent / 'yakulingo.ico'
 
     ui.run(
         host=host,
         port=port,
         title='YakuLingo',
-        favicon=icon_path,
+        favicon=favicon_path,
         dark=False,
         reload=False,
         native=native,

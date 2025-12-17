@@ -4089,10 +4089,11 @@ class PdfProcessor(FileProcessor):
         in_formula = False  # Currently in formula mode
         vbkt = 0  # Bracket count for formula continuation
 
-        # Previous char coordinates
+        # Previous char coordinates and text
         prev_x0 = 0.0
         prev_x1 = 0.0
         prev_y0 = 0.0
+        prev_char_text = ""  # For closing bracket detection
         has_prev = False
 
         # Coordinate conversion setup
@@ -4164,6 +4165,42 @@ class PdfProcessor(FileProcessor):
                     char_cls, prev_cls, use_layout,
                     prev_x1=prev_x1
                 )
+
+                # Check for opening brackets with X gap - indicates new semantic unit
+                # Examples: "92. （３）中間連結..." should split at "（"
+                # "上場会社名 (単位：百万円)" should split at "("
+                # This catches cases where X gap is smaller than TABLE_CELL_X_THRESHOLD
+                # but clearly indicates a separate element (page numbers, section headers, etc.)
+                OPENING_BRACKETS_FOR_SPLIT = frozenset('(（「『【〔〈《')
+                if (char_text in OPENING_BRACKETS_FOR_SPLIT and
+                    prev_x1 is not None and char_x0 > prev_x1 + WORD_SPACE_X_THRESHOLD):
+                    # Opening bracket with gap suggests new semantic unit
+                    new_paragraph = True
+                    is_strong_boundary = True
+
+                # Check for text following closing brackets with X gap
+                # Examples: "(単位：百万円) 前中間連結会計期間" should split after ")"
+                # This ensures units/annotations are separated from following content
+                CLOSING_BRACKETS_FOR_SPLIT = frozenset(')）」』】〕〉》')
+                if (prev_char_text in CLOSING_BRACKETS_FOR_SPLIT and
+                    prev_x1 is not None and char_x0 > prev_x1 + WORD_SPACE_X_THRESHOLD):
+                    # Text after closing bracket with gap suggests new semantic unit
+                    new_paragraph = True
+                    is_strong_boundary = True
+
+                # Check for CJK text following period/number with X gap
+                # Examples: "92. 前中間連結会計期間" should split after "92."
+                # This handles page numbers and section markers followed by headers
+                # Use larger gap threshold (3pt) to avoid splitting "9.1概要"
+                PERIOD_CHARS = frozenset('.。')
+                PAGE_NUMBER_GAP_THRESHOLD = 3.0  # Larger gap for period-based split
+                if (prev_char_text in PERIOD_CHARS and
+                    prev_x1 is not None and char_x0 > prev_x1 + PAGE_NUMBER_GAP_THRESHOLD and
+                    _is_cjk_char(char_text)):
+                    # CJK text after period with significant gap suggests new semantic unit
+                    new_paragraph = True
+                    is_strong_boundary = True
+
                 # Also check X position for line break
                 if not new_paragraph and char_x1 < prev_x0 - LINE_BREAK_X_THRESHOLD:
                     line_break = True
@@ -4421,6 +4458,7 @@ class PdfProcessor(FileProcessor):
             prev_x0 = char_x0
             prev_x1 = char_x1
             prev_y0 = char_y0
+            prev_char_text = char_text
             has_prev = True
 
         if logger.isEnabledFor(logging.DEBUG):

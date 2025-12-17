@@ -1421,8 +1421,14 @@ class CopilotHandler:
 
         # Minimize Edge window before cleanup to prevent it from staying in foreground
         # This handles cases where timeout errors or other failures leave the window visible
+        # Note: Skip minimization in side_panel/foreground mode since browser is intentionally visible
         with suppress(Exception):
-            self._minimize_edge_window(None)
+            from yakulingo.config.settings import AppSettings
+            settings_path = Path.home() / ".yakulingo" / "settings.json"
+            settings = AppSettings.load(settings_path)
+            mode = settings.browser_display_mode
+            if mode not in ("side_panel", "foreground"):
+                self._minimize_edge_window(None)
 
         with suppress(Exception):
             if self._browser:
@@ -1450,8 +1456,16 @@ class CopilotHandler:
         self._playwright = None
         self.edge_process = None
 
+    # Context retrieval settings
+    CONTEXT_RETRY_COUNT = 10  # Number of retries to find existing context
+    CONTEXT_RETRY_INTERVAL = 0.3  # Seconds between retries (total max wait: 3s)
+
     def _get_or_create_context(self):
         """Get existing browser context or create a new one.
+
+        After disconnect(keep_browser=True) and reconnect, CDP connection may take
+        a few hundred milliseconds to fully establish. During this time, contexts
+        may appear empty even though Edge has active sessions.
 
         Returns:
             Browser context, or None if creation failed
@@ -1469,16 +1483,24 @@ class CopilotHandler:
             logger.debug("Using existing browser context")
             return contexts[0]
 
-        # CDP接続では通常contextが存在するはず、少し待ってリトライ
-        logger.warning("No existing context found, waiting...")
-        time.sleep(0.2)
-        contexts = self._browser.contexts
-        if contexts:
-            logger.debug("Found context after retry")
-            return contexts[0]
+        # CDP接続では通常contextが存在するはず
+        # disconnect(keep_browser=True)後の再接続では、CDP接続確立に時間がかかる場合がある
+        # リトライを増やして既存セッションを確実に取得する
+        logger.warning("No existing context found, waiting for CDP connection to stabilize...")
+        for attempt in range(self.CONTEXT_RETRY_COUNT):
+            time.sleep(self.CONTEXT_RETRY_INTERVAL)
+            contexts = self._browser.contexts
+            if contexts:
+                logger.info("Found context after %d retries (%.1fs)",
+                           attempt + 1, (attempt + 1) * self.CONTEXT_RETRY_INTERVAL)
+                return contexts[0]
+            logger.debug("Context retry %d/%d - still empty",
+                        attempt + 1, self.CONTEXT_RETRY_COUNT)
 
         # フォールバック: 新規context作成（EdgeProfileのCookiesでセッション保持）
-        logger.warning("Creating new context - login may be required")
+        # 注意: 新規contextはセッションクッキーを持たないため、ログインが必要になる可能性が高い
+        logger.warning("Creating new context after %d retries - login will likely be required",
+                      self.CONTEXT_RETRY_COUNT)
         return self._browser.new_context()
 
     def _get_or_create_copilot_page(self):

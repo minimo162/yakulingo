@@ -533,31 +533,51 @@ class TestYakuLingoAppFileTranslation:
                     app.translation_service = mock_translation_service
                     yield app
 
-    async def test_translate_file_uses_effective_reference_files(
-        self, app_with_service, mock_translation_service
+    def test_get_effective_reference_files_includes_glossary_when_enabled(
+        self, app_with_service, tmp_path
     ):
-        """File translation should include bundled abbreviations when enabled"""
-
+        """_get_effective_reference_files should include bundled glossary when enabled"""
         app = app_with_service
         app.settings.use_bundled_glossary = True
 
-        # Prepare file state
-        app.state.selected_file = Path("/tmp/test.xlsx")
-        app.state.file_state = FileState.SELECTED
-        app.state.file_output_language = "en"
-        app._client = MagicMock()
-        app._client.__enter__ = MagicMock(return_value=None)
-        app._client.__exit__ = MagicMock(return_value=None)
-        app.state.file_info = FileInfo(
-            path=app.state.selected_file,
-            file_type=FileType.EXCEL,
-            size_bytes=1024,
-        )
+        # Create a temporary glossary file
+        glossary_file = tmp_path / "glossary.csv"
+        glossary_file.write_text("term,translation\n")
+        app._glossary_path = glossary_file
 
-        await app._translate_file()
+        reference_files = app._get_effective_reference_files()
 
-        reference_files = mock_translation_service.translate_file.call_args.args[1]
-        assert app._glossary_path in reference_files
+        assert reference_files is not None
+        assert glossary_file in reference_files
+
+    def test_get_effective_reference_files_excludes_glossary_when_disabled(
+        self, app_with_service
+    ):
+        """_get_effective_reference_files should not include glossary when disabled"""
+        app = app_with_service
+        app.settings.use_bundled_glossary = False
+
+        reference_files = app._get_effective_reference_files()
+
+        # Should return None when no reference files
+        assert reference_files is None
+
+    def test_get_effective_reference_files_excludes_glossary_when_embedded(
+        self, app_with_service, tmp_path
+    ):
+        """_get_effective_reference_files should exclude glossary when exclude_glossary=True"""
+        app = app_with_service
+        app.settings.use_bundled_glossary = True
+
+        # Create a temporary glossary file
+        glossary_file = tmp_path / "glossary.csv"
+        glossary_file.write_text("term,translation\n")
+        app._glossary_path = glossary_file
+
+        reference_files = app._get_effective_reference_files(exclude_glossary=True)
+
+        # Should return None when glossary is excluded and no other files
+        assert reference_files is None
 
 
 # =============================================================================

@@ -179,7 +179,7 @@ else:
                 self._running = False
 
             if self._thread:
-                self._thread.join(timeout=0.5)
+                self._thread.join(timeout=0.2)
                 if self._thread.is_alive():
                     logger.debug("HotkeyManager thread did not stop in time")
                     # Fallback: manually unregister hotkey if thread didn't clean up

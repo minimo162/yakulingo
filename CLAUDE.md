@@ -1969,6 +1969,8 @@ Based on recent commits:
   - **Profile directory cleanup**: 子プロセス終了によりプロファイルディレクトリのファイルハンドルロック解除
   - **Playwright greenlet fix**: シャットダウン時にPlaywright.stop()を削除してgreenletエラーを回避
   - **Timeout optimization**: Edge終了時のタイムアウトを短縮
+  - **Edge PID preservation**: `_edge_pid`変数でEdge起動時のPIDを別途保存し、`edge_process`がNoneになっても終了処理を実行可能に
+  - **Conditional about:blank navigation**: `about:blank`へのナビゲートを`_browser_started_by_us`がTrueの場合のみに限定（ブラウザが残る問題を修正）
 - **File Panel Scrolling Fix (2024-12)**:
   - **ui.scroll_area usage**: ファイルパネルにui.scroll_area()を使用してスクロールを確実に有効化
 - **Main Panel Horizontal Scroll Fix (2024-12)**:

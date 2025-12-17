@@ -645,6 +645,8 @@ class CopilotHandler:
         # Flag to track if we started the browser (for cleanup purposes)
         # This remains True even if edge_process becomes None after cleanup
         self._browser_started_by_us = False
+        # Store Edge PID separately so we can kill it even if edge_process is None
+        self._edge_pid: int | None = None
         # Expected app position calculated during early connection (for side panel mode)
         # This allows the app window to move directly to the correct position
         # without waiting for Edge window to be found
@@ -976,6 +978,8 @@ class CopilotHandler:
                     logger.info("Edge started successfully")
                     # Mark that we started this browser (for cleanup on app exit)
                     self._browser_started_by_us = True
+                    # Store PID separately so we can kill it even if edge_process becomes None
+                    self._edge_pid = self.edge_process.pid
                     # Apply browser display mode (minimize, side panel, or foreground)
                     self._apply_browser_display_mode(None)
                     return True
@@ -3390,13 +3394,15 @@ class CopilotHandler:
         self._connected = False
 
         # Navigate to about:blank before closing to prevent "Restore pages" dialog
-        # Do this before shutting down the executor
-        with suppress(Exception):
-            if self._page and not self._page.is_closed():
-                _playwright_executor.execute(
-                    lambda: self._page.goto("about:blank", wait_until="commit", timeout=1000)
-                )
-                logger.debug("Navigated to about:blank before force disconnect")
+        # Only do this if we started the browser (will be terminated below)
+        # This prevents leaving Edge in about:blank state when we don't terminate it
+        if self._browser_started_by_us:
+            with suppress(Exception):
+                if self._page and not self._page.is_closed():
+                    _playwright_executor.execute(
+                        lambda: self._page.goto("about:blank", wait_until="commit", timeout=1000)
+                    )
+                    logger.debug("Navigated to about:blank before force disconnect")
 
         # First, shutdown the executor to release any pending operations
         executor_start = time.time()
@@ -3422,13 +3428,22 @@ class CopilotHandler:
             # Use _kill_process_tree to kill all child processes (renderer, GPU, etc.)
             # that may be holding file handles to the profile directory
             taskkill_start = time.time()
+
+            # Get PID from edge_process or fall back to saved _edge_pid
+            pid_to_kill = None
+            if self.edge_process and self.edge_process.pid:
+                pid_to_kill = self.edge_process.pid
+            elif self._edge_pid:
+                pid_to_kill = self._edge_pid
+                logger.debug("Using saved _edge_pid %s (edge_process is None)", pid_to_kill)
+
             with suppress(Exception):
-                if self.edge_process and self.edge_process.pid:
-                    if self._kill_process_tree(self.edge_process.pid):
+                if pid_to_kill:
+                    if self._kill_process_tree(pid_to_kill):
                         browser_terminated = True
                         logger.info("Edge browser terminated (force via process tree kill)")
-                    else:
-                        # Fall back to terminate/kill if taskkill failed
+                    elif self.edge_process:
+                        # Fall back to terminate/kill if taskkill failed and we have process object
                         self.edge_process.terminate()
                         try:
                             self.edge_process.wait(timeout=0.05)
@@ -3440,7 +3455,7 @@ class CopilotHandler:
                             logger.info("Edge browser terminated (force via terminate)")
             logger.debug("[TIMING] kill_process_tree: %.2fs", time.time() - taskkill_start)
 
-            # If edge_process was None (lost after cleanup_on_error), kill by port
+            # If still not terminated, try killing by port as last resort
             if not browser_terminated and self._is_port_in_use():
                 with suppress(Exception):
                     self._kill_existing_translator_edge()
@@ -3452,6 +3467,7 @@ class CopilotHandler:
         self._page = None
         self._playwright = None
         self.edge_process = None
+        self._edge_pid = None
         self._browser_started_by_us = False
 
         logger.info("[TIMING] force_disconnect total: %.2fs", time.time() - shutdown_start)
@@ -3472,11 +3488,13 @@ class CopilotHandler:
         self._connected = False
 
         # Navigate to about:blank before closing to prevent "Restore pages" dialog
-        # When Edge is closed with content, it may prompt to restore on next startup
-        with suppress(Exception):
-            if self._page and not self._page.is_closed():
-                self._page.goto("about:blank", wait_until="commit", timeout=2000)
-                logger.debug("Navigated to about:blank before closing")
+        # Only do this if we started the browser AND will terminate it
+        # This prevents leaving Edge in about:blank state when we don't terminate it
+        if self._browser_started_by_us and not keep_browser:
+            with suppress(Exception):
+                if self._page and not self._page.is_closed():
+                    self._page.goto("about:blank", wait_until="commit", timeout=2000)
+                    logger.debug("Navigated to about:blank before closing")
 
         # Use suppress for cleanup - we want to continue even if errors occur
         # Catch all exceptions during cleanup to ensure resources are released
@@ -3502,13 +3520,21 @@ class CopilotHandler:
             # Use _kill_process_tree to kill all child processes (renderer, GPU, etc.)
             # that may be holding file handles to the profile directory
             if not browser_terminated:
+                # Get PID from edge_process or fall back to saved _edge_pid
+                pid_to_kill = None
+                if self.edge_process and self.edge_process.pid:
+                    pid_to_kill = self.edge_process.pid
+                elif self._edge_pid:
+                    pid_to_kill = self._edge_pid
+                    logger.debug("Using saved _edge_pid %s (edge_process is None)", pid_to_kill)
+
                 with suppress(Exception):
-                    if self.edge_process and self.edge_process.pid:
-                        if self._kill_process_tree(self.edge_process.pid):
+                    if pid_to_kill:
+                        if self._kill_process_tree(pid_to_kill):
                             browser_terminated = True
                             logger.info("Edge browser terminated (via process tree kill)")
-                        else:
-                            # Fall back to terminate/kill if taskkill failed
+                        elif self.edge_process:
+                            # Fall back to terminate/kill if taskkill failed and we have process object
                             self.edge_process.terminate()
                             try:
                                 self.edge_process.wait(timeout=2)
@@ -3517,14 +3543,15 @@ class CopilotHandler:
                             logger.info("Edge browser terminated (via terminate)")
                             browser_terminated = True
 
-            # If edge_process was None (lost after cleanup_on_error), kill by port
+            # If still not terminated, try killing by port as last resort
             if not browser_terminated and self._is_port_in_use():
                 with suppress(Exception):
                     self._kill_existing_translator_edge()
                     logger.info("Edge browser terminated (via port)")
 
-            # Only clear edge_process if we terminated the browser
+            # Clear edge_process and PID after termination
             self.edge_process = None
+            self._edge_pid = None
             self._browser_started_by_us = False
         elif keep_browser:
             logger.info("Keeping Edge browser running for reconnection")

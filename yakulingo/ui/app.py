@@ -885,8 +885,8 @@ class YakuLingoApp:
 
             user32 = ctypes.WinDLL('user32', use_last_error=True)
 
-            # Find YakuLingo window
-            yakulingo_hwnd = self._copilot._find_yakulingo_window_handle()
+            # Find YakuLingo window (include hidden in case startup hasn't fully completed)
+            yakulingo_hwnd = self._copilot._find_yakulingo_window_handle(include_hidden=True)
             if not yakulingo_hwnd:
                 logger.debug("YakuLingo window not found for repositioning")
                 return False
@@ -947,29 +947,52 @@ class YakuLingoApp:
             return False
 
     def _restore_app_window_win32(self) -> bool:
-        """Restore and bring app window to front using Windows API."""
+        """Restore and bring app window to front using Windows API.
+
+        This function ensures the app window is visible and in the foreground,
+        handling both minimized and hidden window states.
+        """
         try:
             import ctypes
             from ctypes import wintypes
 
             user32 = ctypes.WinDLL('user32', use_last_error=True)
 
-            # Find YakuLingo window
-            hwnd = self.copilot._find_yakulingo_window_handle() if self._copilot else None
+            # Find YakuLingo window (include hidden windows during startup)
+            hwnd = self.copilot._find_yakulingo_window_handle(include_hidden=True) if self._copilot else None
             if not hwnd:
-                # Try finding by title directly
+                # Try finding by title directly (FindWindowW doesn't check visibility)
                 hwnd = user32.FindWindowW(None, "YakuLingo")
             if not hwnd:
                 logger.debug("YakuLingo window not found for restore")
                 return False
 
+            # Window flag constants
+            SW_RESTORE = 9
+            SW_SHOW = 5
+            SWP_NOZORDER = 0x0004
+            SWP_NOACTIVATE = 0x0010
+            SWP_SHOWWINDOW = 0x0040
+            SWP_NOSIZE = 0x0001
+            SWP_NOMOVE = 0x0002
+
             # Check if window is minimized
             is_minimized = user32.IsIconic(hwnd)
             if is_minimized:
                 # Restore minimized window
-                SW_RESTORE = 9
                 user32.ShowWindow(hwnd, SW_RESTORE)
                 logger.debug("Restored minimized YakuLingo window")
+
+            # Check if window is not visible (hidden) and show it
+            if not user32.IsWindowVisible(hwnd):
+                user32.ShowWindow(hwnd, SW_SHOW)
+                logger.debug("Showed hidden YakuLingo window")
+
+            # Ensure window is visible using SetWindowPos with SWP_SHOWWINDOW
+            user32.SetWindowPos(
+                hwnd, None, 0, 0, 0, 0,
+                SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_NOSIZE | SWP_NOMOVE
+            )
 
             # Bring to front
             user32.SetForegroundWindow(hwnd)
@@ -3904,7 +3927,16 @@ def run_app(
     # Early window positioning: Move app window IMMEDIATELY when pywebview creates it
     # This runs in parallel with Edge startup and positions the window before UI is rendered
     def _position_window_early_sync():
-        """Position YakuLingo window immediately when it's created (sync, runs in thread)."""
+        """Position YakuLingo window immediately when it's created (sync, runs in thread).
+
+        This function ensures the app window is visible and properly positioned for all
+        browser display modes (side_panel, minimized, foreground).
+
+        Key behaviors:
+        - side_panel mode: Position app window at pre-calculated position
+        - minimized/foreground mode: Ensure window is visible (restore if minimized)
+        - All modes: Use SWP_SHOWWINDOW flag to ensure window is displayed
+        """
         if sys.platform != 'win32':
             return
 
@@ -3915,18 +3947,6 @@ def run_app(
             from yakulingo.config.settings import AppSettings
             settings_path = Path.home() / ".yakulingo" / "settings.json"
             settings = AppSettings.load(settings_path)
-            if settings.browser_display_mode != "side_panel":
-                return
-
-            # Calculate target position
-            app_position = _calculate_app_position_for_side_panel(
-                yakulingo_app._window_size[0], yakulingo_app._window_size[1]
-            )
-            if not app_position:
-                return
-
-            target_x, target_y = app_position
-            target_width, target_height = yakulingo_app._window_size
 
             user32 = ctypes.WinDLL('user32', use_last_error=True)
 
@@ -3943,35 +3963,70 @@ def run_app(
                     ("bottom", ctypes.c_long),
                 ]
 
+            # Window flag constants
+            SW_RESTORE = 9
+            SWP_NOZORDER = 0x0004
+            SWP_NOACTIVATE = 0x0010
+            SWP_SHOWWINDOW = 0x0040
+            SWP_NOSIZE = 0x0001
+            SWP_NOMOVE = 0x0002
+
             while waited_ms < MAX_WAIT_MS:
                 # Find YakuLingo window by title
                 hwnd = user32.FindWindowW(None, "YakuLingo")
                 if hwnd:
-                    # Get current position
-                    current_rect = RECT()
-                    if user32.GetWindowRect(hwnd, ctypes.byref(current_rect)):
-                        current_x = current_rect.left
-                        current_y = current_rect.top
+                    # First, check if window is minimized and restore it
+                    if user32.IsIconic(hwnd):
+                        user32.ShowWindow(hwnd, SW_RESTORE)
+                        logger.debug("[EARLY_POSITION] Window was minimized, restored after %dms", waited_ms)
+                        time.sleep(0.1)  # Brief wait for restore animation
 
-                        # Check if window is NOT at target position (needs moving)
-                        POSITION_TOLERANCE = 10
-                        if (abs(current_x - target_x) > POSITION_TOLERANCE or
-                            abs(current_y - target_y) > POSITION_TOLERANCE):
-                            # Move window immediately
-                            SWP_NOZORDER = 0x0004
-                            SWP_NOACTIVATE = 0x0010
-                            result = user32.SetWindowPos(
-                                hwnd, None,
-                                target_x, target_y, target_width, target_height,
-                                SWP_NOZORDER | SWP_NOACTIVATE
-                            )
-                            if result:
-                                logger.debug("[EARLY_POSITION] Window moved from (%d, %d) to (%d, %d) after %dms",
-                                           current_x, current_y, target_x, target_y, waited_ms)
-                            else:
-                                logger.debug("[EARLY_POSITION] SetWindowPos failed after %dms", waited_ms)
-                        else:
-                            logger.debug("[EARLY_POSITION] Window already at correct position after %dms", waited_ms)
+                    # For side_panel mode, position window at calculated position
+                    if settings.browser_display_mode == "side_panel":
+                        # Calculate target position
+                        app_position = _calculate_app_position_for_side_panel(
+                            yakulingo_app._window_size[0], yakulingo_app._window_size[1]
+                        )
+                        if app_position:
+                            target_x, target_y = app_position
+                            target_width, target_height = yakulingo_app._window_size
+
+                            # Get current position
+                            current_rect = RECT()
+                            if user32.GetWindowRect(hwnd, ctypes.byref(current_rect)):
+                                current_x = current_rect.left
+                                current_y = current_rect.top
+
+                                # Check if window is NOT at target position (needs moving)
+                                POSITION_TOLERANCE = 10
+                                if (abs(current_x - target_x) > POSITION_TOLERANCE or
+                                    abs(current_y - target_y) > POSITION_TOLERANCE):
+                                    # Move window immediately with SWP_SHOWWINDOW to ensure visibility
+                                    result = user32.SetWindowPos(
+                                        hwnd, None,
+                                        target_x, target_y, target_width, target_height,
+                                        SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW
+                                    )
+                                    if result:
+                                        logger.debug("[EARLY_POSITION] Window moved from (%d, %d) to (%d, %d) after %dms",
+                                                   current_x, current_y, target_x, target_y, waited_ms)
+                                    else:
+                                        logger.debug("[EARLY_POSITION] SetWindowPos failed after %dms", waited_ms)
+                                else:
+                                    # Window at correct position, just ensure it's visible
+                                    user32.SetWindowPos(
+                                        hwnd, None, 0, 0, 0, 0,
+                                        SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_NOSIZE | SWP_NOMOVE
+                                    )
+                                    logger.debug("[EARLY_POSITION] Window already at correct position after %dms", waited_ms)
+                    else:
+                        # For minimized/foreground modes, just ensure window is visible
+                        user32.SetWindowPos(
+                            hwnd, None, 0, 0, 0, 0,
+                            SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_NOSIZE | SWP_NOMOVE
+                        )
+                        logger.debug("[EARLY_POSITION] Window visibility ensured (%s mode) after %dms",
+                                   settings.browser_display_mode, waited_ms)
                     return
 
                 time.sleep(POLL_INTERVAL_MS / 1000)

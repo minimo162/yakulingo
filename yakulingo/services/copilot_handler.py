@@ -2088,8 +2088,17 @@ class CopilotHandler:
             logger.debug("Failed to locate Edge window handle: %s", e)
             return None
 
-    def _find_yakulingo_window_handle(self):
-        """Locate the YakuLingo app window handle using Win32 APIs."""
+    def _find_yakulingo_window_handle(self, include_hidden: bool = False):
+        """Locate the YakuLingo app window handle using Win32 APIs.
+
+        Args:
+            include_hidden: If True, also search for minimized/hidden windows.
+                          This is useful during startup when the window may not
+                          be fully visible yet. Default is False.
+
+        Returns:
+            Window handle (HWND) if found, None otherwise.
+        """
         if sys.platform != "win32":
             return None
 
@@ -2108,8 +2117,11 @@ class CopilotHandler:
             def enum_windows_callback(hwnd, lparam):
                 nonlocal found_hwnd
 
-                # Check if window is visible
-                if not user32.IsWindowVisible(hwnd):
+                # Check if window is visible (skip if include_hidden is True)
+                # Note: IsWindowVisible returns False for minimized windows with SW_HIDE,
+                # but True for minimized windows with SW_MINIMIZE. During startup,
+                # the window may be hidden briefly, so include_hidden allows finding it.
+                if not include_hidden and not user32.IsWindowVisible(hwnd):
                     return True
 
                 title_length = user32.GetWindowTextLengthW(hwnd) + 1
@@ -2119,7 +2131,7 @@ class CopilotHandler:
 
                 # Match "YakuLingo" exactly or as prefix (pywebview may add suffix)
                 if window_title == "YakuLingo" or window_title.startswith("YakuLingo"):
-                    logger.debug("Found YakuLingo window: %s", window_title)
+                    logger.debug("Found YakuLingo window: %s (include_hidden=%s)", window_title, include_hidden)
                     found_hwnd = hwnd
                     return False
 
@@ -2297,8 +2309,8 @@ class CopilotHandler:
 
             user32 = ctypes.WinDLL('user32', use_last_error=True)
 
-            # Find both windows
-            yakulingo_hwnd = self._find_yakulingo_window_handle()
+            # Find both windows (include hidden for robustness during startup)
+            yakulingo_hwnd = self._find_yakulingo_window_handle(include_hidden=True)
             edge_hwnd = self._find_edge_window_handle(page_title)
 
             if not yakulingo_hwnd:

@@ -1909,6 +1909,17 @@ Based on recent commits:
     - 自動ログイン完了時: `should_minimize`条件を追加して不要な最小化を防止
   - **Benefits**: ブラウザスロットリング問題を回避、翻訳経過をリアルタイムで確認可能
   - **Implementation**: `_calculate_app_position_for_side_panel()`, `_calculate_side_panel_geometry_from_screen()`, `_expected_app_position`, `app.native.window_args`, `_find_yakulingo_window_handle()`, `_position_edge_as_side_panel()`, `_reposition_windows_for_side_panel()`
+- **Window Minimization Fix at Startup (2024-12)**:
+  - **Problem**: アプリ起動時にウィンドウが最小化されて画面に表示されないことがある
+  - **Root causes**:
+    - `_position_window_early_sync()`がサイドパネルモード以外で早期returnしていた
+    - `SetWindowPos()`に`SWP_SHOWWINDOW`フラグがなく、最小化ウィンドウが表示されなかった
+    - `_find_yakulingo_window_handle()`が非表示ウィンドウを検索できなかった
+  - **Fixes**:
+    - `_position_window_early_sync()`: 全モードで実行、`IsIconic()`で最小化を検出し`SW_RESTORE`で復元
+    - `SetWindowPos()`に`SWP_SHOWWINDOW`フラグを追加して確実にウィンドウを表示
+    - `_find_yakulingo_window_handle(include_hidden=True)`: 非表示/最小化ウィンドウも検索可能に
+    - `_restore_app_window_win32()`: 最小化と非表示の両方を処理、`ShowWindow(SW_SHOW)`で非表示ウィンドウを表示
 - **Excel COM Isolation Improvements (2024-12)**:
   - **Problem**: xlwingsの`xw.App()`がCOM ROT経由で既存Excelインスタンスに接続する可能性
   - **Risk**: ユーザーが手動で開いているExcelファイルに誤って翻訳処理が実行される危険性

@@ -2549,6 +2549,12 @@ Based on recent commits:
   - **Early termination check**: stop_button消失直後にテキスト安定性を即座にチェック（stable_count=1から開始可能）
   - **Edge startup optimization**: `--disable-extensions`, `--disable-features=TranslateUI`, `--disable-gpu-sandbox` を追加
   - **Expected improvement**: 送信処理 約1秒高速化、新規チャット開始 約0.5秒高速化、ポーリング完了 約0.05〜0.1秒高速化
+- **New Chat Button Optimization (2024-12)**:
+  - **Async click parallelization**: `start_new_chat(click_only=True)`で非同期クリックを発火し、プロンプト入力と並列化
+  - **setTimeout dispatch**: `el => setTimeout(() => el.click(), 0)`で即座にreturn、クリックはバックグラウンドで実行
+  - **Safe parallelization**: 入力欄は新規チャットボタンのクリックでリセットされないため安全に並列化可能
+  - **Affected methods**: `translate_single`, `translate_sync`の両方で`click_only=True`を使用
+  - **Expected improvement**: `start_new_chat` 0.55秒→約0.02秒（約0.5秒短縮）
 - **Prompt Sending Optimization (2024-12)**:
   - **SEND_WARMUP sleep reduction**: 0.05秒→0.02秒に短縮（約0.03秒短縮）
   - **Playwright fill() maintained**: React contenteditable要素との互換性のためfill()メソッドを維持（JS直接設定は改行が消える問題あり）

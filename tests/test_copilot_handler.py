@@ -348,7 +348,7 @@ class TestCopilotHandlerTranslateSingle:
 
         handler._connect_impl = lambda: True
         handler._is_cancelled = lambda: False
-        handler.start_new_chat = lambda: None
+        handler.start_new_chat = lambda skip_clear_wait=False, click_only=False: None
         handler._send_message = lambda prompt: False  # Returns bool
         handler._get_response = lambda on_chunk=None, stop_button_seen_during_send=False: ""
 
@@ -567,17 +567,21 @@ class TestSendMessage:
         mock_page.wait_for_selector.assert_called()
 
     def test_send_message_empty_input_raises(self):
-        """_send_message raises when input field is empty after fill"""
+        """_send_message raises when all fill methods fail"""
         handler = CopilotHandler()
 
         mock_page = MagicMock()
         mock_input = MagicMock()
         mock_page.wait_for_selector.return_value = mock_input
-        # Method 1: input_elem.evaluate returns False
-        mock_input.evaluate.return_value = False
-        # Method 2: input_elem.fill succeeds but inner_text is empty
+
+        # Method 1: fill() raises exception (triggers fallback to Method 2)
+        mock_input.fill.side_effect = Exception("fill failed")
+        # Method 2: execCommand returns False
+        mock_page.evaluate.return_value = False
+        # Method 2/3: inner_text is empty (after Control+a select)
         mock_input.inner_text.return_value = ""
-        # Method 3: type also fails to produce content
+        # Method 3 will also fail because inner_text is empty
+
         handler._page = mock_page
         handler._is_page_valid = Mock(return_value=True)
 

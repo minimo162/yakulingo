@@ -3851,7 +3851,13 @@ class CopilotHandler:
                 raise TranslationCancelledError("Translation cancelled by user")
 
             # Start a new chat to clear previous context (prevents using old responses)
-            self.start_new_chat(skip_clear_wait=skip_clear_wait if attempt == 0 else True)
+            # OPTIMIZED: Use click_only=True for parallelization with prompt input
+            # The new chat button click doesn't reset the input field, so we can
+            # safely proceed to send_message immediately while click executes async
+            self.start_new_chat(
+                skip_clear_wait=skip_clear_wait if attempt == 0 else True,
+                click_only=True
+            )
 
             # Minimize browser after start_new_chat to prevent window flash
             self._send_to_background_impl(self._page)
@@ -4054,9 +4060,12 @@ class CopilotHandler:
                 raise TranslationCancelledError("Translation cancelled by user")
 
             # Start a new chat to clear previous context
+            # OPTIMIZED: Use click_only=True for parallelization with prompt input
+            # The new chat button click doesn't reset the input field, so we can
+            # safely proceed to send_message immediately while click executes async
             new_chat_start = time.time()
-            self.start_new_chat()
-            logger.info("[TIMING] start_new_chat: %.2fs", time.time() - new_chat_start)
+            self.start_new_chat(click_only=True)
+            logger.info("[TIMING] start_new_chat (click_only): %.2fs", time.time() - new_chat_start)
 
             # Minimize browser after start_new_chat to prevent window flash
             self._send_to_background_impl(self._page)
@@ -5838,13 +5847,16 @@ class CopilotHandler:
 
         return translations[:expected_count]
 
-    def start_new_chat(self, skip_clear_wait: bool = False) -> None:
+    def start_new_chat(self, skip_clear_wait: bool = False, click_only: bool = False) -> None:
         """Start a new chat session and verify previous responses are cleared.
 
         Args:
             skip_clear_wait: If True, skip the response clear verification.
                            Useful for 2nd+ batches where we just finished getting
                            a response (so chat is already clear).
+            click_only: If True, only click the new chat button and return immediately.
+                       Skip all wait operations (input ready, response clear).
+                       Useful for parallelizing with prompt input.
         """
         error_types = _get_playwright_errors()
         PlaywrightError = error_types['Error']
@@ -5879,15 +5891,24 @@ class CopilotHandler:
                     pass  # Non-critical - proceed with click
 
                 click_start = time.time()
-                # Use JavaScript click to avoid Playwright's actionability checks
-                # which can block for 30s on slow page loads
-                new_chat_btn.evaluate('el => el.click()')
-                click_time = time.time() - click_start
-                # Log warning if click takes unexpectedly long (should be <100ms)
-                if click_time > 0.1:
-                    logger.warning("[TIMING] new_chat: click took %.3fs (expected <0.1s) - browser may be slow",
-                                  click_time)
-                logger.info("[TIMING] new_chat: click: %.2fs", click_time)
+                if click_only:
+                    # OPTIMIZED: Use async click via setTimeout for parallelization
+                    # This returns immediately while click executes in background
+                    # Safe because: input field is not reset by new chat button click
+                    new_chat_btn.evaluate('el => setTimeout(() => el.click(), 0)')
+                    logger.info("[TIMING] new_chat: async click dispatched: %.2fs", time.time() - click_start)
+                    logger.info("[TIMING] start_new_chat total (click_only): %.2fs", time.time() - new_chat_total_start)
+                    return  # Return immediately, skip all wait operations
+                else:
+                    # Use JavaScript click to avoid Playwright's actionability checks
+                    # which can block for 30s on slow page loads
+                    new_chat_btn.evaluate('el => el.click()')
+                    click_time = time.time() - click_start
+                    # Log warning if click takes unexpectedly long (should be <100ms)
+                    if click_time > 0.1:
+                        logger.warning("[TIMING] new_chat: click took %.3fs (expected <0.1s) - browser may be slow",
+                                      click_time)
+                    logger.info("[TIMING] new_chat: click: %.2fs", click_time)
             else:
                 logger.warning("New chat button not found - chat context may not be cleared")
 

@@ -3099,6 +3099,11 @@ class CopilotHandler:
             ConnectionState.LOGIN_REQUIRED - ログインが必要またはリダイレクト中
             ConnectionState.ERROR - ページが存在しない
         """
+        # Early exit if login wait was cancelled (e.g., during shutdown)
+        if self._login_cancelled:
+            logger.debug("check_copilot_state: cancelled, returning ERROR")
+            return ConnectionState.ERROR
+
         error_types = _get_playwright_errors()
         PlaywrightError = error_types['Error']
 

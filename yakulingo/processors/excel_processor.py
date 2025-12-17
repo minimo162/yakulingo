@@ -223,7 +223,7 @@ def _try_create_new_excel_instance(xw, max_attempts: int = 3):
         logger.warning("win32com not available - falling back to xw.App()")
         # Fall back to simple retry with xw.App()
         for attempt in range(max_attempts):
-            gc.collect()
+            # Note: _cleanup_com_before_retry() already calls gc.collect() once
             _cleanup_com_before_retry()
             time.sleep(0.3 * (attempt + 1))
             try:
@@ -236,7 +236,7 @@ def _try_create_new_excel_instance(xw, max_attempts: int = 3):
         return None
 
     for attempt in range(max_attempts):
-        gc.collect()
+        # Note: _cleanup_com_before_retry() already calls gc.collect() once
         _cleanup_com_before_retry()
         time.sleep(0.2 * (attempt + 1))
 
@@ -1419,9 +1419,10 @@ class ExcelProcessor(FileProcessor):
                     _t_close = _time.perf_counter()
                     logger.debug("[TIMING] Workbook close: %.2fs", _t_close - _t_sheets_end)
             finally:
+                _t_before_quit = _time.perf_counter()
                 app.quit()
                 _t_quit = _time.perf_counter()
-                logger.debug("[TIMING] Excel app quit: %.2fs", _t_quit - _t_start)
+                logger.debug("[TIMING] Excel app quit: %.2fs", _t_quit - _t_before_quit)
                 logger.debug("[TIMING] Total extraction: %.2fs", _t_quit - _t_start)
 
         # Log warning for very large files

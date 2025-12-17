@@ -935,6 +935,13 @@ class CopilotHandler:
                 "--disable-session-crashed-bubble",
                 # Hide the crash restore bubble (Edge-specific, additional safety)
                 "--hide-crash-restore-bubble",
+                # === ADDITIONAL PERFORMANCE OPTIMIZATIONS ===
+                # Disable hang monitor for reduced overhead
+                "--disable-hang-monitor",
+                # Disable crash reporting (Breakpad) to reduce startup time
+                "--disable-breakpad",
+                # Disable IPC flooding protection for faster message passing
+                "--disable-ipc-flooding-protection",
             ]
 
             # Configure window position based on display mode
@@ -5752,6 +5759,14 @@ class CopilotHandler:
             new_chat_btn = self._page.query_selector(self.NEW_CHAT_BUTTON_SELECTOR)
             logger.info("[TIMING] new_chat: query_selector: %.2fs", time.time() - query_start)
             if new_chat_btn:
+                # Pre-warm: scroll button into view and brief settle time
+                # This helps browser prepare the element for click, reducing click latency
+                try:
+                    new_chat_btn.evaluate('el => el.scrollIntoView({behavior: "instant", block: "center"})')
+                    time.sleep(0.03)  # 30ms for browser to settle (reduced from 50ms)
+                except Exception:
+                    pass  # Non-critical - proceed with click
+
                 click_start = time.time()
                 # Use JavaScript click to avoid Playwright's actionability checks
                 # which can block for 30s on slow page loads

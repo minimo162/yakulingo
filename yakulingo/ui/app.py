@@ -584,7 +584,7 @@ class YakuLingoApp:
         Returns:
             List of translated texts, or None if failed
         """
-        from yakulingo.services.prompt_builder import PromptBuilder
+        from yakulingo.services.prompt_builder import PromptBuilder, GLOSSARY_EMBEDDED_INSTRUCTION, REFERENCE_INSTRUCTION
 
         prompt_builder = PromptBuilder(prompts_dir=get_default_prompts_dir())
 
@@ -602,12 +602,32 @@ class YakuLingoApp:
         numbered_cells = [f"[{i+1}] {cell}" for i, cell in enumerate(cells)]
         combined_text = "\n".join(numbered_cells)
 
-        prompt = prompt_builder.build_text_prompt(
-            combined_text,
-            output_language,
-            style,
-            glossary_content,
-        )
+        # Get text translation template
+        template = prompt_builder.get_text_template(output_language, style)
+        if template is None:
+            logger.error("Failed to get text template for language=%s, style=%s", output_language, style)
+            return None
+
+        # Build reference section
+        if glossary_content:
+            reference_section = GLOSSARY_EMBEDDED_INSTRUCTION.format(glossary_content=glossary_content)
+            files_to_attach = None
+        elif reference_files:
+            reference_section = REFERENCE_INSTRUCTION
+            files_to_attach = reference_files
+        else:
+            reference_section = ""
+            files_to_attach = None
+
+        # Apply placeholders
+        prompt_builder.reload_translation_rules()
+        translation_rules = prompt_builder.get_translation_rules()
+
+        prompt = template.replace("{translation_rules}", translation_rules)
+        prompt = prompt.replace("{reference_section}", reference_section)
+        prompt = prompt.replace("{input_text}", combined_text)
+        if output_language == "en":
+            prompt = prompt.replace("{style}", style)
 
         # Add instruction to preserve numbered format
         prompt += "\n\n【重要】各項目の番号を維持して、番号ごとに翻訳結果のみを返してください。"
@@ -615,8 +635,9 @@ class YakuLingoApp:
 
         try:
             response = self.copilot.translate_single(
+                combined_text,  # text (unused, for API compatibility)
                 prompt,
-                reference_files if reference_files else None,
+                files_to_attach,
             )
 
             if not response:

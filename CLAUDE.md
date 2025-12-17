@@ -2560,6 +2560,7 @@ Based on recent commits:
   - **Playwright fill() maintained**: React contenteditable要素との互換性のためfill()メソッドを維持（JS直接設定は改行が消える問題あり）
   - **Elapsed time measurement fix**: `start_time`をUI表示開始時点に移動（用語集読み込み等の準備時間を除外）
   - **Detailed timing logs**: `[TIMING]`プレフィックスで翻訳処理の各ステップの時間を出力（デバッグ用）
+  - **_send_message sleep optimization**: Button scroll後 0.1→0.03秒、JS key events後 0.05→0.02秒、Playwright Enter後 0.05→0.02秒（合計約0.13秒短縮）
 
 ## Git Workflow
 

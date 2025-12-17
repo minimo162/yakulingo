@@ -4121,15 +4121,23 @@ class CopilotHandler:
                 # This is required for React/Vue apps that don't detect direct DOM changes.
                 method1_error = None
                 try:
+                    # Detailed timing for fill() investigation
+                    t0 = time.time()
                     input_elem.fill(message)
+                    t1 = time.time()
                     # Dispatch input event to trigger framework reactivity
                     input_elem.evaluate('''el => {
                         el.dispatchEvent(new Event('input', { bubbles: true }));
                         el.dispatchEvent(new Event('change', { bubbles: true }));
                     }''')
+                    t2 = time.time()
                     # Reduced from 0.1s - fill() already waits for actionability
                     time.sleep(0.02)
+                    t3 = time.time()
                     content = input_elem.inner_text()
+                    t4 = time.time()
+                    logger.debug("[FILL_DETAIL] fill=%.3fs, dispatchEvent=%.3fs, sleep=%.3fs, inner_text=%.3fs",
+                                 t1 - t0, t2 - t1, t3 - t2, t4 - t3)
                     fill_success = len(content.strip()) > 0
                     if fill_success:
                         fill_method = 1
@@ -4213,9 +4221,12 @@ class CopilotHandler:
                 btn_ready = False
 
                 for wait_iter in range(20):  # Max 2 seconds (20 * 0.1s)
+                    iter_start = time.time()
                     send_btn = self._page.query_selector(self.SEND_BUTTON_SELECTOR)
+                    query_time = time.time() - iter_start
                     if send_btn:
                         try:
+                            eval_start = time.time()
                             btn_state = send_btn.evaluate('''el => {
                                 const rect = el.getBoundingClientRect();
                                 const style = window.getComputedStyle(el);
@@ -4228,9 +4239,11 @@ class CopilotHandler:
                                     inViewport: rect.y >= 0 && rect.y < window.innerHeight
                                 };
                             }''')
+                            eval_time = time.time() - eval_start
 
                             if wait_iter == 0:
-                                logger.debug("[SEND_PREP] Initial button state: %s", btn_state)
+                                logger.debug("[SEND_PREP] Initial button state: %s (query=%.3fs, eval=%.3fs)",
+                                            btn_state, query_time, eval_time)
 
                             # Check if button is ready (visible and in viewport)
                             if (btn_state['rect']['y'] >= 0 and
@@ -4262,6 +4275,7 @@ class CopilotHandler:
 
                 # Pre-warm: Stabilize UI before sending
                 # First attempt often fails because UI needs time to settle after text input
+                warmup_start = time.time()
                 try:
                     warmup_result = self._page.evaluate('''() => {
                         const input = document.querySelector('#m365-chat-editor-target-element');
@@ -4290,11 +4304,14 @@ class CopilotHandler:
 
                         return result;
                     }''')
-                    logger.debug("[SEND_WARMUP] Result: %s", warmup_result)
+                    warmup_eval_time = time.time() - warmup_start
+                    logger.debug("[SEND_WARMUP] Result: %s (eval=%.3fs)", warmup_result, warmup_eval_time)
 
                     # Wait for UI to stabilize after scroll
                     # Reduced from 0.3s - scrollIntoView uses 'instant' behavior
                     time.sleep(0.05)
+                    logger.debug("[SEND_WARMUP] Total: %.3fs (eval=%.3fs, sleep=0.050s)",
+                                time.time() - warmup_start, warmup_eval_time)
 
                 except Exception as warmup_err:
                     logger.debug("[SEND_WARMUP] Failed: %s", warmup_err)
@@ -5743,7 +5760,12 @@ class CopilotHandler:
                 # Use JavaScript click to avoid Playwright's actionability checks
                 # which can block for 30s on slow page loads
                 new_chat_btn.evaluate('el => el.click()')
-                logger.info("[TIMING] new_chat: click: %.2fs", time.time() - click_start)
+                click_time = time.time() - click_start
+                # Log warning if click takes unexpectedly long (should be <100ms)
+                if click_time > 0.1:
+                    logger.warning("[TIMING] new_chat: click took %.3fs (expected <0.1s) - browser may be slow",
+                                  click_time)
+                logger.info("[TIMING] new_chat: click: %.2fs", click_time)
             else:
                 logger.warning("New chat button not found - chat context may not be cleared")
 

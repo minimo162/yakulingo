@@ -333,26 +333,67 @@ def open_file(file_path: Path) -> bool:
 
         if system == 'Windows':
             import ctypes
+            from ctypes import wintypes
 
             # Allow the opened application to take foreground
             # ASFW_ANY = -1 allows any process to set foreground window
             ASFW_ANY = -1
             ctypes.windll.user32.AllowSetForegroundWindow(ASFW_ANY)
 
-            # Use SW_SHOWNORMAL to activate and display the window
+            # Use ShellExecuteExW to get process handle
+            SEE_MASK_NOCLOSEPROCESS = 0x00000040
             SW_SHOWNORMAL = 1
-            result = ctypes.windll.shell32.ShellExecuteW(
-                None,           # hwnd
-                "open",         # operation
-                str(file_path), # file
-                None,           # parameters
-                None,           # directory
-                SW_SHOWNORMAL   # show command - activates window
-            )
-            # ShellExecuteW returns > 32 on success
-            if result <= 32:
-                logger.error("ShellExecuteW failed with code %s", result)
+
+            class SHELLEXECUTEINFOW(ctypes.Structure):
+                _fields_ = [
+                    ("cbSize", wintypes.DWORD),
+                    ("fMask", wintypes.ULONG),
+                    ("hwnd", wintypes.HWND),
+                    ("lpVerb", wintypes.LPCWSTR),
+                    ("lpFile", wintypes.LPCWSTR),
+                    ("lpParameters", wintypes.LPCWSTR),
+                    ("lpDirectory", wintypes.LPCWSTR),
+                    ("nShow", ctypes.c_int),
+                    ("hInstApp", wintypes.HINSTANCE),
+                    ("lpIDList", ctypes.c_void_p),
+                    ("lpClass", wintypes.LPCWSTR),
+                    ("hkeyClass", wintypes.HKEY),
+                    ("dwHotKey", wintypes.DWORD),
+                    ("hIconOrMonitor", wintypes.HANDLE),
+                    ("hProcess", wintypes.HANDLE),
+                ]
+
+            sei = SHELLEXECUTEINFOW()
+            sei.cbSize = ctypes.sizeof(SHELLEXECUTEINFOW)
+            sei.fMask = SEE_MASK_NOCLOSEPROCESS
+            sei.hwnd = None
+            sei.lpVerb = "open"
+            sei.lpFile = str(file_path)
+            sei.lpParameters = None
+            sei.lpDirectory = None
+            sei.nShow = SW_SHOWNORMAL
+            sei.hInstApp = None
+            sei.hProcess = None
+
+            shell32 = ctypes.windll.shell32
+            shell32.ShellExecuteExW.argtypes = [ctypes.POINTER(SHELLEXECUTEINFOW)]
+            shell32.ShellExecuteExW.restype = wintypes.BOOL
+
+            result = shell32.ShellExecuteExW(ctypes.byref(sei))
+            if not result:
+                logger.error("ShellExecuteExW failed")
                 return False
+
+            # Wait for the application to initialize and bring its window to foreground
+            if sei.hProcess:
+                # New process was started
+                _bring_opened_app_to_foreground(sei.hProcess)
+                ctypes.windll.kernel32.CloseHandle(sei.hProcess)
+            else:
+                # File was opened in an existing application instance
+                # Find and bring that window to foreground
+                _bring_app_window_to_foreground_by_extension(file_path.suffix.lower())
+
         elif system == 'Darwin':
             # macOS: use open command
             subprocess.run(['open', str(file_path)], check=True)
@@ -365,6 +406,207 @@ def open_file(file_path: Path) -> bool:
     except (OSError, subprocess.SubprocessError) as e:
         logger.error("Failed to open file %s: %s", file_path, e)
         return False
+
+
+def _bring_opened_app_to_foreground(process_handle) -> None:
+    """
+    Bring the window of the opened application to foreground.
+
+    This handles the case where an application (e.g., Excel, Word) is already
+    running but minimized. When opening a new file in such an application,
+    ShellExecuteEx doesn't restore the minimized window automatically.
+
+    Args:
+        process_handle: Handle to the process that was started
+    """
+    import ctypes
+    from ctypes import wintypes
+    import time
+
+    try:
+        user32 = ctypes.WinDLL('user32', use_last_error=True)
+        kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+
+        # Wait for the application to be ready for input (max 5 seconds)
+        WAIT_TIMEOUT = 5000
+        kernel32.WaitForInputIdle(process_handle, WAIT_TIMEOUT)
+
+        # Get the process ID
+        process_id = wintypes.DWORD()
+        kernel32.GetProcessId.argtypes = [wintypes.HANDLE]
+        kernel32.GetProcessId.restype = wintypes.DWORD
+        process_id = kernel32.GetProcessId(process_handle)
+
+        if not process_id:
+            logger.debug("Could not get process ID")
+            return
+
+        # Small delay to let the window appear
+        time.sleep(0.2)
+
+        # Find windows belonging to this process
+        target_hwnd = None
+
+        # Define callback type
+        WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+
+        def enum_callback(hwnd, lparam):
+            nonlocal target_hwnd
+            window_pid = wintypes.DWORD()
+            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(window_pid))
+
+            if window_pid.value == process_id:
+                # Check if it's a main window (has a title and is a top-level window)
+                title_length = user32.GetWindowTextLengthW(hwnd)
+                if title_length > 0:
+                    # Check if window is visible or minimized (we want to restore minimized)
+                    WS_VISIBLE = 0x10000000
+                    WS_MINIMIZE = 0x20000000
+                    style = user32.GetWindowLongW(hwnd, -16)  # GWL_STYLE
+                    if style & (WS_VISIBLE | WS_MINIMIZE):
+                        target_hwnd = hwnd
+                        return False  # Stop enumeration
+            return True  # Continue enumeration
+
+        callback = WNDENUMPROC(enum_callback)
+        user32.EnumWindows(callback, 0)
+
+        if not target_hwnd:
+            logger.debug("No window found for process %d", process_id)
+            return
+
+        # Window show commands
+        SW_RESTORE = 9
+        SW_SHOW = 5
+        SWP_SHOWWINDOW = 0x0040
+        SWP_NOZORDER = 0x0004
+        SWP_NOSIZE = 0x0001
+        SWP_NOMOVE = 0x0002
+
+        # Check if window is minimized
+        is_minimized = user32.IsIconic(target_hwnd)
+        if is_minimized:
+            user32.ShowWindow(target_hwnd, SW_RESTORE)
+            logger.debug("Restored minimized window")
+        else:
+            user32.ShowWindow(target_hwnd, SW_SHOW)
+
+        # Ensure window is visible
+        user32.SetWindowPos(
+            target_hwnd, None, 0, 0, 0, 0,
+            SWP_SHOWWINDOW | SWP_NOZORDER | SWP_NOSIZE | SWP_NOMOVE
+        )
+
+        # Bring to foreground
+        user32.SetForegroundWindow(target_hwnd)
+        logger.debug("Brought window to foreground: hwnd=%s", target_hwnd)
+
+    except Exception as e:
+        logger.debug("Failed to bring opened app to foreground: %s", e)
+
+
+def _bring_app_window_to_foreground_by_extension(extension: str) -> None:
+    """
+    Find and bring to foreground the window of an application based on file extension.
+
+    This handles the case where a file is opened in an existing application instance,
+    and ShellExecuteEx returns NULL for hProcess.
+
+    Args:
+        extension: File extension (e.g., ".xlsx", ".docx")
+    """
+    import ctypes
+    from ctypes import wintypes
+    import time
+
+    # Map file extensions to window class patterns and title patterns
+    # Class names are more reliable than window titles
+    app_patterns = {
+        '.xlsx': ('XLMAIN', 'Excel'),
+        '.xls': ('XLMAIN', 'Excel'),
+        '.docx': ('OpusApp', 'Word'),
+        '.doc': ('OpusApp', 'Word'),
+        '.pptx': ('PPTFrameClass', 'PowerPoint'),
+        '.ppt': ('PPTFrameClass', 'PowerPoint'),
+        '.pdf': (None, None),  # PDF readers vary too much
+        '.csv': ('XLMAIN', 'Excel'),
+    }
+
+    pattern = app_patterns.get(extension)
+    if not pattern or pattern == (None, None):
+        logger.debug("No pattern for extension: %s", extension)
+        return
+
+    class_name, title_pattern = pattern
+
+    try:
+        user32 = ctypes.WinDLL('user32', use_last_error=True)
+
+        # Small delay to let the window update
+        time.sleep(0.2)
+
+        target_hwnd = None
+
+        if class_name:
+            # Try to find by class name first (more reliable)
+            target_hwnd = user32.FindWindowW(class_name, None)
+
+        if not target_hwnd and title_pattern:
+            # Fallback: enumerate all windows and find by title pattern
+            WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+
+            def enum_callback(hwnd, lparam):
+                nonlocal target_hwnd
+                # Get window title
+                title_buffer = ctypes.create_unicode_buffer(256)
+                user32.GetWindowTextW(hwnd, title_buffer, 256)
+                title = title_buffer.value
+
+                if title_pattern in title:
+                    # Check if window is visible or minimized
+                    WS_VISIBLE = 0x10000000
+                    WS_MINIMIZE = 0x20000000
+                    style = user32.GetWindowLongW(hwnd, -16)  # GWL_STYLE
+                    if style & (WS_VISIBLE | WS_MINIMIZE):
+                        target_hwnd = hwnd
+                        return False  # Stop enumeration
+                return True  # Continue enumeration
+
+            callback = WNDENUMPROC(enum_callback)
+            user32.EnumWindows(callback, 0)
+
+        if not target_hwnd:
+            logger.debug("No window found for extension: %s", extension)
+            return
+
+        # Window show commands
+        SW_RESTORE = 9
+        SW_SHOW = 5
+        SWP_SHOWWINDOW = 0x0040
+        SWP_NOZORDER = 0x0004
+        SWP_NOSIZE = 0x0001
+        SWP_NOMOVE = 0x0002
+
+        # Check if window is minimized
+        is_minimized = user32.IsIconic(target_hwnd)
+        if is_minimized:
+            user32.ShowWindow(target_hwnd, SW_RESTORE)
+            logger.debug("Restored minimized window for %s", extension)
+        else:
+            user32.ShowWindow(target_hwnd, SW_SHOW)
+
+        # Ensure window is visible
+        user32.SetWindowPos(
+            target_hwnd, None, 0, 0, 0, 0,
+            SWP_SHOWWINDOW | SWP_NOZORDER | SWP_NOSIZE | SWP_NOMOVE
+        )
+
+        # Bring to foreground
+        user32.SetForegroundWindow(target_hwnd)
+        logger.debug("Brought %s window to foreground: hwnd=%s", extension, target_hwnd)
+
+    except Exception as e:
+        logger.debug("Failed to bring app window to foreground by extension: %s", e)
 
 
 def show_in_folder(file_path: Path) -> bool:

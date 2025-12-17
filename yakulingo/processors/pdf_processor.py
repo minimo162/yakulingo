@@ -4215,14 +4215,40 @@ class PdfProcessor(FileProcessor):
                 # Check for digit following CJK text with X gap
                 # Examples: "日本 155" in tables where label and value are in adjacent cells
                 # This handles table patterns where item names are followed by numeric values
-                # Use WORD_SPACE_X_THRESHOLD (1pt) to detect any spacing between them
+                # In table regions: be more aggressive (no gap required, just not overlapping)
+                # Outside tables: require minimum 1pt gap to avoid splitting "日本1位"
                 TABLE_LABEL_VALUE_GAP_THRESHOLD = 1.0
+                is_table_region_for_split = (
+                    use_layout and char_cls is not None and char_cls >= LAYOUT_TABLE_BASE
+                )
                 if (prev_char_text and _is_cjk_char(prev_char_text) and
-                    char_text.isdigit() and
-                    prev_x1 is not None and char_x0 > prev_x1 + TABLE_LABEL_VALUE_GAP_THRESHOLD):
-                    # Digit after CJK text with gap suggests table label/value boundary
-                    new_paragraph = True
-                    is_strong_boundary = True
+                    char_text.isdigit() and prev_x1 is not None):
+                    if is_table_region_for_split:
+                        # In table regions: split if X is not going backward (>= 0pt gap)
+                        if char_x0 >= prev_x1:
+                            new_paragraph = True
+                            is_strong_boundary = True
+                    elif char_x0 > prev_x1 + TABLE_LABEL_VALUE_GAP_THRESHOLD:
+                        # Outside tables: require 1pt gap
+                        new_paragraph = True
+                        is_strong_boundary = True
+
+                # Check for negative sign (△/▲/▼) following text with X gap
+                # Examples: "△43,633" in tables where this indicates a separate cell
+                # Common in Japanese financial documents (決算短信) where △ means negative
+                # In table regions: be more aggressive (no gap required)
+                NEGATIVE_SIGN_CHARS = frozenset('△▲▼')
+                if (prev_char_text and char_text in NEGATIVE_SIGN_CHARS and
+                    prev_x1 is not None):
+                    if is_table_region_for_split:
+                        # In table regions: split if X is not going backward
+                        if char_x0 >= prev_x1:
+                            new_paragraph = True
+                            is_strong_boundary = True
+                    elif char_x0 > prev_x1 + TABLE_LABEL_VALUE_GAP_THRESHOLD:
+                        # Outside tables: require 1pt gap
+                        new_paragraph = True
+                        is_strong_boundary = True
 
                 # Also check X position for line break
                 if not new_paragraph and char_x1 < prev_x0 - LINE_BREAK_X_THRESHOLD:

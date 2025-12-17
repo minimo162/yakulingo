@@ -146,6 +146,7 @@ html {
     /* Reference: 1900px window → 16px, scaled with sqrt for gentle effect */
     font-size: var(--base-font-size, 16px);
     height: 100%;
+    overflow-x: hidden; /* Prevent horizontal scroll at document level */
 }
 
 body {

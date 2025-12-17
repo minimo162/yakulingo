@@ -1,23 +1,23 @@
-## Summary Request
+## 要点抽出リクエスト
 
-Summarize the key points of the text concisely in Japanese.
+テキストの要点を日本語で簡潔にまとめてください。
 
-### Inputs
-- Text to summarize: {input_text}
-- Japanese translation (reference): {translation}
+### 入力情報
+- 要約対象のテキスト: {input_text}
+- 日本語翻訳（参考）: {translation}
 
-### Guidelines
-- Keep each point to 1 line
-- Order points by importance
-- Note any important business actions clearly
+### ガイドライン
+- 各ポイントは1行にまとめる
+- 重要度の高い順に並べる
+- ビジネス上の重要なアクションは明確に記載する
 
-### Output Format
-訳文: 1-line summary title of key points
+### 出力形式
+訳文: 要点の1行タイトル
 
 解説:
-- Key point 1 (most important)
-- Key point 2 (next most important)
-- Key point 3 (other important points)
-- Key points 4-5 as needed
+- 要点1（最も重要）
+- 要点2（次に重要）
+- 要点3（その他の重要な点）
+- 要点4-5（必要に応じて）
 
 {reference_section}

@@ -114,7 +114,8 @@ YakuLingo/
 ├── tests/                         # Test suite (33 test files)
 │   ├── conftest.py                # Shared fixtures and mocks
 │   └── test_*.py                  # Unit tests for each module
-├── prompts/                       # Translation prompt templates (17 files)
+├── prompts/                       # Translation prompt templates (18 files, all in Japanese)
+│   ├── translation_rules.txt      # 共通翻訳ルール（数値表記・記号変換ルール）- ユーザー編集可能
 │   ├── detect_language.txt        # Language detection (currently unused, local detection preferred)
 │   ├── copilot_injection_review.md # Prompt injection risk review
 │   ├── file_translate_to_en_{standard|concise|minimal}.txt  # File translation (JP→EN)
@@ -980,6 +981,100 @@ The `AutoUpdater` class provides GitHub Releases-based updates:
 2. Check `yakulingo/processors/translators.py` for skip patterns
 3. Check prompt templates in `prompts/*.txt`
 4. Update tests in `tests/test_translation_service.py`
+
+### Prompt Template Architecture
+
+プロンプトテンプレートは全て日本語で記述されています（ユーザーが日本語話者のため）。
+
+**ファイル構成:**
+
+| ファイル | 用途 |
+|----------|------|
+| `translation_rules.txt` | 共通翻訳ルール（全プロンプトに注入される） |
+| `file_translate_to_en_{style}.txt` | ファイル翻訳（JP→EN、style: standard/concise/minimal） |
+| `file_translate_to_jp.txt` | ファイル翻訳（EN→JP） |
+| `text_translate_to_en_{style}.txt` | テキスト翻訳（JP→EN） |
+| `text_translate_to_jp.txt` | テキスト翻訳（EN→JP、解説付き） |
+| `text_*.txt` | フォローアップ翻訳（alternatives, review, summarize等） |
+
+**プレースホルダー:**
+
+| プレースホルダー | 説明 |
+|------------------|------|
+| `{translation_rules}` | `translation_rules.txt`の内容が注入される |
+| `{input_text}` | 翻訳対象テキスト |
+| `{reference_section}` | 用語集・参照ファイルの内容 |
+| `{translation_style}` / `{style}` | 翻訳スタイル（standard/concise/minimal） |
+
+**PromptBuilderの使用:**
+
+```python
+from yakulingo.services.prompt_builder import PromptBuilder
+
+builder = PromptBuilder(prompts_dir=Path("prompts"))
+
+# ファイル翻訳プロンプト
+prompt = builder.build(
+    input_text="翻訳対象テキスト",
+    output_language="en",
+    reference_text="用語集内容",
+    translation_style="concise"
+)
+
+# テキスト翻訳プロンプト
+prompt = builder.build_text_translation_prompt(
+    input_text="翻訳対象テキスト",
+    output_language="en",
+    reference_text="用語集内容",
+    translation_style="concise"
+)
+
+# 共通ルールの取得・再読み込み
+rules = builder.get_translation_rules()
+builder.reload_translation_rules()
+```
+
+**translation_rules.txt の構造:**
+
+```
+## 翻訳ルール（Translation Rules）
+
+このファイルは、翻訳時に適用される共通ルールです。
+
+---
+
+### 数値表記ルール（日本語 → 英語）
+
+重要: 数字は絶対に変換しない。単位のみを置き換える。
+
+| 日本語 | 英語 | 変換例 |
+|--------|------|--------|
+| 億 | oku | 4,500億円 → 4,500 oku yen |
+| 千 | k | 12,000 → 12k |
+| ▲（マイナス）| () | ▲50 → (50) |
+
+注意:
+- 「4,500億円」は必ず「4,500 oku yen」に翻訳する
+- 「450 billion」や「4.5 trillion」には絶対に変換しない
+- 数字の桁は絶対に変えない（4,500は4,500のまま）
+
+### 記号変換ルール（英訳時）
+
+以下の記号は英語圏でビジネス文書に不適切です。
+必ず英語で表現してください。
+
+禁止記号と置き換え:
+- ↑ → increased, up, higher（使用禁止）
+- ↓ → decreased, down, lower（使用禁止）
+- ~ → approximately, about（使用禁止）
+- → → leads to, results in（使用禁止）
+- ＞＜ → greater than, less than（使用禁止）
+- ≧≦ → or more, or less（使用禁止）
+
+例:
+- 「3か月以上」→ "3 months or more"（× > 3 months）
+- 「売上↑」→ "Sales increased"（× Sales ↑）
+```
 
 ### Adding UI Components
 1. Create component in `yakulingo/ui/components/`

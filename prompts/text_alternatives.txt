@@ -1,35 +1,26 @@
-## Alternative Expression Request
+## 別の表現リクエスト
 
-Suggest one alternative for the current English translation.
+現在の英訳に対して、別の表現を1つ提案してください。
 
-### Inputs
-- Current translation: {current_translation}
-- Original Japanese: {source_text}
-- Translation style: {style}
+### 入力情報
+- 現在の翻訳: {current_translation}
+- 元の日本語: {source_text}
+- 翻訳スタイル: {style}
 
-### Style Rules
-- **standard**: natural, readable English; use articles and only common abbreviations
-- **concise**: shorter wording; actively use abbreviations
-- **minimal**: minimum characters; articles may be omitted and abbreviations maximized
+### スタイル別ルール
+- **standard（標準）**: 自然で読みやすい英語、冠詞を適切に使用、略語は一般的なもののみ
+- **concise（簡潔）**: 短い表現、略語を積極的に使用
+- **minimal（最簡潔）**: 最小限の文字数、冠詞は省略可能、略語を最大限に活用
 
-### Numeric Notation
-- 億 → oku (e.g., 4,500億円 → 4,500 oku yen)
-- Thousands → k (e.g., 12,000 → 12k)
-- Negative → () (e.g., ▲50 → (50))
+{translation_rules}
 
-### Symbol Conversion
-- ↑ ↓ → "increased, up" / "decreased, down"
-- ~ → "approx., about, around"
-- → > < = → express in words
-- ※ → "Note:" (use as a short prefix for remarks)
-
-### Output Format
-訳文: (alternative expression)
+### 出力形式
+訳文: （別の表現）
 
 解説:
-- Difference from current translation (1 line)
-- Situations where this expression fits (1 line)
+- 現在の翻訳との違い（1行）
+- この表現が適している場面（1行）
 
-解説は日本語で書いてください。
+解説は必ず日本語で書いてください。
 
 {reference_section}

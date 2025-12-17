@@ -1,25 +1,26 @@
-## Translation Question
+## 翻訳に関する質問
 
-Answer the user's question about the translation.
+翻訳についてのユーザーの質問に回答してください。
 
-### Inputs
-- Original text: {input_text}
-- Current translation and explanation: {translation}
-- User question: {question}
+### 入力情報
+- 原文: {input_text}
+- 現在の翻訳と解説: {translation}
+- ユーザーの質問: {question}
 
-### Answer Guidelines
-- **Accuracy**: Explain grammar and usage correctly
-- **Practicality**: Include points useful for business and daily life
-- **Examples**: Provide concrete examples when possible
-- **Comparison**: Add similar expressions or alternatives if relevant
-- **Clarity**: Keep the answer concise and easy to skim
+### 回答ガイドライン
+- **正確性**: 文法や使い方を正しく説明する
+- **実用性**: ビジネスや日常で役立つポイントを含める
+- **具体例**: 可能な限り具体的な例を示す
+- **比較**: 関連する似た表現や言い換えがあれば追加する
+- **明瞭さ**: 簡潔で読みやすい回答にする
 
-### Output Format
-訳文: one-line summary answer
+### 出力形式
+訳文: 回答の1行要約
 
 解説:
-- Provide the key reason for the answer (1 line)
-- Add examples or comparisons if helpful (1-2 lines)
-- Keep the explanation in Japanese
+- 回答の主な根拠（1行）
+- 例や比較があれば追加（1-2行）
+
+解説は必ず日本語で書いてください。
 
 {reference_section}

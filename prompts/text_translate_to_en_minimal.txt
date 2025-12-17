@@ -1,34 +1,28 @@
-## Translation Request (Minimal)
+## テキスト翻訳リクエスト（最簡潔スタイル）
 
-Translate the Japanese text into English.
+日本語を英語に翻訳してください。
 
-### Style
-- Minimum characters, key points only; good for subjects/headings/tables
-- Articles may be omitted; maximize abbreviation
-- Allowed symbols: & / vs. % # w/ w/o @ +
+### 翻訳スタイル（最簡潔）
+- 最小限の文字数、要点のみ
+- 件名・見出し・表に適した簡潔さ
+- 冠詞は省略可能
+- 略語を最大限に活用
+- 許可される記号: & / vs. % # w/ w/o @ +
 
-### Symbol Conversion
-- ↑↓ → "up/down, increased/decreased"
-- ~ → "approx., about"
-- → > < = → express in words
-- ※ → "Note:"
+{translation_rules}
 
-### Numeric Notation
-- 億 → oku, thousands → k, negative → ()
+### 構造保持
+- 原文の改行・タブ・段落構造をそのまま維持する
 
-### Structure
-- Keep original line breaks and tabs
-- Preserve paragraph structure exactly
-
-### Output Format
-訳文: English translation
+### 出力形式
+訳文: 英語翻訳
 
 解説:
-- この表現を選んだ理由 (1行)
-- 言い換えのポイント (1行)
-- 使用場面・注意点 (1行)
+- この表現を選んだ理由（1行）
+- 言い換えのポイント（1行）
+- 使用場面・注意点（1行）
 
-解説は日本語で書いてください。
+解説は必ず日本語で書いてください。
 
 {reference_section}
 

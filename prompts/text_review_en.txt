@@ -1,23 +1,30 @@
-## English Review Request
+## 英文チェックリクエスト
 
-Review the English text for grammar, naturalness, and business fit.
+英文の文法、自然さ、ビジネスへの適切さをチェックしてください。
 
-### Inputs
-- Text to review: {input_text}
-- Japanese translation (reference): {translation}
+### 入力情報
+- チェック対象の英文: {input_text}
+- 日本語翻訳（参考）: {translation}
 
-### Review Focus
-- Grammar and spelling
-- Natural expressions (neither too formal nor too casual)
-- Business appropriateness
-- Typical Japanese speaker errors (articles, prepositions)
+### チェック項目
+- 文法とスペル
+- 自然な表現かどうか（硬すぎず、砕けすぎず）
+- ビジネスにふさわしいか
+- 日本語話者がよく間違えるポイント（冠詞、前置詞）
 
-### Output Format (解説は必ず日本語で)
-- **No major issues:**
-  - 訳文: 問題ありません。自然な英語です。
-  - 解説: 良い点を1-2行で日本語で説明
-- **Issues found:**
-  - 訳文: 修正後の英文
-  - 解説: 各問題を ❌ 問題: "..." → ✅ 修正: "..." の形式で日本語で説明
+### 出力形式
+**問題がない場合:**
+訳文: 問題ありません。自然な英語です。
+
+解説:
+- 良い点を1-2行で説明
+
+**問題がある場合:**
+訳文: 修正後の英文
+
+解説:
+- ❌ 問題: "..." → ✅ 修正: "..." の形式で各問題を説明
+
+解説は必ず日本語で書いてください。
 
 {reference_section}

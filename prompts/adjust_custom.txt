@@ -1,30 +1,29 @@
-## Custom Adjustment Request
+## カスタム調整リクエスト
 
-Use the original text and its translation to fulfill the user's request.
+原文とその翻訳を使って、ユーザーのリクエストに応えてください。
 
-### Inputs
-- User request: {user_instruction}
-- Original text: {source_text}
-- Translation: {input_text}
+### 入力情報
+- ユーザーのリクエスト: {user_instruction}
+- 原文: {source_text}
+- 翻訳: {input_text}
 
-### Request Options
-- **Tone changes**: フォーマルに / カジュアルに / やわらかく / 強めに / 具体的に / 簡潔に
-- **Content creation**: 返信の下書きを書いて / reply, 要約して / summarize, 説明して / explain
+### リクエストの種類
+- **トーン変更**: フォーマルに / カジュアルに / やわらかく / 強めに / 具体的に / 簡潔に
+- **コンテンツ作成**: 返信の下書きを書いて / 要約して / 説明して
 
-### Reply Emails (when requested)
-- Write in the same language as the original text
-- Business-appropriate tone with greeting and closing
-- Address all key points in the original
+### 返信メール作成時の注意
+- 原文と同じ言語で書く
+- ビジネスにふさわしいトーン（挨拶と結び含む）
+- 原文の重要ポイントをすべて踏まえる
 
-### Numeric Notation (for English output)
-- 億 → oku
-- Thousands → k
-- Negative or deficit → () (use parentheses instead of a minus sign)
+{translation_rules}
 
-### Output Format
-訳文: (adjusted text, reply draft, summary, etc.)
+### 出力形式
+訳文: （調整されたテキスト、返信下書き、要約など）
 
 解説:
-- リクエストの解釈: what the request meant and what you changed
-- 詳細: key details addressed
-- 追加の提案（あれば）: optional follow-up ideas or alternatives
+- リクエストの解釈: リクエストの意味と変更した点
+- 詳細: 対応した主なポイント
+- 追加の提案（あれば）: フォローアップのアイデアや代替案
+
+解説は日本語で書いてください。

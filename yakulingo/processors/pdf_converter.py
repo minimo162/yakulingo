@@ -128,6 +128,11 @@ MIN_COLUMN_THRESHOLD = 50.0       # 50pt minimum
 SENTENCE_END_CHARS_JA = frozenset('。！？…‥）」』】｝〕〉》）＞]＞')
 SENTENCE_END_CHARS_EN = frozenset('.!?;:')
 
+# Quantity units that typically END a phrase (not continuation)
+# Common in financial documents: △971億円, 5,000万円, 100台, etc.
+# When text ends with these characters, treat as a complete unit and allow paragraph break.
+QUANTITY_UNITS_JA = frozenset('円万億千台個件名社年月日回本枚％%')
+
 # Japanese particles and suffixes that indicate line continuation (yomitoku reference)
 # When text ends with these characters, it's likely a continuation to the next line.
 # Based on yomitoku's approach: intelligently join lines within paragraphs.

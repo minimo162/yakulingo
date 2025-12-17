@@ -74,7 +74,7 @@ from .pdf_converter import (
     is_japanese_continuation_line,  # For intelligent paragraph boundary detection
     is_toc_line_ending,  # For TOC pattern detection (leader + page number)
     # Sentence end characters for paragraph boundary detection
-    SENTENCE_END_CHARS_JA, SENTENCE_END_CHARS_EN,
+    SENTENCE_END_CHARS_JA, SENTENCE_END_CHARS_EN, QUANTITY_UNITS_JA,
     # Coordinate conversion utilities (PDFMathTranslate compliant)
     pdf_to_image_coord, image_to_pdf_coord,
     pdf_bbox_to_image_bbox, image_bbox_to_pdf_bbox,
@@ -89,7 +89,7 @@ from .pdf_converter import (
 from .pdf_layout import (
     # Constants
     LAYOUT_ABANDON, LAYOUT_BACKGROUND, LAYOUT_PARAGRAPH_BASE, LAYOUT_TABLE_BASE,
-    LAYOUT_TRANSLATE_LABELS, LAYOUT_SKIP_LABELS,
+    LAYOUT_PAGE_NUMBER, LAYOUT_TRANSLATE_LABELS, LAYOUT_SKIP_LABELS, LAYOUT_PRESERVE_LABELS,
     # yomitoku-style constants
     NOISE_MIN_SIZE_PX, HEADER_FOOTER_RATIO, ELEMENT_OVERLAP_THRESHOLD,
     ELEMENT_CONTAINMENT_THRESHOLD, ELEMENT_INTERSECTION_THRESHOLD,
@@ -3876,7 +3876,11 @@ class PdfProcessor(FileProcessor):
             # Check if this block should be translated or preserved as-is
             # Non-translatable blocks (numbers, dates, etc.) are included but marked
             # so apply_translations can preserve original text
-            skip_translation = not self.should_translate(text_without_placeholders)
+            # Page numbers (LAYOUT_PAGE_NUMBER) are always preserved without translation
+            if para.layout_class == LAYOUT_PAGE_NUMBER:
+                skip_translation = True
+            else:
+                skip_translation = not self.should_translate(text_without_placeholders)
             if skip_translation:
                 skipped_no_translate += 1
                 # DEBUG: Log non-translatable text for troubleshooting
@@ -4166,6 +4170,13 @@ class PdfProcessor(FileProcessor):
                     prev_x1=prev_x1
                 )
 
+                # Force new paragraph when entering/leaving page number region
+                # Page numbers should always be in separate blocks
+                if char_cls == LAYOUT_PAGE_NUMBER or prev_cls == LAYOUT_PAGE_NUMBER:
+                    if char_cls != prev_cls:
+                        new_paragraph = True
+                        is_strong_boundary = True
+
                 # Check for opening brackets with X gap - indicates new semantic unit
                 # Examples: "92. （３）中間連結..." should split at "（"
                 # "上場会社名 (単位：百万円)" should split at "("
@@ -4198,6 +4209,18 @@ class PdfProcessor(FileProcessor):
                     prev_x1 is not None and char_x0 > prev_x1 + PAGE_NUMBER_GAP_THRESHOLD and
                     _is_cjk_char(char_text)):
                     # CJK text after period with significant gap suggests new semantic unit
+                    new_paragraph = True
+                    is_strong_boundary = True
+
+                # Check for digit following CJK text with X gap
+                # Examples: "日本 155" in tables where label and value are in adjacent cells
+                # This handles table patterns where item names are followed by numeric values
+                # Use WORD_SPACE_X_THRESHOLD (1pt) to detect any spacing between them
+                TABLE_LABEL_VALUE_GAP_THRESHOLD = 1.0
+                if (prev_char_text and _is_cjk_char(prev_char_text) and
+                    char_text.isdigit() and
+                    prev_x1 is not None and char_x0 > prev_x1 + TABLE_LABEL_VALUE_GAP_THRESHOLD):
+                    # Digit after CJK text with gap suggests table label/value boundary
                     new_paragraph = True
                     is_strong_boundary = True
 
@@ -4372,6 +4395,9 @@ class PdfProcessor(FileProcessor):
                             is_sentence_end = (
                                 last_char in SENTENCE_END_CHARS_JA or
                                 last_char in SENTENCE_END_CHARS_EN or
+                                # Quantity units indicate end of a value phrase (e.g., △971億円)
+                                # These should NOT be joined with the next line in tables
+                                last_char in QUANTITY_UNITS_JA or
                                 # TOC pattern: leader dots (…) followed by page number
                                 # e.g., "経営成績等の概況…………… 2"
                                 is_toc_line_ending(prev_text)

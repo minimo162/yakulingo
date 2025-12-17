@@ -1997,6 +1997,18 @@ When interacting with users in this repository, prefer Japanese for comments and
 ## Recent Development Focus
 
 Based on recent commits:
+- **PDF Translation Table/Page Number Fix (2024-12)**:
+  - **Page number preservation**: ヘッダー/フッターのページ番号が翻訳時に移動する問題を修正
+    - `LAYOUT_PAGE_NUMBER = -1` 定数を追加（ページ番号領域用の特別なマーカー）
+    - `LAYOUT_PRESERVE_LABELS` セットを追加（`"page_number"` を含む）
+    - ページ番号領域は `skip_translation=True` で翻訳をスキップし、元の位置・テキストを保持
+  - **Table cell value separation**: テーブルの項目名と値が結合される問題を修正
+    - `QUANTITY_UNITS_JA` を `is_sentence_end` チェックに追加（円万億千台個件名社年月日回本枚％%）
+    - 数量単位で終わるテキスト（例：△971億円）は文末として扱い、次の行と結合しない
+  - **CJK-digit boundary detection**: 日本語項目名と数値が結合される問題を修正
+    - CJKテキストの直後に数字が続き、X座標にギャップがある場合に強い境界として分割
+    - 例：「日本155」→「日本」と「155」を別ブロックに分離
+    - 閾値: `TABLE_LABEL_VALUE_GAP_THRESHOLD = 1.0pt`
 - **Browser Side Panel Display Mode (2024-12)**:
   - **Default changed**: `browser_display_mode` のデフォルトを `"side_panel"` に変更
   - **Modes**: `"side_panel"`（デフォルト）、`"minimized"`（従来）、`"foreground"`（前面）

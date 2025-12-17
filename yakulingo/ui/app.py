@@ -730,7 +730,10 @@ class YakuLingoApp:
         if sys.platform == 'win32' and self._settings and self._copilot:
             if self._settings.browser_display_mode == "side_panel":
                 try:
-                    await asyncio.to_thread(self._copilot._position_edge_as_side_panel, None)
+                    # bring_to_front=True ensures Edge is visible when activated via hotkey
+                    await asyncio.to_thread(
+                        self._copilot._position_edge_as_side_panel, None, True
+                    )
                     logger.debug("Edge positioned as side panel after bring to front")
                 except Exception as e:
                     logger.debug("Failed to position Edge as side panel: %s", e)

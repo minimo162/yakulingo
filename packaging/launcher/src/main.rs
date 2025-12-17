@@ -80,10 +80,10 @@ fn run() -> Result<(), String> {
     setup_environment(&base_dir, &venv_dir, &python_dir);
     log_event(&log_path, "Environment variables configured");
 
-    // Launch application
+    // Launch application and wait for window
     let app_script = base_dir.join("app.py");
-    launch_app(&python_exe, &app_script, &base_dir)?;
-    log_event(&log_path, "Launch command issued successfully");
+    launch_app(&python_exe, &app_script, &base_dir, &log_path)?;
+    log_event(&log_path, "Window appeared, launcher exiting");
 
     Ok(())
 }
@@ -309,12 +309,15 @@ fn setup_environment(base_dir: &PathBuf, venv_dir: &PathBuf, python_dir: &PathBu
     env::set_var("PATH", new_path);
 }
 
-/// Launch the application
+/// Launch the application and wait for window to appear
+/// This keeps the launcher process alive until the window is shown,
+/// which maintains the Windows busy cursor (loading circle) until the app is ready.
 #[cfg(windows)]
 fn launch_app(
     python_exe: &PathBuf,
     app_script: &PathBuf,
     working_dir: &PathBuf,
+    log_path: &Option<PathBuf>,
 ) -> Result<(), String> {
     Command::new(python_exe)
         .arg(app_script)
@@ -323,7 +326,42 @@ fn launch_app(
         .spawn()
         .map_err(|e| format!("Failed to start application: {}", e))?;
 
+    log_event(log_path, "Python process spawned, waiting for window");
+
+    // Wait for YakuLingo window to appear
+    // This keeps the launcher alive, maintaining the Windows busy cursor
+    wait_for_window("YakuLingo", Duration::from_secs(30));
+
     Ok(())
+}
+
+/// Wait for a window with the specified title to appear
+#[cfg(windows)]
+fn wait_for_window(title: &str, timeout: Duration) {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+    use std::thread;
+    use winapi::um::winuser::FindWindowW;
+
+    let wide_title: Vec<u16> = OsStr::new(title)
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+
+    let start = std::time::Instant::now();
+    let poll_interval = Duration::from_millis(100);
+
+    while start.elapsed() < timeout {
+        unsafe {
+            let hwnd = FindWindowW(std::ptr::null(), wide_title.as_ptr());
+            if !hwnd.is_null() {
+                // Window found, exit the loop
+                return;
+            }
+        }
+        thread::sleep(poll_interval);
+    }
+    // Timeout reached, exit anyway (app might still be starting)
 }
 
 #[cfg(not(windows))]
@@ -331,6 +369,7 @@ fn launch_app(
     python_exe: &PathBuf,
     app_script: &PathBuf,
     working_dir: &PathBuf,
+    _log_path: &Option<PathBuf>,
 ) -> Result<(), String> {
     Command::new(python_exe)
         .arg(app_script)

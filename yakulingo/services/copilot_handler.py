@@ -543,10 +543,15 @@ def clear_pre_initialized_playwright():
 
     This must be called when Playwright.stop() is called on the pre-initialized
     instance to prevent returning a stopped instance on subsequent connections.
+
+    Also resets _pre_init_event to allow re-initialization (e.g., after disconnect
+    during PP-DocLayout-L initialization).
     """
-    global _pre_initialized_playwright
+    global _pre_initialized_playwright, _pre_init_error
     with _pre_init_lock:
         _pre_initialized_playwright = None
+        _pre_init_error = None
+        _pre_init_event.clear()  # Allow re-initialization
         logger.debug("Pre-initialized Playwright cleared")
 
 

@@ -1666,8 +1666,13 @@ class YakuLingoApp:
         })();
         """
         try:
-            ui.run_javascript(js_code)
-            logger.debug("[LAYOUT] Layout dimensions logging triggered via JavaScript")
+            async def log_layout():
+                result = await ui.run_javascript(js_code)
+                if result:
+                    logger.info("[LAYOUT_DEBUG] resultPanel: %s", result.get('resultPanel'))
+                    logger.info("[LAYOUT_DEBUG] resultPanelNiceguiColumn: %s", result.get('resultPanelNiceguiColumn'))
+                    logger.info("[LAYOUT_DEBUG] innerColumn: %s", result.get('innerColumn'))
+            asyncio.create_task(log_layout())
         except Exception as e:
             logger.warning("[LAYOUT] Failed to log layout dimensions: %s", e)
 

@@ -1942,8 +1942,9 @@ class CopilotHandler:
             try:
                 self._page.wait_for_selector(input_selector, timeout=2000, state='visible')
                 logger.info("Auto-login completed at timeout - chat UI ready")
-                # Ensure window is minimized before returning
-                self._minimize_edge_window(None)
+                # Ensure window is minimized before returning (only in minimized mode)
+                if should_minimize:
+                    self._minimize_edge_window(None)
                 return True
             except PlaywrightTimeoutError:
                 logger.info("Auto-login timeout - chat UI not ready after %.1fs", max_wait)

@@ -553,6 +553,8 @@ async def _translate_text(self):
 - ブラウザスロットリング問題を回避可能
 - ログイン時の前面表示処理がスキップされる（既に見えているため）
 - **アプリとEdgeを最初から正しい位置に配置**（ちらつきなし）
+- **Ctrl+Alt+Jホットキー時もアプリとEdgeをセットで前面に配置**
+- **PDF翻訳再接続時もEdgeをサイドパネル位置に維持**（最小化しない）
 
 **サイドパネルのレイアウト:**
 ```
@@ -1901,6 +1903,10 @@ Based on recent commits:
     - サイドパネル/foregroundモードではEdge起動時に画面外配置オプションを使用しない
     - サイドパネル/foregroundモードでは自動ログイン中もEdgeを最小化しない（常に表示）
     - `_bring_to_foreground_impl`、`_ensure_edge_minimized`、`_wait_for_auto_login_impl`がモードを考慮
+  - **Hotkey & reconnect handling (2024-12)**:
+    - Ctrl+Alt+Jホットキー時: `_bring_window_to_front`でサイドパネルモード時にEdgeも配置
+    - PDF翻訳再接続時: `_reconnect_copilot_with_retry`で`browser_display_mode`をチェック
+    - 自動ログイン完了時: `should_minimize`条件を追加して不要な最小化を防止
   - **Benefits**: ブラウザスロットリング問題を回避、翻訳経過をリアルタイムで確認可能
   - **Implementation**: `_calculate_app_position_for_side_panel()`, `_calculate_side_panel_geometry_from_screen()`, `_expected_app_position`, `app.native.window_args`, `_find_yakulingo_window_handle()`, `_position_edge_as_side_panel()`, `_reposition_windows_for_side_panel()`
 - **Excel COM Isolation Improvements (2024-12)**:

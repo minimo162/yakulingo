@@ -697,6 +697,16 @@ class YakuLingoApp:
             win32_success = await asyncio.to_thread(self._bring_window_to_front_win32)
             logger.debug("Windows API bring_to_front result: %s", win32_success)
 
+        # Method 3: Position Edge as side panel if in side_panel mode
+        # This ensures Edge is visible alongside the app when activated via hotkey
+        if sys.platform == 'win32' and self._settings and self._copilot and self._copilot._connected:
+            if self._settings.browser_display_mode == "side_panel":
+                try:
+                    await asyncio.to_thread(self._copilot._position_edge_as_side_panel, None)
+                    logger.debug("Edge positioned as side panel after bring to front")
+                except Exception as e:
+                    logger.debug("Failed to position Edge as side panel: %s", e)
+
     def _bring_window_to_front_win32(self) -> bool:
         """Bring YakuLingo window to front using Windows API.
 
@@ -2742,9 +2752,17 @@ class YakuLingoApp:
                 )
                 if success:
                     logger.info("Copilot reconnected successfully (attempt %d)", attempt + 1)
-                    # Ensure Edge is minimized after reconnection
-                    # Playwright operations during reconnect may bring Edge to foreground
-                    await asyncio.to_thread(self.copilot._minimize_edge_window, None)
+                    # Handle Edge window based on browser_display_mode
+                    # Playwright operations during reconnect may change Edge window state
+                    if self._settings and self._settings.browser_display_mode == "side_panel":
+                        # In side_panel mode, position Edge as side panel instead of minimizing
+                        await asyncio.to_thread(self.copilot._position_edge_as_side_panel, None)
+                        logger.debug("Edge positioned as side panel after reconnection")
+                    elif self._settings and self._settings.browser_display_mode == "minimized":
+                        # In minimized mode, ensure Edge is minimized
+                        await asyncio.to_thread(self.copilot._minimize_edge_window, None)
+                        logger.debug("Edge minimized after reconnection")
+                    # In foreground mode, do nothing (leave Edge as is)
                     # Update connection state
                     self.state.connection_state = ConnectionState.CONNECTED
                     self.state.copilot_ready = True

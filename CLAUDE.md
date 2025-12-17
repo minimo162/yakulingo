@@ -115,7 +115,7 @@ YakuLingo/
 │   ├── conftest.py                # Shared fixtures and mocks
 │   └── test_*.py                  # Unit tests for each module
 ├── prompts/                       # Translation prompt templates (18 files, all in Japanese)
-│   ├── translation_rules.txt      # 共通翻訳ルール（数値表記・記号変換ルール）- ユーザー編集可能
+│   ├── translation_rules.txt      # 共通翻訳ルール（数値表記・記号変換ルール）- UI編集可、翻訳時自動再読込
 │   ├── detect_language.txt        # Language detection (currently unused, local detection preferred)
 │   ├── copilot_injection_review.md # Prompt injection risk review
 │   ├── file_translate_to_en_{standard|concise|minimal}.txt  # File translation (JP→EN)
@@ -1029,12 +1029,14 @@ prompt = builder.build_text_translation_prompt(
     translation_style="concise"
 )
 
-# 共通ルールの取得・再読み込み
+# 共通ルールの取得（翻訳時は自動で再読み込みされる）
 rules = builder.get_translation_rules()
-builder.reload_translation_rules()
 ```
 
 **translation_rules.txt の構造:**
+
+UIの📏アイコン（用語集編集ボタンの隣）からデフォルトエディタで編集可能。
+編集後は保存するだけで、次の翻訳時に自動で反映される。
 
 ```
 ## 翻訳ルール（Translation Rules）

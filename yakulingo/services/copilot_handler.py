@@ -4117,33 +4117,41 @@ class CopilotHandler:
                 fill_success = False
                 fill_method = None  # Track which method succeeded
 
-                # Method 1: Use Playwright's fill() - handles newlines correctly for contenteditable
-                # After fill(), dispatch input event to notify the app of the text change.
-                # This is required for React/Vue apps that don't detect direct DOM changes.
+                # Method 1: Use JS to set text directly (faster than fill())
+                # Set innerText and dispatch events in a single evaluate() call
+                # This avoids Playwright's fill() overhead (~0.4s -> ~0.05s)
                 method1_error = None
                 try:
-                    # Detailed timing for fill() investigation
                     t0 = time.time()
-                    input_elem.fill(message)
-                    t1 = time.time()
-                    # Dispatch input event to trigger framework reactivity
-                    input_elem.evaluate('''el => {
+                    # Use innerText for contenteditable span - preserves newlines
+                    result = input_elem.evaluate('''(el, text) => {
+                        // Focus first to ensure element is ready
+                        el.focus();
+
+                        // Clear and set text
+                        el.innerText = text;
+
+                        // Move cursor to end
+                        const selection = window.getSelection();
+                        const range = document.createRange();
+                        range.selectNodeContents(el);
+                        range.collapse(false);
+                        selection.removeAllRanges();
+                        selection.addRange(range);
+
+                        // Dispatch events to trigger React/framework reactivity
                         el.dispatchEvent(new Event('input', { bubbles: true }));
                         el.dispatchEvent(new Event('change', { bubbles: true }));
-                    }''')
-                    t2 = time.time()
-                    # Reduced from 0.1s - fill() already waits for actionability
-                    time.sleep(0.02)
-                    t3 = time.time()
-                    content = input_elem.inner_text()
-                    t4 = time.time()
-                    logger.debug("[FILL_DETAIL] fill=%.3fs, dispatchEvent=%.3fs, sleep=%.3fs, inner_text=%.3fs",
-                                 t1 - t0, t2 - t1, t3 - t2, t4 - t3)
-                    fill_success = len(content.strip()) > 0
+
+                        return el.innerText.trim().length;
+                    }''', message)
+                    t1 = time.time()
+                    logger.debug("[FILL_DETAIL] js_set_text=%.3fs, content_length=%d", t1 - t0, result)
+                    fill_success = result > 0
                     if fill_success:
                         fill_method = 1
                     else:
-                        method1_error = "fill succeeded but content is empty"
+                        method1_error = "js_set_text succeeded but content is empty"
                 except Exception as e:
                     method1_error = str(e)
                     fill_success = False
@@ -4200,7 +4208,7 @@ class CopilotHandler:
 
                 # Log timing and method used
                 method_names = {
-                    1: "fill",
+                    1: "js_set_text",
                     2: "execCommand insertText",
                     3: "type line by line",
                 }
@@ -4212,9 +4220,7 @@ class CopilotHandler:
                     logger.warning("Input field is empty after fill - Copilot may need attention")
                     raise RuntimeError("Copilotに入力できませんでした。Edgeブラウザを確認してください。")
 
-                # Wait for Copilot to process input and update internal React state
-                # Reduced from 0.1s - button loop below handles stabilization
-                time.sleep(0.02)
+                # Note: No sleep needed here - button loop below handles React state stabilization
 
                 # Wait for send button to become visible AND in viewport
                 send_button_start = time.time()
@@ -4309,9 +4315,9 @@ class CopilotHandler:
                     logger.debug("[SEND_WARMUP] Result: %s (eval=%.3fs)", warmup_result, warmup_eval_time)
 
                     # Wait for UI to stabilize after scroll
-                    # Reduced from 0.3s - scrollIntoView uses 'instant' behavior
-                    time.sleep(0.05)
-                    logger.debug("[SEND_WARMUP] Total: %.3fs (eval=%.3fs, sleep=0.050s)",
+                    # Reduced from 0.05s - scrollIntoView with 'instant' needs minimal wait
+                    time.sleep(0.02)
+                    logger.debug("[SEND_WARMUP] Total: %.3fs (eval=%.3fs, sleep=0.020s)",
                                 time.time() - warmup_start, warmup_eval_time)
 
                 except Exception as warmup_err:

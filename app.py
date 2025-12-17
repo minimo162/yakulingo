@@ -92,6 +92,16 @@ def setup_logging():
         child_logger.setLevel(logging.DEBUG)
         child_logger.propagate = True  # Ensure logs propagate to root
 
+    # Suppress verbose logging from third-party libraries
+    # python_multipart: Logs every chunk during file upload (very noisy)
+    # uvicorn/starlette: Internal web server logs
+    # asyncio: Event loop debug logs
+    for name in ['python_multipart', 'python_multipart.multipart', 'multipart',
+                 'uvicorn', 'uvicorn.error', 'uvicorn.access',
+                 'starlette', 'httpcore', 'httpx',
+                 'asyncio', 'concurrent']:
+        logging.getLogger(name).setLevel(logging.WARNING)
+
     # Log startup message
     logger = logging.getLogger(__name__)
     logger.info("=" * 60)

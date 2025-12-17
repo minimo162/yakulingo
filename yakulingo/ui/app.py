@@ -869,15 +869,16 @@ class YakuLingoApp:
                 logger.debug("Windows API restore failed: %s", e)
 
     def _reposition_windows_for_side_panel(self) -> bool:
-        """Reposition app window for side_panel mode using pre-calculated position.
+        """Reposition app window for side_panel mode using consistent position calculation.
 
         This is called after UI is displayed to fix window positions.
         pywebview places the app at screen center, which may cause overlap
         with the side panel. This method moves only the app window to the
-        pre-calculated position (Edge is already in the correct position).
+        calculated position (Edge is already in the correct position).
 
-        Using the pre-calculated position avoids recalculation and reduces
-        window movement (Edge doesn't move at all), minimizing visual flickering.
+        Uses _calculate_app_position_for_side_panel() for consistent position
+        calculation with _position_window_early_sync(), preventing duplicate
+        repositioning when early positioning has already placed the window correctly.
 
         If the window is already at the correct position (within tolerance),
         SetWindowPos() is skipped to avoid unnecessary visual flickering.
@@ -894,15 +895,22 @@ class YakuLingoApp:
             if not settings or settings.browser_display_mode != "side_panel":
                 return False
 
-            # Check if we have a pre-calculated app position from early connection
-            if not self._copilot or not self._copilot._expected_app_position:
-                # Fall back to full repositioning if no pre-calculated position
-                if self._copilot and self._copilot._connected:
+            # Calculate target position using the same function as _position_window_early_sync()
+            # This ensures consistent positioning and avoids duplicate repositioning
+            target_position = _calculate_app_position_for_side_panel(
+                self._window_size[0], self._window_size[1]
+            )
+            if not target_position:
+                # Fall back to Copilot's position if calculation fails
+                if self._copilot and self._copilot._expected_app_position:
+                    app_x, app_y, app_width, app_height = self._copilot._expected_app_position
+                elif self._copilot and self._copilot._connected:
                     return self._copilot._position_edge_as_side_panel()
-                return False
-
-            # Use pre-calculated position (app only, Edge is already positioned)
-            app_x, app_y, app_width, app_height = self._copilot._expected_app_position
+                else:
+                    return False
+            else:
+                app_x, app_y = target_position
+                app_width, app_height = self._window_size
 
             import ctypes
             from ctypes import wintypes
@@ -4047,13 +4055,11 @@ def run_app(
 
             user32 = ctypes.WinDLL('user32', use_last_error=True)
 
-            # Poll for YakuLingo window with exponential backoff
-            # Starts at 25ms, doubles up to 200ms max for efficient CPU usage
+            # Poll for YakuLingo window with short fixed interval
+            # Use aggressive polling (5ms) to minimize time window is at wrong position
             # Total max wait: 6s is sufficient (typical detection < 3s)
             MAX_WAIT_MS = 6000
-            POLL_INTERVAL_INITIAL_MS = 25
-            POLL_INTERVAL_MAX_MS = 200
-            poll_interval_ms = POLL_INTERVAL_INITIAL_MS
+            POLL_INTERVAL_MS = 5  # Fixed 5ms interval for fastest detection
             waited_ms = 0
 
             class RECT(ctypes.Structure):
@@ -4130,11 +4136,8 @@ def run_app(
                                    settings.browser_display_mode, waited_ms)
                     return
 
-                time.sleep(poll_interval_ms / 1000)
-                waited_ms += poll_interval_ms
-                # Exponential backoff: double interval after first second, cap at max
-                if waited_ms > 1000:
-                    poll_interval_ms = min(poll_interval_ms * 2, POLL_INTERVAL_MAX_MS)
+                time.sleep(POLL_INTERVAL_MS / 1000)
+                waited_ms += POLL_INTERVAL_MS
 
             logger.debug("[EARLY_POSITION] Window not found within %dms", MAX_WAIT_MS)
 
@@ -4383,24 +4386,10 @@ document.fonts.ready.then(function() {
     # window_size is already determined at the start of run_app()
     logger.info("[TIMING] Before ui.run(): %.2fs", time.perf_counter() - _t0)
 
-    # Set initial window position for side_panel mode (avoids post-creation repositioning)
-    # This must be done before ui.run() to pass position to pywebview
-    if native and run_window_size is not None:
-        try:
-            # Load settings to check browser_display_mode
-            from yakulingo.config.settings import AppSettings
-            settings_path = Path.home() / ".yakulingo" / "settings.json"
-            settings = AppSettings.load(settings_path)
-            if settings.browser_display_mode == "side_panel":
-                app_position = _calculate_app_position_for_side_panel(
-                    run_window_size[0], run_window_size[1]
-                )
-                if app_position:
-                    nicegui_app.native.window_args['x'] = app_position[0]
-                    nicegui_app.native.window_args['y'] = app_position[1]
-                    logger.debug("Set initial window position: (%d, %d)", app_position[0], app_position[1])
-        except Exception as e:
-            logger.debug("Failed to set initial window position: %s", e)
+    # NOTE: window_args['x'] and window_args['y'] are NOT set here because
+    # NiceGUI uses multiprocessing to spawn pywebview, so these args don't
+    # get passed to the child process. Instead, _position_window_early_sync()
+    # polls for the window and moves it immediately after creation.
 
     # Use the same icon for favicon (browser tab icon)
     favicon_path = Path(__file__).parent / 'yakulingo.ico'

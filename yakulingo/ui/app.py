@@ -595,7 +595,7 @@ class YakuLingoApp:
             output_language = "jp"
 
         # Get translation style
-        style = self.settings.get("text_translation_style", "concise")
+        style = self.settings.text_translation_style
 
         # Build prompt for batch translation
         # Use numbered format to preserve cell order

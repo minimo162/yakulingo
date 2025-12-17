@@ -3773,6 +3773,15 @@ def run_app(
     if multiprocessing.current_process().name != 'MainProcess':
         return
 
+    # Start Playwright pre-initialization BEFORE NiceGUI import
+    # This allows Playwright init (~2.8s) to run in parallel with NiceGUI import (~2.2s)
+    # Expected savings: ~2 seconds
+    try:
+        from yakulingo.services.copilot_handler import pre_initialize_playwright
+        pre_initialize_playwright()
+    except Exception as e:
+        logger.debug("Failed to start Playwright pre-initialization: %s", e)
+
     # Import NiceGUI (deferred from module level for ~6s faster startup)
     global nicegui, ui, nicegui_app, nicegui_Client
     _t_nicegui_import = time.perf_counter()

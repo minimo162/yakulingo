@@ -448,6 +448,95 @@ class PlaywrightThreadExecutor:
 # Global singleton instance for Playwright thread execution
 _playwright_executor = PlaywrightThreadExecutor()
 
+# Early Playwright initialization cache
+# This allows Playwright to be initialized in parallel with NiceGUI import
+_pre_initialized_playwright = None
+_pre_init_lock = threading.Lock()
+_pre_init_event = threading.Event()
+_pre_init_error = None
+
+
+def _pre_init_playwright_impl():
+    """Implementation that runs in the executor thread."""
+    global _pre_initialized_playwright, _pre_init_error
+    try:
+        import time as _time
+        _t_start = _time.perf_counter()
+        _, sync_playwright = _get_playwright()
+        logger.debug("[TIMING] pre_init _get_playwright(): %.2fs", _time.perf_counter() - _t_start)
+        _t_init = _time.perf_counter()
+        _pre_initialized_playwright = sync_playwright().start()
+        logger.debug("[TIMING] pre_init sync_playwright().start(): %.2fs", _time.perf_counter() - _t_init)
+        logger.info("[TIMING] Playwright pre-initialization completed: %.2fs", _time.perf_counter() - _t_start)
+        return True
+    except Exception as e:
+        logger.warning("Playwright pre-initialization failed: %s", e)
+        _pre_init_error = e
+        return False
+    finally:
+        _pre_init_event.set()
+
+
+def _pre_init_thread_wrapper():
+    """Thread wrapper that runs pre-initialization via executor."""
+    try:
+        _playwright_executor.execute(_pre_init_playwright_impl, timeout=60)
+    except Exception as e:
+        global _pre_init_error
+        logger.warning("Playwright pre-initialization failed: %s", e)
+        _pre_init_error = e
+        _pre_init_event.set()
+
+
+def pre_initialize_playwright():
+    """Start Playwright initialization early, before NiceGUI import.
+
+    This function starts Playwright initialization in a background thread
+    so it can run in parallel with NiceGUI import (~2s savings).
+
+    The initialization runs in the PlaywrightThreadExecutor's worker thread
+    to satisfy Playwright's greenlet constraint (must use same thread for all ops).
+
+    Call this BEFORE importing NiceGUI for best effect.
+    """
+    global _pre_init_error
+    with _pre_init_lock:
+        if _pre_initialized_playwright is not None or _pre_init_event.is_set():
+            return  # Already initialized or in progress
+
+        _pre_init_error = None
+
+        # Start initialization in a separate thread that uses the executor
+        # This allows pre_initialize_playwright() to return immediately
+        try:
+            init_thread = threading.Thread(
+                target=_pre_init_thread_wrapper,
+                daemon=True,
+                name="playwright-preinit"
+            )
+            init_thread.start()
+            logger.info("[TIMING] Playwright pre-initialization started (background thread)")
+        except Exception as e:
+            logger.warning("Failed to start Playwright pre-initialization: %s", e)
+            _pre_init_error = e
+            _pre_init_event.set()
+
+
+def get_pre_initialized_playwright(timeout: float = 30.0):
+    """Get the pre-initialized Playwright instance, waiting if necessary.
+
+    Args:
+        timeout: Maximum time to wait for initialization to complete
+
+    Returns:
+        Pre-initialized Playwright instance, or None if not available
+    """
+    if _pre_init_event.wait(timeout=timeout):
+        if _pre_init_error is not None:
+            return None
+        return _pre_initialized_playwright
+    return None
+
 
 class CopilotHandler:
     """
@@ -1116,6 +1205,15 @@ class CopilotHandler:
             # (greenlet limitation), so only Edge startup can be parallelized
             need_start_edge = not self._is_port_in_use()
 
+            # Try to use pre-initialized Playwright (started during NiceGUI import)
+            _t_pw_start = _time.perf_counter()
+            pre_init_pw = get_pre_initialized_playwright(timeout=0.1)  # Quick check
+            if pre_init_pw is not None:
+                self._playwright = pre_init_pw
+                logger.info("[TIMING] Using pre-initialized Playwright (saved ~2.8s)")
+            else:
+                pre_init_pw = None  # Will initialize below
+
             if need_start_edge:
                 # Start Edge in background thread while initializing Playwright in current thread
                 _t_parallel_start = _time.perf_counter()
@@ -1129,15 +1227,23 @@ class CopilotHandler:
                 with ThreadPoolExecutor(max_workers=1, thread_name_prefix="edge_start") as executor:
                     edge_future = executor.submit(_start_edge_background)
 
-                    # Initialize Playwright in current thread while Edge starts
-                    logger.info("Connecting to browser...")
-                    _t_pw_start = _time.perf_counter()
-                    _, sync_playwright = _get_playwright()
-                    logger.debug("[TIMING] _get_playwright(): %.2fs", _time.perf_counter() - _t_pw_start)
-                    _t_pw_init = _time.perf_counter()
-                    self._playwright = sync_playwright().start()
-                    logger.debug("[TIMING] sync_playwright().start() (parallel with Edge): %.2fs",
-                                 _time.perf_counter() - _t_pw_init)
+                    # Initialize Playwright if not pre-initialized
+                    if self._playwright is None:
+                        # Wait for pre-initialization if in progress
+                        pre_init_pw = get_pre_initialized_playwright(timeout=5.0)
+                        if pre_init_pw is not None:
+                            self._playwright = pre_init_pw
+                            logger.info("[TIMING] Using pre-initialized Playwright (waited): %.2fs",
+                                       _time.perf_counter() - _t_pw_start)
+                        else:
+                            # Fallback: initialize Playwright now
+                            logger.info("Connecting to browser...")
+                            _, sync_playwright = _get_playwright()
+                            logger.debug("[TIMING] _get_playwright(): %.2fs", _time.perf_counter() - _t_pw_start)
+                            _t_pw_init = _time.perf_counter()
+                            self._playwright = sync_playwright().start()
+                            logger.debug("[TIMING] sync_playwright().start() (parallel with Edge): %.2fs",
+                                         _time.perf_counter() - _t_pw_init)
 
                     # Wait for Edge startup to complete
                     edge_started = edge_future.result()
@@ -1154,7 +1260,7 @@ class CopilotHandler:
                 logger.debug("[TIMING] Parallel Edge+Playwright init: %.2fs",
                              _time.perf_counter() - _t_parallel_start)
             else:
-                # Edge already running, just initialize Playwright
+                # Edge already running, just initialize Playwright if needed
                 # Ensure profile_dir is set even when connecting to existing Edge
                 if not self.profile_dir:
                     local_app_data = os.environ.get("LOCALAPPDATA", "")
@@ -1165,13 +1271,21 @@ class CopilotHandler:
                     self.profile_dir.mkdir(parents=True, exist_ok=True)
                     logger.debug("Set profile_dir for existing Edge: %s", self.profile_dir)
 
-                logger.info("Connecting to browser...")
-                _t_pw_start = _time.perf_counter()
-                _, sync_playwright = _get_playwright()
-                logger.debug("[TIMING] _get_playwright(): %.2fs", _time.perf_counter() - _t_pw_start)
-                _t_pw_init = _time.perf_counter()
-                self._playwright = sync_playwright().start()
-                logger.debug("[TIMING] sync_playwright().start(): %.2fs", _time.perf_counter() - _t_pw_init)
+                if self._playwright is None:
+                    # Wait for pre-initialization if in progress
+                    pre_init_pw = get_pre_initialized_playwright(timeout=5.0)
+                    if pre_init_pw is not None:
+                        self._playwright = pre_init_pw
+                        logger.info("[TIMING] Using pre-initialized Playwright (waited): %.2fs",
+                                   _time.perf_counter() - _t_pw_start)
+                    else:
+                        # Fallback: initialize Playwright now
+                        logger.info("Connecting to browser...")
+                        _, sync_playwright = _get_playwright()
+                        logger.debug("[TIMING] _get_playwright(): %.2fs", _time.perf_counter() - _t_pw_start)
+                        _t_pw_init = _time.perf_counter()
+                        self._playwright = sync_playwright().start()
+                        logger.debug("[TIMING] sync_playwright().start(): %.2fs", _time.perf_counter() - _t_pw_init)
 
             # Debug: Check EdgeProfile directory contents for login persistence
             self._log_profile_directory_status()

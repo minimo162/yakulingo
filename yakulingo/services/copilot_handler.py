@@ -4118,18 +4118,27 @@ class CopilotHandler:
                 fill_method = None  # Track which method succeeded
 
                 # Method 1: Use JS to set text directly (faster than fill())
-                # Set innerText and dispatch events in a single evaluate() call
+                # Set innerHTML with proper escaping and newline conversion
                 # This avoids Playwright's fill() overhead (~0.4s -> ~0.05s)
                 method1_error = None
                 try:
                     t0 = time.time()
-                    # Use innerText for contenteditable span - preserves newlines
+                    # For contenteditable, convert newlines to <br> tags
                     result = input_elem.evaluate('''(el, text) => {
                         // Focus first to ensure element is ready
                         el.focus();
 
-                        // Clear and set text
-                        el.innerText = text;
+                        // Escape HTML entities to prevent XSS and preserve special chars
+                        const escaped = text
+                            .replace(/&/g, '&amp;')
+                            .replace(/</g, '&lt;')
+                            .replace(/>/g, '&gt;')
+                            .replace(/"/g, '&quot;')
+                            .replace(/'/g, '&#039;');
+
+                        // Convert newlines to <br> for contenteditable
+                        const html = escaped.replace(/\\n/g, '<br>');
+                        el.innerHTML = html;
 
                         // Move cursor to end
                         const selection = window.getSelection();

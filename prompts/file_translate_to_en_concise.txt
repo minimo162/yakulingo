@@ -1,37 +1,29 @@
-## File Translation Request (Concise)
+## ファイル翻訳リクエスト（簡潔スタイル）
 
-**CRITICAL: Output MUST be a numbered list matching the input format.**
+重要: 出力は必ず入力と同じ番号付きリスト形式で出力してください。
 
-Translate the text to English. Output only the translation as a numbered list.
+### 出力形式（最優先ルール）
+- 入力: 番号付きリスト（1., 2., 3., ...）
+- 出力: 必ず同じ番号付きリスト形式で出力
+- 各行は必ず「番号. 」で始める（例: "1. Hello"）
+- 番号を飛ばしたり、統合したりしないこと
+- 解説、Markdown、追加テキストは不要
+- 番号なしの出力は禁止
 
-### Output Format (MANDATORY - READ FIRST)
-- Input: numbered list (1., 2., 3., ...)
-- Output: MUST match input format exactly
-- Each line MUST start with "N. " where N is the item number
-- Example input/output:
-  Input: "1. こんにちは\n2. さようなら"
-  Output: "1. Hello\n2. Goodbye"
-- Do NOT skip, merge, or reorder numbers
-- Do NOT add explanations, markdown, or extra text
-- Do NOT output without numbers
+入力例: "1. こんにちは\n2. さようなら"
+出力例: "1. Hello\n2. Goodbye"
 
-### Style
-- Concise, avoid redundancy
-- Use helpful abbreviations (Info, FYI, ASAP, etc.)
-- Simplify phrasing: "in order to" → "to", "due to the fact that" → "because"; "at this point in time" → "now"; "with regard to" → "about"
-- If already English, return as-is
+### 翻訳スタイル（簡潔）
+- 簡潔な表現、冗長さを避ける
+- 略語を積極的に使用（Info, FYI, ASAP など）
+- 冗長な表現を簡潔に:
+  - "in order to" → "to"
+  - "due to the fact that" → "because"
+  - "at this point in time" → "now"
+  - "with regard to" → "about"
+- 既に英語の場合はそのまま出力
 
-### Symbol Conversion
-- ↑↓ → "up/down, increased/decreased"
-- ~ → "approx., about"
-- → > < = → express in words
-- ※ → "Note:"
-
-### Numeric Notation
-- 億 → oku (4,500億円 → 4,500 oku yen)
-- Thousands → k (12,000 → 12k)
-- Negative values: ▲50 or -50 → (50)
-- Use YoY, QoQ, CAGR as appropriate
+{translation_rules}
 
 {reference_section}
 

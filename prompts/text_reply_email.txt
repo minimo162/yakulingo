@@ -1,27 +1,29 @@
-## Reply Email Request
+## 返信メール作成リクエスト
 
-Create a polished, ready-to-send reply that matches the user's intent.
+ユーザーの意図に合った、そのまま送信できる返信メールを作成してください。
 
-### Inputs
-- Original email received: {input_text}
-- Japanese translation (reference): {translation}
-- User's reply intent: {reply_intent}
+### 入力情報
+- 受信したメール原文: {input_text}
+- 日本語翻訳（参考）: {translation}
+- ユーザーの返信意図: {reply_intent}
 
-### Reply Composition Steps
-- Read the original email to keep the same language and context (translation is only a reference).
-- Start with a courteous greeting that fits the relationship and subject.
-- Address the user's intent clearly (answer questions, acknowledge receipt, propose times, etc.).
-- Highlight key actions or decisions in concise sentences or short bullets.
-- Close with an appreciative, professional sign-off and keep the tone consistent throughout.
-- Avoid filler phrases and keep the reply concise and natural for a native speaker.
+### 返信作成の手順
+- 原文のメールを読んで、同じ言語とコンテキストを維持する（翻訳は参考のみ）
+- 関係性と件名にふさわしい丁寧な挨拶から始める
+- ユーザーの意図を明確に伝える（質問への回答、受領確認、日時の提案など）
+- 重要なアクションや決定事項を簡潔な文または短い箇条書きで強調する
+- 感謝を込めたプロフェッショナルな結びで締め、全体のトーンを一貫させる
+- 無駄なフレーズを避け、ネイティブスピーカーにとって自然な簡潔な返信にする
 
-### Output Format
-訳文: ready-to-send reply text
+### 出力形式
+訳文: そのまま送信できる返信文
 
 解説:
-- 返信のポイント: main message conveyed
-- トーンについて: chosen politeness level and why
-- 使用場面: suitable situations
-- カスタマイズのヒント: parts that can be adjusted
+- 返信のポイント: 伝えた主なメッセージ
+- トーンについて: 選んだ丁寧さのレベルとその理由
+- 使用場面: 適している状況
+- カスタマイズのヒント: 調整可能な部分
+
+解説は日本語で書いてください。
 
 {reference_section}

@@ -1,34 +1,30 @@
-## Translation Request (Concise)
+## テキスト翻訳リクエスト（簡潔スタイル）
 
-Translate the Japanese text into English.
+日本語を英語に翻訳してください。
 
-### Style
-- Concise wording, avoid redundancy
-- Use abbreviations where helpful (Info, FYI, ASAP, etc.)
-- Simplify phrases: "in order to" → "to", "due to the fact that" → "because"
+### 翻訳スタイル（簡潔）
+- 簡潔な表現、冗長さを避ける
+- 略語を積極的に使用（Info, FYI, ASAP など）
+- 冗長な表現を簡潔に:
+  - "in order to" → "to"
+  - "due to the fact that" → "because"
+  - "at this point in time" → "now"
+  - "with regard to" → "about"
 
-### Symbol Conversion
-- ↑↓ → "up/down, increased/decreased"
-- ~ → "approx., about"
-- → > < = → express in words
-- ※ → "Note:"
+{translation_rules}
 
-### Numeric Notation
-- 億 → oku, thousands → k, negative → ()
+### 構造保持
+- 原文の改行・タブ・段落構造をそのまま維持する
 
-### Structure
-- Keep original line breaks and tabs
-- Preserve paragraph structure exactly
-
-### Output Format
-訳文: English translation
+### 出力形式
+訳文: 英語翻訳
 
 解説:
-- この表現を選んだ理由 (1行)
-- 言い換えのポイント (1行)
-- 使用場面・注意点 (1行)
+- この表現を選んだ理由（1行）
+- 言い換えのポイント（1行）
+- 使用場面・注意点（1行）
 
-解説は日本語で書いてください。
+解説は必ず日本語で書いてください。
 
 {reference_section}
 

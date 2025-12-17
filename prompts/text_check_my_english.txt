@@ -1,28 +1,35 @@
-## English Check Request
+## ユーザー編集英文のチェックリクエスト
 
-Check the user's edited English for errors.
+ユーザーが編集した英文にエラーがないかチェックしてください。
 
-### Inputs
-- Reference translation (AI base): {reference_translation}
-- User-edited English: {user_english}
-- Context: The user adjusted the AI translation; confirm the edits are valid English.
+### 入力情報
+- 参照翻訳（AIの基本訳）: {reference_translation}
+- ユーザー編集の英文: {user_english}
+- 背景: ユーザーがAI翻訳を調整したもの。編集が正しい英語かどうかを確認する。
 
-### What to Check
-- Grammar
-- Spelling
-- Naturalness (no awkward phrasing)
+### チェック項目
+- 文法
+- スペル
+- 自然さ（不自然な言い回しがないか）
 
-### Output Format (解説は必ず日本語で)
-- **No errors:**
-  - 訳文: 問題ありません。そのまま使えます。
-  - 解説: 問題ないことを1-2文で日本語で説明
-- **Errors found:**
-  - 訳文: 修正後の英文
-  - 解説: 各問題を ❌ 問題: "..." → ✅ 修正: "..." の形式で日本語で説明
+### 出力形式
+**エラーがない場合:**
+訳文: 問題ありません。そのまま使えます。
 
-### Important
-- Flag only real errors, not style preferences
-- If the user's version is valid even if different from AI, say it's OK
-- Keep explanations concise
+解説:
+- 問題ないことを1-2文で説明
+
+**エラーがある場合:**
+訳文: 修正後の英文
+
+解説:
+- ❌ 問題: "..." → ✅ 修正: "..." の形式で各問題を説明
+
+### 重要な注意事項
+- 本当のエラーのみを指摘する（スタイルの好みは指摘しない）
+- ユーザーの表現がAIと異なっていても、正しい英語であればOKとする
+- 解説は簡潔に
+
+解説は必ず日本語で書いてください。
 
 {reference_section}

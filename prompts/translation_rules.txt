@@ -1,0 +1,75 @@
+## 翻訳ルール（Translation Rules）
+
+このファイルは、翻訳時に適用される共通ルールです。
+設定画面から編集できます。
+
+---
+
+### 数値表記ルール（日本語 → 英語）
+
+重要: 数字は絶対に変換しない。単位のみを置き換える。
+
+| 日本語 | 英語 | 変換例 |
+|--------|------|--------|
+| 億 | oku | 4,500億円 → 4,500 oku yen |
+| 千 | k | 12,000 → 12k |
+| ▲ (マイナス) | () | ▲50 → (50) |
+| 前年比 | YoY | 前年比10%増 → 10% YoY increase |
+| 前期比 | QoQ | 前期比5%減 → 5% QoQ decrease |
+| 年平均成長率 | CAGR | 年平均成長率3% → CAGR 3% |
+
+注意:
+- 「4,500億円」は必ず「4,500 oku yen」に翻訳する
+- 「450 billion」や「4.5 trillion」には絶対に変換しない
+- 数字の桁は絶対に変えない（4,500は4,500のまま）
+
+---
+
+### 数値表記ルール（英語 → 日本語）
+
+| 英語 | 日本語 | 変換例 |
+|------|--------|--------|
+| oku | 億 | 4,500 oku → 4,500億 |
+| k | 千または000 | 12k → 12,000 |
+| () | ▲ | (50) → ▲50 |
+
+---
+
+### 記号変換ルール（英訳時）
+
+以下の記号は英語圏でビジネス文書に不適切です。
+必ず英語で表現してください。
+
+禁止記号と置き換え:
+- ↑ → increased, up, higher（使用禁止）
+- ↓ → decreased, down, lower（使用禁止）
+- ~ → approximately, about, around（使用禁止）
+- → → leads to, results in, becomes（使用禁止）
+- > → greater than, more than, exceeds（使用禁止）
+- < → less than, below, under（使用禁止）
+- = → equals, is, amounts to（使用禁止）
+- ※ → Note:, *（使用禁止）
+- × → times, multiplied by（使用禁止）
+- ○ → yes, applicable, available（使用禁止）
+- ☓ → no, not applicable, unavailable（使用禁止）
+
+例:
+- 「3か月以上」→ "3 months or more"（×  > 3 months）
+- 「売上↑」→ "Sales increased"（× Sales ↑）
+- 「約100万円」→ "approximately 1 million yen"（× ~1 million yen）
+
+許可される記号:
+- & (and の代わり)
+- % (パーセント)
+- / (または、per)
+- + (プラス、追加)
+- # (番号)
+- @ (アットマーク)
+
+---
+
+### 構造保持ルール
+
+- 原文の改行・タブ・段落構造をそのまま維持する
+- 箇条書きの形式を保持する
+- 表形式のレイアウトを崩さない

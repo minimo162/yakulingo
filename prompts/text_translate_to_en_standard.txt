@@ -1,34 +1,26 @@
-## Translation Request (Standard)
+## テキスト翻訳リクエスト（標準スタイル）
 
-Translate the Japanese text into English.
+日本語を英語に翻訳してください。
 
-### Style
-- Natural, readable English
-- Use articles (a/an/the) appropriately
-- Only common abbreviations (YoY, QoQ, CAGR)
+### 翻訳スタイル（標準）
+- 自然で読みやすい英語
+- 冠詞（a/an/the）を適切に使用
+- 略語は一般的なもののみ（YoY, QoQ, CAGR）
 
-### Symbol Conversion
-- ↑↓ → "up/down, increased/decreased"
-- ~ → "approx., about"
-- → > < = → express in words
-- ※ → "Note:"
+{translation_rules}
 
-### Numeric Notation
-- 億 → oku, thousands → k, negative → ()
+### 構造保持
+- 原文の改行・タブ・段落構造をそのまま維持する
 
-### Structure
-- Keep original line breaks and tabs
-- Preserve paragraph structure exactly
-
-### Output Format
-訳文: English translation
+### 出力形式
+訳文: 英語翻訳
 
 解説:
-- この表現を選んだ理由 (1行)
-- 言い換えのポイント (1行)
-- 使用場面・注意点 (1行)
+- この表現を選んだ理由（1行）
+- 言い換えのポイント（1行）
+- 使用場面・注意点（1行）
 
-解説は日本語で書いてください。
+解説は必ず日本語で書いてください。
 
 {reference_section}
 

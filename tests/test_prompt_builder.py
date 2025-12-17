@@ -41,7 +41,8 @@ class TestPromptBuilder:
         prompt = builder.build("こんにちは")
 
         assert "こんにちは" in prompt
-        assert "Input" in prompt
+        # Input text appears after "---" separator
+        assert "---" in prompt
 
     def test_build_for_english_output(self):
         """Build prompt for English output (JP→EN)"""
@@ -299,7 +300,7 @@ class TestPromptBuilderTemplateLoading:
             prompt = builder.build("test", output_language="en")
 
             # Should use default template
-            assert "Role Definition" in prompt
+            assert "ファイル翻訳リクエスト" in prompt
             assert "英語" in prompt
 
     def test_fallback_to_default_when_to_jp_missing(self):
@@ -312,7 +313,7 @@ class TestPromptBuilderTemplateLoading:
             prompt = builder.build("test", output_language="jp")
 
             # Should use default template
-            assert "Role Definition" in prompt
+            assert "ファイル翻訳リクエスト" in prompt
             assert "日本語" in prompt
 
     def test_mixed_custom_and_default_templates(self):
@@ -322,7 +323,7 @@ class TestPromptBuilderTemplateLoading:
 
             # Only create to_en template
             to_en_file = prompts_dir / "file_translate_to_en.txt"
-            to_en_file.write_text("Custom EN: {input_text}\n{reference_section}")
+            to_en_file.write_text("Custom EN: {input_text}\n{reference_section}\n{translation_rules}")
 
             builder = PromptBuilder(prompts_dir=prompts_dir)
 
@@ -332,7 +333,7 @@ class TestPromptBuilderTemplateLoading:
 
             # JP output uses default
             prompt_jp = builder.build("test", output_language="jp")
-            assert "Role Definition" in prompt_jp
+            assert "ファイル翻訳リクエスト" in prompt_jp
             assert "日本語" in prompt_jp
 
 
@@ -350,17 +351,16 @@ class TestDefaultTemplates:
         assert "{reference_section}" in DEFAULT_TO_JP_TEMPLATE
 
     def test_to_en_template_contains_rules(self):
-        """TO_EN template contains translation rules"""
-        assert "出力形式厳守" in DEFAULT_TO_EN_TEMPLATE
-        assert "自然な翻訳" in DEFAULT_TO_EN_TEMPLATE
-        assert "数値表記" in DEFAULT_TO_EN_TEMPLATE
-        assert "oku" in DEFAULT_TO_EN_TEMPLATE  # Number notation rule
+        """TO_EN template contains translation rules placeholders and structure"""
+        assert "出力形式（最優先ルール）" in DEFAULT_TO_EN_TEMPLATE
+        assert "翻訳スタイル" in DEFAULT_TO_EN_TEMPLATE
+        assert "{translation_rules}" in DEFAULT_TO_EN_TEMPLATE  # Placeholder for common rules
 
     def test_to_jp_template_contains_rules(self):
-        """TO_JP template contains translation rules"""
-        assert "出力形式厳守" in DEFAULT_TO_JP_TEMPLATE
-        assert "自然な翻訳" in DEFAULT_TO_JP_TEMPLATE
-        assert "数値表記" in DEFAULT_TO_JP_TEMPLATE
+        """TO_JP template contains translation rules and structure"""
+        assert "出力形式（最優先ルール）" in DEFAULT_TO_JP_TEMPLATE
+        assert "翻訳ガイドライン" in DEFAULT_TO_JP_TEMPLATE
+        assert "数値表記ルール" in DEFAULT_TO_JP_TEMPLATE
         assert "億" in DEFAULT_TO_JP_TEMPLATE  # Number notation rule
 
     def test_to_en_template_targets_english(self):
@@ -386,7 +386,7 @@ class TestPromptBuilderEdgeCases:
         builder = PromptBuilder()
         prompt = builder.build("")
 
-        assert "Input" in prompt
+        assert "---" in prompt
         # Empty input should still produce valid prompt structure
 
     def test_very_long_input_text(self):
@@ -411,7 +411,7 @@ class TestPromptBuilderEdgeCases:
         prompt = builder.build_batch([])
 
         # Should produce valid prompt with empty input section
-        assert "Input" in prompt
+        assert "---" in prompt
 
     def test_build_batch_single_item(self):
         """Handle single item in batch"""

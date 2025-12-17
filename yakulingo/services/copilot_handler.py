@@ -589,8 +589,9 @@ class CopilotHandler:
 
     # Selector wait timeouts (milliseconds) - for Playwright wait_for_selector()
     SELECTOR_CHAT_INPUT_TIMEOUT_MS = 15000   # 15 seconds for chat input to appear
-    SELECTOR_CHAT_INPUT_STEP_TIMEOUT_MS = 3000  # 3 seconds per step for early login detection
-    SELECTOR_CHAT_INPUT_MAX_STEPS = 5        # Max steps (3s * 5 = 15s total)
+    SELECTOR_CHAT_INPUT_FIRST_STEP_TIMEOUT_MS = 1000  # 1 second for first step (fast path for logged-in users)
+    SELECTOR_CHAT_INPUT_STEP_TIMEOUT_MS = 2000  # 2 seconds per subsequent step for early login detection
+    SELECTOR_CHAT_INPUT_MAX_STEPS = 7        # Max steps (1s + 2s*6 = 13s total)
     # SELECTOR_SEND_BUTTON_TIMEOUT_MS removed - no longer wait for send button before Enter
     SELECTOR_RESPONSE_TIMEOUT_MS = 10000     # 10 seconds for response element to appear
     SELECTOR_NEW_CHAT_READY_TIMEOUT_MS = 5000  # 5 seconds for new chat to be ready
@@ -1623,18 +1624,19 @@ class CopilotHandler:
             return False
 
         # If we're on Copilot but still on landing or another interim page, wait for chat
+        # Use shorter timeouts for faster startup (3s instead of 5-10s)
         if _is_copilot_url(url) and any(path in url for path in ("/landing", "/landingv2")):
             logger.info("Detected Copilot landing page, waiting for redirect to /chat...")
             try:
-                page.wait_for_load_state('networkidle', timeout=5000)
+                page.wait_for_load_state('networkidle', timeout=3000)
             except PlaywrightTimeoutError:
                 pass
             url = page.url
             if any(path in url for path in ("/landing", "/landingv2")):
                 logger.debug("Still on landing page after wait, navigating to chat...")
                 try:
-                    page.goto(self.COPILOT_URL, wait_until='domcontentloaded', timeout=30000)
-                    page.wait_for_load_state('domcontentloaded', timeout=10000)
+                    page.goto(self.COPILOT_URL, wait_until='domcontentloaded', timeout=15000)
+                    page.wait_for_load_state('domcontentloaded', timeout=5000)
                 except (PlaywrightTimeoutError, PlaywrightError) as nav_err:
                     logger.warning("Failed to navigate to chat from landing: %s", nav_err)
         elif _is_copilot_url(url) and "/chat" not in url:
@@ -1643,32 +1645,36 @@ class CopilotHandler:
                 logger.info("On auth flow page (%s), waiting for auth to complete...", url[:60])
                 # Wait for auth flow to complete naturally
                 try:
-                    page.wait_for_load_state('networkidle', timeout=10000)
+                    page.wait_for_load_state('networkidle', timeout=5000)
                 except PlaywrightTimeoutError:
                     pass
             elif self._has_auth_dialog():
                 # Auth dialog present - do NOT navigate, wait for user to complete auth
                 logger.info("Auth dialog detected on Copilot page, waiting for auth to complete...")
                 try:
-                    page.wait_for_load_state('networkidle', timeout=10000)
+                    page.wait_for_load_state('networkidle', timeout=5000)
                 except PlaywrightTimeoutError:
                     pass
             else:
                 logger.info("On Copilot domain but not /chat, navigating...")
                 try:
-                    page.goto(self.COPILOT_URL, wait_until='domcontentloaded', timeout=30000)
-                    page.wait_for_load_state('domcontentloaded', timeout=10000)
+                    page.goto(self.COPILOT_URL, wait_until='domcontentloaded', timeout=15000)
+                    page.wait_for_load_state('domcontentloaded', timeout=5000)
                 except (PlaywrightTimeoutError, PlaywrightError) as nav_err:
                     logger.warning("Navigation to chat failed: %s", nav_err)
 
         # Use stepped waiting with early login detection
-        # Instead of waiting 15 seconds then checking, check every 3 seconds
+        # First step uses shorter timeout (fast path for logged-in users)
+        # Subsequent steps use longer timeout for login detection
         chat_input_found = False
         for step in range(self.SELECTOR_CHAT_INPUT_MAX_STEPS):
+            # First step: 1 second (fast path), subsequent steps: 2 seconds
+            step_timeout = (self.SELECTOR_CHAT_INPUT_FIRST_STEP_TIMEOUT_MS
+                           if step == 0 else self.SELECTOR_CHAT_INPUT_STEP_TIMEOUT_MS)
             try:
                 page.wait_for_selector(
                     input_selector,
-                    timeout=self.SELECTOR_CHAT_INPUT_STEP_TIMEOUT_MS,
+                    timeout=step_timeout,
                     state='visible'
                 )
                 chat_input_found = True
@@ -1717,7 +1723,7 @@ class CopilotHandler:
 
             current_url = page.url
             logger.info("Copilot chat UI ready (URL: %s)", current_url[:80] if current_url else "empty")
-            time.sleep(0.2)  # Wait for session to fully initialize
+            time.sleep(0.1)  # Brief wait for session initialization (reduced from 0.2s)
             return True
 
         # Chat input not found after all steps - handle timeout

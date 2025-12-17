@@ -914,8 +914,10 @@ wait_time = backoff_time + jitter
 |----------|--------|------|------|
 | ページ読み込み | `PAGE_GOTO_TIMEOUT_MS` | 30000ms | page.goto()のタイムアウト |
 | ネットワーク | `PAGE_NETWORK_IDLE_TIMEOUT_MS` | 5000ms | ネットワークアイドル待機 |
-| セレクタ | `SELECTOR_CHAT_INPUT_TIMEOUT_MS` | 15000ms | チャット入力欄の表示待機 |
-| セレクタ | `SELECTOR_SEND_BUTTON_TIMEOUT_MS` | 5000ms | 送信ボタン有効化待機 |
+| セレクタ | `SELECTOR_CHAT_INPUT_TIMEOUT_MS` | 15000ms | チャット入力欄の表示待機（総タイムアウト） |
+| セレクタ | `SELECTOR_CHAT_INPUT_FIRST_STEP_TIMEOUT_MS` | 1000ms | チャット入力欄の最初のステップ（高速パス） |
+| セレクタ | `SELECTOR_CHAT_INPUT_STEP_TIMEOUT_MS` | 2000ms | チャット入力欄の後続ステップ |
+| セレクタ | `SELECTOR_CHAT_INPUT_MAX_STEPS` | 7 | 最大ステップ数（1s + 2s×6 = 13s） |
 | セレクタ | `SELECTOR_RESPONSE_TIMEOUT_MS` | 10000ms | レスポンス要素の表示待機 |
 | セレクタ | `SELECTOR_NEW_CHAT_READY_TIMEOUT_MS` | 5000ms | 新規チャット準備完了待機 |
 | セレクタ | `SELECTOR_LOGIN_CHECK_TIMEOUT_MS` | 2000ms | ログイン状態チェック |
@@ -1997,6 +1999,19 @@ When interacting with users in this repository, prefer Japanese for comments and
 ## Recent Development Focus
 
 Based on recent commits:
+- **Copilot Connection Startup Optimization (2024-12)**:
+  - **Fast path for logged-in users**: 最初のセレクタ待機を1秒に短縮（3秒→1秒）
+    - `SELECTOR_CHAT_INPUT_FIRST_STEP_TIMEOUT_MS = 1000` 新規追加
+    - ログイン済みユーザーは1秒以内にチャット入力欄を検出
+  - **Stepped timeout reduction**: 後続ステップを2秒に短縮（3秒→2秒）
+    - `SELECTOR_CHAT_INPUT_STEP_TIMEOUT_MS = 2000`
+    - `SELECTOR_CHAT_INPUT_MAX_STEPS = 7`（1s + 2s×6 = 13s総タイムアウト）
+  - **Network idle wait reduction**: ランディングページ/認証フローの待機を短縮
+    - networkidle: 5秒→3秒、10秒→5秒
+    - domcontentloaded: 10秒→5秒
+    - goto: 30秒→15秒
+  - **Session init wait reduction**: セッション初期化待機を0.1秒に短縮（0.2秒→0.1秒）
+  - **Expected improvement**: ログイン済みユーザーで約0.6〜0.8秒の起動時間短縮
 - **PDF Translation Table/Page Number Fix (2024-12)**:
   - **Page number preservation**: ヘッダー/フッターのページ番号が翻訳時に移動する問題を修正
     - `LAYOUT_PAGE_NUMBER = -1` 定数を追加（ページ番号領域用の特別なマーカー）

@@ -23,11 +23,13 @@ logger = logging.getLogger(__name__)
 # Minimum supported NiceGUI version (major, minor, patch)
 MIN_NICEGUI_VERSION = (3, 0, 0)
 
-# Import NiceGUI directly (no lazy loading - simplifies code and debugging)
-_t_nicegui_import = time.perf_counter()
-import nicegui
-from nicegui import ui, app as nicegui_app, Client as nicegui_Client
-logger.info("[TIMING] NiceGUI import: %.2fs", time.perf_counter() - _t_nicegui_import)
+# NiceGUI imports - deferred to run_app() for faster startup (~6s savings)
+# These are set as globals in run_app() before any UI code runs
+# Note: from __future__ import annotations allows type hints to work without import
+nicegui = None
+ui = None
+nicegui_app = None
+nicegui_Client = None
 
 
 def _ensure_nicegui_version() -> None:
@@ -37,6 +39,8 @@ def _ensure_nicegui_version() -> None:
     revised native window handling). Ensure we fail fast with a clear message
     rather than hitting obscure runtime errors when an older version is
     installed.
+
+    Must be called after NiceGUI is imported (inside run_app()).
     """
     version_str = getattr(nicegui, '__version__', '')
     try:
@@ -54,8 +58,7 @@ def _ensure_nicegui_version() -> None:
         )
 
 
-# Validate NiceGUI version at import time
-_ensure_nicegui_version()
+# Note: Version check moved to run_app() after import
 
 # Fast imports - required at startup (lightweight modules only)
 from yakulingo.ui.state import AppState, Tab, FileState, ConnectionState, LayoutInitializationState
@@ -3746,6 +3749,20 @@ def run_app(
     if multiprocessing.current_process().name != 'MainProcess':
         return
 
+    # Import NiceGUI (deferred from module level for ~6s faster startup)
+    global nicegui, ui, nicegui_app, nicegui_Client
+    _t_nicegui_import = time.perf_counter()
+    import nicegui as _nicegui
+    from nicegui import ui as _ui, app as _nicegui_app, Client as _nicegui_Client
+    nicegui = _nicegui
+    ui = _ui
+    nicegui_app = _nicegui_app
+    nicegui_Client = _nicegui_Client
+    logger.info("[TIMING] NiceGUI import: %.2fs", time.perf_counter() - _t_nicegui_import)
+
+    # Validate NiceGUI version after import
+    _ensure_nicegui_version()
+
     _t0 = time.perf_counter()  # Start timing for total run_app duration
     _t1 = time.perf_counter()
     yakulingo_app = create_app()
@@ -3905,9 +3922,13 @@ def run_app(
     # Optimize pywebview startup (native mode only)
     # - background_color: Match app background to reduce visual flicker
     # - easy_drag: Disable titlebar drag region (not needed, window has native titlebar)
+    # - icon: Use YakuLingo icon for taskbar (instead of default Python icon)
     if native:
         nicegui_app.native.window_args['background_color'] = '#FEFBFF'  # M3 surface color
         nicegui_app.native.window_args['easy_drag'] = False
+        icon_path = Path(__file__).parent / 'yakulingo.ico'
+        if icon_path.exists():
+            nicegui_app.native.window_args['icon'] = str(icon_path)
 
     # Early Copilot connection: Start Edge browser BEFORE UI is displayed
     # This saves ~2-3 seconds as Edge startup runs in parallel with UI rendering
@@ -4298,14 +4319,14 @@ document.fonts.ready.then(function() {
         except Exception as e:
             logger.debug("Failed to set initial window position: %s", e)
 
-    # Use the same icon as desktop shortcut for taskbar
-    icon_path = Path(__file__).parent / 'yakulingo.ico'
+    # Use the same icon for favicon (browser tab icon)
+    favicon_path = Path(__file__).parent / 'yakulingo.ico'
 
     ui.run(
         host=host,
         port=port,
         title='YakuLingo',
-        favicon=icon_path,
+        favicon=favicon_path,
         dark=False,
         reload=False,
         native=native,

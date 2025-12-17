@@ -3406,16 +3406,9 @@ class CopilotHandler:
         # Mark as disconnected first
         self._connected = False
 
-        # Navigate to about:blank before closing to prevent "Restore pages" dialog
-        # Only do this if we started the browser (will be terminated below)
-        # This prevents leaving Edge in about:blank state when we don't terminate it
-        if self._browser_started_by_us:
-            with suppress(Exception):
-                if self._page and not self._page.is_closed():
-                    _playwright_executor.execute(
-                        lambda: self._page.goto("about:blank", wait_until="commit", timeout=1000)
-                    )
-                    logger.debug("Navigated to about:blank before force disconnect")
+        # Note: about:blank navigation removed for performance optimization (~1s saved)
+        # --disable-session-crashed-bubble flag should suppress "Restore pages" dialog
+        # If dialog appears frequently, this can be re-enabled
 
         # First, shutdown the executor to release any pending operations
         executor_start = time.time()
@@ -3500,14 +3493,8 @@ class CopilotHandler:
 
         self._connected = False
 
-        # Navigate to about:blank before closing to prevent "Restore pages" dialog
-        # Only do this if we started the browser AND will terminate it
-        # This prevents leaving Edge in about:blank state when we don't terminate it
-        if self._browser_started_by_us and not keep_browser:
-            with suppress(Exception):
-                if self._page and not self._page.is_closed():
-                    self._page.goto("about:blank", wait_until="commit", timeout=2000)
-                    logger.debug("Navigated to about:blank before closing")
+        # Note: about:blank navigation removed for performance optimization (~1s saved)
+        # --disable-session-crashed-bubble flag should suppress "Restore pages" dialog
 
         # Use suppress for cleanup - we want to continue even if errors occur
         # Catch all exceptions during cleanup to ensure resources are released
@@ -4136,11 +4123,9 @@ class CopilotHandler:
                     t0 = time.time()
                     input_elem.fill(message)
                     t1 = time.time()
-                    # Dispatch events to ensure React detects the change
-                    input_elem.evaluate('''el => {
-                        el.dispatchEvent(new Event('input', { bubbles: true }));
-                        el.dispatchEvent(new Event('change', { bubbles: true }));
-                    }''')
+                    # Dispatch input event to ensure React detects the change
+                    # Note: change event removed for optimization - input event is sufficient for React
+                    input_elem.evaluate('el => el.dispatchEvent(new Event("input", { bubbles: true }))')
                     t2 = time.time()
                     content = input_elem.inner_text()
                     t3 = time.time()
@@ -4226,7 +4211,7 @@ class CopilotHandler:
                 send_btn = None
                 btn_ready = False
 
-                for wait_iter in range(20):  # Max 2 seconds (20 * 0.1s)
+                for wait_iter in range(10):  # Max 1 second (10 * 0.1s) - optimized from 20
                     iter_start = time.time()
                     send_btn = self._page.query_selector(self.SEND_BUTTON_SELECTOR)
                     query_time = time.time() - iter_start

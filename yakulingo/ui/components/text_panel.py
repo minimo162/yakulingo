@@ -139,6 +139,7 @@ def create_text_input_panel(
     use_bundled_glossary: bool = False,
     on_glossary_toggle: Optional[Callable[[bool], None]] = None,
     on_edit_glossary: Optional[Callable[[], None]] = None,
+    on_edit_translation_rules: Optional[Callable[[], None]] = None,
     on_textarea_created: Optional[Callable[[ui.textarea], None]] = None,
 ):
     """
@@ -150,7 +151,7 @@ def create_text_input_panel(
         on_attach_reference_file, on_remove_reference_file,
         on_settings, on_translate_button_created,
         use_bundled_glossary, on_glossary_toggle, on_edit_glossary,
-        on_textarea_created,
+        on_edit_translation_rules, on_textarea_created,
     )
 
 
@@ -166,6 +167,7 @@ def _create_large_input_panel(
     use_bundled_glossary: bool = False,
     on_glossary_toggle: Optional[Callable[[bool], None]] = None,
     on_edit_glossary: Optional[Callable[[], None]] = None,
+    on_edit_translation_rules: Optional[Callable[[], None]] = None,
     on_textarea_created: Optional[Callable[[ui.textarea], None]] = None,
 ):
     """Large input panel for INPUT state - spans 2 columns"""
@@ -220,6 +222,14 @@ def _create_large_input_panel(
                                     on_click=on_edit_glossary
                                 ).props('flat dense round size=sm').classes('settings-btn')
                                 edit_btn.tooltip('用語集をExcelで編集')
+
+                        # Edit translation rules button
+                        if on_edit_translation_rules:
+                            rules_btn = ui.button(
+                                icon='rule',
+                                on_click=on_edit_translation_rules
+                            ).props('flat dense round size=sm').classes('settings-btn')
+                            rules_btn.tooltip('翻訳ルールを編集')
 
                         # Settings button
                         if on_settings:

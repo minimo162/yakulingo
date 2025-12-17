@@ -147,6 +147,7 @@ def create_file_panel(
     use_bundled_glossary: bool = True,
     on_glossary_toggle: Optional[Callable[[bool], None]] = None,
     on_edit_glossary: Optional[Callable[[], None]] = None,
+    on_edit_translation_rules: Optional[Callable[[], None]] = None,
 ):
     """File translation panel - Nani-inspired design"""
 
@@ -183,6 +184,7 @@ def create_file_panel(
                             use_bundled_glossary,
                             on_glossary_toggle,
                             on_edit_glossary,
+                            on_edit_translation_rules,
                         )
                         # Reference file selector
                         _reference_file_selector(
@@ -344,6 +346,7 @@ def _glossary_selector(
     use_bundled_glossary: bool,
     on_toggle: Optional[Callable[[bool], None]],
     on_edit: Optional[Callable[[], None]],
+    on_edit_translation_rules: Optional[Callable[[], None]] = None,
 ):
     """Bundled glossary toggle button - same style as text panel"""
     with ui.row().classes('w-full justify-center mt-3 items-center gap-2'):
@@ -365,6 +368,14 @@ def _glossary_selector(
                     on_click=on_edit
                 ).props('flat dense round size=sm').classes('settings-btn')
                 edit_btn.tooltip('用語集をExcelで編集')
+
+        # Edit translation rules button
+        if on_edit_translation_rules:
+            rules_btn = ui.button(
+                icon='rule',
+                on_click=on_edit_translation_rules
+            ).props('flat dense round size=sm').classes('settings-btn')
+            rules_btn.tooltip('翻訳ルールを編集')
 
 
 def _reference_file_selector(

@@ -355,6 +355,9 @@ class PromptBuilder:
         Returns:
             Template with all placeholders replaced
         """
+        # Always reload translation rules from file to pick up user edits
+        self._translation_rules = self._load_translation_rules()
+
         # Replace placeholders
         prompt = template.replace("{translation_rules}", self._translation_rules)
         prompt = prompt.replace("{reference_section}", reference_section)

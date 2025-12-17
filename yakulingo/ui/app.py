@@ -1746,6 +1746,7 @@ class YakuLingoApp:
                         use_bundled_glossary=self.settings.use_bundled_glossary,
                         on_glossary_toggle=self._on_glossary_toggle,
                         on_edit_glossary=self._edit_glossary,
+                        on_edit_translation_rules=self._edit_translation_rules,
                         on_textarea_created=self._on_textarea_created,
                     )
 
@@ -1785,6 +1786,7 @@ class YakuLingoApp:
                         use_bundled_glossary=self.settings.use_bundled_glossary,
                         on_glossary_toggle=self._on_glossary_toggle,
                         on_edit_glossary=self._edit_glossary,
+                        on_edit_translation_rules=self._edit_translation_rules,
                     )
 
         self._main_content = main_content
@@ -1827,6 +1829,28 @@ class YakuLingoApp:
 
         # Cooldown: prevent rapid re-clicking by refreshing UI
         # (button won't appear again until next refresh after 3s)
+        await asyncio.sleep(3)
+
+    async def _edit_translation_rules(self):
+        """Open translation_rules.txt in default editor with cooldown to prevent double-open"""
+        from yakulingo.ui.utils import open_file
+
+        rules_path = get_default_prompts_dir() / "translation_rules.txt"
+
+        # Check if file exists
+        if not rules_path.exists():
+            ui.notify('翻訳ルールファイルが見つかりません', type='warning')
+            return
+
+        # Open the file
+        open_file(rules_path)
+        ui.notify(
+            '翻訳ルールを開きました。編集後は保存してから翻訳してください',
+            type='info',
+            timeout=5000
+        )
+
+        # Cooldown: prevent rapid re-clicking
         await asyncio.sleep(3)
 
     def _get_effective_reference_files(self, exclude_glossary: bool = False) -> list[Path] | None:

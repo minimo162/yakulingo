@@ -1480,7 +1480,7 @@ textarea:focus-visible {
 .main-area.has-results .result-panel {
     display: flex;
     flex: 1;
-    justify-content: center;  /* Center content horizontally */
+    justify-content: flex-start;  /* Align content to top (horizontal centering via align-items) */
 }
 
 /* File panel always 2-column (centered) */

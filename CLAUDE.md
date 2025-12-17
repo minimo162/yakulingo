@@ -2000,6 +2000,10 @@ When interacting with users in this repository, prefer Japanese for comments and
 
 Based on recent commits:
 - **Copilot Connection Startup Optimization (2024-12)**:
+  - **Deferred chat input detection**: 起動時のチャット入力欄待機を削除、初回翻訳時に遅延実行
+    - `_quick_login_check()`: 起動時はログインページ判定のみ（~0.1秒）
+    - `_ensure_chat_input_ready()`: 翻訳時にチャット入力欄を確認
+    - **起動時間短縮**: 約3-5秒削減
   - **Fast path for logged-in users**: 最初のセレクタ待機を1秒に短縮（3秒→1秒）
     - `SELECTOR_CHAT_INPUT_FIRST_STEP_TIMEOUT_MS = 1000` 新規追加
     - ログイン済みユーザーは1秒以内にチャット入力欄を検出
@@ -2011,7 +2015,7 @@ Based on recent commits:
     - domcontentloaded: 10秒→5秒
     - goto: 30秒→15秒
   - **Session init wait reduction**: セッション初期化待機を0.1秒に短縮（0.2秒→0.1秒）
-  - **Expected improvement**: ログイン済みユーザーで約0.6〜0.8秒の起動時間短縮
+  - **Expected improvement**: 起動時間 約3-5秒短縮（チャット入力欄待機の遅延実行により）
 - **PDF Translation Table/Page Number Fix (2024-12)**:
   - **Page number preservation**: ヘッダー/フッターのページ番号が翻訳時に移動する問題を修正
     - `LAYOUT_PAGE_NUMBER = -1` 定数を追加（ページ番号領域用の特別なマーカー）

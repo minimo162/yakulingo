@@ -1336,14 +1336,15 @@ class CopilotHandler:
                 return False
 
             # Note: Browser is only brought to foreground when login is required
-            # (handled in _wait_for_chat_ready), not on every startup
+            # (handled in _quick_login_check), not on every startup
 
-            # Step 5: Wait for chat UI. Do not block for login; let the UI handle
-            # login-required state via polling so the user sees feedback immediately.
-            _t_chat = _time.perf_counter()
-            chat_ready = self._wait_for_chat_ready(self._page, wait_for_login=False)
-            logger.debug("[TIMING] _wait_for_chat_ready(): %.2fs", _time.perf_counter() - _t_chat)
-            if not chat_ready:
+            # Step 5: Quick login check only (don't wait for chat input)
+            # Chat input detection is deferred to first translation request for faster startup.
+            # This saves ~3-5 seconds on startup while still detecting login requirements.
+            _t_login = _time.perf_counter()
+            login_ok = self._quick_login_check(self._page)
+            logger.debug("[TIMING] _quick_login_check(): %.2fs", _time.perf_counter() - _t_login)
+            if not login_ok:
                 # Keep Edge/Playwright alive when login is required so the UI can
                 # poll for completion while the user signs in.
                 if self.last_connection_error == self.ERROR_LOGIN_REQUIRED:
@@ -1590,6 +1591,102 @@ class CopilotHandler:
             self._minimize_edge_window(None)
 
         return copilot_page
+
+    def _quick_login_check(self, page) -> bool:
+        """Quick login status check without waiting for chat input.
+
+        This is a fast check (~0.1s) used at startup to detect if login is required.
+        Chat input detection is deferred to the first translation request.
+
+        Args:
+            page: Playwright page to check
+
+        Returns:
+            True if on Copilot page (may or may not be ready for chat),
+            False if login is required.
+        """
+        try:
+            url = page.url
+
+            # Check if on login page
+            if _is_login_page(url):
+                logger.warning("Login page detected: %s", url[:50])
+                self.last_connection_error = self.ERROR_LOGIN_REQUIRED
+                return False
+
+            # Check for auth dialog (quick check)
+            if self._has_auth_dialog():
+                logger.warning("Auth dialog detected on page")
+                self.last_connection_error = self.ERROR_LOGIN_REQUIRED
+                return False
+
+            # On Copilot domain - consider connection successful
+            # Chat input will be verified when first translation is requested
+            if _is_copilot_url(url):
+                logger.info("On Copilot page (URL: %s) - login check passed", url[:60])
+                return True
+
+            # Not on Copilot and not on login - might be redirecting
+            logger.debug("Not on Copilot page yet: %s", url[:60])
+            return True  # Let it continue, will be checked later
+
+        except Exception as e:
+            logger.debug("Quick login check failed: %s", e)
+            return True  # Don't block on check failures
+
+    def _ensure_chat_input_ready(self) -> bool:
+        """Ensure chat input is visible before translation.
+
+        This is called at the start of translation to verify the chat UI is ready.
+        It's deferred from startup to reduce launch time (~3-5 seconds saved).
+
+        Returns:
+            True if chat input is ready, False if login required or timeout.
+        """
+        error_types = _get_playwright_errors()
+        PlaywrightTimeoutError = error_types['TimeoutError']
+
+        if not self._page:
+            logger.warning("No page available for chat input check")
+            return False
+
+        # Quick check: is chat input already visible?
+        try:
+            input_elem = self._page.query_selector(self.CHAT_INPUT_SELECTOR)
+            if input_elem and input_elem.is_visible():
+                logger.debug("Chat input already visible")
+                return True
+        except Exception:
+            pass
+
+        # Not visible yet - wait for it (this is the first translation after startup)
+        logger.info("Waiting for chat input (first translation)...")
+        _t_start = time.time()
+
+        try:
+            self._page.wait_for_selector(
+                self.CHAT_INPUT_SELECTOR,
+                timeout=self.SELECTOR_CHAT_INPUT_TIMEOUT_MS,
+                state='visible'
+            )
+            logger.info("[TIMING] Chat input ready: %.2fs", time.time() - _t_start)
+            return True
+
+        except PlaywrightTimeoutError:
+            # Check if we need login
+            url = self._page.url
+            if _is_login_page(url) or self._has_auth_dialog():
+                logger.warning("Login required - chat input not available")
+                self.last_connection_error = self.ERROR_LOGIN_REQUIRED
+                self._bring_to_foreground_impl(self._page, reason="ensure_chat_input_ready: login required")
+                return False
+
+            logger.warning("Chat input not found after timeout")
+            return False
+
+        except Exception as e:
+            logger.warning("Failed to wait for chat input: %s", e)
+            return False
 
     def _wait_for_chat_ready(self, page, wait_for_login: bool = True) -> bool:
         """Wait for Copilot chat UI to be ready.
@@ -3892,6 +3989,12 @@ class CopilotHandler:
                 raise RuntimeError("Copilotへのログインが必要です。Edgeブラウザでログインしてください。")
             raise RuntimeError("ブラウザに接続できませんでした。Edgeが起動しているか確認してください。")
 
+        # Ensure chat input is ready (deferred from startup for faster launch)
+        if not self._ensure_chat_input_ready():
+            if self.last_connection_error == self.ERROR_LOGIN_REQUIRED:
+                raise RuntimeError("Copilotへのログインが必要です。Edgeブラウザでログインしてください。")
+            raise RuntimeError("Copilotのチャット画面が表示されませんでした。ページを再読み込みしてください。")
+
         # Check for cancellation before starting translation
         if self._is_cancelled():
             logger.info("Translation cancelled before starting")
@@ -4100,6 +4203,12 @@ class CopilotHandler:
             if self.last_connection_error == self.ERROR_LOGIN_REQUIRED:
                 raise RuntimeError("Copilotへのログインが必要です。Edgeブラウザでログインしてください。")
             raise RuntimeError("ブラウザに接続できませんでした。Edgeが起動しているか確認してください。")
+
+        # Ensure chat input is ready (deferred from startup for faster launch)
+        if not self._ensure_chat_input_ready():
+            if self.last_connection_error == self.ERROR_LOGIN_REQUIRED:
+                raise RuntimeError("Copilotへのログインが必要です。Edgeブラウザでログインしてください。")
+            raise RuntimeError("Copilotのチャット画面が表示されませんでした。ページを再読み込みしてください。")
 
         # Check for cancellation before starting translation
         if self._is_cancelled():

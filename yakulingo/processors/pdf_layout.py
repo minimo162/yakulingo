@@ -169,6 +169,7 @@ LAYOUT_ABANDON = 0        # Figures, headers, footers - skip translation
 LAYOUT_BACKGROUND = 1     # Background (default)
 LAYOUT_PARAGRAPH_BASE = 2 # Paragraphs start from 2
 LAYOUT_TABLE_BASE = 1000  # Tables start from 1000
+LAYOUT_PAGE_NUMBER = -1   # Page numbers - preserve without translation
 
 # PP-DocLayout-L category mapping
 # Categories to translate (text content)
@@ -182,8 +183,14 @@ LAYOUT_TRANSLATE_LABELS = {
 # Categories to skip (non-text or layout elements)
 LAYOUT_SKIP_LABELS = {
     "figure", "figure_title", "chart", "chart_title", "seal",
-    "header", "footer", "page_number", "header_image", "footer_image",
+    "header", "footer", "header_image", "footer_image",
     "formula", "formula_number",
+}
+
+# Categories to preserve without translation (page numbers, etc.)
+# These are extracted as TextBlocks but marked as skip_translation=True
+LAYOUT_PRESERVE_LABELS = {
+    "page_number",
 }
 
 # =============================================================================
@@ -944,6 +951,18 @@ def create_layout_array_from_pp_doclayout(
             skip_boxes.append((x0, y0, x1, y1))
             if label in figure_labels:
                 figures_list.append(coord[:4])
+            continue
+
+        # Handle preserve labels (page_number, etc.) - mark with LAYOUT_PAGE_NUMBER
+        if label in LAYOUT_PRESERVE_LABELS:
+            layout[y0:y1, x0:x1] = LAYOUT_PAGE_NUMBER
+            paragraphs_info[LAYOUT_PAGE_NUMBER] = paragraphs_info.get(LAYOUT_PAGE_NUMBER, [])
+            paragraphs_info[LAYOUT_PAGE_NUMBER].append({
+                'order': box_idx,
+                'box': coord[:4],
+                'label': label,
+                'score': score,
+            })
             continue
 
         # Process text boxes

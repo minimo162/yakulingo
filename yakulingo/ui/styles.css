@@ -240,6 +240,7 @@ body {
 .result-panel {
     flex: 1;
     height: 100%;  /* Use 100% to respect parent's height constraint */
+    min-height: 0;  /* Required for scrolling to top in nested flex containers */
     /* Note: padding moved to child elements to prevent "frame" flash during DOM refresh */
     overflow-y: auto;
     display: flex;

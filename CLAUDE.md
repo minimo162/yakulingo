@@ -2154,9 +2154,11 @@ Based on recent commits:
 - **File Panel Scrolling Fix (2024-12)**:
   - **ui.scroll_area usage**: ファイルパネルにui.scroll_area()を使用してスクロールを確実に有効化
 - **Main Panel Horizontal Scroll Fix (2024-12)**:
-  - **Root cause**: `100vw` はスクロールバー幅を含むため、`.main-area` が実際の表示領域より広くなり微小な横スクロールが発生
-  - **Solution**: `width: calc(100vw - sidebar)` を維持しつつ `max-width: calc(100% - sidebar)` を追加。`width` でカード位置を維持し、`max-width` でスクロールバー幅分のオーバーフローを防止
-  - **Why not 100% only**: `100%` のみに変更するとカード位置がずれる（内部レイアウトが `100vw` ベースの幅を基準にしているため）
+  - **Root cause**: `100vw` はスクロールバー幅を含むため、縦スクロールバーが表示されると `.main-area` が実際の表示領域より広くなり横スクロールが発生
+  - **Solution**: `width: calc(100vw - sidebar)` を `width: calc(100% - sidebar)` に変更。`100%` は親要素の幅を基準にするためスクロールバー幅の問題を回避
+- **Result Panel Scroll Fix (2024-12)**:
+  - **Root cause**: Flexboxで `overflow-y: auto` と `flex: 1` を組み合わせた場合、子要素のデフォルト `min-height: auto` がコンテンツ高さに設定され、最上部までスクロールできない問題が発生
+  - **Solution**: `.result-panel` と `.result-panel > .nicegui-column` に `min-height: 0` を追加。これにより子要素がコンテンツサイズ以下に縮小可能になり、スクロールが正しく動作
 - **File Attachment Button Improvement (2024-12)**:
   - **Direct file selection**: ファイル添付ボタンでダイアログを経由せず直接ファイル選択を開くように改善
 - **Glossary Processing Improvements (2024-12)**:

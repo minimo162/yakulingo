@@ -2810,22 +2810,39 @@ class YakuLingoApp:
                 logger.info("Disconnecting Copilot before PP-DocLayout-L initialization...")
                 await asyncio.to_thread(lambda: self.copilot.disconnect(keep_browser=True))
 
-            # Step 2: Initialize PP-DocLayout-L
+            # Step 2: Initialize PP-DocLayout-L and pre-initialize Playwright in parallel
+            # This saves ~1.5s by starting Playwright initialization during model loading
             logger.info("Initializing PP-DocLayout-L on-demand...")
-            try:
-                from yakulingo.processors.pdf_processor import prewarm_layout_model
-                success = await asyncio.to_thread(prewarm_layout_model)
-                if success:
-                    self._layout_init_state = LayoutInitializationState.INITIALIZED
-                    logger.info("PP-DocLayout-L initialized successfully")
-                else:
-                    self._layout_init_state = LayoutInitializationState.FAILED
-                    logger.warning("PP-DocLayout-L initialization returned False")
-            except Exception as e:
-                self._layout_init_state = LayoutInitializationState.FAILED
-                logger.warning("PP-DocLayout-L initialization failed: %s", e)
+            from yakulingo.processors.pdf_processor import prewarm_layout_model
 
-            # Step 3: Reconnect Copilot
+            async def _init_layout():
+                try:
+                    success = await asyncio.to_thread(prewarm_layout_model)
+                    if success:
+                        self._layout_init_state = LayoutInitializationState.INITIALIZED
+                        logger.info("PP-DocLayout-L initialized successfully")
+                    else:
+                        self._layout_init_state = LayoutInitializationState.FAILED
+                        logger.warning("PP-DocLayout-L initialization returned False")
+                except Exception as e:
+                    self._layout_init_state = LayoutInitializationState.FAILED
+                    logger.warning("PP-DocLayout-L initialization failed: %s", e)
+
+            async def _prewarm_playwright():
+                """Pre-initialize Playwright in background during layout model init."""
+                if not was_connected:
+                    return
+                try:
+                    from yakulingo.services.copilot_handler import pre_initialize_playwright
+                    await asyncio.to_thread(pre_initialize_playwright)
+                    logger.debug("Playwright pre-initialized during layout init")
+                except Exception as e:
+                    logger.debug("Playwright pre-init failed (will retry on reconnect): %s", e)
+
+            # Run layout init and Playwright pre-init in parallel
+            await asyncio.gather(_init_layout(), _prewarm_playwright())
+
+            # Step 3: Reconnect Copilot (uses pre-initialized Playwright if available)
             if was_connected:
                 logger.info("Reconnecting Copilot after PP-DocLayout-L initialization...")
                 await self._reconnect_copilot_with_retry(max_retries=3)

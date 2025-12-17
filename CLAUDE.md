@@ -2413,6 +2413,9 @@ Based on recent commits:
   - **Dialog skip optimization**: 初期化済み時は準備ダイアログをスキップ（2回目以降のPDF選択が即座に完了）
   - **Fallback detection**: `_layout_fallback_used`フラグで状態を追跡
   - **Memory estimation**: 大規模PDF処理時のメモリ使用量見積もりをログに出力
+  - **Network check disabled**: PaddleOCR import時のネットワークチェック（HuggingFace, ModelScope, AIStudio等）を環境変数で無効化（約4-6秒短縮）
+  - **Parallel initialization**: PP-DocLayout-L初期化とPlaywright事前初期化を`asyncio.gather`で並列実行（約1.5秒短縮）
+  - **Playwright re-initialization**: `clear_pre_initialized_playwright()`で`_pre_init_event`もリセットして再初期化を可能に
 - **Translation Card UI Unification**:
   - **Unified structure**: 和訳の翻訳結果カード構造を英訳と統一
   - **Card width alignment**: 翻訳結果カードの横幅を原文カードと統一

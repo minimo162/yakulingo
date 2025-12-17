@@ -16,6 +16,7 @@ Based on PDFMathTranslate: https://github.com/PDFMathTranslate/PDFMathTranslate
 """
 
 import logging
+import os
 import threading
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -34,6 +35,38 @@ _table_cell_detector = None
 _torch = None
 _np = None
 _layout_dependency_warning_logged = False
+_network_check_disabled = False
+
+
+def _disable_network_checks():
+    """
+    Disable PaddleOCR network availability checks for faster startup.
+
+    PaddleOCR checks connectivity to multiple model hosting services
+    (HuggingFace, ModelScope, Baidu AIStudio, etc.) on import.
+    This adds 4-6 seconds of delay that we can skip since models
+    are already cached locally after first download.
+    """
+    global _network_check_disabled
+    if _network_check_disabled:
+        return
+
+    # Disable HuggingFace Hub network check
+    os.environ.setdefault("HF_HUB_OFFLINE", "1")
+    os.environ.setdefault("HF_DATASETS_OFFLINE", "1")
+    os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+
+    # Disable ModelScope network check
+    os.environ.setdefault("MODELSCOPE_OFFLINE", "1")
+
+    # Disable PaddleHub network check (used internally by PaddleOCR)
+    os.environ.setdefault("PADDLEHUB_OFFLINE", "1")
+
+    # Force local-only model loading
+    os.environ.setdefault("PADDLE_PDX_LOCAL_MODE", "1")
+
+    _network_check_disabled = True
+    logger.debug("PaddleOCR network checks disabled for faster startup")
 
 
 def _get_numpy():
@@ -49,6 +82,9 @@ def _get_paddleocr():
     """Lazy import PaddleOCR (PP-DocLayout-L for layout analysis)."""
     global _paddleocr
     if _paddleocr is None:
+        # Disable network checks before importing (saves ~4-6 seconds)
+        _disable_network_checks()
+
         # First, check if paddlepaddle (the core framework) is available
         try:
             import paddle
@@ -247,6 +283,9 @@ def is_layout_available() -> bool:
     global _layout_available_cache
     if _layout_available_cache is not None:
         return _layout_available_cache
+
+    # Disable network checks before importing (saves ~4-6 seconds)
+    _disable_network_checks()
 
     try:
         from paddleocr import LayoutDetection  # noqa: F401

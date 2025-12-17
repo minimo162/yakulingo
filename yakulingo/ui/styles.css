@@ -251,6 +251,7 @@ body {
 /* Apply padding to result panel's direct child to prevent flickering */
 .result-panel > .nicegui-column {
     padding: 1.5rem 2rem;
+    min-height: 0;  /* Required for scrolling to top in nested flex containers */
 }
 
 /* Result panel inner content - dynamic width based on monitor resolution, centered */

@@ -3804,6 +3804,7 @@ def run_app(
 
         # Cancel all pending operations immediately (non-blocking)
         # These are just flag settings, no waiting
+        step_start = time_module.time()
         if yakulingo_app._active_progress_timer is not None:
             try:
                 yakulingo_app._active_progress_timer.cancel()
@@ -3828,9 +3829,12 @@ def run_app(
                 yakulingo_app._copilot.cancel_login_wait()
             except Exception:
                 pass
+        logger.debug("[TIMING] Cancel operations: %.2fs", time_module.time() - step_start)
 
         # Stop hotkey manager (quick, just unregisters hotkey)
+        step_start = time_module.time()
         yakulingo_app.stop_hotkey_manager()
+        logger.debug("[TIMING] Hotkey manager stop: %.2fs", time_module.time() - step_start)
 
         # Force disconnect from Copilot (the main time-consuming step)
         step_start = time_module.time()
@@ -3842,12 +3846,15 @@ def run_app(
                 logger.debug("Error disconnecting Copilot: %s", e)
 
         # Close database connections (quick)
+        step_start = time_module.time()
         try:
             yakulingo_app.state.close()
         except Exception:
             pass
+        logger.debug("[TIMING] DB close: %.2fs", time_module.time() - step_start)
 
         # Clear PP-DocLayout-L cache (only if loaded)
+        step_start = time_module.time()
         try:
             from yakulingo.processors.pdf_layout import clear_analyzer_cache
             clear_analyzer_cache()
@@ -3855,6 +3862,7 @@ def run_app(
             pass
         except Exception:
             pass
+        logger.debug("[TIMING] PDF cache clear: %.2fs", time_module.time() - step_start)
 
         # Clear references (helps GC but don't force gc.collect - it's slow)
         yakulingo_app._copilot = None

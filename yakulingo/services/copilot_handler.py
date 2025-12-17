@@ -2546,7 +2546,7 @@ class CopilotHandler:
             logger.warning("Failed to calculate side panel geometry: %s", e)
             return None
 
-    def _position_edge_as_side_panel(self, page_title: str = None) -> bool:
+    def _position_edge_as_side_panel(self, page_title: str = None, bring_to_front: bool = False) -> bool:
         """Position Edge window as a side panel next to YakuLingo app.
 
         This method positions both the YakuLingo app and Edge browser as a "set"
@@ -2561,6 +2561,7 @@ class CopilotHandler:
 
         Args:
             page_title: The current page title for exact matching
+            bring_to_front: If True, bring Edge window to front (for hotkey activation)
 
         Returns:
             True if windows were successfully positioned
@@ -2672,6 +2673,7 @@ class CopilotHandler:
             SWP_NOACTIVATE = 0x0010  # Don't activate window
             SWP_NOZORDER = 0x0004    # Don't change Z-order
             SWP_NOSIZE = 0x0001      # Don't change size
+            SWP_NOMOVE = 0x0002      # Don't change position
             SWP_SHOWWINDOW = 0x0040  # Show window
 
             # Move YakuLingo app if needed (only position, keep size)
@@ -2703,16 +2705,42 @@ class CopilotHandler:
                 user32.ShowWindow(edge_hwnd, SW_RESTORE)
 
             # Position and resize Edge window
-            flags = SWP_NOACTIVATE | SWP_SHOWWINDOW
-            user32.SetWindowPos(
-                edge_hwnd,
-                None,  # hWndInsertAfter
-                edge_x,
-                edge_y,
-                edge_width,
-                app_height,
-                flags
-            )
+            # If bring_to_front is True, use HWND_TOPMOST to ensure Edge is visible
+            # This is important for hotkey activation where Edge may be behind other windows
+            HWND_TOPMOST = -1
+            HWND_NOTOPMOST = -2
+
+            if bring_to_front:
+                # First, bring Edge to front using TOPMOST
+                flags = SWP_NOACTIVATE | SWP_SHOWWINDOW
+                user32.SetWindowPos(
+                    edge_hwnd,
+                    HWND_TOPMOST,
+                    edge_x,
+                    edge_y,
+                    edge_width,
+                    app_height,
+                    flags
+                )
+                # Then reset to NOTOPMOST so other windows can go on top later
+                user32.SetWindowPos(
+                    edge_hwnd,
+                    HWND_NOTOPMOST,
+                    0, 0, 0, 0,
+                    SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE
+                )
+                logger.debug("Edge brought to front via TOPMOST/NOTOPMOST")
+            else:
+                flags = SWP_NOACTIVATE | SWP_SHOWWINDOW
+                user32.SetWindowPos(
+                    edge_hwnd,
+                    None,  # hWndInsertAfter
+                    edge_x,
+                    edge_y,
+                    edge_width,
+                    app_height,
+                    flags
+                )
 
             # Ensure window is visible (not minimized, not activated)
             SW_SHOWNOACTIVATE = 4

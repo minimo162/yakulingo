@@ -726,7 +726,8 @@ class YakuLingoApp:
 
         # Method 3: Position Edge as side panel if in side_panel mode
         # This ensures Edge is visible alongside the app when activated via hotkey
-        if sys.platform == 'win32' and self._settings and self._copilot and self._copilot._connected:
+        # Note: Don't check _connected - Edge may be running even before Copilot connects
+        if sys.platform == 'win32' and self._settings and self._copilot:
             if self._settings.browser_display_mode == "side_panel":
                 try:
                     await asyncio.to_thread(self._copilot._position_edge_as_side_panel, None)

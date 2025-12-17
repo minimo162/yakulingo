@@ -2934,7 +2934,7 @@ class CopilotHandler:
 
         Behavior depends on browser_display_mode setting:
         - "minimized": Minimize Edge window (default)
-        - "side_panel": Keep Edge as side panel (no action needed)
+        - "side_panel": Position Edge as side panel next to app
         - "foreground": Keep Edge in foreground (no action needed)
         """
         if sys.platform == "win32":
@@ -2948,7 +2948,10 @@ class CopilotHandler:
             if mode == "minimized":
                 # Only minimize in minimized mode
                 self._minimize_edge_window(None)
-            # For side_panel and foreground modes, keep the window visible
+            elif mode == "side_panel":
+                # Ensure Edge is positioned as side panel (handles hotkey activation)
+                self._position_edge_as_side_panel(None)
+            # For foreground mode, keep the window visible as-is
             logger.debug("Browser display mode: %s", mode)
         else:
             logger.debug("Background minimization not implemented for this platform")

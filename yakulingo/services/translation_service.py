@@ -1252,7 +1252,13 @@ class TranslationService:
                 reference_section = ""
                 files_to_attach = None
 
-            prompt = template.replace("{reference_section}", reference_section)
+            # Apply all placeholder replacements
+            # Reload translation rules to pick up any user edits
+            self.prompt_builder.reload_translation_rules()
+            translation_rules = self.prompt_builder.get_translation_rules()
+
+            prompt = template.replace("{translation_rules}", translation_rules)
+            prompt = prompt.replace("{reference_section}", reference_section)
             prompt = prompt.replace("{input_text}", text)
             # Replace style placeholder for English translation
             if output_language == "en":
@@ -1473,7 +1479,14 @@ class TranslationService:
 解説: （説明）"""
 
             # Build prompt with full context (original text + translation)
-            prompt = template.replace("{user_instruction}", adjust_type)
+            # Reload translation rules to pick up any user edits
+            self.prompt_builder.reload_translation_rules()
+            translation_rules = self.prompt_builder.get_translation_rules()
+            reference_section = self.prompt_builder.build_reference_section(reference_files) if reference_files else ""
+
+            prompt = template.replace("{translation_rules}", translation_rules)
+            prompt = prompt.replace("{reference_section}", reference_section)
+            prompt = prompt.replace("{user_instruction}", adjust_type)
             prompt = prompt.replace("{source_text}", source_text if source_text else "")
             prompt = prompt.replace("{input_text}", text)
 
@@ -1541,12 +1554,16 @@ class TranslationService:
 {reference_section}"""
 
             # Build prompt
-            prompt = template.replace("{current_translation}", current_translation)
+            # Reload translation rules to pick up any user edits
+            self.prompt_builder.reload_translation_rules()
+            translation_rules = self.prompt_builder.get_translation_rules()
+            reference_section = self.prompt_builder.build_reference_section(reference_files) if reference_files else ""
+
+            prompt = template.replace("{translation_rules}", translation_rules)
+            prompt = prompt.replace("{reference_section}", reference_section)
+            prompt = prompt.replace("{current_translation}", current_translation)
             prompt = prompt.replace("{source_text}", source_text)
             prompt = prompt.replace("{style}", style)
-            # Build reference section if reference files are provided
-            reference_section = self.prompt_builder.build_reference_section(reference_files) if reference_files else ""
-            prompt = prompt.replace("{reference_section}", reference_section)
 
             # Get alternative translation
             raw_result = self.copilot.translate_single(source_text, prompt, reference_files)

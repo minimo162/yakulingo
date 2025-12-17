@@ -2025,9 +2025,14 @@ Based on recent commits:
     - `QUANTITY_UNITS_JA` を `is_sentence_end` チェックに追加（円万億千台個件名社年月日回本枚％%）
     - 数量単位で終わるテキスト（例：△971億円）は文末として扱い、次の行と結合しない
   - **CJK-digit boundary detection**: 日本語項目名と数値が結合される問題を修正
-    - CJKテキストの直後に数字が続き、X座標にギャップがある場合に強い境界として分割
-    - 例：「日本155」→「日本」と「155」を別ブロックに分離
-    - 閾値: `TABLE_LABEL_VALUE_GAP_THRESHOLD = 1.0pt`
+    - CJKテキストの直後に数字が続く場合に強い境界として分割
+    - テーブル領域内: X座標が戻らなければ分離（0pt以上のギャップで分離）
+    - テーブル外: 1pt以上のギャップが必要（誤分離防止）
+    - 例：「日本64」→「日本」と「64」を別ブロックに分離
+  - **Negative sign boundary detection**: 負号記号（△▲▼）を別セルとして認識
+    - 決算短信などで「△43,633」のような負号付き数値を正しく分離
+    - テーブル領域内: 0pt以上のギャップで分離
+    - テーブル外: 1pt以上のギャップが必要
 - **Browser Side Panel Display Mode (2024-12)**:
   - **Default changed**: `browser_display_mode` のデフォルトを `"side_panel"` に変更
   - **Modes**: `"side_panel"`（デフォルト）、`"minimized"`（従来）、`"foreground"`（前面）

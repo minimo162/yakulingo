@@ -4117,50 +4117,28 @@ class CopilotHandler:
                 fill_success = False
                 fill_method = None  # Track which method succeeded
 
-                # Method 1: Use JS to set text directly (faster than fill())
-                # Set innerHTML with proper escaping and newline conversion
-                # This avoids Playwright's fill() overhead (~0.4s -> ~0.05s)
+                # Method 1: Use Playwright's fill() - reliable for React apps
+                # fill() handles contenteditable properly and triggers React state updates
                 method1_error = None
                 try:
                     t0 = time.time()
-                    # For contenteditable, convert newlines to <br> tags
-                    result = input_elem.evaluate('''(el, text) => {
-                        // Focus first to ensure element is ready
-                        el.focus();
-
-                        // Escape HTML entities to prevent XSS and preserve special chars
-                        const escaped = text
-                            .replace(/&/g, '&amp;')
-                            .replace(/</g, '&lt;')
-                            .replace(/>/g, '&gt;')
-                            .replace(/"/g, '&quot;')
-                            .replace(/'/g, '&#039;');
-
-                        // Convert newlines to <br> for contenteditable
-                        const html = escaped.replace(/\\n/g, '<br>');
-                        el.innerHTML = html;
-
-                        // Move cursor to end
-                        const selection = window.getSelection();
-                        const range = document.createRange();
-                        range.selectNodeContents(el);
-                        range.collapse(false);
-                        selection.removeAllRanges();
-                        selection.addRange(range);
-
-                        // Dispatch events to trigger React/framework reactivity
+                    input_elem.fill(message)
+                    t1 = time.time()
+                    # Dispatch events to ensure React detects the change
+                    input_elem.evaluate('''el => {
                         el.dispatchEvent(new Event('input', { bubbles: true }));
                         el.dispatchEvent(new Event('change', { bubbles: true }));
-
-                        return el.innerText.trim().length;
-                    }''', message)
-                    t1 = time.time()
-                    logger.debug("[FILL_DETAIL] js_set_text=%.3fs, content_length=%d", t1 - t0, result)
-                    fill_success = result > 0
+                    }''')
+                    t2 = time.time()
+                    content = input_elem.inner_text()
+                    t3 = time.time()
+                    logger.debug("[FILL_DETAIL] fill=%.3fs, dispatchEvent=%.3fs, inner_text=%.3fs",
+                                 t1 - t0, t2 - t1, t3 - t2)
+                    fill_success = len(content.strip()) > 0
                     if fill_success:
                         fill_method = 1
                     else:
-                        method1_error = "js_set_text succeeded but content is empty"
+                        method1_error = "fill() succeeded but content is empty"
                 except Exception as e:
                     method1_error = str(e)
                     fill_success = False

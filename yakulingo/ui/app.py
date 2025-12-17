@@ -2033,6 +2033,9 @@ class YakuLingoApp:
         """Translate text with 2-step process: language detection then translation."""
         import time
 
+        # Log when button was clicked (before any processing)
+        button_click_time = time.time()
+
         if not self._require_connection():
             return
 
@@ -2040,7 +2043,7 @@ class YakuLingoApp:
 
         trace_id = self._active_translation_trace_id or f"text-{uuid.uuid4().hex[:8]}"
         self._active_translation_trace_id = trace_id
-        logger.info("Translation [%s] starting (chars=%d)", trace_id, len(source_text))
+        logger.info("[TIMING] Translation [%s] button clicked at: %.3f (chars=%d)", trace_id, button_click_time, len(source_text))
 
         # Check text length limit - switch to file translation for long text
         if len(source_text) > TEXT_TRANSLATION_CHAR_LIMIT:
@@ -2071,8 +2074,10 @@ class YakuLingoApp:
                 self._active_translation_trace_id = None
                 return
 
-        # Track translation time
+        # Track translation time from user's perspective (when loading UI appears)
         start_time = time.time()
+        prep_time = start_time - button_click_time
+        logger.info("[TIMING] Translation [%s] start_time set: %.3f (prep_time: %.3fs since button click)", trace_id, start_time, prep_time)
 
         # Update UI to show loading state (before language detection)
         self.state.text_translating = True
@@ -2097,7 +2102,8 @@ class YakuLingoApp:
                 source_text,
             )
 
-            logger.debug("Translation [%s] detected language: %s", trace_id, detected_language)
+            lang_detect_elapsed = time.time() - start_time
+            logger.info("[TIMING] Translation [%s] language detected in %.3fs: %s", trace_id, lang_detect_elapsed, detected_language)
 
             # Update UI with detected language
             self.state.text_detected_language = detected_language
@@ -2119,8 +2125,11 @@ class YakuLingoApp:
             )
 
             # Calculate elapsed time
-            elapsed_time = time.time() - start_time
+            end_time = time.time()
+            elapsed_time = end_time - start_time
+            logger.info("[TIMING] Translation [%s] end_time: %.3f, elapsed_time: %.3fs", trace_id, end_time, elapsed_time)
             self.state.text_translation_elapsed_time = elapsed_time
+            logger.info("[TIMING] Translation [%s] state.text_translation_elapsed_time set to: %.3fs", trace_id, self.state.text_translation_elapsed_time)
 
             if hasattr(result, 'status'):
                 status_value = result.status.value
@@ -2150,6 +2159,7 @@ class YakuLingoApp:
         self.state.text_detected_language = None
 
         # Restore client context for UI operations after asyncio.to_thread
+        ui_refresh_start = time.time()
         with client:
             if error_message:
                 self._notify_error(error_message)
@@ -2161,6 +2171,14 @@ class YakuLingoApp:
             self._refresh_status()
             # Re-enable tabs (translation finished)
             self._refresh_tabs()
+        ui_refresh_elapsed = time.time() - ui_refresh_start
+        total_from_button_click = time.time() - button_click_time
+        logger.info("[TIMING] Translation [%s] UI refresh completed in %.3fs", trace_id, ui_refresh_elapsed)
+        logger.info("[TIMING] Translation [%s] SUMMARY: displayed=%.1fs, total_from_button=%.3fs, diff=%.3fs",
+                    trace_id,
+                    self.state.text_translation_elapsed_time or 0,
+                    total_from_button_click,
+                    total_from_button_click - (self.state.text_translation_elapsed_time or 0))
 
         self._active_translation_trace_id = None
 

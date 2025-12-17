@@ -2441,6 +2441,11 @@ Based on recent commits:
   - **Early termination check**: stop_button消失直後にテキスト安定性を即座にチェック（stable_count=1から開始可能）
   - **Edge startup optimization**: `--disable-extensions`, `--disable-features=TranslateUI`, `--disable-gpu-sandbox` を追加
   - **Expected improvement**: 送信処理 約1秒高速化、新規チャット開始 約0.5秒高速化、ポーリング完了 約0.05〜0.1秒高速化
+- **Prompt Sending Optimization (2024-12)**:
+  - **SEND_WARMUP sleep reduction**: 0.05秒→0.02秒に短縮（約0.03秒短縮）
+  - **Playwright fill() maintained**: React contenteditable要素との互換性のためfill()メソッドを維持（JS直接設定は改行が消える問題あり）
+  - **Elapsed time measurement fix**: `start_time`をUI表示開始時点に移動（用語集読み込み等の準備時間を除外）
+  - **Detailed timing logs**: `[TIMING]`プレフィックスで翻訳処理の各ステップの時間を出力（デバッグ用）
 
 ## Git Workflow
 

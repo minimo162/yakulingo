@@ -429,7 +429,10 @@ def _bring_opened_app_to_foreground(process_handle) -> None:
 
         # Wait for the application to be ready for input (max 5 seconds)
         WAIT_TIMEOUT = 5000
-        kernel32.WaitForInputIdle(process_handle, WAIT_TIMEOUT)
+        # WaitForInputIdle is in user32.dll, not kernel32.dll
+        user32.WaitForInputIdle.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+        user32.WaitForInputIdle.restype = wintypes.DWORD
+        user32.WaitForInputIdle(process_handle, WAIT_TIMEOUT)
 
         # Get the process ID
         process_id = wintypes.DWORD()

@@ -3730,12 +3730,18 @@ def run_app(
     global nicegui, ui, nicegui_app, nicegui_Client
     _t_nicegui_import = time.perf_counter()
     import nicegui as _nicegui
-    from nicegui import ui as _ui, app as _nicegui_app, Client as _nicegui_Client
+    _t1 = time.perf_counter()
+    logger.debug("[TIMING] import nicegui: %.2fs", _t1 - _t_nicegui_import)
+    from nicegui import ui as _ui
+    _t2 = time.perf_counter()
+    logger.debug("[TIMING] from nicegui import ui: %.2fs", _t2 - _t1)
+    from nicegui import app as _nicegui_app, Client as _nicegui_Client
+    logger.debug("[TIMING] from nicegui import app, Client: %.2fs", time.perf_counter() - _t2)
     nicegui = _nicegui
     ui = _ui
     nicegui_app = _nicegui_app
     nicegui_Client = _nicegui_Client
-    logger.info("[TIMING] NiceGUI import: %.2fs", time.perf_counter() - _t_nicegui_import)
+    logger.info("[TIMING] NiceGUI import total: %.2fs", time.perf_counter() - _t_nicegui_import)
 
     # Validate NiceGUI version after import
     _ensure_nicegui_version()

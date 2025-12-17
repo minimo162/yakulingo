@@ -252,6 +252,7 @@ body {
 .result-panel > .nicegui-column {
     padding: 1.5rem 2rem;
     min-height: 0;  /* Required for scrolling to top in nested flex containers */
+    flex-shrink: 0;  /* Prevent content from shrinking */
 }
 
 /* Result panel inner content - dynamic width based on monitor resolution, centered */

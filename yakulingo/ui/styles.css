@@ -172,7 +172,7 @@ body {
     max-height: var(--viewport-height);
     min-width: 1000px;  /* Minimum width to prevent layout breaking */
     overflow: hidden;   /* Prevent body scrolling - use inner containers for scroll */
-    overflow-x: auto;   /* Enable horizontal scroll when window is too narrow */
+    overflow-x: hidden; /* Prevent horizontal scroll - min-width handles narrow windows */
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
 }
@@ -251,7 +251,7 @@ body {
 /* Apply padding to result panel's direct child to prevent flickering */
 .result-panel > .nicegui-column {
     padding: 1.5rem 2rem;
-    min-height: min-content;  /* Allow scrolling while preserving content height */
+    flex: none;  /* Don't participate in flex sizing - use natural content height */
 }
 
 /* Result panel inner content - dynamic width based on monitor resolution, centered */

@@ -1666,13 +1666,21 @@ class YakuLingoApp:
         })();
         """
         try:
-            async def log_layout():
-                result = await ui.run_javascript(js_code)
-                if result:
-                    logger.info("[LAYOUT_DEBUG] resultPanel: %s", result.get('resultPanel'))
-                    logger.info("[LAYOUT_DEBUG] resultPanelNiceguiColumn: %s", result.get('resultPanelNiceguiColumn'))
-                    logger.info("[LAYOUT_DEBUG] innerColumn: %s", result.get('innerColumn'))
-            asyncio.create_task(log_layout())
+            client = self._client
+            if client:
+                async def log_layout():
+                    try:
+                        with client:
+                            result = await client.run_javascript(js_code)
+                        if result:
+                            logger.info("[LAYOUT_DEBUG] resultPanel: %s", result.get('resultPanel'))
+                            logger.info("[LAYOUT_DEBUG] resultPanelNiceguiColumn: %s", result.get('resultPanelNiceguiColumn'))
+                            logger.info("[LAYOUT_DEBUG] innerColumn: %s", result.get('innerColumn'))
+                            logger.info("[LAYOUT_DEBUG] hasHorizontalOverflow: %s", result.get('hasHorizontalOverflow'))
+                            logger.info("[LAYOUT_DEBUG] hasVerticalOverflow: %s", result.get('hasVerticalOverflow'))
+                    except Exception as inner_e:
+                        logger.warning("[LAYOUT] JavaScript execution failed: %s", inner_e)
+                asyncio.create_task(log_layout())
         except Exception as e:
             logger.warning("[LAYOUT] Failed to log layout dimensions: %s", e)
 

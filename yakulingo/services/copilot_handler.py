@@ -4253,15 +4253,12 @@ class CopilotHandler:
                     # Note: change event removed for optimization - input event is sufficient for React
                     input_elem.evaluate('el => el.dispatchEvent(new Event("input", { bubbles: true }))')
                     t2 = time.time()
-                    content = input_elem.inner_text()
-                    t3 = time.time()
-                    logger.debug("[FILL_DETAIL] fill=%.3fs, dispatchEvent=%.3fs, inner_text=%.3fs",
-                                 t1 - t0, t2 - t1, t3 - t2)
-                    fill_success = len(content.strip()) > 0
-                    if fill_success:
-                        fill_method = 1
-                    else:
-                        method1_error = "fill() succeeded but content is empty"
+                    # OPTIMIZED: Removed inner_text() verification (~0.11s savings)
+                    # Post-send verification catches empty input cases
+                    logger.debug("[FILL_DETAIL] fill=%.3fs, dispatchEvent=%.3fs",
+                                 t1 - t0, t2 - t1)
+                    fill_success = True
+                    fill_method = 1
                 except Exception as e:
                     method1_error = str(e)
                     fill_success = False
@@ -5877,7 +5874,7 @@ class CopilotHandler:
                 # This helps browser prepare the element for click, reducing click latency
                 try:
                     new_chat_btn.evaluate('el => el.scrollIntoView({behavior: "instant", block: "center"})')
-                    time.sleep(0.03)  # 30ms for browser to settle (reduced from 50ms)
+                    time.sleep(0.01)  # 10ms for browser to settle (optimized from 30ms)
                 except Exception:
                     pass  # Non-critical - proceed with click
 

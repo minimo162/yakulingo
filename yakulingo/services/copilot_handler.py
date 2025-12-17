@@ -5412,15 +5412,16 @@ class CopilotHandler:
                     time.sleep(poll_interval)
                     continue
 
-                # OPTIMIZED: Early termination check when stop button just disappeared
-                # If we have content and stop button was seen but just disappeared,
-                # check if text is already stable (same as last) to skip first stability check
+                # OPTIMIZED: Immediate termination when stop button disappears and text is stable
+                # If stop button was visible and just disappeared, Copilot has finished generating.
+                # Return immediately without additional stability checks to reduce lag.
                 if stop_button_ever_seen and has_content and stable_count == 0:
                     quick_text, quick_found = self._get_latest_response_text()
                     if quick_found and quick_text and quick_text == last_text:
-                        # Text is already stable - start with stable_count=1
-                        stable_count = 1
-                        logger.debug("[POLLING] Early stability: stop button disappeared, text unchanged")
+                        # Text is stable - return immediately (stop button confirms completion)
+                        logger.info("[TIMING] response_stabilized: %.2fs (early termination: stop button disappeared, text stable)",
+                                   time.time() - response_start_time)
+                        return quick_text
 
                 # Warn if stop button was never found (possible selector change)
                 if has_content and not stop_button_ever_seen and not stop_button_warning_logged:

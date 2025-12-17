@@ -212,7 +212,8 @@ body {
 /* === 3-Column Main Layout === */
 .main-area {
     margin-left: var(--sidebar-width);
-    /* Use calc(100% - sidebar) to avoid 100vw which includes scrollbar width */
+    /* Use 100% instead of 100vw to avoid scrollbar width issue */
+    /* 100vw includes scrollbar width, causing horizontal overflow when vertical scrollbar appears */
     width: calc(100% - var(--sidebar-width));
     flex: 1;
     height: var(--viewport-height);  /* Fixed height to match viewport */
@@ -220,7 +221,6 @@ body {
     display: flex;
     flex-direction: row;
     overflow: hidden;  /* Prevent children from overflowing */
-    overflow-x: hidden;  /* Explicitly prevent horizontal scroll */
 }
 
 /* Input Panel (Middle Column - Sticky) */
@@ -241,6 +241,7 @@ body {
 .result-panel {
     flex: 1;
     height: 100%;  /* Use 100% to respect parent's height constraint */
+    min-height: 0;  /* Required for proper scrolling in nested flex containers */
     /* Note: padding moved to child elements to prevent "frame" flash during DOM refresh */
     overflow-y: auto;
     display: flex;
@@ -251,8 +252,9 @@ body {
 /* Apply padding to result panel's direct child to prevent flickering */
 .result-panel > .nicegui-column {
     padding: 1.5rem 2rem;
-    /* flex-shrink: 0 prevents content from shrinking and disappearing when scrolling */
-    flex-shrink: 0;
+    /* min-height: 0 is required for proper scrolling in flex containers */
+    /* Without this, flex-1 children can prevent scrolling to the top */
+    min-height: 0;
 }
 
 /* Result panel inner content - dynamic width based on monitor resolution, centered */

@@ -3842,23 +3842,29 @@ def run_app(
         # Cancel all pending operations (non-blocking, just flag settings)
         step_start = time_module.time()
         if yakulingo_app._active_progress_timer is not None:
+            t0 = time_module.time()
             try:
                 yakulingo_app._active_progress_timer.cancel()
                 yakulingo_app._active_progress_timer = None
             except Exception:
                 pass
+            logger.debug("[TIMING] Cancel: progress_timer: %.3fs", time_module.time() - t0)
 
         if yakulingo_app._login_polling_task is not None:
+            t0 = time_module.time()
             try:
                 yakulingo_app._login_polling_task.cancel()
             except Exception:
                 pass
+            logger.debug("[TIMING] Cancel: login_polling_task: %.3fs", time_module.time() - t0)
 
         if yakulingo_app.translation_service is not None:
+            t0 = time_module.time()
             try:
                 yakulingo_app.translation_service.cancel()
             except Exception:
                 pass
+            logger.debug("[TIMING] Cancel: translation_service: %.3fs", time_module.time() - t0)
 
         logger.debug("[TIMING] Cancel operations: %.2fs", time_module.time() - step_start)
 

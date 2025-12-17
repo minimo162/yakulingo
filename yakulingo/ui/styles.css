@@ -3424,3 +3424,29 @@ a:not(.q-btn):not(.q-item),
         opacity: 0.95;
     }
 }
+
+/* === Layout Debugging (デバッグ用 - 削除可) === */
+/* Uncomment these rules to visualize layout containers */
+/*
+.debug-layout .app-container {
+    border: 3px solid red !important;
+}
+.debug-layout .sidebar {
+    border: 3px solid blue !important;
+}
+.debug-layout .main-area {
+    border: 3px solid green !important;
+}
+.debug-layout .input-panel {
+    border: 3px solid orange !important;
+}
+.debug-layout .result-panel {
+    border: 3px solid purple !important;
+}
+.debug-layout .result-container {
+    border: 3px solid cyan !important;
+}
+.debug-layout .nicegui-column {
+    border: 1px dashed pink !important;
+}
+*/

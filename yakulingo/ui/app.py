@@ -3825,8 +3825,15 @@ def run_app(
         # Set shutdown flag FIRST to prevent new tasks from starting
         yakulingo_app._shutdown_requested = True
 
-        # Cancel all pending operations immediately (non-blocking)
-        # These are just flag settings, no waiting
+        # Cancel login wait IMMEDIATELY (before other cancellations)
+        # This sets _login_cancelled flag to break out of wait loops faster
+        if yakulingo_app._copilot is not None:
+            try:
+                yakulingo_app._copilot.cancel_login_wait()
+            except Exception:
+                pass
+
+        # Cancel all pending operations (non-blocking, just flag settings)
         if yakulingo_app._active_progress_timer is not None:
             try:
                 yakulingo_app._active_progress_timer.cancel()
@@ -3846,11 +3853,7 @@ def run_app(
             except Exception:
                 pass
 
-        if yakulingo_app._copilot is not None:
-            try:
-                yakulingo_app._copilot.cancel_login_wait()
-            except Exception:
-                pass
+        logger.debug("[TIMING] Cancel flags set: %.2fs", time_module.time() - cleanup_start)
 
         # Stop hotkey manager (quick, just unregisters hotkey)
         yakulingo_app.stop_hotkey_manager()

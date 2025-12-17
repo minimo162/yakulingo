@@ -2410,9 +2410,11 @@ class TranslationService:
         self.batch_translator.cancel()
 
         # Also cancel PDF processor if it's running OCR
-        pdf_processor = self.processors.get('.pdf')
-        if pdf_processor and hasattr(pdf_processor, 'cancel'):
-            pdf_processor.cancel()
+        # Use _processors (not processors property) to avoid lazy initialization on shutdown
+        if self._processors is not None:
+            pdf_processor = self._processors.get('.pdf')
+            if pdf_processor and hasattr(pdf_processor, 'cancel'):
+                pdf_processor.cancel()
 
     def _get_processor(self, file_path: Path) -> FileProcessor:
         """Get appropriate processor for file type"""

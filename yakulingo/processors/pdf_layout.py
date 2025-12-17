@@ -230,18 +230,30 @@ class LayoutArray:
 # Device Detection
 # =============================================================================
 
+# Cache for is_layout_available() - checked once per process lifetime
+_layout_available_cache: bool | None = None
+
+
 def is_layout_available() -> bool:
     """
-    Check if PP-DocLayout-L is available.
+    Check if PP-DocLayout-L is available (cached).
+
+    The result is cached since paddleocr availability won't change during runtime.
+    This avoids the ~100-200ms import overhead on repeated calls.
 
     Returns:
         True if paddleocr is installed and LayoutDetection is available
     """
+    global _layout_available_cache
+    if _layout_available_cache is not None:
+        return _layout_available_cache
+
     try:
         from paddleocr import LayoutDetection  # noqa: F401
-        return True
+        _layout_available_cache = True
     except ImportError:
-        return False
+        _layout_available_cache = False
+    return _layout_available_cache
 
 
 def get_device(config_device: str = "auto") -> str:

@@ -2951,22 +2951,39 @@ class YakuLingoApp:
 
         init_dialog = None
         try:
+            # Set loading state immediately for fast UI feedback
+            self.state.selected_file = file_path
+            self.state.file_state = FileState.SELECTED
+            self.state.file_detected_language = None  # Clear previous detection
+            self.state.file_info = None  # Will be loaded async
+            self._refresh_content()
+
             # On-demand PP-DocLayout-L initialization for PDF files
             if file_path.suffix.lower() == '.pdf':
-                # Show initialization dialog immediately for fast feedback
-                with client:
-                    init_dialog = self._create_layout_init_dialog()
-                    init_dialog.open()
-                # Yield to event loop to ensure dialog is rendered
-                await asyncio.sleep(0)
-
                 from yakulingo.processors import is_layout_available
-                # Check availability in background thread (import paddleocr can be slow)
-                layout_available = await asyncio.to_thread(is_layout_available)
-                if layout_available:
-                    # PP-DocLayout-L is available, ensure it's initialized
+
+                # Fast path: already initialized (from File tab preload)
+                needs_init = (
+                    self._layout_init_state == LayoutInitializationState.NOT_INITIALIZED
+                    and is_layout_available()
+                )
+
+                if needs_init:
+                    # Show initialization dialog only if initialization is actually needed
+                    with client:
+                        init_dialog = self._create_layout_init_dialog()
+                        init_dialog.open()
+                    # Yield to event loop to ensure dialog is rendered
+                    await asyncio.sleep(0)
                     await self._ensure_layout_initialized()
-                else:
+                elif self._layout_init_state == LayoutInitializationState.INITIALIZING:
+                    # Initialization in progress (from preload) - wait for it
+                    with client:
+                        init_dialog = self._create_layout_init_dialog()
+                        init_dialog.open()
+                    await asyncio.sleep(0)
+                    await self._ensure_layout_initialized()
+                elif not is_layout_available():
                     # PP-DocLayout-L not installed - warn user
                     with client:
                         ui.notify(
@@ -2976,13 +2993,7 @@ class YakuLingoApp:
                             position='top',
                             timeout=8000,
                         )
-
-            # Set loading state immediately for fast UI feedback
-            self.state.selected_file = file_path
-            self.state.file_state = FileState.SELECTED
-            self.state.file_detected_language = None  # Clear previous detection
-            self.state.file_info = None  # Will be loaded async
-            self._refresh_content()
+                # else: already INITIALIZED or FAILED - proceed immediately
 
             # Load file info in background thread to avoid UI blocking
             file_info = await asyncio.to_thread(

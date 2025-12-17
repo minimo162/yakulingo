@@ -681,6 +681,28 @@ def disconnect(self) -> None:
 This is critical when called from `asyncio.to_thread()` in NiceGUI async handlers,
 as the worker thread differs from the Playwright initialization thread.
 
+### Pre-initialized Playwright Singleton (早期起動最適化)
+
+アプリ起動時のPlaywright初期化を高速化するため、グローバルシングルトンを使用：
+
+```python
+# yakulingo/services/copilot_handler.py
+_pre_initialized_playwright: Playwright | None = None
+
+def get_pre_initialized_playwright() -> Playwright | None:
+    """Return pre-initialized Playwright instance if available."""
+    return _pre_initialized_playwright
+
+def clear_pre_initialized_playwright() -> None:
+    """Clear the pre-initialized Playwright instance after it has been stopped."""
+    global _pre_initialized_playwright
+    _pre_initialized_playwright = None
+```
+
+**重要**: `disconnect()`や`_cleanup_on_error()`で`self._playwright.stop()`を呼び出した後は、
+必ず`clear_pre_initialized_playwright()`を呼び出すこと。停止済みのPlaywrightインスタンスを
+再利用すると接続エラーが発生する。
+
 ### Connection Flow
 The `connect()` method performs these steps:
 1. Checks if already connected (returns immediately if true)
@@ -2387,6 +2409,8 @@ Based on recent commits:
   - **LayoutInitializationState**: 初期化状態管理（NOT_INITIALIZED, INITIALIZING, INITIALIZED, FAILED）
   - **Windows message suppression**: Windowsメッセージを抑制
   - **Installation check**: PDF選択時に`is_layout_available()`でチェック、未インストール時にUI警告を表示
+  - **is_layout_available() cache**: paddleocr importを1回のみに制限（`_layout_available_cache`グローバル変数）
+  - **Dialog skip optimization**: 初期化済み時は準備ダイアログをスキップ（2回目以降のPDF選択が即座に完了）
   - **Fallback detection**: `_layout_fallback_used`フラグで状態を追跡
   - **Memory estimation**: 大規模PDF処理時のメモリ使用量見積もりをログに出力
 - **Translation Card UI Unification**:

@@ -538,6 +538,18 @@ def get_pre_initialized_playwright(timeout: float = 30.0):
     return None
 
 
+def clear_pre_initialized_playwright():
+    """Clear the pre-initialized Playwright instance after it has been stopped.
+
+    This must be called when Playwright.stop() is called on the pre-initialized
+    instance to prevent returning a stopped instance on subsequent connections.
+    """
+    global _pre_initialized_playwright
+    with _pre_init_lock:
+        _pre_initialized_playwright = None
+        logger.debug("Pre-initialized Playwright cleared")
+
+
 class CopilotHandler:
     """
     Handles communication with M365 Copilot via Playwright.
@@ -1437,6 +1449,8 @@ class CopilotHandler:
         with suppress(Exception):
             if self._playwright:
                 self._playwright.stop()
+                # Clear the pre-initialized Playwright global if this was the same instance
+                clear_pre_initialized_playwright()
 
         # Terminate Edge browser process if we started it and a connection
         # error occurred. Otherwise, the remote debugging port remains
@@ -3656,6 +3670,9 @@ class CopilotHandler:
         with suppress(Exception):
             if self._playwright:
                 self._playwright.stop()
+                # Clear the pre-initialized Playwright global if this was the same instance
+                # This prevents returning a stopped instance on subsequent connections
+                clear_pre_initialized_playwright()
 
         # Terminate Edge browser process that we started
         # Only if we started the browser in this session AND keep_browser is False

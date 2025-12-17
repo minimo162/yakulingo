@@ -562,7 +562,7 @@ async def _translate_text(self):
 |---余白---|---アプリ---|---隙間---|---サイドパネル---|---余白---|
 ```
 - アプリとサイドパネルの全体幅（`app_width + gap + side_panel_width`）を画面中央に配置
-- `app.native.window_args` でpywebviewにアプリ位置を事前指定
+- `_position_window_early_sync()` で5msポーリングによりウィンドウ作成直後に正しい位置へ移動
 - `--window-position` でEdge起動時に位置を指定
 
 **サイドパネルのサイズ計算（解像度対応）:**
@@ -1990,11 +1990,11 @@ Based on recent commits:
     - **アプリとEdgeを最初から正しい位置に配置**（ちらつきなし）
   - **Window positioning optimization (2024-12)**:
     - `_calculate_app_position_for_side_panel()`: サイドパネルモードのアプリ位置を事前計算
-    - `_position_window_early_sync()`: on_startupでウィンドウ監視タスクを開始し、pywebviewウィンドウが作成されたら即座に（50ms以内）正しい位置に移動
+    - `_position_window_early_sync()`: on_startupでウィンドウ監視タスクを開始し、pywebviewウィンドウが作成されたら即座に（5msポーリング）正しい位置に移動
     - `_calculate_side_panel_geometry_from_screen()`: Edge位置計算 + アプリ位置を`_expected_app_position`に保存
     - `--window-position`: Edge起動時に正しい位置を指定
-    - **早期ウィンドウ配置**: NiceGUIのmultiprocessingによりwindow_argsが子プロセスに渡されない問題を回避。ウィンドウ作成をポーリングで監視し、見つかったらすぐにSetWindowPos()で移動
-    - `_reposition_windows_for_side_panel()`: 既に正しい位置なら移動をスキップ（重複移動によるちらつき防止）
+    - **早期ウィンドウ配置**: NiceGUIのmultiprocessingによりwindow_argsが子プロセスに渡されないため、ウィンドウ作成を5msポーリングで監視しSetWindowPos()で移動
+    - `_reposition_windows_for_side_panel()`: `_calculate_app_position_for_side_panel()`と同じ位置計算を使用し、既に正しい位置なら移動をスキップ
   - **Simplified browser handling**:
     - サイドパネル/foregroundモードではログイン時の前面表示処理をスキップ
     - サイドパネル/foregroundモードではEdge起動時に画面外配置オプションを使用しない
@@ -2005,7 +2005,7 @@ Based on recent commits:
     - PDF翻訳再接続時: `_reconnect_copilot_with_retry`で`browser_display_mode`をチェック
     - 自動ログイン完了時: `should_minimize`条件を追加して不要な最小化を防止
   - **Benefits**: ブラウザスロットリング問題を回避、翻訳経過をリアルタイムで確認可能
-  - **Implementation**: `_calculate_app_position_for_side_panel()`, `_calculate_side_panel_geometry_from_screen()`, `_expected_app_position`, `app.native.window_args`, `_find_yakulingo_window_handle()`, `_position_edge_as_side_panel()`, `_reposition_windows_for_side_panel()`
+  - **Implementation**: `_calculate_app_position_for_side_panel()`, `_calculate_side_panel_geometry_from_screen()`, `_expected_app_position`, `_position_window_early_sync()`, `_find_yakulingo_window_handle()`, `_position_edge_as_side_panel()`, `_reposition_windows_for_side_panel()`
 - **Window Minimization Fix at Startup (2024-12)**:
   - **Problem**: アプリ起動時にウィンドウが最小化されて画面に表示されないことがある
   - **Root causes**:

@@ -169,7 +169,7 @@ class TestCopilotHandlerSendMessage:
     """Tests for _send_message() method"""
 
     def test_send_message_fills_and_submits(self):
-        """_send_message uses fill() to set text and presses Enter to send"""
+        """_send_message uses fill() to set text and sends via JS events or Enter key"""
         handler = CopilotHandler()
         handler._is_page_valid = Mock(return_value=True)
 
@@ -181,33 +181,94 @@ class TestCopilotHandlerSendMessage:
         # query_selector returns None for auth dialog
         mock_page.query_selector.return_value = None
 
+        # Mock evaluate to simulate JS events success (stopBtnVisible=True means send succeeded)
+        # The implementation checks for stopBtnVisible or textLength=0 after JS events
+        call_count = [0]
+
+        def mock_evaluate(js_code, *args):
+            call_count[0] += 1
+            # Return appropriate mock data based on the JS code
+            if 'stopBtnAfterEvents' in js_code:
+                # JS key events - simulate success
+                return {
+                    'inputFound': True,
+                    'events': [
+                        {'type': 'keydown', 'dispatched': True, 'defaultPrevented': False},
+                        {'type': 'keypress', 'dispatched': True, 'defaultPrevented': False},
+                        {'type': 'keyup', 'dispatched': True, 'defaultPrevented': False},
+                    ],
+                    'textLengthBefore': 12,
+                    'textLengthAfter': 0,  # Input cleared = success
+                    'success': True,
+                    'stopBtnAfterEvents': True  # Stop button visible = send started
+                }
+            elif 'stopBtnVisible' in js_code:
+                # Post-send state check
+                return {'textLength': 0, 'stopBtnVisible': True, 'timestamp': 123}
+            else:
+                # Other evaluate calls (button state, etc.)
+                return {}
+
+        mock_page.evaluate = mock_evaluate
+
         handler._page = mock_page
 
         handler._send_message("Test message")
 
         # Method 1: fill() is called with the message
         mock_input.fill.assert_called_once_with("Test message")
-        # Sends via Enter key (not click)
-        mock_input.press.assert_called_with("Enter")
+        # When JS events succeed (stopBtnVisible=True), press("Enter") is NOT called
+        # The implementation skips Playwright Enter to avoid sending empty message
+        # So we just verify fill() was called - that's the key assertion
 
-    def test_send_message_presses_enter_when_no_button(self):
-        """_send_message presses Enter when send button not found"""
+    def test_send_message_presses_enter_when_js_events_fail(self):
+        """_send_message presses Enter as fallback when JS events don't trigger send"""
         handler = CopilotHandler()
         handler._is_page_valid = Mock(return_value=True)
 
         mock_input = Mock()
         mock_input.inner_text.return_value = "Test message"  # Non-empty after fill
-        mock_input.evaluate.return_value = True  # Method 1 succeeds
         mock_page = Mock()
         mock_page.wait_for_selector.return_value = mock_input
         mock_page.query_selector.return_value = None  # No auth dialog / No send button
+
+        # Track evaluate calls to return different values at different stages
+        evaluate_call_count = [0]
+
+        def mock_evaluate(js_code, *args):
+            evaluate_call_count[0] += 1
+            if 'stopBtnAfterEvents' in js_code:
+                # JS key events - simulate failure (text not cleared, no stop button)
+                return {
+                    'inputFound': True,
+                    'events': [
+                        {'type': 'keydown', 'dispatched': True, 'defaultPrevented': False},
+                        {'type': 'keypress', 'dispatched': True, 'defaultPrevented': False},
+                        {'type': 'keyup', 'dispatched': True, 'defaultPrevented': False},
+                    ],
+                    'textLengthBefore': 12,
+                    'textLengthAfter': 12,  # Input NOT cleared
+                    'success': True,
+                    'stopBtnAfterEvents': False  # Stop button NOT visible
+                }
+            elif 'stopBtnVisible' in js_code:
+                # First call (after JS events): failure state
+                # Second call (after Playwright Enter): success state
+                if evaluate_call_count[0] <= 10:  # Early calls - JS events failed
+                    return {'textLength': 12, 'stopBtnVisible': False, 'timestamp': 123}
+                else:  # Later calls - after Playwright Enter succeeded
+                    return {'textLength': 0, 'stopBtnVisible': True, 'timestamp': 456}
+            else:
+                return {}
+
+        mock_page.evaluate = mock_evaluate
 
         handler._page = mock_page
 
         handler._send_message("Test message")
 
-        # Final press is Enter (after Method 1 succeeds but no send button found)
-        assert mock_input.press.call_args_list[-1] == (("Enter",),)
+        # When JS events fail, Playwright press("Enter") is called as fallback
+        mock_input.press.assert_called_with("Enter")
 
     def test_send_message_handles_timeout(self):
         """_send_message handles input element timeout"""
@@ -236,6 +297,24 @@ class TestCopilotHandlerSendMessage:
         mock_page.wait_for_selector.return_value = mock_input
         mock_page.query_selector.return_value = None  # No auth dialog
 
+        # Mock evaluate to simulate JS events success
+        def mock_evaluate(js_code, *args):
+            if 'stopBtnAfterEvents' in js_code:
+                return {
+                    'inputFound': True,
+                    'events': [],
+                    'textLengthBefore': 50,
+                    'textLengthAfter': 0,
+                    'success': True,
+                    'stopBtnAfterEvents': True
+                }
+            elif 'stopBtnVisible' in js_code:
+                return {'textLength': 0, 'stopBtnVisible': True, 'timestamp': 123}
+            else:
+                return {}
+
+        mock_page.evaluate = mock_evaluate
+
         handler._page = mock_page
 
         special_text = "日本語テスト <script>alert('xss')</script> & special chars"
@@ -243,8 +322,7 @@ class TestCopilotHandlerSendMessage:
 
         # fill() is used with the special characters
         mock_input.fill.assert_called_once_with(special_text)
-        # Sends via Enter key
-        mock_input.press.assert_called_with("Enter")
+        # When JS events succeed, press("Enter") is not called (send already happened)
 
 
 class TestCopilotHandlerGetResponse:

@@ -315,7 +315,8 @@ def create_text_result_panel(
         state.text_view_state
     )
 
-    with ui.column().classes('flex-1 w-full gap-4'):
+    # Note: Do NOT use flex-1 here - it causes content to shrink and top content to disappear
+    with ui.column().classes('w-full gap-4'):
         # Source text section at the top (when translating or has result)
         source_text_to_display = None
         if state.text_translating and state.source_text:

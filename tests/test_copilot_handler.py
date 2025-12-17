@@ -840,7 +840,8 @@ class TestSendMessage:
         handler._page = mock_page
 
         # Mock time to make polling loops exit quickly
-        time_values = [i * 0.2 for i in range(100)]
+        # Need enough values for all time.time() calls in _send_message
+        time_values = [i * 0.1 for i in range(500)]
 
         with patch('time.time', side_effect=time_values):
             with patch('time.sleep'):

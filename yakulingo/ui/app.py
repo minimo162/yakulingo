@@ -215,6 +215,9 @@ class YakuLingoApp:
         self._early_connection_task: "asyncio.Task | None" = None
         self._early_connection_result: Optional[bool] = None
 
+        # Early window positioning flag (prevents duplicate repositioning)
+        self._early_position_completed = False
+
         # Text input textarea reference for auto-focus
         self._text_input_textarea: Optional[ui.textarea] = None
 
@@ -856,11 +859,15 @@ class YakuLingoApp:
 
         # For side_panel mode, reposition both windows after UI is fully displayed
         # This ensures windows are positioned correctly even if pywebview placed app at center
+        # Skip if early positioning already completed (prevents duplicate repositioning)
         if sys.platform == 'win32':
-            try:
-                await asyncio.to_thread(self._reposition_windows_for_side_panel)
-            except Exception as e:
-                logger.debug("Window repositioning failed: %s", e)
+            if not self._early_position_completed:
+                try:
+                    await asyncio.to_thread(self._reposition_windows_for_side_panel)
+                except Exception as e:
+                    logger.debug("Window repositioning failed: %s", e)
+            else:
+                logger.debug("Skipping window repositioning (early positioning already completed)")
 
             # Additional Windows API fallback to bring app to front
             try:
@@ -4111,6 +4118,7 @@ def run_app(
                                     if result:
                                         logger.debug("[EARLY_POSITION] Window moved from (%d, %d) to (%d, %d) after %dms",
                                                    current_x, current_y, target_x, target_y, waited_ms)
+                                        yakulingo_app._early_position_completed = True
                                     else:
                                         logger.debug("[EARLY_POSITION] SetWindowPos failed after %dms", waited_ms)
                                 else:
@@ -4120,6 +4128,7 @@ def run_app(
                                         SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_NOSIZE | SWP_NOMOVE
                                     )
                                     logger.debug("[EARLY_POSITION] Window already at correct position after %dms", waited_ms)
+                                    yakulingo_app._early_position_completed = True
                     else:
                         # For minimized/foreground modes, just ensure window is visible
                         user32.SetWindowPos(

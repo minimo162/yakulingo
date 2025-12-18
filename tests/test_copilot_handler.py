@@ -1533,26 +1533,19 @@ class TestGptModeSwitch:
         # The result depends on verification query_selector call count
         # If verification succeeds (returns Think Deeper), result is True
 
-    def test_ensure_gpt_mode_returns_false_when_button_not_found(self, handler):
-        """_ensure_gpt_mode returns False when button not found for clicking"""
+    def test_ensure_gpt_mode_returns_true_when_button_not_found(self, handler):
+        """_ensure_gpt_mode returns True when button not found (doesn't block translation)"""
         mock_page = MagicMock()
 
-        # Text elem exists and shows different mode
-        mock_text_elem = MagicMock()
-        mock_text_elem.text_content.return_value = "自動"
-
-        # But button not found
-        def query_selector_side_effect(selector):
-            if 'div' in selector:
-                return mock_text_elem
-            return None  # Button not found
-
-        mock_page.query_selector.side_effect = query_selector_side_effect
+        # All selectors return None (button not found)
+        mock_page.query_selector.return_value = None
+        mock_page.query_selector_all.return_value = []
         handler._page = mock_page
 
         result = handler._ensure_gpt_mode()
 
-        assert result is False
+        # Should return True to not block translation when UI changes
+        assert result is True
 
     def test_ensure_gpt_mode_returns_true_on_exception(self, handler):
         """_ensure_gpt_mode returns True on exception (doesn't block translation)"""

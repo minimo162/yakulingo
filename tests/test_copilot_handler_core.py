@@ -178,8 +178,12 @@ class TestCopilotHandlerSendMessage:
         mock_page = Mock()
         # wait_for_selector returns input element for input, then for send button
         mock_page.wait_for_selector.return_value = mock_input
-        # query_selector returns None for auth dialog
-        mock_page.query_selector.return_value = None
+        # query_selector returns mock_input for input selector, None for auth dialog
+        def query_selector_side_effect(selector):
+            if 'm365-chat-editor' in selector:
+                return mock_input
+            return None  # auth dialog selector
+        mock_page.query_selector.side_effect = query_selector_side_effect
 
         # Mock evaluate to simulate JS events success (stopBtnVisible=True means send succeeded)
         # The implementation checks for stopBtnVisible or textLength=0 after JS events
@@ -230,7 +234,12 @@ class TestCopilotHandlerSendMessage:
         mock_input.inner_text.return_value = "Test message"  # Non-empty after fill
         mock_page = Mock()
         mock_page.wait_for_selector.return_value = mock_input
-        mock_page.query_selector.return_value = None  # No auth dialog / No send button
+        # query_selector returns mock_input for input selector, None for others
+        def query_selector_side_effect(selector):
+            if 'm365-chat-editor' in selector:
+                return mock_input
+            return None  # auth dialog / send button
+        mock_page.query_selector.side_effect = query_selector_side_effect
 
         # Track evaluate calls to return different values at different stages
         evaluate_call_count = [0]
@@ -270,21 +279,21 @@ class TestCopilotHandlerSendMessage:
         # When JS events fail, Playwright press("Enter") is called as fallback
         mock_input.press.assert_called_with("Enter")
 
-    def test_send_message_handles_timeout(self):
-        """_send_message handles input element timeout"""
+    def test_send_message_handles_input_not_found(self):
+        """_send_message raises error when input element not found"""
         handler = CopilotHandler()
         handler._is_page_valid = Mock(return_value=True)
 
         mock_page = Mock()
-        mock_page.query_selector.return_value = None  # No auth dialog
-        mock_page.wait_for_selector.side_effect = Exception("Timeout")
+        # query_selector returns None for all selectors (input not found)
+        mock_page.query_selector.return_value = None
 
         handler._page = mock_page
 
-        with pytest.raises(Exception) as exc:
+        with pytest.raises(RuntimeError) as exc:
             handler._send_message("Test message")
 
-        assert "Timeout" in str(exc.value)
+        assert "入力欄" in str(exc.value)
 
     def test_send_message_with_special_characters(self):
         """_send_message handles special characters via fill()"""
@@ -295,7 +304,12 @@ class TestCopilotHandlerSendMessage:
         mock_input.inner_text.return_value = "日本語テスト"  # Non-empty after fill()
         mock_page = Mock()
         mock_page.wait_for_selector.return_value = mock_input
-        mock_page.query_selector.return_value = None  # No auth dialog
+        # query_selector returns mock_input for input selector, None for others
+        def query_selector_side_effect(selector):
+            if 'm365-chat-editor' in selector:
+                return mock_input
+            return None  # auth dialog
+        mock_page.query_selector.side_effect = query_selector_side_effect
 
         # Mock evaluate to simulate JS events success
         def mock_evaluate(js_code, *args):
@@ -555,6 +569,7 @@ class TestCopilotHandlerTranslateSync:
         handler = CopilotHandler()
         handler._connected = False
         mock_page = Mock()
+        mock_page.url = "https://m365.cloud.microsoft/chat"  # Valid Copilot URL
         mock_page.query_selector_all.return_value = []  # No responses (cleared)
         mock_page.query_selector.return_value = None  # No auth dialog
         handler._page = mock_page
@@ -611,6 +626,7 @@ class TestCopilotHandlerTranslateSingle:
         handler = CopilotHandler()
         handler._connected = False
         mock_page = Mock()
+        mock_page.url = "https://m365.cloud.microsoft/chat"  # Valid Copilot URL
         mock_page.query_selector_all.return_value = []  # No responses (cleared)
         mock_page.query_selector.return_value = None  # No auth dialog
         handler._page = mock_page
@@ -656,6 +672,7 @@ class TestCopilotHandlerTranslateSingle:
         handler = CopilotHandler()
         handler._connected = False
         mock_page = Mock()
+        mock_page.url = "https://m365.cloud.microsoft/chat"  # Valid Copilot URL
         mock_page.query_selector_all.return_value = []
         mock_page.query_selector.return_value = None  # No auth dialog
         handler._page = mock_page

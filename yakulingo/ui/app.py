@@ -3650,82 +3650,8 @@ def create_app() -> YakuLingoApp:
     return YakuLingoApp()
 
 
-def _get_display_cache_path() -> Path:
-    """Get the path to the display settings cache file."""
-    return Path.home() / ".yakulingo" / "display_cache.json"
-
-
-def _load_display_cache() -> tuple[tuple[int, int], tuple[int, int, int]] | None:
-    """Load cached display settings from disk.
-
-    Returns:
-        Cached display settings or None if cache is invalid/missing.
-    """
-    import json
-
-    cache_path = _get_display_cache_path()
-    if not cache_path.exists():
-        return None
-
-    try:
-        with open(cache_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-
-        # Validate cache structure
-        if not isinstance(data, dict):
-            return None
-
-        window = data.get('window')
-        panels = data.get('panels')
-
-        if not (isinstance(window, list) and len(window) == 2 and
-                isinstance(panels, list) and len(panels) == 3):
-            return None
-
-        # Validate values are reasonable
-        if window[0] < 800 or window[1] < 500:
-            return None
-
-        logger.debug("Loaded display cache: window=%s, panels=%s", window, panels)
-        return (tuple(window), tuple(panels))
-
-    except (json.JSONDecodeError, OSError, KeyError, TypeError) as e:
-        logger.debug("Failed to load display cache: %s", e)
-        return None
-
-
-def _save_display_cache(
-    window_size: tuple[int, int],
-    panel_sizes: tuple[int, int, int],
-    screen_signature: str
-) -> None:
-    """Save display settings to cache file.
-
-    Args:
-        window_size: (width, height) tuple.
-        panel_sizes: (sidebar_width, input_panel_width, content_width) tuple.
-        screen_signature: String identifying the screen configuration.
-    """
-    import json
-
-    cache_path = _get_display_cache_path()
-    try:
-        cache_path.parent.mkdir(parents=True, exist_ok=True)
-        data = {
-            'window': list(window_size),
-            'panels': list(panel_sizes),
-            'screen_signature': screen_signature,
-        }
-        with open(cache_path, 'w', encoding='utf-8') as f:
-            json.dump(data, f)
-        logger.debug("Saved display cache: %s", data)
-    except OSError as e:
-        logger.debug("Failed to save display cache: %s", e)
-
-
 def _detect_display_settings(
-    webview_module: "ModuleType | None" = None,
-    use_cache: bool = True
+    webview_module: "ModuleType | None" = None
 ) -> tuple[tuple[int, int], tuple[int, int, int]]:
     """Detect connected monitors and determine window size and panel widths.
 
@@ -3748,7 +3674,6 @@ def _detect_display_settings(
 
     Args:
         webview_module: Pre-initialized webview module (avoids redundant initialization).
-        use_cache: If True, try to load from cache first (default: True).
 
     Returns:
         Tuple of ((window_width, window_height), (sidebar_width, input_panel_width, content_width))
@@ -3756,15 +3681,16 @@ def _detect_display_settings(
     """
     # Reference ratios based on 2560x1440 → 1800x1100
     # WIDTH_RATIO adjusts to accommodate side panel mode (default)
-    # Side panel width: 550px (1920px+), 450px (1366px-), gap: 10px
+    # Side panel width: 750px (1920px+), 600px (1366px-), gap: 10px
+    # Wider panel is needed to show GPT mode switcher button
     # Calculation: screen_width - side_panel - gap = available_for_app
-    # Example: 1920px - 550px - 10px = 1360px available → 1306px window (68%)
-    WIDTH_RATIO = 0.68  # Adjusted for side panel mode
+    # Example: 1920px - 750px - 10px = 1160px available → 1056px window (55%)
+    WIDTH_RATIO = 0.55  # Adjusted for wider side panel (GPT mode UI)
     HEIGHT_RATIO = 1100 / 1440  # 0.764
 
     # Side panel dimensions (must match copilot_handler.py constants)
-    SIDE_PANEL_BASE_WIDTH = 550  # For 1920px+ screens
-    SIDE_PANEL_MIN_WIDTH = 450   # For smaller screens
+    SIDE_PANEL_BASE_WIDTH = 750  # For 1920px+ screens (wider for GPT mode UI)
+    SIDE_PANEL_MIN_WIDTH = 600   # For smaller screens
     SIDE_PANEL_GAP = 10
 
     # Panel ratios based on 1800px window width
@@ -3847,13 +3773,6 @@ def _detect_display_settings(
     # Default based on 1920x1080 screen
     default_window, default_panels = calculate_sizes(1920, 1080)
 
-    # Try to load from cache first (saves ~0.3-0.4s)
-    if use_cache:
-        cached = _load_display_cache()
-        if cached is not None:
-            logger.info("Using cached display settings (fast startup)")
-            return cached
-
     # Use pre-initialized webview module if provided, otherwise import
     webview = webview_module
     if webview is None:
@@ -3900,53 +3819,11 @@ def _detect_display_settings(
             panel_sizes[0], panel_sizes[1], panel_sizes[2]
         )
 
-        # Save to cache for next startup
-        screen_signature = f"{len(screens)}:{logical_width}x{logical_height}"
-        _save_display_cache(window_size, panel_sizes, screen_signature)
-
         return (window_size, panel_sizes)
 
     except Exception as e:
         logger.warning("Failed to detect display: %s, using default", e)
         return (default_window, default_panels)
-
-
-def _check_native_mode_minimal(native_requested: bool) -> bool:
-    """Minimal check for native mode availability (import only, no initialize).
-
-    This is a fast-path check used when display cache is available.
-    It only verifies that webview can be imported and a display is available,
-    without calling webview.initialize() (which takes ~2 seconds).
-
-    Returns:
-        True if native mode appears available, False otherwise.
-    """
-    if not native_requested:
-        return False
-
-    import os
-    import sys
-
-    # Linux containers often lack a display server; avoid pywebview crashes
-    if sys.platform.startswith('linux') and not (
-        os.environ.get('DISPLAY') or os.environ.get('WAYLAND_DISPLAY')
-    ):
-        logger.warning(
-            "Native mode requested but no display detected (DISPLAY / WAYLAND_DISPLAY); "
-            "falling back to browser mode."
-        )
-        return False
-
-    try:
-        import webview  # type: ignore  # noqa: F401
-        # Just verify import succeeds - don't call initialize()
-        # If cache exists, native mode worked before, so it should work now
-        return True
-    except Exception as e:
-        logger.warning(
-            "Native mode requested but pywebview is unavailable: %s; starting in browser mode.", e
-        )
-        return False
 
 
 def _check_native_mode_and_get_webview(native_requested: bool) -> tuple[bool, "ModuleType | None"]:
@@ -4050,8 +3927,8 @@ def _calculate_app_position_for_side_panel(
         screen_height = work_area.bottom - work_area.top
 
         # Side panel constants (must match CopilotHandler)
-        SIDE_PANEL_BASE_WIDTH = 550
-        SIDE_PANEL_MIN_WIDTH = 450
+        SIDE_PANEL_BASE_WIDTH = 750  # Wider for GPT mode UI
+        SIDE_PANEL_MIN_WIDTH = 600
         SIDE_PANEL_GAP = 10
 
         # Calculate side panel width based on screen resolution
@@ -4148,39 +4025,21 @@ def run_app(
     logger.info("[TIMING] create_app: %.2fs", time.perf_counter() - _t1)
 
     # Detect optimal window size BEFORE ui.run() to avoid resize flicker
-    # OPTIMIZATION: Check cache FIRST to skip expensive webview.initialize() (~2s savings)
+    # Fallback to browser mode when pywebview cannot create a native window (e.g., headless Linux)
     _t2 = time.perf_counter()
-    cached_settings = _load_display_cache() if native else None
-
-    if cached_settings is not None:
-        # Cache hit: skip webview.initialize() entirely (saves ~2 seconds)
-        logger.info("Using cached display settings (fast startup)")
-        window_size, panel_sizes = cached_settings
-        yakulingo_app._panel_sizes = panel_sizes
+    native, webview_module = _check_native_mode_and_get_webview(native)
+    logger.info("Native mode enabled: %s", native)
+    if native:
+        # Pass pre-initialized webview module to avoid second initialization
+        window_size, panel_sizes = _detect_display_settings(webview_module=webview_module)
+        yakulingo_app._panel_sizes = panel_sizes  # (sidebar_width, input_panel_width, content_width)
         yakulingo_app._window_size = window_size
         run_window_size = window_size
-        # Still need to verify webview is available for native mode (import only, no initialize)
-        native = _check_native_mode_minimal(native)
-        logger.info("Native mode enabled: %s (cache hit)", native)
-        if not native:
-            run_window_size = None
     else:
-        # Cache miss: perform full webview initialization and screen detection
-        # Fallback to browser mode when pywebview cannot create a native window (e.g., headless Linux)
-        # Combined check + webview initialization to avoid redundant webview.initialize() calls
-        native, webview_module = _check_native_mode_and_get_webview(native)
-        logger.info("Native mode enabled: %s (full detection)", native)
-        if native:
-            # Pass pre-initialized webview module to avoid second initialization
-            window_size, panel_sizes = _detect_display_settings(webview_module=webview_module, use_cache=False)
-            yakulingo_app._panel_sizes = panel_sizes  # (sidebar_width, input_panel_width, content_width)
-            yakulingo_app._window_size = window_size
-            run_window_size = window_size
-        else:
-            window_size = (1800, 1100)  # Default size for browser mode (reduced for side panel)
-            yakulingo_app._panel_sizes = (250, 400, 850)  # Default panel sizes (sidebar, input, content)
-            yakulingo_app._window_size = window_size
-            run_window_size = None  # Passing a size would re-enable native mode inside NiceGUI
+        window_size = (1800, 1100)  # Default size for browser mode (reduced for side panel)
+        yakulingo_app._panel_sizes = (250, 400, 850)  # Default panel sizes (sidebar, input, content)
+        yakulingo_app._window_size = window_size
+        run_window_size = None  # Passing a size would re-enable native mode inside NiceGUI
     logger.info("[TIMING] _detect_display_settings: %.2fs", time.perf_counter() - _t2)
 
     # NOTE: PP-DocLayout-L pre-initialization moved to @ui.page('/') handler

@@ -614,14 +614,15 @@ class CopilotHandler:
     # Side Panel Mode Settings
     # =========================================================================
     # Side panel width scales based on screen width to accommodate different resolutions
-    # Reference: 1920px screen → 550px panel, 1366px screen → 450px panel
-    SIDE_PANEL_BASE_WIDTH = 550      # Base width for 1920px+ screens
-    SIDE_PANEL_MIN_WIDTH = 450       # Minimum width for smaller screens
+    # Reference: 1920px screen → 750px panel, 1366px screen → 600px panel
+    # Wider panel is needed to show GPT mode switcher button
+    SIDE_PANEL_BASE_WIDTH = 750      # Base width for 1920px+ screens (wider for GPT mode UI)
+    SIDE_PANEL_MIN_WIDTH = 600       # Minimum width for smaller screens
     SIDE_PANEL_GAP = 10              # Gap between app and side panel
     SIDE_PANEL_MIN_HEIGHT = 500      # Minimum height for usability
 
     # App window size calculation ratios (must match app.py _detect_display_settings)
-    APP_WIDTH_RATIO = 0.68           # App window width as ratio of screen width
+    APP_WIDTH_RATIO = 0.55           # App window width as ratio of screen width (reduced for wider panel)
     APP_HEIGHT_RATIO = 1100 / 1440   # 0.764
 
     # =========================================================================
@@ -2650,9 +2651,9 @@ class CopilotHandler:
         Layout: |---margin---|---app_window---|---gap---|---side_panel---|---margin---|
 
         The panel width scales based on available screen space:
-        - 1920px+ screen width: 550px panel
-        - 1366-1919px: scales proportionally (450-550px)
-        - <1366px: 450px minimum
+        - 1920px+ screen width: 750px panel (wider for GPT mode UI)
+        - 1366-1919px: scales proportionally (600-750px)
+        - <1366px: 600px minimum
 
         Args:
             page_title: The current page title for exact matching

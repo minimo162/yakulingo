@@ -693,17 +693,15 @@ class CopilotHandler:
         1. Edgeが起動していなければ起動（専用プロファイル使用）
         2. Playwrightで接続（PlaywrightThreadExecutor経由）
         3. Copilotページを開く
-        4. チャット入力欄の準備完了を待機
-        5. セッション状態を復元（storage_state.json）
+        4. ログインページ判定（ステップ式タイムアウト）
+        ※ セッション保持はEdgeProfileのCookiesが担当
         """
 
     def translate_sync(texts: list[str], prompt: str, reference_files: list[Path]) -> list[str]:
         """
-        1. GPT-5トグルを有効化（送信前に確認）
-        2. プロンプトをCopilotに送信（送信ボタン有効化を待機）
-        3. 応答を待機（安定するまで）
-        4. 結果をパース
-        5. セッション状態を保存
+        1. プロンプトをCopilotに送信（送信ボタン有効化を待機）
+        2. 応答を待機（安定するまで）
+        3. 結果をパース
         """
 
     def translate_single(text: str, prompt: str, reference_files: list[Path]) -> str:
@@ -712,12 +710,12 @@ class CopilotHandler:
     def disconnect() -> None:
         """ブラウザ接続を終了"""
 
-    def _ensure_gpt5_enabled(max_wait: float = 1.0) -> bool:
+    def ensure_gpt_mode() -> None:
         """
-        GPT-5トグルボタンを確認・有効化
-        - 送信直前に呼び出し（遅延描画対応）
-        - 複数の検出方法（CSS selector + JS parent traversal）
-        - ボタンが見つからない場合は静かにスキップ（将来の変更対応）
+        GPT-5.2 Think Deeperモードを設定
+        - 接続完了後にUIレイヤーから呼び出し
+        - ステップ式タイムアウト（1秒→2秒×4、最大9秒）
+        - ボタンが見つからない場合は静かにスキップ
         """
 ```
 
@@ -731,7 +729,7 @@ class CopilotHandler:
 - 送信ボタン: `:not([disabled])`条件で有効化を待機
 - メニュー表示: `div[role="menu"]`の表示を確認
 - ファイル添付: 添付インジケータをポーリングで確認
-- GPT-5トグル: 送信直前に状態確認・必要に応じて有効化
+- GPTモード: 接続完了後に`ensure_gpt_mode()`で設定（ステップ式タイムアウト）
 
 **Copilot文字数制限:**
 - Free ライセンス: 8,000文字

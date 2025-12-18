@@ -959,8 +959,10 @@ wait_time = backoff_time + jitter
 | セレクタ | `SELECTOR_RESPONSE_TIMEOUT_MS` | 10000ms | レスポンス要素の表示待機 |
 | セレクタ | `SELECTOR_NEW_CHAT_READY_TIMEOUT_MS` | 5000ms | 新規チャット準備完了待機 |
 | セレクタ | `SELECTOR_LOGIN_CHECK_TIMEOUT_MS` | 2000ms | ログイン状態チェック |
-| GPTモード | `GPT_MODE_BUTTON_WAIT_MS` | 10000ms | GPTモードボタンの出現待機（遅延描画対応） |
-| GPTモード | `GPT_MODE_MENU_WAIT` | 0.3s | メニュー開閉の待機時間 |
+| GPTモード | `GPT_MODE_BUTTON_FIRST_STEP_TIMEOUT_MS` | 1000ms | GPTモードボタンの最初のステップ（高速パス） |
+| GPTモード | `GPT_MODE_BUTTON_STEP_TIMEOUT_MS` | 2000ms | GPTモードボタンの後続ステップ |
+| GPTモード | `GPT_MODE_BUTTON_MAX_STEPS` | 5 | 最大ステップ数（1s + 2s×4 = 9s） |
+| GPTモード | `GPT_MODE_MENU_WAIT` | 0.1s | メニュー開閉の待機時間 |
 | ログイン | `LOGIN_WAIT_TIMEOUT_SECONDS` | 300s | ユーザーログイン待機 |
 | エグゼキュータ | `EXECUTOR_TIMEOUT_BUFFER_SECONDS` | 60s | レスポンスタイムアウトのマージン |
 
@@ -2037,6 +2039,13 @@ When interacting with users in this repository, prefer Japanese for comments and
 ## Recent Development Focus
 
 Based on recent commits:
+- **GPT Mode Optimization (2024-12)**:
+  - **Stepped timeout for GPT mode button**: ステップ式タイムアウトに変更（チャット入力欄待機と同様）
+    - `GPT_MODE_BUTTON_FIRST_STEP_TIMEOUT_MS = 1000` - 高速パス（ボタン表示済みなら1秒で検出）
+    - `GPT_MODE_BUTTON_STEP_TIMEOUT_MS = 2000` - 後続ステップ
+    - `GPT_MODE_BUTTON_MAX_STEPS = 5`（1s + 2s×4 = 9s総タイムアウト）
+  - **Menu wait reduction**: メニュー開閉待機を0.3秒→0.1秒に短縮（3回呼出で0.6秒削減）
+  - **Expected improvement**: ボタン表示済みなら約6秒短縮（10秒→1秒）、メニュー操作で0.6秒短縮
 - **Copilot Connection Startup Optimization (2024-12)**:
   - **Deferred chat input detection**: 起動時のチャット入力欄待機を削除、初回翻訳時に遅延実行
     - `_quick_login_check()`: 起動時はログインページ判定のみ（~0.1秒）

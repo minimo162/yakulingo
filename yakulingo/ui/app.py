@@ -1647,6 +1647,28 @@ class YakuLingoApp:
                 };
             }
 
+            // NiceGUI content container
+            const niceguiContent = document.querySelector('.nicegui-content');
+            if (niceguiContent) {
+                const rect = niceguiContent.getBoundingClientRect();
+                const computed = getComputedStyle(niceguiContent);
+                results.niceguiContent = {
+                    rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+                    padding: {
+                        top: computed.paddingTop,
+                        right: computed.paddingRight,
+                        bottom: computed.paddingBottom,
+                        left: computed.paddingLeft
+                    },
+                    margin: {
+                        top: computed.marginTop,
+                        right: computed.marginRight,
+                        bottom: computed.marginBottom,
+                        left: computed.marginLeft
+                    }
+                };
+            }
+
             // App container
             const appContainer = document.querySelector('.app-container');
             if (appContainer) {
@@ -1656,7 +1678,13 @@ class YakuLingoApp:
                     rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
                     scroll: { top: appContainer.scrollTop, left: appContainer.scrollLeft },
                     scrollSize: { width: appContainer.scrollWidth, height: appContainer.scrollHeight },
-                    overflow: { x: computed.overflowX, y: computed.overflowY }
+                    overflow: { x: computed.overflowX, y: computed.overflowY },
+                    padding: {
+                        top: computed.paddingTop,
+                        right: computed.paddingRight,
+                        bottom: computed.paddingBottom,
+                        left: computed.paddingLeft
+                    }
                 };
             }
 
@@ -1832,6 +1860,8 @@ class YakuLingoApp:
                         if result:
                             # Window and document info
                             logger.info("[LAYOUT_DEBUG] window: %s", result.get('window'))
+                            logger.info("[LAYOUT_DEBUG] niceguiContent: %s", result.get('niceguiContent'))
+                            logger.info("[LAYOUT_DEBUG] appContainer: %s", result.get('appContainer'))
                             logger.info("[LAYOUT_DEBUG] sidebar: %s", result.get('sidebar'))
                             logger.info("[LAYOUT_DEBUG] mainArea: %s", result.get('mainArea'))
                             # Input panel detailed info (for margin debugging)

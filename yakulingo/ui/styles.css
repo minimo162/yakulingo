@@ -180,6 +180,13 @@ body {
     -moz-osx-font-smoothing: grayscale;
 }
 
+/* === NiceGUI Default Reset === */
+/* NiceGUI/Quasar adds default padding to content containers that must be reset */
+.nicegui-content {
+    padding: 0 !important;
+    margin: 0 !important;
+}
+
 /* === 3-Column Layout Container === */
 .app-container {
     display: flex;

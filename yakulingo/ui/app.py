@@ -4305,12 +4305,36 @@ def run_app(
     nicegui_app.add_static_files('/static', ui_dir)
 
     # Optimize pywebview startup (native mode only)
+    # - hidden: Start window hidden and show after positioning (prevents flicker)
+    # - x, y: Pre-calculate window position for side_panel mode
     # - background_color: Match app background to reduce visual flicker
     # - easy_drag: Disable titlebar drag region (not needed, window has native titlebar)
     # - icon: Use YakuLingo icon for taskbar (instead of default Python icon)
     if native:
         nicegui_app.native.window_args['background_color'] = '#FEFBFF'  # M3 surface color
         nicegui_app.native.window_args['easy_drag'] = False
+
+        # Start window hidden to prevent position flicker
+        # Window will be shown by _position_window_early_sync() after positioning
+        nicegui_app.native.window_args['hidden'] = True
+
+        # Pre-calculate window position for side_panel mode
+        # This allows pywebview to create window at correct position (if it gets passed to child process)
+        from yakulingo.config.settings import AppSettings
+        settings_path = Path.home() / ".yakulingo" / "settings.json"
+        try:
+            settings = AppSettings.load(settings_path)
+            if settings.browser_display_mode == "side_panel":
+                app_position = _calculate_app_position_for_side_panel(
+                    yakulingo_app._window_size[0], yakulingo_app._window_size[1]
+                )
+                if app_position:
+                    nicegui_app.native.window_args['x'] = app_position[0]
+                    nicegui_app.native.window_args['y'] = app_position[1]
+                    logger.debug("Pre-set window position: x=%d, y=%d", app_position[0], app_position[1])
+        except Exception as e:
+            logger.debug("Failed to pre-set window position: %s", e)
+
         icon_path = Path(__file__).parent / 'yakulingo.ico'
         if icon_path.exists():
             nicegui_app.native.window_args['icon'] = str(icon_path)
@@ -4339,9 +4363,9 @@ def run_app(
         browser display modes (side_panel, minimized, foreground).
 
         Key behaviors:
-        - side_panel mode: Position app window at pre-calculated position
-        - minimized/foreground mode: Ensure window is visible (restore if minimized)
-        - All modes: Use SWP_SHOWWINDOW flag to ensure window is displayed
+        - Window is created with hidden=True in window_args
+        - This function positions the window while hidden, then shows it
+        - This eliminates the visual flicker of window moving after appearing
         """
         if sys.platform != 'win32':
             return
@@ -4372,6 +4396,7 @@ def run_app(
                 ]
 
             # Window flag constants
+            SW_SHOW = 5
             SW_RESTORE = 9
             SWP_NOZORDER = 0x0004
             SWP_NOACTIVATE = 0x0010
@@ -4383,6 +4408,9 @@ def run_app(
                 # Find YakuLingo window by title
                 hwnd = user32.FindWindowW(None, "YakuLingo")
                 if hwnd:
+                    # Check if window is hidden (not visible) - this is expected due to hidden=True
+                    is_visible = user32.IsWindowVisible(hwnd)
+
                     # First, check if window is minimized and restore it
                     if user32.IsIconic(hwnd):
                         user32.ShowWindow(hwnd, SW_RESTORE)
@@ -4407,36 +4435,49 @@ def run_app(
 
                                 # Check if window is NOT at target position (needs moving)
                                 POSITION_TOLERANCE = 10
-                                if (abs(current_x - target_x) > POSITION_TOLERANCE or
-                                    abs(current_y - target_y) > POSITION_TOLERANCE):
-                                    # Move window immediately with SWP_SHOWWINDOW to ensure visibility
+                                needs_move = (abs(current_x - target_x) > POSITION_TOLERANCE or
+                                            abs(current_y - target_y) > POSITION_TOLERANCE)
+
+                                if needs_move:
+                                    # Move window to target position (while still hidden if hidden=True worked)
                                     result = user32.SetWindowPos(
                                         hwnd, None,
                                         target_x, target_y, target_width, target_height,
-                                        SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW
+                                        SWP_NOZORDER | SWP_NOACTIVATE
                                     )
                                     if result:
                                         logger.debug("[EARLY_POSITION] Window moved from (%d, %d) to (%d, %d) after %dms",
                                                    current_x, current_y, target_x, target_y, waited_ms)
-                                        yakulingo_app._early_position_completed = True
                                     else:
                                         logger.debug("[EARLY_POSITION] SetWindowPos failed after %dms", waited_ms)
+
+                                # Now show the window at correct position
+                                if not is_visible:
+                                    user32.ShowWindow(hwnd, SW_SHOW)
+                                    logger.debug("[EARLY_POSITION] Window shown after positioning (was hidden)")
                                 else:
-                                    # Window at correct position, just ensure it's visible
+                                    # Window was already visible, just ensure it's in correct state
                                     user32.SetWindowPos(
                                         hwnd, None, 0, 0, 0, 0,
                                         SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_NOSIZE | SWP_NOMOVE
                                     )
-                                    logger.debug("[EARLY_POSITION] Window already at correct position after %dms", waited_ms)
-                                    yakulingo_app._early_position_completed = True
+                                    if needs_move:
+                                        logger.debug("[EARLY_POSITION] Window was visible during move (hidden=True may not have worked)")
+
+                                yakulingo_app._early_position_completed = True
                     else:
                         # For minimized/foreground modes, just ensure window is visible
-                        user32.SetWindowPos(
-                            hwnd, None, 0, 0, 0, 0,
-                            SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_NOSIZE | SWP_NOMOVE
-                        )
-                        logger.debug("[EARLY_POSITION] Window visibility ensured (%s mode) after %dms",
-                                   settings.browser_display_mode, waited_ms)
+                        if not is_visible:
+                            user32.ShowWindow(hwnd, SW_SHOW)
+                            logger.debug("[EARLY_POSITION] Window shown (%s mode, was hidden) after %dms",
+                                       settings.browser_display_mode, waited_ms)
+                        else:
+                            user32.SetWindowPos(
+                                hwnd, None, 0, 0, 0, 0,
+                                SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_NOSIZE | SWP_NOMOVE
+                            )
+                            logger.debug("[EARLY_POSITION] Window visibility ensured (%s mode) after %dms",
+                                       settings.browser_display_mode, waited_ms)
                     return
 
                 time.sleep(POLL_INTERVAL_MS / 1000)
@@ -4689,10 +4730,12 @@ document.fonts.ready.then(function() {
     # window_size is already determined at the start of run_app()
     logger.info("[TIMING] Before ui.run(): %.2fs", time.perf_counter() - _t0)
 
-    # NOTE: window_args['x'] and window_args['y'] are NOT set here because
-    # NiceGUI uses multiprocessing to spawn pywebview, so these args don't
-    # get passed to the child process. Instead, _position_window_early_sync()
-    # polls for the window and moves it immediately after creation.
+    # NOTE: Window positioning strategy to eliminate visual flicker:
+    # 1. window_args['hidden'] = True: Window is created hidden (not visible)
+    # 2. window_args['x'] and window_args['y']: Pre-calculated position (may or may not work
+    #    due to NiceGUI multiprocessing - depends on whether window_args is passed to child process)
+    # 3. _position_window_early_sync() polls for window, positions it while hidden, then shows it
+    # This approach ensures the window appears at the correct position from the start.
 
     # Use the same icon for favicon (browser tab icon)
     favicon_path = Path(__file__).parent / 'yakulingo.ico'

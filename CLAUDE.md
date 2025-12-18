@@ -939,6 +939,8 @@ wait_time = backoff_time + jitter
 | セレクタ | `SELECTOR_RESPONSE_TIMEOUT_MS` | 10000ms | レスポンス要素の表示待機 |
 | セレクタ | `SELECTOR_NEW_CHAT_READY_TIMEOUT_MS` | 5000ms | 新規チャット準備完了待機 |
 | セレクタ | `SELECTOR_LOGIN_CHECK_TIMEOUT_MS` | 2000ms | ログイン状態チェック |
+| GPTモード | `GPT_MODE_BUTTON_WAIT_MS` | 5000ms | GPTモードボタンの出現待機 |
+| GPTモード | `GPT_MODE_MENU_WAIT` | 0.3s | メニュー開閉の待機時間 |
 | ログイン | `LOGIN_WAIT_TIMEOUT_SECONDS` | 300s | ユーザーログイン待機 |
 | エグゼキュータ | `EXECUTOR_TIMEOUT_BUFFER_SECONDS` | 60s | レスポンスタイムアウトのマージン |
 
@@ -2448,6 +2450,7 @@ Based on recent commits:
   - **Buttons**: `SEND_BUTTON_SELECTOR`, `STOP_BUTTON_SELECTORS`, `NEW_CHAT_BUTTON_SELECTOR`
   - **File upload**: `PLUS_MENU_BUTTON_SELECTOR`, `FILE_INPUT_SELECTOR`
   - **Response**: `RESPONSE_SELECTORS`, `RESPONSE_SELECTOR_COMBINED`
+  - **GPT mode**: `GPT_MODE_BUTTON_SELECTOR` (#gptModeSwitcher), `GPT_MODE_TEXT_SELECTOR`, `GPT_MODE_MORE_SELECTOR`, `GPT_MODE_MENU_ITEM_SELECTOR`
 - **LRU Cache for Font Info**:
   - **OrderedDict-based**: `_font_info_cache` with `_FONT_INFO_CACHE_MAX_SIZE=5`
   - **Thread-safe**: `_font_info_cache_lock` for concurrent access

@@ -703,6 +703,7 @@ class CopilotHandler:
     GPT_MODE_TARGET = 'GPT-5.2 Think Deeper'
     GPT_MODE_MORE_TEXT = 'More'
     GPT_MODE_MENU_WAIT = 0.3  # Wait for menu to open/close
+    GPT_MODE_BUTTON_WAIT_MS = 5000  # Wait up to 5 seconds for GPT mode button to appear
 
     # Dynamic polling intervals for faster response detection
     # OPTIMIZED: Reduced intervals for quicker response detection (0.15s -> 0.1s)
@@ -1698,6 +1699,18 @@ class CopilotHandler:
             return True  # Don't block on missing page
 
         try:
+            # Wait for GPT mode button to appear (it may load asynchronously)
+            try:
+                self._page.wait_for_selector(
+                    self.GPT_MODE_BUTTON_SELECTOR,
+                    timeout=self.GPT_MODE_BUTTON_WAIT_MS,
+                    state='visible'
+                )
+            except Exception as wait_err:
+                logger.debug("GPT mode button did not appear within %dms: %s",
+                            self.GPT_MODE_BUTTON_WAIT_MS, wait_err)
+                return True  # Don't block if button doesn't appear
+
             # Check current mode by reading button text
             mode_text_elem = self._page.query_selector(self.GPT_MODE_TEXT_SELECTOR)
             if not mode_text_elem:

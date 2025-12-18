@@ -115,7 +115,7 @@
 
     /* Panel widths are calculated dynamically by JavaScript based on window.innerWidth.
        These defaults are only visible until JS executes (typically < 100ms). */
-    --sidebar-width: 320px;
+    --sidebar-width: 280px;
     --input-panel-width: 400px;
     /* Unified content width for both input and result panels (600-900px range) */
     --content-width: 800px;
@@ -434,7 +434,7 @@ body {
     /* M3 tabs have no rounded corners */
     border-radius: 0;
     /* Larger typography for better visibility */
-    font-size: var(--md-sys-typescale-size-sm);
+    font-size: var(--md-sys-typescale-size-md);
     font-weight: 600;
     letter-spacing: 0.1px;
     line-height: 1.5rem;
@@ -590,10 +590,12 @@ body {
 
 .history-item .history-title {
     color: var(--md-sys-color-on-surface);
+    font-size: var(--md-sys-typescale-size-md);  /* 18px */
 }
 
 .history-item .history-preview {
     color: var(--md-sys-color-on-surface-variant);
+    font-size: var(--md-sys-typescale-size-sm);  /* 16px */
 }
 
 /* Staggered history item animations */
@@ -618,7 +620,7 @@ body {
     gap: 0.375rem;
     padding: 0.375rem 0.875rem;
     border-radius: var(--md-sys-shape-corner-full);
-    font-size: var(--md-sys-typescale-size-xs);  /* 16px */
+    font-size: var(--md-sys-typescale-size-sm);  /* 16px */
     font-weight: 500;
     background: var(--md-sys-color-surface-container);
     color: var(--md-sys-color-on-surface-variant);

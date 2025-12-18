@@ -2045,7 +2045,7 @@ class YakuLingoApp:
         # History section
         with ui.column().classes('sidebar-history flex-1'):
             with ui.row().classes('items-center px-2 mb-2'):
-                ui.label('履歴').classes('text-sm font-semibold text-muted')
+                ui.label('履歴').classes('font-semibold text-muted')
 
             @ui.refreshable
             def history_list():
@@ -3801,7 +3801,7 @@ def _detect_display_settings(
     SIDE_PANEL_GAP = 10
 
     # Panel ratios based on 1800px window width
-    SIDEBAR_RATIO = 320 / 1800  # ~0.178
+    SIDEBAR_RATIO = 280 / 1800  # ~0.156
     INPUT_PANEL_RATIO = 400 / 1800  # 0.222
 
     # Minimum sizes to prevent layout breaking on smaller screens
@@ -3810,7 +3810,7 @@ def _detect_display_settings(
     # Example: 1366x768 at 125% = 1092x614 logical → window ~810x469 (74% ratio)
     MIN_WINDOW_WIDTH = 1100   # Lowered from 1400 to maintain ~74% ratio on smaller screens
     MIN_WINDOW_HEIGHT = 650   # Lowered from 850 to maintain ~76% ratio on smaller screens
-    MIN_SIDEBAR_WIDTH = 320   # Narrower sidebar
+    MIN_SIDEBAR_WIDTH = 280   # Narrower sidebar
     MIN_INPUT_PANEL_WIDTH = 320  # Lowered from 380 for smaller screens
 
     # Unified content width for both input and result panels
@@ -4498,9 +4498,9 @@ def run_app(
 (function() {
     // Constants matching Python calculation (from _detect_display_settings)
     const BASE_FONT_SIZE = 16;  // Fixed font size (no dynamic scaling)
-    const SIDEBAR_RATIO = 320 / 1800;
+    const SIDEBAR_RATIO = 280 / 1800;
     const INPUT_PANEL_RATIO = 400 / 1800;
-    const MIN_SIDEBAR_WIDTH = 320;  // Narrower sidebar
+    const MIN_SIDEBAR_WIDTH = 280;  // Narrower sidebar
     const MIN_INPUT_PANEL_WIDTH = 320;  // Lowered for smaller screens
     // Unified content width for both input and result panels
     // Uses mainAreaWidth * 0.55, clamped to min-max range

@@ -1447,9 +1447,9 @@ class TestGptModeSwitch:
         assert hasattr(handler, 'GPT_MODE_MENU_WAIT')
         # Single wait constant used for all menu operations
         assert handler.GPT_MODE_MENU_WAIT == 0.3
-        # Button wait timeout for async loading
+        # Button wait timeout for async loading (10s for delayed rendering)
         assert hasattr(handler, 'GPT_MODE_BUTTON_WAIT_MS')
-        assert handler.GPT_MODE_BUTTON_WAIT_MS == 5000
+        assert handler.GPT_MODE_BUTTON_WAIT_MS == 10000
 
     def test_ensure_gpt_mode_completes_when_no_page(self, handler):
         """_ensure_gpt_mode completes without error when no page"""

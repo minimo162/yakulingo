@@ -741,7 +741,7 @@ class CopilotHandler:
     GPT_MODE_TARGET = 'GPT-5.2 Think Deeper'
     GPT_MODE_MORE_TEXT = 'More'
     GPT_MODE_MENU_WAIT = 0.3  # Wait for menu to open/close
-    GPT_MODE_BUTTON_WAIT_MS = 5000  # Wait up to 5 seconds for GPT mode button to appear
+    GPT_MODE_BUTTON_WAIT_MS = 10000  # Wait up to 10 seconds for GPT mode button to appear (delayed rendering)
 
     # Dynamic polling intervals for faster response detection
     # OPTIMIZED: Reduced intervals for quicker response detection (0.15s -> 0.1s)

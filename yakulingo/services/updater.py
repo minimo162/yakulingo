@@ -631,7 +631,8 @@ class AutoUpdater:
         "YakuLingo.exe",    # 起動ランチャー
         "README.md",        # ドキュメント
         # Note: glossary.csv はマージ処理で対応（merge_glossary()）
-        # Note: config/settings.json はマージ処理で対応（merge_settings()）
+        # Note: config/settings.template.json はアップデートで上書き（merge_settings()）
+        # Note: config/user_settings.json はユーザー設定（ソースに含まれないため保持）
     ]
 
     def install_update(self, zip_path: Path) -> bool:
@@ -1458,105 +1459,49 @@ def check_for_updates(
     return updater.check_for_updates()
 
 
-# ユーザーがUIで明示的に変更した設定項目（アップデート時に保護される）
-# これ以外の設定は開発者が自由に変更・削除可能
-USER_PROTECTED_SETTINGS = {
-    # 翻訳スタイル設定（設定ダイアログで変更）
-    "translation_style",
-    "text_translation_style",
-    # フォント設定（設定ダイアログで変更）
-    "font_jp_to_en",
-    "font_en_to_jp",
-    "font_size_adjustment_jp_to_en",
-    # 出力オプション（ファイル翻訳パネルで変更）
-    "bilingual_output",
-    "export_glossary",
-    "use_bundled_glossary",
-    "embed_glossary_in_prompt",
-    # UI状態（自動保存）
-    "last_tab",
-    "onboarding_completed",
-    # 更新設定（更新ダイアログで変更）
-    "skipped_version",
-}
-
-
 def merge_settings(app_dir: Path, source_dir: Path) -> int:
     """
-    設定ファイルをマージ（ユーザー設定を保護しつつ新しい設定を適用）
+    設定テンプレートを更新
 
-    新しいバージョンの設定をベースとし、USER_PROTECTED_SETTINGS に含まれる
-    ユーザーの設定のみを上書きします。これにより：
-    - 開発者は新しい設定項目を追加できる
-    - 開発者は不要な設定項目を削除できる
-    - 開発者は技術的な設定のデフォルト値を変更できる
-    - ユーザーの明示的な設定（UIで変更した項目）は保護される
+    分離方式:
+    - settings.template.json: デフォルト値（開発者が管理、アップデートで更新）
+    - user_settings.json: ユーザーが変更した設定のみ保存（アップデートで保持）
+
+    この関数はsettings.template.jsonを新バージョンで上書きします。
+    user_settings.jsonはそのまま保持されます。
+    旧settings.jsonからの移行は行いません（バグ防止のため）。
 
     Args:
-        app_dir: アプリケーションディレクトリ（ユーザーのsettings.jsonがある場所）
-        source_dir: ソースディレクトリ（新しいsettings.jsonまたはテンプレートがある場所）
+        app_dir: アプリケーションディレクトリ
+        source_dir: ソースディレクトリ（新しい設定テンプレートがある場所）
 
     Returns:
-        int: 変更された設定項目数（正: 追加/変更, 負: 新規作成）
+        int: 1=テンプレート更新, -1=新規作成, 0=変更なし
     """
-    user_settings = app_dir / "config" / "settings.json"
-    # 新しい設定ファイルまたはテンプレートを探す
-    new_settings = source_dir / "config" / "settings.json"
-    if not new_settings.exists():
-        new_settings = source_dir / "config" / "settings.template.json"
+    config_dir = app_dir / "config"
+    template_path = config_dir / "settings.template.json"
 
-    if not new_settings.exists():
-        logger.info("新しい設定ファイルが見つかりません: %s", new_settings)
+    # 新しいテンプレートを探す
+    new_template = source_dir / "config" / "settings.template.json"
+    if not new_template.exists():
+        new_template = source_dir / "config" / "settings.json"
+
+    if not new_template.exists():
+        logger.info("新しい設定テンプレートが見つかりません: %s", new_template)
         return 0
 
-    # ユーザーの設定が存在しない場合はコピー
-    if not user_settings.exists():
-        user_settings.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(new_settings, user_settings)
-        logger.info("設定ファイルをコピーしました: %s", user_settings)
-        return -1  # 新規作成を示す
+    config_dir.mkdir(parents=True, exist_ok=True)
 
-    # 両方の設定を読み込む
+    # テンプレートを更新（user_settings.jsonはそのまま保持）
+    is_new = not template_path.exists()
     try:
-        # utf-8-sig を使用してBOM付きファイルにも対応
-        with open(user_settings, "r", encoding="utf-8-sig") as f:
-            user_data = json.load(f)
-        with open(new_settings, "r", encoding="utf-8-sig") as f:
-            new_data = json.load(f)
-    except (json.JSONDecodeError, OSError) as e:
-        logger.warning("設定ファイルの読み込みに失敗: %s", e)
+        shutil.copy2(new_template, template_path)
+        logger.info("設定テンプレートを更新しました: %s", template_path)
+    except OSError as e:
+        logger.warning("設定テンプレートの更新に失敗: %s", e)
         return 0
 
-    # 新しい設定をベースとする（開発者の変更を反映）
-    merged_data = dict(new_data)
-
-    # ユーザー保護対象の設定のみを上書き
-    preserved_count = 0
-    for key in USER_PROTECTED_SETTINGS:
-        if key in user_data:
-            # ユーザーの設定値が新しい設定にも存在する場合のみ復元
-            # （削除された設定は復元しない）
-            if key in new_data:
-                merged_data[key] = user_data[key]
-                preserved_count += 1
-                logger.debug("ユーザー設定を保持: %s", key)
-
-    # 変更があれば保存
-    with open(user_settings, "w", encoding="utf-8") as f:
-        json.dump(merged_data, f, ensure_ascii=False, indent=2)
-
-    # 追加された新規項目数をカウント
-    added_keys = set(new_data.keys()) - set(user_data.keys())
-    removed_keys = set(user_data.keys()) - set(new_data.keys())
-
-    if added_keys:
-        logger.info("新規設定項目: %s", ", ".join(added_keys))
-    if removed_keys:
-        logger.info("削除された設定項目: %s", ", ".join(removed_keys))
-    if preserved_count > 0:
-        logger.info("保持されたユーザー設定: %d 件", preserved_count)
-
-    return len(added_keys)
+    return -1 if is_new else 1
 
 
 def backup_and_update_glossary(app_dir: Path, source_dir: Path) -> Optional[str]:

@@ -1,6 +1,11 @@
 # yakulingo/config/settings.py
 """
 Application settings management for YakuLingo.
+
+設定ファイルの分離方式:
+- settings.template.json: デフォルト値（開発者が管理、アップデートで上書き）
+- user_settings.json: ユーザーが変更した設定のみ保存
+- 起動時にtemplateを読み込み、user_settingsで上書き
 """
 
 import logging
@@ -11,6 +16,28 @@ import json
 
 # Module logger
 logger = logging.getLogger(__name__)
+
+# ユーザーが変更可能な設定項目（user_settings.jsonに保存される）
+USER_SETTINGS_KEYS = {
+    # 翻訳スタイル設定（設定ダイアログで変更）
+    "translation_style",
+    "text_translation_style",
+    # フォント設定（設定ダイアログで変更）
+    "font_jp_to_en",
+    "font_en_to_jp",
+    "font_size_adjustment_jp_to_en",
+    # 出力オプション（ファイル翻訳パネルで変更）
+    "bilingual_output",
+    "export_glossary",
+    "use_bundled_glossary",
+    "embed_glossary_in_prompt",
+    # ブラウザ表示モード
+    "browser_display_mode",
+    # UI状態（自動保存）
+    "last_tab",
+    # 更新設定（更新ダイアログで変更）
+    "skipped_version",
+}
 
 
 @dataclass
@@ -79,49 +106,69 @@ class AppSettings:
 
     @classmethod
     def load(cls, path: Path) -> "AppSettings":
-        """Load settings from JSON file"""
-        if path.exists():
+        """Load settings from template and user settings files.
+
+        分離方式:
+        1. settings.template.json からデフォルト値を読み込み
+        2. user_settings.json でユーザー設定を上書き
+
+        Args:
+            path: 設定ファイルのパス（config/settings.json または config/settings.template.json）
+                  実際にはtemplateとuser_settingsを探すためのベースパスとして使用
+        """
+        # Determine base config directory
+        config_dir = path.parent
+        template_path = config_dir / "settings.template.json"
+        user_settings_path = config_dir / "user_settings.json"
+
+        # Start with defaults
+        data = {}
+
+        # 1. Load from template (developer defaults)
+        if template_path.exists():
             try:
-                # Use utf-8-sig to handle UTF-8 BOM (Windows Notepad etc.)
-                with open(path, 'r', encoding='utf-8-sig') as f:
+                with open(template_path, 'r', encoding='utf-8-sig') as f:
                     data = json.load(f)
-                    # Remove deprecated fields
-                    data.pop('last_direction', None)
-                    data.pop('window_width', None)
-                    data.pop('window_height', None)
-                    # Migrate old PDF-only options to common options
-                    if 'pdf_bilingual_output' in data and 'bilingual_output' not in data:
-                        data['bilingual_output'] = data.pop('pdf_bilingual_output')
-                    else:
-                        data.pop('pdf_bilingual_output', None)
-                    if 'pdf_export_glossary' in data and 'export_glossary' not in data:
-                        data['export_glossary'] = data.pop('pdf_export_glossary')
-                    else:
-                        data.pop('pdf_export_glossary', None)
-                    # Migrate old font settings (4 settings → 2 settings)
-                    if 'font_jp_to_en_mincho' in data and 'font_jp_to_en' not in data:
-                        data['font_jp_to_en'] = data.pop('font_jp_to_en_mincho')
-                    else:
-                        data.pop('font_jp_to_en_mincho', None)
-                    data.pop('font_jp_to_en_gothic', None)
-                    if 'font_en_to_jp_serif' in data and 'font_en_to_jp' not in data:
-                        data['font_en_to_jp'] = data.pop('font_en_to_jp_serif')
-                    else:
-                        data.pop('font_en_to_jp_serif', None)
-                    data.pop('font_en_to_jp_sans', None)
-                    # Remove old PDF font settings (now unified)
-                    data.pop('pdf_font_ja', None)
-                    data.pop('pdf_font_en', None)
-                    # Filter to only known fields to handle future version settings
-                    known_fields = {f.name for f in cls.__dataclass_fields__.values()}
-                    filtered_data = {k: v for k, v in data.items() if k in known_fields}
-                    settings = cls(**filtered_data)
-                    settings._validate()
-                    return settings
-            except (json.JSONDecodeError, TypeError, UnicodeDecodeError) as e:
-                logger.warning("Failed to load settings: %s", e)
-                return cls()
-        return cls()
+                    logger.debug("Loaded template settings from: %s", template_path)
+            except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                logger.warning("Failed to load template settings: %s", e)
+
+        # 2. Override with user settings
+        if user_settings_path.exists():
+            try:
+                with open(user_settings_path, 'r', encoding='utf-8-sig') as f:
+                    user_data = json.load(f)
+                    # Only apply known user settings keys
+                    for key in USER_SETTINGS_KEYS:
+                        if key in user_data:
+                            data[key] = user_data[key]
+                    logger.debug("Loaded user settings from: %s", user_settings_path)
+            except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                logger.warning("Failed to load user settings: %s", e)
+
+        # NOTE: Legacy settings.json is NOT migrated to prevent bugs.
+        # Users will start with fresh defaults from template.
+
+        # Clean up deprecated fields
+        data.pop('last_direction', None)
+        data.pop('window_width', None)
+        data.pop('window_height', None)
+        data.pop('pdf_bilingual_output', None)
+        data.pop('pdf_export_glossary', None)
+        data.pop('font_jp_to_en_mincho', None)
+        data.pop('font_jp_to_en_gothic', None)
+        data.pop('font_en_to_jp_serif', None)
+        data.pop('font_en_to_jp_sans', None)
+        data.pop('pdf_font_ja', None)
+        data.pop('pdf_font_en', None)
+
+        # Filter to only known fields
+        known_fields = {f.name for f in cls.__dataclass_fields__.values()}
+        filtered_data = {k: v for k, v in data.items() if k in known_fields}
+
+        settings = cls(**filtered_data)
+        settings._validate()
+        return settings
 
     def _validate(self) -> None:
         """Validate and normalize setting values for consistency.
@@ -158,43 +205,30 @@ class AppSettings:
             self.ocr_dpi = 300
 
     def save(self, path: Path) -> None:
-        """Save settings to JSON file"""
-        path.parent.mkdir(parents=True, exist_ok=True)
-        data = {
-            "reference_files": self.reference_files,
-            "output_directory": self.output_directory,
-            "last_tab": self.last_tab,
-            # NOTE: window_width/window_height は廃止（動的計算に移行）
-            "max_chars_per_batch": self.max_chars_per_batch,
-            "request_timeout": self.request_timeout,
-            "max_retries": self.max_retries,
-            # File Translation Options
-            "bilingual_output": self.bilingual_output,
-            "export_glossary": self.export_glossary,
-            "translation_style": self.translation_style,
-            # Text Translation Options
-            "text_translation_style": self.text_translation_style,
-            "use_bundled_glossary": self.use_bundled_glossary,
-            "embed_glossary_in_prompt": self.embed_glossary_in_prompt,
-            # Font Settings
-            "font_size_adjustment_jp_to_en": self.font_size_adjustment_jp_to_en,
-            "font_size_min": self.font_size_min,
-            "font_jp_to_en": self.font_jp_to_en,
-            "font_en_to_jp": self.font_en_to_jp,
-            # PDF Layout Options
-            "ocr_batch_size": self.ocr_batch_size,
-            "ocr_dpi": self.ocr_dpi,
-            "ocr_device": self.ocr_device,
-            # Auto Update
-            "auto_update_enabled": self.auto_update_enabled,
-            "auto_update_check_interval": self.auto_update_check_interval,
-            "github_repo_owner": self.github_repo_owner,
-            "github_repo_name": self.github_repo_name,
-            "last_update_check": self.last_update_check,
-            "skipped_version": self.skipped_version,
-        }
-        with open(path, 'w', encoding='utf-8') as f:
+        """Save user settings to user_settings.json.
+
+        ユーザーが変更した設定のみをuser_settings.jsonに保存。
+        settings.template.jsonは変更しない。
+
+        Args:
+            path: 設定ファイルのパス（config/settings.json）
+                  実際にはconfig/user_settings.jsonに保存
+        """
+        config_dir = path.parent
+        user_settings_path = config_dir / "user_settings.json"
+
+        config_dir.mkdir(parents=True, exist_ok=True)
+
+        # Only save user-changeable settings
+        data = {}
+        for key in USER_SETTINGS_KEYS:
+            if hasattr(self, key):
+                data[key] = getattr(self, key)
+
+        with open(user_settings_path, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
+
+        logger.debug("Saved user settings to: %s", user_settings_path)
 
     def get_reference_file_paths(self, base_dir: Path) -> list[Path]:
         """

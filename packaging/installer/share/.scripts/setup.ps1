@@ -651,8 +651,9 @@ function Invoke-Setup {
 
     # Backup user data files before removing the directory
     # Note: glossary.csv is handled separately (compare & backup to Desktop if changed)
+    # Note: settings.json は廃止、user_settings.json にユーザー設定のみ保存
     $BackupFiles = @()
-    $UserDataFiles = @("config\settings.json")
+    $UserDataFiles = @("config\user_settings.json")
     $script:GlossaryBackupPath = $null  # Will be set if glossary was backed up
     $BackupDir = Join-Path $env:TEMP "YakuLingo_Backup_$(Get-Date -Format 'yyyyMMddHHmmss')"
 
@@ -797,16 +798,13 @@ function Invoke-Setup {
             if (-not (Test-Path $SetupPath)) {
                 New-Item -ItemType Directory -Path $SetupPath -Force | Out-Null
             }
-            # Run 7-Zip with output redirected to log file (avoids buffer deadlock)
+            # Run 7-Zip via cmd.exe with output redirected to log file
             # -aoa: Overwrite all existing files without prompt
             # -bb1: Show names of processed files (verbose logging)
-            # Output redirected to file to avoid stdout buffer deadlock with many files
-            $sevenZipArgs = "x `"$TempZipFile`" `"-o$SetupPath`" -y -mmt=on -aoa -bb1"
-            $cmdLine = "& `"$($script:SevenZip)`" $sevenZipArgs >> `"$extractLogPath`" 2>&1"
-
+            # Using cmd.exe for reliable output redirection
             $psi = New-Object System.Diagnostics.ProcessStartInfo
-            $psi.FileName = "powershell.exe"
-            $psi.Arguments = "-NoProfile -Command `"$cmdLine; exit `$LASTEXITCODE`""
+            $psi.FileName = "cmd.exe"
+            $psi.Arguments = "/c `"`"$($script:SevenZip)`" x `"$TempZipFile`" `"-o$SetupPath`" -y -mmt=on -aoa -bb1 >> `"$extractLogPath`" 2>&1`""
             $psi.UseShellExecute = $false
             $psi.CreateNoWindow = $true
             $psi.RedirectStandardOutput = $false
@@ -970,6 +968,35 @@ function Invoke-Setup {
         # Ignore verification errors
     }
 
+    # Clean up __pycache__ and updates folder to prevent stale bytecode/files from affecting the app
+    Write-Status -Message "Cleaning up cache..." -Progress -Step "Step 3/4: Extracting" -Percent 82
+    try {
+        "=== Cache Cleanup ===" | Out-File -FilePath $extractLogPath -Append -Encoding UTF8
+
+        # Remove __pycache__ directories
+        $pycacheDirs = Get-ChildItem -Path $SetupPath -Recurse -Directory -Filter "__pycache__" -ErrorAction SilentlyContinue
+        $pycacheCount = @($pycacheDirs).Count
+        if ($pycacheCount -gt 0) {
+            $pycacheDirs | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+            "Removed $pycacheCount __pycache__ directories" | Out-File -FilePath $extractLogPath -Append -Encoding UTF8
+            if (-not $GuiMode) {
+                Write-Host "      Removed $pycacheCount __pycache__ directories" -ForegroundColor Gray
+            }
+        }
+
+        # Remove updates folder (auto-update cache)
+        $updatesDir = Join-Path $SetupPath "updates"
+        if (Test-Path $updatesDir) {
+            Remove-Item -Path $updatesDir -Recurse -Force -ErrorAction SilentlyContinue
+            "Removed updates directory" | Out-File -FilePath $extractLogPath -Append -Encoding UTF8
+            if (-not $GuiMode) {
+                Write-Host "      Removed updates directory" -ForegroundColor Gray
+            }
+        }
+    } catch {
+        # Ignore cleanup errors
+    }
+
     # Fix pyvenv.cfg placeholder (__PYTHON_HOME__) to the actual bundled runtime path
     Write-Status -Message "Configuring Python runtime..." -Progress -Step "Step 3/4: Extracting" -Percent 85
     Update-PyVenvConfig -SetupPath $SetupPath
@@ -1000,110 +1027,10 @@ function Invoke-Setup {
                     New-Item -ItemType Directory -Path $restoreParent -Force | Out-Null
                 }
 
-                if ($file -eq "config\settings.json") {
-                    # 設定ファイルはマージ（ユーザー保護対象の設定のみ保持）
-                    # 新しい設定をベースとし、ユーザー設定の一部のみ上書き
-                    $newSettingsPath = $restorePath
-                    $templateSettingsPath = Join-Path $SetupPath "config\\settings.template.json"
-                    if (-not (Test-Path $newSettingsPath) -and (Test-Path $templateSettingsPath)) {
-                        # settings.json が無い場合はテンプレートを使用（アップデーターと同様の挙動）
-                        $newSettingsPath = $templateSettingsPath
-                    }
-
-                    if (Test-Path $newSettingsPath) {
-                        # 新しい設定を一時保存
-                        $tempNewSettings = Join-Path $BackupDir "settings_new.json"
-                        Copy-Item -Path $newSettingsPath -Destination $tempNewSettings -Force
-
-                        # ユーザーがUIで変更した設定（これ以外は開発者が自由に変更可能）
-                        $UserProtectedSettings = @(
-                            # 翻訳スタイル設定（設定ダイアログで変更）
-                            "translation_style",
-                            "text_translation_style",
-                            # フォント設定（設定ダイアログで変更）
-                            "font_jp_to_en",
-                            "font_en_to_jp",
-                            "font_size_adjustment_jp_to_en",
-                            # 出力オプション（ファイル翻訳パネルで変更）
-                            "bilingual_output",
-                            "export_glossary",
-                            "use_bundled_glossary",
-                            "embed_glossary_in_prompt",
-                            # UI状態（自動保存）
-                            "last_tab",
-                            "onboarding_completed",
-                            # 更新設定（更新ダイアログで変更）
-                            "skipped_version"
-                        )
-
-                        # JSONをマージ
-                        try {
-                            $userData = Get-Content -Path $backupPath -Encoding UTF8 | ConvertFrom-Json
-                            $newDataJson = Get-Content -Path $tempNewSettings -Encoding UTF8 -Raw
-                            $newData = $newDataJson | ConvertFrom-Json
-                            $preservedCount = 0
-
-                            # 新しい設定をベースにする（深いコピー: JSON経由で再生成）
-                            $mergedData = $newDataJson | ConvertFrom-Json
-
-                            # ユーザー保護対象の設定のみを上書き
-                            foreach ($key in $UserProtectedSettings) {
-                                if ($userData.PSObject.Properties.Name -contains $key) {
-                                    # 新しい設定にもキーが存在する場合のみ復元（削除された設定は復元しない）
-                                    if ($newData.PSObject.Properties.Name -contains $key) {
-                                        $mergedData.$key = $userData.$key
-                                        $preservedCount++
-                                    }
-                                }
-                            }
-
-                            # 保存
-                            $mergedData | ConvertTo-Json -Depth 10 | Set-Content -Path $restorePath -Encoding UTF8
-
-                            # 変更カウント
-                            $addedKeys = $newData.PSObject.Properties.Name | Where-Object { -not ($userData.PSObject.Properties.Name -contains $_) }
-                            $removedKeys = $userData.PSObject.Properties.Name | Where-Object { -not ($newData.PSObject.Properties.Name -contains $_) }
-
-                            if (-not $GuiMode) {
-                                $addedCount = @($addedKeys).Count
-                                $removedCount = @($removedKeys).Count
-                                if ($addedCount -gt 0 -or $removedCount -gt 0) {
-                                    $msg = "      Merged: $file"
-                                    if ($addedCount -gt 0) { $msg += " (+$addedCount new)" }
-                                    if ($removedCount -gt 0) { $msg += " (-$removedCount removed)" }
-                                    Write-Host $msg -ForegroundColor Gray
-                                } else {
-                                    Write-Host "      Merged: $file (user settings preserved)" -ForegroundColor Gray
-                                }
-                            }
-                        } catch {
-                            # マージに失敗した場合はバックアップを保存して新しい設定を使用
-                            # ユーザーが後で確認できるように SetupPath/config/ に保存
-                            $failedBackupPath = Join-Path $SetupPath "config\settings.backup.json"
-                            try {
-                                Copy-Item -Path $backupPath -Destination $failedBackupPath -Force
-                            } catch {
-                                # バックアップ保存に失敗しても続行
-                            }
-                            if (-not $GuiMode) {
-                                Write-Host "      Warning: Failed to merge settings (JSON parse error)" -ForegroundColor Yellow
-                                Write-Host "      Old settings saved to: config\settings.backup.json" -ForegroundColor Gray
-                                Write-Host "      Using new settings: $file" -ForegroundColor Gray
-                            }
-                        }
-                    } else {
-                        # 新しい設定がなければバックアップを復元
-                        Copy-Item -Path $backupPath -Destination $restorePath -Force
-                        if (-not $GuiMode) {
-                            Write-Host "      Restored: $file" -ForegroundColor Gray
-                        }
-                    }
-                } else {
-                    # その他のファイルはそのまま復元
-                    Copy-Item -Path $backupPath -Destination $restorePath -Force
-                    if (-not $GuiMode) {
-                        Write-Host "      Restored: $file" -ForegroundColor Gray
-                    }
+                # user_settings.json はそのまま復元（ユーザー設定を保持）
+                Copy-Item -Path $backupPath -Destination $restorePath -Force
+                if (-not $GuiMode) {
+                    Write-Host "      Restored: $file" -ForegroundColor Gray
                 }
             }
         }

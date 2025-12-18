@@ -19,7 +19,6 @@ from yakulingo.services.updater import (
     merge_settings,
     merge_glossary,
     backup_and_update_glossary,
-    USER_PROTECTED_SETTINGS,
 )
 
 
@@ -655,97 +654,111 @@ class TestMakeRequestWithProxy:
 # --- Tests: merge_settings() ---
 
 class TestMergeSettings:
-    """Test merge_settings function"""
+    """Test merge_settings function (分離方式)
 
-    def test_merge_settings_new_file_created(self, tmp_path):
-        """When user settings don't exist, copy new settings"""
+    merge_settings() now:
+    1. Updates settings.template.json from source
+    2. Migrates legacy settings.json to user_settings.json (if needed)
+    """
+
+    def test_merge_settings_creates_template(self, tmp_path):
+        """When template doesn't exist, copy from source"""
         app_dir = tmp_path / "app"
         source_dir = tmp_path / "source"
 
-        # Create source settings
+        # Create source template
         (source_dir / "config").mkdir(parents=True)
-        new_settings = {"key1": "value1", "key2": "value2"}
-        (source_dir / "config" / "settings.json").write_text(
-            json.dumps(new_settings), encoding="utf-8"
+        template = {"key1": "value1", "key2": "value2"}
+        (source_dir / "config" / "settings.template.json").write_text(
+            json.dumps(template), encoding="utf-8"
         )
 
         result = merge_settings(app_dir, source_dir)
 
         assert result == -1  # New file created
-        assert (app_dir / "config" / "settings.json").exists()
-        saved = json.loads((app_dir / "config" / "settings.json").read_text())
-        assert saved == new_settings
+        assert (app_dir / "config" / "settings.template.json").exists()
+        saved = json.loads((app_dir / "config" / "settings.template.json").read_text())
+        assert saved == template
 
-    def test_merge_settings_preserves_protected_settings(self, tmp_path):
-        """Protected settings from user are preserved"""
+    def test_merge_settings_updates_existing_template(self, tmp_path):
+        """When template exists, update it"""
         app_dir = tmp_path / "app"
         source_dir = tmp_path / "source"
 
-        # Create user settings with protected values
+        # Create existing template
         (app_dir / "config").mkdir(parents=True)
-        user_settings = {
-            "translation_style": "minimal",  # Protected
-            "max_chars_per_batch": 5000,      # Not protected
-            "font_jp_to_en": "Times",         # Protected
-        }
-        (app_dir / "config" / "settings.json").write_text(
-            json.dumps(user_settings), encoding="utf-8"
+        old_template = {"old_key": "old_value"}
+        (app_dir / "config" / "settings.template.json").write_text(
+            json.dumps(old_template), encoding="utf-8"
         )
 
-        # Create new settings with different values
+        # Create source template with new values
         (source_dir / "config").mkdir(parents=True)
-        new_settings = {
-            "translation_style": "standard",  # Will be overwritten by user value
-            "max_chars_per_batch": 7000,      # Will use new value
-            "font_jp_to_en": "Arial",         # Will be overwritten by user value
-            "new_setting": "new_value",       # New setting added
-        }
-        (source_dir / "config" / "settings.json").write_text(
-            json.dumps(new_settings), encoding="utf-8"
+        new_template = {"new_key": "new_value"}
+        (source_dir / "config" / "settings.template.json").write_text(
+            json.dumps(new_template), encoding="utf-8"
         )
 
         result = merge_settings(app_dir, source_dir)
 
-        merged = json.loads((app_dir / "config" / "settings.json").read_text())
-        # Protected settings preserved from user
-        assert merged["translation_style"] == "minimal"
-        assert merged["font_jp_to_en"] == "Times"
-        # Non-protected settings updated from new
-        assert merged["max_chars_per_batch"] == 7000
-        # New settings added
-        assert merged["new_setting"] == "new_value"
-        assert result == 1  # 1 new setting added
+        assert result == 1  # Template updated
+        saved = json.loads((app_dir / "config" / "settings.template.json").read_text())
+        assert saved == new_template
 
-    def test_merge_settings_removes_deprecated_settings(self, tmp_path):
-        """Settings not in new version are removed"""
+    def test_merge_settings_does_not_migrate_legacy(self, tmp_path):
+        """Legacy settings.json should NOT be migrated (to prevent bugs)"""
         app_dir = tmp_path / "app"
         source_dir = tmp_path / "source"
 
-        # Create user settings with deprecated setting
+        # Create legacy settings.json with custom settings
         (app_dir / "config").mkdir(parents=True)
-        user_settings = {
-            "old_setting": "old_value",  # Will be removed
-            "translation_style": "concise",
+        legacy_settings = {
+            "translation_style": "minimal",
+            "font_jp_to_en": "Times",
+            "last_tab": "file",
         }
         (app_dir / "config" / "settings.json").write_text(
+            json.dumps(legacy_settings), encoding="utf-8"
+        )
+
+        # Create source template
+        (source_dir / "config").mkdir(parents=True)
+        template = {"key": "value"}
+        (source_dir / "config" / "settings.template.json").write_text(
+            json.dumps(template), encoding="utf-8"
+        )
+
+        result = merge_settings(app_dir, source_dir)
+
+        # Legacy settings.json should NOT create user_settings.json
+        assert not (app_dir / "config" / "user_settings.json").exists()
+        # Template should still be updated
+        assert result == -1
+
+    def test_merge_settings_does_not_overwrite_user_settings(self, tmp_path):
+        """Existing user_settings.json is not modified"""
+        app_dir = tmp_path / "app"
+        source_dir = tmp_path / "source"
+
+        # Create existing user_settings.json
+        (app_dir / "config").mkdir(parents=True)
+        user_settings = {"translation_style": "minimal"}
+        (app_dir / "config" / "user_settings.json").write_text(
             json.dumps(user_settings), encoding="utf-8"
         )
 
-        # Create new settings without deprecated setting
+        # Create source template
         (source_dir / "config").mkdir(parents=True)
-        new_settings = {
-            "translation_style": "standard",
-        }
-        (source_dir / "config" / "settings.json").write_text(
-            json.dumps(new_settings), encoding="utf-8"
+        template = {"key": "value"}
+        (source_dir / "config" / "settings.template.json").write_text(
+            json.dumps(template), encoding="utf-8"
         )
 
         merge_settings(app_dir, source_dir)
 
-        merged = json.loads((app_dir / "config" / "settings.json").read_text())
-        assert "old_setting" not in merged
-        # Protected setting preserved
-        assert merged["translation_style"] == "concise"
+        # user_settings.json should be unchanged
+        saved = json.loads((app_dir / "config" / "user_settings.json").read_text())
+        assert saved["translation_style"] == "minimal"
 
     def test_merge_settings_no_source_file(self, tmp_path):
         """Returns 0 when source settings don't exist"""
@@ -756,39 +769,47 @@ class TestMergeSettings:
         result = merge_settings(app_dir, source_dir)
         assert result == 0
 
-    def test_merge_settings_uses_template_fallback(self, tmp_path):
-        """Falls back to settings.template.json if settings.json not found"""
+    def test_merge_settings_uses_settings_json_as_template_fallback(self, tmp_path):
+        """Falls back to settings.json if settings.template.json not found in source"""
         app_dir = tmp_path / "app"
         source_dir = tmp_path / "source"
 
-        # Create template instead of settings.json
+        # Create settings.json instead of template
         (source_dir / "config").mkdir(parents=True)
-        template = {"template_key": "template_value"}
+        settings = {"fallback_key": "fallback_value"}
+        (source_dir / "config" / "settings.json").write_text(
+            json.dumps(settings), encoding="utf-8"
+        )
+
+        result = merge_settings(app_dir, source_dir)
+
+        assert result == -1
+        saved = json.loads((app_dir / "config" / "settings.template.json").read_text())
+        assert saved == settings
+
+    def test_merge_settings_legacy_json_ignored(self, tmp_path):
+        """Legacy settings.json is completely ignored (not read at all)"""
+        app_dir = tmp_path / "app"
+        source_dir = tmp_path / "source"
+
+        # Create legacy settings (even if invalid, it's ignored)
+        (app_dir / "config").mkdir(parents=True)
+        (app_dir / "config" / "settings.json").write_text("invalid json{", encoding="utf-8")
+
+        # Create valid source template
+        (source_dir / "config").mkdir(parents=True)
+        template = {"key": "value"}
         (source_dir / "config" / "settings.template.json").write_text(
             json.dumps(template), encoding="utf-8"
         )
 
         result = merge_settings(app_dir, source_dir)
 
+        # Template should still be created (legacy is ignored)
         assert result == -1
-        saved = json.loads((app_dir / "config" / "settings.json").read_text())
-        assert saved == template
-
-    def test_merge_settings_invalid_user_json(self, tmp_path):
-        """Returns 0 when user settings JSON is invalid"""
-        app_dir = tmp_path / "app"
-        source_dir = tmp_path / "source"
-
-        # Create invalid user settings
-        (app_dir / "config").mkdir(parents=True)
-        (app_dir / "config" / "settings.json").write_text("invalid json{", encoding="utf-8")
-
-        # Create valid source settings
-        (source_dir / "config").mkdir(parents=True)
-        (source_dir / "config" / "settings.json").write_text('{"key": "value"}', encoding="utf-8")
-
-        result = merge_settings(app_dir, source_dir)
-        assert result == 0
+        assert (app_dir / "config" / "settings.template.json").exists()
+        # user_settings.json not created (legacy not migrated)
+        assert not (app_dir / "config" / "user_settings.json").exists()
 
 
 # --- Tests: backup_and_update_glossary() ---
@@ -938,33 +959,3 @@ class TestMergeGlossaryBackwardCompat:
         assert result == 0
 
 
-# --- Tests: USER_PROTECTED_SETTINGS ---
-
-class TestUserProtectedSettings:
-    """Test USER_PROTECTED_SETTINGS constant"""
-
-    def test_protected_settings_contains_ui_settings(self):
-        """Protected settings includes UI-changeable settings"""
-        assert "translation_style" in USER_PROTECTED_SETTINGS
-        assert "text_translation_style" in USER_PROTECTED_SETTINGS
-        assert "font_jp_to_en" in USER_PROTECTED_SETTINGS
-        assert "font_en_to_jp" in USER_PROTECTED_SETTINGS
-        assert "font_size_adjustment_jp_to_en" in USER_PROTECTED_SETTINGS
-        assert "bilingual_output" in USER_PROTECTED_SETTINGS
-        assert "export_glossary" in USER_PROTECTED_SETTINGS
-        assert "use_bundled_glossary" in USER_PROTECTED_SETTINGS
-        assert "last_tab" in USER_PROTECTED_SETTINGS
-        assert "skipped_version" in USER_PROTECTED_SETTINGS
-
-    def test_protected_settings_excludes_developer_settings(self):
-        """Protected settings excludes developer-controlled settings"""
-        assert "max_chars_per_batch" not in USER_PROTECTED_SETTINGS
-        assert "request_timeout" not in USER_PROTECTED_SETTINGS
-        assert "max_retries" not in USER_PROTECTED_SETTINGS
-        assert "ocr_batch_size" not in USER_PROTECTED_SETTINGS
-        assert "ocr_dpi" not in USER_PROTECTED_SETTINGS
-        assert "ocr_device" not in USER_PROTECTED_SETTINGS
-        assert "github_repo_owner" not in USER_PROTECTED_SETTINGS
-        assert "github_repo_name" not in USER_PROTECTED_SETTINGS
-        assert "auto_update_check_interval" not in USER_PROTECTED_SETTINGS
-        # NOTE: window_width/window_height are deprecated (dynamically calculated)

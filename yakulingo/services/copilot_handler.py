@@ -588,13 +588,10 @@ class CopilotHandler:
     PAGE_NETWORK_IDLE_TIMEOUT_MS = 5000 # 5 seconds for network idle checks
 
     # Selector wait timeouts (milliseconds) - for Playwright wait_for_selector()
-    SELECTOR_CHAT_INPUT_TIMEOUT_MS = 15000   # 15 seconds for chat input to appear
     SELECTOR_CHAT_INPUT_FIRST_STEP_TIMEOUT_MS = 1000  # 1 second for first step (fast path for logged-in users)
     SELECTOR_CHAT_INPUT_STEP_TIMEOUT_MS = 2000  # 2 seconds per subsequent step for early login detection
     SELECTOR_CHAT_INPUT_MAX_STEPS = 7        # Max steps (1s + 2s*6 = 13s total)
-    # SELECTOR_SEND_BUTTON_TIMEOUT_MS removed - no longer wait for send button before Enter
     SELECTOR_RESPONSE_TIMEOUT_MS = 10000     # 10 seconds for response element to appear
-    SELECTOR_NEW_CHAT_READY_TIMEOUT_MS = 5000  # 5 seconds for new chat to be ready
     SELECTOR_LOGIN_CHECK_TIMEOUT_MS = 2000   # 2 seconds for login state checks
     SELECTOR_QUICK_CHECK_TIMEOUT_MS = 500    # 0.5 seconds for instant checks
 

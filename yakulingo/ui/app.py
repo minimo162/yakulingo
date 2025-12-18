@@ -4320,10 +4320,8 @@ def run_app(
 
         # Pre-calculate window position for side_panel mode
         # This allows pywebview to create window at correct position (if it gets passed to child process)
-        from yakulingo.config.settings import AppSettings
-        settings_path = Path.home() / ".yakulingo" / "settings.json"
         try:
-            settings = AppSettings.load(settings_path)
+            settings = AppSettings.load(get_default_settings_path())
             if settings.browser_display_mode == "side_panel":
                 app_position = _calculate_app_position_for_side_panel(
                     yakulingo_app._window_size[0], yakulingo_app._window_size[1]
@@ -4374,9 +4372,7 @@ def run_app(
             import ctypes
 
             # Load settings to check browser_display_mode
-            from yakulingo.config.settings import AppSettings
-            settings_path = Path.home() / ".yakulingo" / "settings.json"
-            settings = AppSettings.load(settings_path)
+            settings = AppSettings.load(get_default_settings_path())
 
             user32 = ctypes.WinDLL('user32', use_last_error=True)
 

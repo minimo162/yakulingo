@@ -1421,9 +1421,8 @@ class CopilotHandler:
         # This handles cases where timeout errors or other failures leave the window visible
         # Note: Skip minimization in side_panel/foreground mode since browser is intentionally visible
         with suppress(Exception):
-            from yakulingo.config.settings import AppSettings
-            settings_path = Path.home() / ".yakulingo" / "settings.json"
-            settings = AppSettings.load(settings_path)
+            from yakulingo.config.settings import AppSettings, get_default_settings_path
+            settings = AppSettings.load(get_default_settings_path())
             mode = settings.browser_display_mode
             if mode not in ("side_panel", "foreground"):
                 self._minimize_edge_window(None)
@@ -1514,9 +1513,8 @@ class CopilotHandler:
         PlaywrightTimeoutError = error_types['TimeoutError']
 
         # Check browser display mode - skip minimize for side_panel/foreground modes
-        from yakulingo.config.settings import AppSettings
-        settings_path = Path.home() / ".yakulingo" / "settings.json"
-        settings = AppSettings.load(settings_path)
+        from yakulingo.config.settings import AppSettings, get_default_settings_path
+        settings = AppSettings.load(get_default_settings_path())
         should_minimize = settings.browser_display_mode not in ("side_panel", "foreground")
 
         logger.info("Checking for existing Copilot page...")
@@ -2014,9 +2012,8 @@ class CopilotHandler:
 
         # Check browser display mode - only minimize in "minimized" mode
         # In side_panel/foreground mode, browser should remain visible
-        from yakulingo.config.settings import AppSettings
-        settings_path = Path.home() / ".yakulingo" / "settings.json"
-        settings = AppSettings.load(settings_path)
+        from yakulingo.config.settings import AppSettings, get_default_settings_path
+        settings = AppSettings.load(get_default_settings_path())
         should_minimize = settings.browser_display_mode == "minimized"
 
         elapsed = 0.0
@@ -2216,9 +2213,8 @@ class CopilotHandler:
         """
         # Check browser display mode - skip for side_panel/foreground modes
         # (browser is already visible, no need to bring to front)
-        from yakulingo.config.settings import AppSettings
-        settings_path = Path.home() / ".yakulingo" / "settings.json"
-        settings = AppSettings.load(settings_path)
+        from yakulingo.config.settings import AppSettings, get_default_settings_path
+        settings = AppSettings.load(get_default_settings_path())
         mode = settings.browser_display_mode
 
         if mode in ("side_panel", "foreground"):
@@ -2793,11 +2789,9 @@ class CopilotHandler:
         """
         # Cache settings to avoid repeated disk I/O during startup
         if not hasattr(self, '_cached_browser_display_mode'):
-            from yakulingo.config.settings import AppSettings
-            from pathlib import Path
+            from yakulingo.config.settings import AppSettings, get_default_settings_path
 
-            settings_path = Path.home() / ".yakulingo" / "settings.json"
-            settings = AppSettings.load(settings_path)
+            settings = AppSettings.load(get_default_settings_path())
             self._cached_browser_display_mode = settings.browser_display_mode
 
         return self._cached_browser_display_mode
@@ -3115,11 +3109,9 @@ class CopilotHandler:
         - "foreground": Keep Edge in foreground (no action needed)
         """
         if sys.platform == "win32":
-            from yakulingo.config.settings import AppSettings
-            from pathlib import Path
+            from yakulingo.config.settings import AppSettings, get_default_settings_path
 
-            settings_path = Path.home() / ".yakulingo" / "settings.json"
-            settings = AppSettings.load(settings_path)
+            settings = AppSettings.load(get_default_settings_path())
             mode = settings.browser_display_mode
 
             if mode == "minimized":
@@ -3182,9 +3174,8 @@ class CopilotHandler:
                 redirects and will be logged at a lower level.
         """
         # Check browser display mode - skip for side_panel/foreground modes
-        from yakulingo.config.settings import AppSettings
-        settings_path = Path.home() / ".yakulingo" / "settings.json"
-        settings = AppSettings.load(settings_path)
+        from yakulingo.config.settings import AppSettings, get_default_settings_path
+        settings = AppSettings.load(get_default_settings_path())
         mode = settings.browser_display_mode
 
         if mode in ("side_panel", "foreground"):

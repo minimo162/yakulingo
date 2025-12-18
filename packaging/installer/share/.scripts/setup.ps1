@@ -1027,95 +1027,29 @@ function Invoke-Setup {
                 }
 
                 if ($file -eq "config\settings.json") {
-                    # 設定ファイルはマージ（ユーザー保護対象の設定のみ保持）
-                    # 新しい設定をベースとし、ユーザー設定の一部のみ上書き
+                    # 設定ファイルは完全上書き（旧設定はバックアップとして保存）
+                    # 削除された機能の設定が残る問題を防ぐため、マージではなく上書きを使用
                     $newSettingsPath = $restorePath
                     $templateSettingsPath = Join-Path $SetupPath "config\\settings.template.json"
                     if (-not (Test-Path $newSettingsPath) -and (Test-Path $templateSettingsPath)) {
-                        # settings.json が無い場合はテンプレートを使用（アップデーターと同様の挙動）
+                        # settings.json が無い場合はテンプレートを使用
                         $newSettingsPath = $templateSettingsPath
                     }
 
                     if (Test-Path $newSettingsPath) {
-                        # 新しい設定を一時保存
-                        $tempNewSettings = Join-Path $BackupDir "settings_new.json"
-                        Copy-Item -Path $newSettingsPath -Destination $tempNewSettings -Force
-
-                        # ユーザーがUIで変更した設定（これ以外は開発者が自由に変更可能）
-                        $UserProtectedSettings = @(
-                            # 翻訳スタイル設定（設定ダイアログで変更）
-                            "translation_style",
-                            "text_translation_style",
-                            # フォント設定（設定ダイアログで変更）
-                            "font_jp_to_en",
-                            "font_en_to_jp",
-                            "font_size_adjustment_jp_to_en",
-                            # 出力オプション（ファイル翻訳パネルで変更）
-                            "bilingual_output",
-                            "export_glossary",
-                            "use_bundled_glossary",
-                            "embed_glossary_in_prompt",
-                            # UI状態（自動保存）
-                            "last_tab",
-                            "onboarding_completed",
-                            # 更新設定（更新ダイアログで変更）
-                            "skipped_version"
-                        )
-
-                        # JSONをマージ
+                        # 旧設定をバックアップとして保存（参照用）
+                        $settingsBackupPath = Join-Path $SetupPath "config\settings.backup.json"
                         try {
-                            $userData = Get-Content -Path $backupPath -Encoding UTF8 | ConvertFrom-Json
-                            $newDataJson = Get-Content -Path $tempNewSettings -Encoding UTF8 -Raw
-                            $newData = $newDataJson | ConvertFrom-Json
-                            $preservedCount = 0
-
-                            # 新しい設定をベースにする（深いコピー: JSON経由で再生成）
-                            $mergedData = $newDataJson | ConvertFrom-Json
-
-                            # ユーザー保護対象の設定のみを上書き
-                            foreach ($key in $UserProtectedSettings) {
-                                if ($userData.PSObject.Properties.Name -contains $key) {
-                                    # 新しい設定にもキーが存在する場合のみ復元（削除された設定は復元しない）
-                                    if ($newData.PSObject.Properties.Name -contains $key) {
-                                        $mergedData.$key = $userData.$key
-                                        $preservedCount++
-                                    }
-                                }
-                            }
-
-                            # 保存
-                            $mergedData | ConvertTo-Json -Depth 10 | Set-Content -Path $restorePath -Encoding UTF8
-
-                            # 変更カウント
-                            $addedKeys = $newData.PSObject.Properties.Name | Where-Object { -not ($userData.PSObject.Properties.Name -contains $_) }
-                            $removedKeys = $userData.PSObject.Properties.Name | Where-Object { -not ($newData.PSObject.Properties.Name -contains $_) }
-
+                            Copy-Item -Path $backupPath -Destination $settingsBackupPath -Force
                             if (-not $GuiMode) {
-                                $addedCount = @($addedKeys).Count
-                                $removedCount = @($removedKeys).Count
-                                if ($addedCount -gt 0 -or $removedCount -gt 0) {
-                                    $msg = "      Merged: $file"
-                                    if ($addedCount -gt 0) { $msg += " (+$addedCount new)" }
-                                    if ($removedCount -gt 0) { $msg += " (-$removedCount removed)" }
-                                    Write-Host $msg -ForegroundColor Gray
-                                } else {
-                                    Write-Host "      Merged: $file (user settings preserved)" -ForegroundColor Gray
-                                }
+                                Write-Host "      Backup: Old settings saved to config\settings.backup.json" -ForegroundColor Gray
                             }
                         } catch {
-                            # マージに失敗した場合はバックアップを保存して新しい設定を使用
-                            # ユーザーが後で確認できるように SetupPath/config/ に保存
-                            $failedBackupPath = Join-Path $SetupPath "config\settings.backup.json"
-                            try {
-                                Copy-Item -Path $backupPath -Destination $failedBackupPath -Force
-                            } catch {
-                                # バックアップ保存に失敗しても続行
-                            }
-                            if (-not $GuiMode) {
-                                Write-Host "      Warning: Failed to merge settings (JSON parse error)" -ForegroundColor Yellow
-                                Write-Host "      Old settings saved to: config\settings.backup.json" -ForegroundColor Gray
-                                Write-Host "      Using new settings: $file" -ForegroundColor Gray
-                            }
+                            # バックアップ保存に失敗しても続行
+                        }
+                        # 新しい設定をそのまま使用（上書き）
+                        if (-not $GuiMode) {
+                            Write-Host "      Using new settings: $file" -ForegroundColor Gray
                         }
                     } else {
                         # 新しい設定がなければバックアップを復元

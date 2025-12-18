@@ -965,30 +965,10 @@ The `AutoUpdater` class provides GitHub Releases-based updates:
 - `backup_and_update_glossary()` 関数で実装（`merge_glossary()`は後方互換性のため維持）
 
 **設定ファイル (settings.json):**
-- 新しい設定ファイルをベースとし、ユーザー保護対象の設定のみ上書き
-- `merge_settings()` 関数と `USER_PROTECTED_SETTINGS` で実装
-
-**ユーザー保護対象の設定 (USER_PROTECTED_SETTINGS):**
-
-| カテゴリ | 設定 | 変更方法 |
-|---------|------|---------|
-| 翻訳スタイル | `translation_style`, `text_translation_style` | 設定ダイアログ |
-| フォント | `font_jp_to_en`, `font_en_to_jp`, `font_size_adjustment_jp_to_en` | 設定ダイアログ |
-| 出力オプション | `bilingual_output`, `export_glossary`, `use_bundled_glossary`, `embed_glossary_in_prompt` | ファイル翻訳パネル |
-| UI状態 | `last_tab` | 自動保存 |
-| 更新設定 | `skipped_version` | 更新ダイアログ |
-
-**開発者が自由に変更可能な設定:**
-- `max_chars_per_batch`, `request_timeout`, `max_retries` - 技術的設定
-- `font_size_min` - フォント最小サイズ
-- `ocr_batch_size`, `ocr_dpi`, `ocr_device` - OCR設定
-- `auto_update_check_interval` - 更新チェック間隔
-- `github_repo_owner`, `github_repo_name` - リポジトリ情報
-- `reference_files`, `output_directory` - UIで保存されない
-- `auto_update_enabled`, `last_update_check` - 読み取り専用
-
-**廃止された設定（使用されない）:**
-- `window_width`, `window_height` - 動的計算に移行（`_detect_display_settings()`で論理解像度から計算）
+- 完全上書き方式で処理（マージではなく新しい設定で置き換え）
+- 旧設定は `config/settings.backup.json` として保存（ユーザーが参照可能）
+- `merge_settings()` 関数で実装（後方互換性のため関数名は維持）
+- 削除された機能の設定が残る問題を防ぐために完全上書きを採用
 
 ## Common Tasks for AI Assistants
 

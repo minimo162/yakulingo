@@ -1458,48 +1458,22 @@ def check_for_updates(
     return updater.check_for_updates()
 
 
-# ユーザーがUIで明示的に変更した設定項目（アップデート時に保護される）
-# これ以外の設定は開発者が自由に変更・削除可能
-USER_PROTECTED_SETTINGS = {
-    # 翻訳スタイル設定（設定ダイアログで変更）
-    "translation_style",
-    "text_translation_style",
-    # フォント設定（設定ダイアログで変更）
-    "font_jp_to_en",
-    "font_en_to_jp",
-    "font_size_adjustment_jp_to_en",
-    # 出力オプション（ファイル翻訳パネルで変更）
-    "bilingual_output",
-    "export_glossary",
-    "use_bundled_glossary",
-    "embed_glossary_in_prompt",
-    # UI状態（自動保存）
-    "last_tab",
-    "onboarding_completed",
-    # 更新設定（更新ダイアログで変更）
-    "skipped_version",
-}
-
-
 def merge_settings(app_dir: Path, source_dir: Path) -> int:
     """
-    設定ファイルをマージ（ユーザー設定を保護しつつ新しい設定を適用）
+    設定ファイルを完全上書き（旧設定はバックアップとして保存）
 
-    新しいバージョンの設定をベースとし、USER_PROTECTED_SETTINGS に含まれる
-    ユーザーの設定のみを上書きします。これにより：
-    - 開発者は新しい設定項目を追加できる
-    - 開発者は不要な設定項目を削除できる
-    - 開発者は技術的な設定のデフォルト値を変更できる
-    - ユーザーの明示的な設定（UIで変更した項目）は保護される
+    削除された機能の設定が残る問題を防ぐため、マージではなく完全上書きを使用。
+    旧設定は config/settings.backup.json として保存され、ユーザーが参照可能。
 
     Args:
         app_dir: アプリケーションディレクトリ（ユーザーのsettings.jsonがある場所）
         source_dir: ソースディレクトリ（新しいsettings.jsonまたはテンプレートがある場所）
 
     Returns:
-        int: 変更された設定項目数（正: 追加/変更, 負: 新規作成）
+        int: 変更された設定項目数（正: 追加/変更, 負: 新規作成, 0: 変更なし）
     """
     user_settings = app_dir / "config" / "settings.json"
+    backup_settings = app_dir / "config" / "settings.backup.json"
     # 新しい設定ファイルまたはテンプレートを探す
     new_settings = source_dir / "config" / "settings.json"
     if not new_settings.exists():
@@ -1516,47 +1490,22 @@ def merge_settings(app_dir: Path, source_dir: Path) -> int:
         logger.info("設定ファイルをコピーしました: %s", user_settings)
         return -1  # 新規作成を示す
 
-    # 両方の設定を読み込む
+    # 旧設定をバックアップとして保存（参照用）
     try:
-        # utf-8-sig を使用してBOM付きファイルにも対応
-        with open(user_settings, "r", encoding="utf-8-sig") as f:
-            user_data = json.load(f)
-        with open(new_settings, "r", encoding="utf-8-sig") as f:
-            new_data = json.load(f)
-    except (json.JSONDecodeError, OSError) as e:
-        logger.warning("設定ファイルの読み込みに失敗: %s", e)
+        shutil.copy2(user_settings, backup_settings)
+        logger.info("旧設定をバックアップしました: %s", backup_settings)
+    except OSError as e:
+        logger.warning("設定ファイルのバックアップに失敗: %s", e)
+
+    # 新しい設定で完全上書き
+    try:
+        shutil.copy2(new_settings, user_settings)
+        logger.info("設定ファイルを上書きしました: %s", user_settings)
+    except OSError as e:
+        logger.warning("設定ファイルの上書きに失敗: %s", e)
         return 0
 
-    # 新しい設定をベースとする（開発者の変更を反映）
-    merged_data = dict(new_data)
-
-    # ユーザー保護対象の設定のみを上書き
-    preserved_count = 0
-    for key in USER_PROTECTED_SETTINGS:
-        if key in user_data:
-            # ユーザーの設定値が新しい設定にも存在する場合のみ復元
-            # （削除された設定は復元しない）
-            if key in new_data:
-                merged_data[key] = user_data[key]
-                preserved_count += 1
-                logger.debug("ユーザー設定を保持: %s", key)
-
-    # 変更があれば保存
-    with open(user_settings, "w", encoding="utf-8") as f:
-        json.dump(merged_data, f, ensure_ascii=False, indent=2)
-
-    # 追加された新規項目数をカウント
-    added_keys = set(new_data.keys()) - set(user_data.keys())
-    removed_keys = set(user_data.keys()) - set(new_data.keys())
-
-    if added_keys:
-        logger.info("新規設定項目: %s", ", ".join(added_keys))
-    if removed_keys:
-        logger.info("削除された設定項目: %s", ", ".join(removed_keys))
-    if preserved_count > 0:
-        logger.info("保持されたユーザー設定: %d 件", preserved_count)
-
-    return len(added_keys)
+    return 1  # 上書き完了
 
 
 def backup_and_update_glossary(app_dir: Path, source_dir: Path) -> Optional[str]:

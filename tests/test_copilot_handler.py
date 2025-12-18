@@ -1445,11 +1445,13 @@ class TestGptModeSwitch:
     def test_gpt_mode_wait_constants_defined(self, handler):
         """GPT mode wait time constants are defined"""
         assert hasattr(handler, 'GPT_MODE_MENU_WAIT')
-        # Single wait constant used for all menu operations
-        assert handler.GPT_MODE_MENU_WAIT == 0.3
-        # Button wait timeout for async loading (10s for delayed rendering)
-        assert hasattr(handler, 'GPT_MODE_BUTTON_WAIT_MS')
-        assert handler.GPT_MODE_BUTTON_WAIT_MS == 10000
+        # OPTIMIZED: Reduced from 0.3s to 0.1s (3 calls = 0.6s saved)
+        assert handler.GPT_MODE_MENU_WAIT == 0.1
+        # OPTIMIZED: Polling-based detection for quick response to delayed rendering
+        assert hasattr(handler, 'GPT_MODE_BUTTON_POLL_INTERVAL_MS')
+        assert handler.GPT_MODE_BUTTON_POLL_INTERVAL_MS == 100  # Detect within 100ms
+        assert hasattr(handler, 'GPT_MODE_BUTTON_MAX_WAIT_MS')
+        assert handler.GPT_MODE_BUTTON_MAX_WAIT_MS == 8000  # 8s total timeout
 
     def test_ensure_gpt_mode_completes_when_no_page(self, handler):
         """_ensure_gpt_mode completes without error when no page"""
@@ -1586,17 +1588,20 @@ class TestGptModeSwitch:
         # Should complete without raising (don't block if UI element not found)
         handler._ensure_gpt_mode_impl()
 
-    def test_ensure_gpt_mode_completes_when_wait_for_selector_times_out(self, handler):
-        """_ensure_gpt_mode completes without error when wait_for_selector times out"""
+    def test_ensure_gpt_mode_completes_when_polling_times_out(self, handler):
+        """_ensure_gpt_mode completes without error when polling times out"""
         mock_page = MagicMock()
-        # Simulate wait_for_selector timeout
-        mock_page.wait_for_selector.side_effect = Exception("Timeout 5000ms exceeded")
+        # query_selector always returns None (button never appears)
+        mock_page.query_selector.return_value = None
         handler._page = mock_page
+        # Set a very short timeout for testing
+        handler.GPT_MODE_BUTTON_MAX_WAIT_MS = 50  # 50ms timeout
+        handler.GPT_MODE_BUTTON_POLL_INTERVAL_MS = 10  # 10ms poll interval
 
         # Should complete without raising when button doesn't appear
         handler._ensure_gpt_mode_impl()
-        # Verify wait_for_selector was called
-        mock_page.wait_for_selector.assert_called_once()
+        # Verify query_selector was called multiple times (polling)
+        assert mock_page.query_selector.call_count >= 1
 
     def test_ensure_gpt_mode_closes_menu_on_target_not_found(self, handler):
         """_ensure_gpt_mode closes menu when target mode not in menu"""

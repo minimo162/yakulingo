@@ -391,8 +391,8 @@ def open_file(file_path: Path) -> bool:
                 ctypes.windll.kernel32.CloseHandle(sei.hProcess)
             else:
                 # File was opened in an existing application instance
-                # Find and bring that window to foreground
-                _bring_app_window_to_foreground_by_extension(file_path.suffix.lower())
+                # Find and bring that window to foreground by matching filename in title
+                _bring_app_window_to_foreground_by_filename(file_path)
 
         elif system == 'Darwin':
             # macOS: use open command
@@ -508,78 +508,88 @@ def _bring_opened_app_to_foreground(process_handle) -> None:
         logger.debug("Failed to bring opened app to foreground: %s", e)
 
 
-def _bring_app_window_to_foreground_by_extension(extension: str) -> None:
+def _bring_app_window_to_foreground_by_filename(file_path: Path) -> None:
     """
-    Find and bring to foreground the window of an application based on file extension.
+    Find and bring to foreground the window containing the opened file.
 
     This handles the case where a file is opened in an existing application instance,
-    and ShellExecuteEx returns NULL for hProcess.
+    and ShellExecuteEx returns NULL for hProcess. Instead of searching by class name
+    (which could match any Excel/Word window), search by filename in window title.
 
     Args:
-        extension: File extension (e.g., ".xlsx", ".docx")
+        file_path: Path to the file that was opened
     """
     import ctypes
     from ctypes import wintypes
     import time
 
-    # Map file extensions to window class patterns and title patterns
-    # Class names are more reliable than window titles
-    app_patterns = {
-        '.xlsx': ('XLMAIN', 'Excel'),
-        '.xls': ('XLMAIN', 'Excel'),
-        '.docx': ('OpusApp', 'Word'),
-        '.doc': ('OpusApp', 'Word'),
-        '.pptx': ('PPTFrameClass', 'PowerPoint'),
-        '.ppt': ('PPTFrameClass', 'PowerPoint'),
-        '.pdf': (None, None),  # PDF readers vary too much
-        '.csv': ('XLMAIN', 'Excel'),
+    # Get filename without extension for title matching
+    # Excel/Word typically show "filename - Excel" or "filename - Microsoft Excel"
+    filename_stem = file_path.stem
+    extension = file_path.suffix.lower()
+
+    # Map file extensions to window class names for additional filtering
+    app_class_names = {
+        '.xlsx': 'XLMAIN',
+        '.xls': 'XLMAIN',
+        '.docx': 'OpusApp',
+        '.doc': 'OpusApp',
+        '.pptx': 'PPTFrameClass',
+        '.ppt': 'PPTFrameClass',
+        '.csv': 'XLMAIN',
     }
 
-    pattern = app_patterns.get(extension)
-    if not pattern or pattern == (None, None):
-        logger.debug("No pattern for extension: %s", extension)
+    expected_class = app_class_names.get(extension)
+    if not expected_class:
+        logger.debug("No class pattern for extension: %s", extension)
         return
-
-    class_name, title_pattern = pattern
 
     try:
         user32 = ctypes.WinDLL('user32', use_last_error=True)
 
-        # Small delay to let the window update
-        time.sleep(0.2)
+        # Small delay to let the window update with the new file
+        time.sleep(0.3)
 
         target_hwnd = None
+        WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
 
-        if class_name:
-            # Try to find by class name first (more reliable)
-            target_hwnd = user32.FindWindowW(class_name, None)
+        def enum_callback(hwnd, lparam):
+            nonlocal target_hwnd
 
-        if not target_hwnd and title_pattern:
-            # Fallback: enumerate all windows and find by title pattern
-            WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+            # Get window class name
+            class_buffer = ctypes.create_unicode_buffer(256)
+            user32.GetClassNameW(hwnd, class_buffer, 256)
+            window_class = class_buffer.value
 
-            def enum_callback(hwnd, lparam):
-                nonlocal target_hwnd
-                # Get window title
-                title_buffer = ctypes.create_unicode_buffer(256)
-                user32.GetWindowTextW(hwnd, title_buffer, 256)
-                title = title_buffer.value
-
-                if title_pattern in title:
-                    # Check if window is visible or minimized
-                    WS_VISIBLE = 0x10000000
-                    WS_MINIMIZE = 0x20000000
-                    style = user32.GetWindowLongW(hwnd, -16)  # GWL_STYLE
-                    if style & (WS_VISIBLE | WS_MINIMIZE):
-                        target_hwnd = hwnd
-                        return False  # Stop enumeration
+            # Only check windows of the expected class
+            if window_class != expected_class:
                 return True  # Continue enumeration
 
-            callback = WNDENUMPROC(enum_callback)
-            user32.EnumWindows(callback, 0)
+            # Get window title
+            title_buffer = ctypes.create_unicode_buffer(512)
+            user32.GetWindowTextW(hwnd, title_buffer, 512)
+            title = title_buffer.value
+
+            # Check if filename is in title (case-insensitive)
+            if filename_stem.lower() in title.lower():
+                # Verify window is visible or minimized (not hidden)
+                WS_VISIBLE = 0x10000000
+                WS_MINIMIZE = 0x20000000
+                style = user32.GetWindowLongW(hwnd, -16)  # GWL_STYLE
+                if style & (WS_VISIBLE | WS_MINIMIZE):
+                    target_hwnd = hwnd
+                    logger.debug(
+                        "Found window matching filename '%s': hwnd=%s, title='%s'",
+                        filename_stem, hwnd, title
+                    )
+                    return False  # Stop enumeration
+            return True  # Continue enumeration
+
+        callback = WNDENUMPROC(enum_callback)
+        user32.EnumWindows(callback, 0)
 
         if not target_hwnd:
-            logger.debug("No window found for extension: %s", extension)
+            logger.debug("No window found containing filename: %s", filename_stem)
             return
 
         # Window show commands
@@ -594,7 +604,7 @@ def _bring_app_window_to_foreground_by_extension(extension: str) -> None:
         is_minimized = user32.IsIconic(target_hwnd)
         if is_minimized:
             user32.ShowWindow(target_hwnd, SW_RESTORE)
-            logger.debug("Restored minimized window for %s", extension)
+            logger.debug("Restored minimized window for %s", filename_stem)
         else:
             user32.ShowWindow(target_hwnd, SW_SHOW)
 
@@ -606,10 +616,10 @@ def _bring_app_window_to_foreground_by_extension(extension: str) -> None:
 
         # Bring to foreground
         user32.SetForegroundWindow(target_hwnd)
-        logger.debug("Brought %s window to foreground: hwnd=%s", extension, target_hwnd)
+        logger.debug("Brought window to foreground for file: %s", filename_stem)
 
     except Exception as e:
-        logger.debug("Failed to bring app window to foreground by extension: %s", e)
+        logger.debug("Failed to bring app window to foreground by filename: %s", e)
 
 
 def show_in_folder(file_path: Path) -> bool:

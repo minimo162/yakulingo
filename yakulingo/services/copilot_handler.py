@@ -2639,6 +2639,18 @@ class CopilotHandler:
             app_width = app_rect.right - app_rect.left
             app_height = app_rect.bottom - app_rect.top
 
+            # If expected app position is saved (from early connection), use its height
+            # This prevents Edge height from shrinking during app startup when window
+            # hasn't fully initialized yet
+            if hasattr(self, '_expected_app_position') and self._expected_app_position:
+                expected_app_x, expected_app_y, expected_app_width, expected_app_height = self._expected_app_position
+                # Use expected height if current height is significantly smaller
+                # (indicates app window hasn't finished initializing)
+                if app_height < expected_app_height * 0.9:  # Allow 10% tolerance
+                    logger.debug("Using expected app height %d instead of current %d (startup)",
+                                expected_app_height, app_height)
+                    app_height = expected_app_height
+
             # Ensure minimum height for usability
             if app_height < self.SIDE_PANEL_MIN_HEIGHT:
                 app_height = self.SIDE_PANEL_MIN_HEIGHT

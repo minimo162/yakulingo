@@ -115,7 +115,7 @@
 
     /* Panel widths are calculated dynamically by JavaScript based on window.innerWidth.
        These defaults are only visible until JS executes (typically < 100ms). */
-    --sidebar-width: 360px;
+    --sidebar-width: 320px;
     --input-panel-width: 400px;
     /* Unified content width for both input and result panels (600-900px range) */
     --content-width: 800px;
@@ -215,7 +215,8 @@ body {
 /* === 3-Column Main Layout === */
 .main-area {
     margin-left: var(--sidebar-width);
-    /* Let flex: 1 determine width instead of explicit calc */
+    width: calc(100vw - var(--sidebar-width));
+    max-width: calc(100% - var(--sidebar-width));
     flex: 1;
     height: var(--viewport-height);  /* Fixed height to match viewport */
     max-height: var(--viewport-height);

@@ -277,26 +277,38 @@ def _try_create_new_excel_instance(xw, max_attempts: int = 3):
                         "DispatchEx instance has books (count=%d), this is unexpected",
                         len(target_app.books)
                     )
+                    # Clean up this unexpected instance
+                    try:
+                        excel_com.Quit()
+                    except Exception:
+                        pass
+                    excel_com = None
+                    continue  # Retry
 
-            # If we couldn't find it in xw.apps, try xw.App() as fallback
-            # but verify it's truly isolated
-            logger.debug("Hwnd not found in xw.apps, trying xw.App() fallback")
-            app = xw.App(visible=False, add_book=False)
-            if len(app.books) == 0:
-                logger.info(
-                    "Created isolated Excel instance via fallback (PID=%s)",
-                    app.pid
-                )
-                # Don't quit excel_com - it might be the same instance
-                return app
-            else:
-                logger.debug(
-                    "Attempt %d: xw.App() connected to existing Excel (PID=%s, books=%d)",
-                    attempt + 1, app.pid, len(app.books)
-                )
-                del app
+            # Hwnd not found in xw.apps - wait for xlwings to register the instance
+            # xlwings monitors ROT asynchronously, may need a short wait
+            logger.debug("Hwnd %s not found in xw.apps, waiting for registration...", new_hwnd)
+            for wait_attempt in range(5):
+                time.sleep(0.1)
+                for xw_app in xw.apps:
+                    try:
+                        if hasattr(xw_app, 'hwnd') and xw_app.hwnd == new_hwnd:
+                            if len(xw_app.books) == 0:
+                                logger.info(
+                                    "Created isolated Excel instance via DispatchEx after wait "
+                                    "(PID=%s, Hwnd=%s, wait_attempts=%d)",
+                                    xw_app.pid, new_hwnd, wait_attempt + 1
+                                )
+                                return xw_app
+                            break
+                    except Exception:
+                        continue
 
-            # Clean up the DispatchEx COM object if we couldn't use it
+            # Still not found - clean up and retry
+            logger.debug(
+                "Attempt %d: Could not find DispatchEx instance (Hwnd=%s) in xlwings",
+                attempt + 1, new_hwnd
+            )
             try:
                 excel_com.Quit()
             except Exception:

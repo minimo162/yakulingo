@@ -777,11 +777,21 @@ function Invoke-Setup {
         New-Item -ItemType Directory -Path $SetupParent -Force | Out-Null
     }
 
+    # Create extraction log file
+    $extractLogPath = Join-Path $env:TEMP "YakuLingo_extract.log"
+    try {
+        "=== Extraction started: $(Get-Date) ===" | Out-File -FilePath $extractLogPath -Encoding UTF8
+        "ZIP file: $TempZipFile" | Out-File -FilePath $extractLogPath -Append -Encoding UTF8
+        "Target: $SetupPath" | Out-File -FilePath $extractLogPath -Append -Encoding UTF8
+        "Method: $(if ($script:Use7Zip) { '7-Zip' } else { 'Expand-Archive' })" | Out-File -FilePath $extractLogPath -Append -Encoding UTF8
+    } catch { }
+
     try {
         # Extract directly to SetupPath (ZIP has flat structure, no parent folder)
         if ($script:Use7Zip) {
             if (-not $GuiMode) {
                 Write-Host "      Extracting with 7-Zip: $($script:SevenZip)" -ForegroundColor Gray
+                Write-Host "      Log: $extractLogPath" -ForegroundColor Gray
             }
             # Create SetupPath if not exists
             if (-not (Test-Path $SetupPath)) {
@@ -789,9 +799,10 @@ function Invoke-Setup {
             }
             # Run 7-Zip asynchronously to keep GUI responsive
             # -aoa: Overwrite all existing files without prompt
+            # -bb1: Show names of processed files (verbose logging)
             $psi = New-Object System.Diagnostics.ProcessStartInfo
             $psi.FileName = $script:SevenZip
-            $psi.Arguments = "x `"$TempZipFile`" `"-o$SetupPath`" -y -mmt=on -aoa -bso0 -bsp0"
+            $psi.Arguments = "x `"$TempZipFile`" `"-o$SetupPath`" -y -mmt=on -aoa -bb1"
             $psi.UseShellExecute = $false
             $psi.CreateNoWindow = $true
             $psi.RedirectStandardOutput = $true
@@ -817,11 +828,34 @@ function Invoke-Setup {
             }
 
             $proc.WaitForExit()
+
+            # Capture and log output
+            $stdOut = $proc.StandardOutput.ReadToEnd()
+            $stdErr = $proc.StandardError.ReadToEnd()
+            try {
+                "=== 7-Zip Output ===" | Out-File -FilePath $extractLogPath -Append -Encoding UTF8
+                $stdOut | Out-File -FilePath $extractLogPath -Append -Encoding UTF8
+                if ($stdErr) {
+                    "=== 7-Zip Errors ===" | Out-File -FilePath $extractLogPath -Append -Encoding UTF8
+                    $stdErr | Out-File -FilePath $extractLogPath -Append -Encoding UTF8
+                }
+                "Exit code: $($proc.ExitCode)" | Out-File -FilePath $extractLogPath -Append -Encoding UTF8
+                "=== Extraction completed: $(Get-Date) ===" | Out-File -FilePath $extractLogPath -Append -Encoding UTF8
+            } catch { }
+
             if ($proc.ExitCode -ne 0) {
-                $errorOutput = $proc.StandardError.ReadToEnd()
-                throw "Failed to extract ZIP file.`n`nFile: $ZipFileName`n$errorOutput"
+                if (-not $GuiMode) {
+                    Write-Host "      [ERROR] 7-Zip failed. See log: $extractLogPath" -ForegroundColor Red
+                }
+                throw "Failed to extract ZIP file.`n`nFile: $ZipFileName`nExit code: $($proc.ExitCode)`n$stdErr`n`nSee log: $extractLogPath"
             }
             $proc.Dispose()
+
+            if (-not $GuiMode) {
+                # Count extracted files
+                $extractedCount = ($stdOut -split "`n" | Where-Object { $_ -match "^- " }).Count
+                Write-Host "      Extracted $extractedCount files" -ForegroundColor Gray
+            }
         } else {
             if (-not $GuiMode) {
                 Write-Host "      Extracting with Expand-Archive (7-Zip not found, this may take longer)..." -ForegroundColor Gray
@@ -888,6 +922,51 @@ function Invoke-Setup {
         Write-Host "[OK] Extraction completed" -ForegroundColor Green
     }
     Write-Status -Message "Files extracted" -Progress -Step "Step 3/4: Extracting" -Percent 80
+
+    # Verify extracted files and log
+    try {
+        "=== Verification: $(Get-Date) ===" | Out-File -FilePath $extractLogPath -Append -Encoding UTF8
+        $criticalFiles = @(
+            "YakuLingo.exe",
+            "app.py",
+            "yakulingo\__init__.py",
+            "yakulingo\ui\app.py",
+            "yakulingo\ui\styles.css",
+            "yakulingo\ui\components\text_panel.py",
+            "yakulingo\ui\components\file_panel.py",
+            ".venv\pyvenv.cfg"
+        )
+        $missingFiles = @()
+        foreach ($file in $criticalFiles) {
+            $fullPath = Join-Path $SetupPath $file
+            $exists = Test-Path $fullPath
+            "$file : $(if ($exists) { 'OK' } else { 'MISSING' })" | Out-File -FilePath $extractLogPath -Append -Encoding UTF8
+            if (-not $exists) {
+                $missingFiles += $file
+            }
+        }
+
+        # Log UI file timestamps for debugging
+        "=== UI File Timestamps ===" | Out-File -FilePath $extractLogPath -Append -Encoding UTF8
+        $uiDir = Join-Path $SetupPath "yakulingo\ui"
+        if (Test-Path $uiDir) {
+            Get-ChildItem -Path $uiDir -File | ForEach-Object {
+                "$($_.Name) : $($_.LastWriteTime)" | Out-File -FilePath $extractLogPath -Append -Encoding UTF8
+            }
+        }
+
+        if ($missingFiles.Count -gt 0) {
+            if (-not $GuiMode) {
+                Write-Host "      [WARNING] Missing files after extraction:" -ForegroundColor Yellow
+                foreach ($f in $missingFiles) {
+                    Write-Host "        - $f" -ForegroundColor Yellow
+                }
+                Write-Host "      See log: $extractLogPath" -ForegroundColor Yellow
+            }
+        }
+    } catch {
+        # Ignore verification errors
+    }
 
     # Fix pyvenv.cfg placeholder (__PYTHON_HOME__) to the actual bundled runtime path
     Write-Status -Message "Configuring Python runtime..." -Progress -Step "Step 3/4: Extracting" -Percent 85
@@ -1169,6 +1248,10 @@ function Invoke-Setup {
             Write-Host " Glossary updated. Previous version backed up to Desktop:" -ForegroundColor Yellow
             Write-Host "   $backupFileName" -ForegroundColor Yellow
         }
+        Write-Host ""
+        Write-Host " Log files (for troubleshooting):" -ForegroundColor Gray
+        Write-Host "   Debug: $debugLog" -ForegroundColor Gray
+        Write-Host "   Extract: $extractLogPath" -ForegroundColor Gray
         Write-Host ""
     }
 }

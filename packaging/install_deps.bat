@@ -302,10 +302,29 @@ if !PADDLE_ERROR! neq 0 (
 :: ============================================================
 echo.
 echo [6/6] Pre-compiling Python bytecode...
+echo [INFO] This may take a few minutes on first run...
+
+:: Compile yakulingo package
 .venv\Scripts\python.exe -m compileall -q yakulingo
 if errorlevel 1 (
-    echo [WARNING] Some bytecode compilation failed, but this is not critical.
+    echo [WARNING] Some yakulingo bytecode compilation failed, but this is not critical.
 )
+
+:: Compile NiceGUI and its dependencies (critical for fast startup)
+echo [INFO] Pre-compiling NiceGUI and dependencies...
+.venv\Scripts\python.exe -m compileall -q .venv\Lib\site-packages\nicegui 2>nul
+.venv\Scripts\python.exe -m compileall -q .venv\Lib\site-packages\fastapi 2>nul
+.venv\Scripts\python.exe -m compileall -q .venv\Lib\site-packages\uvicorn 2>nul
+.venv\Scripts\python.exe -m compileall -q .venv\Lib\site-packages\starlette 2>nul
+.venv\Scripts\python.exe -m compileall -q .venv\Lib\site-packages\pydantic 2>nul
+
+:: Compile Playwright
+echo [INFO] Pre-compiling Playwright...
+.venv\Scripts\python.exe -m compileall -q .venv\Lib\site-packages\playwright 2>nul
+
+:: Compile pywebview
+echo [INFO] Pre-compiling pywebview...
+.venv\Scripts\python.exe -m compileall -q .venv\Lib\site-packages\webview 2>nul
 
 echo [INFO] Pre-importing modules for faster startup...
 :: Use PowerShell to run module imports (avoids batch quoting issues)

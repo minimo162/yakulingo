@@ -750,7 +750,7 @@ background authentication/session establishment, causing auth dialogs to appear.
 | 再接続→再ログイン | `_wait_for_login_completion()` | ✓（セッションリセット） |
 
 **設計方針:**
-- GPTモードはUIレイヤー（app.py）から`copilot._ensure_gpt_mode()`を呼び出し
+- GPTモードはUIレイヤー（app.py）から`copilot.ensure_gpt_mode()`を呼び出し
 - copilot_handler.pyにフラグを持たず、UIが接続ライフサイクルを管理
 - 再接続時は呼び出さない（ユーザーが手動でモード変更した場合を考慮）
 - 再ログイン時は呼び出す（セッションリセットでモード設定も消えるため）

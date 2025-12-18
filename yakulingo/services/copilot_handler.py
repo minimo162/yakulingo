@@ -1685,6 +1685,10 @@ class CopilotHandler:
         This method delegates to the Playwright thread executor to ensure
         all Playwright operations run in the correct thread.
         """
+        if not self._page:
+            logger.debug("Skipping ensure_gpt_mode: no page available")
+            return
+
         try:
             _playwright_executor.execute(self._ensure_gpt_mode_impl)
         except Exception as e:

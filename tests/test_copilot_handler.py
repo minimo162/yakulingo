@@ -1628,3 +1628,23 @@ class TestGptModeSwitch:
 
         # Should have pressed Escape to close menu
         mock_keyboard.press.assert_called_with('Escape')
+
+    def test_ensure_gpt_mode_wrapper_with_page(self, handler):
+        """ensure_gpt_mode delegates to Playwright thread executor when page exists"""
+        mock_page = MagicMock()
+        handler._page = mock_page
+
+        with patch('yakulingo.services.copilot_handler._playwright_executor') as mock_executor:
+            handler.ensure_gpt_mode()
+
+        mock_executor.execute.assert_called_once_with(handler._ensure_gpt_mode_impl)
+
+    def test_ensure_gpt_mode_wrapper_no_page(self, handler):
+        """ensure_gpt_mode handles no page gracefully without calling executor"""
+        handler._page = None
+
+        with patch('yakulingo.services.copilot_handler._playwright_executor') as mock_executor:
+            # Should not raise and should not call executor
+            handler.ensure_gpt_mode()
+
+        mock_executor.execute.assert_not_called()

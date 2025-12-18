@@ -308,7 +308,10 @@ class PlaywrightThreadExecutor:
             if self._shutdown_flag:
                 raise RuntimeError("Executor has been shutdown and cannot be restarted")
             if self._thread is not None and self._thread.is_alive():
+                logger.debug("[THREAD] Executor thread already alive: %s", self._thread.ident)
                 return
+            logger.debug("[THREAD] Creating new executor thread (old thread: %s)",
+                        self._thread.ident if self._thread else None)
             self._running = True
             self._thread = threading.Thread(target=self._worker, daemon=True)
             self._thread.start()
@@ -375,6 +378,7 @@ class PlaywrightThreadExecutor:
             The _shutdown_flag is checked after getting an item from the queue
             to handle the case where shutdown() is called while waiting.
         """
+        logger.debug("[THREAD] Executor worker thread started: %s", threading.current_thread().ident)
         while self._running and not self._shutdown_flag:
             try:
                 item = self._request_queue.get(timeout=1)
@@ -389,6 +393,8 @@ class PlaywrightThreadExecutor:
                     break
 
                 func, args, result_event = item
+                func_name = func.__name__ if hasattr(func, '__name__') else str(func)
+                logger.debug("[THREAD] Worker executing %s in thread %s", func_name, threading.current_thread().ident)
                 try:
                     result = func(*args)
                     result_event['result'] = result
@@ -423,6 +429,9 @@ class PlaywrightThreadExecutor:
             raise RuntimeError("Executor is shutting down")
 
         self.start()  # Ensure thread is running
+        logger.debug("[THREAD] execute() called from thread %s for func %s, worker thread: %s",
+                    threading.current_thread().ident, func.__name__ if hasattr(func, '__name__') else func,
+                    self._thread.ident if self._thread else None)
 
         result_event = {
             'done': threading.Event(),
@@ -462,6 +471,7 @@ def _pre_init_playwright_impl():
     try:
         import time as _time
         _t_start = _time.perf_counter()
+        logger.debug("[THREAD] pre_init_playwright_impl running in thread %s", threading.current_thread().ident)
         _, sync_playwright = _get_playwright()
         logger.debug("[TIMING] pre_init _get_playwright(): %.2fs", _time.perf_counter() - _t_start)
         _t_init = _time.perf_counter()
@@ -1199,6 +1209,8 @@ class CopilotHandler:
             bring_to_foreground_on_login: If True, bring browser to foreground when
                 manual login is required. Set to False for background reconnection.
         """
+        logger.debug("[THREAD] _connect_impl running in thread %s", threading.current_thread().ident)
+
         # Check if existing connection is still valid
         if self._connected and self._is_page_valid():
             return True
@@ -1696,6 +1708,8 @@ class CopilotHandler:
 
     def _ensure_gpt_mode_impl(self) -> None:
         """Implementation of ensure_gpt_mode() that runs in Playwright thread."""
+        logger.debug("[THREAD] _ensure_gpt_mode_impl running in thread %s", threading.current_thread().ident)
+
         if not self._page:
             logger.debug("No page available for GPT mode check")
             return

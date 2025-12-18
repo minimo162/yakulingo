@@ -705,18 +705,17 @@ class TestMergeSettings:
         saved = json.loads((app_dir / "config" / "settings.template.json").read_text())
         assert saved == new_template
 
-    def test_merge_settings_migrates_legacy_settings(self, tmp_path):
-        """Legacy settings.json is migrated to user_settings.json"""
+    def test_merge_settings_does_not_migrate_legacy(self, tmp_path):
+        """Legacy settings.json should NOT be migrated (to prevent bugs)"""
         app_dir = tmp_path / "app"
         source_dir = tmp_path / "source"
 
-        # Create legacy settings.json with mixed settings
+        # Create legacy settings.json with custom settings
         (app_dir / "config").mkdir(parents=True)
         legacy_settings = {
-            "translation_style": "minimal",  # User setting
-            "max_chars_per_batch": 5000,      # Developer setting (not migrated)
-            "font_jp_to_en": "Times",         # User setting
-            "last_tab": "file",               # User setting
+            "translation_style": "minimal",
+            "font_jp_to_en": "Times",
+            "last_tab": "file",
         }
         (app_dir / "config" / "settings.json").write_text(
             json.dumps(legacy_settings), encoding="utf-8"
@@ -731,14 +730,10 @@ class TestMergeSettings:
 
         result = merge_settings(app_dir, source_dir)
 
-        # Check user_settings.json was created with user settings only
-        assert (app_dir / "config" / "user_settings.json").exists()
-        user_settings = json.loads((app_dir / "config" / "user_settings.json").read_text())
-        assert user_settings["translation_style"] == "minimal"
-        assert user_settings["font_jp_to_en"] == "Times"
-        assert user_settings["last_tab"] == "file"
-        # Developer settings should not be migrated
-        assert "max_chars_per_batch" not in user_settings
+        # Legacy settings.json should NOT create user_settings.json
+        assert not (app_dir / "config" / "user_settings.json").exists()
+        # Template should still be updated
+        assert result == -1
 
     def test_merge_settings_does_not_overwrite_user_settings(self, tmp_path):
         """Existing user_settings.json is not modified"""
@@ -750,12 +745,6 @@ class TestMergeSettings:
         user_settings = {"translation_style": "minimal"}
         (app_dir / "config" / "user_settings.json").write_text(
             json.dumps(user_settings), encoding="utf-8"
-        )
-
-        # Create legacy settings.json (should be ignored since user_settings exists)
-        legacy_settings = {"translation_style": "standard"}
-        (app_dir / "config" / "settings.json").write_text(
-            json.dumps(legacy_settings), encoding="utf-8"
         )
 
         # Create source template
@@ -798,12 +787,12 @@ class TestMergeSettings:
         saved = json.loads((app_dir / "config" / "settings.template.json").read_text())
         assert saved == settings
 
-    def test_merge_settings_invalid_legacy_json(self, tmp_path):
-        """Invalid legacy settings.json is ignored but template is still updated"""
+    def test_merge_settings_legacy_json_ignored(self, tmp_path):
+        """Legacy settings.json is completely ignored (not read at all)"""
         app_dir = tmp_path / "app"
         source_dir = tmp_path / "source"
 
-        # Create invalid legacy settings
+        # Create legacy settings (even if invalid, it's ignored)
         (app_dir / "config").mkdir(parents=True)
         (app_dir / "config" / "settings.json").write_text("invalid json{", encoding="utf-8")
 
@@ -816,10 +805,10 @@ class TestMergeSettings:
 
         result = merge_settings(app_dir, source_dir)
 
-        # Template should still be created
+        # Template should still be created (legacy is ignored)
         assert result == -1
         assert (app_dir / "config" / "settings.template.json").exists()
-        # user_settings.json should not be created due to invalid legacy file
+        # user_settings.json not created (legacy not migrated)
         assert not (app_dir / "config" / "user_settings.json").exists()
 
 

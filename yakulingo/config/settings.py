@@ -146,19 +146,8 @@ class AppSettings:
             except (json.JSONDecodeError, UnicodeDecodeError) as e:
                 logger.warning("Failed to load user settings: %s", e)
 
-        # 3. Fallback: try legacy settings.json for migration
-        legacy_settings_path = config_dir / "settings.json"
-        if not user_settings_path.exists() and legacy_settings_path.exists():
-            try:
-                with open(legacy_settings_path, 'r', encoding='utf-8-sig') as f:
-                    legacy_data = json.load(f)
-                    # Migrate user settings from legacy file
-                    for key in USER_SETTINGS_KEYS:
-                        if key in legacy_data:
-                            data[key] = legacy_data[key]
-                    logger.info("Migrated settings from legacy settings.json")
-            except (json.JSONDecodeError, UnicodeDecodeError) as e:
-                logger.warning("Failed to load legacy settings: %s", e)
+        # NOTE: Legacy settings.json is NOT migrated to prevent bugs.
+        # Users will start with fresh defaults from template.
 
         # Clean up deprecated fields
         data.pop('last_direction', None)

@@ -76,11 +76,14 @@ class TestAppSettings:
             assert settings.last_tab == "text"
 
     def test_load_removes_deprecated_last_direction(self):
-        """Test that old settings with last_direction are handled gracefully"""
+        """Test that template with deprecated fields is handled gracefully"""
         with tempfile.TemporaryDirectory() as tmpdir:
-            settings_path = Path(tmpdir) / "settings.json"
-            # Write old-style settings with deprecated field
-            settings_path.write_text('{"last_direction": "jp_to_en", "last_tab": "file"}')
+            config_dir = Path(tmpdir)
+            settings_path = config_dir / "settings.json"
+
+            # Write template with deprecated field
+            template_path = config_dir / "settings.template.json"
+            template_path.write_text('{"last_direction": "jp_to_en", "last_tab": "file"}')
 
             settings = AppSettings.load(settings_path)
             # Should load without error, ignoring deprecated field
@@ -595,31 +598,28 @@ class TestSettingsSeparation:
 class TestSettingsMigration:
     """Test settings migration from old formats"""
 
-    def test_migrate_from_v1_settings(self):
-        """Migrate from legacy settings.json format (v1 with last_direction)"""
+    def test_legacy_settings_not_migrated(self):
+        """Legacy settings.json should NOT be migrated (to prevent bugs)"""
         with tempfile.TemporaryDirectory() as tmpdir:
             config_dir = Path(tmpdir)
             settings_path = config_dir / "settings.json"
 
-            # Legacy settings.json (old v1 format with deprecated fields)
-            # No template or user_settings.json exists - should fall back to legacy
+            # Legacy settings.json (old format with custom values)
+            # No template or user_settings.json exists
             settings_path.write_text('''
             {
                 "last_direction": "jp_to_en",
-                "last_tab": "text",
-                "window_width": 900,
-                "window_height": 700,
+                "last_tab": "file",
                 "translation_style": "minimal"
             }
             ''')
 
             settings = AppSettings.load(settings_path)
 
-            # Should load successfully, ignoring deprecated fields
-            # last_direction, window_width, window_height are all deprecated
-            assert settings.last_tab == "text"
-            # USER_SETTINGS_KEYS should be loaded from legacy
-            assert settings.translation_style == "minimal"
+            # Legacy settings should NOT be loaded - use defaults instead
+            # This prevents bugs from old/incompatible settings
+            assert settings.last_tab == "text"  # Default, not "file" from legacy
+            assert settings.translation_style == "concise"  # Default, not "minimal"
 
     def test_handle_future_version_settings(self):
         """Handle settings from a future version with new fields"""

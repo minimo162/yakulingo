@@ -307,15 +307,17 @@ echo [INFO] This may take 3-5 minutes...
 :: Compile all site-packages in parallel (-j 0 = use all CPUs)
 :: This is critical for fast first launch - compiles all transitive dependencies
 :: -x excludes Python 2 legacy files that cause SyntaxError
+:: --invalidation-mode=unchecked-hash: Uses hash-based cache that survives ZIP extraction
+:: (Without this, mtime changes after ZIP extraction cause full recompilation: 23s -> <100ms)
 echo [INFO] Pre-compiling all site-packages (parallel)...
-.venv\Scripts\python.exe -m compileall -q -j 0 -x "olefile2|test_" .venv\Lib\site-packages 2>nul
+.venv\Scripts\python.exe -m compileall -q -j 0 --invalidation-mode=unchecked-hash -x "olefile2|test_" .venv\Lib\site-packages 2>nul
 if errorlevel 1 (
     echo [WARNING] Some bytecode compilation failed, but this is not critical.
 )
 
 :: Compile yakulingo package
 echo [INFO] Pre-compiling yakulingo package...
-.venv\Scripts\python.exe -m compileall -q -j 0 yakulingo 2>nul
+.venv\Scripts\python.exe -m compileall -q -j 0 --invalidation-mode=unchecked-hash yakulingo 2>nul
 
 :: Warm up module cache by actually importing modules
 :: This initializes Python's internal caches beyond just .pyc files

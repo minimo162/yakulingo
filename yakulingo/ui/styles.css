@@ -1377,7 +1377,7 @@ textarea:focus-visible {
     flex-direction: column;  /* Stack children vertically */
     justify-content: flex-start;
     align-items: center;  /* Center children horizontally */
-    padding: 1.5rem 1.5rem 1.5rem 1rem;  /* top right bottom left - 左側を少し減らして視覚的に均等に */
+    padding: 1.5rem 1rem 1.5rem 1.5rem;  /* top right bottom left - 右側を少し減らして視覚的に均等に */
     box-sizing: border-box;  /* Include padding in width */
 }
 

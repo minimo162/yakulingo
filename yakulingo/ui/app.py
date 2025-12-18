@@ -882,6 +882,16 @@ class YakuLingoApp:
             except Exception as e:
                 logger.debug("Windows API restore failed: %s", e)
 
+            # Start window synchronization for side_panel mode
+            # This makes app and Edge window act as a "set" - when user clicks on
+            # YakuLingo in taskbar, Edge window also comes to front automatically
+            if self._settings and self._settings.browser_display_mode == "side_panel":
+                try:
+                    if self._copilot:
+                        self._copilot.start_window_sync()
+                except Exception as e:
+                    logger.debug("Failed to start window sync: %s", e)
+
     def _reposition_windows_for_side_panel(self) -> bool:
         """Reposition app window for side_panel mode using consistent position calculation.
 

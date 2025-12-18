@@ -758,6 +758,11 @@ class CopilotHandler:
         # This allows the app window to move directly to the correct position
         # without waiting for Edge window to be found
         self._expected_app_position: tuple[int, int, int, int] | None = None
+        # Window synchronization for side panel mode
+        # When YakuLingo becomes foreground, Edge window is also brought forward
+        self._window_sync_hook = None  # SetWinEventHook handle
+        self._window_sync_running = False  # Thread stop flag
+        self._window_sync_thread = None  # Dedicated thread for message loop
 
     @property
     def is_connected(self) -> bool:
@@ -3752,6 +3757,9 @@ class CopilotHandler:
         # Mark as disconnected first
         self._connected = False
 
+        # Stop window synchronization (side panel mode)
+        self.stop_window_sync()
+
         # Note: about:blank navigation removed for performance optimization (~1s saved)
         # --disable-session-crashed-bubble flag should suppress "Restore pages" dialog
         # If dialog appears frequently, this can be re-enabled
@@ -6209,3 +6217,250 @@ class CopilotHandler:
             return False
 
         return True
+
+    # =========================================================================
+    # Window Synchronization (Side Panel Mode)
+    # =========================================================================
+    # When YakuLingo window becomes foreground, Edge window is brought forward too.
+    # This makes the app and browser act as a "set" - user can switch to YakuLingo
+    # from taskbar and Edge will also appear without needing separate clicks.
+    #
+    # Implementation notes:
+    # - SetWinEventHook requires a message loop in the calling thread
+    # - We use a dedicated thread with GetMessage() loop for this
+    # - The callback must be fast to avoid blocking the message pump
+
+    def start_window_sync(self) -> bool:
+        """Start window synchronization for side panel mode.
+
+        Uses SetWinEventHook to monitor foreground window changes.
+        When YakuLingo becomes the foreground window, Edge is brought forward
+        (placed right after YakuLingo in Z-order).
+
+        This should only be called in side_panel browser display mode.
+        Creates a dedicated thread with a message loop for the event hook.
+
+        Returns:
+            True if synchronization started successfully, False otherwise.
+        """
+        if sys.platform != "win32":
+            logger.debug("Window sync not supported on this platform")
+            return False
+
+        if self._window_sync_running:
+            logger.debug("Window sync already running")
+            return True
+
+        try:
+            # Start dedicated thread for message loop
+            self._window_sync_running = True
+            self._window_sync_thread = threading.Thread(
+                target=self._window_sync_thread_func,
+                daemon=True,
+                name="WindowSyncThread"
+            )
+            self._window_sync_thread.start()
+            logger.info("Window synchronization started for side panel mode")
+            return True
+
+        except Exception as e:
+            logger.warning("Failed to start window sync: %s", e)
+            self._window_sync_running = False
+            return False
+
+    def stop_window_sync(self) -> None:
+        """Stop window synchronization.
+
+        Signals the thread to stop and waits for cleanup.
+        Safe to call multiple times.
+        """
+        if not self._window_sync_running:
+            return
+
+        self._window_sync_running = False
+        logger.info("Window synchronization stopping...")
+
+        # Thread will exit on next message loop iteration
+        # Don't wait too long as we may be in shutdown
+        if hasattr(self, '_window_sync_thread') and self._window_sync_thread:
+            try:
+                self._window_sync_thread.join(timeout=1.0)
+            except Exception:
+                pass
+            self._window_sync_thread = None
+
+    def _window_sync_thread_func(self) -> None:
+        """Thread function for window synchronization.
+
+        Sets up SetWinEventHook and runs a message loop to receive events.
+        The hook callback is invoked when any window becomes foreground.
+        """
+        if sys.platform != "win32":
+            return
+
+        import ctypes
+        from ctypes import wintypes
+
+        user32 = ctypes.WinDLL('user32', use_last_error=True)
+
+        # Define callback type for SetWinEventHook
+        # WINEVENTPROC: (HWINEVENTHOOK, DWORD, HWND, LONG, LONG, DWORD, DWORD) -> void
+        WINEVENTPROC = ctypes.WINFUNCTYPE(
+            None,
+            wintypes.HANDLE,  # hWinEventHook
+            wintypes.DWORD,   # event
+            wintypes.HWND,    # hwnd
+            wintypes.LONG,    # idObject
+            wintypes.LONG,    # idChild
+            wintypes.DWORD,   # dwEventThread
+            wintypes.DWORD,   # dwmsEventTime
+        )
+
+        # Store callback reference to prevent garbage collection
+        callback = WINEVENTPROC(self._window_event_callback)
+
+        # EVENT_SYSTEM_FOREGROUND: Sent when a window becomes foreground
+        EVENT_SYSTEM_FOREGROUND = 0x0003
+        # WINEVENT_OUTOFCONTEXT: Callback runs in our process (no DLL injection)
+        WINEVENT_OUTOFCONTEXT = 0x0000
+
+        # Set up the hook (must be done in this thread for message delivery)
+        hook = user32.SetWinEventHook(
+            EVENT_SYSTEM_FOREGROUND,  # eventMin
+            EVENT_SYSTEM_FOREGROUND,  # eventMax
+            None,                      # hmodWinEventProc (NULL for out-of-context)
+            callback,                  # pfnWinEventProc
+            0,                         # idProcess (0 = all processes)
+            0,                         # idThread (0 = all threads)
+            WINEVENT_OUTOFCONTEXT,     # dwFlags
+        )
+
+        if not hook:
+            error = ctypes.get_last_error()
+            logger.warning("SetWinEventHook failed with error: %d", error)
+            self._window_sync_running = False
+            return
+
+        self._window_sync_hook = hook
+        logger.debug("SetWinEventHook installed, starting message loop")
+
+        # Message loop - required for SetWinEventHook callbacks
+        # Using PeekMessage with PM_REMOVE for non-blocking check
+        PM_REMOVE = 0x0001
+        msg = wintypes.MSG()
+
+        try:
+            while self._window_sync_running:
+                # Check for messages without blocking
+                if user32.PeekMessageW(ctypes.byref(msg), None, 0, 0, PM_REMOVE):
+                    user32.TranslateMessage(ctypes.byref(msg))
+                    user32.DispatchMessageW(ctypes.byref(msg))
+                else:
+                    # No message, sleep briefly to avoid busy loop
+                    time.sleep(0.05)
+        finally:
+            # Cleanup: unhook when loop exits
+            if hook:
+                user32.UnhookWinEvent(hook)
+                logger.debug("SetWinEventHook uninstalled")
+            self._window_sync_hook = None
+
+    def _window_event_callback(
+        self,
+        hWinEventHook,
+        event,
+        hwnd,
+        idObject,
+        idChild,
+        dwEventThread,
+        dwmsEventTime,
+    ) -> None:
+        """Callback for SetWinEventHook.
+
+        Called when a window becomes the foreground window.
+        If it's the YakuLingo window, brings Edge to the front as well.
+
+        Note: This callback runs in the WindowSyncThread.
+        Keep processing minimal to avoid blocking message pumping.
+        """
+        if not self._window_sync_running:
+            return
+
+        # Check if the foreground window is YakuLingo
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            user32 = ctypes.WinDLL('user32', use_last_error=True)
+
+            # Get window title
+            title_length = user32.GetWindowTextLengthW(hwnd) + 1
+            if title_length <= 1:
+                return
+
+            title = ctypes.create_unicode_buffer(title_length)
+            user32.GetWindowTextW(hwnd, title, title_length)
+            window_title = title.value
+
+            # Check if this is the YakuLingo window
+            if window_title != "YakuLingo" and not window_title.startswith("YakuLingo"):
+                return
+
+            logger.debug("YakuLingo became foreground, syncing Edge window")
+
+            # Bring Edge to front (non-blocking, minimal processing)
+            self._sync_edge_to_foreground(hwnd)
+
+        except Exception as e:
+            # Don't log errors in callback to avoid flooding
+            pass
+
+    def _sync_edge_to_foreground(self, yakulingo_hwnd) -> None:
+        """Bring Edge window to foreground when YakuLingo is activated.
+
+        Places Edge window right after YakuLingo in Z-order so both windows
+        are visible together. Does not change window positions.
+
+        Args:
+            yakulingo_hwnd: Handle to the YakuLingo window (for Z-order reference)
+        """
+        if sys.platform != "win32":
+            return
+
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            user32 = ctypes.WinDLL('user32', use_last_error=True)
+
+            # Find Edge window
+            edge_hwnd = self._find_edge_window_handle()
+            if not edge_hwnd:
+                return
+
+            # Check if Edge is minimized
+            is_minimized = user32.IsIconic(edge_hwnd)
+            if is_minimized:
+                # Restore without activating
+                SW_SHOWNOACTIVATE = 4
+                user32.ShowWindow(edge_hwnd, SW_SHOWNOACTIVATE)
+
+            # SetWindowPos flags
+            SWP_NOACTIVATE = 0x0010  # Don't activate window
+            SWP_NOMOVE = 0x0002      # Don't change position
+            SWP_NOSIZE = 0x0001      # Don't change size
+            SWP_SHOWWINDOW = 0x0040  # Show window
+
+            # Place Edge right after YakuLingo in Z-order
+            # This ensures Edge is visible but YakuLingo stays focused
+            user32.SetWindowPos(
+                edge_hwnd,
+                yakulingo_hwnd,  # hWndInsertAfter: place after YakuLingo
+                0, 0, 0, 0,      # x, y, cx, cy (ignored due to flags)
+                SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW
+            )
+
+            logger.debug("Edge window synced to foreground (after YakuLingo)")
+
+        except Exception as e:
+            logger.debug("Failed to sync Edge window: %s", e)

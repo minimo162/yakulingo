@@ -1669,6 +1669,17 @@ class YakuLingoApp:
                 };
             }
 
+            // Main app container (parent of app-container)
+            const mainAppContainer = document.querySelector('.main-app-container');
+            if (mainAppContainer) {
+                const rect = mainAppContainer.getBoundingClientRect();
+                const computed = getComputedStyle(mainAppContainer);
+                results.mainAppContainer = {
+                    rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+                    width: computed.width
+                };
+            }
+
             // App container
             const appContainer = document.querySelector('.app-container');
             if (appContainer) {
@@ -1861,6 +1872,7 @@ class YakuLingoApp:
                             # Window and document info
                             logger.info("[LAYOUT_DEBUG] window: %s", result.get('window'))
                             logger.info("[LAYOUT_DEBUG] niceguiContent: %s", result.get('niceguiContent'))
+                            logger.info("[LAYOUT_DEBUG] mainAppContainer: %s", result.get('mainAppContainer'))
                             logger.info("[LAYOUT_DEBUG] appContainer: %s", result.get('appContainer'))
                             logger.info("[LAYOUT_DEBUG] sidebar: %s", result.get('sidebar'))
                             logger.info("[LAYOUT_DEBUG] mainArea: %s", result.get('mainArea'))
@@ -4588,6 +4600,7 @@ def run_app(
 }
 /* Main app fade-in animation */
 .main-app-container {
+    width: 100%;
     opacity: 0;
     transition: opacity 0.3s ease-in;
 }

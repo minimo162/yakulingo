@@ -1686,8 +1686,56 @@ class YakuLingoApp:
                     rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
                     scroll: { top: inputPanel.scrollTop, left: inputPanel.scrollLeft },
                     scrollSize: { width: inputPanel.scrollWidth, height: inputPanel.scrollHeight },
-                    overflow: { x: computed.overflowX, y: computed.overflowY }
+                    overflow: { x: computed.overflowX, y: computed.overflowY },
+                    padding: {
+                        top: computed.paddingTop,
+                        right: computed.paddingRight,
+                        bottom: computed.paddingBottom,
+                        left: computed.paddingLeft
+                    },
+                    boxSizing: computed.boxSizing
                 };
+
+                // Main card inside input panel
+                const mainCard = inputPanel.querySelector('.main-card');
+                if (mainCard) {
+                    const mcRect = mainCard.getBoundingClientRect();
+                    const mcComputed = getComputedStyle(mainCard);
+                    results.mainCard = {
+                        rect: { x: mcRect.x, y: mcRect.y, width: mcRect.width, height: mcRect.height },
+                        margin: {
+                            top: mcComputed.marginTop,
+                            right: mcComputed.marginRight,
+                            bottom: mcComputed.marginBottom,
+                            left: mcComputed.marginLeft
+                        },
+                        // Calculate actual margins from parent
+                        leftMarginFromParent: mcRect.x - rect.x,
+                        rightMarginFromParent: (rect.x + rect.width) - (mcRect.x + mcRect.width)
+                    };
+                }
+
+                // nicegui-column inside input panel
+                const inputColumn = inputPanel.querySelector(':scope > .nicegui-column');
+                if (inputColumn) {
+                    const icRect = inputColumn.getBoundingClientRect();
+                    const icComputed = getComputedStyle(inputColumn);
+                    results.inputPanelColumn = {
+                        rect: { x: icRect.x, y: icRect.y, width: icRect.width, height: icRect.height },
+                        padding: {
+                            top: icComputed.paddingTop,
+                            right: icComputed.paddingRight,
+                            bottom: icComputed.paddingBottom,
+                            left: icComputed.paddingLeft
+                        },
+                        margin: {
+                            top: icComputed.marginTop,
+                            right: icComputed.marginRight,
+                            bottom: icComputed.marginBottom,
+                            left: icComputed.marginLeft
+                        }
+                    };
+                }
             }
 
             // Result panel
@@ -1782,9 +1830,19 @@ class YakuLingoApp:
                         with client:
                             result = await client.run_javascript(js_code)
                         if result:
+                            # Window and document info
+                            logger.info("[LAYOUT_DEBUG] window: %s", result.get('window'))
+                            logger.info("[LAYOUT_DEBUG] sidebar: %s", result.get('sidebar'))
+                            logger.info("[LAYOUT_DEBUG] mainArea: %s", result.get('mainArea'))
+                            # Input panel detailed info (for margin debugging)
+                            logger.info("[LAYOUT_DEBUG] inputPanel: %s", result.get('inputPanel'))
+                            logger.info("[LAYOUT_DEBUG] inputPanelColumn: %s", result.get('inputPanelColumn'))
+                            logger.info("[LAYOUT_DEBUG] mainCard: %s", result.get('mainCard'))
+                            # Result panel info
                             logger.info("[LAYOUT_DEBUG] resultPanel: %s", result.get('resultPanel'))
                             logger.info("[LAYOUT_DEBUG] resultPanelNiceguiColumn: %s", result.get('resultPanelNiceguiColumn'))
                             logger.info("[LAYOUT_DEBUG] innerColumn: %s", result.get('innerColumn'))
+                            # Overflow status
                             logger.info("[LAYOUT_DEBUG] hasHorizontalOverflow: %s", result.get('hasHorizontalOverflow'))
                             logger.info("[LAYOUT_DEBUG] hasVerticalOverflow: %s", result.get('hasVerticalOverflow'))
                     except Exception as inner_e:
@@ -4561,6 +4619,12 @@ document.fonts.ready.then(function() {
         asyncio.create_task(yakulingo_app._ensure_app_window_visible())
 
         logger.info("[TIMING] UI displayed - total from run_app: %.2fs", _time_module.perf_counter() - _t0)
+
+        # Log layout dimensions for debugging (after a short delay to ensure DOM is ready)
+        async def log_layout_after_delay():
+            await asyncio.sleep(0.5)  # Wait for DOM to be fully rendered
+            yakulingo_app._log_layout_dimensions()
+        asyncio.create_task(log_layout_after_delay())
 
     # window_size is already determined at the start of run_app()
     logger.info("[TIMING] Before ui.run(): %.2fs", time.perf_counter() - _t0)

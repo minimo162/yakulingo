@@ -696,16 +696,18 @@ class CopilotHandler:
     RESPONSE_SELECTOR_COMBINED = ", ".join(RESPONSE_SELECTORS)
 
     # GPT Mode switcher selectors
-    # Used to ensure Think Deeper mode is selected for better translation quality
+    # Used to ensure GPT-5.2 Think Deeper mode is selected for better translation quality
     GPT_MODE_BUTTON_SELECTOR = '#gptModeSwitcher'
     GPT_MODE_TEXT_SELECTOR = '#gptModeSwitcher div'
     GPT_MODE_MENU_ITEM_SELECTOR = '[role="menuitem"], [role="option"], [role="menuitemradio"]'
-    # Target mode name (partial match) - uses "Think Deeper" to find the menu item
-    GPT_MODE_TARGET = 'Think Deeper'
+    # Target mode name (partial match) - the full name in the submenu
+    GPT_MODE_TARGET = 'GPT-5.2 Think Deeper'
+    # Parent menu item to open submenu (first level menu)
+    GPT_MODE_PARENT = 'Think Deeper'
     # Mode switching timeout and wait times
     GPT_MODE_SWITCH_TIMEOUT_MS = 3000
-    GPT_MODE_MENU_WAIT = 0.2  # Wait for menu to open/close
-    GPT_MODE_SWITCH_WAIT = 0.2  # Wait for mode to switch
+    GPT_MODE_MENU_WAIT = 0.3  # Wait for menu to open/close
+    GPT_MODE_SWITCH_WAIT = 0.3  # Wait for mode to switch
 
     # Dynamic polling intervals for faster response detection
     # OPTIMIZED: Reduced intervals for quicker response detection (0.15s -> 0.1s)
@@ -1677,10 +1679,14 @@ class CopilotHandler:
             return False
 
     def _ensure_gpt_mode(self) -> bool:
-        """Ensure Think Deeper mode is selected for better translation quality.
+        """Ensure GPT-5.2 Think Deeper mode is selected for better translation quality.
 
-        This method checks the current GPT mode and switches to "Think Deeper"
+        This method checks the current GPT mode and switches to "GPT-5.2 Think Deeper"
         if a different mode (e.g., "自動") is selected.
+
+        The menu has a 2-level structure:
+        - Level 1: 「自動」「クイック応答」「Think Deeper」
+        - Level 2 (under Think Deeper): 「GPT-5.2 クイック応答」「GPT-5.2 Think Deeper」
 
         Returns:
             True if mode is correct or successfully switched, False if switch failed.
@@ -1725,19 +1731,16 @@ class CopilotHandler:
             # Wait for menu to open
             time.sleep(self.GPT_MODE_MENU_WAIT)
 
-            # Find menu items and look for target mode
+            # Find menu items and look for target mode (try direct match first)
             menu_items = self._page.query_selector_all(self.GPT_MODE_MENU_ITEM_SELECTOR)
             if not menu_items:
                 logger.warning("No menu items found (menu may not have opened)")
-                # Try to close menu by pressing Escape
-                try:
-                    self._page.keyboard.press('Escape')
-                except Exception as esc_err:
-                    logger.debug("Failed to press Escape: %s", esc_err)
+                self._close_menu_safely()
                 return False
 
-            # Search for target mode in menu items
+            # First, try to find target mode directly in level 1 menu
             target_item = None
+            parent_item = None
             available_items = []
             for item in menu_items:
                 try:
@@ -1747,19 +1750,50 @@ class CopilotHandler:
                         available_items.append(item_text_stripped)
                         if self.GPT_MODE_TARGET in item_text:
                             target_item = item
-                            logger.debug("Found target menu item: %s", item_text_stripped)
+                            logger.debug("Found target menu item in level 1: %s", item_text_stripped)
                             break
+                        # Check for parent item that opens submenu
+                        if item_text_stripped.startswith(self.GPT_MODE_PARENT):
+                            parent_item = item
+                            logger.debug("Found parent menu item: %s", item_text_stripped)
                 except Exception:
                     continue
+
+            # If target not found directly, try to open submenu via parent
+            if not target_item and parent_item:
+                logger.debug("Target not in level 1, opening submenu via '%s'...", self.GPT_MODE_PARENT)
+
+                # Hover over parent item to open submenu (some menus use hover)
+                try:
+                    parent_item.hover()
+                    time.sleep(self.GPT_MODE_MENU_WAIT)
+                except Exception as hover_err:
+                    logger.debug("Hover failed, trying click: %s", hover_err)
+
+                # Click parent item to open submenu
+                self._page.evaluate('el => el.click()', parent_item)
+                time.sleep(self.GPT_MODE_MENU_WAIT)
+
+                # Re-fetch menu items (now should include submenu items)
+                menu_items = self._page.query_selector_all(self.GPT_MODE_MENU_ITEM_SELECTOR)
+                available_items = []
+                for item in menu_items:
+                    try:
+                        item_text = item.text_content()
+                        if item_text:
+                            item_text_stripped = item_text.strip()
+                            available_items.append(item_text_stripped)
+                            if self.GPT_MODE_TARGET in item_text:
+                                target_item = item
+                                logger.debug("Found target menu item in submenu: %s", item_text_stripped)
+                                break
+                    except Exception:
+                        continue
 
             if not target_item:
                 logger.warning("Target mode '%s' not found in menu. Available items: %s",
                               self.GPT_MODE_TARGET, available_items)
-                # Close menu
-                try:
-                    self._page.keyboard.press('Escape')
-                except Exception as esc_err:
-                    logger.debug("Failed to press Escape: %s", esc_err)
+                self._close_menu_safely()
                 return False
 
             # Click target item
@@ -1785,6 +1819,14 @@ class CopilotHandler:
             logger.warning("Failed to check/switch GPT mode: %s", e)
             # Don't block translation on GPT mode errors - user can manually switch
             return True
+
+    def _close_menu_safely(self) -> None:
+        """Close any open menu by pressing Escape."""
+        try:
+            if self._page:
+                self._page.keyboard.press('Escape')
+        except Exception as esc_err:
+            logger.debug("Failed to press Escape: %s", esc_err)
 
     def _wait_for_chat_ready(self, page, wait_for_login: bool = True) -> bool:
         """Wait for Copilot chat UI to be ready.
@@ -4165,11 +4207,11 @@ class CopilotHandler:
                 raise RuntimeError("Copilotへのログインが必要です。Edgeブラウザでログインしてください。")
             raise RuntimeError("Copilotページにアクセスできませんでした。")
 
-        # Ensure Think Deeper mode is selected (best translation quality)
+        # Ensure GPT-5.2 Think Deeper mode is selected (best translation quality)
         # On failure, logs warning but continues - user can manually switch if needed
         if not self._ensure_gpt_mode():
             logger.warning("GPT mode switch failed - translation may use different model. "
-                          "Please manually select 'Think Deeper' in Copilot.")
+                          "Please manually select 'GPT-5.2 Think Deeper' in Copilot.")
 
         # Check for cancellation before starting translation
         if self._is_cancelled():
@@ -4386,11 +4428,11 @@ class CopilotHandler:
                 raise RuntimeError("Copilotへのログインが必要です。Edgeブラウザでログインしてください。")
             raise RuntimeError("Copilotページにアクセスできませんでした。")
 
-        # Ensure Think Deeper mode is selected (best translation quality)
+        # Ensure GPT-5.2 Think Deeper mode is selected (best translation quality)
         # On failure, logs warning but continues - user can manually switch if needed
         if not self._ensure_gpt_mode():
             logger.warning("GPT mode switch failed - translation may use different model. "
-                          "Please manually select 'Think Deeper' in Copilot.")
+                          "Please manually select 'GPT-5.2 Think Deeper' in Copilot.")
 
         # Check for cancellation before starting translation
         if self._is_cancelled():

@@ -696,12 +696,12 @@ class CopilotHandler:
     RESPONSE_SELECTOR_COMBINED = ", ".join(RESPONSE_SELECTORS)
 
     # GPT Mode switcher selectors
-    # Used to ensure GPT-5.2 Think Deeper mode is selected for better translation quality
+    # Used to ensure Think Deeper mode is selected for better translation quality
     GPT_MODE_BUTTON_SELECTOR = '#gptModeSwitcher'
     GPT_MODE_TEXT_SELECTOR = '#gptModeSwitcher div'
     GPT_MODE_MENU_ITEM_SELECTOR = '[role="menuitem"], [role="option"], [role="menuitemradio"]'
-    # Target mode name (partial match) - must include "GPT-5.2" to distinguish from plain "Think Deeper"
-    GPT_MODE_TARGET = 'GPT-5.2 Think Deeper'
+    # Target mode name (partial match) - uses "Think Deeper" to find the menu item
+    GPT_MODE_TARGET = 'Think Deeper'
     # Mode switching timeout and wait times
     GPT_MODE_SWITCH_TIMEOUT_MS = 3000
     GPT_MODE_MENU_WAIT = 0.2  # Wait for menu to open/close
@@ -1677,9 +1677,9 @@ class CopilotHandler:
             return False
 
     def _ensure_gpt_mode(self) -> bool:
-        """Ensure GPT-5.2 Think Deeper mode is selected for better translation quality.
+        """Ensure Think Deeper mode is selected for better translation quality.
 
-        This method checks the current GPT mode and switches to "GPT-5.2 Think Deeper"
+        This method checks the current GPT mode and switches to "Think Deeper"
         if a different mode (e.g., "自動") is selected.
 
         Returns:
@@ -4165,11 +4165,11 @@ class CopilotHandler:
                 raise RuntimeError("Copilotへのログインが必要です。Edgeブラウザでログインしてください。")
             raise RuntimeError("Copilotページにアクセスできませんでした。")
 
-        # Ensure GPT-5.2 Think Deeper mode is selected (best translation quality)
+        # Ensure Think Deeper mode is selected (best translation quality)
         # On failure, logs warning but continues - user can manually switch if needed
         if not self._ensure_gpt_mode():
             logger.warning("GPT mode switch failed - translation may use different model. "
-                          "Please manually select 'GPT-5.2 Think Deeper' in Copilot.")
+                          "Please manually select 'Think Deeper' in Copilot.")
 
         # Check for cancellation before starting translation
         if self._is_cancelled():
@@ -4386,11 +4386,11 @@ class CopilotHandler:
                 raise RuntimeError("Copilotへのログインが必要です。Edgeブラウザでログインしてください。")
             raise RuntimeError("Copilotページにアクセスできませんでした。")
 
-        # Ensure GPT-5.2 Think Deeper mode is selected (best translation quality)
+        # Ensure Think Deeper mode is selected (best translation quality)
         # On failure, logs warning but continues - user can manually switch if needed
         if not self._ensure_gpt_mode():
             logger.warning("GPT mode switch failed - translation may use different model. "
-                          "Please manually select 'GPT-5.2 Think Deeper' in Copilot.")
+                          "Please manually select 'Think Deeper' in Copilot.")
 
         # Check for cancellation before starting translation
         if self._is_cancelled():

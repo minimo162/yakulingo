@@ -535,8 +535,7 @@ async def _translate_text(self):
   "auto_update_check_interval": 0,
   "github_repo_owner": "minimo162",
   "github_repo_name": "yakulingo",
-  "last_update_check": null,
-  "skipped_version": null
+  "last_update_check": null
 }
 ```
 
@@ -1025,7 +1024,6 @@ The `AutoUpdater` class provides GitHub Releases-based updates:
 | 出力オプション | `bilingual_output`, `export_glossary`, `use_bundled_glossary`, `embed_glossary_in_prompt` | ファイル翻訳パネル |
 | ブラウザ表示 | `browser_display_mode` | 設定ダイアログ |
 | UI状態 | `last_tab` | 自動保存 |
-| 更新設定 | `skipped_version` | 更新ダイアログ |
 
 その他の設定（`max_chars_per_batch`, `request_timeout`, `ocr_dpi`等）はテンプレートで管理され、
 アップデート時に開発者が自由に変更可能

@@ -70,13 +70,6 @@ class UpdateNotification:
             # チェック日時を更新
             self.settings.last_update_check = datetime.now().isoformat()
 
-            # スキップしたバージョンは無視
-            if (
-                result.status == UpdateStatus.UPDATE_AVAILABLE
-                and result.latest_version == self.settings.skipped_version
-            ):
-                result.status = UpdateStatus.UP_TO_DATE
-
             return result
 
         except (OSError, ValueError, RuntimeError) as e:
@@ -211,21 +204,12 @@ class UpdateNotification:
                     ).classes('text-xs text-muted text-center')
                     with ui.row().classes('w-full justify-end gap-2'):
                         ui.button(
-                            'スキップ',
-                            on_click=lambda: self._skip_version(info.version, dialog),
-                        ).props('flat').classes('text-muted')
-                        ui.button(
                             '閉じる',
                             on_click=dialog.close,
                         ).classes('btn-primary')
             else:
                 # 通常のアップデート
                 with ui.row().classes('w-full justify-end gap-2'):
-                    ui.button(
-                        'スキップ',
-                        on_click=lambda: self._skip_version(info.version, dialog),
-                    ).props('flat').classes('text-muted')
-
                     async def on_download():
                         await self._start_download(info, dialog)
 
@@ -235,13 +219,6 @@ class UpdateNotification:
                     ).classes('btn-primary')
 
         dialog.open()
-
-    def _skip_version(self, version: str, dialog: ui.dialog):
-        """このバージョンをスキップ"""
-        self.settings.skipped_version = version
-        dialog.close()
-        self._dismiss_banner()
-        ui.notify(f'バージョン {version} をスキップしました', type='info')
 
     async def _start_download(self, info: VersionInfo, dialog: ui.dialog):
         """ダウンロードを開始"""

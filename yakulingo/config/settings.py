@@ -35,8 +35,6 @@ USER_SETTINGS_KEYS = {
     "browser_display_mode",
     # UI状態（自動保存）
     "last_tab",
-    # 更新設定（更新ダイアログで変更）
-    "skipped_version",
 }
 
 
@@ -102,7 +100,6 @@ class AppSettings:
     github_repo_owner: str = "minimo162"        # GitHubリポジトリオーナー
     github_repo_name: str = "yakulingo"         # GitHubリポジトリ名
     last_update_check: Optional[str] = None     # 最後のチェック日時（ISO形式）
-    skipped_version: Optional[str] = None       # スキップしたバージョン
 
     @classmethod
     def load(cls, path: Path) -> "AppSettings":

@@ -957,10 +957,10 @@ def _render_check_my_english(
                     ).props('flat no-caps size=sm').classes('cancel-btn')
 
                     # Check button
-                    def check_english():
+                    async def check_english():
                         user_english = english_input.value.strip() if english_input.value else ''
                         if user_english:
-                            on_follow_up('check_my_english', user_english)
+                            await on_follow_up('check_my_english', user_english)
                             english_input.set_value('')
                             expanded_container.style('display: none')
                             collapsed_container.style('display: block')
@@ -1018,10 +1018,10 @@ def _render_reply_composer(
                     ).props('flat no-caps size=sm').classes('cancel-btn')
 
                     # Create reply button
-                    def create_reply():
+                    async def create_reply():
                         intent = reply_input.value.strip() if reply_input.value else ''
                         if intent:
-                            on_follow_up('reply', intent)
+                            await on_follow_up('reply', intent)
                             reply_input.set_value('')
                             expanded_container.style('display: none')
                             collapsed_container.style('display: block')

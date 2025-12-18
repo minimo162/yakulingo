@@ -1443,10 +1443,13 @@ class TestGptModeSwitch:
         assert handler.GPT_MODE_TARGET == 'GPT-5.2 Think Deeper'
 
     def test_gpt_mode_wait_constants_defined(self, handler):
-        """GPT mode wait time constant is defined"""
+        """GPT mode wait time constants are defined"""
         assert hasattr(handler, 'GPT_MODE_MENU_WAIT')
         # Single wait constant used for all menu operations
         assert handler.GPT_MODE_MENU_WAIT == 0.3
+        # Button wait timeout for async loading
+        assert hasattr(handler, 'GPT_MODE_BUTTON_WAIT_MS')
+        assert handler.GPT_MODE_BUTTON_WAIT_MS == 5000
 
     def test_ensure_gpt_mode_returns_true_when_no_page(self, handler):
         """_ensure_gpt_mode returns True when no page (doesn't block)"""
@@ -1585,6 +1588,19 @@ class TestGptModeSwitch:
         # Should return True (don't block if UI element not found)
         result = handler._ensure_gpt_mode()
         assert result is True
+
+    def test_ensure_gpt_mode_returns_true_when_wait_for_selector_times_out(self, handler):
+        """_ensure_gpt_mode returns True when wait_for_selector times out (async loading)"""
+        mock_page = MagicMock()
+        # Simulate wait_for_selector timeout
+        mock_page.wait_for_selector.side_effect = Exception("Timeout 5000ms exceeded")
+        handler._page = mock_page
+
+        # Should return True to not block translation when button doesn't appear
+        result = handler._ensure_gpt_mode()
+        assert result is True
+        # Verify wait_for_selector was called
+        mock_page.wait_for_selector.assert_called_once()
 
     def test_ensure_gpt_mode_closes_menu_on_target_not_found(self, handler):
         """_ensure_gpt_mode closes menu when target mode not in menu"""

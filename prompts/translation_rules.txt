@@ -48,35 +48,51 @@
 
 ---
 
-### 記号変換ルール（英訳時）
+### 記号変換ルール（英訳時）【最優先】
 
-以下の記号は英語圏でビジネス文書に不適切です。
-必ず英語で表現してください。
+**絶対禁止**: 以下の記号は英訳に一切使用してはいけません。
+簡潔さより記号禁止が優先です。記号を使わず、必ず英単語で表現してください。
 
-禁止記号と置き換え:
-- ↑ → increased, up, higher（使用禁止）
-- ↓ → decreased, down, lower（使用禁止）
-- ~ → approximately, about, around（使用禁止）
-- → → leads to, results in, becomes（使用禁止）
-- > → greater than, more than, exceeds（使用禁止）
-- < → less than, below, under（使用禁止）
-- = → equals, is, amounts to（使用禁止）
-- ※ → Note:, *（使用禁止）
-- × → times, multiplied by（使用禁止）
-- ○ → yes, applicable, available（使用禁止）
-- ☓ → no, not applicable, unavailable（使用禁止）
+#### 禁止記号一覧
 
-**重要**: 数式記号を英訳に残してはいけません。必ず英単語で表現してください。
+| 禁止記号 | 代替表現 |
+|----------|----------|
+| > | more than, exceeding, over, longer than |
+| < | less than, under, below, shorter than |
+| → | leads to, results in, which provides, enabling |
+| ↑ | increased, up, higher, grew |
+| ↓ | decreased, down, lower, declined |
+| ~ | approximately, about, around |
+| = | equals, is, amounts to |
+| ※ | Note: |
+| × | times, multiplied by |
+| ○ | yes, applicable, available |
+| ☓ | no, not applicable, unavailable |
 
-例:
-- 「3か月以上」→ "3 months or more"（× > 3 months）
-- 「3か月超」→ "more than 3 months" または "exceeding 3 months"（× >3 months, × >3-month）
-- 「100万円未満」→ "less than 1 million yen"（× < 1 million yen）
-- 「売上↑」→ "Sales increased"（× Sales ↑）
-- 「約100万円」→ "approximately 1 million yen"（× ~1 million yen）
-- 「A → B」→ "A leads to B" または "A results in B"（× A → B）
+#### 変換例（正解と禁止パターン）
 
-許可される記号:
+**期間・数量の比較表現**:
+| 日本語 | ✓ 正解 | ✗ 禁止 |
+|--------|--------|--------|
+| 3か月超の預金 | deposits with terms exceeding 3 months | >3-month deposits |
+| 4年超の残存期間 | remaining term of more than 4 years | remaining >4 yrs |
+| 3か月以上 | 3 months or more | >3 months, ≥3 months |
+| 100万円未満 | less than 1 million yen | <1 million yen |
+
+**矢印の変換**:
+| 日本語 | ✓ 正解 | ✗ 禁止 |
+|--------|--------|--------|
+| 分散返済→安定性向上 | staggered repayment, which enhances stability | staggered repayment → stronger stability |
+| A→B | A leads to B, A results in B | A → B |
+| 売上↑ | Sales increased | Sales ↑ |
+| コスト↓ | Costs decreased | Costs ↓ |
+
+**形容詞として使う場合も禁止**:
+- ✗ `>3-month deposit` → ✓ `deposits exceeding 3 months` または `deposits with terms over 3 months`
+- ✗ `>4 yrs remaining` → ✓ `more than 4 years remaining`
+- ✗ `~100 oku` → ✓ `approximately 100 oku`
+
+#### 許可される記号
 - & (and の代わり)
 - % (パーセント)
 - / (または、per)

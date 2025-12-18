@@ -3689,7 +3689,7 @@ def _detect_display_settings(
     HEIGHT_RATIO = 1100 / 1440  # 0.764
 
     # Side panel dimensions (must match copilot_handler.py constants)
-    SIDE_PANEL_BASE_WIDTH = 750  # For 1920px+ screens (wider for GPT mode UI)
+    SIDE_PANEL_BASE_WIDTH = 850  # For 1920px+ screens (wider for GPT model selector)
     SIDE_PANEL_MIN_WIDTH = 600   # For smaller screens
     SIDE_PANEL_GAP = 10
 
@@ -3927,7 +3927,7 @@ def _calculate_app_position_for_side_panel(
         screen_height = work_area.bottom - work_area.top
 
         # Side panel constants (must match CopilotHandler)
-        SIDE_PANEL_BASE_WIDTH = 750  # Wider for GPT mode UI
+        SIDE_PANEL_BASE_WIDTH = 850  # Wider for GPT model selector
         SIDE_PANEL_MIN_WIDTH = 600
         SIDE_PANEL_GAP = 10
 

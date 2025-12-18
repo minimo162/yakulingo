@@ -586,11 +586,11 @@ async def _translate_text(self):
 
 | 画面幅 | サイドパネル幅 | アプリ幅の目安 | 合計 |
 |--------|---------------|---------------|------|
-| 1920px+ | 750px | 1056px (55%) | 1816px |
-| 1600px | 663px | 880px (55%) | 1553px |
+| 1920px+ | 850px | 1056px (55%) | 1916px |
+| 1600px | 706px | 880px (55%) | 1596px |
 | 1366px | 600px | 751px (55%) | 1361px |
 
-- サイドパネル幅は1366px〜1920pxの間で線形補間（600px〜750px）
+- サイドパネル幅は1366px〜1920pxの間で線形補間（600px〜850px）
 - アプリウィンドウ幅は `min(screen_width × 0.55, screen_width - side_panel - gap)` で計算
 - ギャップ: 10px
 
@@ -2053,9 +2053,9 @@ Based on recent commits:
   - **Default changed**: `browser_display_mode` のデフォルトを `"side_panel"` に変更
   - **Modes**: `"side_panel"`（デフォルト）、`"minimized"`（従来）、`"foreground"`（前面）
   - **Resolution-aware sizing**: サイドパネルとアプリウィンドウの幅を解像度に応じて動的計算
-    - サイドパネル幅: 1920px+ → 750px、1366px → 600px、間は線形補間
+    - サイドパネル幅: 1920px+ → 850px、1366px → 600px、間は線形補間
     - アプリウィンドウ幅: `screen_width × 0.55` または `screen_width - side_panel - gap` の小さい方
-    - 定数: `SIDE_PANEL_BASE_WIDTH=750`, `SIDE_PANEL_MIN_WIDTH=600`, `SIDE_PANEL_GAP=10`, `SIDE_PANEL_MIN_HEIGHT=500`
+    - 定数: `SIDE_PANEL_BASE_WIDTH=850`, `SIDE_PANEL_MIN_WIDTH=600`, `SIDE_PANEL_GAP=10`, `SIDE_PANEL_MIN_HEIGHT=500`
   - **Side panel features**:
     - アプリとサイドパネルを「セット」として画面中央に配置（重なりを防止）
     - YakuLingoアプリの右側にEdgeを配置
@@ -2592,11 +2592,11 @@ Based on recent commits:
 - **Window Sizing (Dynamic Scaling)**:
   - **Dynamic calculation**: `_detect_display_settings()` calculates window size from logical screen resolution
   - **DPI-aware**: pywebview returns logical pixels (after DPI scaling), so window maintains ~55% width ratio
-  - **Side panel accommodation**: WIDTH_RATIO reduced to 55% to fit wider side panel mode (750px + 10px gap)
+  - **Side panel accommodation**: WIDTH_RATIO reduced to 55% to fit wider side panel mode (850px + 10px gap)
   - **Reference**: 2560x1440 logical → 1408x1100 window (55% width, 76.4% height)
   - **Minimum sizes**: 1100x650 pixels (lowered from 1400x850 to maintain ratio on smaller screens)
   - **Examples by DPI scaling**:
-    - 1920x1200 at 100% → 論理1920x1200 → window 1056x916 (55%) + side panel (750px) = 1816px ✓
+    - 1920x1200 at 100% → 論理1920x1200 → window 1056x916 (55%) + side panel (850px) = 1916px ✓
     - 1920x1200 at 125% → 論理1536x960 → window 845x733 (55%)
     - 2560x1440 at 150% → 論理1706x960 → window 938x733 (55%)
   - **Panel layout**: Translation result panel elements aligned to 2/3 width with center alignment

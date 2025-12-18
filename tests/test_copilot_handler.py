@@ -1454,7 +1454,7 @@ class TestGptModeSwitch:
     def test_ensure_gpt_mode_completes_when_no_page(self, handler):
         """_ensure_gpt_mode completes without error when no page"""
         handler._page = None
-        handler._ensure_gpt_mode()  # Should not raise
+        handler._ensure_gpt_mode_impl()  # Should not raise
 
     def test_ensure_gpt_mode_completes_when_already_correct(self, handler):
         """_ensure_gpt_mode completes without switching when already in GPT-5.2 Think Deeper mode"""
@@ -1464,7 +1464,7 @@ class TestGptModeSwitch:
         mock_page.query_selector.return_value = mock_text_elem
         handler._page = mock_page
 
-        handler._ensure_gpt_mode()
+        handler._ensure_gpt_mode_impl()
         # Should not click anything (already in correct mode)
         assert mock_page.evaluate.call_count == 0
 
@@ -1505,7 +1505,7 @@ class TestGptModeSwitch:
 
         handler._page = mock_page
 
-        result = handler._ensure_gpt_mode()
+        result = handler._ensure_gpt_mode_impl()
 
         # Should have attempted to click button, More, and menu item (3 clicks)
         assert mock_page.evaluate.call_count >= 3
@@ -1548,7 +1548,7 @@ class TestGptModeSwitch:
 
         handler._page = mock_page
 
-        result = handler._ensure_gpt_mode()
+        result = handler._ensure_gpt_mode_impl()
 
         # Verify that click actions were performed (evaluate called for JS click)
         # 3-step flow: Button click + More click + menu item click
@@ -1565,7 +1565,7 @@ class TestGptModeSwitch:
         mock_page.query_selector_all.return_value = []
         handler._page = mock_page
 
-        handler._ensure_gpt_mode()  # Should not raise (graceful degradation)
+        handler._ensure_gpt_mode_impl()  # Should not raise (graceful degradation)
 
     def test_ensure_gpt_mode_completes_on_exception(self, handler):
         """_ensure_gpt_mode completes without raising when internal exception occurs"""
@@ -1574,7 +1574,7 @@ class TestGptModeSwitch:
         handler._page = mock_page
 
         # Should not raise despite internal exception (graceful degradation)
-        handler._ensure_gpt_mode()
+        handler._ensure_gpt_mode_impl()
 
     def test_ensure_gpt_mode_completes_when_button_not_visible(self, handler):
         """_ensure_gpt_mode completes without error when GPT mode button not visible"""
@@ -1584,7 +1584,7 @@ class TestGptModeSwitch:
         handler._page = mock_page
 
         # Should complete without raising (don't block if UI element not found)
-        handler._ensure_gpt_mode()
+        handler._ensure_gpt_mode_impl()
 
     def test_ensure_gpt_mode_completes_when_wait_for_selector_times_out(self, handler):
         """_ensure_gpt_mode completes without error when wait_for_selector times out"""
@@ -1594,7 +1594,7 @@ class TestGptModeSwitch:
         handler._page = mock_page
 
         # Should complete without raising when button doesn't appear
-        handler._ensure_gpt_mode()
+        handler._ensure_gpt_mode_impl()
         # Verify wait_for_selector was called
         mock_page.wait_for_selector.assert_called_once()
 
@@ -1624,7 +1624,27 @@ class TestGptModeSwitch:
 
         handler._page = mock_page
 
-        handler._ensure_gpt_mode()
+        handler._ensure_gpt_mode_impl()
 
         # Should have pressed Escape to close menu
         mock_keyboard.press.assert_called_with('Escape')
+
+    def test_ensure_gpt_mode_wrapper_with_page(self, handler):
+        """ensure_gpt_mode delegates to Playwright thread executor when page exists"""
+        mock_page = MagicMock()
+        handler._page = mock_page
+
+        with patch('yakulingo.services.copilot_handler._playwright_executor') as mock_executor:
+            handler.ensure_gpt_mode()
+
+        mock_executor.execute.assert_called_once_with(handler._ensure_gpt_mode_impl)
+
+    def test_ensure_gpt_mode_wrapper_no_page(self, handler):
+        """ensure_gpt_mode handles no page gracefully without calling executor"""
+        handler._page = None
+
+        with patch('yakulingo.services.copilot_handler._playwright_executor') as mock_executor:
+            # Should not raise and should not call executor
+            handler.ensure_gpt_mode()
+
+        mock_executor.execute.assert_not_called()

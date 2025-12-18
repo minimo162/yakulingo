@@ -1676,12 +1676,26 @@ class CopilotHandler:
             logger.warning("Failed to check Copilot page: %s", e)
             return False
 
-    def _ensure_gpt_mode(self) -> None:
-        """Set GPT-5.2 Think Deeper mode.
+    def ensure_gpt_mode(self) -> None:
+        """Thread-safe wrapper to set GPT-5.2 Think Deeper mode.
 
         Called from UI layer (app.py) after initial connection.
         Should only be called once per session to respect user's manual changes.
+
+        This method delegates to the Playwright thread executor to ensure
+        all Playwright operations run in the correct thread.
         """
+        if not self._page:
+            logger.debug("Skipping ensure_gpt_mode: no page available")
+            return
+
+        try:
+            _playwright_executor.execute(self._ensure_gpt_mode_impl)
+        except Exception as e:
+            logger.debug("Failed to set GPT mode: %s", e)
+
+    def _ensure_gpt_mode_impl(self) -> None:
+        """Implementation of ensure_gpt_mode() that runs in Playwright thread."""
         if not self._page:
             logger.debug("No page available for GPT mode check")
             return

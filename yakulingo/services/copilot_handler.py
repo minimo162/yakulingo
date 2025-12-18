@@ -613,16 +613,13 @@ class CopilotHandler:
     # =========================================================================
     # Side Panel Mode Settings
     # =========================================================================
-    # Side panel width scales based on screen width to accommodate different resolutions
-    # Reference: 1920px screen → 850px panel, 1366px screen → 600px panel
-    # Wider panel is needed to show GPT mode switcher button and model selector
-    SIDE_PANEL_BASE_WIDTH = 850      # Base width for 1920px+ screens (wider for GPT model selector)
-    SIDE_PANEL_MIN_WIDTH = 600       # Minimum width for smaller screens
+    # Side panel configuration: App and browser windows use 1:1 ratio
+    # This ensures both windows get equal screen space for optimal usability
     SIDE_PANEL_GAP = 10              # Gap between app and side panel
     SIDE_PANEL_MIN_HEIGHT = 500      # Minimum height for usability
 
     # App window size calculation ratios (must match app.py _detect_display_settings)
-    APP_WIDTH_RATIO = 0.55           # App window width as ratio of screen width (reduced for wider panel)
+    APP_WIDTH_RATIO = 0.5            # App and browser each get 50% of available width (1:1 ratio)
     APP_HEIGHT_RATIO = 1100 / 1440   # 0.764
 
     # =========================================================================
@@ -697,18 +694,15 @@ class CopilotHandler:
 
     # GPT Mode switcher selectors
     # Used to ensure GPT-5.2 Think Deeper mode is selected for better translation quality
+    # Flow: 1. Click #gptModeSwitcher -> 2. Click "More" (role=button) -> 3. Click target (role=menuitem)
     GPT_MODE_BUTTON_SELECTOR = '#gptModeSwitcher'
     GPT_MODE_TEXT_SELECTOR = '#gptModeSwitcher div'
-    GPT_MODE_MENU_ITEM_SELECTOR = '[role="menuitem"], [role="option"], [role="menuitemradio"]'
-    # Target mode name (partial match) - the full name in the submenu
+    # "More" button has role="button" with aria-haspopup="menu", target has role="menuitem"
+    GPT_MODE_MORE_SELECTOR = '[role="button"][aria-haspopup="menu"]'
+    GPT_MODE_MENU_ITEM_SELECTOR = '[role="menuitem"]'
     GPT_MODE_TARGET = 'GPT-5.2 Think Deeper'
-    # Parent menu item patterns to open submenu (first level menu)
-    # Supports both English "More" and Japanese variations
-    GPT_MODE_PARENT_PATTERNS = ('More', 'その他', '詳細', 'もっと見る')
-    # Mode switching timeout and wait times
-    GPT_MODE_SWITCH_TIMEOUT_MS = 3000
+    GPT_MODE_MORE_TEXT = 'More'
     GPT_MODE_MENU_WAIT = 0.3  # Wait for menu to open/close
-    GPT_MODE_SWITCH_WAIT = 0.3  # Wait for mode to switch
 
     # Dynamic polling intervals for faster response detection
     # OPTIMIZED: Reduced intervals for quicker response detection (0.15s -> 0.1s)
@@ -1429,6 +1423,10 @@ class CopilotHandler:
         # Apply browser display mode based on settings
         self._apply_browser_display_mode(None)
 
+        # Set GPT mode to "GPT-5.2 Think Deeper" at startup for best translation quality
+        if not self._ensure_gpt_mode():
+            logger.warning("GPT mode switch failed at startup - user can manually switch if needed")
+
     def _cleanup_on_error(self) -> None:
         """Clean up resources when connection fails."""
         from contextlib import suppress
@@ -1682,8 +1680,10 @@ class CopilotHandler:
     def _ensure_gpt_mode(self) -> bool:
         """Ensure GPT-5.2 Think Deeper mode is selected for better translation quality.
 
-        This method checks the current GPT mode and switches to "GPT-5.2 Think Deeper"
-        if a different mode (e.g., "自動") is selected.
+        Flow:
+        1. Click #gptModeSwitcher to open menu
+        2. Click "More" button (role=button with aria-haspopup=menu) to open submenu
+        3. Click "GPT-5.2 Think Deeper" menu item (role=menuitem)
 
         The menu has a 2-level structure:
         - Level 1: 「自動」「クイック応答」「Think Deeper」
@@ -1720,28 +1720,38 @@ class CopilotHandler:
             # Need to switch mode
             logger.info("Switching GPT mode from '%s' to '%s'...", current_mode, self.GPT_MODE_TARGET)
 
-            # Click the mode switcher button to open menu
+            # Step 1: Click #gptModeSwitcher to open menu
             mode_button = self._page.query_selector(self.GPT_MODE_BUTTON_SELECTOR)
             if not mode_button:
                 logger.warning("GPT mode button not found for clicking")
                 return False
 
-            # Use JS click to avoid bringing window to foreground
             self._page.evaluate('el => el.click()', mode_button)
-
-            # Wait for menu to open
             time.sleep(self.GPT_MODE_MENU_WAIT)
 
-            # Find menu items and look for target mode (try direct match first)
-            menu_items = self._page.query_selector_all(self.GPT_MODE_MENU_ITEM_SELECTOR)
-            if not menu_items:
-                logger.warning("No menu items found (menu may not have opened)")
+            # Step 2: Click "More" button to open submenu
+            more_buttons = self._page.query_selector_all(self.GPT_MODE_MORE_SELECTOR)
+            more_button = None
+            for btn in more_buttons:
+                try:
+                    btn_text = btn.text_content()
+                    if btn_text and self.GPT_MODE_MORE_TEXT in btn_text:
+                        more_button = btn
+                        break
+                except Exception:
+                    continue
+
+            if not more_button:
+                logger.warning("'More' button not found in menu")
                 self._close_menu_safely()
                 return False
 
-            # First, try to find target mode directly in level 1 menu
+            self._page.evaluate('el => el.click()', more_button)
+            time.sleep(self.GPT_MODE_MENU_WAIT)
+
+            # Step 3: Click "GPT-5.2 Think Deeper" menu item
+            menu_items = self._page.query_selector_all(self.GPT_MODE_MENU_ITEM_SELECTOR)
             target_item = None
-            parent_item = None
             available_items = []
             for item in menu_items:
                 try:
@@ -1751,60 +1761,18 @@ class CopilotHandler:
                         available_items.append(item_text_stripped)
                         if self.GPT_MODE_TARGET in item_text:
                             target_item = item
-                            logger.debug("Found target menu item in level 1: %s", item_text_stripped)
                             break
-                        # Check for parent item that opens submenu (More, その他, etc.)
-                        if not parent_item:
-                            for pattern in self.GPT_MODE_PARENT_PATTERNS:
-                                if pattern in item_text_stripped:
-                                    parent_item = item
-                                    logger.debug("Found parent menu item '%s': %s", pattern, item_text_stripped)
-                                    break
                 except Exception:
                     continue
 
-            # If target not found directly, try to open submenu via parent (More menu)
-            if not target_item and parent_item:
-                logger.debug("Target not in level 1, opening submenu via parent item...")
-
-                # Hover over parent item to open submenu (some menus use hover)
-                try:
-                    parent_item.hover()
-                    time.sleep(self.GPT_MODE_MENU_WAIT)
-                except Exception as hover_err:
-                    logger.debug("Hover failed, trying click: %s", hover_err)
-
-                # Click parent item to open submenu
-                self._page.evaluate('el => el.click()', parent_item)
-                time.sleep(self.GPT_MODE_MENU_WAIT)
-
-                # Re-fetch menu items (now should include submenu items)
-                menu_items = self._page.query_selector_all(self.GPT_MODE_MENU_ITEM_SELECTOR)
-                available_items = []
-                for item in menu_items:
-                    try:
-                        item_text = item.text_content()
-                        if item_text:
-                            item_text_stripped = item_text.strip()
-                            available_items.append(item_text_stripped)
-                            if self.GPT_MODE_TARGET in item_text:
-                                target_item = item
-                                logger.debug("Found target menu item in submenu: %s", item_text_stripped)
-                                break
-                    except Exception:
-                        continue
-
             if not target_item:
-                logger.warning("Target mode '%s' not found in menu. Available items: %s",
+                logger.warning("Target mode '%s' not found in submenu. Available items: %s",
                               self.GPT_MODE_TARGET, available_items)
                 self._close_menu_safely()
                 return False
 
-            # Click target item
             self._page.evaluate('el => el.click()', target_item)
-
-            # Wait for mode to switch
-            time.sleep(self.GPT_MODE_SWITCH_WAIT)
+            time.sleep(self.GPT_MODE_MENU_WAIT)
 
             # Verify mode was switched
             mode_text_elem = self._page.query_selector(self.GPT_MODE_TEXT_SELECTOR)
@@ -2619,35 +2587,23 @@ class CopilotHandler:
             screen_width = work_area.right - work_area.left
             screen_height = work_area.bottom - work_area.top
 
-            # Calculate side panel width based on screen resolution
-            if screen_width >= 1920:
-                edge_width = self.SIDE_PANEL_BASE_WIDTH
-            elif screen_width <= 1366:
-                edge_width = self.SIDE_PANEL_MIN_WIDTH
-            else:
-                ratio = (screen_width - 1366) / (1920 - 1366)
-                edge_width = int(self.SIDE_PANEL_MIN_WIDTH +
-                               (self.SIDE_PANEL_BASE_WIDTH - self.SIDE_PANEL_MIN_WIDTH) * ratio)
-
-            # Calculate available space for app window
-            available_width = screen_width - edge_width - self.SIDE_PANEL_GAP
+            # Calculate 1:1 ratio: app and browser each get half the available width
+            available_width = screen_width - self.SIDE_PANEL_GAP
+            edge_width = available_width // 2
             max_window_height = int(screen_height * 0.95)
 
-            # Try to load cached window size from app.py's display cache
-            # This ensures consistency with the actual window size used by pywebview
+            # For 1:1 ratio, app width equals edge width (both get half)
+            app_width = edge_width
+
+            # Try to load cached window size for height
             cached_window_size = self._load_window_size_from_cache()
             if cached_window_size:
-                app_width, app_height = cached_window_size
-                # Ensure cached size fits in available space
-                app_width = min(app_width, available_width)
+                _, app_height = cached_window_size
                 app_height = min(app_height, max_window_height)
-                logger.debug("Using cached window size: %dx%d", app_width, app_height)
+                logger.debug("Using cached window height: %d (width fixed to %d for 1:1)", app_height, app_width)
             else:
-                # Fallback: Calculate app window size (must match app.py _detect_display_settings)
-                MIN_WINDOW_WIDTH = 1100
+                # Fallback: Calculate app window height (must match app.py _detect_display_settings)
                 MIN_WINDOW_HEIGHT = 650
-                ratio_based_width = int(screen_width * self.APP_WIDTH_RATIO)
-                app_width = min(max(ratio_based_width, MIN_WINDOW_WIDTH), available_width)
                 app_height = min(max(int(screen_height * self.APP_HEIGHT_RATIO), MIN_WINDOW_HEIGHT), max_window_height)
                 logger.debug("Using calculated window size: %dx%d (no cache)", app_width, app_height)
 
@@ -2696,10 +2652,8 @@ class CopilotHandler:
 
         Layout: |---margin---|---app_window---|---gap---|---side_panel---|---margin---|
 
-        The panel width scales based on available screen space:
-        - 1920px+ screen width: 750px panel (wider for GPT mode UI)
-        - 1366-1919px: scales proportionally (600-750px)
-        - <1366px: 600px minimum
+        Both app and browser use 1:1 ratio (each gets 50% of available width)
+        Example: 1920px screen - 10px gap = 1910px available → 955px each
 
         Args:
             page_title: The current page title for exact matching
@@ -2765,21 +2719,12 @@ class CopilotHandler:
             screen_width = work_area.right - work_area.left
             screen_height = work_area.bottom - work_area.top
 
-            # Calculate side panel width based on screen resolution
-            # Scale from MIN_WIDTH (at 1366px) to BASE_WIDTH (at 1920px+)
-            if screen_width >= 1920:
-                edge_width = self.SIDE_PANEL_BASE_WIDTH
-            elif screen_width <= 1366:
-                edge_width = self.SIDE_PANEL_MIN_WIDTH
-            else:
-                # Linear interpolation between 1366px and 1920px
-                ratio = (screen_width - 1366) / (1920 - 1366)
-                edge_width = int(self.SIDE_PANEL_MIN_WIDTH +
-                               (self.SIDE_PANEL_BASE_WIDTH - self.SIDE_PANEL_MIN_WIDTH) * ratio)
-
             # Get app window dimensions
             app_width = app_rect.right - app_rect.left
             app_height = app_rect.bottom - app_rect.top
+
+            # 1:1 ratio: browser width equals app width
+            edge_width = app_width
 
             # If expected app position is saved (from early connection), use its height
             # This prevents Edge height from shrinking during app startup when window
@@ -4211,12 +4156,6 @@ class CopilotHandler:
                 raise RuntimeError("Copilotへのログインが必要です。Edgeブラウザでログインしてください。")
             raise RuntimeError("Copilotページにアクセスできませんでした。")
 
-        # Ensure GPT-5.2 Think Deeper mode is selected (best translation quality)
-        # On failure, logs warning but continues - user can manually switch if needed
-        if not self._ensure_gpt_mode():
-            logger.warning("GPT mode switch failed - translation may use different model. "
-                          "Please manually select 'GPT-5.2 Think Deeper' in Copilot.")
-
         # Check for cancellation before starting translation
         if self._is_cancelled():
             logger.info("Translation cancelled before starting")
@@ -4431,12 +4370,6 @@ class CopilotHandler:
             if self.last_connection_error == self.ERROR_LOGIN_REQUIRED:
                 raise RuntimeError("Copilotへのログインが必要です。Edgeブラウザでログインしてください。")
             raise RuntimeError("Copilotページにアクセスできませんでした。")
-
-        # Ensure GPT-5.2 Think Deeper mode is selected (best translation quality)
-        # On failure, logs warning but continues - user can manually switch if needed
-        if not self._ensure_gpt_mode():
-            logger.warning("GPT mode switch failed - translation may use different model. "
-                          "Please manually select 'GPT-5.2 Think Deeper' in Copilot.")
 
         # Check for cancellation before starting translation
         if self._is_cancelled():

@@ -582,17 +582,18 @@ async def _translate_text(self):
 - `_position_window_early_sync()` で5msポーリングによりウィンドウ作成直後に正しい位置へ移動
 - `--window-position` でEdge起動時に位置を指定
 
-**サイドパネルのサイズ計算（解像度対応）:**
+**サイドパネルのサイズ計算（1:1比率）:**
 
-| 画面幅 | サイドパネル幅 | アプリ幅の目安 | 合計 |
-|--------|---------------|---------------|------|
-| 1920px+ | 850px | 1056px (55%) | 1916px |
-| 1600px | 706px | 880px (55%) | 1596px |
-| 1366px | 600px | 751px (55%) | 1361px |
+アプリとブラウザは1:1の比率で画面を分割します（GPTモードUIのスペース確保のため）。
 
-- サイドパネル幅は1366px〜1920pxの間で線形補間（600px〜850px）
-- アプリウィンドウ幅は `min(screen_width × 0.55, screen_width - side_panel - gap)` で計算
-- ギャップ: 10px
+| 画面幅 | アプリ幅 | サイドパネル幅 | ギャップ | 合計 |
+|--------|---------|---------------|---------|------|
+| 1920px | 955px | 955px | 10px | 1920px |
+| 1600px | 795px | 795px | 10px | 1600px |
+| 1366px | 678px | 678px | 10px | 1366px |
+
+- 計算式: `available_width = screen_width - SIDE_PANEL_GAP (10px)` → 2分割
+- 定数: `APP_WIDTH_RATIO=0.5`, `SIDE_PANEL_GAP=10`, `SIDE_PANEL_MIN_HEIGHT=500`
 
 **用語集の処理モード**:
 - `use_bundled_glossary`: 同梱の glossary.csv を使用するか（デフォルト: true）
@@ -2052,10 +2053,9 @@ Based on recent commits:
 - **Browser Side Panel Display Mode (2024-12)**:
   - **Default changed**: `browser_display_mode` のデフォルトを `"side_panel"` に変更
   - **Modes**: `"side_panel"`（デフォルト）、`"minimized"`（従来）、`"foreground"`（前面）
-  - **Resolution-aware sizing**: サイドパネルとアプリウィンドウの幅を解像度に応じて動的計算
-    - サイドパネル幅: 1920px+ → 850px、1366px → 600px、間は線形補間
-    - アプリウィンドウ幅: `screen_width × 0.55` または `screen_width - side_panel - gap` の小さい方
-    - 定数: `SIDE_PANEL_BASE_WIDTH=850`, `SIDE_PANEL_MIN_WIDTH=600`, `SIDE_PANEL_GAP=10`, `SIDE_PANEL_MIN_HEIGHT=500`
+  - **1:1 ratio sizing**: アプリとブラウザは1:1の比率で画面を分割（GPTモードUIのスペース確保）
+    - 計算式: `available_width = screen_width - gap` → 2分割
+    - 定数: `APP_WIDTH_RATIO=0.5`, `SIDE_PANEL_GAP=10`, `SIDE_PANEL_MIN_HEIGHT=500`
   - **Side panel features**:
     - アプリとサイドパネルを「セット」として画面中央に配置（重なりを防止）
     - YakuLingoアプリの右側にEdgeを配置
@@ -2589,16 +2589,15 @@ Based on recent commits:
   - **Source text section**: 翻訳結果パネル上部に原文を表示（コピーボタン付き）
   - **Translation status display**: 「英訳中...」「和訳中...」→「✓ 英訳しました」「✓ 和訳しました」+ 経過時間
   - **Full-height input area**: 翻訳中・翻訳後の入力欄を縦幅いっぱいに拡張
-- **Window Sizing (Dynamic Scaling)**:
+- **Window Sizing (1:1 Ratio)**:
+  - **1:1 ratio**: アプリとブラウザは1:1で画面を分割（GPTモードUIのスペース確保）
   - **Dynamic calculation**: `_detect_display_settings()` calculates window size from logical screen resolution
-  - **DPI-aware**: pywebview returns logical pixels (after DPI scaling), so window maintains ~55% width ratio
-  - **Side panel accommodation**: WIDTH_RATIO reduced to 55% to fit wider side panel mode (850px + 10px gap)
-  - **Reference**: 2560x1440 logical → 1408x1100 window (55% width, 76.4% height)
-  - **Minimum sizes**: 1100x650 pixels (lowered from 1400x850 to maintain ratio on smaller screens)
-  - **Examples by DPI scaling**:
-    - 1920x1200 at 100% → 論理1920x1200 → window 1056x916 (55%) + side panel (850px) = 1916px ✓
-    - 1920x1200 at 125% → 論理1536x960 → window 845x733 (55%)
-    - 2560x1440 at 150% → 論理1706x960 → window 938x733 (55%)
+  - **DPI-aware**: pywebview returns logical pixels (after DPI scaling)
+  - **Calculation**: `available_width = screen_width - SIDE_PANEL_GAP (10px)` → 2分割
+  - **Minimum sizes**: 1100x650 pixels
+  - **Examples**:
+    - 1920px screen → 955px app + 10px gap + 955px browser
+    - 1600px screen → 795px app + 10px gap + 795px browser
   - **Panel layout**: Translation result panel elements aligned to 2/3 width with center alignment
 - **Global Hotkey (Ctrl+Alt+J)**:
   - **Quick translation**: Select text in any app, press Ctrl+Alt+J to translate

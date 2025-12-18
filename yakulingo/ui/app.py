@@ -3680,17 +3680,13 @@ def _detect_display_settings(
         - content_width: Unified width for both input and result panel content (600-900px)
     """
     # Reference ratios based on 2560x1440 → 1800x1100
-    # WIDTH_RATIO adjusts to accommodate side panel mode (default)
-    # Side panel width: 750px (1920px+), 600px (1366px-), gap: 10px
-    # Wider panel is needed to show GPT mode switcher button
-    # Calculation: screen_width - side_panel - gap = available_for_app
-    # Example: 1920px - 750px - 10px = 1160px available → 1056px window (55%)
-    WIDTH_RATIO = 0.55  # Adjusted for wider side panel (GPT mode UI)
+    # App and browser use 1:1 ratio (each gets half the screen)
+    # This ensures browser has enough space for GPT mode UI elements
+    # Example: 1920px - 10px gap = 1910px available → 955px each
+    WIDTH_RATIO = 0.5  # App and browser each get 50% (1:1 ratio)
     HEIGHT_RATIO = 1100 / 1440  # 0.764
 
     # Side panel dimensions (must match copilot_handler.py constants)
-    SIDE_PANEL_BASE_WIDTH = 850  # For 1920px+ screens (wider for GPT model selector)
-    SIDE_PANEL_MIN_WIDTH = 600   # For smaller screens
     SIDE_PANEL_GAP = 10
 
     # Panel ratios based on 1800px window width
@@ -3714,40 +3710,26 @@ def _detect_display_settings(
     MAX_CONTENT_WIDTH = 900
 
     def calculate_side_panel_width(screen_width: int) -> int:
-        """Calculate side panel width based on screen resolution.
+        """Calculate side panel width for 1:1 ratio with app window.
 
-        Scales from MIN_WIDTH (at 1366px) to BASE_WIDTH (at 1920px+).
+        Both app and browser get equal width (half of available space).
         """
-        if screen_width >= 1920:
-            return SIDE_PANEL_BASE_WIDTH
-        elif screen_width <= 1366:
-            return SIDE_PANEL_MIN_WIDTH
-        else:
-            ratio = (screen_width - 1366) / (1920 - 1366)
-            return int(SIDE_PANEL_MIN_WIDTH +
-                      (SIDE_PANEL_BASE_WIDTH - SIDE_PANEL_MIN_WIDTH) * ratio)
+        available_width = screen_width - SIDE_PANEL_GAP
+        return available_width // 2
 
     def calculate_sizes(screen_width: int, screen_height: int) -> tuple[tuple[int, int], tuple[int, int, int]]:
         """Calculate window size and panel widths from screen resolution.
 
-        Applies minimum values for larger screens, but respects screen bounds for smaller screens.
-        Window size is calculated to fit alongside the side panel (default mode).
+        Uses 1:1 ratio for app and browser windows (each gets half the screen).
 
         Returns:
             Tuple of ((window_width, window_height),
                       (sidebar_width, input_panel_width, content_width))
         """
-        # Calculate side panel width for this screen resolution
-        side_panel_width = calculate_side_panel_width(screen_width)
-
-        # Calculate available space for app window (screen - side panel - gap)
-        available_width = screen_width - side_panel_width - SIDE_PANEL_GAP
+        # 1:1 ratio: app and browser each get half the available width
+        available_width = screen_width - SIDE_PANEL_GAP
+        window_width = available_width // 2
         max_window_height = int(screen_height * 0.95)
-
-        # Apply ratio-based calculation, ensuring app + side panel fit on screen
-        # Use the smaller of: ratio-based width or available width
-        ratio_based_width = int(screen_width * WIDTH_RATIO)
-        window_width = min(max(ratio_based_width, MIN_WINDOW_WIDTH), available_width)
         window_height = min(max(int(screen_height * HEIGHT_RATIO), MIN_WINDOW_HEIGHT), max_window_height)
 
         # For smaller windows, use ratio-based panel sizes instead of fixed minimums
@@ -3926,20 +3908,9 @@ def _calculate_app_position_for_side_panel(
         screen_width = work_area.right - work_area.left
         screen_height = work_area.bottom - work_area.top
 
-        # Side panel constants (must match CopilotHandler)
-        SIDE_PANEL_BASE_WIDTH = 850  # Wider for GPT model selector
-        SIDE_PANEL_MIN_WIDTH = 600
+        # 1:1 ratio: app and browser each get half the available width
         SIDE_PANEL_GAP = 10
-
-        # Calculate side panel width based on screen resolution
-        if screen_width >= 1920:
-            edge_width = SIDE_PANEL_BASE_WIDTH
-        elif screen_width <= 1366:
-            edge_width = SIDE_PANEL_MIN_WIDTH
-        else:
-            ratio = (screen_width - 1366) / (1920 - 1366)
-            edge_width = int(SIDE_PANEL_MIN_WIDTH +
-                           (SIDE_PANEL_BASE_WIDTH - SIDE_PANEL_MIN_WIDTH) * ratio)
+        edge_width = window_width  # Browser width equals app width
 
         # Calculate total width of app + gap + side panel
         total_width = window_width + SIDE_PANEL_GAP + edge_width
@@ -4379,16 +4350,8 @@ def run_app(
         sidebar_width, input_panel_width, content_width = yakulingo_app._panel_sizes
         window_width, window_height = yakulingo_app._window_size
 
-        # Calculate base font size with gentle scaling (needed for other calculations)
-        # Reference: 1900px window → 16px font
-        # Use square root for gentle scaling (no upper limit for large screens)
-        import math
-        REFERENCE_WINDOW_WIDTH = 1900
-        REFERENCE_FONT_SIZE = 16
-        scale_ratio = window_width / REFERENCE_WINDOW_WIDTH
-        # Square root scaling for gentler effect, minimum 85% (13.6px), no upper limit
-        gentle_scale = max(0.85, math.sqrt(scale_ratio))
-        base_font_size = round(REFERENCE_FONT_SIZE * gentle_scale, 1)
+        # Fixed base font size (no dynamic scaling)
+        base_font_size = 16
 
         # Calculate input min-height based on 7 lines of text (Nani-style)
         # Formula: 7 lines × line-height × font-size + padding
@@ -4423,9 +4386,7 @@ def run_app(
         ui.add_head_html('''<script>
 (function() {
     // Constants matching Python calculation (from _detect_display_settings)
-    // Reference window width reduced to accommodate side panel mode (500px + 10px gap)
-    const REFERENCE_WINDOW_WIDTH = 1800;
-    const REFERENCE_FONT_SIZE = 16;
+    const BASE_FONT_SIZE = 16;  // Fixed font size (no dynamic scaling)
     const SIDEBAR_RATIO = 250 / 1800;
     const INPUT_PANEL_RATIO = 400 / 1800;
     const MIN_SIDEBAR_WIDTH = 220;  // Lowered for smaller screens
@@ -4443,10 +4404,8 @@ def run_app(
     function updateCSSVariables() {
         const windowWidth = window.innerWidth;
 
-        // Calculate base font size with gentle scaling (square root)
-        const scaleRatio = windowWidth / REFERENCE_WINDOW_WIDTH;
-        const gentleScale = Math.max(0.85, Math.sqrt(scaleRatio));
-        const baseFontSize = Math.round(REFERENCE_FONT_SIZE * gentleScale * 10) / 10;
+        // Fixed base font size (no dynamic scaling)
+        const baseFontSize = BASE_FONT_SIZE;
 
         // Calculate panel widths
         const sidebarWidth = Math.max(Math.round(windowWidth * SIDEBAR_RATIO), MIN_SIDEBAR_WIDTH);

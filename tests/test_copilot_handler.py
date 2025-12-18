@@ -1443,11 +1443,10 @@ class TestGptModeSwitch:
         assert handler.GPT_MODE_TARGET == 'GPT-5.2 Think Deeper'
 
     def test_gpt_mode_wait_constants_defined(self, handler):
-        """GPT mode wait time constants are defined"""
+        """GPT mode wait time constant is defined"""
         assert hasattr(handler, 'GPT_MODE_MENU_WAIT')
-        assert hasattr(handler, 'GPT_MODE_SWITCH_WAIT')
-        assert handler.GPT_MODE_MENU_WAIT == 0.2
-        assert handler.GPT_MODE_SWITCH_WAIT == 0.2
+        # Single wait constant used for all menu operations
+        assert handler.GPT_MODE_MENU_WAIT == 0.3
 
     def test_ensure_gpt_mode_returns_true_when_no_page(self, handler):
         """_ensure_gpt_mode returns True when no page (doesn't block)"""
@@ -1471,6 +1470,8 @@ class TestGptModeSwitch:
         # Track query_selector calls
         query_count = [0]
         mock_button = MagicMock()
+        mock_more_button = MagicMock()
+        mock_more_button.text_content.return_value = "More"
         mock_menu_item = MagicMock()
         mock_menu_item.text_content.return_value = "GPT-5.2 Think Deeper"
 
@@ -1486,15 +1487,23 @@ class TestGptModeSwitch:
                 return mock_text
             return mock_button
 
+        # Mock query_selector_all to return More button first, then menu items
+        query_all_count = [0]
+        def query_selector_all_side_effect(selector):
+            query_all_count[0] += 1
+            if 'aria-haspopup' in selector:  # GPT_MODE_MORE_SELECTOR
+                return [mock_more_button]
+            return [mock_menu_item]  # GPT_MODE_MENU_ITEM_SELECTOR
+
         mock_page.query_selector.side_effect = query_selector_side_effect
-        mock_page.query_selector_all.return_value = [mock_menu_item]
+        mock_page.query_selector_all.side_effect = query_selector_all_side_effect
 
         handler._page = mock_page
 
         result = handler._ensure_gpt_mode()
 
-        # Should have attempted to click button and menu item
-        assert mock_page.evaluate.call_count >= 2
+        # Should have attempted to click button, More, and menu item (3 clicks)
+        assert mock_page.evaluate.call_count >= 3
 
     def test_ensure_gpt_mode_attempts_switch_when_different(self, handler):
         """_ensure_gpt_mode attempts to switch when mode is different"""
@@ -1505,6 +1514,8 @@ class TestGptModeSwitch:
 
         # Mock elements
         mock_button = MagicMock()
+        mock_more_button = MagicMock()
+        mock_more_button.text_content.return_value = "More"
         mock_menu_item = MagicMock()
         mock_menu_item.text_content.return_value = "GPT-5.2 Think Deeper"
 
@@ -1521,15 +1532,22 @@ class TestGptModeSwitch:
                 return mock_text
             return mock_button
 
+        # Mock query_selector_all to return More button first, then menu items
+        def query_selector_all_side_effect(selector):
+            if 'aria-haspopup' in selector:  # GPT_MODE_MORE_SELECTOR
+                return [mock_more_button]
+            return [mock_menu_item]  # GPT_MODE_MENU_ITEM_SELECTOR
+
         mock_page.query_selector.side_effect = query_selector_side_effect
-        mock_page.query_selector_all.return_value = [mock_menu_item]
+        mock_page.query_selector_all.side_effect = query_selector_all_side_effect
 
         handler._page = mock_page
 
         result = handler._ensure_gpt_mode()
 
         # Verify that click actions were performed (evaluate called for JS click)
-        assert mock_page.evaluate.call_count >= 2  # Button click + menu item click
+        # 3-step flow: Button click + More click + menu item click
+        assert mock_page.evaluate.call_count >= 3
         # The result depends on verification query_selector call count
         # If verification succeeds (returns Think Deeper), result is True
 

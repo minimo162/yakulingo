@@ -740,8 +740,13 @@ class CopilotHandler:
     GPT_MODE_MENU_ITEM_SELECTOR = '[role="menuitem"]'
     GPT_MODE_TARGET = 'GPT-5.2 Think Deeper'
     GPT_MODE_MORE_TEXT = 'More'
-    GPT_MODE_MENU_WAIT = 0.3  # Wait for menu to open/close
-    GPT_MODE_BUTTON_WAIT_MS = 10000  # Wait up to 10 seconds for GPT mode button to appear (delayed rendering)
+    # OPTIMIZED: Reduced menu wait from 0.3s to 0.1s (3 calls = 0.6s saved)
+    GPT_MODE_MENU_WAIT = 0.1  # Wait for menu to open/close
+    # Stepped timeout for GPT mode button (like chat input detection)
+    # Total max wait: 1s + 2s*4 = 9s (was 10s flat)
+    GPT_MODE_BUTTON_FIRST_STEP_TIMEOUT_MS = 1000  # Fast path for already-visible button
+    GPT_MODE_BUTTON_STEP_TIMEOUT_MS = 2000  # Subsequent steps
+    GPT_MODE_BUTTON_MAX_STEPS = 5  # Max retry steps
 
     # Dynamic polling intervals for faster response detection
     # OPTIMIZED: Reduced intervals for quicker response detection (0.15s -> 0.1s)
@@ -1749,16 +1754,31 @@ class CopilotHandler:
             return
 
         try:
-            # Wait for GPT mode button to appear (it may load asynchronously)
-            try:
-                self._page.wait_for_selector(
-                    self.GPT_MODE_BUTTON_SELECTOR,
-                    timeout=self.GPT_MODE_BUTTON_WAIT_MS,
-                    state='visible'
-                )
-            except Exception as wait_err:
-                logger.debug("GPT mode button did not appear within %dms: %s",
-                            self.GPT_MODE_BUTTON_WAIT_MS, wait_err)
+            # Wait for GPT mode button using stepped timeout (like chat input detection)
+            # Fast path: if button is already visible, detect within 1 second
+            start_time = time.time()
+            button_found = False
+            for step in range(self.GPT_MODE_BUTTON_MAX_STEPS):
+                timeout = (self.GPT_MODE_BUTTON_FIRST_STEP_TIMEOUT_MS if step == 0
+                          else self.GPT_MODE_BUTTON_STEP_TIMEOUT_MS)
+                try:
+                    self._page.wait_for_selector(
+                        self.GPT_MODE_BUTTON_SELECTOR,
+                        timeout=timeout,
+                        state='visible'
+                    )
+                    button_found = True
+                    elapsed = time.time() - start_time
+                    logger.debug("[TIMING] GPT mode button found in step %d (%.2fs)", step + 1, elapsed)
+                    break
+                except Exception:
+                    # Continue to next step
+                    continue
+
+            if not button_found:
+                elapsed = time.time() - start_time
+                logger.debug("GPT mode button did not appear after %d steps (%.2fs)",
+                            self.GPT_MODE_BUTTON_MAX_STEPS, elapsed)
                 return
 
             # Check current mode by reading button text

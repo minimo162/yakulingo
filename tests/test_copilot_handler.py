@@ -557,14 +557,13 @@ class TestSendMessage:
         mock_input = MagicMock()
         mock_input.inner_text.return_value = "Test prompt"  # Input validation passes
         mock_page.query_selector.return_value = mock_input
-        mock_page.wait_for_selector.return_value = mock_input
         handler._page = mock_page
         handler._is_page_valid = Mock(return_value=True)
 
         handler._send_message("Test prompt")
 
-        # Should try to find input element
-        mock_page.wait_for_selector.assert_called()
+        # Should try to find input element via query_selector (not wait_for_selector)
+        mock_page.query_selector.assert_called()
 
     def test_send_message_empty_input_raises(self):
         """_send_message raises when all fill methods fail"""
@@ -572,7 +571,7 @@ class TestSendMessage:
 
         mock_page = MagicMock()
         mock_input = MagicMock()
-        mock_page.wait_for_selector.return_value = mock_input
+        mock_page.query_selector.return_value = mock_input
 
         # Method 1: fill() raises exception (triggers fallback to Method 2)
         mock_input.fill.side_effect = Exception("fill failed")
@@ -597,7 +596,6 @@ class TestSendMessage:
 
         mock_page = MagicMock()
         mock_input = MagicMock()
-        mock_refetched_input = MagicMock()
         mock_stop_button = MagicMock()
         mock_stop_button.is_visible.return_value = False  # Stop button not visible initially
         mock_send_button = MagicMock()
@@ -614,9 +612,7 @@ class TestSendMessage:
         mock_send_button.evaluate.side_effect = send_button_click_side_effect
 
         # fill() check returns text (fill success)
-        mock_input.inner_text.return_value = "Test prompt"
         mock_input.evaluate.return_value = True  # has focus
-        mock_refetched_input.evaluate.return_value = True  # has focus
 
         # Mock page.evaluate for POST-STATE check (early verification)
         # Return dict showing input not cleared and stop button not visible
@@ -636,17 +632,8 @@ class TestSendMessage:
 
         mock_page.evaluate.side_effect = page_evaluate_side_effect
 
-        # wait_for_selector behavior:
-        # - First call: return mock_input (for finding input element)
-        # - Subsequent calls for stop button: raise TimeoutError (stop button not visible)
-        wait_for_selector_calls = [0]
-
+        # wait_for_selector for stop button: raise TimeoutError (stop button not visible)
         def wait_for_selector_side_effect(selector, **kwargs):
-            wait_for_selector_calls[0] += 1
-            # First call is for input element
-            if wait_for_selector_calls[0] == 1:
-                return mock_input
-            # Subsequent calls are for stop button - raise timeout to simulate not visible
             if "stop" in selector.lower() or "fai-SendButton__stopBackground" in selector:
                 raise TimeoutError("Stop button not found")
             return mock_input
@@ -663,14 +650,18 @@ class TestSendMessage:
             else:
                 return ""  # Cleared on later attempts
 
-        mock_refetched_input.inner_text.side_effect = inner_text_side_effect
+        mock_input.inner_text.side_effect = inner_text_side_effect
 
+        # query_selector is used for finding input element and buttons
+        query_selector_calls = [0]
         def query_selector_side_effect(selector):
+            query_selector_calls[0] += 1
             if "stop" in selector.lower() or "Stop" in selector:
                 return mock_stop_button
             if "SendButton" in selector or 'type="submit"' in selector:
                 return mock_send_button
-            return mock_refetched_input
+            # Return mock_input for input element queries
+            return mock_input
 
         mock_page.query_selector.side_effect = query_selector_side_effect
         handler._page = mock_page
@@ -730,7 +721,6 @@ class TestSendMessage:
 
         mock_page = MagicMock()
         mock_input = MagicMock()
-        mock_refetched_input = MagicMock()
         mock_stop_button = MagicMock()
         mock_stop_button.is_visible.return_value = False  # Stop button never visible
         mock_send_button = MagicMock()
@@ -738,10 +728,6 @@ class TestSendMessage:
         # fill() check returns text (fill success)
         mock_input.inner_text.return_value = "Test prompt"
         mock_input.evaluate.return_value = True  # has focus
-
-        # After send, query_selector always returns element with text (never clears)
-        mock_refetched_input.inner_text.return_value = "Test prompt"
-        mock_refetched_input.evaluate.return_value = True  # has focus
 
         # Mock page.evaluate for POST-STATE check (early verification)
         # Return dict showing input not cleared and stop button not visible
@@ -757,29 +743,23 @@ class TestSendMessage:
 
         mock_page.evaluate.side_effect = page_evaluate_side_effect
 
-        # wait_for_selector behavior:
-        # - First call: return mock_input (for finding input element)
-        # - Subsequent calls for stop button: raise TimeoutError
-        wait_for_selector_calls = [0]
-
+        # wait_for_selector for stop button: raise TimeoutError
         def wait_for_selector_side_effect(selector, **kwargs):
-            wait_for_selector_calls[0] += 1
-            # First call is for input element
-            if wait_for_selector_calls[0] == 1:
-                return mock_input
-            # Subsequent calls are for stop button - raise timeout
             if "stop" in selector.lower() or "fai-SendButton__stopBackground" in selector:
                 raise TimeoutError("Stop button not found")
             return mock_input
 
         mock_page.wait_for_selector.side_effect = wait_for_selector_side_effect
 
+        # query_selector is used for finding input element and buttons
+        query_selector_calls = [0]
         def query_selector_side_effect(selector):
+            query_selector_calls[0] += 1
             if "stop" in selector.lower() or "Stop" in selector:
                 return mock_stop_button
             if "SendButton" in selector or 'type="submit"' in selector:
                 return mock_send_button
-            return mock_refetched_input
+            return mock_input
 
         mock_page.query_selector.side_effect = query_selector_side_effect
         handler._page = mock_page
@@ -788,8 +768,8 @@ class TestSendMessage:
             # Should not raise - continues anyway (response polling will detect failure)
             handler._send_message("Test prompt")
 
-        # Should have tried multiple times based on wait_for_selector call count
-        assert wait_for_selector_calls[0] >= 2, f"Expected at least 2 wait_for_selector calls but got {wait_for_selector_calls[0]}"
+        # Should have called query_selector multiple times (for input element, buttons, retries)
+        assert query_selector_calls[0] >= 2, f"Expected at least 2 query_selector calls but got {query_selector_calls[0]}"
 
     def test_send_message_uses_enter_key_first(self):
         """_send_message uses Enter key as primary method (first attempt)"""

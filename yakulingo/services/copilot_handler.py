@@ -4452,10 +4452,7 @@ class CopilotHandler:
             # Find input area
             # 実際のCopilot HTML: <span role="combobox" contenteditable="true" id="m365-chat-editor-target-element" ...>
             input_selector = self.CHAT_INPUT_SELECTOR_EXTENDED
-            logger.debug("Waiting for input element...")
-            input_wait_start = time.time()
-            input_elem = self._page.wait_for_selector(input_selector, timeout=self.SELECTOR_CHAT_INPUT_TIMEOUT_MS)
-            logger.info("[TIMING] wait_for_input_element: %.2fs", time.time() - input_wait_start)
+            input_elem = self._page.query_selector(input_selector)
 
             if input_elem:
                 logger.debug("Input element found, setting text via JS...")
@@ -6124,16 +6121,6 @@ class CopilotHandler:
                     logger.info("[TIMING] new_chat: click: %.2fs", click_time)
             else:
                 logger.warning("New chat button not found - chat context may not be cleared")
-
-            # Wait for new chat to be ready (input field becomes available)
-            input_selector = self.CHAT_INPUT_SELECTOR_EXTENDED
-            input_ready_start = time.time()
-            try:
-                self._page.wait_for_selector(input_selector, timeout=self.SELECTOR_NEW_CHAT_READY_TIMEOUT_MS, state='visible')
-            except PlaywrightTimeoutError:
-                # Fallback: wait a bit if selector doesn't appear
-                time.sleep(0.3)
-            logger.info("[TIMING] new_chat: wait_for_input_ready: %.2fs", time.time() - input_ready_start)
 
             # Verify that previous responses are cleared (can be skipped for 2nd+ batches)
             # OPTIMIZED: Reduced timeout from 1.0s to 0.5s for faster new chat start
